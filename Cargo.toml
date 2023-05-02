@@ -6,7 +6,7 @@ description = "A pure Rust implementation of succinct data structures from the S
 repository = "https://github.com/vigna/sux-rs/"
 license = "Apache-2.0 OR LGPL-2.1-or-later"
 readme = "README.md"
-keywords = ["succinct data structures", "rank", "select"]
+keywords = ["succinct", "rank", "select"]
 categories = ["compression", "data-structures"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
