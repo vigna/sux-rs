@@ -2,6 +2,12 @@
 name = "sux-rs"
 version = "0.1.0"
 edition = "2021"
+description = "A pure Rust implementation of succinct data structures from the Sux project (https://sux.di.unimi.it/)."
+repository = "https://github.com/vigna/sux-rs/"
+license = "Apache-2.0 OR LGPL-2.1-or-later"
+readme = "README.md"
+keywords = ["succinct data structures", "rank", "select"]
+categories = ["compression", "data-structures"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
