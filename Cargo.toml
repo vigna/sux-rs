@@ -1,5 +1,5 @@
 [package]
-name = "sux-rs"
+name = "sux"
 version = "0.1.0"
 edition = "2021"
 description = "A pure Rust implementation of succinct data structures from the Sux project (https://sux.di.unimi.it/)."
