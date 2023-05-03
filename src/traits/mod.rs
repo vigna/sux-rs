@@ -11,6 +11,8 @@
 pub trait BitLength {
 	/// Return the length in bits of the underlying bit vector.
 	fn len(&self) -> usize;
+	/// Return the number of ones in the underlying bit vector.
+	fn count(&self) -> usize;
 }
 
 /// Rank over a bit vector.
@@ -47,6 +49,7 @@ pub trait RankZero: Rank + BitLength {
 		pos - self.rank_unchecked(pos)
 	}
 }
+
 /// Select over a bit vector.
 pub trait Select: BitLength {
 	/// Return the position of the one of given rank.
@@ -54,7 +57,14 @@ pub trait Select: BitLength {
 	/// # Arguments
 	/// * `rank` : `usize` - The rank to query. If there is no
 	/// one of given rank, this function return `None`.
-	fn select(&self, rank: usize) -> Option<usize>;
+	fn select(&self, rank: usize) -> Option<usize> {
+		if rank >= self.count() {
+			None
+		} else {
+			Some(unsafe { self.select_unchecked(rank) })
+		}
+	}
+
 
 	/// Return the position of the one of given rank.
 	/// 
@@ -72,12 +82,18 @@ pub trait SelectZero: BitLength {
 	/// # Arguments
 	/// * `rank` : `usize` - The rank to query. If there is no
 	/// zero of given rank, this function return `None`.
-	fn select_zero(&self, i: usize) -> Option<usize>;
+	fn select_zero(&self, rank: usize) -> Option<usize> {
+		if rank >= self.len() - self.count() {
+			None
+		} else {
+			Some(unsafe { self.select_zero_unchecked(rank) })
+		}
+	}
 
 	/// Return the position of the zero of given rank.
 	/// 
 	/// # Arguments
 	/// * `rank` : `usize` - The rank to query, which must be
 	/// between zero (included) and the number of zeroes in the underlying bit vector (excluded).
-	unsafe fn select_zero_unchecked(&self, i: usize) -> usize;
+	unsafe fn select_zero_unchecked(&self, rank: usize) -> usize;
 }
