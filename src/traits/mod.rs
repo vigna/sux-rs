@@ -6,6 +6,9 @@
 //! Traits are collected into a module so you can do `use sux::traits::*;`
 //! for ease of use. 
 
+mod vslice;
+pub use vslice::*;
+
 /// A trait specifying abstractly the length of the bit vector underlying
 /// a succint data structure.
 pub trait BitLength {
