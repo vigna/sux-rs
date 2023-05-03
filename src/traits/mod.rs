@@ -9,6 +9,22 @@
 mod vslice;
 pub use vslice::*;
 
+use anyhow::Result;
+
+/// Like Into but we need to avoid the orphan rule and error [E0210](https://github.com/rust-lang/rust/blob/master/compiler/rustc_error_codes/src/error_codes/E0210.md)
+/// 
+/// Reference: https://rust-lang.github.io/chalk/book/clauses/coherence.html
+pub trait ConvertTo<B> {
+	fn convert_to(self) -> Result<B>;
+}
+
+impl ConvertTo<Vec<u64>> for Vec<u64> {
+	#[inline(always)]
+	fn convert_to(self) -> Result<Self> {
+		Ok(self)
+	}
+}
+
 /// A trait specifying abstractly the length of the bit vector underlying
 /// a succint data structure.
 pub trait BitLength {
