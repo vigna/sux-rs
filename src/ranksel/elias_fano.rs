@@ -23,10 +23,11 @@ impl<H, L> BitLength for EliasFano<H, L> {
     }
 }
 
-impl<H: Select, L> Select for EliasFano<H, L> {
+impl<H: Select, L: VSlice> Select for EliasFano<H, L> {
+    #[inline]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
-        let high_bits = self.high_bits.select(rank) - rank;
-        let low_bits = self.low_bits.get(rank);
+        let high_bits = self.high_bits.select_unchecked(rank) - rank;
+        let low_bits = self.low_bits.get_unchecked(rank);
         (high_bits << self.l) | low_bits
     }
 }

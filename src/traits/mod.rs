@@ -16,6 +16,10 @@ pub trait BitLength {
 	fn len(&self) -> usize;
 	/// Return the number of ones in the underlying bit vector.
 	fn count(&self) -> usize;
+	/// Return if there are any ones
+	fn is_empty(&self) -> bool {
+		self.count() == 0
+	}
 }
 
 /// Rank over a bit vector.
