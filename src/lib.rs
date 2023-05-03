@@ -1,3 +1,5 @@
+#![deny(unconditional_recursion)]
+
 pub mod traits;
 
 pub mod prelude {
@@ -5,4 +7,4 @@ pub mod prelude {
 }
 
 mod bitmap;
-pub use bitmap::BitMap;
+pub(crate) mod utils;

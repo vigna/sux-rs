@@ -81,7 +81,6 @@ pub trait Select: BitLength {
 	unsafe fn select_unchecked(&self, rank: usize) -> usize;
 }
 
-
 /// Select zeros over a bit vector.
 pub trait SelectZero: BitLength {
 	/// Return the position of the zero of given rank.
@@ -103,4 +102,26 @@ pub trait SelectZero: BitLength {
 	/// * `rank` : `usize` - The rank to query, which must be
 	/// between zero (included) and the number of zeroes in the underlying bit vector (excluded).
 	unsafe fn select_zero_unchecked(&self, rank: usize) -> usize;
+}
+
+pub trait SelectHinted: BitLength {
+	unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize;
+}
+
+impl<T: SelectHinted> Select for T {
+	#[inline(always)]
+	unsafe fn select_unchecked(&self, rank: usize) -> usize {
+		self.select_unchecked_hinted(rank, 0, 0)
+	}
+}
+
+pub trait SelectZeroHinted: BitLength {
+	unsafe fn select_zero_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize;
+}
+
+impl<T: SelectZeroHinted> SelectZero for T {
+	#[inline(always)]
+	unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
+		self.select_zero_unchecked_hinted(rank, 0, 0)
+	}
 }

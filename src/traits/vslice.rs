@@ -33,16 +33,19 @@ pub trait VSlice {
             Some(unsafe{self.get_unchecked(index)})
         }
     }
+    /// Return if the slice has length zero
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
-
 
 pub trait VSliceMut: VSlice {
     /// Set the element of the slice at the given position, without
     /// doing any bound or value checking.
-    unsafe fn set_unchecked(&self, index: usize, value: u64);
+    unsafe fn set_unchecked(&mut self, index: usize, value: u64);
     /// Set the element of the slice at the given position, or return `None` if the
     /// position is out of bounds or the value does not fit in [`VSlice::bit_width`] bits.
-    fn set(&self, index: usize, value: u64) -> Result<u64> {
+    fn set(&mut self, index: usize, value: u64) -> Result<u64> {
         if index >= self.len() {
             Err(anyhow::anyhow!("Index out of bounds"))
         } else if value & (u64::MAX >> 64 - self.bit_width()) != value {
@@ -53,5 +56,42 @@ pub trait VSliceMut: VSlice {
             }
             Ok(value)
         }
+    }
+}
+
+impl<'a> VSlice for &'a[u64] {
+    #[inline(always)]
+    fn bit_width(&self) -> usize {
+        64
+    }
+    #[inline(always)]
+    fn len(&self) -> usize {
+        <[u64]>::len(self)
+    }
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+        *<[u64]>::get_unchecked(self, index)
+    }
+}
+
+impl<'a> VSlice for &'a mut [u64] {
+    #[inline(always)]
+    fn bit_width(&self) -> usize {
+        64
+    }
+    #[inline(always)]
+    fn len(&self) -> usize {
+        <[u64]>::len(self)
+    }
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+        *<[u64]>::get_unchecked(self, index)
+    }
+}
+
+impl<'a> VSliceMut for &'a mut [u64] {
+    #[inline(always)]
+    unsafe fn set_unchecked(&mut self, index: usize, value: u64){
+        *<[u64]>::get_unchecked_mut(self, index) = value;
     }
 }

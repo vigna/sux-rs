@@ -2,6 +2,7 @@ use crate::traits::*;
 
 pub struct EliasFano<H, L> {
     high_bits: H,
+    /// A structure that stores the `l` lowest bits of the values
     low_bits: L,
     /// upperbound of the values 
     u: u64,
