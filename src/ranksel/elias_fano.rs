@@ -18,6 +18,7 @@ impl EliasFanoBuilder {
         } else {
             0
         };
+
         Self {
             u,
             n,
@@ -38,15 +39,17 @@ impl EliasFanoBuilder {
     }
 
     pub unsafe fn push_unchecked(&mut self, value: u64) {
-        let high = (value >> self.l) + self.count;
         let low = value & ((1 << self.l) - 1);
-        self.count += 1;
         self.low_bits.set_unchecked(self.count as usize, low);
+
+        let high = (value >> self.l) + self.count;
         self.high_bits.set_unchecked(high as usize, 1);
+        
+        self.count += 1;
         self.last_value = value;
     }
 
-    pub fn finalize(self) -> EliasFano<BitMap<Vec<u64>>, CompactArray<Vec<u64>>> {
+    pub fn build(self) -> EliasFano<BitMap<Vec<u64>>, CompactArray<Vec<u64>>> {
         EliasFano { 
             u: self.u, 
             n: self.n,

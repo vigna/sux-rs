@@ -70,7 +70,7 @@ impl<'a> VSlice for &'a[u64] {
     }
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> u64 {
-        debug_assert!(index < self.len());
+        debug_assert!(index < self.len(), "{} {}", index, self.len());
         *<[u64]>::get_unchecked(self, index)
     }
 }
@@ -86,7 +86,7 @@ impl<'a> VSlice for &'a mut [u64] {
     }
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> u64 {
-        debug_assert!(index < self.len());
+        debug_assert!(index < self.len(), "{} {}", index, self.len());
         *<[u64]>::get_unchecked(self, index)
     }
 }
@@ -94,7 +94,7 @@ impl<'a> VSlice for &'a mut [u64] {
 impl<'a> VSliceMut for &'a mut [u64] {
     #[inline(always)]
     unsafe fn set_unchecked(&mut self, index: usize, value: u64){
-        debug_assert!(index < self.len());
+        debug_assert!(index < self.len(), "{} {}", index, self.len());
         *<[u64]>::get_unchecked_mut(self, index) = value;
     }
 }
@@ -111,7 +111,7 @@ impl<'a> VSlice for Vec<u64> {
     }
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> u64 {
-        debug_assert!(index < self.len());
+        debug_assert!(index < self.len(), "{} {}", index, self.len());
         *<[u64]>::get_unchecked(self, index)
     }
 }
@@ -119,7 +119,7 @@ impl<'a> VSlice for Vec<u64> {
 impl<'a> VSliceMut for Vec<u64> {
     #[inline(always)]
     unsafe fn set_unchecked(&mut self, index: usize, value: u64){
-        debug_assert!(index < self.len());
+        debug_assert!(index < self.len(), "{} {}", index, self.len());
         *<[u64]>::get_unchecked_mut(self, index) = value;
     }
 }
