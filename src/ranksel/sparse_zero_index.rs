@@ -13,11 +13,9 @@ impl<B: SelectZeroHinted + AsRef<[u64]>, O: VSliceMut, const QUANTUM_LOG2: usize
         let mut number_of_ones = 0;
         let mut next_quantum = 0;
         let mut ones_index = 0;
-        dbg!(self.bits.as_ref().len(), self.len(), self.count());
         for (i, mut word) in self.bits.as_ref().iter().copied().enumerate() {
             word = !word;
             let ones_in_word = word.count_ones() as u64;
-            dbg!(number_of_ones, ones_in_word, next_quantum);
             // skip the word if we can
             while number_of_ones + ones_in_word > next_quantum {
                 let in_word_index = select_in_word(word, (next_quantum - number_of_ones) as usize);
