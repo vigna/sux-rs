@@ -13,3 +13,6 @@ categories = ["compression", "data-structures"]
 
 [dependencies]
 anyhow = "1.0.71"
+
+[dev-dependencies]
+rand = {version="0.8.5", features=["small_rng"]}

@@ -10,7 +10,8 @@ pub struct CompactArray<B: VSlice> {
 
 impl CompactArray<Vec<u64>> {
     pub fn new(bit_width: usize, len: usize) -> Self {
-        let n_of_words = (len + bit_width - 1) / bit_width;
+        // we need at least two words to avoid branches in the gets
+        let n_of_words =  (1 + (len * bit_width + 63) / 64).max(2);
         Self {
             data: vec![0; n_of_words],
             bit_width,
@@ -43,36 +44,41 @@ impl<B: VSlice> VSlice for CompactArray<B> {
         self.len
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> u64 {
         let pos = index * self.bit_width;
-        let o1 = pos & 0b11_1111;
-        let o2 = 64 - o1;
+        let word_index = (pos / 64) as usize;
+        let bit_index = pos % 64;
     
-        let mask = (1 << self.bit_width) - 1;
-        let base = (pos / 64) as usize;
+        let mask = (1_u64 << self.bit_width) - 1;
 
-        let lower = (self.data.get_unchecked(base) >> o1) & mask;
-        let higher = self.data.get_unchecked(base + 1) >> o2;
+        let lower = self.data.get_unchecked(word_index) >> bit_index;
+        let higher = (
+            self.data.get_unchecked(word_index + 1) << (63 - bit_index)
+        ) << 1;
         
         (higher | lower) & mask
     }
 }
 
 impl<B: VSliceMut> VSliceMut for CompactArray<B> {
+    #[inline]
     unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
         let pos = index * self.bit_width;
-        let o1 = pos & 0b11_1111;
-        let o2 = 64 - o1;
-    
-        let base = (pos / 64) as usize;
-        let lower = value << o1;
-        let higher = value >> o2;
+        let word_index = pos / 64;
+        let bit_index  = pos % 64;
+
+        let mask = (1_u64 << self.bit_width) - 1;
+
+        let lower = value << bit_index;
+        let higher = (value >> (63 - bit_index)) >> 1;
         
-        // TODO!: should this clean the previous bits?
-        self.data.set_unchecked(base, self.data.get_unchecked(base) | lower);
-        self.data.set_unchecked(base + 1, 
-            self.data.get_unchecked(base + 1) | higher
-        );
+        let lower_word = self.data.get_unchecked(word_index) & !(mask << bit_index);
+        self.data.set_unchecked(word_index, lower_word | lower);
+
+        let higher_word = self.data.get_unchecked(word_index + 1) 
+            & !((mask >> (63 - bit_index)) >> 1);
+        self.data.set_unchecked(word_index + 1, higher_word | higher);
     }
 }
 

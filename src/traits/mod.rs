@@ -124,15 +124,16 @@ pub trait SelectHinted: BitLength {
 	unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize;
 }
 
+pub trait SelectZeroHinted: BitLength {
+	unsafe fn select_zero_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize;
+}
+
+/*
 impl<T: SelectHinted> Select for T {
 	#[inline(always)]
 	unsafe fn select_unchecked(&self, rank: usize) -> usize {
 		self.select_unchecked_hinted(rank, 0, 0)
 	}
-}
-
-pub trait SelectZeroHinted: BitLength {
-	unsafe fn select_zero_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize;
 }
 
 impl<T: SelectZeroHinted> SelectZero for T {
@@ -141,3 +142,4 @@ impl<T: SelectZeroHinted> SelectZero for T {
 		self.select_zero_unchecked_hinted(rank, 0, 0)
 	}
 }
+*/

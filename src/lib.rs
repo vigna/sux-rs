@@ -12,4 +12,4 @@ pub mod prelude {
 
 mod bitmap;
 mod compact_array;
-pub(crate) mod utils;
+pub mod utils;
