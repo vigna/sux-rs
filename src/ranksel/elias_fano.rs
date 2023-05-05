@@ -40,10 +40,10 @@ impl EliasFanoBuilder {
 
     pub unsafe fn push_unchecked(&mut self, value: u64) {
         let low = value & ((1 << self.l) - 1);
-        self.low_bits.set_unchecked(self.count as usize, low);
+        self.low_bits.set(self.count as usize, low).unwrap();
 
         let high = (value >> self.l) + self.count;
-        self.high_bits.set_unchecked(high as usize, 1);
+        self.high_bits.set(high as usize, 1).unwrap();
         
         self.count += 1;
         self.last_value = value;
