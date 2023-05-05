@@ -26,6 +26,7 @@ fn test_elias_fano() {
         // do a slow select
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.select(i).unwrap() as u64, *v);
+            assert_eq!(ef.get(i).unwrap() as u64, *v);
         }
         
         // Add the ones indices
@@ -36,6 +37,7 @@ fn test_elias_fano() {
         // do a fast select
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.select(i).unwrap() as u64, *v);
+            assert_eq!(ef.get(i).unwrap() as u64, *v);
         }
 
         // Add the indices
@@ -50,6 +52,7 @@ fn test_elias_fano() {
         // do a fast select
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.select(i).unwrap() as u64, *v);
+            assert_eq!(ef.get(i).unwrap() as u64, *v);
         }
     }
 }
