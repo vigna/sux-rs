@@ -4,7 +4,6 @@ use crate::traits::*;
 pub struct CompactArray<B: VSlice> {
     data: B,
     bit_width: usize,
-    mask: u64,
     len: usize,
 }
 
@@ -16,7 +15,6 @@ impl CompactArray<Vec<u64>> {
             data: vec![0; n_of_words],
             bit_width,
             len,
-            mask: (1 << bit_width) - 1,
         }
     }
 }
@@ -27,7 +25,6 @@ impl<B: VSlice> CompactArray<B> {
             data,
             bit_width,
             len,
-            mask: (1 << bit_width) - 1,
         }
     }
 }
@@ -90,7 +87,6 @@ where
     fn convert_to(self) -> Result<CompactArray<D>> {
         Ok(CompactArray {
             len: self.len,
-            mask: self.mask,
             bit_width: self.bit_width,
             data: self.data.convert_to()?,
         })
@@ -103,5 +99,25 @@ impl<B: VSlice> ConvertTo<Vec<u64>> for CompactArray<B> {
             .map(|i| unsafe{self.get_unchecked(i)})
             .collect::<Vec<_>>()
         )
+    }
+}
+
+impl<B: VSlice + core::fmt::Debug> core::fmt::Debug for CompactArray<B> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("CompactArray")
+            .field("len", &self.len)
+            .field("bit_width", &self.bit_width)
+            .field("data", &self.data)
+            .finish()
+    }
+}
+
+impl<B: VSlice + Clone> Clone for CompactArray<B> {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            len: self.len,
+            bit_width: self.bit_width,
+        }
     }
 }

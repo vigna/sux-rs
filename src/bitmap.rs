@@ -153,4 +153,24 @@ impl<B: AsRef<[u64]>> AsRef<[u64]> for BitMap<B> {
     fn as_ref(&self) -> &[u64] {
         self.data.as_ref()
     }
-}  
+}
+
+impl<B: core::fmt::Debug + AsRef<[u64]>> core::fmt::Debug for BitMap<B> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("BitMap")
+            .field("len", &self.len)
+            .field("number_of_ones", &self.number_of_ones)
+            .field("data", &self.data)
+            .finish()
+    }
+}
+
+impl<B: AsRef<[u64]> + Clone> Clone for BitMap<B> {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            len: self.len,
+            number_of_ones: self.number_of_ones,
+        }
+    }
+}
