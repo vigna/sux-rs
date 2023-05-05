@@ -24,7 +24,7 @@ impl EliasFanoBuilder {
             n,
             l,
             low_bits: CompactArray::new(l as usize, n as usize),
-            high_bits: BitMap::new(2*n as usize),
+            high_bits: BitMap::new(n as usize + (u as usize >> l) + 1),
             last_value: 0,
             count: 0,
         }
