@@ -124,3 +124,30 @@ where
         })
     }
 }
+
+impl<B, O, const QUANTUM_LOG2: usize> core::fmt::Debug for SparseIndex<B, O, QUANTUM_LOG2> 
+where
+    B: AsRef<[u64]> + SelectHinted + core::fmt::Debug,
+    O: VSlice + core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SparseIndex")
+            .field("bits", &self.bits)
+            .field("ones", &self.ones)
+            .finish()
+    }
+}
+
+impl<B, O, const QUANTUM_LOG2: usize> Clone for SparseIndex<B, O, QUANTUM_LOG2> 
+where
+    B: AsRef<[u64]> + SelectHinted + Clone,
+    O: VSlice + Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            bits: self.bits.clone(),
+            ones: self.ones.clone(),
+            _marker: core::marker::PhantomData::default(),
+        }
+    }
+}
