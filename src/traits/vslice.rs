@@ -12,7 +12,7 @@
 //! Implementations must return always zero on a [`VSlice::get`] when the bit 
 //! width is zero. The behavior of a [`VSlice::set`] in the same context is not defined.
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 pub trait VSlice {
     /// Return the width of the slice. All elements stored in the slice must
@@ -47,9 +47,9 @@ pub trait VSliceMut: VSlice {
     /// position is out of bounds or the value does not fit in [`VSlice::bit_width`] bits.
     fn set(&mut self, index: usize, value: u64) -> Result<u64> {
         if index >= self.len() {
-            Err(anyhow::anyhow!("Index out of bounds"))
+            bail!("Index out of bounds {} on a vector of len {}", index, self.len())
         } else if value & (u64::MAX >> 64 - self.bit_width()) != value {
-            Err(anyhow::anyhow!("Value does not fit in {} bits", self.bit_width()))
+            bail!("Value {} does not fit in {} bits", value, self.bit_width())
         } else {
             unsafe {
                 self.set_unchecked(index, value);
