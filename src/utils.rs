@@ -18,7 +18,7 @@ pub fn select_in_word(word: u64, rank: usize) -> usize {
         /// A Fast x86 Implementation of Select
         /// by Prashant Pandey, Michael A. Bender, and Rob Johnson
         let mask = 1 << rank;
-        let one = unsafe{_pdep_u64(word, mask)};
+        let one = unsafe{_pdep_u64(mask, word)};
         one.trailing_zeros() as usize
     }
     #[cfg(not(target_feature="bmi2"))]
