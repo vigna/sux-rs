@@ -28,9 +28,9 @@ pub fn select_in_word(word: u64, rank: usize) -> usize {
         const LAMBDAS_STEP_8: u64 = 0x80 * ONES_STEP_8;
 
         let mut s = word;
-        s = s - ((s & 0xA * ONES_STEP_4) >> 1);
-        s = (s & 0x3 * ONES_STEP_4) + ((s >> 2) & 0x3 * ONES_STEP_4);
-        s = (s + (s >> 4)) & 0xF * ONES_STEP_8;
+        s = s - ((s & (0xA * ONES_STEP_4)) >> 1);
+        s = (s & (0x3 * ONES_STEP_4)) + ((s >> 2) & (0x3 * ONES_STEP_4));
+        s = (s + (s >> 4)) & (0xF * ONES_STEP_8);
         let byte_sums: u64 = s.wrapping_mul(ONES_STEP_8);
 
         let rank_step_8: u64 = rank as u64 * ONES_STEP_8;
