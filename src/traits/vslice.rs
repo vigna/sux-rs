@@ -59,7 +59,7 @@ pub trait VSliceMut: VSlice {
     }
 }
 
-impl<'a> VSlice for &'a[u64] {
+impl<'a> VSlice for &'a [u64] {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         64
@@ -100,7 +100,7 @@ impl<'a> VSliceMut for &'a mut [u64] {
 }
 
 
-impl<'a> VSlice for Vec<u64> {
+impl VSlice for Vec<u64> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         64
@@ -116,7 +116,7 @@ impl<'a> VSlice for Vec<u64> {
     }
 }
 
-impl<'a> VSliceMut for Vec<u64> {
+impl VSliceMut for Vec<u64> {
     #[inline(always)]
     unsafe fn set_unchecked(&mut self, index: usize, value: u64){
         debug_assert!(index < self.len(), "{} {}", index, self.len());

@@ -44,7 +44,7 @@ impl<B: VSlice> VSlice for CompactArray<B> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> u64 {
         let pos = index * self.bit_width;
-        let word_index = (pos / 64) as usize;
+        let word_index = pos / 64;
         let bit_index = pos % 64;
     
         let mask = (1_u64 << self.bit_width) - 1;
