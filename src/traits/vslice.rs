@@ -48,14 +48,14 @@ pub trait VSliceMut: VSlice {
     fn set(&mut self, index: usize, value: u64) -> Result<u64> {
         if index >= self.len() {
             bail!("Index out of bounds {} on a vector of len {}", index, self.len())
-        } else if value & (u64::MAX >> 64 - self.bit_width()) != value {
-            bail!("Value {} does not fit in {} bits", value, self.bit_width())
-        } else {
-            unsafe {
-                self.set_unchecked(index, value);
-            }
-            Ok(value)
         }
+        let bw = self.bit_width();
+        let mask = u64::MAX. wrapping_shr(64 - bw as u32) & !((bw as i64 - 1) >> 63) as u64;
+        if value & mask != value {
+            bail!("Value {} does not fit in {} bits", value, bw)
+        }
+        unsafe {self.set_unchecked(index, value);}
+        Ok(value)
     }
 }
 
