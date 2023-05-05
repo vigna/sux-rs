@@ -110,3 +110,20 @@ where
         })
     }
 }
+
+impl<H: Select, L: VSlice> VSlice for EliasFano<H, L> {
+    #[inline]
+    fn bit_width(&self) -> usize {
+        self.u.next_power_of_two().ilog2() as _
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.count()
+    }
+
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+        self.select_unchecked(index) as u64
+    }
+}
