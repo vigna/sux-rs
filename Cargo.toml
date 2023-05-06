@@ -25,3 +25,4 @@ rand = {version="0.8.5", features=["small_rng"]}
 
 [features]
 testless_read = []
+testless_write = []
