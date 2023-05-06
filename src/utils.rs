@@ -15,14 +15,28 @@ pub fn select_in_word(word: u64, rank: usize) -> usize {
     #[cfg(target_feature="bmi2")]
     {
         use core::arch::x86_64::_pdep_u64;
-        /// A Fast x86 Implementation of Select
-        /// by Prashant Pandey, Michael A. Bender, and Rob Johnson
+        // A Fast x86 Implementation of Select
+        // by Prashant Pandey, Michael A. Bender, and Rob Johnson
         let mask = 1 << rank;
         let one = unsafe{_pdep_u64(mask, word)};
         one.trailing_zeros() as usize
     }
     #[cfg(not(target_feature="bmi2"))]
     {
+        // [1] Sebastiano Vigna. Broadword Implementation of Rank/Select
+        //  Queries. WEA, 2008
+        //
+        // [2] Simon Gog, Matthias Petri. Optimized succinct data structures
+        // for massive data. Softw. Pract. Exper., 2014
+        //
+        //  [3] Sebastiano Vigna. MG4J 5.2.1. http://mg4j.di.unimi.it/
+        //
+        // [4] Facebook Folly library: https://github.com/facebook/folly
+        //
+        // geq_rank_step_8.trailing_zeroes() has been replaced by
+        // geq_rank_step_8.count_ones() following a suggestion by
+        // Giuseppe Ottaviano.
+    
         const ONES_STEP_4: u64 = 0x1111111111111111;
         const ONES_STEP_8: u64 = 0x0101010101010101;
         const LAMBDAS_STEP_8: u64 = 0x80 * ONES_STEP_8;
