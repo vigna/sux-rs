@@ -34,12 +34,12 @@ pub fn main() {
 
     let mut a = CompactArray::new(args.width, 1 << args.log2_size);
     let mask = (1 << args.log2_size) - 1;
-    let mut rand = SmallRng::seed_from_u64(0);
 
     let mut pl = ProgressLogger::default();
     let mut u = 0;
 
     for _ in 0..args.repeats {
+        let mut rand = SmallRng::seed_from_u64(0);
         pl.name = "write".to_string();
         pl.start("Writing...");
         for _ in 0..args.n {
