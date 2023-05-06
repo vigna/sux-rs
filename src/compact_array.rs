@@ -9,10 +9,10 @@ pub struct CompactArray<B: VSlice> {
 
 impl CompactArray<Vec<u64>> {
     pub fn new(bit_width: usize, len: usize) -> Self {
-        #[cfg(not(feature = "testless_read"))]
+        #[cfg(not(any(feature = "testless_read", feature = "testless_write")))]
         // we need at least two words to avoid branches in the gets
         let n_of_words = (len * bit_width + 63) / 64;
-        #[cfg(feature = "testless_read")]
+        #[cfg(any(feature = "testless_read", feature = "testless_write"))]
         // we need at least two words to avoid branches in the gets
         let n_of_words = (1 + (len * bit_width + 63) / 64).max(2);
         Self {
@@ -58,6 +58,7 @@ impl<B: VSlice> VSlice for CompactArray<B> {
 
         #[cfg(feature = "testless_read")]
         {
+            // ALERT!: this is not the correct mask for width 64
             let mask = (1_u64 << self.bit_width) - 1;
 
             let lower = self.data.get_unchecked(word_index) >> bit_index;
@@ -74,7 +75,11 @@ impl<B: VSlice> VSlice for CompactArray<B> {
                 self.data.get_unchecked(word_index) << l - bit_index >> l
             } else {
                 self.data.get_unchecked(word_index) >> bit_index
-                    | self.data.get_unchecked(word_index + 1).wrapping_shl(l.wrapping_sub(bit_index) as _) >> l
+                    | self
+                        .data
+                        .get_unchecked(word_index + 1)
+                        << (64 + l - bit_index)
+                        >> l
             }
         }
     }
@@ -83,22 +88,55 @@ impl<B: VSlice> VSlice for CompactArray<B> {
 impl<B: VSliceMut> VSliceMut for CompactArray<B> {
     #[inline]
     unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
+        #[cfg(not(feature = "testless_write"))]
+        if self.bit_width == 0 {
+            return;
+        }
+
         let pos = index * self.bit_width;
         let word_index = pos / 64;
         let bit_index = pos % 64;
 
+        // ALERT: this is not the correct mask for width 64
         let mask = (1_u64 << self.bit_width) - 1;
 
-        let lower = value << bit_index;
-        let higher = (value >> (63 - bit_index)) >> 1;
+        #[cfg(feature = "testless_write")]
+        {
 
-        let lower_word = self.data.get_unchecked(word_index) & !(mask << bit_index);
-        self.data.set_unchecked(word_index, lower_word | lower);
+            let lower = value << bit_index;
+            let higher = (value >> (63 - bit_index)) >> 1;
 
-        let higher_word =
-            self.data.get_unchecked(word_index + 1) & !((mask >> (63 - bit_index)) >> 1);
-        self.data
-            .set_unchecked(word_index + 1, higher_word | higher);
+            let lower_word = self.data.get_unchecked(word_index) & !(mask << bit_index);
+            self.data.set_unchecked(word_index, lower_word | lower);
+
+            let higher_word =
+                self.data.get_unchecked(word_index + 1) & !((mask >> (63 - bit_index)) >> 1);
+            self.data
+                .set_unchecked(word_index + 1, higher_word | higher);
+        }
+
+        #[cfg(not(feature = "testless_write"))]
+        {
+            let end_word_index = (pos + self.bit_width - 1) / 64;
+            if word_index == end_word_index {
+                let mut word = self.data.get_unchecked(word_index);
+				word &= !(mask << bit_index);
+				word |= value << bit_index;
+                self.data.set_unchecked(word_index, word);
+
+            } else {
+                let mut word = self.data.get_unchecked(word_index);
+				word &= (1 << bit_index) - 1;
+				word |= value << bit_index;
+                self.data.set_unchecked(word_index, word);
+
+                let mut word = self.data.get_unchecked(end_word_index);
+				word &= !(mask >> (64 - bit_index));
+				word |= value >> (64 - bit_index);
+                self.data.set_unchecked(end_word_index, word);
+            }
+        }
+
     }
 }
 
