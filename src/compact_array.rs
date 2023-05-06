@@ -9,6 +9,10 @@ pub struct CompactArray<B: VSlice> {
 
 impl CompactArray<Vec<u64>> {
     pub fn new(bit_width: usize, len: usize) -> Self {
+        #[cfg(not(feature = "testless_read"))]
+        // we need at least two words to avoid branches in the gets
+        let n_of_words = (len * bit_width + 63) / 64;
+        #[cfg(feature = "testless_read")]
         // we need at least two words to avoid branches in the gets
         let n_of_words = (1 + (len * bit_width + 63) / 64).max(2);
         Self {
