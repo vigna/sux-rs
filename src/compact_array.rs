@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::traits::*;
+use anyhow::Result;
 
 pub struct CompactArray<B: VSlice> {
     data: B,
@@ -10,7 +10,7 @@ pub struct CompactArray<B: VSlice> {
 impl CompactArray<Vec<u64>> {
     pub fn new(bit_width: usize, len: usize) -> Self {
         // we need at least two words to avoid branches in the gets
-        let n_of_words =  (1 + (len * bit_width + 63) / 64).max(2);
+        let n_of_words = (1 + (len * bit_width + 63) / 64).max(2);
         Self {
             data: vec![0; n_of_words],
             bit_width,
@@ -43,18 +43,36 @@ impl<B: VSlice> VSlice for CompactArray<B> {
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> u64 {
+        #[cfg(not(feature = "testless_read"))]
+        if self.bit_width == 0 {
+            return 0;
+        }
+
         let pos = index * self.bit_width;
         let word_index = pos / 64;
-        let bit_index  = pos % 64;
-    
-        let mask = (1_u64 << self.bit_width) - 1;
+        let bit_index = pos % 64;
 
-        let lower = self.data.get_unchecked(word_index) >> bit_index;
-        let higher = (
-            self.data.get_unchecked(word_index + 1) << (63 - bit_index)
-        ) << 1;
-        
-        (higher | lower) & mask
+        #[cfg(feature = "testless_read")]
+        {
+            let mask = (1_u64 << self.bit_width) - 1;
+
+            let lower = self.data.get_unchecked(word_index) >> bit_index;
+            let higher = (self.data.get_unchecked(word_index + 1) << (63 - bit_index)) << 1;
+
+            (higher | lower) & mask
+        }
+
+        #[cfg(not(feature = "testless_read"))]
+        {
+            let l = 64 - self.bit_width;
+
+            if bit_index <= l {
+                self.data.get_unchecked(word_index) << l - bit_index >> l
+            } else {
+                self.data.get_unchecked(word_index) >> bit_index
+                    | self.data.get_unchecked(word_index + 1).wrapping_shl(l.wrapping_sub(bit_index) as _) >> l
+            }
+        }
     }
 }
 
@@ -63,23 +81,24 @@ impl<B: VSliceMut> VSliceMut for CompactArray<B> {
     unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
         let pos = index * self.bit_width;
         let word_index = pos / 64;
-        let bit_index  = pos % 64;
+        let bit_index = pos % 64;
 
         let mask = (1_u64 << self.bit_width) - 1;
 
         let lower = value << bit_index;
         let higher = (value >> (63 - bit_index)) >> 1;
-        
+
         let lower_word = self.data.get_unchecked(word_index) & !(mask << bit_index);
         self.data.set_unchecked(word_index, lower_word | lower);
 
-        let higher_word = self.data.get_unchecked(word_index + 1) 
-            & !((mask >> (63 - bit_index)) >> 1);
-        self.data.set_unchecked(word_index + 1, higher_word | higher);
+        let higher_word =
+            self.data.get_unchecked(word_index + 1) & !((mask >> (63 - bit_index)) >> 1);
+        self.data
+            .set_unchecked(word_index + 1, higher_word | higher);
     }
 }
 
-impl<B, D> ConvertTo<CompactArray<D>> for CompactArray<B> 
+impl<B, D> ConvertTo<CompactArray<D>> for CompactArray<B>
 where
     B: ConvertTo<D> + VSlice,
     D: VSlice,
@@ -96,9 +115,8 @@ where
 impl<B: VSlice> ConvertTo<Vec<u64>> for CompactArray<B> {
     fn convert_to(self) -> Result<Vec<u64>> {
         Ok((0..self.len())
-            .map(|i| unsafe{self.get_unchecked(i)})
-            .collect::<Vec<_>>()
-        )
+            .map(|i| unsafe { self.get_unchecked(i) })
+            .collect::<Vec<_>>())
     }
 }
 

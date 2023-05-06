@@ -13,6 +13,15 @@ categories = ["compression", "data-structures"]
 
 [dependencies]
 anyhow = "1.0.71"
+clap = { version = "4.2.7", features = ["derive"] }
+log = "0.4.17"
+num-format = "0.4.4"
+pluralizer = "0.4.0"
+rand = { version = "0.8.5", features = ["small_rng"] }
+stderrlog = "0.5.4"
 
 [dev-dependencies]
 rand = {version="0.8.5", features=["small_rng"]}
+
+[features]
+testless_read = []
