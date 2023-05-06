@@ -47,6 +47,7 @@ impl<B: VSlice> VSlice for CompactArray<B> {
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> u64 {
+        debug_assert!(self.bit_width != 64);
         #[cfg(not(feature = "testless_read"))]
         if self.bit_width == 0 {
             return 0;
@@ -88,6 +89,7 @@ impl<B: VSlice> VSlice for CompactArray<B> {
 impl<B: VSliceMut> VSliceMut for CompactArray<B> {
     #[inline]
     unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
+        debug_assert!(self.bit_width != 64);
         #[cfg(not(feature = "testless_write"))]
         if self.bit_width == 0 {
             return;
@@ -97,7 +99,6 @@ impl<B: VSliceMut> VSliceMut for CompactArray<B> {
         let word_index = pos / 64;
         let bit_index = pos % 64;
 
-        // ALERT: this is not the correct mask for width 64
         let mask = (1_u64 << self.bit_width) - 1;
 
         #[cfg(feature = "testless_write")]
