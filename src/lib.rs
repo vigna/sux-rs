@@ -13,3 +13,6 @@ pub mod prelude {
 mod bitmap;
 mod compact_array;
 pub mod utils;
+
+mod progress_logger;
+pub use progress_logger::ProgressLogger;
