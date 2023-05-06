@@ -6,9 +6,6 @@ use std::hint::black_box;
 use sux::prelude::*;
 use sux::ProgressLogger;
 
-type ReadType = u32;
-type BufferType = u64;
-
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks compact arrays", long_about = None)]
 struct Args {
