@@ -1,6 +1,6 @@
-use anyhow::Result;
 use crate::traits::*;
 use crate::utils::select_in_word;
+use anyhow::Result;
 
 pub struct SparseZeroIndex<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {
     bits: B,
@@ -8,7 +8,9 @@ pub struct SparseZeroIndex<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: u
     _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,
 }
 
-impl<B: SelectZeroHinted + AsRef<[u64]>, O: VSliceMut, const QUANTUM_LOG2: usize> SparseZeroIndex<B, O, QUANTUM_LOG2>{
+impl<B: SelectZeroHinted + AsRef<[u64]>, O: VSliceMut, const QUANTUM_LOG2: usize>
+    SparseZeroIndex<B, O, QUANTUM_LOG2>
+{
     fn build_zeros(&mut self) -> Result<()> {
         let mut number_of_ones = 0;
         let mut next_quantum = 0;
@@ -35,23 +37,24 @@ impl<B: SelectZeroHinted + AsRef<[u64]>, O: VSliceMut, const QUANTUM_LOG2: usize
 }
 
 /// Provide the hint to the underlying structure
-impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectZero for SparseZeroIndex<B, O, QUANTUM_LOG2> {
+impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectZero
+    for SparseZeroIndex<B, O, QUANTUM_LOG2>
+{
     #[inline(always)]
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
         let index = rank >> QUANTUM_LOG2;
         let pos = self.zeros.get_unchecked(index);
         let rank_at_pos = index << QUANTUM_LOG2;
 
-        self.bits.select_zero_unchecked_hinted(
-            rank,
-            pos as usize,
-            rank_at_pos,
-        )
+        self.bits
+            .select_zero_unchecked_hinted(rank, pos as usize, rank_at_pos)
     }
 }
 
 /// If the underlying implementation has select zero, forward the methods
-impl<B: SelectZeroHinted + Select, O: VSlice, const QUANTUM_LOG2: usize> Select for SparseZeroIndex<B, O, QUANTUM_LOG2> {
+impl<B: SelectZeroHinted + Select, O: VSlice, const QUANTUM_LOG2: usize> Select
+    for SparseZeroIndex<B, O, QUANTUM_LOG2>
+{
     #[inline(always)]
     fn select(&self, rank: usize) -> Option<usize> {
         self.bits.select(rank)
@@ -63,7 +66,9 @@ impl<B: SelectZeroHinted + Select, O: VSlice, const QUANTUM_LOG2: usize> Select 
 }
 
 /// If the underlying implementation has select zero, forward the methods
-impl<B: SelectZeroHinted + SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectHinted for SparseZeroIndex<B, O, QUANTUM_LOG2> {
+impl<B: SelectZeroHinted + SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectHinted
+    for SparseZeroIndex<B, O, QUANTUM_LOG2>
+{
     #[inline(always)]
     unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
         self.bits.select_unchecked_hinted(rank, pos, rank_at_pos)
@@ -71,7 +76,9 @@ impl<B: SelectZeroHinted + SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> S
 }
 
 /// Forward the lengths
-impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> BitLength for SparseZeroIndex<B, O, QUANTUM_LOG2> {
+impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> BitLength
+    for SparseZeroIndex<B, O, QUANTUM_LOG2>
+{
     #[inline(always)]
     fn len(&self) -> usize {
         self.bits.len()
@@ -82,14 +89,18 @@ impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> BitLength for Sp
     }
 }
 
-impl<B: SelectZeroHinted, const QUANTUM_LOG2: usize> ConvertTo<B> for SparseZeroIndex<B, Vec<u64>, QUANTUM_LOG2> {
+impl<B: SelectZeroHinted, const QUANTUM_LOG2: usize> ConvertTo<B>
+    for SparseZeroIndex<B, Vec<u64>, QUANTUM_LOG2>
+{
     #[inline(always)]
     fn convert_to(self) -> Result<B> {
         Ok(self.bits)
     }
 }
 
-impl<B: SelectZeroHinted + AsRef<[u64]>, const QUANTUM_LOG2: usize> ConvertTo<SparseZeroIndex<B, Vec<u64>, QUANTUM_LOG2>> for B {
+impl<B: SelectZeroHinted + AsRef<[u64]>, const QUANTUM_LOG2: usize>
+    ConvertTo<SparseZeroIndex<B, Vec<u64>, QUANTUM_LOG2>> for B
+{
     #[inline(always)]
     fn convert_to(self) -> Result<SparseZeroIndex<B, Vec<u64>, QUANTUM_LOG2>> {
         let mut res = SparseZeroIndex {
@@ -102,7 +113,7 @@ impl<B: SelectZeroHinted + AsRef<[u64]>, const QUANTUM_LOG2: usize> ConvertTo<Sp
     }
 }
 
-impl<B, O, const QUANTUM_LOG2: usize> AsRef<[u64]> for SparseZeroIndex<B, O, QUANTUM_LOG2> 
+impl<B, O, const QUANTUM_LOG2: usize> AsRef<[u64]> for SparseZeroIndex<B, O, QUANTUM_LOG2>
 where
     B: AsRef<[u64]> + SelectZeroHinted,
     O: VSlice,
@@ -112,7 +123,8 @@ where
     }
 }
 
-impl<B, D, O, const QUANTUM_LOG2: usize> ConvertTo<SparseZeroIndex<B, O, QUANTUM_LOG2>> for SparseZeroIndex<D, O, QUANTUM_LOG2> 
+impl<B, D, O, const QUANTUM_LOG2: usize> ConvertTo<SparseZeroIndex<B, O, QUANTUM_LOG2>>
+    for SparseZeroIndex<D, O, QUANTUM_LOG2>
 where
     B: SelectZeroHinted + AsRef<[u64]>,
     D: SelectZeroHinted + AsRef<[u64]> + ConvertTo<B>,
@@ -121,14 +133,14 @@ where
     #[inline(always)]
     fn convert_to(self) -> Result<SparseZeroIndex<B, O, QUANTUM_LOG2>> {
         Ok(SparseZeroIndex {
-            zeros:self.zeros,
+            zeros: self.zeros,
             bits: self.bits.convert_to()?,
             _marker: core::marker::PhantomData::default(),
         })
     }
 }
 
-impl<B, O, const QUANTUM_LOG2: usize> core::fmt::Debug for SparseZeroIndex<B, O, QUANTUM_LOG2> 
+impl<B, O, const QUANTUM_LOG2: usize> core::fmt::Debug for SparseZeroIndex<B, O, QUANTUM_LOG2>
 where
     B: AsRef<[u64]> + SelectZeroHinted + core::fmt::Debug,
     O: VSlice + core::fmt::Debug,
@@ -141,7 +153,7 @@ where
     }
 }
 
-impl<B, O, const QUANTUM_LOG2: usize> Clone for SparseZeroIndex<B, O, QUANTUM_LOG2> 
+impl<B, O, const QUANTUM_LOG2: usize> Clone for SparseZeroIndex<B, O, QUANTUM_LOG2>
 where
     B: AsRef<[u64]> + SelectZeroHinted + Clone,
     O: VSlice + Clone,

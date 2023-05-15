@@ -76,11 +76,7 @@ impl<B: VSlice> VSlice for CompactArray<B> {
                 self.data.get_unchecked(word_index) << l - bit_index >> l
             } else {
                 self.data.get_unchecked(word_index) >> bit_index
-                    | self
-                        .data
-                        .get_unchecked(word_index + 1)
-                        << (64 + l - bit_index)
-                        >> l
+                    | self.data.get_unchecked(word_index + 1) << (64 + l - bit_index) >> l
             }
         }
     }
@@ -103,7 +99,6 @@ impl<B: VSliceMut> VSliceMut for CompactArray<B> {
 
         #[cfg(feature = "testless_write")]
         {
-
             let lower = value << bit_index;
             let higher = (value >> (63 - bit_index)) >> 1;
 
@@ -121,23 +116,21 @@ impl<B: VSliceMut> VSliceMut for CompactArray<B> {
             let end_word_index = (pos + self.bit_width - 1) / 64;
             if word_index == end_word_index {
                 let mut word = self.data.get_unchecked(word_index);
-				word &= !(mask << bit_index);
-				word |= value << bit_index;
+                word &= !(mask << bit_index);
+                word |= value << bit_index;
                 self.data.set_unchecked(word_index, word);
-
             } else {
                 let mut word = self.data.get_unchecked(word_index);
-				word &= (1 << bit_index) - 1;
-				word |= value << bit_index;
+                word &= (1 << bit_index) - 1;
+                word |= value << bit_index;
                 self.data.set_unchecked(word_index, word);
 
                 let mut word = self.data.get_unchecked(end_word_index);
-				word &= !(mask >> (64 - bit_index));
-				word |= value >> (64 - bit_index);
+                word &= !(mask >> (64 - bit_index));
+                word |= value >> (64 - bit_index);
                 self.data.set_unchecked(end_word_index, word);
             }
         }
-
     }
 }
 

@@ -13,21 +13,15 @@ pub fn main() {
     assert_eq!(ef.select(3).unwrap(), 2);
     assert_eq!(ef.get(3).unwrap(), 2);
     // Add the ones indices
-    let ef: EliasFano<
-        SparseIndex<BitMap<Vec<u64>>, Vec<u64>, 8>, 
-        CompactArray<Vec<u64>>,
-    > = ef.convert_to().unwrap();
+    let ef: EliasFano<SparseIndex<BitMap<Vec<u64>>, Vec<u64>, 8>, CompactArray<Vec<u64>>> =
+        ef.convert_to().unwrap();
     // do a fast select
     assert_eq!(ef.select(3).unwrap(), 2);
     assert_eq!(ef.get(3).unwrap(), 2);
 
     // Add the indices
     let ef: EliasFano<
-        SparseZeroIndex<
-            SparseIndex<BitMap<Vec<u64>>, Vec<u64>, 8>, 
-            Vec<u64>, 
-            8,
-        >, 
+        SparseZeroIndex<SparseIndex<BitMap<Vec<u64>>, Vec<u64>, 8>, Vec<u64>, 8>,
         CompactArray<Vec<u64>>,
     > = ef.convert_to().unwrap();
     // do a fast select
