@@ -1,15 +1,15 @@
 //! # VSlice
-//! 
+//!
 //! This module defines the `VSlice` and `VSliceMut` traits, which are accessed
 //! with a logic similar to slices, but when indexed with `get` return a value.
 //! Implementing the slice trait would be more natural, but it would be very complicated
-//! because there is no easy way to return a reference to a bit segment 
+//! because there is no easy way to return a reference to a bit segment
 //! (see, e.g., [BitSlice](https://docs.rs/bitvec/latest/bitvec/slice/struct.BitSlice.html)).
-//! 
+//!
 //! Each `VSlice` has an associated [`BIT_WIDTH`]. All stored values must fit
 //! within this bit width.
-//! 
-//! Implementations must return always zero on a [`VSlice::get`] when the bit 
+//!
+//! Implementations must return always zero on a [`VSlice::get`] when the bit
 //! width is zero. The behavior of a [`VSlice::set`] in the same context is not defined.
 
 use anyhow::{bail, Result};
@@ -30,7 +30,7 @@ pub trait VSlice {
         if index >= self.len() {
             None
         } else {
-            Some(unsafe{self.get_unchecked(index)})
+            Some(unsafe { self.get_unchecked(index) })
         }
     }
     /// Return if the slice has length zero
@@ -47,14 +47,20 @@ pub trait VSliceMut: VSlice {
     /// position is out of bounds or the value does not fit in [`VSlice::bit_width`] bits.
     fn set(&mut self, index: usize, value: u64) -> Result<u64> {
         if index >= self.len() {
-            bail!("Index out of bounds {} on a vector of len {}", index, self.len())
+            bail!(
+                "Index out of bounds {} on a vector of len {}",
+                index,
+                self.len()
+            )
         }
         let bw = self.bit_width();
-        let mask = u64::MAX. wrapping_shr(64 - bw as u32) & !((bw as i64 - 1) >> 63) as u64;
+        let mask = u64::MAX.wrapping_shr(64 - bw as u32) & !((bw as i64 - 1) >> 63) as u64;
         if value & mask != value {
             bail!("Value {} does not fit in {} bits", value, bw)
         }
-        unsafe {self.set_unchecked(index, value);}
+        unsafe {
+            self.set_unchecked(index, value);
+        }
         Ok(value)
     }
 }
@@ -93,12 +99,11 @@ impl<'a> VSlice for &'a mut [u64] {
 
 impl<'a> VSliceMut for &'a mut [u64] {
     #[inline(always)]
-    unsafe fn set_unchecked(&mut self, index: usize, value: u64){
+    unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
         *<[u64]>::get_unchecked_mut(self, index) = value;
     }
 }
-
 
 impl VSlice for Vec<u64> {
     #[inline(always)]
@@ -118,7 +123,7 @@ impl VSlice for Vec<u64> {
 
 impl VSliceMut for Vec<u64> {
     #[inline(always)]
-    unsafe fn set_unchecked(&mut self, index: usize, value: u64){
+    unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
         *<[u64]>::get_unchecked_mut(self, index) = value;
     }

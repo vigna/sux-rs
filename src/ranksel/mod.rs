@@ -1,4 +1,3 @@
-
 pub mod elias_fano;
 pub mod sparse_index;
 pub mod sparse_zero_index;

@@ -1,6 +1,6 @@
 use rand::rngs::SmallRng;
-use rand::SeedableRng;
 use rand::seq::SliceRandom;
+use rand::SeedableRng;
 use sux::prelude::*;
 
 #[test]
@@ -20,7 +20,7 @@ fn test_bitmap() {
         for i in indices[..n].iter().copied() {
             bm.set(i as usize, 1).unwrap();
         }
-        
+
         for i in 0..u {
             assert_eq!(bm.get(i).unwrap() != 0, indices[..n].contains(&i));
         }
@@ -28,7 +28,7 @@ fn test_bitmap() {
         for i in indices[n..].iter().copied() {
             bm.set(i as usize, 1).unwrap();
         }
-        
+
         for i in 0..u {
             assert_eq!(bm.get(i).unwrap() != 0, indices.contains(&i));
         }

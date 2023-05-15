@@ -1,5 +1,5 @@
-use anyhow::{Result, bail};
-use crate::{traits::*, compact_array::CompactArray, bitmap::BitMap};
+use crate::{bitmap::BitMap, compact_array::CompactArray, traits::*};
+use anyhow::{bail, Result};
 
 pub struct EliasFanoBuilder {
     u: u64,
@@ -34,7 +34,9 @@ impl EliasFanoBuilder {
         if value < self.last_value {
             bail!("The values given to elias-fano are not monotone");
         }
-        unsafe{self.push_unchecked(value);}
+        unsafe {
+            self.push_unchecked(value);
+        }
         Ok(())
     }
 
@@ -44,24 +46,24 @@ impl EliasFanoBuilder {
 
         let high = (value >> self.l) + self.count;
         self.high_bits.set(high as usize, 1).unwrap();
-        
+
         self.count += 1;
         self.last_value = value;
     }
 
     pub fn build(self) -> EliasFano<BitMap<Vec<u64>>, CompactArray<Vec<u64>>> {
-        EliasFano { 
-            u: self.u, 
+        EliasFano {
+            u: self.u,
             n: self.n,
-            l: self.l, 
-            low_bits: self.low_bits, 
-            high_bits: self.high_bits, 
+            l: self.l,
+            low_bits: self.low_bits,
+            high_bits: self.high_bits,
         }
     }
 }
 
 pub struct EliasFano<H, L> {
-    /// upperbound of the values 
+    /// upperbound of the values
     u: u64,
     /// number of values
     n: u64,
@@ -94,7 +96,7 @@ impl<H: Select, L: VSlice> Select for EliasFano<H, L> {
     }
 }
 
-impl<H1, L1, H2, L2> ConvertTo<EliasFano<H1, L1>> for EliasFano<H2, L2> 
+impl<H1, L1, H2, L2> ConvertTo<EliasFano<H1, L1>> for EliasFano<H2, L2>
 where
     H2: ConvertTo<H1>,
     L2: ConvertTo<L1>,
