@@ -99,7 +99,7 @@ impl<B: VSliceMut> VSliceMut for CompactArray<B> {
         let word_index = pos / 64;
         let bit_index = pos % 64;
 
-        let mask = (1_u64 << self.bit_width) - 1;
+        let mask: u64 = (1_u64 << self.bit_width) - 1;
 
         #[cfg(feature = "testless_write")]
         {

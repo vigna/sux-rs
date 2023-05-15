@@ -1,10 +1,10 @@
 use clap::Parser;
+use dsi_progress_logger::ProgressLogger;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
 use std::hint::black_box;
 use sux::prelude::*;
-use sux::ProgressLogger;
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks compact arrays", long_about = None)]
@@ -40,7 +40,7 @@ pub fn main() {
 
     for _ in 0..args.repeats {
         let mut rand = SmallRng::seed_from_u64(0);
-        pl.name = "write".to_string();
+        pl.item_name = "write".to_string();
         pl.start("Writing...");
         for _ in 0..args.n {
             let x = rand.gen::<usize>() & mask;
@@ -48,7 +48,7 @@ pub fn main() {
         }
         pl.done_with_count(args.n);
 
-        pl.name = "read".to_string();
+        pl.item_name = "read".to_string();
         pl.start("Reading...");
         for _ in 0..args.n {
             unsafe {
