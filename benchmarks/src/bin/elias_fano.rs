@@ -1,9 +1,9 @@
-use sux::prelude::*;
-use std::hint::black_box;
+use clap::Parser;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
-use clap::Parser;
+use std::hint::black_box;
+use sux::prelude::*;
 
 use std::time::Instant;
 
@@ -40,10 +40,8 @@ fn main() {
     for value in values {
         elias_fano_builder.push(value).unwrap();
     }
-    let elias_fano: EliasFano<
-        SparseIndex<BitMap<Vec<u64>>, Vec<u64>, 8>, 
-        CompactArray<Vec<u64>>,
-    > = elias_fano_builder.build().convert_to().unwrap();
+    let elias_fano: EliasFano<SparseIndex<BitMap<Vec<u64>>, Vec<u64>, 8>, CompactArray<Vec<u64>>> =
+        elias_fano_builder.build().convert_to().unwrap();
 
     let mut ranks = Vec::with_capacity(args.t);
     for _ in 0..args.t {
@@ -55,11 +53,16 @@ fn main() {
     for _ in 0..args.repeats {
         let start = Instant::now();
         for &rank in &ranks {
-            unsafe{u += elias_fano.select_unchecked(rank);}
+            unsafe {
+                u += elias_fano.select_unchecked(rank);
+            }
         }
         let duration = start.elapsed();
 
-        println!("EliasFano select {}ns", duration.as_secs_f64() * 1.0e9 / args.t as f64);  
+        println!(
+            "EliasFano select {}ns",
+            duration.as_secs_f64() * 1.0e9 / args.t as f64
+        );
     }
 
     black_box(u);
