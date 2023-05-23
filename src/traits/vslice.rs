@@ -18,10 +18,16 @@ pub trait VSlice {
     /// Return the width of the slice. All elements stored in the slice must
     /// fit within this bit width.
     fn bit_width(&self) -> usize;
+
     /// Return the length of the slice.
     fn len(&self) -> usize;
+
     /// Return the element of the slice at the given position, without
     /// doing any bounds checking.
+    ///
+    /// # Safety
+    ///
+    /// Must not be called with `index` out of the slice bounds.
     unsafe fn get_unchecked(&self, index: usize) -> u64;
 
     /// Return the element of the slice at the given position, or `None` if the
@@ -42,7 +48,12 @@ pub trait VSlice {
 pub trait VSliceMut: VSlice {
     /// Set the element of the slice at the given position, without
     /// doing any bound or value checking.
+    ///
+    /// # Safety
+    ///
+    /// Must not be called with `index` out of the slice bounds.
     unsafe fn set_unchecked(&mut self, index: usize, value: u64);
+
     /// Set the element of the slice at the given position, or return `None` if the
     /// position is out of bounds or the value does not fit in [`VSlice::bit_width`] bits.
     fn set(&mut self, index: usize, value: u64) -> Result<u64> {

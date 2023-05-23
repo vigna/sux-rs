@@ -51,7 +51,12 @@ pub trait Rank: BitLength {
     /// Return the number of ones preceding the specified position.
     ///
     /// # Arguments
-    /// * `pos` : `usize` - The position to query, which must be between 0 (included ) and the [length of the underlying bit vector](`Length::len`) (included).
+    /// * `pos` : `usize` - The position to query; see Safety below for valid values.
+    ///
+    /// # Safety
+    ///
+    /// `pos` must be between 0 (included) and the [length of the underlying bit
+    /// vector](`Length::len`) (included).
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
 }
 
@@ -67,7 +72,12 @@ pub trait RankZero: Rank + BitLength {
     /// Return the number of zeros preceding the specified position.
     ///
     /// # Arguments
-    /// * `pos` : `usize` - The position to query, which must be between 0 and the [length of the underlying bit vector](`Length::len`) (included).
+    /// * `pos` : `usize` - The position to query; see Safety below for valid values.
+    ///
+    /// # Safety
+    ///
+    /// `pos` must be between 0 and the [length of the underlying bit
+    /// vector](`Length::len`) (included).
     unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
         pos - self.rank_unchecked(pos)
     }
@@ -91,8 +101,12 @@ pub trait Select: BitLength {
     /// Return the position of the one of given rank.
     ///
     /// # Arguments
-    /// * `rank` : `usize` - The rank to query, which must be
-    /// between zero (included) and the number of ones in the underlying bit vector (excluded).
+    /// * `rank` : `usize` - The rank to query; see Seafety below for valid values.
+    ///
+    /// # Safety
+    ///
+    /// `rank` must be between zero (included) and the number of ones in the
+    /// underlying bit vector (excluded).
     unsafe fn select_unchecked(&self, rank: usize) -> usize;
 }
 
@@ -114,8 +128,12 @@ pub trait SelectZero: BitLength {
     /// Return the position of the zero of given rank.
     ///
     /// # Arguments
-    /// * `rank` : `usize` - The rank to query, which must be
-    /// between zero (included) and the number of zeroes in the underlying bit vector (excluded).
+    /// * `rank` : `usize` - The rank to query; see Safety below for valid values
+    ///
+    /// # Safety
+    ///
+    /// `rank` must be between zero (included) and the number of zeroes in the
+    /// underlying bit vector (excluded).
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize;
 }
 
