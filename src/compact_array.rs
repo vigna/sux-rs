@@ -73,7 +73,7 @@ impl<B: VSlice> VSlice for CompactArray<B> {
             let l = 64 - self.bit_width;
 
             if bit_index <= l {
-                self.data.get_unchecked(word_index) << l - bit_index >> l
+                self.data.get_unchecked(word_index) << (l - bit_index) >> l
             } else {
                 self.data.get_unchecked(word_index) >> bit_index
                     | self.data.get_unchecked(word_index + 1) << (64 + l - bit_index) >> l
