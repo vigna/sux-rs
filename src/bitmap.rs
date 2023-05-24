@@ -1,6 +1,7 @@
 use crate::traits::*;
 use crate::utils::select_in_word;
 use anyhow::Result;
+use std::io::{Seek, Write};
 
 pub struct BitMap<B: AsRef<[u64]>> {
     data: B,
@@ -175,5 +176,32 @@ impl<B: AsRef<[u64]> + Clone> Clone for BitMap<B> {
             len: self.len,
             number_of_ones: self.number_of_ones,
         }
+    }
+}
+
+impl<B: AsRef<[u64]> + Serialize> Serialize for BitMap<B> {
+    fn serialize<F: Write + Seek>(&self, backend: &mut F) -> Result<usize> {
+        let mut bytes = 0;
+        bytes += self.len.serialize(backend)?;
+        bytes += self.number_of_ones.serialize(backend)?;
+        bytes += self.data.serialize(backend)?;
+        Ok(bytes)
+    }
+}
+
+impl<'a, B: AsRef<[u64]> + Deserialize<'a>> Deserialize<'a> for BitMap<B> {
+    fn deserialize(backend: &'a [u8]) -> Result<(Self, &'a [u8])> {
+        let (len, backend) = usize::deserialize(&backend)?;
+        let (number_of_ones, backend) = usize::deserialize(&backend)?;
+        let (data, backend) = B::deserialize(&backend)?;
+
+        Ok((
+            Self {
+                len,
+                number_of_ones,
+                data,
+            },
+            backend,
+        ))
     }
 }

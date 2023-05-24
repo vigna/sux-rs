@@ -1,3 +1,7 @@
+pub fn pad_align_to(value: usize, bits: usize) -> usize {
+    value.wrapping_neg() & ((1 << bits) - 1)
+}
+
 #[inline(always)]
 /// Return the i-th
 /// ```

@@ -1,6 +1,7 @@
 use crate::traits::*;
 use crate::utils::select_in_word;
 use anyhow::Result;
+use std::io::{Seek, Write};
 
 pub struct SparseIndex<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {
     bits: B,
@@ -167,5 +168,38 @@ where
             ones: self.ones.clone(),
             _marker: core::marker::PhantomData::default(),
         }
+    }
+}
+
+impl<B: SelectHinted + Serialize, O: VSlice + Serialize, const QUANTUM_LOG2: usize> Serialize
+    for SparseIndex<B, O, QUANTUM_LOG2>
+{
+    fn serialize<F: Write + Seek>(&self, backend: &mut F) -> Result<usize> {
+        let mut bytes = 0;
+        bytes += self.bits.serialize(backend)?;
+        bytes += self.ones.serialize(backend)?;
+        Ok(bytes)
+    }
+}
+
+impl<
+        'a,
+        B: SelectHinted + Deserialize<'a>,
+        O: VSlice + Deserialize<'a>,
+        const QUANTUM_LOG2: usize,
+    > Deserialize<'a> for SparseIndex<B, O, QUANTUM_LOG2>
+{
+    fn deserialize(backend: &'a [u8]) -> Result<(Self, &'a [u8])> {
+        let (bits, backend) = B::deserialize(&backend)?;
+        let (ones, backend) = O::deserialize(&backend)?;
+
+        Ok((
+            Self {
+                bits,
+                ones,
+                _marker: Default::default(),
+            },
+            backend,
+        ))
     }
 }

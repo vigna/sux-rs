@@ -1,5 +1,6 @@
 use crate::traits::*;
 use anyhow::Result;
+use std::io::{Seek, Write};
 
 pub struct CompactArray<B: VSlice> {
     data: B,
@@ -173,5 +174,31 @@ impl<B: VSlice + Clone> Clone for CompactArray<B> {
             len: self.len,
             bit_width: self.bit_width,
         }
+    }
+}
+
+impl<B: VSlice + Serialize> Serialize for CompactArray<B> {
+    fn serialize<F: Write + Seek>(&self, backend: &mut F) -> Result<usize> {
+        let mut bytes = 0;
+        bytes += self.len.serialize(backend)?;
+        bytes += self.bit_width.serialize(backend)?;
+        bytes += self.data.serialize(backend)?;
+        Ok(bytes)
+    }
+}
+
+impl<'a, B: VSlice + Deserialize<'a>> Deserialize<'a> for CompactArray<B> {
+    fn deserialize(backend: &'a [u8]) -> Result<(Self, &'a [u8])> {
+        let (len, backend) = usize::deserialize(&backend)?;
+        let (bit_width, backend) = usize::deserialize(&backend)?;
+        let (data, backend) = B::deserialize(&backend)?;
+        Ok((
+            Self {
+                len,
+                bit_width,
+                data,
+            },
+            backend,
+        ))
     }
 }
