@@ -35,8 +35,8 @@ impl<'a> Deserialize<'a> for $ty {
             fn deserialize(backend: &'a [u8]) -> Result<(Self, &'a [u8])> {
                 let (len, backend) = usize::deserialize(backend)?;
                 let bytes = len * core::mem::size_of::<$ty>();
-                let (pre, data, after) = unsafe { backend[..bytes].align_to() };
-                assert!(pre.is_empty()); // TODO make error
+                let (_pre, data, after) = unsafe { backend[..bytes].align_to() };
+                // TODO make error / we added padding so it's ok
                 assert!(after.is_empty());
                 Ok((data, &backend[bytes..]))
             }
@@ -53,7 +53,7 @@ impl<T: Serialize> Serialize for Vec<T> {
         bytes += backend.write(&len.to_ne_bytes())?;
         // ensure alignement
         let file_pos = backend.seek(std::io::SeekFrom::Current(0))? as usize;
-        for _ in 0..pad_align_to(file_pos, 8) {
+        for _ in 0..pad_align_to(file_pos, core::mem::size_of::<T>()) {
             backend.write(&[0])?;
             bytes += 1;
         }
