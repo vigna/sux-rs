@@ -205,3 +205,12 @@ impl<'a, B: AsRef<[u64]> + Deserialize<'a>> Deserialize<'a> for BitMap<B> {
         ))
     }
 }
+
+impl<B: AsRef<[u64]> + MemSize> MemSize for BitMap<B> {
+    fn mem_size(&self) -> usize {
+        self.len.mem_size() + self.number_of_ones.mem_size() + self.data.mem_size()
+    }
+    fn mem_used(&self) -> usize {
+        self.len.mem_used() + self.number_of_ones.mem_used() + self.data.mem_used()
+    }
+}

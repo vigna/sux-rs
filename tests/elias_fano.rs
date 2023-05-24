@@ -25,7 +25,6 @@ fn test_elias_fano() {
             assert_eq!(ef.select(i).unwrap() as u64, *v);
             assert_eq!(ef.get(i).unwrap() as u64, *v);
         }
-
         // Add the ones indices
         let ef: EliasFano<SparseIndex<BitMap<Vec<u64>>, Vec<u64>, 8>, CompactArray<Vec<u64>>> =
             ef.convert_to().unwrap();
