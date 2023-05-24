@@ -44,6 +44,6 @@ impl<T: MemSize> MemSize for Vec<T> {
     }
     #[inline(always)]
     fn mem_used(&self) -> usize {
-        self.mem_size() + self.iter().map(|x| x.mem_used()).sum::<usize>()
+        core::mem::size_of::<Self>() + self.iter().map(|x| x.mem_used()).sum::<usize>()
     }
 }
