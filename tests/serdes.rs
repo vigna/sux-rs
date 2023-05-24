@@ -1,7 +1,7 @@
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
-use std::io::{Seek, Write};
+use std::io::Seek;
 use sux::prelude::*;
 
 #[test]
