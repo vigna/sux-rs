@@ -9,6 +9,9 @@
 mod serdes;
 pub use serdes::*;
 
+mod memory;
+pub use memory::*;
+
 mod vslice;
 pub use vslice::*;
 

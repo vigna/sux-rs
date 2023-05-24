@@ -187,3 +187,20 @@ impl<'a, H: Deserialize<'a>, L: Deserialize<'a>> Deserialize<'a> for EliasFano<H
         ))
     }
 }
+
+impl<H: MemSize, L: MemSize> MemSize for EliasFano<H, L> {
+    fn mem_size(&self) -> usize {
+        self.u.mem_size()
+            + self.n.mem_size()
+            + self.l.mem_size()
+            + self.high_bits.mem_size()
+            + self.low_bits.mem_size()
+    }
+    fn mem_used(&self) -> usize {
+        self.u.mem_used()
+            + self.n.mem_used()
+            + self.l.mem_used()
+            + self.high_bits.mem_used()
+            + self.low_bits.mem_used()
+    }
+}

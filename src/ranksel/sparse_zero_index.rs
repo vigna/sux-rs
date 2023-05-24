@@ -200,3 +200,14 @@ impl<
         ))
     }
 }
+
+impl<B: SelectZeroHinted + MemSize, O: VSlice + MemSize, const QUANTUM_LOG2: usize> MemSize
+    for SparseZeroIndex<B, O, QUANTUM_LOG2>
+{
+    fn mem_size(&self) -> usize {
+        self.bits.mem_size() + self.zeros.mem_size()
+    }
+    fn mem_used(&self) -> usize {
+        self.bits.mem_used() + self.zeros.mem_used()
+    }
+}

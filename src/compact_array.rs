@@ -202,3 +202,12 @@ impl<'a, B: VSlice + Deserialize<'a>> Deserialize<'a> for CompactArray<B> {
         ))
     }
 }
+
+impl<B: VSlice + MemSize> MemSize for CompactArray<B> {
+    fn mem_size(&self) -> usize {
+        self.len.mem_size() + self.bit_width.mem_size() + self.data.mem_size()
+    }
+    fn mem_used(&self) -> usize {
+        self.len.mem_used() + self.bit_width.mem_used() + self.data.mem_used()
+    }
+}
