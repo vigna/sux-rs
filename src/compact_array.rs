@@ -189,9 +189,9 @@ impl<B: VSlice + Serialize> Serialize for CompactArray<B> {
 
 impl<'a, B: VSlice + Deserialize<'a>> Deserialize<'a> for CompactArray<B> {
     fn deserialize(backend: &'a [u8]) -> Result<(Self, &'a [u8])> {
-        let (len, backend) = usize::deserialize(&backend)?;
-        let (bit_width, backend) = usize::deserialize(&backend)?;
-        let (data, backend) = B::deserialize(&backend)?;
+        let (len, backend) = usize::deserialize(backend)?;
+        let (bit_width, backend) = usize::deserialize(backend)?;
+        let (data, backend) = B::deserialize(backend)?;
         Ok((
             Self {
                 len,

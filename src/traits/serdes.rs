@@ -52,7 +52,7 @@ impl<T: Serialize> Serialize for Vec<T> {
         let mut bytes = 0;
         bytes += backend.write(&len.to_ne_bytes())?;
         // ensure alignement
-        let file_pos = backend.seek(std::io::SeekFrom::Current(0))? as usize;
+        let file_pos = backend.stream_position()? as usize;
         for _ in 0..pad_align_to(file_pos, core::mem::size_of::<T>()) {
             backend.write(&[0])?;
             bytes += 1;

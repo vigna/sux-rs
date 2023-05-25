@@ -191,9 +191,9 @@ impl<B: AsRef<[u64]> + Serialize> Serialize for BitMap<B> {
 
 impl<'a, B: AsRef<[u64]> + Deserialize<'a>> Deserialize<'a> for BitMap<B> {
     fn deserialize(backend: &'a [u8]) -> Result<(Self, &'a [u8])> {
-        let (len, backend) = usize::deserialize(&backend)?;
-        let (number_of_ones, backend) = usize::deserialize(&backend)?;
-        let (data, backend) = B::deserialize(&backend)?;
+        let (len, backend) = usize::deserialize(backend)?;
+        let (number_of_ones, backend) = usize::deserialize(backend)?;
+        let (data, backend) = B::deserialize(backend)?;
 
         Ok((
             Self {
