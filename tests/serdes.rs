@@ -22,6 +22,8 @@ fn test_serdes() {
     }
     // Finish the creation of elias-fano
     let ef = efb.build();
+    println!("{} {}", ef.mem_size(), ef.mem_used());
+    println!("{}", EliasFanoBuilder::mem_upperbound(u, n) / 8);
 
     let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
     {
