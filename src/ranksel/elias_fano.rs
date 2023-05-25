@@ -31,6 +31,10 @@ impl EliasFanoBuilder {
         }
     }
 
+    pub fn mem_upperbound(u: u64, n: u64) -> u64 {
+        2 * n + (n * (u as f64 / n as f64).log2().ceil() as u64)
+    }
+
     pub fn push(&mut self, value: u64) -> Result<()> {
         if value < self.last_value {
             bail!("The values given to elias-fano are not monotone");
