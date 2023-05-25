@@ -173,11 +173,11 @@ impl<H: Serialize, L: Serialize> Serialize for EliasFano<H, L> {
 
 impl<'a, H: Deserialize<'a>, L: Deserialize<'a>> Deserialize<'a> for EliasFano<H, L> {
     fn deserialize(backend: &'a [u8]) -> Result<(Self, &'a [u8])> {
-        let (u, backend) = u64::deserialize(&backend)?;
-        let (n, backend) = u64::deserialize(&backend)?;
-        let (l, backend) = u64::deserialize(&backend)?;
-        let (low_bits, backend) = L::deserialize(&backend)?;
-        let (high_bits, backend) = H::deserialize(&backend)?;
+        let (u, backend) = u64::deserialize(backend)?;
+        let (n, backend) = u64::deserialize(backend)?;
+        let (l, backend) = u64::deserialize(backend)?;
+        let (low_bits, backend) = L::deserialize(backend)?;
+        let (high_bits, backend) = H::deserialize(backend)?;
 
         Ok((
             Self {

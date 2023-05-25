@@ -18,7 +18,7 @@ fn test_bitmap() {
         let (indices, _) = values.partial_shuffle(&mut rng, n2);
 
         for i in indices[..n].iter().copied() {
-            bm.set(i as usize, 1).unwrap();
+            bm.set(i, 1).unwrap();
         }
 
         for i in 0..u {
@@ -26,7 +26,7 @@ fn test_bitmap() {
         }
 
         for i in indices[n..].iter().copied() {
-            bm.set(i as usize, 1).unwrap();
+            bm.set(i, 1).unwrap();
         }
 
         for i in 0..u {
@@ -34,7 +34,7 @@ fn test_bitmap() {
         }
 
         for i in indices[..n].iter().copied() {
-            bm.set(i as usize, 0).unwrap();
+            bm.set(i, 0).unwrap();
         }
 
         for i in 0..u {
@@ -42,7 +42,7 @@ fn test_bitmap() {
         }
 
         for i in indices[n..].iter().copied() {
-            bm.set(i as usize, 0).unwrap();
+            bm.set(i, 0).unwrap();
         }
 
         for i in 0..u {

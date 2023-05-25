@@ -187,8 +187,8 @@ impl<
     > Deserialize<'a> for SparseZeroIndex<B, O, QUANTUM_LOG2>
 {
     fn deserialize(backend: &'a [u8]) -> Result<(Self, &'a [u8])> {
-        let (bits, backend) = B::deserialize(&backend)?;
-        let (zeros, backend) = O::deserialize(&backend)?;
+        let (bits, backend) = B::deserialize(backend)?;
+        let (zeros, backend) = O::deserialize(backend)?;
 
         Ok((
             Self {
