@@ -54,8 +54,7 @@ impl<T: Serialize> Serialize for Vec<T> {
         // ensure alignement
         let file_pos = backend.stream_position()? as usize;
         for _ in 0..pad_align_to(file_pos, core::mem::size_of::<T>()) {
-            backend.write(&[0])?;
-            bytes += 1;
+            bytes += backend.write(&[0])?;
         }
         // write the values
         for item in self {
