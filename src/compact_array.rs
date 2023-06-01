@@ -1,7 +1,8 @@
 use crate::traits::*;
 use anyhow::Result;
-use std::io::{Seek, Write};
+use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CompactArray<B: VSlice> {
     data: B,
     bit_width: usize,
@@ -154,52 +155,6 @@ impl<B: VSlice> ConvertTo<Vec<u64>> for CompactArray<B> {
         Ok((0..self.len())
             .map(|i| unsafe { self.get_unchecked(i) })
             .collect::<Vec<_>>())
-    }
-}
-
-impl<B: VSlice + core::fmt::Debug> core::fmt::Debug for CompactArray<B> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("CompactArray")
-            .field("len", &self.len)
-            .field("bit_width", &self.bit_width)
-            .field("data", &self.data)
-            .finish()
-    }
-}
-
-impl<B: VSlice + Clone> Clone for CompactArray<B> {
-    fn clone(&self) -> Self {
-        Self {
-            data: self.data.clone(),
-            len: self.len,
-            bit_width: self.bit_width,
-        }
-    }
-}
-
-impl<B: VSlice + Serialize> Serialize for CompactArray<B> {
-    fn serialize<F: Write + Seek>(&self, backend: &mut F) -> Result<usize> {
-        let mut bytes = 0;
-        bytes += self.len.serialize(backend)?;
-        bytes += self.bit_width.serialize(backend)?;
-        bytes += self.data.serialize(backend)?;
-        Ok(bytes)
-    }
-}
-
-impl<'a, B: VSlice + Deserialize<'a>> Deserialize<'a> for CompactArray<B> {
-    fn deserialize(backend: &'a [u8]) -> Result<(Self, &'a [u8])> {
-        let (len, backend) = usize::deserialize(&backend)?;
-        let (bit_width, backend) = usize::deserialize(&backend)?;
-        let (data, backend) = B::deserialize(&backend)?;
-        Ok((
-            Self {
-                len,
-                bit_width,
-                data,
-            },
-            backend,
-        ))
     }
 }
 

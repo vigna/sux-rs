@@ -1,8 +1,9 @@
 use crate::traits::*;
 use crate::utils::select_in_word;
 use anyhow::Result;
-use std::io::{Seek, Write};
+use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SparseIndex<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {
     bits: B,
     ones: O,
@@ -141,66 +142,6 @@ where
             bits: self.bits.convert_to()?,
             _marker: core::marker::PhantomData::default(),
         })
-    }
-}
-
-impl<B, O, const QUANTUM_LOG2: usize> core::fmt::Debug for SparseIndex<B, O, QUANTUM_LOG2>
-where
-    B: AsRef<[u64]> + SelectHinted + core::fmt::Debug,
-    O: VSlice + core::fmt::Debug,
-{
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("SparseIndex")
-            .field("bits", &self.bits)
-            .field("ones", &self.ones)
-            .finish()
-    }
-}
-
-impl<B, O, const QUANTUM_LOG2: usize> Clone for SparseIndex<B, O, QUANTUM_LOG2>
-where
-    B: AsRef<[u64]> + SelectHinted + Clone,
-    O: VSlice + Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            bits: self.bits.clone(),
-            ones: self.ones.clone(),
-            _marker: core::marker::PhantomData::default(),
-        }
-    }
-}
-
-impl<B: SelectHinted + Serialize, O: VSlice + Serialize, const QUANTUM_LOG2: usize> Serialize
-    for SparseIndex<B, O, QUANTUM_LOG2>
-{
-    fn serialize<F: Write + Seek>(&self, backend: &mut F) -> Result<usize> {
-        let mut bytes = 0;
-        bytes += self.bits.serialize(backend)?;
-        bytes += self.ones.serialize(backend)?;
-        Ok(bytes)
-    }
-}
-
-impl<
-        'a,
-        B: SelectHinted + Deserialize<'a>,
-        O: VSlice + Deserialize<'a>,
-        const QUANTUM_LOG2: usize,
-    > Deserialize<'a> for SparseIndex<B, O, QUANTUM_LOG2>
-{
-    fn deserialize(backend: &'a [u8]) -> Result<(Self, &'a [u8])> {
-        let (bits, backend) = B::deserialize(&backend)?;
-        let (ones, backend) = O::deserialize(&backend)?;
-
-        Ok((
-            Self {
-                bits,
-                ones,
-                _marker: Default::default(),
-            },
-            backend,
-        ))
     }
 }
 

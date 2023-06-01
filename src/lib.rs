@@ -1,11 +1,13 @@
 #![deny(unconditional_recursion)]
 
+pub mod dessert;
 pub mod ranksel;
 pub mod traits;
 
 pub mod prelude {
     pub use crate::bitmap::*;
     pub use crate::compact_array::*;
+    pub use crate::dessert;
     pub use crate::ranksel::prelude::*;
     pub use crate::traits::*;
 }
