@@ -10,6 +10,12 @@ pub struct Serializer<F: Write> {
 #[derive(Debug)]
 pub struct Error(String);
 
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Self(format!("{}", value))
+    }
+}
+
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
@@ -52,130 +58,100 @@ impl<'a, F: Write> ser::Serializer for &'a mut Serializer<F> {
     }
 
     fn serialize_bool(self, v: bool) -> std::result::Result<Self::Ok, Self::Error> {
-        self.file
-            .write(&[v as u8])
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&[v as u8])?;
         self.bytes_written += 1;
         Ok(())
     }
 
     fn serialize_u8(self, v: u8) -> std::result::Result<Self::Ok, Self::Error> {
-        self.file
-            .write(&v.to_ne_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&v.to_ne_bytes())?;
         self.bytes_written += 1;
         Ok(())
     }
 
     fn serialize_i8(self, v: i8) -> std::result::Result<Self::Ok, Self::Error> {
-        self.file
-            .write(&v.to_ne_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&v.to_ne_bytes())?;
         self.bytes_written += 1;
         Ok(())
     }
 
     fn serialize_u16(self, v: u16) -> std::result::Result<Self::Ok, Self::Error> {
-        self.file
-            .write(&v.to_ne_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&v.to_ne_bytes())?;
         self.bytes_written += 2;
         Ok(())
     }
 
     fn serialize_i16(self, v: i16) -> std::result::Result<Self::Ok, Self::Error> {
-        self.file
-            .write(&v.to_ne_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&v.to_ne_bytes())?;
         self.bytes_written += 2;
         Ok(())
     }
 
     fn serialize_u32(self, v: u32) -> std::result::Result<Self::Ok, Self::Error> {
-        self.file
-            .write(&v.to_ne_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&v.to_ne_bytes())?;
         self.bytes_written += 4;
         Ok(())
     }
 
     fn serialize_i32(self, v: i32) -> std::result::Result<Self::Ok, Self::Error> {
-        self.file
-            .write(&v.to_ne_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&v.to_ne_bytes())?;
         self.bytes_written += 4;
         Ok(())
     }
 
     fn serialize_u64(self, v: u64) -> std::result::Result<Self::Ok, Self::Error> {
-        self.file
-            .write(&v.to_ne_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&v.to_ne_bytes())?;
         self.bytes_written += 8;
         Ok(())
     }
 
     fn serialize_i64(self, v: i64) -> std::result::Result<Self::Ok, Self::Error> {
-        self.file
-            .write(&v.to_ne_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&v.to_ne_bytes())?;
         self.bytes_written += 8;
         Ok(())
     }
 
     fn serialize_u128(self, v: u128) -> std::result::Result<Self::Ok, Self::Error> {
-        self.file
-            .write(&v.to_ne_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&v.to_ne_bytes())?;
         self.bytes_written += 16;
         Ok(())
     }
 
     fn serialize_i128(self, v: i128) -> std::result::Result<Self::Ok, Self::Error> {
-        self.file
-            .write(&v.to_ne_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&v.to_ne_bytes())?;
         self.bytes_written += 16;
         Ok(())
     }
 
     fn serialize_f32(self, v: f32) -> std::result::Result<Self::Ok, Self::Error> {
-        self.file
-            .write(&v.to_ne_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&v.to_ne_bytes())?;
         self.bytes_written += 4;
         Ok(())
     }
 
     fn serialize_f64(self, v: f64) -> std::result::Result<Self::Ok, Self::Error> {
-        self.file
-            .write(&v.to_ne_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&v.to_ne_bytes())?;
         self.bytes_written += 8;
         Ok(())
     }
 
     fn serialize_char(self, v: char) -> std::result::Result<Self::Ok, Self::Error> {
         // https://doc.rust-lang.org/std/primitive.char.html#method.from_u32
-        self.file
-            .write(&(v as u32).to_ne_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(&(v as u32).to_ne_bytes())?;
         self.bytes_written += 4;
         Ok(())
     }
 
     fn serialize_str(self, v: &str) -> std::result::Result<Self::Ok, Self::Error> {
         // TODO!: len?
-        self.file
-            .write(v.as_bytes())
-            .map_err(|e| Error(e.to_string()))?;
+        self.file.write(v.as_bytes())?;
         self.bytes_written += v.as_bytes().len();
         Ok(())
     }
 
     fn serialize_bytes(self, v: &[u8]) -> std::result::Result<Self::Ok, Self::Error> {
         // TODO!: len?
-        self.file.write(v).map_err(|e| Error(e.to_string()))?;
+        self.file.write(v)?;
         self.bytes_written += v.len();
         Ok(())
     }
@@ -201,8 +177,7 @@ impl<'a, F: Write> ser::Serializer for &'a mut Serializer<F> {
     where
         T: Serialize,
     {
-        self.serialize_bool(true)
-            .map_err(|e| Error(e.to_string()))?;
+        self.serialize_bool(true)?;
         value.serialize(self)
     }
 
@@ -220,8 +195,7 @@ impl<'a, F: Write> ser::Serializer for &'a mut Serializer<F> {
         // we can only support sequences with known length
         // otherwise we would need to create a buffer to collect the iter
         // and then store the length anyway
-        self.serialize_u64(len.unwrap() as u64)
-            .map_err(|e| Error(e.to_string()))?;
+        self.serialize_u64(len.unwrap() as u64)?;
         Ok(self)
     }
 
@@ -232,8 +206,7 @@ impl<'a, F: Write> ser::Serializer for &'a mut Serializer<F> {
         // we can only support sequences with known length
         // otherwise we would need to create a buffer to collect the iter
         // and then store the length anyway
-        self.serialize_u64(len.unwrap() as u64)
-            .map_err(|e| Error(e.to_string()))?;
+        self.serialize_u64(len.unwrap() as u64)?;
         Ok(self)
     }
 
@@ -252,8 +225,7 @@ impl<'a, F: Write> ser::Serializer for &'a mut Serializer<F> {
         _variant: &'static str,
         _len: usize,
     ) -> std::result::Result<Self::SerializeTupleVariant, Self::Error> {
-        self.serialize_u32(variant_index)
-            .map_err(|e| Error(e.to_string()))?;
+        self.serialize_u32(variant_index)?;
         Ok(self)
     }
 
@@ -271,8 +243,7 @@ impl<'a, F: Write> ser::Serializer for &'a mut Serializer<F> {
         variant_index: u32,
         _variant: &'static str,
     ) -> std::result::Result<Self::Ok, Self::Error> {
-        self.serialize_u32(variant_index)
-            .map_err(|e| Error(e.to_string()))?;
+        self.serialize_u32(variant_index)?;
         Ok(())
     }
 
@@ -283,8 +254,7 @@ impl<'a, F: Write> ser::Serializer for &'a mut Serializer<F> {
         _variant: &'static str,
         _len: usize,
     ) -> std::result::Result<Self::SerializeStructVariant, Self::Error> {
-        self.serialize_u32(variant_index)
-            .map_err(|e| Error(e.to_string()))?;
+        self.serialize_u32(variant_index)?;
         Ok(self)
     }
 
@@ -309,8 +279,7 @@ impl<'a, F: Write> ser::Serializer for &'a mut Serializer<F> {
     where
         T: Serialize,
     {
-        self.serialize_u32(variant_index)
-            .map_err(|e| Error(e.to_string()))?;
+        self.serialize_u32(variant_index)?;
         value.serialize(self)
     }
 }
