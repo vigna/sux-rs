@@ -31,7 +31,7 @@ fn test_serdes() {
         ef.serialize(&mut file).unwrap();
     }
 
-    let mut file = std::fs::File::open(tmp_file).unwrap();
+    let mut file = std::fs::File::open(&tmp_file).unwrap();
     let file_len = file.seek(std::io::SeekFrom::End(0)).unwrap();
     let mmap = unsafe {
         mmap_rs::MmapOptions::new(file_len as _)
@@ -47,5 +47,11 @@ fn test_serdes() {
 
     for (idx, value) in values.iter().enumerate() {
         assert_eq!(ef2.get(idx).unwrap(), *value);
+    }
+
+    let ef3 = load::<_, EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>(&tmp_file).unwrap();
+
+    for (idx, value) in values.iter().enumerate() {
+        assert_eq!(ef3.get(idx).unwrap(), *value);
     }
 }

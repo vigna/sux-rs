@@ -1,6 +1,57 @@
 use crate::utils::*;
 use anyhow::Result;
-use std::io::{Seek, Write};
+use std::{
+    io::{Seek, Write},
+    mem::MaybeUninit,
+    ops::{Deref, DerefMut},
+    path::Path,
+    ptr::addr_of_mut,
+};
+
+/// Encases a data structure together with its backend.
+pub struct Encase<S, B>(S, B);
+
+impl<S, B> Deref for Encase<S, B> {
+    type Target = S;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<S, B> DerefMut for Encase<S, B> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(file: P) -> Result<Encase<S, mmap_rs::Mmap>> {
+    let file_len = file.as_ref().metadata()?.len();
+    let file = std::fs::File::open(file)?;
+
+    Ok({
+        let mut uninit: MaybeUninit<Encase<S, mmap_rs::Mmap>> = MaybeUninit::uninit();
+        let ptr = uninit.as_mut_ptr();
+
+        let mmap = unsafe {
+            mmap_rs::MmapOptions::new(file_len as _)?
+                .with_file(file, 0)
+                .map()?
+        };
+
+        unsafe {
+            addr_of_mut!((*ptr).1).write(mmap);
+        }
+
+        let (s, _) = S::deserialize(unsafe { &(*ptr).1 })?;
+
+        unsafe {
+            addr_of_mut!((*ptr).0).write(s);
+        }
+
+        unsafe { uninit.assume_init() }
+    })
+}
 
 pub trait Serialize {
     fn serialize<F: Write + Seek>(&self, backend: &mut F) -> Result<usize>;
