@@ -1,7 +1,7 @@
 use crate::utils::*;
 use anyhow::Result;
 use std::{
-    io::{Seek, Write},
+    io::{Read, Seek, Write},
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
     path::Path,
@@ -25,9 +25,9 @@ impl<S, B> DerefMut for Encase<S, B> {
     }
 }
 
-pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(file: P) -> Result<Encase<S, mmap_rs::Mmap>> {
-    let file_len = file.as_ref().metadata()?.len();
-    let file = std::fs::File::open(file)?;
+pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S, mmap_rs::Mmap>> {
+    let file_len = path.as_ref().metadata()?.len();
+    let file = std::fs::File::open(path)?;
 
     Ok({
         let mut uninit: MaybeUninit<Encase<S, mmap_rs::Mmap>> = MaybeUninit::uninit();
@@ -44,6 +44,35 @@ pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(file: P) -> Result<Encase<S,
         }
 
         let (s, _) = S::deserialize(unsafe { &(*ptr).1 })?;
+
+        unsafe {
+            addr_of_mut!((*ptr).0).write(s);
+        }
+
+        unsafe { uninit.assume_init() }
+    })
+}
+
+pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S, Vec<u64>>> {
+    let file_len = path.as_ref().metadata()?.len();
+    let mut file = std::fs::File::open(path)?;
+    let capacity = file_len as usize + 7 / 8;
+    let mut mem = Vec::<u64>::with_capacity(capacity);
+    unsafe {
+        mem.set_len(capacity);
+    }
+    Ok({
+        let mut uninit: MaybeUninit<Encase<S, Vec<u64>>> = MaybeUninit::uninit();
+        let ptr = uninit.as_mut_ptr();
+
+        unsafe {
+            addr_of_mut!((*ptr).1).write(mem);
+        }
+
+        let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(unsafe { &mut (*ptr).1 });
+        file.read(&mut bytes[..capacity])?;
+
+        let (s, _) = S::deserialize(bytes)?;
 
         unsafe {
             addr_of_mut!((*ptr).0).write(s);
