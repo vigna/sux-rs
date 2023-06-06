@@ -10,7 +10,7 @@
 //! within this bit width.
 //!
 //! Implementations must return always zero on a [`VSlice::get`] when the bit
-//! width is zero. The behavior of a [`VSlice::set`] in the same context is not defined.
+//! width is zero. The behavior of a [`VSliceMut::set`] in the same context is not defined.
 
 use anyhow::{bail, Result};
 
