@@ -8,6 +8,8 @@ use std::{
     ptr::addr_of_mut,
 };
 
+use super::VSlice;
+
 enum Backend {
     Mmap(mmap_rs::Mmap),
     Memory(Vec<u64>),
@@ -29,6 +31,20 @@ impl<S> Deref for Encase<S> {
 impl<S> DerefMut for Encase<S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl<S: VSlice> VSlice for Encase<S> {
+    fn bit_width(&self) -> usize {
+        self.0.bit_width()
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+        self.0.get_unchecked(index)
     }
 }
 
