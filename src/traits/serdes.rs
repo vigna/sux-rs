@@ -35,14 +35,17 @@ impl<S> DerefMut for Encase<S> {
 }
 
 impl<S: VSlice> VSlice for Encase<S> {
+    #[inline(always)]
     fn bit_width(&self) -> usize {
         self.0.bit_width()
     }
 
+    #[inline(always)]
     fn len(&self) -> usize {
         self.0.len()
     }
 
+    #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> u64 {
         self.0.get_unchecked(index)
     }
@@ -80,9 +83,9 @@ pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S>>
 }
 
 pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S>> {
-    let file_len = path.as_ref().metadata()?.len();
+    let file_len = path.as_ref().metadata()?.len() as usize;
     let mut file = std::fs::File::open(path)?;
-    let capacity = file_len as usize + 7 / 8;
+    let capacity = (file_len + 7) / 8;
     let mut mem = Vec::<u64>::with_capacity(capacity);
     unsafe {
         mem.set_len(capacity);
@@ -97,7 +100,7 @@ pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S>
 
         if let Backend::Memory(mem) = unsafe { &mut (*ptr).1 } {
             let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(mem);
-            file.read(&mut bytes[..capacity])?;
+            file.read_exact(&mut bytes[..file_len])?;
 
             let (s, _) = S::deserialize(bytes)?;
 
