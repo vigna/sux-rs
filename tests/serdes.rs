@@ -49,9 +49,15 @@ fn test_serdes() {
         assert_eq!(ef2.get(idx).unwrap(), *value);
     }
 
-    let ef3 = load::<_, EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>(&tmp_file).unwrap();
+    let ef3 = map::<_, EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>(&tmp_file).unwrap();
 
     for (idx, value) in values.iter().enumerate() {
         assert_eq!(ef3.get(idx).unwrap(), *value);
+    }
+
+    let ef4 = load::<_, EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>(&tmp_file).unwrap();
+
+    for (idx, value) in values.iter().enumerate() {
+        assert_eq!(ef4.get(idx).unwrap(), *value);
     }
 }

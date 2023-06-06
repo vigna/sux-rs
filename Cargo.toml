@@ -13,6 +13,7 @@ categories = ["compression", "data-structures"]
 
 [dependencies]
 anyhow = "1.0.71"
+bytemuck = "1.13.1"
 mmap-rs = "0.5.0"
 
 [dev-dependencies]
