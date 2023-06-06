@@ -8,13 +8,17 @@ use std::{
     ptr::addr_of_mut,
 };
 
+enum Backend {
+    Mmap(mmap_rs::Mmap),
+    Memory(Vec<u64>),
+}
 /// Encases a data structure together with its backend.
-pub struct Encase<S, B>(S, B);
+pub struct Encase<S>(S, Backend);
 
-unsafe impl<S: Send, B> Send for Encase<S, B> {}
-unsafe impl<S: Sync, B> Sync for Encase<S, B> {}
+unsafe impl<S: Send> Send for Encase<S> {}
+unsafe impl<S: Sync> Sync for Encase<S> {}
 
-impl<S, B> Deref for Encase<S, B> {
+impl<S> Deref for Encase<S> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
@@ -22,18 +26,18 @@ impl<S, B> Deref for Encase<S, B> {
     }
 }
 
-impl<S, B> DerefMut for Encase<S, B> {
+impl<S> DerefMut for Encase<S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S, mmap_rs::Mmap>> {
+pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S>> {
     let file_len = path.as_ref().metadata()?.len();
     let file = std::fs::File::open(path)?;
 
     Ok({
-        let mut uninit: MaybeUninit<Encase<S, mmap_rs::Mmap>> = MaybeUninit::uninit();
+        let mut uninit: MaybeUninit<Encase<S>> = MaybeUninit::uninit();
         let ptr = uninit.as_mut_ptr();
 
         let mmap = unsafe {
@@ -43,20 +47,23 @@ pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S, 
         };
 
         unsafe {
-            addr_of_mut!((*ptr).1).write(mmap);
+            addr_of_mut!((*ptr).1).write(Backend::Mmap(mmap));
         }
 
-        let (s, _) = S::deserialize(unsafe { &(*ptr).1 })?;
+        if let Backend::Mmap(mmap) = unsafe { &(*ptr).1 } {
+            let (s, _) = S::deserialize(mmap)?;
+            unsafe {
+                addr_of_mut!((*ptr).0).write(s);
+            }
 
-        unsafe {
-            addr_of_mut!((*ptr).0).write(s);
+            unsafe { uninit.assume_init() }
+        } else {
+            unreachable!()
         }
-
-        unsafe { uninit.assume_init() }
     })
 }
 
-pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S, Vec<u64>>> {
+pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S>> {
     let file_len = path.as_ref().metadata()?.len();
     let mut file = std::fs::File::open(path)?;
     let capacity = file_len as usize + 7 / 8;
@@ -65,23 +72,27 @@ pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S,
         mem.set_len(capacity);
     }
     Ok({
-        let mut uninit: MaybeUninit<Encase<S, Vec<u64>>> = MaybeUninit::uninit();
+        let mut uninit: MaybeUninit<Encase<S>> = MaybeUninit::uninit();
         let ptr = uninit.as_mut_ptr();
 
         unsafe {
-            addr_of_mut!((*ptr).1).write(mem);
+            addr_of_mut!((*ptr).1).write(Backend::Memory(mem));
         }
 
-        let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(unsafe { &mut (*ptr).1 });
-        file.read(&mut bytes[..capacity])?;
+        if let Backend::Memory(mem) = unsafe { &mut (*ptr).1 } {
+            let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(mem);
+            file.read(&mut bytes[..capacity])?;
 
-        let (s, _) = S::deserialize(bytes)?;
+            let (s, _) = S::deserialize(bytes)?;
 
-        unsafe {
-            addr_of_mut!((*ptr).0).write(s);
+            unsafe {
+                addr_of_mut!((*ptr).0).write(s);
+            }
+
+            unsafe { uninit.assume_init() }
+        } else {
+            unreachable!()
         }
-
-        unsafe { uninit.assume_init() }
     })
 }
 
