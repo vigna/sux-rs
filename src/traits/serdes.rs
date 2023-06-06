@@ -11,6 +11,9 @@ use std::{
 /// Encases a data structure together with its backend.
 pub struct Encase<S, B>(S, B);
 
+unsafe impl<S: Send, B> Send for Encase<S, B> {}
+unsafe impl<S: Sync, B> Sync for Encase<S, B> {}
+
 impl<S, B> Deref for Encase<S, B> {
     type Target = S;
 
