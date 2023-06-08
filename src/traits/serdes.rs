@@ -47,7 +47,7 @@ pub enum RefBackend {
 /// [`MemCase`] instances can not be cloned, but references
 /// to such instances can be shared freely.
 ///
-/// [`MemCase`] implements [`Deref`] to the
+/// [`MemCase`] implements [`Deref`] and [`AsRef`] to the
 /// wrapped type, so it can be used almost transparently. However,
 /// if you need to use a memory-mapped structure as a field in
 /// a struct and you want to avoid `dyn`, you will have
@@ -95,14 +95,14 @@ impl<S: Send + Sync> From<S> for MemCase<S> {
 /// [`RefCase`] instances can be freely cloned, as they keeps an [`Arc`]
 /// to the memory they reference.
 ///
-/// [`RefCase`] implements [`AsRef`] to the
+/// [`RefCase`] implements [`Deref`] and [`AsRef`] to the
 /// wrapped type, so it can be used almost transparently. However,
 /// if you need to use a memory-mapped structure as a field in
 /// a struct and you want to avoid `dyn`, you will have
 /// to use [`RefCase`] as the type of the field.
 /// [`RefCase`] implements [`From`] for the
 /// wrapped type, using the no-op [None](`RefBackend::None`) variant
-/// of [`RefBackend`], so a data structure can be [encased](encase_ref)
+/// of [`RefBackend`], so a reference can be [encased](encase_ref)
 /// almost transparently.
 
 pub struct RefCase<'a, S: ?Sized>(&'a S, RefBackend);
