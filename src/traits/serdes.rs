@@ -6,19 +6,21 @@ use std::{
     ops::{Deref, DerefMut},
     path::Path,
     ptr::addr_of_mut,
+    sync::Arc,
 };
 
 /// Possible backends of a [`MemCase`]. The `None` variant is used when the data structure is
 /// created in memory; the `Memory` variant is used when the data structure is deserialized
 /// from a file loaded into allocated memory; the `Mmap` variant is used when
 /// the data structure is deserialized from a memory-mapped file.
+#[derive(Clone)]
 pub enum Backend {
     /// No backend. The data structure is a standard Rust data structure.
     None,
     /// The backend is an allocated memory region.
-    Memory(Vec<u64>),
+    Memory(Arc<Vec<u64>>),
     /// The backend is a memory-mapped file.
-    Mmap(mmap_rs::Mmap),
+    Mmap(Arc<mmap_rs::Mmap>),
 }
 /// A wrapper keeping together a data structure and the memory
 /// it was deserialized from. It is specifically designed for
@@ -40,6 +42,8 @@ pub enum Backend {
 /// wrapped type, using the no-op [None](`Backend::None`) variant
 /// of [`Backend`], so a data structure can be [encased](encase)
 /// almost transparently.
+
+#[derive(Clone)]
 pub struct MemCase<S>(S, Backend);
 
 unsafe impl<S: Send> Send for MemCase<S> {}
@@ -101,7 +105,7 @@ pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S>
         };
 
         unsafe {
-            addr_of_mut!((*ptr).1).write(Backend::Mmap(mmap));
+            addr_of_mut!((*ptr).1).write(Backend::Mmap(Arc::new(mmap)));
         }
 
         if let Backend::Mmap(mmap) = unsafe { &(*ptr).1 } {
@@ -135,18 +139,19 @@ pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S
         let mut uninit: MaybeUninit<MemCase<S>> = MaybeUninit::uninit();
         let ptr = uninit.as_mut_ptr();
 
+        let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(mem.as_mut_slice());
+        file.read_exact(&mut bytes[..file_len])?;
+        // Fixes the last few bytes to guarantee zero-extension semantics
+        // for bit vectors.
+        bytes[file_len..].fill(0);
+        drop(bytes);
+
         unsafe {
-            addr_of_mut!((*ptr).1).write(Backend::Memory(mem));
+            addr_of_mut!((*ptr).1).write(Backend::Memory(Arc::new(mem)));
         }
 
         if let Backend::Memory(mem) = unsafe { &mut (*ptr).1 } {
-            let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(mem);
-            file.read_exact(&mut bytes[..file_len])?;
-            // Fixes the last few bytes to guarantee zero-extension semantics
-            // for bit vectors.
-            bytes[file_len..].fill(0);
-
-            let (s, _) = S::deserialize(bytes)?;
+            let (s, _) = S::deserialize(bytemuck::cast_slice::<u64, u8>(mem.as_slice()))?;
 
             unsafe {
                 addr_of_mut!((*ptr).0).write(s);
@@ -177,7 +182,7 @@ pub fn map_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(path: P) -> Result<MemCas
         };
 
         unsafe {
-            addr_of_mut!((*ptr).1).write(Backend::Mmap(mmap));
+            addr_of_mut!((*ptr).1).write(Backend::Mmap(Arc::new(mmap)));
         }
 
         if let Backend::Mmap(mmap) = unsafe { &(*ptr).1 } {
@@ -211,17 +216,19 @@ pub fn load_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(path: P) -> Result<MemCa
         let mut uninit: MaybeUninit<MemCase<&'a [T]>> = MaybeUninit::uninit();
         let ptr = uninit.as_mut_ptr();
 
+        let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(mem.as_mut_slice());
+        file.read_exact(&mut bytes[..file_len])?;
+        // Fixes the last few bytes to guarantee zero-extension semantics
+        // for bit vectors.
+        bytes[file_len..].fill(0);
+        drop(bytes);
+
         unsafe {
-            addr_of_mut!((*ptr).1).write(Backend::Memory(mem));
+            addr_of_mut!((*ptr).1).write(Backend::Memory(Arc::new(mem)));
         }
 
         if let Backend::Memory(mem) = unsafe { &mut (*ptr).1 } {
-            let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(mem);
-            file.read_exact(&mut bytes[..file_len])?;
-            // Fixes the last few bytes to guarantee zero-extension semantics
-            // for bit vectors.
-            bytes[file_len..].fill(0);
-            let s: &mut [T] = bytemuck::cast_slice_mut::<u8, T>(bytes);
+            let s: &[T] = bytemuck::cast_slice::<u64, T>(mem.as_slice());
 
             unsafe {
                 addr_of_mut!((*ptr).0).write(s);
