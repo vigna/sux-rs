@@ -61,7 +61,7 @@ impl<S> DerefMut for MemCase<S> {
 
 impl<S: Send + Sync> From<S> for MemCase<S> {
     fn from(s: S) -> Self {
-        MemCase::encase(s)
+        encase(s)
     }
 }
 
