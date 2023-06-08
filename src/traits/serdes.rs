@@ -45,15 +45,15 @@ pub struct MemCase<S>(S, Backend);
 unsafe impl<S: Send> Send for MemCase<S> {}
 unsafe impl<S: Sync> Sync for MemCase<S> {}
 
-impl<S> AsRef<S> for MemCase<S> {
+impl<S> AsRef<S> for MemCase<&S> {
     fn as_ref(&self) -> &S {
-        &self.0
+        self.0
     }
 }
 
-impl<S> AsMut<S> for MemCase<S> {
+impl<S> AsMut<S> for MemCase<&mut S> {
     fn as_mut(&mut self) -> &mut S {
-        &mut self.0
+        self.0
     }
 }
 
