@@ -8,19 +8,18 @@ use std::{
     ptr::addr_of_mut,
 };
 
-use super::VSlice;
-
 enum Backend {
-    Mmap(mmap_rs::Mmap),
+    None,
     Memory(Vec<u64>),
+    Mmap(mmap_rs::Mmap),
 }
 /// Encases a data structure together with its backend.
-pub struct Encase<S>(S, Backend);
+pub struct MemCase<S>(S, Backend);
 
-unsafe impl<S: Send> Send for Encase<S> {}
-unsafe impl<S: Sync> Sync for Encase<S> {}
+unsafe impl<S: Send> Send for MemCase<S> {}
+unsafe impl<S: Sync> Sync for MemCase<S> {}
 
-impl<S> Deref for Encase<S> {
+impl<S> Deref for MemCase<S> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
@@ -28,35 +27,28 @@ impl<S> Deref for Encase<S> {
     }
 }
 
-impl<S> DerefMut for Encase<S> {
+impl<S> DerefMut for MemCase<S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<S: VSlice> VSlice for Encase<S> {
-    #[inline(always)]
-    fn bit_width(&self) -> usize {
-        self.0.bit_width()
-    }
+pub fn encase<S: Send + Sync>(s: S) -> MemCase<S> {
+    MemCase(s, Backend::None)
+}
 
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> u64 {
-        self.0.get_unchecked(index)
+impl<S: Send + Sync> From<S> for MemCase<S> {
+    fn from(s: S) -> Self {
+        encase(s)
     }
 }
 
-pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S>> {
+pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S>> {
     let file_len = path.as_ref().metadata()?.len();
     let file = std::fs::File::open(path)?;
 
     Ok({
-        let mut uninit: MaybeUninit<Encase<S>> = MaybeUninit::uninit();
+        let mut uninit: MaybeUninit<MemCase<S>> = MaybeUninit::uninit();
         let ptr = uninit.as_mut_ptr();
 
         let mmap = unsafe {
@@ -82,7 +74,7 @@ pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S>>
     })
 }
 
-pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S>> {
+pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S>> {
     let file_len = path.as_ref().metadata()?.len() as usize;
     let mut file = std::fs::File::open(path)?;
     let capacity = (file_len + 7) / 8;
@@ -91,7 +83,7 @@ pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S>
         mem.set_len(capacity);
     }
     Ok({
-        let mut uninit: MaybeUninit<Encase<S>> = MaybeUninit::uninit();
+        let mut uninit: MaybeUninit<MemCase<S>> = MaybeUninit::uninit();
         let ptr = uninit.as_mut_ptr();
 
         unsafe {
@@ -101,6 +93,7 @@ pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<Encase<S>
         if let Backend::Memory(mem) = unsafe { &mut (*ptr).1 } {
             let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(mem);
             file.read_exact(&mut bytes[..file_len])?;
+            bytes[file_len..].fill(0);
 
             let (s, _) = S::deserialize(bytes)?;
 
