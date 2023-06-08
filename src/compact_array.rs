@@ -25,6 +25,8 @@ impl CompactArray<Vec<u64>> {
 }
 
 impl<B: VSlice> CompactArray<B> {
+    /// # Safety
+    /// TODO: this function is never used.
     pub unsafe fn from_raw_parts(data: B, bit_width: usize, len: usize) -> Self {
         Self {
             data,

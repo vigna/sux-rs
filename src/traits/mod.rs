@@ -144,10 +144,24 @@ pub trait SelectZero: BitLength {
 }
 
 pub trait SelectHinted: BitLength {
+    /// # Safety
+    /// `rank` must be between zero (included) and the number of ones in the
+    /// underlying bit vector (excluded). `pos` must be between 0 (included) and
+    /// the [length of the underlying bit vector](`Length::len`) (included),
+    /// and must be the position of a one in the underlying bit vector.
+    /// `rank_at_pos` must be the number of ones in the underlying bit vector
+    /// before `pos`.
     unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize;
 }
 
 pub trait SelectZeroHinted: BitLength {
+    /// # Safety
+    /// `rank` must be between zero (included) and the number of zeros in the
+    /// underlying bit vector (excluded). `pos` must be between 0 (included) and
+    /// the [length of the underlying bit vector](`Length::len`) (included),
+    /// and must be the position of a zero in the underlying bit vector.
+    /// `rank_at_pos` must be the number of zeros in the underlying bit vector
+    /// before `pos`.
     unsafe fn select_zero_unchecked_hinted(
         &self,
         rank: usize,
