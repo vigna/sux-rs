@@ -1,7 +1,9 @@
+use anyhow::Result;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
 use std::io::Seek;
+use std::io::Write;
 use sux::prelude::*;
 
 #[test]
@@ -60,4 +62,28 @@ fn test_serdes() {
     for (idx, value) in values.iter().enumerate() {
         assert_eq!(ef4.get(idx).unwrap(), *value);
     }
+}
+
+#[test]
+
+fn test_slices() -> Result<()> {
+    let tmp_file = std::env::temp_dir().join("test_serdes_slices.bin");
+    let s: Vec<u8> = (0..100).collect();
+    {
+        let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file).unwrap());
+        file.write(&s)?;
+    }
+
+    assert_eq!(s.as_slice(), &load_slice::<_, u8>(&tmp_file)?[0..100]);
+    assert_eq!(
+        s.as_slice(),
+        &map_slice::<_, u8>(&tmp_file)?.as_ref()[0..100]
+    );
+
+    let t = bytemuck::cast_slice::<u8, u32>(s.as_slice());
+
+    assert_eq!(t, &load_slice::<_, u32>(&tmp_file)?.as_ref()[0..25]);
+    assert_eq!(t, &map_slice::<_, u32>(&tmp_file)?.as_ref()[0..25]);
+
+    Ok(())
 }
