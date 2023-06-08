@@ -45,6 +45,18 @@ pub struct MemCase<S>(S, Backend);
 unsafe impl<S: Send> Send for MemCase<S> {}
 unsafe impl<S: Sync> Sync for MemCase<S> {}
 
+impl<S> AsRef<S> for MemCase<S> {
+    fn as_ref(&self) -> &S {
+        &self.0
+    }
+}
+
+impl<S> AsMut<S> for MemCase<S> {
+    fn as_mut(&mut self) -> &mut S {
+        &mut self.0
+    }
+}
+
 impl<S> Deref for MemCase<S> {
     type Target = S;
 
@@ -73,6 +85,7 @@ pub fn encase<S>(s: S) -> MemCase<S> {
 /// Mamory map a file and deserialize a data structure from it,
 /// returning a [`MemCase`] containing the data structure and the
 /// memory mapping.
+#[allow(clippy::uninit_vec)]
 pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S>> {
     let file_len = path.as_ref().metadata()?.len();
     let file = std::fs::File::open(path)?;
@@ -107,6 +120,7 @@ pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S>
 /// Load a file into memory and deserialize a data structure from it,
 /// returning a [`MemCase`] containing the data structure and the
 /// memory.
+#[allow(clippy::uninit_vec)]
 pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S>> {
     let file_len = path.as_ref().metadata()?.len() as usize;
     let mut file = std::fs::File::open(path)?;
@@ -115,7 +129,6 @@ pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S
     unsafe {
         // This is safe because we are filling the vector
         // reading from a file.
-        #[allow(clippy::uninit_vec)]
         mem.set_len(capacity);
     }
     Ok({
