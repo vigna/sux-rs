@@ -74,7 +74,10 @@ fn test_slices() -> Result<()> {
         file.write(&s)?;
     }
 
-    assert_eq!(s.as_slice(), &load_slice::<_, u8>(&tmp_file)?[0..100]);
+    assert_eq!(
+        s.as_slice(),
+        &load_slice::<_, u8>(&tmp_file)?.as_ref()[0..100]
+    );
     assert_eq!(
         s.as_slice(),
         &map_slice::<_, u8>(&tmp_file)?.as_ref()[0..100]
