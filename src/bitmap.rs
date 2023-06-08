@@ -21,6 +21,8 @@ impl BitMap<Vec<u64>> {
 }
 
 impl<B: VSlice + AsRef<[u64]>> BitMap<B> {
+    /// # Safety
+    /// TODO: this function is never used
     pub unsafe fn from_raw_parts(data: B, len: usize, number_of_ones: usize) -> Self {
         Self {
             data,

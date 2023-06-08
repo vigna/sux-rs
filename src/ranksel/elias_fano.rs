@@ -45,6 +45,9 @@ impl EliasFanoBuilder {
         Ok(())
     }
 
+    /// # Safety
+    ///
+    /// Values passed to this function must be smaller than `u` and must be monotone.
     pub unsafe fn push_unchecked(&mut self, value: u64) {
         let low = value & ((1 << self.l) - 1);
         self.low_bits.set(self.count as usize, low).unwrap();
