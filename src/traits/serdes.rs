@@ -45,19 +45,19 @@ pub struct MemCase<S>(S, Backend);
 unsafe impl<S: Send> Send for MemCase<S> {}
 unsafe impl<S: Sync> Sync for MemCase<S> {}
 
-impl<S> AsRef<S> for MemCase<&S> {
+impl<S: ?Sized> AsRef<S> for MemCase<&S> {
     fn as_ref(&self) -> &S {
         self.0
     }
 }
 
-impl<S> AsMut<S> for MemCase<&mut S> {
+impl<S: ?Sized> AsMut<S> for MemCase<&mut S> {
     fn as_mut(&mut self) -> &mut S {
         self.0
     }
 }
 
-impl<S> Deref for MemCase<S> {
+impl<S: ?Sized> Deref for MemCase<S> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
@@ -65,7 +65,7 @@ impl<S> Deref for MemCase<S> {
     }
 }
 
-impl<S> DerefMut for MemCase<S> {
+impl<S: ?Sized> DerefMut for MemCase<S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
