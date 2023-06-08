@@ -76,6 +76,11 @@ impl<'a, S> AsRef<S> for MemCase<S> {
     }
 }
 
+/// Encases a data structure in a [`MemCase`] with no backend.
+pub fn encase_mem<S>(s: S) -> MemCase<S> {
+    MemCase(s, MemBackend::None)
+}
+
 impl<S: Send + Sync> From<S> for MemCase<S> {
     fn from(s: S) -> Self {
         encase_mem(s)
@@ -97,11 +102,16 @@ impl<S: Send + Sync> From<S> for MemCase<S> {
 /// to use [`RefCase`] as the type of the field.
 /// [`RefCase`] implements [`From`] for the
 /// wrapped type, using the no-op [None](`RefBackend::None`) variant
-/// of [`RefBackend`], so a data structure can be [encased](encase)
+/// of [`RefBackend`], so a data structure can be [encased](encase_ref)
 /// almost transparently.
 
-#[derive(Clone)]
 pub struct RefCase<'a, S: ?Sized>(&'a S, RefBackend);
+
+impl<'a, S: ?Sized> Clone for RefCase<'a, S> {
+    fn clone(&self) -> Self {
+        Self(self.0, self.1.clone())
+    }
+}
 
 unsafe impl<'a, S: Send + ?Sized> Send for RefCase<'a, S> {}
 unsafe impl<'a, S: Sync + ?Sized> Sync for RefCase<'a, S> {}
@@ -120,20 +130,15 @@ impl<'a, S: ?Sized> AsRef<S> for RefCase<'a, S> {
     }
 }
 
+/// Encases a data structure in a [`RefCase`] with no backend.
+pub fn encase_ref<S>(s: &S) -> RefCase<S> {
+    RefCase(s, RefBackend::None)
+}
+
 impl<'a, S: Send + Sync> From<&'a S> for RefCase<'a, S> {
     fn from(s: &'a S) -> Self {
         encase_ref(s)
     }
-}
-
-/// Encases a data structure in a [`MemCase`] with no backend.
-pub fn encase_mem<S>(s: S) -> MemCase<S> {
-    MemCase(s, MemBackend::None)
-}
-
-/// Encases a data structure in a [`RefCase`] with no backend.
-pub fn encase_ref<S>(s: &S) -> RefCase<S> {
-    RefCase(s, RefBackend::None)
 }
 
 /// Mamory map a file and deserialize a data structure from it,
@@ -214,7 +219,8 @@ pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S
 }
 
 /// Mamory map a file, returning a [`MemCase`] containing a reference
-/// to a slice of the given type filled the file content.
+/// to a slice of the given type filled with the file content.
+/// Excess bytes are zeroed out.
 pub fn map_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(path: P) -> Result<RefCase<'a, [T]>> {
     let file_len = path.as_ref().metadata()?.len();
     let file = std::fs::File::open(path)?;
@@ -275,7 +281,7 @@ pub fn load_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(path: P) -> Result<RefCa
         }
 
         if let RefBackend::Memory(mem) = unsafe { &mut (*ptr).1 } {
-            let s: &[T] = bytemuck::cast_slice::<u64, T>(mem.as_slice());
+            let s: &[T] = bytemuck::cast_slice::<u64, T>(mem);
 
             unsafe {
                 addr_of_mut!((*ptr).0).write(s);
