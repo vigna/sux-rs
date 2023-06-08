@@ -196,6 +196,7 @@ pub fn map_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(path: P) -> Result<MemCas
 /// Load a file into memory and deserialize a data structure from it,
 /// returning a [`MemCase`] containing the data structure and the
 /// memory.
+#[allow(clippy::uninit_vec)]
 pub fn load_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(path: P) -> Result<MemCase<&'a [T]>> {
     let file_len = path.as_ref().metadata()?.len() as usize;
     let mut file = std::fs::File::open(path)?;
@@ -204,7 +205,6 @@ pub fn load_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(path: P) -> Result<MemCa
     unsafe {
         // This is safe because we are filling the vector
         // reading from a file.
-        #[allow(clippy::uninit_vec)]
         mem.set_len(capacity);
     }
     Ok({
