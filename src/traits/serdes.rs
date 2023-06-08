@@ -146,6 +146,81 @@ pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S
     })
 }
 
+/// Mamory map a file and deserialize a data structure from it,
+/// returning a [`MemCase`] containing the data structure and the
+/// memory mapping.
+pub fn map_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(path: P) -> Result<MemCase<&'a [T]>> {
+    let file_len = path.as_ref().metadata()?.len();
+    let file = std::fs::File::open(path)?;
+
+    Ok({
+        let mut uninit: MaybeUninit<MemCase<&'a [T]>> = MaybeUninit::uninit();
+        let ptr = uninit.as_mut_ptr();
+
+        let mmap = unsafe {
+            mmap_rs::MmapOptions::new(file_len as _)?
+                .with_file(file, 0)
+                .map()?
+        };
+
+        unsafe {
+            addr_of_mut!((*ptr).1).write(Backend::Mmap(mmap));
+        }
+
+        if let Backend::Mmap(mmap) = unsafe { &(*ptr).1 } {
+            let s = bytemuck::cast_slice::<u8, T>(mmap);
+            unsafe {
+                addr_of_mut!((*ptr).0).write(s);
+            }
+
+            unsafe { uninit.assume_init() }
+        } else {
+            unreachable!()
+        }
+    })
+}
+
+/// Load a file into memory and deserialize a data structure from it,
+/// returning a [`MemCase`] containing the data structure and the
+/// memory.
+pub fn load_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(path: P) -> Result<MemCase<&'a [T]>> {
+    let file_len = path.as_ref().metadata()?.len() as usize;
+    let mut file = std::fs::File::open(path)?;
+    let capacity = (file_len + 7) / 8;
+    let mut mem = Vec::<u64>::with_capacity(capacity);
+    unsafe {
+        // This is safe because we are filling the vector
+        // reading from a file.
+        #[allow(clippy::uninit_vec)]
+        mem.set_len(capacity);
+    }
+    Ok({
+        let mut uninit: MaybeUninit<MemCase<&'a [T]>> = MaybeUninit::uninit();
+        let ptr = uninit.as_mut_ptr();
+
+        unsafe {
+            addr_of_mut!((*ptr).1).write(Backend::Memory(mem));
+        }
+
+        if let Backend::Memory(mem) = unsafe { &mut (*ptr).1 } {
+            let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(mem);
+            file.read_exact(&mut bytes[..file_len])?;
+            // Fixes the last few bytes to guarantee zero-extension semantics
+            // for bit vectors.
+            bytes[file_len..].fill(0);
+            let s: &mut [T] = bytemuck::cast_slice_mut::<u8, T>(bytes);
+
+            unsafe {
+                addr_of_mut!((*ptr).0).write(s);
+            }
+
+            unsafe { uninit.assume_init() }
+        } else {
+            unreachable!()
+        }
+    })
+}
+
 pub trait Serialize {
     fn serialize<F: Write + Seek>(&self, backend: &mut F) -> Result<usize>;
 }
