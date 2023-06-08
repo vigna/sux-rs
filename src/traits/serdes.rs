@@ -57,7 +57,7 @@ impl<S: ?Sized> AsMut<S> for MemCase<&mut S> {
     }
 }
 
-impl<S: ?Sized> Deref for MemCase<S> {
+impl<S> Deref for MemCase<S> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
@@ -65,7 +65,7 @@ impl<S: ?Sized> Deref for MemCase<S> {
     }
 }
 
-impl<S: ?Sized> DerefMut for MemCase<S> {
+impl<S> DerefMut for MemCase<S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
