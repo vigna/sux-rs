@@ -9,6 +9,26 @@ use std::{
     sync::Arc,
 };
 
+use bitflags::bitflags;
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct Flags: u32 {
+        const MMAP = 1 << 0;
+        const TRANSPARENT_HUGE_PAGES = 1 << 1;
+        const NONE = 0;
+    }
+}
+
+impl Flags {
+    fn mmap_flags(&self) -> mmap_rs::MmapFlags {
+        match self.contains(Flags::TRANSPARENT_HUGE_PAGES) {
+            true => mmap_rs::MmapFlags::TRANSPARENT_HUGE_PAGES,
+            false => mmap_rs::MmapFlags::empty(),
+        }
+    }
+}
+
 /// Possible backends of a [`MemCase`]. The `None` variant is used when the data structure is
 /// created in memory; the `Memory` variant is used when the data structure is deserialized
 /// from a file loaded into an allocated memory region; the `Mmap` variant is used when
@@ -145,7 +165,7 @@ impl<'a, S: Send + Sync> From<&'a S> for RefCase<'a, S> {
 /// returning a [`MemCase`] containing the data structure and the
 /// memory mapping.
 #[allow(clippy::uninit_vec)]
-pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S>> {
+pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P, flags: &Flags) -> Result<MemCase<S>> {
     let file_len = path.as_ref().metadata()?.len();
     let file = std::fs::File::open(path)?;
 
@@ -155,6 +175,7 @@ pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S>
 
         let mmap = unsafe {
             mmap_rs::MmapOptions::new(file_len as _)?
+                .with_flags(flags.mmap_flags())
                 .with_file(file, 0)
                 .map()?
         };
@@ -180,7 +201,7 @@ pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S>
 /// returning a [`MemCase`] containing the data structure and the
 /// memory. Excess bytes are zeroed out.
 #[allow(clippy::uninit_vec)]
-pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S>> {
+pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P, flags: &Flags) -> Result<MemCase<S>> {
     let file_len = path.as_ref().metadata()?.len() as usize;
     let mut file = std::fs::File::open(path)?;
     let capacity = (file_len + 7) / 8;
@@ -221,7 +242,10 @@ pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P) -> Result<MemCase<S
 /// Mamory map a file, returning a [`MemCase`] containing a reference
 /// to a slice of the given type filled with the file content.
 /// Excess bytes are zeroed out.
-pub fn map_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(path: P) -> Result<RefCase<'a, [T]>> {
+pub fn map_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(
+    path: P,
+    flags: &Flags,
+) -> Result<RefCase<'a, [T]>> {
     let file_len = path.as_ref().metadata()?.len();
     let file = std::fs::File::open(path)?;
 
@@ -231,6 +255,7 @@ pub fn map_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(path: P) -> Result<RefCas
 
         let mmap = unsafe {
             mmap_rs::MmapOptions::new(file_len as _)?
+                .with_flags(flags.mmap_flags())
                 .with_file(file, 0)
                 .map()?
         };
@@ -256,7 +281,10 @@ pub fn map_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(path: P) -> Result<RefCas
 /// to a slice of the given type filled with the file content. Excess bytes
 /// are zeroed out.
 #[allow(clippy::uninit_vec)]
-pub fn load_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(path: P) -> Result<RefCase<'a, [T]>> {
+pub fn load_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(
+    path: P,
+    flags: &Flags,
+) -> Result<RefCase<'a, [T]>> {
     let file_len = path.as_ref().metadata()?.len() as usize;
     let mut file = std::fs::File::open(path)?;
     let capacity = (file_len + 7) / 8;
