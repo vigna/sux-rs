@@ -11,41 +11,41 @@ use std::{
 
 /// Possible backends of a [`MemCase`]. The `None` variant is used when the data structure is
 /// created in memory; the `Memory` variant is used when the data structure is deserialized
-/// from a file loaded into allocated memory; the `Mmap` variant is used when
-/// the data structure is deserialized from a memory-mapped file.
+/// from a file loaded into an allocated memory region; the `Mmap` variant is used when
+/// the data structure is deserialized from memory-mapped region.
 pub enum MemBackend {
     /// No backend. The data structure is a standard Rust data structure.
     None,
-    /// The backend is an allocated memory region.
+    /// The backend is an allocated in a memory region aligned to 64 bits.
     Memory(Vec<u64>),
-    /// The backend is a memory-mapped file.
+    /// The backend is a memory-mapped region.
     Mmap(mmap_rs::Mmap),
 }
 
-/// Possible backends of a [`RefCase`]. See ['MemBackend'] for details.
+/// Possible backends of a [`RefCase`]. See [`MemBackend`] for details.
 #[derive(Clone)]
 pub enum RefBackend {
     /// No backend. The data structure is a standard Rust data structure.
     None,
-    /// The backend is an allocated memory region.
+    /// The backend is an allocated in a memory region aligned to 64 bits.
     Memory(Arc<Vec<u64>>),
-    /// The backend is a memory-mapped file.
+    /// The backend is a memory-mapped region.
     Mmap(Arc<mmap_rs::Mmap>),
 }
 
-/// A wrapper keeping together a data structure and the memory
+/// A wrapper keeping together an immutable structure and the memory
 /// it was deserialized from. It is specifically designed for
-/// the case of memory-mapped files, where the mapping must
+/// the case of memory-mapped regions, where the mapping must
 /// be kept alive for the whole lifetime of the data structure.
-/// It can also be used with data structures deserialized from
-/// memory, although in that case it is not strictly necessary
-/// (cloning each field would work); nonetheless, reading a
-/// single block of memory with [`Read::read_exact`] can be
-/// very fast, and using [`load`] is a way to ensure that
-/// no cloning is performed.
-///
 /// [`MemCase`] instances can not be cloned, but references
 /// to such instances can be shared freely.
+///
+/// [`MemCase`] can also be used with data structures deserialized from
+/// memory, although in that case it is not strictly necessary;
+/// nonetheless, reading a single block of memory with [`Read::read_exact`] can be
+/// very fast, and using [`load`] to create a [`MemCase`]
+/// is a way to prevent cloning of the immutable
+/// structure.
 ///
 /// [`MemCase`] implements [`Deref`] and [`AsRef`] to the
 /// wrapped type, so it can be used almost transparently. However,
@@ -53,7 +53,7 @@ pub enum RefBackend {
 /// a struct and you want to avoid `dyn`, you will have
 /// to use [`MemCase`] as the type of the field.
 /// [`MemCase`] implements [`From`] for the
-/// wrapped type, using the no-op [None](`MemBackend::None`) variant
+/// wrapped type, using the no-op [`None`](`MemBackend#variant.None`) variant
 /// of [`MemBackend`], so a data structure can be [encased](encase_mem)
 /// almost transparently.
 
@@ -89,7 +89,7 @@ impl<S: Send + Sync> From<S> for MemCase<S> {
 
 /// A wrapper keeping together a reference (usually, to a slice)
 /// and the memory that supports it. It is specifically designed for
-/// the case of memory-mapped files, where the mapping must
+/// the case of memory-mapped regions, where the mapping must
 /// be kept alive for the whole lifetime of the reference.
 ///
 /// [`RefCase`] instances can be freely cloned, as they keeps an [`Arc`]
@@ -101,7 +101,7 @@ impl<S: Send + Sync> From<S> for MemCase<S> {
 /// a struct and you want to avoid `dyn`, you will have
 /// to use [`RefCase`] as the type of the field.
 /// [`RefCase`] implements [`From`] for the
-/// wrapped type, using the no-op [None](`RefBackend::None`) variant
+/// wrapped type, using the no-op [`None`](`RefBackend#variant.None`) variant
 /// of [`RefBackend`], so a reference can be [encased](encase_ref)
 /// almost transparently.
 
