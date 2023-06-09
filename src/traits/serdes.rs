@@ -16,7 +16,6 @@ bitflags! {
     pub struct Flags: u32 {
         const MMAP = 1 << 0;
         const TRANSPARENT_HUGE_PAGES = 1 << 1;
-        const NONE = 0;
     }
 }
 
@@ -265,7 +264,16 @@ pub fn map_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(
         }
 
         if let RefBackend::Mmap(mmap) = unsafe { &(*ptr).1 } {
-            let s = bytemuck::cast_slice::<u8, T>(mmap);
+            // We cannot use bytemuck here because we need to
+            // map a region of memory that is not necessarily
+            // aligned to the size of T.
+            let s = unsafe {
+                core::slice::from_raw_parts(
+                    mmap.as_ptr() as *const T,
+                    (mmap.len() + core::mem::size_of::<T>() - 1) / core::mem::size_of::<T>(),
+                )
+            };
+
             unsafe {
                 addr_of_mut!((*ptr).0).write(s);
             }
