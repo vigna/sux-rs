@@ -43,24 +43,36 @@ fn test_serdes() {
             .unwrap()
     };
 
-    let ef2 = <EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>::deserialize(&mmap)
+    let ef = <EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>::deserialize(&mmap)
         .unwrap()
         .0;
 
     for (idx, value) in values.iter().enumerate() {
-        assert_eq!(ef2.get(idx).unwrap(), *value);
+        assert_eq!(ef.get(idx).unwrap(), *value);
     }
 
-    let ef3 = map::<_, EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>(&tmp_file).unwrap();
+    let ef = map::<_, EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>(&tmp_file, &Flags::empty())
+        .unwrap();
 
     for (idx, value) in values.iter().enumerate() {
-        assert_eq!(ef3.get(idx).unwrap(), *value);
+        assert_eq!(ef.get(idx).unwrap(), *value);
     }
 
-    let ef4 = load::<_, EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>(&tmp_file).unwrap();
+    let ef = map::<_, EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>(
+        &tmp_file,
+        &Flags::TRANSPARENT_HUGE_PAGES,
+    )
+    .unwrap();
 
     for (idx, value) in values.iter().enumerate() {
-        assert_eq!(ef4.get(idx).unwrap(), *value);
+        assert_eq!(ef.get(idx).unwrap(), *value);
+    }
+
+    let ef = load::<_, EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>(&tmp_file, &Flags::empty())
+        .unwrap();
+
+    for (idx, value) in values.iter().enumerate() {
+        assert_eq!(ef.get(idx).unwrap(), *value);
     }
 }
 
@@ -76,17 +88,23 @@ fn test_slices() -> Result<()> {
 
     assert_eq!(
         s.as_slice(),
-        &load_slice::<_, u8>(&tmp_file)?.as_ref()[0..100]
+        &load_slice::<_, u8>(&tmp_file, &Flags::empty())?.as_ref()[0..100]
     );
     assert_eq!(
         s.as_slice(),
-        &map_slice::<_, u8>(&tmp_file)?.as_ref()[0..100]
+        &map_slice::<_, u8>(&tmp_file, &Flags::empty())?.as_ref()[0..100]
     );
 
     let t = bytemuck::cast_slice::<u8, u32>(s.as_slice());
 
-    assert_eq!(t, &load_slice::<_, u32>(&tmp_file)?.as_ref()[0..25]);
-    assert_eq!(t, &map_slice::<_, u32>(&tmp_file)?.as_ref()[0..25]);
+    assert_eq!(
+        t,
+        &load_slice::<_, u32>(&tmp_file, &Flags::empty())?.as_ref()[0..25]
+    );
+    assert_eq!(
+        t,
+        &map_slice::<_, u32>(&tmp_file, &Flags::empty())?.as_ref()[0..25]
+    );
 
     Ok(())
 }
