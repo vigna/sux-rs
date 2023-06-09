@@ -265,8 +265,8 @@ pub fn map_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(
 
         if let RefBackend::Mmap(mmap) = unsafe { &(*ptr).1 } {
             // We cannot use bytemuck here because we need to
-            // map a region of memory that is not necessarily
-            // aligned to the size of T.
+            // map a region of memory whose length might not be a multiple
+            // of the size of T.
             let s = unsafe {
                 core::slice::from_raw_parts(
                     mmap.as_ptr() as *const T,
@@ -296,38 +296,73 @@ pub fn load_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(
     let file_len = path.as_ref().metadata()?.len() as usize;
     let mut file = std::fs::File::open(path)?;
     let capacity = (file_len + 7) / 8;
-    let mut mem = Vec::<u64>::with_capacity(capacity);
-    unsafe {
-        // This is safe because we are filling the vector
-        // reading from a file.
-        mem.set_len(capacity);
-    }
-    Ok({
-        let mut uninit: MaybeUninit<RefCase<'a, [T]>> = MaybeUninit::uninit();
-        let ptr = uninit.as_mut_ptr();
+    if flags.contains(Flags::MMAP) {
+        let mut mmap = mmap_rs::MmapOptions::new(capacity * 8)?
+            .with_flags(flags.mmap_flags())
+            .map_mut()?;
 
-        let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(mem.as_mut_slice());
-        file.read_exact(&mut bytes[..file_len])?;
-        // Fixes the last few bytes to guarantee zero-extension semantics
-        // for bit vectors.
-        bytes[file_len..].fill(0);
-
-        unsafe {
-            addr_of_mut!((*ptr).1).write(RefBackend::Memory(Arc::new(mem)));
-        }
-
-        if let RefBackend::Memory(mem) = unsafe { &mut (*ptr).1 } {
-            let s: &[T] = bytemuck::cast_slice::<u64, T>(mem);
+        Ok({
+            let mut uninit: MaybeUninit<RefCase<'a, [T]>> = MaybeUninit::uninit();
+            let ptr = uninit.as_mut_ptr();
+            file.read_exact(&mut mmap[..file_len])?;
+            // Fixes the last few bytes to guarantee zero-extension semantics
+            // for bit vectors.
+            mmap[file_len..].fill(0);
 
             unsafe {
-                addr_of_mut!((*ptr).0).write(s);
+                if let Ok(mmap_ro) = mmap.make_read_only() {
+                    addr_of_mut!((*ptr).1).write(RefBackend::Mmap(Arc::new(mmap_ro)));
+                } else {
+                    unreachable!("mmap.)make_read_only() failed")
+                }
             }
 
-            unsafe { uninit.assume_init() }
-        } else {
-            unreachable!()
+            if let RefBackend::Mmap(mmap) = unsafe { &mut (*ptr).1 } {
+                let s: &[T] = bytemuck::cast_slice::<u8, T>(mmap);
+
+                unsafe {
+                    addr_of_mut!((*ptr).0).write(s);
+                }
+
+                unsafe { uninit.assume_init() }
+            } else {
+                unreachable!()
+            }
+        })
+    } else {
+        let mut mem = Vec::<u64>::with_capacity(capacity);
+        unsafe {
+            // This is safe because we are filling the vector
+            // reading from a file.
+            mem.set_len(capacity);
         }
-    })
+        Ok({
+            let mut uninit: MaybeUninit<RefCase<'a, [T]>> = MaybeUninit::uninit();
+            let ptr = uninit.as_mut_ptr();
+
+            let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(mem.as_mut_slice());
+            file.read_exact(&mut bytes[..file_len])?;
+            // Fixes the last few bytes to guarantee zero-extension semantics
+            // for bit vectors.
+            bytes[file_len..].fill(0);
+
+            unsafe {
+                addr_of_mut!((*ptr).1).write(RefBackend::Memory(Arc::new(mem)));
+            }
+
+            if let RefBackend::Memory(mem) = unsafe { &mut (*ptr).1 } {
+                let s: &[T] = bytemuck::cast_slice::<u64, T>(mem);
+
+                unsafe {
+                    addr_of_mut!((*ptr).0).write(s);
+                }
+
+                unsafe { uninit.assume_init() }
+            } else {
+                unreachable!()
+            }
+        })
+    }
 }
 
 pub trait Serialize {
