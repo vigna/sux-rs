@@ -22,7 +22,9 @@ bitflags! {
 impl Flags {
     fn mmap_flags(&self) -> mmap_rs::MmapFlags {
         match self.contains(Flags::TRANSPARENT_HUGE_PAGES) {
-            true => mmap_rs::MmapFlags::TRANSPARENT_HUGE_PAGES,
+            // By passing COPY_ON_WRITE we set the MAP_PRIVATE flag, which
+            // in necessary for transparent huge pages to work.
+            true => mmap_rs::MmapFlags::TRANSPARENT_HUGE_PAGES | mmap_rs::MmapFlags::COPY_ON_WRITE,
             false => mmap_rs::MmapFlags::empty(),
         }
     }
@@ -83,13 +85,14 @@ unsafe impl<S: Sync> Sync for MemCase<S> {}
 
 impl<S> Deref for MemCase<S> {
     type Target = S;
-
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
 impl<'a, S> AsRef<S> for MemCase<S> {
+    #[inline(always)]
     fn as_ref(&self) -> &S {
         &self.0
     }
@@ -138,12 +141,14 @@ unsafe impl<'a, S: Sync + ?Sized> Sync for RefCase<'a, S> {}
 impl<'a, S: ?Sized> Deref for RefCase<'a, S> {
     type Target = S;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.0
     }
 }
 
 impl<'a, S: ?Sized> AsRef<S> for RefCase<'a, S> {
+    #[inline(always)]
     fn as_ref(&self) -> &S {
         self.0
     }
@@ -204,38 +209,74 @@ pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P, flags: &Flags) -> R
     let file_len = path.as_ref().metadata()?.len() as usize;
     let mut file = std::fs::File::open(path)?;
     let capacity = (file_len + 7) / 8;
-    let mut mem = Vec::<u64>::with_capacity(capacity);
-    unsafe {
-        // This is safe because we are filling the vector
-        // reading from a file.
-        mem.set_len(capacity);
-    }
-    Ok({
-        let mut uninit: MaybeUninit<MemCase<S>> = MaybeUninit::uninit();
-        let ptr = uninit.as_mut_ptr();
 
-        let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(mem.as_mut_slice());
-        file.read_exact(&mut bytes[..file_len])?;
-        // Fixes the last few bytes to guarantee zero-extension semantics
-        // for bit vectors.
-        bytes[file_len..].fill(0);
+    if flags.contains(Flags::MMAP) {
+        let mut mmap = mmap_rs::MmapOptions::new(capacity * 8)?
+            .with_flags(flags.mmap_flags())
+            .map_mut()?;
+        Ok({
+            let mut uninit: MaybeUninit<MemCase<S>> = MaybeUninit::uninit();
+            let ptr = uninit.as_mut_ptr();
 
-        unsafe {
-            addr_of_mut!((*ptr).1).write(MemBackend::Memory(mem));
-        }
-
-        if let MemBackend::Memory(mem) = unsafe { &mut (*ptr).1 } {
-            let (s, _) = S::deserialize(bytemuck::cast_slice::<u64, u8>(mem))?;
+            file.read_exact(&mut mmap[..file_len])?;
+            // Fixes the last few bytes to guarantee zero-extension semantics
+            // for bit vectors.
+            mmap[file_len..].fill(0);
 
             unsafe {
-                addr_of_mut!((*ptr).0).write(s);
+                if let Ok(mmap_ro) = mmap.make_read_only() {
+                    addr_of_mut!((*ptr).1).write(MemBackend::Mmap(mmap_ro));
+                } else {
+                    unreachable!("make_read_only() failed")
+                }
             }
 
-            unsafe { uninit.assume_init() }
-        } else {
-            unreachable!()
+            if let MemBackend::Mmap(mmap) = unsafe { &mut (*ptr).1 } {
+                let (s, _) = S::deserialize(mmap)?;
+
+                unsafe {
+                    addr_of_mut!((*ptr).0).write(s);
+                }
+
+                unsafe { uninit.assume_init() }
+            } else {
+                unreachable!()
+            }
+        })
+    } else {
+        let mut mem = Vec::<u64>::with_capacity(capacity);
+        unsafe {
+            // This is safe because we are filling the vector
+            // reading from a file.
+            mem.set_len(capacity);
         }
-    })
+        Ok({
+            let mut uninit: MaybeUninit<MemCase<S>> = MaybeUninit::uninit();
+            let ptr = uninit.as_mut_ptr();
+
+            let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(mem.as_mut_slice());
+            file.read_exact(&mut bytes[..file_len])?;
+            // Fixes the last few bytes to guarantee zero-extension semantics
+            // for bit vectors.
+            bytes[file_len..].fill(0);
+
+            unsafe {
+                addr_of_mut!((*ptr).1).write(MemBackend::Memory(mem));
+            }
+
+            if let MemBackend::Memory(mem) = unsafe { &mut (*ptr).1 } {
+                let (s, _) = S::deserialize(bytemuck::cast_slice::<u64, u8>(mem))?;
+
+                unsafe {
+                    addr_of_mut!((*ptr).0).write(s);
+                }
+
+                unsafe { uninit.assume_init() }
+            } else {
+                unreachable!()
+            }
+        })
+    }
 }
 
 /// Mamory map a file, returning a [`MemCase`] containing a reference
@@ -313,7 +354,7 @@ pub fn load_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(
                 if let Ok(mmap_ro) = mmap.make_read_only() {
                     addr_of_mut!((*ptr).1).write(RefBackend::Mmap(Arc::new(mmap_ro)));
                 } else {
-                    unreachable!("mmap.)make_read_only() failed")
+                    unreachable!("make_read_only() failed")
                 }
             }
 
