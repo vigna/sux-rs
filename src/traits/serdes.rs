@@ -20,7 +20,7 @@ bitflags! {
 }
 
 impl Flags {
-    fn mmap_flags(&self) -> mmap_rs::MmapFlags {
+    pub fn mmap_flags(&self) -> mmap_rs::MmapFlags {
         match self.contains(Flags::TRANSPARENT_HUGE_PAGES) {
             // By passing COPY_ON_WRITE we set the MAP_PRIVATE flag, which
             // in necessary for transparent huge pages to work.
@@ -199,6 +199,25 @@ pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P, flags: &Flags) -> Re
             unreachable!()
         }
     })
+}
+
+#[macro_export]
+macro_rules! map2 {
+    ($name:expr, $struct:ty, $flags:expr) => {{
+        let file_len = $name.as_ref().metadata()?.len();
+        let file = std::fs::File::open($name)?;
+
+        let mmap = unsafe {
+            mmap_rs::MmapOptions::new(file_len as _)?
+                .with_flags($flags.mmap_flags())
+                .with_file(file, 0)
+                .map()?
+        };
+
+        let (s, _) = <$struct>::sux::traits::deserialize(&mmap)?;
+
+        (s, mmap)
+    }};
 }
 
 /// Load a file into memory and deserialize a data structure from it,

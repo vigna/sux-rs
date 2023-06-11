@@ -6,7 +6,7 @@
 //! Traits are collected into a module so you can do `use sux::traits::*;`
 //! for ease of use.
 
-mod serdes;
+pub mod serdes;
 pub use serdes::*;
 
 mod memory;
