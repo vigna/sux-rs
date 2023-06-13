@@ -203,21 +203,21 @@ pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P, flags: &Flags) -> Re
 
 #[macro_export]
 macro_rules! map2 {
-    ($name:expr, $struct:ty, $flags:expr) => {{
-        let file_len = $name.as_ref().metadata()?.len();
-        let file = std::fs::File::open($name)?;
+    ($result:ident, $backend:ident, $name:expr, $struct:ty, $flags:expr) => {
+        use sux::traits::Deserialize;
+        let path = std::path::Path::new($name.as_str());
+        let file_len = path.metadata()?.len();
+        let file = std::fs::File::open(path)?;
 
-        let mmap = unsafe {
+        let $backend = std::sync::Arc::new(unsafe {
             mmap_rs::MmapOptions::new(file_len as _)?
                 .with_flags($flags.mmap_flags())
                 .with_file(file, 0)
                 .map()?
-        };
+        });
 
-        let (s, _) = <$struct>::sux::traits::deserialize(&mmap)?;
-
-        (s, mmap)
-    }};
+        let ($result, _): ($struct, &[u8]) = <$struct as Deserialize>::deserialize(&$backend)?;
+    };
 }
 
 /// Load a file into memory and deserialize a data structure from it,
