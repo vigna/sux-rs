@@ -40,7 +40,7 @@ pub fn main() {
 
     for _ in 0..args.repeats {
         let mut rand = SmallRng::seed_from_u64(0);
-        pl.item_name = "write".to_string();
+        pl.item_name = "write";
         pl.start("Writing...");
         for _ in 0..args.n {
             let x = rand.gen::<usize>() & mask;
@@ -48,7 +48,7 @@ pub fn main() {
         }
         pl.done_with_count(args.n);
 
-        pl.item_name = "read".to_string();
+        pl.item_name = "read";
         pl.start("Reading...");
         for _ in 0..args.n {
             unsafe {
