@@ -1,13 +1,15 @@
 use crate::utils::*;
 use anyhow::Result;
+use stable_deref_trait::StableDeref;
 use std::{
+    borrow::Cow,
     io::{Read, Seek, Write},
     mem::MaybeUninit,
     ops::Deref,
     path::Path,
     ptr::addr_of_mut,
-    sync::Arc,
 };
+use yoke::Yoke;
 
 use bitflags::bitflags;
 
@@ -33,7 +35,7 @@ impl Flags {
 /// Possible backends of a [`MemCase`]. The `None` variant is used when the data structure is
 /// created in memory; the `Memory` variant is used when the data structure is deserialized
 /// from a file loaded into an allocated memory region; the `Mmap` variant is used when
-/// the data structure is deserialized from memory-mapped region.
+/// the data structure is deserialized from a memory-mapped region.
 pub enum MemBackend {
     /// No backend. The data structure is a standard Rust data structure.
     None,
@@ -41,17 +43,6 @@ pub enum MemBackend {
     Memory(Vec<u64>),
     /// The backend is a memory-mapped region.
     Mmap(mmap_rs::Mmap),
-}
-
-/// Possible backends of a [`RefCase`]. See [`MemBackend`] for details.
-#[derive(Clone)]
-pub enum RefBackend {
-    /// No backend. The data structure is a standard Rust data structure.
-    None,
-    /// The backend is an allocated in a memory region aligned to 64 bits.
-    Memory(Arc<Vec<u64>>),
-    /// The backend is a memory-mapped region.
-    Mmap(Arc<mmap_rs::Mmap>),
 }
 
 /// A wrapper keeping together an immutable structure and the memory
@@ -69,7 +60,8 @@ pub enum RefBackend {
 /// structure.
 ///
 /// [`MemCase`] implements [`Deref`] and [`AsRef`] to the
-/// wrapped type, so it can be used almost transparently. However,
+/// wrapped type, so it can be used almost transparently and
+/// with no performance cost. However,
 /// if you need to use a memory-mapped structure as a field in
 /// a struct and you want to avoid `dyn`, you will have
 /// to use [`MemCase`] as the type of the field.
@@ -78,7 +70,7 @@ pub enum RefBackend {
 /// of [`MemBackend`], so a data structure can be [encased](encase_mem)
 /// almost transparently.
 
-pub struct MemCase<S>(S, MemBackend);
+pub struct MemCase<S>(pub S, MemBackend);
 
 unsafe impl<S: Send> Send for MemCase<S> {}
 unsafe impl<S: Sync> Sync for MemCase<S> {}
@@ -106,62 +98,6 @@ pub fn encase_mem<S>(s: S) -> MemCase<S> {
 impl<S: Send + Sync> From<S> for MemCase<S> {
     fn from(s: S) -> Self {
         encase_mem(s)
-    }
-}
-
-/// A wrapper keeping together a reference (usually, to a slice)
-/// and the memory that supports it. It is specifically designed for
-/// the case of memory-mapped regions, where the mapping must
-/// be kept alive for the whole lifetime of the reference.
-///
-/// [`RefCase`] instances can be freely cloned, as they keeps an [`Arc`]
-/// to the memory they reference.
-///
-/// [`RefCase`] implements [`Deref`] and [`AsRef`] to the
-/// wrapped type, so it can be used almost transparently. However,
-/// if you need to use a memory-mapped structure as a field in
-/// a struct and you want to avoid `dyn`, you will have
-/// to use [`RefCase`] as the type of the field.
-/// [`RefCase`] implements [`From`] for the
-/// wrapped type, using the no-op [`None`](`RefBackend#variant.None`) variant
-/// of [`RefBackend`], so a reference can be [encased](encase_ref)
-/// almost transparently.
-
-pub struct RefCase<'a, S: ?Sized>(&'a S, RefBackend);
-
-impl<'a, S: ?Sized> Clone for RefCase<'a, S> {
-    fn clone(&self) -> Self {
-        Self(self.0, self.1.clone())
-    }
-}
-
-unsafe impl<'a, S: Send + ?Sized> Send for RefCase<'a, S> {}
-unsafe impl<'a, S: Sync + ?Sized> Sync for RefCase<'a, S> {}
-
-impl<'a, S: ?Sized> Deref for RefCase<'a, S> {
-    type Target = S;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        self.0
-    }
-}
-
-impl<'a, S: ?Sized> AsRef<S> for RefCase<'a, S> {
-    #[inline(always)]
-    fn as_ref(&self) -> &S {
-        self.0
-    }
-}
-
-/// Encases a data structure in a [`RefCase`] with no backend.
-pub fn encase_ref<S>(s: &S) -> RefCase<S> {
-    RefCase(s, RefBackend::None)
-}
-
-impl<'a, S: Send + Sync> From<&'a S> for RefCase<'a, S> {
-    fn from(s: &'a S) -> Self {
-        encase_ref(s)
     }
 }
 
@@ -199,25 +135,6 @@ pub fn map<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P, flags: &Flags) -> Re
             unreachable!()
         }
     })
-}
-
-#[macro_export]
-macro_rules! map2 {
-    ($result:ident, $backend:ident, $name:expr, $struct:ty, $flags:expr) => {
-        use sux::traits::Deserialize;
-        let path = std::path::Path::new($name.as_str());
-        let file_len = path.metadata()?.len();
-        let file = std::fs::File::open(path)?;
-
-        let $backend = std::sync::Arc::new(unsafe {
-            mmap_rs::MmapOptions::new(file_len as _)?
-                .with_flags($flags.mmap_flags())
-                .with_file(file, 0)
-                .map()?
-        });
-
-        let ($result, _): ($struct, &[u8]) = <$struct as Deserialize>::deserialize(&$backend)?;
-    };
 }
 
 /// Load a file into memory and deserialize a data structure from it,
@@ -285,133 +202,6 @@ pub fn load<'a, P: AsRef<Path>, S: Deserialize<'a>>(path: P, flags: &Flags) -> R
 
             if let MemBackend::Memory(mem) = unsafe { &mut (*ptr).1 } {
                 let (s, _) = S::deserialize(bytemuck::cast_slice::<u64, u8>(mem))?;
-
-                unsafe {
-                    addr_of_mut!((*ptr).0).write(s);
-                }
-
-                unsafe { uninit.assume_init() }
-            } else {
-                unreachable!()
-            }
-        })
-    }
-}
-
-/// Mamory map a file, returning a [`MemCase`] containing a reference
-/// to a slice of the given type filled with the file content.
-/// Excess bytes are zeroed out.
-pub fn map_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(
-    path: P,
-    flags: &Flags,
-) -> Result<RefCase<'a, [T]>> {
-    let file_len = path.as_ref().metadata()?.len();
-    let file = std::fs::File::open(path)?;
-
-    Ok({
-        let mut uninit: MaybeUninit<RefCase<[T]>> = MaybeUninit::uninit();
-        let ptr = uninit.as_mut_ptr();
-
-        let mmap = unsafe {
-            mmap_rs::MmapOptions::new(file_len as _)?
-                .with_flags(flags.mmap_flags())
-                .with_file(file, 0)
-                .map()?
-        };
-
-        unsafe {
-            addr_of_mut!((*ptr).1).write(RefBackend::Mmap(Arc::new(mmap)));
-        }
-
-        if let RefBackend::Mmap(mmap) = unsafe { &(*ptr).1 } {
-            // We cannot use bytemuck here because we need to
-            // map a region of memory whose length might not be a multiple
-            // of the size of T.
-            let s = unsafe {
-                core::slice::from_raw_parts(
-                    mmap.as_ptr() as *const T,
-                    (mmap.len() + core::mem::size_of::<T>() - 1) / core::mem::size_of::<T>(),
-                )
-            };
-
-            unsafe {
-                addr_of_mut!((*ptr).0).write(s);
-            }
-
-            unsafe { uninit.assume_init() }
-        } else {
-            unreachable!()
-        }
-    })
-}
-
-/// Loads a file in memory, returning a [`MemCase`] containing a reference
-/// to a slice of the given type filled with the file content. Excess bytes
-/// are zeroed out.
-#[allow(clippy::uninit_vec)]
-pub fn load_slice<'a, P: AsRef<Path>, T: bytemuck::Pod>(
-    path: P,
-    flags: &Flags,
-) -> Result<RefCase<'a, [T]>> {
-    let file_len = path.as_ref().metadata()?.len() as usize;
-    let mut file = std::fs::File::open(path)?;
-    let capacity = (file_len + 7) / 8;
-    if flags.contains(Flags::MMAP) {
-        let mut mmap = mmap_rs::MmapOptions::new(capacity * 8)?
-            .with_flags(flags.mmap_flags())
-            .map_mut()?;
-
-        Ok({
-            let mut uninit: MaybeUninit<RefCase<'a, [T]>> = MaybeUninit::uninit();
-            let ptr = uninit.as_mut_ptr();
-            file.read_exact(&mut mmap[..file_len])?;
-            // Fixes the last few bytes to guarantee zero-extension semantics
-            // for bit vectors.
-            mmap[file_len..].fill(0);
-
-            unsafe {
-                if let Ok(mmap_ro) = mmap.make_read_only() {
-                    addr_of_mut!((*ptr).1).write(RefBackend::Mmap(Arc::new(mmap_ro)));
-                } else {
-                    unreachable!("make_read_only() failed")
-                }
-            }
-
-            if let RefBackend::Mmap(mmap) = unsafe { &mut (*ptr).1 } {
-                let s: &[T] = bytemuck::cast_slice::<u8, T>(mmap);
-
-                unsafe {
-                    addr_of_mut!((*ptr).0).write(s);
-                }
-
-                unsafe { uninit.assume_init() }
-            } else {
-                unreachable!()
-            }
-        })
-    } else {
-        let mut mem = Vec::<u64>::with_capacity(capacity);
-        unsafe {
-            // This is safe because we are filling the vector
-            // reading from a file.
-            mem.set_len(capacity);
-        }
-        Ok({
-            let mut uninit: MaybeUninit<RefCase<'a, [T]>> = MaybeUninit::uninit();
-            let ptr = uninit.as_mut_ptr();
-
-            let bytes: &mut [u8] = bytemuck::cast_slice_mut::<u64, u8>(mem.as_mut_slice());
-            file.read_exact(&mut bytes[..file_len])?;
-            // Fixes the last few bytes to guarantee zero-extension semantics
-            // for bit vectors.
-            bytes[file_len..].fill(0);
-
-            unsafe {
-                addr_of_mut!((*ptr).1).write(RefBackend::Memory(Arc::new(mem)));
-            }
-
-            if let RefBackend::Memory(mem) = unsafe { &mut (*ptr).1 } {
-                let s: &[T] = bytemuck::cast_slice::<u64, T>(mem);
 
                 unsafe {
                     addr_of_mut!((*ptr).0).write(s);
