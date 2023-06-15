@@ -26,7 +26,7 @@ impl<B: SelectZeroHinted + AsRef<[u64]>, O: VSliceMut, const QUANTUM_LOG2: usize
                 if index >= self.len() as _ {
                     return Ok(());
                 }
-                self.zeros.set(ones_index, index)?;
+                self.zeros.set(ones_index, index);
                 next_quantum += 1 << QUANTUM_LOG2;
                 ones_index += 1;
             }

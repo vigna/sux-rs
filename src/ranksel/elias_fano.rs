@@ -50,10 +50,10 @@ impl EliasFanoBuilder {
     /// Values passed to this function must be smaller than `u` and must be monotone.
     pub unsafe fn push_unchecked(&mut self, value: u64) {
         let low = value & ((1 << self.l) - 1);
-        self.low_bits.set(self.count as usize, low).unwrap();
+        self.low_bits.set(self.count as usize, low);
 
         let high = (value >> self.l) + self.count;
-        self.high_bits.set(high as usize, 1).unwrap();
+        self.high_bits.set(high as usize, 1);
 
         self.count += 1;
         self.last_value = value;
@@ -121,12 +121,8 @@ where
     }
 }
 
-impl<H: Select, L: VSlice> VSlice for EliasFano<H, L> {
-    #[inline]
-    fn bit_width(&self) -> usize {
-        self.u.next_power_of_two().ilog2() as _
-    }
-
+impl<H: Select, L: VSlice> IndexedDict for EliasFano<H, L> {
+    type Value = u64;
     #[inline]
     fn len(&self) -> usize {
         self.count()

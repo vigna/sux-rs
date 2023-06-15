@@ -15,6 +15,9 @@ pub use memory::*;
 mod vslice;
 pub use vslice::*;
 
+mod indexed_dict;
+pub use indexed_dict::*;
+
 use anyhow::Result;
 
 /// Like Into but we need to avoid the orphan rule and error [E0210](https://github.com/rust-lang/rust/blob/master/compiler/rustc_error_codes/src/error_codes/E0210.md)

@@ -23,7 +23,7 @@ impl<B: SelectHinted + AsRef<[u64]>, O: VSliceMut, const QUANTUM_LOG2: usize>
             while number_of_ones + ones_in_word > next_quantum {
                 let in_word_index = select_in_word(word, (next_quantum - number_of_ones) as usize);
                 let index = (i * 64) as u64 + in_word_index as u64;
-                self.ones.set(ones_index, index).unwrap();
+                self.ones.set(ones_index, index);
                 next_quantum += 1 << QUANTUM_LOG2;
                 ones_index += 1;
             }

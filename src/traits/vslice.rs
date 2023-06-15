@@ -6,13 +6,11 @@
 //! because there is no easy way to return a reference to a bit segment
 //! (see, e.g., [BitSlice](https://docs.rs/bitvec/latest/bitvec/slice/struct.BitSlice.html)).
 //!
-//! Each `VSlice` has an associated [`BIT_WIDTH`]. All stored values must fit
+//! Each `VSlice` has an associated [`VSlice::bit_width`]. All stored values must fit
 //! within this bit width.
 //!
 //! Implementations must return always zero on a [`VSlice::get`] when the bit
 //! width is zero. The behavior of a [`VSliceMut::set`] in the same context is not defined.
-
-use anyhow::{bail, Result};
 
 pub trait VSlice {
     /// Return the width of the slice. All elements stored in the slice must
@@ -22,21 +20,21 @@ pub trait VSlice {
     /// Return the length of the slice.
     fn len(&self) -> usize;
 
-    /// Return the element of the slice at the given position, without
-    /// doing any bounds checking.
+    /// Return the value at the specified index.
     ///
     /// # Safety
-    ///
-    /// Must not be called with `index` out of the slice bounds.
+    /// `index` must be in [0..[len](`VSlice::len`)). No bounds checking is performed.
     unsafe fn get_unchecked(&self, index: usize) -> u64;
 
-    /// Return the element of the slice at the given position, or `None` if the
-    /// position is out of bounds.
-    fn get(&self, index: usize) -> Option<u64> {
+    /// Return the value at the specified index.
+    ///
+    /// # Panics
+    /// May panic if the index is not in in [0..[len](`VSlice::len`))
+    fn get(&self, index: usize) -> u64 {
         if index >= self.len() {
-            None
+            panic!("Index out of bounds: {} >= {}", index, self.len());
         } else {
-            Some(unsafe { self.get_unchecked(index) })
+            unsafe { self.get_unchecked(index) }
         }
     }
     /// Return if the slice has length zero
@@ -46,19 +44,21 @@ pub trait VSlice {
 }
 
 pub trait VSliceMut: VSlice {
-    /// Set the element of the slice at the given position, without
-    /// doing any bound or value checking.
+    /// Set the element of the slice at the specified index.
+    /// No bounds checking is performed.
     ///
     /// # Safety
-    ///
-    /// Must not be called with `index` out of the slice bounds.
+    /// `index` must be in [0..[len](`VSlice::len`)). No bounds checking is performed.
     unsafe fn set_unchecked(&mut self, index: usize, value: u64);
 
-    /// Set the element of the slice at the given position, or return `None` if the
-    /// position is out of bounds or the value does not fit in [`VSlice::bit_width`] bits.
-    fn set(&mut self, index: usize, value: u64) -> Result<u64> {
+    /// Set the element of the slice at the specified index.
+    ///
+    ///
+    /// May panic if the index is not in in [0..[len](`VSlice::len`))
+    /// or the value does not fit in [`VSlice::bit_width`] bits.
+    fn set(&mut self, index: usize, value: u64) {
         if index >= self.len() {
-            bail!(
+            panic!(
                 "Index out of bounds {} on a vector of len {}",
                 index,
                 self.len()
@@ -67,12 +67,11 @@ pub trait VSliceMut: VSlice {
         let bw = self.bit_width();
         let mask = u64::MAX.wrapping_shr(64 - bw as u32) & !((bw as i64 - 1) >> 63) as u64;
         if value & mask != value {
-            bail!("Value {} does not fit in {} bits", value, bw)
+            panic!("Value {} does not fit in {} bits", value, bw)
         }
         unsafe {
             self.set_unchecked(index, value);
         }
-        Ok(value)
     }
 }
 
