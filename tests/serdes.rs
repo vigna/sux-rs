@@ -2,8 +2,6 @@ use anyhow::Result;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
-use std::io::Seek;
-use std::io::Write;
 use sux::prelude::*;
 
 #[test]
@@ -44,13 +42,13 @@ fn test_serdes() -> Result<()> {
     let ef = <EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>::deserialize(&mmap)?.0;
 
     for (idx, value) in values.iter().enumerate() {
-        assert_eq!(ef.get(idx).unwrap(), *value);
+        assert_eq!(ef.get(idx), *value);
     }
 
     let ef = map::<_, EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>(&tmp_file, &Flags::empty())?;
 
     for (idx, value) in values.iter().enumerate() {
-        assert_eq!(ef.get(idx).unwrap(), *value);
+        assert_eq!(ef.get(idx), *value);
     }
 
     let ef = map::<_, EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>(
@@ -59,14 +57,14 @@ fn test_serdes() -> Result<()> {
     )?;
 
     for (idx, value) in values.iter().enumerate() {
-        assert_eq!(ef.get(idx).unwrap(), *value);
+        assert_eq!(ef.get(idx), *value);
     }
 
     let ef =
         load::<_, EliasFano<BitMap<&[u64]>, CompactArray<&[u64]>>>(&tmp_file, &Flags::empty())?;
 
     for (idx, value) in values.iter().enumerate() {
-        assert_eq!(ef.get(idx).unwrap(), *value);
+        assert_eq!(ef.get(idx), *value);
     }
 
     Ok(())

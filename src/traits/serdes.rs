@@ -1,15 +1,12 @@
 use crate::utils::*;
 use anyhow::Result;
-use stable_deref_trait::StableDeref;
 use std::{
-    borrow::Cow,
     io::{Read, Seek, Write},
     mem::MaybeUninit,
     ops::Deref,
     path::Path,
     ptr::addr_of_mut,
 };
-use yoke::Yoke;
 
 use bitflags::bitflags;
 
@@ -83,7 +80,7 @@ impl<S> Deref for MemCase<S> {
     }
 }
 
-impl<'a, S> AsRef<S> for MemCase<S> {
+impl<S> AsRef<S> for MemCase<S> {
     #[inline(always)]
     fn as_ref(&self) -> &S {
         &self.0

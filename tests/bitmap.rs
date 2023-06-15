@@ -18,35 +18,35 @@ fn test_bitmap() {
         let (indices, _) = values.partial_shuffle(&mut rng, n2);
 
         for i in indices[..n].iter().copied() {
-            bm.set(i, 1).unwrap();
+            bm.set(i, 1);
         }
 
         for i in 0..u {
-            assert_eq!(bm.get(i).unwrap() != 0, indices[..n].contains(&i));
+            assert_eq!(bm.get(i) != 0, indices[..n].contains(&i));
         }
 
         for i in indices[n..].iter().copied() {
-            bm.set(i, 1).unwrap();
+            bm.set(i, 1);
         }
 
         for i in 0..u {
-            assert_eq!(bm.get(i).unwrap() != 0, indices.contains(&i));
+            assert_eq!(bm.get(i) != 0, indices.contains(&i));
         }
 
         for i in indices[..n].iter().copied() {
-            bm.set(i, 0).unwrap();
+            bm.set(i, 0);
         }
 
         for i in 0..u {
-            assert_eq!(bm.get(i).unwrap() != 0, indices[n..].contains(&i));
+            assert_eq!(bm.get(i) != 0, indices[n..].contains(&i));
         }
 
         for i in indices[n..].iter().copied() {
-            bm.set(i, 0).unwrap();
+            bm.set(i, 0);
         }
 
         for i in 0..u {
-            assert_eq!(bm.get(i).unwrap(), 0);
+            assert_eq!(bm.get(i), 0);
         }
     }
 }

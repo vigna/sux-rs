@@ -19,18 +19,18 @@ fn test_compact_array() {
             indices.shuffle(&mut rng);
 
             for i in indices {
-                cp.set(i, values[i]).unwrap();
+                cp.set(i, values[i]);
             }
 
             for (i, value) in values.iter().enumerate() {
-                assert_eq!(cp.get(i).unwrap(), *value);
+                assert_eq!(cp.get(i), *value);
             }
 
             let mut indices = (0..n).collect::<Vec<_>>();
             indices.shuffle(&mut rng);
 
             for i in indices {
-                assert_eq!(cp.get(i).unwrap(), values[i]);
+                assert_eq!(cp.get(i), values[i]);
             }
         }
     }
