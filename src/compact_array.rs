@@ -2,6 +2,7 @@ use crate::traits::*;
 use anyhow::Result;
 use std::io::{Seek, Write};
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CompactArray<B: VSlice> {
     data: B,
     bit_width: usize,
@@ -156,26 +157,6 @@ impl<B: VSlice> ConvertTo<Vec<u64>> for CompactArray<B> {
         Ok((0..self.len())
             .map(|i| unsafe { self.get_unchecked(i) })
             .collect::<Vec<_>>())
-    }
-}
-
-impl<B: VSlice + core::fmt::Debug> core::fmt::Debug for CompactArray<B> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("CompactArray")
-            .field("len", &self.len)
-            .field("bit_width", &self.bit_width)
-            .field("data", &self.data)
-            .finish()
-    }
-}
-
-impl<B: VSlice + Clone> Clone for CompactArray<B> {
-    fn clone(&self) -> Self {
-        Self {
-            data: self.data.clone(),
-            len: self.len,
-            bit_width: self.bit_width,
-        }
     }
 }
 

@@ -20,7 +20,7 @@ fn test_elias_fano() -> Result<()> {
         }
         // Finish the creation of elias-fano
         let ef = efb.build();
-
+        println!("{:?}", ef);
         // do a slow select
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.select(i).unwrap() as u64, *v);
@@ -34,6 +34,7 @@ fn test_elias_fano() -> Result<()> {
             assert_eq!(ef.select(i).unwrap() as u64, *v);
             assert_eq!(ef.get(i) as u64, *v);
         }
+        println!("{:?}", ef);
 
         // Add the indices
         let ef: EliasFano<
@@ -45,6 +46,7 @@ fn test_elias_fano() -> Result<()> {
             assert_eq!(ef.select(i).unwrap() as u64, *v);
             assert_eq!(ef.get(i) as u64, *v);
         }
+        println!("{:?}", ef);
     }
 
     Ok(())
