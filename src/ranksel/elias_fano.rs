@@ -70,6 +70,7 @@ impl EliasFanoBuilder {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EliasFano<H, L> {
     /// upperbound of the values
     u: u64,
@@ -131,30 +132,6 @@ impl<H: Select, L: VSlice> IndexedDict for EliasFano<H, L> {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> u64 {
         self.select_unchecked(index) as u64
-    }
-}
-
-impl<H: core::fmt::Debug, L: core::fmt::Debug> core::fmt::Debug for EliasFano<H, L> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("EliasFano")
-            .field("n", &self.n)
-            .field("u", &self.u)
-            .field("l", &self.l)
-            .field("low_bits", &self.low_bits)
-            .field("high_bits", &self.high_bits)
-            .finish()
-    }
-}
-
-impl<H: Clone, L: Clone> Clone for EliasFano<H, L> {
-    fn clone(&self) -> Self {
-        Self {
-            n: self.n,
-            u: self.u,
-            l: self.l,
-            low_bits: self.low_bits.clone(),
-            high_bits: self.high_bits.clone(),
-        }
     }
 }
 
