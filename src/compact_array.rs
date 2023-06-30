@@ -25,6 +25,12 @@ impl CompactArray<Vec<u64>> {
     }
 }
 
+impl AsRef<[u64]> for CompactArray<Vec<u64>> {
+    fn as_ref(&self) -> &[u64] {
+        &self.data
+    }
+}
+
 impl<B: VSlice> CompactArray<B> {
     /// # Safety
     /// TODO: this function is never used.
