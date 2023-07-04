@@ -117,22 +117,14 @@ fn main() -> Result<()> {
             ];
 
             for i in 0..3 {
-                deg[edge[i]].fetch_sub(1, Ordering::Relaxed);
+                if deg[edge[i]].fetch_sub(1, Ordering::Relaxed) == 2 {
+                    stack.push(edge[i]);
+                }
+                // When edge[i] == v this is useless, but we avoid a branch.
                 xor[edge[i]].fetch_xor(edge_index, Ordering::Relaxed);
             }
 
             xor[v].store(edge_index, Ordering::Relaxed);
-
-            if deg[edge[0]].load(Ordering::Relaxed) == 1 {
-                stack.push(edge[0]);
-            }
-            if deg[edge[1]].load(Ordering::Relaxed) == 1 && edge[1] != edge[0] {
-                stack.push(edge[1]);
-            }
-            if deg[edge[2]].load(Ordering::Relaxed) == 1 && edge[2] != edge[0] && edge[2] != edge[1]
-            {
-                stack.push(edge[2]);
-            }
         }
 
         stack.truncate(curr);
