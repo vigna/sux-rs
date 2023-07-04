@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use std::io::{BufRead, BufReader};
+use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
 use std::time::Instant;
 use sux::prelude::CompactArray;
 use sux::prelude::*;
@@ -54,27 +55,31 @@ fn main() -> Result<()> {
     let start = Instant::now();
 
     let num_edges = sigs.len();
-    let num_vertices = (num_edges as f64 * 1.23).ceil() as usize + 1;
+    let mut num_vertices = (num_edges as f64 * 1.12).ceil() as usize + 1;
+    num_vertices = num_vertices + 130 - num_vertices % 130;
+    let segment_size = num_vertices / 130;
 
     let mut deg = Vec::new();
-    deg.resize(num_vertices, 0);
+    deg.resize_with(num_vertices, || AtomicU16::new(0));
     let mut xor = Vec::new();
-    xor.resize(num_vertices, 0);
+    xor.resize_with(num_vertices, || AtomicUsize::new(0));
     let mut stack = Vec::new();
 
     for (edge_index, sig) in sigs.iter().enumerate() {
         let tuple = spooky_short_rehash(sig, 0);
+        let first_segment = tuple[3] as usize % 128;
         for i in 0..3 {
-            let vertex = ((tuple[i] as u128) * (num_vertices as u128) >> 64) as usize;
+            let vertex = ((tuple[i] as u128) * (segment_size as u128) >> 64) as usize
+                + (first_segment + i) * segment_size;
             // Djamal's trick: xor edges incident to a vertex.
             // We will be visiting only vertices of degree 1 anyway.
-            xor[vertex] ^= edge_index;
-            deg[vertex] += 1;
+            xor[vertex].fetch_xor(edge_index, Ordering::Relaxed);
+            deg[vertex].fetch_add(1, Ordering::Relaxed);
         }
     }
 
     for x in 0..num_vertices {
-        if deg[x] != 1 {
+        if deg[x].load(Ordering::Relaxed) != 1 {
             continue;
         }
 
@@ -87,35 +92,45 @@ fn main() -> Result<()> {
             let v = stack[pos];
             pos += 1;
 
-            if deg[v] != 1 {
+            if deg[v].load(Ordering::Relaxed) != 1 {
+                continue; // Skip no longer useful entries
+            }
+
+            let edge_index = xor[v].swap(usize::MAX, Ordering::Relaxed);
+            if edge_index == usize::MAX {
+                debug_assert_eq!(deg[1].load(Ordering::Relaxed), 0);
                 continue; // Skip no longer useful entries
             }
 
             stack[curr] = v;
             curr += 1;
 
-            let edge_index = xor[v];
-
             let tuple = spooky_short_rehash(&sigs[edge_index], 0);
+            let first_segment = tuple[3] as usize % 128;
             let edge = [
-                ((tuple[0] as u128) * (num_vertices as u128) >> 64) as usize,
-                ((tuple[1] as u128) * (num_vertices as u128) >> 64) as usize,
-                ((tuple[2] as u128) * (num_vertices as u128) >> 64) as usize,
+                ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
+                    + (first_segment + 0) * segment_size,
+                ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
+                    + (first_segment + 1) * segment_size,
+                ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
+                    + (first_segment + 2) * segment_size,
             ];
 
             for i in 0..3 {
-                deg[edge[i]] -= 1;
-                if edge[i] != v {
-                    xor[edge[i]] ^= edge_index;
-                }
+                deg[edge[i]].fetch_sub(1, Ordering::Relaxed);
+                xor[edge[i]].fetch_xor(edge_index, Ordering::Relaxed);
             }
-            if deg[edge[0]] == 1 {
+
+            xor[v].store(edge_index, Ordering::Relaxed);
+
+            if deg[edge[0]].load(Ordering::Relaxed) == 1 {
                 stack.push(edge[0]);
             }
-            if deg[edge[1]] == 1 && edge[1] != edge[0] {
+            if deg[edge[1]].load(Ordering::Relaxed) == 1 && edge[1] != edge[0] {
                 stack.push(edge[1]);
             }
-            if deg[edge[2]] == 1 && edge[2] != edge[0] && edge[2] != edge[1] {
+            if deg[edge[2]].load(Ordering::Relaxed) == 1 && edge[2] != edge[0] && edge[2] != edge[1]
+            {
                 stack.push(edge[2]);
             }
         }
@@ -128,12 +143,16 @@ fn main() -> Result<()> {
     let mut values = CompactArray::new(2, num_vertices);
 
     while let Some(v) = stack.pop() {
-        let edge_index = xor[v];
+        let edge_index = xor[v].load(Ordering::Relaxed);
         let tuple = spooky_short_rehash(&sigs[edge_index], 0);
+        let first_segment = tuple[3] as usize % 128;
         let edge = [
-            ((tuple[0] as u128) * (num_vertices as u128) >> 64) as usize,
-            ((tuple[1] as u128) * (num_vertices as u128) >> 64) as usize,
-            ((tuple[2] as u128) * (num_vertices as u128) >> 64) as usize,
+            ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
+                + (first_segment + 0) * segment_size,
+            ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
+                + (first_segment + 1) * segment_size,
+            ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
+                + (first_segment + 2) * segment_size,
         ];
 
         let (s, hinge_index) = if v == edge[0] {
@@ -185,10 +204,14 @@ fn main() -> Result<()> {
 
     for sig in &sigs {
         let tuple = spooky_short_rehash(sig, 0);
+        let first_segment = tuple[3] as usize % 128;
         let edge = [
-            ((tuple[0] as u128) * (num_vertices as u128) >> 64) as usize,
-            ((tuple[1] as u128) * (num_vertices as u128) >> 64) as usize,
-            ((tuple[2] as u128) * (num_vertices as u128) >> 64) as usize,
+            ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
+                + (first_segment + 0) * segment_size,
+            ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
+                + (first_segment + 1) * segment_size,
+            ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
+                + (first_segment + 2) * segment_size,
         ];
 
         let mut hinge =
