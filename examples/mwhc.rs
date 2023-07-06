@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use std::io::{BufRead, BufReader};
 use std::mem::size_of;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Instant;
 use sux::prelude::CompactArray;
@@ -10,6 +10,7 @@ use sux::prelude::*;
 use sux::spooky::spooky_short;
 use sux::spooky::spooky_short_mix;
 use sux::spooky::SC_CONST;
+use Ordering::Relaxed;
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks compact arrays", long_about = None)]
@@ -21,6 +22,24 @@ const DEG: usize = 1_usize << DEG_SHIFT;
 
 fn count_nonzero_pairs(x: u64) -> usize {
     ((x | x >> 1) & 0x5555555555555555).count_ones() as usize
+}
+
+struct Values(Vec<AtomicU64>);
+impl Values {
+    fn new(n: usize) -> Self {
+        let mut v = Vec::new();
+        v.resize_with((n * 2 + 63) / 64, || AtomicU64::new(0));
+        Self(v)
+    }
+    fn get(&self, i: usize) -> u64 {
+        let pos = i * 2;
+        self.0[pos / 64].load(Relaxed) >> (pos % 64) & 3
+    }
+
+    fn set(&self, i: usize, v: u64) {
+        let pos = i * 2;
+        self.0[pos / 64].fetch_or(v << pos % 64, Relaxed);
+    }
 }
 
 fn main() -> Result<()> {
@@ -67,6 +86,7 @@ fn main() -> Result<()> {
     deg_add.resize_with(num_vertices, || AtomicUsize::new(0));
     let mut peeled = Vec::new();
     peeled.resize_with(num_edges, || AtomicBool::new(false));
+    let mut values = Values::new(num_vertices);
 
     for (edge_index, sig) in sigs.iter().enumerate() {
         let tuple = spooky_short_rehash(sig, 0);
@@ -76,7 +96,7 @@ fn main() -> Result<()> {
                 + (first_segment + i) * segment_size;
             // Djamal's trick: xor edges incident to a vertex.
             // We will be visiting only vertices of degree 1 anyway.
-            deg_add[vertex].fetch_add(DEG | edge_index, Ordering::Relaxed);
+            deg_add[vertex].fetch_add(DEG | edge_index, Relaxed);
         }
     }
 
@@ -87,11 +107,11 @@ fn main() -> Result<()> {
             s.spawn(|| {
                 let mut stack = Vec::new();
                 loop {
-                    let next = curr.fetch_add(1, Ordering::Relaxed);
+                    let next = curr.fetch_add(1, Relaxed);
                     if next >= num_vertices {
                         break;
                     }
-                    if deg_add[next].load(Ordering::Relaxed) >> DEG_SHIFT != 1 {
+                    if deg_add[next].load(Relaxed) >> DEG_SHIFT != 1 {
                         continue;
                     }
 
@@ -104,7 +124,7 @@ fn main() -> Result<()> {
                         let v = stack[pos];
                         pos += 1;
 
-                        let t = deg_add[v].load(Ordering::Relaxed);
+                        let t = deg_add[v].load(Relaxed);
                         let d = t >> DEG_SHIFT;
                         if d != 1 {
                             assert_eq!(d, 0, "v = {}", v);
@@ -112,10 +132,10 @@ fn main() -> Result<()> {
                             continue; // Skip no longer useful entries
                         }
                         let edge_index = t & (1_usize << DEG_SHIFT) - 1;
-                        if peeled[edge_index].swap(true, Ordering::Relaxed) {
+                        if peeled[edge_index].swap(true, Relaxed) {
                             continue;
                         }
-                        deg_add[v].store(edge_index, Ordering::Relaxed);
+                        deg_add[v].store(edge_index, Relaxed);
 
                         stack[curr] = v;
                         curr += 1;
@@ -132,7 +152,7 @@ fn main() -> Result<()> {
 
                         for i in 0..3 {
                             if edge[i] != v {
-                                if deg_add[edge[i]].fetch_sub(DEG | edge_index, Ordering::Relaxed)
+                                if deg_add[edge[i]].fetch_sub(DEG | edge_index, Relaxed)
                                     >> DEG_SHIFT
                                     == 2
                                 {
@@ -143,57 +163,50 @@ fn main() -> Result<()> {
                     }
 
                     stack.truncate(curr);
-                }
 
-                num_peeled.fetch_add(stack.len(), Ordering::Relaxed);
+                    num_peeled.fetch_add(stack.len(), Relaxed);
+
+                    while let Some(v) = stack.pop() {
+                        let edge_index = deg_add[v].load(Relaxed) >> DEG_SHIFT;
+                        let tuple = spooky_short_rehash(&sigs[edge_index], 0);
+                        let first_segment = tuple[3] as usize % 128;
+                        let edge = [
+                            ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
+                                + (first_segment + 0) * segment_size,
+                            ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
+                                + (first_segment + 1) * segment_size,
+                            ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
+                                + (first_segment + 2) * segment_size,
+                        ];
+
+                        let (s, hinge_index) = if v == edge[0] {
+                            (values.get(edge[1]) + values.get(edge[2]), 0)
+                        } else if v == edge[1] {
+                            (values.get(edge[0]) + values.get(edge[2]), 1)
+                        } else {
+                            debug_assert_eq!(v, edge[2]);
+                            (values.get(edge[0]) + values.get(edge[1]), 2)
+                        };
+                        let value = (9 + hinge_index - s) % 3;
+                        values.set(v, if value == 0 { 3 } else { value });
+                    }
+                }
             });
         }
     });
 
     for i in 0..num_vertices {
-        assert_ne!(
-            deg_add[i].load(Ordering::Relaxed) >> DEG_SHIFT,
-            1,
-            "v = {}",
-            i
-        );
+        assert_ne!(deg_add[i].load(Relaxed) >> DEG_SHIFT, 1, "v = {}", i);
     }
-    assert_eq!(num_edges, num_peeled.load(Ordering::Relaxed));
+    assert_eq!(num_edges, num_peeled.load(Relaxed));
     println!("{}", start.elapsed().as_nanos() / sigs.len() as u128);
-
-    /*     let mut values = CompactArray::new(2, num_vertices);
-
-    while let Some(v) = stack.pop() {
-        let edge_index = xor[v].load(Ordering::Relaxed);
-        let tuple = spooky_short_rehash(&sigs[edge_index], 0);
-        let first_segment = tuple[3] as usize % 128;
-        let edge = [
-            ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
-                + (first_segment + 0) * segment_size,
-            ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
-                + (first_segment + 1) * segment_size,
-            ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
-                + (first_segment + 2) * segment_size,
-        ];
-
-        let (s, hinge_index) = if v == edge[0] {
-            (values.get(edge[1]) + values.get(edge[2]), 0)
-        } else if v == edge[1] {
-            (values.get(edge[0]) + values.get(edge[2]), 1)
-        } else {
-            debug_assert_eq!(v, edge[2]);
-            (values.get(edge[0]) + values.get(edge[1]), 2)
-        };
-        let value = (9 + hinge_index - s) % 3;
-        values.set(v, if value == 0 { 3 } else { value });
-    }
 
     println!("{}", start.elapsed().as_nanos() / sigs.len() as u128);
 
-    let words = values.as_ref();
+    let words = &values.0;
     const WORDS_PER_SUPERBLOCK: usize = 32;
     let num_counts =
-        ((values.len() * 2 + WORDS_PER_SUPERBLOCK * 64 - 1) / (WORDS_PER_SUPERBLOCK * 64)) * 2;
+        ((num_vertices * 2 + WORDS_PER_SUPERBLOCK * 64 - 1) / (WORDS_PER_SUPERBLOCK * 64)) * 2;
     // Init rank/select structure
     let mut counts = Vec::new();
     counts.resize(num_counts + 1, 0);
@@ -212,7 +225,7 @@ fn main() -> Result<()> {
                 } << 12 * (j / 6 - 1);
             }
             if i + j < words.len() {
-                c += count_nonzero_pairs(words[i + j]);
+                c += count_nonzero_pairs(words[i + j].load(Relaxed));
             }
         }
         i += WORDS_PER_SUPERBLOCK;
@@ -248,11 +261,11 @@ fn main() -> Result<()> {
         let mut result = counts[block]
             + (counts[block + 1] >> 12 * (offset + (((offset as usize) >> 32 - 4) as isize & 6))
                 & 0x7FF)
-            + count_nonzero_pairs(words[word] & (1_u64 << (hinge % 64)) - 1);
+            + count_nonzero_pairs(words[word].load(Relaxed) & (1_u64 << (hinge % 64)) - 1);
 
         for _ in 0..(word & 0x1F) % 6 {
             word -= 1;
-            result += count_nonzero_pairs(words[word]);
+            result += count_nonzero_pairs(words[word].load(Relaxed));
         }
 
         assert!(result < num_edges);
@@ -267,6 +280,6 @@ fn main() -> Result<()> {
             .collect::<std::collections::HashSet::<_>>()
             .len()
     );
-    */
+
     Ok(())
 }
