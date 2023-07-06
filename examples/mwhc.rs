@@ -1,7 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
 use std::io::{BufRead, BufReader};
-use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
+use std::mem::size_of;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use std::thread;
 use std::time::Instant;
 use sux::prelude::CompactArray;
 use sux::prelude::*;
@@ -14,6 +16,8 @@ use sux::spooky::SC_CONST;
 struct Args {
     filename: String,
 }
+const DEG_SHIFT: usize = 8 * size_of::<usize>() - 10;
+const DEG: usize = 1_usize << DEG_SHIFT;
 
 fn count_nonzero_pairs(x: u64) -> usize {
     ((x | x >> 1) & 0x5555555555555555).count_ones() as usize
@@ -59,11 +63,10 @@ fn main() -> Result<()> {
     num_vertices = num_vertices + 130 - num_vertices % 130;
     let segment_size = num_vertices / 130;
 
-    let mut deg = Vec::new();
-    deg.resize_with(num_vertices, || AtomicU16::new(0));
-    let mut xor = Vec::new();
-    xor.resize_with(num_vertices, || AtomicUsize::new(0));
-    let mut stack = Vec::new();
+    let mut deg_add = Vec::new();
+    deg_add.resize_with(num_vertices, || AtomicUsize::new(0));
+    let mut peeled = Vec::new();
+    peeled.resize_with(num_edges, || AtomicBool::new(false));
 
     for (edge_index, sig) in sigs.iter().enumerate() {
         let tuple = spooky_short_rehash(sig, 0);
@@ -73,66 +76,92 @@ fn main() -> Result<()> {
                 + (first_segment + i) * segment_size;
             // Djamal's trick: xor edges incident to a vertex.
             // We will be visiting only vertices of degree 1 anyway.
-            xor[vertex].fetch_xor(edge_index, Ordering::Relaxed);
-            deg[vertex].fetch_add(1, Ordering::Relaxed);
+            deg_add[vertex].fetch_add(DEG | edge_index, Ordering::Relaxed);
         }
     }
 
-    for x in 0..num_vertices {
-        if deg[x].load(Ordering::Relaxed) != 1 {
-            continue;
-        }
+    let mut num_peeled = AtomicUsize::new(0);
+    let curr = AtomicUsize::new(0);
+    thread::scope(|s| {
+        for _ in 0..4 {
+            s.spawn(|| {
+                let mut stack = Vec::new();
+                loop {
+                    let next = curr.fetch_add(1, Ordering::Relaxed);
+                    if next >= num_vertices {
+                        break;
+                    }
+                    if deg_add[next].load(Ordering::Relaxed) >> DEG_SHIFT != 1 {
+                        continue;
+                    }
 
-        let mut pos = stack.len();
-        let mut curr = stack.len();
-        // Stack initialization
-        stack.push(x);
+                    let mut pos = stack.len();
+                    let mut curr = stack.len();
+                    // Stack initialization
+                    stack.push(next);
 
-        while pos < stack.len() {
-            let v = stack[pos];
-            pos += 1;
+                    while pos < stack.len() {
+                        let v = stack[pos];
+                        pos += 1;
 
-            if deg[v].load(Ordering::Relaxed) != 1 {
-                continue; // Skip no longer useful entries
-            }
+                        let t = deg_add[v].load(Ordering::Relaxed);
+                        let d = t >> DEG_SHIFT;
+                        if d != 1 {
+                            assert_eq!(d, 0, "v = {}", v);
 
-            let edge_index = xor[v].swap(usize::MAX, Ordering::Relaxed);
-            if edge_index == usize::MAX {
-                debug_assert_eq!(deg[1].load(Ordering::Relaxed), 0);
-                continue; // Skip no longer useful entries
-            }
+                            continue; // Skip no longer useful entries
+                        }
+                        let edge_index = t & (1_usize << DEG_SHIFT) - 1;
+                        if peeled[edge_index].swap(true, Ordering::Relaxed) {
+                            continue;
+                        }
+                        deg_add[v].store(edge_index, Ordering::Relaxed);
 
-            stack[curr] = v;
-            curr += 1;
+                        stack[curr] = v;
+                        curr += 1;
+                        let tuple = spooky_short_rehash(&sigs[edge_index], 0);
+                        let first_segment = tuple[3] as usize % 128;
+                        let edge = [
+                            ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
+                                + (first_segment + 0) * segment_size,
+                            ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
+                                + (first_segment + 1) * segment_size,
+                            ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
+                                + (first_segment + 2) * segment_size,
+                        ];
 
-            let tuple = spooky_short_rehash(&sigs[edge_index], 0);
-            let first_segment = tuple[3] as usize % 128;
-            let edge = [
-                ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
-                    + (first_segment + 0) * segment_size,
-                ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
-                    + (first_segment + 1) * segment_size,
-                ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
-                    + (first_segment + 2) * segment_size,
-            ];
+                        for i in 0..3 {
+                            if edge[i] != v {
+                                if deg_add[edge[i]].fetch_sub(DEG | edge_index, Ordering::Relaxed)
+                                    >> DEG_SHIFT
+                                    == 2
+                                {
+                                    stack.push(edge[i]);
+                                }
+                            }
+                        }
+                    }
 
-            for i in 0..3 {
-                if deg[edge[i]].fetch_sub(1, Ordering::Relaxed) == 2 {
-                    stack.push(edge[i]);
+                    stack.truncate(curr);
                 }
-                // When edge[i] == v this is useless, but we avoid a branch.
-                xor[edge[i]].fetch_xor(edge_index, Ordering::Relaxed);
-            }
 
-            xor[v].store(edge_index, Ordering::Relaxed);
+                num_peeled.fetch_add(stack.len(), Ordering::Relaxed);
+            });
         }
+    });
 
-        stack.truncate(curr);
+    for i in 0..num_vertices {
+        assert_ne!(
+            deg_add[i].load(Ordering::Relaxed) >> DEG_SHIFT,
+            1,
+            "v = {}",
+            i
+        );
     }
+    assert_eq!(num_edges, num_peeled.load(Ordering::Relaxed));
+    println!("{}", start.elapsed().as_nanos() / sigs.len() as u128);
 
-    assert_eq!(num_edges, stack.len());
-
-    let mut values = CompactArray::new(2, num_vertices);
+    /*     let mut values = CompactArray::new(2, num_vertices);
 
     while let Some(v) = stack.pop() {
         let edge_index = xor[v].load(Ordering::Relaxed);
@@ -238,6 +267,6 @@ fn main() -> Result<()> {
             .collect::<std::collections::HashSet::<_>>()
             .len()
     );
-
+    */
     Ok(())
 }
