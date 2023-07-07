@@ -18,30 +18,135 @@ use Ordering::Relaxed;
 struct Args {
     filename: String,
 }
-const DEG_SHIFT: usize = 8 * size_of::<usize>() - 10;
-const EDGE_INDEX_MASK: usize = (1_usize << DEG_SHIFT) - 1;
-const DEG: usize = 1_usize << DEG_SHIFT;
 
 fn count_nonzero_pairs(x: u64) -> usize {
     ((x | x >> 1) & 0x5555555555555555).count_ones() as usize
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+
+struct EdgeList(usize);
+impl EdgeList {
+    const DEG_SHIFT: usize = 8 * size_of::<usize>() - 10;
+    const EDGE_INDEX_MASK: usize = (1_usize << EdgeList::DEG_SHIFT) - 1;
+    const DEG: usize = 1_usize << EdgeList::DEG_SHIFT;
+
+    #[inline(always)]
+    fn add(&mut self, edge: usize) {
+        self.0 += EdgeList::DEG;
+        self.0 ^= edge;
+    }
+
+    #[inline(always)]
+    fn remove(&mut self, edge: usize) {
+        self.0 -= EdgeList::DEG;
+        self.0 ^= edge;
+    }
+
+    #[inline(always)]
+    fn degree(&self) -> usize {
+        self.0 >> EdgeList::DEG_SHIFT
+    }
+
+    #[inline(always)]
+    fn zero(&mut self) -> usize {
+        debug_assert!(self.degree() == 1);
+        self.0 &= EdgeList::EDGE_INDEX_MASK;
+        self.0
+    }
+
+    #[inline(always)]
+    fn edge(&self) -> usize {
+        debug_assert!(self.degree() == 1);
+        self.0 & EdgeList::EDGE_INDEX_MASK
+    }
+}
+
 struct Values(Vec<AtomicU64>);
 impl Values {
+    #[inline(always)]
     fn new(n: usize) -> Self {
         let mut v = Vec::new();
         v.resize_with((n * 2 + 63) / 64, || AtomicU64::new(0));
         Self(v)
     }
+
+    #[inline(always)]
     fn get(&self, i: usize) -> u64 {
         let pos = i * 2;
         self.0[pos / 64].load(Relaxed) >> (pos % 64) & 3
     }
 
+    #[inline(always)]
     fn set(&self, i: usize, v: u64) {
         let pos = i * 2;
         self.0[pos / 64].fetch_or(v << pos % 64, Relaxed);
     }
+}
+
+fn count_sort<T: Copy + Clone, F: Fn(&T) -> usize>(
+    sigs: &mut [T],
+    num_keys: usize,
+    key: F,
+) -> (Vec<usize>, Vec<usize>) {
+    let mut counts = Vec::new();
+    counts.resize(num_keys, 0_usize);
+
+    for sig in &*sigs {
+        counts[key(sig)] += 1;
+    }
+
+    let mut cum = Vec::new();
+    cum.resize(counts.len() + 1, 0_usize);
+    for i in 1..cum.len() {
+        cum[i] += cum[i - 1] + counts[i - 1];
+    }
+    let end = sigs.len() - counts.last().unwrap();
+
+    let mut pos = cum[1..].to_vec();
+    let mut i = 0;
+    while i < end {
+        let mut sig = sigs[i];
+
+        loop {
+            let slot = key(&sig);
+            pos[slot] -= 1;
+            if pos[slot] <= i {
+                break;
+            }
+            mem::swap(&mut sigs[pos[slot]], &mut sig);
+        }
+        sigs[i] = sig;
+        i += counts[key(&sig)];
+    }
+
+    (counts, cum)
+}
+
+#[inline(always)]
+#[must_use]
+pub const fn spooky_short_rehash(signature: &[u64; 2], seed: u64) -> [u64; 4] {
+    spooky_short_mix([
+        seed,
+        SC_CONST.wrapping_add(signature[0]),
+        SC_CONST.wrapping_add(signature[1]),
+        SC_CONST,
+    ])
+}
+
+#[inline(always)]
+#[must_use]
+fn edge(sig: &[u64; 2], segment_size: usize) -> [usize; 3] {
+    let tuple = spooky_short_rehash(sig, 0);
+    let first_segment = tuple[3] as usize % 128;
+    [
+        ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
+            + (first_segment + 0) * segment_size,
+        ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
+            + (first_segment + 1) * segment_size,
+        ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
+            + (first_segment + 2) * segment_size,
+    ]
 }
 
 fn main() -> Result<()> {
@@ -52,17 +157,6 @@ fn main() -> Result<()> {
         .unwrap();
 
     let args = Args::parse();
-
-    #[inline(always)]
-    #[must_use]
-    pub const fn spooky_short_rehash(signature: &[u64; 2], seed: u64) -> [u64; 4] {
-        spooky_short_mix([
-            seed,
-            SC_CONST.wrapping_add(signature[0]),
-            SC_CONST.wrapping_add(signature[1]),
-            SC_CONST,
-        ])
-    }
 
     let mut pl = ProgressLogger::default();
 
@@ -80,20 +174,10 @@ fn main() -> Result<()> {
     pl.done();
 
     pl.start("Sorting...");
-
-    let mut counts = Vec::new();
-    counts.resize(1 << high_bits, 0_usize);
-
-    for sig in &sigs {
-        counts[(sig[0] >> (64 - high_bits)) as usize] += 1;
-    }
-
-    let mut cum = Vec::new();
-    cum.resize(counts.len() + 1, 0_usize);
-    for i in 1..cum.len() {
-        cum[i] += cum[i - 1] + counts[i - 1];
-    }
-    let end = sigs.len() - counts.last().unwrap();
+    let (counts, cum) = count_sort(&mut sigs, 1 << high_bits, |sig| {
+        (sig[0] >> (64 - high_bits)) as usize
+    });
+    pl.done_with_count(sigs.len());
 
     let mut delims = vec![0];
     for &count in &counts {
@@ -102,40 +186,13 @@ fn main() -> Result<()> {
         delims.push(delims.last().unwrap() + num_vertices / 130);
     }
 
-    dbg!(&counts, &cum, &delims);
-
-    let mut pos = cum[1..].to_vec();
-    let mut i = 0;
-    while i < end {
-        let mut sig = sigs[i];
-
-        loop {
-            let slot = (sig[0] >> (64 - high_bits)) as usize;
-            pos[slot] -= 1;
-            if pos[slot] <= i {
-                break;
-            }
-            mem::swap(&mut sigs[pos[slot]], &mut sig);
-        }
-        sigs[i] = sig;
-        i += counts[(sig[0] >> (64 - high_bits)) as usize];
-    }
-
-    pl.done_with_count(sigs.len());
-
-    for i in 1..sigs.len() {
-        assert!(
-            (sigs[i - 1][0] >> (64 - high_bits)) as usize
-                <= (sigs[i][0] >> (64 - high_bits)) as usize
-        );
-    }
-
     pl.start("Peeling graph...");
-    let num_vertices = (*cum.last().unwrap() as f64 * 1.12) as usize;
-    let mut values = Values::new(*delims.last().unwrap() * 130);
+    let num_vertices = delims.last().unwrap() * 130;
+    let mut values = Values::new(num_vertices);
 
     let mut num_peeled = AtomicUsize::new(0);
     let next_chunk = AtomicUsize::new(0);
+
     thread::scope(|s| {
         for _ in 0..8 {
             s.spawn(|| loop {
@@ -149,18 +206,12 @@ fn main() -> Result<()> {
                 let segment_size = delims[chunk + 1] - delims[chunk];
                 let mut num_vertices = segment_size * 130;
 
-                let mut deg_add = Vec::new();
-                deg_add.resize(num_vertices, 0);
+                let mut edge_lists = Vec::new();
+                edge_lists.resize(num_vertices, EdgeList::default());
 
                 for (edge_index, sig) in sigs.iter().enumerate() {
-                    let tuple = spooky_short_rehash(sig, 0);
-                    let first_segment = tuple[3] as usize % 128;
-                    for i in 0..3 {
-                        let vertex = ((tuple[i] as u128) * (segment_size as u128) >> 64) as usize
-                            + (first_segment + i) * segment_size;
-                        // Djamal's trick: xor edges incident to a vertex.
-                        // We will be visiting only vertices of degree 1 anyway.
-                        deg_add[vertex] += DEG | edge_index;
+                    for v in edge(sig, segment_size).iter() {
+                        edge_lists[*v].add(edge_index);
                     }
                 }
 
@@ -169,9 +220,8 @@ fn main() -> Result<()> {
                 let mut curr = 0;
 
                 for x in 0..num_vertices {
-                    let t = deg_add[x];
-                    if t >> DEG_SHIFT != 1 {
-                        // degree != 1
+                    let t = edge_lists[x];
+                    if t.degree() != 1 {
                         continue;
                     }
                     pos = stack.len();
@@ -181,33 +231,21 @@ fn main() -> Result<()> {
                     while pos < stack.len() {
                         let v = stack[pos];
                         pos += 1;
-                        if deg_add[v] >> DEG_SHIFT != 1 {
+                        if edge_lists[v].degree() != 1 {
                             continue; // Skip no longer useful entries
                         }
 
-                        deg_add[v] &= EDGE_INDEX_MASK;
-                        let edge_index = deg_add[v];
+                        let edge_index = edge_lists[v].zero();
 
                         stack[curr] = v;
                         curr += 1;
 
-                        let tuple = spooky_short_rehash(&sigs[edge_index], 0);
-                        let first_segment = tuple[3] as usize % 128;
-                        let edge = [
-                            ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
-                                + (first_segment + 0) * segment_size,
-                            ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
-                                + (first_segment + 1) * segment_size,
-                            ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
-                                + (first_segment + 2) * segment_size,
-                        ];
-
-                        for i in 0..3 {
-                            if edge[i] != v {
-                                deg_add[edge[i]] -= DEG | edge_index;
-                                if deg_add[edge[i]] >> DEG_SHIFT == 1 {
+                        for &x in edge(&sigs[edge_index], segment_size).iter() {
+                            if x != v {
+                                edge_lists[x].remove(edge_index);
+                                if edge_lists[x].degree() == 1 {
                                     {
-                                        stack.push(edge[i]);
+                                        stack.push(x);
                                     }
                                 }
                             }
@@ -220,17 +258,8 @@ fn main() -> Result<()> {
                 let start_vertex = delims[chunk] * 130;
 
                 while let Some(v) = stack.pop() {
-                    let edge_index = deg_add[v];
-                    let tuple = spooky_short_rehash(&sigs[edge_index], 0);
-                    let first_segment = tuple[3] as usize % 128;
-                    let edge = [
-                        ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
-                            + (first_segment + 0) * segment_size,
-                        ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
-                            + (first_segment + 1) * segment_size,
-                        ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
-                            + (first_segment + 2) * segment_size,
-                    ];
+                    let edge_index = edge_lists[v].0; // Degree already masked out
+                    let edge = edge(&sigs[edge_index], segment_size);
 
                     let (s, hinge_index) = if v == edge[0] {
                         (
@@ -265,21 +294,10 @@ fn main() -> Result<()> {
         sigs.iter()
             .map(|sig| {
                 let chunk = (sig[0] >> (64 - high_bits)) as usize;
-                let tuple = spooky_short_rehash(sig, 0);
-                let first_segment = tuple[3] as usize % 128;
                 let segment_size = delims[chunk + 1] - delims[chunk];
                 let start_vertex = delims[chunk] * 130;
-                let edge = [
-                    ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
-                        + (first_segment + 0) * segment_size
-                        + start_vertex,
-                    ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
-                        + (first_segment + 1) * segment_size
-                        + start_vertex,
-                    ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
-                        + (first_segment + 2) * segment_size
-                        + start_vertex,
-                ];
+                let mut edge = edge(sig, segment_size);
+                edge.iter_mut().for_each(|x| *x += start_vertex);
 
                 edge[((values.get(edge[0]) + values.get(edge[1]) + values.get(edge[2])) % 3)
                     as usize]
@@ -326,21 +344,11 @@ fn main() -> Result<()> {
     pl.start("Querying...");
     for sig in &sigs {
         let chunk = (sig[0] >> (64 - high_bits)) as usize;
-        let tuple = spooky_short_rehash(sig, 0);
-        let first_segment = tuple[3] as usize % 128;
         let segment_size = delims[chunk + 1] - delims[chunk];
         let start_vertex = delims[chunk] * 130;
-        let edge = [
-            ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
-                + (first_segment + 0) * segment_size
-                + start_vertex,
-            ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
-                + (first_segment + 1) * segment_size
-                + start_vertex,
-            ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
-                + (first_segment + 2) * segment_size
-                + start_vertex,
-        ];
+
+        let mut edge = edge(sig, segment_size);
+        edge.iter_mut().for_each(|x| *x += start_vertex);
 
         let mut hinge =
             edge[((values.get(edge[0]) + values.get(edge[1]) + values.get(edge[2])) % 3) as usize];
@@ -366,8 +374,6 @@ fn main() -> Result<()> {
         out.push(result);
     }
     pl.done_with_count(sigs.len());
-
-    println!("{}", start.elapsed().as_nanos() / sigs.len() as u128);
 
     assert_eq!(
         out.len(),
