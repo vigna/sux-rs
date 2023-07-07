@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use dsi_progress_logger::ProgressLogger;
 use std::io::{BufRead, BufReader};
 use std::mem::{self, size_of};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -52,8 +53,6 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let start = Instant::now();
-
     #[inline(always)]
     #[must_use]
     pub const fn spooky_short_rehash(signature: &[u64; 2], seed: u64) -> [u64; 4] {
@@ -65,6 +64,9 @@ fn main() -> Result<()> {
         ])
     }
 
+    let mut pl = ProgressLogger::default();
+
+    pl.start("Reading input...");
     let file = std::fs::File::open(args.filename)?;
     let mut sigs = BufReader::new(file)
         .lines()
@@ -75,6 +77,9 @@ fn main() -> Result<()> {
         .collect::<Vec<_>>();
 
     let high_bits = 2;
+    pl.done();
+
+    pl.start("Sorting...");
 
     let mut counts = Vec::new();
     counts.resize(1 << high_bits, 0_usize);
@@ -94,7 +99,7 @@ fn main() -> Result<()> {
     for &count in &counts {
         let mut num_vertices = (count as f64 * 1.12).ceil() as usize + 1;
         num_vertices = num_vertices + 130 - num_vertices % 130;
-        delims.push(delims.last().unwrap() + num_vertices);
+        delims.push(delims.last().unwrap() + num_vertices / 130);
     }
 
     dbg!(&counts, &cum, &delims);
@@ -116,6 +121,8 @@ fn main() -> Result<()> {
         i += counts[(sig[0] >> (64 - high_bits)) as usize];
     }
 
+    pl.done_with_count(sigs.len());
+
     for i in 1..sigs.len() {
         assert!(
             (sigs[i - 1][0] >> (64 - high_bits)) as usize
@@ -123,11 +130,9 @@ fn main() -> Result<()> {
         );
     }
 
-    println!("{}", start.elapsed().as_nanos() / sigs.len() as u128);
-
-    let start = Instant::now();
+    pl.start("Peeling graph...");
     let num_vertices = (*cum.last().unwrap() as f64 * 1.12) as usize;
-    let mut values = Values::new(*delims.last().unwrap());
+    let mut values = Values::new(*delims.last().unwrap() * 130);
 
     let mut num_peeled = AtomicUsize::new(0);
     let next_chunk = AtomicUsize::new(0);
@@ -141,8 +146,8 @@ fn main() -> Result<()> {
                 let (start_edge, end_edge) = (cum[chunk], cum[chunk + 1]);
                 let sigs = &sigs[start_edge..end_edge];
                 let num_edges = sigs.len();
-                let mut num_vertices = delims[chunk + 1] - delims[chunk];
-                let segment_size = num_vertices / 130;
+                let segment_size = delims[chunk + 1] - delims[chunk];
+                let mut num_vertices = segment_size * 130;
 
                 let mut deg_add = Vec::new();
                 deg_add.resize(num_vertices, 0);
@@ -212,7 +217,7 @@ fn main() -> Result<()> {
                 }
 
                 num_peeled.fetch_add(stack.len(), Relaxed);
-                let start_vertex = delims[chunk];
+                let start_vertex = delims[chunk] * 130;
 
                 while let Some(v) = stack.pop() {
                     let edge_index = deg_add[v];
@@ -251,8 +256,9 @@ fn main() -> Result<()> {
         }
     });
 
+    pl.done_with_count(sigs.len());
+
     assert_eq!(sigs.len(), num_peeled.load(Relaxed));
-    println!("{}", start.elapsed().as_nanos() / sigs.len() as u128);
 
     assert_eq!(
         sigs.len(),
@@ -261,8 +267,8 @@ fn main() -> Result<()> {
                 let chunk = (sig[0] >> (64 - high_bits)) as usize;
                 let tuple = spooky_short_rehash(sig, 0);
                 let first_segment = tuple[3] as usize % 128;
-                let segment_size = num_vertices / 130;
-                let start_vertex = delims[chunk];
+                let segment_size = delims[chunk + 1] - delims[chunk];
+                let start_vertex = delims[chunk] * 130;
                 let edge = [
                     ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
                         + (first_segment + 0) * segment_size
@@ -282,6 +288,7 @@ fn main() -> Result<()> {
             .len()
     );
 
+    pl.start("Build rank...");
     let words = &values.0;
     const WORDS_PER_SUPERBLOCK: usize = 32;
     let num_counts =
@@ -311,22 +318,28 @@ fn main() -> Result<()> {
         pos += 2;
     }
 
+    pl.done_with_count(sigs.len());
     let mut out = Vec::new();
 
     let start = Instant::now();
 
+    pl.start("Querying...");
     for sig in &sigs {
-        let chunk = sig[0] >> (64 - high_bits);
+        let chunk = (sig[0] >> (64 - high_bits)) as usize;
         let tuple = spooky_short_rehash(sig, 0);
         let first_segment = tuple[3] as usize % 128;
-        let segment_size = num_vertices / 130;
+        let segment_size = delims[chunk + 1] - delims[chunk];
+        let start_vertex = delims[chunk] * 130;
         let edge = [
             ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
-                + (first_segment + 0) * segment_size,
+                + (first_segment + 0) * segment_size
+                + start_vertex,
             ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
-                + (first_segment + 1) * segment_size,
+                + (first_segment + 1) * segment_size
+                + start_vertex,
             ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
-                + (first_segment + 2) * segment_size,
+                + (first_segment + 2) * segment_size
+                + start_vertex,
         ];
 
         let mut hinge =
@@ -352,6 +365,7 @@ fn main() -> Result<()> {
         assert!(result < sigs.len());
         out.push(result);
     }
+    pl.done_with_count(sigs.len());
 
     println!("{}", start.elapsed().as_nanos() / sigs.len() as u128);
 
