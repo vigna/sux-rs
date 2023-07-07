@@ -5,6 +5,9 @@ use std::io::{BufRead, BufReader};
 use std::mem::{self, size_of};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::thread;
+use sux::prelude::CompactArray;
+use sux::prelude::VSlice;
+use sux::prelude::VSliceMut;
 use sux::spooky::spooky_short;
 use sux::spooky::spooky_short_mix;
 use sux::spooky::SC_CONST;
@@ -16,13 +19,11 @@ struct Args {
     filename: String,
 }
 
-const WORDS_PER_SUPERBLOCK: usize = 32;
-
 struct DelimSeed(u64);
 
 impl DelimSeed {
     fn new(seed: u8, delim: usize) -> Self {
-        Self((seed as u64) << 56 | (delim as u64))
+        return Self((seed as u64) << 56 | (delim as u64));
     }
 
     fn seed(&self) -> u64 {
@@ -37,14 +38,21 @@ pub trait Remap {
     fn remap(key: &Self) -> [u64; 2];
 }
 
-fn generate_and_sort(sigs: &[[u64; 2]], segment_size: usize) -> (Vec<usize>, Vec<EdgeList>) {
+impl<T: AsRef<[u8]>> Remap for T {
+    fn remap(key: &Self) -> [u64; 2] {
+        let spooky = spooky_short(key.as_ref(), 0);
+        [spooky[0], spooky[1]]
+    }
+}
+
+fn generate_and_sort(sigs: &[([u64; 2], u64)], segment_size: usize) -> (Vec<usize>, Vec<EdgeList>) {
     let num_vertices = segment_size * 130;
 
     let mut edge_lists = Vec::new();
     edge_lists.resize(num_vertices, EdgeList::default());
 
     for (edge_index, sig) in sigs.iter().enumerate() {
-        for v in edge(sig, segment_size).iter() {
+        for v in edge(&sig.0, segment_size).iter() {
             edge_lists[*v].add(edge_index);
         }
     }
@@ -74,7 +82,7 @@ fn generate_and_sort(sigs: &[[u64; 2]], segment_size: usize) -> (Vec<usize>, Vec
             stack[curr] = v;
             curr += 1;
 
-            for &x in edge(&sigs[edge_index], segment_size).iter() {
+            for &x in edge(&sigs[edge_index].0, segment_size).iter() {
                 if x != v {
                     edge_lists[x].remove(edge_index);
                     if edge_lists[x].degree() == 1 {
@@ -89,76 +97,50 @@ fn generate_and_sort(sigs: &[[u64; 2]], segment_size: usize) -> (Vec<usize>, Vec
     (stack, edge_lists)
 }
 
-pub struct MinimalPerfectHashFunction<T: Remap> {
+pub struct Function<T: Remap> {
     seed: u64,
     num_keys: usize,
     delim_seed: Vec<DelimSeed>,
-    values: Values,
-    counts: Vec<u64>,
+    values: CompactArray<Vec<u64>>,
     high_bits: usize,
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: AsRef<[u8]>> Remap for T {
-    fn remap(key: &Self) -> [u64; 2] {
-        let spooky = spooky_short(key.as_ref(), 0);
-        [spooky[0], spooky[1]]
-    }
-}
-
-impl<T: Remap> MinimalPerfectHashFunction<T> {
-    pub fn get_by_sig(&self, sig: &[u64; 2]) -> usize {
+impl<T: Remap> Function<T> {
+    pub fn get_by_sig(&self, sig: &[u64; 2]) -> u64 {
         let chunk = (sig[0] >> (64 - self.high_bits)) as usize;
         let segment_size = self.delim_seed[chunk + 1].delim() - self.delim_seed[chunk].delim();
         let start_vertex = self.delim_seed[chunk].delim() * 130;
 
         let mut edge = edge(&sig, segment_size);
         edge.iter_mut().for_each(|x| *x += start_vertex);
-
-        let mut hinge =
-            edge[((self.values.get(edge[0]) + self.values.get(edge[1]) + self.values.get(edge[2]))
-                % 3) as usize];
-
-        // rank
-        hinge *= 2;
-
-        // TODO: /-% 6
-        let mut word = hinge / 64;
-        let block = word / (WORDS_PER_SUPERBLOCK / 2) & !1;
-        let offset = ((word % WORDS_PER_SUPERBLOCK) / 6) as isize - 1;
-
-        let mut result = self.counts[block]
-            + (self.counts[block + 1]
-                >> 12 * (offset + (((offset as usize) >> 32 - 4) as isize & 6))
-                & 0x7FF)
-            + count_nonzero_pairs(self.values.0[word] & (1_u64 << (hinge % 64)) - 1);
-
-        for _ in 0..(word & 0x1F) % 6 {
-            word -= 1;
-            result += count_nonzero_pairs(self.values.0[word]);
-        }
-
-        result as usize
+        self.values.get(edge[0]) ^ self.values.get(edge[1]) ^ self.values.get(edge[2])
     }
 
     #[inline(always)]
-    pub fn get(&self, key: &T) -> usize {
+    pub fn get(&self, key: &T) -> u64 {
         self.get_by_sig(&T::remap(key))
     }
 
-    pub fn new<I: std::iter::Iterator<Item = T>>(
+    pub fn new<I: std::iter::Iterator<Item = T>, V: std::iter::Iterator<Item = u64>>(
         keys: I,
+        values: &mut V,
+        bit_width: usize,
         pl: &mut Option<&mut ProgressLogger>,
-    ) -> MinimalPerfectHashFunction<T> {
+    ) -> Function<T> {
         pl.as_mut().map(|pl| pl.start("Reading input..."));
-        let mut sigs = keys.map(|x| T::remap(&x)).collect::<Vec<_>>();
+        let mut sigs = keys
+            .map(|x| (T::remap(&x), values.next().unwrap()))
+            .collect::<Vec<_>>();
+
+        //assert!(values.next().is_none());
 
         let high_bits = 2;
         pl.as_mut().map(|pl| pl.done());
 
         pl.as_mut().map(|pl| pl.start("Sorting..."));
         let (counts, cum) = count_sort(&mut sigs, 1 << high_bits, |sig| {
-            (sig[0] >> (64 - high_bits)) as usize
+            (sig.0[0] >> (64 - high_bits)) as usize
         });
         pl.as_mut().map(|pl| pl.done_with_count(sigs.len()));
 
@@ -171,13 +153,13 @@ impl<T: Remap> MinimalPerfectHashFunction<T> {
 
         pl.as_mut().map(|pl| pl.start("Peeling graph..."));
         let num_vertices = delims.last().unwrap() * 130;
-        let values = AtomicValues::new(num_vertices);
+        let mut values = CompactArray::new(bit_width, num_vertices);
 
         let num_peeled = AtomicUsize::new(0);
         let next_chunk = AtomicUsize::new(0);
 
         thread::scope(|s| {
-            for _ in 0..4 {
+            {
                 s.spawn(|| loop {
                     let chunk = next_chunk.fetch_add(1, Relaxed);
                     if chunk >= 1 << high_bits {
@@ -192,30 +174,17 @@ impl<T: Remap> MinimalPerfectHashFunction<T> {
 
                     while let Some(v) = stack.pop() {
                         let edge_index = edge_lists[v].0; // Degree already masked out
-                        let edge = edge(&sigs[edge_index], segment_size);
+                        let edge = edge(&sigs[edge_index].0, segment_size);
 
-                        let (s, hinge_index) = if v == edge[0] {
-                            (
-                                values.get(edge[1] + start_vertex)
-                                    + values.get(edge[2] + start_vertex),
-                                0,
-                            )
+                        let value = if v == edge[0] {
+                            values.get(edge[1] + start_vertex) ^ values.get(edge[2] + start_vertex)
                         } else if v == edge[1] {
-                            (
-                                values.get(edge[0] + start_vertex)
-                                    + values.get(edge[2] + start_vertex),
-                                1,
-                            )
+                            values.get(edge[0] + start_vertex) ^ values.get(edge[2] + start_vertex)
                         } else {
                             debug_assert_eq!(v, edge[2]);
-                            (
-                                values.get(edge[0] + start_vertex)
-                                    + values.get(edge[1] + start_vertex),
-                                2,
-                            )
+                            values.get(edge[0] + start_vertex) ^ values.get(edge[1] + start_vertex)
                         };
-                        let value = (9 + hinge_index - s) % 3;
-                        values.set(v + start_vertex, if value == 0 { 3 } else { value });
+                        values.set(v + start_vertex, &sigs[edge_index].1 ^ value);
                     }
                 });
             }
@@ -225,55 +194,7 @@ impl<T: Remap> MinimalPerfectHashFunction<T> {
 
         assert_eq!(sigs.len(), num_peeled.load(Relaxed));
 
-        assert_eq!(
-            sigs.len(),
-            sigs.iter()
-                .map(|sig| {
-                    let chunk = (sig[0] >> (64 - high_bits)) as usize;
-                    let segment_size = delims[chunk + 1] - delims[chunk];
-                    let start_vertex = delims[chunk] * 130;
-                    let mut edge = edge(sig, segment_size);
-                    edge.iter_mut().for_each(|x| *x += start_vertex);
-
-                    edge[((values.get(edge[0]) + values.get(edge[1]) + values.get(edge[2])) % 3)
-                        as usize]
-                })
-                .collect::<std::collections::HashSet<_>>()
-                .len()
-        );
-
-        pl.as_mut().map(|pl| pl.start("Build rank..."));
-        let words = &values.0;
-        let num_counts =
-            ((num_vertices * 2 + WORDS_PER_SUPERBLOCK * 64 - 1) / (WORDS_PER_SUPERBLOCK * 64)) * 2;
-        // Init rank/select structure
-        let mut counts = Vec::new();
-        counts.resize(num_counts + 1, 0);
-
-        let mut c = 0;
-        let mut pos = 0;
-        let mut i = 0;
-        while i < words.len() {
-            counts[pos] = c;
-            for j in 0..WORDS_PER_SUPERBLOCK {
-                if j != 0 && j % 6 == 0 {
-                    counts[pos + 1] |= if i + j <= words.len() {
-                        c - counts[pos]
-                    } else {
-                        0x7FF
-                    } << 12 * (j / 6 - 1);
-                }
-                if i + j < words.len() {
-                    c += count_nonzero_pairs(words[i + j].load(Relaxed));
-                }
-            }
-            i += WORDS_PER_SUPERBLOCK;
-            pos += 2;
-        }
-
-        pl.as_mut().map(|pl| pl.done_with_count(sigs.len()));
-
-        MinimalPerfectHashFunction {
+        Function {
             seed: 0,
             num_keys: sigs.len(),
             delim_seed: delims
@@ -281,7 +202,6 @@ impl<T: Remap> MinimalPerfectHashFunction<T> {
                 .map(|x| DelimSeed(x as u64))
                 .collect::<Vec<_>>(),
             values: values.into(),
-            counts,
             high_bits,
             _phantom: std::marker::PhantomData,
         }
@@ -443,8 +363,10 @@ fn main() -> Result<()> {
     let mut pl = ProgressLogger::default();
 
     let file = std::fs::File::open(&args.filename)?;
-    let mph = MinimalPerfectHashFunction::new(
+    let mph = Function::new(
         BufReader::new(file).lines().map(|line| line.unwrap()),
+        &mut (0..).into_iter(),
+        64,
         &mut Some(&mut pl),
     );
 
@@ -456,22 +378,10 @@ fn main() -> Result<()> {
         .collect::<Vec<_>>();
 
     pl.start("Querying...");
-    for key in &keys {
-        std::hint::black_box(mph.get(key));
+    for (index, key) in keys.iter().enumerate() {
+        assert_eq!(index, mph.get(key) as usize);
     }
     pl.done_with_count(keys.len());
-
-    let file = std::fs::File::open(&args.filename)?;
-    let keys = BufReader::new(file).lines().map(|line| line.unwrap());
-
-    let mut out = <std::collections::HashSet<_>>::new();
-    let mut c: usize = 0;
-    keys.for_each(|key| {
-        let result = mph.get(&key);
-        out.insert(result);
-        c += 1;
-    });
-    assert_eq!(c, out.len());
 
     Ok(())
 }
