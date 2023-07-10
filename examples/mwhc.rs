@@ -7,9 +7,11 @@ use std::thread;
 use std::time::Instant;
 use sux::prelude::CompactArray;
 use sux::prelude::*;
+use rayon::prelude::*;
 use sux::spooky::spooky_short;
 use sux::spooky::spooky_short_mix;
 use sux::spooky::SC_CONST;
+use dsi_progress_logger::ProgressLogger;
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks compact arrays", long_about = None)]
@@ -46,6 +48,9 @@ fn main() -> Result<()> {
         ])
     }
 
+    let mut pl = ProgressLogger::default();
+
+    pl.start("Reading input...");
     let file = std::fs::File::open(args.filename)?;
     let sigs = BufReader::new(file)
         .lines()
@@ -55,11 +60,13 @@ fn main() -> Result<()> {
         })
         .collect::<Vec<_>>();
 
-    println!("{}", start.elapsed().as_nanos() / sigs.len() as u128);
-
-    let start = Instant::now();
+    pl.done();
 
     let num_edges = sigs.len();
+    pl.expected_updates = Some(num_edges);
+
+    pl.start("Creating graph...");
+
     let mut num_vertices = (num_edges as f64 * 1.12).ceil() as usize + 1;
     num_vertices = num_vertices + 130 - num_vertices % 130;
     let segment_size = num_vertices / 130;
@@ -69,7 +76,7 @@ fn main() -> Result<()> {
     let mut peeled = Vec::new();
     peeled.resize_with(num_edges, || AtomicBool::new(false));
 
-    for (edge_index, sig) in sigs.iter().enumerate() {
+    sigs.par_iter().enumerate().for_each(|(edge_index, sig)| {
         let tuple = spooky_short_rehash(sig, 0);
         let first_segment = tuple[3] as usize % 128;
         for i in 0..3 {
@@ -79,7 +86,11 @@ fn main() -> Result<()> {
             // We will be visiting only vertices of degree 1 anyway.
             deg_add[vertex].fetch_add(DEG | edge_index, Ordering::Relaxed);
         }
-    }
+});
+
+    pl.done_with_count(num_edges);
+
+    pl.start("Peeling...");
 
     let mut num_peeled = AtomicUsize::new(0);
     let curr = AtomicUsize::new(0);
@@ -87,7 +98,6 @@ fn main() -> Result<()> {
     let incr = num_edges / (num_proc * 4);
     thread::scope(|s| {
         for _ in 0..num_proc {
-            eprintln!("**");
             s.spawn(|| {
                 let mut stack = Vec::new();
                 loop {
@@ -152,8 +162,8 @@ fn main() -> Result<()> {
         }
     });
 
+    pl.done_with_count(num_edges);
     assert_eq!(num_edges, num_peeled.load(Ordering::Relaxed));
-    println!("{}", start.elapsed().as_nanos() / sigs.len() as u128);
 
     /*    for i in 0..num_vertices {
             assert_ne!(
