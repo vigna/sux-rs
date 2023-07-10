@@ -106,6 +106,9 @@ fn main() -> Result<()> {
                         break;
                     }
                     for next in start..(start + incr).min(num_vertices) {
+                        if deg_add[next].load(Ordering::Relaxed) >> DEG_SHIFT != 1 {
+                            continue;
+                        }
                         let mut pos = stack.len();
                         let mut curr = stack.len();
                         // Stack initialization
@@ -115,7 +118,7 @@ fn main() -> Result<()> {
                             let v = stack[pos];
                             pos += 1;
 
-                            let t = deg_add[v].load(Ordering::Relaxed);
+                            let t = deg_add[v].fetch_sub(DEG, Ordering::Relaxed);
                             let d = t >> DEG_SHIFT;
                             if d != 1 {
                                 //assert_eq!(d, 0, "v = {}", v);
@@ -126,7 +129,7 @@ fn main() -> Result<()> {
                             if peeled[edge_index].swap(true, Ordering::Relaxed) {
                                 continue;
                             }
-                            deg_add[v].store(edge_index, Ordering::Relaxed);
+                            //deg_add[v].store(edge_index, Ordering::Relaxed);
 
                             stack[curr] = v;
                             curr += 1;
