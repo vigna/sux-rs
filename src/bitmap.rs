@@ -12,10 +12,11 @@ pub struct BitMap<B> {
 }
 
 impl BitMap<Vec<u64>> {
-    pub fn new(len: usize) -> Self {
+    pub fn new(len: usize, fill: bool) -> Self {
         let n_of_words = (len + 63) / 64;
+        let word = if fill { u64::MAX } else { 0 };
         Self {
-            data: vec![0; n_of_words],
+            data: vec![word; n_of_words],
             len,
             number_of_ones: AtomicUsize::new(0),
         }
@@ -23,10 +24,11 @@ impl BitMap<Vec<u64>> {
 }
 
 impl BitMap<Vec<AtomicU64>> {
-    pub fn new_atomic(len: usize) -> Self {
+    pub fn new_atomic(len: usize, fill: bool) -> Self {
         let n_of_words = (len + 63) / 64;
+        let word = if fill { u64::MAX } else { 0 };
         Self {
-            data: (0..n_of_words).map(|_| AtomicU64::new(0)).collect(),
+            data: (0..n_of_words).map(|_| AtomicU64::new(word)).collect(),
             len,
             number_of_ones: AtomicUsize::new(0),
         }
