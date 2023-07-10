@@ -317,7 +317,7 @@ impl From<BitMap<Vec<u64>>> for BitMap<Vec<AtomicU64>> {
     fn from(bm: BitMap<Vec<u64>>) -> Self {
         let data = unsafe { std::mem::transmute::<Vec<u64>, Vec<AtomicU64>>(bm.data) };
         BitMap {
-            data: data,
+            data,
             len: bm.len,
             number_of_ones: bm.number_of_ones,
         }
@@ -329,7 +329,7 @@ impl From<BitMap<Vec<AtomicU64>>> for BitMap<Vec<u64>> {
     fn from(bm: BitMap<Vec<AtomicU64>>) -> Self {
         let data = unsafe { std::mem::transmute::<Vec<AtomicU64>, Vec<u64>>(bm.data) };
         BitMap {
-            data: data,
+            data,
             len: bm.len,
             number_of_ones: bm.number_of_ones,
         }
@@ -341,7 +341,7 @@ impl<'a> From<BitMap<&'a [AtomicU64]>> for BitMap<&'a [u64]> {
     fn from(bm: BitMap<&'a [AtomicU64]>) -> Self {
         let data = unsafe { std::mem::transmute::<&'a [AtomicU64], &'a [u64]>(bm.data) };
         BitMap {
-            data: data,
+            data,
             len: bm.len,
             number_of_ones: bm.number_of_ones,
         }
@@ -353,7 +353,7 @@ impl<'a> From<BitMap<&'a [u64]>> for BitMap<&'a [AtomicU64]> {
     fn from(bm: BitMap<&'a [u64]>) -> Self {
         let data = unsafe { std::mem::transmute::<&'a [u64], &'a [AtomicU64]>(bm.data) };
         BitMap {
-            data: data,
+            data,
             len: bm.len,
             number_of_ones: bm.number_of_ones,
         }
@@ -365,7 +365,7 @@ impl<'a> From<BitMap<&'a mut [AtomicU64]>> for BitMap<&'a mut [u64]> {
     fn from(bm: BitMap<&'a mut [AtomicU64]>) -> Self {
         let data = unsafe { std::mem::transmute::<&'a mut [AtomicU64], &'a mut [u64]>(bm.data) };
         BitMap {
-            data: data,
+            data,
             len: bm.len,
             number_of_ones: bm.number_of_ones,
         }
@@ -377,7 +377,7 @@ impl<'a> From<BitMap<&'a mut [u64]>> for BitMap<&'a mut [AtomicU64]> {
     fn from(bm: BitMap<&'a mut [u64]>) -> Self {
         let data = unsafe { std::mem::transmute::<&'a mut [u64], &'a mut [AtomicU64]>(bm.data) };
         BitMap {
-            data: data,
+            data,
             len: bm.len,
             number_of_ones: bm.number_of_ones,
         }

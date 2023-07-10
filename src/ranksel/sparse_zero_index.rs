@@ -108,7 +108,7 @@ impl<B: SelectZeroHinted + AsRef<[u64]>, const QUANTUM_LOG2: usize>
         let mut res = SparseZeroIndex {
             zeros: vec![0; (self.len() - self.count() + (1 << QUANTUM_LOG2) - 1) >> QUANTUM_LOG2],
             bits: self,
-            _marker: core::marker::PhantomData::default(),
+            _marker: core::marker::PhantomData,
         };
         res.build_zeros()?;
         Ok(res)
@@ -137,7 +137,7 @@ where
         Ok(SparseZeroIndex {
             zeros: self.zeros,
             bits: self.bits.convert_to()?,
-            _marker: core::marker::PhantomData::default(),
+            _marker: core::marker::PhantomData,
         })
     }
 }

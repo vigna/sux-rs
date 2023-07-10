@@ -136,6 +136,9 @@ pub trait VSliceMutAtomic: VSliceAtomic {
     }
 
     #[inline(always)]
+    /// Compare and exchange the value at the specified index.
+    /// If the current value is equal to `current`, set it to `new` and return
+    /// `Ok(current)`. Otherwise, return `Err(current)`.
     fn compare_exchange(
         &self,
         index: usize,
@@ -162,6 +165,13 @@ pub trait VSliceMutAtomic: VSliceAtomic {
         unsafe { self.compare_exchange_unchecked(index, current, new, success, failure) }
     }
 
+    /// Compare and exchange the value at the specified index.
+    /// If the current value is equal to `current`, set it to `new` and return
+    /// `Ok(current)`. Otherwise, return `Err(current)`.
+    ///
+    /// # Safety
+    /// The caller must ensure that `index` is in [0..[len](`VSlice::len`)) and that
+    /// `current` and `new` fit in [`VSlice::bit_width`] bits.
     unsafe fn compare_exchange_unchecked(
         &self,
         index: usize,
