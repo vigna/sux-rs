@@ -28,12 +28,18 @@ impl CompactArray<Vec<u64>> {
 impl<B: VSlice> CompactArray<B> {
     /// # Safety
     /// TODO: this function is never used.
+    #[inline(always)]
     pub unsafe fn from_raw_parts(data: B, bit_width: usize, len: usize) -> Self {
         Self {
             data,
             bit_width,
             len,
         }
+    }
+
+    #[inline(always)]
+    pub fn into_raw_parts(self) -> (B, usize, usize) {
+        (self.data, self.bit_width, self.len)
     }
 }
 

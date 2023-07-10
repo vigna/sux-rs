@@ -10,6 +10,23 @@ pub struct SparseIndex<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize = 6
     _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,
 }
 
+impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> SparseIndex<B, O, QUANTUM_LOG2> {
+    /// # Safety
+    /// TODO: this function is never used
+    #[inline(always)]
+    pub unsafe fn from_raw_parts(bits: B, ones: O) -> Self {
+        Self {
+            bits,
+            ones,
+            _marker: core::marker::PhantomData,
+        }
+    }
+    #[inline(always)]
+    pub fn into_raw_parts(self) -> (B, O) {
+        (self.bits, self.ones)
+    }
+}
+
 impl<B: SelectHinted + AsRef<[u64]>, O: VSliceMut, const QUANTUM_LOG2: usize>
     SparseIndex<B, O, QUANTUM_LOG2>
 {
