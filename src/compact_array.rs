@@ -37,10 +37,10 @@ impl<B: VSlice> CompactArray<B> {
     }
 }
 
-// TODO!: add invariant that Self::bit_width() <= B::bit_width()
-impl<B: VSlice> VSlice for CompactArray<B> {
+impl<B: VSlice> VSliceCore for CompactArray<B> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
+        debug_assert!(self.bit_width <= self.data.bit_width());
         self.bit_width
     }
 
@@ -48,7 +48,9 @@ impl<B: VSlice> VSlice for CompactArray<B> {
     fn len(&self) -> usize {
         self.len
     }
+}
 
+impl<B: VSlice> VSlice for CompactArray<B> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> u64 {
         debug_assert!(self.bit_width != 64);
