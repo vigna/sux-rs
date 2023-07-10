@@ -55,6 +55,7 @@ impl<T: Remap> Function<T> {
         keys: I,
         values: &mut V,
         bit_width: usize,
+        threads: usize,
         pl: &mut Option<&mut ProgressLogger>,
     ) -> Function<T> {
         pl.as_mut().map(|pl| pl.start("Reading input..."));
@@ -89,7 +90,7 @@ impl<T: Remap> Function<T> {
         pl.as_mut().map(|pl| pl.start("Peeling and assigning..."));
 
         thread::scope(|s| {
-            for _ in 0..1 {
+            for _ in 0..threads {
                 s.spawn(|| {
                     let mut stack = Vec::new();
                     loop {
@@ -287,6 +288,7 @@ fn main() -> Result<()> {
         BufReader::new(file).lines().map(|line| line.unwrap()),
         &mut (0..).into_iter(),
         64,
+        args.threads,
         &mut Some(&mut pl),
     );
 
