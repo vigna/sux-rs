@@ -5,6 +5,7 @@ use rayon::prelude::*;
 use std::io::{BufRead, BufReader};
 use std::mem::{self, size_of};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::Mutex;
 use std::thread;
 use sux::prelude::CompactArray;
 use sux::prelude::VSlice;
@@ -35,6 +36,7 @@ impl<T: AsRef<[u8]>> Remap for T {
 pub struct Function<T: Remap> {
     seed: u64,
     num_keys: usize,
+    high_bits: usize,
     segment_size: usize,
     values: Box<[u64]>,
     _phantom: std::marker::PhantomData<T>,
@@ -43,7 +45,11 @@ pub struct Function<T: Remap> {
 impl<T: Remap> Function<T> {
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> u64 {
         let edge = edge(&sig, self.segment_size);
-        self.values[edge[0]] ^ self.values[edge[1]] ^ self.values[edge[2]]
+        let block = (sig[0] >> 64 - self.high_bits) as usize;
+        let offset = block * self.segment_size * 130;
+        self.values[edge[0] + offset]
+            ^ self.values[edge[1] + offset]
+            ^ self.values[edge[2] + offset]
     }
 
     #[inline(always)]
@@ -59,108 +65,144 @@ impl<T: Remap> Function<T> {
         pl: &mut Option<&mut ProgressLogger>,
     ) -> Function<T> {
         pl.as_mut().map(|pl| pl.start("Reading input..."));
-        let sigs = keys
+        let mut sigs = keys
             .map(|x| (T::remap(&x), values.next().unwrap()))
             .collect::<Vec<_>>();
         pl.as_mut().map(|pl| pl.done());
 
-        let mut num_vertices = (sigs.len() as f64 * 1.12).ceil() as usize + 1;
+        let high_bits = 2;
+        let num_blocks = 1 << high_bits;
+        let (counts, cumul) = count_sort(&mut sigs, num_blocks, |x| {
+            (x.0[0] >> 64 - high_bits) as usize
+        });
+
+        let block_size = *counts.iter().max().unwrap();
+        let mut num_vertices = (block_size as f64 * 1.12).ceil() as usize + 1;
         num_vertices = num_vertices + 130 - num_vertices % 130;
         let segment_size = num_vertices / 130;
 
-        pl.as_mut().map(|pl| pl.start("Generating graph..."));
-        let mut edge_lists = Vec::new();
-        edge_lists.resize_with(num_vertices, || EdgeList::default());
-        sigs.par_iter().enumerate().for_each(|(edge_index, sig)| {
-            for &v in edge(&sig.0, segment_size).iter() {
-                edge_lists[v].add(edge_index);
-            }
-        });
-        pl.as_mut().map(|pl| pl.done_with_count(sigs.len()));
-
         let mut values = Vec::new();
-        values.resize_with(num_vertices, || AtomicU64::new(0));
-        let mut peeled = Vec::new();
-        peeled.resize_with(sigs.len(), || AtomicBool::new(false));
+        values.resize_with(num_vertices * num_blocks, || AtomicU64::new(0));
 
         let num_peeled = AtomicUsize::new(0);
-        let next = AtomicUsize::new(0);
-        let incr = 1024;
-
-        pl.as_mut().map(|pl| pl.start("Peeling and assigning..."));
-
+        let block = AtomicUsize::new(0);
         thread::scope(|s| {
-            for _ in 0..threads {
+            for _ in 0..num_blocks {
                 s.spawn(|| {
-                    let mut stack = Vec::new();
-                    loop {
-                        let start = next.fetch_add(incr, Ordering::Relaxed);
-                        if start >= num_vertices {
-                            break;
+                    let block = block.fetch_add(1, Relaxed);
+                    let mut pl = Some(ProgressLogger::default());
+                    pl.as_mut().map(|pl| pl.start("Generating graph..."));
+                    let mut edge_lists = Vec::new();
+                    edge_lists.resize_with(num_vertices, || EdgeList::default());
+                    let sigs = &sigs[cumul[block]..cumul[block + 1]];
+                    sigs.par_iter().enumerate().for_each(|(edge_index, sig)| {
+                        for &v in edge(&sig.0, segment_size).iter() {
+                            edge_lists[v].add(edge_index);
                         }
-                        for v in start..(start + incr).min(num_vertices) {
-                            if edge_lists[v].degree() != 1 {
-                                continue;
-                            }
-                            let mut pos = stack.len();
-                            let mut curr = stack.len();
-                            stack.push(v);
+                    });
+                    pl.as_mut().map(|pl| pl.done_with_count(sigs.len()));
 
-                            while pos < stack.len() {
-                                let v = stack[pos];
-                                pos += 1;
+                    let mut peeled = Vec::new();
+                    peeled.resize_with(sigs.len(), || AtomicBool::new(false));
 
-                                let (d, edge_index) = edge_lists[v].dec();
-                                if d != 1 {
-                                    debug_assert_eq!(d, 0, "v = {}", v);
-                                    continue; // Skip no longer useful entries
-                                }
-                                if peeled[edge_index].swap(true, Ordering::Relaxed) {
-                                    // Someone already peeled this edge
-                                    continue;
-                                }
+                    let next = AtomicUsize::new(0);
+                    let incr = 1024;
 
-                                stack[curr] = v;
-                                curr += 1;
-                                // Degree is necessarily 0
-                                for &x in edge(&sigs[edge_index].0, segment_size).iter() {
-                                    if x != v {
-                                        if let (2, _) = edge_lists[x].remove(edge_index) {
-                                            // Vertex transitioned to degree 1, so we put it on the stack
-                                            stack.push(x);
+                    pl.as_mut().map(|pl| pl.start("Peeling..."));
+                    let stacks = Mutex::new(vec![]);
+
+                    thread::scope(|s| {
+                        for _ in 0..threads {
+                            s.spawn(|| {
+                                let mut stack = Vec::new();
+                                loop {
+                                    let start = next.fetch_add(incr, Ordering::Relaxed);
+                                    if start >= num_vertices {
+                                        break;
+                                    }
+                                    for v in start..(start + incr).min(num_vertices) {
+                                        if edge_lists[v].degree() != 1 {
+                                            continue;
                                         }
+                                        let mut pos = stack.len();
+                                        let mut curr = stack.len();
+                                        stack.push(v);
+
+                                        while pos < stack.len() {
+                                            let v = stack[pos];
+                                            pos += 1;
+
+                                            let (d, edge_index) = edge_lists[v].dec();
+                                            if d != 1 {
+                                                debug_assert_eq!(d, 0, "v = {}", v);
+                                                continue; // Skip no longer useful entries
+                                            }
+                                            if peeled[edge_index].swap(true, Ordering::Relaxed) {
+                                                // Someone already peeled this edge
+                                                continue;
+                                            }
+
+                                            stack[curr] = v;
+                                            curr += 1;
+                                            // Degree is necessarily 0
+                                            for &x in edge(&sigs[edge_index].0, segment_size).iter()
+                                            {
+                                                if x != v {
+                                                    if let (2, _) = edge_lists[x].remove(edge_index)
+                                                    {
+                                                        // Vertex transitioned to degree 1, so we put it on the stack
+                                                        stack.push(x);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        stack.truncate(curr);
                                     }
                                 }
-                            }
-                            stack.truncate(curr);
+                                num_peeled.fetch_add(stack.len(), Relaxed);
+                                stacks.lock().unwrap().push(stack);
+                            });
+                        }
+                    });
+
+                    pl.as_mut().map(|pl| pl.done_with_count(sigs.len()));
+
+                    pl.as_mut().map(|pl| pl.start("Assigning..."));
+
+                    let mut stacks = stacks.lock().unwrap();
+                    while let Some(mut stack) = stacks.pop() {
+                        while let Some(mut v) = stack.pop() {
+                            let edge_index = edge_lists[v].edge_index();
+                            let mut edge = edge(&sigs[edge_index].0, segment_size);
+                            v += block * num_vertices;
+                            edge.iter_mut().for_each(|v| {
+                                *v += block * num_vertices;
+                            });
+
+                            let value = if v == edge[0] {
+                                values[edge[1]].load(Relaxed) ^ values[edge[2]].load(Relaxed)
+                            } else if v == edge[1] {
+                                values[edge[0]].load(Relaxed) ^ values[edge[2]].load(Relaxed)
+                            } else {
+                                debug_assert_eq!(v, edge[2]);
+                                values[edge[0]].load(Relaxed) ^ values[edge[1]].load(Relaxed)
+                            };
+                            values[v].store(&sigs[edge_index].1 ^ value, Relaxed);
                         }
                     }
-                    num_peeled.fetch_add(stack.len(), Relaxed);
-                    while let Some(v) = stack.pop() {
-                        let edge_index = edge_lists[v].edge_index();
-                        let edge = edge(&sigs[edge_index].0, segment_size);
-
-                        let value = if v == edge[0] {
-                            values[edge[1]].load(Relaxed) ^ values[edge[2]].load(Relaxed)
-                        } else if v == edge[1] {
-                            values[edge[0]].load(Relaxed) ^ values[edge[2]].load(Relaxed)
-                        } else {
-                            debug_assert_eq!(v, edge[2]);
-                            values[edge[0]].load(Relaxed) ^ values[edge[1]].load(Relaxed)
-                        };
-                        values[v].store(&sigs[edge_index].1 ^ value, Relaxed);
-                    }
+                    pl.as_mut().map(|pl| pl.done_with_count(sigs.len()));
                 });
             }
         });
-
-        pl.as_mut().map(|pl| pl.done_with_count(sigs.len()));
-
         assert_eq!(sigs.len(), num_peeled.load(Relaxed));
-
+        println!(
+            "bits/keys: {}",
+            values.len() as f64 * 64.0 / sigs.len() as f64,
+        );
         Function {
             seed: 0,
             num_keys: sigs.len(),
+            high_bits,
             segment_size,
             values: unsafe {
                 std::mem::transmute::<Vec<AtomicU64>, Vec<u64>>(values).into_boxed_slice()
