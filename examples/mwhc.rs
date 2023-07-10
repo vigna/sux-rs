@@ -1,5 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
+use dsi_progress_logger::ProgressLogger;
+use rayon::prelude::*;
 use std::io::{BufRead, BufReader};
 use std::mem::size_of;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
@@ -7,11 +9,9 @@ use std::thread;
 use std::time::Instant;
 use sux::prelude::CompactArray;
 use sux::prelude::*;
-use rayon::prelude::*;
 use sux::spooky::spooky_short;
 use sux::spooky::spooky_short_mix;
 use sux::spooky::SC_CONST;
-use dsi_progress_logger::ProgressLogger;
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks compact arrays", long_about = None)]
@@ -86,7 +86,7 @@ fn main() -> Result<()> {
             // We will be visiting only vertices of degree 1 anyway.
             deg_add[vertex].fetch_add(DEG | edge_index, Ordering::Relaxed);
         }
-});
+    });
 
     pl.done_with_count(num_edges);
 
@@ -121,7 +121,7 @@ fn main() -> Result<()> {
                             let t = deg_add[v].fetch_sub(DEG, Ordering::Relaxed);
                             let d = t >> DEG_SHIFT;
                             if d != 1 {
-                                //assert_eq!(d, 0, "v = {}", v);
+                                assert_eq!(d, 0, "v = {}", v);
 
                                 continue; // Skip no longer useful entries
                             }
@@ -129,7 +129,6 @@ fn main() -> Result<()> {
                             if peeled[edge_index].swap(true, Ordering::Relaxed) {
                                 continue;
                             }
-                            //deg_add[v].store(edge_index, Ordering::Relaxed);
 
                             stack[curr] = v;
                             curr += 1;
@@ -159,6 +158,10 @@ fn main() -> Result<()> {
                         stack.truncate(curr);
                     }
                 }
+                for &i in &stack {
+                    let d = deg_add[i].load(Ordering::Relaxed) >> DEG_SHIFT;
+                    assert_eq!(d, 0, "v = {}", i);
+                }
 
                 num_peeled.fetch_add(stack.len(), Ordering::Relaxed);
             });
@@ -168,15 +171,11 @@ fn main() -> Result<()> {
     pl.done_with_count(num_edges);
     assert_eq!(num_edges, num_peeled.load(Ordering::Relaxed));
 
-    /*    for i in 0..num_vertices {
-            assert_ne!(
-                deg_add[i].load(Ordering::Relaxed) >> DEG_SHIFT,
-                1,
-                "v = {}",
-                i
-            );
-        }
-    */
+    for i in 0..num_vertices {
+        let d = deg_add[i].load(Ordering::Relaxed) >> DEG_SHIFT;
+        assert!(d == 0 || d == 1023, "v = {}", i);
+    }
+
     /*     let mut values = CompactArray::new(2, num_vertices);
 
     while let Some(v) = stack.pop() {
