@@ -36,13 +36,21 @@ impl BitMap<Vec<AtomicU64>> {
 impl<B> BitMap<B> {
     /// # Safety
     /// TODO: this function is never used
-    #[inline]
+    #[inline(always)]
     pub unsafe fn from_raw_parts(data: B, len: usize, number_of_ones: usize) -> Self {
         Self {
             data,
             len,
             number_of_ones: AtomicUsize::new(number_of_ones),
         }
+    }
+    #[inline(always)]
+    pub fn into_raw_parts(self) -> (B, usize, usize) {
+        (
+            self.data,
+            self.len,
+            self.number_of_ones.load(Ordering::SeqCst),
+        )
     }
 }
 

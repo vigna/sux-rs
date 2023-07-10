@@ -84,6 +84,25 @@ pub struct EliasFano<H, L> {
     high_bits: H,
 }
 
+impl<H, L> EliasFano<H, L> {
+    /// # Safety
+    /// TODO: this function is never used
+    #[inline(always)]
+    pub unsafe fn from_raw_parts(u: u64, n: u64, l: u64, low_bits: L, high_bits: H) -> Self {
+        Self {
+            u,
+            n,
+            l,
+            low_bits,
+            high_bits,
+        }
+    }
+    #[inline(always)]
+    pub fn into_raw_parts(self) -> (u64, u64, u64, L, H) {
+        (self.u, self.n, self.l, self.low_bits, self.high_bits)
+    }
+}
+
 impl<H, L> BitLength for EliasFano<H, L> {
     #[inline(always)]
     fn len(&self) -> usize {
