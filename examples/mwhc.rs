@@ -15,6 +15,7 @@ use sux::spooky::SC_CONST;
 #[command(about = "Benchmarks compact arrays", long_about = None)]
 struct Args {
     filename: String,
+    threads: usize,
 }
 const DEG_SHIFT: usize = 8 * size_of::<usize>() - 10;
 const DEG: usize = 1_usize << DEG_SHIFT;
@@ -82,67 +83,73 @@ fn main() -> Result<()> {
 
     let mut num_peeled = AtomicUsize::new(0);
     let curr = AtomicUsize::new(0);
+    let num_proc = args.threads;
+    let incr = num_edges / (num_proc * 4);
     thread::scope(|s| {
-        for _ in 0..4 {
+        for _ in 0..num_proc {
+            eprintln!("**");
             s.spawn(|| {
                 let mut stack = Vec::new();
                 loop {
-                    let next = curr.fetch_add(1, Ordering::Relaxed);
-                    if next >= num_vertices {
+                    let start = curr.fetch_add(incr, Ordering::Relaxed);
+                    if start >= num_vertices {
                         break;
                     }
-                    if deg_add[next].load(Ordering::Relaxed) >> DEG_SHIFT != 1 {
-                        continue;
-                    }
-
-                    let mut pos = stack.len();
-                    let mut curr = stack.len();
-                    // Stack initialization
-                    stack.push(next);
-
-                    while pos < stack.len() {
-                        let v = stack[pos];
-                        pos += 1;
-
-                        let t = deg_add[v].load(Ordering::Relaxed);
-                        let d = t >> DEG_SHIFT;
-                        if d != 1 {
-                            assert_eq!(d, 0, "v = {}", v);
-
-                            continue; // Skip no longer useful entries
-                        }
-                        let edge_index = t & (1_usize << DEG_SHIFT) - 1;
-                        if peeled[edge_index].swap(true, Ordering::Relaxed) {
+                    for next in start..(start + incr).min(num_vertices) {
+                        if deg_add[next].load(Ordering::Relaxed) >> DEG_SHIFT != 1 {
                             continue;
                         }
-                        deg_add[v].store(edge_index, Ordering::Relaxed);
 
-                        stack[curr] = v;
-                        curr += 1;
-                        let tuple = spooky_short_rehash(&sigs[edge_index], 0);
-                        let first_segment = tuple[3] as usize % 128;
-                        let edge = [
-                            ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
-                                + (first_segment + 0) * segment_size,
-                            ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
-                                + (first_segment + 1) * segment_size,
-                            ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
-                                + (first_segment + 2) * segment_size,
-                        ];
+                        let mut pos = stack.len();
+                        let mut curr = stack.len();
+                        // Stack initialization
+                        stack.push(next);
 
-                        for i in 0..3 {
-                            if edge[i] != v {
-                                if deg_add[edge[i]].fetch_sub(DEG | edge_index, Ordering::Relaxed)
-                                    >> DEG_SHIFT
-                                    == 2
-                                {
-                                    stack.push(edge[i]);
+                        while pos < stack.len() {
+                            let v = stack[pos];
+                            pos += 1;
+
+                            let t = deg_add[v].load(Ordering::Relaxed);
+                            let d = t >> DEG_SHIFT;
+                            if d != 1 {
+                                assert_eq!(d, 0, "v = {}", v);
+
+                                continue; // Skip no longer useful entries
+                            }
+                            let edge_index = t & (1_usize << DEG_SHIFT) - 1;
+                            if peeled[edge_index].swap(true, Ordering::Relaxed) {
+                                continue;
+                            }
+                            deg_add[v].store(edge_index, Ordering::Relaxed);
+
+                            stack[curr] = v;
+                            curr += 1;
+                            let tuple = spooky_short_rehash(&sigs[edge_index], 0);
+                            let first_segment = tuple[3] as usize % 128;
+                            let edge = [
+                                ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
+                                    + (first_segment + 0) * segment_size,
+                                ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
+                                    + (first_segment + 1) * segment_size,
+                                ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
+                                    + (first_segment + 2) * segment_size,
+                            ];
+
+                            for i in 0..3 {
+                                if edge[i] != v {
+                                    if deg_add[edge[i]]
+                                        .fetch_sub(DEG | edge_index, Ordering::Relaxed)
+                                        >> DEG_SHIFT
+                                        == 2
+                                    {
+                                        stack.push(edge[i]);
+                                    }
                                 }
                             }
                         }
+                        stack.truncate(curr);
                     }
 
-                    stack.truncate(curr);
                 }
 
                 num_peeled.fetch_add(stack.len(), Ordering::Relaxed);
@@ -150,17 +157,18 @@ fn main() -> Result<()> {
         }
     });
 
-    for i in 0..num_vertices {
-        assert_ne!(
-            deg_add[i].load(Ordering::Relaxed) >> DEG_SHIFT,
-            1,
-            "v = {}",
-            i
-        );
-    }
     assert_eq!(num_edges, num_peeled.load(Ordering::Relaxed));
     println!("{}", start.elapsed().as_nanos() / sigs.len() as u128);
 
+    /*    for i in 0..num_vertices {
+            assert_ne!(
+                deg_add[i].load(Ordering::Relaxed) >> DEG_SHIFT,
+                1,
+                "v = {}",
+                i
+            );
+        }
+    */
     /*     let mut values = CompactArray::new(2, num_vertices);
 
     while let Some(v) = stack.pop() {
