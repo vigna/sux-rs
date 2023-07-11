@@ -88,11 +88,42 @@ impl<B: VSlice> VSlice for BitMap<B> {
     }
 }
 
-impl<B: VSliceAtomic> VSliceAtomic for BitMap<B> {
+impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for BitMap<B> {
     unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> u64 {
         let word_index = index / self.data.bit_width();
         let word = self.data.get_atomic_unchecked(word_index, order);
         (word >> (index % self.data.bit_width())) & 1
+    }
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: u64, order: Ordering) {
+        // get the word index, and the bit index in the word
+        let word_index = index / self.data.bit_width();
+        let bit_index = index % self.data.bit_width();
+        let mut word = self.data.get_atomic_unchecked(word_index, order);
+        let mut new_word;
+        loop {
+            // get the old word
+            // clean the old bit in the word
+            new_word = word & !(1 << bit_index);
+            // and write the new one
+            new_word |= value << bit_index;
+            // write it back
+            // idk if the ordering is reasonable here, the only reasonable is
+            // Release
+            match self
+                .data
+                .compare_exchange_unchecked(word_index, word, new_word, order, order)
+            {
+                Ok(_) => break,
+                Err(w) => word = w,
+            }
+        }
+        // update the count of ones if we added a one
+        // update the count of ones if we removed a one
+        let inc = (new_word > word) as isize - (new_word < word) as isize;
+        // use the isize as usize (which JUST re-interprets the bits)
+        // to do a single fetch_add and ensure consistency
+        self.number_of_ones
+            .fetch_add(inc as usize, Ordering::Relaxed);
     }
 }
 
@@ -121,40 +152,7 @@ impl<B: VSliceMut> VSliceMut for BitMap<B> {
     }
 }
 
-impl<B: VSliceMutAtomic> VSliceMutAtomic for BitMap<B> {
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: u64, order: Ordering) {
-        // get the word index, and the bit index in the word
-        let word_index = index / self.data.bit_width();
-        let bit_index = index % self.data.bit_width();
-        let (word, new_word) = loop {
-            // get the old word
-            let word = self
-                .data
-                .get_atomic_unchecked(word_index, Ordering::Acquire);
-            // clean the old bit in the word
-            let mut new_word = word & !(1 << bit_index);
-            // and write the new one
-            new_word |= value << bit_index;
-            // write it back
-            // idk if the ordering is reasonable here, the only reasonable is
-            // Release
-            if self
-                .data
-                .compare_exchange_unchecked(word_index, word, new_word, order, order)
-                .is_ok()
-            {
-                break (word, new_word);
-            }
-        };
-        // update the count of ones if we added a one
-        // update the count of ones if we removed a one
-        let inc = (new_word > word) as isize - (new_word < word) as isize;
-        // use the isize as usize (which JUST re-interprets the bits)
-        // to do a single fetch_add and ensure consistency
-        self.number_of_ones
-            .fetch_add(inc as usize, Ordering::Relaxed);
-    }
-
+impl<B: VSliceMutAtomicCmpExchange> VSliceMutAtomicCmpExchange for BitMap<B> {
     #[inline(always)]
     unsafe fn compare_exchange_unchecked(
         &self,

@@ -1,9 +1,12 @@
 use crate::traits::*;
 use anyhow::Result;
-use std::io::{Seek, Write};
+use std::{
+    io::{Seek, Write},
+    sync::atomic::{compiler_fence, fence, AtomicU64, Ordering},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CompactArray<B: VSlice> {
+pub struct CompactArray<B> {
     data: B,
     bit_width: usize,
     len: usize,
@@ -25,7 +28,23 @@ impl CompactArray<Vec<u64>> {
     }
 }
 
-impl<B: VSlice> CompactArray<B> {
+impl CompactArray<Vec<AtomicU64>> {
+    pub fn new_atomic(bit_width: usize, len: usize) -> Self {
+        #[cfg(not(any(feature = "testless_read", feature = "testless_write")))]
+        // we need at least two words to avoid branches in the gets
+        let n_of_words = (len * bit_width + 63) / 64;
+        #[cfg(any(feature = "testless_read", feature = "testless_write"))]
+        // we need at least two words to avoid branches in the gets
+        let n_of_words = (1 + (len * bit_width + 63) / 64).max(2);
+        Self {
+            data: (0..n_of_words).map(|_| AtomicU64::new(0)).collect(),
+            bit_width,
+            len,
+        }
+    }
+}
+
+impl<B> CompactArray<B> {
     /// # Safety
     /// TODO: this function is never used.
     #[inline(always)]
@@ -43,7 +62,7 @@ impl<B: VSlice> CompactArray<B> {
     }
 }
 
-impl<B: VSlice> VSliceCore for CompactArray<B> {
+impl<B: VSliceCore> VSliceCore for CompactArray<B> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= self.data.bit_width());
@@ -90,6 +109,103 @@ impl<B: VSlice> VSlice for CompactArray<B> {
                 self.data.get_unchecked(word_index) >> bit_index
                     | self.data.get_unchecked(word_index + 1) << (64 + l - bit_index) >> l
             }
+        }
+    }
+}
+
+impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
+    #[inline]
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> u64 {
+        debug_assert!(self.bit_width != 64);
+        if self.bit_width == 0 {
+            return 0;
+        }
+
+        let pos = index * self.bit_width;
+        let word_index = pos / 64;
+        let bit_index = pos % 64;
+
+        let l = 64 - self.bit_width;
+        // we always use the testless to reduce the probability of unconsistent reads
+        if bit_index <= l {
+            self.data.get_atomic_unchecked(word_index, order) << (l - bit_index) >> l
+        } else {
+            self.data.get_atomic_unchecked(word_index, order) >> bit_index
+                | self.data.get_atomic_unchecked(word_index + 1, order) << (64 + l - bit_index) >> l
+        }
+    }
+    #[inline]
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: u64, order: Ordering) {
+        debug_assert!(self.bit_width != 64);
+        if self.bit_width == 0 {
+            return;
+        }
+
+        let pos = index * self.bit_width;
+        let word_index = pos / 64;
+        let bit_index = pos % 64;
+
+        let mask: u64 = (1_u64 << self.bit_width) - 1;
+
+        let end_word_index = (pos + self.bit_width - 1) / 64;
+        if word_index == end_word_index {
+            // this is consistent
+            let mut current = self.data.get_atomic_unchecked(word_index, order);
+            loop {
+                let mut new = current;
+                new &= !(mask << bit_index);
+                new |= value << bit_index;
+
+                match self
+                    .data
+                    .compare_exchange(word_index, current, new, order, order)
+                {
+                    Ok(_) => break,
+                    Err(e) => current = e,
+                }
+            }
+        } else {
+            // try to wait for the other thread to finish
+            let mut word = self.data.get_atomic_unchecked(word_index, order);
+            fence(Ordering::Acquire);
+            loop {
+                let mut new = word;
+                new &= (1 << bit_index) - 1;
+                new |= value << bit_index;
+
+                match self
+                    .data
+                    .compare_exchange(word_index, word, new, order, order)
+                {
+                    Ok(_) => break,
+                    Err(e) => word = e,
+                }
+            }
+            fence(Ordering::Release);
+
+            // ensure that the compiler does not reorder the two atomic operations
+            // this should increase the probability of having consistency
+            // between two concurrent writes as they will both execute the set
+            // of the bits in the same order, and the release / acquire fence
+            // should try to syncronize the threads as much as possible
+            compiler_fence(Ordering::SeqCst);
+
+            let mut word = self.data.get_atomic_unchecked(end_word_index, order);
+            fence(Ordering::Acquire);
+            loop {
+                let mut new = word;
+                new &= !(mask >> (64 - bit_index));
+                new |= value >> (64 - bit_index);
+
+                match self
+                    .data
+                    .compare_exchange(end_word_index, word, new, order, order)
+                {
+                    Ok(_) => break,
+                    Err(e) => word = e,
+                }
+            }
+            fence(Ordering::Release);
         }
     }
 }
@@ -200,5 +316,77 @@ impl<B: VSlice + MemSize> MemSize for CompactArray<B> {
     }
     fn mem_used(&self) -> usize {
         self.len.mem_used() + self.bit_width.mem_used() + self.data.mem_used()
+    }
+}
+
+impl From<CompactArray<Vec<u64>>> for CompactArray<Vec<AtomicU64>> {
+    #[inline]
+    fn from(bm: CompactArray<Vec<u64>>) -> Self {
+        let data = unsafe { std::mem::transmute::<Vec<u64>, Vec<AtomicU64>>(bm.data) };
+        CompactArray {
+            data,
+            len: bm.len,
+            bit_width: bm.bit_width,
+        }
+    }
+}
+
+impl From<CompactArray<Vec<AtomicU64>>> for CompactArray<Vec<u64>> {
+    #[inline]
+    fn from(bm: CompactArray<Vec<AtomicU64>>) -> Self {
+        let data = unsafe { std::mem::transmute::<Vec<AtomicU64>, Vec<u64>>(bm.data) };
+        CompactArray {
+            data,
+            len: bm.len,
+            bit_width: bm.bit_width,
+        }
+    }
+}
+
+impl<'a> From<CompactArray<&'a [AtomicU64]>> for CompactArray<&'a [u64]> {
+    #[inline]
+    fn from(bm: CompactArray<&'a [AtomicU64]>) -> Self {
+        let data = unsafe { std::mem::transmute::<&'a [AtomicU64], &'a [u64]>(bm.data) };
+        CompactArray {
+            data,
+            len: bm.len,
+            bit_width: bm.bit_width,
+        }
+    }
+}
+
+impl<'a> From<CompactArray<&'a [u64]>> for CompactArray<&'a [AtomicU64]> {
+    #[inline]
+    fn from(bm: CompactArray<&'a [u64]>) -> Self {
+        let data = unsafe { std::mem::transmute::<&'a [u64], &'a [AtomicU64]>(bm.data) };
+        CompactArray {
+            data,
+            len: bm.len,
+            bit_width: bm.bit_width,
+        }
+    }
+}
+
+impl<'a> From<CompactArray<&'a mut [AtomicU64]>> for CompactArray<&'a mut [u64]> {
+    #[inline]
+    fn from(bm: CompactArray<&'a mut [AtomicU64]>) -> Self {
+        let data = unsafe { std::mem::transmute::<&'a mut [AtomicU64], &'a mut [u64]>(bm.data) };
+        CompactArray {
+            data,
+            len: bm.len,
+            bit_width: bm.bit_width,
+        }
+    }
+}
+
+impl<'a> From<CompactArray<&'a mut [u64]>> for CompactArray<&'a mut [AtomicU64]> {
+    #[inline]
+    fn from(bm: CompactArray<&'a mut [u64]>) -> Self {
+        let data = unsafe { std::mem::transmute::<&'a mut [u64], &'a mut [AtomicU64]>(bm.data) };
+        CompactArray {
+            data,
+            len: bm.len,
+            bit_width: bm.bit_width,
+        }
     }
 }
