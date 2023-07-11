@@ -126,7 +126,10 @@ impl<T: Remap> Function<T> {
             .collect::<Vec<_>>();
         pl.as_mut().map(|pl| pl.done());
 
-        let high_bits = 5;
+        let eps = 0.001;
+        let t = (sigs.len() as f64 * eps * eps / 2.0).ln();
+        let high_bits = ((t - t.ln()) / 2_f64.ln()).ceil() as usize;
+        dbg!(high_bits);
         let num_chunks = 1 << high_bits;
         let (counts, cumul) = count_sort(&mut sigs, num_chunks, |x| Self::chunk(&x.0, high_bits));
 
