@@ -1,3 +1,4 @@
+use core::sync::atomic::{AtomicU64, Ordering};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
@@ -31,6 +32,29 @@ fn test_compact_array() {
 
             for i in indices {
                 assert_eq!(cp.get(i), values[i]);
+            }
+        }
+        // convert to atomic
+        let cp: CompactArray<Vec<AtomicU64>> = cp.into();
+        for _ in 0..10 {
+            let values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
+
+            let mut indices = (0..n).collect::<Vec<_>>();
+            indices.shuffle(&mut rng);
+
+            for i in indices {
+                cp.set_atomic(i, values[i], Ordering::Relaxed);
+            }
+
+            for (i, value) in values.iter().enumerate() {
+                assert_eq!(cp.get_atomic(i, Ordering::Relaxed), *value);
+            }
+
+            let mut indices = (0..n).collect::<Vec<_>>();
+            indices.shuffle(&mut rng);
+
+            for i in indices {
+                assert_eq!(cp.get_atomic(i, Ordering::Relaxed), values[i]);
             }
         }
     }
