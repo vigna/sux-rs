@@ -97,7 +97,7 @@ impl<B: SelectHinted + SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> S
     }
 }
 
-/// Allow the sue of multiple indices, this might not be the best way to do it
+/// Allow the use of multiple indices, this might not be the best way to do it
 /// but it works
 impl<B: SelectHinted + SelectZero, O: VSlice, const QUANTUM_LOG2: usize> SelectHinted
     for SparseIndex<B, O, QUANTUM_LOG2>
