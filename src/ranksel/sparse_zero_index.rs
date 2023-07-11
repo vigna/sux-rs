@@ -96,6 +96,33 @@ impl<B: SelectZeroHinted + SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> S
     }
 }
 
+/// Allow the sue of multiple indices, this might not be the best way to do it
+/// but it works
+impl<B: SelectZeroHinted + SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectZeroHinted
+    for SparseZeroIndex<B, O, QUANTUM_LOG2>
+{
+    #[inline(always)]
+    unsafe fn select_zero_unchecked_hinted(
+        &self,
+        rank: usize,
+        pos: usize,
+        rank_at_pos: usize,
+    ) -> usize {
+        let index = rank >> QUANTUM_LOG2;
+        let this_pos = self.zeros.get_unchecked(index) as usize;
+        let this_rank_at_pos = index << QUANTUM_LOG2;
+
+        // choose the best hint, as in the one with rank_at_pos closest to rank
+        if rank_at_pos > this_rank_at_pos {
+            self.bits
+                .select_zero_unchecked_hinted(rank, pos, rank_at_pos)
+        } else {
+            self.bits
+                .select_zero_unchecked_hinted(rank, this_pos, this_rank_at_pos)
+        }
+    }
+}
+
 /// Forward the lengths
 impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> BitLength
     for SparseZeroIndex<B, O, QUANTUM_LOG2>
@@ -141,23 +168,6 @@ where
 {
     fn as_ref(&self) -> &[u64] {
         self.bits.as_ref()
-    }
-}
-
-impl<B, D, O, const QUANTUM_LOG2: usize> ConvertTo<SparseZeroIndex<B, O, QUANTUM_LOG2>>
-    for SparseZeroIndex<D, O, QUANTUM_LOG2>
-where
-    B: SelectZeroHinted + AsRef<[u64]>,
-    D: SelectZeroHinted + AsRef<[u64]> + ConvertTo<B>,
-    O: VSlice,
-{
-    #[inline(always)]
-    fn convert_to(self) -> Result<SparseZeroIndex<B, O, QUANTUM_LOG2>> {
-        Ok(SparseZeroIndex {
-            zeros: self.zeros,
-            bits: self.bits.convert_to()?,
-            _marker: core::marker::PhantomData,
-        })
     }
 }
 
