@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::ProgressLogger;
 use rayon::prelude::*;
-use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::mem::{self, size_of};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -127,13 +126,14 @@ impl<T: Remap> Function<T> {
             .collect::<Vec<_>>();
         pl.as_mut().map(|pl| pl.done());
 
-        let high_bits = 0;
+        let high_bits = 5;
         let num_chunks = 1 << high_bits;
         let (counts, cumul) = count_sort(&mut sigs, num_chunks, |x| Self::chunk(&x.0, high_bits));
 
         let segment_size =
             ((*counts.iter().max().unwrap() as f64 * 1.12).ceil() as usize + 129) / 130;
         let num_vertices = segment_size * 130;
+        eprintln!("Size {:.2}%", (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * 1.12));
 
         let mut values = Vec::new();
         values.resize_with(num_vertices * num_chunks, || AtomicU64::new(0));
@@ -220,10 +220,8 @@ impl<T: Remap> Function<T> {
                     pl.done_with_count(sigs.len());
 
                     pl.start("Assigning...");
-                    let mut t = HashSet::new();
                     let mut stacks = stacks.lock().unwrap();
                     while let Some(mut stack) = stacks.pop() {
-                        let mut s = HashSet::new();
                         while let Some(mut v) = stack.pop() {
                             let edge_index = edge_lists[v].edge_index();
                             let mut edge = Self::edge(&sigs[edge_index].0, segment_size);
@@ -232,8 +230,6 @@ impl<T: Remap> Function<T> {
                             edge.iter_mut().for_each(|v| {
                                 *v += chunk_offset;
                             });
-                            assert!(s.insert(v));
-                            assert!(t.insert(v));
                             let value = if v == edge[0] {
                                 values[edge[1]].load(Relaxed) ^ values[edge[2]].load(Relaxed)
                             } else if v == edge[1] {
