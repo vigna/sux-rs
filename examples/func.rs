@@ -33,38 +33,35 @@ impl<T: AsRef<[u8]>> Remap for T {
 
 #[derive(Debug, Default)]
 
-struct EdgeList(AtomicUsize);
+struct EdgeList(usize);
 impl EdgeList {
     const DEG_SHIFT: usize = 8 * size_of::<usize>() - 10;
     const EDGE_INDEX_MASK: usize = (1_usize << EdgeList::DEG_SHIFT) - 1;
     const DEG: usize = 1_usize << EdgeList::DEG_SHIFT;
 
     #[inline(always)]
-    fn add(&self, edge: usize) -> (usize, usize) {
-        let t = self.0.fetch_add(EdgeList::DEG | edge, Relaxed);
-        (t >> EdgeList::DEG_SHIFT, t & EdgeList::EDGE_INDEX_MASK)
+    fn add(&mut self, edge: usize) {
+        self.0 += EdgeList::DEG | edge;
     }
 
     #[inline(always)]
-    fn remove(&self, edge: usize) -> (usize, usize) {
-        let t = self.0.fetch_sub(EdgeList::DEG | edge, Relaxed);
-        (t >> EdgeList::DEG_SHIFT, t & EdgeList::EDGE_INDEX_MASK)
+    fn remove(&mut self, edge: usize) {
+        self.0 -= EdgeList::DEG | edge;
     }
 
     #[inline(always)]
     fn degree(&self) -> usize {
-        self.0.load(Relaxed) >> EdgeList::DEG_SHIFT
+        self.0 >> EdgeList::DEG_SHIFT
     }
 
     #[inline(always)]
     fn edge_index(&self) -> usize {
-        self.0.load(Relaxed) & EdgeList::EDGE_INDEX_MASK
+        self.0 & EdgeList::EDGE_INDEX_MASK
     }
 
     #[inline(always)]
-    fn dec(&self) -> (usize, usize) {
-        let t = self.0.fetch_sub(EdgeList::DEG, Relaxed);
-        (t >> EdgeList::DEG_SHIFT, t & EdgeList::EDGE_INDEX_MASK)
+    fn dec(&mut self) {
+        self.0 -= EdgeList::DEG;
     }
 }
 
@@ -157,7 +154,7 @@ impl<T: Remap> Function<T> {
                     let mut edge_lists = Vec::new();
                     edge_lists.resize_with(num_vertices, || EdgeList::default());
 
-                    sigs.par_iter().enumerate().for_each(|(edge_index, sig)| {
+                    sigs.iter().enumerate().for_each(|(edge_index, sig)| {
                         for &v in Self::edge(&sig.0, segment_size).iter() {
                             edge_lists[v].add(edge_index);
                         }
@@ -173,60 +170,52 @@ impl<T: Remap> Function<T> {
                     pl.start("Peeling...");
                     let stacks = Mutex::new(vec![]);
 
-                    thread::scope(|s| {
-                        for _ in 0..threads {
-                            s.spawn(|| {
-                                let mut stack = Vec::new();
-                                loop {
-                                    let start = next.fetch_add(incr, Ordering::Relaxed);
-                                    if start >= num_vertices {
-                                        break;
-                                    }
-                                    for v in start..(start + incr).min(num_vertices) {
-                                        if edge_lists[v].degree() != 1 {
-                                            continue;
+                    let mut stack = Vec::new();
+                    loop {
+                        let start = next.fetch_add(incr, Ordering::Relaxed);
+                        if start >= num_vertices {
+                            break;
+                        }
+                        for v in start..(start + incr).min(num_vertices) {
+                            if edge_lists[v].degree() != 1 {
+                                continue;
+                            }
+                            let mut pos = stack.len();
+                            let mut curr = stack.len();
+                            stack.push(v);
+
+                            while pos < stack.len() {
+                                let v = stack[pos];
+                                pos += 1;
+
+                                edge_lists[v].dec();
+                                if edge_lists[v].degree() != 0 {
+                                    debug_assert_eq!(edge_lists[v].degree(), 0, "v = {}", v);
+                                    continue; // Skip no longer useful entries
+                                }
+                                let edge_index = edge_lists[v].edge_index();
+                                if peeled[edge_index].swap(true, Ordering::Relaxed) {
+                                    // Someone already peeled this edge
+                                    continue;
+                                }
+
+                                stack[curr] = v;
+                                curr += 1;
+                                // Degree is necessarily 0
+                                for &x in Self::edge(&sigs[edge_index].0, segment_size).iter() {
+                                    if x != v {
+                                        edge_lists[x].remove(edge_index);
+                                        if edge_lists[x].degree() == 1 {
+                                            stack.push(x);
                                         }
-                                        let mut pos = stack.len();
-                                        let mut curr = stack.len();
-                                        stack.push(v);
-
-                                        while pos < stack.len() {
-                                            let v = stack[pos];
-                                            pos += 1;
-
-                                            let (d, edge_index) = edge_lists[v].dec();
-                                            if d != 1 {
-                                                debug_assert_eq!(d, 0, "v = {}", v);
-                                                continue; // Skip no longer useful entries
-                                            }
-                                            if peeled[edge_index].swap(true, Ordering::Relaxed) {
-                                                // Someone already peeled this edge
-                                                continue;
-                                            }
-
-                                            stack[curr] = v;
-                                            curr += 1;
-                                            // Degree is necessarily 0
-                                            for &x in
-                                                Self::edge(&sigs[edge_index].0, segment_size).iter()
-                                            {
-                                                if x != v {
-                                                    if let (2, _) = edge_lists[x].remove(edge_index)
-                                                    {
-                                                        // Vertex transitioned to degree 1, so we put it on the stack
-                                                        stack.push(x);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        stack.truncate(curr);
                                     }
                                 }
-                                num_peeled.fetch_add(stack.len(), Relaxed);
-                                stacks.lock().unwrap().push(stack);
-                            });
+                            }
+                            stack.truncate(curr);
                         }
-                    });
+                    }
+                    num_peeled.fetch_add(stack.len(), Relaxed);
+                    stacks.lock().unwrap().push(stack);
 
                     pl.done_with_count(sigs.len());
 
