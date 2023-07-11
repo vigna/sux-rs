@@ -1,10 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::ProgressLogger;
-use rayon::prelude::*;
 use std::io::{BufRead, BufReader};
 use std::mem::{self, size_of};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::thread;
 use sux::spooky::spooky_short;
@@ -16,7 +15,6 @@ use Ordering::Relaxed;
 #[command(about = "Functions", long_about = None)]
 struct Args {
     filename: String,
-    threads: usize,
 }
 
 pub trait Remap {
@@ -67,7 +65,7 @@ impl EdgeList {
 pub struct Function<T: Remap> {
     seed: u64,
     num_keys: usize,
-    high_bits: usize,
+    chunk_mask: u64,
     segment_size: usize,
     values: Box<[u64]>,
     _phantom: std::marker::PhantomData<T>,
@@ -76,28 +74,27 @@ pub struct Function<T: Remap> {
 impl<T: Remap> Function<T> {
     #[inline(always)]
     #[must_use]
-    fn chunk(sig: &[u64; 2], high_bits: usize) -> usize {
-        (sig[0] >> 63 - high_bits >> 1) as usize
+    fn chunk(sig: &[u64; 2], bit_mask: u64) -> usize {
+        (sig[0] & bit_mask) as usize
     }
 
     #[inline(always)]
     #[must_use]
     fn edge(sig: &[u64; 2], segment_size: usize) -> [usize; 3] {
-        let tuple = spooky_short_rehash(sig, 0);
-        let first_segment = tuple[3] as usize % 128;
+        let first_segment = (sig[0] >> 32 - 7 & 0x7F) as usize;
         [
-            ((tuple[0] as u128) * (segment_size as u128) >> 64) as usize
+            ((sig[0] >> 32) * segment_size as u64 >> 32) as usize
                 + (first_segment + 0) * segment_size,
-            ((tuple[1] as u128) * (segment_size as u128) >> 64) as usize
+            ((sig[1] & 0xFFFFFFFF) * segment_size as u64 >> 32) as usize
                 + (first_segment + 1) * segment_size,
-            ((tuple[2] as u128) * (segment_size as u128) >> 64) as usize
+            ((sig[1] >> 32) * segment_size as u64 >> 32) as usize
                 + (first_segment + 2) * segment_size,
         ]
     }
 
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> u64 {
         let edge = Self::edge(&sig, self.segment_size);
-        let chunk = Self::chunk(sig, self.high_bits);
+        let chunk = Self::chunk(sig, self.chunk_mask);
         let chunk_offset = chunk * self.segment_size * 130;
         self.values[edge[0] + chunk_offset]
             ^ self.values[edge[1] + chunk_offset]
@@ -117,7 +114,6 @@ impl<T: Remap> Function<T> {
         keys: I,
         values: &mut V,
         bit_width: usize,
-        threads: usize,
         pl: &mut Option<&mut ProgressLogger>,
     ) -> Function<T> {
         pl.as_mut().map(|pl| pl.start("Reading input..."));
@@ -128,15 +124,19 @@ impl<T: Remap> Function<T> {
 
         let eps = 0.001;
         let t = (sigs.len() as f64 * eps * eps / 2.0).ln();
-        let high_bits = ((t - t.ln()) / 2_f64.ln()).ceil() as usize;
-        dbg!(high_bits);
-        let num_chunks = 1 << high_bits;
-        let (counts, cumul) = count_sort(&mut sigs, num_chunks, |x| Self::chunk(&x.0, high_bits));
+        let low_bits = ((t - t.ln()) / 2_f64.ln()).ceil() as usize;
+        dbg!(low_bits);
+        let num_chunks = 1 << low_bits;
+        let chunk_mask = (1 << low_bits) - 1;
+        let (counts, cumul) = count_sort(&mut sigs, num_chunks, |x| Self::chunk(&x.0, chunk_mask));
 
         let segment_size =
             ((*counts.iter().max().unwrap() as f64 * 1.12).ceil() as usize + 129) / 130;
         let num_vertices = segment_size * 130;
-        eprintln!("Size {:.2}%", (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * 1.12));
+        eprintln!(
+            "Size {:.2}%",
+            (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * 1.12)
+        );
 
         let mut values = Vec::new();
         values.resize_with(num_vertices * num_chunks, || AtomicU64::new(0));
@@ -163,9 +163,6 @@ impl<T: Remap> Function<T> {
                         }
                     });
                     pl.done_with_count(sigs.len());
-
-                    let mut peeled = Vec::new();
-                    peeled.resize_with(sigs.len(), || AtomicBool::new(false));
 
                     let next = AtomicUsize::new(0);
                     let incr = 1024;
@@ -197,10 +194,6 @@ impl<T: Remap> Function<T> {
                                     continue; // Skip no longer useful entries
                                 }
                                 let edge_index = edge_lists[v].edge_index();
-                                if peeled[edge_index].swap(true, Ordering::Relaxed) {
-                                    // Someone already peeled this edge
-                                    continue;
-                                }
 
                                 stack[curr] = v;
                                 curr += 1;
@@ -263,7 +256,7 @@ impl<T: Remap> Function<T> {
         Function {
             seed: 0,
             num_keys: sigs.len(),
-            high_bits,
+            chunk_mask,
             segment_size,
             values: unsafe {
                 std::mem::transmute::<Vec<AtomicU64>, Vec<u64>>(values).into_boxed_slice()
@@ -342,7 +335,6 @@ fn main() -> Result<()> {
         BufReader::new(file).lines().map(|line| line.unwrap()),
         &mut (0..).into_iter(),
         64,
-        args.threads,
         &mut Some(&mut pl),
     );
 
