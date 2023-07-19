@@ -138,3 +138,46 @@ impl VSliceMut for Vec<u64> {
         *<[u64]>::get_unchecked_mut(self, index) = value;
     }
 }
+
+impl VSlice for mmap_rs::Mmap {
+    #[inline(always)]
+    fn bit_width(&self) -> usize {
+        64
+    }
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.as_ref().len() / 8
+    }
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+        debug_assert!(index < self.len(), "{} {}", index, self.len());
+        let ptr = (self.as_ptr() as *const u64).add(index);
+        std::ptr::read(ptr)
+    }
+}
+
+impl VSlice for mmap_rs::MmapMut {
+    #[inline(always)]
+    fn bit_width(&self) -> usize {
+        64
+    }
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.as_ref().len() / 8
+    }
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+        debug_assert!(index < self.len(), "{} {}", index, self.len());
+        let ptr = (self.as_ptr() as *const u64).add(index);
+        std::ptr::read(ptr)
+    }
+}
+
+impl VSliceMut for mmap_rs::MmapMut {
+    #[inline(always)]
+    unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
+        debug_assert!(index < self.len(), "{} {}", index, self.len());
+        let ptr = (self.as_ptr() as *mut u64).add(index);
+        std::ptr::write(ptr, value);
+    }
+}
