@@ -126,7 +126,7 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
         let bit_index = pos % 64;
 
         let l = 64 - self.bit_width;
-        // we always use the testless to reduce the probability of unconsistent reads
+        // we always use the tested to reduce the probability of unconsistent reads
         if bit_index <= l {
             self.data.get_atomic_unchecked(word_index, order) << (l - bit_index) >> l
         } else {
