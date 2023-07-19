@@ -28,15 +28,6 @@ impl CompactArray<Vec<u64>> {
     }
 }
 
-<<<<<<< HEAD
-impl AsRef<[u64]> for CompactArray<Vec<u64>> {
-    fn as_ref(&self) -> &[u64] {
-        &self.data
-    }
-}
-
-impl<B: VSlice> CompactArray<B> {
-=======
 impl CompactArray<Vec<AtomicU64>> {
     pub fn new_atomic(bit_width: usize, len: usize) -> Self {
         #[cfg(not(any(feature = "testless_read", feature = "testless_write")))]
@@ -54,7 +45,6 @@ impl CompactArray<Vec<AtomicU64>> {
 }
 
 impl<B> CompactArray<B> {
->>>>>>> main
     /// # Safety
     /// TODO: this function is never used.
     #[inline(always)]
