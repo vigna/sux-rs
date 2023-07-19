@@ -19,7 +19,7 @@ pub struct Stats {
     pub sum_str_len: usize,
 
     /// The bytes wasted writing without compression the first string in block
-    pub redoundancy: isize,
+    pub redundancy: isize,
 }
 
 #[derive(Debug)]
@@ -124,12 +124,12 @@ where
             // save a pointer to the start of the string
             self.pointers.push(self.data.len().as_());
 
-            // compute the redoundancy
+            // compute the redundancy
             if Self::COMPUTE_REDUNDANCY {
                 let lcp = longest_common_prefix(&self.last_str, string.as_bytes());
                 let rear_length = self.last_str.len() - lcp;
-                self.stats.redoundancy += lcp as isize;
-                self.stats.redoundancy -= encode_int_len(rear_length) as isize;
+                self.stats.redundancy += lcp as isize;
+                self.stats.redundancy -= encode_int_len(rear_length) as isize;
             }
 
             // just encode the whole string
@@ -288,16 +288,16 @@ where
         println!("ptrs_bytes:  {:>15}", ptr_size);
 
         if Self::COMPUTE_REDUNDANCY {
-            println!("redundancy: {:>15}", self.stats.redoundancy);
+            println!("redundancy: {:>15}", self.stats.redundancy);
 
-            let overhead = self.stats.redoundancy + ptr_size as isize;
+            let overhead = self.stats.redundancy + ptr_size as isize;
             println!(
                 "overhead_ratio: {}",
                 overhead as f64 / (overhead + self.data.len() as isize) as f64
             );
             println!(
                 "no_overhead_compression_ratio: {:.3}",
-                (self.data.len() as isize - self.stats.redoundancy) as f64
+                (self.data.len() as isize - self.stats.redundancy) as f64
                     / self.stats.sum_str_len as f64
             );
         }
