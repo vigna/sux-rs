@@ -136,7 +136,6 @@ where
                 self.stats.redundancy += lcp as isize;
                 self.stats.redundancy -= encode_int_len(rear_length) as isize;
             }
-            self.stats.suffixes_bytes += self.data.len();
 
             // just encode the whole string
             string.as_bytes()
@@ -153,7 +152,6 @@ where
             encode_int(rear_length, &mut self.data);
             // update stats
             self.stats.code_bytes += self.data.len() - prev_len;
-            self.stats.suffixes_bytes += rear_length;
             // return the delta suffix
             &string.as_bytes()[lcp..]
         };
@@ -161,6 +159,7 @@ where
         self.data.extend_from_slice(to_encode);
         // push the \0 terminator
         self.data.push(0);
+        self.stats.suffixes_bytes += to_encode.len() + 1;
 
         // put the string as last_str for the next iteration
         self.last_str.clear();
@@ -317,16 +316,15 @@ where
         human("codes_bytes", self.stats.code_bytes);
         human("suffixes_bytes", self.stats.suffixes_bytes);
         human("ptrs_bytes", ptr_size);
-        human("total_size", total_size);
         human("uncompressed_size", self.stats.sum_str_len);
+        human("total_size", total_size);
 
         if Self::COMPUTE_REDUNDANCY {
-            human("redundancy", self.stats.redundancy as usize);
-
             human(
                 "optimal_size",
                 (self.data.len() as isize - self.stats.redundancy) as usize,
             );
+            human("redundancy", self.stats.redundancy as usize);
             let overhead = self.stats.redundancy + ptr_size as isize;
             println!(
                 "overhead_ratio: {:>10}",
