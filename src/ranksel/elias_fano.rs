@@ -1,5 +1,6 @@
 use crate::{bitmap::BitMap, compact_array::CompactArray, traits::*};
 use anyhow::{bail, Result};
+use core::sync::atomic::{AtomicU64, Ordering};
 use std::io::{Seek, Write};
 
 pub struct EliasFanoBuilder {
@@ -25,7 +26,7 @@ impl EliasFanoBuilder {
             n,
             l,
             low_bits: CompactArray::new(l as usize, n as usize),
-            high_bits: BitMap::new(n as usize + (u as usize >> l) + 1),
+            high_bits: BitMap::new(n as usize + (u as usize >> l) + 1, false),
             last_value: 0,
             count: 0,
         }
@@ -70,6 +71,58 @@ impl EliasFanoBuilder {
     }
 }
 
+pub struct EliasFanoAtomicBuilder {
+    u: u64,
+    n: u64,
+    l: u64,
+    low_bits: CompactArray<Vec<AtomicU64>>,
+    high_bits: BitMap<Vec<AtomicU64>>,
+}
+
+impl EliasFanoAtomicBuilder {
+    pub fn new(u: u64, n: u64) -> Self {
+        let l = if u >= n {
+            (u as f64 / n as f64).log2().floor() as u64
+        } else {
+            0
+        };
+
+        Self {
+            u,
+            n,
+            l,
+            low_bits: CompactArray::new_atomic(l as usize, n as usize),
+            high_bits: BitMap::new_atomic(n as usize + (u as usize >> l) + 1, false),
+        }
+    }
+
+    pub fn mem_upperbound(u: u64, n: u64) -> u64 {
+        2 * n + (n * (u as f64 / n as f64).log2().ceil() as u64)
+    }
+
+    /// Concurrently set values
+    ///
+    /// # Safety
+    /// The values and indices have to be right and the values should be monotone
+    pub unsafe fn set(&self, index: usize, value: u64, order: Ordering) {
+        let low = value & ((1 << self.l) - 1);
+        self.low_bits.set_atomic_unchecked(index, low, order);
+
+        let high = (value >> self.l) + index as u64;
+        self.high_bits.set_atomic_unchecked(high as usize, 1, order);
+    }
+
+    pub fn build(self) -> EliasFano<BitMap<Vec<u64>>, CompactArray<Vec<u64>>> {
+        EliasFano {
+            u: self.u,
+            n: self.n,
+            l: self.l,
+            low_bits: self.low_bits.into(),
+            high_bits: self.high_bits.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EliasFano<H, L> {
     /// upperbound of the values
@@ -82,6 +135,25 @@ pub struct EliasFano<H, L> {
     low_bits: L,
 
     high_bits: H,
+}
+
+impl<H, L> EliasFano<H, L> {
+    /// # Safety
+    /// TODO: this function is never used
+    #[inline(always)]
+    pub unsafe fn from_raw_parts(u: u64, n: u64, l: u64, low_bits: L, high_bits: H) -> Self {
+        Self {
+            u,
+            n,
+            l,
+            low_bits,
+            high_bits,
+        }
+    }
+    #[inline(always)]
+    pub fn into_raw_parts(self) -> (u64, u64, u64, L, H) {
+        (self.u, self.n, self.l, self.low_bits, self.high_bits)
+    }
 }
 
 impl<H, L> BitLength for EliasFano<H, L> {

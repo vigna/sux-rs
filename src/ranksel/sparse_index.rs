@@ -10,6 +10,23 @@ pub struct SparseIndex<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize = 6
     _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,
 }
 
+impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> SparseIndex<B, O, QUANTUM_LOG2> {
+    /// # Safety
+    /// TODO: this function is never used
+    #[inline(always)]
+    pub unsafe fn from_raw_parts(bits: B, ones: O) -> Self {
+        Self {
+            bits,
+            ones,
+            _marker: core::marker::PhantomData,
+        }
+    }
+    #[inline(always)]
+    pub fn into_raw_parts(self) -> (B, O) {
+        (self.bits, self.ones)
+    }
+}
+
 impl<B: SelectHinted + AsRef<[u64]>, O: VSliceMut, const QUANTUM_LOG2: usize>
     SparseIndex<B, O, QUANTUM_LOG2>
 {
@@ -80,6 +97,27 @@ impl<B: SelectHinted + SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> S
     }
 }
 
+/// Allow the use of multiple indices, this might not be the best way to do it
+/// but it works
+impl<B: SelectHinted + SelectZero, O: VSlice, const QUANTUM_LOG2: usize> SelectHinted
+    for SparseIndex<B, O, QUANTUM_LOG2>
+{
+    #[inline(always)]
+    unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
+        let index = rank >> QUANTUM_LOG2;
+        let this_pos = self.ones.get_unchecked(index) as usize;
+        let this_rank_at_pos = index << QUANTUM_LOG2;
+
+        // choose the best hint, as in the one with rank_at_pos closest to rank
+        if rank_at_pos > this_rank_at_pos {
+            self.bits.select_unchecked_hinted(rank, pos, rank_at_pos)
+        } else {
+            self.bits
+                .select_unchecked_hinted(rank, this_pos, this_rank_at_pos)
+        }
+    }
+}
+
 /// Forward the lengths
 impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> BitLength
     for SparseIndex<B, O, QUANTUM_LOG2>
@@ -111,7 +149,7 @@ impl<B: SelectHinted + AsRef<[u64]>, const QUANTUM_LOG2: usize>
         let mut res = SparseIndex {
             ones: vec![0; (self.count() + (1 << QUANTUM_LOG2) - 1) >> QUANTUM_LOG2],
             bits: self,
-            _marker: core::marker::PhantomData::default(),
+            _marker: core::marker::PhantomData,
         };
         res.build_ones()?;
         Ok(res)
@@ -125,23 +163,6 @@ where
 {
     fn as_ref(&self) -> &[u64] {
         self.bits.as_ref()
-    }
-}
-
-impl<B, D, O, const QUANTUM_LOG2: usize> ConvertTo<SparseIndex<B, O, QUANTUM_LOG2>>
-    for SparseIndex<D, O, QUANTUM_LOG2>
-where
-    B: SelectHinted + AsRef<[u64]>,
-    D: SelectHinted + AsRef<[u64]> + ConvertTo<B>,
-    O: VSlice,
-{
-    #[inline(always)]
-    fn convert_to(self) -> Result<SparseIndex<B, O, QUANTUM_LOG2>> {
-        Ok(SparseIndex {
-            ones: self.ones,
-            bits: self.bits.convert_to()?,
-            _marker: core::marker::PhantomData::default(),
-        })
     }
 }
 
