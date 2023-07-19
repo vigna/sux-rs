@@ -29,7 +29,7 @@ fn test_rear_coded_array() {
 
     assert!(!rca.contains(""));
 
-    for (i, word) in words.iter().enumerate() {
+    for word in words.iter() {
         assert!(rca.contains(word));
         let mut word = word.clone();
         word.push_str("IT'S HIGHLY IMPROBABLE THAT THIS STRING IS IN THE WORDLIST");
