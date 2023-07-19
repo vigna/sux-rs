@@ -1,5 +1,9 @@
 use clap::Parser;
 use dsi_progress_logger::ProgressLogger;
+use rand::rngs::SmallRng;
+use rand::Rng;
+use rand::SeedableRng;
+use std::hint::black_box;
 use std::io::prelude::*;
 use sux::prelude::*;
 
@@ -12,6 +16,10 @@ struct Args {
     #[arg(short, long, default_value = "4")]
     /// Fully write every string with index multiple of k.
     k: usize,
+
+    #[arg(short, long, default_value = "10000")]
+    /// How many iterations of random access speed test
+    accesses: usize,
 }
 
 pub fn main() {
@@ -40,4 +48,17 @@ pub fn main() {
     pl.done();
 
     rca.print_stats();
+
+    let mut rand = SmallRng::seed_from_u64(0);
+
+    let start = std::time::Instant::now();
+    for _ in 0..args.accesses {
+        let i = rand.gen::<usize>() % rca.len();
+        let _ = black_box(rca.get(i));
+    }
+    let elapsed = start.elapsed();
+    println!(
+        "avg_rnd_access_speed: {} ns/access",
+        elapsed.as_nanos() as f64 / args.accesses as f64
+    );
 }
