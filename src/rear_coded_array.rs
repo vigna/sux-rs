@@ -18,6 +18,11 @@ pub struct Stats {
     /// the total sum of the strings length in bytes
     pub sum_str_len: usize,
 
+    /// The number of bytes used to store the rear lengths in data
+    pub code_bytes: usize,
+    /// The number of bytes used to store the suffixes in data
+    pub suffixes_bytes: usize,
+
     /// The bytes wasted writing without compression the first string in block
     pub redundancy: isize,
 }
@@ -131,6 +136,7 @@ where
                 self.stats.redundancy += lcp as isize;
                 self.stats.redundancy -= encode_int_len(rear_length) as isize;
             }
+            self.stats.suffixes_bytes += self.data.len();
 
             // just encode the whole string
             string.as_bytes()
@@ -143,7 +149,11 @@ where
             self.stats.sum_lcp += lcp;
             // encode the len of the bytes in data
             let rear_length = self.last_str.len() - lcp;
+            let prev_len = self.data.len();
             encode_int(rear_length, &mut self.data);
+            // update stats
+            self.stats.code_bytes += self.data.len() - prev_len;
+            self.stats.suffixes_bytes += rear_length;
             // return the delta suffix
             &string.as_bytes()[lcp..]
         };
@@ -284,12 +294,33 @@ where
         );
 
         let ptr_size: usize = self.pointers.len() * core::mem::size_of::<Ptr>();
-        println!("data_bytes:  {:>15}", self.data.len());
-        println!("ptrs_bytes:  {:>15}", ptr_size);
+
+        fn human(key: &str, x: usize) {
+            const UOM: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+            let mut y = x as f64;
+            let mut uom_idx = 0;
+            while y > 1000.0 {
+                uom_idx += 1;
+                y /= 1000.0;
+            }
+            println!("{:>20}:{:>10.3}{}{:>20} ", key, y, UOM[uom_idx], x);
+        }
+
+        let total_size = ptr_size + self.data.len() + core::mem::size_of::<Self>();
+        human("data_bytes", self.data.len());
+        human("codes_bytes", self.stats.code_bytes);
+        human("suffixes_bytes", self.stats.suffixes_bytes);
+        human("ptrs_bytes", ptr_size);
+        human("total_size", total_size);
+        human("uncompressed_size", self.stats.sum_str_len);
 
         if Self::COMPUTE_REDUNDANCY {
-            println!("redundancy: {:>15}", self.stats.redundancy);
+            human("redundancy", self.stats.redundancy as usize);
 
+            human(
+                "optimal_size",
+                (self.data.len() as isize - self.stats.redundancy) as usize,
+            );
             let overhead = self.stats.redundancy + ptr_size as isize;
             println!(
                 "overhead_ratio: {}",
