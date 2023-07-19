@@ -61,7 +61,7 @@ fn strcpy<'a>(mut data: &'a [u8], result: &mut Vec<u8>) -> &'a [u8] {
 /// strcmp but string is a rust string and data is a \0 terminated string
 fn strcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
     for (i, c) in string.iter().enumerate() {
-        match data[i].cmp(&c) {
+        match data[i].cmp(c) {
             core::cmp::Ordering::Equal => {}
             ord => return ord,
         }
@@ -74,7 +74,7 @@ fn strcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
 /// strcmp but both string are rust strings
 fn strcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
     for (i, c) in string.iter().enumerate() {
-        match other.get(i).unwrap_or(&0).cmp(&c) {
+        match other.get(i).unwrap_or(&0).cmp(c) {
             core::cmp::Ordering::Equal => {}
             ord => return ord,
         }
@@ -133,7 +133,7 @@ where
             }
 
             // just encode the whole string
-            &string.as_bytes()
+            string.as_bytes()
         } else {
             // just write the difference between the last string and the current one
             // encode only the delta
@@ -323,7 +323,7 @@ where
 
     #[inline(always)]
     fn len(&self) -> usize {
-        self.len as usize
+        self.len
     }
 }
 
@@ -364,9 +364,9 @@ where
         if self.index % self.rca.k == 0 {
             // just copy the data
             self.buffer.clear();
-            self.data = strcpy(&self.data, &mut self.buffer);
+            self.data = strcpy(self.data, &mut self.buffer);
         } else {
-            let (len, tmp) = decode_int(&self.data);
+            let (len, tmp) = decode_int(self.data);
             self.buffer.resize(self.buffer.len() - len, 0);
             self.data = strcpy(tmp, &mut self.buffer);
         }
@@ -455,10 +455,10 @@ fn decode_int(data: &[u8]) -> (usize, &[u8]) {
     // TODO: optimize base computation with
     // pdep((1 << len) - 1, 0x4081020408102040)
     let mut shift = 8 - len;
-    for i in 1..len {
-        base = base << 7;
+    for value in &data[1..len] {
+        base <<= 7;
         base += 1 << 7;
-        res |= (data[i] as usize) << shift;
+        res |= (*value as usize) << shift;
         shift += 8;
     }
     (res + base, &data[len..])

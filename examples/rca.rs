@@ -1,6 +1,5 @@
 use clap::Parser;
 use dsi_progress_logger::ProgressLogger;
-use std::hint::black_box;
 use std::io::prelude::*;
 use sux::prelude::*;
 
