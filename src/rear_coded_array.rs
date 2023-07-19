@@ -288,7 +288,7 @@ where
         println!("ptrs_bytes:  {:>15}", ptr_size);
 
         if Self::COMPUTE_REDUNDANCY {
-            println!("redoundancy: {:>15}", self.stats.redoundancy);
+            println!("redundancy: {:>15}", self.stats.redoundancy);
 
             let overhead = self.stats.redoundancy + ptr_size as isize;
             println!(
