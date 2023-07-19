@@ -275,21 +275,27 @@ where
     }
 
     pub fn print_stats(&self) {
-        println!("max_block_bytes: {}", self.stats.max_block_bytes);
         println!(
-            "avg_block_bytes: {:.3}",
+            "{:>20}: {:>10}",
+            "max_block_bytes", self.stats.max_block_bytes
+        );
+        println!(
+            "{:>20}: {:>10.3}",
+            "avg_block_bytes",
             self.stats.sum_block_bytes as f64 / self.len() as f64
         );
 
-        println!("max_lcp: {}", self.stats.max_lcp);
+        println!("{:>20}: {:>10}", "max_lcp", self.stats.max_lcp);
         println!(
-            "avg_lcp: {:.3}",
+            "{:>20}: {:>10.3}",
+            "avg_lcp",
             self.stats.sum_lcp as f64 / self.len() as f64
         );
 
-        println!("max_str_len: {}", self.stats.max_str_len);
+        println!("{:>20}: {:>10}", "max_str_len", self.stats.max_str_len);
         println!(
-            "avg_str_len: {:.3}",
+            "{:>20}: {:>10.3}",
+            "avg_str_len",
             self.stats.sum_str_len as f64 / self.len() as f64
         );
 
@@ -323,7 +329,7 @@ where
             );
             let overhead = self.stats.redundancy + ptr_size as isize;
             println!(
-                "overhead_ratio: {}",
+                "overhead_ratio: {:>10}",
                 overhead as f64 / (overhead + self.data.len() as isize) as f64
             );
             println!(
