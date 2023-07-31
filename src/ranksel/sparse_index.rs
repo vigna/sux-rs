@@ -1,6 +1,6 @@
 use crate::traits::*;
-use crate::utils::select_in_word;
 use anyhow::Result;
+use common_traits::SelectInWord;
 use std::io::{Seek, Write};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -39,7 +39,7 @@ impl<B: SelectHinted + AsRef<[u64]>, O: VSliceMut, const QUANTUM_LOG2: usize>
             let ones_in_word = word.count_ones() as u64;
             // skip the word if we can
             while number_of_ones + ones_in_word > next_quantum {
-                let in_word_index = select_in_word(word, (next_quantum - number_of_ones) as usize);
+                let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
                 let index = (i * 64) as u64 + in_word_index as u64;
                 self.ones.set(ones_index, index);
                 next_quantum += 1 << QUANTUM_LOG2;

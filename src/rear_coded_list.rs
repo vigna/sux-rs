@@ -2,6 +2,7 @@ use crate::traits::IndexedDict;
 use num_traits::AsPrimitive;
 
 #[derive(Debug, Clone, Default)]
+/// Statistics of the encoded data
 pub struct Stats {
     /// Maximum block size in bytes
     pub max_block_bytes: usize,
@@ -28,7 +29,19 @@ pub struct Stats {
 }
 
 #[derive(Debug)]
-pub struct RearCodedArray<Ptr: AsPrimitive<usize> = usize>
+/// Rear coded list, it takes a list of strings and encode them in a way that
+/// the common prefix between strings is encoded only once.
+///
+/// The encoding is done in blocks of k strings, the first string is encoded
+/// without compression, the other strings are encoded with the common prefix
+/// removed.
+///
+/// The encoding is done in a way that the encoded strings are \0 terminated
+/// and the pointers to the start of the strings are stored in a separate
+/// structure `Ptr`. This structure could be either arrays, possibly memory-mapped,
+/// of different sized of ptrs, or Elias-Fano, or any other structure that can
+/// store monotone increasing integers.
+pub struct RearCodedList<Ptr: AsPrimitive<usize> = usize>
 where
     usize: AsPrimitive<Ptr>,
 {
@@ -88,12 +101,19 @@ fn strcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
     other.len().cmp(&string.len())
 }
 
-impl<Ptr: AsPrimitive<usize>> RearCodedArray<Ptr>
+impl<Ptr: AsPrimitive<usize>> RearCodedList<Ptr>
 where
     usize: AsPrimitive<Ptr>,
 {
+    /// If true, compute the redundancy of the encoding, this is useful to
+    /// understand how much the encoding is compressing the data.
+    /// But slows down the construction as we need to compute the LCP even on
+    /// strings that are not compressed.
     const COMPUTE_REDUNDANCY: bool = true;
 
+    /// Create a new empty RearCodedList where the block size is `k`.
+    /// This means that the first string every `k` is encoded without compression,
+    /// the other strings are encoded with the common prefix removed.
     pub fn new(k: usize) -> Self {
         Self {
             data: Vec::with_capacity(1 << 20),
@@ -105,6 +125,7 @@ where
         }
     }
 
+    /// Re-allocate the data to remove wasted capacity in the structure
     pub fn shrink_to_fit(&mut self) {
         self.data.shrink_to_fit();
         self.pointers.shrink_to_fit();
@@ -112,6 +133,7 @@ where
     }
 
     #[inline]
+    /// Append a string to the end of the list
     pub fn push<S: AsRef<str>>(&mut self, string: S) {
         let string = string.as_ref();
         // update stats
@@ -168,13 +190,16 @@ where
     }
 
     #[inline]
+    /// Append all the strings from an iterator to the end of the list
     pub fn extend<S: AsRef<str>, I: Iterator<Item = S>>(&mut self, iter: I) {
         for string in iter {
             self.push(string);
         }
     }
 
-    /// Write the index-th string to `result` as bytes
+    /// Write the index-th string to `result` as bytes. This is done to avoid
+    /// allocating a new string for every query and skipping the utf-8 validity
+    /// check.
     #[inline(always)]
     pub fn get_inplace(&self, index: usize, result: &mut Vec<u8>) {
         result.clear();
@@ -273,6 +298,7 @@ where
         res
     }
 
+    /// Print in an human readable format the statistics of the RCL
     pub fn print_stats(&self) {
         println!(
             "{:>20}: {:>10}",
@@ -344,7 +370,7 @@ where
     }
 }
 
-impl<Ptr: AsPrimitive<usize>> IndexedDict for RearCodedArray<Ptr>
+impl<Ptr: AsPrimitive<usize>> IndexedDict for RearCodedList<Ptr>
 where
     usize: AsPrimitive<Ptr>,
 {
@@ -362,11 +388,12 @@ where
     }
 }
 
+/// Sequential iterator over the strings
 pub struct RCAIter<'a, Ptr: AsPrimitive<usize>>
 where
     usize: AsPrimitive<Ptr>,
 {
-    rca: &'a RearCodedArray<Ptr>,
+    rca: &'a RearCodedList<Ptr>,
     buffer: Vec<u8>,
     data: &'a [u8],
     index: usize,
@@ -376,7 +403,7 @@ impl<'a, Ptr: AsPrimitive<usize>> RCAIter<'a, Ptr>
 where
     usize: AsPrimitive<Ptr>,
 {
-    pub fn new(rca: &'a RearCodedArray<Ptr>) -> Self {
+    pub fn new(rca: &'a RearCodedList<Ptr>) -> Self {
         Self {
             rca,
             buffer: Vec::with_capacity(rca.stats.max_str_len),
@@ -421,6 +448,7 @@ where
 }
 
 #[inline(always)]
+/// Compute the longest common prefix between two strings as bytes
 fn longest_common_prefix(a: &[u8], b: &[u8]) -> usize {
     // ofc the lcp is at most the len of the minimum string
     let min_len = a.len().min(b.len());

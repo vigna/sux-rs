@@ -10,7 +10,7 @@ fn test_rear_coded_array() {
         .collect::<Vec<_>>();
 
     // create a new rca with u16 as pointers (this limit data to u16::MAX bytes max size)
-    let mut rca = <RearCodedArray<u16>>::new(8);
+    let mut rca = <RearCodedList<u16>>::new(8);
     rca.extend(words.iter());
 
     rca.print_stats();
