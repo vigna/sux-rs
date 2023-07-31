@@ -31,7 +31,7 @@ pub fn main() {
 
     let args = Args::parse();
 
-    let mut rca = <RearCodedArray<usize>>::new(args.k);
+    let mut rca = <RearCodedList<usize>>::new(args.k);
     let mut pl = ProgressLogger::default().display_memory();
     pl.item_name = "line";
 
