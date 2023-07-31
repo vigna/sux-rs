@@ -3,7 +3,7 @@ use std::io::BufReader;
 use sux::prelude::*;
 
 #[test]
-fn test_rear_coded_array() {
+fn test_rear_coded_list() {
     let words = BufReader::new(std::fs::File::open("tests/data/wordlist.10000").unwrap())
         .lines()
         .map(|line| line.unwrap())
