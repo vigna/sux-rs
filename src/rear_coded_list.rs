@@ -635,8 +635,7 @@ fn decode_int(data: &[u8]) -> (usize, &[u8]) {
         return (x, &data[7..]);
     }
     if x < 0xFF {
-        let x = (((x & !0xFF) as usize) << 56
-            | (data[1] as usize) << 48
+        let x = ((data[1] as usize) << 48
             | (data[2] as usize) << 40
             | (data[3] as usize) << 32
             | (data[4] as usize) << 24
