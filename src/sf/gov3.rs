@@ -13,6 +13,11 @@ use std::path::Path;
 ///
 /// Static function structure that reads Java-generated, dumped structures.
 ///
+/// To generate the structure, you can use the Java version as:
+/// ```bash
+/// java -Xmx500G $JVMOPTS it.unimi.dsi.sux4j.mph.GOV3Function 7B.64-gov 7B.out -b
+/// ```
+///
 /// To obtain a file that can be read by this structure, load
 /// the Java instance of the static function and write it to a file
 /// using the `dump` method.
