@@ -6,7 +6,6 @@ use std::io::BufReader;
 
 #[test]
 fn test_gov_mph() -> Result<()> {
-    // Read the offsets
     let m = sux::mph::gov::GOVMPH::load("tests/data/test.cmph")?;
     let reader = BufReader::new(File::open("tests/data/mph.txt")?);
     let mut s = HashSet::new();
@@ -22,7 +21,6 @@ fn test_gov_mph() -> Result<()> {
 
 #[test]
 fn test_gov3_sf() -> Result<()> {
-    // Read the offsets
     let m = sux::sf::gov3::GOV3::load("tests/data/test.csf")?;
     let reader = BufReader::new(File::open("tests/data/mph.txt")?);
     for (idx, line) in reader.lines().enumerate() {
