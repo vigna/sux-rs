@@ -31,6 +31,11 @@ impl<W: Word, B: AsRef<[u8]>> WordArray<W, B> {
     pub fn len(&self) -> usize {
         self.data.as_ref().len() / W::BYTES
     }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.data.as_ref().is_empty()
+    }
 }
 
 impl<W: Word, B: AsRef<[u8]> + AsMut<[u8]>> WordArray<W, B> {
