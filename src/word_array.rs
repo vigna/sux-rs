@@ -21,6 +21,10 @@ impl<W: Word, B: AsRef<[u8]>> WordArray<W, B> {
             unsafe { self.get_unchecked(index) }
         }
     }
+
+    /// # Safety
+    ///
+    /// `index` must be between 0 (included) and `len()` (excluded)
     #[inline(always)]
     pub unsafe fn get_unchecked(&self, index: usize) -> W {
         debug_assert!(index < self.len());
@@ -47,6 +51,10 @@ impl<W: Word, B: AsRef<[u8]> + AsMut<[u8]>> WordArray<W, B> {
             unsafe { self.set_unchecked(index, value) }
         }
     }
+
+    /// # Safety
+    ///
+    /// `index` must be between 0 (included) and `len()` (excluded)
     #[inline(always)]
     pub unsafe fn set_unchecked(&mut self, index: usize, value: W) {
         debug_assert!(index < self.len());
