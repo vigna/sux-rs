@@ -162,7 +162,9 @@ impl<H, L> BitLength for EliasFano<H, L> {
     fn len(&self) -> usize {
         self.u as usize
     }
+}
 
+impl<H, L> BitCount for EliasFano<H, L> {
     #[inline(always)]
     fn count(&self) -> usize {
         self.n as usize

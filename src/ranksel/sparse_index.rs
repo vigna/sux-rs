@@ -127,6 +127,11 @@ impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> BitLength
     fn len(&self) -> usize {
         self.bits.len()
     }
+}
+
+impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> BitCount
+    for SparseIndex<B, O, QUANTUM_LOG2>
+{
     #[inline(always)]
     fn count(&self) -> usize {
         self.bits.count()
