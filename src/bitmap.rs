@@ -1,11 +1,11 @@
 use crate::traits::*;
-use crate::utils::select_in_word;
 use anyhow::Result;
+use common_traits::SelectInWord;
 use epserde::*;
 use std::io::{Seek, Write};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
-#[derive(Epserde, Debug)]
+#[derive(Debug)]
 pub struct BitMap<B> {
     data: B,
     len: usize,
@@ -217,7 +217,7 @@ impl<B: VSlice> SelectHinted for BitMap<B> {
             residual -= bit_count;
         }
 
-        word_index * self.data.bit_width() + select_in_word(word, residual)
+        word_index * self.data.bit_width() + word.select_in_word(residual)
     }
 }
 
@@ -250,7 +250,7 @@ impl<B: VSlice> SelectZeroHinted for BitMap<B> {
             residual -= bit_count;
         }
 
-        word_index * self.data.bit_width() + select_in_word(word, residual)
+        word_index * self.data.bit_width() + word.select_in_word(residual)
     }
 }
 

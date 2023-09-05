@@ -1,10 +1,10 @@
 use crate::traits::*;
-use crate::utils::select_in_word;
 use anyhow::Result;
+use common_traits::SelectInWord;
 use epserde::*;
 use std::io::{Seek, Write};
 
-#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SparseZeroIndex<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {
     bits: B,
     zeros: O,
@@ -42,7 +42,7 @@ impl<B: SelectZeroHinted + AsRef<[u64]>, O: VSliceMut, const QUANTUM_LOG2: usize
             let ones_in_word = word.count_ones() as u64;
             // skip the word if we can
             while number_of_ones + ones_in_word > next_quantum {
-                let in_word_index = select_in_word(word, (next_quantum - number_of_ones) as usize);
+                let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
                 let index = (i * 64) as u64 + in_word_index as u64;
                 if index >= self.len() as _ {
                     return Ok(());

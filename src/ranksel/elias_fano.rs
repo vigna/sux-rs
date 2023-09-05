@@ -124,7 +124,7 @@ impl EliasFanoAtomicBuilder {
     }
 }
 
-#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EliasFano<H, L> {
     /// upperbound of the values
     u: u64,
