@@ -26,7 +26,7 @@ pub fn sequential_search() {}
 pub fn parallel_search() {}
 
 #[allow(dead_code)] // PTHash is a work in progress
-fn search<HT, H, B>(taken: &mut B, hashes: &[HT]) -> u64
+fn search<HT, H, B>(taken: &B, hashes: &[HT]) -> u64
 where
     // hash type
     HT: Word + To<usize> + FastRange,
