@@ -1,9 +1,10 @@
 use crate::traits::*;
 use crate::utils::select_in_word;
 use anyhow::Result;
+use epserde::*;
 use std::io::{Seek, Write};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SparseZeroIndex<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {
     bits: B,
     zeros: O,
@@ -168,39 +169,6 @@ where
 {
     fn as_ref(&self) -> &[u64] {
         self.bits.as_ref()
-    }
-}
-
-impl<B: SelectZeroHinted + Serialize, O: VSlice + Serialize, const QUANTUM_LOG2: usize> Serialize
-    for SparseZeroIndex<B, O, QUANTUM_LOG2>
-{
-    fn serialize<F: Write + Seek>(&self, backend: &mut F) -> Result<usize> {
-        let mut bytes = 0;
-        bytes += self.bits.serialize(backend)?;
-        bytes += self.zeros.serialize(backend)?;
-        Ok(bytes)
-    }
-}
-
-impl<
-        'a,
-        B: SelectZeroHinted + Deserialize<'a>,
-        O: VSlice + Deserialize<'a>,
-        const QUANTUM_LOG2: usize,
-    > Deserialize<'a> for SparseZeroIndex<B, O, QUANTUM_LOG2>
-{
-    fn deserialize(backend: &'a [u8]) -> Result<(Self, &'a [u8])> {
-        let (bits, backend) = B::deserialize(backend)?;
-        let (zeros, backend) = O::deserialize(backend)?;
-
-        Ok((
-            Self {
-                bits,
-                zeros,
-                _marker: Default::default(),
-            },
-            backend,
-        ))
     }
 }
 

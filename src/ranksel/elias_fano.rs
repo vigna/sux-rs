@@ -1,6 +1,7 @@
 use crate::{bitmap::BitMap, compact_array::CompactArray, traits::*};
 use anyhow::{bail, Result};
 use core::sync::atomic::{AtomicU64, Ordering};
+use epserde::*;
 use std::io::{Seek, Write};
 
 pub struct EliasFanoBuilder {
@@ -123,7 +124,7 @@ impl EliasFanoAtomicBuilder {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EliasFano<H, L> {
     /// upperbound of the values
     u: u64,
@@ -204,39 +205,6 @@ impl<H: Select, L: VSlice> IndexedDict for EliasFano<H, L> {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> u64 {
         self.select_unchecked(index) as u64
-    }
-}
-
-impl<H: Serialize, L: Serialize> Serialize for EliasFano<H, L> {
-    fn serialize<F: Write + Seek>(&self, backend: &mut F) -> Result<usize> {
-        let mut bytes = 0;
-        bytes += self.u.serialize(backend)?;
-        bytes += self.n.serialize(backend)?;
-        bytes += self.l.serialize(backend)?;
-        bytes += self.low_bits.serialize(backend)?;
-        bytes += self.high_bits.serialize(backend)?;
-        Ok(bytes)
-    }
-}
-
-impl<'a, H: Deserialize<'a>, L: Deserialize<'a>> Deserialize<'a> for EliasFano<H, L> {
-    fn deserialize(backend: &'a [u8]) -> Result<(Self, &'a [u8])> {
-        let (u, backend) = u64::deserialize(backend)?;
-        let (n, backend) = u64::deserialize(backend)?;
-        let (l, backend) = u64::deserialize(backend)?;
-        let (low_bits, backend) = L::deserialize(backend)?;
-        let (high_bits, backend) = H::deserialize(backend)?;
-
-        Ok((
-            Self {
-                u,
-                n,
-                l,
-                high_bits,
-                low_bits,
-            },
-            backend,
-        ))
     }
 }
 

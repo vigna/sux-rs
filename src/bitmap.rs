@@ -1,10 +1,11 @@
 use crate::traits::*;
 use crate::utils::select_in_word;
 use anyhow::Result;
+use epserde::*;
 use std::io::{Seek, Write};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
-#[derive(Debug)]
+#[derive(Epserde, Debug)]
 pub struct BitMap<B> {
     data: B,
     len: usize,
@@ -274,36 +275,6 @@ impl<B: AsRef<[u64]>> AsRef<[u64]> for BitMap<B> {
 impl<B: AsRef<[AtomicU64]>> AsRef<[AtomicU64]> for BitMap<B> {
     fn as_ref(&self) -> &[AtomicU64] {
         self.data.as_ref()
-    }
-}
-
-impl<B: AsRef<[u64]> + Serialize> Serialize for BitMap<B> {
-    fn serialize<F: Write + Seek>(&self, backend: &mut F) -> Result<usize> {
-        let mut bytes = 0;
-        bytes += self.len.serialize(backend)?;
-        bytes += self
-            .number_of_ones
-            .load(Ordering::SeqCst)
-            .serialize(backend)?;
-        bytes += self.data.serialize(backend)?;
-        Ok(bytes)
-    }
-}
-
-impl<'a, B: AsRef<[u64]> + Deserialize<'a>> Deserialize<'a> for BitMap<B> {
-    fn deserialize(backend: &'a [u8]) -> Result<(Self, &'a [u8])> {
-        let (len, backend) = usize::deserialize(backend)?;
-        let (number_of_ones, backend) = usize::deserialize(backend)?;
-        let (data, backend) = B::deserialize(backend)?;
-
-        Ok((
-            Self {
-                len,
-                number_of_ones: AtomicUsize::new(number_of_ones),
-                data,
-            },
-            backend,
-        ))
     }
 }
 
