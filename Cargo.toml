@@ -20,6 +20,8 @@ num_cpus = "1.16.0"
 rayon = "1.7.0"
 stable_deref_trait = "1.2.0"
 yoke = "0.7.1"
+epserde = {git = "https://github.com/vigna/epserde-rs"}
+
 
 [dev-dependencies]
 stderrlog = "0.5.4"
