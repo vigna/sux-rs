@@ -62,6 +62,9 @@ impl<B> BitLength for BitMap<B> {
     fn len(&self) -> usize {
         self.len
     }
+}
+
+impl<B> BitCount for BitMap<B> {
     #[inline(always)]
     fn count(&self) -> usize {
         self.number_of_ones.load(Ordering::SeqCst)

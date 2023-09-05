@@ -1,7 +1,5 @@
 //! # Traits
 //! This modules contains basic traits related to succinct data structures.
-//! The train `Length` provides information about the length of the
-//! underlying bit vector, independently of its implementation.
 //!
 //! Traits are collected into a module so you can do `use sux::traits::*;`
 //! for ease of use.
@@ -20,7 +18,8 @@ pub use indexed_dict::*;
 
 use anyhow::Result;
 
-/// Like Into but we need to avoid the orphan rule and error [E0210](https://github.com/rust-lang/rust/blob/master/compiler/rustc_error_codes/src/error_codes/E0210.md)
+/// Like [`Into`], but we need to avoid the orphan rule and error
+/// [E0210](https://github.com/rust-lang/rust/blob/master/compiler/rustc_error_codes/src/error_codes/E0210.md)
 ///
 /// Reference: https://rust-lang.github.io/chalk/book/clauses/coherence.html
 pub trait ConvertTo<B> {
@@ -34,17 +33,18 @@ impl ConvertTo<Vec<u64>> for Vec<u64> {
     }
 }
 
-/// A trait specifying abstractly the length of the bit vector underlying
-/// a succint data structure.
+/// A trait for succinct data structures that expose the
+/// length of the underlying bit vector.
 pub trait BitLength {
     /// Return the length in bits of the underlying bit vector.
     fn len(&self) -> usize;
+}
+
+/// A trait for succinct data structures that expose the
+/// numer of ones of the underlying bit vector.
+pub trait BitCount {
     /// Return the number of ones in the underlying bit vector.
     fn count(&self) -> usize;
-    /// Return if there are any ones
-    fn is_empty(&self) -> bool {
-        self.count() == 0
-    }
 }
 
 /// Rank over a bit vector.
@@ -70,7 +70,7 @@ pub trait Rank: BitLength {
 }
 
 /// Rank zeros over a bit vector.
-pub trait RankZero: Rank + BitLength {
+pub trait RankZero: Rank {
     /// Return the number of zeros preceding the specified position.
     ///
     /// # Arguments
@@ -93,7 +93,7 @@ pub trait RankZero: Rank + BitLength {
 }
 
 /// Select over a bit vector.
-pub trait Select: BitLength {
+pub trait Select: BitCount {
     /// Return the position of the one of given rank.
     ///
     /// # Arguments
@@ -120,7 +120,7 @@ pub trait Select: BitLength {
 }
 
 /// Select zeros over a bit vector.
-pub trait SelectZero: BitLength {
+pub trait SelectZero: BitLength + BitCount {
     /// Return the position of the zero of given rank.
     ///
     /// # Arguments
