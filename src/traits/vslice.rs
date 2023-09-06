@@ -27,6 +27,18 @@ pub trait VSliceCore {
     }
 }
 
+macro_rules! panic_out_of_bounds {
+    ($index: expr, $len: expr) => {
+        panic!("Index out of bounds: {} >= {}", $index, $len)
+    };
+}
+
+macro_rules! panic_value {
+    ($value: expr, $bit_width: expr) => {
+        panic!("Value {} does not fit in {} bits", $value, $bit_width);
+    };
+}
+
 pub trait VSlice: VSliceCore {
     /// Return the value at the specified index.
     ///
@@ -40,7 +52,7 @@ pub trait VSlice: VSliceCore {
     /// May panic if the index is not in in [0..[len](`VSlice::len`))
     fn get(&self, index: usize) -> u64 {
         if index >= self.len() {
-            panic!("Index out of bounds: {} >= {}", index, self.len());
+            panic_out_of_bounds!(index, self.len());
         } else {
             unsafe { self.get_unchecked(index) }
         }
@@ -62,16 +74,12 @@ pub trait VSliceMut: VSlice {
     /// or the value does not fit in [`VSlice::bit_width`] bits.
     fn set(&mut self, index: usize, value: u64) {
         if index >= self.len() {
-            panic!(
-                "Index out of bounds {} on a vector of len {}",
-                index,
-                self.len()
-            )
+            panic_out_of_bounds!(index, self.len());
         }
         let bw = self.bit_width();
         let mask = u64::MAX.wrapping_shr(64 - bw as u32) & !((bw as i64 - 1) >> 63) as u64;
         if value & mask != value {
-            panic!("Value {} does not fit in {} bits", value, bw)
+            panic_value!(value, bw);
         }
         unsafe {
             self.set_unchecked(index, value);
@@ -92,7 +100,7 @@ pub trait VSliceAtomic: VSliceCore {
     /// May panic if the index is not in in [0..[len](`VSlice::len`))
     fn get_atomic(&self, index: usize, order: Ordering) -> u64 {
         if index >= self.len() {
-            panic!("Index out of bounds: {} >= {}", index, self.len());
+            panic_out_of_bounds!(index, self.len());
         } else {
             unsafe { self.get_atomic_unchecked(index, order) }
         }
@@ -117,16 +125,12 @@ pub trait VSliceAtomic: VSliceCore {
     /// or the value does not fit in [`VSlice::bit_width`] bits.
     fn set_atomic(&self, index: usize, value: u64, order: Ordering) {
         if index >= self.len() {
-            panic!(
-                "Index out of bounds {} on a vector of len {}",
-                index,
-                self.len()
-            )
+            panic_out_of_bounds!(index, self.len());
         }
         let bw = self.bit_width();
         let mask = u64::MAX.wrapping_shr(64 - bw as u32) & !((bw as i64 - 1) >> 63) as u64;
         if value & mask != value {
-            panic!("Value {} does not fit in {} bits", value, bw)
+            panic_value!(value, bw);
         }
         unsafe {
             self.set_atomic_unchecked(index, value, order);
@@ -148,11 +152,7 @@ pub trait VSliceMutAtomicCmpExchange: VSliceAtomic {
         failure: Ordering,
     ) -> Result<u64, u64> {
         if index >= self.len() {
-            panic!(
-                "Index out of bounds {} on a vector of len {}",
-                index,
-                self.len()
-            )
+            panic_out_of_bounds!(index, self.len());
         }
         let bw = self.bit_width();
         let mask = u64::MAX.wrapping_shr(64 - bw as u32) & !((bw as i64 - 1) >> 63) as u64;
