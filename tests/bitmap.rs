@@ -12,7 +12,7 @@ fn test_bitmap() {
 
     let mut rng = SmallRng::seed_from_u64(0);
 
-    let mut bm = BitMap::new(u, false);
+    let mut bm = BitMap::new(u);
 
     for _ in 0..10 {
         let mut values = (0..u).collect::<Vec<_>>();

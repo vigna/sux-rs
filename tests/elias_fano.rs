@@ -19,7 +19,7 @@ fn test_elias_fano() -> Result<()> {
             efb.push(*value)?;
         }
         // Finish the creation of elias-fano
-        let ef = efb.build();
+        let ef: EliasFano<CountingBitmap<Vec<u64>, usize>, CompactArray<Vec<u64>>> = efb.build();
         println!("{:?}", ef);
         // do a slow select
         for (i, v) in values.iter().enumerate() {
@@ -27,8 +27,10 @@ fn test_elias_fano() -> Result<()> {
             assert_eq!(ef.get(i) as u64, *v);
         }
         // Add the ones indices
-        let ef: EliasFano<SparseIndex<BitMap<Vec<u64>>, Vec<u64>, 8>, CompactArray<Vec<u64>>> =
-            ef.convert_to().unwrap();
+        let ef: EliasFano<
+            SparseIndex<CountingBitmap<Vec<u64>, usize>, Vec<u64>, 8>,
+            CompactArray<Vec<u64>>,
+        > = ef.convert_to().unwrap();
         // do a fast select
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.select(i).unwrap() as u64, *v);
@@ -38,7 +40,7 @@ fn test_elias_fano() -> Result<()> {
 
         // Add the indices
         let ef: EliasFano<
-            SparseZeroIndex<SparseIndex<BitMap<Vec<u64>>, Vec<u64>, 8>, Vec<u64>, 8>,
+            SparseZeroIndex<SparseIndex<CountingBitmap<Vec<u64>, usize>, Vec<u64>, 8>, Vec<u64>, 8>,
             CompactArray<Vec<u64>>,
         > = ef.convert_to().unwrap();
         // do a fast select

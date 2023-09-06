@@ -1,10 +1,7 @@
 use crate::traits::*;
 use anyhow::Result;
 use epserde::*;
-use std::{
-    io::{Seek, Write},
-    sync::atomic::{compiler_fence, fence, AtomicU64, Ordering},
-};
+use std::sync::atomic::{compiler_fence, fence, AtomicU64, Ordering};
 
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CompactArray<B> {
