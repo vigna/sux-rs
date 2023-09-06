@@ -5,6 +5,8 @@
 //! for ease of use.
 
 pub mod serdes;
+use std::sync::atomic::{AtomicU64, AtomicUsize};
+
 pub use serdes::*;
 
 mod memory;
@@ -26,10 +28,59 @@ pub trait ConvertTo<B> {
     fn convert_to(self) -> Result<B>;
 }
 
+impl ConvertTo<usize> for usize {
+    #[inline(always)]
+    fn convert_to(self) -> Result<Self> {
+        Ok(self)
+    }
+}
+impl ConvertTo<AtomicUsize> for AtomicUsize {
+    #[inline(always)]
+    fn convert_to(self) -> Result<Self> {
+        Ok(self)
+    }
+}
 impl ConvertTo<Vec<u64>> for Vec<u64> {
     #[inline(always)]
     fn convert_to(self) -> Result<Self> {
         Ok(self)
+    }
+}
+
+impl ConvertTo<Vec<u64>> for Vec<AtomicU64> {
+    #[inline(always)]
+    fn convert_to(self) -> Result<Vec<u64>> {
+        Ok(unsafe { std::mem::transmute::<Vec<AtomicU64>, Vec<u64>>(self) })
+    }
+}
+impl ConvertTo<Vec<AtomicU64>> for Vec<u64> {
+    #[inline(always)]
+    fn convert_to(self) -> Result<Vec<AtomicU64>> {
+        Ok(unsafe { std::mem::transmute::<Vec<u64>, Vec<AtomicU64>>(self) })
+    }
+}
+impl<'a> ConvertTo<&'a [AtomicU64]> for &'a [u64] {
+    #[inline(always)]
+    fn convert_to(self) -> Result<&'a [AtomicU64]> {
+        Ok(unsafe { std::mem::transmute::<&'a [u64], &'a [AtomicU64]>(self) })
+    }
+}
+impl<'a> ConvertTo<&'a [u64]> for &'a [AtomicU64] {
+    #[inline(always)]
+    fn convert_to(self) -> Result<&'a [u64]> {
+        Ok(unsafe { std::mem::transmute::<&'a [AtomicU64], &'a [u64]>(self) })
+    }
+}
+impl<'a> ConvertTo<&'a mut [AtomicU64]> for &'a mut [u64] {
+    #[inline(always)]
+    fn convert_to(self) -> Result<&'a mut [AtomicU64]> {
+        Ok(unsafe { std::mem::transmute::<&'a mut [u64], &'a mut [AtomicU64]>(self) })
+    }
+}
+impl<'a> ConvertTo<&'a mut [u64]> for &'a mut [AtomicU64] {
+    #[inline(always)]
+    fn convert_to(self) -> Result<&'a mut [u64]> {
+        Ok(unsafe { std::mem::transmute::<&'a mut [AtomicU64], &'a mut [u64]>(self) })
     }
 }
 
@@ -146,7 +197,7 @@ pub trait SelectZero: BitLength + BitCount {
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize;
 }
 
-pub trait SelectHinted: Select + BitLength {
+pub trait SelectHinted: Select {
     /// # Safety
     /// `rank` must be between zero (included) and the number of ones in the
     /// underlying bit vector (excluded). `pos` must be between 0 (included) and
@@ -157,7 +208,7 @@ pub trait SelectHinted: Select + BitLength {
     unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize;
 }
 
-pub trait SelectZeroHinted: SelectZero + BitLength {
+pub trait SelectZeroHinted: SelectZero {
     /// # Safety
     /// `rank` must be between zero (included) and the number of zeros in the
     /// underlying bit vector (excluded). `pos` must be between 0 (included) and

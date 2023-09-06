@@ -2,7 +2,6 @@ use crate::traits::*;
 use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
-use std::io::{Seek, Write};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SparseIndex<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {
@@ -120,7 +119,7 @@ impl<B: SelectHinted + SelectZero, O: VSlice, const QUANTUM_LOG2: usize> SelectH
 }
 
 /// Forward the lengths
-impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> BitLength
+impl<B: SelectHinted + BitLength, O: VSlice, const QUANTUM_LOG2: usize> BitLength
     for SparseIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
@@ -169,16 +168,5 @@ where
 {
     fn as_ref(&self) -> &[u64] {
         self.bits.as_ref()
-    }
-}
-
-impl<B: SelectHinted + MemSize, O: VSlice + MemSize, const QUANTUM_LOG2: usize> MemSize
-    for SparseIndex<B, O, QUANTUM_LOG2>
-{
-    fn mem_size(&self) -> usize {
-        self.bits.mem_size() + self.ones.mem_size()
-    }
-    fn mem_used(&self) -> usize {
-        self.bits.mem_used() + self.ones.mem_used()
     }
 }

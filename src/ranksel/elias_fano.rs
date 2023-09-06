@@ -1,9 +1,13 @@
-use crate::{bitmap::BitMap, compact_array::CompactArray, traits::*};
+use crate::{bitmap::BitMap, compact_array::CompactArray, prelude::CountingBitmap, traits::*};
 use anyhow::{bail, Result};
 use core::sync::atomic::{AtomicU64, Ordering};
 use epserde::*;
-use std::io::{Seek, Write};
 
+/// The default combination of parameters for Elias-Fano which is returned
+/// by the builders
+pub type DefaultEliasFano = EliasFano<CountingBitmap<Vec<u64>, usize>, CompactArray<Vec<u64>>>;
+
+/// A sequential builder for elias-fano
 pub struct EliasFanoBuilder {
     u: u64,
     n: u64,
@@ -27,7 +31,7 @@ impl EliasFanoBuilder {
             n,
             l,
             low_bits: CompactArray::new(l as usize, n as usize),
-            high_bits: BitMap::new(n as usize + (u as usize >> l) + 1, false),
+            high_bits: BitMap::new(n as usize + (u as usize >> l) + 1),
             last_value: 0,
             count: 0,
         }
@@ -61,17 +65,18 @@ impl EliasFanoBuilder {
         self.last_value = value;
     }
 
-    pub fn build(self) -> EliasFano<BitMap<Vec<u64>>, CompactArray<Vec<u64>>> {
+    pub fn build(self) -> DefaultEliasFano {
         EliasFano {
             u: self.u,
             n: self.n,
             l: self.l,
             low_bits: self.low_bits,
-            high_bits: self.high_bits,
+            high_bits: self.high_bits.with_count(self.n as _).into(),
         }
     }
 }
 
+/// A concurrent builder for elias-fano
 pub struct EliasFanoAtomicBuilder {
     u: u64,
     n: u64,
@@ -93,7 +98,7 @@ impl EliasFanoAtomicBuilder {
             n,
             l,
             low_bits: CompactArray::new_atomic(l as usize, n as usize),
-            high_bits: BitMap::new_atomic(n as usize + (u as usize >> l) + 1, false),
+            high_bits: BitMap::new_atomic(n as usize + (u as usize >> l) + 1),
         }
     }
 
@@ -113,13 +118,13 @@ impl EliasFanoAtomicBuilder {
         self.high_bits.set_atomic_unchecked(high as usize, 1, order);
     }
 
-    pub fn build(self) -> EliasFano<BitMap<Vec<u64>>, CompactArray<Vec<u64>>> {
+    pub fn build(self) -> DefaultEliasFano {
         EliasFano {
             u: self.u,
             n: self.n,
             l: self.l,
             low_bits: self.low_bits.into(),
-            high_bits: self.high_bits.into(),
+            high_bits: self.high_bits.with_count(self.n as _).into(),
         }
     }
 }
@@ -134,7 +139,7 @@ pub struct EliasFano<H, L> {
     l: u64,
     /// A structure that stores the `l` lowest bits of the values
     low_bits: L,
-
+    /// The bitmap containing the gaps between high bits as unary codes
     high_bits: H,
 }
 
