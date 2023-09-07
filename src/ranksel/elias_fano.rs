@@ -144,6 +144,22 @@ pub struct EliasFano<H, L> {
 }
 
 impl<H, L> EliasFano<H, L> {
+    pub fn monad<F, H2, L2>(self, func: F) -> EliasFano<H2, L2>
+    where
+        F: Fn(H, L) -> (H2, L2),
+    {
+        let (high_bits, low_bits) = func(self.high_bits, self.low_bits);
+        EliasFano {
+            u: self.u,
+            n: self.n,
+            l: self.l,
+            low_bits,
+            high_bits,
+        }
+    }
+}
+
+impl<H, L> EliasFano<H, L> {
     /// # Safety
     /// TODO: this function is never used
     #[inline(always)]

@@ -2,6 +2,8 @@ use crate::traits::*;
 use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 /// Wrapper over a bitmap that keeps tracks of the number of ones
@@ -129,7 +131,6 @@ impl<B: VSlice> SelectHinted for CountingBitmap<B, usize> {
         let mut word_index = pos / self.bitmap.data.bit_width();
         let bit_index = pos % self.bitmap.data.bit_width();
         let mut residual = rank - rank_at_pos;
-        // TODO!: M2L or L2M?
         let mut word = (self.bitmap.data.get_unchecked(word_index) >> bit_index) << bit_index;
         loop {
             let bit_count = word.count_ones() as usize;
@@ -162,7 +163,6 @@ impl<B: VSlice> SelectZeroHinted for CountingBitmap<B, usize> {
         let mut word_index = pos / self.bitmap.data.bit_width();
         let bit_index = pos % self.bitmap.data.bit_width();
         let mut residual = rank - rank_at_pos;
-        // TODO!: M2L or L2M?
         let mut word = (!self.bitmap.data.get_unchecked(word_index) >> bit_index) << bit_index;
         loop {
             let bit_count = word.count_ones() as usize;
@@ -299,8 +299,25 @@ impl<B> BitMap<B> {
 }
 
 impl BitMap<Vec<u64>> {
+    pub fn count_ones(&self) -> usize {
+        #[cfg(feature = "rayon")]
+        {
+            self.as_ref()
+                .par_iter()
+                .map(|x| x.count_ones() as usize)
+                .sum()
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            self.as_ref().iter().map(|x| x.count_ones() as usize).sum()
+        }
+    }
+
     #[inline(always)]
     pub fn with_count(self, number_of_ones: usize) -> CountingBitmap<Vec<u64>, usize> {
+        debug_assert!(number_of_ones <= self.len);
+        debug_assert_eq!(number_of_ones, self.count_ones());
         CountingBitmap {
             bitmap: self,
             number_of_ones,
@@ -308,8 +325,32 @@ impl BitMap<Vec<u64>> {
     }
 }
 impl BitMap<Vec<AtomicU64>> {
+    pub fn count_ones(&self) -> usize {
+        // Just to be sure, add a fence to ensure that we will see all the final
+        // values
+        core::sync::atomic::fence(Ordering::SeqCst);
+
+        #[cfg(feature = "rayon")]
+        {
+            self.as_ref()
+                .par_iter()
+                .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
+                .sum()
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            self.as_ref()
+                .iter()
+                .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
+                .sum()
+        }
+    }
+
     #[inline(always)]
     pub fn with_count(self, number_of_ones: usize) -> CountingBitmap<Vec<AtomicU64>, AtomicUsize> {
+        debug_assert!(number_of_ones <= self.len);
+        debug_assert_eq!(number_of_ones, self.count_ones());
         CountingBitmap {
             bitmap: self,
             number_of_ones: AtomicUsize::new(number_of_ones),
@@ -457,6 +498,16 @@ impl<B: AsRef<[AtomicU64]>> AsRef<[AtomicU64]> for BitMap<B> {
         self.data.as_ref()
     }
 }
+impl<B: AsRef<[u64]>> AsRef<[u64]> for CountingBitmap<B, usize> {
+    fn as_ref(&self) -> &[u64] {
+        self.bitmap.as_ref()
+    }
+}
+impl<B: AsRef<[AtomicU64]>> AsRef<[AtomicU64]> for CountingBitmap<B, AtomicUsize> {
+    fn as_ref(&self) -> &[AtomicU64] {
+        self.bitmap.as_ref()
+    }
+}
 
 impl From<BitMap<Vec<u64>>> for BitMap<Vec<AtomicU64>> {
     #[inline]
@@ -591,11 +642,7 @@ impl<B, C> From<CountingBitmap<B, C>> for BitMap<B> {
 impl From<BitMap<Vec<u64>>> for CountingBitmap<Vec<u64>, usize> {
     fn from(bitmap: BitMap<Vec<u64>>) -> Self {
         // THIS MIGHT BE SLOW
-        let number_of_ones = bitmap
-            .as_ref()
-            .iter()
-            .map(|x| x.count_ones() as usize)
-            .sum();
+        let number_of_ones = bitmap.count_ones();
         Self {
             bitmap,
             number_of_ones,
@@ -605,16 +652,8 @@ impl From<BitMap<Vec<u64>>> for CountingBitmap<Vec<u64>, usize> {
 
 impl From<BitMap<Vec<AtomicU64>>> for CountingBitmap<Vec<AtomicU64>, AtomicUsize> {
     fn from(bitmap: BitMap<Vec<AtomicU64>>) -> Self {
-        // Just to be sure, add a fence to ensure that we will see all the final
-        // values
-        core::sync::atomic::fence(Ordering::SeqCst);
-
         // THIS MIGHT BE SLOW
-        let number_of_ones = bitmap
-            .as_ref()
-            .iter()
-            .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
-            .sum();
+        let number_of_ones = bitmap.count_ones();
 
         Self {
             bitmap,
