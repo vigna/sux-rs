@@ -122,7 +122,7 @@ impl<T: Remap> Function<T> {
     pub fn new<I: std::iter::Iterator<Item = T>, V: std::iter::Iterator<Item = u64>>(
         keys: I,
         values: &mut V,
-        bit_width: usize,
+        _bit_width: usize,
         pl: &mut Option<&mut ProgressLogger>,
     ) -> Function<T> {
         let seed = rand::random::<u64>();
