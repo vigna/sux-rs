@@ -3,7 +3,7 @@ use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SparseIndex<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {
     bits: B,
     ones: O,
