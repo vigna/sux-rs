@@ -1,7 +1,8 @@
 use crate::traits::IndexedDict;
+use epserde::*;
 use num_traits::AsPrimitive;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Epserde)]
 /// Statistics of the encoded data
 pub struct Stats {
     /// Maximum block size in bytes
@@ -28,7 +29,7 @@ pub struct Stats {
     pub redundancy: isize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Epserde)]
 /// Rear coded list, it takes a list of strings and encode them in a way that
 /// the common prefix between strings is encoded only once.
 ///
@@ -41,7 +42,7 @@ pub struct Stats {
 /// structure `Ptr`. This structure could be either arrays, possibly memory-mapped,
 /// of different sized of ptrs, or Elias-Fano, or any other structure that can
 /// store monotone increasing integers.
-pub struct RearCodedList<Ptr: AsPrimitive<usize> = usize>
+pub struct RearCodedList<Ptr: AsPrimitive<usize> + ZeroCopy = usize>
 where
     usize: AsPrimitive<Ptr>,
 {
@@ -101,7 +102,7 @@ fn strcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
     other.len().cmp(&string.len())
 }
 
-impl<Ptr: AsPrimitive<usize>> RearCodedList<Ptr>
+impl<Ptr: AsPrimitive<usize> + ZeroCopy> RearCodedList<Ptr>
 where
     usize: AsPrimitive<Ptr>,
 {
@@ -370,7 +371,7 @@ where
     }
 }
 
-impl<Ptr: AsPrimitive<usize>> IndexedDict for RearCodedList<Ptr>
+impl<Ptr: AsPrimitive<usize> + ZeroCopy> IndexedDict for RearCodedList<Ptr>
 where
     usize: AsPrimitive<Ptr>,
 {
@@ -389,7 +390,7 @@ where
 }
 
 /// Sequential iterator over the strings
-pub struct RCAIter<'a, Ptr: AsPrimitive<usize>>
+pub struct RCAIter<'a, Ptr: AsPrimitive<usize> + ZeroCopy>
 where
     usize: AsPrimitive<Ptr>,
 {
@@ -399,7 +400,7 @@ where
     index: usize,
 }
 
-impl<'a, Ptr: AsPrimitive<usize>> RCAIter<'a, Ptr>
+impl<'a, Ptr: AsPrimitive<usize> + ZeroCopy> RCAIter<'a, Ptr>
 where
     usize: AsPrimitive<Ptr>,
 {
@@ -413,7 +414,7 @@ where
     }
 }
 
-impl<'a, Ptr: AsPrimitive<usize>> Iterator for RCAIter<'a, Ptr>
+impl<'a, Ptr: AsPrimitive<usize> + ZeroCopy> Iterator for RCAIter<'a, Ptr>
 where
     usize: AsPrimitive<Ptr>,
 {
@@ -438,7 +439,7 @@ where
     }
 }
 
-impl<'a, Ptr: AsPrimitive<usize>> ExactSizeIterator for RCAIter<'a, Ptr>
+impl<'a, Ptr: AsPrimitive<usize> + ZeroCopy> ExactSizeIterator for RCAIter<'a, Ptr>
 where
     usize: AsPrimitive<Ptr>,
 {
