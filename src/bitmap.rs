@@ -5,7 +5,7 @@ use epserde::*;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 /// Wrapper over a bitmap that keeps tracks of the number of ones
-#[derive(Debug)]
+#[derive(Epserde, Debug)]
 pub struct CountingBitmap<B, C> {
     bitmap: BitMap<B>,
     number_of_ones: C,
@@ -259,7 +259,7 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceMutAtomicCmpExchange for CountingBitma
     }
 }
 
-#[derive(Debug)]
+#[derive(Epserde, Debug)]
 pub struct BitMap<B> {
     data: B,
     len: usize,
