@@ -1,9 +1,11 @@
+use anyhow::Result;
+use epserde::*;
 use std::io::prelude::*;
 use std::io::BufReader;
 use sux::prelude::*;
 
 #[test]
-fn test_rear_coded_list() {
+fn test_rear_coded_list() -> Result<()> {
     let words = BufReader::new(std::fs::File::open("tests/data/wordlist.10000").unwrap())
         .lines()
         .map(|line| line.unwrap())
@@ -35,4 +37,18 @@ fn test_rear_coded_list() {
         word.push_str("IT'S HIGHLY IMPROBABLE THAT THIS STRING IS IN THE WORDLIST");
         assert!(!rca.contains(&word));
     }
+
+    let tmp_file = std::env::temp_dir().join("test_serdes_rcl.bin");
+    let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);
+    let schema = rca.serialize_with_schema(&mut file)?;
+    drop(file);
+    println!("{}", schema.to_csv());
+
+    let c = epserde::map::<RearCodedList<u16>>(&tmp_file, epserde::Flags::empty())?;
+
+    for (i, word) in words.iter().enumerate() {
+        assert_eq!(&c.get(i), word);
+    }
+
+    Ok(())
 }

@@ -15,7 +15,6 @@ pub mod prelude {
     pub use crate::rear_coded_list::*;
     pub use crate::sf::*;
     pub use crate::traits::*;
-    pub use crate::word_array::*;
 }
 
 mod bitmap;
@@ -23,4 +22,3 @@ mod compact_array;
 pub mod rear_coded_list;
 pub mod spooky;
 pub mod utils;
-pub mod word_array;
