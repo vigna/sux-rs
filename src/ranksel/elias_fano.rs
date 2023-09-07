@@ -1,4 +1,4 @@
-use crate::{bitmap::BitMap, compact_array::CompactArray, prelude::CountingBitmap, traits::*};
+use crate::{bitmap::Bitmap, compact_array::CompactArray, prelude::CountingBitmap, traits::*};
 use anyhow::{bail, Result};
 use core::sync::atomic::{AtomicU64, Ordering};
 use epserde::*;
@@ -13,7 +13,7 @@ pub struct EliasFanoBuilder {
     n: u64,
     l: u64,
     low_bits: CompactArray<Vec<u64>>,
-    high_bits: BitMap<Vec<u64>>,
+    high_bits: Bitmap<Vec<u64>>,
     last_value: u64,
     count: u64,
 }
@@ -31,7 +31,7 @@ impl EliasFanoBuilder {
             n,
             l,
             low_bits: CompactArray::new(l as usize, n as usize),
-            high_bits: BitMap::new(n as usize + (u as usize >> l) + 1),
+            high_bits: Bitmap::new(n as usize + (u as usize >> l) + 1),
             last_value: 0,
             count: 0,
         }
@@ -82,7 +82,7 @@ pub struct EliasFanoAtomicBuilder {
     n: u64,
     l: u64,
     low_bits: CompactArray<Vec<AtomicU64>>,
-    high_bits: BitMap<Vec<AtomicU64>>,
+    high_bits: Bitmap<Vec<AtomicU64>>,
 }
 
 impl EliasFanoAtomicBuilder {
@@ -98,7 +98,7 @@ impl EliasFanoAtomicBuilder {
             n,
             l,
             low_bits: CompactArray::new_atomic(l as usize, n as usize),
-            high_bits: BitMap::new_atomic(n as usize + (u as usize >> l) + 1),
+            high_bits: Bitmap::new_atomic(n as usize + (u as usize >> l) + 1),
         }
     }
 

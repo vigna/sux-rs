@@ -13,7 +13,7 @@ fn test_bitmap() {
 
     let mut rng = SmallRng::seed_from_u64(0);
 
-    let mut bm = BitMap::new(u);
+    let mut bm = Bitmap::new(u);
 
     for _ in 0..10 {
         let mut values = (0..u).collect::<Vec<_>>();
@@ -52,7 +52,7 @@ fn test_bitmap() {
         }
     }
 
-    let bm: BitMap<Vec<AtomicU64>> = bm.into();
+    let bm: Bitmap<Vec<AtomicU64>> = bm.into();
     for _ in 0..10 {
         let mut values = (0..u).collect::<Vec<_>>();
         let (indices, _) = values.partial_shuffle(&mut rng, n2);
@@ -103,7 +103,7 @@ fn test_bitmap() {
 #[test]
 fn test_epsserde() {
     let mut rng = SmallRng::seed_from_u64(0);
-    let mut b = BitMap::new(200);
+    let mut b = Bitmap::new(200);
     for i in 0..200 {
         b.set(i, rng.next_u64() % 2);
     }
@@ -113,7 +113,7 @@ fn test_epsserde() {
     b.serialize(&mut file).unwrap();
     drop(file);
 
-    let c = epserde::map::<BitMap<Vec<u64>>>(&tmp_file, epserde::Flags::empty()).unwrap();
+    let c = epserde::map::<Bitmap<Vec<u64>>>(&tmp_file, epserde::Flags::empty()).unwrap();
 
     for i in 0..200 {
         assert_eq!(b.get(i), c.get(i));
