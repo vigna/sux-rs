@@ -4,7 +4,7 @@ use common_traits::SelectInWord;
 use epserde::*;
 use std::io::{Seek, Write};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SparseZeroIndex<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {
     bits: B,
     zeros: O,
