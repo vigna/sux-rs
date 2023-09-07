@@ -40,7 +40,7 @@ fn main() {
     for value in values {
         elias_fano_builder.push(value).unwrap();
     }
-    let elias_fano: EliasFano<SparseIndex<BitMap<Vec<u64>>, Vec<u64>, 8>, CompactArray<Vec<u64>>> =
+    let elias_fano: EliasFano<SparseIndex<Bitmap<Vec<u64>>, Vec<u64>, 8>, CompactArray<Vec<u64>>> =
         elias_fano_builder.build().convert_to().unwrap();
 
     let mut ranks = Vec::with_capacity(args.t);
