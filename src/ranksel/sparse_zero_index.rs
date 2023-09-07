@@ -2,7 +2,6 @@ use crate::traits::*;
 use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
-use std::io::{Seek, Write};
 
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SparseZeroIndex<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {

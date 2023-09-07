@@ -36,5 +36,6 @@ dsi-progress-logger = "0.1.0"
 rand_chacha = "0.3"
 
 [features]
+default = ["rayon"]
 testless_read = []
 testless_write = []
