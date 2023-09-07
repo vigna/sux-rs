@@ -9,23 +9,23 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 /// Wrapper over a bitmap that keeps tracks of the number of ones
 #[derive(Epserde, Debug)]
 pub struct CountingBitmap<B, C> {
-    bitmap: BitMap<B>,
+    data: B,
+    len: usize,
     number_of_ones: C,
 }
 
-impl<C, T, B: AsRef<T>> AsRef<T> for CountingBitmap<B, C>
-where
-    BitMap<B>: AsRef<T>,
-{
+impl<C, T, B: AsRef<T>> AsRef<T> for CountingBitmap<B, C> {
     fn as_ref(&self) -> &T {
-        self.bitmap.as_ref()
+        self.data.as_ref()
     }
 }
 
 impl CountingBitmap<Vec<u64>, usize> {
     pub fn new(len: usize) -> Self {
+        let n_of_words = (len + 63) / 64;
         Self {
-            bitmap: BitMap::new(len),
+            data: vec![0; n_of_words],
+            len,
             number_of_ones: 0,
         }
     }
@@ -33,8 +33,10 @@ impl CountingBitmap<Vec<u64>, usize> {
 
 impl CountingBitmap<Vec<AtomicU64>, AtomicUsize> {
     pub fn new_atomic(len: usize) -> Self {
+        let n_of_words = (len + 63) / 64;
         Self {
-            bitmap: BitMap::new_atomic(len),
+            data: (0..n_of_words).map(|_| AtomicU64::new(0)).collect(),
+            len,
             number_of_ones: AtomicUsize::new(0),
         }
     }
@@ -43,7 +45,7 @@ impl CountingBitmap<Vec<AtomicU64>, AtomicUsize> {
 impl<B, S> BitLength for CountingBitmap<B, S> {
     #[inline(always)]
     fn len(&self) -> usize {
-        self.bitmap.len
+        self.len
     }
 }
 
@@ -65,50 +67,54 @@ impl<B, S> CountingBitmap<B, S> {
     /// # Safety
     /// TODO: this function is never used
     #[inline(always)]
-    pub unsafe fn from_raw_parts(bitmap: BitMap<B>, number_of_ones: S) -> Self {
+    pub unsafe fn from_raw_parts(data: B, len: usize, number_of_ones: S) -> Self {
         Self {
-            bitmap,
+            data,
+            len,
             number_of_ones: number_of_ones,
         }
     }
     #[inline(always)]
-    pub fn into_raw_parts(self) -> (BitMap<B>, S) {
-        (self.bitmap, self.number_of_ones)
+    pub fn into_raw_parts(self) -> (B, usize, S) {
+        (self.data, self.len, self.number_of_ones)
     }
 }
 
 impl<B: VSliceCore, S> VSliceCore for CountingBitmap<B, S> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
-        self.bitmap.bit_width()
+        debug_assert!(1 <= self.data.bit_width());
+        1
     }
 
     #[inline(always)]
     fn len(&self) -> usize {
-        self.bitmap.len
+        self.len
     }
 }
 
 impl<B: VSlice, S> VSlice for CountingBitmap<B, S> {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> u64 {
-        self.bitmap.get_unchecked(index)
+        let word_index = index / self.data.bit_width();
+        let word = self.data.get_unchecked(word_index);
+        (word >> (index % self.data.bit_width())) & 1
     }
 }
 
 impl<B: VSliceMut> VSliceMut for CountingBitmap<B, usize> {
     unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
         // get the word index, and the bit index in the word
-        let word_index = index / self.bitmap.data.bit_width();
-        let bit_index = index % self.bitmap.data.bit_width();
+        let word_index = index / self.data.bit_width();
+        let bit_index = index % self.data.bit_width();
         // get the old word
-        let word = self.bitmap.data.get_unchecked(word_index);
+        let word = self.data.get_unchecked(word_index);
         // clean the old bit in the word
         let mut new_word = word & !(1 << bit_index);
         // and write the new one
         new_word |= value << bit_index;
         // write it back
-        self.bitmap.data.set_unchecked(word_index, new_word);
+        self.data.set_unchecked(word_index, new_word);
         // we are safe to use this as we have mut access so we are the only ones
         // and there are no concurrency
 
@@ -128,21 +134,21 @@ impl<B: VSlice> Select for CountingBitmap<B, usize> {
 
 impl<B: VSlice> SelectHinted for CountingBitmap<B, usize> {
     unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
-        let mut word_index = pos / self.bitmap.data.bit_width();
-        let bit_index = pos % self.bitmap.data.bit_width();
+        let mut word_index = pos / self.data.bit_width();
+        let bit_index = pos % self.data.bit_width();
         let mut residual = rank - rank_at_pos;
-        let mut word = (self.bitmap.data.get_unchecked(word_index) >> bit_index) << bit_index;
+        let mut word = (self.data.get_unchecked(word_index) >> bit_index) << bit_index;
         loop {
             let bit_count = word.count_ones() as usize;
             if residual < bit_count {
                 break;
             }
             word_index += 1;
-            word = self.bitmap.data.get_unchecked(word_index);
+            word = self.data.get_unchecked(word_index);
             residual -= bit_count;
         }
 
-        word_index * self.bitmap.data.bit_width() + word.select_in_word(residual)
+        word_index * self.data.bit_width() + word.select_in_word(residual)
     }
 }
 
@@ -160,34 +166,36 @@ impl<B: VSlice> SelectZeroHinted for CountingBitmap<B, usize> {
         pos: usize,
         rank_at_pos: usize,
     ) -> usize {
-        let mut word_index = pos / self.bitmap.data.bit_width();
-        let bit_index = pos % self.bitmap.data.bit_width();
+        let mut word_index = pos / self.data.bit_width();
+        let bit_index = pos % self.data.bit_width();
         let mut residual = rank - rank_at_pos;
-        let mut word = (!self.bitmap.data.get_unchecked(word_index) >> bit_index) << bit_index;
+        let mut word = (!self.data.get_unchecked(word_index) >> bit_index) << bit_index;
         loop {
             let bit_count = word.count_ones() as usize;
             if residual < bit_count {
                 break;
             }
             word_index += 1;
-            word = !self.bitmap.data.get_unchecked(word_index);
+            word = !self.data.get_unchecked(word_index);
             residual -= bit_count;
         }
 
-        word_index * self.bitmap.data.bit_width() + word.select_in_word(residual)
+        word_index * self.data.bit_width() + word.select_in_word(residual)
     }
 }
 
 impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CountingBitmap<B, AtomicUsize> {
     #[inline(always)]
     unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> u64 {
-        self.bitmap.get_atomic_unchecked(index, order)
+        let word_index = index / self.data.bit_width();
+        let word = self.data.get_atomic_unchecked(word_index, order);
+        (word >> (index % self.data.bit_width())) & 1
     }
     unsafe fn set_atomic_unchecked(&self, index: usize, value: u64, order: Ordering) {
         // get the word index, and the bit index in the word
-        let word_index = index / self.bitmap.data.bit_width();
-        let bit_index = index % self.bitmap.data.bit_width();
-        let mut word = self.bitmap.data.get_atomic_unchecked(word_index, order);
+        let word_index = index / self.data.bit_width();
+        let bit_index = index % self.data.bit_width();
+        let mut word = self.data.get_atomic_unchecked(word_index, order);
         let mut new_word;
         loop {
             // get the old word
@@ -199,7 +207,6 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CountingBitmap<B, AtomicUsi
             // idk if the ordering is reasonable here, the only reasonable is
             // Release
             match self
-                .bitmap
                 .data
                 .compare_exchange_unchecked(word_index, word, new_word, order, order)
             {
@@ -228,11 +235,10 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceMutAtomicCmpExchange for CountingBitma
         failure: Ordering,
     ) -> Result<u64, u64> {
         // get the word index, and the bit index in the word
-        let word_index = index / self.bitmap.data.bit_width();
-        let bit_index = index % self.bitmap.data.bit_width();
+        let word_index = index / self.data.bit_width();
+        let bit_index = index % self.data.bit_width();
         // get the old word
         let word = self
-            .bitmap
             .data
             .get_atomic_unchecked(word_index, Ordering::Acquire);
         // clean the old bit in the word
@@ -242,7 +248,6 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceMutAtomicCmpExchange for CountingBitma
         let new_word = clean_word | (new << bit_index);
         // write it back
         let res = self
-            .bitmap
             .data
             .compare_exchange_unchecked(word_index, cur_word, new_word, success, failure);
         // if the exchange was successful, update the count of ones
@@ -319,7 +324,8 @@ impl BitMap<Vec<u64>> {
         debug_assert!(number_of_ones <= self.len);
         debug_assert_eq!(number_of_ones, self.count_ones());
         CountingBitmap {
-            bitmap: self,
+            data: self.data,
+            len: self.len,
             number_of_ones,
         }
     }
@@ -352,7 +358,8 @@ impl BitMap<Vec<AtomicU64>> {
         debug_assert!(number_of_ones <= self.len);
         debug_assert_eq!(number_of_ones, self.count_ones());
         CountingBitmap {
-            bitmap: self,
+            data: self.data,
+            len: self.len,
             number_of_ones: AtomicUsize::new(number_of_ones),
         }
     }
@@ -476,13 +483,14 @@ where
 
 impl<B1, C1, B2, C2> ConvertTo<CountingBitmap<B2, C2>> for CountingBitmap<B1, C1>
 where
-    BitMap<B1>: ConvertTo<BitMap<B2>>,
+    B1: ConvertTo<B2>,
     C1: ConvertTo<C2>,
 {
     #[inline(always)]
     fn convert_to(self) -> Result<CountingBitmap<B2, C2>> {
         Ok(CountingBitmap {
-            bitmap: self.bitmap.convert_to()?,
+            data: self.data.convert_to()?,
+            len: self.len,
             number_of_ones: self.number_of_ones.convert_to()?,
         })
     }
@@ -500,12 +508,12 @@ impl<B: AsRef<[AtomicU64]>> AsRef<[AtomicU64]> for BitMap<B> {
 }
 impl<B: AsRef<[u64]>> AsRef<[u64]> for CountingBitmap<B, usize> {
     fn as_ref(&self) -> &[u64] {
-        self.bitmap.as_ref()
+        self.data.as_ref()
     }
 }
 impl<B: AsRef<[AtomicU64]>> AsRef<[AtomicU64]> for CountingBitmap<B, AtomicUsize> {
     fn as_ref(&self) -> &[AtomicU64] {
-        self.bitmap.as_ref()
+        self.data.as_ref()
     }
 }
 
@@ -573,7 +581,8 @@ impl From<CountingBitmap<Vec<u64>, usize>> for CountingBitmap<Vec<AtomicU64>, At
     #[inline]
     fn from(bm: CountingBitmap<Vec<u64>, usize>) -> Self {
         CountingBitmap {
-            bitmap: bm.bitmap.into(),
+            data: bm.data.convert_to().unwrap(),
+            len: bm.len,
             number_of_ones: AtomicUsize::new(bm.number_of_ones),
         }
     }
@@ -583,7 +592,8 @@ impl From<CountingBitmap<Vec<AtomicU64>, AtomicUsize>> for CountingBitmap<Vec<u6
     #[inline]
     fn from(bm: CountingBitmap<Vec<AtomicU64>, AtomicUsize>) -> Self {
         CountingBitmap {
-            bitmap: bm.bitmap.into(),
+            data: bm.data.convert_to().unwrap(),
+            len: bm.len,
             number_of_ones: bm.number_of_ones.into_inner(),
         }
     }
@@ -593,7 +603,8 @@ impl<'a> From<CountingBitmap<&'a [AtomicU64], AtomicUsize>> for CountingBitmap<&
     #[inline]
     fn from(bm: CountingBitmap<&'a [AtomicU64], AtomicUsize>) -> Self {
         CountingBitmap {
-            bitmap: bm.bitmap.into(),
+            data: bm.data.convert_to().unwrap(),
+            len: bm.len,
             number_of_ones: bm.number_of_ones.into_inner(),
         }
     }
@@ -603,7 +614,8 @@ impl<'a> From<CountingBitmap<&'a [u64], usize>> for CountingBitmap<&'a [AtomicU6
     #[inline]
     fn from(bm: CountingBitmap<&'a [u64], usize>) -> Self {
         CountingBitmap {
-            bitmap: bm.bitmap.into(),
+            data: bm.data.convert_to().unwrap(),
+            len: bm.len,
             number_of_ones: AtomicUsize::new(bm.number_of_ones),
         }
     }
@@ -615,7 +627,8 @@ impl<'a> From<CountingBitmap<&'a mut [AtomicU64], AtomicUsize>>
     #[inline]
     fn from(bm: CountingBitmap<&'a mut [AtomicU64], AtomicUsize>) -> Self {
         CountingBitmap {
-            bitmap: bm.bitmap.into(),
+            data: bm.data.convert_to().unwrap(),
+            len: bm.len,
             number_of_ones: bm.number_of_ones.into_inner(),
         }
     }
@@ -627,7 +640,8 @@ impl<'a> From<CountingBitmap<&'a mut [u64], usize>>
     #[inline]
     fn from(bm: CountingBitmap<&'a mut [u64], usize>) -> Self {
         CountingBitmap {
-            bitmap: bm.bitmap.into(),
+            data: bm.data.convert_to().unwrap(),
+            len: bm.len,
             number_of_ones: AtomicUsize::new(bm.number_of_ones),
         }
     }
@@ -635,7 +649,10 @@ impl<'a> From<CountingBitmap<&'a mut [u64], usize>>
 
 impl<B, C> From<CountingBitmap<B, C>> for BitMap<B> {
     fn from(cb: CountingBitmap<B, C>) -> Self {
-        cb.bitmap
+        BitMap {
+            data: cb.data,
+            len: cb.len,
+        }
     }
 }
 
@@ -644,7 +661,8 @@ impl From<BitMap<Vec<u64>>> for CountingBitmap<Vec<u64>, usize> {
         // THIS MIGHT BE SLOW
         let number_of_ones = bitmap.count_ones();
         Self {
-            bitmap,
+            data: bitmap.data,
+            len: bitmap.len,
             number_of_ones,
         }
     }
@@ -656,7 +674,8 @@ impl From<BitMap<Vec<AtomicU64>>> for CountingBitmap<Vec<AtomicU64>, AtomicUsize
         let number_of_ones = bitmap.count_ones();
 
         Self {
-            bitmap,
+            data: bitmap.data,
+            len: bitmap.len,
             number_of_ones: AtomicUsize::new(number_of_ones),
         }
     }
