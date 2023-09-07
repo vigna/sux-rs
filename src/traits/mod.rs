@@ -4,10 +4,7 @@
 //! Traits are collected into a module so you can do `use sux::traits::*;`
 //! for ease of use.
 
-pub mod serdes;
 use std::sync::atomic::{AtomicU64, AtomicUsize};
-
-pub use serdes::*;
 
 mod memory;
 pub use memory::*;
