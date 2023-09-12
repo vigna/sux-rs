@@ -9,7 +9,6 @@
 //! https://arxiv.org/pdf/1612.06257.pdf
 //! Just use https://github.com/nickbabcock/highway-rs
 
-pub mod sip;
 pub mod spooky;
 
 /// Automatically implement our generalized Hasher for anything that already
