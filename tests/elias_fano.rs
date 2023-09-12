@@ -17,6 +17,7 @@ use sux::prelude::*;
 #[cfg(feature = "rayon")]
 fn test_elias_fano_concurrent() -> Result<()> {
     use rayon::prelude::*;
+    use sux::dict::elias_fano::EliasFanoAtomicBuilder;
     let mut rng = SmallRng::seed_from_u64(0);
     for (u, n) in [(1000, 100), (100, 100), (100, 1000)] {
         let mut values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
@@ -72,7 +73,7 @@ fn test_elias_fano() -> Result<()> {
         println!("{:?}", ef);
 
         // Add the indices
-        let ef: EliasFano<
+        let ef: sux::dict::elias_fano::EliasFano<
             SparseZeroIndex<SparseIndex<CountingBitmap<Vec<u64>, usize>, Vec<u64>, 8>, Vec<u64>, 8>,
             CompactArray<Vec<u64>>,
         > = ef.convert_to().unwrap();
