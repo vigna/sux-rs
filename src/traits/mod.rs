@@ -13,9 +13,6 @@
 
 use std::sync::atomic::{AtomicU64, AtomicUsize};
 
-mod memory;
-pub use memory::*;
-
 mod vslice;
 pub use vslice::*;
 
