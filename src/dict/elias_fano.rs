@@ -8,8 +8,7 @@
  */
 
 use crate::{
-    bits::bitmap::Bitmap, bits::bitmap::CountingBitmap, bits::compact_array::CompactArray,
-    traits::*,
+    bits::bit_vec::BitVec, bits::bit_vec::CountBitVec, bits::compact_array::CompactArray, traits::*,
 };
 use anyhow::{bail, Result};
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -17,7 +16,7 @@ use epserde::*;
 
 /// The default combination of parameters for Elias-Fano which is returned
 /// by the builders
-pub type DefaultEliasFano = EliasFano<CountingBitmap<Vec<u64>, usize>, CompactArray<Vec<u64>>>;
+pub type DefaultEliasFano = EliasFano<CountBitVec<Vec<u64>, usize>, CompactArray<Vec<u64>>>;
 
 /// A sequential builder for elias-fano
 pub struct EliasFanoBuilder {
@@ -25,7 +24,7 @@ pub struct EliasFanoBuilder {
     n: usize,
     l: usize,
     low_bits: CompactArray<Vec<u64>>,
-    high_bits: Bitmap<Vec<u64>>,
+    high_bits: BitVec<Vec<u64>>,
     last_value: usize,
     count: usize,
 }
@@ -43,7 +42,7 @@ impl EliasFanoBuilder {
             n,
             l,
             low_bits: CompactArray::new(l, n),
-            high_bits: Bitmap::new(n + (u >> l) + 1),
+            high_bits: BitVec::new(n + (u >> l) + 1),
             last_value: 0,
             count: 0,
         }
@@ -95,7 +94,7 @@ pub struct EliasFanoAtomicBuilder {
     n: usize,
     l: usize,
     low_bits: CompactArray<Vec<AtomicU64>>,
-    high_bits: Bitmap<Vec<AtomicU64>>,
+    high_bits: BitVec<Vec<AtomicU64>>,
 }
 
 impl EliasFanoAtomicBuilder {
@@ -111,7 +110,7 @@ impl EliasFanoAtomicBuilder {
             n,
             l,
             low_bits: CompactArray::new_atomic(l, n),
-            high_bits: Bitmap::new_atomic(n + (u >> l) + 1),
+            high_bits: BitVec::new_atomic(n + (u >> l) + 1),
         }
     }
 

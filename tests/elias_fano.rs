@@ -11,7 +11,7 @@ use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
 use std::sync::atomic::Ordering;
-use sux::prelude::bitmap::CountingBitmap;
+use sux::prelude::bit_vec::CountBitVec;
 use sux::prelude::compact_array::CompactArray;
 use sux::prelude::*;
 
@@ -64,7 +64,7 @@ fn test_elias_fano() -> Result<()> {
         }
         // Add the ones indices
         let ef: EliasFano<
-            SparseIndex<CountingBitmap<Vec<u64>, usize>, Vec<u64>, 8>,
+            SparseIndex<CountBitVec<Vec<u64>, usize>, Vec<u64>, 8>,
             CompactArray<Vec<u64>>,
         > = ef.convert_to().unwrap();
         // do a fast select
@@ -76,7 +76,7 @@ fn test_elias_fano() -> Result<()> {
 
         // Add the indices
         let ef: sux::dict::elias_fano::EliasFano<
-            SparseZeroIndex<SparseIndex<CountingBitmap<Vec<u64>, usize>, Vec<u64>, 8>, Vec<u64>, 8>,
+            SparseZeroIndex<SparseIndex<CountBitVec<Vec<u64>, usize>, Vec<u64>, 8>, Vec<u64>, 8>,
             CompactArray<Vec<u64>>,
         > = ef.convert_to().unwrap();
         // do a fast select
@@ -108,7 +108,7 @@ fn test_epsserde() -> Result<()> {
         let ef: DefaultEliasFano = efb.build();
         // Add the ones indices
         let ef: EliasFano<
-            SparseIndex<CountingBitmap<Vec<u64>, usize>, Vec<u64>, 8>,
+            SparseIndex<CountBitVec<Vec<u64>, usize>, Vec<u64>, 8>,
             CompactArray<Vec<u64>>,
         > = ef.convert_to().unwrap();
 
@@ -119,7 +119,7 @@ fn test_epsserde() -> Result<()> {
         println!("{}", schema.to_csv());
 
         let c = <EliasFano<
-            SparseIndex<CountingBitmap<Vec<u64>, usize>, Vec<u64>, 8>,
+            SparseIndex<CountBitVec<Vec<u64>, usize>, Vec<u64>, 8>,
             CompactArray<Vec<u64>>,
         >>::mmap(&tmp_file, epserde::Flags::empty())?;
 
