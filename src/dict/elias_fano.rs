@@ -16,7 +16,7 @@ use epserde::*;
 
 /// The default combination of parameters for Elias-Fano which is returned
 /// by the builders
-pub type DefaultEliasFano = EliasFano<CountBitVec<Vec<u64>, usize>, CompactArray<Vec<u64>>>;
+pub type DefaultEliasFano = EliasFano<CountBitVec<Vec<u64>>, CompactArray<Vec<u64>>>;
 
 /// A sequential builder for elias-fano
 pub struct EliasFanoBuilder {
@@ -71,7 +71,7 @@ impl EliasFanoBuilder {
         self.low_bits.set(self.count, low as u64);
 
         let high = (value >> self.l) + self.count;
-        self.high_bits.set(high, 1);
+        self.high_bits.set(high, true);
 
         self.count += 1;
         self.last_value = value;
@@ -128,16 +128,17 @@ impl EliasFanoAtomicBuilder {
         self.low_bits.set_atomic_unchecked(index, low as u64, order);
 
         let high = (value >> self.l) + index;
-        self.high_bits.set_atomic_unchecked(high, 1, order);
+        self.high_bits.set(high, true, order);
     }
 
     pub fn build(self) -> DefaultEliasFano {
+        let bit_vec: BitVec<Vec<u64>> = self.high_bits.into();
         EliasFano {
             u: self.u,
             n: self.n,
             l: self.l,
             low_bits: self.low_bits.into(),
-            high_bits: self.high_bits.with_count(self.n as _).into(),
+            high_bits: bit_vec.with_count(self.n),
         }
     }
 }
