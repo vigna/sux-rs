@@ -18,19 +18,19 @@ pub type DefaultEliasFano = EliasFano<CountingBitmap<Vec<u64>, usize>, CompactAr
 
 /// A sequential builder for elias-fano
 pub struct EliasFanoBuilder {
-    u: u64,
-    n: u64,
-    l: u64,
+    u: usize,
+    n: usize,
+    l: usize,
     low_bits: CompactArray<Vec<u64>>,
     high_bits: Bitmap<Vec<u64>>,
-    last_value: u64,
-    count: u64,
+    last_value: usize,
+    count: usize,
 }
 
 impl EliasFanoBuilder {
-    pub fn new(u: u64, n: u64) -> Self {
+    pub fn new(u: usize, n: usize) -> Self {
         let l = if u >= n {
-            (u as f64 / n as f64).log2().floor() as u64
+            (u as f64 / n as f64).log2().floor() as usize
         } else {
             0
         };
@@ -46,11 +46,11 @@ impl EliasFanoBuilder {
         }
     }
 
-    pub fn mem_upperbound(u: u64, n: u64) -> u64 {
-        2 * n + (n * (u as f64 / n as f64).log2().ceil() as u64)
+    pub fn mem_upperbound(u: usize, n: usize) -> usize {
+        2 * n + (n * (u as f64 / n as f64).log2().ceil() as usize)
     }
 
-    pub fn push(&mut self, value: u64) -> Result<()> {
+    pub fn push(&mut self, value: usize) -> Result<()> {
         if value < self.last_value {
             bail!("The values given to elias-fano are not monotone");
         }
@@ -63,9 +63,10 @@ impl EliasFanoBuilder {
     /// # Safety
     ///
     /// Values passed to this function must be smaller than `u` and must be monotone.
-    pub unsafe fn push_unchecked(&mut self, value: u64) {
+    pub unsafe fn push_unchecked(&mut self, value: usize) {
         let low = value & ((1 << self.l) - 1);
-        self.low_bits.set(self.count as usize, low);
+        // TODO
+        self.low_bits.set(self.count as usize, low as u64);
 
         let high = (value >> self.l) + self.count;
         self.high_bits.set(high as usize, 1);
@@ -87,17 +88,17 @@ impl EliasFanoBuilder {
 
 /// A concurrent builder for elias-fano
 pub struct EliasFanoAtomicBuilder {
-    u: u64,
-    n: u64,
-    l: u64,
+    u: usize,
+    n: usize,
+    l: usize,
     low_bits: CompactArray<Vec<AtomicU64>>,
     high_bits: Bitmap<Vec<AtomicU64>>,
 }
 
 impl EliasFanoAtomicBuilder {
-    pub fn new(u: u64, n: u64) -> Self {
+    pub fn new(u: usize, n: usize) -> Self {
         let l = if u >= n {
-            (u as f64 / n as f64).log2().floor() as u64
+            (u as f64 / n as f64).log2().floor() as usize
         } else {
             0
         };
@@ -119,11 +120,12 @@ impl EliasFanoAtomicBuilder {
     ///
     /// # Safety
     /// The values and indices have to be right and the values should be monotone
-    pub unsafe fn set(&self, index: usize, value: u64, order: Ordering) {
+    pub unsafe fn set(&self, index: usize, value: usize, order: Ordering) {
         let low = value & ((1 << self.l) - 1);
-        self.low_bits.set_atomic_unchecked(index, low, order);
+        // TODO
+        self.low_bits.set_atomic_unchecked(index, low as u64, order);
 
-        let high = (value >> self.l) + index as u64;
+        let high = (value >> self.l) + index as usize;
         self.high_bits.set_atomic_unchecked(high as usize, 1, order);
     }
 
@@ -141,11 +143,11 @@ impl EliasFanoAtomicBuilder {
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EliasFano<H, L> {
     /// upperbound of the values
-    u: u64,
+    u: usize,
     /// number of values
-    n: u64,
+    n: usize,
     /// the size of the lower bits
-    l: u64,
+    l: usize,
     /// A structure that stores the `l` lowest bits of the values
     low_bits: L,
     /// The bitmap containing the gaps between high bits as unary codes
@@ -172,7 +174,7 @@ impl<H, L> EliasFano<H, L> {
     /// # Safety
     /// TODO: this function is never used
     #[inline(always)]
-    pub unsafe fn from_raw_parts(u: u64, n: u64, l: u64, low_bits: L, high_bits: H) -> Self {
+    pub unsafe fn from_raw_parts(u: usize, n: usize, l: usize, low_bits: L, high_bits: H) -> Self {
         Self {
             u,
             n,
@@ -182,7 +184,7 @@ impl<H, L> EliasFano<H, L> {
         }
     }
     #[inline(always)]
-    pub fn into_raw_parts(self) -> (u64, u64, u64, L, H) {
+    pub fn into_raw_parts(self) -> (usize, usize, usize, L, H) {
         (self.u, self.n, self.l, self.low_bits, self.high_bits)
     }
 }
@@ -204,9 +206,7 @@ impl<H, L> BitCount for EliasFano<H, L> {
 impl<H: Select, L: VSlice> Select for EliasFano<H, L> {
     #[inline]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
-        let high_bits = self.high_bits.select_unchecked(rank) - rank;
-        let low_bits = self.low_bits.get_unchecked(rank);
-        (high_bits << self.l) | low_bits as usize
+        self.get_unchecked(rank)
     }
 }
 
@@ -228,15 +228,17 @@ where
 }
 
 impl<H: Select, L: VSlice> IndexedDict for EliasFano<H, L> {
-    type Value = u64;
+    type Value = usize;
     #[inline]
     fn len(&self) -> usize {
         self.count()
     }
 
     #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> u64 {
-        self.select_unchecked(index) as u64
+    unsafe fn get_unchecked(&self, index: usize) -> usize {
+        let high_bits = self.high_bits.select_unchecked(index) - index;
+        let low_bits = self.low_bits.get_unchecked(index);
+        (high_bits << self.l) | low_bits as usize
     }
 }
 
