@@ -11,7 +11,7 @@
 ///  - does not need any other special mathematical properties
 ///
 /// The original is SC_CONST = 0xdeadbeefdeadbeef but we use the golden ratio :)
-const SC_CONST: u64 = 0x9e3779b97f4a7c13;
+pub const SC_CONST: u64 = 0x9e3779b97f4a7c13;
 
 #[inline(always)]
 #[must_use]
@@ -30,7 +30,7 @@ const SC_CONST: u64 = 0x9e3779b97f4a7c13;
 /// with diffs defined by either xor or subtraction
 /// with a base of all zeros plus a counter, or plus another bit, or random
 ///
-const fn spooky_short_mix(mut h: [u64; 4]) -> [u64; 4] {
+pub const fn spooky_short_mix(mut h: [u64; 4]) -> [u64; 4] {
     h[2] = h[2].rotate_left(50);
     h[2] = h[2].wrapping_add(h[3]);
     h[0] ^= h[2];
