@@ -124,7 +124,7 @@ fn test_epsserde() -> Result<()> {
         >>::mmap(&tmp_file, epserde::Flags::empty())?;
 
         for i in 0..n {
-            assert_eq!(ef.get(i as usize), c.get(i as usize));
+            assert_eq!(ef.get(i), c.get(i));
         }
     }
     Ok(())

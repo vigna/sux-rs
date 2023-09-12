@@ -5,19 +5,20 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! # VSlice
-//!
-//! This module defines the `VSlice` and `VSliceMut` traits, which are accessed
-//! with a logic similar to slices, but when indexed with `get` return a value.
-//! Implementing the slice trait would be more natural, but it would be very complicated
-//! because there is no easy way to return a reference to a bit segment
-//! (see, e.g., [BitSlice](https://docs.rs/bitvec/latest/bitvec/slice/struct.BitSlice.html)).
-//!
-//! Each `VSlice` has an associated [`VSlice::bit_width`]. All stored values must fit
-//! within this bit width.
-//!
-//! Implementations must return always zero on a [`VSlice::get`] when the bit
-//! width is zero. The behavior of a [`VSliceMut::set`] in the same context is not defined.
+/*!
+
+ This module defines the `VSlice` and `VSliceMut` traits, which are accessed
+ with a logic similar to slices, but when indexed with `get` return a value.
+ Implementing the slice trait would be more natural, but it would be very complicated
+ because there is no easy way to return a reference to a bit segment
+ (see, e.g., [BitSlice](https://docs.rs/bitvec/latest/bitvec/slice/struct.BitSlice.html)).
+
+ Each `VSlice` has an associated [`VSlice::bit_width`]. All stored values must fit
+ within this bit width.
+
+ Implementations must return always zero on a [`VSlice::get`] when the bit
+ width is zero. The behavior of a [`VSliceMut::set`] in the same context is not defined.
+*/
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// Trait for common bits between [`VSlice`] and [`VSliceAtomic`]

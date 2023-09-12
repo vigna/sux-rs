@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/// A dictionary of monotonically increasing values that can be indexed by a `usize`.
+/// A dictionary of values indexed by a `usize`.
 pub trait IndexedDict {
     /// The type of the values stored in the dictionary.
     type Value;
@@ -39,6 +39,7 @@ pub trait IndexedDict {
     }
 }
 
+/// Successor computation for dictionaries whose values are monotonically increasing.
 pub trait Successor: IndexedDict {
     /// Return the index of the successor and the successor
     /// of the given value, or `None` if there is no successor.
@@ -47,6 +48,7 @@ pub trait Successor: IndexedDict {
     fn successor(&self, value: Self::Value) -> Option<(usize, Self::Value)>;
 }
 
+/// Predecessor computation for dictionaries whoses value are monotonically increasing.
 pub trait Predecessor: IndexedDict {
     /// Return the index of the predecessor and the predecessor
     /// of the given value, or `None` if there is no predecessor.

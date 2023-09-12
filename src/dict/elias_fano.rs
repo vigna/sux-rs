@@ -42,8 +42,8 @@ impl EliasFanoBuilder {
             u,
             n,
             l,
-            low_bits: CompactArray::new(l as usize, n as usize),
-            high_bits: Bitmap::new(n as usize + (u as usize >> l) + 1),
+            low_bits: CompactArray::new(l, n),
+            high_bits: Bitmap::new(n + (u >> l) + 1),
             last_value: 0,
             count: 0,
         }
@@ -69,10 +69,10 @@ impl EliasFanoBuilder {
     pub unsafe fn push_unchecked(&mut self, value: usize) {
         let low = value & ((1 << self.l) - 1);
         // TODO
-        self.low_bits.set(self.count as usize, low as u64);
+        self.low_bits.set(self.count, low as u64);
 
         let high = (value >> self.l) + self.count;
-        self.high_bits.set(high as usize, 1);
+        self.high_bits.set(high, 1);
 
         self.count += 1;
         self.last_value = value;
@@ -110,8 +110,8 @@ impl EliasFanoAtomicBuilder {
             u,
             n,
             l,
-            low_bits: CompactArray::new_atomic(l as usize, n as usize),
-            high_bits: Bitmap::new_atomic(n as usize + (u as usize >> l) + 1),
+            low_bits: CompactArray::new_atomic(l, n),
+            high_bits: Bitmap::new_atomic(n + (u >> l) + 1),
         }
     }
 
@@ -128,8 +128,8 @@ impl EliasFanoAtomicBuilder {
         // TODO
         self.low_bits.set_atomic_unchecked(index, low as u64, order);
 
-        let high = (value >> self.l) + index as usize;
-        self.high_bits.set_atomic_unchecked(high as usize, 1, order);
+        let high = (value >> self.l) + index;
+        self.high_bits.set_atomic_unchecked(high, 1, order);
     }
 
     pub fn build(self) -> DefaultEliasFano {
@@ -195,14 +195,14 @@ impl<H, L> EliasFano<H, L> {
 impl<H, L> BitLength for EliasFano<H, L> {
     #[inline(always)]
     fn len(&self) -> usize {
-        self.u as usize
+        self.u
     }
 }
 
 impl<H, L> BitCount for EliasFano<H, L> {
     #[inline(always)]
     fn count(&self) -> usize {
-        self.n as usize
+        self.n
     }
 }
 
