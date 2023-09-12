@@ -1,3 +1,10 @@
+/*
+ * SPDX-FileCopyrightText: 2023 Inria
+ * SPDX-FileCopyrightText: 2023 Sebastiano Vigna
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ */
+
 /// A dictionary of monotonically increasing values that can be indexed by a `usize`.
 pub trait IndexedDict {
     /// The type of the values stored in the dictionary.
