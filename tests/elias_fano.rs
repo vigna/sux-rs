@@ -108,12 +108,10 @@ fn test_epsserde() -> Result<()> {
         drop(file);
         println!("{}", schema.to_csv());
 
-        let c = epserde::map::<
-            EliasFano<
-                SparseIndex<CountingBitmap<Vec<u64>, usize>, Vec<u64>, 8>,
-                CompactArray<Vec<u64>>,
-            >,
-        >(&tmp_file, epserde::Flags::empty())?;
+        let c = <EliasFano<
+            SparseIndex<CountingBitmap<Vec<u64>, usize>, Vec<u64>, 8>,
+            CompactArray<Vec<u64>>,
+        >>::mmap(&tmp_file, epserde::Flags::empty())?;
 
         for i in 0..n {
             assert_eq!(ef.get(i as usize), c.get(i as usize));
