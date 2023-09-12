@@ -57,7 +57,7 @@ fn test_elias_fano() -> Result<()> {
         // do a slow select
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.select(i).unwrap() as u64, *v);
-            assert_eq!(ef.get(i) as u64, *v);
+            assert_eq!({ ef.get(i) }, *v);
         }
         // Add the ones indices
         let ef: EliasFano<
@@ -67,7 +67,7 @@ fn test_elias_fano() -> Result<()> {
         // do a fast select
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.select(i).unwrap() as u64, *v);
-            assert_eq!(ef.get(i) as u64, *v);
+            assert_eq!({ ef.get(i) }, *v);
         }
         println!("{:?}", ef);
 
@@ -79,7 +79,7 @@ fn test_elias_fano() -> Result<()> {
         // do a fast select
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.select(i).unwrap() as u64, *v);
-            assert_eq!(ef.get(i) as u64, *v);
+            assert_eq!({ ef.get(i) }, *v);
         }
         println!("{:?}", ef);
     }

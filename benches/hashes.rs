@@ -31,12 +31,6 @@ bench_hash!(
 
 bench_hash!(core::hash::SipHasher, bench_std_siphasher);
 
-bench_hash!(sux::hash::sip::Sip64Scalar<2, 4>, bench_siphash_scalar_24);
-bench_hash!(sux::hash::sip::Sip64Scalar<1, 3>, bench_siphash_scalar_13);
-bench_hash!(sux::hash::sip::Sip64Scalar<4, 8>, bench_siphash_scalar_48);
-bench_hash!(sux::hash::sip::Sip64Scalar<0, 0>, bench_siphash_scalar_00);
-bench_hash!(sux::hash::sip::Sip64Scalar<1, 1>, bench_siphash_scalar_11);
-
 //#[cfg(target_feature = "sse")]
 //bench_hash!(sux::hash::sip::SipHash64SSE<2, 4>, bench_siphash_sse_24);
 //#[cfg(target_feature = "sse")]

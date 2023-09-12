@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::ProgressLogger;
 use std::io::{BufRead, BufReader};
-use std::mem::{self, size_of};
+use std::mem::{self};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::thread;
@@ -40,7 +40,7 @@ impl Remap for u64 {
 
 struct EdgeList(usize);
 impl EdgeList {
-    const DEG_SHIFT: usize = 8 * size_of::<usize>() - 10;
+    const DEG_SHIFT: usize = usize::BITS as usize - 10;
     const EDGE_INDEX_MASK: usize = (1_usize << EdgeList::DEG_SHIFT) - 1;
     const DEG: usize = 1_usize << EdgeList::DEG_SHIFT;
 
@@ -92,17 +92,17 @@ impl<T: Remap> Function<T> {
     fn edge(sig: &[u64; 2], l: usize, segment_size: usize) -> [usize; 3] {
         let first_segment = sig[0] as usize >> 16 & (l - 1);
         [
-            ((sig[0] >> 32) * segment_size as u64 >> 32) as usize
-                + (first_segment + 0) * segment_size,
-            ((sig[1] & 0xFFFFFFFF) * segment_size as u64 >> 32) as usize
+            (((sig[0] >> 32) * segment_size as u64) >> 32) as usize
+                + first_segment * segment_size,
+            (((sig[1] & 0xFFFFFFFF) * segment_size as u64) >> 32) as usize
                 + (first_segment + 1) * segment_size,
-            ((sig[1] >> 32) * segment_size as u64 >> 32) as usize
+            (((sig[1] >> 32) * segment_size as u64) >> 32) as usize
                 + (first_segment + 2) * segment_size,
         ]
     }
 
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> u64 {
-        let edge = Self::edge(&sig, self.l, self.segment_size);
+        let edge = Self::edge(sig, self.l, self.segment_size);
         let chunk = Self::chunk(sig, self.chunk_mask);
         let chunk_offset = chunk * self.segment_size * (self.l + 2);
         self.values[edge[0] + chunk_offset]
@@ -126,11 +126,11 @@ impl<T: Remap> Function<T> {
         pl: &mut Option<&mut ProgressLogger>,
     ) -> Function<T> {
         let seed = rand::random::<u64>();
-        pl.as_mut().map(|pl| pl.start("Reading input..."));
+        if let Some(pl) = pl.as_mut() { pl.start("Reading input...") }
         let mut sigs = keys
             .map(|x| (T::remap(&x, seed), values.next().unwrap()))
             .collect::<Vec<_>>();
-        pl.as_mut().map(|pl| pl.done());
+        if let Some(pl) = pl.as_mut() { pl.done() }
 
         let eps = 0.001;
         let low_bits = if sigs.len() <= 1 << 21 {
@@ -179,7 +179,7 @@ impl<T: Remap> Function<T> {
 
                     pl.start("Generating graph...");
                     let mut edge_lists = Vec::new();
-                    edge_lists.resize_with(num_vertices, || EdgeList::default());
+                    edge_lists.resize_with(num_vertices, EdgeList::default);
 
                     sigs.iter().enumerate().for_each(|(edge_index, sig)| {
                         for &v in Self::edge(&sig.0, l, segment_size).iter() {
@@ -374,7 +374,7 @@ fn main() -> Result<()> {
         let file = std::fs::File::open(&filename)?;
         let func = Function::new(
             BufReader::new(file).lines().map(|line| line.unwrap()),
-            &mut (0..).into_iter(),
+            &mut (0..),
             64,
             &mut Some(&mut pl),
         );
@@ -395,14 +395,14 @@ fn main() -> Result<()> {
 
     if let Some(n) = args.n {
         let func = Function::new(
-            (0..n as u64).into_iter(),
-            &mut (0..).into_iter(),
+            0..n as u64,
+            &mut (0..),
             64,
             &mut Some(&mut pl),
         );
 
         pl.start("Querying...");
-        for (index, key) in (0..n as u64).into_iter().enumerate() {
+        for (index, key) in (0..n as u64).enumerate() {
             assert_eq!(index, func.get(&key) as usize);
         }
         pl.done_with_count(n);

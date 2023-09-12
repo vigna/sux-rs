@@ -14,17 +14,20 @@ fn main() {
 
     let mut r = StdRng::seed_from_u64(0);
     let start = Instant::now();
-    black_box(r.fill(fill));
+    r.fill(fill);
+    black_box(());
     println!("ChaCha12 {}", start.elapsed().as_nanos() as f64 / N as f64);
 
     let mut r = ChaCha8Rng::seed_from_u64(0);
     let start = Instant::now();
-    black_box(r.fill(fill));
+    r.fill(fill);
+    black_box(());
     println!("ChaCha8 {}", start.elapsed().as_nanos() as f64 / N as f64);
 
     let mut r = SmallRng::seed_from_u64(0);
     let start = Instant::now();
-    black_box(r.fill(fill));
+    r.fill(fill);
+    black_box(());
 
     println!(
         "xoshiro256++ {}",
