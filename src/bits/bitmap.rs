@@ -10,7 +10,10 @@ use common_traits::SelectInWord;
 use epserde::*;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::{
+    ops::Index,
+    sync::atomic::{AtomicU64, AtomicUsize, Ordering},
+};
 
 #[derive(Epserde, Debug)]
 pub struct Bitmap<B> {
@@ -39,6 +42,11 @@ impl Bitmap<Vec<AtomicU64>> {
 }
 
 impl<B> Bitmap<B> {
+    #[inline(always)]
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.len
+    }
     /// # Safety
     /// TODO: this function is never used
     #[inline(always)]
@@ -117,7 +125,7 @@ impl Bitmap<Vec<AtomicU64>> {
 impl<B> BitLength for Bitmap<B> {
     #[inline(always)]
     fn len(&self) -> usize {
-        self.len
+        self.len()
     }
 }
 
@@ -130,7 +138,19 @@ impl<B: VSliceCore> VSliceCore for Bitmap<B> {
 
     #[inline(always)]
     fn len(&self) -> usize {
-        self.len
+        self.len()
+    }
+}
+
+impl<B: VSlice> Index<usize> for Bitmap<B> {
+    type Output = bool;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match self.get(index) {
+            0 => &false,
+            1 => &true,
+            _ => unreachable!(),
+        }
     }
 }
 

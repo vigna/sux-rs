@@ -87,6 +87,7 @@ impl<'a> ConvertTo<&'a mut [u64]> for &'a mut [AtomicU64] {
 
 /// A trait for succinct data structures that expose the
 /// length of the underlying bit vector.
+#[allow(clippy::len_without_is_empty)]
 pub trait BitLength {
     /// Return the length in bits of the underlying bit vector.
     fn len(&self) -> usize;
