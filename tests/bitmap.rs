@@ -10,6 +10,7 @@ use epserde::*;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngCore, SeedableRng};
+use sux::bits::bitmap::{Bitmap, CountingBitmap};
 use sux::prelude::*;
 
 #[test]

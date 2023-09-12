@@ -10,6 +10,7 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand::SeedableRng;
+use sux::prelude::compact_array::CompactArray;
 use sux::prelude::*;
 
 #[test]

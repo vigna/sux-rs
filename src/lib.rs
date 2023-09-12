@@ -7,16 +7,17 @@
 #![doc = include_str!("../README.md")]
 #![deny(unconditional_recursion)]
 
+pub mod bits;
 pub mod dict;
 pub mod hash;
 pub mod mph;
 pub mod ranksel;
 pub mod sf;
 pub mod traits;
+pub mod utils;
 
 pub mod prelude {
-    pub use crate::bitmap::*;
-    pub use crate::compact_array::*;
+    pub use crate::bits::*;
     pub use crate::dict::prelude::*;
     pub use crate::hash::*;
     pub use crate::mph::*;
@@ -24,7 +25,3 @@ pub mod prelude {
     pub use crate::sf::*;
     pub use crate::traits::*;
 }
-
-mod bitmap;
-mod compact_array;
-pub mod utils;
