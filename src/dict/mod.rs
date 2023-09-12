@@ -7,10 +7,10 @@
 
 //! Rank and select operations.
 
-pub mod sparse_index;
-pub mod sparse_zero_index;
+pub mod elias_fano;
+pub mod rear_coded_list;
 
 pub mod prelude {
-    pub use super::sparse_index::*;
-    pub use super::sparse_zero_index::*;
+    pub use super::elias_fano::*;
+    pub use super::rear_coded_list::*;
 }
