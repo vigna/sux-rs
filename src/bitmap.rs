@@ -283,7 +283,7 @@ impl<B, S> CountingBitmap<B, S> {
         Self {
             data,
             len,
-            number_of_ones: number_of_ones,
+            number_of_ones,
         }
     }
     #[inline(always)]

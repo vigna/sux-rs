@@ -80,7 +80,7 @@ impl EliasFanoBuilder {
             n: self.n,
             l: self.l,
             low_bits: self.low_bits,
-            high_bits: self.high_bits.with_count(self.n as _).into(),
+            high_bits: self.high_bits.with_count(self.n as _),
         }
     }
 }
