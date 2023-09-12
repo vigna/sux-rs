@@ -7,7 +7,7 @@ use std::io::BufReader;
 use std::io::Read;
 use std::path::Path;
 
-/// GOV Minimum perfect Hashing:
+/// GOV Minimal perfect Hashing:
 ///
 /// Minimal perfect hash structure that reads Java-generated, dumped structures.
 ///
