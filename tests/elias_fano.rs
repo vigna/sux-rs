@@ -11,6 +11,8 @@ use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
 use std::sync::atomic::Ordering;
+use sux::prelude::bitmap::CountingBitmap;
+use sux::prelude::compact_array::CompactArray;
 use sux::prelude::*;
 
 #[test]

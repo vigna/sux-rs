@@ -7,7 +7,10 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::{bitmap::Bitmap, compact_array::CompactArray, prelude::CountingBitmap, traits::*};
+use crate::{
+    bits::bitmap::Bitmap, bits::bitmap::CountingBitmap, bits::compact_array::CompactArray,
+    traits::*,
+};
 use anyhow::{bail, Result};
 use core::sync::atomic::{AtomicU64, Ordering};
 use epserde::*;
