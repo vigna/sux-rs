@@ -6,9 +6,7 @@ use std::mem::{self};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::thread;
-use sux::spooky::spooky_short;
-use sux::spooky::spooky_short_mix;
-use sux::spooky::SC_CONST;
+use sux::prelude::spooky::*;
 use Ordering::Relaxed;
 
 pub trait Remap {
@@ -92,8 +90,7 @@ impl<T: Remap> Function<T> {
     fn edge(sig: &[u64; 2], l: usize, segment_size: usize) -> [usize; 3] {
         let first_segment = sig[0] as usize >> 16 & (l - 1);
         [
-            (((sig[0] >> 32) * segment_size as u64) >> 32) as usize
-                + first_segment * segment_size,
+            (((sig[0] >> 32) * segment_size as u64) >> 32) as usize + first_segment * segment_size,
             (((sig[1] & 0xFFFFFFFF) * segment_size as u64) >> 32) as usize
                 + (first_segment + 1) * segment_size,
             (((sig[1] >> 32) * segment_size as u64) >> 32) as usize
@@ -126,11 +123,15 @@ impl<T: Remap> Function<T> {
         pl: &mut Option<&mut ProgressLogger>,
     ) -> Function<T> {
         let seed = rand::random::<u64>();
-        if let Some(pl) = pl.as_mut() { pl.start("Reading input...") }
+        if let Some(pl) = pl.as_mut() {
+            pl.start("Reading input...")
+        }
         let mut sigs = keys
             .map(|x| (T::remap(&x, seed), values.next().unwrap()))
             .collect::<Vec<_>>();
-        if let Some(pl) = pl.as_mut() { pl.done() }
+        if let Some(pl) = pl.as_mut() {
+            pl.done()
+        }
 
         let eps = 0.001;
         let low_bits = if sigs.len() <= 1 << 21 {
@@ -394,12 +395,7 @@ fn main() -> Result<()> {
     }
 
     if let Some(n) = args.n {
-        let func = Function::new(
-            0..n as u64,
-            &mut (0..),
-            64,
-            &mut Some(&mut pl),
-        );
+        let func = Function::new(0..n as u64, &mut (0..), 64, &mut Some(&mut pl));
 
         pl.start("Querying...");
         for (index, key) in (0..n as u64).enumerate() {

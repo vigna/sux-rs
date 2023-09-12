@@ -27,5 +27,4 @@ pub mod prelude {
 
 mod bitmap;
 mod compact_array;
-pub mod spooky;
 pub mod utils;
