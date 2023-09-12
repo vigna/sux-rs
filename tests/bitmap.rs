@@ -113,7 +113,7 @@ fn test_epsserde() {
     b.serialize(&mut file).unwrap();
     drop(file);
 
-    let c = epserde::map::<Bitmap<Vec<u64>>>(&tmp_file, epserde::Flags::empty()).unwrap();
+    let c = <Bitmap<Vec<u64>>>::mmap(&tmp_file, epserde::Flags::empty()).unwrap();
 
     for i in 0..200 {
         assert_eq!(b.get(i), c.get(i));
@@ -129,8 +129,7 @@ fn test_epsserde() {
     b.serialize(&mut file).unwrap();
     drop(file);
 
-    let c = epserde::map::<CountingBitmap<Vec<u64>, usize>>(&tmp_file, epserde::Flags::empty())
-        .unwrap();
+    let c = <CountingBitmap<Vec<u64>, usize>>::mmap(&tmp_file, epserde::Flags::empty()).unwrap();
 
     for i in 0..200 {
         assert_eq!(b.get(i), c.get(i));

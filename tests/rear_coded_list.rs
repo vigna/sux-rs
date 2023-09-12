@@ -44,7 +44,7 @@ fn test_rear_coded_list() -> Result<()> {
     drop(file);
     println!("{}", schema.to_csv());
 
-    let c = epserde::map::<RearCodedList<u16>>(&tmp_file, epserde::Flags::empty())?;
+    let c = <RearCodedList<u16>>::mmap(&tmp_file, epserde::Flags::empty())?;
 
     for (i, word) in words.iter().enumerate() {
         assert_eq!(&c.get(i), word);

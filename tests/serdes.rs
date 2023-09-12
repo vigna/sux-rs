@@ -19,7 +19,7 @@ fn test_serdes() -> Result<()> {
     v.serialize(&mut file)?;
     drop(file);
 
-    let w = epserde::map::<CompactArray<Vec<u64>>>(&tmp_file, epserde::Flags::empty()).unwrap();
+    let w = <CompactArray<Vec<u64>>>::mmap(&tmp_file, epserde::Flags::empty()).unwrap();
 
     for i in 0..200 {
         assert_eq!(v.get(i), w.get(i));
