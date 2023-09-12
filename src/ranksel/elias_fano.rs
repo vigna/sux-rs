@@ -1,3 +1,12 @@
+/*
+ *
+ * SPDX-FileCopyrightText: 2023 Tommaso Fontana
+ * SPDX-FileCopyrightText: 2023 Inria
+ * SPDX-FileCopyrightText: 2023 Sebastiano Vigna
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ */
+
 use crate::{bitmap::Bitmap, compact_array::CompactArray, prelude::CountingBitmap, traits::*};
 use anyhow::{bail, Result};
 use core::sync::atomic::{AtomicU64, Ordering};

@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2023 Inria
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ */
+
 /// Like `core::mem::size_of()` but also for complex objects
 pub trait MemSize {
     /// Memory Owned, i.e. how much data is copied on Clone
