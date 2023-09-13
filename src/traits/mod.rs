@@ -11,17 +11,10 @@
 //! Traits are collected into a module so you can do `use sux::traits::*;`
 //! for ease of use.
 
-mod vslice;
-pub use vslice::*;
-
-mod indexed_dict;
-pub use indexed_dict::*;
-
-mod convert_to;
-pub use convert_to::*;
-
-mod rank_sel;
-pub use rank_sel::*;
+pub mod convert_to;
+pub mod indexed_dict;
+pub mod rank_sel;
+pub mod vslice;
 
 pub mod prelude {
     pub use super::convert_to::*;
