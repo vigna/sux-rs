@@ -7,16 +7,33 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+/*!
+
+Implementation of the Elias--Fano representation of monotone sequences.
+
+There are two ways to build an [`EliasFano`] structure: using
+an [`EliasFanoBuilder`] or an [`EliasFanoAtomicBuilder`].
+
+The main trait implemented by [`EliasFano`] is [`IndexedDict`], which
+makes it possible to access its values with [`IndexedDict::get`].
+
+Note that [`EliasFano`] can also be interpreted as an opportunistic
+(i.e., succinct) representation of a bit vector in which the represented
+values are the positions of the ones. In this case, [`EliasFano::len`] will
+return the number of ones in the vector, rather than its length, which
+you can recover with using `as BitLength`.
+ */
 use crate::prelude::*;
 use anyhow::{bail, Result};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use epserde::*;
 
-/// The default combination of parameters for Elias-Fano which is returned
-/// by the builders
+/// The default combination of parameters return by the builders
 pub type DefaultEliasFano = EliasFano<CountBitVec<Vec<usize>>, CompactArray<Vec<usize>>>;
 
-/// A sequential builder for elias-fano
+/// A sequential builder for [`EliasFano`].
+///
+/// After creating an instance, you can use [`EliasFanoBuilder::push`] to add new values.
 pub struct EliasFanoBuilder {
     u: usize,
     n: usize,
@@ -28,6 +45,8 @@ pub struct EliasFanoBuilder {
 }
 
 impl EliasFanoBuilder {
+    /// Create a builder for an [`EliasFano`] containing
+    /// `n` numbers smaller than `u`.
     pub fn new(u: usize, n: usize) -> Self {
         let l = if u >= n {
             (u as f64 / n as f64).log2().floor() as usize
@@ -46,11 +65,18 @@ impl EliasFanoBuilder {
         }
     }
 
-    pub fn mem_upperbound(u: usize, n: usize) -> usize {
-        2 * n + (n * (u as f64 / n as f64).log2().ceil() as usize)
-    }
-
+    /// Add a new value to the builder.
+    ///
+    /// # Panic
+    /// May panic if the value is smaller than the last provided
+    /// value, or if too many values are provided.
     pub fn push(&mut self, value: usize) -> Result<()> {
+        if self.count == self.n {
+            bail!("Too many values");
+        }
+        if value >= self.u {
+            bail!("Value too large: {} >= {}", value, self.u);
+        }
         if value < self.last_value {
             bail!("The values given to elias-fano are not monotone");
         }
@@ -63,9 +89,9 @@ impl EliasFanoBuilder {
     /// # Safety
     ///
     /// Values passed to this function must be smaller than `u` and must be monotone.
+    /// Moreover, the function should not be called more than `n` times.
     pub unsafe fn push_unchecked(&mut self, value: usize) {
         let low = value & ((1 << self.l) - 1);
-        // TODO
         self.low_bits.set(self.count, low);
 
         let high = (value >> self.l) + self.count;
@@ -81,12 +107,17 @@ impl EliasFanoBuilder {
             n: self.n,
             l: self.l,
             low_bits: self.low_bits,
-            high_bits: self.high_bits.with_count(self.n as _),
+            high_bits: self.high_bits.with_count(self.n),
         }
     }
 }
 
-/// A concurrent builder for elias-fano
+/// A sequential builder for [`EliasFano`].
+///
+/// After creating an instance, you can use [`EliasFanoAtomicBuilder::set`]
+/// to set the values concurrently. However, this operation is inherently
+/// unsafe as no check is performed on the provided data (e.g., duplicate
+/// indices and lack of monotonicity are not detected).
 pub struct EliasFanoAtomicBuilder {
     u: usize,
     n: usize,
@@ -112,17 +143,14 @@ impl EliasFanoAtomicBuilder {
         }
     }
 
-    pub fn mem_upperbound(u: u64, n: u64) -> u64 {
-        2 * n + (n * (u as f64 / n as f64).log2().ceil() as u64)
-    }
-
     /// Concurrently set values
     ///
     /// # Safety
     /// The values and indices have to be right and the values should be monotone
     pub unsafe fn set(&self, index: usize, value: usize, order: Ordering) {
         let low = value & ((1 << self.l) - 1);
-        // TODO
+        // Note that the concurrency guarantees of CompactArray
+        // are sufficient for us.
         self.low_bits.set_unchecked(index, low, order);
 
         let high = (value >> self.l) + index;
@@ -143,20 +171,35 @@ impl EliasFanoAtomicBuilder {
 
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EliasFano<H, L> {
-    /// upperbound of the values
+    /// An upper bound to the values.
     u: usize,
-    /// number of values
+    /// The number of values.
     n: usize,
-    /// the size of the lower bits
+    /// The number of lower bits.
     l: usize,
-    /// A structure that stores the `l` lowest bits of the values
+    /// The lower-bits array.
     low_bits: L,
-    /// The bitmap containing the gaps between high bits as unary codes
+    /// the higher-bits array.
     high_bits: H,
 }
 
 impl<H, L> EliasFano<H, L> {
-    pub fn monad<F, H2, L2>(self, func: F) -> EliasFano<H2, L2>
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.n
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Estimate the size of an instance.
+    pub fn estimate_size(u: usize, n: usize) -> usize {
+        2 * n + (n * (u as f64 / n as f64).log2().ceil() as usize)
+    }
+
+    pub fn transform<F, H2, L2>(self, func: F) -> EliasFano<H2, L2>
     where
         F: Fn(H, L) -> (H2, L2),
     {
@@ -173,7 +216,7 @@ impl<H, L> EliasFano<H, L> {
 
 impl<H, L> EliasFano<H, L> {
     /// # Safety
-    /// TODO: this function is never used
+    /// No check is performed.
     #[inline(always)]
     pub unsafe fn from_raw_parts(u: usize, n: usize, l: usize, low_bits: L, high_bits: H) -> Self {
         Self {
@@ -232,7 +275,7 @@ impl<H: Select, L: VSlice> IndexedDict for EliasFano<H, L> {
     type Value = usize;
     #[inline]
     fn len(&self) -> usize {
-        self.count()
+        self.n
     }
 
     #[inline(always)]
