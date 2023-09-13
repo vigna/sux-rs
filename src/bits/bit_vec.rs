@@ -431,24 +431,6 @@ impl<'a> From<BitVec<&'a [AtomicUsize]>> for BitVec<&'a [usize]> {
     }
 }
 
-/// Provide conversion from mutable references to standard bit vectors
-/// to mutable references to atomic bit vectors.
-impl<'a> From<BitVec<&'a mut [usize]>> for BitVec<&'a mut [AtomicUsize]> {
-    #[inline]
-    fn from(bm: BitVec<&'a mut [usize]>) -> Self {
-        bm.convert_to().unwrap()
-    }
-}
-
-/// Provide conversion from mutable references to atomic bit vectors
-/// to mutable references to standard bit vectors.
-impl<'a> From<BitVec<&'a mut [AtomicUsize]>> for BitVec<&'a mut [usize]> {
-    #[inline]
-    fn from(bm: BitVec<&'a mut [AtomicUsize]>) -> Self {
-        bm.convert_to().unwrap()
-    }
-}
-
 /// Forget the number of ones.
 impl<B> ConvertTo<BitVec<B>> for CountBitVec<B> {
     fn convert_to(self) -> Result<BitVec<B>> {
