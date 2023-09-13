@@ -11,7 +11,7 @@ pub mod bits;
 pub mod dict;
 pub mod hash;
 pub mod mph;
-pub mod ranksel;
+pub mod rank_sel;
 pub mod sf;
 pub mod traits;
 pub mod utils;
@@ -21,7 +21,7 @@ pub mod prelude {
     pub use crate::dict::prelude::*;
     pub use crate::hash::*;
     pub use crate::mph::*;
-    pub use crate::ranksel::prelude::*;
+    pub use crate::rank_sel::prelude::*;
     pub use crate::sf::*;
     pub use crate::traits::*;
 }

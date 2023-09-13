@@ -65,7 +65,7 @@ fn test_elias_fano() -> Result<()> {
         }
         // Add the ones indices
         let ef: EliasFano<
-            SparseIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
+            QuantumIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
             CompactArray<Vec<usize>>,
         > = ef.convert_to().unwrap();
         // do a fast select
@@ -77,7 +77,7 @@ fn test_elias_fano() -> Result<()> {
 
         // Add the indices
         let ef: sux::dict::elias_fano::EliasFano<
-            SparseZeroIndex<SparseIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>, Vec<usize>, 8>,
+            QuantumZeroIndex<QuantumIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>, Vec<usize>, 8>,
             CompactArray<Vec<usize>>,
         > = ef.convert_to().unwrap();
         // do a fast select
@@ -109,7 +109,7 @@ fn test_epsserde() -> Result<()> {
         let ef: DefaultEliasFano = efb.build();
         // Add the ones indices
         let ef: EliasFano<
-            SparseIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
+            QuantumIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
             CompactArray<Vec<usize>>,
         > = ef.convert_to().unwrap();
 
@@ -120,7 +120,7 @@ fn test_epsserde() -> Result<()> {
         println!("{}", schema.to_csv());
 
         let c = <EliasFano<
-            SparseIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
+            QuantumIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
             CompactArray<Vec<usize>>,
         >>::mmap(&tmp_file, epserde::des::Flags::empty())?;
 
