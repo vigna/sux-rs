@@ -241,6 +241,6 @@ impl<H: Select, L: VSlice> IndexedDict for EliasFano<H, L> {
     unsafe fn get_unchecked(&self, index: usize) -> usize {
         let high_bits = self.high_bits.select_unchecked(index) - index;
         let low_bits = self.low_bits.get_unchecked(index);
-        (high_bits << self.l) | low_bits as usize
+        (high_bits << self.l) | low_bits
     }
 }

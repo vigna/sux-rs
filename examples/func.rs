@@ -116,6 +116,10 @@ impl<T: Remap> Function<T> {
         self.num_keys
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn new<I: std::iter::Iterator<Item = T>, V: std::iter::Iterator<Item = u64>>(
         keys: I,
         values: &mut V,
@@ -259,7 +263,7 @@ impl<T: Remap> Function<T> {
                                 debug_assert_eq!(v, edge[2]);
                                 values[edge[0]].load(Relaxed) ^ values[edge[1]].load(Relaxed)
                             };
-                            values[v].store(&sigs[edge_index].1 ^ value, Relaxed);
+                            values[v].store(sigs[edge_index].1 ^ value, Relaxed);
 
                             assert_eq!(
                                 values[edge[0]].load(Relaxed)
