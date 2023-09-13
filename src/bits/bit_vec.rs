@@ -487,3 +487,37 @@ impl From<BitVec<Vec<usize>>> for CountBitVec<Vec<usize>> {
         bitmap.convert_to().unwrap()
     }
 }
+
+/// Provide conversion betweeen bit vectors whose backends
+/// are [convertible](ConvertTo) into one another.
+///
+/// Many implementations of this trait are then used to
+/// implement by delegation a corresponding [`From`].
+impl<B, D> ConvertTo<CountBitVec<D>> for CountBitVec<B>
+where
+    B: ConvertTo<D>,
+{
+    fn convert_to(self) -> Result<CountBitVec<D>> {
+        Ok(CountBitVec {
+            number_of_ones: self.number_of_ones,
+            len: self.len,
+            data: self.data.convert_to()?,
+        })
+    }
+}
+
+/// Needed so that the sparse index can build the ones.
+impl AsRef<[usize]> for CountBitVec<Vec<usize>> {
+    #[inline(always)]
+    fn as_ref(&self) -> &[usize] {
+        self.data.as_ref()
+    }
+}
+
+/// Needed so that the sparse index can build the ones.
+impl AsRef<[usize]> for BitVec<Vec<usize>> {
+    #[inline(always)]
+    fn as_ref(&self) -> &[usize] {
+        self.data.as_ref()
+    }
+}

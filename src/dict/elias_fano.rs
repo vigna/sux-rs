@@ -11,9 +11,8 @@ use crate::{
     bits::bit_vec::BitVec, bits::bit_vec::CountBitVec, bits::compact_array::CompactArray, traits::*,
 };
 use anyhow::{bail, Result};
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 use epserde::*;
-use std::sync::atomic::AtomicUsize;
 
 /// The default combination of parameters for Elias-Fano which is returned
 /// by the builders
