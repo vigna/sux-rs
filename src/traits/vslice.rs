@@ -58,6 +58,7 @@ macro_rules! panic_if_out_of_bounds {
         }
     };
 }
+pub(crate) use panic_if_out_of_bounds;
 
 macro_rules! panic_if_value {
     ($value: expr, $mask: expr, $bit_width: expr) => {
@@ -66,10 +67,16 @@ macro_rules! panic_if_value {
         }
     };
 }
+pub(crate) use panic_if_value;
 
 macro_rules! debug_assert_bounds {
     ($index: expr, $len: expr) => {
-        debug_assert!($index < $len, "Index out of bounds: {} >= {}", $index, $len);
+        debug_assert!(
+            $index < $len || ($index == 0 && $len == 0),
+            "Index out of bounds: {} >= {}",
+            $index,
+            $len
+        );
     };
 }
 
