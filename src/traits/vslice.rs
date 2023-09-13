@@ -19,7 +19,7 @@
  Implementations must return always zero on a [`VSlice::get`] when the bit
  width is zero. The behavior of a [`VSliceMut::set`] in the same context is not defined.
 */
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// Trait for common bits between [`VSlice`] and [`VSliceAtomic`]
 pub trait VSliceCore {
@@ -52,13 +52,13 @@ pub trait VSlice: VSliceCore {
     ///
     /// # Safety
     /// `index` must be in [0..[len](`VSlice::len`)). No bounds checking is performed.
-    unsafe fn get_unchecked(&self, index: usize) -> u64;
+    unsafe fn get_unchecked(&self, index: usize) -> usize;
 
     /// Return the value at the specified index.
     ///
     /// # Panics
     /// May panic if the index is not in in [0..[len](`VSlice::len`))
-    fn get(&self, index: usize) -> u64 {
+    fn get(&self, index: usize) -> usize {
         if index >= self.len() {
             panic_out_of_bounds!(index, self.len());
         } else {
@@ -73,19 +73,19 @@ pub trait VSliceMut: VSlice {
     ///
     /// # Safety
     /// `index` must be in [0..[len](`VSlice::len`)). No bounds checking is performed.
-    unsafe fn set_unchecked(&mut self, index: usize, value: u64);
+    unsafe fn set_unchecked(&mut self, index: usize, value: usize);
 
     /// Set the element of the slice at the specified index.
     ///
     ///
     /// May panic if the index is not in in [0..[len](`VSlice::len`))
     /// or the value does not fit in [`VSlice::bit_width`] bits.
-    fn set(&mut self, index: usize, value: u64) {
+    fn set(&mut self, index: usize, value: usize) {
         if index >= self.len() {
             panic_out_of_bounds!(index, self.len());
         }
         let bw = self.bit_width();
-        let mask = u64::MAX.wrapping_shr(64 - bw as u32) & !((bw as i64 - 1) >> 63) as u64;
+        let mask = usize::MAX.wrapping_shr(64 - bw as u32) & !((bw as i64 - 1) >> 63) as usize;
         if value & mask != value {
             panic_value!(value, bw);
         }
@@ -100,13 +100,13 @@ pub trait VSliceAtomic: VSliceCore {
     ///
     /// # Safety
     /// `index` must be in [0..[len](`VSlice::len`)). No bounds checking is performed.
-    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> u64;
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> usize;
 
     /// Return the value at the specified index.
     ///
     /// # Panics
     /// May panic if the index is not in in [0..[len](`VSlice::len`))
-    fn get_atomic(&self, index: usize, order: Ordering) -> u64 {
+    fn get_atomic(&self, index: usize, order: Ordering) -> usize {
         if index >= self.len() {
             panic_out_of_bounds!(index, self.len());
         } else {
@@ -124,19 +124,19 @@ pub trait VSliceAtomic: VSliceCore {
     ///
     /// # Safety
     /// `index` must be in [0..[len](`VSlice::len`)). No bounds checking is performed.
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: u64, order: Ordering);
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: usize, order: Ordering);
 
     /// Set the element of the slice at the specified index.
     ///
     ///
     /// May panic if the index is not in in [0..[len](`VSlice::len`))
     /// or the value does not fit in [`VSlice::bit_width`] bits.
-    fn set_atomic(&self, index: usize, value: u64, order: Ordering) {
+    fn set_atomic(&self, index: usize, value: usize, order: Ordering) {
         if index >= self.len() {
             panic_out_of_bounds!(index, self.len());
         }
         let bw = self.bit_width();
-        let mask = u64::MAX.wrapping_shr(64 - bw as u32) & !((bw as i64 - 1) >> 63) as u64;
+        let mask = usize::MAX.wrapping_shr(64 - bw as u32) & !((bw as i64 - 1) >> 63) as usize;
         if value & mask != value {
             panic_value!(value, bw);
         }
@@ -154,16 +154,16 @@ pub trait VSliceMutAtomicCmpExchange: VSliceAtomic {
     fn compare_exchange(
         &self,
         index: usize,
-        current: u64,
-        new: u64,
+        current: usize,
+        new: usize,
         success: Ordering,
         failure: Ordering,
-    ) -> Result<u64, u64> {
+    ) -> Result<usize, usize> {
         if index >= self.len() {
             panic_out_of_bounds!(index, self.len());
         }
         let bw = self.bit_width();
-        let mask = u64::MAX.wrapping_shr(64 - bw as u32) & !((bw as i64 - 1) >> 63) as u64;
+        let mask = usize::MAX.wrapping_shr(64 - bw as u32) & !((bw as i64 - 1) >> 63) as usize;
         if current & mask != current {
             panic!("Value {} does not fit in {} bits", current, bw)
         }
@@ -183,199 +183,199 @@ pub trait VSliceMutAtomicCmpExchange: VSliceAtomic {
     unsafe fn compare_exchange_unchecked(
         &self,
         index: usize,
-        current: u64,
-        new: u64,
+        current: usize,
+        new: usize,
         success: Ordering,
         failure: Ordering,
-    ) -> Result<u64, u64>;
+    ) -> Result<usize, usize>;
 }
 
-impl<'a> VSliceCore for &'a [u64] {
+impl<'a> VSliceCore for &'a [usize] {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         64
     }
     #[inline(always)]
     fn len(&self) -> usize {
-        <[u64]>::len(self)
+        <[usize]>::len(self)
     }
 }
 
-impl<'a> VSlice for &'a [u64] {
+impl<'a> VSlice for &'a [usize] {
     #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+    unsafe fn get_unchecked(&self, index: usize) -> usize {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        *<[u64]>::get_unchecked(self, index)
+        *<[usize]>::get_unchecked(self, index)
     }
 }
 
-impl<'a> VSliceCore for &'a [AtomicU64] {
+impl<'a> VSliceCore for &'a [AtomicUsize] {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         64
     }
     #[inline(always)]
     fn len(&self) -> usize {
-        <[AtomicU64]>::len(self)
+        <[AtomicUsize]>::len(self)
     }
 }
 
-impl<'a> VSliceAtomic for &'a [AtomicU64] {
+impl<'a> VSliceAtomic for &'a [AtomicUsize] {
     #[inline(always)]
-    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> u64 {
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> usize {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        <[AtomicU64]>::get_unchecked(self, index).load(order)
+        <[AtomicUsize]>::get_unchecked(self, index).load(order)
     }
     #[inline(always)]
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: u64, order: Ordering) {
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: usize, order: Ordering) {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        <[AtomicU64]>::get_unchecked(self, index).store(value, order);
+        <[AtomicUsize]>::get_unchecked(self, index).store(value, order);
     }
 }
 
-impl<'a> VSliceCore for &'a mut [u64] {
+impl<'a> VSliceCore for &'a mut [usize] {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         64
     }
     #[inline(always)]
     fn len(&self) -> usize {
-        <[u64]>::len(self)
+        <[usize]>::len(self)
     }
 }
 
-impl<'a> VSlice for &'a mut [u64] {
+impl<'a> VSlice for &'a mut [usize] {
     #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+    unsafe fn get_unchecked(&self, index: usize) -> usize {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        *<[u64]>::get_unchecked(self, index)
+        *<[usize]>::get_unchecked(self, index)
     }
 }
 
-impl<'a> VSliceMut for &'a mut [u64] {
+impl<'a> VSliceMut for &'a mut [usize] {
     #[inline(always)]
-    unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
+    unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        *<[u64]>::get_unchecked_mut(self, index) = value;
+        *<[usize]>::get_unchecked_mut(self, index) = value;
     }
 }
 
-impl<'a> VSliceCore for &'a mut [AtomicU64] {
+impl<'a> VSliceCore for &'a mut [AtomicUsize] {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         64
     }
     #[inline(always)]
     fn len(&self) -> usize {
-        <[AtomicU64]>::len(self)
+        <[AtomicUsize]>::len(self)
     }
 }
 
-impl<'a> VSliceAtomic for &'a mut [AtomicU64] {
+impl<'a> VSliceAtomic for &'a mut [AtomicUsize] {
     #[inline(always)]
-    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> u64 {
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> usize {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        <[AtomicU64]>::get_unchecked(self, index).load(order)
+        <[AtomicUsize]>::get_unchecked(self, index).load(order)
     }
     #[inline(always)]
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: u64, order: Ordering) {
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: usize, order: Ordering) {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        <[AtomicU64]>::get_unchecked(self, index).store(value, order);
+        <[AtomicUsize]>::get_unchecked(self, index).store(value, order);
     }
 }
 
-impl<'a> VSliceMutAtomicCmpExchange for &'a [AtomicU64] {
+impl<'a> VSliceMutAtomicCmpExchange for &'a [AtomicUsize] {
     #[inline(always)]
     unsafe fn compare_exchange_unchecked(
         &self,
         index: usize,
-        current: u64,
-        new: u64,
+        current: usize,
+        new: usize,
         success: Ordering,
         failure: Ordering,
-    ) -> Result<u64, u64> {
+    ) -> Result<usize, usize> {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        <[AtomicU64]>::get_unchecked(self, index).compare_exchange(current, new, success, failure)
+        <[AtomicUsize]>::get_unchecked(self, index).compare_exchange(current, new, success, failure)
     }
 }
 
-impl<'a> VSliceMutAtomicCmpExchange for &'a mut [AtomicU64] {
+impl<'a> VSliceMutAtomicCmpExchange for &'a mut [AtomicUsize] {
     #[inline(always)]
     unsafe fn compare_exchange_unchecked(
         &self,
         index: usize,
-        current: u64,
-        new: u64,
+        current: usize,
+        new: usize,
         success: Ordering,
         failure: Ordering,
-    ) -> Result<u64, u64> {
+    ) -> Result<usize, usize> {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        <[AtomicU64]>::get_unchecked(self, index).compare_exchange(current, new, success, failure)
+        <[AtomicUsize]>::get_unchecked(self, index).compare_exchange(current, new, success, failure)
     }
 }
 
-impl VSliceCore for Vec<u64> {
+impl VSliceCore for Vec<usize> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         64
     }
     #[inline(always)]
     fn len(&self) -> usize {
-        <[u64]>::len(self)
+        <[usize]>::len(self)
     }
 }
 
-impl VSlice for Vec<u64> {
+impl VSlice for Vec<usize> {
     #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+    unsafe fn get_unchecked(&self, index: usize) -> usize {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        *<[u64]>::get_unchecked(self, index)
+        *<[usize]>::get_unchecked(self, index)
     }
 }
 
-impl VSliceMut for Vec<u64> {
+impl VSliceMut for Vec<usize> {
     #[inline(always)]
-    unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
+    unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        *<[u64]>::get_unchecked_mut(self, index) = value;
+        *<[usize]>::get_unchecked_mut(self, index) = value;
     }
 }
 
-impl VSliceCore for Vec<AtomicU64> {
+impl VSliceCore for Vec<AtomicUsize> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         64
     }
     #[inline(always)]
     fn len(&self) -> usize {
-        <[AtomicU64]>::len(self)
+        <[AtomicUsize]>::len(self)
     }
 }
-impl VSliceAtomic for Vec<AtomicU64> {
+impl VSliceAtomic for Vec<AtomicUsize> {
     #[inline(always)]
-    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> u64 {
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> usize {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        <[AtomicU64]>::get_unchecked(self, index).load(order)
+        <[AtomicUsize]>::get_unchecked(self, index).load(order)
     }
     #[inline(always)]
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: u64, order: Ordering) {
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: usize, order: Ordering) {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        <[AtomicU64]>::get_unchecked(self, index).store(value, order);
+        <[AtomicUsize]>::get_unchecked(self, index).store(value, order);
     }
 }
 
-impl VSliceMutAtomicCmpExchange for Vec<AtomicU64> {
+impl VSliceMutAtomicCmpExchange for Vec<AtomicUsize> {
     #[inline(always)]
     unsafe fn compare_exchange_unchecked(
         &self,
         index: usize,
-        current: u64,
-        new: u64,
+        current: usize,
+        new: usize,
         success: Ordering,
         failure: Ordering,
-    ) -> Result<u64, u64> {
+    ) -> Result<usize, usize> {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        <[AtomicU64]>::get_unchecked(self, index).compare_exchange(current, new, success, failure)
+        <[AtomicUsize]>::get_unchecked(self, index).compare_exchange(current, new, success, failure)
     }
 }
 
@@ -392,9 +392,9 @@ impl VSliceCore for mmap_rs::Mmap {
 
 impl VSlice for mmap_rs::Mmap {
     #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+    unsafe fn get_unchecked(&self, index: usize) -> usize {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        let ptr = (self.as_ptr() as *const u64).add(index);
+        let ptr = (self.as_ptr() as *const usize).add(index);
         std::ptr::read(ptr)
     }
 }
@@ -412,33 +412,33 @@ impl VSliceCore for mmap_rs::MmapMut {
 
 impl VSlice for mmap_rs::MmapMut {
     #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+    unsafe fn get_unchecked(&self, index: usize) -> usize {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        let ptr = (self.as_ptr() as *const u64).add(index);
+        let ptr = (self.as_ptr() as *const usize).add(index);
         std::ptr::read(ptr)
     }
 }
 
 impl VSliceAtomic for mmap_rs::MmapMut {
     #[inline(always)]
-    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> u64 {
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> usize {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        let ptr = (self.as_ptr() as *const AtomicU64).add(index);
+        let ptr = (self.as_ptr() as *const AtomicUsize).add(index);
         (*ptr).load(order)
     }
     #[inline(always)]
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: u64, order: Ordering) {
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: usize, order: Ordering) {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        let ptr = (self.as_ptr() as *const AtomicU64).add(index);
+        let ptr = (self.as_ptr() as *const AtomicUsize).add(index);
         (*ptr).store(value, order)
     }
 }
 
 impl VSliceMut for mmap_rs::MmapMut {
     #[inline(always)]
-    unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
+    unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        let ptr = (self.as_ptr() as *mut u64).add(index);
+        let ptr = (self.as_ptr() as *mut usize).add(index);
         std::ptr::write(ptr, value);
     }
 }
@@ -448,13 +448,13 @@ impl VSliceMutAtomicCmpExchange for mmap_rs::MmapMut {
     unsafe fn compare_exchange_unchecked(
         &self,
         index: usize,
-        current: u64,
-        new: u64,
+        current: usize,
+        new: usize,
         success: Ordering,
         failure: Ordering,
-    ) -> Result<u64, u64> {
+    ) -> Result<usize, usize> {
         debug_assert!(index < self.len(), "{} {}", index, self.len());
-        let ptr = (self.as_ptr() as *const AtomicU64).add(index);
+        let ptr = (self.as_ptr() as *const AtomicUsize).add(index);
         (*ptr).compare_exchange(current, new, success, failure)
     }
 }

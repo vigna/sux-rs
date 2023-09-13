@@ -5,11 +5,12 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::Ordering;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand::SeedableRng;
+use std::sync::atomic::AtomicUsize;
 use sux::prelude::compact_array::CompactArray;
 use sux::prelude::*;
 
@@ -43,7 +44,7 @@ fn test_compact_array() {
             }
         }
         // convert to atomic
-        let cp: CompactArray<Vec<AtomicU64>> = cp.into();
+        let cp: CompactArray<Vec<AtomicUsize>> = cp.into();
         for _ in 0..10 {
             let values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
 

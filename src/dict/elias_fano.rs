@@ -13,18 +13,19 @@ use crate::{
 use anyhow::{bail, Result};
 use core::sync::atomic::{AtomicU64, Ordering};
 use epserde::*;
+use std::sync::atomic::AtomicUsize;
 
 /// The default combination of parameters for Elias-Fano which is returned
 /// by the builders
-pub type DefaultEliasFano = EliasFano<CountBitVec<Vec<u64>>, CompactArray<Vec<u64>>>;
+pub type DefaultEliasFano = EliasFano<CountBitVec<Vec<usize>>, CompactArray<Vec<usize>>>;
 
 /// A sequential builder for elias-fano
 pub struct EliasFanoBuilder {
     u: usize,
     n: usize,
     l: usize,
-    low_bits: CompactArray<Vec<u64>>,
-    high_bits: BitVec<Vec<u64>>,
+    low_bits: CompactArray<Vec<usize>>,
+    high_bits: BitVec<Vec<usize>>,
     last_value: usize,
     count: usize,
 }
@@ -68,7 +69,7 @@ impl EliasFanoBuilder {
     pub unsafe fn push_unchecked(&mut self, value: usize) {
         let low = value & ((1 << self.l) - 1);
         // TODO
-        self.low_bits.set(self.count, low as u64);
+        self.low_bits.set(self.count, low);
 
         let high = (value >> self.l) + self.count;
         self.high_bits.set(high, true);
@@ -93,8 +94,8 @@ pub struct EliasFanoAtomicBuilder {
     u: usize,
     n: usize,
     l: usize,
-    low_bits: CompactArray<Vec<AtomicU64>>,
-    high_bits: BitVec<Vec<AtomicU64>>,
+    low_bits: CompactArray<Vec<AtomicUsize>>,
+    high_bits: BitVec<Vec<AtomicUsize>>,
 }
 
 impl EliasFanoAtomicBuilder {
@@ -125,14 +126,14 @@ impl EliasFanoAtomicBuilder {
     pub unsafe fn set(&self, index: usize, value: usize, order: Ordering) {
         let low = value & ((1 << self.l) - 1);
         // TODO
-        self.low_bits.set_atomic_unchecked(index, low as u64, order);
+        self.low_bits.set_atomic_unchecked(index, low, order);
 
         let high = (value >> self.l) + index;
         self.high_bits.set(high, true, order);
     }
 
     pub fn build(self) -> DefaultEliasFano {
-        let bit_vec: BitVec<Vec<u64>> = self.high_bits.into();
+        let bit_vec: BitVec<Vec<usize>> = self.high_bits.into();
         EliasFano {
             u: self.u,
             n: self.n,

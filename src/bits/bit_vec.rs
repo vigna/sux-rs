@@ -8,12 +8,12 @@
 
 Bit vector implementations. There are three flavors:
 
-- `BitVec<Vec<u64>>`: a mutable bit vector with a `Vec<u64>` as underlying storage;
-- `BitVec<&[u64]>`: a mutable bit vector with a `&[u64]` as underlying storage,
+- `BitVec<Vec<usize>>`: a mutable bit vector with a `Vec<usize>` as underlying storage;
+- `BitVec<&[usize]>`: a mutable bit vector with a `&[usize]` as underlying storage,
    mainly useful for [`epserde`];
-- `BitVec<Vec<AtomicU64>>`: a thread-safe mutable bit vector
-   with a `Vec<AtomicU64>` as underlying storage;
-- `CountBitVec<Vec<u64>, usize>`: an immutable bit vector with a `Vec<u64>`
+- `BitVec<Vec<AtomicUsize>>`: a thread-safe mutable bit vector
+   with a `Vec<AtomicUsize>` as underlying storage;
+- `CountBitVec<Vec<usize>, usize>`: an immutable bit vector with a `Vec<usize>`
    as underlying storage that implements [`BitCount`].
 
 It is possible to juggle between the three flavors using [`From`].
@@ -26,11 +26,13 @@ use epserde::*;
 use rayon::prelude::*;
 use std::{
     ops::Index,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
+const BITS: usize = usize::BITS as usize;
+
 /// A bit vector with selectable backend. We provide implementations
-/// for `Vec<u64>` and `Vec<AtomicU64>`.
+/// for `Vec<usize>` and `Vec<AtomicUsize>`.
 ///
 /// In the second case, [`BitVec::get`]
 /// and [`BitVec::set`] are both thread-safe, as they both take an immutable reference.
@@ -55,7 +57,7 @@ impl<B> BitLength for BitVec<B> {
     }
 }
 
-impl Index<usize> for BitVec<Vec<u64>> {
+impl Index<usize> for BitVec<Vec<usize>> {
     type Output = bool;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -66,10 +68,10 @@ impl Index<usize> for BitVec<Vec<u64>> {
     }
 }
 
-impl BitVec<Vec<u64>> {
+impl BitVec<Vec<usize>> {
     /// Create a new bit vector of length `len`.
     pub fn new(len: usize) -> Self {
-        let n_of_words = (len + 63) / 64;
+        let n_of_words = (len + BITS - 1) / BITS;
         Self {
             data: vec![0; n_of_words],
             len,
@@ -77,12 +79,12 @@ impl BitVec<Vec<u64>> {
     }
 }
 
-impl BitVec<Vec<AtomicU64>> {
+impl BitVec<Vec<AtomicUsize>> {
     /// Create a new atomic bit vector of length `len`.
     pub fn new_atomic(len: usize) -> Self {
         let n_of_words = (len + 63) / 64;
         Self {
-            data: (0..n_of_words).map(|_| AtomicU64::new(0)).collect(),
+            data: (0..n_of_words).map(|_| AtomicUsize::new(0)).collect(),
             len,
         }
     }
@@ -108,7 +110,7 @@ impl<B> BitVec<B> {
     }
 }
 
-impl BitVec<Vec<u64>> {
+impl BitVec<Vec<usize>> {
     /// Return the number of bits set to 1 in this bit vector.
     ///
     /// If the feature "rayon" is enabled, this function is parallelized.
@@ -131,7 +133,7 @@ impl BitVec<Vec<u64>> {
     /// No control is performed on the number of ones, unless
     /// debug assertions are enabled.</div>
     #[inline(always)]
-    pub fn with_count(self, number_of_ones: usize) -> CountBitVec<Vec<u64>> {
+    pub fn with_count(self, number_of_ones: usize) -> CountBitVec<Vec<usize>> {
         debug_assert!(number_of_ones <= self.len);
         debug_assert_eq!(number_of_ones, self.count_ones());
         CountBitVec {
@@ -142,7 +144,7 @@ impl BitVec<Vec<u64>> {
     }
 }
 
-impl BitVec<Vec<AtomicU64>> {
+impl BitVec<Vec<AtomicUsize>> {
     /// Return the number of bits set to 1 in this bit vector.
     ///
     /// If the feature "rayon" is enabled, this function is parallelized.
@@ -169,7 +171,7 @@ impl BitVec<Vec<AtomicU64>> {
     }
 }
 
-impl BitVec<Vec<u64>> {
+impl BitVec<Vec<usize>> {
     pub fn get(&self, index: usize) -> bool {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.get_unchecked(index) }
@@ -184,9 +186,9 @@ impl BitVec<Vec<u64>> {
     ///
     /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
     pub unsafe fn get_unchecked(&self, index: usize) -> bool {
-        let word_index = index / self.data.bit_width();
+        let word_index = index / BITS;
         let word = self.data.get_unchecked(word_index);
-        (word >> (index % self.data.bit_width())) & 1 != 0
+        (word >> (index % BITS)) & 1 != 0
     }
 
     /// # Safety
@@ -194,8 +196,8 @@ impl BitVec<Vec<u64>> {
     /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
     #[inline(always)]
     pub unsafe fn set_unchecked(&mut self, index: usize, value: bool) {
-        let word_index = index / self.data.bit_width();
-        let bit_index = index % self.data.bit_width();
+        let word_index = index / BITS;
+        let bit_index = index % BITS;
 
         // For constant values, this should be inlined with no test.
         if value {
@@ -206,7 +208,7 @@ impl BitVec<Vec<u64>> {
     }
 }
 
-impl BitVec<&[u64]> {
+impl BitVec<&[usize]> {
     pub fn get(&self, index: usize) -> bool {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.get_unchecked(index) }
@@ -216,13 +218,13 @@ impl BitVec<&[u64]> {
     ///
     /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
     pub unsafe fn get_unchecked(&self, index: usize) -> bool {
-        let word_index = index / self.data.bit_width();
+        let word_index = index / BITS;
         let word = self.data.get_unchecked(word_index);
-        (word >> (index % self.data.bit_width())) & 1 != 0
+        (word >> (index % BITS)) & 1 != 0
     }
 }
 
-impl BitVec<Vec<AtomicU64>> {
+impl BitVec<Vec<AtomicUsize>> {
     pub fn get(&self, index: usize, order: Ordering) -> bool {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.get_unchecked(index, order) }
@@ -234,14 +236,14 @@ impl BitVec<Vec<AtomicU64>> {
     }
 
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> bool {
-        let word_index = index / self.data.bit_width();
-        let word = self.data.get_atomic_unchecked(word_index, order);
-        (word >> (index % self.data.bit_width())) & 1 != 0
+        let word_index = index / BITS;
+        let word = self.data.get_unchecked(word_index).load(order);
+        (word >> (index % BITS)) & 1 != 0
     }
     #[inline(always)]
     unsafe fn set_unchecked(&self, index: usize, value: bool, order: Ordering) {
-        let word_index = index / self.data.bit_width();
-        let bit_index = index % self.data.bit_width();
+        let word_index = index / BITS;
+        let bit_index = index % BITS;
 
         // For constant values, this should be inlined with no test.
         if value {
@@ -278,7 +280,7 @@ impl<B> BitCount for CountBitVec<B> {
     }
 }
 
-impl Index<usize> for CountBitVec<Vec<u64>> {
+impl Index<usize> for CountBitVec<Vec<usize>> {
     type Output = bool;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -308,7 +310,7 @@ impl<B> CountBitVec<B> {
     }
 }
 
-impl CountBitVec<Vec<u64>> {
+impl CountBitVec<Vec<usize>> {
     pub fn get(&self, index: usize) -> bool {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.get_unchecked(index) }
@@ -316,9 +318,9 @@ impl CountBitVec<Vec<u64>> {
 
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> bool {
-        let word_index = index / self.data.bit_width();
+        let word_index = index / BITS;
         let word = self.data.get_unchecked(word_index);
-        (word >> (index % self.data.bit_width())) & 1 != 0
+        (word >> (index % BITS)) & 1 != 0
     }
 }
 
@@ -331,8 +333,8 @@ impl<B: VSlice> Select for CountBitVec<B> {
 
 impl<B: VSlice> SelectHinted for CountBitVec<B> {
     unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
-        let mut word_index = pos / self.data.bit_width();
-        let bit_index = pos % self.data.bit_width();
+        let mut word_index = pos / BITS;
+        let bit_index = pos % BITS;
         let mut residual = rank - rank_at_pos;
         let mut word = (self.data.get_unchecked(word_index) >> bit_index) << bit_index;
         loop {
@@ -345,7 +347,7 @@ impl<B: VSlice> SelectHinted for CountBitVec<B> {
             residual -= bit_count;
         }
 
-        word_index * self.data.bit_width() + word.select_in_word(residual)
+        word_index * BITS + word.select_in_word(residual)
     }
 }
 
@@ -363,8 +365,8 @@ impl<B: VSlice> SelectZeroHinted for CountBitVec<B> {
         pos: usize,
         rank_at_pos: usize,
     ) -> usize {
-        let mut word_index = pos / self.data.bit_width();
-        let bit_index = pos % self.data.bit_width();
+        let mut word_index = pos / BITS;
+        let bit_index = pos % BITS;
         let mut residual = rank - rank_at_pos;
         let mut word = (!self.data.get_unchecked(word_index) >> bit_index) << bit_index;
         loop {
@@ -377,7 +379,7 @@ impl<B: VSlice> SelectZeroHinted for CountBitVec<B> {
             residual -= bit_count;
         }
 
-        word_index * self.data.bit_width() + word.select_in_word(residual)
+        word_index * BITS + word.select_in_word(residual)
     }
 }
 
@@ -399,53 +401,53 @@ where
 }
 
 /// Provide conversion from standard to atomic bit vectors.
-impl From<BitVec<Vec<u64>>> for BitVec<Vec<AtomicU64>> {
+impl From<BitVec<Vec<usize>>> for BitVec<Vec<AtomicUsize>> {
     #[inline]
-    fn from(bm: BitVec<Vec<u64>>) -> Self {
+    fn from(bm: BitVec<Vec<usize>>) -> Self {
         bm.convert_to().unwrap()
     }
 }
 
 /// Provide conversion from standard to atomic bit vectors.
-impl From<BitVec<Vec<AtomicU64>>> for BitVec<Vec<u64>> {
+impl From<BitVec<Vec<AtomicUsize>>> for BitVec<Vec<usize>> {
     #[inline]
-    fn from(bm: BitVec<Vec<AtomicU64>>) -> Self {
+    fn from(bm: BitVec<Vec<AtomicUsize>>) -> Self {
         bm.convert_to().unwrap()
     }
 }
 
 /// Provide conversion from references to standard bit vectors
 /// to references to atomic bit vectors.
-impl<'a> From<BitVec<&'a [u64]>> for BitVec<&'a [AtomicU64]> {
+impl<'a> From<BitVec<&'a [usize]>> for BitVec<&'a [AtomicUsize]> {
     #[inline]
-    fn from(bm: BitVec<&'a [u64]>) -> Self {
+    fn from(bm: BitVec<&'a [usize]>) -> Self {
         bm.convert_to().unwrap()
     }
 }
 
 /// Provide conversion from references to atomic bit vectors
 /// to references to standard bit vectors.
-impl<'a> From<BitVec<&'a [AtomicU64]>> for BitVec<&'a [u64]> {
+impl<'a> From<BitVec<&'a [AtomicUsize]>> for BitVec<&'a [usize]> {
     #[inline]
-    fn from(bm: BitVec<&'a [AtomicU64]>) -> Self {
+    fn from(bm: BitVec<&'a [AtomicUsize]>) -> Self {
         bm.convert_to().unwrap()
     }
 }
 
 /// Provide conversion from mutable references to standard bit vectors
 /// to mutable references to atomic bit vectors.
-impl<'a> From<BitVec<&'a mut [u64]>> for BitVec<&'a mut [AtomicU64]> {
+impl<'a> From<BitVec<&'a mut [usize]>> for BitVec<&'a mut [AtomicUsize]> {
     #[inline]
-    fn from(bm: BitVec<&'a mut [u64]>) -> Self {
+    fn from(bm: BitVec<&'a mut [usize]>) -> Self {
         bm.convert_to().unwrap()
     }
 }
 
 /// Provide conversion from mutable references to atomic bit vectors
 /// to mutable references to standard bit vectors.
-impl<'a> From<BitVec<&'a mut [AtomicU64]>> for BitVec<&'a mut [u64]> {
+impl<'a> From<BitVec<&'a mut [AtomicUsize]>> for BitVec<&'a mut [usize]> {
     #[inline]
-    fn from(bm: BitVec<&'a mut [AtomicU64]>) -> Self {
+    fn from(bm: BitVec<&'a mut [AtomicUsize]>) -> Self {
         bm.convert_to().unwrap()
     }
 }
@@ -468,8 +470,8 @@ impl<B> From<CountBitVec<B>> for BitVec<B> {
 }
 
 /// Compute the number of ones and return a [`CountBitVec`].
-impl ConvertTo<CountBitVec<Vec<u64>>> for BitVec<Vec<u64>> {
-    fn convert_to(self) -> Result<CountBitVec<Vec<u64>>> {
+impl ConvertTo<CountBitVec<Vec<usize>>> for BitVec<Vec<usize>> {
+    fn convert_to(self) -> Result<CountBitVec<Vec<usize>>> {
         let number_of_ones = self.count_ones();
         Ok(CountBitVec {
             data: self.data,
@@ -480,8 +482,8 @@ impl ConvertTo<CountBitVec<Vec<u64>>> for BitVec<Vec<u64>> {
 }
 
 /// Compute the number of ones and return a [`CountBitVec`].
-impl From<BitVec<Vec<u64>>> for CountBitVec<Vec<u64>> {
-    fn from(bitmap: BitVec<Vec<u64>>) -> Self {
+impl From<BitVec<Vec<usize>>> for CountBitVec<Vec<usize>> {
+    fn from(bitmap: BitVec<Vec<usize>>) -> Self {
         bitmap.convert_to().unwrap()
     }
 }
