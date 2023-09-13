@@ -283,9 +283,10 @@ impl VSliceMut for CompactArray<Vec<usize>> {
 
 impl<B, D> ConvertTo<CompactArray<D>> for CompactArray<B>
 where
-    B: ConvertTo<D> + VSlice,
-    D: VSlice,
+    B: ConvertTo<D> + VSliceCore,
+    D: VSliceCore,
 {
+    #[inline]
     fn convert_to(self) -> Result<CompactArray<D>> {
         Ok(CompactArray {
             len: self.len,
@@ -295,92 +296,44 @@ where
     }
 }
 
-impl ConvertTo<Vec<usize>> for CompactArray<Vec<usize>> {
-    fn convert_to(self) -> Result<Vec<usize>> {
-        Ok((0..self.len())
-            .map(|i| unsafe { self.get_unchecked(i) })
-            .collect::<Vec<_>>())
-    }
-}
-
-impl ConvertTo<Vec<usize>> for CompactArray<Vec<AtomicUsize>> {
-    fn convert_to(self) -> Result<Vec<usize>> {
-        Ok((0..self.len())
-            .map(|i| unsafe { self.get_unchecked(i, Ordering::Relaxed) })
-            .collect::<Vec<_>>())
-    }
-}
-
 impl From<CompactArray<Vec<usize>>> for CompactArray<Vec<AtomicUsize>> {
     #[inline]
     fn from(bm: CompactArray<Vec<usize>>) -> Self {
-        let data = unsafe { std::mem::transmute::<Vec<usize>, Vec<AtomicUsize>>(bm.data) };
-        CompactArray {
-            data,
-            len: bm.len,
-            bit_width: bm.bit_width,
-        }
+        bm.convert_to().unwrap()
     }
 }
 
 impl From<CompactArray<Vec<AtomicUsize>>> for CompactArray<Vec<usize>> {
     #[inline]
     fn from(bm: CompactArray<Vec<AtomicUsize>>) -> Self {
-        let data = unsafe { std::mem::transmute::<Vec<AtomicUsize>, Vec<usize>>(bm.data) };
-        CompactArray {
-            data,
-            len: bm.len,
-            bit_width: bm.bit_width,
-        }
+        bm.convert_to().unwrap()
     }
 }
 
 impl<'a> From<CompactArray<&'a [AtomicUsize]>> for CompactArray<&'a [usize]> {
     #[inline]
     fn from(bm: CompactArray<&'a [AtomicUsize]>) -> Self {
-        let data = unsafe { std::mem::transmute::<&'a [AtomicUsize], &'a [usize]>(bm.data) };
-        CompactArray {
-            data,
-            len: bm.len,
-            bit_width: bm.bit_width,
-        }
+        bm.convert_to().unwrap()
     }
 }
 
 impl<'a> From<CompactArray<&'a [usize]>> for CompactArray<&'a [AtomicUsize]> {
     #[inline]
     fn from(bm: CompactArray<&'a [usize]>) -> Self {
-        let data = unsafe { std::mem::transmute::<&'a [usize], &'a [AtomicUsize]>(bm.data) };
-        CompactArray {
-            data,
-            len: bm.len,
-            bit_width: bm.bit_width,
-        }
+        bm.convert_to().unwrap()
     }
 }
 
 impl<'a> From<CompactArray<&'a mut [AtomicUsize]>> for CompactArray<&'a mut [usize]> {
     #[inline]
     fn from(bm: CompactArray<&'a mut [AtomicUsize]>) -> Self {
-        let data =
-            unsafe { std::mem::transmute::<&'a mut [AtomicUsize], &'a mut [usize]>(bm.data) };
-        CompactArray {
-            data,
-            len: bm.len,
-            bit_width: bm.bit_width,
-        }
+        bm.convert_to().unwrap()
     }
 }
 
 impl<'a> From<CompactArray<&'a mut [usize]>> for CompactArray<&'a mut [AtomicUsize]> {
     #[inline]
     fn from(bm: CompactArray<&'a mut [usize]>) -> Self {
-        let data =
-            unsafe { std::mem::transmute::<&'a mut [usize], &'a mut [AtomicUsize]>(bm.data) };
-        CompactArray {
-            data,
-            len: bm.len,
-            bit_width: bm.bit_width,
-        }
+        bm.convert_to().unwrap()
     }
 }
