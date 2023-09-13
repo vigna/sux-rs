@@ -7,9 +7,9 @@
 
 /*!
 
- This module defines the `VSlice` and `VSliceMut` traits, which are accessed
+ This module defines the [`VSlice`] and [`VSliceMut`] traits, which are accessed
  with a logic similar to slices, but when indexed with `get` return a value.
- Implementing the slice trait would be more natural, but it would be very complicated
+ Implementing the [`core::ops::Index`] trait would be more natural, but it would be very complicated
  because there is no easy way to return a reference to a bit segment
  (see, e.g., [BitSlice](https://docs.rs/bitvec/latest/bitvec/slice/struct.BitSlice.html)).
 
