@@ -237,7 +237,7 @@ impl BitVec<Vec<AtomicUsize>> {
 
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> bool {
         let word_index = index / BITS;
-        let word = self.data.get_unchecked(index, order)[word_index].load(order);
+        let word = <[AtomicUsize]>::get_unchecked(&self.data, word_index).load(order);
         (word >> (index % BITS)) & 1 != 0
     }
     #[inline(always)]
@@ -247,12 +247,9 @@ impl BitVec<Vec<AtomicUsize>> {
 
         // For constant values, this should be inlined with no test.
         if value {
-            self.data
-                .get_unchecked(word_index)
-                .fetch_or(1 << bit_index, order);
+            <[AtomicUsize]>::get_unchecked(&self.data, word_index).fetch_or(1 << bit_index, order);
         } else {
-            self.data
-                .get_unchecked(word_index)
+            <[AtomicUsize]>::get_unchecked(&self.data, word_index)
                 .fetch_and(!(1 << bit_index), order);
         }
     }
