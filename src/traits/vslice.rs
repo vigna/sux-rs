@@ -111,7 +111,7 @@ pub trait VSliceMut: VSlice {
         panic_if_out_of_bounds!(index, self.len());
         let bw = self.bit_width();
         let mask = usize::MAX.wrapping_shr(BITS as u32 - bw as u32)
-            & !((bw as isize - 1) >> BITS - 1) as usize;
+            & !((bw as isize - 1) >> (BITS - 1)) as usize;
         panic_if_value!(value, mask, bw);
         unsafe {
             self.set_unchecked(index, value);
@@ -156,7 +156,7 @@ pub trait VSliceAtomic: VSliceCore {
         }
         let bw = self.bit_width();
         let mask = usize::MAX.wrapping_shr(BITS as u32 - bw as u32)
-            & !((bw as isize - 1) >> BITS - 1) as usize;
+            & !((bw as isize - 1) >> (BITS - 1)) as usize;
         panic_if_value!(value, mask, bw);
         unsafe {
             self.set_unchecked(index, value, order);
