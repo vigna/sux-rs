@@ -13,3 +13,8 @@ Classes for [bit vectors](`bit_vec::BitVec`) and
 
 pub mod bit_vec;
 pub mod compact_array;
+
+pub mod prelude {
+    pub use super::bit_vec::*;
+    pub use super::compact_array::*;
+}
