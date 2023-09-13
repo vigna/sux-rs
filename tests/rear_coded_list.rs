@@ -6,7 +6,7 @@
  */
 
 use anyhow::Result;
-use epserde::*;
+use epserde::prelude::*;
 use std::io::prelude::*;
 use std::io::BufReader;
 use sux::prelude::*;
