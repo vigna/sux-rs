@@ -29,45 +29,45 @@ impl<B: VSliceCore> VSliceCore for ToBe<B> {
 
 impl<B: VSlice> VSlice for ToLe<B> {
     #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+    unsafe fn get_unchecked(&self, index: usize) -> usize {
         self.0.get_unchecked(index).to_le()
     }
 }
 impl<B: VSlice> VSlice for ToBe<B> {
     #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+    unsafe fn get_unchecked(&self, index: usize) -> usize {
         self.0.get_unchecked(index).to_be()
     }
 }
 
 impl<B: VSliceMut> VSliceMut for ToLe<B> {
     #[inline(always)]
-    unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
+    unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
         self.0.set_unchecked(index, value.to_le());
     }
 }
 impl<B: VSliceMut> VSliceMut for ToBe<B> {
     #[inline(always)]
-    unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
+    unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
         self.0.set_unchecked(index, value.to_be());
     }
 }
 
 impl<B: VSliceAtomic> VSliceAtomic for ToLe<B> {
     #[inline(always)]
-    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> u64 {
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> usize {
         self.0.get_atomic_unchecked(index, order).to_le()
     }
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: u64, order: Ordering) {
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: usize, order: Ordering) {
         self.0.set_atomic_unchecked(index, value.to_le(), order);
     }
 }
 impl<B: VSliceAtomic> VSliceAtomic for ToBe<B> {
     #[inline(always)]
-    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> u64 {
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> usize {
         self.0.get_atomic_unchecked(index, order).to_be()
     }
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: u64, order: Ordering) {
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: usize, order: Ordering) {
         self.0.set_atomic_unchecked(index, value.to_be(), order);
     }
 }
@@ -77,11 +77,11 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceMutAtomicCmpExchange for ToLe<B> {
     unsafe fn compare_exchange_unchecked(
         &self,
         index: usize,
-        current: u64,
-        new: u64,
+        current: usize,
+        new: usize,
         success: Ordering,
         failure: Ordering,
-    ) -> Result<u64, u64> {
+    ) -> Result<usize, usize> {
         self.0
             .compare_exchange_unchecked(index, current.to_le(), new.to_le(), success, failure)
     }
@@ -91,11 +91,11 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceMutAtomicCmpExchange for ToBe<B> {
     unsafe fn compare_exchange_unchecked(
         &self,
         index: usize,
-        current: u64,
-        new: u64,
+        current: usize,
+        new: usize,
         success: Ordering,
         failure: Ordering,
-    ) -> Result<u64, u64> {
+    ) -> Result<usize, usize> {
         self.0
             .compare_exchange_unchecked(index, current.to_be(), new.to_be(), success, failure)
     }

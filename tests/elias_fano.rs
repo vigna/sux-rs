@@ -59,12 +59,14 @@ fn test_elias_fano() -> Result<()> {
         println!("{:?}", ef);
         // do a slow select
         for (i, v) in values.iter().enumerate() {
-            assert_eq!(ef.select(i).unwrap(), *v);
+            assert_eq!(ef.get(i), *v);
             assert_eq!({ ef.get(i) }, *v);
         }
         // Add the ones indices
-        let ef: EliasFano<SparseIndex<CountBitVec<Vec<u64>>, Vec<u64>, 8>, CompactArray<Vec<u64>>> =
-            ef.convert_to().unwrap();
+        let ef: EliasFano<
+            SparseIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
+            CompactArray<Vec<usize>>,
+        > = ef.convert_to().unwrap();
         // do a fast select
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.select(i).unwrap(), *v);
@@ -74,8 +76,8 @@ fn test_elias_fano() -> Result<()> {
 
         // Add the indices
         let ef: sux::dict::elias_fano::EliasFano<
-            SparseZeroIndex<SparseIndex<CountBitVec<Vec<u64>>, Vec<u64>, 8>, Vec<u64>, 8>,
-            CompactArray<Vec<u64>>,
+            SparseZeroIndex<SparseIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>, Vec<usize>, 8>,
+            CompactArray<Vec<usize>>,
         > = ef.convert_to().unwrap();
         // do a fast select
         for (i, v) in values.iter().enumerate() {
@@ -105,8 +107,10 @@ fn test_epsserde() -> Result<()> {
         // Finish the creation of elias-fano
         let ef: DefaultEliasFano = efb.build();
         // Add the ones indices
-        let ef: EliasFano<SparseIndex<CountBitVec<Vec<u64>>, Vec<u64>, 8>, CompactArray<Vec<u64>>> =
-            ef.convert_to().unwrap();
+        let ef: EliasFano<
+            SparseIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
+            CompactArray<Vec<usize>>,
+        > = ef.convert_to().unwrap();
 
         let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
         let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);
@@ -115,8 +119,8 @@ fn test_epsserde() -> Result<()> {
         println!("{}", schema.to_csv());
 
         let c = <EliasFano<
-            SparseIndex<CountBitVec<Vec<u64>>, Vec<u64>, 8>,
-            CompactArray<Vec<u64>>,
+            SparseIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
+            CompactArray<Vec<usize>>,
         >>::mmap(&tmp_file, epserde::des::Flags::empty())?;
 
         for i in 0..n {

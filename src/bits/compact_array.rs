@@ -7,8 +7,11 @@
 use crate::traits::*;
 use anyhow::Result;
 use epserde::*;
-use std::sync::atomic::{compiler_fence, fence, AtomicU64, Ordering};
+use std::sync::atomic::{compiler_fence, fence, AtomicUsize, Ordering};
 
+/// A fixed-length array of values of bounded bit width. We provide an implementation
+/// based on `Vec<usize>`, and one based on `Vec<AtomicUsize>`. In the second case we can
+/// provide some concurrency guarantee.
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CompactArray<B> {
     data: B,
@@ -16,7 +19,7 @@ pub struct CompactArray<B> {
     len: usize,
 }
 
-impl CompactArray<Vec<u64>> {
+impl CompactArray<Vec<usize>> {
     pub fn new(bit_width: usize, len: usize) -> Self {
         #[cfg(not(any(feature = "testless_read", feature = "testless_write")))]
         // we need at least two words to avoid branches in the gets
@@ -32,7 +35,7 @@ impl CompactArray<Vec<u64>> {
     }
 }
 
-impl CompactArray<Vec<AtomicU64>> {
+impl CompactArray<Vec<AtomicUsize>> {
     pub fn new_atomic(bit_width: usize, len: usize) -> Self {
         #[cfg(not(any(feature = "testless_read", feature = "testless_write")))]
         // we need at least two words to avoid branches in the gets
@@ -41,7 +44,7 @@ impl CompactArray<Vec<AtomicU64>> {
         // we need at least two words to avoid branches in the gets
         let n_of_words = (1 + (len * bit_width + 63) / 64).max(2);
         Self {
-            data: (0..n_of_words).map(|_| AtomicU64::new(0)).collect(),
+            data: (0..n_of_words).map(|_| AtomicUsize::new(0)).collect(),
             bit_width,
             len,
         }
@@ -81,7 +84,7 @@ impl<B: VSliceCore> VSliceCore for CompactArray<B> {
 
 impl<B: VSlice> VSlice for CompactArray<B> {
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> u64 {
+    unsafe fn get_unchecked(&self, index: usize) -> usize {
         debug_assert!(self.bit_width != 64);
         #[cfg(not(feature = "testless_read"))]
         if self.bit_width == 0 {
@@ -95,7 +98,7 @@ impl<B: VSlice> VSlice for CompactArray<B> {
         #[cfg(feature = "testless_read")]
         {
             // ALERT!: this is not the correct mask for width 64
-            let mask = (1_u64 << self.bit_width) - 1;
+            let mask = (1_usize << self.bit_width) - 1;
 
             let lower = self.data.get_unchecked(word_index) >> bit_index;
             let higher = (self.data.get_unchecked(word_index + 1) << (63 - bit_index)) << 1;
@@ -119,7 +122,7 @@ impl<B: VSlice> VSlice for CompactArray<B> {
 
 impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
     #[inline]
-    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> u64 {
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> usize {
         debug_assert!(self.bit_width != 64);
         if self.bit_width == 0 {
             return 0;
@@ -139,7 +142,7 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
         }
     }
     #[inline]
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: u64, order: Ordering) {
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: usize, order: Ordering) {
         debug_assert!(self.bit_width != 64);
         if self.bit_width == 0 {
             return;
@@ -149,7 +152,7 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
         let word_index = pos / 64;
         let bit_index = pos % 64;
 
-        let mask: u64 = (1_u64 << self.bit_width) - 1;
+        let mask: usize = (1_usize << self.bit_width) - 1;
 
         let end_word_index = (pos + self.bit_width - 1) / 64;
         if word_index == end_word_index {
@@ -216,7 +219,7 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
 
 impl<B: VSliceMut> VSliceMut for CompactArray<B> {
     #[inline]
-    unsafe fn set_unchecked(&mut self, index: usize, value: u64) {
+    unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
         debug_assert!(self.bit_width != 64);
         #[cfg(not(feature = "testless_write"))]
         if self.bit_width == 0 {
@@ -227,7 +230,7 @@ impl<B: VSliceMut> VSliceMut for CompactArray<B> {
         let word_index = pos / 64;
         let bit_index = pos % 64;
 
-        let mask: u64 = (1_u64 << self.bit_width) - 1;
+        let mask: usize = (1_usize << self.bit_width) - 1;
 
         #[cfg(feature = "testless_write")]
         {
@@ -280,18 +283,18 @@ where
     }
 }
 
-impl<B: VSlice> ConvertTo<Vec<u64>> for CompactArray<B> {
-    fn convert_to(self) -> Result<Vec<u64>> {
+impl<B: VSlice> ConvertTo<Vec<usize>> for CompactArray<B> {
+    fn convert_to(self) -> Result<Vec<usize>> {
         Ok((0..self.len())
             .map(|i| unsafe { self.get_unchecked(i) })
             .collect::<Vec<_>>())
     }
 }
 
-impl From<CompactArray<Vec<u64>>> for CompactArray<Vec<AtomicU64>> {
+impl From<CompactArray<Vec<usize>>> for CompactArray<Vec<AtomicUsize>> {
     #[inline]
-    fn from(bm: CompactArray<Vec<u64>>) -> Self {
-        let data = unsafe { std::mem::transmute::<Vec<u64>, Vec<AtomicU64>>(bm.data) };
+    fn from(bm: CompactArray<Vec<usize>>) -> Self {
+        let data = unsafe { std::mem::transmute::<Vec<usize>, Vec<AtomicUsize>>(bm.data) };
         CompactArray {
             data,
             len: bm.len,
@@ -300,10 +303,10 @@ impl From<CompactArray<Vec<u64>>> for CompactArray<Vec<AtomicU64>> {
     }
 }
 
-impl From<CompactArray<Vec<AtomicU64>>> for CompactArray<Vec<u64>> {
+impl From<CompactArray<Vec<AtomicUsize>>> for CompactArray<Vec<usize>> {
     #[inline]
-    fn from(bm: CompactArray<Vec<AtomicU64>>) -> Self {
-        let data = unsafe { std::mem::transmute::<Vec<AtomicU64>, Vec<u64>>(bm.data) };
+    fn from(bm: CompactArray<Vec<AtomicUsize>>) -> Self {
+        let data = unsafe { std::mem::transmute::<Vec<AtomicUsize>, Vec<usize>>(bm.data) };
         CompactArray {
             data,
             len: bm.len,
@@ -312,10 +315,10 @@ impl From<CompactArray<Vec<AtomicU64>>> for CompactArray<Vec<u64>> {
     }
 }
 
-impl<'a> From<CompactArray<&'a [AtomicU64]>> for CompactArray<&'a [u64]> {
+impl<'a> From<CompactArray<&'a [AtomicUsize]>> for CompactArray<&'a [usize]> {
     #[inline]
-    fn from(bm: CompactArray<&'a [AtomicU64]>) -> Self {
-        let data = unsafe { std::mem::transmute::<&'a [AtomicU64], &'a [u64]>(bm.data) };
+    fn from(bm: CompactArray<&'a [AtomicUsize]>) -> Self {
+        let data = unsafe { std::mem::transmute::<&'a [AtomicUsize], &'a [usize]>(bm.data) };
         CompactArray {
             data,
             len: bm.len,
@@ -324,10 +327,10 @@ impl<'a> From<CompactArray<&'a [AtomicU64]>> for CompactArray<&'a [u64]> {
     }
 }
 
-impl<'a> From<CompactArray<&'a [u64]>> for CompactArray<&'a [AtomicU64]> {
+impl<'a> From<CompactArray<&'a [usize]>> for CompactArray<&'a [AtomicUsize]> {
     #[inline]
-    fn from(bm: CompactArray<&'a [u64]>) -> Self {
-        let data = unsafe { std::mem::transmute::<&'a [u64], &'a [AtomicU64]>(bm.data) };
+    fn from(bm: CompactArray<&'a [usize]>) -> Self {
+        let data = unsafe { std::mem::transmute::<&'a [usize], &'a [AtomicUsize]>(bm.data) };
         CompactArray {
             data,
             len: bm.len,
@@ -336,10 +339,11 @@ impl<'a> From<CompactArray<&'a [u64]>> for CompactArray<&'a [AtomicU64]> {
     }
 }
 
-impl<'a> From<CompactArray<&'a mut [AtomicU64]>> for CompactArray<&'a mut [u64]> {
+impl<'a> From<CompactArray<&'a mut [AtomicUsize]>> for CompactArray<&'a mut [usize]> {
     #[inline]
-    fn from(bm: CompactArray<&'a mut [AtomicU64]>) -> Self {
-        let data = unsafe { std::mem::transmute::<&'a mut [AtomicU64], &'a mut [u64]>(bm.data) };
+    fn from(bm: CompactArray<&'a mut [AtomicUsize]>) -> Self {
+        let data =
+            unsafe { std::mem::transmute::<&'a mut [AtomicUsize], &'a mut [usize]>(bm.data) };
         CompactArray {
             data,
             len: bm.len,
@@ -348,10 +352,11 @@ impl<'a> From<CompactArray<&'a mut [AtomicU64]>> for CompactArray<&'a mut [u64]>
     }
 }
 
-impl<'a> From<CompactArray<&'a mut [u64]>> for CompactArray<&'a mut [AtomicU64]> {
+impl<'a> From<CompactArray<&'a mut [usize]>> for CompactArray<&'a mut [AtomicUsize]> {
     #[inline]
-    fn from(bm: CompactArray<&'a mut [u64]>) -> Self {
-        let data = unsafe { std::mem::transmute::<&'a mut [u64], &'a mut [AtomicU64]>(bm.data) };
+    fn from(bm: CompactArray<&'a mut [usize]>) -> Self {
+        let data =
+            unsafe { std::mem::transmute::<&'a mut [usize], &'a mut [AtomicUsize]>(bm.data) };
         CompactArray {
             data,
             len: bm.len,

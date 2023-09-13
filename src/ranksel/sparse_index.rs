@@ -36,7 +36,7 @@ impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> SparseIndex<B, O, QU
     }
 }
 
-impl<B: SelectHinted + AsRef<[u64]>, O: VSliceMut, const QUANTUM_LOG2: usize>
+impl<B: SelectHinted + AsRef<[usize]>, O: VSliceMut, const QUANTUM_LOG2: usize>
     SparseIndex<B, O, QUANTUM_LOG2>
 {
     fn build_ones(&mut self) -> Result<()> {
@@ -49,7 +49,7 @@ impl<B: SelectHinted + AsRef<[u64]>, O: VSliceMut, const QUANTUM_LOG2: usize>
             // skip the word if we can
             while number_of_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
-                let index = (i * 64) as u64 + in_word_index as u64;
+                let index = (i * 64) + in_word_index;
                 self.ones.set(ones_index, index);
                 next_quantum += 1 << QUANTUM_LOG2;
                 ones_index += 1;
@@ -146,8 +146,10 @@ impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> BitCount
     }
 }
 
-impl<B: SelectHinted, const QUANTUM_LOG2: usize> ConvertTo<B>
-    for SparseIndex<B, Vec<u64>, QUANTUM_LOG2>
+impl<B: SelectHinted, T, const QUANTUM_LOG2: usize> ConvertTo<B>
+    for SparseIndex<B, Vec<T>, QUANTUM_LOG2>
+where
+    Vec<T>: VSlice,
 {
     #[inline(always)]
     fn convert_to(self) -> Result<B> {
@@ -155,11 +157,11 @@ impl<B: SelectHinted, const QUANTUM_LOG2: usize> ConvertTo<B>
     }
 }
 
-impl<B: SelectHinted + AsRef<[u64]>, const QUANTUM_LOG2: usize>
-    ConvertTo<SparseIndex<B, Vec<u64>, QUANTUM_LOG2>> for B
+impl<B: SelectHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
+    ConvertTo<SparseIndex<B, Vec<usize>, QUANTUM_LOG2>> for B
 {
     #[inline(always)]
-    fn convert_to(self) -> Result<SparseIndex<B, Vec<u64>, QUANTUM_LOG2>> {
+    fn convert_to(self) -> Result<SparseIndex<B, Vec<usize>, QUANTUM_LOG2>> {
         let mut res = SparseIndex {
             ones: vec![0; (self.count() + (1 << QUANTUM_LOG2) - 1) >> QUANTUM_LOG2],
             bits: self,
@@ -170,12 +172,12 @@ impl<B: SelectHinted + AsRef<[u64]>, const QUANTUM_LOG2: usize>
     }
 }
 
-impl<B, O, const QUANTUM_LOG2: usize> AsRef<[u64]> for SparseIndex<B, O, QUANTUM_LOG2>
+impl<B, O, const QUANTUM_LOG2: usize> AsRef<[usize]> for SparseIndex<B, O, QUANTUM_LOG2>
 where
-    B: AsRef<[u64]> + SelectHinted,
+    B: AsRef<[usize]> + SelectHinted,
     O: VSlice,
 {
-    fn as_ref(&self) -> &[u64] {
+    fn as_ref(&self) -> &[usize] {
         self.bits.as_ref()
     }
 }
