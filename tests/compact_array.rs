@@ -52,18 +52,18 @@ fn test_compact_array() {
             indices.shuffle(&mut rng);
 
             for i in indices {
-                cp.set_atomic(i, values[i], Ordering::Relaxed);
+                cp.set(i, values[i], Ordering::Relaxed);
             }
 
             for (i, value) in values.iter().enumerate() {
-                assert_eq!(cp.get_atomic(i, Ordering::Relaxed), *value);
+                assert_eq!(cp.get(i, Ordering::Relaxed), *value);
             }
 
             let mut indices = (0..n).collect::<Vec<_>>();
             indices.shuffle(&mut rng);
 
             for i in indices {
-                assert_eq!(cp.get_atomic(i, Ordering::Relaxed), values[i]);
+                assert_eq!(cp.get(i, Ordering::Relaxed), values[i]);
             }
         }
     }

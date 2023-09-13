@@ -237,7 +237,7 @@ impl BitVec<Vec<AtomicUsize>> {
 
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> bool {
         let word_index = index / BITS;
-        let word = self.data.get_unchecked(word_index).load(order);
+        let word = self.data.get_unchecked(index, order)[word_index].load(order);
         (word >> (index % BITS)) & 1 != 0
     }
     #[inline(always)]
