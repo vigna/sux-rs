@@ -117,7 +117,7 @@ fn test_epsserde() -> Result<()> {
         let c = <EliasFano<
             SparseIndex<CountBitVec<Vec<u64>>, Vec<u64>, 8>,
             CompactArray<Vec<u64>>,
-        >>::mmap(&tmp_file, epserde::Flags::empty())?;
+        >>::mmap(&tmp_file, epserde::des::Flags::empty())?;
 
         for i in 0..n {
             assert_eq!(ef.get(i), c.get(i));
