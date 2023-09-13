@@ -7,16 +7,16 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Test with http://burtleburtle.net/bob/c/froggy.cpp
+//! Test with <http://burtleburtle.net/bob/c/froggy.cpp>
 //! Hashes to consider:
 //! - murmur
 //! - blake3
 //! - highway
 //!
 //! highway has a good rust libray:
-//! https://github.com/google/highwayhash
-//! https://arxiv.org/pdf/1612.06257.pdf
-//! Just use https://github.com/nickbabcock/highway-rs
+//! <https://github.com/google/highwayhash>
+//! <https://arxiv.org/pdf/1612.06257.pdf>
+//! Just use <https://github.com/nickbabcock/highway-rs>
 
 pub mod spooky;
 
