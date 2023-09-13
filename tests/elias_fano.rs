@@ -22,7 +22,7 @@ fn test_elias_fano_concurrent() -> Result<()> {
     use rayon::prelude::*;
     use sux::dict::elias_fano::EliasFanoAtomicBuilder;
     let mut rng = SmallRng::seed_from_u64(0);
-    for (u, n) in [(1000, 100), (100, 100), (100, 1000)] {
+    for (n, u) in [(100, 1000), (100, 100), (1000, 100)] {
         let mut values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
 
         values.sort();
@@ -44,7 +44,7 @@ fn test_elias_fano_concurrent() -> Result<()> {
 #[test]
 fn test_elias_fano() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
-    for (u, n) in [(1000, 100), (100, 100), (100, 1000)] {
+    for (n, u) in [(100, 1000), (100, 100), (1000, 100)] {
         let mut values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
 
         values.sort();
@@ -92,7 +92,7 @@ fn test_elias_fano() -> Result<()> {
 #[test]
 fn test_epsserde() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
-    for (u, n) in [(1000, 100), (100, 100), (100, 1000)] {
+    for (n, u) in [(100, 1000), (100, 100), (1000, 100)] {
         let mut values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
 
         values.sort();

@@ -38,5 +38,3 @@ rand_chacha = "0.3"
 
 [features]
 default = ["rayon"]
-testless_read = []
-testless_write = []
