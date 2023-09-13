@@ -17,11 +17,6 @@ an [`EliasFanoBuilder`] or an [`EliasFanoAtomicBuilder`].
 The main trait implemented by [`EliasFano`] is [`IndexedDict`], which
 makes it possible to access its values with [`IndexedDict::get`].
 
-Note that [`EliasFano`] can also be interpreted as an opportunistic
-(i.e., succinct) representation of a bit vector in which the represented
-values are the positions of the ones. In this case, [`EliasFano::len`] will
-return the number of ones in the vector, rather than its length, which
-you can recover with using `as BitLength`.
  */
 use crate::prelude::*;
 use anyhow::{bail, Result};
@@ -29,7 +24,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use epserde::*;
 
 /// The default combination of parameters return by the builders
-pub type DefaultEliasFano = EliasFano<CountBitVec<Vec<usize>>, CompactArray<Vec<usize>>>;
+pub type DefaultEliasFano = EliasFano<CountBitVec, CompactArray>;
 
 /// A sequential builder for [`EliasFano`].
 ///
@@ -47,7 +42,7 @@ pub struct EliasFanoBuilder {
 impl EliasFanoBuilder {
     /// Create a builder for an [`EliasFano`] containing
     /// `n` numbers smaller than `u`.
-    pub fn new(u: usize, n: usize) -> Self {
+    pub fn new(n: usize, u: usize) -> Self {
         let l = if u >= n {
             (u as f64 / n as f64).log2().floor() as usize
         } else {
@@ -112,7 +107,7 @@ impl EliasFanoBuilder {
     }
 }
 
-/// A sequential builder for [`EliasFano`].
+/// A parallel builder for [`EliasFano`].
 ///
 /// After creating an instance, you can use [`EliasFanoAtomicBuilder::set`]
 /// to set the values concurrently. However, this operation is inherently
@@ -127,7 +122,9 @@ pub struct EliasFanoAtomicBuilder {
 }
 
 impl EliasFanoAtomicBuilder {
-    pub fn new(u: usize, n: usize) -> Self {
+    /// Create a builder for an [`EliasFano`] containing
+    /// `n` numbers smaller than `u`.
+    pub fn new(n: usize, u: usize) -> Self {
         let l = if u >= n {
             (u as f64 / n as f64).log2().floor() as usize
         } else {
@@ -143,10 +140,13 @@ impl EliasFanoAtomicBuilder {
         }
     }
 
-    /// Concurrently set values
+    /// Concurrently set values.
     ///
     /// # Safety
-    /// The values and indices have to be right and the values should be monotone
+    /// - All indices must be distinct.
+    /// - All values must be smaller than `u`.
+    /// - All indices must be smaller than `n`.
+    /// - You must call this function exactly `n` times.
     pub unsafe fn set(&self, index: usize, value: usize, order: Ordering) {
         let low = value & ((1 << self.l) - 1);
         // Note that the concurrency guarantees of CompactArray
@@ -214,6 +214,32 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
+/**
+Implementation of the Elias--Fano representation of monotone sequences.
+
+There are two ways to build an [`EliasFano`] structure: using
+an [`EliasFanoBuilder`] or an [`EliasFanoAtomicBuilder`].
+
+Once the structure has been built, it is possible to enrich it with
+indices that will make operations faster. This is done by calling
+[ConvertTo::convert_to] towards the desired type. For example,
+```rust
+use sux::prelude::*;
+let mut efb = EliasFanoBuilder::new(2, 5);
+efb.push(0);
+efb.push(1);
+let ef = efb.build();
+// Add an index on the ones (accelerates get operations).
+let efo: EliasFano<QuantumIndex<CountBitVec>, CompactArray> =
+    ef.convert_to().unwrap();
+// Add also an index on the zeros  (accelerates precedessor and successor).
+let efoz: EliasFano<QuantumZeroIndex<QuantumIndex<CountBitVec>>, CompactArray> =
+    efo.convert_to().unwrap();
+```
+
+The main trait implemented is [`IndexedDict`], which
+makes it possible to access values with [`IndexedDict::get`].
+ */
 impl<H, L> EliasFano<H, L> {
     /// # Safety
     /// No check is performed.
@@ -233,24 +259,18 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<H, L> BitLength for EliasFano<H, L> {
-    #[inline(always)]
+impl<H: Select, L: VSlice> IndexedDict for EliasFano<H, L> {
+    type Value = usize;
+    #[inline]
     fn len(&self) -> usize {
-        self.u
-    }
-}
-
-impl<H, L> BitCount for EliasFano<H, L> {
-    #[inline(always)]
-    fn count(&self) -> usize {
         self.n
     }
-}
 
-impl<H: Select, L: VSlice> Select for EliasFano<H, L> {
-    #[inline]
-    unsafe fn select_unchecked(&self, rank: usize) -> usize {
-        self.get_unchecked(rank)
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, index: usize) -> usize {
+        let high_bits = self.high_bits.select_unchecked(index) - index;
+        let low_bits = self.low_bits.get_unchecked(index);
+        (high_bits << self.l) | low_bits
     }
 }
 
@@ -268,20 +288,5 @@ where
             low_bits: self.low_bits.convert_to()?,
             high_bits: self.high_bits.convert_to()?,
         })
-    }
-}
-
-impl<H: Select, L: VSlice> IndexedDict for EliasFano<H, L> {
-    type Value = usize;
-    #[inline]
-    fn len(&self) -> usize {
-        self.n
-    }
-
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> usize {
-        let high_bits = self.high_bits.select_unchecked(index) - index;
-        let low_bits = self.low_bits.get_unchecked(index);
-        (high_bits << self.l) | low_bits
     }
 }

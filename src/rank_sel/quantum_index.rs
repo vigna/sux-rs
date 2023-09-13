@@ -13,7 +13,7 @@ use common_traits::SelectInWord;
 use epserde::*;
 
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct QuantumIndex<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {
+pub struct QuantumIndex<B: SelectHinted, O: VSlice = Vec<usize>, const QUANTUM_LOG2: usize = 8> {
     bits: B,
     ones: O,
     _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,

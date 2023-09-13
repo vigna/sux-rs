@@ -37,7 +37,7 @@ const BITS: usize = usize::BITS as usize;
 /// In the second case, [`BitVec::get`]
 /// and [`BitVec::set`] are both thread-safe, as they both take an immutable reference.
 #[derive(Epserde, Debug)]
-pub struct BitVec<B> {
+pub struct BitVec<B = Vec<usize>> {
     data: B,
     len: usize,
 }
@@ -257,7 +257,7 @@ impl BitVec<Vec<AtomicUsize>> {
 
 /// An immutable bit vector that returns the number of ones.
 #[derive(Epserde, Debug)]
-pub struct CountBitVec<B> {
+pub struct CountBitVec<B = Vec<usize>> {
     data: B,
     len: usize,
     number_of_ones: usize,

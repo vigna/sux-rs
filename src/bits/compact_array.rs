@@ -32,7 +32,7 @@ const BITS: usize = core::mem::size_of::<usize>() * 8;
 ///
 /// Note that the generic backend must implement [`VSliceCore`]
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CompactArray<B> {
+pub struct CompactArray<B = Vec<usize>> {
     data: B,
     bit_width: usize,
     len: usize,
