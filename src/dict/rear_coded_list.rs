@@ -5,6 +5,7 @@
  */
 
 use crate::traits::IndexedDict;
+use epserde::traits::*;
 use epserde::*;
 use num_traits::AsPrimitive;
 
