@@ -131,7 +131,7 @@ impl BitVec<Vec<usize>> {
     ///
     /// # Warning
     /// No control is performed on the number of ones, unless
-    /// debug assertions are enabled.</div>
+    /// debug assertions are enabled.
     #[inline(always)]
     pub fn with_count(self, number_of_ones: usize) -> CountBitVec<Vec<usize>> {
         debug_assert!(number_of_ones <= self.len);
