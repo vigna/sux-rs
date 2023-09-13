@@ -11,10 +11,10 @@ use std::time::Instant;
 #[command(about = "Benchmarks the Rust Sux implementation", long_about = None)]
 struct Args {
     /// The number of elements
-    n: u64,
+    n: usize,
 
     /// The size of the universe
-    u: u64,
+    u: usize,
 
     /// The number of values to test
     t: usize,
@@ -40,8 +40,10 @@ fn main() {
     for value in values {
         elias_fano_builder.push(value).unwrap();
     }
-    let elias_fano: EliasFano<SparseIndex<Bitmap<Vec<u64>>, Vec<u64>, 8>, CompactArray<Vec<u64>>> =
-        elias_fano_builder.build().convert_to().unwrap();
+    let elias_fano: EliasFano<
+        QuantumIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
+        CompactArray<Vec<usize>>,
+    > = elias_fano_builder.build().convert_to().unwrap();
 
     let mut ranks = Vec::with_capacity(args.t);
     for _ in 0..args.t {
