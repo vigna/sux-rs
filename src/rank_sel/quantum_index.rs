@@ -13,13 +13,13 @@ use common_traits::SelectInWord;
 use epserde::*;
 
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SparseIndex<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {
+pub struct QuantumIndex<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {
     bits: B,
     ones: O,
     _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,
 }
 
-impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> SparseIndex<B, O, QUANTUM_LOG2> {
+impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> QuantumIndex<B, O, QUANTUM_LOG2> {
     /// # Safety
     /// TODO: this function is never used
     #[inline(always)]
@@ -37,7 +37,7 @@ impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> SparseIndex<B, O, QU
 }
 
 impl<B: SelectHinted + AsRef<[usize]>, O: VSliceMut, const QUANTUM_LOG2: usize>
-    SparseIndex<B, O, QUANTUM_LOG2>
+    QuantumIndex<B, O, QUANTUM_LOG2>
 {
     fn build_ones(&mut self) -> Result<()> {
         let mut number_of_ones = 0;
@@ -63,7 +63,7 @@ impl<B: SelectHinted + AsRef<[usize]>, O: VSliceMut, const QUANTUM_LOG2: usize>
 
 /// Provide the hint to the underlying structure
 impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> Select
-    for SparseIndex<B, O, QUANTUM_LOG2>
+    for QuantumIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -77,7 +77,7 @@ impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> Select
 
 /// If the underlying implementation has select zero, forward the methods
 impl<B: SelectHinted + SelectZero, O: VSlice, const QUANTUM_LOG2: usize> SelectZero
-    for SparseIndex<B, O, QUANTUM_LOG2>
+    for QuantumIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     fn select_zero(&self, rank: usize) -> Option<usize> {
@@ -91,7 +91,7 @@ impl<B: SelectHinted + SelectZero, O: VSlice, const QUANTUM_LOG2: usize> SelectZ
 
 /// If the underlying implementation has select zero, forward the methods
 impl<B: SelectHinted + SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectZeroHinted
-    for SparseIndex<B, O, QUANTUM_LOG2>
+    for QuantumIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     unsafe fn select_zero_unchecked_hinted(
@@ -108,7 +108,7 @@ impl<B: SelectHinted + SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> S
 /// Allow the use of multiple indices, this might not be the best way to do it
 /// but it works
 impl<B: SelectHinted + SelectZero, O: VSlice, const QUANTUM_LOG2: usize> SelectHinted
-    for SparseIndex<B, O, QUANTUM_LOG2>
+    for QuantumIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
@@ -128,7 +128,7 @@ impl<B: SelectHinted + SelectZero, O: VSlice, const QUANTUM_LOG2: usize> SelectH
 
 /// Forward the lengths
 impl<B: SelectHinted + BitLength, O: VSlice, const QUANTUM_LOG2: usize> BitLength
-    for SparseIndex<B, O, QUANTUM_LOG2>
+    for QuantumIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -137,7 +137,7 @@ impl<B: SelectHinted + BitLength, O: VSlice, const QUANTUM_LOG2: usize> BitLengt
 }
 
 impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> BitCount
-    for SparseIndex<B, O, QUANTUM_LOG2>
+    for QuantumIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     fn count(&self) -> usize {
@@ -146,7 +146,7 @@ impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> BitCount
 }
 
 impl<B: SelectHinted, T, const QUANTUM_LOG2: usize> ConvertTo<B>
-    for SparseIndex<B, Vec<T>, QUANTUM_LOG2>
+    for QuantumIndex<B, Vec<T>, QUANTUM_LOG2>
 where
     Vec<T>: VSlice,
 {
@@ -157,11 +157,11 @@ where
 }
 
 impl<B: SelectHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
-    ConvertTo<SparseIndex<B, Vec<usize>, QUANTUM_LOG2>> for B
+    ConvertTo<QuantumIndex<B, Vec<usize>, QUANTUM_LOG2>> for B
 {
     #[inline(always)]
-    fn convert_to(self) -> Result<SparseIndex<B, Vec<usize>, QUANTUM_LOG2>> {
-        let mut res = SparseIndex {
+    fn convert_to(self) -> Result<QuantumIndex<B, Vec<usize>, QUANTUM_LOG2>> {
+        let mut res = QuantumIndex {
             ones: vec![0; (self.count() + (1 << QUANTUM_LOG2) - 1) >> QUANTUM_LOG2],
             bits: self,
             _marker: core::marker::PhantomData,
@@ -171,7 +171,7 @@ impl<B: SelectHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
     }
 }
 
-impl<B, O, const QUANTUM_LOG2: usize> AsRef<[usize]> for SparseIndex<B, O, QUANTUM_LOG2>
+impl<B, O, const QUANTUM_LOG2: usize> AsRef<[usize]> for QuantumIndex<B, O, QUANTUM_LOG2>
 where
     B: AsRef<[usize]> + SelectHinted,
     O: VSlice,

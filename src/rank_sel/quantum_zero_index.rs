@@ -13,14 +13,14 @@ use common_traits::SelectInWord;
 use epserde::*;
 
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SparseZeroIndex<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {
+pub struct QuantumZeroIndex<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize = 6> {
     bits: B,
     zeros: O,
     _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,
 }
 
 impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize>
-    SparseZeroIndex<B, O, QUANTUM_LOG2>
+    QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     /// # Safety
     /// TODO: this function is never used
@@ -39,7 +39,7 @@ impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize>
 }
 
 impl<B: SelectZeroHinted + AsRef<[usize]>, O: VSliceMut, const QUANTUM_LOG2: usize>
-    SparseZeroIndex<B, O, QUANTUM_LOG2>
+    QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     fn build_zeros(&mut self) -> Result<()> {
         let mut number_of_ones = 0;
@@ -68,7 +68,7 @@ impl<B: SelectZeroHinted + AsRef<[usize]>, O: VSliceMut, const QUANTUM_LOG2: usi
 
 /// Provide the hint to the underlying structure
 impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectZero
-    for SparseZeroIndex<B, O, QUANTUM_LOG2>
+    for QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
@@ -83,7 +83,7 @@ impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectZero
 
 /// If the underlying implementation has select zero, forward the methods
 impl<B: SelectZeroHinted + Select, O: VSlice, const QUANTUM_LOG2: usize> Select
-    for SparseZeroIndex<B, O, QUANTUM_LOG2>
+    for QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     fn select(&self, rank: usize) -> Option<usize> {
@@ -97,7 +97,7 @@ impl<B: SelectZeroHinted + Select, O: VSlice, const QUANTUM_LOG2: usize> Select
 
 /// If the underlying implementation has select zero, forward the methods
 impl<B: SelectZeroHinted + SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectHinted
-    for SparseZeroIndex<B, O, QUANTUM_LOG2>
+    for QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
@@ -108,7 +108,7 @@ impl<B: SelectZeroHinted + SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> S
 /// Allow the use of multiple indices, this might not be the best way to do it
 /// but it works
 impl<B: SelectZeroHinted + SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectZeroHinted
-    for SparseZeroIndex<B, O, QUANTUM_LOG2>
+    for QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     unsafe fn select_zero_unchecked_hinted(
@@ -133,7 +133,7 @@ impl<B: SelectZeroHinted + SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> S
 }
 
 impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> BitLength
-    for SparseZeroIndex<B, O, QUANTUM_LOG2>
+    for QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -142,7 +142,7 @@ impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> BitLength
 }
 
 impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> BitCount
-    for SparseZeroIndex<B, O, QUANTUM_LOG2>
+    for QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     fn count(&self) -> usize {
@@ -151,7 +151,7 @@ impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> BitCount
 }
 
 impl<B: SelectZeroHinted, const QUANTUM_LOG2: usize> ConvertTo<B>
-    for SparseZeroIndex<B, Vec<usize>, QUANTUM_LOG2>
+    for QuantumZeroIndex<B, Vec<usize>, QUANTUM_LOG2>
 {
     #[inline(always)]
     fn convert_to(self) -> Result<B> {
@@ -160,11 +160,11 @@ impl<B: SelectZeroHinted, const QUANTUM_LOG2: usize> ConvertTo<B>
 }
 
 impl<B: SelectZeroHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
-    ConvertTo<SparseZeroIndex<B, Vec<usize>, QUANTUM_LOG2>> for B
+    ConvertTo<QuantumZeroIndex<B, Vec<usize>, QUANTUM_LOG2>> for B
 {
     #[inline(always)]
-    fn convert_to(self) -> Result<SparseZeroIndex<B, Vec<usize>, QUANTUM_LOG2>> {
-        let mut res = SparseZeroIndex {
+    fn convert_to(self) -> Result<QuantumZeroIndex<B, Vec<usize>, QUANTUM_LOG2>> {
+        let mut res = QuantumZeroIndex {
             zeros: vec![0; (self.len() - self.count() + (1 << QUANTUM_LOG2) - 1) >> QUANTUM_LOG2],
             bits: self,
             _marker: core::marker::PhantomData,
@@ -174,7 +174,7 @@ impl<B: SelectZeroHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
     }
 }
 
-impl<B, O, const QUANTUM_LOG2: usize> AsRef<[usize]> for SparseZeroIndex<B, O, QUANTUM_LOG2>
+impl<B, O, const QUANTUM_LOG2: usize> AsRef<[usize]> for QuantumZeroIndex<B, O, QUANTUM_LOG2>
 where
     B: AsRef<[usize]> + SelectZeroHinted,
     O: VSlice,
