@@ -55,48 +55,19 @@ impl<B: VSliceMut> VSliceMut for ToBe<B> {
 
 impl<B: VSliceAtomic> VSliceAtomic for ToLe<B> {
     #[inline(always)]
-    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> usize {
-        self.0.get_atomic_unchecked(index, order).to_le()
+    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
+        self.0.get_unchecked(index, order).to_le()
     }
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: usize, order: Ordering) {
-        self.0.set_atomic_unchecked(index, value.to_le(), order);
+    unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering) {
+        self.0.set_unchecked(index, value.to_le(), order);
     }
 }
 impl<B: VSliceAtomic> VSliceAtomic for ToBe<B> {
     #[inline(always)]
-    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> usize {
-        self.0.get_atomic_unchecked(index, order).to_be()
+    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
+        self.0.get_unchecked(index, order).to_be()
     }
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: usize, order: Ordering) {
-        self.0.set_atomic_unchecked(index, value.to_be(), order);
-    }
-}
-
-impl<B: VSliceMutAtomicCmpExchange> VSliceMutAtomicCmpExchange for ToLe<B> {
-    #[inline(always)]
-    unsafe fn compare_exchange_unchecked(
-        &self,
-        index: usize,
-        current: usize,
-        new: usize,
-        success: Ordering,
-        failure: Ordering,
-    ) -> Result<usize, usize> {
-        self.0
-            .compare_exchange_unchecked(index, current.to_le(), new.to_le(), success, failure)
-    }
-}
-impl<B: VSliceMutAtomicCmpExchange> VSliceMutAtomicCmpExchange for ToBe<B> {
-    #[inline(always)]
-    unsafe fn compare_exchange_unchecked(
-        &self,
-        index: usize,
-        current: usize,
-        new: usize,
-        success: Ordering,
-        failure: Ordering,
-    ) -> Result<usize, usize> {
-        self.0
-            .compare_exchange_unchecked(index, current.to_be(), new.to_be(), success, failure)
+    unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering) {
+        self.0.set_unchecked(index, value.to_be(), order);
     }
 }

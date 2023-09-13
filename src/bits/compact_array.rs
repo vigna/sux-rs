@@ -84,7 +84,7 @@ impl<B: VSliceCore> VSliceCore for CompactArray<B> {
     }
 }
 
-impl<B: VSlice> VSlice for CompactArray<B> {
+impl VSlice for CompactArray<Vec<usize>> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> usize {
         debug_assert!(self.bit_width != BITS);
@@ -122,9 +122,9 @@ impl<B: VSlice> VSlice for CompactArray<B> {
     }
 }
 
-impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
+impl VSliceAtomic for CompactArray<Vec<AtomicUsize>> {
     #[inline]
-    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> usize {
+    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
         debug_assert!(self.bit_width != BITS);
         if self.bit_width == 0 {
             return 0;
@@ -137,15 +137,14 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
         let l = BITS - self.bit_width;
         // we always use the tested to reduce the probability of unconsistent reads
         if bit_index <= l {
-            self.data.get_atomic_unchecked(word_index, order) << (l - bit_index) >> l
+            self.data.get_unchecked(word_index, order) << (l - bit_index) >> l
         } else {
-            self.data.get_atomic_unchecked(word_index, order) >> bit_index
-                | self.data.get_atomic_unchecked(word_index + 1, order) << (BITS + l - bit_index)
-                    >> l
+            self.data.get_unchecked(word_index, order) >> bit_index
+                | self.data.get_unchecked(word_index + 1, order) << (BITS + l - bit_index) >> l
         }
     }
     #[inline]
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: usize, order: Ordering) {
+    unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering) {
         debug_assert!(self.bit_width != BITS);
         if self.bit_width == 0 {
             return;
@@ -160,33 +159,27 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
         let end_word_index = (pos + self.bit_width - 1) / BITS;
         if word_index == end_word_index {
             // this is consistent
-            let mut current = self.data.get_atomic_unchecked(word_index, order);
+            let mut current = self.data.get_unchecked(word_index, order);
             loop {
                 let mut new = current;
                 new &= !(mask << bit_index);
                 new |= value << bit_index;
 
-                match self
-                    .data
-                    .compare_exchange(word_index, current, new, order, order)
-                {
+                match self.data[word_index].compare_exchange(current, new, order, order) {
                     Ok(_) => break,
                     Err(e) => current = e,
                 }
             }
         } else {
             // try to wait for the other thread to finish
-            let mut word = self.data.get_atomic_unchecked(word_index, order);
+            let mut word = self.data.get_unchecked(word_index, order);
             fence(Ordering::Acquire);
             loop {
                 let mut new = word;
                 new &= (1 << bit_index) - 1;
                 new |= value << bit_index;
 
-                match self
-                    .data
-                    .compare_exchange(word_index, word, new, order, order)
-                {
+                match self.data[word_index].compare_exchange(word, new, order, order) {
                     Ok(_) => break,
                     Err(e) => word = e,
                 }
@@ -200,17 +193,14 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
             // should try to syncronize the threads as much as possible
             compiler_fence(Ordering::SeqCst);
 
-            let mut word = self.data.get_atomic_unchecked(end_word_index, order);
+            let mut word = self.data.get_unchecked(end_word_index, order);
             fence(Ordering::Acquire);
             loop {
                 let mut new = word;
                 new &= !(mask >> (BITS - bit_index));
                 new |= value >> (BITS - bit_index);
 
-                match self
-                    .data
-                    .compare_exchange(end_word_index, word, new, order, order)
-                {
+                match self.data[end_word_index].compare_exchange(word, new, order, order) {
                     Ok(_) => break,
                     Err(e) => word = e,
                 }
@@ -220,7 +210,7 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
     }
 }
 
-impl<B: VSliceMut> VSliceMut for CompactArray<B> {
+impl VSliceMut for CompactArray<Vec<usize>> {
     #[inline]
     unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
         debug_assert!(self.bit_width != BITS);
@@ -286,10 +276,18 @@ where
     }
 }
 
-impl<B: VSlice> ConvertTo<Vec<usize>> for CompactArray<B> {
+impl ConvertTo<Vec<usize>> for CompactArray<Vec<usize>> {
     fn convert_to(self) -> Result<Vec<usize>> {
         Ok((0..self.len())
             .map(|i| unsafe { self.get_unchecked(i) })
+            .collect::<Vec<_>>())
+    }
+}
+
+impl ConvertTo<Vec<usize>> for CompactArray<Vec<AtomicUsize>> {
+    fn convert_to(self) -> Result<Vec<usize>> {
+        Ok((0..self.len())
+            .map(|i| unsafe { self.get_unchecked(i, Ordering::Relaxed) })
             .collect::<Vec<_>>())
     }
 }
