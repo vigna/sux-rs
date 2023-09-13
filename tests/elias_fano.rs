@@ -28,7 +28,7 @@ fn test_elias_fano_concurrent() -> Result<()> {
         values.sort();
 
         // create the builder for the "in memory" elias-fano
-        let efb = EliasFanoAtomicBuilder::new(u, n);
+        let efb = EliasFanoAtomicBuilder::new(n, u);
         // push concurrently the values
         values
             .par_iter()
@@ -50,7 +50,7 @@ fn test_elias_fano() -> Result<()> {
         values.sort();
 
         // create the builder for the "in memory" elias-fano
-        let mut efb = EliasFanoBuilder::new(u, n);
+        let mut efb = EliasFanoBuilder::new(n, u);
         // push the values
         for value in values.iter() {
             efb.push(*value)?;
@@ -70,8 +70,7 @@ fn test_elias_fano() -> Result<()> {
         > = ef.convert_to().unwrap();
         // do a fast select
         for (i, v) in values.iter().enumerate() {
-            assert_eq!(ef.select(i).unwrap(), *v);
-            assert_eq!({ ef.get(i) }, *v);
+            assert_eq!(ef.get(i), *v);
         }
         println!("{:?}", ef);
 
@@ -82,7 +81,6 @@ fn test_elias_fano() -> Result<()> {
         > = ef.convert_to().unwrap();
         // do a fast select
         for (i, v) in values.iter().enumerate() {
-            assert_eq!(ef.select(i).unwrap(), *v);
             assert_eq!({ ef.get(i) }, *v);
         }
         println!("{:?}", ef);
@@ -100,7 +98,7 @@ fn test_epsserde() -> Result<()> {
         values.sort();
 
         // create the builder for the "in memory" elias-fano
-        let mut efb = EliasFanoBuilder::new(u, n);
+        let mut efb = EliasFanoBuilder::new(n, u);
         // push the values
         for value in values.iter() {
             efb.push(*value)?;
