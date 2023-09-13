@@ -7,15 +7,20 @@
 
 /*!
 
- This module defines the [`VSlice`] and [`VSliceMut`] traits, which are accessed
- with a logic similar to slices, but when indexed with `get` return a value.
- Implementing the [`core::ops::Index`]/[`core::ops::IndexMut`] traits
-would be more natural and practical, but it is impossible
- because there is no way to return a reference to a bit segment
- (see, e.g., [BitSlice](https://docs.rs/bitvec/latest/bitvec/slice/struct.BitSlice.html)).
+This modules define traits for *value slices* (with a limited
+bit width per element), which are accessed
+with a logic similar to slices, but when indexed with `get` return a value.
+Implementing the [`core::ops::Index`]/[`core::ops::IndexMut`] traits
+would be more natural and practical, but in certain cases it is impossible:
+in our main use case, [`CompactArray`](crate::bits::compact_array::CompactArray)
+we cannot implement [`core::ops::Index`] because there is no way to
+return a reference to a bit segment
+(see, e.g., [BitSlice](https://docs.rs/bitvec/latest/bitvec/slice/struct.BitSlice.html)).
 
- Each `VSlice` has an associated [`VSliceCore::bit_width`]. All stored values must fit
- within this bit width.
+There are three end-user traits: [`VSlice`], [`VSliceMut`] and [`VSliceAtomic`].
+The trait [`VSliceCore`] contains the common methods, and in particular
+[`VSliceCore::bit_width`], which returns the bit width of the slice.
+ All stored values must fit within this bit width.
 
  Implementations must return always zero on a [`VSlice::get`] when the bit
  width is zero. The behavior of a [`VSliceMut::set`] in the same context is not defined.

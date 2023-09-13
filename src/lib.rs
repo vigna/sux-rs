@@ -23,5 +23,5 @@ pub mod prelude {
     pub use crate::mph::*;
     pub use crate::rank_sel::prelude::*;
     pub use crate::sf::*;
-    pub use crate::traits::*;
+    pub use crate::traits::prelude::*;
 }
