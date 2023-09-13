@@ -77,7 +77,7 @@ impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectZero
         let rank_at_pos = index << QUANTUM_LOG2;
 
         self.bits
-            .select_zero_unchecked_hinted(rank, pos as usize, rank_at_pos)
+            .select_zero_unchecked_hinted(rank, pos, rank_at_pos)
     }
 }
 
@@ -118,7 +118,7 @@ impl<B: SelectZeroHinted + SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> S
         rank_at_pos: usize,
     ) -> usize {
         let index = rank >> QUANTUM_LOG2;
-        let this_pos = self.zeros.get_unchecked(index) as usize;
+        let this_pos = self.zeros.get_unchecked(index);
         let this_rank_at_pos = index << QUANTUM_LOG2;
 
         // choose the best hint, as in the one with rank_at_pos closest to rank
