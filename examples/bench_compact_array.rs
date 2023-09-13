@@ -4,7 +4,7 @@ use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
 use std::hint::black_box;
-use sux::prelude::compact_array::CompactArray;
+use sux::prelude::CompactArray;
 use sux::prelude::*;
 
 #[derive(Parser, Debug)]
