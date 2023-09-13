@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::traits::*;
+use crate::prelude::*;
 use anyhow::Result;
 use epserde::*;
 use std::sync::atomic::{compiler_fence, fence, AtomicUsize, Ordering};

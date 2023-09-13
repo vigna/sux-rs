@@ -7,9 +7,13 @@
 
 /*!
 
-This modules define traits for *value slices* (with a limited
-bit width per element), which are accessed
-with a logic similar to slices, but when indexed with `get` return a value.
+Traits for value slices, which are accessed
+with a logic similar to slices, but when indexed with `get` return an owned value.
+
+Value slices have a limited bit width per element, and are accessed
+with a logic similar to slices, but when indexed with `get`
+return an owned value---not a reference.
+
 Implementing the [`core::ops::Index`]/[`core::ops::IndexMut`] traits
 would be more natural and practical, but in certain cases it is impossible:
 in our main use case, [`CompactArray`](crate::bits::compact_array::CompactArray)
@@ -22,14 +26,18 @@ The trait [`VSliceCore`] contains the common methods, and in particular
 [`VSliceCore::bit_width`], which returns the bit width of the slice.
  All stored values must fit within this bit width.
 
- Implementations must return always zero on a [`VSlice::get`] when the bit
- width is zero. The behavior of a [`VSliceMut::set`] in the same context is not defined.
+Implementations must return always zero on a [`VSlice::get`] when the bit
+width is zero. The behavior of a [`VSliceMut::set`] in the same context is not defined.
+
+We provide implementations for `Vec<usize>`, `Vec<AtomicUsize>`, `&[usize]`,
+and `&[AtomicUsize]`. The implementations based on atomic types implements
+[`VSliceAtomic`].
 */
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 const BITS: usize = core::mem::size_of::<usize>() * 8;
 
-/// Common methods between [`VSlice`] and [`VSliceAtomic`]
+/// Common methods for [`VSlice`], [`VSliceMut`], and [`VSliceAtomic`]
 pub trait VSliceCore {
     /// Return the width of the slice. All elements stored in the slice must
     /// fit within this bit width.
@@ -64,6 +72,7 @@ macro_rules! debug_assert_bounds {
     };
 }
 
+/// A value slice.
 pub trait VSlice: VSliceCore {
     /// Return the value at the specified index.
     ///
@@ -81,6 +90,7 @@ pub trait VSlice: VSliceCore {
     }
 }
 
+/// A mutable value slice.
 pub trait VSliceMut: VSlice {
     /// Set the element of the slice at the specified index.
     /// No bounds checking is performed.
@@ -108,7 +118,7 @@ pub trait VSliceMut: VSlice {
     }
 }
 
-/// A value slice supporting atomit operations.
+/// A thread-safe value slice supporting atomic operations.
 pub trait VSliceAtomic: VSliceCore {
     /// Return the value at the specified index.
     ///

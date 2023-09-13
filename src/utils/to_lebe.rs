@@ -1,4 +1,4 @@
-use crate::traits::*;
+use crate::prelude::*;
 use core::sync::atomic::Ordering;
 
 /// On-the-fly conversion to little-endian of a VSlice

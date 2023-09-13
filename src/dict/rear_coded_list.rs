@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::traits::IndexedDict;
+use crate::traits::indexed_dict::IndexedDict;
 use epserde::traits::*;
 use epserde::*;
 use num_traits::AsPrimitive;

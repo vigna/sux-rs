@@ -18,7 +18,7 @@ Bit vector implementations. There are three flavors:
 
 It is possible to juggle between the three flavors using [`From`].
  */
-use crate::traits::*;
+use crate::traits::prelude::*;
 use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
