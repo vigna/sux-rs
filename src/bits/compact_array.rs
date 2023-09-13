@@ -9,6 +9,8 @@ use anyhow::Result;
 use epserde::*;
 use std::sync::atomic::{compiler_fence, fence, AtomicUsize, Ordering};
 
+const BITS: usize = core::mem::size_of::<usize>() * 8;
+
 /// A fixed-length array of values of bounded bit width. We provide an implementation
 /// based on `Vec<usize>`, and one based on `Vec<AtomicUsize>`. In the second case we can
 /// provide some concurrency guarantee.
@@ -23,10 +25,10 @@ impl CompactArray<Vec<usize>> {
     pub fn new(bit_width: usize, len: usize) -> Self {
         #[cfg(not(any(feature = "testless_read", feature = "testless_write")))]
         // we need at least two words to avoid branches in the gets
-        let n_of_words = (len * bit_width + 63) / 64;
+        let n_of_words = (len * bit_width + BITS - 1) / BITS;
         #[cfg(any(feature = "testless_read", feature = "testless_write"))]
         // we need at least two words to avoid branches in the gets
-        let n_of_words = (1 + (len * bit_width + 63) / 64).max(2);
+        let n_of_words = (1 + (len * bit_width + BITS - 1) / BITS).max(2);
         Self {
             data: vec![0; n_of_words],
             bit_width,
@@ -39,10 +41,10 @@ impl CompactArray<Vec<AtomicUsize>> {
     pub fn new_atomic(bit_width: usize, len: usize) -> Self {
         #[cfg(not(any(feature = "testless_read", feature = "testless_write")))]
         // we need at least two words to avoid branches in the gets
-        let n_of_words = (len * bit_width + 63) / 64;
+        let n_of_words = (len * bit_width + BITS - 1) / BITS;
         #[cfg(any(feature = "testless_read", feature = "testless_write"))]
         // we need at least two words to avoid branches in the gets
-        let n_of_words = (1 + (len * bit_width + 63) / 64).max(2);
+        let n_of_words = (1 + (len * bit_width + BITS - 1) / BITS).max(2);
         Self {
             data: (0..n_of_words).map(|_| AtomicUsize::new(0)).collect(),
             bit_width,
@@ -85,36 +87,36 @@ impl<B: VSliceCore> VSliceCore for CompactArray<B> {
 impl<B: VSlice> VSlice for CompactArray<B> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> usize {
-        debug_assert!(self.bit_width != 64);
+        debug_assert!(self.bit_width != BITS);
         #[cfg(not(feature = "testless_read"))]
         if self.bit_width == 0 {
             return 0;
         }
 
         let pos = index * self.bit_width;
-        let word_index = pos / 64;
-        let bit_index = pos % 64;
+        let word_index = pos / BITS;
+        let bit_index = pos % BITS;
 
         #[cfg(feature = "testless_read")]
         {
-            // ALERT!: this is not the correct mask for width 64
+            // ALERT!: this is not the correct mask for width BITS
             let mask = (1_usize << self.bit_width) - 1;
 
             let lower = self.data.get_unchecked(word_index) >> bit_index;
-            let higher = (self.data.get_unchecked(word_index + 1) << (63 - bit_index)) << 1;
+            let higher = (self.data.get_unchecked(word_index + 1) << (BITS - 1 - bit_index)) << 1;
 
             (higher | lower) & mask
         }
 
         #[cfg(not(feature = "testless_read"))]
         {
-            let l = 64 - self.bit_width;
+            let l = BITS - self.bit_width;
 
             if bit_index <= l {
                 self.data.get_unchecked(word_index) << (l - bit_index) >> l
             } else {
                 self.data.get_unchecked(word_index) >> bit_index
-                    | self.data.get_unchecked(word_index + 1) << (64 + l - bit_index) >> l
+                    | self.data.get_unchecked(word_index + 1) << (BITS + l - bit_index) >> l
             }
         }
     }
@@ -123,38 +125,39 @@ impl<B: VSlice> VSlice for CompactArray<B> {
 impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
     #[inline]
     unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> usize {
-        debug_assert!(self.bit_width != 64);
+        debug_assert!(self.bit_width != BITS);
         if self.bit_width == 0 {
             return 0;
         }
 
         let pos = index * self.bit_width;
-        let word_index = pos / 64;
-        let bit_index = pos % 64;
+        let word_index = pos / BITS;
+        let bit_index = pos % BITS;
 
-        let l = 64 - self.bit_width;
+        let l = BITS - self.bit_width;
         // we always use the tested to reduce the probability of unconsistent reads
         if bit_index <= l {
             self.data.get_atomic_unchecked(word_index, order) << (l - bit_index) >> l
         } else {
             self.data.get_atomic_unchecked(word_index, order) >> bit_index
-                | self.data.get_atomic_unchecked(word_index + 1, order) << (64 + l - bit_index) >> l
+                | self.data.get_atomic_unchecked(word_index + 1, order) << (BITS + l - bit_index)
+                    >> l
         }
     }
     #[inline]
     unsafe fn set_atomic_unchecked(&self, index: usize, value: usize, order: Ordering) {
-        debug_assert!(self.bit_width != 64);
+        debug_assert!(self.bit_width != BITS);
         if self.bit_width == 0 {
             return;
         }
 
         let pos = index * self.bit_width;
-        let word_index = pos / 64;
-        let bit_index = pos % 64;
+        let word_index = pos / BITS;
+        let bit_index = pos % BITS;
 
         let mask: usize = (1_usize << self.bit_width) - 1;
 
-        let end_word_index = (pos + self.bit_width - 1) / 64;
+        let end_word_index = (pos + self.bit_width - 1) / BITS;
         if word_index == end_word_index {
             // this is consistent
             let mut current = self.data.get_atomic_unchecked(word_index, order);
@@ -201,8 +204,8 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
             fence(Ordering::Acquire);
             loop {
                 let mut new = word;
-                new &= !(mask >> (64 - bit_index));
-                new |= value >> (64 - bit_index);
+                new &= !(mask >> (BITS - bit_index));
+                new |= value >> (BITS - bit_index);
 
                 match self
                     .data
@@ -220,35 +223,35 @@ impl<B: VSliceMutAtomicCmpExchange> VSliceAtomic for CompactArray<B> {
 impl<B: VSliceMut> VSliceMut for CompactArray<B> {
     #[inline]
     unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
-        debug_assert!(self.bit_width != 64);
+        debug_assert!(self.bit_width != BITS);
         #[cfg(not(feature = "testless_write"))]
         if self.bit_width == 0 {
             return;
         }
 
         let pos = index * self.bit_width;
-        let word_index = pos / 64;
-        let bit_index = pos % 64;
+        let word_index = pos / BITS;
+        let bit_index = pos % BITS;
 
         let mask: usize = (1_usize << self.bit_width) - 1;
 
         #[cfg(feature = "testless_write")]
         {
             let lower = value << bit_index;
-            let higher = (value >> (63 - bit_index)) >> 1;
+            let higher = (value >> (BITS - 1 - bit_index)) >> 1;
 
             let lower_word = self.data.get_unchecked(word_index) & !(mask << bit_index);
             self.data.set_unchecked(word_index, lower_word | lower);
 
             let higher_word =
-                self.data.get_unchecked(word_index + 1) & !((mask >> (63 - bit_index)) >> 1);
+                self.data.get_unchecked(word_index + 1) & !((mask >> (BITS - 1 - bit_index)) >> 1);
             self.data
                 .set_unchecked(word_index + 1, higher_word | higher);
         }
 
         #[cfg(not(feature = "testless_write"))]
         {
-            let end_word_index = (pos + self.bit_width - 1) / 64;
+            let end_word_index = (pos + self.bit_width - 1) / BITS;
             if word_index == end_word_index {
                 let mut word = self.data.get_unchecked(word_index);
                 word &= !(mask << bit_index);
@@ -261,8 +264,8 @@ impl<B: VSliceMut> VSliceMut for CompactArray<B> {
                 self.data.set_unchecked(word_index, word);
 
                 let mut word = self.data.get_unchecked(end_word_index);
-                word &= !(mask >> (64 - bit_index));
-                word |= value >> (64 - bit_index);
+                word &= !(mask >> (BITS - bit_index));
+                word |= value >> (BITS - bit_index);
                 self.data.set_unchecked(end_word_index, word);
             }
         }
