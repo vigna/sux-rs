@@ -6,7 +6,7 @@
  */
 
 use anyhow::Result;
-use epserde::*;
+use epserde::prelude::*;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
