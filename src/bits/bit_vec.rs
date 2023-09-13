@@ -82,7 +82,7 @@ impl BitVec<Vec<usize>> {
 impl BitVec<Vec<AtomicUsize>> {
     /// Create a new atomic bit vector of length `len`.
     pub fn new_atomic(len: usize) -> Self {
-        let n_of_words = (len + 63) / 64;
+        let n_of_words = (len + BITS - 1) / BITS;
         Self {
             data: (0..n_of_words).map(|_| AtomicUsize::new(0)).collect(),
             len,
