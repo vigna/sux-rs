@@ -30,7 +30,8 @@ Implementations must return always zero on a [`VSlice::get`] when the bit
 width is zero. The behavior of a [`VSliceMut::set`] in the same context is not defined.
 
 We provide implementations for `Vec<usize>`, `Vec<AtomicUsize>`, `&[usize]`,
-and `&[AtomicUsize]`. The implementations based on atomic types implements
+and `&[AtomicUsize]` that view their elements as values with a bit width
+equal to that of `usize`. The implementations based on atomic types implements
 [`VSliceAtomic`].
 */
 use core::sync::atomic::{AtomicUsize, Ordering};

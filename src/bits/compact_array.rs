@@ -11,9 +11,26 @@ use std::sync::atomic::{compiler_fence, fence, AtomicUsize, Ordering};
 
 const BITS: usize = core::mem::size_of::<usize>() * 8;
 
-/// A fixed-length array of values of bounded bit width. We provide an implementation
-/// based on `Vec<usize>`, and one based on `Vec<AtomicUsize>`. In the second case we can
-/// provide some concurrency guarantee.
+/// A fixed-length array of values of bounded bit width.
+///
+/// Elements are stored contiguously, with no padding bits (in particular,
+/// unless the bit width is a power of two some elements will be stored
+/// across word boundaries).
+///
+/// We provide an implementation
+/// based on `Vec<usize>`, and one based on `Vec<AtomicUsize>`. The first
+/// implementation implements [`VSlice`] and [`VSliceMut`], the second
+/// implementation implements [`VSliceAtomic`].
+///
+/// In the second case we can provide some concurrency guarantees,
+/// albeit not full-fledged thread safety: more precisely, we can
+/// guarantee thread-safety if the bit width is a power of two; otherwise,
+/// concurrent writes to values that cross word boundaries might end
+/// up in different threads succeding in writing only part of a value.
+/// If the user can guarantee that no two threads ever write to the same
+/// boundary-crossing value, then no race condition can happen.
+///
+/// Note that the generic backend must implement [`VSliceCore`]
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CompactArray<B> {
     data: B,
@@ -55,7 +72,8 @@ impl CompactArray<Vec<AtomicUsize>> {
 
 impl<B> CompactArray<B> {
     /// # Safety
-    /// TODO: this function is never used.
+    /// `len` * `bit_width` must be between 0 (included) the number of
+    /// bits in `data` (included).
     #[inline(always)]
     pub unsafe fn from_raw_parts(data: B, bit_width: usize, len: usize) -> Self {
         Self {
@@ -71,10 +89,10 @@ impl<B> CompactArray<B> {
     }
 }
 
-impl<B: VSliceCore> VSliceCore for CompactArray<B> {
+impl<T> VSliceCore for CompactArray<T> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
-        debug_assert!(self.bit_width <= self.data.bit_width());
+        debug_assert!(self.bit_width <= BITS);
         self.bit_width
     }
 
@@ -84,7 +102,7 @@ impl<B: VSliceCore> VSliceCore for CompactArray<B> {
     }
 }
 
-impl<T: AsRef<[usize]> + VSliceCore> VSlice for CompactArray<T> {
+impl<T: AsRef<[usize]>> VSlice for CompactArray<T> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> usize {
         debug_assert!(self.bit_width != BITS);
@@ -120,111 +138,6 @@ impl<T: AsRef<[usize]> + VSliceCore> VSlice for CompactArray<T> {
                     | self.data.as_ref().get_unchecked(word_index + 1) << (BITS + l - bit_index)
                         >> l
             }
-        }
-    }
-}
-
-impl<T: AsRef<[AtomicUsize]> + VSliceCore> VSliceAtomic for CompactArray<T> {
-    #[inline]
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
-        debug_assert!(self.bit_width != BITS);
-        if self.bit_width == 0 {
-            return 0;
-        }
-
-        let pos = index * self.bit_width;
-        let word_index = pos / BITS;
-        let bit_index = pos % BITS;
-
-        let l = BITS - self.bit_width;
-        // we always use the tested to reduce the probability of unconsistent reads
-        if bit_index <= l {
-            self.data.as_ref().get_unchecked(word_index).load(order) << (l - bit_index) >> l
-        } else {
-            self.data.as_ref().get_unchecked(word_index).load(order) >> bit_index
-                | self.data.as_ref().get_unchecked(word_index + 1).load(order)
-                    << (BITS + l - bit_index)
-                    >> l
-        }
-    }
-    #[inline]
-    unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering) {
-        debug_assert!(self.bit_width != BITS);
-        if self.bit_width == 0 {
-            return;
-        }
-
-        let pos = index * self.bit_width;
-        let word_index = pos / BITS;
-        let bit_index = pos % BITS;
-
-        let mask: usize = (1_usize << self.bit_width) - 1;
-
-        let end_word_index = (pos + self.bit_width - 1) / BITS;
-        if word_index == end_word_index {
-            // this is consistent
-            let mut current = self.data.as_ref().get_unchecked(word_index).load(order);
-            loop {
-                let mut new = current;
-                new &= !(mask << bit_index);
-                new |= value << bit_index;
-
-                match self
-                    .data
-                    .as_ref()
-                    .get_unchecked(word_index)
-                    .compare_exchange(current, new, order, order)
-                {
-                    Ok(_) => break,
-                    Err(e) => current = e,
-                }
-            }
-        } else {
-            // try to wait for the other thread to finish
-            let mut word = self.data.as_ref().get_unchecked(word_index).load(order);
-            fence(Ordering::Acquire);
-            loop {
-                let mut new = word;
-                new &= (1 << bit_index) - 1;
-                new |= value << bit_index;
-
-                match self
-                    .data
-                    .as_ref()
-                    .get_unchecked(word_index)
-                    .compare_exchange(word, new, order, order)
-                {
-                    Ok(_) => break,
-                    Err(e) => word = e,
-                }
-            }
-            fence(Ordering::Release);
-
-            // ensure that the compiler does not reorder the two atomic operations
-            // this should increase the probability of having consistency
-            // between two concurrent writes as they will both execute the set
-            // of the bits in the same order, and the release / acquire fence
-            // should try to syncronize the threads as much as possible
-            compiler_fence(Ordering::SeqCst);
-
-            let mut word = self.data.as_ref().get_unchecked(end_word_index).load(order);
-            fence(Ordering::Acquire);
-            loop {
-                let mut new = word;
-                new &= !(mask >> (BITS - bit_index));
-                new |= value >> (BITS - bit_index);
-
-                match self
-                    .data
-                    .as_ref()
-                    .get_unchecked(end_word_index)
-                    .compare_exchange(word, new, order, order)
-                {
-                    Ok(_) => break,
-                    Err(e) => word = e,
-                }
-            }
-            fence(Ordering::Release);
         }
     }
 }
@@ -281,10 +194,119 @@ impl VSliceMut for CompactArray<Vec<usize>> {
     }
 }
 
+impl<T: AsRef<[AtomicUsize]>> VSliceAtomic for CompactArray<T> {
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
+        debug_assert!(self.bit_width != BITS);
+        if self.bit_width == 0 {
+            return 0;
+        }
+
+        let pos = index * self.bit_width;
+        let word_index = pos / BITS;
+        let bit_index = pos % BITS;
+
+        let l = BITS - self.bit_width;
+        // we always use the tested to reduce the probability of unconsistent reads
+        if bit_index <= l {
+            self.data.as_ref().get_unchecked(word_index).load(order) << (l - bit_index) >> l
+        } else {
+            self.data.as_ref().get_unchecked(word_index).load(order) >> bit_index
+                | self.data.as_ref().get_unchecked(word_index + 1).load(order)
+                    << (BITS + l - bit_index)
+                    >> l
+        }
+    }
+    #[inline]
+    unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering) {
+        debug_assert!(self.bit_width != BITS);
+        if self.bit_width == 0 {
+            return;
+        }
+
+        let pos = index * self.bit_width;
+        let word_index = pos / BITS;
+        let bit_index = pos % BITS;
+
+        let mask: usize = (1_usize << self.bit_width) - 1;
+
+        let end_word_index = (pos + self.bit_width - 1) / BITS;
+        if word_index == end_word_index {
+            // this is consistent
+            let mut current = self.data.as_ref().get_unchecked(word_index).load(order);
+            loop {
+                let mut new = current;
+                new &= !(mask << bit_index);
+                new |= value << bit_index;
+
+                match self
+                    .data
+                    .as_ref()
+                    .get_unchecked(word_index)
+                    .compare_exchange(current, new, order, order)
+                {
+                    Ok(_) => break,
+                    Err(e) => current = e,
+                }
+            }
+        } else {
+            let mut word = self.data.as_ref().get_unchecked(word_index).load(order);
+            // try to wait for the other thread to finish
+            fence(Ordering::Acquire);
+            loop {
+                let mut new = word;
+                new &= (1 << bit_index) - 1;
+                new |= value << bit_index;
+
+                match self
+                    .data
+                    .as_ref()
+                    .get_unchecked(word_index)
+                    .compare_exchange(word, new, order, order)
+                {
+                    Ok(_) => break,
+                    Err(e) => word = e,
+                }
+            }
+            fence(Ordering::Release);
+
+            // ensure that the compiler does not reorder the two atomic operations
+            // this should increase the probability of having consistency
+            // between two concurrent writes as they will both execute the set
+            // of the bits in the same order, and the release / acquire fence
+            // should try to syncronize the threads as much as possible
+            compiler_fence(Ordering::SeqCst);
+
+            let mut word = self.data.as_ref().get_unchecked(end_word_index).load(order);
+            fence(Ordering::Acquire);
+            loop {
+                let mut new = word;
+                new &= !(mask >> (BITS - bit_index));
+                new |= value >> (BITS - bit_index);
+
+                match self
+                    .data
+                    .as_ref()
+                    .get_unchecked(end_word_index)
+                    .compare_exchange(word, new, order, order)
+                {
+                    Ok(_) => break,
+                    Err(e) => word = e,
+                }
+            }
+            fence(Ordering::Release);
+        }
+    }
+}
+
+/// Provide conversion betweeen compact arrays whose backends
+/// are [convertible](ConvertTo) into one another.
+///
+/// Many implementations of this trait are then used to
+/// implement by delegation a corresponding [`From`].
 impl<B, D> ConvertTo<CompactArray<D>> for CompactArray<B>
 where
-    B: ConvertTo<D> + VSliceCore,
-    D: VSliceCore,
+    B: ConvertTo<D>,
 {
     #[inline]
     fn convert_to(self) -> Result<CompactArray<D>> {
@@ -295,7 +317,7 @@ where
         })
     }
 }
-
+/// Provide conversion from standard to atomic compact arrays.
 impl From<CompactArray<Vec<usize>>> for CompactArray<Vec<AtomicUsize>> {
     #[inline]
     fn from(bm: CompactArray<Vec<usize>>) -> Self {
@@ -303,6 +325,7 @@ impl From<CompactArray<Vec<usize>>> for CompactArray<Vec<AtomicUsize>> {
     }
 }
 
+/// Provide conversion from atomic to standard compact arrays.
 impl From<CompactArray<Vec<AtomicUsize>>> for CompactArray<Vec<usize>> {
     #[inline]
     fn from(bm: CompactArray<Vec<AtomicUsize>>) -> Self {
@@ -310,13 +333,8 @@ impl From<CompactArray<Vec<AtomicUsize>>> for CompactArray<Vec<usize>> {
     }
 }
 
-impl<'a> From<CompactArray<&'a [AtomicUsize]>> for CompactArray<&'a [usize]> {
-    #[inline]
-    fn from(bm: CompactArray<&'a [AtomicUsize]>) -> Self {
-        bm.convert_to().unwrap()
-    }
-}
-
+/// Provide conversion from references to standard compact arrays to
+/// references to atomic compact arrays.
 impl<'a> From<CompactArray<&'a [usize]>> for CompactArray<&'a [AtomicUsize]> {
     #[inline]
     fn from(bm: CompactArray<&'a [usize]>) -> Self {
@@ -324,16 +342,11 @@ impl<'a> From<CompactArray<&'a [usize]>> for CompactArray<&'a [AtomicUsize]> {
     }
 }
 
-impl<'a> From<CompactArray<&'a mut [AtomicUsize]>> for CompactArray<&'a mut [usize]> {
+/// Provide conversion from references to atomic compact arrays to
+/// references to standard compact arrays.
+impl<'a> From<CompactArray<&'a [AtomicUsize]>> for CompactArray<&'a [usize]> {
     #[inline]
-    fn from(bm: CompactArray<&'a mut [AtomicUsize]>) -> Self {
-        bm.convert_to().unwrap()
-    }
-}
-
-impl<'a> From<CompactArray<&'a mut [usize]>> for CompactArray<&'a mut [AtomicUsize]> {
-    #[inline]
-    fn from(bm: CompactArray<&'a mut [usize]>) -> Self {
+    fn from(bm: CompactArray<&'a [AtomicUsize]>) -> Self {
         bm.convert_to().unwrap()
     }
 }
