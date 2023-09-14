@@ -56,7 +56,7 @@ fn main() {
         let start = Instant::now();
         for &rank in &ranks {
             unsafe {
-                u += elias_fano.select_unchecked(rank);
+                u += elias_fano.get_unchecked(rank);
             }
         }
         let duration = start.elapsed();

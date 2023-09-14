@@ -55,7 +55,7 @@ pub trait IndexedDict {
     }
 
     fn iter(&self) -> Self::Iterator<'_>;
-    fn iter_from(&self) -> Self::Iterator<'_>;
+    fn iter_from(&self, start_index: usize) -> Self::Iterator<'_>;
 }
 
 /// Successor computation for dictionaries whose values are monotonically increasing.

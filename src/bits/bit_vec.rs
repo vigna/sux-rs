@@ -486,7 +486,7 @@ where
 }
 
 /// Needed so that the sparse index can build the ones.
-impl AsRef<[usize]> for CountBitVec<Vec<usize>> {
+impl<B: AsRef<[usize]>> AsRef<[usize]> for CountBitVec<B> {
     #[inline(always)]
     fn as_ref(&self) -> &[usize] {
         self.data.as_ref()
@@ -494,9 +494,56 @@ impl AsRef<[usize]> for CountBitVec<Vec<usize>> {
 }
 
 /// Needed so that the sparse index can build the ones.
-impl AsRef<[usize]> for BitVec<Vec<usize>> {
+impl<B: AsRef<[usize]>> AsRef<[usize]> for BitVec<B> {
     #[inline(always)]
     fn as_ref(&self) -> &[usize] {
         self.data.as_ref()
+    }
+}
+
+pub struct BitVecOnesIterator<B> {
+    mem_words: B,
+    word_idx: usize,
+    /// This is an usize because BitVec is implemented only for Vec<usize> and &[usize]
+    word: usize,
+    len: usize,
+}
+impl<B: AsRef<[usize]>> BitVecOnesIterator<B> {
+    pub fn new(mem_words: B, len: usize) -> Self {
+        let word = if mem_words.as_ref().is_empty() {
+            0
+        } else {
+            unsafe { *mem_words.as_ref().get_unchecked(0) }
+        };
+        Self {
+            mem_words,
+            word_idx: 0,
+            word,
+            len,
+        }
+    }
+}
+
+impl<B: AsRef<[usize]>> Iterator for BitVecOnesIterator<B> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.len == 0 {
+            return None;
+        }
+        // find the next word with zeros
+        while self.word == 0 {
+            self.word_idx += 1;
+            debug_assert!(self.word_idx < self.mem_words.as_ref().len());
+            self.word = unsafe { *self.mem_words.as_ref().get_unchecked(self.word_idx) };
+        }
+        // find the lowest bit set index in the word
+        let bit_idx = self.word.trailing_zeros() as usize;
+        // compute the global bit index
+        let res = (self.word_idx * BITS) + bit_idx;
+        // clear the lowest bit set
+        self.word &= self.word - 1;
+        self.len -= 1;
+        Some(res)
     }
 }
