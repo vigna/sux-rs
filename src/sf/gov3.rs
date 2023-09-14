@@ -16,30 +16,27 @@ use std::io::BufReader;
 use std::io::Read;
 use std::path::Path;
 
-#[derive(Debug)]
-/// An immutable function stored quasi-succinctly using the Linear3SystemSolver
-/// Genuzio-Ottaviano-Vigna method to solve **F**2-linear systems.
+/// A stub to load and access Genuzio-Ottaviano-Vigna static functions.
 ///
-/// Static function structure that reads Java-generated, dumped structures.
-///
-/// To generate the structure, you can use the Java version as:
+/// To generate the structure you must use the Java version:
 /// ```bash
-/// java -Xmx500G $JVMOPTS it.unimi.dsi.sux4j.mph.GOV3Function 7B.64-gov 7B.out -b
+/// java it.unimi.dsi.sux4j.mph.GOV3Function --byte-array SOURCE test.sf
 /// ```
 ///
 /// To obtain a file that can be read by this structure, load
-/// the Java instance of the static function and write it to a file
-/// using the `dump` method.
-///
-/// You can do it through:
+/// the serialized Java instance of the static function and
+/// dump it in C-compatible format:
 /// ```shell
-/// echo '((it.unimi.dsi.sux4j.mph.GOV3Function)it.unimi.dsi.fastutil.io.BinIO.loadObject("test.mph")).dump("test.cmph");' | jshell
+/// echo '((it.unimi.dsi.sux4j.mph.GOV3Function)it.unimi.dsi.fastutil.io.BinIO.loadObject("test.sf")).dump("test.csf");' | jshell
 /// ```
+///
+/// You can now load the dumped file with the [`load`](crate::sf::gov3::GOV3::load) method.
 ///
 /// # Reference:
 /// [Marco Genuzio, Giuseppe Ottaviano, and Sebastiano Vigna, Fast Scalable Construction of (Minimal Perfect Hash) Functions](https://arxiv.org/pdf/1603.04330.pdf)
 /// [Java version with `dump` method](https://github.com/vigna/Sux4J/blob/master/src/it/unimi/dsi/sux4j/mph/GOV3Function.java)
 
+#[derive(Debug)]
 pub struct GOV3 {
     pub size: u64,
     pub width: u64,

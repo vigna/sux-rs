@@ -13,7 +13,6 @@ pub mod mph;
 pub mod rank_sel;
 pub mod sf;
 pub mod traits;
-pub mod utils;
 
 pub mod prelude {
     pub use crate::bits::prelude::*;
