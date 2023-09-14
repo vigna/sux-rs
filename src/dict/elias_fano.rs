@@ -346,7 +346,7 @@ impl<'a, H: Select + AsRef<[usize]>, L: VSlice> EliasFanoIterator<'a, H, L> {
             // get the word from the high bits
             let word = unsafe { *ef.high_bits.as_ref().get_unchecked(word_idx) };
             // clean off the bits that we don't care about
-            word & ((1 << bits_to_clean) - 1)
+            word & !((1 << bits_to_clean) - 1)
         };
 
         Self {
