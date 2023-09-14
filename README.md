@@ -7,7 +7,7 @@ we provide:
 
 - the [`VSlice`](crate::traits::vslice::VSlice) trait---a value-based alternative to [`Index`](core::ops::Index);
 - traits for building blocks and structures like [`Rank`](crate::traits::rank_sel::Rank) , 
-  [`Select`](crate::traits::rank_sel::Select), and [`IndexedDict`](crate::traits::rank_sel::IndexedDict);
+  [`Select`](crate::traits::rank_sel::Select), and [`IndexedDict`](crate::traits::indexed_dict::IndexedDict);
 - an implementation of the [Elias--Fano representation of monotone sequences](crate::dict::elias_fano::EliasFano);
 - an implementation of list of [strings compressed by rear-coded prefix omission](crate::dict::rear_coded_list::RearCodedList);
 - some support for reading static ([minimal perfect hash](crate::mph::gov::GOVMPH)) [functions](crate::sf::gov3::GOV3)

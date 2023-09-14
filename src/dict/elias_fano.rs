@@ -314,7 +314,7 @@ pub struct EliasFanoIterator<'a, H: Select + AsRef<[usize]>, L: VSlice> {
     /// Index of the word loaded in the `word` field.
     word_idx: usize,
     /// Current window on the high bits.
-    /// This is an usize because BitVec is implemented only for Vec<usize> and &[usize]
+    /// This is an usize because BitVec is implemented only for `Vec<usize>` and `&[usize]`.
     window: usize,
 }
 

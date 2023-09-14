@@ -33,8 +33,8 @@ use std::path::Path;
 /// You can now load the dumped file with the [`load`](crate::sf::gov3::GOV3::load) method.
 ///
 /// # Reference:
-/// [Marco Genuzio, Giuseppe Ottaviano, and Sebastiano Vigna, Fast Scalable Construction of (Minimal Perfect Hash) Functions](https://arxiv.org/pdf/1603.04330.pdf)
-/// [Java version with `dump` method](https://github.com/vigna/Sux4J/blob/master/src/it/unimi/dsi/sux4j/mph/GOV3Function.java)
+/// - [Marco Genuzio, Giuseppe Ottaviano, and Sebastiano Vigna, Fast Scalable Construction of (Minimal Perfect Hash) Functions](https://arxiv.org/pdf/1603.04330.pdf)
+/// - [Java version with `dump` method](https://github.com/vigna/Sux4J/blob/master/src/it/unimi/dsi/sux4j/mph/GOV3Function.java)
 
 #[derive(Debug)]
 pub struct GOV3 {

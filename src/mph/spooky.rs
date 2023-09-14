@@ -11,34 +11,12 @@
 //!
 //! Ported from <https://github.com/vigna/Sux4J/blob/master/c/mph.c>.
 
-///
-/// SC_CONST: a constant which:
-///  - is not zero
-///  - is odd
-///  - is a not-very-regular mix of 1's and 0's
-///  - does not need any other special mathematical properties
-///
-/// The original is SC_CONST = 0xdeadbeefdeadbeef but we must
-/// be compatible with the original Java implementation in Sux4J.
+// The original is SC_CONST = 0xdeadbeefdeadbeef but we must
+// be compatible with the original Java implementation in Sux4J.
 pub const SC_CONST: u64 = 0x9e3779b97f4a7c13;
 
 #[inline(always)]
 #[must_use]
-///
-/// The goal is for each bit of the input to expand into 128 bits of
-///   apparent entropy before it is fully overwritten.
-/// n trials both set and cleared at least m bits of h0 h1 h2 h3
-///   n: 2   m: 29
-///   n: 3   m: 46
-///   n: 4   m: 57
-///   n: 5   m: 107
-///   n: 6   m: 146
-///   n: 7   m: 152
-/// when run forwards or backwards
-/// for all 1-bit and 2-bit diffs
-/// with diffs defined by either xor or subtraction
-/// with a base of all zeros plus a counter, or plus another bit, or random
-///
 pub const fn spooky_short_mix(mut h: [u64; 4]) -> [u64; 4] {
     h[2] = h[2].rotate_left(50);
     h[2] = h[2].wrapping_add(h[3]);
@@ -81,18 +59,6 @@ pub const fn spooky_short_mix(mut h: [u64; 4]) -> [u64; 4] {
 
 #[inline(always)]
 #[must_use]
-///
-/// Mix all 4 inputs together so that h0, h1 are a hash of them all.
-///
-/// For two inputs differing in just the input bits
-/// Where "differ" means xor or subtraction
-/// And the base value is random, or a counting value starting at that bit
-/// The final result will have each bit of h0, h1 flip
-/// For every input bit,
-/// with probability 50 +- .3% (it is probably better than that)
-/// For every pair of input bits,
-/// with probability 50 +- .75% (the worst case is approximately that)
-///
 const fn spooky_short_end(mut h: [u64; 4]) -> [u64; 4] {
     h[3] ^= h[2];
     h[2] = h[2].rotate_left(15);
