@@ -9,7 +9,7 @@
 
 //! Ported from <https://github.com/vigna/Sux4J/blob/master/c/mph.c>
 
-use crate::hash::spooky::{spooky_short, spooky_short_rehash};
+use super::spooky::{spooky_short, spooky_short_rehash};
 use anyhow::Result;
 use std::fs::File;
 use std::io::BufReader;

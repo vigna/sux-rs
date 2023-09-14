@@ -1,7 +1,15 @@
-//! SpookyHash: a 128-bit noncryptographic hash function
-//! <https://burtleburtle.net/bob/hash/spooky.html>
+/*
+ *
+ * SPDX-FileCopyrightText: 2023 Tommaso Fontana
+ * SPDX-FileCopyrightText: 2023 Inria
+ * SPDX-FileCopyrightText: 2023 Sebastiano Vigna
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ */
+
+//! A pure Rust implementation of [SpookyHash](https://burtleburtle.net/bob/hash/spooky.html).
 //!
-//! Ported from <https://github.com/vigna/Sux4J/blob/master/c/mph.c>
+//! Ported from <https://github.com/vigna/Sux4J/blob/master/c/mph.c>.
 
 ///
 /// SC_CONST: a constant which:
@@ -10,7 +18,8 @@
 ///  - is a not-very-regular mix of 1's and 0's
 ///  - does not need any other special mathematical properties
 ///
-/// The original is SC_CONST = 0xdeadbeefdeadbeef but we use the golden ratio :)
+/// The original is SC_CONST = 0xdeadbeefdeadbeef but we must
+/// be compatible with the original Java implementation in Sux4J.
 pub const SC_CONST: u64 = 0x9e3779b97f4a7c13;
 
 #[inline(always)]

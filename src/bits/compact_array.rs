@@ -30,7 +30,7 @@ const BITS: usize = core::mem::size_of::<usize>() * 8;
 /// If the user can guarantee that no two threads ever write to the same
 /// boundary-crossing value, then no race condition can happen.
 ///
-/// Note that the generic backend must implement [`VSliceCore`]
+
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CompactArray<B = Vec<usize>> {
     /// The underlying storage.
@@ -135,6 +135,7 @@ impl VSliceMut for CompactArray<Vec<usize>> {
     ///
     /// May panic if the index is not in in [0..[len](`VSliceCore::len`))
     /// or the value does not fit in [`VSliceCore::bit_width`] bits.
+    #[inline(always)]
     fn set(&mut self, index: usize, value: usize) {
         panic_if_out_of_bounds!(index, self.len);
         panic_if_value!(value, self.mask, self.bit_width);
@@ -184,6 +185,23 @@ impl<T: AsRef<[AtomicUsize]>> VSliceAtomic for CompactArray<T> {
                 & self.mask
         }
     }
+
+    // We reimplement set as we have the mask in the structure.
+
+    /// Set the element of the slice at the specified index.
+    ///
+    ///
+    /// May panic if the index is not in in [0..[len](`VSliceCore::len`))
+    /// or the value does not fit in [`VSliceCore::bit_width`] bits.
+    #[inline(always)]
+    fn set(&self, index: usize, value: usize, order: Ordering) {
+        panic_if_out_of_bounds!(index, self.len);
+        panic_if_value!(value, self.mask, self.bit_width);
+        unsafe {
+            self.set_unchecked(index, value, order);
+        }
+    }
+
     #[inline]
     unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering) {
         debug_assert!(self.bit_width != BITS);

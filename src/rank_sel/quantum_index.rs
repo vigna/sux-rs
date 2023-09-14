@@ -12,28 +12,26 @@ use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
 
+/// An index that records the position of the ones in a bit vector at a fixed
+/// set of positions.
+///
+/// More precisely, given a constant quantum <var>q</var>, this index records the position
+/// of the ones at positions 0, <var>q</var>, <var>2q</var>, &hellip;, and so on.
+/// The positions are recorded in a provided [`VSliceMut`] whose [bit width](VSliceCore::bit_width)
+/// must be sufficient to record all the positions.
+///
+/// The index takes a backend parameter `B` that can be any type that implements
+/// [`SelectHinted`]. This will usually be something like [`CountBitVec`](crate::bits::bit_vec::CountBitVec), or possibly
+/// a [`CountBitVec`](crate::bits::bit_vec::CountBitVec) wrapped in another index structure for which
+/// this structure has delegation (e.g., [`QuantumZeroIndex`](crate::rank_sel::QuantumZeroIndex)). See the documentation
+/// of [`EliasFano`](crate::dict::elias_fano::EliasFano) for an example of this approach.
+///
+/// See [`QuantumZeroIndex`](crate::rank_sel::QuantumZeroIndex) for the same index for zeros.
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct QuantumIndex<B: SelectHinted, O: VSlice = Vec<usize>, const QUANTUM_LOG2: usize = 8> {
     bits: B,
     ones: O,
     _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,
-}
-
-impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> QuantumIndex<B, O, QUANTUM_LOG2> {
-    /// # Safety
-    /// TODO: this function is never used
-    #[inline(always)]
-    pub unsafe fn from_raw_parts(bits: B, ones: O) -> Self {
-        Self {
-            bits,
-            ones,
-            _marker: core::marker::PhantomData,
-        }
-    }
-    #[inline(always)]
-    pub fn into_raw_parts(self) -> (B, O) {
-        (self.bits, self.ones)
-    }
 }
 
 impl<B: SelectHinted + AsRef<[usize]>, O: VSliceMut, const QUANTUM_LOG2: usize>
@@ -75,7 +73,7 @@ impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> Select
     }
 }
 
-/// If the underlying implementation has select zero, forward the methods
+/// If the underlying implementation has select zero, forward the methods.
 impl<B: SelectHinted + SelectZero, O: VSlice, const QUANTUM_LOG2: usize> SelectZero
     for QuantumIndex<B, O, QUANTUM_LOG2>
 {
@@ -89,7 +87,7 @@ impl<B: SelectHinted + SelectZero, O: VSlice, const QUANTUM_LOG2: usize> SelectZ
     }
 }
 
-/// If the underlying implementation has select zero, forward the methods
+/// If the underlying implementation has hint for select zero, forward the methods.
 impl<B: SelectHinted + SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectZeroHinted
     for QuantumIndex<B, O, QUANTUM_LOG2>
 {
@@ -105,28 +103,6 @@ impl<B: SelectHinted + SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> S
     }
 }
 
-/// Allow the use of multiple indices, this might not be the best way to do it
-/// but it works
-impl<B: SelectHinted + SelectZero, O: VSlice, const QUANTUM_LOG2: usize> SelectHinted
-    for QuantumIndex<B, O, QUANTUM_LOG2>
-{
-    #[inline(always)]
-    unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
-        let index = rank >> QUANTUM_LOG2;
-        let this_pos = self.ones.get_unchecked(index);
-        let this_rank_at_pos = index << QUANTUM_LOG2;
-
-        // choose the best hint, as in the one with rank_at_pos closest to rank
-        if rank_at_pos > this_rank_at_pos {
-            self.bits.select_unchecked_hinted(rank, pos, rank_at_pos)
-        } else {
-            self.bits
-                .select_unchecked_hinted(rank, this_pos, this_rank_at_pos)
-        }
-    }
-}
-
-/// Forward the lengths
 impl<B: SelectHinted + BitLength, O: VSlice, const QUANTUM_LOG2: usize> BitLength
     for QuantumIndex<B, O, QUANTUM_LOG2>
 {
@@ -145,6 +121,7 @@ impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> BitCount
     }
 }
 
+/// Forget the index.
 impl<B: SelectHinted, T, const QUANTUM_LOG2: usize> ConvertTo<B>
     for QuantumIndex<B, Vec<T>, QUANTUM_LOG2>
 where
@@ -156,6 +133,7 @@ where
     }
 }
 
+/// Create and add a quantum index.
 impl<B: SelectHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
     ConvertTo<QuantumIndex<B, Vec<usize>, QUANTUM_LOG2>> for B
 {
