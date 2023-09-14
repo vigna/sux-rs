@@ -504,7 +504,11 @@ fn longest_common_prefix(a: &[u8], b: &[u8]) -> (usize, core::cmp::Ordering) {
         i += 1;
     }
     // TODO!: try to optimize with vpcmpeqb pextrb and leading count ones
-    (i, a.len().cmp(&b.len()).then_with(|| a[i].cmp(&b[i])))
+    if i < min_len {
+        (i, a[i].cmp(&b[i]))
+    } else {
+        (i, a.len().cmp(&b.len()))
+    }
 }
 
 #[cfg(test)]
