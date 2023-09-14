@@ -31,7 +31,7 @@ pub fn main() {
 
     let args = Args::parse();
 
-    let mut rca = <RearCodedList<usize>>::new(args.k);
+    let mut rcab = RearCodedListBuilder::new(args.k);
     let mut pl = ProgressLogger::default().display_memory();
     pl.item_name = "line";
 
@@ -41,13 +41,14 @@ pub fn main() {
 
     pl.start("Inserting...");
     for line in lines {
-        rca.push(line);
+        rcab.push(line);
         pl.light_update();
     }
 
     pl.done();
 
-    rca.print_stats();
+    rcab.print_stats();
+    let rca = rcab.build();
 
     let mut rand = SmallRng::seed_from_u64(0);
 

@@ -8,10 +8,12 @@
 /// A dictionary of values indexed by a `usize`.
 pub trait IndexedDict {
     /// The type of the values stored in the dictionary.
-    type Value: PartialEq;
+    type OutputValue: PartialEq<Self::InputValue> + PartialEq;
+    type InputValue: PartialEq<Self::OutputValue> + PartialEq + ?Sized;
+
     /// The type of the iterator returned by [`iter`](`IndexedDict::iter`).
     /// and [`iter_from`](`IndexedDict::iter_from`).
-    type Iterator<'a>: ExactSizeIterator<Item = Self::Value> + 'a
+    type Iterator<'a>: ExactSizeIterator<Item = Self::OutputValue> + 'a
     where
         Self: 'a;
 
@@ -20,7 +22,7 @@ pub trait IndexedDict {
     /// # Panics
     /// May panic if the index is not in in [0..[len](`IndexedDict::len`)).
 
-    fn get(&self, index: usize) -> Self::Value {
+    fn get(&self, index: usize) -> Self::OutputValue {
         if index >= self.len() {
             panic!("Index out of bounds: {} >= {}", index, self.len())
         } else {
@@ -33,13 +35,13 @@ pub trait IndexedDict {
     /// # Safety
     ///
     /// `index` must be in [0..[len](`IndexedDict::len`)). No bounds checking is performed.
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Value;
+    unsafe fn get_unchecked(&self, index: usize) -> Self::OutputValue;
 
     /// Return true if the dictionary contains the given value.
     ///
     /// The default implementations just checks iteratively
     /// if the value is equal to any of the values in the dictionary.
-    fn contains(&self, value: &Self::Value) -> bool {
+    fn contains(&self, value: &Self::InputValue) -> bool {
         for i in 0..self.len() {
             if self.get(i) == *value {
                 return true;
@@ -64,19 +66,27 @@ pub trait IndexedDict {
 }
 
 /// Successor computation for dictionaries whose values are monotonically increasing.
-pub trait Successor<T: PartialOrd>: IndexedDict<Value = T> {
+pub trait Successor: IndexedDict
+where
+    Self::OutputValue: PartialOrd<Self::InputValue> + PartialOrd,
+    Self::InputValue: PartialOrd<Self::OutputValue> + PartialOrd,
+{
     /// Return the index of the successor and the successor
     /// of the given value, or `None` if there is no successor.
     /// The successor is the first value in the dictionary
     /// that is greater than or equal to the given value.
-    fn successor(&self, value: &Self::Value) -> Option<(usize, Self::Value)>;
+    fn successor(&self, value: &Self::InputValue) -> Option<(usize, Self::OutputValue)>;
 }
 
 /// Predecessor computation for dictionaries whoses value are monotonically increasing.
-pub trait Predecessor<T: PartialOrd>: IndexedDict<Value = T> {
+pub trait Predecessor: IndexedDict
+where
+    Self::OutputValue: PartialOrd<Self::InputValue> + PartialOrd,
+    Self::InputValue: PartialOrd<Self::OutputValue> + PartialOrd,
+{
     /// Return the index of the predecessor and the predecessor
     /// of the given value, or `None` if there is no predecessor.
     /// The predecessor is the last value in the dictionary
     /// that is less than the given value.
-    fn predecessor(&self, value: &Self::Value) -> Option<Self::Value>;
+    fn predecessor(&self, value: &Self::InputValue) -> Option<(usize, Self::OutputValue)>;
 }

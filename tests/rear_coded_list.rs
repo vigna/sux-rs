@@ -19,10 +19,11 @@ fn test_rear_coded_list() -> Result<()> {
         .collect::<Vec<_>>();
 
     // create a new rca with u16 as pointers (this limit data to u16::MAX bytes max size)
-    let mut rca = <RearCodedList<u16>>::new(8);
-    rca.extend(words.iter());
+    let mut rcab = <RearCodedListBuilder>::new(8);
+    rcab.extend(words.iter());
 
-    rca.print_stats();
+    rcab.print_stats();
+    let rca = rcab.build();
 
     assert_eq!(rca.len(), words.len());
 
@@ -51,7 +52,7 @@ fn test_rear_coded_list() -> Result<()> {
     drop(file);
     println!("{}", schema.to_csv());
 
-    let c = <RearCodedList<u16>>::mmap(&tmp_file, epserde::des::Flags::empty())?;
+    let c = RearCodedList::mmap(&tmp_file, epserde::des::Flags::empty())?;
 
     for (i, word) in words.iter().enumerate() {
         assert_eq!(&c.get(i), word);
