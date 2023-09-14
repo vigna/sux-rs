@@ -10,29 +10,29 @@ use epserde::*;
 use num_traits::AsPrimitive;
 
 #[derive(Debug, Clone, Default, Epserde)]
-/// Statistics of the encoded data
-pub struct Stats {
-    /// Maximum block size in bytes
+/// Statistics of the encoded data.
+struct Stats {
+    /// Maximum block size in bytes.
     pub max_block_bytes: usize,
-    /// The total sum of the block size in bytes
+    /// The total sum of the block size in bytes.
     pub sum_block_bytes: usize,
 
-    /// Maximum shared prefix in bytes
+    /// Maximum shared prefix in bytes.
     pub max_lcp: usize,
-    /// The total sum of the shared prefix in bytes
+    /// The total sum of the shared prefix in bytes.
     pub sum_lcp: usize,
 
-    /// maximum string length in bytes
+    /// Maximum string length in bytes.
     pub max_str_len: usize,
-    /// the total sum of the strings length in bytes
+    /// The total sum of the strings length in bytes.
     pub sum_str_len: usize,
 
-    /// The number of bytes used to store the rear lengths in data
+    /// The number of bytes used to store the rear lengths in data.
     pub code_bytes: usize,
-    /// The number of bytes used to store the suffixes in data
+    /// The number of bytes used to store the suffixes in data.
     pub suffixes_bytes: usize,
 
-    /// The bytes wasted writing without compression the first string in block
+    /// The bytes wasted writing without compression the first string in block.
     pub redundancy: isize,
 }
 
@@ -61,7 +61,7 @@ where
     /// decompression speed tradeoff
     k: usize,
     /// Statistics of the encoded data
-    pub stats: Stats,
+    stats: Stats,
     /// Number of encoded strings
     len: usize,
     /// Cache of the last encoded string for incremental encoding

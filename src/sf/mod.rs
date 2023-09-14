@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! # Static Functions
+//! # Static functions
 //!
 //! Static functions are data structures designed to store arbitrary mappings f : X → Σ from a finite
 //! set of keys X ⊆ U to an alphabet Σ, where U is a universe of possible keys. Given x ∈ U, a static
@@ -20,8 +20,5 @@
 //! techniques when handling, for instance, large sets of strings, and they are important building
 //! blocks of space-efficient data structures such as (compressed) full-text indexes, (monotone)
 //! MPHFs, Bloom filter-like data structures, and prefix-search data structures.
-//!
-//! # References
-//! - <https://vigna.di.unimi.it/ftp/papers/Compressed.pdf>
 
 pub mod gov3;

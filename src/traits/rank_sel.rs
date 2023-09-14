@@ -82,7 +82,7 @@ pub trait Select: BitCount {
     /// Return the position of the one of given rank.
     ///
     /// # Arguments
-    /// * `rank` : `usize` - The rank to query; see Seafety below for valid values.
+    /// * `rank` : `usize` - The rank to query; see Safety below for valid values.
     ///
     /// # Safety
     ///
@@ -113,7 +113,7 @@ pub trait SelectZero: BitLength + BitCount {
     ///
     /// # Safety
     ///
-    /// `rank` must be between zero (included) and the number of zeroes in the
+    /// `rank` must be between zero (included) and the number of zeros in the
     /// underlying bit vector (excluded).
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize;
 }
