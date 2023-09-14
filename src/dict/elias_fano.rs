@@ -306,13 +306,14 @@ where
     }
 }
 
+/// An iterator streaming over the Elias--Fano representation.
 pub struct EliasFanoIterator<'a, H: Select + AsRef<[usize]>, L: VSlice> {
     ef: &'a EliasFano<H, L>,
-    /// the index of the next value it will be returned when `next` is called
+    /// The index of the next value it will be returned when `next` is called.
     index: usize,
-    /// Index of the word loaded in the `word` field
+    /// Index of the word loaded in the `word` field.
     word_idx: usize,
-    //// Current word we use to compute the next high bit by finding the lowest bit set
+    /// Current window on the high bits.
     /// This is an usize because BitVec is implemented only for Vec<usize> and &[usize]
     window: usize,
 }
