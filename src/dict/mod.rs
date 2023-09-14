@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Rank and select operations.
+//! Indexed dictionaries.
 
 pub mod elias_fano;
 pub mod rear_coded_list;

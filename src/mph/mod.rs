@@ -7,11 +7,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/*!
-
-Stubs for reading Sux4J minimal perfect hash functions dumped from the original Java code.
-
-*/
+//! Minimal perfect hash functions.
 
 pub mod gov;
 pub mod spooky;
