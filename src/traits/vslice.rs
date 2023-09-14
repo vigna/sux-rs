@@ -171,146 +171,42 @@ pub trait VSliceAtomic: VSliceCore {
     }
 }
 
-impl<'a> VSliceCore for &'a [usize] {
+impl<T: AsRef<[usize]>> VSliceCore for T {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         BITS
     }
     #[inline(always)]
     fn len(&self) -> usize {
-        <[usize]>::len(self)
+        self.as_ref().len()
     }
 }
 
-impl<'a> VSlice for &'a [usize] {
+impl<T: AsRef<[usize]>> VSlice for T {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> usize {
         debug_assert_bounds!(index, self.len());
-        *<[usize]>::get_unchecked(self, index)
+        *self.as_ref().get_unchecked(index)
     }
 }
 
-impl<'a> VSliceCore for &'a [AtomicUsize] {
-    #[inline(always)]
-    fn bit_width(&self) -> usize {
-        BITS
-    }
-    #[inline(always)]
-    fn len(&self) -> usize {
-        <[AtomicUsize]>::len(self)
-    }
-}
-
-impl<'a> VSliceAtomic for &'a [AtomicUsize] {
+impl<T: AsRef<[AtomicUsize]> + AsRef<[usize]>> VSliceAtomic for T {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
         debug_assert_bounds!(index, self.len());
-        <[AtomicUsize]>::get_unchecked(self, index).load(order)
+        <T as AsRef<[AtomicUsize]>>::as_ref(self).get_unchecked(index).load(order)
     }
     #[inline(always)]
     unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering) {
         debug_assert_bounds!(index, self.len());
-        <[AtomicUsize]>::get_unchecked(self, index).store(value, order);
+        <T as AsRef<[AtomicUsize]>>::as_ref(self).get_unchecked(index).store(value, order);
     }
 }
 
-impl<'a> VSliceCore for &'a mut [usize] {
-    #[inline(always)]
-    fn bit_width(&self) -> usize {
-        BITS
-    }
-    #[inline(always)]
-    fn len(&self) -> usize {
-        <[usize]>::len(self)
-    }
-}
-
-impl<'a> VSlice for &'a mut [usize] {
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> usize {
-        debug_assert!(index < self.len(), "{} {}", index, self.len());
-        *<[usize]>::get_unchecked(self, index)
-    }
-}
-
-impl<'a> VSliceMut for &'a mut [usize] {
+impl<T: AsMut<[usize]> + AsRef<[usize]>> VSliceMut for T {
     #[inline(always)]
     unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
         debug_assert_bounds!(index, self.len());
-        *<[usize]>::get_unchecked_mut(self, index) = value;
-    }
-}
-
-impl<'a> VSliceCore for &'a mut [AtomicUsize] {
-    #[inline(always)]
-    fn bit_width(&self) -> usize {
-        BITS
-    }
-    #[inline(always)]
-    fn len(&self) -> usize {
-        <[AtomicUsize]>::len(self)
-    }
-}
-
-impl<'a> VSliceAtomic for &'a mut [AtomicUsize] {
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
-        debug_assert_bounds!(index, self.len());
-        <[AtomicUsize]>::get_unchecked(self, index).load(order)
-    }
-    #[inline(always)]
-    unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering) {
-        debug_assert_bounds!(index, self.len());
-        <[AtomicUsize]>::get_unchecked(self, index).store(value, order);
-    }
-}
-
-impl VSliceCore for Vec<usize> {
-    #[inline(always)]
-    fn bit_width(&self) -> usize {
-        BITS
-    }
-    #[inline(always)]
-    fn len(&self) -> usize {
-        <[usize]>::len(self)
-    }
-}
-
-impl VSlice for Vec<usize> {
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> usize {
-        debug_assert_bounds!(index, self.len());
-        *<[usize]>::get_unchecked(self, index)
-    }
-}
-
-impl VSliceMut for Vec<usize> {
-    #[inline(always)]
-    unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
-        debug_assert_bounds!(index, self.len());
-        *<[usize]>::get_unchecked_mut(self, index) = value;
-    }
-}
-
-impl VSliceCore for Vec<AtomicUsize> {
-    #[inline(always)]
-    fn bit_width(&self) -> usize {
-        BITS
-    }
-    #[inline(always)]
-    fn len(&self) -> usize {
-        <[AtomicUsize]>::len(self)
-    }
-}
-impl VSliceAtomic for Vec<AtomicUsize> {
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
-        debug_assert_bounds!(index, self.len());
-        <[AtomicUsize]>::get_unchecked(self, index).load(order)
-    }
-    #[inline(always)]
-    unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering) {
-        debug_assert_bounds!(index, self.len());
-        <[AtomicUsize]>::get_unchecked(self, index).store(value, order);
+        *self.as_mut().get_unchecked_mut(index) = value;
     }
 }
