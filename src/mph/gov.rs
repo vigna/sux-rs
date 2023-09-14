@@ -16,19 +16,21 @@ use std::io::BufReader;
 use std::io::Read;
 use std::path::Path;
 
-/// GOV Minimal perfect Hashing:
+/// A stub to load and access Genuzio-Ottaviano-Vigna minimal perfect hash functions.
 ///
-/// Minimal perfect hash structure that reads Java-generated, dumped structures.
+/// To generate the structure you must use the Java version:
+/// ```bash
+/// java it.unimi.dsi.sux4j.mph.GOVMinimalPerfectHashFunction --byte-array SOURCE test.mph
+/// ```
 ///
 /// To obtain a file that can be read by this structure, load
-/// the Java instance of the MPH and write it to a file
-/// using the `dump` method.
-///
-/// You can do it through:
+/// the serialized Java instance of the minimal perfect hash function and
+/// dump it in C-compatible format:
 /// ```shell
 /// echo '((it.unimi.dsi.sux4j.mph.GOVMinimalPerfectHashFunction)it.unimi.dsi.fastutil.io.BinIO.loadObject("test.mph")).dump("test.cmph");' | jshell
 /// ```
-/// or using the [`SWH Mph2Cmph class`](https://gitlab.softwareheritage.org/swh/devel/swh-graph/-/blob/master/java/src/main/java/org/softwareheritage/graph/utils/Mph2Cmph.java).
+///
+/// You can now load the dumped file with the [`load`](crate::sf::mph::GOVMPH::load) method.
 ///
 /// # Reference:
 /// [Marco Genuzio, Giuseppe Ottaviano, and Sebastiano Vigna, Fast Scalable Construction of (Minimal Perfect Hash) Functions](https://arxiv.org/pdf/1603.04330.pdf)
