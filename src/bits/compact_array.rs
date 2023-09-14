@@ -86,7 +86,7 @@ impl<B> CompactArray<B> {
         Self {
             data,
             bit_width,
-            mask: mask,
+            mask,
             len,
         }
     }

@@ -259,8 +259,13 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<H: Select, L: VSlice> IndexedDict for EliasFano<H, L> {
+impl<H: Select + AsRef<[usize]>, L: VSlice> IndexedDict for EliasFano<H, L> {
     type Value = usize;
+
+    type Iterator<'a> = EliasFanoIterator<'a, H, L>
+    where
+        Self: 'a;
+
     #[inline]
     fn len(&self) -> usize {
         self.n
@@ -271,6 +276,16 @@ impl<H: Select, L: VSlice> IndexedDict for EliasFano<H, L> {
         let high_bits = self.high_bits.select_unchecked(index) - index;
         let low_bits = self.low_bits.get_unchecked(index);
         (high_bits << self.l) | low_bits
+    }
+
+    #[inline(always)]
+    fn iter(&self) -> Self::Iterator<'_> {
+        EliasFanoIterator::new(self)
+    }
+
+    #[inline(always)]
+    fn iter_from(&self, start_index: usize) -> Self::Iterator<'_> {
+        EliasFanoIterator::new_from(self, start_index)
     }
 }
 
@@ -288,5 +303,91 @@ where
             low_bits: self.low_bits.convert_to()?,
             high_bits: self.high_bits.convert_to()?,
         })
+    }
+}
+
+pub struct EliasFanoIterator<'a, H: Select + AsRef<[usize]>, L: VSlice> {
+    ef: &'a EliasFano<H, L>,
+    /// the index of the next value it will be returned when `next` is called
+    index: usize,
+    /// Index of the word loaded in the `word` field
+    word_idx: usize,
+    //// Current word we use to compute the next high bit by finding the lowest bit set
+    /// This is an usize because BitVec is implemented only for Vec<usize> and &[usize]
+    window: usize,
+}
+
+impl<'a, H: Select + AsRef<[usize]>, L: VSlice> EliasFanoIterator<'a, H, L> {
+    pub fn new(ef: &'a EliasFano<H, L>) -> Self {
+        let word = if ef.high_bits.as_ref().is_empty() {
+            0
+        } else {
+            unsafe { *ef.high_bits.as_ref().get_unchecked(0) }
+        };
+        Self {
+            ef,
+            index: 0,
+            word_idx: 0,
+            window: word,
+        }
+    }
+
+    pub fn new_from(ef: &'a EliasFano<H, L>, start_index: usize) -> Self {
+        if start_index > ef.len() {
+            panic!("Index out of bounds: {} > {}", start_index, ef.len());
+        }
+        let bit_pos = unsafe { ef.high_bits.select_unchecked(start_index) };
+        let word_idx = bit_pos / (core::mem::size_of::<usize>() * 8);
+        let bits_to_clean = bit_pos % (core::mem::size_of::<usize>() * 8);
+
+        let window = if ef.high_bits.as_ref().is_empty() {
+            0
+        } else {
+            // get the word from the high bits
+            let word = unsafe { *ef.high_bits.as_ref().get_unchecked(word_idx) };
+            // clean off the bits that we don't care about
+            word & ((1 << bits_to_clean) - 1)
+        };
+
+        Self {
+            ef,
+            index: start_index,
+            word_idx,
+            window,
+        }
+    }
+}
+
+impl<'a, H: Select + AsRef<[usize]>, L: VSlice> Iterator for EliasFanoIterator<'a, H, L> {
+    type Item = usize;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.ef.len() {
+            return None;
+        }
+        // find the next word with zeros
+        while self.window == 0 {
+            self.word_idx += 1;
+            debug_assert!(self.word_idx < self.ef.high_bits.as_ref().len());
+            self.window = unsafe { *self.ef.high_bits.as_ref().get_unchecked(self.word_idx) };
+        }
+        // find the lowest bit set index in the word
+        let bit_idx = self.window.trailing_zeros() as usize;
+        // compute the global bit index
+        let high_bits = (self.word_idx * core::mem::size_of::<usize>() * 8) + bit_idx - self.index;
+        // clear the lowest bit set
+        self.window &= self.window - 1;
+        // compose the value
+        let res = (high_bits << self.ef.l) | unsafe { self.ef.low_bits.get_unchecked(self.index) };
+        self.index += 1;
+        Some(res)
+    }
+}
+
+impl<'a, H: Select + AsRef<[usize]>, L: VSlice> ExactSizeIterator for EliasFanoIterator<'a, H, L> {
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.ef.len() - self.index
     }
 }

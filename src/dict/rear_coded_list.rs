@@ -278,34 +278,6 @@ where
         false
     }
 
-    /// Return a sequential iterator over the strings
-    pub fn iter(&self) -> RCAIter<'_, Ptr> {
-        RCAIter {
-            rca: self,
-            index: 0,
-            data: &self.data,
-            buffer: Vec::with_capacity(self.stats.max_str_len),
-        }
-    }
-
-    // create a sequential iterator from a given index
-    pub fn iter_from(&self, index: usize) -> RCAIter<'_, Ptr> {
-        let block = index / self.k;
-        let offset = index % self.k;
-
-        let start = self.pointers[block];
-        let mut res = RCAIter {
-            rca: self,
-            index,
-            data: &self.data[start.as_()..],
-            buffer: Vec::with_capacity(self.stats.max_str_len),
-        };
-        for _ in 0..offset {
-            res.next();
-        }
-        res
-    }
-
     /// Print in an human readable format the statistics of the RCL
     pub fn print_stats(&self) {
         println!(
@@ -383,6 +355,9 @@ where
     usize: AsPrimitive<Ptr>,
 {
     type Value = String;
+    type Iterator<'a> = RCAIter<'a, Ptr>
+    where
+        Self: 'a;
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Value {
         let mut result = Vec::with_capacity(self.stats.max_str_len);
@@ -393,6 +368,32 @@ where
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
+    }
+
+    fn iter(&self) -> RCAIter<'_, Ptr> {
+        RCAIter {
+            rca: self,
+            index: 0,
+            data: &self.data,
+            buffer: Vec::with_capacity(self.stats.max_str_len),
+        }
+    }
+
+    fn iter_from(&self, index: usize) -> RCAIter<'_, Ptr> {
+        let block = index / self.k;
+        let offset = index % self.k;
+
+        let start = self.pointers[block];
+        let mut res = RCAIter {
+            rca: self,
+            index,
+            data: &self.data[start.as_()..],
+            buffer: Vec::with_capacity(self.stats.max_str_len),
+        };
+        for _ in 0..offset {
+            res.next();
+        }
+        res
     }
 }
 
