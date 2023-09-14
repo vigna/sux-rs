@@ -441,7 +441,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> RCAIter<'a, D, P> {
 
         let start = rca.pointers.as_ref()[block];
         let mut res = RCAIter {
-            rca: rca,
+            rca,
             index: start_index,
             data: &rca.data.as_ref()[start..],
             buffer: Vec::with_capacity(128),

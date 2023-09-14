@@ -30,7 +30,7 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    let mut values = Vec::with_capacity(args.n as usize);
+    let mut values = Vec::with_capacity(args.n);
     let mut rng = SmallRng::seed_from_u64(0);
     for _ in 0..args.n {
         values.push(rng.gen_range(0..args.u));
@@ -40,14 +40,12 @@ fn main() {
     for value in values {
         elias_fano_builder.push(value).unwrap();
     }
-    let elias_fano: EliasFano<
-        QuantumIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
-        CompactArray<Vec<usize>>,
-    > = elias_fano_builder.build().convert_to().unwrap();
+    let elias_fano: EliasFano<QuantumIndex<CountBitVec, Vec<usize>, 8>, CompactArray> =
+        elias_fano_builder.build().convert_to().unwrap();
 
     let mut ranks = Vec::with_capacity(args.t);
     for _ in 0..args.t {
-        ranks.push(rng.gen_range(0..args.n as usize));
+        ranks.push(rng.gen_range(0..args.n));
     }
 
     let mut u: usize = 0;
