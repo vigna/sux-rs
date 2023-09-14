@@ -260,7 +260,8 @@ impl<H, L> EliasFano<H, L> {
 }
 
 impl<H: Select + AsRef<[usize]>, L: VSlice> IndexedDict for EliasFano<H, L> {
-    type Value = usize;
+    type OutputValue = usize;
+    type InputValue = usize;
 
     type Iterator<'a> = EliasFanoIterator<'a, H, L>
     where
