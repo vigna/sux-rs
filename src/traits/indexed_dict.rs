@@ -9,6 +9,8 @@
 pub trait IndexedDict {
     /// The type of the values stored in the dictionary.
     type Value: PartialEq;
+    /// The type of the iterator returned by [`iter`](`IndexedDict::iter`).
+    /// and [`iter_from`](`IndexedDict::iter_from`).
     type Iterator<'a>: ExactSizeIterator<Item = Self::Value> + 'a
     where
         Self: 'a;
@@ -54,7 +56,10 @@ pub trait IndexedDict {
         self.len() == 0
     }
 
+    /// Return an iterator on the whole dictionary.
     fn iter(&self) -> Self::Iterator<'_>;
+
+    /// Return an iterator on the dictionary starting from the specified index.
     fn iter_from(&self, start_index: usize) -> Self::Iterator<'_>;
 }
 
