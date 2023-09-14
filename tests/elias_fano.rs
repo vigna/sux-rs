@@ -84,6 +84,17 @@ fn test_elias_fano() -> Result<()> {
             assert_eq!({ ef.get(i) }, *v);
         }
         println!("{:?}", ef);
+
+        for (i, v) in ef.iter().enumerate() {
+            assert_eq!(v, values[i]);
+        }
+
+        for from in 0..ef.len() {
+            dbg!(from);
+            for (i, v) in ef.iter_from(from).enumerate() {
+                assert_eq!(v, values[i + from]);
+            }
+        }
     }
 
     Ok(())
