@@ -9,6 +9,9 @@
 pub trait IndexedDict {
     /// The type of the values stored in the dictionary.
     type Value: PartialEq;
+    type Iterator<'a>: ExactSizeIterator<Item = Self::Value> + 'a
+    where
+        Self: 'a;
 
     /// Return the value at the specified index.
     ///
@@ -50,6 +53,9 @@ pub trait IndexedDict {
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    fn iter(&self) -> Self::Iterator<'_>;
+    fn iter_from(&self) -> Self::Iterator<'_>;
 }
 
 /// Successor computation for dictionaries whose values are monotonically increasing.

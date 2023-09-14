@@ -18,6 +18,9 @@ use std::sync::atomic::{AtomicU64, AtomicUsize};
 /// [E0210](https://github.com/rust-lang/rust/blob/master/compiler/rustc_error_codes/src/error_codes/E0210.md)
 ///
 /// Reference: <https://rust-lang.github.io/chalk/book/clauses/coherence.html>
+///
+/// We provide implementations between vectors and (mutable) references to slices of atomic and non-atomic integers
+/// of type `u64` and `usize`.
 pub trait ConvertTo<B> {
     fn convert_to(self) -> Result<B>;
 }
