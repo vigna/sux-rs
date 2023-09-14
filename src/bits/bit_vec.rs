@@ -504,7 +504,7 @@ impl<B: AsRef<[usize]>> AsRef<[usize]> for BitVec<B> {
 pub struct BitVecOnesIterator<B> {
     mem_words: B,
     word_idx: usize,
-    /// This is an usize because BitVec is implemented only for Vec<usize> and &[usize]
+    /// This is an usize because BitVec is implemented only for `Vec<usize>` and `&[usize]`.
     word: usize,
     len: usize,
 }
