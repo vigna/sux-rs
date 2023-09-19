@@ -17,12 +17,15 @@ const BITS: usize = core::mem::size_of::<usize>() * 8;
 /// unless the bit width is a power of two some elements will be stored
 /// across word boundaries).
 ///
-/// We provide an implementation
-/// based on `Vec<usize>`, and one based on `Vec<AtomicUsize>`. The first
-/// implementation implements [`VSlice`] and [`VSliceMut`], the second
-/// implementation implements [`VSliceAtomic`].
+/// We provide implementations
+/// based on `AsRef<[usize]>`, `AsMut<[usize]>`, and
+/// `AsRef<[AtomicUsize]>`. They implement
+/// [`VSlice`], [`VSliceMut`], and [`VSliceAtomic`], respectively. Constructors are provided
+/// for storing data in a [`Vec<usize>`](CompactArray::new) (for the first
+/// two implementations) or in a
+/// [`Vec<AtomicUsize>`](CompactArray::new_atomic) (for the third implementation).
 ///
-/// In the second case we can provide some concurrency guarantees,
+/// In the latter case we can provide some concurrency guarantees,
 /// albeit not full-fledged thread safety: more precisely, we can
 /// guarantee thread-safety if the bit width is a power of two; otherwise,
 /// concurrent writes to values that cross word boundaries might end
