@@ -194,12 +194,16 @@ impl<T: AsRef<[AtomicUsize]> + AsRef<[usize]>> VSliceAtomic for T {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
         debug_assert_bounds!(index, self.len());
-        <T as AsRef<[AtomicUsize]>>::as_ref(self).get_unchecked(index).load(order)
+        <T as AsRef<[AtomicUsize]>>::as_ref(self)
+            .get_unchecked(index)
+            .load(order)
     }
     #[inline(always)]
     unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering) {
         debug_assert_bounds!(index, self.len());
-        <T as AsRef<[AtomicUsize]>>::as_ref(self).get_unchecked(index).store(value, order);
+        <T as AsRef<[AtomicUsize]>>::as_ref(self)
+            .get_unchecked(index)
+            .store(value, order);
     }
 }
 
