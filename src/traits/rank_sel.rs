@@ -4,6 +4,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
+
+/*!
+
+Basic traits for bit vectors, including [`Rank`] and [`Select`].
+
+*/
+
 /// A trait for succinct data structures that expose the
 /// length of the underlying bit vector.
 #[allow(clippy::len_without_is_empty)]
@@ -137,7 +144,7 @@ pub trait SelectZeroHinted: SelectZero {
     /// and must be the position of a zero in the underlying bit vector.
     /// `rank_at_pos` must be the number of zeros in the underlying bit vector
     /// before `pos`.
-    unsafe fn select_zero_unchecked_hinted(
+    unsafe fn select_zero_hinted_unchecked(
         &self,
         rank: usize,
         pos: usize,

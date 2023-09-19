@@ -92,14 +92,14 @@ impl<B: SelectHinted + SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> S
     for QuantumIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
-    unsafe fn select_zero_unchecked_hinted(
+    unsafe fn select_zero_hinted_unchecked(
         &self,
         rank: usize,
         pos: usize,
         rank_at_pos: usize,
     ) -> usize {
         self.bits
-            .select_zero_unchecked_hinted(rank, pos, rank_at_pos)
+            .select_zero_hinted_unchecked(rank, pos, rank_at_pos)
     }
 }
 
