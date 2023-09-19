@@ -351,12 +351,12 @@ impl<B: VSlice> SelectHinted for CountBitVec<B> {
 impl<B: VSlice> SelectZero for CountBitVec<B> {
     #[inline(always)]
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
-        self.select_zero_unchecked_hinted(rank, 0, 0)
+        self.select_zero_hinted_unchecked(rank, 0, 0)
     }
 }
 
 impl<B: VSlice> SelectZeroHinted for CountBitVec<B> {
-    unsafe fn select_zero_unchecked_hinted(
+    unsafe fn select_zero_hinted_unchecked(
         &self,
         rank: usize,
         pos: usize,

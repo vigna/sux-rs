@@ -77,7 +77,7 @@ impl<B: SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectZero
         let rank_at_pos = index << QUANTUM_LOG2;
 
         self.bits
-            .select_zero_unchecked_hinted(rank, pos, rank_at_pos)
+            .select_zero_hinted_unchecked(rank, pos, rank_at_pos)
     }
 }
 
