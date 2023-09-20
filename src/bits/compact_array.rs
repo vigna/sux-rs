@@ -127,7 +127,7 @@ impl<T: AsRef<[usize]>> VSlice for CompactArray<T> {
     }
 }
 
-impl VSliceMut for CompactArray<Vec<usize>> {
+impl<T: AsMut<[usize]> + AsRef<[usize]>> VSliceMut for CompactArray<T> {
     // We reimplement set as we have the mask in the structure.
 
     /// Set the element of the slice at the specified index.
