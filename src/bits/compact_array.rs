@@ -113,6 +113,23 @@ impl<T> VSliceCore for CompactArray<T> {
     }
 }
 
+impl<B: AsRef<[usize]>> VSlice for CompactArray<B> {
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize) -> usize {
+        let pos = index * self.bit_width;
+        let word_index = pos / BITS;
+        let bit_index = pos % BITS;
+
+        if bit_index + self.bit_width <= BITS {
+            (self.data.as_ref().get_unchecked(word_index) >> bit_index) & self.mask
+        } else {
+            (self.data.as_ref().get_unchecked(word_index) >> bit_index
+                | self.data.as_ref().get_unchecked(word_index + 1) << (BITS - bit_index))
+                & self.mask
+        }
+    }
+}
+
 pub struct CompactArrayIterator<'a, B> {
     array: &'a CompactArray<B>,
     index: usize,
@@ -147,23 +164,6 @@ impl<'a, B: AsRef<[usize]>> UncheckedIterator for CompactArrayIterator<'a, B> {
 impl<'a, B: AsRef<[usize]>> ExactSizeIterator for CompactArrayIterator<'a, B> {
     fn len(&self) -> usize {
         self.array.len() - self.index
-    }
-}
-
-impl<B: AsRef<[usize]>> VSlice for CompactArray<B> {
-    #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> usize {
-        let pos = index * self.bit_width;
-        let word_index = pos / BITS;
-        let bit_index = pos % BITS;
-
-        if bit_index + self.bit_width <= BITS {
-            (self.data.as_ref().get_unchecked(word_index) >> bit_index) & self.mask
-        } else {
-            (self.data.as_ref().get_unchecked(word_index) >> bit_index
-                | self.data.as_ref().get_unchecked(word_index + 1) << (BITS - bit_index))
-                & self.mask
-        }
     }
 }
 
