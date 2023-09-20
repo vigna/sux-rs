@@ -82,18 +82,18 @@ impl<B> CompactArray<B> {
     /// `len` * `bit_width` must be between 0 (included) the number of
     /// bits in `data` (included).
     #[inline(always)]
-    pub unsafe fn from_raw_parts(data: B, bit_width: usize, mask: usize, len: usize) -> Self {
+    pub unsafe fn from_raw_parts(data: B, bit_width: usize, len: usize) -> Self {
         Self {
             data,
             bit_width,
-            mask,
+            mask: mask(bit_width),
             len,
         }
     }
 
     #[inline(always)]
-    pub fn into_raw_parts(self) -> (B, usize, usize, usize) {
-        (self.data, self.bit_width, self.mask, self.len)
+    pub fn into_raw_parts(self) -> (B, usize, usize) {
+        (self.data, self.bit_width, self.len)
     }
 }
 
