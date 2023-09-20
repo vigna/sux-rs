@@ -132,46 +132,65 @@ impl<B: AsRef<[usize]>> VSlice for CompactArray<B> {
 
 pub struct CompactArrayIterator<'a, B> {
     array: &'a CompactArray<B>,
-    index: usize,
+    word_index: usize,
+    window: usize,
+    fill: usize,
 }
 
-impl<'a, B> CompactArrayIterator<'a, B> {
+impl<'a, B: AsRef<[usize]>> CompactArrayIterator<'a, B> {
     fn new(array: &'a CompactArray<B>, index: usize) -> Self {
-        Self { array, index }
-    }
-}
-
-impl<'a, B: AsRef<[usize]>> Iterator for CompactArrayIterator<'a, B> {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<usize> {
-        if self.index < self.array.len() {
-            let res = unsafe { self.array.get_unchecked(self.index) };
-            self.index += 1;
-            Some(res)
+        if index >= array.len() {
+            panic!("Start index out of bounds: {} > {}", index, array.len());
+        }
+        let bit_offset = index * array.bit_width;
+        let word_index = bit_offset / usize::BITS as usize;
+        let fill;
+        let window = if index == array.len() {
+            fill = 0;
+            0
         } else {
-            None
+            let bit_index = bit_offset % usize::BITS as usize;
+            fill = usize::BITS as usize - bit_index;
+            unsafe {
+                // SAFETY: index has been check at the start and it is within bounds
+                array.data.get_unchecked(word_index) >> bit_index
+            }
+        };
+        Self {
+            array,
+            word_index,
+            window,
+            fill,
         }
     }
 }
 
 impl<'a, B: AsRef<[usize]>> UncheckedIterator for CompactArrayIterator<'a, B> {
+    type Item = usize;
     unsafe fn next_unchecked(&mut self) -> usize {
-        self.array.get_unchecked(self.index)
+        if self.fill >= self.array.bit_width {
+            self.fill -= self.array.bit_width;
+            let res = self.window & self.array.mask;
+            self.window >>= self.array.bit_width;
+            return res;
+        }
+
+        let res = self.window;
+        self.word_index += 1;
+        self.window = self.array.data.get_unchecked(self.word_index);
+        let res = (res | (self.window << self.fill)) & self.array.mask;
+        let used = self.array.bit_width - self.fill;
+        self.window >>= used;
+        self.fill = usize::BITS as usize - used;
+        res
     }
 }
 
-impl<'a, B: AsRef<[usize]>> ExactSizeIterator for CompactArrayIterator<'a, B> {
-    fn len(&self) -> usize {
-        self.array.len() - self.index
-    }
-}
-
-impl<B: AsRef<[usize]>> VSliceIntoValIter for CompactArray<B> {
+impl<B: AsRef<[usize]>> VSliceIntoValIterUnchecked for CompactArray<B> {
     type IntoValIter<'a> = CompactArrayIterator<'a, B>
         where B:'a;
 
-    fn iter_val_from(&self, from: usize) -> Self::IntoValIter<'_> {
+    fn iter_val_from_unchecked(&self, from: usize) -> Self::IntoValIter<'_> {
         CompactArrayIterator::new(&self, from)
     }
 }
