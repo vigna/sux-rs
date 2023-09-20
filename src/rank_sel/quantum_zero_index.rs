@@ -38,7 +38,7 @@ pub struct QuantumZeroIndex<
     _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,
 }
 
-impl<B: SelectZeroHinted + AsRef<[usize]>, O: VSliceMut, const QUANTUM_LOG2: usize>
+impl<B: SelectZeroHinted + AsRef<[usize]>, O: VSlice + VSliceMut, const QUANTUM_LOG2: usize>
     QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     fn build_zeros(&mut self) -> Result<()> {

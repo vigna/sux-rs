@@ -34,7 +34,7 @@ pub struct QuantumIndex<B: SelectHinted, O: VSlice = Vec<usize>, const QUANTUM_L
     _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,
 }
 
-impl<B: SelectHinted + AsRef<[usize]>, O: VSliceMut, const QUANTUM_LOG2: usize>
+impl<B: SelectHinted + AsRef<[usize]>, O: VSlice + VSliceMut, const QUANTUM_LOG2: usize>
     QuantumIndex<B, O, QUANTUM_LOG2>
 {
     fn build_ones(&mut self) -> Result<()> {

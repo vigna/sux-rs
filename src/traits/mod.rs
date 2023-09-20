@@ -16,3 +16,10 @@ pub mod prelude {
     pub use super::rank_sel::*;
     pub use super::vslice::*;
 }
+
+/// A trait for iterating very quickly and very unsafely.
+pub trait UncheckedIterator: Iterator {
+    unsafe fn next_unchecked(&mut self) -> Self::Item {
+        self.next().unwrap()
+    }
+}
