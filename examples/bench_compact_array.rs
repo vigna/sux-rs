@@ -6,6 +6,7 @@ use rand::SeedableRng;
 use std::hint::black_box;
 use sux::prelude::CompactArray;
 use sux::prelude::*;
+use sux::traits::UncheckedIterator;
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks compact arrays", long_about = None)]
@@ -50,11 +51,27 @@ pub fn main() {
         pl.done_with_count(args.n);
 
         pl.item_name = "read";
-        pl.start("Reading...");
+        pl.start("Reading (random)...");
         for _ in 0..args.n {
             unsafe {
                 u += a.get_unchecked(rand.gen::<usize>() & mask);
             }
+        }
+        pl.done_with_count(args.n);
+
+        pl.start("Reading (sequential)...");
+        for i in 0..args.n {
+            unsafe {
+                u += a.get_unchecked(i);
+            }
+        }
+        pl.done_with_count(args.n);
+
+        let mut iter = a.iter_val_unchecked();
+        pl.item_name = "item";
+        pl.start("Scanning (unchecked) ...");
+        for _ in 0..args.n {
+            u += unsafe { iter.next_unchecked() };
         }
         pl.done_with_count(args.n);
     }

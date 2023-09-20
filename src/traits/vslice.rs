@@ -102,7 +102,7 @@ pub trait VSlice: VSliceCore {
 }
 
 pub trait VSliceIntoValIter: VSliceCore {
-    type IntoValIter<'a>: UncheckedIterator<Item = usize> + ExactSizeIterator<Item = usize> + 'a
+    type IntoValIter<'a>: Iterator<Item = usize> + ExactSizeIterator<Item = usize> + 'a
     where
         Self: 'a;
 
@@ -111,6 +111,18 @@ pub trait VSliceIntoValIter: VSliceCore {
     }
 
     fn iter_val_from(&self, from: usize) -> Self::IntoValIter<'_>;
+}
+
+pub trait VSliceIntoValIterUnchecked: VSliceCore {
+    type IntoValIter<'a>: UncheckedIterator<Item = usize> + 'a
+    where
+        Self: 'a;
+
+    fn iter_val_unchecked(&self) -> Self::IntoValIter<'_> {
+        self.iter_val_from_unchecked(0)
+    }
+
+    fn iter_val_from_unchecked(&self, from: usize) -> Self::IntoValIter<'_>;
 }
 
 /// A mutable value slice.
@@ -204,8 +216,6 @@ impl<T: AsRef<[usize]>> VSlice for T {
         *self.as_ref().get_unchecked(index)
     }
 }
-
-impl UncheckedIterator for Copied<core::slice::Iter<'_, usize>> {}
 
 impl<T: AsRef<[usize]>> VSliceIntoValIter for T {
     type IntoValIter<'a> = Copied<core::slice::Iter<'a, usize>>

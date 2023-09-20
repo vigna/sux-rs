@@ -1,4 +1,5 @@
 use clap::Parser;
+use dsi_progress_logger::ProgressLogger;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
@@ -29,6 +30,12 @@ struct Args {
 }
 
 fn main() {
+    stderrlog::new()
+        .verbosity(2)
+        .timestamp(stderrlog::Timestamp::Second)
+        .init()
+        .unwrap();
+
     let args = Args::parse();
     let mut values = Vec::with_capacity(args.n);
     let mut rng = SmallRng::seed_from_u64(0);
@@ -36,7 +43,7 @@ fn main() {
         values.push(rng.gen_range(0..args.u));
     }
     values.sort();
-    let mut elias_fano_builder = EliasFanoBuilder::new(args.u, args.n);
+    let mut elias_fano_builder = EliasFanoBuilder::new(args.n, args.u);
     for value in values {
         elias_fano_builder.push(value).unwrap();
     }
@@ -48,21 +55,23 @@ fn main() {
         ranks.push(rng.gen_range(0..args.n));
     }
 
-    let mut u: usize = 0;
+    let mut u = 0;
 
     for _ in 0..args.repeats {
-        let start = Instant::now();
+        let mut pl = ProgressLogger::default();
+        pl.start("Benchmarking get()...");
         for &rank in &ranks {
             unsafe {
-                u += elias_fano.get_unchecked(rank);
+                u ^= elias_fano.get_unchecked(rank);
             }
         }
-        let duration = start.elapsed();
+        pl.done_with_count(args.t);
 
-        println!(
-            "EliasFano select {}ns",
-            duration.as_secs_f64() * 1.0e9 / args.t as f64
-        );
+        pl.start("Benchmarking iter()...");
+        for i in elias_fano.iter() {
+            u ^= i;
+        }
+        pl.done_with_count(args.n);
     }
 
     black_box(u);

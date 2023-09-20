@@ -18,8 +18,7 @@ pub mod prelude {
 }
 
 /// A trait for iterating very quickly and very unsafely.
-pub trait UncheckedIterator: Iterator {
-    unsafe fn next_unchecked(&mut self) -> Self::Item {
-        self.next().unwrap()
-    }
+pub trait UncheckedIterator {
+    type Item;
+    unsafe fn next_unchecked(&mut self) -> Self::Item;
 }
