@@ -18,7 +18,7 @@ The main trait implemented by [`EliasFano`] is [`IndexedDict`], which
 makes it possible to access its values with [`IndexedDict::get`].
 
  */
-use crate::prelude::*;
+use crate::{prelude::*, traits::UncheckedIterator};
 use anyhow::{bail, Result};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use epserde::*;
@@ -259,7 +259,9 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<H: Select + AsRef<[usize]>, L: VSlice> IndexedDict for EliasFano<H, L> {
+impl<H: Select + AsRef<[usize]>, L: VSlice + VSliceIntoValIterUnchecked> IndexedDict
+    for EliasFano<H, L>
+{
     type OutputValue = usize;
     type InputValue = usize;
 
@@ -308,7 +310,8 @@ where
 }
 
 /// An iterator streaming over the Elias--Fano representation.
-pub struct EliasFanoIterator<'a, H: Select + AsRef<[usize]>, L: VSlice> {
+pub struct EliasFanoIterator<'a, H: Select + AsRef<[usize]>, L: VSlice + VSliceIntoValIterUnchecked>
+{
     ef: &'a EliasFano<H, L>,
     /// The index of the next value it will be returned when `next` is called.
     index: usize,
@@ -317,9 +320,12 @@ pub struct EliasFanoIterator<'a, H: Select + AsRef<[usize]>, L: VSlice> {
     /// Current window on the high bits.
     /// This is an usize because BitVec is implemented only for `Vec<usize>` and `&[usize]`.
     window: usize,
+    low_bits: <L as VSliceIntoValIterUnchecked>::IntoValIter<'a>,
 }
 
-impl<'a, H: Select + AsRef<[usize]>, L: VSlice> EliasFanoIterator<'a, H, L> {
+impl<'a, H: Select + AsRef<[usize]>, L: VSlice + VSliceIntoValIterUnchecked>
+    EliasFanoIterator<'a, H, L>
+{
     pub fn new(ef: &'a EliasFano<H, L>) -> Self {
         let word = if ef.high_bits.as_ref().is_empty() {
             0
@@ -331,6 +337,7 @@ impl<'a, H: Select + AsRef<[usize]>, L: VSlice> EliasFanoIterator<'a, H, L> {
             index: 0,
             word_idx: 0,
             window: word,
+            low_bits: ef.low_bits.iter_val_unchecked(),
         }
     }
 
@@ -356,11 +363,14 @@ impl<'a, H: Select + AsRef<[usize]>, L: VSlice> EliasFanoIterator<'a, H, L> {
             index: start_index,
             word_idx,
             window,
+            low_bits: ef.low_bits.iter_val_from_unchecked(start_index),
         }
     }
 }
 
-impl<'a, H: Select + AsRef<[usize]>, L: VSlice> Iterator for EliasFanoIterator<'a, H, L> {
+impl<'a, H: Select + AsRef<[usize]>, L: VSlice + VSliceIntoValIterUnchecked> Iterator
+    for EliasFanoIterator<'a, H, L>
+{
     type Item = usize;
 
     #[inline(always)]
@@ -381,13 +391,15 @@ impl<'a, H: Select + AsRef<[usize]>, L: VSlice> Iterator for EliasFanoIterator<'
         // clear the lowest bit set
         self.window &= self.window - 1;
         // compose the value
-        let res = (high_bits << self.ef.l) | unsafe { self.ef.low_bits.get_unchecked(self.index) };
+        let res = (high_bits << self.ef.l) | unsafe { self.low_bits.next_unchecked() };
         self.index += 1;
         Some(res)
     }
 }
 
-impl<'a, H: Select + AsRef<[usize]>, L: VSlice> ExactSizeIterator for EliasFanoIterator<'a, H, L> {
+impl<'a, H: Select + AsRef<[usize]>, L: VSlice + VSliceIntoValIterUnchecked> ExactSizeIterator
+    for EliasFanoIterator<'a, H, L>
+{
     #[inline(always)]
     fn len(&self) -> usize {
         self.ef.len() - self.index
