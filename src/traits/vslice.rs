@@ -35,6 +35,7 @@ equal to that of `usize`. The implementations based on atomic types implements
 [`VSliceAtomic`].
 */
 use core::sync::atomic::{AtomicUsize, Ordering};
+use std::iter::Copied;
 
 const BITS: usize = core::mem::size_of::<usize>() * 8;
 
@@ -69,6 +70,8 @@ macro_rules! panic_if_value {
 }
 pub(crate) use panic_if_value;
 
+use super::UncheckedIterator;
+
 macro_rules! debug_assert_bounds {
     ($index: expr, $len: expr) => {
         debug_assert!(
@@ -98,8 +101,20 @@ pub trait VSlice: VSliceCore {
     }
 }
 
+pub trait VSliceIntoValIter: VSliceCore {
+    type IntoValIter<'a>: UncheckedIterator<Item = usize> + ExactSizeIterator<Item = usize> + 'a
+    where
+        Self: 'a;
+
+    fn iter_val(&self) -> Self::IntoValIter<'_> {
+        self.iter_val_from(0)
+    }
+
+    fn iter_val_from(&self, from: usize) -> Self::IntoValIter<'_>;
+}
+
 /// A mutable value slice.
-pub trait VSliceMut: VSlice {
+pub trait VSliceMut: VSliceCore {
     /// Set the element of the slice at the specified index.
     /// No bounds checking is performed.
     ///
@@ -187,6 +202,24 @@ impl<T: AsRef<[usize]>> VSlice for T {
     unsafe fn get_unchecked(&self, index: usize) -> usize {
         debug_assert_bounds!(index, self.len());
         *self.as_ref().get_unchecked(index)
+    }
+}
+
+impl UncheckedIterator for Copied<core::slice::Iter<'_, usize>> {}
+
+impl<T: AsRef<[usize]>> VSliceIntoValIter for T {
+    type IntoValIter<'a> = Copied<core::slice::Iter<'a, usize>>
+        where
+            T: 'a;
+    #[inline(always)]
+    fn iter_val(&self) -> Self::IntoValIter<'_> {
+        <Self as AsRef<[usize]>>::as_ref(self).iter().copied()
+    }
+
+    fn iter_val_from(&self, from: usize) -> Self::IntoValIter<'_> {
+        <Self as AsRef<[usize]>>::as_ref(self)[from..]
+            .iter()
+            .copied()
     }
 }
 

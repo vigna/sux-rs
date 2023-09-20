@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::prelude::*;
+use crate::{prelude::*, traits::UncheckedIterator};
 use anyhow::Result;
 use epserde::*;
 use std::sync::atomic::{compiler_fence, fence, AtomicUsize, Ordering};
@@ -113,7 +113,44 @@ impl<T> VSliceCore for CompactArray<T> {
     }
 }
 
-impl<T: AsRef<[usize]>> VSlice for CompactArray<T> {
+pub struct CompactArrayIterator<'a, B> {
+    array: &'a CompactArray<B>,
+    index: usize,
+}
+
+impl<'a, B> CompactArrayIterator<'a, B> {
+    fn new(array: &'a CompactArray<B>, index: usize) -> Self {
+        Self { array, index }
+    }
+}
+
+impl<'a, B: AsRef<[usize]>> Iterator for CompactArrayIterator<'a, B> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        if self.index < self.array.len() {
+            let res = unsafe { self.array.get_unchecked(self.index) };
+            self.index += 1;
+            Some(res)
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a, B: AsRef<[usize]>> UncheckedIterator for CompactArrayIterator<'a, B> {
+    unsafe fn next_unchecked(&mut self) -> usize {
+        self.array.get_unchecked(self.index)
+    }
+}
+
+impl<'a, B: AsRef<[usize]>> ExactSizeIterator for CompactArrayIterator<'a, B> {
+    fn len(&self) -> usize {
+        self.array.len() - self.index
+    }
+}
+
+impl<B: AsRef<[usize]>> VSlice for CompactArray<B> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> usize {
         let pos = index * self.bit_width;
@@ -127,6 +164,15 @@ impl<T: AsRef<[usize]>> VSlice for CompactArray<T> {
                 | self.data.as_ref().get_unchecked(word_index + 1) << (BITS - bit_index))
                 & self.mask
         }
+    }
+}
+
+impl<B: AsRef<[usize]>> VSliceIntoValIter for CompactArray<B> {
+    type IntoValIter<'a> = CompactArrayIterator<'a, B>
+        where B:'a;
+
+    fn iter_val_from(&self, from: usize) -> Self::IntoValIter<'_> {
+        CompactArrayIterator::new(&self, from)
     }
 }
 
@@ -299,6 +345,7 @@ where
         })
     }
 }
+
 /// Provide conversion from standard to atomic compact arrays.
 impl From<CompactArray<Vec<usize>>> for CompactArray<Vec<AtomicUsize>> {
     #[inline]
