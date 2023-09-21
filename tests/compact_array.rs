@@ -85,7 +85,6 @@ fn test_compact_array() {
 }
 
 #[test]
-
 fn test_compact_array_usize() {
     const BITS: usize = core::mem::size_of::<usize>() * 8;
     let mut c = CompactArray::new(BITS, 4);
@@ -97,4 +96,12 @@ fn test_compact_array_usize() {
     assert_eq!(c.get(1), 1234567);
     assert_eq!(c.get(2), 0);
     assert_eq!(c.get(3), -1_isize as usize);
+}
+
+#[test]
+fn test_width_zero() {
+    let c = CompactArray::new(0, 1000);
+    for i in 0..c.len() {
+        assert_eq!(c.get(i), 0);
+    }
 }
