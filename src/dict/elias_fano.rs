@@ -424,6 +424,7 @@ impl<
     > Succ for EliasFano<H, L>
 {
     unsafe fn succ_unchecked(&self, value: &Self::InputValue) -> (usize, Self::OutputValue) {
+        debug_assert!(*value <= self.get(self.len() - 1));
         let zeros_to_skip = value >> self.l;
         let bit_pos = if zeros_to_skip == 0 {
             0
