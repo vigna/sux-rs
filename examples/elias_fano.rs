@@ -42,12 +42,16 @@ fn main() {
     }
     values.sort();
     let mut elias_fano_builder = EliasFanoBuilder::new(args.n, args.u);
-    for value in values {
-        elias_fano_builder.push(value).unwrap();
+    for value in &values {
+        elias_fano_builder.push(*value).unwrap();
     }
     let elias_fano: EliasFano<QuantumIndex<CountBitVec, Vec<usize>, 8>, CompactArray> =
         elias_fano_builder.build().convert_to().unwrap();
-
+    /*     let elias_fano: EliasFano<
+            QuantumZeroIndex<QuantumIndex<CountBitVec, Vec<usize>, 8>>,
+            CompactArray,
+        > = elias_fano.convert_to().unwrap();
+    */
     let mut ranks = Vec::with_capacity(args.t);
     for _ in 0..args.t {
         ranks.push(rng.gen_range(0..args.n));
@@ -59,9 +63,31 @@ fn main() {
         let mut pl = ProgressLogger::default();
         pl.start("Benchmarking get()...");
         for &rank in &ranks {
+            u ^= elias_fano.get(rank);
+        }
+        pl.done_with_count(args.t);
+
+        pl.start("Benchmarking get_unchecked()...");
+        for &rank in &ranks {
             unsafe {
                 u ^= elias_fano.get_unchecked(rank);
             }
+        }
+        pl.done_with_count(args.t);
+
+        pl.start("Benchmarking succ()...");
+        for _ in 0..args.t {
+            u ^= elias_fano
+                .succ(&rng.gen_range(0..args.u))
+                .unwrap_or((0, 0))
+                .0;
+        }
+        pl.done_with_count(args.t);
+
+        pl.start("Benchmarking succ_unchecked()...");
+        let upper_bound = *values.last().unwrap();
+        for _ in 0..args.t {
+            u ^= unsafe { elias_fano.succ_unchecked(&rng.gen_range(0..upper_bound)).0 };
         }
         pl.done_with_count(args.t);
 

@@ -67,11 +67,10 @@ fn test_elias_fano() -> Result<()> {
             QuantumIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
             CompactArray<Vec<usize>>,
         > = ef.convert_to().unwrap();
-        // do a fast select
+
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.get(i), *v);
         }
-        println!("{:?}", ef);
 
         // Add the indices
         let ef: sux::dict::elias_fano::EliasFano<
