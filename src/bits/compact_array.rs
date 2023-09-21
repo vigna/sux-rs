@@ -130,16 +130,16 @@ impl<B: AsRef<[usize]>> VSlice for CompactArray<B> {
     }
 }
 
-pub struct CompactArrayIterator<'a, B> {
+pub struct CompactArrayUncheckedIterator<'a, B> {
     array: &'a CompactArray<B>,
     word_index: usize,
     window: usize,
     fill: usize,
 }
 
-impl<'a, B: AsRef<[usize]>> CompactArrayIterator<'a, B> {
+impl<'a, B: AsRef<[usize]>> CompactArrayUncheckedIterator<'a, B> {
     fn new(array: &'a CompactArray<B>, index: usize) -> Self {
-        if index >= array.len() {
+        if index > array.len() {
             panic!("Start index out of bounds: {} > {}", index, array.len());
         }
         let bit_offset = index * array.bit_width;
@@ -165,7 +165,7 @@ impl<'a, B: AsRef<[usize]>> CompactArrayIterator<'a, B> {
     }
 }
 
-impl<'a, B: AsRef<[usize]>> UncheckedIterator for CompactArrayIterator<'a, B> {
+impl<'a, B: AsRef<[usize]>> UncheckedIterator for CompactArrayUncheckedIterator<'a, B> {
     type Item = usize;
     unsafe fn next_unchecked(&mut self) -> usize {
         if self.fill >= self.array.bit_width {
@@ -187,10 +187,56 @@ impl<'a, B: AsRef<[usize]>> UncheckedIterator for CompactArrayIterator<'a, B> {
 }
 
 impl<B: AsRef<[usize]>> VSliceIntoValIterUnchecked for CompactArray<B> {
-    type IntoValIter<'a> = CompactArrayIterator<'a, B>
+    type IntoValIter<'a> = CompactArrayUncheckedIterator<'a, B>
         where B:'a;
 
     fn iter_val_from_unchecked(&self, from: usize) -> Self::IntoValIter<'_> {
+        CompactArrayUncheckedIterator::new(&self, from)
+    }
+}
+
+pub struct CompactArrayIterator<'a, B> {
+    unchecked: CompactArrayUncheckedIterator<'a, B>,
+    index: usize,
+}
+
+impl<'a, B: AsRef<[usize]>> CompactArrayIterator<'a, B> {
+    fn new(array: &'a CompactArray<B>, index: usize) -> Self {
+        if index > array.len() {
+            panic!("Start index out of bounds: {} > {}", index, array.len());
+        }
+        Self {
+            unchecked: CompactArrayUncheckedIterator::new(array, index),
+            index,
+        }
+    }
+}
+
+impl<'a, B: AsRef<[usize]>> Iterator for CompactArrayIterator<'a, B> {
+    type Item = usize;
+    fn next(&mut self) -> Option<usize> {
+        if self.index < self.unchecked.array.len() {
+            // SAFETY: index has just been checked.
+            let res = unsafe { self.unchecked.next_unchecked() };
+            self.index += 1;
+            Some(res)
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a, B: AsRef<[usize]>> ExactSizeIterator for CompactArrayIterator<'a, B> {
+    fn len(&self) -> usize {
+        self.unchecked.array.len() - self.index
+    }
+}
+
+impl<B: AsRef<[usize]>> VSliceIntoValIter for CompactArray<B> {
+    type IntoValIter<'a> = CompactArrayIterator<'a, B>
+        where B:'a;
+
+    fn iter_val_from(&self, from: usize) -> Self::IntoValIter<'_> {
         CompactArrayIterator::new(&self, from)
     }
 }

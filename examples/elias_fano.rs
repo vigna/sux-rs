@@ -6,8 +6,6 @@ use rand::SeedableRng;
 use std::hint::black_box;
 use sux::prelude::*;
 
-use std::time::Instant;
-
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks the Rust Sux implementation", long_about = None)]
 struct Args {
