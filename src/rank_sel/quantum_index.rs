@@ -17,7 +17,7 @@ use epserde::*;
 ///
 /// More precisely, given a constant quantum <var>q</var>, this index records the position
 /// of the ones at positions 0, <var>q</var>, <var>2q</var>, &hellip;, and so on.
-/// The positions are recorded in a provided [`VSliceMut`] whose [bit width](VSliceCore::bit_width)
+/// The positions are recorded in a provided [`BitFieldSliceMut`] whose [bit width](BitFieldSliceCore::bit_width)
 /// must be sufficient to record all the positions.
 ///
 /// The index takes a backend parameter `B` that can be any type that implements
@@ -28,14 +28,21 @@ use epserde::*;
 ///
 /// See [`QuantumZeroIndex`](crate::rank_sel::QuantumZeroIndex) for the same index for zeros.
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct QuantumIndex<B: SelectHinted, O: VSlice = Vec<usize>, const QUANTUM_LOG2: usize = 8> {
+pub struct QuantumIndex<
+    B: SelectHinted,
+    O: BitFieldSlice = Vec<usize>,
+    const QUANTUM_LOG2: usize = 8,
+> {
     bits: B,
     ones: O,
     _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,
 }
 
-impl<B: SelectHinted + AsRef<[usize]>, O: VSlice + VSliceMut, const QUANTUM_LOG2: usize>
-    QuantumIndex<B, O, QUANTUM_LOG2>
+impl<
+        B: SelectHinted + AsRef<[usize]>,
+        O: BitFieldSlice + BitFieldSliceMut,
+        const QUANTUM_LOG2: usize,
+    > QuantumIndex<B, O, QUANTUM_LOG2>
 {
     fn build_ones(&mut self) -> Result<()> {
         let mut number_of_ones = 0;
@@ -60,7 +67,7 @@ impl<B: SelectHinted + AsRef<[usize]>, O: VSlice + VSliceMut, const QUANTUM_LOG2
 }
 
 /// Provide the hint to the underlying structure
-impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> Select
+impl<B: SelectHinted, O: BitFieldSlice, const QUANTUM_LOG2: usize> Select
     for QuantumIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
@@ -74,7 +81,7 @@ impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> Select
 }
 
 /// If the underlying implementation has select zero, forward the methods.
-impl<B: SelectHinted + SelectZero, O: VSlice, const QUANTUM_LOG2: usize> SelectZero
+impl<B: SelectHinted + SelectZero, O: BitFieldSlice, const QUANTUM_LOG2: usize> SelectZero
     for QuantumIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
@@ -88,8 +95,8 @@ impl<B: SelectHinted + SelectZero, O: VSlice, const QUANTUM_LOG2: usize> SelectZ
 }
 
 /// If the underlying implementation has hint for select zero, forward the methods.
-impl<B: SelectHinted + SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> SelectZeroHinted
-    for QuantumIndex<B, O, QUANTUM_LOG2>
+impl<B: SelectHinted + SelectZeroHinted, O: BitFieldSlice, const QUANTUM_LOG2: usize>
+    SelectZeroHinted for QuantumIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     unsafe fn select_zero_hinted_unchecked(
@@ -103,7 +110,7 @@ impl<B: SelectHinted + SelectZeroHinted, O: VSlice, const QUANTUM_LOG2: usize> S
     }
 }
 
-impl<B: SelectHinted + BitLength, O: VSlice, const QUANTUM_LOG2: usize> BitLength
+impl<B: SelectHinted + BitLength, O: BitFieldSlice, const QUANTUM_LOG2: usize> BitLength
     for QuantumIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
@@ -112,7 +119,7 @@ impl<B: SelectHinted + BitLength, O: VSlice, const QUANTUM_LOG2: usize> BitLengt
     }
 }
 
-impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> BitCount
+impl<B: SelectHinted, O: BitFieldSlice, const QUANTUM_LOG2: usize> BitCount
     for QuantumIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
@@ -125,7 +132,7 @@ impl<B: SelectHinted, O: VSlice, const QUANTUM_LOG2: usize> BitCount
 impl<B: SelectHinted, T, const QUANTUM_LOG2: usize> ConvertTo<B>
     for QuantumIndex<B, Vec<T>, QUANTUM_LOG2>
 where
-    Vec<T>: VSlice,
+    Vec<T>: BitFieldSlice,
 {
     #[inline(always)]
     fn convert_to(self) -> Result<B> {
@@ -152,7 +159,7 @@ impl<B: SelectHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
 impl<B, O, const QUANTUM_LOG2: usize> AsRef<[usize]> for QuantumIndex<B, O, QUANTUM_LOG2>
 where
     B: AsRef<[usize]> + SelectHinted,
-    O: VSlice,
+    O: BitFieldSlice,
 {
     fn as_ref(&self) -> &[usize] {
         self.bits.as_ref()

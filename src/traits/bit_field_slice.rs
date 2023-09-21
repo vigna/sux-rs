@@ -7,32 +7,31 @@
 
 /*!
 
-Traits for value slices, which are accessed
-with a logic similar to slices, but when indexed with `get` return an owned value.
+Traits for slices of bit fields of constant width.
 
-Value slices have a limited bit width per element, and are accessed
-with a logic similar to slices, but when indexed with `get`
-return an owned value---not a reference.
+Slices of bit fields are accessed with a logic similar to slices, but
+when indexed with [`get`](BitFieldSlice::get) return an owned value
+of a [fixed bit width](BitFieldSliceCore::bit_width).
 
 Implementing the [`core::ops::Index`]/[`core::ops::IndexMut`] traits
 would be more natural and practical, but in certain cases it is impossible:
-in our main use case, [`CompactArray`]
+in our main use case, [`CompactArray`],
 we cannot implement [`core::ops::Index`] because there is no way to
 return a reference to a bit segment
 (see, e.g., [BitSlice](https://docs.rs/bitvec/latest/bitvec/slice/struct.BitSlice.html)).
 
-There are three end-user traits: [`VSlice`], [`VSliceMut`] and [`VSliceAtomic`].
-The trait [`VSliceCore`] contains the common methods, and in particular
-[`VSliceCore::bit_width`], which returns the bit width of the slice.
+There are three end-user traits: [`BitFieldSlice`], [`BitFieldSliceMut`] and [`BitFieldSliceAtomic`].
+The trait [`BitFieldSliceCore`] contains the common methods, and in particular
+[`BitFieldSliceCore::bit_width`], which returns the bit width the values stored in the slice.
  All stored values must fit within this bit width.
 
-Implementations must return always zero on a [`VSlice::get`] when the bit
-width is zero. The behavior of a [`VSliceMut::set`] in the same context is not defined.
+Implementations must return always zero on a [`BitFieldSlice::get`] when the bit
+width is zero. The behavior of a [`BitFieldSliceMut::set`] in the same context is not defined.
 
 We provide implementations for `Vec<usize>`, `Vec<AtomicUsize>`, `&[usize]`,
 and `&[AtomicUsize]` that view their elements as values with a bit width
 equal to that of `usize`. The implementations based on atomic types implements
-[`VSliceAtomic`].
+[`BitFieldSliceAtomic`].
 */
 
 use crate::prelude::*;
@@ -41,8 +40,8 @@ use std::iter::Copied;
 
 const BITS: usize = core::mem::size_of::<usize>() * 8;
 
-/// Common methods for [`VSlice`], [`VSliceMut`], and [`VSliceAtomic`]
-pub trait VSliceCore {
+/// Common methods for [`BitFieldSlice`], [`BitFieldSliceMut`], and [`BitFieldSliceAtomic`]
+pub trait BitFieldSliceCore {
     /// Return the width of the slice. All elements stored in the slice must
     /// fit within this bit width.
     fn bit_width(&self) -> usize;
@@ -84,17 +83,17 @@ macro_rules! debug_assert_bounds {
 }
 
 /// A value slice.
-pub trait VSlice: VSliceCore {
+pub trait BitFieldSlice: BitFieldSliceCore {
     /// Return the value at the specified index.
     ///
     /// # Safety
-    /// `index` must be in [0..[len](`VSliceCore::len`)). No bounds checking is performed.
+    /// `index` must be in [0..[len](`BitFieldSliceCore::len`)). No bounds checking is performed.
     unsafe fn get_unchecked(&self, index: usize) -> usize;
 
     /// Return the value at the specified index.
     ///
     /// # Panics
-    /// May panic if the index is not in in [0..[len](`VSliceCore::len`))
+    /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     fn get(&self, index: usize) -> usize {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_unchecked(index) }
@@ -102,21 +101,21 @@ pub trait VSlice: VSliceCore {
 }
 
 /// A mutable value slice.
-pub trait VSliceMut: VSliceCore {
+pub trait BitFieldSliceMut: BitFieldSliceCore {
     /// Set the element of the slice at the specified index.
     /// No bounds checking is performed.
     ///
     /// # Safety
-    /// - `index` must be in [0..[len](`VSliceCore::len`));
-    /// - `value` must fit withing [`VSliceCore::bit_width`] bits.
+    /// - `index` must be in [0..[len](`BitFieldSliceCore::len`));
+    /// - `value` must fit withing [`BitFieldSliceCore::bit_width`] bits.
     /// No bound or bit-width check is performed.
     unsafe fn set_unchecked(&mut self, index: usize, value: usize);
 
     /// Set the element of the slice at the specified index.
     ///
     ///
-    /// May panic if the index is not in in [0..[len](`VSliceCore::len`))
-    /// or the value does not fit in [`VSliceCore::bit_width`] bits.
+    /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
+    /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
     fn set(&mut self, index: usize, value: usize) {
         panic_if_out_of_bounds!(index, self.len());
         let bw = self.bit_width();
@@ -130,18 +129,18 @@ pub trait VSliceMut: VSliceCore {
 }
 
 /// A thread-safe value slice supporting atomic operations.
-pub trait VSliceAtomic: VSliceCore {
+pub trait BitFieldSliceAtomic: BitFieldSliceCore {
     /// Return the value at the specified index.
     ///
     /// # Safety
-    /// `index` must be in [0..[len](`VSliceCore::len`)).
+    /// `index` must be in [0..[len](`BitFieldSliceCore::len`)).
     /// No bound or bit-width check is performed.
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize;
 
     /// Return the value at the specified index.
     ///
     /// # Panics
-    /// May panic if the index is not in in [0..[len](`VSliceCore::len`))
+    /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     fn get(&self, index: usize, order: Ordering) -> usize {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_unchecked(index, order) }
@@ -150,16 +149,16 @@ pub trait VSliceAtomic: VSliceCore {
     /// Set the element of the slice at the specified index.
     ///
     /// # Safety
-    /// - `index` must be in [0..[len](`VSliceCore::len`));
-    /// - `value` must fit withing [`VSliceCore::bit_width`] bits.
+    /// - `index` must be in [0..[len](`BitFieldSliceCore::len`));
+    /// - `value` must fit withing [`BitFieldSliceCore::bit_width`] bits.
     /// No bound or bit-width check is performed.
     unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering);
 
     /// Set the element of the slice at the specified index.
     ///
     ///
-    /// May panic if the index is not in in [0..[len](`VSliceCore::len`))
-    /// or the value does not fit in [`VSliceCore::bit_width`] bits.
+    /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
+    /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
     fn set(&self, index: usize, value: usize, order: Ordering) {
         if index >= self.len() {
             panic_if_out_of_bounds!(index, self.len());
@@ -174,7 +173,7 @@ pub trait VSliceAtomic: VSliceCore {
     }
 }
 
-impl<T: AsRef<[usize]>> VSliceCore for T {
+impl<T: AsRef<[usize]>> BitFieldSliceCore for T {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         BITS
@@ -185,7 +184,7 @@ impl<T: AsRef<[usize]>> VSliceCore for T {
     }
 }
 
-impl<T: AsRef<[usize]>> VSlice for T {
+impl<T: AsRef<[usize]>> BitFieldSlice for T {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> usize {
         debug_assert_bounds!(index, self.len());
@@ -210,7 +209,7 @@ impl<T: AsRef<[usize]>> IntoValueIterator for T {
     }
 }
 
-impl<T: AsRef<[AtomicUsize]> + AsRef<[usize]>> VSliceAtomic for T {
+impl<T: AsRef<[AtomicUsize]> + AsRef<[usize]>> BitFieldSliceAtomic for T {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
         debug_assert_bounds!(index, self.len());
@@ -227,7 +226,7 @@ impl<T: AsRef<[AtomicUsize]> + AsRef<[usize]>> VSliceAtomic for T {
     }
 }
 
-impl<T: AsMut<[usize]> + AsRef<[usize]>> VSliceMut for T {
+impl<T: AsMut<[usize]> + AsRef<[usize]>> BitFieldSliceMut for T {
     #[inline(always)]
     unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
         debug_assert_bounds!(index, self.len());

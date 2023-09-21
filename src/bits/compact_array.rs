@@ -20,7 +20,7 @@ const BITS: usize = core::mem::size_of::<usize>() * 8;
 /// We provide implementations
 /// based on `AsRef<[usize]>`, `AsMut<[usize]>`, and
 /// `AsRef<[AtomicUsize]>`. They implement
-/// [`VSlice`], [`VSliceMut`], and [`VSliceAtomic`], respectively. Constructors are provided
+/// [`BitFieldSlice`], [`BitFieldSliceMut`], and [`BitFieldSliceAtomic`], respectively. Constructors are provided
 /// for storing data in a [`Vec<usize>`](CompactArray::new) (for the first
 /// two implementations) or in a
 /// [`Vec<AtomicUsize>`](CompactArray::new_atomic) (for the third implementation).
@@ -100,7 +100,7 @@ impl<B> CompactArray<B> {
     }
 }
 
-impl<T> VSliceCore for CompactArray<T> {
+impl<T> BitFieldSliceCore for CompactArray<T> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= BITS);
@@ -113,7 +113,7 @@ impl<T> VSliceCore for CompactArray<T> {
     }
 }
 
-impl<B: AsRef<[usize]>> VSlice for CompactArray<B> {
+impl<B: AsRef<[usize]>> BitFieldSlice for CompactArray<B> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> usize {
         let pos = index * self.bit_width;
@@ -243,14 +243,14 @@ impl<B: AsRef<[usize]>> IntoValueIterator for CompactArray<B> {
     }
 }
 
-impl<T: AsRef<[usize]> + AsMut<[usize]>> VSliceMut for CompactArray<T> {
+impl<T: AsRef<[usize]> + AsMut<[usize]>> BitFieldSliceMut for CompactArray<T> {
     // We reimplement set as we have the mask in the structure.
 
     /// Set the element of the slice at the specified index.
     ///
     ///
-    /// May panic if the index is not in in [0..[len](`VSliceCore::len`))
-    /// or the value does not fit in [`VSliceCore::bit_width`] bits.
+    /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
+    /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
     #[inline(always)]
     fn set(&mut self, index: usize, value: usize) {
         panic_if_out_of_bounds!(index, self.len);
@@ -285,7 +285,7 @@ impl<T: AsRef<[usize]> + AsMut<[usize]>> VSliceMut for CompactArray<T> {
     }
 }
 
-impl<T: AsRef<[AtomicUsize]>> VSliceAtomic for CompactArray<T> {
+impl<T: AsRef<[AtomicUsize]>> BitFieldSliceAtomic for CompactArray<T> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
         let pos = index * self.bit_width;
@@ -307,8 +307,8 @@ impl<T: AsRef<[AtomicUsize]>> VSliceAtomic for CompactArray<T> {
     /// Set the element of the slice at the specified index.
     ///
     ///
-    /// May panic if the index is not in in [0..[len](`VSliceCore::len`))
-    /// or the value does not fit in [`VSliceCore::bit_width`] bits.
+    /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
+    /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
     #[inline(always)]
     fn set(&self, index: usize, value: usize, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len);
