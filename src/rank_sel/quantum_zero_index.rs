@@ -55,9 +55,10 @@ impl<
             while number_of_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
                 let index = (i * usize::BITS as usize) + in_word_index;
-                if index >= self.len() as _ {
+                /*  if index >= self.len() as _ {
+                    eprintln!("{:?}", &self.zeros);
                     return Ok(());
-                }
+                }*/
                 self.zeros.set(ones_index, index);
                 next_quantum += 1 << QUANTUM_LOG2;
                 ones_index += 1;
@@ -65,6 +66,7 @@ impl<
 
             number_of_ones += ones_in_word;
         }
+
         Ok(())
     }
 }

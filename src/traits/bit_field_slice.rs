@@ -38,7 +38,7 @@ The implementations based on atomic types implements
 
 use crate::prelude::*;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use std::iter::Copied;
+use std::{fmt::Display, iter::Copied};
 
 const BITS: usize = core::mem::size_of::<usize>() * 8;
 
@@ -175,7 +175,6 @@ pub trait BitFieldSliceAtomic: BitFieldSliceCore {
     }
 }
 
-pub trait IntoValueITerator: BitFieldSlice + IntoValueIterator {}
 /// A ready-made implementation of [`BitFieldSliceIterator`].
 ///
 /// We cannot implement [`IntoValueIterator`] for [`BitFieldSlice`]
@@ -196,8 +195,9 @@ impl<'a, B: BitFieldSlice> BitFieldSliceIterator<'a, B> {
     }
 }
 
-impl<'a, B: BitFieldSlice> BitFieldSliceIterator<'a, B> {
-    pub fn next(&mut self) -> Option<usize> {
+impl<'a, B: BitFieldSlice> Iterator for BitFieldSliceIterator<'a, B> {
+    type Item = usize;
+    fn next(&mut self) -> Option<usize> {
         if self.index < self.slice.len() {
             let res = self.slice.get(self.index);
             self.index += 1;
@@ -266,5 +266,18 @@ impl<T: AsMut<[usize]> + AsRef<[usize]>> BitFieldSliceMut for T {
     unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
         debug_assert_bounds!(index, self.len());
         *self.as_mut().get_unchecked_mut(index) = value;
+    }
+}
+
+impl Display for dyn BitFieldSlice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("["))?;
+        if !self.is_empty() {
+            f.write_fmt(format_args!("{}", self.get(0)))?;
+            for i in 1..self.len() {
+                f.write_fmt(format_args!(", {}", self.get(i)))?;
+            }
+        }
+        f.write_fmt(format_args!("]"))
     }
 }
