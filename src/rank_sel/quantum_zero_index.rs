@@ -103,8 +103,8 @@ impl<B: SelectZeroHinted + SelectHinted, O: BitFieldSlice, const QUANTUM_LOG2: u
     for QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
-    unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
-        self.bits.select_unchecked_hinted(rank, pos, rank_at_pos)
+    unsafe fn select_hinted_unchecked(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
+        self.bits.select_hinted_unchecked(rank, pos, rank_at_pos)
     }
 }
 
