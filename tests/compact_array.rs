@@ -52,6 +52,12 @@ fn test_compact_array() {
                     }
                 }
             }
+
+            for from in 0..cp.len() {
+                for (i, v) in cp.iter_val_from(from).enumerate() {
+                    assert_eq!(v, values[i + from]);
+                }
+            }
         }
         // convert to atomic
         let cp: CompactArray<Vec<AtomicUsize>> = cp.into();
