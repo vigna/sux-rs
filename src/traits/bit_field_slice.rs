@@ -30,7 +30,9 @@ width is zero. The behavior of a [`BitFieldSliceMut::set`] in the same context i
 
 We provide implementations for `Vec<usize>`, `Vec<AtomicUsize>`, `&[usize]`,
 and `&[AtomicUsize]` that view their elements as values with a bit width
-equal to that of `usize`. The implementations based on atomic types implements
+equal to that of `usize`; for those, we also implement
+[`IntoValueIterator`](crate::traits::iter::IntoValueIterator).
+The implementations based on atomic types implements
 [`BitFieldSliceAtomic`].
 */
 
@@ -169,6 +171,39 @@ pub trait BitFieldSliceAtomic: BitFieldSliceCore {
         panic_if_value!(value, mask, bw);
         unsafe {
             self.set_unchecked(index, value, order);
+        }
+    }
+}
+
+pub trait IntoValueITerator: BitFieldSlice + IntoValueIterator {}
+/// A ready-made implementation of [`BitFieldSliceIterator`].
+///
+/// We cannot implement [`IntoValueIterator`] for [`BitFieldSlice`]
+/// because it would be impossible to override in implementing classes,
+/// but you can implement [`IntoValueIterator`] for your implementation
+/// of [`BitFieldSlice`] by using this structure.
+pub struct BitFieldSliceIterator<'a, B: BitFieldSlice> {
+    slice: &'a B,
+    index: usize,
+}
+
+impl<'a, B: BitFieldSlice> BitFieldSliceIterator<'a, B> {
+    pub fn new(slice: &'a B, index: usize) -> Self {
+        if index > slice.len() {
+            panic!("Start index out of bounds: {} > {}", index, slice.len());
+        }
+        Self { slice, index }
+    }
+}
+
+impl<'a, B: BitFieldSlice> BitFieldSliceIterator<'a, B> {
+    pub fn next(&mut self) -> Option<usize> {
+        if self.index < self.slice.len() {
+            let res = self.slice.get(self.index);
+            self.index += 1;
+            Some(res)
+        } else {
+            None
         }
     }
 }
