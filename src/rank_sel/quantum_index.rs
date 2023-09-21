@@ -76,7 +76,7 @@ impl<B: SelectHinted, O: BitFieldSlice, const QUANTUM_LOG2: usize> Select
         let pos = self.ones.get_unchecked(index);
         let rank_at_pos = index << QUANTUM_LOG2;
 
-        self.bits.select_unchecked_hinted(rank, pos, rank_at_pos)
+        self.bits.select_hinted_unchecked(rank, pos, rank_at_pos)
     }
 }
 

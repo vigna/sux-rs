@@ -133,7 +133,7 @@ pub trait SelectHinted: Select {
     /// and must be the position of a one in the underlying bit vector.
     /// `rank_at_pos` must be the number of ones in the underlying bit vector
     /// before `pos`.
-    unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize;
+    unsafe fn select_hinted_unchecked(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize;
 }
 
 pub trait SelectZeroHinted: SelectZero {

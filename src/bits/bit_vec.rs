@@ -324,12 +324,12 @@ impl CountBitVec<Vec<usize>> {
 impl<B: BitFieldSlice> Select for CountBitVec<B> {
     #[inline(always)]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
-        self.select_unchecked_hinted(rank, 0, 0)
+        self.select_hinted_unchecked(rank, 0, 0)
     }
 }
 
 impl<B: BitFieldSlice> SelectHinted for CountBitVec<B> {
-    unsafe fn select_unchecked_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
+    unsafe fn select_hinted_unchecked(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
         let mut word_index = pos / BITS;
         let bit_index = pos % BITS;
         let mut residual = rank - rank_at_pos;

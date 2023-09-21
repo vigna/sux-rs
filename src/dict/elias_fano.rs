@@ -259,7 +259,7 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<H: Select + AsRef<[usize]>, L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>>
+impl<H: AsRef<[usize]> + Select, L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>>
     IndexedDict for EliasFano<H, L>
 {
     type OutputValue = usize;
@@ -312,7 +312,7 @@ where
 /// An iterator streaming over the Elias--Fano representation.
 pub struct EliasFanoIterator<
     'a,
-    H: Select + AsRef<[usize]>,
+    H: AsRef<[usize]>,
     L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>,
 > {
     ef: &'a EliasFano<H, L>,
@@ -374,11 +374,8 @@ impl<
     }
 }
 
-impl<
-        'a,
-        H: Select + AsRef<[usize]>,
-        L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>,
-    > Iterator for EliasFanoIterator<'a, H, L>
+impl<'a, H: AsRef<[usize]>, L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>> Iterator
+    for EliasFanoIterator<'a, H, L>
 {
     type Item = usize;
 
@@ -406,11 +403,8 @@ impl<
     }
 }
 
-impl<
-        'a,
-        H: Select + AsRef<[usize]>,
-        L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>,
-    > ExactSizeIterator for EliasFanoIterator<'a, H, L>
+impl<'a, H: AsRef<[usize]>, L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>>
+    ExactSizeIterator for EliasFanoIterator<'a, H, L>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -419,7 +413,7 @@ impl<
 }
 
 impl<
-        H: Select + SelectZero + AsRef<[usize]>,
+        H: SelectZero + Select + AsRef<[usize]>,
         L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>,
     > Succ for EliasFano<H, L>
 {
