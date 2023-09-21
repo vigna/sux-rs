@@ -6,7 +6,6 @@ use rand::SeedableRng;
 use std::hint::black_box;
 use sux::prelude::CompactArray;
 use sux::prelude::*;
-use sux::traits::UncheckedIterator;
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks compact arrays", long_about = None)]

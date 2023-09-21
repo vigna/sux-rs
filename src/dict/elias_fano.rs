@@ -18,7 +18,7 @@ The main trait implemented by [`EliasFano`] is [`IndexedDict`], which
 makes it possible to access its values with [`IndexedDict::get`].
 
  */
-use crate::{prelude::*, traits::UncheckedIterator};
+use crate::prelude::*;
 use anyhow::{bail, Result};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use epserde::*;
@@ -259,7 +259,7 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<H: Select + AsRef<[usize]>, L: VSlice + VSliceIntoValIterUnchecked> IndexedDict
+impl<H: Select + AsRef<[usize]>, L: VSlice + IntoUncheckedValueIterator<Item = usize>> IndexedDict
     for EliasFano<H, L>
 {
     type OutputValue = usize;
@@ -310,8 +310,11 @@ where
 }
 
 /// An iterator streaming over the Elias--Fano representation.
-pub struct EliasFanoIterator<'a, H: Select + AsRef<[usize]>, L: VSlice + VSliceIntoValIterUnchecked>
-{
+pub struct EliasFanoIterator<
+    'a,
+    H: Select + AsRef<[usize]>,
+    L: VSlice + IntoUncheckedValueIterator<Item = usize>,
+> {
     ef: &'a EliasFano<H, L>,
     /// The index of the next value it will be returned when `next` is called.
     index: usize,
@@ -320,10 +323,10 @@ pub struct EliasFanoIterator<'a, H: Select + AsRef<[usize]>, L: VSlice + VSliceI
     /// Current window on the high bits.
     /// This is an usize because BitVec is implemented only for `Vec<usize>` and `&[usize]`.
     window: usize,
-    low_bits: <L as VSliceIntoValIterUnchecked>::IntoValIter<'a>,
+    low_bits: <L as IntoUncheckedValueIterator>::IntoUncheckedValueIter<'a>,
 }
 
-impl<'a, H: Select + AsRef<[usize]>, L: VSlice + VSliceIntoValIterUnchecked>
+impl<'a, H: Select + AsRef<[usize]>, L: VSlice + IntoUncheckedValueIterator<Item = usize>>
     EliasFanoIterator<'a, H, L>
 {
     pub fn new(ef: &'a EliasFano<H, L>) -> Self {
@@ -368,7 +371,7 @@ impl<'a, H: Select + AsRef<[usize]>, L: VSlice + VSliceIntoValIterUnchecked>
     }
 }
 
-impl<'a, H: Select + AsRef<[usize]>, L: VSlice + VSliceIntoValIterUnchecked> Iterator
+impl<'a, H: Select + AsRef<[usize]>, L: VSlice + IntoUncheckedValueIterator<Item = usize>> Iterator
     for EliasFanoIterator<'a, H, L>
 {
     type Item = usize;
@@ -397,8 +400,8 @@ impl<'a, H: Select + AsRef<[usize]>, L: VSlice + VSliceIntoValIterUnchecked> Ite
     }
 }
 
-impl<'a, H: Select + AsRef<[usize]>, L: VSlice + VSliceIntoValIterUnchecked> ExactSizeIterator
-    for EliasFanoIterator<'a, H, L>
+impl<'a, H: Select + AsRef<[usize]>, L: VSlice + IntoUncheckedValueIterator<Item = usize>>
+    ExactSizeIterator for EliasFanoIterator<'a, H, L>
 {
     #[inline(always)]
     fn len(&self) -> usize {
