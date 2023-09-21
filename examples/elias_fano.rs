@@ -47,11 +47,11 @@ fn main() {
     }
     let elias_fano: EliasFano<QuantumIndex<CountBitVec, Vec<usize>, 8>, CompactArray> =
         elias_fano_builder.build().convert_to().unwrap();
-    /*     let elias_fano: EliasFano<
-            QuantumZeroIndex<QuantumIndex<CountBitVec, Vec<usize>, 8>>,
-            CompactArray,
-        > = elias_fano.convert_to().unwrap();
-    */
+    let elias_fano: EliasFano<
+        QuantumZeroIndex<QuantumIndex<CountBitVec, Vec<usize>, 8>>,
+        CompactArray,
+    > = elias_fano.convert_to().unwrap();
+
     let mut ranks = Vec::with_capacity(args.t);
     for _ in 0..args.t {
         ranks.push(rng.gen_range(0..args.n));

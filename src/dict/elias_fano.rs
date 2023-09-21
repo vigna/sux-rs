@@ -352,8 +352,8 @@ impl<
             panic!("Index out of bounds: {} > {}", start_index, ef.len());
         }
         let bit_pos = unsafe { ef.high_bits.select_unchecked(start_index) };
-        let word_idx = bit_pos / (core::mem::size_of::<usize>() * 8);
-        let bits_to_clean = bit_pos % (core::mem::size_of::<usize>() * 8);
+        let word_idx = bit_pos / (usize::BITS as usize);
+        let bits_to_clean = bit_pos % (usize::BITS as usize);
 
         let window = if ef.high_bits.as_ref().is_empty() {
             0
@@ -393,7 +393,7 @@ impl<'a, H: AsRef<[usize]>, L: BitFieldSlice + IntoUncheckedValueIterator<Item =
         // find the lowest bit set index in the word
         let bit_idx = self.window.trailing_zeros() as usize;
         // compute the global bit index
-        let high_bits = (self.word_idx * core::mem::size_of::<usize>() * 8) + bit_idx - self.index;
+        let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
         // clear the lowest bit set
         self.window &= self.window - 1;
         // compose the value
@@ -428,8 +428,8 @@ impl<
 
         let mut rank = bit_pos - zeros_to_skip;
         let mut iter = self.low_bits.iter_val_from_unchecked(rank);
-        let mut word_idx = bit_pos / (core::mem::size_of::<usize>() * 8);
-        let bits_to_clean = bit_pos % (core::mem::size_of::<usize>() * 8);
+        let mut word_idx = bit_pos / (usize::BITS as usize);
+        let bits_to_clean = bit_pos % (usize::BITS as usize);
 
         let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) }
             & (usize::MAX << bits_to_clean);
@@ -443,7 +443,7 @@ impl<
             // find the lowest bit set index in the word
             let bit_idx = window.trailing_zeros() as usize;
             // compute the global bit index
-            let high_bits = (word_idx * core::mem::size_of::<usize>() * 8) + bit_idx - rank;
+            let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
             // compose the value
             // SAFETY: we are certainly iterating within the length of the array
             // because there is a successor for sure
@@ -457,3 +457,64 @@ impl<
         }
     }
 }
+/*
+impl<
+        H: SelectZero + Select + AsRef<[usize]>,
+        L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>,
+    > Pred for EliasFano<H, L>
+{
+    unsafe fn pred_unchecked(&self, value: &Self::InputValue) -> (usize, Self::OutputValue) {
+        debug_assert!(*value > self.get(0));
+        let zeros_to_skip = value >> self.l;
+        let bit_pos = self.high_bits.select_zero(zeros_to_skip).unwrap() - 1;
+
+        let mut rank = bit_pos - zeros_to_skip;
+        let mut iter = self.low_bits.iter_val_from_unchecked(rank);
+        let mut word_idx = bit_pos / (usize::BITS);
+        let bit_idx = bit_pos % (usize::BITS);
+
+        loop {
+            let lower_bits = unsafe { iter.next_unchecked() };
+            if self.high_bits.get(word_idx) & (1 << bit_idx) == 0 {
+                // zeros =  - (64 - (position % 64))
+                let mut zeros = bit_pos | (usize::BITS).wrapping_neg();
+                word_idx = bit_pos / (usize::BITS);
+                let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
+                while window == 0 {
+                    word_idx -= 1;
+                    window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
+                    zeros += (usize::BITS) as usize;
+                }
+                return (rank, bit_pos - zeros - window.leading_zeros() - rank - 1 << self.l | lower_bits));
+            }
+
+            if lower_bits < value & (1 << self.l) - 1 {
+                return (rank, bit_pos - rank << self.l | lower_bits);
+            }
+
+
+        }
+        loop {
+            while window == 0 {
+                word_idx += 1;
+                debug_assert!(word_idx < self.high_bits.as_ref().len());
+                window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
+            }
+            // find the lowest bit set index in the word
+            let bit_idx = window.trailing_zeros() as usize;
+            // compute the global bit index
+            let high_bits = (word_idx * usize::BITS) + bit_idx - rank;
+            // compose the value
+            // SAFETY: we are certainly iterating within the length of the array
+            // because there is a successor for sure
+            let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
+            if res >= *value {
+                return (rank, res);
+            }
+            // clear the lowest bit set
+            window &= window - 1;
+            rank += 1;
+        }
+    }
+}
+*/
