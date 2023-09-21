@@ -66,7 +66,7 @@ pub trait IndexedDict {
 }
 
 /// Successor computation for dictionaries whose values are monotonically increasing.
-pub trait Successor: IndexedDict
+pub trait Succ: IndexedDict
 where
     Self::OutputValue: PartialOrd<Self::InputValue> + PartialOrd,
     Self::InputValue: PartialOrd<Self::OutputValue> + PartialOrd,
@@ -75,11 +75,23 @@ where
     /// of the given value, or `None` if there is no successor.
     /// The successor is the first value in the dictionary
     /// that is greater than or equal to the given value.
-    fn successor(&self, value: &Self::InputValue) -> Option<(usize, Self::OutputValue)>;
+    fn succ(&self, value: &Self::InputValue) -> Option<(usize, Self::OutputValue)> {
+        if self.is_empty() || value > &self.get(self.len() - 1) {
+            None
+        } else {
+            Some(unsafe { self.succ_unchecked(value) })
+        }
+    }
+
+    /// Return the index of the successor and the successor
+    /// of the given value, or `None` if there is no successor.
+    /// The successor is the first value in the dictionary
+    /// that is greater than or equal to the given value.
+    unsafe fn succ_unchecked(&self, value: &Self::InputValue) -> (usize, Self::OutputValue);
 }
 
 /// Predecessor computation for dictionaries whoses value are monotonically increasing.
-pub trait Predecessor: IndexedDict
+pub trait Pred: IndexedDict
 where
     Self::OutputValue: PartialOrd<Self::InputValue> + PartialOrd,
     Self::InputValue: PartialOrd<Self::OutputValue> + PartialOrd,
@@ -88,5 +100,12 @@ where
     /// of the given value, or `None` if there is no predecessor.
     /// The predecessor is the last value in the dictionary
     /// that is less than the given value.
-    fn predecessor(&self, value: &Self::InputValue) -> Option<(usize, Self::OutputValue)>;
+    fn pred(&self, value: &Self::InputValue) -> Option<(usize, Self::OutputValue)> {
+        if self.is_empty() || value <= &self.get(0) {
+            None
+        } else {
+            Some(unsafe { self.pred_unchecked(value) })
+        }
+    }
+    unsafe fn pred_unchecked(&self, value: &Self::InputValue) -> (usize, Self::OutputValue);
 }

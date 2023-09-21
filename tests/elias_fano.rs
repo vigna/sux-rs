@@ -22,7 +22,7 @@ fn test_elias_fano_concurrent() -> Result<()> {
     use rayon::prelude::*;
     use sux::dict::elias_fano::EliasFanoAtomicBuilder;
     let mut rng = SmallRng::seed_from_u64(0);
-    for (n, u) in [(100, 1000), (100, 100), (1000, 100)] {
+    for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
         let mut values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
 
         values.sort();
@@ -35,8 +35,7 @@ fn test_elias_fano_concurrent() -> Result<()> {
             .enumerate()
             .for_each(|(index, value)| unsafe { efb.set(index, *value, Ordering::SeqCst) });
         // Finish the creation of elias-fano
-        let ef = efb.build();
-        println!("{:?}", ef);
+        let _ef = efb.build();
     }
     Ok(())
 }
@@ -44,7 +43,7 @@ fn test_elias_fano_concurrent() -> Result<()> {
 #[test]
 fn test_elias_fano() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
-    for (n, u) in [(100, 1000), (100, 100), (1000, 100)] {
+    for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
         let mut values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
 
         values.sort();
@@ -92,13 +91,29 @@ fn test_elias_fano() -> Result<()> {
         }
 
         for from in 0..ef.len() {
-            dbg!(from);
             let mut iterator = ef.iter_from(from).enumerate();
             while let Some((i, v)) = iterator.next() {
                 assert_eq!(v, values[i + from]);
                 assert_eq!(iterator.len(), ef.len() - i - from - 1);
             }
         }
+
+        let last = values.last().unwrap();
+        let mut lower_bound = 0;
+        for (i, v) in (&values).iter().enumerate() {
+            if lower_bound > *v {
+                continue;
+            }
+            loop {
+                assert!(ef.succ(&lower_bound).unwrap() == (i, *v));
+                lower_bound += 1;
+                if lower_bound > values[i] {
+                    break;
+                }
+            }
+        }
+
+        assert_eq!(None, ef.succ(&(last + 1)));
     }
 
     Ok(())
