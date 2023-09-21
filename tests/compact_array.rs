@@ -13,7 +13,6 @@ use rand::SeedableRng;
 use std::sync::atomic::AtomicUsize;
 use sux::prelude::CompactArray;
 use sux::prelude::*;
-use sux::traits::UncheckedIterator;
 
 #[test]
 fn test_compact_array() {
@@ -46,9 +45,9 @@ fn test_compact_array() {
 
             for from in 0..cp.len() {
                 let mut iter = cp.iter_val_from_unchecked(from);
-                for i in from..cp.len() {
+                for v in &values[from..] {
                     unsafe {
-                        assert_eq!(iter.next_unchecked(), values[i]);
+                        assert_eq!(iter.next_unchecked(), *v);
                     }
                 }
             }

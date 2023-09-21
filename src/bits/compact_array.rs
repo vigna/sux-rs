@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::{prelude::*, traits::UncheckedIterator};
+use crate::prelude::*;
 use anyhow::Result;
 use epserde::*;
 use std::sync::atomic::{compiler_fence, fence, AtomicUsize, Ordering};
@@ -165,7 +165,7 @@ impl<'a, B: AsRef<[usize]>> CompactArrayUncheckedIterator<'a, B> {
     }
 }
 
-impl<'a, B: AsRef<[usize]>> UncheckedIterator for CompactArrayUncheckedIterator<'a, B> {
+impl<'a, B: AsRef<[usize]>> UncheckedValueIterator for CompactArrayUncheckedIterator<'a, B> {
     type Item = usize;
     unsafe fn next_unchecked(&mut self) -> usize {
         if self.fill >= self.array.bit_width {
@@ -186,12 +186,13 @@ impl<'a, B: AsRef<[usize]>> UncheckedIterator for CompactArrayUncheckedIterator<
     }
 }
 
-impl<B: AsRef<[usize]>> VSliceIntoValIterUnchecked for CompactArray<B> {
-    type IntoValIter<'a> = CompactArrayUncheckedIterator<'a, B>
+impl<B: AsRef<[usize]>> IntoUncheckedValueIterator for CompactArray<B> {
+    type Item = usize;
+    type IntoUncheckedValueIter<'a> = CompactArrayUncheckedIterator<'a, B>
         where B:'a;
 
-    fn iter_val_from_unchecked(&self, from: usize) -> Self::IntoValIter<'_> {
-        CompactArrayUncheckedIterator::new(&self, from)
+    fn iter_val_from_unchecked(&self, from: usize) -> Self::IntoUncheckedValueIter<'_> {
+        CompactArrayUncheckedIterator::new(self, from)
     }
 }
 
@@ -232,12 +233,13 @@ impl<'a, B: AsRef<[usize]>> ExactSizeIterator for CompactArrayIterator<'a, B> {
     }
 }
 
-impl<B: AsRef<[usize]>> VSliceIntoValIter for CompactArray<B> {
-    type IntoValIter<'a> = CompactArrayIterator<'a, B>
+impl<B: AsRef<[usize]>> IntoValueIterator for CompactArray<B> {
+    type Item = usize;
+    type IntoValueIter<'a> = CompactArrayIterator<'a, B>
         where B:'a;
 
-    fn iter_val_from(&self, from: usize) -> Self::IntoValIter<'_> {
-        CompactArrayIterator::new(&self, from)
+    fn iter_val_from(&self, from: usize) -> Self::IntoValueIter<'_> {
+        CompactArrayIterator::new(self, from)
     }
 }
 

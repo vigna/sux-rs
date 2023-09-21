@@ -303,8 +303,7 @@ fn count_sort<T: Copy + Clone, F: Fn(&T) -> usize>(
     if num_keys == 1 {
         return (vec![data.len()], vec![0, data.len()]);
     }
-    let mut counts = Vec::new();
-    counts.resize(num_keys, 0);
+    let mut counts = vec![0; num_keys];
 
     for sig in &*data {
         counts[key(sig)] += 1;

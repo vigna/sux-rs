@@ -16,7 +16,7 @@ return an owned value---not a reference.
 
 Implementing the [`core::ops::Index`]/[`core::ops::IndexMut`] traits
 would be more natural and practical, but in certain cases it is impossible:
-in our main use case, [`CompactArray`](crate::bits::compact_array::CompactArray)
+in our main use case, [`CompactArray`]
 we cannot implement [`core::ops::Index`] because there is no way to
 return a reference to a bit segment
 (see, e.g., [BitSlice](https://docs.rs/bitvec/latest/bitvec/slice/struct.BitSlice.html)).
@@ -34,6 +34,8 @@ and `&[AtomicUsize]` that view their elements as values with a bit width
 equal to that of `usize`. The implementations based on atomic types implements
 [`VSliceAtomic`].
 */
+
+use crate::prelude::*;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use std::iter::Copied;
 
@@ -70,8 +72,6 @@ macro_rules! panic_if_value {
 }
 pub(crate) use panic_if_value;
 
-use super::UncheckedIterator;
-
 macro_rules! debug_assert_bounds {
     ($index: expr, $len: expr) => {
         debug_assert!(
@@ -99,30 +99,6 @@ pub trait VSlice: VSliceCore {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_unchecked(index) }
     }
-}
-
-pub trait VSliceIntoValIter: VSliceCore {
-    type IntoValIter<'a>: Iterator<Item = usize> + ExactSizeIterator<Item = usize> + 'a
-    where
-        Self: 'a;
-
-    fn iter_val(&self) -> Self::IntoValIter<'_> {
-        self.iter_val_from(0)
-    }
-
-    fn iter_val_from(&self, from: usize) -> Self::IntoValIter<'_>;
-}
-
-pub trait VSliceIntoValIterUnchecked: VSliceCore {
-    type IntoValIter<'a>: UncheckedIterator<Item = usize> + 'a
-    where
-        Self: 'a;
-
-    fn iter_val_unchecked(&self) -> Self::IntoValIter<'_> {
-        self.iter_val_from_unchecked(0)
-    }
-
-    fn iter_val_from_unchecked(&self, from: usize) -> Self::IntoValIter<'_>;
 }
 
 /// A mutable value slice.
@@ -217,16 +193,17 @@ impl<T: AsRef<[usize]>> VSlice for T {
     }
 }
 
-impl<T: AsRef<[usize]>> VSliceIntoValIter for T {
-    type IntoValIter<'a> = Copied<core::slice::Iter<'a, usize>>
+impl<T: AsRef<[usize]>> IntoValueIterator for T {
+    type Item = usize;
+    type IntoValueIter<'a> = Copied<core::slice::Iter<'a, usize>>
         where
             T: 'a;
     #[inline(always)]
-    fn iter_val(&self) -> Self::IntoValIter<'_> {
+    fn iter_val(&self) -> Self::IntoValueIter<'_> {
         <Self as AsRef<[usize]>>::as_ref(self).iter().copied()
     }
 
-    fn iter_val_from(&self, from: usize) -> Self::IntoValIter<'_> {
+    fn iter_val_from(&self, from: usize) -> Self::IntoValueIter<'_> {
         <Self as AsRef<[usize]>>::as_ref(self)[from..]
             .iter()
             .copied()
