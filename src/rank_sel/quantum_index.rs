@@ -54,7 +54,7 @@ impl<
             // skip the word if we can
             while number_of_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
-                let index = (i * 64) + in_word_index;
+                let index = (i * usize::BITS as usize) + in_word_index;
                 self.ones.set(ones_index, index);
                 next_quantum += 1 << QUANTUM_LOG2;
                 ones_index += 1;
