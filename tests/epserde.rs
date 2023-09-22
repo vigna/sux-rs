@@ -27,7 +27,7 @@ fn test_epserde() -> Result<()> {
     v.serialize(&mut file)?;
     drop(file);
 
-    let w = <CompactArray<Vec<usize>>>::mmap(&tmp_file, epserde::des::Flags::empty()).unwrap();
+    let w = <CompactArray<Vec<usize>>>::mmap(&tmp_file, epserde::deser::Flags::empty()).unwrap();
 
     for i in 0..200 {
         assert_eq!(v.get(i), w.get(i));

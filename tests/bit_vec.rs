@@ -111,7 +111,7 @@ fn test_epserde() {
     b.serialize(&mut file).unwrap();
     drop(file);
 
-    let c = <BitVec<Vec<usize>>>::mmap(&tmp_file, epserde::des::Flags::empty()).unwrap();
+    let c = <BitVec<Vec<usize>>>::mmap(&tmp_file, epserde::deser::Flags::empty()).unwrap();
 
     for i in 0..200 {
         assert_eq!(b.get(i), c.get(i));

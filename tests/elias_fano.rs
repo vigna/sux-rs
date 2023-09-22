@@ -149,7 +149,7 @@ fn test_epsserde() -> Result<()> {
         let c = <EliasFano<
             QuantumIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
             CompactArray<Vec<usize>>,
-        >>::mmap(&tmp_file, epserde::des::Flags::empty())?;
+        >>::mmap(&tmp_file, epserde::deser::Flags::empty())?;
 
         for i in 0..n {
             assert_eq!(ef.get(i), c.get(i));
