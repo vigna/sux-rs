@@ -52,7 +52,7 @@ fn test_rear_coded_list() -> Result<()> {
     drop(file);
     println!("{}", schema.to_csv());
 
-    let c = <RearCodedList>::mmap(&tmp_file, epserde::des::Flags::empty())?;
+    let c = <RearCodedList>::mmap(&tmp_file, epserde::deser::Flags::empty())?;
 
     for (i, word) in words.iter().enumerate() {
         assert_eq!(&c.get(i), word);
