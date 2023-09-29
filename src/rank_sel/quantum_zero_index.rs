@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::traits::prelude::*;
+use crate::{bits::prelude::CountBitVec, traits::prelude::*};
 use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
@@ -29,7 +29,7 @@ use epserde::*;
 /// See [`QuantumIndex`](crate::rank_sel::QuantumIndex) for the same index for ones.
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct QuantumZeroIndex<
-    B: SelectZeroHinted,
+    B: SelectZeroHinted = CountBitVec,
     O: BitFieldSlice = Vec<usize>,
     const QUANTUM_LOG2: usize = 8,
 > {
@@ -40,7 +40,7 @@ pub struct QuantumZeroIndex<
 
 impl<
         B: SelectZeroHinted + AsRef<[usize]>,
-        O: BitFieldSlice + BitFieldSliceMut,
+        O: BitFieldSlice + BitFieldSliceMut + core::fmt::Debug,
         const QUANTUM_LOG2: usize,
     > QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
@@ -55,8 +55,7 @@ impl<
             while number_of_zeros + zeros_in_word > next_quantum {
                 let in_word_index = word.select_in_word((next_quantum - number_of_zeros) as usize);
                 let index = (i * usize::BITS as usize) + in_word_index;
-                if index >= self.len() as _ {
-                    //eprintln!("{}", &self.zeros);
+                if index >= <Self as BitLength>::len(self) as _ {
                     return Ok(());
                 }
                 self.zeros.set(zeros_index, index);

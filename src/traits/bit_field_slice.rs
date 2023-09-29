@@ -268,16 +268,3 @@ impl<T: AsMut<[usize]> + AsRef<[usize]>> BitFieldSliceMut for T {
         *self.as_mut().get_unchecked_mut(index) = value;
     }
 }
-
-impl Display for dyn BitFieldSlice {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("["))?;
-        if !self.is_empty() {
-            f.write_fmt(format_args!("{}", self.get(0)))?;
-            for i in 1..self.len() {
-                f.write_fmt(format_args!(", {}", self.get(i)))?;
-            }
-        }
-        f.write_fmt(format_args!("]"))
-    }
-}
