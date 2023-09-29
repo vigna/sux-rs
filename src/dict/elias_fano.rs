@@ -23,9 +23,6 @@ use anyhow::{bail, Result};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use epserde::*;
 
-/// The default combination of parameters return by the builders
-pub type DefaultEliasFano = EliasFano<CountBitVec, CompactArray>;
-
 /// A sequential builder for [`EliasFano`].
 ///
 /// After creating an instance, you can use [`EliasFanoBuilder::push`] to add new values.
@@ -96,7 +93,7 @@ impl EliasFanoBuilder {
         self.last_value = value;
     }
 
-    pub fn build(self) -> DefaultEliasFano {
+    pub fn build(self) -> EliasFano {
         EliasFano {
             u: self.u,
             n: self.n,
@@ -157,7 +154,7 @@ impl EliasFanoAtomicBuilder {
         self.high_bits.set(high, true, order);
     }
 
-    pub fn build(self) -> DefaultEliasFano {
+    pub fn build(self) -> EliasFano {
         let bit_vec: BitVec<Vec<usize>> = self.high_bits.into();
         EliasFano {
             u: self.u,
@@ -170,7 +167,7 @@ impl EliasFanoAtomicBuilder {
 }
 
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct EliasFano<H, L> {
+pub struct EliasFano<H = CountBitVec, L = CompactArray> {
     /// An upper bound to the values.
     u: usize,
     /// The number of values.

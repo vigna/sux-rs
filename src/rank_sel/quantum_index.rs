@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::traits::prelude::*;
+use crate::{bits::prelude::CountBitVec, traits::prelude::*};
 use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
@@ -29,7 +29,7 @@ use epserde::*;
 /// See [`QuantumZeroIndex`](crate::rank_sel::QuantumZeroIndex) for the same index for zeros.
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct QuantumIndex<
-    B: SelectHinted,
+    B: SelectHinted = CountBitVec,
     O: BitFieldSlice = Vec<usize>,
     const QUANTUM_LOG2: usize = 8,
 > {
