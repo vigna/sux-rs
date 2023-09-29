@@ -255,6 +255,116 @@ impl BitVec<Vec<AtomicUsize>> {
     }
 }
 
+impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
+    fn count(&self) -> usize {
+        self.data
+            .as_ref()
+            .iter()
+            .map(|w| w.count_ones() as usize)
+            .sum()
+    }
+}
+
+impl<B: AsRef<[usize]>> Select for BitVec<B> {
+    #[inline(always)]
+    unsafe fn select_unchecked(&self, rank: usize) -> usize {
+        self.select_hinted_unchecked(rank, 0, 0)
+    }
+}
+
+impl<B: AsRef<[usize]>> SelectHinted for BitVec<B> {
+    unsafe fn select_hinted_unchecked(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
+        let mut word_index = pos / BITS;
+        let bit_index = pos % BITS;
+        let mut residual = rank - rank_at_pos;
+        let mut word = (self.data.get_unchecked(word_index) >> bit_index) << bit_index;
+        loop {
+            let bit_count = word.count_ones() as usize;
+            if residual < bit_count {
+                break;
+            }
+            word_index += 1;
+            word = self.data.get_unchecked(word_index);
+            residual -= bit_count;
+        }
+
+        word_index * BITS + word.select_in_word(residual)
+    }
+
+    fn select_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
+        let mut word_index = pos / BITS;
+        let bit_index = pos % BITS;
+        let mut residual = rank - rank_at_pos;
+        let mut word = (self.data.as_ref().get(word_index)? >> bit_index) << bit_index;
+        loop {
+            let bit_count = word.count_ones() as usize;
+            if residual < bit_count {
+                break;
+            }
+            word_index += 1;
+            word = *self.data.as_ref().get(word_index)?;
+            residual -= bit_count;
+        }
+
+        Some(word_index * BITS + word.select_in_word(residual))
+    }
+}
+
+impl<B: AsRef<[usize]>> SelectZero for BitVec<B> {
+    #[inline(always)]
+    unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
+        self.select_zero_hinted_unchecked(rank, 0, 0)
+    }
+}
+
+impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
+    unsafe fn select_zero_hinted_unchecked(
+        &self,
+        rank: usize,
+        pos: usize,
+        rank_at_pos: usize,
+    ) -> usize {
+        let mut word_index = pos / BITS;
+        let bit_index = pos % BITS;
+        let mut residual = rank - rank_at_pos;
+        let mut word = (!self.data.get_unchecked(word_index) >> bit_index) << bit_index;
+        loop {
+            let bit_count = word.count_ones() as usize;
+            if residual < bit_count {
+                break;
+            }
+            word_index += 1;
+            word = !self.data.get_unchecked(word_index);
+            residual -= bit_count;
+        }
+
+        word_index * BITS + word.select_in_word(residual)
+    }
+
+    fn select_zero_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
+        let mut word_index = pos / BITS;
+        let bit_index = pos % BITS;
+        let mut residual = rank - rank_at_pos;
+        let mut word = (!self.data.as_ref().get(word_index)? >> bit_index) << bit_index;
+        loop {
+            let bit_count = word.count_ones() as usize;
+            if residual < bit_count {
+                break;
+            }
+            word_index += 1;
+            word = !*self.data.as_ref().get(word_index)?;
+            residual -= bit_count;
+        }
+
+        let result = word_index * BITS + word.select_in_word(residual);
+        if result >= self.len() {
+            None
+        } else {
+            Some(result)
+        }
+    }
+}
+
 /// An immutable bit vector that returns the number of ones.
 #[derive(Epserde, Debug)]
 pub struct CountBitVec<B = Vec<usize>> {
@@ -263,10 +373,17 @@ pub struct CountBitVec<B = Vec<usize>> {
     number_of_ones: usize,
 }
 
-impl<B> BitLength for CountBitVec<B> {
+impl<B> CountBitVec<B> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
+    }
+}
+
+impl<B> BitLength for CountBitVec<B> {
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len()
     }
 }
 
@@ -346,6 +463,24 @@ impl<B: AsRef<[usize]>> SelectHinted for CountBitVec<B> {
 
         word_index * BITS + word.select_in_word(residual)
     }
+
+    fn select_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
+        let mut word_index = pos / BITS;
+        let bit_index = pos % BITS;
+        let mut residual = rank - rank_at_pos;
+        let mut word = (self.data.as_ref().get(word_index)? >> bit_index) << bit_index;
+        loop {
+            let bit_count = word.count_ones() as usize;
+            if residual < bit_count {
+                break;
+            }
+            word_index += 1;
+            word = *self.data.as_ref().get(word_index)?;
+            residual -= bit_count;
+        }
+
+        Some(word_index * BITS + word.select_in_word(residual))
+    }
 }
 
 impl<B: AsRef<[usize]>> SelectZero for CountBitVec<B> {
@@ -377,6 +512,29 @@ impl<B: AsRef<[usize]>> SelectZeroHinted for CountBitVec<B> {
         }
 
         word_index * BITS + word.select_in_word(residual)
+    }
+
+    fn select_zero_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
+        let mut word_index = pos / BITS;
+        let bit_index = pos % BITS;
+        let mut residual = rank - rank_at_pos;
+        let mut word = (!self.data.as_ref().get(word_index)? >> bit_index) << bit_index;
+        loop {
+            let bit_count = word.count_ones() as usize;
+            if residual < bit_count {
+                break;
+            }
+            word_index += 1;
+            word = !*self.data.as_ref().get(word_index)?;
+            residual -= bit_count;
+        }
+
+        let result = word_index * BITS + word.select_in_word(residual);
+        if result >= self.len() {
+            None
+        } else {
+            Some(result)
+        }
     }
 }
 
