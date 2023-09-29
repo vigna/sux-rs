@@ -321,14 +321,14 @@ impl CountBitVec<Vec<usize>> {
     }
 }
 
-impl<B: BitFieldSlice> Select for CountBitVec<B> {
+impl<B: AsRef<[usize]>> Select for CountBitVec<B> {
     #[inline(always)]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         self.select_hinted_unchecked(rank, 0, 0)
     }
 }
 
-impl<B: BitFieldSlice> SelectHinted for CountBitVec<B> {
+impl<B: AsRef<[usize]>> SelectHinted for CountBitVec<B> {
     unsafe fn select_hinted_unchecked(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
         let mut word_index = pos / BITS;
         let bit_index = pos % BITS;
@@ -348,14 +348,14 @@ impl<B: BitFieldSlice> SelectHinted for CountBitVec<B> {
     }
 }
 
-impl<B: BitFieldSlice> SelectZero for CountBitVec<B> {
+impl<B: AsRef<[usize]>> SelectZero for CountBitVec<B> {
     #[inline(always)]
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
         self.select_zero_hinted_unchecked(rank, 0, 0)
     }
 }
 
-impl<B: BitFieldSlice> SelectZeroHinted for CountBitVec<B> {
+impl<B: AsRef<[usize]>> SelectZeroHinted for CountBitVec<B> {
     unsafe fn select_zero_hinted_unchecked(
         &self,
         rank: usize,
