@@ -108,6 +108,11 @@ impl<B: SelectHinted + SelectZeroHinted, O: BitFieldSlice, const QUANTUM_LOG2: u
         self.bits
             .select_zero_hinted_unchecked(rank, pos, rank_at_pos)
     }
+
+    #[inline(always)]
+    fn select_zero_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
+        self.bits.select_zero_hinted(rank, pos, rank_at_pos)
+    }
 }
 
 impl<B: SelectHinted + BitLength, O: BitFieldSlice, const QUANTUM_LOG2: usize> BitLength
