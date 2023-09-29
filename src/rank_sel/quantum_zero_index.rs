@@ -45,26 +45,26 @@ impl<
     > QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     fn build_zeros(&mut self) -> Result<()> {
-        let mut number_of_ones = 0;
+        let mut number_of_zeros = 0;
         let mut next_quantum = 0;
-        let mut ones_index = 0;
+        let mut zeros_index = 0;
         for (i, mut word) in self.bits.as_ref().iter().copied().enumerate() {
             word = !word;
-            let ones_in_word = word.count_ones() as u64;
+            let zeros_in_word = word.count_ones() as u64;
             // skip the word if we can
-            while number_of_ones + ones_in_word > next_quantum {
-                let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
+            while number_of_zeros + zeros_in_word > next_quantum {
+                let in_word_index = word.select_in_word((next_quantum - number_of_zeros) as usize);
                 let index = (i * usize::BITS as usize) + in_word_index;
-                /*  if index >= self.len() as _ {
-                    eprintln!("{:?}", &self.zeros);
+                if index >= self.len() as _ {
+                    //eprintln!("{}", &self.zeros);
                     return Ok(());
-                }*/
-                self.zeros.set(ones_index, index);
+                }
+                self.zeros.set(zeros_index, index);
                 next_quantum += 1 << QUANTUM_LOG2;
-                ones_index += 1;
+                zeros_index += 1;
             }
 
-            number_of_ones += ones_in_word;
+            number_of_zeros += zeros_in_word;
         }
 
         Ok(())
@@ -97,16 +97,6 @@ impl<B: SelectZeroHinted + Select, O: BitFieldSlice, const QUANTUM_LOG2: usize> 
     #[inline(always)]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         self.bits.select_unchecked(rank)
-    }
-}
-
-/// If the underlying implementation has a hint for select, forward the methods
-impl<B: SelectZeroHinted + SelectHinted, O: BitFieldSlice, const QUANTUM_LOG2: usize> SelectHinted
-    for QuantumZeroIndex<B, O, QUANTUM_LOG2>
-{
-    #[inline(always)]
-    unsafe fn select_hinted_unchecked(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
-        self.bits.select_hinted_unchecked(rank, pos, rank_at_pos)
     }
 }
 
