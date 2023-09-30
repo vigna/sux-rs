@@ -17,8 +17,7 @@ Implementing the [`core::ops::Index`]/[`core::ops::IndexMut`] traits
 would be more natural and practical, but in certain cases it is impossible:
 in our main use case, [`CompactArray`],
 we cannot implement [`core::ops::Index`] because there is no way to
-return a reference to a bit segment
-(see, e.g., [BitSlice](https://docs.rs/bitvec/latest/bitvec/slice/struct.BitSlice.html)).
+return a reference to a bit segment.
 
 There are three end-user traits: [`BitFieldSlice`], [`BitFieldSliceMut`] and [`BitFieldSliceAtomic`].
 The trait [`BitFieldSliceCore`] contains the common methods, and in particular
@@ -87,7 +86,7 @@ macro_rules! debug_assert_bounds {
     };
 }
 
-/// A value slice.
+/// A slice of bit fields of constant bit width.
 pub trait BitFieldSlice: BitFieldSliceCore {
     /// Return the value at the specified index.
     ///
@@ -105,7 +104,7 @@ pub trait BitFieldSlice: BitFieldSliceCore {
     }
 }
 
-/// A mutable value slice.
+/// A mutable slice of bit fields of constant bit width.
 pub trait BitFieldSliceMut: BitFieldSliceCore {
     /// Set the element of the slice at the specified index.
     /// No bounds checking is performed.
@@ -117,7 +116,6 @@ pub trait BitFieldSliceMut: BitFieldSliceCore {
     unsafe fn set_unchecked(&mut self, index: usize, value: usize);
 
     /// Set the element of the slice at the specified index.
-    ///
     ///
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
@@ -133,7 +131,10 @@ pub trait BitFieldSliceMut: BitFieldSliceCore {
     }
 }
 
-/// A thread-safe value slice supporting atomic operations.
+/// A thread-safe slice of bit fields of constant bit width supporting atomic operations.
+///
+/// Different implementations might provide different atomicity guarantees. See
+/// [`CompactArray`] for an example.
 pub trait BitFieldSliceAtomic: BitFieldSliceCore {
     /// Return the value at the specified index.
     ///
@@ -160,7 +161,6 @@ pub trait BitFieldSliceAtomic: BitFieldSliceCore {
     unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering);
 
     /// Set the element of the slice at the specified index.
-    ///
     ///
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.

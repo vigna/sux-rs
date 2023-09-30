@@ -42,7 +42,8 @@ pub trait IntoValueIterator {
     fn iter_val_from(&self, from: usize) -> Self::IntoValueIter<'_>;
 }
 
-/// A trait for types that can generate an (unchecked iterator on values)[UncheckedValueIterator], rather than on references.
+/// A trait for types that can generate an
+/// (unchecked iterator on values)[UncheckedValueIterator], rather than on references.
 pub trait IntoUncheckedValueIterator {
     type Item;
     type IntoUncheckedValueIter<'a>: UncheckedValueIterator<Item = Self::Item> + 'a

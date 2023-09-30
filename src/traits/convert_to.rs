@@ -5,22 +5,20 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! # Traits
-//! This modules contains basic traits related to succinct data structures.
-//!
-//! Traits are collected into a module so you can do `use sux::traits::*;`
-//! for ease of use.
+//! Custom conversion trait.
 
 use anyhow::Result;
 use std::sync::atomic::{AtomicU64, AtomicUsize};
 
 /// Like [`Into`], but we need to avoid the orphan rule and error
-/// [E0210](https://github.com/rust-lang/rust/blob/master/compiler/rustc_error_codes/src/error_codes/E0210.md)
+/// [E0210](https://github.com/rust-lang/rust/blob/master/compiler/rustc_error_codes/src/error_codes/E0210.md).
 ///
 /// Reference: <https://rust-lang.github.io/chalk/book/clauses/coherence.html>
 ///
 /// We provide implementations between vectors and (mutable) references to slices of atomic and non-atomic integers
 /// of type `u64` and `usize`.
+///
+/// Other structures, such as [`EliasFano`](crate::dict::elias_fano::EliasFano), use this trait to add features to a basic implementation.
 pub trait ConvertTo<B> {
     fn convert_to(self) -> Result<B>;
 }
