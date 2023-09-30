@@ -5,6 +5,13 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+/*!
+
+Traits for indexed dictionaries, possibly with support for additional
+operations such as predecessor and successor.
+
+*/
+
 /**
 
 A dictionary of values indexed by a `usize`.
