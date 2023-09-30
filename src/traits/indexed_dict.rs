@@ -21,8 +21,8 @@ compressed structures (see, e.g., [rear-coded lists](crate::dict::rear_coded_lis
 
 */
 pub trait IndexedDict {
-    type Output: PartialEq<Self::Input> + PartialEq;
     type Input: PartialEq<Self::Output> + PartialEq + ?Sized;
+    type Output: PartialEq<Self::Input> + PartialEq;
 
     /// The type of the iterator returned by [`iter`](`IndexedDict::iter`).
     /// and [`iter_from`](`IndexedDict::iter_from`).
@@ -107,8 +107,8 @@ where
 /// Predecessor computation for dictionaries whoses value are monotonically increasing.
 pub trait Pred: IndexedDict
 where
-    Self::Output: PartialOrd<Self::Input> + PartialOrd,
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
+    Self::Output: PartialOrd<Self::Input> + PartialOrd,
 {
     /// Return the index of the predecessor and the predecessor
     /// of the given value, or `None` if there is no predecessor.
