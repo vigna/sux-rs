@@ -12,5 +12,5 @@ pub mod rear_coded_list;
 
 pub mod prelude {
     pub use super::elias_fano::*;
-    pub use super::rear_coded_list::*;
+    pub use super::rear_coded_list::{RearCodedList, RearCodedListBuilder};
 }

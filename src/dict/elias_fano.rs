@@ -233,6 +233,8 @@ let efo: EliasFano<QuantumIndex<CountBitVec>, CompactArray> =
 let efoz: EliasFano<QuantumZeroIndex<QuantumIndex<CountBitVec>>, CompactArray> =
     efo.convert_to().unwrap();
 ```
+You have either of the indices, both, or none of them, but in the latter
+case all operations will be very slow, except iterating over the whole sequence.
 
 The main trait implemented is [`IndexedDict`], which
 makes it possible to access values with [`IndexedDict::get`].

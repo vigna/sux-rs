@@ -10,16 +10,16 @@ use sux::prelude::*;
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks compact arrays", long_about = None)]
 struct Args {
-    /// The width of the elements of the array
+    /// The width of the elements of the array.
     width: usize,
-    /// The base-2 logarith of the length of the array
+    /// The base-2 logarithm of the length of the array.
     log2_size: usize,
 
-    /// The number of test repetitions
+    /// The number of test repetitions.
     #[arg(short, long, default_value = "10")]
     repeats: usize,
 
-    /// The number of elements to get and set
+    /// The number of elements to get and set.
     #[arg(short, long, default_value = "10000000")]
     n: usize,
 }

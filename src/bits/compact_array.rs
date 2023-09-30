@@ -11,29 +11,31 @@ use std::sync::atomic::{compiler_fence, fence, AtomicUsize, Ordering};
 
 const BITS: usize = core::mem::size_of::<usize>() * 8;
 
-/// A fixed-length array of values of bounded bit width.
-///
-/// Elements are stored contiguously, with no padding bits (in particular,
-/// unless the bit width is a power of two some elements will be stored
-/// across word boundaries).
-///
-/// We provide implementations
-/// based on `AsRef<[usize]>`, `AsMut<[usize]>`, and
-/// `AsRef<[AtomicUsize]>`. They implement
-/// [`BitFieldSlice`], [`BitFieldSliceMut`], and [`BitFieldSliceAtomic`], respectively. Constructors are provided
-/// for storing data in a [`Vec<usize>`](CompactArray::new) (for the first
-/// two implementations) or in a
-/// [`Vec<AtomicUsize>`](CompactArray::new_atomic) (for the third implementation).
-///
-/// In the latter case we can provide some concurrency guarantees,
-/// albeit not full-fledged thread safety: more precisely, we can
-/// guarantee thread-safety if the bit width is a power of two; otherwise,
-/// concurrent writes to values that cross word boundaries might end
-/// up in different threads succeding in writing only part of a value.
-/// If the user can guarantee that no two threads ever write to the same
-/// boundary-crossing value, then no race condition can happen.
-///
+/**
 
+A fixed-length array of values of bounded bit width.
+
+Elements are stored contiguously, with no padding bits (in particular,
+unless the bit width is a power of two some elements will be stored
+across word boundaries).
+
+We provide implementations
+based on `AsRef<[usize]>`, `AsMut<[usize]>`, and
+`AsRef<[AtomicUsize]>`. They implement
+[`BitFieldSlice`], [`BitFieldSliceMut`], and [`BitFieldSliceAtomic`], respectively. Constructors are provided
+for storing data in a [`Vec<usize>`](CompactArray::new) (for the first
+two implementations) or in a
+[`Vec<AtomicUsize>`](CompactArray::new_atomic) (for the third implementation).
+
+In the latter case we can provide some concurrency guarantees,
+albeit not full-fledged thread safety: more precisely, we can
+guarantee thread-safety if the bit width is a power of two; otherwise,
+concurrent writes to values that cross word boundaries might end
+up in different threads succeding in writing only part of a value.
+If the user can guarantee that no two threads ever write to the same
+boundary-crossing value, then no race condition can happen.
+
+*/
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CompactArray<B = Vec<usize>> {
     /// The underlying storage.

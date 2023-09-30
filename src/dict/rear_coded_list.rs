@@ -34,53 +34,52 @@ struct Stats {
     pub redundancy: isize,
 }
 
+/*
+
+Immutable lists of strings compressed by prefix-omission by rear coding.
+
+Prefix omission compresses a list of strings omitting the common prefixes
+of consecutive strings. To do so, it stores the length of what remains
+after the common prefix (hence, rear coding).
+
+The encoding is done in blocks of `k` strings: in each block the first string is encoded
+without compression, wheres the other strings are encoded with the common prefix
+removed.
+
+*/
 #[derive(Debug, Clone, Epserde)]
-/// Rear coded list, it takes a list of strings and encode them in a way that
-/// the common prefix between strings is encoded only once.
-///
-/// The encoding is done in blocks of k strings, the first string is encoded
-/// without compression, the other strings are encoded with the common prefix
-/// removed.
-///
-/// The encoding is done in a way that the encoded strings are \0 terminated
-/// and the pointers to the start of the strings are stored in a separate
-/// structure `Ptr`. This structure could be either arrays, possibly memory-mapped,
-/// of different sized of ptrs, or Elias-Fano, or any other structure that can
-/// store monotone increasing integers.
 pub struct RearCodedList<D: AsRef<[u8]> = Vec<u8>, P: AsRef<[usize]> = Vec<usize>> {
-    /// The number of strings in a block, this regulates the compression vs
-    /// decompression speed tradeoff
+    /// The number of strings in a block; this value trades off compression for speed.
     k: usize,
-    /// Number of encoded strings
+    /// Number of encoded strings.
     len: usize,
-    /// If the strings in the RearCodedList are sorted
+    /// Whether the strings are sorted.
     is_sorted: bool,
-    /// The encoded strings \0 terminated
+    /// The encoded strings, `\0`-terminated.
     data: D,
-    /// The pointer to in which byte the k-th string start
+    /// The pointer to the starting string of each block.
     pointers: P,
 }
 
 pub struct RearCodedListBuilder {
-    /// The encoded strings \0 terminated
-    data: Vec<u8>,
-    /// The pointer to in which byte the k-th string start
-    pointers: Vec<usize>,
-    /// If the strings in the RearCodedList are sorted
-    is_sorted: bool,
-    /// The number of strings in a block, this regulates the compression vs
-    /// decompression speed tradeoff
+    /// The number of strings in a block; this value trades off compression for speed.
     k: usize,
-    /// Statistics of the encoded data
-    stats: Stats,
-    /// Number of encoded strings
+    /// Number of encoded strings.
     len: usize,
-    /// Cache of the last encoded string for incremental encoding
+    /// Whether the strings are sorted.
+    is_sorted: bool,
+    /// The encoded strings, `\0`-terminated.
+    data: Vec<u8>,
+    /// The pointer to the starting string of each block.
+    pointers: Vec<usize>,
+    /// Statistics of the encoded data.
+    stats: Stats,
+    /// Cache of the last encoded string for incremental encoding.
     last_str: Vec<u8>,
 }
 
-/// Copy a string until the first \0 from `data` to `result` and return the
-/// remaining data
+/// Copy a string until the first `\0` from `data` to `result` and return the
+/// remaining data.
 #[inline(always)]
 fn strcpy<'a>(mut data: &'a [u8], result: &mut Vec<u8>) -> &'a [u8] {
     loop {
@@ -95,7 +94,7 @@ fn strcpy<'a>(mut data: &'a [u8], result: &mut Vec<u8>) -> &'a [u8] {
 }
 
 #[inline(always)]
-/// strcmp but string is a rust string and data is a \0 terminated string
+/// strcmp but string is a Rust string and data is a `\0`-terminated string.
 fn strcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
     for (i, c) in string.iter().enumerate() {
         match data[i].cmp(c) {
@@ -108,7 +107,7 @@ fn strcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
 }
 
 #[inline(always)]
-/// strcmp but both string are rust strings
+/// strcmp but both string are Rust strings.
 fn strcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
     for (i, c) in string.iter().enumerate() {
         match other.get(i).unwrap_or(&0).cmp(c) {
@@ -121,9 +120,6 @@ fn strcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
 }
 
 impl RearCodedListBuilder {
-    /// Create a new empty RearCodedList where the block size is `k`.
-    /// This means that the first string every `k` is encoded without compression,
-    /// the other strings are encoded with the common prefix removed.
     #[inline]
     pub fn new(k: usize) -> Self {
         Self {
@@ -138,7 +134,6 @@ impl RearCodedListBuilder {
     }
 
     #[inline]
-    /// Consume the builder and return a RearCodedList
     pub fn build(self) -> RearCodedList<Vec<u8>, Vec<usize>> {
         RearCodedList {
             data: self.data,
@@ -157,7 +152,7 @@ impl RearCodedListBuilder {
     }
 
     #[inline]
-    /// Append a string to the end of the list
+    /// Encode and append a string to the end of the list.
     pub fn push<S: AsRef<str>>(&mut self, string: S) {
         let string = string.as_ref();
         // update stats
@@ -215,7 +210,7 @@ impl RearCodedListBuilder {
 
     #[inline]
     /// Append all the strings from an iterator to the end of the list
-    pub fn extend<S: AsRef<str>, I: Iterator<Item = S>>(&mut self, iter: I) {
+    pub fn extend<S: AsRef<str>, I: std::iter::Iterator<Item = S>>(&mut self, iter: I) {
         for string in iter {
             self.push(string);
         }
@@ -292,8 +287,8 @@ impl RearCodedListBuilder {
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
-    /// Write the index-th string to `result` as bytes. This is done to avoid
-    /// allocating a new string for every query and skipping the utf-8 validity
+    /// Write the index-th string to `result` as bytes. This is useful to avoid
+    /// allocating a new string for every query and skipping the UTF-8 validity
     /// check.
     #[inline(always)]
     pub fn get_inplace(&self, index: usize, result: &mut Vec<u8>) {
@@ -379,7 +374,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
     type OutputValue = String;
     type InputValue = str;
-    type Iterator<'a> = RCAIter<'a, D, P>
+    type Iterator<'a> = Iterator<'a, D, P>
     where
         Self: 'a;
 
@@ -395,18 +390,18 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
     }
 
     #[inline(always)]
-    fn iter(&self) -> RCAIter<'_, D, P> {
-        RCAIter::new(self)
+    fn iter(&self) -> Iterator<'_, D, P> {
+        Iterator::new(self)
     }
 
     #[inline(always)]
-    fn iter_from(&self, start_index: usize) -> RCAIter<'_, D, P> {
-        RCAIter::new_from(self, start_index)
+    fn iter_from(&self, start_index: usize) -> Iterator<'_, D, P> {
+        Iterator::new_from(self, start_index)
     }
 
     /// Return whether the string is contained in the array.
-    /// If the RCA is sorted, this will use a binary search, otherwise it will
-    /// use a linear search.
+    /// If the strings in the list are sorted this is done with a binary search,
+    /// otherwise it is done with a linear search.
     #[inline]
     fn contains(&self, string: &Self::InputValue) -> bool {
         if self.is_sorted {
@@ -417,15 +412,15 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
     }
 }
 
-/// Sequential iterator over the strings
-pub struct RCAIter<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
+/// Sequential iterator over the strings.
+pub struct Iterator<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
     rca: &'a RearCodedList<D, P>,
     buffer: Vec<u8>,
     data: &'a [u8],
     index: usize,
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> RCAIter<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
     pub fn new(rca: &'a RearCodedList<D, P>) -> Self {
         Self {
             rca,
@@ -440,7 +435,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> RCAIter<'a, D, P> {
         let offset = start_index % rca.k;
 
         let start = rca.pointers.as_ref()[block];
-        let mut res = RCAIter {
+        let mut res = Iterator {
             rca,
             index: start_index,
             data: &rca.data.as_ref()[start..],
@@ -453,7 +448,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> RCAIter<'a, D, P> {
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator for RCAIter<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iterator<'a, D, P> {
     type Item = String;
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -462,7 +457,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator for RCAIter<'a, D, P> {
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> RCAIter<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
     #[inline]
     /// A next that returns a reference to the inner buffer containg the string.
     /// This is useful to avoid allocating a new string for every query if you
@@ -487,16 +482,15 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> RCAIter<'a, D, P> {
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeIterator for RCAIter<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeIterator for Iterator<'a, D, P> {
     fn len(&self) -> usize {
         self.rca.len() - self.index
     }
 }
 
 #[inline(always)]
-/// Compute the longest common prefix between two strings as bytes
+/// Compute the longest common prefix between two strings as bytes.
 fn longest_common_prefix(a: &[u8], b: &[u8]) -> (usize, core::cmp::Ordering) {
-    // ofc the lcp is at most the len of the minimum string
     let min_len = a.len().min(b.len());
     // normal lcp computation
     let mut i = 0;
@@ -509,25 +503,6 @@ fn longest_common_prefix(a: &[u8], b: &[u8]) -> (usize, core::cmp::Ordering) {
     } else {
         (i, a.len().cmp(&b.len()))
     }
-}
-
-#[cfg(test)]
-#[cfg_attr(test, test)]
-fn test_longest_common_prefix() {
-    let str1 = b"absolutely";
-    let str2 = b"absorption";
-    assert_eq!(
-        longest_common_prefix(str1, str2),
-        (4, core::cmp::Ordering::Less),
-    );
-    assert_eq!(
-        longest_common_prefix(str1, str1),
-        (str1.len(), core::cmp::Ordering::Equal)
-    );
-    assert_eq!(
-        longest_common_prefix(str2, str2),
-        (str2.len(), core::cmp::Ordering::Equal)
-    );
 }
 
 /// Compute the length in bytes of value encoded as VByte
@@ -734,4 +709,23 @@ fn test_encode_decode_int() {
         data = tmp;
         assert_eq!(i, j);
     }
+}
+
+#[cfg(test)]
+#[cfg_attr(test, test)]
+fn test_longest_common_prefix() {
+    let str1 = b"absolutely";
+    let str2 = b"absorption";
+    assert_eq!(
+        longest_common_prefix(str1, str2),
+        (4, core::cmp::Ordering::Less),
+    );
+    assert_eq!(
+        longest_common_prefix(str1, str1),
+        (str1.len(), core::cmp::Ordering::Equal)
+    );
+    assert_eq!(
+        longest_common_prefix(str2, str2),
+        (str2.len(), core::cmp::Ordering::Equal)
+    );
 }
