@@ -133,7 +133,7 @@ fn test_epsserde() -> Result<()> {
             efb.push(*value)?;
         }
         // Finish the creation of elias-fano
-        let ef: DefaultEliasFano = efb.build();
+        let ef: EliasFano = efb.build();
         // Add the ones indices
         let ef: EliasFano<
             QuantumIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
