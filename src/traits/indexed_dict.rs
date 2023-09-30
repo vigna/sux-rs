@@ -21,12 +21,12 @@ compressed structures (see, e.g., [rear-coded lists](crate::dict::rear_coded_lis
 
 */
 pub trait IndexedDict {
-    type OutputValue: PartialEq<Self::InputValue> + PartialEq;
-    type InputValue: PartialEq<Self::OutputValue> + PartialEq + ?Sized;
+    type Output: PartialEq<Self::Input> + PartialEq;
+    type Input: PartialEq<Self::Output> + PartialEq + ?Sized;
 
     /// The type of the iterator returned by [`iter`](`IndexedDict::iter`).
     /// and [`iter_from`](`IndexedDict::iter_from`).
-    type Iterator<'a>: ExactSizeIterator<Item = Self::OutputValue> + 'a
+    type Iterator<'a>: ExactSizeIterator<Item = Self::Output> + 'a
     where
         Self: 'a;
 
@@ -34,7 +34,7 @@ pub trait IndexedDict {
     ///
     /// # Panics
     /// May panic if the index is not in in [0..[len](`IndexedDict::len`)).
-    fn get(&self, index: usize) -> Self::OutputValue {
+    fn get(&self, index: usize) -> Self::Output {
         if index >= self.len() {
             panic!("Index out of bounds: {} >= {}", index, self.len())
         } else {
@@ -46,13 +46,13 @@ pub trait IndexedDict {
     ///
     /// # Safety
     /// `index` must be in [0..[len](`IndexedDict::len`)). No bounds checking is performed.
-    unsafe fn get_unchecked(&self, index: usize) -> Self::OutputValue;
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Output;
 
     /// Return true if the dictionary contains the given value.
     ///
     /// The default implementations just checks iteratively
     /// if the value is equal to any of the values in the dictionary.
-    fn contains(&self, value: &Self::InputValue) -> bool {
+    fn contains(&self, value: &Self::Input) -> bool {
         for i in 0..self.len() {
             if self.get(i) == *value {
                 return true;
@@ -79,14 +79,14 @@ pub trait IndexedDict {
 /// Successor computation for dictionaries whose values are monotonically increasing.
 pub trait Succ: IndexedDict
 where
-    Self::OutputValue: PartialOrd<Self::InputValue> + PartialOrd,
-    Self::InputValue: PartialOrd<Self::OutputValue> + PartialOrd,
+    Self::Output: PartialOrd<Self::Input> + PartialOrd,
+    Self::Input: PartialOrd<Self::Output> + PartialOrd,
 {
     /// Return the index of the successor and the successor
     /// of the given value, or `None` if there is no successor.
     /// The successor is the first value in the dictionary
     /// that is greater than or equal to the given value.
-    fn succ(&self, value: &Self::InputValue) -> Option<(usize, Self::OutputValue)> {
+    fn succ(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
         if self.is_empty() || value > &self.get(self.len() - 1) {
             None
         } else {
@@ -101,20 +101,20 @@ where
     ///
     /// # Safety
     /// The successors must exist.
-    unsafe fn succ_unchecked(&self, value: &Self::InputValue) -> (usize, Self::OutputValue);
+    unsafe fn succ_unchecked(&self, value: &Self::Input) -> (usize, Self::Output);
 }
 
 /// Predecessor computation for dictionaries whoses value are monotonically increasing.
 pub trait Pred: IndexedDict
 where
-    Self::OutputValue: PartialOrd<Self::InputValue> + PartialOrd,
-    Self::InputValue: PartialOrd<Self::OutputValue> + PartialOrd,
+    Self::Output: PartialOrd<Self::Input> + PartialOrd,
+    Self::Input: PartialOrd<Self::Output> + PartialOrd,
 {
     /// Return the index of the predecessor and the predecessor
     /// of the given value, or `None` if there is no predecessor.
     /// The predecessor is the last value in the dictionary
     /// that is less than the given value.
-    fn pred(&self, value: &Self::InputValue) -> Option<(usize, Self::OutputValue)> {
+    fn pred(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
         if self.is_empty() || value <= &self.get(0) {
             None
         } else {
@@ -128,5 +128,5 @@ where
     ///
     /// # Safety
     /// The predecessor must exist.
-    unsafe fn pred_unchecked(&self, value: &Self::InputValue) -> (usize, Self::OutputValue);
+    unsafe fn pred_unchecked(&self, value: &Self::Input) -> (usize, Self::Output);
 }

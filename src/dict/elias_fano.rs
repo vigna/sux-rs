@@ -261,8 +261,8 @@ impl<H, L> EliasFano<H, L> {
 impl<H: AsRef<[usize]> + Select, L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>>
     IndexedDict for EliasFano<H, L>
 {
-    type OutputValue = usize;
-    type InputValue = usize;
+    type Output = usize;
+    type Input = usize;
 
     type Iterator<'a> = EliasFanoIterator<'a, H, L>
     where
@@ -416,7 +416,7 @@ impl<
         L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>,
     > Succ for EliasFano<H, L>
 {
-    unsafe fn succ_unchecked(&self, value: &Self::InputValue) -> (usize, Self::OutputValue) {
+    unsafe fn succ_unchecked(&self, value: &Self::Input) -> (usize, Self::Output) {
         debug_assert!(*value <= self.get(self.len() - 1));
         let zeros_to_skip = value >> self.l;
         let bit_pos = if zeros_to_skip == 0 {
