@@ -320,7 +320,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         }
     }
 
-    fn contains_unsorted(&self, string: &<Self as IndexedDict>::InputValue) -> bool {
+    fn contains_unsorted(&self, string: &<Self as IndexedDict>::Input) -> bool {
         let string = string.as_bytes();
         let mut iter = self.iter();
         while let Some(buffer) = iter.next_weak() {
@@ -331,7 +331,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         false
     }
 
-    fn contains_sorted(&self, string: &<Self as IndexedDict>::InputValue) -> bool {
+    fn contains_sorted(&self, string: &<Self as IndexedDict>::Input) -> bool {
         let string = string.as_bytes();
         // first to a binary search on the blocks to find the block
         let block_idx = self
@@ -379,13 +379,13 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
-    type OutputValue = String;
-    type InputValue = str;
+    type Output = String;
+    type Input = str;
     type Iterator<'a> = Iterator<'a, D, P>
     where
         Self: 'a;
 
-    unsafe fn get_unchecked(&self, index: usize) -> Self::OutputValue {
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
         let mut result = Vec::with_capacity(128);
         self.get_inplace(index, &mut result);
         String::from_utf8(result).unwrap()
@@ -410,7 +410,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
     /// If the strings in the list are sorted this is done with a binary search,
     /// otherwise it is done with a linear search.
     #[inline]
-    fn contains(&self, string: &Self::InputValue) -> bool {
+    fn contains(&self, string: &Self::Input) -> bool {
         if self.is_sorted {
             self.contains_sorted(string)
         } else {
