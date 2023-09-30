@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+/*!
+
+Immutable lists of strings compressed by prefix omission via rear coding.
+
+*/
+
 use crate::traits::indexed_dict::IndexedDict;
 use epserde::*;
 
@@ -34,13 +40,14 @@ struct Stats {
     pub redundancy: isize,
 }
 
-/*
+/**
 
-Immutable lists of strings compressed by prefix-omission by rear coding.
+Immutable lists of strings compressed by prefix omission via rear coding.
 
 Prefix omission compresses a list of strings omitting the common prefixes
 of consecutive strings. To do so, it stores the length of what remains
-after the common prefix (hence, rear coding).
+after the common prefix (hence, rear coding). It is usually applied
+to lists strings sorted in ascending order.
 
 The encoding is done in blocks of `k` strings: in each block the first string is encoded
 without compression, wheres the other strings are encoded with the common prefix
