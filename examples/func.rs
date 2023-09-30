@@ -74,7 +74,7 @@ impl EdgeList {
 }
 
 #[derive(Epserde, Debug, Default)]
-pub struct Function<T: Remap, S: BitFieldSlice> {
+pub struct Function<T: Remap, S: BitFieldSlice = CompactArray<Vec<usize>>> {
     seed: u64,
     l: usize,
     num_keys: usize,
@@ -84,7 +84,7 @@ pub struct Function<T: Remap, S: BitFieldSlice> {
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: Remap, C: BitFieldSlice> Function<T, C> {
+impl<T: Remap, S: BitFieldSlice> Function<T, S> {
     #[inline(always)]
     #[must_use]
     fn chunk(sig: &[u64; 2], bit_mask: u64) -> usize {
@@ -134,7 +134,7 @@ impl<T: Remap, C: BitFieldSlice> Function<T, C> {
         into_values: &mut V,
         bit_width: usize,
         pl: &mut Option<&mut ProgressLogger>,
-    ) -> Function<T, CompactArray<Vec<usize>>> {
+    ) -> Function<T> {
         loop {
             let seed = rand::random::<u64>();
             let mut values = into_values.clone().into_iter();
@@ -422,7 +422,7 @@ fn main() -> Result<()> {
     let mut pl = ProgressLogger::default();
 
     if let Some(filename) = args.filename {
-        let func = Function::<_, CompactArray<Vec<usize>>>::new(
+        let func = Function::<_>::new(
             FilenameIntoIterator(&filename),
             &mut (0..),
             args.w,
@@ -437,7 +437,7 @@ fn main() -> Result<()> {
             .collect::<Vec<_>>();
 
         func.store(&args.func)?;
-        let func = Function::<String, CompactArray<Vec<usize>>>::load_mem(&args.func)?;
+        let func = Function::<_>::load_mem(&args.func)?;
         pl.start("Querying...");
         for (index, key) in keys.iter().enumerate() {
             assert_eq!(index, func.get(key) as usize);
