@@ -87,6 +87,9 @@ where
     /// of the given value, or `None` if there is no successor.
     /// The successor is the first value in the dictionary
     /// that is greater than or equal to the given value.
+    ///
+    /// # Safety
+    /// The successors must exist.
     unsafe fn succ_unchecked(&self, value: &Self::InputValue) -> (usize, Self::OutputValue);
 }
 
@@ -107,5 +110,12 @@ where
             Some(unsafe { self.pred_unchecked(value) })
         }
     }
+    /// Return the index of the predecessor and the predecessor
+    /// of the given value, or `None` if there is no predecessor.
+    /// The predecessor is the last value in the dictionary
+    /// that is less than the given value.
+    ///
+    /// # Safety
+    /// The predecessor must exist.
     unsafe fn pred_unchecked(&self, value: &Self::InputValue) -> (usize, Self::OutputValue);
 }

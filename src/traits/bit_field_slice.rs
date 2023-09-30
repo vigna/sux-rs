@@ -31,14 +31,17 @@ width is zero. The behavior of a [`BitFieldSliceMut::set`] in the same context i
 We provide implementations for `Vec<usize>`, `Vec<AtomicUsize>`, `&[usize]`,
 and `&[AtomicUsize]` that view their elements as values with a bit width
 equal to that of `usize`; for those, we also implement
-[`IntoValueIterator`](crate::traits::iter::IntoValueIterator).
-The implementations based on atomic types implements
+[`IntoValueIterator`] using a [helper](BitFieldSliceIterator) structure
+that might be useful for other implementations, too.
+
+The implementations based on atomic types implement
 [`BitFieldSliceAtomic`].
+
 */
 
 use crate::prelude::*;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use std::{fmt::Display, iter::Copied};
+use std::iter::Copied;
 
 const BITS: usize = core::mem::size_of::<usize>() * 8;
 
