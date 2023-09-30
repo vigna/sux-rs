@@ -76,7 +76,7 @@ impl EdgeList {
 #[derive(Epserde, Debug, Default)]
 pub struct Function<T: Remap, S: BitFieldSlice = CompactArray<Vec<usize>>> {
     seed: u64,
-    l: usize,
+    log2_l: usize,
     num_keys: usize,
     chunk_mask: u64,
     segment_size: usize,
@@ -93,8 +93,8 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
 
     #[inline(always)]
     #[must_use]
-    fn edge(sig: &[u64; 2], l: usize, segment_size: usize) -> [usize; 3] {
-        let first_segment = sig[0] as usize >> 16 & (l - 1);
+    fn edge(sig: &[u64; 2], log2_l: usize, segment_size: usize) -> [usize; 3] {
+        let first_segment = sig[0] as usize >> 16 & ((1 << log2_l) - 1);
         [
             (((sig[0] >> 32) * segment_size as u64) >> 32) as usize + first_segment * segment_size,
             (((sig[1] & 0xFFFFFFFF) * segment_size as u64) >> 32) as usize
@@ -105,9 +105,10 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
     }
 
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> usize {
-        let edge = Self::edge(sig, self.l, self.segment_size);
+        let edge = Self::edge(sig, self.log2_l, self.segment_size);
         let chunk = Self::chunk(sig, self.chunk_mask);
-        let chunk_offset = chunk * self.segment_size * (self.l + 2);
+        // chunk * self.segment_size * (2^log2_l + 2)
+        let chunk_offset = chunk * ((self.segment_size << self.log2_l) + (self.segment_size << 1));
         self.values.get(edge[0] + chunk_offset)
             ^ self.values.get(edge[1] + chunk_offset)
             ^ self.values.get(edge[2] + chunk_offset)
@@ -164,7 +165,8 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
             };
             dbg!(low_bits);
 
-            let l = 128;
+            let log2_l = 7;
+            let l = 1 << log2_l;
             let num_chunks = 1 << low_bits;
             let chunk_mask = (1 << low_bits) - 1;
             let (counts, cumul) =
@@ -201,7 +203,7 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
                         edge_lists.resize_with(num_vertices, EdgeList::default);
 
                         sigs.iter().enumerate().for_each(|(edge_index, sig)| {
-                            for &v in Self::edge(&sig.0, l, segment_size).iter() {
+                            for &v in Self::edge(&sig.0, log2_l, segment_size).iter() {
                                 edge_lists[v].add(edge_index);
                             }
                         });
@@ -245,7 +247,7 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
                                     curr += 1;
                                     // Degree is necessarily 0
                                     for &x in
-                                        Self::edge(&sigs[edge_index].0, l, segment_size).iter()
+                                        Self::edge(&sigs[edge_index].0, log2_l, segment_size).iter()
                                     {
                                         if x != v {
                                             edge_lists[x].remove(edge_index);
@@ -270,7 +272,8 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
                         while let Some(mut stack) = stacks.pop() {
                             while let Some(mut v) = stack.pop() {
                                 let edge_index = edge_lists[v].edge_index();
-                                let mut edge = Self::edge(&sigs[edge_index].0, l, segment_size);
+                                let mut edge =
+                                    Self::edge(&sigs[edge_index].0, log2_l, segment_size);
                                 let chunk_offset = chunk * num_vertices;
                                 v += chunk_offset;
                                 edge.iter_mut().for_each(|v| {
@@ -308,7 +311,7 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
                 );
                 return Function {
                     seed,
-                    l,
+                    log2_l,
                     num_keys: sigs.len(),
                     chunk_mask,
                     segment_size,
