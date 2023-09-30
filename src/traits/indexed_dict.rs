@@ -5,9 +5,15 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/// A dictionary of values indexed by a `usize`.
+/**
+
+A dictionary of values indexed by a `usize`.
+
+The input and output values may be different, to make it easier to implement
+compressed structures (see, e.g., [rear-coded lists](crate::dict::rear_coded_list::RearCodedList)).
+
+*/
 pub trait IndexedDict {
-    /// The type of the values stored in the dictionary.
     type OutputValue: PartialEq<Self::InputValue> + PartialEq;
     type InputValue: PartialEq<Self::OutputValue> + PartialEq + ?Sized;
 
@@ -21,7 +27,6 @@ pub trait IndexedDict {
     ///
     /// # Panics
     /// May panic if the index is not in in [0..[len](`IndexedDict::len`)).
-
     fn get(&self, index: usize) -> Self::OutputValue {
         if index >= self.len() {
             panic!("Index out of bounds: {} >= {}", index, self.len())
@@ -33,7 +38,6 @@ pub trait IndexedDict {
     /// Return the value at the specified index.
     ///
     /// # Safety
-    ///
     /// `index` must be in [0..[len](`IndexedDict::len`)). No bounds checking is performed.
     unsafe fn get_unchecked(&self, index: usize) -> Self::OutputValue;
 
@@ -62,7 +66,7 @@ pub trait IndexedDict {
     fn iter(&self) -> Self::Iterator<'_>;
 
     /// Return an iterator on the dictionary starting from the specified index.
-    fn iter_from(&self, start_index: usize) -> Self::Iterator<'_>;
+    fn iter_from(&self, from: usize) -> Self::Iterator<'_>;
 }
 
 /// Successor computation for dictionaries whose values are monotonically increasing.
