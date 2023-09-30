@@ -1,14 +1,17 @@
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::ProgressLogger;
+use log::warn;
 use std::io::{BufRead, BufReader};
 use std::mem::{self};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::thread;
-use sux::prelude::spooky::*;
+use sux::prelude::{
+    spooky::*, BitFieldSlice, BitFieldSliceAtomic, BitFieldSliceCore, CompactArray,
+};
+use sux::traits::convert_to::ConvertTo;
 use Ordering::Relaxed;
-
 pub trait Remap {
     fn remap(key: &Self, seed: u64) -> [u64; 2];
 }
@@ -68,13 +71,13 @@ impl EdgeList {
     }
 }
 
-pub struct Function<T: Remap> {
+pub struct Function<T: Remap, C: BitFieldSlice = CompactArray<Vec<usize>>> {
     seed: u64,
     l: usize,
     num_keys: usize,
     chunk_mask: u64,
     segment_size: usize,
-    values: Box<[u64]>,
+    values: C,
     _phantom: std::marker::PhantomData<T>,
 }
 
@@ -98,17 +101,17 @@ impl<T: Remap> Function<T> {
         ]
     }
 
-    pub fn get_by_sig(&self, sig: &[u64; 2]) -> u64 {
+    pub fn get_by_sig(&self, sig: &[u64; 2]) -> usize {
         let edge = Self::edge(sig, self.l, self.segment_size);
         let chunk = Self::chunk(sig, self.chunk_mask);
         let chunk_offset = chunk * self.segment_size * (self.l + 2);
-        self.values[edge[0] + chunk_offset]
-            ^ self.values[edge[1] + chunk_offset]
-            ^ self.values[edge[2] + chunk_offset]
+        self.values.get(edge[0] + chunk_offset)
+            ^ self.values.get(edge[1] + chunk_offset)
+            ^ self.values.get(edge[2] + chunk_offset)
     }
 
     #[inline(always)]
-    pub fn get(&self, key: &T) -> u64 {
+    pub fn get(&self, key: &T) -> usize {
         self.get_by_sig(&T::remap(key, self.seed))
     }
 
@@ -120,177 +123,196 @@ impl<T: Remap> Function<T> {
         self.len() == 0
     }
 
-    pub fn new<I: std::iter::Iterator<Item = T>, V: std::iter::Iterator<Item = u64>>(
+    pub fn new<
+        I: std::iter::IntoIterator<Item = T> + Clone,
+        V: std::iter::IntoIterator<Item = usize> + Clone,
+    >(
         keys: I,
-        values: &mut V,
-        _bit_width: usize,
+        into_values: &mut V,
+        bit_width: usize,
         pl: &mut Option<&mut ProgressLogger>,
     ) -> Function<T> {
-        let seed = rand::random::<u64>();
-        if let Some(pl) = pl.as_mut() {
-            pl.start("Reading input...")
-        }
-        let mut sigs = keys
-            .map(|x| (T::remap(&x, seed), values.next().unwrap()))
-            .collect::<Vec<_>>();
-        if let Some(pl) = pl.as_mut() {
-            pl.done()
-        }
-
-        let eps = 0.001;
-        let low_bits = if sigs.len() <= 1 << 21 {
-            0
-        } else {
-            let t = (sigs.len() as f64 * eps * eps / 2.0).ln();
-            dbg!(t);
-            if t > 0.0 {
-                ((t - t.ln()) / 2_f64.ln()).ceil() as usize
-            } else {
-                0
+        loop {
+            let seed = rand::random::<u64>();
+            let mut values = into_values.clone().into_iter();
+            if let Some(pl) = pl.as_mut() {
+                pl.start("Reading input...")
             }
-        };
-        dbg!(low_bits);
+            let mut sigs = keys
+                .clone()
+                .into_iter()
+                .map(|x| (T::remap(&x, seed), values.next().unwrap()))
+                .collect::<Vec<_>>();
+            if let Some(pl) = pl.as_mut() {
+                pl.done_with_count(sigs.len());
+            }
 
-        let l = 128;
-        let num_chunks = 1 << low_bits;
-        let chunk_mask = (1 << low_bits) - 1;
-        let (counts, cumul) = count_sort(&mut sigs, num_chunks, |x| Self::chunk(&x.0, chunk_mask));
+            let eps = 0.001;
+            let low_bits = if sigs.len() <= 1 << 21 {
+                0
+            } else {
+                let t = (sigs.len() as f64 * eps * eps / 2.0).ln();
+                dbg!(t);
+                if t > 0.0 {
+                    ((t - t.ln()) / 2_f64.ln()).ceil() as usize
+                } else {
+                    0
+                }
+            };
+            dbg!(low_bits);
 
-        let segment_size =
-            ((*counts.iter().max().unwrap() as f64 * 1.12).ceil() as usize + l + 1) / (l + 2);
-        dbg!(segment_size);
-        let num_vertices = segment_size * (l + 2);
-        eprintln!(
-            "Size {:.2}%",
-            (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * 1.12)
-        );
+            let l = 128;
+            let num_chunks = 1 << low_bits;
+            let chunk_mask = (1 << low_bits) - 1;
+            let (counts, cumul) =
+                count_sort(&mut sigs, num_chunks, |x| Self::chunk(&x.0, chunk_mask));
 
-        let mut values = Vec::new();
-        values.resize_with(num_vertices * num_chunks, || AtomicU64::new(0));
+            let segment_size =
+                ((*counts.iter().max().unwrap() as f64 * 1.12).ceil() as usize + l + 1) / (l + 2);
+            dbg!(segment_size);
+            let num_vertices = segment_size * (l + 2);
+            eprintln!(
+                "Size {:.2}%",
+                (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * 1.12)
+            );
 
-        let chunk = AtomicUsize::new(0);
+            let data = CompactArray::new_atomic(bit_width, num_vertices * num_chunks);
 
-        thread::scope(|s| {
-            for _ in 0..num_chunks.min(num_cpus::get()) {
-                s.spawn(|| loop {
-                    let chunk = chunk.fetch_add(1, Relaxed);
-                    if chunk >= num_chunks {
-                        break;
-                    }
-                    let sigs = &sigs[cumul[chunk]..cumul[chunk + 1]];
+            let chunk = AtomicUsize::new(0);
+            let fail = AtomicBool::new(false);
 
-                    let mut pl = ProgressLogger::default();
-                    pl.expected_updates = Some(sigs.len());
-
-                    pl.start("Generating graph...");
-                    let mut edge_lists = Vec::new();
-                    edge_lists.resize_with(num_vertices, EdgeList::default);
-
-                    sigs.iter().enumerate().for_each(|(edge_index, sig)| {
-                        for &v in Self::edge(&sig.0, l, segment_size).iter() {
-                            edge_lists[v].add(edge_index);
-                        }
-                    });
-                    pl.done_with_count(sigs.len());
-
-                    let next = AtomicUsize::new(0);
-                    let incr = 1024;
-
-                    pl.start("Peeling...");
-                    let stacks = Mutex::new(vec![]);
-
-                    let mut stack = Vec::new();
-                    loop {
-                        let start = next.fetch_add(incr, Ordering::Relaxed);
-                        if start >= num_vertices {
+            thread::scope(|s| {
+                for _ in 0..num_chunks.min(num_cpus::get()) {
+                    s.spawn(|| loop {
+                        let chunk = chunk.fetch_add(1, Relaxed);
+                        if chunk >= num_chunks {
                             break;
                         }
-                        for v in start..(start + incr).min(num_vertices) {
-                            if edge_lists[v].degree() != 1 {
-                                continue;
+                        let sigs = &sigs[cumul[chunk]..cumul[chunk + 1]];
+
+                        let mut pl = ProgressLogger::default();
+                        pl.expected_updates = Some(sigs.len());
+
+                        pl.start("Generating graph...");
+                        let mut edge_lists = Vec::new();
+                        edge_lists.resize_with(num_vertices, EdgeList::default);
+
+                        sigs.iter().enumerate().for_each(|(edge_index, sig)| {
+                            for &v in Self::edge(&sig.0, l, segment_size).iter() {
+                                edge_lists[v].add(edge_index);
                             }
-                            let mut pos = stack.len();
-                            let mut curr = stack.len();
-                            stack.push(v);
+                        });
+                        pl.done_with_count(sigs.len());
 
-                            while pos < stack.len() {
-                                let v = stack[pos];
-                                pos += 1;
+                        let next = AtomicUsize::new(0);
+                        let incr = 1024;
 
-                                edge_lists[v].dec();
-                                if edge_lists[v].degree() != 0 {
-                                    debug_assert_eq!(edge_lists[v].degree(), 0, "v = {}", v);
-                                    continue; // Skip no longer useful entries
+                        pl.start("Peeling...");
+                        let stacks = Mutex::new(vec![]);
+
+                        let mut stack = Vec::new();
+                        loop {
+                            if fail.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            let start = next.fetch_add(incr, Ordering::Relaxed);
+                            if start >= num_vertices {
+                                break;
+                            }
+                            for v in start..(start + incr).min(num_vertices) {
+                                if edge_lists[v].degree() != 1 {
+                                    continue;
                                 }
-                                let edge_index = edge_lists[v].edge_index();
+                                let mut pos = stack.len();
+                                let mut curr = stack.len();
+                                stack.push(v);
 
-                                stack[curr] = v;
-                                curr += 1;
-                                // Degree is necessarily 0
-                                for &x in Self::edge(&sigs[edge_index].0, l, segment_size).iter() {
-                                    if x != v {
-                                        edge_lists[x].remove(edge_index);
-                                        if edge_lists[x].degree() == 1 {
-                                            stack.push(x);
+                                while pos < stack.len() {
+                                    let v = stack[pos];
+                                    pos += 1;
+
+                                    edge_lists[v].dec();
+                                    if edge_lists[v].degree() != 0 {
+                                        debug_assert_eq!(edge_lists[v].degree(), 0, "v = {}", v);
+                                        continue; // Skip no longer useful entries
+                                    }
+                                    let edge_index = edge_lists[v].edge_index();
+
+                                    stack[curr] = v;
+                                    curr += 1;
+                                    // Degree is necessarily 0
+                                    for &x in
+                                        Self::edge(&sigs[edge_index].0, l, segment_size).iter()
+                                    {
+                                        if x != v {
+                                            edge_lists[x].remove(edge_index);
+                                            if edge_lists[x].degree() == 1 {
+                                                stack.push(x);
+                                            }
                                         }
                                     }
                                 }
+                                stack.truncate(curr);
                             }
-                            stack.truncate(curr);
                         }
-                    }
-                    assert_eq!(sigs.len(), stack.len());
-                    stacks.lock().unwrap().push(stack);
-
-                    pl.done_with_count(sigs.len());
-
-                    pl.start("Assigning...");
-                    let mut stacks = stacks.lock().unwrap();
-                    while let Some(mut stack) = stacks.pop() {
-                        while let Some(mut v) = stack.pop() {
-                            let edge_index = edge_lists[v].edge_index();
-                            let mut edge = Self::edge(&sigs[edge_index].0, l, segment_size);
-                            let chunk_offset = chunk * num_vertices;
-                            v += chunk_offset;
-                            edge.iter_mut().for_each(|v| {
-                                *v += chunk_offset;
-                            });
-                            let value = if v == edge[0] {
-                                values[edge[1]].load(Relaxed) ^ values[edge[2]].load(Relaxed)
-                            } else if v == edge[1] {
-                                values[edge[0]].load(Relaxed) ^ values[edge[2]].load(Relaxed)
-                            } else {
-                                debug_assert_eq!(v, edge[2]);
-                                values[edge[0]].load(Relaxed) ^ values[edge[1]].load(Relaxed)
-                            };
-                            values[v].store(sigs[edge_index].1 ^ value, Relaxed);
-
-                            assert_eq!(
-                                values[edge[0]].load(Relaxed)
-                                    ^ values[edge[1]].load(Relaxed)
-                                    ^ values[edge[2]].load(Relaxed),
-                                sigs[edge_index].1
-                            );
+                        if sigs.len() != stack.len() {
+                            fail.store(true, Ordering::Relaxed);
                         }
-                    }
-                    pl.done_with_count(sigs.len());
-                });
+                        stacks.lock().unwrap().push(stack);
+
+                        pl.done_with_count(sigs.len());
+
+                        pl.start("Assigning...");
+                        let mut stacks = stacks.lock().unwrap();
+                        while let Some(mut stack) = stacks.pop() {
+                            while let Some(mut v) = stack.pop() {
+                                let edge_index = edge_lists[v].edge_index();
+                                let mut edge = Self::edge(&sigs[edge_index].0, l, segment_size);
+                                let chunk_offset = chunk * num_vertices;
+                                v += chunk_offset;
+                                edge.iter_mut().for_each(|v| {
+                                    *v += chunk_offset;
+                                });
+                                let value = if v == edge[0] {
+                                    data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
+                                } else if v == edge[1] {
+                                    data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
+                                } else {
+                                    data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
+                                };
+                                // TODO
+                                data.set(v, sigs[edge_index].1 ^ value, Relaxed);
+
+                                assert_eq!(
+                                    data.get(edge[0], Relaxed)
+                                        ^ data.get(edge[1], Relaxed)
+                                        ^ data.get(edge[2], Relaxed),
+                                    sigs[edge_index].1
+                                );
+                            }
+                        }
+                        pl.done_with_count(sigs.len());
+                    });
+                }
+            });
+
+            if fail.load(Ordering::Relaxed) {
+                warn!("Failed peeling, trying again...")
+            } else {
+                println!(
+                    "bits/keys: {}",
+                    data.len() as f64 * bit_width as f64 / sigs.len() as f64,
+                );
+                return Function {
+                    seed,
+                    l,
+                    num_keys: sigs.len(),
+                    chunk_mask,
+                    segment_size,
+                    values: data.convert_to().unwrap(),
+                    _phantom: std::marker::PhantomData,
+                };
             }
-        });
-        println!(
-            "bits/keys: {}",
-            values.len() as f64 * 64.0 / sigs.len() as f64,
-        );
-        Function {
-            seed,
-            l,
-            num_keys: sigs.len(),
-            chunk_mask,
-            segment_size,
-            values: unsafe {
-                std::mem::transmute::<Vec<AtomicU64>, Vec<u64>>(values).into_boxed_slice()
-            },
-            _phantom: std::marker::PhantomData,
         }
     }
 }
@@ -356,11 +378,31 @@ pub const fn spooky_short_rehash(signature: &[u64; 2], seed: u64) -> [u64; 4] {
 ))]
 struct Args {
     #[arg(short, long)]
-    // A file containing UTF-8 keys, one per line
+    // A file containing UTF-8 keys, one per line.
     filename: Option<String>,
     #[arg(short)]
-    // Use the 64-bit keys [0..n)
+    // Key bit width.
+    w: usize,
+    #[arg(short)]
+    // Use the 64-bit keys [0..n).
     n: Option<usize>,
+}
+
+#[derive(Clone)]
+struct FilenameIntoIterator<'a>(&'a String);
+
+impl<'a> IntoIterator for FilenameIntoIterator<'a> {
+    type Item = String;
+    type IntoIter = std::iter::Map<
+        std::io::Lines<BufReader<std::fs::File>>,
+        fn(std::io::Result<String>) -> String,
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        BufReader::new(std::fs::File::open(self.0).unwrap())
+            .lines()
+            .map(|line| line.unwrap())
+    }
 }
 
 fn main() -> Result<()> {
@@ -375,11 +417,10 @@ fn main() -> Result<()> {
     let mut pl = ProgressLogger::default();
 
     if let Some(filename) = args.filename {
-        let file = std::fs::File::open(&filename)?;
         let func = Function::new(
-            BufReader::new(file).lines().map(|line| line.unwrap()),
+            FilenameIntoIterator(&filename),
             &mut (0..),
-            64,
+            args.w,
             &mut Some(&mut pl),
         );
 
@@ -398,7 +439,7 @@ fn main() -> Result<()> {
     }
 
     if let Some(n) = args.n {
-        let func = Function::new(0..n as u64, &mut (0..), 64, &mut Some(&mut pl));
+        let func = Function::new(0..n as u64, &mut (0..), args.w, &mut Some(&mut pl));
 
         pl.start("Querying...");
         for (index, key) in (0..n as u64).enumerate() {
