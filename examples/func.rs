@@ -1,6 +1,8 @@
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::ProgressLogger;
+use epserde::prelude::*;
+use epserde::Epserde;
 use log::warn;
 use std::io::{BufRead, BufReader};
 use std::mem::{self};
@@ -71,17 +73,18 @@ impl EdgeList {
     }
 }
 
-pub struct Function<T: Remap, C: BitFieldSlice = CompactArray<Vec<usize>>> {
+#[derive(Epserde, Debug, Default)]
+pub struct Function<T: Remap, S: BitFieldSlice> {
     seed: u64,
     l: usize,
     num_keys: usize,
     chunk_mask: u64,
     segment_size: usize,
-    values: C,
+    values: S,
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: Remap> Function<T> {
+impl<T: Remap, C: BitFieldSlice> Function<T, C> {
     #[inline(always)]
     #[must_use]
     fn chunk(sig: &[u64; 2], bit_mask: u64) -> usize {
@@ -131,7 +134,7 @@ impl<T: Remap> Function<T> {
         into_values: &mut V,
         bit_width: usize,
         pl: &mut Option<&mut ProgressLogger>,
-    ) -> Function<T> {
+    ) -> Function<T, CompactArray<Vec<usize>>> {
         loop {
             let seed = rand::random::<u64>();
             let mut values = into_values.clone().into_iter();
@@ -380,6 +383,8 @@ struct Args {
     #[arg(short, long)]
     // A file containing UTF-8 keys, one per line.
     filename: Option<String>,
+    // A name for the ε-serde serialized map.
+    func: String,
     #[arg(short)]
     // Key bit width.
     w: usize,
@@ -417,7 +422,7 @@ fn main() -> Result<()> {
     let mut pl = ProgressLogger::default();
 
     if let Some(filename) = args.filename {
-        let func = Function::new(
+        let func = Function::<_, CompactArray<Vec<usize>>>::new(
             FilenameIntoIterator(&filename),
             &mut (0..),
             args.w,
@@ -431,6 +436,8 @@ fn main() -> Result<()> {
             .take(10_000_000)
             .collect::<Vec<_>>();
 
+        func.store(&args.func)?;
+        let func = Function::<String, CompactArray<Vec<usize>>>::load_mem(&args.func)?;
         pl.start("Querying...");
         for (index, key) in keys.iter().enumerate() {
             assert_eq!(index, func.get(key) as usize);
@@ -439,8 +446,14 @@ fn main() -> Result<()> {
     }
 
     if let Some(n) = args.n {
-        let func = Function::new(0..n as u64, &mut (0..), args.w, &mut Some(&mut pl));
-
+        let func = Function::<_, CompactArray<Vec<usize>>>::new(
+            0..n as u64,
+            &mut (0..),
+            args.w,
+            &mut Some(&mut pl),
+        );
+        func.store(&args.func)?;
+        let func = Function::<u64, CompactArray<Vec<usize>>>::load_mem(&args.func)?;
         pl.start("Querying...");
         for (index, key) in (0..n as u64).enumerate() {
             assert_eq!(index, func.get(&key) as usize);
