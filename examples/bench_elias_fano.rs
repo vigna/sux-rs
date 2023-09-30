@@ -7,7 +7,7 @@ use std::hint::black_box;
 use sux::prelude::*;
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmarks the Rust Sux implementation", long_about = None)]
+#[command(about = "Benchmarks Elias-Fano", long_about = None)]
 struct Args {
     /// The number of elements
     n: usize,
@@ -41,11 +41,15 @@ fn main() {
         values.push(rng.gen_range(0..args.u));
     }
     values.sort();
+    // Build Elias-Fano
     let mut elias_fano_builder = EliasFanoBuilder::new(args.n, args.u);
     for value in &values {
         elias_fano_builder.push(*value).unwrap();
     }
-    let elias_fano: EliasFano<QuantumZeroIndex> = elias_fano_builder.build().convert_to().unwrap();
+    // Add an index on ones
+    let elias_fano: EliasFano<QuantumIndex> = elias_fano_builder.build().convert_to().unwrap();
+    // Add an index on zeros
+    let elias_fano: EliasFano<QuantumZeroIndex<QuantumIndex>> = elias_fano.convert_to().unwrap();
 
     let mut ranks = Vec::with_capacity(args.t);
     for _ in 0..args.t {

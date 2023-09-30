@@ -8,7 +8,7 @@ use std::io::prelude::*;
 use sux::prelude::*;
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmarks construction of RCA and print stats", long_about = None)]
+#[command(about = "Benchmarks construction and access fo read-coded lists", long_about = None)]
 struct Args {
     /// The file to read, every line will be inserted in the RCA.
     file_path: String,
