@@ -9,4 +9,4 @@
 
 //! Static functions.
 
-pub mod func;
+pub mod vigna;

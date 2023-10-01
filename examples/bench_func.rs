@@ -9,7 +9,7 @@ use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::ProgressLogger;
 use epserde::prelude::*;
-use sux::prelude::func::Function;
+use sux::func::vigna::Function;
 
 #[derive(Parser, Debug)]
 #[command(about = "Functions", long_about = None)]
