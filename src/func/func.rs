@@ -1,44 +1,69 @@
-use anyhow::Result;
-use clap::{ArgGroup, Parser};
+/*
+*
+* SPDX-FileCopyrightText: 2023 Sebastiano Vigna
+*
+* SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+*/
+
+/*!
+
+No-nonsense static functions with 10%-11% space overhead,
+fast parallel construction, and fast queries.
+
+*/
+
+use crate::prelude::{
+    spooky::*, BitFieldSlice, BitFieldSliceAtomic, BitFieldSliceCore, CompactArray,
+};
+use crate::traits::convert_to::ConvertTo;
+use crate::BitOps;
 use dsi_progress_logger::ProgressLogger;
-use epserde::prelude::*;
 use epserde::Epserde;
 use log::warn;
+use log::*;
 use rayon::prelude::*;
-use std::io::{BufRead, BufReader};
 use std::mem::{self};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::thread;
-use sux::prelude::{
-    spooky::*, BitFieldSlice, BitFieldSliceAtomic, BitFieldSliceCore, CompactArray,
-};
-use sux::traits::convert_to::ConvertTo;
 use Ordering::Relaxed;
-pub trait Remap {
-    fn remap(key: &Self, seed: u64) -> [u64; 2];
+
+/// This trait has to be implemented by keys. It must turn a key
+/// into a random-looking 128-bit signature.
+///
+/// We provide implementations for all primitive types and strings
+/// by turning them into slice of bytes and then hashing them with
+/// [sux::mph::spooky::spooky_short].
+pub trait ToSig {
+    fn to_sig(key: &Self, seed: u64) -> [u64; 2];
 }
 
-impl Remap for String {
-    fn remap(key: &Self, seed: u64) -> [u64; 2] {
+impl ToSig for String {
+    fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
         let spooky = spooky_short(key.as_ref(), seed);
         [spooky[0], spooky[1]]
     }
 }
 
-impl Remap for str {
-    fn remap(key: &Self, seed: u64) -> [u64; 2] {
+impl ToSig for str {
+    fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
         let spooky = spooky_short(key.as_ref(), seed);
         [spooky[0], spooky[1]]
     }
 }
 
-impl Remap for u64 {
-    fn remap(key: &Self, seed: u64) -> [u64; 2] {
-        let spooky = spooky_short(&key.to_ne_bytes(), seed);
-        [spooky[0], spooky[1]]
-    }
+macro_rules! remap_prim {
+    ($($ty:ty),*) => {$(
+        impl ToSig for $ty {
+            fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
+                let spooky = spooky_short(&key.to_ne_bytes(), seed);
+                [spooky[0], spooky[1]]
+            }
+        }
+    )*};
 }
+
+remap_prim!(isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
 
 const PARAMS: [(usize, usize, f64); 15] = [
     (0, 1, 1.23),
@@ -91,8 +116,13 @@ impl EdgeList {
     }
 }
 
+/**
+
+A static function from key implementing [ToSig] to arbitrary values.
+
+*/
 #[derive(Epserde, Debug, Default)]
-pub struct Function<T: Remap, S: BitFieldSlice = CompactArray<Vec<usize>>> {
+pub struct Function<T: ToSig, S: BitFieldSlice = CompactArray<Vec<usize>>> {
     seed: u64,
     log2_l: u32,
     high_bits: u32,
@@ -103,7 +133,7 @@ pub struct Function<T: Remap, S: BitFieldSlice = CompactArray<Vec<usize>>> {
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: Remap, S: BitFieldSlice> Function<T, S> {
+impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
     #[inline(always)]
     #[must_use]
     fn chunk(sig: &[u64; 2], high_bits: u32, chunk_mask: u32) -> usize {
@@ -134,7 +164,7 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
 
     #[inline(always)]
     pub fn get(&self, key: &T) -> usize {
-        self.get_by_sig(&T::remap(key, self.seed))
+        self.get_by_sig(&T::to_sig(key, self.seed))
     }
 
     pub fn len(&self) -> usize {
@@ -145,13 +175,13 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
         self.len() == 0
     }
 
+    /// Creates a new function with given keys and values.
     pub fn new<
         I: std::iter::IntoIterator<Item = T> + Clone,
         V: std::iter::IntoIterator<Item = usize> + Clone,
     >(
         keys: I,
         into_values: &mut V,
-        bit_width: usize,
         pl: &mut Option<&mut ProgressLogger>,
     ) -> Function<T> {
         // Loop until success or duplicate detection
@@ -162,17 +192,19 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
             }
 
             let mut values = into_values.clone().into_iter();
-
+            let mut max_value = 0;
             let mut sigs = keys
                 .clone()
                 .into_iter()
                 .map(|x| {
-                    (
-                        T::remap(&x, seed),
-                        values.next().expect("Not enough values"),
-                    )
+                    let v = values.next().expect("Not enough values");
+                    max_value = max_value.max(v);
+                    (T::to_sig(&x, seed), v)
                 })
                 .collect::<Vec<_>>();
+
+            let bit_width = max_value.len() as usize;
+            info!("max value = {}, bit width = {}", max_value, bit_width);
 
             if let Some(pl) = pl.as_mut() {
                 pl.done_with_count(sigs.len());
@@ -188,15 +220,13 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
             let eps = 0.001;
             let mut high_bits = {
                 let t = (sigs.len() as f64 * eps * eps / 2.0).ln();
-                dbg!(t);
+
                 if t > 0.0 {
                     ((t - t.ln()) / 2_f64.ln()).ceil()
                 } else {
                     0.0
                 }
             } as u32;
-
-            dbg!(high_bits);
 
             let (l, c) = {
                 loop {
@@ -214,8 +244,9 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
                 }
             };
 
+            info!("high bits = {}, l = {}, c = {}", high_bits, l, c);
+
             let log2_l = l.ilog2();
-            dbg!(num_keys, high_bits, num_keys >> high_bits, log2_l, c);
             let num_chunks = 1 << high_bits;
             let chunk_mask = (1u32 << high_bits) - 1;
 
@@ -251,7 +282,7 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
             if dup {
                 if dup_count >= 3 {
                     panic!(
-                        "Duplicate keys (duplicate 128-bit signaturs with three different seeds)"
+                        "Duplicate keys (duplicate 128-bit signatures with four different seeds)"
                     );
                 }
                 warn!("Duplicate 128-bit signature, trying again...");
@@ -267,7 +298,7 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
             let segment_size =
                 ((*counts.iter().max().unwrap() as f64 * c).ceil() as usize + l + 1) / (l + 2);
             let num_vertices = segment_size * (l + 2);
-            eprintln!(
+            info!(
                 "Size {:.2}%",
                 (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * c)
             );
@@ -327,11 +358,11 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
                                     let v = stack[pos];
                                     pos += 1;
 
-                                    edge_lists[v].dec();
-                                    if edge_lists[v].degree() != 0 {
-                                        debug_assert_eq!(edge_lists[v].degree(), 0, "v = {}", v);
+                                    if edge_lists[v].degree() == 0 {
                                         continue; // Skip no longer useful entries
                                     }
+
+                                    edge_lists[v].dec();
                                     let edge_index = edge_lists[v].edge_index();
 
                                     stack[curr] = v;
@@ -396,7 +427,7 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
             if fail.load(Ordering::Relaxed) {
                 warn!("Failed peeling, trying again...")
             } else {
-                println!(
+                info!(
                     "bits/keys: {}",
                     data.len() as f64 * bit_width as f64 / sigs.len() as f64,
                 );
@@ -455,109 +486,4 @@ fn _count_sort<T: Copy + Clone, F: Fn(&T) -> usize>(
     }
 
     (counts, cumul)
-}
-
-#[inline(always)]
-#[must_use]
-pub const fn spooky_short_rehash(signature: &[u64; 2], seed: u64) -> [u64; 4] {
-    spooky_short_mix([
-        seed,
-        SC_CONST.wrapping_add(signature[0]),
-        SC_CONST.wrapping_add(signature[1]),
-        SC_CONST,
-    ])
-}
-
-#[derive(Parser, Debug)]
-#[command(about = "Functions", long_about = None)]
-#[clap(group(
-            ArgGroup::new("input")
-                .required(true)
-                .args(&["filename", "n"]),
-))]
-struct Args {
-    #[arg(short, long)]
-    // A file containing UTF-8 keys, one per line.
-    filename: Option<String>,
-    // A name for the ε-serde serialized map.
-    func: String,
-    #[arg(short)]
-    // Key bit width.
-    w: usize,
-    #[arg(short)]
-    // Use the 64-bit keys [0..n).
-    n: Option<usize>,
-}
-
-#[derive(Clone)]
-struct FilenameIntoIterator<'a>(&'a String);
-
-impl<'a> IntoIterator for FilenameIntoIterator<'a> {
-    type Item = String;
-    type IntoIter = std::iter::Map<
-        std::io::Lines<BufReader<std::fs::File>>,
-        fn(std::io::Result<String>) -> String,
-    >;
-
-    fn into_iter(self) -> Self::IntoIter {
-        BufReader::new(std::fs::File::open(self.0).unwrap())
-            .lines()
-            .map(|line| line.unwrap())
-    }
-}
-
-fn main() -> Result<()> {
-    stderrlog::new()
-        .verbosity(2)
-        .timestamp(stderrlog::Timestamp::Second)
-        .init()
-        .unwrap();
-
-    let args = Args::parse();
-
-    let mut pl = ProgressLogger::default();
-
-    if let Some(filename) = args.filename {
-        let func = Function::<_>::new(
-            FilenameIntoIterator(&filename),
-            &mut (0..),
-            args.w,
-            &mut Some(&mut pl),
-        );
-
-        let file = std::fs::File::open(&filename)?;
-        let keys = BufReader::new(file)
-            .lines()
-            .map(|line| line.unwrap())
-            .take(10_000_000)
-            .collect::<Vec<_>>();
-
-        func.store(&args.func)?;
-        let func = Function::<_>::load_mem(&args.func)?;
-        pl.start("Querying...");
-        for (index, key) in keys.iter().enumerate() {
-            assert_eq!(index, func.get(key) as usize);
-        }
-        pl.done_with_count(keys.len());
-    }
-
-    if let Some(n) = args.n {
-        let func = Function::<_, CompactArray<Vec<usize>>>::new(
-            0..n as u64,
-            &mut (0..),
-            args.w,
-            &mut Some(&mut pl),
-        );
-        func.store(&args.func)?;
-        let func = Function::<u64, CompactArray<Vec<usize>>>::load_mmap(
-            &args.func,
-            epserde::deser::mem_case::Flags::TRANSPARENT_HUGE_PAGES,
-        )?;
-        pl.start("Querying...");
-        for (index, key) in (0..n as u64).enumerate() {
-            assert_eq!(index, func.get(&key) as usize);
-        }
-        pl.done_with_count(n);
-    }
-    Ok(())
 }

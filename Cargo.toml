@@ -26,13 +26,11 @@ stable_deref_trait = "1.2.0"
 yoke = "0.7.1"
 epserde = "0.1.1"
 bitvec = "1.0.1"
-
-[dev-dependencies]
-stderrlog = "0.5.4"
-log = "0.4.17"
 clap = { version = "4.2.7", features = ["derive"] }
-rand = {version="0.8.5", features=["small_rng"]}
 dsi-progress-logger = "0.1.0"
+stderrlog = "0.5.4"
+rand = {version="0.8.5", features=["small_rng"]}
+zstd = "0.12.4"
 
 [features]
 default = ["rayon"]
