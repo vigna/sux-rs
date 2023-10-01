@@ -191,7 +191,7 @@ impl<B: AsRef<[usize]>> VSliceIntoValIterUnchecked for CompactArray<B> {
         where B:'a;
 
     fn iter_val_from_unchecked(&self, from: usize) -> Self::IntoValIter<'_> {
-        CompactArrayIterator::new(&self, from)
+        CompactArrayIterator::new(self, from)
     }
 }
 

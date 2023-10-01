@@ -20,5 +20,7 @@ pub mod prelude {
 /// A trait for iterating very quickly and very unsafely.
 pub trait UncheckedIterator {
     type Item;
+    /// # Safety
+    /// Next item must be available in the iterator.
     unsafe fn next_unchecked(&mut self) -> Self::Item;
 }
