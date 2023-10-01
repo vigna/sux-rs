@@ -195,7 +195,7 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
         V: std::iter::IntoIterator<Item = usize> + Clone,
     >(
         keys: I,
-        into_values: &mut V,
+        into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
     ) -> Function<T> {
         // Loop until success or duplicate detection
@@ -224,10 +224,10 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
                 pl.done_with_count(sigs.len());
             }
 
-            if false && values.next().is_some() {
+            /*if values.next().is_some() {
                 // TODO
                 panic!("Too many values");
-            }
+            }*/
 
             let num_keys = sigs.len();
 
@@ -475,8 +475,7 @@ fn _count_sort<T: Copy + Clone, F: Fn(&T) -> usize>(
         counts[key(sig)] += 1;
     }
 
-    let mut cumul = Vec::new();
-    cumul.resize(counts.len() + 1, 0);
+    let mut cumul = vec![0; counts.len() + 1];
     for i in 1..cumul.len() {
         cumul[i] += cumul[i - 1] + counts[i - 1];
     }

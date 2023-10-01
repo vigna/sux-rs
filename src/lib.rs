@@ -28,6 +28,7 @@ pub mod prelude {
     pub use crate::utils::*;
 }
 
+#[allow(clippy::len_without_is_empty)]
 pub trait BitOps {
     fn ceil_log2(self) -> u32;
     fn len(self) -> u32;
