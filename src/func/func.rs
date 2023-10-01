@@ -33,7 +33,7 @@ use Ordering::Relaxed;
 ///
 /// We provide implementations for all primitive types and strings
 /// by turning them into slice of bytes and then hashing them with
-/// [sux::mph::spooky::spooky_short].
+/// [crate::mph::spooky::spooky_short].
 pub trait ToSig {
     fn to_sig(key: &Self, seed: u64) -> [u64; 2];
 }
@@ -133,6 +133,18 @@ pub struct Function<T: ToSig, S: BitFieldSlice = CompactArray<Vec<usize>>> {
     _phantom: std::marker::PhantomData<T>,
 }
 
+/**
+
+Chunk and edge information is derived from the 128-bit signatures of the keys.
+More precisely, each signature is made of two 64-bit integers `h` and `l`, and then:
+
+- the `high_bits` most significant bits of `h` are used to select a chunk;
+- the `log2_l` least significant bits of the upper 32 bits of `h` are used to select a segment;
+- the lower 32 bits of `h` are used to select the virst vertex;
+- the upper 32 bits of `l` are used to select the second vertex;
+- the lower 32 bits of `l` are used to select the third vertex.
+
+*/
 impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
     #[inline(always)]
     #[must_use]
@@ -147,8 +159,10 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
         let start = first_segment * segment_size;
         [
             (((sig[0] & 0xFFFFFFFF) * segment_size as u64) >> 32) as usize + start,
-            (((sig[1] & 0xFFFFFFFF) * segment_size as u64) >> 32) as usize + start + segment_size,
-            (((sig[1] >> 32) * segment_size as u64) >> 32) as usize + start + 2 * segment_size,
+            (((sig[1] >> 32) * segment_size as u64) >> 32) as usize + start + segment_size,
+            (((sig[1] & 0xFFFFFFFF) * segment_size as u64) >> 32) as usize
+                + start
+                + 2 * segment_size,
         ]
     }
 
