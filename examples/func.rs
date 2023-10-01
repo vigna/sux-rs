@@ -4,6 +4,7 @@ use dsi_progress_logger::ProgressLogger;
 use epserde::prelude::*;
 use epserde::Epserde;
 use log::warn;
+use rayon::prelude::*;
 use std::io::{BufRead, BufReader};
 use std::mem::{self};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -39,8 +40,25 @@ impl Remap for u64 {
     }
 }
 
-#[derive(Debug, Default)]
+const PARAMS: [(usize, usize, f64); 15] = [
+    (0, 1, 1.23),
+    (13, 32, 1.22),
+    (14, 32, 1.21),
+    (15, 32, 1.20),
+    (16, 64, 1.18),
+    (17, 64, 1.16),
+    (18, 64, 1.15),
+    (19, 128, 1.14),
+    (20, 128, 1.13),
+    (21, 256, 1.12),
+    (22, 512, 1.12),
+    (23, 256, 1.11),
+    (24, 512, 1.11),
+    (25, 256, 1.11),
+    (26, 512, 1.10),
+];
 
+#[derive(Debug, Default)]
 struct EdgeList(usize);
 impl EdgeList {
     const DEG_SHIFT: usize = usize::BITS as usize - 10;
@@ -76,9 +94,10 @@ impl EdgeList {
 #[derive(Epserde, Debug, Default)]
 pub struct Function<T: Remap, S: BitFieldSlice = CompactArray<Vec<usize>>> {
     seed: u64,
-    log2_l: usize,
+    log2_l: u32,
+    high_bits: u32,
+    chunk_mask: u32,
     num_keys: usize,
-    chunk_mask: u64,
     segment_size: usize,
     values: S,
     _phantom: std::marker::PhantomData<T>,
@@ -87,26 +106,25 @@ pub struct Function<T: Remap, S: BitFieldSlice = CompactArray<Vec<usize>>> {
 impl<T: Remap, S: BitFieldSlice> Function<T, S> {
     #[inline(always)]
     #[must_use]
-    fn chunk(sig: &[u64; 2], bit_mask: u64) -> usize {
-        (sig[0] & bit_mask) as usize
+    fn chunk(sig: &[u64; 2], high_bits: u32, chunk_mask: u32) -> usize {
+        (sig[0].rotate_left(high_bits) & chunk_mask as u64) as usize
     }
 
     #[inline(always)]
     #[must_use]
-    fn edge(sig: &[u64; 2], log2_l: usize, segment_size: usize) -> [usize; 3] {
-        let first_segment = sig[0] as usize >> 16 & ((1 << log2_l) - 1);
+    fn edge(sig: &[u64; 2], log2_l: u32, segment_size: usize) -> [usize; 3] {
+        let first_segment = (sig[0] >> 32 & ((1 << log2_l) - 1)) as usize;
+        let start = first_segment * segment_size;
         [
-            (((sig[0] >> 32) * segment_size as u64) >> 32) as usize + first_segment * segment_size,
-            (((sig[1] & 0xFFFFFFFF) * segment_size as u64) >> 32) as usize
-                + (first_segment + 1) * segment_size,
-            (((sig[1] >> 32) * segment_size as u64) >> 32) as usize
-                + (first_segment + 2) * segment_size,
+            (((sig[0] & 0xFFFFFFFF) * segment_size as u64) >> 32) as usize + start,
+            (((sig[1] & 0xFFFFFFFF) * segment_size as u64) >> 32) as usize + start + segment_size,
+            (((sig[1] >> 32) * segment_size as u64) >> 32) as usize + start + 2 * segment_size,
         ]
     }
 
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> usize {
         let edge = Self::edge(sig, self.log2_l, self.segment_size);
-        let chunk = Self::chunk(sig, self.chunk_mask);
+        let chunk = Self::chunk(sig, self.high_bits, self.chunk_mask);
         // chunk * self.segment_size * (2^log2_l + 2)
         let chunk_offset = chunk * ((self.segment_size << self.log2_l) + (self.segment_size << 1));
         self.values.get(edge[0] + chunk_offset)
@@ -136,49 +154,122 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
         bit_width: usize,
         pl: &mut Option<&mut ProgressLogger>,
     ) -> Function<T> {
-        loop {
-            let seed = rand::random::<u64>();
-            let mut values = into_values.clone().into_iter();
+        // Loop until success or duplicate detection
+        let mut dup_count = 0;
+        for seed in 0.. {
             if let Some(pl) = pl.as_mut() {
                 pl.start("Reading input...")
             }
+
+            let mut values = into_values.clone().into_iter();
+
             let mut sigs = keys
                 .clone()
                 .into_iter()
-                .map(|x| (T::remap(&x, seed), values.next().unwrap()))
+                .map(|x| {
+                    (
+                        T::remap(&x, seed),
+                        values.next().expect("Not enough values"),
+                    )
+                })
                 .collect::<Vec<_>>();
+
             if let Some(pl) = pl.as_mut() {
                 pl.done_with_count(sigs.len());
             }
 
+            if false && values.next().is_some() {
+                // TODO
+                panic!("Too many values");
+            }
+
+            let num_keys = sigs.len();
+
             let eps = 0.001;
-            let low_bits = if sigs.len() <= 1 << 21 {
-                0
-            } else {
+            let mut high_bits = {
                 let t = (sigs.len() as f64 * eps * eps / 2.0).ln();
                 dbg!(t);
                 if t > 0.0 {
-                    ((t - t.ln()) / 2_f64.ln()).ceil() as usize
+                    ((t - t.ln()) / 2_f64.ln()).ceil()
                 } else {
-                    0
+                    0.0
+                }
+            } as u32;
+
+            dbg!(high_bits);
+
+            let (l, c) = {
+                loop {
+                    let (_, l, c) = PARAMS
+                        .iter()
+                        .rev()
+                        .filter(|(log_n, _l, _c)| (1 << log_n) <= (num_keys >> high_bits))
+                        .copied()
+                        .next()
+                        .unwrap(); // first log_n is 0, so this is always valid
+                    if high_bits == 0 || c <= 1.11 {
+                        break (l, c);
+                    }
+                    high_bits -= 1;
                 }
             };
-            dbg!(low_bits);
 
-            let log2_l = 7;
-            let l = 1 << log2_l;
-            let num_chunks = 1 << low_bits;
-            let chunk_mask = (1 << low_bits) - 1;
-            let (counts, cumul) =
-                count_sort(&mut sigs, num_chunks, |x| Self::chunk(&x.0, chunk_mask));
+            let log2_l = l.ilog2();
+            dbg!(num_keys, high_bits, num_keys >> high_bits, log2_l, c);
+            let num_chunks = 1 << high_bits;
+            let chunk_mask = (1u32 << high_bits) - 1;
+
+            if let Some(pl) = pl.as_mut() {
+                pl.start("Sorting...")
+            }
+            sigs.par_sort_unstable();
+            if let Some(pl) = pl.as_mut() {
+                pl.done_with_count(num_keys);
+            }
+
+            if let Some(pl) = pl.as_mut() {
+                pl.start("Checking for duplicates...")
+            }
+
+            let mut counts = vec![0; num_chunks];
+            let mut dup = false;
+
+            for w in sigs.windows(2) {
+                counts[Self::chunk(&w[0].0, high_bits, chunk_mask)] += 1;
+                if w[0].0 == w[1].0 {
+                    dup = true;
+                    break;
+                }
+            }
+
+            counts[Self::chunk(&sigs[num_keys - 1].0, high_bits, chunk_mask)] += 1;
+
+            if let Some(pl) = pl.as_mut() {
+                pl.done_with_count(num_keys);
+            }
+
+            if dup {
+                if dup_count >= 3 {
+                    panic!(
+                        "Duplicate keys (duplicate 128-bit signaturs with three different seeds)"
+                    );
+                }
+                warn!("Duplicate 128-bit signature, trying again...");
+                dup_count += 1;
+                continue;
+            }
+
+            let mut cumul = vec![0; num_chunks + 1];
+            for i in 0..num_chunks {
+                cumul[i + 1] = cumul[i] + counts[i];
+            }
 
             let segment_size =
-                ((*counts.iter().max().unwrap() as f64 * 1.12).ceil() as usize + l + 1) / (l + 2);
-            dbg!(segment_size);
+                ((*counts.iter().max().unwrap() as f64 * c).ceil() as usize + l + 1) / (l + 2);
             let num_vertices = segment_size * (l + 2);
             eprintln!(
                 "Size {:.2}%",
-                (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * 1.12)
+                (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * c)
             );
 
             let data = CompactArray::new_atomic(bit_width, num_vertices * num_chunks);
@@ -312,18 +403,20 @@ impl<T: Remap, S: BitFieldSlice> Function<T, S> {
                 return Function {
                     seed,
                     log2_l,
-                    num_keys: sigs.len(),
+                    high_bits,
                     chunk_mask,
+                    num_keys: sigs.len(),
                     segment_size,
                     values: data.convert_to().unwrap(),
                     _phantom: std::marker::PhantomData,
                 };
             }
         }
+        unreachable!("There are infinite possible seeds.")
     }
 }
 
-fn count_sort<T: Copy + Clone, F: Fn(&T) -> usize>(
+fn _count_sort<T: Copy + Clone, F: Fn(&T) -> usize>(
     data: &mut [T],
     num_keys: usize,
     key: F,
@@ -456,7 +549,10 @@ fn main() -> Result<()> {
             &mut Some(&mut pl),
         );
         func.store(&args.func)?;
-        let func = Function::<u64, CompactArray<Vec<usize>>>::load_mem(&args.func)?;
+        let func = Function::<u64, CompactArray<Vec<usize>>>::load_mmap(
+            &args.func,
+            epserde::deser::mem_case::Flags::TRANSPARENT_HUGE_PAGES,
+        )?;
         pl.start("Querying...");
         for (index, key) in (0..n as u64).enumerate() {
             assert_eq!(index, func.get(&key) as usize);
