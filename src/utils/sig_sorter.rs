@@ -10,8 +10,11 @@
 Fast sorting of signatures and values.
 */
 
-use anyhow::Result;
-use rayon::slice::ParallelSliceMut;
+use anyhow::{bail, Result};
+use rayon::{
+    prelude::ParallelIterator,
+    slice::{ParallelSlice, ParallelSliceMut},
+};
 use std::{fs::File, io::*};
 use tempfile::TempDir;
 
@@ -122,10 +125,8 @@ impl SigSorter {
                 max_count = max_count.max(data.len());
                 counts[i] = data.len();
 
-                for w in data.windows(2) {
-                    if w[0].0 == w[1].0 {
-                        return Err(anyhow::anyhow!("duplicate signature"));
-                    }
+                if data.par_windows(2).filter(|w| w[0].0 == w[1].0).count() > 0 {
+                    bail!("Duplicate key");
                 }
             }
             files[i].seek(SeekFrom::Start(0))?;
