@@ -8,8 +8,8 @@
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::ProgressLogger;
-use epserde::prelude::*;
-use sux::func::vigna::Function;
+use epserde::ser::Serialize;
+use sux::func::vfunc::VFunc;
 use sux::prelude::CompactArray;
 use sux::utils::file::FilenameIntoIterator;
 use sux::utils::FilenameZstdIntoIterator;
@@ -48,19 +48,19 @@ fn main() -> Result<()> {
 
     if let Some(filename) = args.filename {
         let func = if args.zstd {
-            Function::<_>::new(
+            VFunc::<_>::new(
                 FilenameZstdIntoIterator(&filename),
                 &(0..),
                 &mut Some(&mut pl),
             )
         } else {
-            Function::<_>::new_offline(FilenameIntoIterator(&filename), &(0..), &mut Some(&mut pl))?
+            VFunc::<_>::new_offline(FilenameIntoIterator(&filename), &(0..), &mut Some(&mut pl))?
         };
         func.store(&args.func)?;
     }
 
     if let Some(n) = args.n {
-        let func = Function::<_, CompactArray<Vec<usize>>>::new_offline(
+        let func = VFunc::<_, CompactArray<Vec<usize>>>::new_offline(
             0..n as u64,
             &(0..),
             &mut Some(&mut pl),
