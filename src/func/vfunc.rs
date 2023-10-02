@@ -240,6 +240,9 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 .into_iter()
                 .map(|x| {
                     let v = values.next().expect("Not enough values");
+                    if let Some(pl) = pl.as_mut() {
+                        pl.light_update();
+                    }
                     max_value = max_value.max(v);
                     (T::to_sig(&x, seed), v)
                 })
@@ -308,15 +311,15 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             let mut counts = vec![0; num_chunks];
             let mut dup = false;
 
+            counts[Self::chunk(&sigs[0].0, chunk_high_bits, chunk_mask)] += 1;
+
             for w in sigs.windows(2) {
-                counts[Self::chunk(&w[0].0, chunk_high_bits, chunk_mask)] += 1;
+                counts[Self::chunk(&w[1].0, chunk_high_bits, chunk_mask)] += 1;
                 if w[0].0 == w[1].0 {
                     dup = true;
                     break;
                 }
             }
-
-            counts[Self::chunk(&sigs[num_keys - 1].0, chunk_high_bits, chunk_mask)] += 1;
 
             if let Some(pl) = pl.as_mut() {
                 pl.done_with_count(num_keys);
@@ -363,7 +366,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                         let mut pl = ProgressLogger::default();
                         pl.expected_updates = Some(sigs.len());
 
-                        pl.start("Generating graph...");
+                        pl.start(format!("Generating graph for chunk {}...", chunk));
                         let mut edge_lists = Vec::new();
                         edge_lists.resize_with(num_vertices, EdgeList::default);
 
@@ -377,7 +380,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                         let next = AtomicUsize::new(0);
                         let incr = 1024;
 
-                        pl.start("Peeling...");
+                        pl.start(format!("Peeling graph for chunk {}...", chunk));
                         let stacks = Mutex::new(vec![]);
 
                         let mut stack = Vec::new();
@@ -432,7 +435,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
 
                         pl.done_with_count(sigs.len());
 
-                        pl.start("Assigning...");
+                        pl.start(format!("Assigning values for chunk {}...", chunk));
                         let mut stacks = stacks.lock().unwrap();
                         while let Some(mut stack) = stacks.pop() {
                             while let Some(mut v) = stack.pop() {
@@ -463,6 +466,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                             }
                         }
                         pl.done_with_count(sigs.len());
+                        pl.start(format!("Completed chunk {}.", chunk));
                     });
                 }
             });
@@ -508,6 +512,9 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             let mut values = into_values.clone().into_iter();
             let mut max_value = 0;
             sig_sorter.extend(keys.clone().into_iter().map(|x| {
+                if let Some(pl) = pl.as_mut() {
+                    pl.light_update();
+                }
                 let v = values.next().expect("Not enough values");
                 max_value = max_value.max(v);
                 (T::to_sig(&x, seed), v as u64)
@@ -566,6 +573,9 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             let num_chunks = 1 << chunk_high_bits;
             let chunk_mask = (1u32 << chunk_high_bits) - 1;
 
+            if let Some(pl) = pl.as_mut() {
+                pl.start("Sorting...")
+            }
             let sorted_sig;
             if let Ok(t) = sig_sorter.into_iter(chunk_high_bits) {
                 sorted_sig = t;
@@ -578,6 +588,10 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 warn!("Duplicate 128-bit signature, trying again...");
                 dup_count += 1;
                 continue;
+            }
+
+            if let Some(pl) = pl.as_mut() {
+                pl.done_with_count(num_keys);
             }
 
             let mut cumul = vec![0; num_chunks + 1];
@@ -614,7 +628,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                         let mut pl = ProgressLogger::default();
                         pl.expected_updates = Some(num_keys);
 
-                        pl.start("Generating graph...");
+                        pl.start(format!("Generating graph for chunk {}...", chunk));
                         let mut edge_lists = Vec::new();
                         edge_lists.resize_with(num_vertices, EdgeList::default);
 
@@ -628,7 +642,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                         let next = AtomicUsize::new(0);
                         let incr = 1024;
 
-                        pl.start("Peeling...");
+                        pl.start(format!("Peeling graph for chunk {}...", chunk));
                         let stacks = Mutex::new(vec![]);
 
                         let mut stack = Vec::new();
@@ -683,7 +697,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
 
                         pl.done_with_count(sigs.len());
 
-                        pl.start("Assigning...");
+                        pl.start(format!("Assigning values for chunk {}...", chunk));
                         let mut stacks = stacks.lock().unwrap();
                         while let Some(mut stack) = stacks.pop() {
                             while let Some(mut v) = stack.pop() {
@@ -714,6 +728,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                             }
                         }
                         pl.done_with_count(sigs.len());
+                        pl.start(format!("Completed chunk {}.", chunk));
                     });
                 }
             });
