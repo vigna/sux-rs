@@ -13,7 +13,7 @@ fast parallel construction, and fast queries.
 */
 
 use crate::prelude::{
-    spooky::*, BitFieldSlice, BitFieldSliceAtomic, BitFieldSliceCore, CompactArray, SigSorter,
+    spooky::*, BitFieldSlice, BitFieldSliceAtomic, BitFieldSliceCore, CompactArray, SigStore,
 };
 use crate::traits::convert_to::ConvertTo;
 use crate::BitOps;
@@ -475,7 +475,7 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
                 pl.start("Reading input...")
             }
 
-            let mut sig_sorter = SigSorter::new(8).unwrap();
+            let mut sig_sorter = SigStore::new(8).unwrap();
             let mut values = into_values.clone().into_iter();
             let mut max_value = 0;
             sig_sorter.extend(keys.clone().into_iter().map(|x| {
@@ -537,7 +537,7 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
             let chunk_mask = (1u32 << chunk_high_bits) - 1;
 
             let sorted_sig;
-            if let Ok(t) = sig_sorter.sort(chunk_high_bits) {
+            if let Ok(t) = sig_sorter.into_iter(chunk_high_bits) {
                 sorted_sig = t;
             } else {
                 if dup_count >= 3 {
@@ -579,7 +579,6 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
                                 return;
                             }
                             (chunk, sigs) = next.unwrap();
-                            dbg!(chunk);
                         }
 
                         let mut pl = ProgressLogger::default();

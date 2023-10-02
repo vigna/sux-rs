@@ -7,22 +7,51 @@
 
 /*!
 
-Fast sorting of signatures and values.
+Fast sorting of and grouping of signatures and values.
+
+
 */
 
 use anyhow::{bail, Result};
 use rayon::slice::ParallelSliceMut;
-use std::{fs::File, io::*};
+use std::{
+    fmt::{Display, Formatter},
+    fs::File,
+    io::*,
+};
 
-/// Adapter to iterate over the lines of a file.
-pub struct SigSorter {
+/**
+
+This structure is used to sort key signatures (i.e., randomly-looking
+hashes associated to keys) and associated values in a fast way,
+and to group them by the high bits of the hash. It accepts signatures and values
+in any order, and it sorts them in a way that allows to group them into *chunks*
+using their highest bits.
+
+The implementation exploits the fact that signatures are randomly distributed,
+and thus bucket sorting is very effective: at construction time you specify
+the number of high bits to use for bucket sorting (say, 8), and when you
+[push](`SigStore::push`) keys they will be stored in different buffers
+(in this case, 256) depending on their high bits.
+
+When you call [`SigStore::sort`] you can specify the number of high bits
+to use for grouping signatures into chunks, and the necessary buffer splitting or merging
+will be handled automatically.
+
+*/
+pub struct SigStore {
     num_keys: usize,
-    buf_high_bits: u32,
+    buckets_high_bits: u32,
     writers: Vec<BufWriter<File>>,
     buf_sizes: Vec<usize>,
 }
 
-pub struct SortedSig {
+/**
+
+The iterator on chunks returned by [`SigStore::sort`].
+
+*/
+pub struct Chunks {
     buf_high_bits: u32,
     chunk_high_bits: u32,
     files: Vec<File>,
@@ -31,13 +60,25 @@ pub struct SortedSig {
     chunk: usize,
 }
 
-impl SortedSig {
+impl Chunks {
+    /// The sizes of the chunks returned by the iterator.
     pub fn counts(&self) -> &[usize] {
         &self.chunk_sizes
     }
 }
 
-impl Iterator for SortedSig {
+#[derive(Debug)]
+pub struct DuplicateKeyError {}
+
+impl Display for DuplicateKeyError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Duplicate key")
+    }
+}
+
+impl std::error::Error for DuplicateKeyError {}
+
+impl Iterator for Chunks {
     type Item = (usize, Box<[([u64; 2], u64)]>);
     fn next(&mut self) -> Option<Self::Item> {
         if self.files.is_empty() {
@@ -83,7 +124,8 @@ impl Iterator for SortedSig {
     }
 }
 
-impl SigSorter {
+impl SigStore {
+    /// Create a new store with 2<sup>`buf_high_bits`</sup> buffers.
     pub fn new(buf_high_bits: u32) -> Result<Self> {
         let temp_dir = tempfile::TempDir::new()?;
         let mut writers = vec![];
@@ -97,23 +139,25 @@ impl SigSorter {
         }
         Ok(Self {
             num_keys: 0,
-            buf_high_bits,
+            buckets_high_bits: buf_high_bits,
             writers,
             buf_sizes: vec![0; 1 << buf_high_bits],
         })
     }
 
+    /// Adds a pair of signatures and values to the store.
     pub fn push(&mut self, value: &([u64; 2], u64)) -> Result<()> {
         self.num_keys += 1;
         // high_bits can be 0
-        let buffer =
-            (value.0[0].rotate_left(self.buf_high_bits)) as usize & ((1 << self.buf_high_bits) - 1);
+        let buffer = (value.0[0].rotate_left(self.buckets_high_bits)) as usize
+            & ((1 << self.buckets_high_bits) - 1);
         self.buf_sizes[buffer] += 1;
         self.writers[buffer].write_all(&value.0[0].to_ne_bytes())?;
         self.writers[buffer].write_all(&value.0[1].to_ne_bytes())?;
         Ok(self.writers[buffer].write_all(&value.1.to_ne_bytes())?)
     }
 
+    /// Adds pairs of signature and value to the store.
     pub fn extend(&mut self, iter: impl IntoIterator<Item = ([u64; 2], u64)>) -> Result<()> {
         for value in iter {
             self.push(&value)?;
@@ -121,16 +165,20 @@ impl SigSorter {
         Ok(())
     }
 
+    /// The number of keys added to the store so far.
     pub fn num_keys(&self) -> usize {
         self.num_keys
     }
 
-    pub fn sort(mut self, chunk_high_bits: u32) -> Result<SortedSig> {
+    /// Sorts the signatures and values and returns
+    /// an iterator on 2<sup>`chunk_high_bits`</sup> chunks grouped
+    /// by the highest `chunk_high_bits` bits of the signatures.
+    pub fn into_iter(mut self, chunk_high_bits: u32) -> Result<Chunks> {
         let mut max_len = 0;
         let mut lens = vec![];
         let mut files = vec![];
 
-        for _ in 0..1 << self.buf_high_bits {
+        for _ in 0..1 << self.buckets_high_bits {
             self.writers[0].flush()?; // We will remove it
 
             let len = self.writers[0].stream_position()?;
@@ -144,7 +192,7 @@ impl SigSorter {
 
         let mut buf = vec![0_u8; max_len as usize];
         let mut counts = vec![0; 1 << chunk_high_bits];
-        for i in 0..1 << self.buf_high_bits {
+        for i in 0..1 << self.buckets_high_bits {
             files[i].read_exact(&mut buf[..lens[i] as usize])?;
             {
                 let (pre, data, after) =
@@ -160,7 +208,7 @@ impl SigSorter {
                     counts[w[1].0[0].rotate_left(chunk_high_bits) as usize
                         & ((1 << chunk_high_bits) - 1)] += 1;
                     if w[0].0 == w[1].0 {
-                        bail!("Duplicate key");
+                        bail!(DuplicateKeyError {});
                     }
                 }
             }
@@ -170,8 +218,8 @@ impl SigSorter {
             files[i].seek(SeekFrom::Start(0))?;
         }
 
-        Ok(SortedSig {
-            buf_high_bits: self.buf_high_bits,
+        Ok(Chunks {
+            buf_high_bits: self.buckets_high_bits,
             chunk_high_bits,
             files,
             buf_sizes: self.buf_sizes,
@@ -187,14 +235,14 @@ fn test_sig_sorter() {
     use rand::prelude::*;
     for high_bits in [0, 2, 4] {
         for chunk_bits in [0, 2, 4] {
-            let mut sig_sorter = SigSorter::new(high_bits).unwrap();
+            let mut sig_sorter = SigStore::new(high_bits).unwrap();
             let mut rand = SmallRng::seed_from_u64(0);
             for _ in (0..1000).rev() {
                 sig_sorter
                     .push(&([rand.next_u64(), rand.next_u64()], rand.next_u64()))
                     .unwrap();
             }
-            let sorted_sig = sig_sorter.sort(chunk_bits).unwrap();
+            let sorted_sig = sig_sorter.into_iter(chunk_bits).unwrap();
             let mut count = 0;
             for chunk in sorted_sig {
                 count += 1;
@@ -207,4 +255,13 @@ fn test_sig_sorter() {
             assert_eq!(count, 1 << chunk_bits);
         }
     }
+}
+
+#[test]
+
+fn test_dup() {
+    let mut sig_sorter = SigStore::new(0).unwrap();
+    sig_sorter.push(&([0, 0], 0)).unwrap();
+    sig_sorter.push(&([0, 0], 0)).unwrap();
+    assert!(sig_sorter.into_iter(0).is_err());
 }
