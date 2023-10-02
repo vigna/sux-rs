@@ -260,7 +260,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             let num_keys = sigs.len();
 
             let eps = 0.001;
-            let mut high_bits = {
+            let mut chunk_high_bits = {
                 let t = (sigs.len() as f64 * eps * eps / 2.0).ln();
 
                 if t > 0.0 {
@@ -268,29 +268,30 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 } else {
                     0.0
                 }
-            } as u32;
+            }
+            .min(10.0) as u32; // More than 1000 chunks make no sense
 
             let (l, c) = {
                 loop {
                     let (_, l, c) = PARAMS
                         .iter()
                         .rev()
-                        .filter(|(log_n, _l, _c)| (1 << log_n) <= (num_keys >> high_bits))
+                        .filter(|(log_n, _l, _c)| (1 << log_n) <= (num_keys >> chunk_high_bits))
                         .copied()
                         .next()
                         .unwrap(); // first log_n is 0, so this is always valid
-                    if high_bits == 0 || c <= 1.11 {
+                    if chunk_high_bits == 0 || c <= 1.11 {
                         break (l, c);
                     }
-                    high_bits -= 1;
+                    chunk_high_bits -= 1;
                 }
             };
 
-            info!("high bits = {}, l = {}, c = {}", high_bits, l, c);
+            info!("high bits = {}, l = {}, c = {}", chunk_high_bits, l, c);
 
             let log2_l = l.ilog2();
-            let num_chunks = 1 << high_bits;
-            let chunk_mask = (1u32 << high_bits) - 1;
+            let num_chunks = 1 << chunk_high_bits;
+            let chunk_mask = (1u32 << chunk_high_bits) - 1;
 
             if let Some(pl) = pl.as_mut() {
                 pl.start("Sorting...")
@@ -308,14 +309,14 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             let mut dup = false;
 
             for w in sigs.windows(2) {
-                counts[Self::chunk(&w[0].0, high_bits, chunk_mask)] += 1;
+                counts[Self::chunk(&w[0].0, chunk_high_bits, chunk_mask)] += 1;
                 if w[0].0 == w[1].0 {
                     dup = true;
                     break;
                 }
             }
 
-            counts[Self::chunk(&sigs[num_keys - 1].0, high_bits, chunk_mask)] += 1;
+            counts[Self::chunk(&sigs[num_keys - 1].0, chunk_high_bits, chunk_mask)] += 1;
 
             if let Some(pl) = pl.as_mut() {
                 pl.done_with_count(num_keys);
@@ -476,7 +477,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 return VFunc {
                     seed,
                     log2_l,
-                    high_bits,
+                    high_bits: chunk_high_bits,
                     chunk_mask,
                     num_keys: sigs.len(),
                     segment_size,
@@ -537,7 +538,8 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 } else {
                     0.0
                 }
-            } as u32;
+            }
+            .min(10.0) as u32; // More than 1000 chunks make no sense
 
             let (l, c) = {
                 loop {
