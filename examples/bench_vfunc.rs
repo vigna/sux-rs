@@ -42,8 +42,8 @@ fn main() -> Result<()> {
             .take(args.n)
             .collect::<Vec<_>>();
         pl.start("Querying...");
-        for i in 0..keys.len() {
-            std::hint::black_box(func.get(&i));
+        for (i, key) in keys.iter().enumerate() {
+            assert_eq!(i, func.get(&key));
         }
         pl.done_with_count(keys.len());
     } else {
