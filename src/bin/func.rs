@@ -54,14 +54,17 @@ fn main() -> Result<()> {
                 &mut Some(&mut pl),
             )
         } else {
-            Function::<_>::new(FilenameIntoIterator(&filename), &(0..), &mut Some(&mut pl))
+            Function::<_>::new_offline(FilenameIntoIterator(&filename), &(0..), &mut Some(&mut pl))?
         };
         func.store(&args.func)?;
     }
 
     if let Some(n) = args.n {
-        let func =
-            Function::<_, CompactArray<Vec<usize>>>::new(0..n as u64, &(0..), &mut Some(&mut pl));
+        let func = Function::<_, CompactArray<Vec<usize>>>::new_offline(
+            0..n as u64,
+            &(0..),
+            &mut Some(&mut pl),
+        )?;
 
         func.store(&args.func)?;
     }
