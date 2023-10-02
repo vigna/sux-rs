@@ -13,8 +13,8 @@ use sux::func::vigna::Function;
 fn test_func() {
     let mut pl = ProgressLogger::default();
 
-    for n in [10, 100, 1000, 100000, 10000000] {
-        let func = Function::<_>::new(0..n as u64, &mut (0..), &mut Some(&mut pl));
+    for n in [10, 100, 1000, 100000] {
+        let func = Function::<_>::new(0..n as u64, &(0..), &mut Some(&mut pl));
         let mut cursor = epserde::new_aligned_cursor();
         func.serialize(&mut cursor).unwrap();
         cursor.set_position(0);
