@@ -16,8 +16,8 @@ to use for grouping signatures into chunks.
 
 */
 
-use anyhow::{bail, Result};
-use rayon::{collections::vec_deque, slice::ParallelSliceMut};
+use anyhow::Result;
+use rayon::slice::ParallelSliceMut;
 use std::{
     collections::VecDeque,
     fmt::{Display, Formatter},
@@ -46,28 +46,49 @@ will be handled automatically.
 
 */
 pub struct SigStore {
+    /// Number of keys added so far.
     num_keys: usize,
+    /// The number of high bits used for bucket sorting (i.e., the number of files).
     buckets_high_bits: u32,
+    /// The maximum number of high bits used for defining chunks in the call to
+    /// [`SigStore::into_iter`].
     max_chunk_high_bits: u32,
+    /// A mask for the lowest `buckets_high_bits` bits.
     buckets_mask: u64,
+    //A mask for the lowest `max_chunk_high_bits` bits.
     max_chunk_mask: u64,
+    /// The writers associated to the buckets.
     writers: VecDeque<BufWriter<File>>,
+    /// The number of keys in each bucket.
     buf_sizes: VecDeque<usize>,
+    /// The number of keys with the same `max_chunk_high_bits` high bits.
     counts: Vec<usize>,
 }
 
 /**
 
-The iterator on chunks returned by [`ChunkStore`].
+The iterator on chunks returned by [`ChunkStore::next`].
+
+This is a subset of the buckets corresponding to at least one chunk.
+It can be scanned independently.
+
+If the index of a returned chunk is `usize::MAX`, then the chunk contains
+a duplicate signature.
 
 */
 #[derive(Debug)]
 pub struct Chunks {
+    /// The number of high bits used for bucket sorting (i.e., the number of files).
     bucket_high_bits: u32,
+    /// The number of high bits defining a chunk.
     chunk_high_bits: u32,
+    /// The files associated to the buckets.
     files: Vec<File>,
+    /// The number of keys in each bucket.
     buf_sizes: Vec<usize>,
+    /// The number of keys in each chunk.
     chunk_sizes: Vec<usize>,
+    /// The next chunk to return.
     next_chunk: usize,
 }
 
@@ -75,17 +96,32 @@ pub struct Chunks {
 
 The iterator on iterators on chunks returned by [`SigStore::into_iter`].
 
+As the iterator progresses, signatures are sorted and
+istances of [`Chunks`] are returned. Each instance of [`Chunks`] is a subset of the buckets
+corresponding to at least one chunk. It can be scanned independently.
+
 */
 #[derive(Debug)]
 pub struct ChunkStore {
+    /// The number of high bits used for bucket sorting (i.e., the number of files).
     bucket_high_bits: u32,
+    /// The number of high bits defining a chunk.
     chunk_high_bits: u32,
+    /// The files associated to the buckets.
     files: VecDeque<File>,
+    /// The number of keys in each bucket.
     buf_sizes: VecDeque<usize>,
+    /// The number of keys in each chunk.
     chunk_sizes: VecDeque<usize>,
+    /// The next chunk to return.
     next_chunk: usize,
 }
 
+impl ChunkStore {
+    pub fn chunk_sizes(&self) -> &VecDeque<usize> {
+        &self.chunk_sizes
+    }
+}
 impl Iterator for ChunkStore {
     type Item = Chunks;
 
@@ -94,6 +130,7 @@ impl Iterator for ChunkStore {
             return None;
         }
         if self.bucket_high_bits >= self.chunk_high_bits {
+            // We need to aggregate some buckets to check a chunk
             let to_aggr = 1 << (self.bucket_high_bits - self.chunk_high_bits);
             let mut files = vec![];
             let mut buf_sizes = vec![];
@@ -108,7 +145,7 @@ impl Iterator for ChunkStore {
                 chunk_high_bits: self.chunk_high_bits,
                 files,
                 buf_sizes,
-                chunk_sizes: vec![self.chunk_sizes.pop_front().unwrap()],
+                chunk_sizes: vec![self.chunk_sizes.pop_front().unwrap()], // Just one chunk
                 next_chunk: self.next_chunk,
             };
             self.next_chunk += 1;
@@ -117,6 +154,7 @@ impl Iterator for ChunkStore {
 
         let num_chunks = 1 << (self.chunk_high_bits - self.bucket_high_bits);
         let mut chunk_sizes = vec![];
+        // We get a few chunks in a single bucket
         for _ in 0..num_chunks {
             chunk_sizes.push(self.chunk_sizes.pop_front().unwrap());
         }
@@ -124,7 +162,7 @@ impl Iterator for ChunkStore {
         let res = Chunks {
             bucket_high_bits: self.bucket_high_bits,
             chunk_high_bits: self.chunk_high_bits,
-            files: vec![self.files.pop_front().unwrap()],
+            files: vec![self.files.pop_front().unwrap()], // Just one bucket
             buf_sizes: vec![self.buf_sizes.pop_front().unwrap()],
             chunk_sizes,
             next_chunk: self.next_chunk,
@@ -269,16 +307,7 @@ impl SigStore {
         self.num_keys
     }
 
-    /// The number of keys with given high bits so far.
-    pub fn counts(&self) -> &[usize] {
-        &self.counts
-    }
-
-    /// Sorts the signatures and values and returns
-    /// an iterator on 2<sup>`chunk_high_bits`</sup> chunks grouped
-    /// by the highest `chunk_high_bits` bits of the signatures.
-    ///
-    /// Beside I/O error, this method might return a [`DuplicateKeyError`].
+    /// Flushes the buffers and return a [`ChunkStore`].
     pub fn into_iter(mut self, chunk_high_bits: u32) -> Result<ChunkStore> {
         assert!(chunk_high_bits <= self.max_chunk_high_bits);
         let mut files = VecDeque::new();

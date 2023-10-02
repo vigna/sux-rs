@@ -544,8 +544,6 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 panic!("Too many values");
             }*/
 
-            let num_keys = num_keys;
-
             let eps = 0.001;
             let mut chunk_high_bits = {
                 let t = (num_keys as f64 * eps * eps / 2.0).ln();
@@ -583,31 +581,9 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             let num_chunks = 1 << chunk_high_bits;
             let chunk_mask = (1u32 << chunk_high_bits) - 1;
 
-            let counts = sig_sorter
-                .counts()
-                .chunks(1 << (store_bits - chunk_high_bits))
-                .map(|chunk| chunk.iter().sum())
-                .collect::<Vec<usize>>();
-
-            let mut cumul = vec![0; num_chunks + 1];
-            for i in 0..num_chunks {
-                cumul[i + 1] = cumul[i] + counts[i];
-            }
-
-            let segment_size =
-                ((*counts.iter().max().unwrap() as f64 * c).ceil() as usize + l + 1) / (l + 2);
-            let num_vertices = segment_size * (l + 2);
-            info!(
-                "Size {:.2}%",
-                (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
-            );
-
-            if let Some(pl) = pl.as_mut() {
-                pl.start("Sorting...")
-            }
-            let sorted_sig;
+            let chunk_store;
             if let Ok(t) = sig_sorter.into_iter(chunk_high_bits) {
-                sorted_sig = t;
+                chunk_store = t;
             } else {
                 if dup_count >= 3 {
                     panic!(
@@ -619,6 +595,25 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 continue;
             }
 
+            let chunk_sizes = chunk_store.chunk_sizes();
+
+            let mut cumul = vec![0; num_chunks + 1];
+            for i in 0..num_chunks {
+                cumul[i + 1] = cumul[i] + chunk_sizes[i];
+            }
+
+            let segment_size =
+                ((*chunk_sizes.iter().max().unwrap() as f64 * c).ceil() as usize + l + 1) / (l + 2);
+            let num_vertices = segment_size * (l + 2);
+            info!(
+                "Size {:.2}%",
+                (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
+            );
+
+            if let Some(pl) = pl.as_mut() {
+                pl.start("Sorting...")
+            }
+
             if let Some(pl) = pl.as_mut() {
                 pl.done_with_count(num_keys);
             }
@@ -626,7 +621,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             let data = CompactArray::new_atomic(bit_width, num_vertices * num_chunks);
 
             let fail = AtomicBool::new(false);
-            let mutex = std::sync::Arc::new(Mutex::new(sorted_sig));
+            let mutex = std::sync::Arc::new(Mutex::new(chunk_store));
 
             thread::scope(|s| {
                 for _ in 0..num_chunks.min(num_cpus::get()) {
