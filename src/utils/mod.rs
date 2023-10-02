@@ -12,4 +12,6 @@ Utility traits and implementations.
 */
 
 pub mod file;
+pub mod sig_sorter;
 pub use crate::utils::file::*;
+pub use crate::utils::sig_sorter::*;

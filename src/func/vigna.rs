@@ -13,7 +13,7 @@ fast parallel construction, and fast queries.
 */
 
 use crate::prelude::{
-    spooky::*, BitFieldSlice, BitFieldSliceAtomic, BitFieldSliceCore, CompactArray,
+    spooky::*, BitFieldSlice, BitFieldSliceAtomic, BitFieldSliceCore, CompactArray, SigSorter,
 };
 use crate::traits::convert_to::ConvertTo;
 use crate::BitOps;
@@ -455,6 +455,253 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
                     values: data.convert_to().unwrap(),
                     _phantom: std::marker::PhantomData,
                 };
+            }
+        }
+        unreachable!("There are infinite possible seeds.")
+    }
+
+    pub fn new_offline<
+        I: std::iter::IntoIterator<Item = T> + Clone,
+        V: std::iter::IntoIterator<Item = usize> + Clone,
+    >(
+        keys: I,
+        into_values: &V,
+        pl: &mut Option<&mut ProgressLogger>,
+    ) -> anyhow::Result<Function<T>> {
+        // Loop until success or duplicate detection
+        let mut dup_count = 0;
+        for seed in 0.. {
+            if let Some(pl) = pl.as_mut() {
+                pl.start("Reading input...")
+            }
+
+            let mut sig_sorter = SigSorter::new(6).unwrap();
+            let mut values = into_values.clone().into_iter();
+            let mut max_value = 0;
+            sig_sorter.extend(keys.clone().into_iter().map(|x| {
+                let v = values.next().expect("Not enough values");
+                max_value = max_value.max(v);
+                (T::to_sig(&x, seed), v as u64)
+            }))?;
+
+            let sorted_sig;
+            if let Ok(t) = sig_sorter.sort() {
+                sorted_sig = t;
+            } else {
+                if dup_count >= 3 {
+                    panic!(
+                        "Duplicate keys (duplicate 128-bit signatures with four different seeds)"
+                    );
+                }
+                warn!("Duplicate 128-bit signature, trying again...");
+                dup_count += 1;
+                continue;
+            }
+            let num_keys = sorted_sig.num_keys;
+
+            let bit_width = max_value.len() as usize;
+            info!("max value = {}, bit width = {}", max_value, bit_width);
+
+            if let Some(pl) = pl.as_mut() {
+                pl.done_with_count(num_keys);
+            }
+
+            /*if values.next().is_some() {
+                // TODO
+                panic!("Too many values");
+            }*/
+
+            let num_keys = num_keys;
+
+            let eps = 0.001;
+            let mut high_bits = {
+                let t = (num_keys as f64 * eps * eps / 2.0).ln();
+
+                if t > 0.0 {
+                    ((t - t.ln()) / 2_f64.ln()).ceil()
+                } else {
+                    0.0
+                }
+            } as u32;
+
+            let (l, c) = {
+                loop {
+                    let (_, l, c) = PARAMS
+                        .iter()
+                        .rev()
+                        .filter(|(log_n, _l, _c)| (1 << log_n) <= (num_keys >> high_bits))
+                        .copied()
+                        .next()
+                        .unwrap(); // first log_n is 0, so this is always valid
+                    if high_bits == 0 || c <= 1.11 {
+                        break (l, c);
+                    }
+                    high_bits -= 1;
+                }
+            };
+
+            info!("high bits = {}, l = {}, c = {}", high_bits, l, c);
+
+            let log2_l = l.ilog2();
+            let num_chunks = 1 << high_bits;
+            let chunk_mask = (1u32 << high_bits) - 1;
+
+            let mut cumul = vec![0; num_chunks + 1];
+            for i in 0..num_chunks {
+                cumul[i + 1] = cumul[i] + sorted_sig.counts()[i];
+            }
+
+            let segment_size =
+                ((*sorted_sig.counts().iter().max().unwrap() as f64 * c).ceil() as usize + l + 1)
+                    / (l + 2);
+            let num_vertices = segment_size * (l + 2);
+            info!(
+                "Size {:.2}%",
+                (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
+            );
+
+            let data = CompactArray::new_atomic(bit_width, num_vertices * num_chunks);
+
+            let fail = AtomicBool::new(false);
+            let mutex = std::sync::Arc::new(Mutex::new(sorted_sig));
+
+            thread::scope(|s| {
+                for _ in 0..num_chunks.min(num_cpus::get()) {
+                    s.spawn(|| loop {
+                        let (sigs, chunk);
+                        {
+                            let next = mutex.lock().unwrap().next();
+                            if next.is_none() {
+                                return;
+                            }
+                            (chunk, sigs) = next.unwrap();
+                            dbg!(chunk);
+                        }
+
+                        let mut pl = ProgressLogger::default();
+                        pl.expected_updates = Some(num_keys);
+
+                        pl.start("Generating graph...");
+                        let mut edge_lists = Vec::new();
+                        edge_lists.resize_with(num_vertices, EdgeList::default);
+
+                        sigs.iter().enumerate().for_each(|(edge_index, sig)| {
+                            for &v in Self::edge(&sig.0, log2_l, segment_size).iter() {
+                                edge_lists[v].add(edge_index);
+                            }
+                        });
+                        pl.done_with_count(sigs.len());
+
+                        let next = AtomicUsize::new(0);
+                        let incr = 1024;
+
+                        pl.start("Peeling...");
+                        let stacks = Mutex::new(vec![]);
+
+                        let mut stack = Vec::new();
+                        loop {
+                            if fail.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            let start = next.fetch_add(incr, Ordering::Relaxed);
+                            if start >= num_vertices {
+                                break;
+                            }
+                            for v in start..(start + incr).min(num_vertices) {
+                                if edge_lists[v].degree() != 1 {
+                                    continue;
+                                }
+                                let mut pos = stack.len();
+                                let mut curr = stack.len();
+                                stack.push(v);
+
+                                while pos < stack.len() {
+                                    let v = stack[pos];
+                                    pos += 1;
+
+                                    if edge_lists[v].degree() == 0 {
+                                        continue; // Skip no longer useful entries
+                                    }
+
+                                    edge_lists[v].dec();
+                                    let edge_index = edge_lists[v].edge_index();
+
+                                    stack[curr] = v;
+                                    curr += 1;
+                                    // Degree is necessarily 0
+                                    for &x in
+                                        Self::edge(&sigs[edge_index].0, log2_l, segment_size).iter()
+                                    {
+                                        if x != v {
+                                            edge_lists[x].remove(edge_index);
+                                            if edge_lists[x].degree() == 1 {
+                                                stack.push(x);
+                                            }
+                                        }
+                                    }
+                                }
+                                stack.truncate(curr);
+                            }
+                        }
+                        if sigs.len() != stack.len() {
+                            fail.store(true, Ordering::Relaxed);
+                        }
+                        stacks.lock().unwrap().push(stack);
+
+                        pl.done_with_count(sigs.len());
+
+                        pl.start("Assigning...");
+                        let mut stacks = stacks.lock().unwrap();
+                        while let Some(mut stack) = stacks.pop() {
+                            while let Some(mut v) = stack.pop() {
+                                let edge_index = edge_lists[v].edge_index();
+                                let mut edge =
+                                    Self::edge(&sigs[edge_index].0, log2_l, segment_size);
+                                let chunk_offset = chunk * num_vertices;
+                                v += chunk_offset;
+                                edge.iter_mut().for_each(|v| {
+                                    *v += chunk_offset;
+                                });
+                                let value = if v == edge[0] {
+                                    data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
+                                } else if v == edge[1] {
+                                    data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
+                                } else {
+                                    data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
+                                };
+                                // TODO
+                                data.set(v, sigs[edge_index].1 as usize ^ value, Relaxed);
+
+                                assert_eq!(
+                                    data.get(edge[0], Relaxed)
+                                        ^ data.get(edge[1], Relaxed)
+                                        ^ data.get(edge[2], Relaxed),
+                                    sigs[edge_index].1 as usize
+                                );
+                            }
+                        }
+                        pl.done_with_count(sigs.len());
+                    });
+                }
+            });
+
+            if fail.load(Ordering::Relaxed) {
+                warn!("Failed peeling, trying again...")
+            } else {
+                info!(
+                    "bits/keys: {}",
+                    data.len() as f64 * bit_width as f64 / num_keys as f64,
+                );
+                return Ok(Function {
+                    seed,
+                    log2_l,
+                    high_bits,
+                    chunk_mask,
+                    num_keys: num_keys,
+                    segment_size,
+                    values: data.convert_to().unwrap(),
+                    _phantom: std::marker::PhantomData,
+                });
             }
         }
         unreachable!("There are infinite possible seeds.")
