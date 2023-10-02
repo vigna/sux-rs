@@ -66,7 +66,7 @@ impl ToSig for &str {
     }
 }
 
-macro_rules! remap_prim {
+macro_rules! to_sig_prim {
     ($($ty:ty),*) => {$(
         impl ToSig for $ty {
             fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
@@ -77,7 +77,21 @@ macro_rules! remap_prim {
     )*};
 }
 
-remap_prim!(isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
+to_sig_prim!(isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
+
+macro_rules! to_sig_slice {
+    ($($ty:ty),*) => {$(
+        impl ToSig for &[$ty] {
+            fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
+                // Alignemnt to u8 never fails or leave trailing/leading bytes
+                let spooky = spooky_short(unsafe {key.align_to::<u8>().1 }, seed);
+                [spooky[0], spooky[1]]
+            }
+        }
+    )*};
+}
+
+to_sig_slice!(isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
 
 const PARAMS: [(usize, usize, f64); 15] = [
     (0, 1, 1.23),
