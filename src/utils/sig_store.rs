@@ -17,8 +17,9 @@ to use for grouping signatures into chunks.
 */
 
 use anyhow::{bail, Result};
-use rayon::slice::ParallelSliceMut;
+use rayon::{collections::vec_deque, slice::ParallelSliceMut};
 use std::{
+    collections::VecDeque,
     fmt::{Display, Formatter},
     fs::File,
     io::*,
@@ -47,23 +48,90 @@ will be handled automatically.
 pub struct SigStore {
     num_keys: usize,
     buckets_high_bits: u32,
-    writers: Vec<BufWriter<File>>,
-    buf_sizes: Vec<usize>,
+    max_chunk_high_bits: u32,
+    buckets_mask: u64,
+    max_chunk_mask: u64,
+    writers: VecDeque<BufWriter<File>>,
+    buf_sizes: VecDeque<usize>,
+    counts: Vec<usize>,
 }
 
 /**
 
-The iterator on chunks returned by [`SigStore::into_iter`].
+The iterator on chunks returned by [`ChunkStore`].
 
 */
 #[derive(Debug)]
 pub struct Chunks {
-    buf_high_bits: u32,
+    bucket_high_bits: u32,
     chunk_high_bits: u32,
     files: Vec<File>,
     buf_sizes: Vec<usize>,
     chunk_sizes: Vec<usize>,
-    chunk: usize,
+    next_chunk: usize,
+}
+
+/**
+
+The iterator on iterators on chunks returned by [`SigStore::into_iter`].
+
+*/
+#[derive(Debug)]
+pub struct ChunkStore {
+    bucket_high_bits: u32,
+    chunk_high_bits: u32,
+    files: VecDeque<File>,
+    buf_sizes: VecDeque<usize>,
+    chunk_sizes: VecDeque<usize>,
+    next_chunk: usize,
+}
+
+impl Iterator for ChunkStore {
+    type Item = Chunks;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.files.len() == 0 {
+            return None;
+        }
+        if self.bucket_high_bits >= self.chunk_high_bits {
+            let to_aggr = 1 << (self.bucket_high_bits - self.chunk_high_bits);
+            let mut files = vec![];
+            let mut buf_sizes = vec![];
+
+            for _ in 0..to_aggr {
+                files.push(self.files.pop_front().unwrap());
+                buf_sizes.push(self.buf_sizes.pop_front().unwrap());
+            }
+
+            let res = Chunks {
+                bucket_high_bits: self.bucket_high_bits,
+                chunk_high_bits: self.chunk_high_bits,
+                files,
+                buf_sizes,
+                chunk_sizes: vec![self.chunk_sizes.pop_front().unwrap()],
+                next_chunk: self.next_chunk,
+            };
+            self.next_chunk += 1;
+            return Some(res);
+        }
+
+        let num_chunks = 1 << (self.chunk_high_bits - self.bucket_high_bits);
+        let mut chunk_sizes = vec![];
+        for _ in 0..num_chunks {
+            chunk_sizes.push(self.chunk_sizes.pop_front().unwrap());
+        }
+
+        let res = Chunks {
+            bucket_high_bits: self.bucket_high_bits,
+            chunk_high_bits: self.chunk_high_bits,
+            files: vec![self.files.pop_front().unwrap()],
+            buf_sizes: vec![self.buf_sizes.pop_front().unwrap()],
+            chunk_sizes,
+            next_chunk: self.next_chunk,
+        };
+        self.next_chunk += num_chunks;
+        return Some(res);
+    }
 }
 
 impl Chunks {
@@ -92,8 +160,8 @@ impl Iterator for Chunks {
         } else {
             let mut data = vec![([0_u64; 2], 0_u64); self.chunk_sizes.remove(0)];
 
-            if self.buf_high_bits >= self.chunk_high_bits {
-                let to_aggr = 1 << (self.buf_high_bits - self.chunk_high_bits);
+            if self.bucket_high_bits >= self.chunk_high_bits {
+                let to_aggr = 1 << (self.bucket_high_bits - self.chunk_high_bits);
 
                 {
                     let (pre, mut buf, after) = unsafe { data.align_to_mut::<u8>() };
@@ -108,8 +176,16 @@ impl Iterator for Chunks {
                     }
                 }
 
-                let res = Some((self.chunk, data.into_boxed_slice()));
-                self.chunk += 1;
+                data.par_sort_unstable();
+
+                for w in data.windows(2) {
+                    if w[0].0 == w[1].0 {
+                        return Some((usize::MAX, Box::new([])));
+                    }
+                }
+
+                let res = Some((self.next_chunk, data.into_boxed_slice()));
+                self.next_chunk += 1;
                 res
             } else {
                 {
@@ -119,9 +195,17 @@ impl Iterator for Chunks {
                     self.files[0].read_exact(buf).unwrap();
                 }
 
-                let res = Some((self.chunk, data.into_boxed_slice()));
-                self.chunk += 1;
-                if self.chunk % (1 << (self.chunk_high_bits - self.buf_high_bits)) == 0 {
+                data.par_sort_unstable();
+
+                for w in data.windows(2) {
+                    if w[0].0 == w[1].0 {
+                        return Some((usize::MAX, Box::new([])));
+                    }
+                }
+
+                let res = Some((self.next_chunk, data.into_boxed_slice()));
+                self.next_chunk += 1;
+                if self.next_chunk % (1 << (self.chunk_high_bits - self.bucket_high_bits)) == 0 {
                     self.files.remove(0);
                 }
                 res
@@ -132,22 +216,26 @@ impl Iterator for Chunks {
 
 impl SigStore {
     /// Create a new store with 2<sup>`buf_high_bits`</sup> buffers.
-    pub fn new(buf_high_bits: u32) -> Result<Self> {
+    pub fn new(buckets_high_bits: u32, max_chunk_high_bits: u32) -> Result<Self> {
         let temp_dir = tempfile::TempDir::new()?;
-        let mut writers = vec![];
-        for i in 0..1 << buf_high_bits {
+        let mut writers = VecDeque::new();
+        for i in 0..1 << buckets_high_bits {
             let file = File::options()
                 .read(true)
                 .write(true)
                 .create(true)
                 .open(temp_dir.path().join(format!("{}.tmp", i)))?;
-            writers.push(BufWriter::new(file));
+            writers.push_back(BufWriter::new(file));
         }
         Ok(Self {
             num_keys: 0,
-            buckets_high_bits: buf_high_bits,
+            buckets_high_bits,
+            max_chunk_high_bits,
+            buckets_mask: (1u64 << buckets_high_bits) - 1,
+            max_chunk_mask: (1u64 << max_chunk_high_bits) - 1,
             writers,
-            buf_sizes: vec![0; 1 << buf_high_bits],
+            buf_sizes: VecDeque::from(vec![0; 1 << buckets_high_bits]),
+            counts: vec![0; 1 << max_chunk_high_bits],
         })
     }
 
@@ -155,9 +243,14 @@ impl SigStore {
     pub fn push(&mut self, value: &([u64; 2], u64)) -> Result<()> {
         self.num_keys += 1;
         // high_bits can be 0
-        let buffer = (value.0[0].rotate_left(self.buckets_high_bits)) as usize
-            & ((1 << self.buckets_high_bits) - 1);
+        let buffer =
+            ((value.0[0].rotate_left(self.buckets_high_bits)) & self.buckets_mask) as usize;
+        let chunk =
+            ((value.0[0].rotate_left(self.max_chunk_high_bits)) & self.max_chunk_mask) as usize;
+
         self.buf_sizes[buffer] += 1;
+        self.counts[chunk] += 1;
+
         self.writers[buffer].write_all(&value.0[0].to_ne_bytes())?;
         self.writers[buffer].write_all(&value.0[1].to_ne_bytes())?;
         Ok(self.writers[buffer].write_all(&value.1.to_ne_bytes())?)
@@ -176,63 +269,39 @@ impl SigStore {
         self.num_keys
     }
 
+    /// The number of keys with given high bits so far.
+    pub fn counts(&self) -> &[usize] {
+        &self.counts
+    }
+
     /// Sorts the signatures and values and returns
     /// an iterator on 2<sup>`chunk_high_bits`</sup> chunks grouped
     /// by the highest `chunk_high_bits` bits of the signatures.
     ///
     /// Beside I/O error, this method might return a [`DuplicateKeyError`].
-    pub fn into_iter(mut self, chunk_high_bits: u32) -> Result<Chunks> {
-        let mut max_len = 0;
-        let mut lens = vec![];
-        let mut files = vec![];
+    pub fn into_iter(mut self, chunk_high_bits: u32) -> Result<ChunkStore> {
+        assert!(chunk_high_bits <= self.max_chunk_high_bits);
+        let mut files = VecDeque::new();
 
         for _ in 0..1 << self.buckets_high_bits {
-            self.writers[0].flush()?; // We will remove it
-
-            let len = self.writers[0].stream_position()?;
-            lens.push(len);
-            max_len = max_len.max(len);
-
-            let mut file = self.writers.remove(0).into_inner()?;
+            let mut writer = self.writers.pop_front().unwrap();
+            writer.flush()?;
+            let mut file = writer.into_inner()?;
             file.seek(SeekFrom::Start(0))?;
-            files.push(file);
+            files.push_back(file);
         }
 
-        let mut buf = vec![0_u8; max_len as usize];
-        let mut counts = vec![0; 1 << chunk_high_bits];
-        for i in 0..1 << self.buckets_high_bits {
-            files[i].read_exact(&mut buf[..lens[i] as usize])?;
-            {
-                let (pre, data, after) =
-                    unsafe { buf[..lens[i] as usize].align_to_mut::<([u64; 2], u64)>() };
-                assert!(pre.is_empty());
-                assert!(after.is_empty());
-                data.par_sort_unstable();
-
-                counts[data[0].0[0].rotate_left(chunk_high_bits) as usize
-                    & ((1 << chunk_high_bits) - 1)] += 1;
-
-                for w in data.windows(2) {
-                    counts[w[1].0[0].rotate_left(chunk_high_bits) as usize
-                        & ((1 << chunk_high_bits) - 1)] += 1;
-                    if w[0].0 == w[1].0 {
-                        bail!(DuplicateSigError {});
-                    }
-                }
-            }
-            files[i].seek(SeekFrom::Start(0))?;
-            files[i].write_all(&buf[..lens[i] as usize])?;
-            files[i].flush()?;
-            files[i].seek(SeekFrom::Start(0))?;
-        }
-
-        Ok(Chunks {
-            buf_high_bits: self.buckets_high_bits,
+        Ok(ChunkStore {
+            bucket_high_bits: self.buckets_high_bits,
             chunk_high_bits,
             files,
             buf_sizes: self.buf_sizes,
-            chunk_sizes: counts,
-            chunk: 0,
+            chunk_sizes: self
+                .counts
+                .chunks(1 << self.max_chunk_high_bits - chunk_high_bits)
+                .map(|x| x.iter().sum())
+                .collect(),
+            next_chunk: 0,
         })
     }
 }
@@ -241,26 +310,31 @@ impl SigStore {
 
 fn test_sig_sorter() {
     use rand::prelude::*;
-    for high_bits in [0, 2, 4] {
-        for chunk_bits in [0, 2, 4] {
-            let mut sig_sorter = SigStore::new(high_bits).unwrap();
-            let mut rand = SmallRng::seed_from_u64(0);
-            for _ in (0..1000).rev() {
-                sig_sorter
-                    .push(&([rand.next_u64(), rand.next_u64()], rand.next_u64()))
-                    .unwrap();
-            }
-            let sorted_sig = sig_sorter.into_iter(chunk_bits).unwrap();
-            let mut count = 0;
-            for chunk in sorted_sig {
-                count += 1;
-                for w in chunk.1.windows(2) {
-                    assert!(
-                        w[0].0[0] < w[1].0[0] || w[0].0[0] == w[1].0[0] && w[0].0[1] < w[1].0[1]
-                    );
+    for max_chunk_bits in [4, 6] {
+        for high_bits in [0, 2, 4] {
+            for chunk_bits in [0, 2, 4] {
+                let mut sig_sorter = SigStore::new(high_bits, max_chunk_bits).unwrap();
+                let mut rand = SmallRng::seed_from_u64(0);
+                for _ in (0..1000).rev() {
+                    sig_sorter
+                        .push(&([rand.next_u64(), rand.next_u64()], rand.next_u64()))
+                        .unwrap();
                 }
+                let sorted_sig = sig_sorter.into_iter(chunk_bits).unwrap();
+                let mut count = 0;
+                for chunks in sorted_sig {
+                    for chunk in chunks {
+                        count += 1;
+                        for w in chunk.1.windows(2) {
+                            assert!(
+                                w[0].0[0] < w[1].0[0]
+                                    || w[0].0[0] == w[1].0[0] && w[0].0[1] < w[1].0[1]
+                            );
+                        }
+                    }
+                }
+                assert_eq!(count, 1 << chunk_bits);
             }
-            assert_eq!(count, 1 << chunk_bits);
         }
     }
 }
@@ -268,12 +342,17 @@ fn test_sig_sorter() {
 #[test]
 
 fn test_dup() {
-    let mut sig_sorter = SigStore::new(0).unwrap();
+    let mut sig_sorter = SigStore::new(0, 0).unwrap();
     sig_sorter.push(&([0, 0], 0)).unwrap();
     sig_sorter.push(&([0, 0], 0)).unwrap();
-    assert!(sig_sorter
-        .into_iter(0)
-        .unwrap_err()
-        .downcast_ref::<DuplicateSigError>()
-        .is_some());
+    let mut dup = false;
+    for chunks in sig_sorter.into_iter(0).unwrap() {
+        for chunk in chunks {
+            if chunk.0 == usize::MAX {
+                dup = true;
+                break;
+            }
+        }
+    }
+    assert!(dup);
 }

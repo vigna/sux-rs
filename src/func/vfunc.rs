@@ -517,7 +517,8 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 pl.start("Reading input...")
             }
 
-            let mut sig_sorter = SigStore::new(8).unwrap();
+            let store_bits = 12;
+            let mut sig_sorter = SigStore::new(8, store_bits).unwrap();
             let mut values = into_values.clone().into_iter();
             let mut max_value = 0;
             sig_sorter.extend(keys.clone().into_iter().map(|x| {
@@ -582,6 +583,25 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             let num_chunks = 1 << chunk_high_bits;
             let chunk_mask = (1u32 << chunk_high_bits) - 1;
 
+            let counts = sig_sorter
+                .counts()
+                .chunks(1 << (store_bits - chunk_high_bits))
+                .map(|chunk| chunk.iter().sum())
+                .collect::<Vec<usize>>();
+
+            let mut cumul = vec![0; num_chunks + 1];
+            for i in 0..num_chunks {
+                cumul[i + 1] = cumul[i] + counts[i];
+            }
+
+            let segment_size =
+                ((*counts.iter().max().unwrap() as f64 * c).ceil() as usize + l + 1) / (l + 2);
+            let num_vertices = segment_size * (l + 2);
+            info!(
+                "Size {:.2}%",
+                (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
+            );
+
             if let Some(pl) = pl.as_mut() {
                 pl.start("Sorting...")
             }
@@ -603,20 +623,6 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 pl.done_with_count(num_keys);
             }
 
-            let mut cumul = vec![0; num_chunks + 1];
-            for i in 0..num_chunks {
-                cumul[i + 1] = cumul[i] + sorted_sig.counts()[i];
-            }
-
-            let segment_size =
-                ((*sorted_sig.counts().iter().max().unwrap() as f64 * c).ceil() as usize + l + 1)
-                    / (l + 2);
-            let num_vertices = segment_size * (l + 2);
-            info!(
-                "Size {:.2}%",
-                (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
-            );
-
             let data = CompactArray::new_atomic(bit_width, num_vertices * num_chunks);
 
             let fail = AtomicBool::new(false);
@@ -625,128 +631,130 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             thread::scope(|s| {
                 for _ in 0..num_chunks.min(num_cpus::get()) {
                     s.spawn(|| loop {
-                        let (sigs, chunk);
+                        let chunks;
                         {
                             let next = mutex.lock().unwrap().next();
                             if next.is_none() {
                                 return;
                             }
-                            (chunk, sigs) = next.unwrap();
+                            chunks = next.unwrap();
                         }
+                        for (chunk_index, chunk) in chunks {
+                            let mut pl = ProgressLogger::default();
+                            pl.expected_updates = Some(num_keys);
 
-                        let mut pl = ProgressLogger::default();
-                        pl.expected_updates = Some(num_keys);
+                            pl.start(format!(
+                                "Generating graph for chunk {}/{}...",
+                                chunk_index, num_chunks
+                            ));
+                            let mut edge_lists = Vec::new();
+                            edge_lists.resize_with(num_vertices, EdgeList::default);
 
-                        pl.start(format!(
-                            "Generating graph for chunk {}/{}...",
-                            chunk, num_chunks
-                        ));
-                        let mut edge_lists = Vec::new();
-                        edge_lists.resize_with(num_vertices, EdgeList::default);
-
-                        sigs.iter().enumerate().for_each(|(edge_index, sig)| {
-                            for &v in Self::edge(&sig.0, log2_l, segment_size).iter() {
-                                edge_lists[v].add(edge_index);
-                            }
-                        });
-                        pl.done_with_count(sigs.len());
-
-                        let next = AtomicUsize::new(0);
-                        let incr = 1024;
-
-                        pl.start(format!(
-                            "Peeling graph for chunk {}/{}...",
-                            chunk, num_chunks
-                        ));
-                        let stacks = Mutex::new(vec![]);
-
-                        let mut stack = Vec::new();
-                        loop {
-                            if fail.load(Ordering::Relaxed) {
-                                return;
-                            }
-                            let start = next.fetch_add(incr, Ordering::Relaxed);
-                            if start >= num_vertices {
-                                break;
-                            }
-                            for v in start..(start + incr).min(num_vertices) {
-                                if edge_lists[v].degree() != 1 {
-                                    continue;
+                            chunk.iter().enumerate().for_each(|(edge_index, sig)| {
+                                for &v in Self::edge(&sig.0, log2_l, segment_size).iter() {
+                                    edge_lists[v].add(edge_index);
                                 }
-                                let mut pos = stack.len();
-                                let mut curr = stack.len();
-                                stack.push(v);
+                            });
+                            pl.done_with_count(chunk.len());
 
-                                while pos < stack.len() {
-                                    let v = stack[pos];
-                                    pos += 1;
+                            let next = AtomicUsize::new(0);
+                            let incr = 1024;
 
-                                    if edge_lists[v].degree() == 0 {
-                                        continue; // Skip no longer useful entries
+                            pl.start(format!(
+                                "Peeling graph for chunk {}/{}...",
+                                chunk_index, num_chunks
+                            ));
+                            let stacks = Mutex::new(vec![]);
+
+                            let mut stack = Vec::new();
+                            loop {
+                                if fail.load(Ordering::Relaxed) {
+                                    return;
+                                }
+                                let start = next.fetch_add(incr, Ordering::Relaxed);
+                                if start >= num_vertices {
+                                    break;
+                                }
+                                for v in start..(start + incr).min(num_vertices) {
+                                    if edge_lists[v].degree() != 1 {
+                                        continue;
                                     }
+                                    let mut pos = stack.len();
+                                    let mut curr = stack.len();
+                                    stack.push(v);
 
-                                    edge_lists[v].dec();
-                                    let edge_index = edge_lists[v].edge_index();
+                                    while pos < stack.len() {
+                                        let v = stack[pos];
+                                        pos += 1;
 
-                                    stack[curr] = v;
-                                    curr += 1;
-                                    // Degree is necessarily 0
-                                    for &x in
-                                        Self::edge(&sigs[edge_index].0, log2_l, segment_size).iter()
-                                    {
-                                        if x != v {
-                                            edge_lists[x].remove(edge_index);
-                                            if edge_lists[x].degree() == 1 {
-                                                stack.push(x);
+                                        if edge_lists[v].degree() == 0 {
+                                            continue; // Skip no longer useful entries
+                                        }
+
+                                        edge_lists[v].dec();
+                                        let edge_index = edge_lists[v].edge_index();
+
+                                        stack[curr] = v;
+                                        curr += 1;
+                                        // Degree is necessarily 0
+                                        for &x in
+                                            Self::edge(&chunk[edge_index].0, log2_l, segment_size)
+                                                .iter()
+                                        {
+                                            if x != v {
+                                                edge_lists[x].remove(edge_index);
+                                                if edge_lists[x].degree() == 1 {
+                                                    stack.push(x);
+                                                }
                                             }
                                         }
                                     }
+                                    stack.truncate(curr);
                                 }
-                                stack.truncate(curr);
                             }
-                        }
-                        if sigs.len() != stack.len() {
-                            fail.store(true, Ordering::Relaxed);
-                        }
-                        stacks.lock().unwrap().push(stack);
-
-                        pl.done_with_count(sigs.len());
-
-                        pl.start(format!(
-                            "Assigning values for chunk {}/{}...",
-                            chunk, num_chunks
-                        ));
-                        let mut stacks = stacks.lock().unwrap();
-                        while let Some(mut stack) = stacks.pop() {
-                            while let Some(mut v) = stack.pop() {
-                                let edge_index = edge_lists[v].edge_index();
-                                let mut edge =
-                                    Self::edge(&sigs[edge_index].0, log2_l, segment_size);
-                                let chunk_offset = chunk * num_vertices;
-                                v += chunk_offset;
-                                edge.iter_mut().for_each(|v| {
-                                    *v += chunk_offset;
-                                });
-                                let value = if v == edge[0] {
-                                    data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
-                                } else if v == edge[1] {
-                                    data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
-                                } else {
-                                    data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
-                                };
-                                // TODO
-                                data.set(v, sigs[edge_index].1 as usize ^ value, Relaxed);
-
-                                assert_eq!(
-                                    data.get(edge[0], Relaxed)
-                                        ^ data.get(edge[1], Relaxed)
-                                        ^ data.get(edge[2], Relaxed),
-                                    sigs[edge_index].1 as usize
-                                );
+                            if chunk.len() != stack.len() {
+                                fail.store(true, Ordering::Relaxed);
                             }
+                            stacks.lock().unwrap().push(stack);
+
+                            pl.done_with_count(chunk.len());
+
+                            pl.start(format!(
+                                "Assigning values for chunk {}/{}...",
+                                chunk_index, num_chunks
+                            ));
+                            let mut stacks = stacks.lock().unwrap();
+                            while let Some(mut stack) = stacks.pop() {
+                                while let Some(mut v) = stack.pop() {
+                                    let edge_index = edge_lists[v].edge_index();
+                                    let mut edge =
+                                        Self::edge(&chunk[edge_index].0, log2_l, segment_size);
+                                    let chunk_offset = chunk_index * num_vertices;
+                                    v += chunk_offset;
+                                    edge.iter_mut().for_each(|v| {
+                                        *v += chunk_offset;
+                                    });
+                                    let value = if v == edge[0] {
+                                        data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
+                                    } else if v == edge[1] {
+                                        data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
+                                    } else {
+                                        data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
+                                    };
+                                    // TODO
+                                    data.set(v, chunk[edge_index].1 as usize ^ value, Relaxed);
+
+                                    assert_eq!(
+                                        data.get(edge[0], Relaxed)
+                                            ^ data.get(edge[1], Relaxed)
+                                            ^ data.get(edge[2], Relaxed),
+                                        chunk[edge_index].1 as usize
+                                    );
+                                }
+                            }
+                            pl.done_with_count(chunk.len());
+                            pl.start(format!("Completed chunk {}/{}.", chunk_index, num_chunks));
                         }
-                        pl.done_with_count(sigs.len());
-                        pl.start(format!("Completed chunk {}/{}.", chunk, num_chunks));
                     });
                 }
             });
