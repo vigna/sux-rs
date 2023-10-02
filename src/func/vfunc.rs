@@ -366,7 +366,10 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                         let mut pl = ProgressLogger::default();
                         pl.expected_updates = Some(sigs.len());
 
-                        pl.start(format!("Generating graph for chunk {}...", chunk));
+                        pl.start(format!(
+                            "Generating graph for chunk {}/{}...",
+                            chunk, num_chunks
+                        ));
                         let mut edge_lists = Vec::new();
                         edge_lists.resize_with(num_vertices, EdgeList::default);
 
@@ -380,7 +383,10 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                         let next = AtomicUsize::new(0);
                         let incr = 1024;
 
-                        pl.start(format!("Peeling graph for chunk {}...", chunk));
+                        pl.start(format!(
+                            "Peeling graph for chunk {}/{}...",
+                            chunk, num_chunks
+                        ));
                         let stacks = Mutex::new(vec![]);
 
                         let mut stack = Vec::new();
@@ -435,7 +441,10 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
 
                         pl.done_with_count(sigs.len());
 
-                        pl.start(format!("Assigning values for chunk {}...", chunk));
+                        pl.start(format!(
+                            "Assigning values for chunk {}/{}...",
+                            chunk, num_chunks
+                        ));
                         let mut stacks = stacks.lock().unwrap();
                         while let Some(mut stack) = stacks.pop() {
                             while let Some(mut v) = stack.pop() {
@@ -466,7 +475,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                             }
                         }
                         pl.done_with_count(sigs.len());
-                        pl.start(format!("Completed chunk {}.", chunk));
+                        pl.start(format!("Completed chunk {}/{}.", chunk, num_chunks));
                     });
                 }
             });
@@ -628,7 +637,10 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                         let mut pl = ProgressLogger::default();
                         pl.expected_updates = Some(num_keys);
 
-                        pl.start(format!("Generating graph for chunk {}...", chunk));
+                        pl.start(format!(
+                            "Generating graph for chunk {}/{}...",
+                            chunk, num_chunks
+                        ));
                         let mut edge_lists = Vec::new();
                         edge_lists.resize_with(num_vertices, EdgeList::default);
 
@@ -642,7 +654,10 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                         let next = AtomicUsize::new(0);
                         let incr = 1024;
 
-                        pl.start(format!("Peeling graph for chunk {}...", chunk));
+                        pl.start(format!(
+                            "Peeling graph for chunk {}/{}...",
+                            chunk, num_chunks
+                        ));
                         let stacks = Mutex::new(vec![]);
 
                         let mut stack = Vec::new();
@@ -697,7 +712,10 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
 
                         pl.done_with_count(sigs.len());
 
-                        pl.start(format!("Assigning values for chunk {}...", chunk));
+                        pl.start(format!(
+                            "Assigning values for chunk {}/{}...",
+                            chunk, num_chunks
+                        ));
                         let mut stacks = stacks.lock().unwrap();
                         while let Some(mut stack) = stacks.pop() {
                             while let Some(mut v) = stack.pop() {
@@ -728,7 +746,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                             }
                         }
                         pl.done_with_count(sigs.len());
-                        pl.start(format!("Completed chunk {}.", chunk));
+                        pl.start(format!("Completed chunk {}/{}.", chunk, num_chunks));
                     });
                 }
             });
