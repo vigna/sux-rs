@@ -9,7 +9,7 @@ use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::ProgressLogger;
 use epserde::prelude::*;
-use sux::func::vigna::Function;
+use sux::func::vfunc::VFunc;
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks functions", long_about = None)]
@@ -34,7 +34,7 @@ fn main() -> Result<()> {
     let mut pl = ProgressLogger::default();
 
     let args = Args::parse();
-    let func = Function::<_>::load_mem(&args.func)?;
+    let func = VFunc::<_>::load_mem(&args.func)?;
 
     if let Some(filename) = args.filename {
         let keys = sux::utils::file::FilenameIntoIterator(&filename)

@@ -122,7 +122,7 @@ A static function from key implementing [ToSig] to arbitrary values.
 
 */
 #[derive(Epserde, Debug, Default)]
-pub struct Function<T: ToSig, S: BitFieldSlice = CompactArray<Vec<usize>>> {
+pub struct VFunc<T: ToSig, S: BitFieldSlice = CompactArray<Vec<usize>>> {
     seed: u64,
     log2_l: u32,
     high_bits: u32,
@@ -145,7 +145,7 @@ More precisely, each signature is made of two 64-bit integers `h` and `l`, and t
 - the lower 32 bits of `l` are used to select the third vertex.
 
 */
-impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
+impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
     #[inline(always)]
     #[must_use]
     fn chunk(sig: &[u64; 2], high_bits: u32, chunk_mask: u32) -> usize {
@@ -197,7 +197,7 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
         keys: I,
         into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
-    ) -> Function<T> {
+    ) -> VFunc<T> {
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         for seed in 0.. {
@@ -445,7 +445,7 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
                     "bits/keys: {}",
                     data.len() as f64 * bit_width as f64 / sigs.len() as f64,
                 );
-                return Function {
+                return VFunc {
                     seed,
                     log2_l,
                     high_bits,
@@ -467,7 +467,7 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
         keys: I,
         into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
-    ) -> anyhow::Result<Function<T>> {
+    ) -> anyhow::Result<VFunc<T>> {
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         for seed in 0.. {
@@ -695,7 +695,7 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
                     "bits/keys: {}",
                     data.len() as f64 * bit_width as f64 / num_keys as f64,
                 );
-                return Ok(Function {
+                return Ok(VFunc {
                     seed,
                     log2_l,
                     high_bits: chunk_high_bits,
