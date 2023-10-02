@@ -7,8 +7,12 @@
 
 /*!
 
-Fast sorting of and grouping of signatures and values.
+Fast sorting and grouping of signatures and values.
 
+A *signature* is a pair of 64-bit integers, and a *value* is a 64-bit integer.
+A [`SigStore`] accepts signatures and values in any order; then,
+when you call [`SigStore::into_iter`] you can specify the number of high bits
+to use for grouping signatures into chunks.
 
 */
 
@@ -31,10 +35,11 @@ using their highest bits.
 The implementation exploits the fact that signatures are randomly distributed,
 and thus bucket sorting is very effective: at construction time you specify
 the number of high bits to use for bucket sorting (say, 8), and when you
-[push](`SigStore::push`) keys they will be stored in different buffers
-(in this case, 256) depending on their high bits.
+[push](`SigStore::push`) keys they will be stored in different disk buffers
+(in this case, 256) depending on their high bits. The buffer will be stored
+in a directory created by [`tempfile::TempDir`].
 
-When you call [`SigStore::sort`] you can specify the number of high bits
+When you call [`SigStore::into_iter`] you can specify the number of high bits
 to use for grouping signatures into chunks, and the necessary buffer splitting or merging
 will be handled automatically.
 
@@ -48,7 +53,7 @@ pub struct SigStore {
 
 /**
 
-The iterator on chunks returned by [`SigStore::sort`].
+The iterator on chunks returned by [`SigStore::into_iter`].
 
 */
 #[derive(Debug)]
@@ -69,15 +74,15 @@ impl Chunks {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct DuplicateKeyError {}
+pub struct DuplicateSigError {}
 
-impl Display for DuplicateKeyError {
+impl Display for DuplicateSigError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Duplicate key")
+        write!(f, "Duplicate signature detected")
     }
 }
 
-impl std::error::Error for DuplicateKeyError {}
+impl std::error::Error for DuplicateSigError {}
 
 impl Iterator for Chunks {
     type Item = (usize, Box<[([u64; 2], u64)]>);
@@ -174,6 +179,8 @@ impl SigStore {
     /// Sorts the signatures and values and returns
     /// an iterator on 2<sup>`chunk_high_bits`</sup> chunks grouped
     /// by the highest `chunk_high_bits` bits of the signatures.
+    ///
+    /// Beside I/O error, this method might return a [`DuplicateKeyError`].
     pub fn into_iter(mut self, chunk_high_bits: u32) -> Result<Chunks> {
         let mut max_len = 0;
         let mut lens = vec![];
@@ -209,7 +216,7 @@ impl SigStore {
                     counts[w[1].0[0].rotate_left(chunk_high_bits) as usize
                         & ((1 << chunk_high_bits) - 1)] += 1;
                     if w[0].0 == w[1].0 {
-                        bail!(DuplicateKeyError {});
+                        bail!(DuplicateSigError {});
                     }
                 }
             }
@@ -267,6 +274,6 @@ fn test_dup() {
     assert!(sig_sorter
         .into_iter(0)
         .unwrap_err()
-        .downcast_ref::<DuplicateKeyError>()
+        .downcast_ref::<DuplicateSigError>()
         .is_some());
 }
