@@ -11,61 +11,85 @@ Fast sorting of signatures and values.
 */
 
 use anyhow::{bail, Result};
-use rayon::{
-    prelude::ParallelIterator,
-    slice::{ParallelSlice, ParallelSliceMut},
-};
+use rayon::slice::ParallelSliceMut;
 use std::{fs::File, io::*};
 use tempfile::TempDir;
 
 /// Adapter to iterate over the lines of a file.
 pub struct SigSorter {
-    high_bits: u32,
+    num_keys: usize,
+    buf_high_bits: u32,
     writers: Vec<BufWriter<File>>,
+    buf_sizes: Vec<usize>,
     tmp_dir: TempDir,
 }
 
 pub struct SortedSig {
-    pub num_keys: usize,
-    readers: Vec<BufReader<File>>,
-    counts: Vec<usize>,
+    buf_high_bits: u32,
+    chunk_high_bits: u32,
+    files: Vec<File>,
+    buf_sizes: Vec<usize>,
+    chunk_sizes: Vec<usize>,
     chunk: usize,
 }
 
 impl SortedSig {
     pub fn counts(&self) -> &[usize] {
-        &self.counts
+        &self.chunk_sizes
     }
 }
 
 impl Iterator for SortedSig {
     type Item = (usize, Box<[([u64; 2], u64)]>);
     fn next(&mut self) -> Option<Self::Item> {
-        if self.readers.is_empty() {
+        if self.files.is_empty() {
             None
         } else {
-            let mut reader = self.readers.remove(0);
-            let count = self.counts.remove(0);
-            let mut data = vec![([0_u64; 2], 0_u64); count];
-            {
-                let (pre, mut buf, after) = unsafe { data.align_to_mut::<u8>() };
-                assert!(pre.is_empty());
-                assert!(after.is_empty());
-                reader.read_exact(&mut buf).unwrap();
-            }
+            let mut data = vec![([0_u64; 2], 0_u64); self.chunk_sizes.remove(0)];
 
-            let res = Some((self.chunk, data.into_boxed_slice()));
-            self.chunk += 1;
-            res
+            if self.buf_high_bits >= self.chunk_high_bits {
+                let to_aggr = 1 << self.buf_high_bits - self.chunk_high_bits;
+
+                {
+                    let (pre, mut buf, after) = unsafe { data.align_to_mut::<u8>() };
+                    assert!(pre.is_empty());
+                    assert!(after.is_empty());
+                    for i in 0..to_aggr {
+                        let mut reader = self.files.remove(0);
+                        let bytes =
+                            self.buf_sizes.remove(0) * core::mem::size_of::<([u64; 2], u64)>();
+                        reader.read_exact(&mut buf[..bytes]).unwrap();
+                        buf = &mut buf[bytes..];
+                    }
+                }
+
+                let res = Some((self.chunk, data.into_boxed_slice()));
+                self.chunk += 1;
+                res
+            } else {
+                {
+                    let (pre, mut buf, after) = unsafe { data.align_to_mut::<u8>() };
+                    assert!(pre.is_empty());
+                    assert!(after.is_empty());
+                    self.files[0].read_exact(&mut buf).unwrap();
+                }
+
+                let res = Some((self.chunk, data.into_boxed_slice()));
+                self.chunk += 1;
+                if self.chunk % (1 << self.chunk_high_bits - self.buf_high_bits) == 0 {
+                    self.files.remove(0);
+                }
+                res
+            }
         }
     }
 }
 
 impl SigSorter {
-    pub fn new(high_bits: u32) -> Result<Self> {
+    pub fn new(buf_high_bits: u32) -> Result<Self> {
         let tmp_dir = tempfile::TempDir::new().unwrap();
         let mut writers = vec![];
-        for i in 0..1 << high_bits {
+        for i in 0..1 << buf_high_bits {
             let file = File::options()
                 .read(true)
                 .write(true)
@@ -74,18 +98,23 @@ impl SigSorter {
             writers.push(BufWriter::new(file));
         }
         Ok(Self {
-            high_bits,
+            num_keys: 0,
+            buf_high_bits,
             writers,
+            buf_sizes: vec![0; 1 << buf_high_bits],
             tmp_dir,
         })
     }
 
     pub fn push(&mut self, value: &([u64; 2], u64)) -> Result<()> {
+        self.num_keys += 1;
         // high_bits can be 0
-        let chunk = (value.0[0].rotate_left(self.high_bits)) as usize & ((1 << self.high_bits) - 1);
-        self.writers[chunk].write_all(&value.0[0].to_ne_bytes())?;
-        self.writers[chunk].write_all(&value.0[1].to_ne_bytes())?;
-        Ok(self.writers[chunk].write_all(&value.1.to_ne_bytes())?)
+        let buffer =
+            (value.0[0].rotate_left(self.buf_high_bits)) as usize & ((1 << self.buf_high_bits) - 1);
+        self.buf_sizes[buffer] += 1;
+        self.writers[buffer].write_all(&value.0[0].to_ne_bytes())?;
+        self.writers[buffer].write_all(&value.0[1].to_ne_bytes())?;
+        Ok(self.writers[buffer].write_all(&value.1.to_ne_bytes())?)
     }
 
     pub fn extend(&mut self, iter: impl IntoIterator<Item = ([u64; 2], u64)>) -> Result<()> {
@@ -95,12 +124,16 @@ impl SigSorter {
         Ok(())
     }
 
-    pub fn sort(mut self) -> Result<SortedSig> {
+    pub fn num_keys(&self) -> usize {
+        self.num_keys
+    }
+
+    pub fn sort(mut self, chunk_high_bits: u32) -> Result<SortedSig> {
         let mut max_len = 0;
         let mut lens = vec![];
         let mut files = vec![];
-        let mut max_count = 0;
-        for _ in (0..1 << self.high_bits).rev() {
+
+        for _ in 0..1 << self.buf_high_bits {
             self.writers[0].flush()?; // We will remove it
 
             let len = self.writers[0].stream_position()?;
@@ -113,8 +146,8 @@ impl SigSorter {
         }
 
         let mut buf = vec![0_u8; max_len as usize];
-        let mut counts = vec![0; 1 << self.high_bits];
-        for i in 0..1 << self.high_bits {
+        let mut counts = vec![0; 1 << chunk_high_bits];
+        for i in 0..1 << self.buf_high_bits {
             files[i].read_exact(&mut buf[..lens[i] as usize])?;
             {
                 let (pre, data, after) =
@@ -122,30 +155,30 @@ impl SigSorter {
                 assert!(pre.is_empty());
                 assert!(after.is_empty());
                 data.par_sort_unstable();
-                max_count = max_count.max(data.len());
-                counts[i] = data.len();
 
-                if data.par_windows(2).filter(|w| w[0].0 == w[1].0).count() > 0 {
-                    bail!("Duplicate key");
+                counts[data[0].0[0].rotate_left(chunk_high_bits) as usize
+                    & ((1 << chunk_high_bits) - 1)] += 1;
+
+                for w in data.windows(2) {
+                    counts[w[1].0[0].rotate_left(chunk_high_bits) as usize
+                        & ((1 << chunk_high_bits) - 1)] += 1;
+                    if w[0].0 == w[1].0 {
+                        bail!("Duplicate key");
+                    }
                 }
             }
             files[i].seek(SeekFrom::Start(0))?;
             files[i].write_all(&buf[..lens[i] as usize])?;
             files[i].flush()?;
+            files[i].seek(SeekFrom::Start(0))?;
         }
 
-        let mut readers = vec![];
-        for file in files {
-            let mut reader = BufReader::new(file);
-            reader.seek(SeekFrom::Start(0))?;
-            readers.push(reader);
-        }
-
-        dbg!(readers.len(), &counts);
         Ok(SortedSig {
-            num_keys: counts.iter().sum(),
-            readers,
-            counts,
+            buf_high_bits: self.buf_high_bits,
+            chunk_high_bits,
+            files,
+            buf_sizes: self.buf_sizes,
+            chunk_sizes: counts,
             chunk: 0,
         })
     }
@@ -155,17 +188,26 @@ impl SigSorter {
 
 fn test_sig_sorter() {
     use rand::prelude::*;
-    let mut sig_sorter = SigSorter::new(4).unwrap();
-    let mut rand = SmallRng::seed_from_u64(0);
-    for _ in (0..1000).rev() {
-        sig_sorter
-            .push(&([rand.next_u64(), rand.next_u64()], rand.next_u64()))
-            .unwrap();
-    }
-    let sorted_sig = sig_sorter.sort().unwrap();
-    for chunk in sorted_sig {
-        for w in chunk.1.windows(2) {
-            assert!(w[0].0[0] < w[1].0[0] || w[0].0[0] == w[1].0[0] && w[0].0[1] < w[1].0[1]);
+    for high_bits in [0, 2, 4] {
+        for chunk_bits in [0, 2, 4] {
+            let mut sig_sorter = SigSorter::new(high_bits).unwrap();
+            let mut rand = SmallRng::seed_from_u64(0);
+            for _ in (0..1000).rev() {
+                sig_sorter
+                    .push(&([rand.next_u64(), rand.next_u64()], rand.next_u64()))
+                    .unwrap();
+            }
+            let sorted_sig = sig_sorter.sort(chunk_bits).unwrap();
+            let mut count = 0;
+            for chunk in sorted_sig {
+                count += 1;
+                for w in chunk.1.windows(2) {
+                    assert!(
+                        w[0].0[0] < w[1].0[0] || w[0].0[0] == w[1].0[0] && w[0].0[1] < w[1].0[1]
+                    );
+                }
+            }
+            assert_eq!(count, 1 << chunk_bits);
         }
     }
 }

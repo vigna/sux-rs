@@ -475,7 +475,7 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
                 pl.start("Reading input...")
             }
 
-            let mut sig_sorter = SigSorter::new(6).unwrap();
+            let mut sig_sorter = SigSorter::new(8).unwrap();
             let mut values = into_values.clone().into_iter();
             let mut max_value = 0;
             sig_sorter.extend(keys.clone().into_iter().map(|x| {
@@ -484,20 +484,7 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
                 (T::to_sig(&x, seed), v as u64)
             }))?;
 
-            let sorted_sig;
-            if let Ok(t) = sig_sorter.sort() {
-                sorted_sig = t;
-            } else {
-                if dup_count >= 3 {
-                    panic!(
-                        "Duplicate keys (duplicate 128-bit signatures with four different seeds)"
-                    );
-                }
-                warn!("Duplicate 128-bit signature, trying again...");
-                dup_count += 1;
-                continue;
-            }
-            let num_keys = sorted_sig.num_keys;
+            let num_keys = sig_sorter.num_keys();
 
             let bit_width = max_value.len() as usize;
             info!("max value = {}, bit width = {}", max_value, bit_width);
@@ -514,7 +501,7 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
             let num_keys = num_keys;
 
             let eps = 0.001;
-            let mut high_bits = {
+            let mut chunk_high_bits = {
                 let t = (num_keys as f64 * eps * eps / 2.0).ln();
 
                 if t > 0.0 {
@@ -529,22 +516,39 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
                     let (_, l, c) = PARAMS
                         .iter()
                         .rev()
-                        .filter(|(log_n, _l, _c)| (1 << log_n) <= (num_keys >> high_bits))
+                        .filter(|(log_n, _l, _c)| (1 << log_n) <= (num_keys >> chunk_high_bits))
                         .copied()
                         .next()
                         .unwrap(); // first log_n is 0, so this is always valid
-                    if high_bits == 0 || c <= 1.11 {
+                    if chunk_high_bits == 0 || c <= 1.11 {
                         break (l, c);
                     }
-                    high_bits -= 1;
+                    chunk_high_bits -= 1;
                 }
             };
 
-            info!("high bits = {}, l = {}, c = {}", high_bits, l, c);
+            info!(
+                "chunk high bits = {}, l = {}, c = {}",
+                chunk_high_bits, l, c
+            );
 
             let log2_l = l.ilog2();
-            let num_chunks = 1 << high_bits;
-            let chunk_mask = (1u32 << high_bits) - 1;
+            let num_chunks = 1 << chunk_high_bits;
+            let chunk_mask = (1u32 << chunk_high_bits) - 1;
+
+            let sorted_sig;
+            if let Ok(t) = sig_sorter.sort(chunk_high_bits) {
+                sorted_sig = t;
+            } else {
+                if dup_count >= 3 {
+                    panic!(
+                        "Duplicate keys (duplicate 128-bit signatures with four different seeds)"
+                    );
+                }
+                warn!("Duplicate 128-bit signature, trying again...");
+                dup_count += 1;
+                continue;
+            }
 
             let mut cumul = vec![0; num_chunks + 1];
             for i in 0..num_chunks {
@@ -695,7 +699,7 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
                 return Ok(Function {
                     seed,
                     log2_l,
-                    high_bits,
+                    high_bits: chunk_high_bits,
                     chunk_mask,
                     num_keys: num_keys,
                     segment_size,
