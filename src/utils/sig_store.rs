@@ -51,6 +51,7 @@ pub struct SigStore {
 The iterator on chunks returned by [`SigStore::sort`].
 
 */
+#[derive(Debug)]
 pub struct Chunks {
     buf_high_bits: u32,
     chunk_high_bits: u32,
@@ -67,7 +68,7 @@ impl Chunks {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DuplicateKeyError {}
 
 impl Display for DuplicateKeyError {
@@ -263,5 +264,9 @@ fn test_dup() {
     let mut sig_sorter = SigStore::new(0).unwrap();
     sig_sorter.push(&([0, 0], 0)).unwrap();
     sig_sorter.push(&([0, 0], 0)).unwrap();
-    assert!(sig_sorter.into_iter(0).is_err());
+    assert!(sig_sorter
+        .into_iter(0)
+        .unwrap_err()
+        .downcast_ref::<DuplicateKeyError>()
+        .is_some());
 }
