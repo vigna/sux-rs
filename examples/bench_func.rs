@@ -12,18 +12,16 @@ use epserde::prelude::*;
 use sux::func::vigna::Function;
 
 #[derive(Parser, Debug)]
-#[command(about = "Functions", long_about = None)]
-#[clap(group(
-            ArgGroup::new("input")
-                .required(true)
-                .args(&["filename", "n"]),
-))]
+#[command(about = "Benchmarks functions", long_about = None)]
 struct Args {
-    // A name for the ε-serde serialized function with u64 keys.
-    func: String,
+    #[arg(short = 'f', long)]
+    // A file containing UTF-8 keys, one per line.
+    filename: Option<String>,
     #[arg(short)]
     // Use the 64-bit keys [0..n).
     n: usize,
+    // A name for the ε-serde serialized function with u64 keys.
+    func: String,
 }
 
 fn main() -> Result<()> {
@@ -37,11 +35,24 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
     let func = Function::<_>::load_mem(&args.func)?;
-    pl.start("Querying...");
-    for i in 0..args.n {
-        assert_eq!(i, func.get(&i));
+
+    if let Some(filename) = args.filename {
+        let keys = sux::utils::file::FilenameIntoIterator(&filename)
+            .into_iter()
+            .take(args.n)
+            .collect::<Vec<_>>();
+        pl.start("Querying...");
+        for i in 0..keys.len() {
+            assert_eq!(i, func.get(&i));
+        }
+        pl.done_with_count(keys.len());
+    } else {
+        pl.start("Querying...");
+        for i in 0..args.n {
+            assert_eq!(i, func.get(&i));
+        }
+        pl.done_with_count(args.n);
     }
-    pl.done_with_count(args.n);
 
     Ok(())
 }
