@@ -701,7 +701,7 @@ impl<T: ToSig, S: BitFieldSlice> Function<T, S> {
                     log2_l,
                     high_bits: chunk_high_bits,
                     chunk_mask,
-                    num_keys: num_keys,
+                    num_keys,
                     segment_size,
                     values: data.convert_to().unwrap(),
                     _phantom: std::marker::PhantomData,

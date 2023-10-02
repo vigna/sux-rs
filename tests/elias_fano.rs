@@ -99,7 +99,7 @@ fn test_elias_fano() -> Result<()> {
 
         let last = values.last().unwrap();
         let mut lower_bound = 0;
-        for (i, v) in (&values).iter().enumerate() {
+        for (i, v) in values.iter().enumerate() {
             if lower_bound > *v {
                 continue;
             }

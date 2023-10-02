@@ -13,7 +13,6 @@ Fast sorting of signatures and values.
 use anyhow::{bail, Result};
 use rayon::slice::ParallelSliceMut;
 use std::{fs::File, io::*};
-use tempfile::TempDir;
 
 /// Adapter to iterate over the lines of a file.
 pub struct SigSorter {
@@ -21,7 +20,6 @@ pub struct SigSorter {
     buf_high_bits: u32,
     writers: Vec<BufWriter<File>>,
     buf_sizes: Vec<usize>,
-    tmp_dir: TempDir,
 }
 
 pub struct SortedSig {
@@ -48,13 +46,13 @@ impl Iterator for SortedSig {
             let mut data = vec![([0_u64; 2], 0_u64); self.chunk_sizes.remove(0)];
 
             if self.buf_high_bits >= self.chunk_high_bits {
-                let to_aggr = 1 << self.buf_high_bits - self.chunk_high_bits;
+                let to_aggr = 1 << (self.buf_high_bits - self.chunk_high_bits);
 
                 {
                     let (pre, mut buf, after) = unsafe { data.align_to_mut::<u8>() };
                     assert!(pre.is_empty());
                     assert!(after.is_empty());
-                    for i in 0..to_aggr {
+                    for _ in 0..to_aggr {
                         let mut reader = self.files.remove(0);
                         let bytes =
                             self.buf_sizes.remove(0) * core::mem::size_of::<([u64; 2], u64)>();
@@ -68,15 +66,15 @@ impl Iterator for SortedSig {
                 res
             } else {
                 {
-                    let (pre, mut buf, after) = unsafe { data.align_to_mut::<u8>() };
+                    let (pre, buf, after) = unsafe { data.align_to_mut::<u8>() };
                     assert!(pre.is_empty());
                     assert!(after.is_empty());
-                    self.files[0].read_exact(&mut buf).unwrap();
+                    self.files[0].read_exact(buf).unwrap();
                 }
 
                 let res = Some((self.chunk, data.into_boxed_slice()));
                 self.chunk += 1;
-                if self.chunk % (1 << self.chunk_high_bits - self.buf_high_bits) == 0 {
+                if self.chunk % (1 << (self.chunk_high_bits - self.buf_high_bits)) == 0 {
                     self.files.remove(0);
                 }
                 res
@@ -87,14 +85,14 @@ impl Iterator for SortedSig {
 
 impl SigSorter {
     pub fn new(buf_high_bits: u32) -> Result<Self> {
-        let tmp_dir = tempfile::TempDir::new().unwrap();
+        let temp_dir = tempfile::TempDir::new()?;
         let mut writers = vec![];
         for i in 0..1 << buf_high_bits {
             let file = File::options()
                 .read(true)
                 .write(true)
                 .create(true)
-                .open(tmp_dir.path().join(format!("{}.tmp", i)))?;
+                .open(temp_dir.path().join(format!("{}.tmp", i)))?;
             writers.push(BufWriter::new(file));
         }
         Ok(Self {
@@ -102,7 +100,6 @@ impl SigSorter {
             buf_high_bits,
             writers,
             buf_sizes: vec![0; 1 << buf_high_bits],
-            tmp_dir,
         })
     }
 
