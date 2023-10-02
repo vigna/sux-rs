@@ -43,7 +43,7 @@ fn main() -> Result<()> {
             .collect::<Vec<_>>();
         pl.start("Querying...");
         for i in 0..keys.len() {
-            assert_eq!(i, func.get(&i));
+            std::hint::black_box(func.get(&i));
         }
         pl.done_with_count(keys.len());
     } else {
