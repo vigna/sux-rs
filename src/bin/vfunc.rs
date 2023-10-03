@@ -22,7 +22,7 @@ use sux::utils::FilenameZstdIntoIterator;
                 .args(&["filename", "n"]),
 ))]
 struct Args {
-    #[arg(short = 'f', long)]
+    #[arg(short, long)]
     /// A file containing UTF-8 keys, one per line.
     filename: Option<String>,
     #[arg(short)]
@@ -31,7 +31,7 @@ struct Args {
     /// A name for the ε-serde serialized function.
     func: String,
     /// The filename containing the keys is compressed with zstd.
-    #[arg(short)]
+    #[arg(short, long)]
     zstd: bool,
 }
 
@@ -48,11 +48,11 @@ fn main() -> Result<()> {
 
     if let Some(filename) = args.filename {
         let func = if args.zstd {
-            VFunc::<_>::new(
+            VFunc::<_>::new_offline(
                 FilenameZstdIntoIterator(&filename),
                 &(0..),
                 &mut Some(&mut pl),
-            )
+            )?
         } else {
             VFunc::<_>::new_offline(FilenameIntoIterator(&filename), &(0..), &mut Some(&mut pl))?
         };
