@@ -328,7 +328,7 @@ impl SigStore {
             .counts
             .chunks(1 << self.max_chunk_high_bits - chunk_high_bits)
             .map(|x| x.iter().sum())
-            .collect::<VecDeque<_x>>();
+            .collect::<VecDeque<_>>();
         let iter = Vec::from_iter(chunk_sizes.iter().copied());
         Ok((
             ChunkStore {
