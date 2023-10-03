@@ -23,14 +23,14 @@ use sux::utils::FilenameZstdIntoIterator;
 ))]
 struct Args {
     #[arg(short = 'f', long)]
-    // A file containing UTF-8 keys, one per line.
+    /// A file containing UTF-8 keys, one per line.
     filename: Option<String>,
     #[arg(short)]
-    // Use the 64-bit keys [0..n).
+    /// Use the 64-bit keys [0..n).
     n: Option<usize>,
-    // A name for the ε-serde serialized function.
+    /// A name for the ε-serde serialized function.
     func: String,
-    // The filename containing the keys is compressed with zstd.
+    /// The filename containing the keys is compressed with zstd.
     #[arg(short)]
     zstd: bool,
 }
