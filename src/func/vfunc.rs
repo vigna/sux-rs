@@ -581,9 +581,9 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             let num_chunks = 1 << chunk_high_bits;
             let chunk_mask = (1u32 << chunk_high_bits) - 1;
 
-            let chunk_store;
-            if let Ok(t) = sig_sorter.into_iter(chunk_high_bits) {
-                chunk_store = t;
+            let (chunk_store, chunk_sizes);
+            if let Ok(t) = sig_sorter.into_store(chunk_high_bits) {
+                (chunk_store, chunk_sizes) = t;
             } else {
                 if dup_count >= 3 {
                     panic!(
@@ -594,8 +594,6 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 dup_count += 1;
                 continue;
             }
-
-            let chunk_sizes = chunk_store.chunk_sizes();
 
             let mut cumul = vec![0; num_chunks + 1];
             for i in 0..num_chunks {

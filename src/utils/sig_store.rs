@@ -67,17 +67,22 @@ pub struct SigStore {
 
 /**
 
-The iterator on chunks returned by [`ChunkStore::next`].
+An iterator on chunks returned by [`ChunkStore::next`].
 
-This is a subset of the buckets corresponding to at least one chunk.
-It can be scanned independently.
+The iterator owns a sublist of the buckets corresponding
+to at least one chunk. All such iterators can be scanned
+independently.
+
+As the iterator progresses, buckets are sorted, checked for duplicates,
+and turned into pairs given by a chunk index and an associated slice of
+pairs of signatures and values.
 
 If the index of a returned chunk is `usize::MAX`, then the chunk contains
 a duplicate signature.
 
 */
 #[derive(Debug)]
-pub struct Chunks {
+pub struct ChunkIterator {
     /// The number of high bits used for bucket sorting (i.e., the number of files).
     bucket_high_bits: u32,
     /// The number of high bits defining a chunk.
@@ -96,9 +101,8 @@ pub struct Chunks {
 
 The iterator on iterators on chunks returned by [`SigStore::into_iter`].
 
-As the iterator progresses, signatures are sorted and
-istances of [`Chunks`] are returned. Each instance of [`Chunks`] is a subset of the buckets
-corresponding to at least one chunk. It can be scanned independently.
+Each iterator returned by [`ChunkStore::next`] is owned
+and can be scanned independently.
 
 */
 #[derive(Debug)]
@@ -118,12 +122,13 @@ pub struct ChunkStore {
 }
 
 impl ChunkStore {
+    /// Return the chunk sizes.
     pub fn chunk_sizes(&self) -> &VecDeque<usize> {
         &self.chunk_sizes
     }
 }
 impl Iterator for ChunkStore {
-    type Item = Chunks;
+    type Item = ChunkIterator;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.files.len() == 0 {
@@ -140,7 +145,7 @@ impl Iterator for ChunkStore {
                 buf_sizes.push(self.buf_sizes.pop_front().unwrap());
             }
 
-            let res = Chunks {
+            let res = ChunkIterator {
                 bucket_high_bits: self.bucket_high_bits,
                 chunk_high_bits: self.chunk_high_bits,
                 files,
@@ -159,7 +164,7 @@ impl Iterator for ChunkStore {
             chunk_sizes.push(self.chunk_sizes.pop_front().unwrap());
         }
 
-        let res = Chunks {
+        let res = ChunkIterator {
             bucket_high_bits: self.bucket_high_bits,
             chunk_high_bits: self.chunk_high_bits,
             files: vec![self.files.pop_front().unwrap()], // Just one bucket
@@ -169,13 +174,6 @@ impl Iterator for ChunkStore {
         };
         self.next_chunk += num_chunks;
         return Some(res);
-    }
-}
-
-impl Chunks {
-    /// The sizes of the chunks returned by the iterator.
-    pub fn counts(&self) -> &[usize] {
-        &self.chunk_sizes
     }
 }
 
@@ -190,7 +188,7 @@ impl Display for DuplicateSigError {
 
 impl std::error::Error for DuplicateSigError {}
 
-impl Iterator for Chunks {
+impl Iterator for ChunkIterator {
     type Item = (usize, Box<[([u64; 2], u64)]>);
     fn next(&mut self) -> Option<Self::Item> {
         if self.files.is_empty() {
@@ -253,7 +251,8 @@ impl Iterator for Chunks {
 }
 
 impl SigStore {
-    /// Create a new store with 2<sup>`buf_high_bits`</sup> buffers.
+    /// Create a new store with 2<sup>`buf_high_bits`</sup> buffers, keeping
+    /// counts for chunks defined by at most `max_chunk_high_bits` high bits.
     pub fn new(buckets_high_bits: u32, max_chunk_high_bits: u32) -> Result<Self> {
         let temp_dir = tempfile::TempDir::new()?;
         let mut writers = VecDeque::new();
@@ -307,8 +306,13 @@ impl SigStore {
         self.num_keys
     }
 
-    /// Flushes the buffers and return a [`ChunkStore`].
-    pub fn into_iter(mut self, chunk_high_bits: u32) -> Result<ChunkStore> {
+    /// Flush the buffers and return a pair given by [`ChunkStore`] whose chunks are defined by
+    /// the `chunk_high_bits` high bits of the signatures, and the sizes of the chunks.
+    ///
+    /// It must hold that
+    /// `chunk_high_bits` is at most the `max_chunk_high_bits` value provided
+    /// at construction time, or this method will panic.
+    pub fn into_store(mut self, chunk_high_bits: u32) -> Result<(ChunkStore, Vec<usize>)> {
         assert!(chunk_high_bits <= self.max_chunk_high_bits);
         let mut files = VecDeque::new();
 
@@ -320,18 +324,23 @@ impl SigStore {
             files.push_back(file);
         }
 
-        Ok(ChunkStore {
-            bucket_high_bits: self.buckets_high_bits,
-            chunk_high_bits,
-            files,
-            buf_sizes: self.buf_sizes,
-            chunk_sizes: self
-                .counts
-                .chunks(1 << self.max_chunk_high_bits - chunk_high_bits)
-                .map(|x| x.iter().sum())
-                .collect(),
-            next_chunk: 0,
-        })
+        let chunk_sizes = self
+            .counts
+            .chunks(1 << self.max_chunk_high_bits - chunk_high_bits)
+            .map(|x| x.iter().sum())
+            .collect::<VecDeque<_x>>();
+        let iter = Vec::from_iter(chunk_sizes.iter().copied());
+        Ok((
+            ChunkStore {
+                bucket_high_bits: self.buckets_high_bits,
+                chunk_high_bits,
+                files,
+                buf_sizes: self.buf_sizes,
+                chunk_sizes,
+                next_chunk: 0,
+            },
+            iter,
+        ))
     }
 }
 
@@ -349,7 +358,7 @@ fn test_sig_sorter() {
                         .push(&([rand.next_u64(), rand.next_u64()], rand.next_u64()))
                         .unwrap();
                 }
-                let sorted_sig = sig_sorter.into_iter(chunk_bits).unwrap();
+                let (sorted_sig, _) = sig_sorter.into_store(chunk_bits).unwrap();
                 let mut count = 0;
                 for chunks in sorted_sig {
                     for chunk in chunks {
@@ -375,7 +384,8 @@ fn test_dup() {
     sig_sorter.push(&([0, 0], 0)).unwrap();
     sig_sorter.push(&([0, 0], 0)).unwrap();
     let mut dup = false;
-    for chunks in sig_sorter.into_iter(0).unwrap() {
+    let (chunk_store, _) = sig_sorter.into_store(0).unwrap();
+    for chunks in chunk_store {
         for chunk in chunks {
             if chunk.0 == usize::MAX {
                 dup = true;
