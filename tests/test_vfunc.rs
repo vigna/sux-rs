@@ -19,11 +19,11 @@ fn test_func() {
         func.serialize(&mut cursor).unwrap();
         cursor.set_position(0);
         let buf = cursor.into_inner();
-        let func = VFunc::<_>::deserialize_eps(&buf).unwrap();
+        let func = VFunc::<u64>::deserialize_eps(&buf).unwrap();
         pl.start("Querying...");
         for i in 0..n {
-            assert_eq!(i, func.get(&i) as usize);
+            assert_eq!(i, func.get(&i) as u64);
         }
-        pl.done_with_count(n);
+        pl.done_with_count(n as usize);
     }
 }
