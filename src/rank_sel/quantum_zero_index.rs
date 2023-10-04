@@ -30,7 +30,7 @@ use epserde::*;
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct QuantumZeroIndex<
     B: SelectZeroHinted = CountBitVec,
-    O: BitFieldSlice = Vec<usize>,
+    O: BitFieldSlice<usize> = Vec<usize>,
     const QUANTUM_LOG2: usize = 8,
 > {
     bits: B,
@@ -40,7 +40,7 @@ pub struct QuantumZeroIndex<
 
 impl<
         B: SelectZeroHinted + AsRef<[usize]>,
-        O: BitFieldSlice + BitFieldSliceMut + core::fmt::Debug,
+        O: BitFieldSlice<usize> + BitFieldSliceMut<usize> + core::fmt::Debug,
         const QUANTUM_LOG2: usize,
     > QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
@@ -71,7 +71,7 @@ impl<
 }
 
 /// Provide the hint to the underlying structure
-impl<B: SelectZeroHinted, O: BitFieldSlice, const QUANTUM_LOG2: usize> SelectZero
+impl<B: SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> SelectZero
     for QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
@@ -86,7 +86,7 @@ impl<B: SelectZeroHinted, O: BitFieldSlice, const QUANTUM_LOG2: usize> SelectZer
 }
 
 /// If the underlying implementation has select, forward the methods
-impl<B: SelectZeroHinted + Select, O: BitFieldSlice, const QUANTUM_LOG2: usize> Select
+impl<B: SelectZeroHinted + Select, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> Select
     for QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
@@ -99,7 +99,7 @@ impl<B: SelectZeroHinted + Select, O: BitFieldSlice, const QUANTUM_LOG2: usize> 
     }
 }
 
-impl<B: SelectZeroHinted, O: BitFieldSlice, const QUANTUM_LOG2: usize> BitLength
+impl<B: SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitLength
     for QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
@@ -108,7 +108,7 @@ impl<B: SelectZeroHinted, O: BitFieldSlice, const QUANTUM_LOG2: usize> BitLength
     }
 }
 
-impl<B: SelectZeroHinted, O: BitFieldSlice, const QUANTUM_LOG2: usize> BitCount
+impl<B: SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitCount
     for QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
@@ -146,7 +146,7 @@ impl<B: SelectZeroHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
 impl<B, O, const QUANTUM_LOG2: usize> AsRef<[usize]> for QuantumZeroIndex<B, O, QUANTUM_LOG2>
 where
     B: AsRef<[usize]> + SelectZeroHinted,
-    O: BitFieldSlice,
+    O: BitFieldSlice<usize>,
 {
     fn as_ref(&self) -> &[usize] {
         self.bits.as_ref()

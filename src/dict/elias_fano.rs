@@ -258,7 +258,7 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<H: AsRef<[usize]> + Select, L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>>
+impl<H: AsRef<[usize]> + Select, L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>>
     IndexedDict for EliasFano<H, L>
 {
     type Output = usize;
@@ -312,7 +312,7 @@ where
 pub struct EliasFanoIterator<
     'a,
     H: AsRef<[usize]>,
-    L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>,
+    L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
 > {
     ef: &'a EliasFano<H, L>,
     /// The index of the next value it will be returned when `next` is called.
@@ -328,7 +328,7 @@ pub struct EliasFanoIterator<
 impl<
         'a,
         H: Select + AsRef<[usize]>,
-        L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>,
+        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
     > EliasFanoIterator<'a, H, L>
 {
     pub fn new(ef: &'a EliasFano<H, L>) -> Self {
@@ -373,7 +373,7 @@ impl<
     }
 }
 
-impl<'a, H: AsRef<[usize]>, L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>> Iterator
+impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>> Iterator
     for EliasFanoIterator<'a, H, L>
 {
     type Item = usize;
@@ -402,7 +402,7 @@ impl<'a, H: AsRef<[usize]>, L: BitFieldSlice + IntoUncheckedValueIterator<Item =
     }
 }
 
-impl<'a, H: AsRef<[usize]>, L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>>
+impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>>
     ExactSizeIterator for EliasFanoIterator<'a, H, L>
 {
     #[inline(always)]
@@ -413,7 +413,7 @@ impl<'a, H: AsRef<[usize]>, L: BitFieldSlice + IntoUncheckedValueIterator<Item =
 
 impl<
         H: SelectZero + Select + AsRef<[usize]>,
-        L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>,
+        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
     > Succ for EliasFano<H, L>
 {
     unsafe fn succ_unchecked(&self, value: &Self::Input) -> (usize, Self::Output) {
