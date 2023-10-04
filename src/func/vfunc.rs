@@ -13,9 +13,10 @@ fast parallel construction, and fast queries.
 */
 
 use crate::prelude::{
-    spooky::*, BitFieldSlice, BitFieldSliceAtomic, BitFieldSliceCore, CompactArray, SigStore,
+    BitFieldSlice, BitFieldSliceAtomic, BitFieldSliceCore, CompactArray, SigStore,
 };
 use crate::traits::convert_to::ConvertTo;
+use crate::utils::spooky::*;
 use crate::BitOps;
 use dsi_progress_logger::ProgressLogger;
 use epserde::Epserde;

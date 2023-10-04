@@ -11,9 +11,7 @@
 //!
 //! Ported from <https://github.com/vigna/Sux4J/blob/master/c/mph.c>.
 
-// The original is SC_CONST = 0xdeadbeefdeadbeef but we must
-// be compatible with the original Java implementation in Sux4J.
-pub const SC_CONST: u64 = 0x9e3779b97f4a7c13;
+pub const SC_CONST: u64 = 0xdeadbeefdeadbeef;
 
 #[inline(always)]
 #[must_use]
