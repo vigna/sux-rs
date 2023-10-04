@@ -582,7 +582,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             let chunk_mask = (1u32 << chunk_high_bits) - 1;
 
             let (chunk_store, chunk_sizes);
-            if let Ok(t) = sig_sorter.into_store(chunk_high_bits) {
+            if let Ok(t) = sig_sorter.into_chunk_store(chunk_high_bits) {
                 (chunk_store, chunk_sizes) = t;
             } else {
                 if dup_count >= 3 {

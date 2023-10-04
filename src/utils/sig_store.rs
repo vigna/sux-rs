@@ -12,7 +12,7 @@ Fast sorting and grouping of signatures and values.
 A *signature* is a pair of 64-bit integers, and a *value* is a generic type
 implementing [`epserde::traits::ZeroCopy`].
 A [`SigStore`] accepts signatures and values in any order; then,
-when you call [`SigStore::into_iter`] you can specify the number of high bits
+when you call [`SigStore::into_chunk_store`] you can specify the number of high bits
 to use for grouping signatures into chunks.
 
 */
@@ -43,7 +43,7 @@ the number of high bits to use for bucket sorting (say, 8), and when you
 (in this case, 256) depending on their high bits. The buffer will be stored
 in a directory created by [`tempfile::TempDir`].
 
-When you call [`SigStore::into_iter`] you can specify the number of high bits
+When you call [`SigStore::into_chunk_store`] you can specify the number of high bits
 to use for grouping signatures into chunks, and the necessary buffer splitting or merging
 will be handled automatically.
 
@@ -54,7 +54,7 @@ pub struct SigStore<T> {
     /// The number of high bits used for bucket sorting (i.e., the number of files).
     buckets_high_bits: u32,
     /// The maximum number of high bits used for defining chunks in the call to
-    /// [`SigStore::into_iter`].
+    /// [`SigStore::into_chunk_store`].
     max_chunk_high_bits: u32,
     /// A mask for the lowest `buckets_high_bits` bits.
     buckets_mask: u64,
@@ -104,7 +104,7 @@ pub struct ChunkIterator<T> {
 
 /**
 
-The iterator on iterators on chunks returned by [`SigStore::into_iter`].
+The iterator on iterators on chunks returned by [`SigStore::into_chunk_store`].
 
 Each iterator returned by [`ChunkStore::next`] is owned
 and can be scanned independently.
@@ -337,7 +337,7 @@ impl<T: ZeroCopy> SigStore<T> {
     /// It must hold that
     /// `chunk_high_bits` is at most the `max_chunk_high_bits` value provided
     /// at construction time, or this method will panic.
-    pub fn into_store(mut self, chunk_high_bits: u32) -> Result<(ChunkStore<T>, Vec<usize>)> {
+    pub fn into_chunk_store(mut self, chunk_high_bits: u32) -> Result<(ChunkStore<T>, Vec<usize>)> {
         assert!(chunk_high_bits <= self.max_chunk_high_bits);
         let mut files = VecDeque::new();
 
@@ -384,7 +384,7 @@ fn test_sig_sorter() {
                         .push(&([rand.next_u64(), rand.next_u64()], rand.next_u64()))
                         .unwrap();
                 }
-                let (sorted_sig, _) = sig_sorter.into_store(chunk_bits).unwrap();
+                let (sorted_sig, _) = sig_sorter.into_chunk_store(chunk_bits).unwrap();
                 let mut count = 0;
                 for chunks in sorted_sig {
                     for chunk in chunks {
@@ -413,7 +413,7 @@ fn test_u8() {
             .push(&([rand.next_u64(), rand.next_u64()], rand.next_u64() as u8))
             .unwrap();
     }
-    let (sorted_sig, _) = sig_sorter.into_store(2).unwrap();
+    let (sorted_sig, _) = sig_sorter.into_chunk_store(2).unwrap();
     let mut count = 0;
     for chunks in sorted_sig {
         for chunk in chunks {
@@ -433,7 +433,7 @@ fn test_dup() {
     sig_sorter.push(&([0, 0], 0)).unwrap();
     sig_sorter.push(&([0, 0], 0)).unwrap();
     let mut dup = false;
-    let (chunk_store, _) = sig_sorter.into_store(0).unwrap();
+    let (chunk_store, _) = sig_sorter.into_chunk_store(0).unwrap();
     for chunks in chunk_store {
         for chunk in chunks {
             if chunk.0 == usize::MAX {
