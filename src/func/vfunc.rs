@@ -85,7 +85,7 @@ A static function from key implementing [ToSig] to arbitrary values.
 
 */
 #[derive(Epserde, Debug, Default)]
-pub struct VFunc<T: ToSig, S: BitFieldSlice = CompactArray<Vec<usize>>> {
+pub struct VFunc<T: ToSig, S: BitFieldSlice<u64> = CompactArray<u64>> {
     seed: u64,
     log2_l: u32,
     high_bits: u32,
@@ -108,7 +108,7 @@ More precisely, each signature is made of two 64-bit integers `h` and `l`, and t
 - the lower 32 bits of `l` are used to select the third vertex.
 
 */
-impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
+impl<T: ToSig, S: BitFieldSlice<u64>> VFunc<T, S> {
     #[inline(always)]
     #[must_use]
     fn chunk(sig: &[u64; 2], high_bits: u32, chunk_mask: u32) -> usize {
@@ -284,7 +284,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * c)
             );
 
-            let data = CompactArray::new_atomic(bit_width, num_vertices * num_chunks);
+            let data = <CompactArray<>>::new_atomic(bit_width, num_vertices * num_chunks);
 
             let chunk = AtomicUsize::new(0);
             let fail = AtomicBool::new(false);
