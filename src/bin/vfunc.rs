@@ -60,11 +60,8 @@ fn main() -> Result<()> {
     }
 
     if let Some(n) = args.n {
-        let func = VFunc::<_, CompactArray<Vec<usize>>>::new_offline(
-            0..n as u64,
-            &(0..),
-            &mut Some(&mut pl),
-        )?;
+        let func =
+            VFunc::<_, CompactArray<Vec<_>>>::new_offline(0..n as u64, &(0..), &mut Some(&mut pl))?;
 
         func.store(&args.func)?;
     }
