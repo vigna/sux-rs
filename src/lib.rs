@@ -26,7 +26,9 @@ pub mod prelude {
 
 #[allow(clippy::len_without_is_empty)]
 pub trait BitOps {
+    /// Ceiling of the logarithm in base 2 (zero for input zero).
     fn ceil_log2(self) -> u32;
+    /// The number of bits needed to represent `self`.
     fn len(self) -> u32;
 }
 

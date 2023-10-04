@@ -1,8 +1,10 @@
 # `sux-rs`
 
-A pure Rust implementation of succinct data structures from the [Sux](https://sux.di.unimi.it/) project.
+A pure Rust implementation of succinct data structures.
 
-This create is a work in progress: new succinct data structures will be added over time. Presently,
+This crate is a work in progress: 
+part of it  is a port from [Sux](https://sux.di.unimi.it/);
+new succinct data structures will be added over time. Presently,
 we provide:
 
 - the [`BitFieldSlice`](crate::traits::bit_field_slice::BitFieldSlice) trait---an
