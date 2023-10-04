@@ -15,6 +15,8 @@ A [`SigStore`] accepts signatures and values in any order; then,
 when you call [`SigStore::into_chunk_store`] you can specify the number of high bits
 to use for grouping signatures into chunks.
 
+The trait [`ToSig`] provides a standard way to generate signatures for a [`SigStore`].
+
 */
 
 use anyhow::Result;
@@ -27,6 +29,76 @@ use std::{
     io::*,
     marker::PhantomData,
 };
+
+use crate::prelude::spooky_short;
+
+/**
+
+Trait for types that must be turned into a signature.
+We provide implementations for all primitive types and strings
+by turning them into slice of bytes and then hashing them with
+[crate::utils::spooky::spooky_short], using the given seed.
+
+*/
+
+pub trait ToSig {
+    fn to_sig(key: &Self, seed: u64) -> [u64; 2];
+}
+
+impl ToSig for String {
+    fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
+        let spooky = spooky_short(key.as_ref(), seed);
+        [spooky[0], spooky[1]]
+    }
+}
+
+impl ToSig for &String {
+    fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
+        let spooky = spooky_short(key.as_ref(), seed);
+        [spooky[0], spooky[1]]
+    }
+}
+
+impl ToSig for str {
+    fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
+        let spooky = spooky_short(key.as_ref(), seed);
+        [spooky[0], spooky[1]]
+    }
+}
+
+impl ToSig for &str {
+    fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
+        let spooky = spooky_short(key.as_ref(), seed);
+        [spooky[0], spooky[1]]
+    }
+}
+
+macro_rules! to_sig_prim {
+    ($($ty:ty),*) => {$(
+        impl ToSig for $ty {
+            fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
+                let spooky = spooky_short(&key.to_ne_bytes(), seed);
+                [spooky[0], spooky[1]]
+            }
+        }
+    )*};
+}
+
+to_sig_prim!(isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
+
+macro_rules! to_sig_slice {
+    ($($ty:ty),*) => {$(
+        impl ToSig for &[$ty] {
+            fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
+                // Alignemnt to u8 never fails or leave trailing/leading bytes
+                let spooky = spooky_short(unsafe {key.align_to::<u8>().1 }, seed);
+                [spooky[0], spooky[1]]
+            }
+        }
+    )*};
+}
+
+to_sig_slice!(isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
 
 /**
 

@@ -7,15 +7,27 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! A pure Rust implementation of [SpookyHash](https://burtleburtle.net/bob/hash/spooky.html).
-//!
-//! Ported from <https://github.com/vigna/Sux4J/blob/master/c/mph.c>.
+/*!
+
+A pure Rust implementation of [SpookyHash::Short V2](https://burtleburtle.net/bob/hash/spooky.html).
+
+We implement only the short version because we want to be able to precompute the internal
+state of the hash function at regular intervals to be able to hash every prefix in constant time.
+This feature much more complicated to implement if the type of hash varies with the string length.
+
+We also need, in general, to access the entire 256-bit state of the hasher,
+so we cannot use [std::hash::Hasher].
+
+Note that this implementation is identical to the original one,
+and different from the one used in [Sux4J](https://sux.di.unimi.it/).
+
+*/
 
 pub const SC_CONST: u64 = 0xdeadbeefdeadbeef;
 
 #[inline(always)]
 #[must_use]
-pub const fn spooky_short_mix(mut h: [u64; 4]) -> [u64; 4] {
+const fn spooky_short_mix(mut h: [u64; 4]) -> [u64; 4] {
     h[2] = h[2].rotate_left(50);
     h[2] = h[2].wrapping_add(h[3]);
     h[0] ^= h[2];
@@ -94,6 +106,7 @@ const fn spooky_short_end(mut h: [u64; 4]) -> [u64; 4] {
     h
 }
 
+/// Rehash an internal state of SpookyHash using an additional seed.
 #[inline(always)]
 #[must_use]
 pub const fn spooky_short_rehash(signature: &[u64; 4], seed: u64) -> [u64; 4] {
@@ -105,9 +118,16 @@ pub const fn spooky_short_rehash(signature: &[u64; 4], seed: u64) -> [u64; 4] {
     ])
 }
 
+/// Compute the 256-bit internal state of SpookyHash (short version)
+/// for a reference to a slice of bytes.
+///
+/// The original implementation uses two 64-bit hash seeds: the only value
+/// provided here is used for both seeds. The 128-bit standard SpookyHash
+/// is given by the first two values of the returned array.
 #[must_use]
 #[inline]
-pub fn spooky_short(data: &[u8], seed: u64) -> [u64; 4] {
+pub fn spooky_short(data: impl AsRef<[u8]>, seed: u64) -> [u64; 4] {
+    let data = data.as_ref();
     let mut h = [seed, seed, SC_CONST, SC_CONST];
 
     let iter = data.chunks_exact(32);
@@ -130,6 +150,8 @@ pub fn spooky_short(data: &[u8], seed: u64) -> [u64; 4] {
         reminder = &reminder[16..];
     }
 
+    h[3] = h[3].wrapping_add(data.len().wrapping_shl(56) as u64);
+
     // Handle the last 0..15 bytes, and its length
     // We copy it into a buffer filled with zeros so we can simplify the
     // code
@@ -143,6 +165,25 @@ pub fn spooky_short(data: &[u8], seed: u64) -> [u64; 4] {
         h[3] = h[3].wrapping_add(u64::from_le_bytes(buffer[8..16].try_into().unwrap()));
     }
 
-    h[0] = h[0].wrapping_add((data.len() as u64) * 8);
     spooky_short_end(h)
+}
+
+#[test]
+
+fn test() {
+    let s = spooky_short("ciaociaociaociaoc", 0);
+    assert_eq!(s[0], 0xfb9a067cf49b4b1c);
+    assert_eq!(s[1], 0xd30b86ad7fb48d4);
+
+    let s = spooky_short("ciaociaociaociaoc", 1);
+    assert_eq!(s[0], 0x4b378d1bc317b08a);
+    assert_eq!(s[1], 0x26087823be213893);
+
+    let s = spooky_short("ciaociaociaociao", 0);
+    assert_eq!(s[0], 0x4ff16aa850d481df);
+    assert_eq!(s[1], 0xbc025187c0cb9eaf);
+
+    let s = spooky_short("ciaociaociaocia", 0);
+    assert_eq!(s[0], 0xf56ea3bd694d8c09);
+    assert_eq!(s[1], 0xba8a7cfe1a359dd5);
 }
