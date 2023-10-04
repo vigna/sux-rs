@@ -137,7 +137,7 @@ impl<T> Iterator for ChunkStore<T> {
     type Item = ChunkIterator<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.files.len() == 0 {
+        if self.files.is_empty() {
             return None;
         }
         if self.bucket_high_bits >= self.chunk_high_bits {
@@ -181,7 +181,7 @@ impl<T> Iterator for ChunkStore<T> {
             _marker: PhantomData,
         };
         self.next_chunk += num_chunks;
-        return Some(res);
+        Some(res)
     }
 }
 
@@ -351,7 +351,7 @@ impl<T: ZeroCopy> SigStore<T> {
 
         let chunk_sizes = self
             .counts
-            .chunks(1 << self.max_chunk_high_bits - chunk_high_bits)
+            .chunks(1 << (self.max_chunk_high_bits - chunk_high_bits))
             .map(|x| x.iter().sum())
             .collect::<VecDeque<_>>();
         let iter = Vec::from_iter(chunk_sizes.iter().copied());
