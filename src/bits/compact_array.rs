@@ -8,9 +8,9 @@
 use crate::prelude::*;
 use anyhow::Result;
 use common_traits::*;
+use core::marker::PhantomData;
 use epserde::*;
 use std::sync::atomic::{compiler_fence, fence, AtomicUsize, Ordering};
-use core::marker::PhantomData;
 
 /**
 
@@ -38,7 +38,7 @@ boundary-crossing value, then no race condition can happen.
 
 */
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CompactArray<W=usize, M = W, B = Vec<W>> {
+pub struct CompactArray<W = usize, M = W, B = Vec<W>> {
     /// The underlying storage.
     data: B,
     /// The bit width of the values stored in the array.
@@ -77,8 +77,10 @@ impl<W: IntoAtomic + Word> CompactArray<W, W, Vec<W>> {
     pub fn new_atomic(bit_width: usize, len: usize) -> CompactArray<W::AtomicType, W> {
         // we need at least two words to avoid branches in the gets
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
-        CompactArray::<W::AtomicType> {
-            data: (0..n_of_words).map(|_| W::AtomicType::new(W::ZERO)).collect(),
+        CompactArray::<W::AtomicType, W> {
+            data: (0..n_of_words)
+                .map(|_| W::AtomicType::new(W::ZERO))
+                .collect(),
             bit_width,
             mask: mask(bit_width),
             len,
@@ -123,16 +125,16 @@ impl<W: Bits, M, T> BitFieldSliceCore<W> for CompactArray<W, M, T> {
 
 impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for CompactArray<W, W, B> {
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> usize {
+    unsafe fn get_unchecked(&self, index: usize) -> W {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
         let bit_index = pos % W::BITS;
 
         if bit_index + self.bit_width <= W::BITS {
-            (self.data.as_ref().get_unchecked(word_index) >> bit_index) & self.mask
+            (*self.data.as_ref().get_unchecked(word_index) >> bit_index) & self.mask
         } else {
-            (self.data.as_ref().get_unchecked(word_index) >> bit_index
-                | self.data.as_ref().get_unchecked(word_index + 1) << (W::BITS - bit_index))
+            (*self.data.as_ref().get_unchecked(word_index) >> bit_index
+                | *self.data.as_ref().get_unchecked(word_index + 1) << (W::BITS - bit_index))
                 & self.mask
         }
     }
@@ -141,12 +143,12 @@ impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for CompactArray<W, W, B> {
 pub struct CompactArrayUncheckedIterator<'a, W, M, B> {
     array: &'a CompactArray<W, M, B>,
     word_index: usize,
-    window: usize,
+    window: W,
     fill: usize,
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> CompactArrayUncheckedIterator<'a, W, W, B> {
-    fn new(array: &'a CompactArray<B>, index: usize) -> Self {
+    fn new(array: &'a CompactArray<W, W, B>, index: usize) -> Self {
         if index > array.len() {
             panic!("Start index out of bounds: {} > {}", index, array.len());
         }
@@ -155,13 +157,13 @@ impl<'a, W: Word, B: AsRef<[W]>> CompactArrayUncheckedIterator<'a, W, W, B> {
         let fill;
         let window = if index == array.len() {
             fill = 0;
-            0
+            W::ZERO
         } else {
             let bit_index = bit_offset % usize::BITS as usize;
             fill = usize::BITS as usize - bit_index;
             unsafe {
                 // SAFETY: index has been check at the start and it is within bounds
-                array.data.get_unchecked(word_index) >> bit_index
+                *array.data.as_ref().get_unchecked(word_index) >> bit_index
             }
         };
         Self {
@@ -173,9 +175,11 @@ impl<'a, W: Word, B: AsRef<[W]>> CompactArrayUncheckedIterator<'a, W, W, B> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> UncheckedValueIterator for CompactArrayUncheckedIterator<'a, W, W, B> {
-    type Item = usize;
-    unsafe fn next_unchecked(&mut self) -> usize {
+impl<'a, W: Word, B: AsRef<[W]>> UncheckedValueIterator
+    for CompactArrayUncheckedIterator<'a, W, W, B>
+{
+    type Item = W;
+    unsafe fn next_unchecked(&mut self) -> W {
         if self.fill >= self.array.bit_width {
             self.fill -= self.array.bit_width;
             let res = self.window & self.array.mask;
@@ -185,7 +189,7 @@ impl<'a, W: Word, B: AsRef<[W]>> UncheckedValueIterator for CompactArrayUnchecke
 
         let res = self.window;
         self.word_index += 1;
-        self.window = self.array.data.get_unchecked(self.word_index);
+        self.window = *self.array.data.as_ref().get_unchecked(self.word_index);
         let res = (res | (self.window << self.fill)) & self.array.mask;
         let used = self.array.bit_width - self.fill;
         self.window >>= used;
@@ -194,7 +198,7 @@ impl<'a, W: Word, B: AsRef<[W]>> UncheckedValueIterator for CompactArrayUnchecke
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> IntoUncheckedValueIterator for CompactArray<W,W, B> {
+impl<W: Word, B: AsRef<[W]>> IntoUncheckedValueIterator for CompactArray<W, W, B> {
     type Item = W;
     type IntoUncheckedValueIter<'a> = CompactArrayUncheckedIterator<'a, W, W, B>
         where B:'a, W:'a ;
@@ -260,7 +264,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for CompactArray<W
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
     #[inline(always)]
-    fn set(&mut self, index: usize, value: usize) {
+    fn set(&mut self, index: usize, value: W) {
         panic_if_out_of_bounds!(index, self.len);
         panic_if_value!(value, self.mask, self.bit_width);
         unsafe {
@@ -269,7 +273,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for CompactArray<W
     }
 
     #[inline]
-    unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
+    unsafe fn set_unchecked(&mut self, index: usize, value: W) {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
         let bit_index = pos % W::BITS;
@@ -281,25 +285,25 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for CompactArray<W
             word |= value << bit_index;
             self.data.as_mut().set_unchecked(word_index, word);
         } else {
-            let mut word = self.data.get_unchecked(word_index);
-            word &= (1 << bit_index) - 1;
+            let mut word = *self.data.as_ref().get_unchecked(word_index);
+            word &= (W::ONE << bit_index) - W::ONE;
             word |= value << bit_index;
             self.data.set_unchecked(word_index, word);
 
-            let mut word = self.data.get_unchecked(word_index + 1);
+            let mut word = *self.data.as_ref().get_unchecked(word_index + 1);
             word &= !(self.mask >> (W::BITS - bit_index));
             word |= value >> (W::BITS - bit_index);
-            self.data.set_unchecked(word_index + 1, word);
+            self.data.as_mut().set_unchecked(word_index + 1, word);
         }
     }
 }
 
-impl<W: Atomic + Bits, T: AsRef<[W]>> BitFieldSliceAtomic<W> for CompactArray<W, W::NonAtomic, T> 
+impl<W: Integer + Atomic, T: AsRef<[W]>> BitFieldSliceAtomic<W> for CompactArray<W, W::NonAtomic, T>
 where
     W::NonAtomic: Word,
 {
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
+    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W::NonAtomic {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
         let bit_index = pos % W::BITS;
@@ -322,7 +326,7 @@ where
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
     #[inline(always)]
-    fn set(&self, index: usize, value: usize, order: Ordering) {
+    fn set(&self, index: usize, value: W::NonAtomic, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len);
         panic_if_value!(value, self.mask, self.bit_width);
         unsafe {
@@ -331,7 +335,7 @@ where
     }
 
     #[inline]
-    unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering) {
+    unsafe fn set_unchecked(&self, index: usize, value: W::NonAtomic, order: Ordering) {
         debug_assert!(self.bit_width != W::BITS);
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
@@ -361,7 +365,7 @@ where
             fence(Ordering::Acquire);
             loop {
                 let mut new = word;
-                new &= (1 << bit_index) - 1;
+                new &= (W::NonAtomic::ONE << bit_index) - W::NonAtomic::ONE;
                 new |= value << bit_index;
 
                 match self
@@ -410,12 +414,12 @@ where
 ///
 /// Many implementations of this trait are then used to
 /// implement by delegation a corresponding [`From`].
-impl<W, B, D> ConvertTo<CompactArray<W, D>> for CompactArray<W, B>
+impl<W, V, M, B, C> ConvertTo<CompactArray<V, M, C>> for CompactArray<W, M, B>
 where
-    B: ConvertTo<D>,
+    B: ConvertTo<C>,
 {
     #[inline]
-    fn convert_to(self) -> Result<CompactArray<D>> {
+    fn convert_to(self) -> Result<CompactArray<V, M, C>> {
         Ok(CompactArray {
             len: self.len,
             bit_width: self.bit_width,
@@ -427,35 +431,39 @@ where
 }
 
 /// Provide conversion from standard to atomic compact arrays.
-impl From<CompactArray<Vec<usize>>> for CompactArray<Vec<AtomicUsize>> {
+impl From<CompactArray<usize>> for CompactArray<AtomicUsize, usize> {
     #[inline]
-    fn from(bm: CompactArray<Vec<usize>>) -> Self {
+    fn from(bm: CompactArray<usize>) -> Self {
         bm.convert_to().unwrap()
     }
 }
 
 /// Provide conversion from atomic to standard compact arrays.
-impl From<CompactArray<Vec<AtomicUsize>>> for CompactArray<Vec<usize>> {
+impl From<CompactArray<AtomicUsize, usize>> for CompactArray<usize> {
     #[inline]
-    fn from(bm: CompactArray<Vec<AtomicUsize>>) -> Self {
+    fn from(bm: CompactArray<AtomicUsize, usize>) -> Self {
         bm.convert_to().unwrap()
     }
 }
 
 /// Provide conversion from references to standard compact arrays to
 /// references to atomic compact arrays.
-impl<'a> From<CompactArray<&'a [usize]>> for CompactArray<&'a [AtomicUsize]> {
+impl<'a> From<CompactArray<usize, usize, &'a [usize]>>
+    for CompactArray<AtomicUsize, usize, &'a [AtomicUsize]>
+{
     #[inline]
-    fn from(bm: CompactArray<&'a [usize]>) -> Self {
+    fn from(bm: CompactArray<usize, usize, &'a [usize]>) -> Self {
         bm.convert_to().unwrap()
     }
 }
 
 /// Provide conversion from references to atomic compact arrays to
 /// references to standard compact arrays.
-impl<'a> From<CompactArray<&'a [AtomicUsize]>> for CompactArray<&'a [usize]> {
+impl<'a> From<CompactArray<AtomicUsize, usize, &'a [AtomicUsize]>>
+    for CompactArray<usize, usize, &'a [usize]>
+{
     #[inline]
-    fn from(bm: CompactArray<&'a [AtomicUsize]>) -> Self {
+    fn from(bm: CompactArray<AtomicUsize, usize, &'a [AtomicUsize]>) -> Self {
         bm.convert_to().unwrap()
     }
 }
