@@ -47,28 +47,28 @@ pub trait ToSig {
 
 impl ToSig for String {
     fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
-        let spooky = spooky_short(key.as_ref(), seed);
+        let spooky = spooky_short(key, seed);
         [spooky[0], spooky[1]]
     }
 }
 
 impl ToSig for &String {
     fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
-        let spooky = spooky_short(key.as_ref(), seed);
+        let spooky = spooky_short(key, seed);
         [spooky[0], spooky[1]]
     }
 }
 
 impl ToSig for str {
     fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
-        let spooky = spooky_short(key.as_ref(), seed);
+        let spooky = spooky_short(key, seed);
         [spooky[0], spooky[1]]
     }
 }
 
 impl ToSig for &str {
     fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
-        let spooky = spooky_short(key.as_ref(), seed);
+        let spooky = spooky_short(key, seed);
         [spooky[0], spooky[1]]
     }
 }
