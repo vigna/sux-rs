@@ -37,11 +37,11 @@ The implementations based on atomic types implement
 [`BitFieldSliceAtomic`].
 
 */
-use common_traits::*;
 use crate::prelude::*;
+use common_traits::Number;
+use common_traits::*;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use std::marker::PhantomData;
-use common_traits::Number;
 
 /// Common methods for [`BitFieldSlice`], [`BitFieldSliceMut`], and [`BitFieldSliceAtomic`]
 pub trait BitFieldSliceCore<V: Bits> {
@@ -104,7 +104,7 @@ pub trait BitFieldSlice<V: Bits>: BitFieldSliceCore<V> {
 }
 
 /// A mutable slice of bit fields of constant bit width.
-pub trait BitFieldSliceMut<V: Bits>: BitFieldSliceCore<V> {
+pub trait BitFieldSliceMut<V: Integer>: BitFieldSliceCore<V> {
     /// Set the element of the slice at the specified index.
     /// No bounds checking is performed.
     ///
@@ -121,8 +121,13 @@ pub trait BitFieldSliceMut<V: Bits>: BitFieldSliceCore<V> {
     fn set(&mut self, index: usize, value: V) {
         panic_if_out_of_bounds!(index, self.len());
         let bw = self.bit_width();
-        let mask = usize::MAX.wrapping_shr(V::BITS as u32 - bw as u32)
-            & !((bw as isize - 1) >> (V::BITS - 1)) as usize;
+        // TODO: Maybe testless?
+        let mask = if bw == 0 {
+            V::ZERO
+        } else {
+            V::MAX.wrapping_shr(V::BITS as u32 - bw as u32)
+        };
+
         panic_if_value!(value, mask, bw);
         unsafe {
             self.set_unchecked(index, value);
@@ -134,7 +139,10 @@ pub trait BitFieldSliceMut<V: Bits>: BitFieldSliceCore<V> {
 ///
 /// Different implementations might provide different atomicity guarantees. See
 /// [`CompactArray`] for an example.
-pub trait BitFieldSliceAtomic<V: Atomic + Bits>: BitFieldSliceCore<V> {
+pub trait BitFieldSliceAtomic<V: Atomic + Integer + Bits>: BitFieldSliceCore<V>
+where
+    V::NonAtomic: Integer,
+{
     /// Return the value at the specified index.
     ///
     /// # Safety
@@ -146,7 +154,7 @@ pub trait BitFieldSliceAtomic<V: Atomic + Bits>: BitFieldSliceCore<V> {
     ///
     /// # Panics
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
-    fn get(&self, index: usize, order: Ordering) ->  V::NonAtomic {
+    fn get(&self, index: usize, order: Ordering) -> V::NonAtomic {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_unchecked(index, order) }
     }
@@ -157,7 +165,7 @@ pub trait BitFieldSliceAtomic<V: Atomic + Bits>: BitFieldSliceCore<V> {
     /// - `index` must be in [0..[len](`BitFieldSliceCore::len`));
     /// - `value` must fit withing [`BitFieldSliceCore::bit_width`] bits.
     /// No bound or bit-width check is performed.
-    unsafe fn set_unchecked(&self, index: usize, value:  V::NonAtomic, order: Ordering);
+    unsafe fn set_unchecked(&self, index: usize, value: V::NonAtomic, order: Ordering);
 
     /// Set the element of the slice at the specified index.
     ///
@@ -168,8 +176,12 @@ pub trait BitFieldSliceAtomic<V: Atomic + Bits>: BitFieldSliceCore<V> {
             panic_if_out_of_bounds!(index, self.len());
         }
         let bw = self.bit_width();
-        let mask = usize::MAX.wrapping_shr(Self::Value::BITS as u32 - bw as u32)
-            & !((bw as isize - 1) >> (Self::Value::BITS - 1)) as usize;
+        // TODO Maybe testless?
+        let mask = if bw == 0 {
+            V::NonAtomic::ZERO
+        } else {
+            V::NonAtomic::MAX.wrapping_shr(V::BITS as u32 - bw as u32)
+        };
         panic_if_value!(value, mask, bw);
         unsafe {
             self.set_unchecked(index, value, order);
@@ -194,7 +206,11 @@ impl<'a, V: Bits, B: BitFieldSlice<V>> BitFieldSliceIterator<'a, V, B> {
         if index > slice.len() {
             panic!("Start index out of bounds: {} > {}", index, slice.len());
         }
-        Self { slice, index, _marker: PhantomData, }
+        Self {
+            slice,
+            index,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -224,14 +240,14 @@ impl<V: Bits, T: AsRef<[V]>> BitFieldSliceCore<V> for T {
 
 impl<V: Bits, T: AsRef<[V]>> BitFieldSlice<V> for T {
     #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> usize {
+    unsafe fn get_unchecked(&self, index: usize) -> V {
         debug_assert_bounds!(index, self.len());
         *self.as_ref().get_unchecked(index)
     }
 }
 
 /*
-impl<V, T> IntoValueIterator for T 
+impl<V, T> IntoValueIterator for T
     where T: AsRef<[V]>
 {
     type Item = V;
@@ -250,26 +266,29 @@ impl<V, T> IntoValueIterator for T
     }
 } */
 
-impl<V: Bits + Atomic, T: AsRef<[V]>> BitFieldSliceAtomic<V> for T {
+impl<V: Bits + Atomic + Integer, T: AsRef<[V]>> BitFieldSliceAtomic<V> for T
+where
+    V::NonAtomic: Integer,
+{
     #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
+    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> V::NonAtomic {
         debug_assert_bounds!(index, self.len());
-        <T as AsRef<[AtomicUsize]>>::as_ref(self)
+        <T as AsRef<[V]>>::as_ref(self)
             .get_unchecked(index)
             .load(order)
     }
     #[inline(always)]
-    unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering) {
+    unsafe fn set_unchecked(&self, index: usize, value: V::NonAtomic, order: Ordering) {
         debug_assert_bounds!(index, self.len());
-        <T as AsRef<[AtomicUsize]>>::as_ref(self)
+        <T as AsRef<[V]>>::as_ref(self)
             .get_unchecked(index)
             .store(value, order);
     }
 }
 
-impl<V: Bits, T: AsMut<[V]> + AsRef<[V]>> BitFieldSliceMut<V> for T {
+impl<V: Integer, T: AsMut<[V]> + AsRef<[V]>> BitFieldSliceMut<V> for T {
     #[inline(always)]
-    unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
+    unsafe fn set_unchecked(&mut self, index: usize, value: V) {
         debug_assert_bounds!(index, self.len());
         *self.as_mut().get_unchecked_mut(index) = value;
     }
