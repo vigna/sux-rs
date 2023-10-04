@@ -30,8 +30,8 @@ pub struct EliasFanoBuilder {
     u: usize,
     n: usize,
     l: usize,
-    low_bits: CompactArray<Vec<usize>>,
-    high_bits: BitVec<Vec<usize>>,
+    low_bits: CompactArray,
+    high_bits: BitVec,
     last_value: usize,
     count: usize,
 }
@@ -114,7 +114,7 @@ pub struct EliasFanoAtomicBuilder {
     u: usize,
     n: usize,
     l: usize,
-    low_bits: CompactArray<Vec<AtomicUsize>>,
+    low_bits: CompactArray<AtomicUsize, usize>,
     high_bits: BitVec<Vec<AtomicUsize>>,
 }
 
@@ -258,8 +258,10 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<H: AsRef<[usize]> + Select, L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>>
-    IndexedDict for EliasFano<H, L>
+impl<
+        H: AsRef<[usize]> + Select,
+        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
+    > IndexedDict for EliasFano<H, L>
 {
     type Output = usize;
     type Input = usize;
@@ -373,8 +375,8 @@ impl<
     }
 }
 
-impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>> Iterator
-    for EliasFanoIterator<'a, H, L>
+impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>>
+    Iterator for EliasFanoIterator<'a, H, L>
 {
     type Item = usize;
 

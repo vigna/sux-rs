@@ -279,11 +279,10 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for CompactArray<W
         let bit_index = pos % W::BITS;
 
         if bit_index + self.bit_width <= W::BITS {
-            let data: &[W] = self.data.as_ref();
-            let mut word = *data.get_unchecked(word_index);
+            let mut word = self.data.get_unchecked(word_index);
             word &= !(self.mask << bit_index);
             word |= value << bit_index;
-            self.data.as_mut().set_unchecked(word_index, word);
+            self.data.set_unchecked(word_index, word);
         } else {
             let mut word = *self.data.as_ref().get_unchecked(word_index);
             word &= (W::ONE << bit_index) - W::ONE;
