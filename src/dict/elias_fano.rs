@@ -31,7 +31,7 @@ pub struct EliasFanoBuilder {
     n: usize,
     l: usize,
     low_bits: CompactArray,
-    high_bits: BitVec,
+    high_bits: BitVec<Vec<usize>>,
     last_value: usize,
     count: usize,
 }

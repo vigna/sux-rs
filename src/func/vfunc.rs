@@ -85,7 +85,7 @@ A static function from key implementing [ToSig] to arbitrary values.
 
 */
 #[derive(Epserde, Debug, Default)]
-pub struct VFunc<T: ToSig, S: BitFieldSlice<u64> = CompactArray<u64>> {
+pub struct VFunc<T: ToSig, S: BitFieldSlice<usize> = CompactArray<usize>> {
     seed: u64,
     log2_l: u32,
     high_bits: u32,
@@ -108,7 +108,7 @@ More precisely, each signature is made of two 64-bit integers `h` and `l`, and t
 - the lower 32 bits of `l` are used to select the third vertex.
 
 */
-impl<T: ToSig, S: BitFieldSlice<u64>> VFunc<T, S> {
+impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
     #[inline(always)]
     #[must_use]
     fn chunk(sig: &[u64; 2], high_bits: u32, chunk_mask: u32) -> usize {
@@ -284,7 +284,7 @@ impl<T: ToSig, S: BitFieldSlice<u64>> VFunc<T, S> {
                 (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * c)
             );
 
-            let data = <CompactArray<>>::new_atomic(bit_width, num_vertices * num_chunks);
+            let data = <CompactArray>::new_atomic(bit_width, num_vertices * num_chunks);
 
             let chunk = AtomicUsize::new(0);
             let fail = AtomicBool::new(false);
@@ -453,7 +453,7 @@ impl<T: ToSig, S: BitFieldSlice<u64>> VFunc<T, S> {
             }
 
             let store_bits = 12;
-            let mut sig_sorter = SigStore::new(8, store_bits).unwrap();
+            let mut sig_sorter = SigStore::<usize>::new(8, store_bits).unwrap();
             let mut values = into_values.clone().into_iter();
             let mut max_value = 0;
             sig_sorter.extend(keys.clone().into_iter().map(|x| {
@@ -462,7 +462,7 @@ impl<T: ToSig, S: BitFieldSlice<u64>> VFunc<T, S> {
                 }
                 let v = values.next().expect("Not enough values");
                 max_value = max_value.max(v);
-                (T::to_sig(&x, seed), v as u64)
+                (T::to_sig(&x, seed), v)
             }))?;
 
             let num_keys = sig_sorter.num_keys();
@@ -551,7 +551,7 @@ impl<T: ToSig, S: BitFieldSlice<u64>> VFunc<T, S> {
                 pl.done_with_count(num_keys);
             }
 
-            let data = CompactArray::new_atomic(bit_width, num_vertices * num_chunks);
+            let data = CompactArray::<usize>::new_atomic(bit_width, num_vertices * num_chunks);
 
             let fail = AtomicBool::new(false);
             let mutex = std::sync::Arc::new(Mutex::new(chunk_store));
@@ -708,44 +708,4 @@ impl<T: ToSig, S: BitFieldSlice<u64>> VFunc<T, S> {
         }
         unreachable!("There are infinite possible seeds.")
     }
-}
-
-fn _count_sort<T: Copy + Clone, F: Fn(&T) -> usize>(
-    data: &mut [T],
-    num_keys: usize,
-    key: F,
-) -> (Vec<usize>, Vec<usize>) {
-    if num_keys == 1 {
-        return (vec![data.len()], vec![0, data.len()]);
-    }
-    let mut counts = vec![0; num_keys];
-
-    for sig in &*data {
-        counts[key(sig)] += 1;
-    }
-
-    let mut cumul = vec![0; counts.len() + 1];
-    for i in 1..cumul.len() {
-        cumul[i] += cumul[i - 1] + counts[i - 1];
-    }
-    let end = data.len() - counts.last().unwrap();
-
-    let mut pos = cumul[1..].to_vec();
-    let mut i = 0;
-    while i < end {
-        let mut sig = data[i];
-
-        loop {
-            let slot = key(&sig);
-            pos[slot] -= 1;
-            if pos[slot] <= i {
-                break;
-            }
-            mem::swap(&mut data[pos[slot]], &mut sig);
-        }
-        data[i] = sig;
-        i += counts[key(&sig)];
-    }
-
-    (counts, cumul)
 }
