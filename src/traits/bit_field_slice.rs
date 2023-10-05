@@ -44,7 +44,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use std::marker::PhantomData;
 
 /// Common methods for [`BitFieldSlice`], [`BitFieldSliceMut`], and [`BitFieldSliceAtomic`]
-pub trait BitFieldSliceCore<V: Bits> {
+pub trait BitFieldSliceCore<V: Integer> {
     /// Return the width of the slice. All elements stored in the slice must
     /// fit within this bit width.
     fn bit_width(&self) -> usize;
@@ -86,7 +86,7 @@ macro_rules! debug_assert_bounds {
 }
 
 /// A slice of bit fields of constant bit width.
-pub trait BitFieldSlice<V: Bits>: BitFieldSliceCore<V> {
+pub trait BitFieldSlice<V: Integer>: BitFieldSliceCore<V> {
     /// Return the value at the specified index.
     ///
     /// # Safety
@@ -195,13 +195,13 @@ where
 /// because it would be impossible to override in implementing classes,
 /// but you can implement [`IntoValueIterator`] for your implementation
 /// of [`BitFieldSlice`] by using this structure.
-pub struct BitFieldSliceIterator<'a, V: Bits, B: BitFieldSlice<V>> {
+pub struct BitFieldSliceIterator<'a, V: Integer, B: BitFieldSlice<V>> {
     slice: &'a B,
     index: usize,
     _marker: PhantomData<V>,
 }
 
-impl<'a, V: Bits, B: BitFieldSlice<V>> BitFieldSliceIterator<'a, V, B> {
+impl<'a, V: Integer, B: BitFieldSlice<V>> BitFieldSliceIterator<'a, V, B> {
     pub fn new(slice: &'a B, index: usize) -> Self {
         if index > slice.len() {
             panic!("Start index out of bounds: {} > {}", index, slice.len());
@@ -214,7 +214,7 @@ impl<'a, V: Bits, B: BitFieldSlice<V>> BitFieldSliceIterator<'a, V, B> {
     }
 }
 
-impl<'a, V: Bits, B: BitFieldSlice<V>> Iterator for BitFieldSliceIterator<'a, V, B> {
+impl<'a, V: Integer, B: BitFieldSlice<V>> Iterator for BitFieldSliceIterator<'a, V, B> {
     type Item = V;
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.slice.len() {
@@ -227,7 +227,7 @@ impl<'a, V: Bits, B: BitFieldSlice<V>> Iterator for BitFieldSliceIterator<'a, V,
     }
 }
 
-impl<V: Bits, T: AsRef<[V]>> BitFieldSliceCore<V> for T {
+impl<V: Integer, T: AsRef<[V]>> BitFieldSliceCore<V> for T {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         V::BITS
@@ -238,7 +238,7 @@ impl<V: Bits, T: AsRef<[V]>> BitFieldSliceCore<V> for T {
     }
 }
 
-impl<V: Bits, T: AsRef<[V]>> BitFieldSlice<V> for T {
+impl<V: Integer, T: AsRef<[V]>> BitFieldSlice<V> for T {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> V {
         debug_assert_bounds!(index, self.len());

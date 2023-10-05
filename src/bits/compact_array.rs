@@ -110,7 +110,7 @@ impl<W: Bits, M: Word, B> CompactArray<W, M, B> {
     }
 }
 
-impl<W: Bits, M, T> BitFieldSliceCore<W> for CompactArray<W, M, T> {
+impl<W: Integer, M, T> BitFieldSliceCore<W> for CompactArray<W, M, T> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= W::BITS);
@@ -255,7 +255,7 @@ impl<W: Word, B: AsRef<[W]>> IntoValueIterator for CompactArray<W, W, B> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for CompactArray<W, W, B> {
+impl<W: Integer, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for CompactArray<W, W, B> {
     // We reimplement set as we have the mask in the structure.
 
     /// Set the element of the slice at the specified index.
@@ -279,27 +279,27 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for CompactArray<W
         let bit_index = pos % W::BITS;
 
         if bit_index + self.bit_width <= W::BITS {
-            let mut word = self.data.get_unchecked(word_index);
+            let mut word = *self.data.as_ref().get_unchecked(word_index);
             word &= !(self.mask << bit_index);
             word |= value << bit_index;
-            self.data.set_unchecked(word_index, word);
+            *self.data.as_ref().get_unchecked_mut(word_index) = word;
         } else {
             let mut word = *self.data.as_ref().get_unchecked(word_index);
             word &= (W::ONE << bit_index) - W::ONE;
             word |= value << bit_index;
-            self.data.set_unchecked(word_index, word);
+            *self.data.as_ref().get_unchecked_mut(word_index) = word;
 
             let mut word = *self.data.as_ref().get_unchecked(word_index + 1);
             word &= !(self.mask >> (W::BITS - bit_index));
             word |= value >> (W::BITS - bit_index);
-            self.data.as_mut().set_unchecked(word_index + 1, word);
+            *self.data.as_ref().get_unchecked_mut(word_index + 1) = word;
         }
     }
 }
 
 impl<W: Integer + Atomic, T: AsRef<[W]>> BitFieldSliceAtomic<W> for CompactArray<W, W::NonAtomic, T>
 where
-    W::NonAtomic: Word,
+    W::NonAtomic: Integer,
 {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W::NonAtomic {
