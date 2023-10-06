@@ -7,6 +7,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use crate::traits::bit_field_slice::BitFieldSlice;
+use crate::traits::bit_field_slice::BitFieldSliceMut;
 use crate::{bits::prelude::CountBitVec, traits::prelude::*};
 use anyhow::Result;
 use common_traits::SelectInWord;

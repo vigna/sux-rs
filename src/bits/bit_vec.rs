@@ -7,7 +7,7 @@
 
 /*!
 
-Bit vector implementations. There are three flavors:
+Bit vector implementations. There are four flavors:
 
 - `BitVec<Vec<usize>>`: a mutable bit vector with a `Vec<usize>` as underlying storage;
 - `BitVec<&[usize]>`: a mutable bit vector with a `&[usize]` as underlying storage,

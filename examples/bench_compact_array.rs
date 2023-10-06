@@ -13,6 +13,8 @@ use rand::SeedableRng;
 use std::hint::black_box;
 use sux::prelude::CompactArray;
 use sux::prelude::*;
+use sux::traits::bit_field_slice::BitFieldSlice;
+use sux::traits::bit_field_slice::BitFieldSliceMut;
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks compact arrays", long_about = None)]
@@ -40,7 +42,7 @@ pub fn main() {
 
     let args = Args::parse();
 
-    let mut a = CompactArray::new(args.width, 1 << args.log2_size);
+    let mut a = CompactArray::<usize>::new(args.width, 1 << args.log2_size);
     let mask = (1 << args.log2_size) - 1;
 
     let mut pl = ProgressLogger::default();

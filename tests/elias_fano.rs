@@ -63,20 +63,15 @@ fn test_elias_fano() -> Result<()> {
             assert_eq!({ ef.get(i) }, *v);
         }
         // Add the ones indices
-        let ef: EliasFano<
-            QuantumIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
-            CompactArray<Vec<usize>>,
-        > = ef.convert_to().unwrap();
+        let ef: EliasFano<QuantumIndex, CompactArray> = ef.convert_to().unwrap();
 
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.get(i), *v);
         }
 
         // Add the indices
-        let ef: sux::dict::elias_fano::EliasFano<
-            QuantumZeroIndex<QuantumIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>, Vec<usize>, 8>,
-            CompactArray<Vec<usize>>,
-        > = ef.convert_to().unwrap();
+        let ef: sux::dict::elias_fano::EliasFano<QuantumZeroIndex<QuantumIndex>, CompactArray> =
+            ef.convert_to().unwrap();
         // do a fast select
         for (i, v) in values.iter().enumerate() {
             assert_eq!({ ef.get(i) }, *v);
@@ -135,10 +130,7 @@ fn test_epserde() -> Result<()> {
         // Finish the creation of elias-fano
         let ef: EliasFano = efb.build();
         // Add the ones indices
-        let ef: EliasFano<
-            QuantumIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
-            CompactArray<Vec<usize>>,
-        > = ef.convert_to().unwrap();
+        let ef: EliasFano<QuantumIndex, CompactArray> = ef.convert_to().unwrap();
 
         let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
         let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);
@@ -146,10 +138,10 @@ fn test_epserde() -> Result<()> {
         drop(file);
         println!("{}", schema.to_csv());
 
-        let c = <EliasFano<
-            QuantumIndex<CountBitVec<Vec<usize>>, Vec<usize>, 8>,
-            CompactArray<Vec<usize>>,
-        >>::mmap(&tmp_file, epserde::deser::Flags::empty())?;
+        let c = <EliasFano<QuantumIndex, CompactArray>>::mmap(
+            &tmp_file,
+            epserde::deser::Flags::empty(),
+        )?;
 
         for i in 0..n {
             assert_eq!(ef.get(i), c.get(i));

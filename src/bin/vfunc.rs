@@ -60,7 +60,7 @@ fn main() -> Result<()> {
     }
 
     if let Some(n) = args.n {
-        let func = VFunc::<_>::new_offline(0..n as usize, &(0..), &mut Some(&mut pl))?;
+        let func = VFunc::<_>::new_offline(0..n, &(0..), &mut Some(&mut pl))?;
 
         func.store(&args.func)?;
     }

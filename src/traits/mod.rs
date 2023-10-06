@@ -18,7 +18,7 @@ pub mod iter;
 pub mod rank_sel;
 
 pub mod prelude {
-    pub use super::bit_field_slice::*;
+    pub use super::bit_field_slice::BitFieldSliceCore;
     pub use super::convert_to::*;
     pub use super::indexed_dict::*;
     pub use super::iter::*;
