@@ -430,34 +430,40 @@ where
     }
 }
 
-impl From<CompactArray<usize>> for CompactArray<AtomicUsize, usize> {
-    #[inline]
-    fn from(bm: CompactArray<usize>) -> Self {
-        bm.convert_to().unwrap()
-    }
+macro_rules! impl_from {
+    ($($ty:ty),*) => {$(
+        impl<B, C> From<CompactArray<$ty, $ty, B>> for CompactArray<<$ty as NonAtomic>::AtomicType, $ty, C> {
+            #[inline]
+            fn from(bm: CompactArray<$ty, $ty, B>) -> Self {
+                bm.convert_to().unwrap()
+            }
+        }
+
+        impl From<CompactArray<<$ty as NonAtomic>::AtomicType, $ty>> for CompactArray<$ty> {
+            #[inline]
+            fn from(bm: CompactArray<<$ty as NonAtomic>::AtomicType, $ty>) -> Self {
+                bm.convert_to().unwrap()
+            }
+        }
+
+        impl<'a> From<CompactArray<$ty, $ty, &'a [$ty]>>
+            for CompactArray<<$ty as NonAtomic>::AtomicType, $ty, &'a [<$ty as NonAtomic>::AtomicType]>
+        {
+            #[inline]
+            fn from(bm: CompactArray<$ty, $ty, &'a [$ty]>) -> Self {
+                bm.convert_to().unwrap()
+            }
+        }
+
+        impl<'a> From<CompactArray<<$ty as NonAtomic>::AtomicType, $ty, &'a [<$ty as NonAtomic>::AtomicType]>>
+            for CompactArray<$ty, $ty, &'a [$ty]>
+        {
+            #[inline]
+            fn from(bm: CompactArray<<$ty as NonAtomic>::AtomicType, $ty, &'a [<$ty as NonAtomic>::AtomicType]>) -> Self {
+                bm.convert_to().unwrap()
+            }
+        }
+    )*};
 }
 
-impl From<CompactArray<AtomicUsize, usize>> for CompactArray<usize> {
-    #[inline]
-    fn from(bm: CompactArray<AtomicUsize, usize>) -> Self {
-        bm.convert_to().unwrap()
-    }
-}
-
-impl<'a> From<CompactArray<usize, usize, &'a [usize]>>
-    for CompactArray<AtomicUsize, usize, &'a [AtomicUsize]>
-{
-    #[inline]
-    fn from(bm: CompactArray<usize, usize, &'a [usize]>) -> Self {
-        bm.convert_to().unwrap()
-    }
-}
-
-impl<'a> From<CompactArray<AtomicUsize, usize, &'a [AtomicUsize]>>
-    for CompactArray<usize, usize, &'a [usize]>
-{
-    #[inline]
-    fn from(bm: CompactArray<AtomicUsize, usize, &'a [AtomicUsize]>) -> Self {
-        bm.convert_to().unwrap()
-    }
-}
+impl_from!(usize);
