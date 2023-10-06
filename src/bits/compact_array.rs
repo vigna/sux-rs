@@ -73,7 +73,7 @@ impl<W: Word> CompactArray<W, W, Vec<W>> {
     }
 }
 
-impl<W: IntoAtomic + Word> CompactArray<W, W, Vec<W>> {
+impl<W: NonAtomic + Word> CompactArray<W, W, Vec<W>> {
     pub fn new_atomic(bit_width: usize, len: usize) -> CompactArray<W::AtomicType, W> {
         // we need at least two words to avoid branches in the gets
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
@@ -110,7 +110,7 @@ impl<W: Bits, M: Word, B> CompactArray<W, M, B> {
     }
 }
 
-impl<W: Integer, M, T> BitFieldSliceCore<W> for CompactArray<W, M, T> {
+impl<W: Bits, M, T> BitFieldSliceCore<W> for CompactArray<W, M, T> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= W::BITS);
@@ -282,27 +282,28 @@ impl<W: Integer, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for CompactArra
             let mut word = *self.data.as_ref().get_unchecked(word_index);
             word &= !(self.mask << bit_index);
             word |= value << bit_index;
-            *self.data.as_ref().get_unchecked_mut(word_index) = word;
+            *self.data.as_mut().get_unchecked_mut(word_index) = word;
         } else {
             let mut word = *self.data.as_ref().get_unchecked(word_index);
             word &= (W::ONE << bit_index) - W::ONE;
             word |= value << bit_index;
-            *self.data.as_ref().get_unchecked_mut(word_index) = word;
+            *self.data.as_mut().get_unchecked_mut(word_index) = word;
 
             let mut word = *self.data.as_ref().get_unchecked(word_index + 1);
             word &= !(self.mask >> (W::BITS - bit_index));
             word |= value >> (W::BITS - bit_index);
-            *self.data.as_ref().get_unchecked_mut(word_index + 1) = word;
+            *self.data.as_mut().get_unchecked_mut(word_index + 1) = word;
         }
     }
 }
 
-impl<W: Integer + Atomic, T: AsRef<[W]>> BitFieldSliceAtomic<W> for CompactArray<W, W::NonAtomic, T>
+impl<W: Atomic + Bits, T: AsRef<[W]>> BitFieldSliceAtomic<W>
+    for CompactArray<W, W::NonAtomicType, T>
 where
-    W::NonAtomic: Integer,
+    W::NonAtomicType: Integer,
 {
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W::NonAtomic {
+    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W::NonAtomicType {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
         let bit_index = pos % W::BITS;
@@ -325,7 +326,7 @@ where
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
     #[inline(always)]
-    fn set(&self, index: usize, value: W::NonAtomic, order: Ordering) {
+    fn set(&self, index: usize, value: W::NonAtomicType, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len);
         panic_if_value!(value, self.mask, self.bit_width);
         unsafe {
@@ -334,7 +335,7 @@ where
     }
 
     #[inline]
-    unsafe fn set_unchecked(&self, index: usize, value: W::NonAtomic, order: Ordering) {
+    unsafe fn set_unchecked(&self, index: usize, value: W::NonAtomicType, order: Ordering) {
         debug_assert!(self.bit_width != W::BITS);
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
@@ -364,7 +365,7 @@ where
             fence(Ordering::Acquire);
             loop {
                 let mut new = word;
-                new &= (W::NonAtomic::ONE << bit_index) - W::NonAtomic::ONE;
+                new &= (W::NonAtomicType::ONE << bit_index) - W::NonAtomicType::ONE;
                 new |= value << bit_index;
 
                 match self

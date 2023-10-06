@@ -19,6 +19,7 @@ makes it possible to access its values with [`IndexedDict::get`].
 
  */
 use crate::prelude::*;
+use crate::traits::bit_field_slice::*;
 use anyhow::{bail, Result};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use epserde::*;

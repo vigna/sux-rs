@@ -12,9 +12,8 @@ fast parallel construction, and fast queries.
 
 */
 
-use crate::prelude::{
-    BitFieldSlice, BitFieldSliceAtomic, BitFieldSliceCore, CompactArray, SigStore, ToSig,
-};
+use crate::prelude::{CompactArray, SigStore, ToSig};
+use crate::traits::bit_field_slice::*;
 use crate::traits::convert_to::ConvertTo;
 use crate::BitOps;
 use dsi_progress_logger::ProgressLogger;
@@ -22,7 +21,6 @@ use epserde::Epserde;
 use log::warn;
 use log::*;
 use rayon::prelude::*;
-use std::mem::{self};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::thread;
