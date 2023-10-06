@@ -6,12 +6,12 @@
  */
 
 use crate::prelude::*;
+use crate::traits::bit_field_slice::*;
 use anyhow::Result;
 use common_traits::*;
 use core::marker::PhantomData;
 use epserde::*;
 use std::sync::atomic::{compiler_fence, fence, AtomicUsize, Ordering};
-
 /**
 
 A fixed-length array of values of bounded bit width.
@@ -59,7 +59,7 @@ fn mask<M: Integer>(bit_width: usize) -> M {
     }
 }
 
-impl<W: Word> CompactArray<W, W, Vec<W>> {
+impl<W: NonAtomic + Word> CompactArray<W, W, Vec<W>> {
     pub fn new(bit_width: usize, len: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
@@ -300,7 +300,7 @@ impl<W: Integer, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for CompactArra
 impl<W: Atomic + Bits, T: AsRef<[W]>> BitFieldSliceAtomic<W>
     for CompactArray<W, W::NonAtomicType, T>
 where
-    W::NonAtomicType: Integer,
+    W::NonAtomicType: Word,
 {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W::NonAtomicType {
@@ -414,12 +414,12 @@ where
 ///
 /// Many implementations of this trait are then used to
 /// implement by delegation a corresponding [`From`].
-impl<W, V, M, B, C> ConvertTo<CompactArray<V, M, C>> for CompactArray<W, M, B>
+impl<V, W, M, B, C> ConvertTo<CompactArray<W, M, C>> for CompactArray<V, M, B>
 where
     B: ConvertTo<C>,
 {
     #[inline]
-    fn convert_to(self) -> Result<CompactArray<V, M, C>> {
+    fn convert_to(self) -> Result<CompactArray<W, M, C>> {
         Ok(CompactArray {
             len: self.len,
             bit_width: self.bit_width,
@@ -430,7 +430,6 @@ where
     }
 }
 
-/// Provide conversion from standard to atomic compact arrays.
 impl From<CompactArray<usize>> for CompactArray<AtomicUsize, usize> {
     #[inline]
     fn from(bm: CompactArray<usize>) -> Self {
@@ -438,7 +437,6 @@ impl From<CompactArray<usize>> for CompactArray<AtomicUsize, usize> {
     }
 }
 
-/// Provide conversion from atomic to standard compact arrays.
 impl From<CompactArray<AtomicUsize, usize>> for CompactArray<usize> {
     #[inline]
     fn from(bm: CompactArray<AtomicUsize, usize>) -> Self {
@@ -446,8 +444,6 @@ impl From<CompactArray<AtomicUsize, usize>> for CompactArray<usize> {
     }
 }
 
-/// Provide conversion from references to standard compact arrays to
-/// references to atomic compact arrays.
 impl<'a> From<CompactArray<usize, usize, &'a [usize]>>
     for CompactArray<AtomicUsize, usize, &'a [AtomicUsize]>
 {
@@ -457,8 +453,6 @@ impl<'a> From<CompactArray<usize, usize, &'a [usize]>>
     }
 }
 
-/// Provide conversion from references to atomic compact arrays to
-/// references to standard compact arrays.
 impl<'a> From<CompactArray<AtomicUsize, usize, &'a [AtomicUsize]>>
     for CompactArray<usize, usize, &'a [usize]>
 {

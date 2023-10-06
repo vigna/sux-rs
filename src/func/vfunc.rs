@@ -13,17 +13,20 @@ fast parallel construction, and fast queries.
 */
 
 use crate::prelude::{CompactArray, SigStore, ToSig};
-use crate::traits::bit_field_slice::*;
+use crate::traits::bit_field_slice;
+use crate::traits::bit_field_slice::BitFieldSliceCore;
 use crate::traits::convert_to::ConvertTo;
 use crate::BitOps;
+use common_traits::{Atomic, Bits, NonAtomic, Word};
 use dsi_progress_logger::ProgressLogger;
+use epserde::prelude::*;
 use epserde::Epserde;
 use log::warn;
 use log::*;
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
-use std::thread;
+use std::{os, thread};
 use Ordering::Relaxed;
 
 const PARAMS: [(usize, usize, f64); 15] = [
@@ -83,7 +86,11 @@ A static function from key implementing [ToSig] to arbitrary values.
 
 */
 #[derive(Epserde, Debug, Default)]
-pub struct VFunc<T: ToSig, S: BitFieldSlice<usize> = CompactArray<usize>> {
+pub struct VFunc<
+    T: ToSig,
+    O: BitOps + ZeroCopy + SerializeInner + DeserializeInner + Word + NonAtomic = usize,
+    S: bit_field_slice::BitFieldSlice<O> = CompactArray<O>,
+> {
     seed: u64,
     log2_l: u32,
     high_bits: u32,
@@ -91,7 +98,8 @@ pub struct VFunc<T: ToSig, S: BitFieldSlice<usize> = CompactArray<usize>> {
     num_keys: usize,
     segment_size: usize,
     values: S,
-    _phantom: std::marker::PhantomData<T>,
+    _marker_t: std::marker::PhantomData<T>,
+    _marker_o: std::marker::PhantomData<O>,
 }
 
 /**
@@ -106,7 +114,15 @@ More precisely, each signature is made of two 64-bit integers `h` and `l`, and t
 - the lower 32 bits of `l` are used to select the third vertex.
 
 */
-impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
+impl<
+        T: ToSig,
+        O: BitOps + ZeroCopy + SerializeInner + DeserializeInner + Word + NonAtomic,
+        S: bit_field_slice::BitFieldSlice<O>,
+    > VFunc<T, O, S>
+where
+    O::AtomicType: Atomic + Bits,
+    CompactArray<O>: From<CompactArray<<O as common_traits::NonAtomic>::AtomicType, O>>,
+{
     #[inline(always)]
     #[must_use]
     fn chunk(sig: &[u64; 2], high_bits: u32, chunk_mask: u32) -> usize {
@@ -127,7 +143,7 @@ impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
         ]
     }
 
-    pub fn get_by_sig(&self, sig: &[u64; 2]) -> usize {
+    pub fn get_by_sig(&self, sig: &[u64; 2]) -> O {
         let edge = Self::edge(sig, self.log2_l, self.segment_size);
         let chunk = Self::chunk(sig, self.high_bits, self.chunk_mask);
         // chunk * self.segment_size * (2^log2_l + 2)
@@ -138,7 +154,7 @@ impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
     }
 
     #[inline(always)]
-    pub fn get(&self, key: &T) -> usize {
+    pub fn get(&self, key: &T) -> O {
         self.get_by_sig(&T::to_sig(key, self.seed))
     }
 
@@ -153,12 +169,13 @@ impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
     /// Creates a new function with given keys and values.
     pub fn new<
         I: std::iter::IntoIterator<Item = T> + Clone,
-        V: std::iter::IntoIterator<Item = usize> + Clone,
+        V: std::iter::IntoIterator<Item = O> + Clone,
     >(
         keys: I,
         into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
-    ) -> VFunc<T> {
+    ) -> VFunc<T, O> {
+        use crate::traits::bit_field_slice::BitFieldSliceAtomic;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         for seed in 0.. {
@@ -167,7 +184,7 @@ impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
             }
 
             let mut values = into_values.clone().into_iter();
-            let mut max_value = 0;
+            let mut max_value = O::ZERO;
             let mut sigs = keys
                 .clone()
                 .into_iter()
@@ -176,7 +193,7 @@ impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
                     if let Some(pl) = pl.as_mut() {
                         pl.light_update();
                     }
-                    max_value = max_value.max(v);
+                    max_value = Ord::max(max_value, v);
                     (T::to_sig(&x, seed), v)
                 })
                 .collect::<Vec<_>>();
@@ -282,7 +299,7 @@ impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
                 (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * c)
             );
 
-            let data = <CompactArray>::new_atomic(bit_width, num_vertices * num_chunks);
+            let data = CompactArray::<O>::new_atomic(bit_width, num_vertices * num_chunks);
 
             let chunk = AtomicUsize::new(0);
             let fail = AtomicBool::new(false);
@@ -427,8 +444,9 @@ impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
                     chunk_mask,
                     num_keys: sigs.len(),
                     segment_size,
-                    values: data.convert_to().unwrap(),
-                    _phantom: std::marker::PhantomData,
+                    values: data.into(),
+                    _marker_t: std::marker::PhantomData,
+                    _marker_o: std::marker::PhantomData,
                 };
             }
         }
@@ -437,12 +455,13 @@ impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
 
     pub fn new_offline<
         I: std::iter::IntoIterator<Item = T> + Clone,
-        V: std::iter::IntoIterator<Item = usize> + Clone,
+        V: std::iter::IntoIterator<Item = O> + Clone,
     >(
         keys: I,
         into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
-    ) -> anyhow::Result<VFunc<T>> {
+    ) -> anyhow::Result<VFunc<T, O>> {
+        use crate::traits::bit_field_slice::BitFieldSliceAtomic;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         for seed in 0.. {
@@ -451,15 +470,15 @@ impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
             }
 
             let store_bits = 12;
-            let mut sig_sorter = SigStore::<usize>::new(8, store_bits).unwrap();
+            let mut sig_sorter = SigStore::<O>::new(8, store_bits).unwrap();
             let mut values = into_values.clone().into_iter();
-            let mut max_value = 0;
+            let mut max_value = O::ZERO;
             sig_sorter.extend(keys.clone().into_iter().map(|x| {
                 if let Some(pl) = pl.as_mut() {
                     pl.light_update();
                 }
                 let v = values.next().expect("Not enough values");
-                max_value = max_value.max(v);
+                max_value = Ord::max(max_value, v);
                 (T::to_sig(&x, seed), v)
             }))?;
 
@@ -549,7 +568,7 @@ impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
                 pl.done_with_count(num_keys);
             }
 
-            let data = CompactArray::<usize>::new_atomic(bit_width, num_vertices * num_chunks);
+            let data = CompactArray::<O>::new_atomic(bit_width, num_vertices * num_chunks);
 
             let fail = AtomicBool::new(false);
             let mutex = std::sync::Arc::new(Mutex::new(chunk_store));
@@ -668,13 +687,13 @@ impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
                                         data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
                                     };
                                     // TODO
-                                    data.set(v, chunk[edge_index].1 as usize ^ value, Relaxed);
+                                    data.set(v, chunk[edge_index].1 ^ value, Relaxed);
 
                                     assert_eq!(
                                         data.get(edge[0], Relaxed)
                                             ^ data.get(edge[1], Relaxed)
                                             ^ data.get(edge[2], Relaxed),
-                                        chunk[edge_index].1 as usize
+                                        chunk[edge_index].1
                                     );
                                 }
                             }
@@ -699,8 +718,9 @@ impl<T: ToSig, S: BitFieldSlice<usize>> VFunc<T, S> {
                     chunk_mask,
                     num_keys,
                     segment_size,
-                    values: data.convert_to().unwrap(),
-                    _phantom: std::marker::PhantomData,
+                    values: data.into(),
+                    _marker_t: std::marker::PhantomData,
+                    _marker_o: std::marker::PhantomData,
                 });
             }
         }
