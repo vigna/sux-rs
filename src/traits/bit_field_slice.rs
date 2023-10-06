@@ -40,11 +40,11 @@ The implementations based on atomic types implement
 use crate::prelude::*;
 use common_traits::Number;
 use common_traits::*;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::*;
 use std::marker::PhantomData;
 
 /// Common methods for [`BitFieldSlice`], [`BitFieldSliceMut`], and [`BitFieldSliceAtomic`]
-pub trait BitFieldSliceCore<V: Integer> {
+pub trait BitFieldSliceCore<V: Bits> {
     /// Return the width of the slice. All elements stored in the slice must
     /// fit within this bit width.
     fn bit_width(&self) -> usize;
@@ -139,22 +139,22 @@ pub trait BitFieldSliceMut<V: Integer>: BitFieldSliceCore<V> {
 ///
 /// Different implementations might provide different atomicity guarantees. See
 /// [`CompactArray`] for an example.
-pub trait BitFieldSliceAtomic<V: Atomic + Integer + Bits>: BitFieldSliceCore<V>
+pub trait BitFieldSliceAtomic<V: Atomic + Bits>: BitFieldSliceCore<V>
 where
-    V::NonAtomic: Integer,
+    V::NonAtomicType: Integer,
 {
     /// Return the value at the specified index.
     ///
     /// # Safety
     /// `index` must be in [0..[len](`BitFieldSliceCore::len`)).
     /// No bound or bit-width check is performed.
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> V::NonAtomic;
+    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> V::NonAtomicType;
 
     /// Return the value at the specified index.
     ///
     /// # Panics
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
-    fn get(&self, index: usize, order: Ordering) -> V::NonAtomic {
+    fn get(&self, index: usize, order: Ordering) -> V::NonAtomicType {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_unchecked(index, order) }
     }
@@ -165,22 +165,22 @@ where
     /// - `index` must be in [0..[len](`BitFieldSliceCore::len`));
     /// - `value` must fit withing [`BitFieldSliceCore::bit_width`] bits.
     /// No bound or bit-width check is performed.
-    unsafe fn set_unchecked(&self, index: usize, value: V::NonAtomic, order: Ordering);
+    unsafe fn set_unchecked(&self, index: usize, value: V::NonAtomicType, order: Ordering);
 
     /// Set the element of the slice at the specified index.
     ///
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
-    fn set(&self, index: usize, value: V::NonAtomic, order: Ordering) {
+    fn set(&self, index: usize, value: V::NonAtomicType, order: Ordering) {
         if index >= self.len() {
             panic_if_out_of_bounds!(index, self.len());
         }
         let bw = self.bit_width();
         // TODO Maybe testless?
         let mask = if bw == 0 {
-            V::NonAtomic::ZERO
+            V::NonAtomicType::ZERO
         } else {
-            V::NonAtomic::MAX.wrapping_shr(V::BITS as u32 - bw as u32)
+            V::NonAtomicType::MAX.wrapping_shr(V::BITS as u32 - bw as u32)
         };
         panic_if_value!(value, mask, bw);
         unsafe {
@@ -227,69 +227,105 @@ impl<'a, V: Integer, B: BitFieldSlice<V>> Iterator for BitFieldSliceIterator<'a,
     }
 }
 
-impl<V: Integer, T: AsRef<[V]>> BitFieldSliceCore<V> for T {
-    #[inline(always)]
-    fn bit_width(&self) -> usize {
-        V::BITS
-    }
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.as_ref().len()
-    }
+macro_rules! impl_core {
+    ($($ty:ty),*) => {$(
+        impl<T: AsRef<[$ty]>> BitFieldSliceCore<$ty> for T {
+            #[inline(always)]
+            fn bit_width(&self) -> usize {
+                <$ty>::BITS as usize
+            }
+            #[inline(always)]
+            fn len(&self) -> usize {
+                self.as_ref().len()
+            }
+        }
+    )*};
 }
 
-impl<V: Integer, T: AsRef<[V]>> BitFieldSlice<V> for T {
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> V {
-        debug_assert_bounds!(index, self.len());
-        *self.as_ref().get_unchecked(index)
-    }
+impl_core!(
+    u8,
+    u16,
+    u32,
+    u64,
+    usize,
+    AtomicU8,
+    AtomicU16,
+    AtomicU32,
+    AtomicU64,
+    AtomicUsize
+);
+
+macro_rules! impl_ref {
+    ($($ty:ty),*) => {$(
+        impl<T: AsRef<[$ty]>> BitFieldSlice<$ty> for T {
+            #[inline(always)]
+            unsafe fn get_unchecked(&self, index: usize) -> $ty {
+                debug_assert_bounds!(index, self.len());
+                *self.as_ref().get_unchecked(index)
+            }
+        }
+    )*};
 }
 
+impl_ref!(u8, u16, u32, u64, usize);
 /*
-impl<V, T> IntoValueIterator for T
-    where T: AsRef<[V]>
-{
-    type Item = V;
-    type IntoValueIter<'a> = Copied<core::slice::Iter<'a, Self::Item>>
-        where
-            T: 'a;
-    #[inline(always)]
-    fn iter_val(&self) -> Self::IntoValueIter<'_> {
-        <Self as AsRef<[Self::Item]>>::as_ref(self).iter().copied()
-    }
+macro_rules! impl_iter {
+    ($($ty:ty),*) => {$(
+        impl<T: AsRef<[$ty]>> IntoValueIterator for T {
+            type Item = $ty;
+            type IntoValueIter<'a> = std::iter::Copied<core::slice::Iter<'a, Self::Item>>
+                where
+                    T: 'a;
+            #[inline(always)]
+            fn iter_val(&self) -> Self::IntoValueIter<'_> {
+                <Self as AsRef<[Self::Item]>>::as_ref(self).iter().copied()
+            }
 
-    fn iter_val_from(&self, from: Self::Item) -> Self::IntoValueIter<'_> {
-        <Self as AsRef<[Self::Item]>>::as_ref(self)[from..]
-            .iter()
-            .copied()
-    }
-} */
-
-impl<V: Bits + Atomic + Integer, T: AsRef<[V]>> BitFieldSliceAtomic<V> for T
-where
-    V::NonAtomic: Integer,
-{
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> V::NonAtomic {
-        debug_assert_bounds!(index, self.len());
-        <T as AsRef<[V]>>::as_ref(self)
-            .get_unchecked(index)
-            .load(order)
-    }
-    #[inline(always)]
-    unsafe fn set_unchecked(&self, index: usize, value: V::NonAtomic, order: Ordering) {
-        debug_assert_bounds!(index, self.len());
-        <T as AsRef<[V]>>::as_ref(self)
-            .get_unchecked(index)
-            .store(value, order);
-    }
+            fn iter_val_from(&self, from: Self::Item) -> Self::IntoValueIter<'_> {
+                <Self as AsRef<[Self::Item]>>::as_ref(self)[from..]
+                    .iter()
+                    .copied()
+            }
+        }
+    )*};
 }
 
-impl<V: Integer, T: AsMut<[V]> + AsRef<[V]>> BitFieldSliceMut<V> for T {
-    #[inline(always)]
-    unsafe fn set_unchecked(&mut self, index: usize, value: V) {
-        debug_assert_bounds!(index, self.len());
-        *self.as_mut().get_unchecked_mut(index) = value;
-    }
+impl_iter!(u8, u16, u32, u64, usize);
+*/
+macro_rules! impl_atomic {
+    ($($ty:ty),*) => {$(
+        impl<T: AsRef<[$ty]>> BitFieldSliceAtomic<$ty> for T
+        {
+            #[inline(always)]
+            unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> <$ty as Atomic>::NonAtomicType {
+                debug_assert_bounds!(index, self.len());
+                <T as AsRef<[$ty]>>::as_ref(self)
+                    .get_unchecked(index)
+                    .load(order)
+            }
+            #[inline(always)]
+            unsafe fn set_unchecked(&self, index: usize, value: <$ty as Atomic>::NonAtomicType, order: Ordering) {
+                debug_assert_bounds!(index, self.len());
+                <T as AsRef<[$ty]>>::as_ref(self)
+                    .get_unchecked(index)
+                    .store(value, order);
+            }
+        }
+    )*};
 }
+
+impl_atomic!(AtomicU8, AtomicU16, AtomicU32, AtomicU64, AtomicUsize);
+
+macro_rules! impl_mut {
+    ($($ty:ty),*) => {$(
+        impl<T: AsMut<[$ty]> + AsRef<[$ty]>> BitFieldSliceMut<$ty> for T {
+            #[inline(always)]
+            unsafe fn set_unchecked(&mut self, index: usize, value: $ty) {
+                debug_assert_bounds!(index, self.len());
+                *self.as_mut().get_unchecked_mut(index) = value;
+            }
+        }
+    )*};
+}
+
+impl_mut!(u8, u16, u32, u64, usize);

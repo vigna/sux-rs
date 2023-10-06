@@ -188,7 +188,7 @@ impl BitVec<Vec<usize>> {
     /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
     pub unsafe fn get_unchecked(&self, index: usize) -> bool {
         let word_index = index / BITS;
-        let word = *self.data.get_unchecked_mut(word_index);
+        let word = self.data.get_unchecked(word_index);
         (word >> (index % BITS)) & 1 != 0
     }
 
@@ -471,7 +471,7 @@ impl CountBitVec<Vec<usize>> {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> bool {
         let word_index = index / BITS;
-        let word = *self.data.get_unchecked_mut(word_index);
+        let word = self.data.get_unchecked(word_index);
         (word >> (index % BITS)) & 1 != 0
     }
 }
