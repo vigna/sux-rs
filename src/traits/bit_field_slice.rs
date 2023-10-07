@@ -11,11 +11,12 @@ Traits for slices of bit fields of constant width.
 
 Slices of bit fields are accessed with a logic similar to slices, but
 when indexed with [`get`](BitFieldSlice::get) return an owned value
-of a [fixed bit width](BitFieldSliceCore::bit_width).
+of a [fixed bit width](BitFieldSliceCore::bit_width). The associated
+implementation is [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec).
 
 Implementing the [`core::ops::Index`]/[`core::ops::IndexMut`] traits
 would be more natural and practical, but in certain cases it is impossible:
-in our main use case, [`CompactArray`],
+in our main use case, [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec),
 we cannot implement [`core::ops::Index`] because there is no way to
 return a reference to a bit segment.
 
@@ -24,20 +25,28 @@ The trait [`BitFieldSliceCore`] contains the common methods, and in particular
 [`BitFieldSliceCore::bit_width`], which returns the bit width the values stored in the slice.
  All stored values must fit within this bit width.
 
+Note that [`BitFieldSliceAtomic`] has methods with the same names as those in
+[`BitFieldSlice`] and [`BitFieldSliceMut`]. Due to the way methods are resolved,
+this might cause problems if you have have imported all traits. We suggest that,
+unless you are using only of the two variants, you import globally only [`BitFieldSliceCore`],
+importing the other traits only in the functions of modules that needs them. For
+this reason, only [`BitFieldSliceCore`] is glob-imported in the prelude.
+
+If you need to iterate over a [`BitFieldSlice`], you can use [`BitFieldSliceIterator`].
+
 Implementations must return always zero on a [`BitFieldSlice::get`] when the bit
 width is zero. The behavior of a [`BitFieldSliceMut::set`] in the same context is not defined.
 
 We provide implementations for `Vec<usize>`, `Vec<AtomicUsize>`, `&[usize]`,
 and `&[AtomicUsize]` that view their elements as values with a bit width
 equal to that of `usize`; for those, we also implement
-[`IntoValueIterator`] using a [helper](BitFieldSliceIterator) structure
+[`IntoValueIterator`](crate::traits::iter::IntoValueIterator) using a [helper](BitFieldSliceIterator) structure
 that might be useful for other implementations, too.
 
 The implementations based on atomic types implement
 [`BitFieldSliceAtomic`].
 
 */
-use crate::prelude::*;
 use common_traits::Number;
 use common_traits::*;
 use core::sync::atomic::*;
@@ -138,7 +147,7 @@ pub trait BitFieldSliceMut<V: Integer>: BitFieldSliceCore<V> {
 /// A thread-safe slice of bit fields of constant bit width supporting atomic operations.
 ///
 /// Different implementations might provide different atomicity guarantees. See
-/// [`CompactArray`] for an example.
+/// [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec) for an example.
 pub trait BitFieldSliceAtomic<V: Atomic + Bits>: BitFieldSliceCore<V>
 where
     V::NonAtomicType: Integer,
@@ -191,9 +200,9 @@ where
 
 /// A ready-made implementation of [`BitFieldSliceIterator`].
 ///
-/// We cannot implement [`IntoValueIterator`] for [`BitFieldSlice`]
+/// We cannot implement [`IntoValueIterator`](crate::traits::iter::IntoValueIterator) for [`BitFieldSlice`]
 /// because it would be impossible to override in implementing classes,
-/// but you can implement [`IntoValueIterator`] for your implementation
+/// but you can implement [`IntoValueIterator`](crate::traits::iter::IntoValueIterator) for your implementation
 /// of [`BitFieldSlice`] by using this structure.
 pub struct BitFieldSliceIterator<'a, V: Integer, B: BitFieldSlice<V>> {
     slice: &'a B,
@@ -218,7 +227,8 @@ impl<'a, V: Integer, B: BitFieldSlice<V>> Iterator for BitFieldSliceIterator<'a,
     type Item = V;
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.slice.len() {
-            let res = self.slice.get(self.index);
+            // SAFETY: self.index is always within bounds
+            let res = unsafe { self.slice.get_unchecked(self.index) };
             self.index += 1;
             Some(res)
         } else {
@@ -247,6 +257,7 @@ impl_core!(
     u16,
     u32,
     u64,
+    u128,
     usize,
     AtomicU8,
     AtomicU16,
@@ -267,31 +278,8 @@ macro_rules! impl_ref {
     )*};
 }
 
-impl_ref!(u8, u16, u32, u64, usize);
-/*
-macro_rules! impl_iter {
-    ($($ty:ty),*) => {$(
-        impl<T: AsRef<[$ty]>> IntoValueIterator for T {
-            type Item = $ty;
-            type IntoValueIter<'a> = std::iter::Copied<core::slice::Iter<'a, Self::Item>>
-                where
-                    T: 'a;
-            #[inline(always)]
-            fn iter_val(&self) -> Self::IntoValueIter<'_> {
-                <Self as AsRef<[Self::Item]>>::as_ref(self).iter().copied()
-            }
+impl_ref!(u8, u16, u32, u64, u128, usize);
 
-            fn iter_val_from(&self, from: Self::Item) -> Self::IntoValueIter<'_> {
-                <Self as AsRef<[Self::Item]>>::as_ref(self)[from..]
-                    .iter()
-                    .copied()
-            }
-        }
-    )*};
-}
-
-impl_iter!(u8, u16, u32, u64, usize);
-*/
 macro_rules! impl_atomic {
     ($($ty:ty),*) => {$(
         impl<T: AsRef<[$ty]>> BitFieldSliceAtomic<$ty> for T
@@ -328,4 +316,4 @@ macro_rules! impl_mut {
     )*};
 }
 
-impl_mut!(u8, u16, u32, u64, usize);
+impl_mut!(u8, u16, u32, u64, u128, usize);
