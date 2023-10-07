@@ -31,7 +31,7 @@ pub struct EliasFanoBuilder {
     u: usize,
     n: usize,
     l: usize,
-    low_bits: CompactArray,
+    low_bits: BitFieldVec,
     high_bits: BitVec<Vec<usize>>,
     last_value: usize,
     count: usize,
@@ -51,7 +51,7 @@ impl EliasFanoBuilder {
             u,
             n,
             l,
-            low_bits: CompactArray::new(l, n),
+            low_bits: BitFieldVec::new(l, n),
             high_bits: BitVec::new(n + (u >> l) + 1),
             last_value: 0,
             count: 0,
@@ -115,7 +115,7 @@ pub struct EliasFanoAtomicBuilder {
     u: usize,
     n: usize,
     l: usize,
-    low_bits: CompactArray<AtomicUsize, usize>,
+    low_bits: BitFieldVec<AtomicUsize, usize>,
     high_bits: BitVec<Vec<AtomicUsize>>,
 }
 
@@ -133,7 +133,7 @@ impl EliasFanoAtomicBuilder {
             u,
             n,
             l,
-            low_bits: CompactArray::new_atomic(l, n),
+            low_bits: BitFieldVec::new_atomic(l, n),
             high_bits: BitVec::new_atomic(n + (u >> l) + 1),
         }
     }
@@ -147,7 +147,7 @@ impl EliasFanoAtomicBuilder {
     /// - You must call this function exactly `n` times.
     pub unsafe fn set(&self, index: usize, value: usize, order: Ordering) {
         let low = value & ((1 << self.l) - 1);
-        // Note that the concurrency guarantees of CompactArray
+        // Note that the concurrency guarantees of BitFieldVec
         // are sufficient for us.
         self.low_bits.set_unchecked(index, low, order);
 
@@ -168,7 +168,7 @@ impl EliasFanoAtomicBuilder {
 }
 
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct EliasFano<H = CountBitVec, L = CompactArray> {
+pub struct EliasFano<H = CountBitVec, L = BitFieldVec> {
     /// An upper bound to the values.
     u: usize,
     /// The number of values.
@@ -228,10 +228,10 @@ efb.push(0);
 efb.push(1);
 let ef = efb.build();
 // Add an index on the ones (accelerates get operations).
-let efo: EliasFano<QuantumIndex<CountBitVec>, CompactArray> =
+let efo: EliasFano<QuantumIndex<CountBitVec>, BitFieldVec> =
     ef.convert_to().unwrap();
 // Add also an index on the zeros  (accelerates precedessor and successor).
-let efoz: EliasFano<QuantumZeroIndex<QuantumIndex<CountBitVec>>, CompactArray> =
+let efoz: EliasFano<QuantumZeroIndex<QuantumIndex<CountBitVec>>, BitFieldVec> =
     efo.convert_to().unwrap();
 ```
 You have either of the indices, both, or none of them, but in the latter

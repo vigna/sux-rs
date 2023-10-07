@@ -12,7 +12,7 @@ fast parallel construction, and fast queries.
 
 */
 
-use crate::prelude::{CompactArray, SigStore, ToSig};
+use crate::prelude::{BitFieldVec, SigStore, ToSig};
 use crate::traits::bit_field_slice;
 use crate::traits::bit_field_slice::BitFieldSliceCore;
 use crate::traits::convert_to::ConvertTo;
@@ -89,7 +89,7 @@ A static function from key implementing [ToSig] to arbitrary values.
 pub struct VFunc<
     T: ToSig,
     O: BitOps + ZeroCopy + SerializeInner + DeserializeInner + Word + NonAtomic = usize,
-    S: bit_field_slice::BitFieldSlice<O> = CompactArray<O>,
+    S: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
 > {
     seed: u64,
     log2_l: u32,
@@ -121,7 +121,7 @@ impl<
     > VFunc<T, O, S>
 where
     O::AtomicType: Atomic + Bits,
-    CompactArray<O>: From<CompactArray<<O as common_traits::NonAtomic>::AtomicType, O>>,
+    BitFieldVec<O>: From<BitFieldVec<<O as common_traits::NonAtomic>::AtomicType, O>>,
 {
     #[inline(always)]
     #[must_use]
@@ -299,7 +299,7 @@ where
                 (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * c)
             );
 
-            let data = CompactArray::<O>::new_atomic(bit_width, num_vertices * num_chunks);
+            let data = BitFieldVec::<O>::new_atomic(bit_width, num_vertices * num_chunks);
 
             let chunk = AtomicUsize::new(0);
             let fail = AtomicBool::new(false);
@@ -568,7 +568,7 @@ where
                 pl.done_with_count(num_keys);
             }
 
-            let data = CompactArray::<O>::new_atomic(bit_width, num_vertices * num_chunks);
+            let data = BitFieldVec::<O>::new_atomic(bit_width, num_vertices * num_chunks);
 
             let fail = AtomicBool::new(false);
             let mutex = std::sync::Arc::new(Mutex::new(chunk_store));

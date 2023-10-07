@@ -10,7 +10,7 @@ use epserde::prelude::*;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
-use sux::prelude::CompactArray;
+use sux::prelude::BitFieldVec;
 use sux::traits::bit_field_slice::BitFieldSlice;
 use sux::traits::bit_field_slice::BitFieldSliceMut;
 
@@ -18,7 +18,7 @@ use sux::traits::bit_field_slice::BitFieldSliceMut;
 fn test_epserde() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
 
-    let mut v = CompactArray::<usize>::new(4, 200);
+    let mut v = BitFieldVec::<usize>::new(4, 200);
     for i in 0..200 {
         v.set(i, rng.gen_range(0..(1 << 4)));
     }
@@ -28,7 +28,7 @@ fn test_epserde() -> Result<()> {
     v.serialize(&mut file)?;
     drop(file);
 
-    let w = <CompactArray<usize>>::mmap(&tmp_file, epserde::deser::Flags::empty()).unwrap();
+    let w = <BitFieldVec<usize>>::mmap(&tmp_file, epserde::deser::Flags::empty()).unwrap();
 
     for i in 0..200 {
         assert_eq!(v.get(i), w.get(i));

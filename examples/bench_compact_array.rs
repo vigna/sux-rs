@@ -11,7 +11,7 @@ use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
 use std::hint::black_box;
-use sux::prelude::CompactArray;
+use sux::prelude::BitFieldVec;
 use sux::prelude::*;
 use sux::traits::bit_field_slice::BitFieldSlice;
 use sux::traits::bit_field_slice::BitFieldSliceMut;
@@ -42,7 +42,7 @@ pub fn main() {
 
     let args = Args::parse();
 
-    let mut a = CompactArray::<usize>::new(args.width, 1 << args.log2_size);
+    let mut a = BitFieldVec::<usize>::new(args.width, 1 << args.log2_size);
     let mask = (1 << args.log2_size) - 1;
 
     let mut pl = ProgressLogger::default();

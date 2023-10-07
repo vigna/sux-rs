@@ -10,11 +10,11 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand::SeedableRng;
-use sux::prelude::CompactArray;
+use sux::prelude::BitFieldVec;
 use sux::prelude::*;
 
 #[test]
-fn test_compact_array() {
+fn test_bit_field_vec() {
     use sux::traits::bit_field_slice::BitFieldSlice;
     use sux::traits::bit_field_slice::BitFieldSliceMut;
     for bit_width in 0..64 {
@@ -22,7 +22,7 @@ fn test_compact_array() {
         let u = 1 << bit_width;
         let mut rng = SmallRng::seed_from_u64(0);
 
-        let mut cp = CompactArray::<usize>::new(bit_width, n);
+        let mut cp = BitFieldVec::<usize>::new(bit_width, n);
         for _ in 0..10 {
             let values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
 
@@ -63,7 +63,7 @@ fn test_compact_array() {
 }
 
 #[test]
-fn test_atomic_compact_array() {
+fn test_atomic_bit_field_vec() {
     use sux::traits::bit_field_slice::BitFieldSliceAtomic;
 
     for bit_width in 0..64 {
@@ -71,7 +71,7 @@ fn test_atomic_compact_array() {
         let u = 1 << bit_width;
         let mut rng = SmallRng::seed_from_u64(0);
 
-        let mut cp = CompactArray::<usize>::new_atomic(bit_width, n);
+        let mut cp = BitFieldVec::<usize>::new_atomic(bit_width, n);
         for _ in 0..10 {
             let values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
 
@@ -97,12 +97,12 @@ fn test_atomic_compact_array() {
 }
 
 #[test]
-fn test_compact_array_usize() {
+fn test_bit_field_vec_usize() {
     use sux::traits::bit_field_slice::BitFieldSlice;
     use sux::traits::bit_field_slice::BitFieldSliceMut;
 
     const BITS: usize = core::mem::size_of::<usize>() * 8;
-    let mut c = CompactArray::<usize>::new(BITS, 4);
+    let mut c = BitFieldVec::<usize>::new(BITS, 4);
     c.set(0, -1_isize as usize);
     c.set(1, 1234567);
     c.set(2, 0);
@@ -117,7 +117,7 @@ fn test_compact_array_usize() {
 fn test_width_zero() {
     use sux::traits::bit_field_slice::BitFieldSlice;
 
-    let c = CompactArray::<usize>::new(0, 1000);
+    let c = BitFieldVec::<usize>::new(0, 1000);
     for i in 0..c.len() {
         assert_eq!(c.get(i), 0);
     }
