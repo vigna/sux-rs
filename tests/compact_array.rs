@@ -10,7 +10,6 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand::SeedableRng;
-use std::sync::atomic::AtomicUsize;
 use sux::prelude::CompactArray;
 use sux::prelude::*;
 

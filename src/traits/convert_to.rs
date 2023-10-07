@@ -8,7 +8,7 @@
 //! Custom conversion trait.
 
 use anyhow::Result;
-use std::sync::atomic::{AtomicU64, AtomicUsize};
+use std::sync::atomic::*;
 
 /// Like [`Into`], but we need to avoid the orphan rule and error
 /// [E0210](https://github.com/rust-lang/rust/blob/master/compiler/rustc_error_codes/src/error_codes/E0210.md).
@@ -71,5 +71,8 @@ macro_rules! convert_to {
     };
 }
 
+convert_to!(u8, AtomicU8);
+convert_to!(u16, AtomicU16);
+convert_to!(u32, AtomicU32);
 convert_to!(u64, AtomicU64);
 convert_to!(usize, AtomicUsize);

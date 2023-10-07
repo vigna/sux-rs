@@ -11,7 +11,7 @@ use anyhow::Result;
 use common_traits::*;
 use core::marker::PhantomData;
 use epserde::*;
-use std::sync::atomic::{compiler_fence, fence, AtomicUsize, Ordering};
+use std::sync::atomic::*;
 /**
 
 A fixed-length array of values of bounded bit width.
@@ -431,39 +431,43 @@ where
 }
 
 macro_rules! impl_from {
-    ($($ty:ty),*) => {$(
-        impl<B, C> From<CompactArray<$ty, $ty, B>> for CompactArray<<$ty as NonAtomic>::AtomicType, $ty, C> {
+    ($std:ty, $atomic:ty) => {
+        impl From<CompactArray<$std>> for CompactArray<$atomic, $std> {
             #[inline]
-            fn from(bm: CompactArray<$ty, $ty, B>) -> Self {
+            fn from(bm: CompactArray<$std>) -> Self {
                 bm.convert_to().unwrap()
             }
         }
 
-        impl From<CompactArray<<$ty as NonAtomic>::AtomicType, $ty>> for CompactArray<$ty> {
+        impl From<CompactArray<$atomic, $std>> for CompactArray<$std> {
             #[inline]
-            fn from(bm: CompactArray<<$ty as NonAtomic>::AtomicType, $ty>) -> Self {
+            fn from(bm: CompactArray<$atomic, $std>) -> Self {
                 bm.convert_to().unwrap()
             }
         }
 
-        impl<'a> From<CompactArray<$ty, $ty, &'a [$ty]>>
-            for CompactArray<<$ty as NonAtomic>::AtomicType, $ty, &'a [<$ty as NonAtomic>::AtomicType]>
+        impl<'a> From<CompactArray<$std, $std, &'a [$std]>>
+            for CompactArray<$atomic, $std, &'a [$atomic]>
         {
             #[inline]
-            fn from(bm: CompactArray<$ty, $ty, &'a [$ty]>) -> Self {
+            fn from(bm: CompactArray<$std, $std, &'a [$std]>) -> Self {
                 bm.convert_to().unwrap()
             }
         }
 
-        impl<'a> From<CompactArray<<$ty as NonAtomic>::AtomicType, $ty, &'a [<$ty as NonAtomic>::AtomicType]>>
-            for CompactArray<$ty, $ty, &'a [$ty]>
+        impl<'a> From<CompactArray<$atomic, $std, &'a [$atomic]>>
+            for CompactArray<$std, $std, &'a [$std]>
         {
             #[inline]
-            fn from(bm: CompactArray<<$ty as NonAtomic>::AtomicType, $ty, &'a [<$ty as NonAtomic>::AtomicType]>) -> Self {
+            fn from(bm: CompactArray<$atomic, $std, &'a [$atomic]>) -> Self {
                 bm.convert_to().unwrap()
             }
         }
-    )*};
+    };
 }
 
-impl_from!(usize);
+impl_from!(u8, AtomicU8);
+impl_from!(u16, AtomicU16);
+impl_from!(u32, AtomicU32);
+impl_from!(u64, AtomicU64);
+impl_from!(usize, AtomicUsize);
