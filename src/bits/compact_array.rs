@@ -123,12 +123,21 @@ impl<B: AsRef<[usize]>> BitFieldSlice for CompactArray<B> {
         let word_index = pos / BITS;
         let bit_index = pos % BITS;
 
-        if bit_index + self.bit_width <= BITS {
-            (self.data.as_ref().get_unchecked(word_index) >> bit_index) & self.mask
-        } else {
-            (self.data.as_ref().get_unchecked(word_index) >> bit_index
-                | self.data.as_ref().get_unchecked(word_index + 1) << (BITS - bit_index))
-                & self.mask
+        #[cfg(not(feature="unaligned"))]
+        {
+            if bit_index + self.bit_width <= BITS {
+                (self.data.as_ref().get_unchecked(word_index) >> bit_index) & self.mask
+            } else {
+                (self.data.as_ref().get_unchecked(word_index) >> bit_index
+                    | self.data.as_ref().get_unchecked(word_index + 1) << (BITS - bit_index))
+                    & self.mask
+            }
+        }
+        #[cfg(feature="unaligned")]
+        unsafe{
+            let ptr = (self.data.as_ref().as_ptr() as *const u8).add(pos / 8) as *const usize;
+            let word = core::ptr::read_unaligned(ptr);
+            (word >> (pos % 8)) & self.mask
         }
     }
 }
