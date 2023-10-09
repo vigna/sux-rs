@@ -120,11 +120,12 @@ impl<B: AsRef<[usize]>> BitFieldSlice for CompactArray<B> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> usize {
         let pos = index * self.bit_width;
-        let word_index = pos / BITS;
-        let bit_index = pos % BITS;
 
         #[cfg(not(feature="unaligned"))]
         {
+            let word_index = pos / BITS;
+            let bit_index = pos % BITS;
+
             if bit_index + self.bit_width <= BITS {
                 (self.data.as_ref().get_unchecked(word_index) >> bit_index) & self.mask
             } else {
@@ -135,9 +136,10 @@ impl<B: AsRef<[usize]>> BitFieldSlice for CompactArray<B> {
         }
         #[cfg(feature="unaligned")]
         unsafe{
-            let ptr = (self.data.as_ref().as_ptr() as *const u8).add(pos / 8) as *const usize;
+            let base_ptr = self.data.as_ref().as_ptr() as *const u8;
+            let ptr = base_ptr.add(pos >> 3) as *const usize;
             let word = core::ptr::read_unaligned(ptr);
-            (word >> (pos % 8)) & self.mask
+            (word >> (pos & 7)) & self.mask
         }
     }
 }
