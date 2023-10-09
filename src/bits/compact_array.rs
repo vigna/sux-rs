@@ -136,6 +136,7 @@ impl<B: AsRef<[usize]>> BitFieldSlice for CompactArray<B> {
         }
         #[cfg(feature="unaligned")]
         unsafe{
+            debug_assert!(self.bit_width <= (usize::BITS - 7));
             let base_ptr = self.data.as_ref().as_ptr() as *const u8;
             let ptr = base_ptr.add(pos >> 3) as *const usize;
             let word = core::ptr::read_unaligned(ptr);
