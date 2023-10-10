@@ -47,10 +47,10 @@ fn main() -> Result<()> {
         }
         pl.done_with_count(keys.len());
     } else {
-        let func = VFunc::<u64>::load_mem(&args.func)?;
+        let func = VFunc::<_>::load_mem(&args.func)?;
         pl.start("Querying...");
-        for i in 0..args.n as u64 {
-            assert_eq!(i, func.get(&i) as u64);
+        for i in 0..args.n as usize {
+            assert_eq!(i, func.get(&i));
         }
         pl.done_with_count(args.n);
     }
