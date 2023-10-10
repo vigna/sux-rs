@@ -14,8 +14,8 @@ fast parallel construction, and fast queries.
 
 use crate::prelude::*;
 use crate::traits::bit_field_slice;
-use crate::BitOps;
-use common_traits::{Atomic, Bits, NonAtomic, Word};
+use common_traits::AtomicUnsignedInt;
+use common_traits::{IntoAtomic, UnsignedInt};
 use dsi_progress_logger::ProgressLogger;
 use epserde::prelude::*;
 use epserde::Epserde;
@@ -29,20 +29,20 @@ use Ordering::Relaxed;
 
 const PARAMS: [(usize, usize, f64); 15] = [
     (0, 1, 1.23),
-    (13, 32, 1.22),
-    (14, 32, 1.21),
-    (15, 32, 1.20),
-    (16, 64, 1.18),
-    (17, 64, 1.16),
-    (18, 64, 1.15),
-    (19, 128, 1.14),
-    (20, 128, 1.13),
-    (21, 256, 1.12),
-    (22, 512, 1.12),
-    (23, 256, 1.11),
-    (24, 512, 1.11),
-    (25, 256, 1.11),
-    (26, 512, 1.10),
+    (10000, 32, 1.23),
+    (12500, 32, 1.22),
+    (19531, 32, 1.21),
+    (30516, 32, 1.20),
+    (38145, 64, 1.19),
+    (47681, 64, 1.18),
+    (74501, 64, 1.17),
+    (116407, 64, 1.16),
+    (227356, 64, 1.15),
+    (355243, 128, 1.14),
+    (693832, 128, 1.13),
+    (2117406, 128, 1.12),
+    (6461807, 256, 1.11),
+    (60180252, 512, 1.10),
 ];
 
 #[derive(Debug, Default)]
@@ -86,7 +86,7 @@ A static function from key implementing [ToSig] to arbitrary values.
 #[derive(Epserde, Debug, Default)]
 pub struct VFunc<
     T: ToSig,
-    O: BitOps + ZeroCopy + SerializeInner + DeserializeInner + Word + NonAtomic = usize,
+    O: ZeroCopy + SerializeInner + DeserializeInner + UnsignedInt + IntoAtomic = usize,
     S: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
 > {
     seed: u64,
@@ -114,12 +114,12 @@ More precisely, each signature is made of two 64-bit integers `h` and `l`, and t
 */
 impl<
         T: ToSig,
-        O: BitOps + ZeroCopy + SerializeInner + DeserializeInner + Word + NonAtomic,
+        O: ZeroCopy + SerializeInner + DeserializeInner + UnsignedInt + IntoAtomic,
         S: bit_field_slice::BitFieldSlice<O>,
     > VFunc<T, O, S>
 where
-    O::AtomicType: Atomic + Bits,
-    BitFieldVec<O>: From<BitFieldVec<<O as common_traits::NonAtomic>::AtomicType, O>>,
+    O::AtomicType: AtomicUnsignedInt,
+    BitFieldVec<O>: From<BitFieldVec<<O as common_traits::IntoAtomic>::AtomicType, O>>,
 {
     #[inline(always)]
     #[must_use]
@@ -209,34 +209,44 @@ where
             }*/
 
             let num_keys = sigs.len();
+            let (chunk_high_bits, max_num_threads, l, c);
 
-            let eps = 0.001;
-            let mut chunk_high_bits = {
-                let t = (sigs.len() as f64 * eps * eps / 2.0).ln();
+            if num_keys < PARAMS[PARAMS.len() - 2].0 {
+                // Too few keys, we cannot split into chunks
+                chunk_high_bits = 0;
+                max_num_threads = 1;
+                (_, l, c) = PARAMS
+                    .iter()
+                    .rev()
+                    .filter(|(n, _l, _c)| n <= &num_keys)
+                    .copied()
+                    .next()
+                    .unwrap(); // first n is 0, so this is always valid
+            } else if num_keys < PARAMS[PARAMS.len() - 1].0 {
+                // We are in the 1.11 regime. We can reduce memory
+                // usage by doing single thread.
+                chunk_high_bits = (num_keys / PARAMS[PARAMS.len() - 2].0).ilog2();
+                max_num_threads = 1;
+                (_, l, c) = PARAMS[PARAMS.len() - 2];
+            } else {
+                // We are in the 1.10 regime. We can increase the number
+                // of threads, but we need to be careful not to use too
+                // much memory.
 
-                if t > 0.0 {
-                    ((t - t.ln()) / 2_f64.ln()).ceil()
-                } else {
-                    0.0
-                }
-            }
-            .min(10.0) as u32; // More than 1000 chunks make no sense
+                let eps = 0.001;
+                chunk_high_bits = {
+                    let t = (sigs.len() as f64 * eps * eps / 2.0).ln();
 
-            let (l, c) = {
-                loop {
-                    let (_, l, c) = PARAMS
-                        .iter()
-                        .rev()
-                        .filter(|(log_n, _l, _c)| (1 << log_n) <= (num_keys >> chunk_high_bits))
-                        .copied()
-                        .next()
-                        .unwrap(); // first log_n is 0, so this is always valid
-                    if chunk_high_bits == 0 || c <= 1.11 {
-                        break (l, c);
+                    if t > 0.0 {
+                        ((t - t.ln()) / 2_f64.ln()).ceil()
+                    } else {
+                        0.0
                     }
-                    chunk_high_bits -= 1;
                 }
-            };
+                .min(10.0) as u32; // More than 1000 chunks make no sense
+                max_num_threads = (1 << chunk_high_bits) / 8;
+                (_, l, c) = PARAMS[PARAMS.len() - 1];
+            }
 
             info!("high bits = {}, l = {}, c = {}", chunk_high_bits, l, c);
 
@@ -303,7 +313,7 @@ where
             let fail = AtomicBool::new(false);
 
             thread::scope(|s| {
-                for _ in 0..num_chunks.min(num_cpus::get()) {
+                for _ in 0..num_chunks.min(num_cpus::get()).min(max_num_threads) {
                     s.spawn(|| loop {
                         let chunk = chunk.fetch_add(1, Relaxed);
                         if chunk >= num_chunks {
@@ -494,33 +504,46 @@ where
                 panic!("Too many values");
             }*/
 
-            let eps = 0.001;
-            let mut chunk_high_bits = {
-                let t = (num_keys as f64 * eps * eps / 2.0).ln();
+            let (chunk_high_bits, max_num_threads, l, c);
 
-                if t > 0.0 {
-                    ((t - t.ln()) / 2_f64.ln()).ceil()
-                } else {
-                    0.0
-                }
-            }
-            .min(10.0) as u32; // More than 1000 chunks make no sense
+            if num_keys < PARAMS[PARAMS.len() - 2].0 {
+                // Too few keys, we cannot split into chunks
+                chunk_high_bits = 0;
+                max_num_threads = 1;
+                (_, l, c) = PARAMS
+                    .iter()
+                    .rev()
+                    .filter(|(n, _l, _c)| n <= &num_keys)
+                    .copied()
+                    .next()
+                    .unwrap(); // first n is 0, so this is always valid
+            } else if num_keys < PARAMS[PARAMS.len() - 1].0 {
+                // We are in the 1.11 regime. We can reduce memory
+                // usage by doing single thread.
+                chunk_high_bits = (num_keys / PARAMS[PARAMS.len() - 2].0).ilog2();
+                max_num_threads = 1;
+                (_, l, c) = PARAMS[PARAMS.len() - 2];
+            } else {
+                // We are in the 1.10 regime. We can increase the number
+                // of threads, but we need to be careful not to use too
+                // much memory.
 
-            let (l, c) = {
-                loop {
-                    let (_, l, c) = PARAMS
-                        .iter()
-                        .rev()
-                        .filter(|(log_n, _l, _c)| (1 << log_n) <= (num_keys >> chunk_high_bits))
-                        .copied()
-                        .next()
-                        .unwrap(); // first log_n is 0, so this is always valid
-                    if chunk_high_bits == 0 || c <= 1.11 {
-                        break (l, c);
+                let eps = 0.001;
+                chunk_high_bits = {
+                    let t = (num_keys as f64 * eps * eps / 2.0).ln();
+
+                    if t > 0.0 {
+                        ((t - t.ln()) / 2_f64.ln()).ceil()
+                    } else {
+                        0.0
                     }
-                    chunk_high_bits -= 1;
                 }
-            };
+                .min(10.0) // More than 1000 chunks make no sense
+                .min((num_keys / PARAMS[PARAMS.len() - 1].0).ilog2() as f64)
+                    as u32;
+                max_num_threads = (1 << chunk_high_bits) / 8;
+                (_, l, c) = PARAMS[PARAMS.len() - 1];
+            }
 
             info!(
                 "chunk high bits = {}, l = {}, c = {}",
@@ -572,7 +595,7 @@ where
             let mutex = std::sync::Arc::new(Mutex::new(chunk_store));
 
             thread::scope(|s| {
-                for _ in 0..num_chunks.min(num_cpus::get()) {
+                for _ in 0..num_chunks.min(num_cpus::get()).min(max_num_threads) {
                     s.spawn(|| loop {
                         let chunks;
                         {
