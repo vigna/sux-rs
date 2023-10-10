@@ -51,7 +51,7 @@ pub struct BitFieldVec<W = usize, M = W, B = Vec<W>> {
     _marker: PhantomData<W>,
 }
 
-fn mask<M: Integer>(bit_width: usize) -> M {
+fn mask<M: UnsignedInt>(bit_width: usize) -> M {
     if bit_width == 0 {
         M::ZERO
     } else {
@@ -59,7 +59,7 @@ fn mask<M: Integer>(bit_width: usize) -> M {
     }
 }
 
-impl<W: NonAtomic + Word> BitFieldVec<W, W, Vec<W>> {
+impl<W: UnsignedInt> BitFieldVec<W, W, Vec<W>> {
     pub fn new(bit_width: usize, len: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
@@ -73,7 +73,7 @@ impl<W: NonAtomic + Word> BitFieldVec<W, W, Vec<W>> {
     }
 }
 
-impl<W: NonAtomic + Word> BitFieldVec<W, W, Vec<W>> {
+impl<W: UnsignedInt + IntoAtomic> BitFieldVec<W, W, Vec<W>> {
     pub fn new_atomic(bit_width: usize, len: usize) -> BitFieldVec<W::AtomicType, W> {
         // we need at least two words to avoid branches in the gets
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
@@ -89,7 +89,7 @@ impl<W: NonAtomic + Word> BitFieldVec<W, W, Vec<W>> {
     }
 }
 
-impl<W: Bits, M: Word, B> BitFieldVec<W, M, B> {
+impl<W, M: UnsignedInt, B> BitFieldVec<W, M, B> {
     /// # Safety
     /// `len` * `bit_width` must be between 0 (included) the number of
     /// bits in `data` (included).
@@ -110,7 +110,7 @@ impl<W: Bits, M: Word, B> BitFieldVec<W, M, B> {
     }
 }
 
-impl<W: Bits, M, T> BitFieldSliceCore<W> for BitFieldVec<W, M, T> {
+impl<W: Scalar, M, T> BitFieldSliceCore<W> for BitFieldVec<W, M, T> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= W::BITS);
@@ -123,7 +123,7 @@ impl<W: Bits, M, T> BitFieldSliceCore<W> for BitFieldVec<W, M, T> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, W, B> {
+impl<W: UnsignedInt, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, W, B> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> W {
         let pos = index * self.bit_width;
@@ -147,7 +147,7 @@ pub struct BitFieldVecUncheckedIterator<'a, W, M, B> {
     fill: usize,
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, W, B> {
+impl<'a, W: UnsignedInt, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, W, B> {
     fn new(array: &'a BitFieldVec<W, W, B>, index: usize) -> Self {
         if index > array.len() {
             panic!("Start index out of bounds: {} > {}", index, array.len());
@@ -175,7 +175,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, W, B> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> UncheckedValueIterator
+impl<'a, W: UnsignedInt, B: AsRef<[W]>> UncheckedValueIterator
     for BitFieldVecUncheckedIterator<'a, W, W, B>
 {
     type Item = W;
@@ -198,7 +198,7 @@ impl<'a, W: Word, B: AsRef<[W]>> UncheckedValueIterator
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> IntoUncheckedValueIterator for BitFieldVec<W, W, B> {
+impl<W: UnsignedInt, B: AsRef<[W]>> IntoUncheckedValueIterator for BitFieldVec<W, W, B> {
     type Item = W;
     type IntoUncheckedValueIter<'a> = BitFieldVecUncheckedIterator<'a, W, W, B>
         where B:'a, W:'a ;
@@ -213,7 +213,7 @@ pub struct BitFieldVecIterator<'a, W, M, B> {
     index: usize,
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, W, B> {
+impl<'a, W: UnsignedInt, B: AsRef<[W]>> BitFieldVecIterator<'a, W, W, B> {
     fn new(array: &'a BitFieldVec<W, W, B>, index: usize) -> Self {
         if index > array.len() {
             panic!("Start index out of bounds: {} > {}", index, array.len());
@@ -225,7 +225,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, W, B> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, W, B> {
+impl<'a, W: UnsignedInt, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, W, B> {
     type Item = W;
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.unchecked.array.len() {
@@ -239,13 +239,13 @@ impl<'a, W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, W, B> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'a, W, W, B> {
+impl<'a, W: UnsignedInt, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'a, W, W, B> {
     fn len(&self) -> usize {
         self.unchecked.array.len() - self.index
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> IntoValueIterator for BitFieldVec<W, W, B> {
+impl<W: UnsignedInt, B: AsRef<[W]>> IntoValueIterator for BitFieldVec<W, W, B> {
     type Item = W;
     type IntoValueIter<'a> = BitFieldVecIterator<'a, W, W, B>
         where B:'a, W: 'a;
@@ -255,7 +255,7 @@ impl<W: Word, B: AsRef<[W]>> IntoValueIterator for BitFieldVec<W, W, B> {
     }
 }
 
-impl<W: Integer, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, W, B> {
+impl<W: UnsignedInt, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, W, B> {
     // We reimplement set as we have the mask in the structure.
 
     /// Set the element of the slice at the specified index.
@@ -297,12 +297,13 @@ impl<W: Integer, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec
     }
 }
 
-impl<W: Atomic + Bits, T: AsRef<[W]>> BitFieldSliceAtomic<W> for BitFieldVec<W, W::NonAtomicType, T>
+impl<W: UnsignedInt + IntoAtomic, T: AsRef<[<W as IntoAtomic>::AtomicType]>> BitFieldSliceAtomic<W>
+    for BitFieldVec<<W as IntoAtomic>::AtomicType, W, T>
 where
-    W::NonAtomicType: Word,
+    <W as IntoAtomic>::AtomicType: AtomicUnsignedInt,
 {
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W::NonAtomicType {
+    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
         let bit_index = pos % W::BITS;
@@ -325,7 +326,7 @@ where
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
     #[inline(always)]
-    fn set(&self, index: usize, value: W::NonAtomicType, order: Ordering) {
+    fn set(&self, index: usize, value: W, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len);
         panic_if_value!(value, self.mask, self.bit_width);
         unsafe {
@@ -334,7 +335,7 @@ where
     }
 
     #[inline]
-    unsafe fn set_unchecked(&self, index: usize, value: W::NonAtomicType, order: Ordering) {
+    unsafe fn set_unchecked(&self, index: usize, value: W, order: Ordering) {
         debug_assert!(self.bit_width != W::BITS);
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
@@ -364,7 +365,7 @@ where
             fence(Ordering::Acquire);
             loop {
                 let mut new = word;
-                new &= (W::NonAtomicType::ONE << bit_index) - W::NonAtomicType::ONE;
+                new &= (W::ONE << bit_index) - W::ONE;
                 new |= value << bit_index;
 
                 match self
