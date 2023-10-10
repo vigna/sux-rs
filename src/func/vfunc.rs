@@ -243,7 +243,9 @@ where
                         0.0
                     }
                 }
-                .min(10.0) as u32; // More than 1000 chunks make no sense
+                .min(10.0) // More than 1000 chunks make no sense
+                .min((num_keys / PARAMS[PARAMS.len() - 1].0).ilog2() as f64) // Let's keep the chunks in the 1.10 regime
+                    as u32;
                 max_num_threads = (1 << chunk_high_bits) / 8;
                 (_, l, c) = PARAMS[PARAMS.len() - 1];
             }
@@ -539,7 +541,7 @@ where
                     }
                 }
                 .min(10.0) // More than 1000 chunks make no sense
-                .min((num_keys / PARAMS[PARAMS.len() - 1].0).ilog2() as f64)
+                .min((num_keys / PARAMS[PARAMS.len() - 1].0).ilog2() as f64) // Let's keep the chunks in the 1.10 regime
                     as u32;
                 max_num_threads = (1 << chunk_high_bits) / 8;
                 (_, l, c) = PARAMS[PARAMS.len() - 1];
