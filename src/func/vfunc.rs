@@ -13,9 +13,8 @@ fast parallel construction, and fast queries.
 */
 
 use crate::prelude::*;
-use crate::traits::bit_field_slice;
-use common_traits::AtomicUnsignedInt;
-use common_traits::{IntoAtomic, UnsignedInt};
+use crate::traits::bit_field_slice::{self, Word};
+use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
 use dsi_progress_logger::ProgressLogger;
 use epserde::prelude::*;
 use epserde::Epserde;
@@ -86,7 +85,7 @@ A static function from key implementing [ToSig] to arbitrary values.
 #[derive(Epserde, Debug, Default)]
 pub struct VFunc<
     T: ToSig,
-    O: ZeroCopy + SerializeInner + DeserializeInner + UnsignedInt + IntoAtomic = usize,
+    O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic = usize,
     S: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
 > {
     seed: u64,
@@ -114,11 +113,11 @@ More precisely, each signature is made of two 64-bit integers `h` and `l`, and t
 */
 impl<
         T: ToSig,
-        O: ZeroCopy + SerializeInner + DeserializeInner + UnsignedInt + IntoAtomic,
+        O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic,
         S: bit_field_slice::BitFieldSlice<O>,
     > VFunc<T, O, S>
 where
-    O::AtomicType: AtomicUnsignedInt,
+    O::AtomicType: AtomicUnsignedInt + AsBytes,
     BitFieldVec<O>: From<BitFieldVec<<O as common_traits::IntoAtomic>::AtomicType, O>>,
 {
     #[inline(always)]
