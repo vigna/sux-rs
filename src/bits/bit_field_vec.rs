@@ -51,7 +51,7 @@ pub struct BitFieldVec<W = usize, M = W, B = Vec<W>> {
     _marker: PhantomData<W>,
 }
 
-fn mask<M: UnsignedInt>(bit_width: usize) -> M {
+fn mask<M: Word>(bit_width: usize) -> M {
     if bit_width == 0 {
         M::ZERO
     } else {
@@ -59,7 +59,7 @@ fn mask<M: UnsignedInt>(bit_width: usize) -> M {
     }
 }
 
-impl<W: UnsignedInt> BitFieldVec<W, W, Vec<W>> {
+impl<W: Word> BitFieldVec<W, W, Vec<W>> {
     pub fn new(bit_width: usize, len: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
@@ -73,7 +73,7 @@ impl<W: UnsignedInt> BitFieldVec<W, W, Vec<W>> {
     }
 }
 
-impl<W: UnsignedInt + IntoAtomic> BitFieldVec<W, W, Vec<W>> {
+impl<W: Word + IntoAtomic> BitFieldVec<W, W, Vec<W>> {
     pub fn new_atomic(bit_width: usize, len: usize) -> BitFieldVec<W::AtomicType, W> {
         // we need at least two words to avoid branches in the gets
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
@@ -89,7 +89,7 @@ impl<W: UnsignedInt + IntoAtomic> BitFieldVec<W, W, Vec<W>> {
     }
 }
 
-impl<W, M: UnsignedInt, B> BitFieldVec<W, M, B> {
+impl<W, M: Word, B> BitFieldVec<W, M, B> {
     /// # Safety
     /// `len` * `bit_width` must be between 0 (included) the number of
     /// bits in `data` (included).
@@ -110,7 +110,7 @@ impl<W, M: UnsignedInt, B> BitFieldVec<W, M, B> {
     }
 }
 
-impl<W: Scalar, M, T> BitFieldSliceCore<W> for BitFieldVec<W, M, T> {
+impl<W: AsBytes, M, T> BitFieldSliceCore<W> for BitFieldVec<W, M, T> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= W::BITS);
@@ -123,7 +123,7 @@ impl<W: Scalar, M, T> BitFieldSliceCore<W> for BitFieldVec<W, M, T> {
     }
 }
 
-impl<W: UnsignedInt, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, W, B> {
+impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, W, B> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> W {
         let pos = index * self.bit_width;
@@ -147,7 +147,7 @@ pub struct BitFieldVecUncheckedIterator<'a, W, M, B> {
     fill: usize,
 }
 
-impl<'a, W: UnsignedInt, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, W, B> {
     fn new(array: &'a BitFieldVec<W, W, B>, index: usize) -> Self {
         if index > array.len() {
             panic!("Start index out of bounds: {} > {}", index, array.len());
@@ -175,7 +175,7 @@ impl<'a, W: UnsignedInt, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, W, B
     }
 }
 
-impl<'a, W: UnsignedInt, B: AsRef<[W]>> UncheckedValueIterator
+impl<'a, W: Word, B: AsRef<[W]>> UncheckedValueIterator
     for BitFieldVecUncheckedIterator<'a, W, W, B>
 {
     type Item = W;
@@ -198,7 +198,7 @@ impl<'a, W: UnsignedInt, B: AsRef<[W]>> UncheckedValueIterator
     }
 }
 
-impl<W: UnsignedInt, B: AsRef<[W]>> IntoUncheckedValueIterator for BitFieldVec<W, W, B> {
+impl<W: Word, B: AsRef<[W]>> IntoUncheckedValueIterator for BitFieldVec<W, W, B> {
     type Item = W;
     type IntoUncheckedValueIter<'a> = BitFieldVecUncheckedIterator<'a, W, W, B>
         where B:'a, W:'a ;
@@ -213,7 +213,7 @@ pub struct BitFieldVecIterator<'a, W, M, B> {
     index: usize,
 }
 
-impl<'a, W: UnsignedInt, B: AsRef<[W]>> BitFieldVecIterator<'a, W, W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, W, B> {
     fn new(array: &'a BitFieldVec<W, W, B>, index: usize) -> Self {
         if index > array.len() {
             panic!("Start index out of bounds: {} > {}", index, array.len());
@@ -225,7 +225,7 @@ impl<'a, W: UnsignedInt, B: AsRef<[W]>> BitFieldVecIterator<'a, W, W, B> {
     }
 }
 
-impl<'a, W: UnsignedInt, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, W, B> {
     type Item = W;
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.unchecked.array.len() {
@@ -239,13 +239,13 @@ impl<'a, W: UnsignedInt, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, 
     }
 }
 
-impl<'a, W: UnsignedInt, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'a, W, W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'a, W, W, B> {
     fn len(&self) -> usize {
         self.unchecked.array.len() - self.index
     }
 }
 
-impl<W: UnsignedInt, B: AsRef<[W]>> IntoValueIterator for BitFieldVec<W, W, B> {
+impl<W: Word, B: AsRef<[W]>> IntoValueIterator for BitFieldVec<W, W, B> {
     type Item = W;
     type IntoValueIter<'a> = BitFieldVecIterator<'a, W, W, B>
         where B:'a, W: 'a;
@@ -255,7 +255,7 @@ impl<W: UnsignedInt, B: AsRef<[W]>> IntoValueIterator for BitFieldVec<W, W, B> {
     }
 }
 
-impl<W: UnsignedInt, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, W, B> {
+impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, W, B> {
     // We reimplement set as we have the mask in the structure.
 
     /// Set the element of the slice at the specified index.
@@ -297,23 +297,23 @@ impl<W: UnsignedInt, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFiel
     }
 }
 
-impl<W: UnsignedInt + IntoAtomic, T: AsRef<[<W as IntoAtomic>::AtomicType]>> BitFieldSliceAtomic<W>
-    for BitFieldVec<<W as IntoAtomic>::AtomicType, W, T>
+impl<W: Word + IntoAtomic, T: AsRef<[W::AtomicType]>> BitFieldSliceAtomic<W>
+    for BitFieldVec<W::AtomicType, W, T>
 where
-    <W as IntoAtomic>::AtomicType: AtomicUnsignedInt,
+    W::AtomicType: AtomicUnsignedInt + AsBytes,
 {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
         let bit_index = pos % W::BITS;
+        let data: &[W::AtomicType] = self.data.as_ref();
 
         if bit_index + self.bit_width <= W::BITS {
-            (self.data.as_ref().get_unchecked(word_index).load(order) >> bit_index) & self.mask
+            (data.get_unchecked(word_index).load(order) >> bit_index) & self.mask
         } else {
-            (self.data.as_ref().get_unchecked(word_index).load(order) >> bit_index
-                | self.data.as_ref().get_unchecked(word_index + 1).load(order)
-                    << (W::BITS - bit_index))
+            (data.get_unchecked(word_index).load(order) >> bit_index
+                | data.get_unchecked(word_index + 1).load(order) << (W::BITS - bit_index))
                 & self.mask
         }
     }
@@ -340,18 +340,17 @@ where
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
         let bit_index = pos % W::BITS;
+        let data: &[W::AtomicType] = self.data.as_ref();
 
         if bit_index + self.bit_width <= W::BITS {
             // this is consistent
-            let mut current = self.data.as_ref().get_unchecked(word_index).load(order);
+            let mut current = data.get_unchecked(word_index).load(order);
             loop {
                 let mut new = current;
                 new &= !(self.mask << bit_index);
                 new |= value << bit_index;
 
-                match self
-                    .data
-                    .as_ref()
+                match data
                     .get_unchecked(word_index)
                     .compare_exchange(current, new, order, order)
                 {
@@ -360,7 +359,7 @@ where
                 }
             }
         } else {
-            let mut word = self.data.as_ref().get_unchecked(word_index).load(order);
+            let mut word = data.get_unchecked(word_index).load(order);
             // try to wait for the other thread to finish
             fence(Ordering::Acquire);
             loop {
@@ -368,9 +367,7 @@ where
                 new &= (W::ONE << bit_index) - W::ONE;
                 new |= value << bit_index;
 
-                match self
-                    .data
-                    .as_ref()
+                match data
                     .get_unchecked(word_index)
                     .compare_exchange(word, new, order, order)
                 {
@@ -387,16 +384,14 @@ where
             // should try to syncronize the threads as much as possible
             compiler_fence(Ordering::SeqCst);
 
-            let mut word = self.data.as_ref().get_unchecked(word_index + 1).load(order);
+            let mut word = data.get_unchecked(word_index + 1).load(order);
             fence(Ordering::Acquire);
             loop {
                 let mut new = word;
                 new &= !(self.mask >> (W::BITS - bit_index));
                 new |= value >> (W::BITS - bit_index);
 
-                match self
-                    .data
-                    .as_ref()
+                match data
                     .get_unchecked(word_index + 1)
                     .compare_exchange(word, new, order, order)
                 {
