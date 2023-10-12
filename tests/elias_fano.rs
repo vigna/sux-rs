@@ -77,14 +77,14 @@ fn test_elias_fano() -> Result<()> {
         }
         println!("{:?}", ef);
 
-        let mut iterator = ef.iter_val().enumerate();
+        let mut iterator = ef.iter().enumerate();
         while let Some((i, v)) = iterator.next() {
             assert_eq!(v, values[i]);
             assert_eq!(iterator.len(), ef.len() - i - 1);
         }
 
         for from in 0..ef.len() {
-            let mut iterator = ef.iter_val_from(from).enumerate();
+            let mut iterator = ef.iter_from(from).enumerate();
             while let Some((i, v)) = iterator.next() {
                 assert_eq!(v, values[i + from]);
                 assert_eq!(iterator.len(), ef.len() - i - from - 1);

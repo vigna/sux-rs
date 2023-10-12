@@ -15,7 +15,7 @@ but implements [`BitCount`]. Both depends on an underlying storage, and presentl
 - `BitVec<Vec<usize>>`: a mutable, growable bit vector with a `Vec<usize>` as underlying storage;
 - `BitVec<&[usize]>`: a mutable bit vector with a `&[usize]` as underlying storage,
    mainly useful for [`epserde`];
-- `BitVec<Vec<AtomicUsize>>`: a thread-safe mutable bit vector
+- `AtomicBitVec<Vec<AtomicUsize>>`: a thread-safe mutable bit vector
    with a `Vec<AtomicUsize>` as underlying storage;
 - `CountBitVec<Vec<usize>>`: an immutable bit vector with a `Vec<usize>`
    as underlying storage that implements [`BitCount`].
@@ -36,12 +36,20 @@ use std::{
 const BITS: usize = usize::BITS as usize;
 
 /// A bit vector with selectable backend. We provide implementations
-/// for `Vec<usize>` and `Vec<AtomicUsize>`.
-///
-/// In the second case, [`BitVec::get`]
-/// and [`BitVec::set`] are both thread-safe, as they both take an immutable reference.
+/// for slices and vectors of `usize`.
 #[derive(Epserde, Debug)]
 pub struct BitVec<B = Vec<usize>> {
+    data: B,
+    len: usize,
+}
+
+/// A bit vector with selectable backend. We provide implementations
+/// for `Vec<AtomicUsize>`.
+///
+/// [`AtomicBitVec::get`]
+/// and [`AtomicBitVec::set`] are both thread-safe, as they both take an immutable reference.
+#[derive(Debug)]
+pub struct AtomicBitVec<B = Vec<AtomicUsize>> {
     data: B,
     len: usize,
 }
@@ -61,18 +69,7 @@ impl<B> BitLength for BitVec<B> {
     }
 }
 
-impl Index<usize> for BitVec<Vec<usize>> {
-    type Output = bool;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        match self.get(index) {
-            false => &false,
-            true => &true,
-        }
-    }
-}
-
-impl Index<usize> for BitVec<&[usize]> {
+impl<B: AsRef<[usize]>> Index<usize> for BitVec<B> {
     type Output = bool;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -94,9 +91,9 @@ impl BitVec<Vec<usize>> {
     }
 }
 
-impl BitVec<Vec<AtomicUsize>> {
+impl AtomicBitVec<Vec<AtomicUsize>> {
     /// Create a new atomic bit vector of length `len`.
-    pub fn new_atomic(len: usize) -> Self {
+    pub fn new(len: usize) -> Self {
         let n_of_words = (len + BITS - 1) / BITS;
         Self {
             data: (0..n_of_words).map(|_| AtomicUsize::new(0)).collect(),
@@ -125,14 +122,45 @@ impl<B> BitVec<B> {
     }
 }
 
-impl BitVec<Vec<usize>> {
+impl<B> BitLength for AtomicBitVec<B> {
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len()
+    }
+}
+
+impl<B> AtomicBitVec<B> {
+    #[inline(always)]
+    #[allow(clippy::len_without_is_empty)]
+    /// Return the number of bits in this bit vector.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+    /// # Safety
+    /// `len` must be between 0 (included) the number of
+    /// bits in `data` (included).
+    #[inline(always)]
+    pub unsafe fn from_raw_parts(data: B, len: usize) -> Self {
+        Self { data, len }
+    }
+    #[inline(always)]
+    pub fn into_raw_parts(self) -> (B, usize) {
+        (self.data, self.len)
+    }
+}
+
+impl<B: AsRef<[usize]>> BitVec<B> {
     /// Return the number of bits set to 1 in this bit vector.
     ///
     /// If the feature "rayon" is enabled, this function is parallelized.
     pub fn count_ones(&self) -> usize {
         #[cfg(feature = "rayon")]
         {
-            self.data.par_iter().map(|x| x.count_ones() as usize).sum()
+            self.data
+                .as_ref()
+                .par_iter()
+                .map(|x| x.count_ones() as usize)
+                .sum()
         }
 
         #[cfg(not(feature = "rayon"))]
@@ -148,7 +176,7 @@ impl BitVec<Vec<usize>> {
     /// No control is performed on the number of ones, unless
     /// debug assertions are enabled.
     #[inline(always)]
-    pub fn with_count(self, number_of_ones: usize) -> CountBitVec<Vec<usize>> {
+    pub fn with_count(self, number_of_ones: usize) -> CountBitVec<B> {
         debug_assert!(number_of_ones <= self.len);
         debug_assert_eq!(number_of_ones, self.count_ones());
         CountBitVec {
@@ -159,24 +187,7 @@ impl BitVec<Vec<usize>> {
     }
 }
 
-impl BitVec<&[usize]> {
-    /// Return the number of bits set to 1 in this bit vector.
-    ///
-    /// If the feature "rayon" is enabled, this function is parallelized.
-    pub fn count_ones(&self) -> usize {
-        #[cfg(feature = "rayon")]
-        {
-            self.data.par_iter().map(|x| x.count_ones() as usize).sum()
-        }
-
-        #[cfg(not(feature = "rayon"))]
-        {
-            self.data.iter().map(|x| x.count_ones() as usize).sum()
-        }
-    }
-}
-
-impl BitVec<Vec<AtomicUsize>> {
+impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
     /// Return the number of bits set to 1 in this bit vector.
     ///
     /// If the feature "rayon" is enabled, this function is parallelized.
@@ -188,6 +199,7 @@ impl BitVec<Vec<AtomicUsize>> {
         #[cfg(feature = "rayon")]
         {
             self.data
+                .as_ref()
                 .par_iter()
                 .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
                 .sum()
@@ -203,44 +215,7 @@ impl BitVec<Vec<AtomicUsize>> {
     }
 }
 
-impl BitVec<Vec<usize>> {
-    pub fn get(&self, index: usize) -> bool {
-        panic_if_out_of_bounds!(index, self.len);
-        unsafe { self.get_unchecked(index) }
-    }
-
-    pub fn set(&mut self, index: usize, value: bool) {
-        panic_if_out_of_bounds!(index, self.len);
-        unsafe { self.set_unchecked(index, value) }
-    }
-
-    /// # Safety
-    ///
-    /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
-    pub unsafe fn get_unchecked(&self, index: usize) -> bool {
-        let word_index = index / BITS;
-        let word = self.data.get_unchecked(word_index);
-        (word >> (index % BITS)) & 1 != 0
-    }
-
-    /// # Safety
-    ///
-    /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
-    #[inline(always)]
-    pub unsafe fn set_unchecked(&mut self, index: usize, value: bool) {
-        let word_index = index / BITS;
-        let bit_index = index % BITS;
-
-        // For constant values, this should be inlined with no test.
-        if value {
-            *self.data.get_unchecked_mut(word_index) |= 1 << bit_index;
-        } else {
-            *self.data.get_unchecked_mut(word_index) &= !(1 << bit_index);
-        }
-    }
-}
-
-impl BitVec<&[usize]> {
+impl<B: AsRef<[usize]>> BitVec<B> {
     pub fn get(&self, index: usize) -> bool {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.get_unchecked(index) }
@@ -251,12 +226,12 @@ impl BitVec<&[usize]> {
     /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
     pub unsafe fn get_unchecked(&self, index: usize) -> bool {
         let word_index = index / BITS;
-        let word = self.data.get_unchecked(word_index);
+        let word = self.data.as_ref().get_unchecked(word_index);
         (word >> (index % BITS)) & 1 != 0
     }
 }
 
-impl BitVec<&mut [usize]> {
+impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
     pub fn set(&mut self, index: usize, value: bool) {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.set_unchecked(index, value) }
@@ -269,17 +244,17 @@ impl BitVec<&mut [usize]> {
     pub unsafe fn set_unchecked(&mut self, index: usize, value: bool) {
         let word_index = index / BITS;
         let bit_index = index % BITS;
-
+        let data: &mut [usize] = self.data.as_mut();
         // For constant values, this should be inlined with no test.
         if value {
-            *self.data.get_unchecked_mut(word_index) |= 1 << bit_index;
+            *data.get_unchecked_mut(word_index) |= 1 << bit_index;
         } else {
-            *self.data.get_unchecked_mut(word_index) &= !(1 << bit_index);
+            *data.get_unchecked_mut(word_index) &= !(1 << bit_index);
         }
     }
 }
 
-impl BitVec<Vec<AtomicUsize>> {
+impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
     pub fn get(&self, index: usize, order: Ordering) -> bool {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.get_unchecked(index, order) }
@@ -292,19 +267,22 @@ impl BitVec<Vec<AtomicUsize>> {
 
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> bool {
         let word_index = index / BITS;
-        let word = <[AtomicUsize]>::get_unchecked(&self.data, word_index).load(order);
+        let data: &[AtomicUsize] = self.data.as_ref();
+        let word = data.get_unchecked(word_index).load(order);
         (word >> (index % BITS)) & 1 != 0
     }
     #[inline(always)]
     unsafe fn set_unchecked(&self, index: usize, value: bool, order: Ordering) {
         let word_index = index / BITS;
         let bit_index = index % BITS;
+        let data: &[AtomicUsize] = self.data.as_ref();
 
         // For constant values, this should be inlined with no test.
         if value {
-            <[AtomicUsize]>::get_unchecked(&self.data, word_index).fetch_or(1 << bit_index, order);
+            data.get_unchecked(word_index)
+                .fetch_or(1 << bit_index, order);
         } else {
-            <[AtomicUsize]>::get_unchecked(&self.data, word_index)
+            data.get_unchecked(word_index)
                 .fetch_and(!(1 << bit_index), order);
         }
     }
@@ -486,18 +464,7 @@ impl<B> BitCount for CountBitVec<B> {
     }
 }
 
-impl Index<usize> for CountBitVec<Vec<usize>> {
-    type Output = bool;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        match self.get(index) {
-            false => &false,
-            true => &true,
-        }
-    }
-}
-
-impl Index<usize> for CountBitVec<&[usize]> {
+impl<B: AsRef<[usize]>> Index<usize> for CountBitVec<B> {
     type Output = bool;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -580,16 +547,35 @@ impl<B: AsRef<[usize]>> SelectZeroHinted for CountBitVec<B> {
     }
 }
 
-/// Provide conversion betweeen bit vectors whose backends
-/// are [convertible](ConvertTo) into one another.
+/// Provide conversion from [bit vectors](BitVec) to
+/// [atomic bit vectors](AtomicBitVec) whose backends
+/// are [convertible](ConvertTo).
 ///
 /// Many implementations of this trait are then used to
 /// implement by delegation a corresponding [`From`].
-impl<B, D> ConvertTo<BitVec<D>> for BitVec<B>
+impl<B, C> ConvertTo<AtomicBitVec<C>> for BitVec<B>
 where
-    B: ConvertTo<D>,
+    B: ConvertTo<C>,
 {
-    fn convert_to(self) -> Result<BitVec<D>> {
+    fn convert_to(self) -> Result<AtomicBitVec<C>> {
+        Ok(AtomicBitVec {
+            len: self.len,
+            data: self.data.convert_to()?,
+        })
+    }
+}
+
+/// Provide conversion from [atomic bit vectors](AtomicBitVec) to
+/// [bit vectors](BitVec) whose backends
+/// are [convertible](ConvertTo).
+///
+/// Many implementations of this trait are then used to
+/// implement by delegation a corresponding [`From`].
+impl<B, C> ConvertTo<BitVec<C>> for AtomicBitVec<B>
+where
+    B: ConvertTo<C>,
+{
+    fn convert_to(self) -> Result<BitVec<C>> {
         Ok(BitVec {
             len: self.len,
             data: self.data.convert_to()?,
@@ -598,7 +584,7 @@ where
 }
 
 /// Provide conversion from standard to atomic bit vectors.
-impl From<BitVec<Vec<usize>>> for BitVec<Vec<AtomicUsize>> {
+impl From<BitVec<Vec<usize>>> for AtomicBitVec<Vec<AtomicUsize>> {
     #[inline]
     fn from(bm: BitVec<Vec<usize>>) -> Self {
         bm.convert_to().unwrap()
@@ -606,16 +592,16 @@ impl From<BitVec<Vec<usize>>> for BitVec<Vec<AtomicUsize>> {
 }
 
 /// Provide conversion from standard to atomic bit vectors.
-impl From<BitVec<Vec<AtomicUsize>>> for BitVec<Vec<usize>> {
+impl From<AtomicBitVec<Vec<AtomicUsize>>> for BitVec<Vec<usize>> {
     #[inline]
-    fn from(bm: BitVec<Vec<AtomicUsize>>) -> Self {
+    fn from(bm: AtomicBitVec<Vec<AtomicUsize>>) -> Self {
         bm.convert_to().unwrap()
     }
 }
 
 /// Provide conversion from references to standard bit vectors
 /// to references to atomic bit vectors.
-impl<'a> From<BitVec<&'a [usize]>> for BitVec<&'a [AtomicUsize]> {
+impl<'a> From<BitVec<&'a [usize]>> for AtomicBitVec<&'a [AtomicUsize]> {
     #[inline]
     fn from(bm: BitVec<&'a [usize]>) -> Self {
         bm.convert_to().unwrap()
@@ -624,9 +610,9 @@ impl<'a> From<BitVec<&'a [usize]>> for BitVec<&'a [AtomicUsize]> {
 
 /// Provide conversion from references to atomic bit vectors
 /// to references to standard bit vectors.
-impl<'a> From<BitVec<&'a [AtomicUsize]>> for BitVec<&'a [usize]> {
+impl<'a> From<AtomicBitVec<&'a [AtomicUsize]>> for BitVec<&'a [usize]> {
     #[inline]
-    fn from(bm: BitVec<&'a [AtomicUsize]>) -> Self {
+    fn from(bm: AtomicBitVec<&'a [AtomicUsize]>) -> Self {
         bm.convert_to().unwrap()
     }
 }

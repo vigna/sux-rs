@@ -9,7 +9,6 @@ use crate::prelude::*;
 use crate::traits::bit_field_slice::*;
 use anyhow::Result;
 use common_traits::*;
-use core::marker::PhantomData;
 use epserde::*;
 use std::sync::atomic::*;
 /**
@@ -23,7 +22,7 @@ across word boundaries).
 We provide implementations
 based on `AsRef<[usize]>`, `AsMut<[usize]>`, and
 `AsRef<[AtomicUsize]>`. They implement
-[`BitFieldSlice`], [`BitFieldSliceMut`], and [`BitFieldSliceAtomic`], respectively. Constructors are provided
+[`BitFieldSlice`], [`BitFieldSliceMut`], and [`AtomicBitFieldSlice`], respectively. Constructors are provided
 for storing data in a [`Vec<usize>`](BitFieldVec::new) (for the first
 two implementations) or in a
 [`Vec<AtomicUsize>`](BitFieldVec::new_atomic) (for the third implementation).
@@ -38,17 +37,27 @@ boundary-crossing value, then no race condition can happen.
 
 */
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct BitFieldVec<W = usize, M = W, B = Vec<W>> {
+pub struct BitFieldVec<W = usize, B = Vec<W>> {
     /// The underlying storage.
     data: B,
     /// The bit width of the values stored in the array.
     bit_width: usize,
     /// A mask with its lowest `bit_width` bits set to one.
-    mask: M,
+    mask: W,
     /// The length of the array.
     len: usize,
+}
 
-    _marker: PhantomData<W>,
+#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AtomicBitFieldVec<W: IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
+    /// The underlying storage.
+    data: B,
+    /// The bit width of the values stored in the array.
+    bit_width: usize,
+    /// A mask with its lowest `bit_width` bits set to one.
+    mask: W,
+    /// The length of the array.
+    len: usize,
 }
 
 fn mask<M: Word>(bit_width: usize) -> M {
@@ -59,7 +68,7 @@ fn mask<M: Word>(bit_width: usize) -> M {
     }
 }
 
-impl<W: Word> BitFieldVec<W, W, Vec<W>> {
+impl<W: Word> BitFieldVec<W, Vec<W>> {
     pub fn new(bit_width: usize, len: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
@@ -68,28 +77,26 @@ impl<W: Word> BitFieldVec<W, W, Vec<W>> {
             bit_width,
             mask: mask(bit_width),
             len,
-            _marker: PhantomData,
         }
     }
 }
 
-impl<W: Word + IntoAtomic> BitFieldVec<W, W, Vec<W>> {
-    pub fn new_atomic(bit_width: usize, len: usize) -> BitFieldVec<W::AtomicType, W> {
+impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
+    pub fn new(bit_width: usize, len: usize) -> AtomicBitFieldVec<W> {
         // we need at least two words to avoid branches in the gets
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
-        BitFieldVec::<W::AtomicType, W> {
+        AtomicBitFieldVec::<W> {
             data: (0..n_of_words)
                 .map(|_| W::AtomicType::new(W::ZERO))
                 .collect(),
             bit_width,
             mask: mask(bit_width),
             len,
-            _marker: PhantomData,
         }
     }
 }
 
-impl<W, M: Word, B> BitFieldVec<W, M, B> {
+impl<W: Word, B> BitFieldVec<W, B> {
     /// # Safety
     /// `len` * `bit_width` must be between 0 (included) the number of
     /// bits in `data` (included).
@@ -100,7 +107,6 @@ impl<W, M: Word, B> BitFieldVec<W, M, B> {
             bit_width,
             mask: mask(bit_width),
             len,
-            _marker: PhantomData,
         }
     }
 
@@ -110,7 +116,27 @@ impl<W, M: Word, B> BitFieldVec<W, M, B> {
     }
 }
 
-impl<W: AsBytes, M, T> BitFieldSliceCore<W> for BitFieldVec<W, M, T> {
+impl<W: Word + IntoAtomic, B> AtomicBitFieldVec<W, B> {
+    /// # Safety
+    /// `len` * `bit_width` must be between 0 (included) the number of
+    /// bits in `data` (included).
+    #[inline(always)]
+    pub unsafe fn from_raw_parts(data: B, bit_width: usize, len: usize) -> Self {
+        Self {
+            data,
+            bit_width,
+            mask: mask(bit_width),
+            len,
+        }
+    }
+
+    #[inline(always)]
+    pub fn into_raw_parts(self) -> (B, usize, usize) {
+        (self.data, self.bit_width, self.len)
+    }
+}
+
+impl<W: AsBytes, T> BitFieldSliceCore<W> for BitFieldVec<W, T> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= W::BITS);
@@ -123,7 +149,20 @@ impl<W: AsBytes, M, T> BitFieldSliceCore<W> for BitFieldVec<W, M, T> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, W, B> {
+impl<W: AsBytes + IntoAtomic, T> BitFieldSliceCore<W::AtomicType> for AtomicBitFieldVec<W, T> {
+    #[inline(always)]
+    fn bit_width(&self) -> usize {
+        debug_assert!(self.bit_width <= W::BITS);
+        self.bit_width
+    }
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
+impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> W {
         let pos = index * self.bit_width;
@@ -140,15 +179,15 @@ impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, W, B> {
     }
 }
 
-pub struct BitFieldVecUncheckedIterator<'a, W, M, B> {
-    array: &'a BitFieldVec<W, M, B>,
+pub struct BitFieldVecUncheckedIterator<'a, W, B> {
+    array: &'a BitFieldVec<W, B>,
     word_index: usize,
     window: W,
     fill: usize,
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, W, B> {
-    fn new(array: &'a BitFieldVec<W, W, B>, index: usize) -> Self {
+impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, B> {
+    fn new(array: &'a BitFieldVec<W, B>, index: usize) -> Self {
         if index > array.len() {
             panic!("Start index out of bounds: {} > {}", index, array.len());
         }
@@ -175,9 +214,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, W, B> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> UncheckedValueIterator
-    for BitFieldVecUncheckedIterator<'a, W, W, B>
-{
+impl<'a, W: Word, B: AsRef<[W]>> UncheckedValueIterator for BitFieldVecUncheckedIterator<'a, W, B> {
     type Item = W;
     unsafe fn next_unchecked(&mut self) -> W {
         if self.fill >= self.array.bit_width {
@@ -198,9 +235,9 @@ impl<'a, W: Word, B: AsRef<[W]>> UncheckedValueIterator
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> IntoUncheckedValueIterator for BitFieldVec<W, W, B> {
+impl<W: Word, B: AsRef<[W]>> IntoUncheckedValueIterator for BitFieldVec<W, B> {
     type Item = W;
-    type IntoUncheckedValueIter<'a> = BitFieldVecUncheckedIterator<'a, W, W, B>
+    type IntoUncheckedValueIter<'a> = BitFieldVecUncheckedIterator<'a, W, B>
         where B:'a, W:'a ;
 
     fn iter_val_from_unchecked(&self, from: usize) -> Self::IntoUncheckedValueIter<'_> {
@@ -208,13 +245,13 @@ impl<W: Word, B: AsRef<[W]>> IntoUncheckedValueIterator for BitFieldVec<W, W, B>
     }
 }
 
-pub struct BitFieldVecIterator<'a, W, M, B> {
-    unchecked: BitFieldVecUncheckedIterator<'a, W, M, B>,
+pub struct BitFieldVecIterator<'a, W, B> {
+    unchecked: BitFieldVecUncheckedIterator<'a, W, B>,
     index: usize,
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, W, B> {
-    fn new(array: &'a BitFieldVec<W, W, B>, index: usize) -> Self {
+impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, B> {
+    fn new(array: &'a BitFieldVec<W, B>, index: usize) -> Self {
         if index > array.len() {
             panic!("Start index out of bounds: {} > {}", index, array.len());
         }
@@ -225,7 +262,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, W, B> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, B> {
     type Item = W;
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.unchecked.array.len() {
@@ -239,15 +276,15 @@ impl<'a, W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, W, B> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'a, W, W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'a, W, B> {
     fn len(&self) -> usize {
         self.unchecked.array.len() - self.index
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> IntoValueIterator for BitFieldVec<W, W, B> {
+impl<W: Word, B: AsRef<[W]>> IntoValueIterator for BitFieldVec<W, B> {
     type Item = W;
-    type IntoValueIter<'a> = BitFieldVecIterator<'a, W, W, B>
+    type IntoValueIter<'a> = BitFieldVecIterator<'a, W, B>
         where B:'a, W: 'a;
 
     fn iter_val_from(&self, from: usize) -> Self::IntoValueIter<'_> {
@@ -255,25 +292,7 @@ impl<W: Word, B: AsRef<[W]>> IntoValueIterator for BitFieldVec<W, W, B> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> IntoIterator for &'a BitFieldVec<W, W, B> {
-    type Item = W;
-    type IntoIter = BitFieldVecIterator<'a, W, W, B>;
-    /// Convenience method that delegates to [`IntoValueIterator::iter_val`].
-    #[inline(always)]
-    fn into_iter(self) -> BitFieldVecIterator<'a, W, W, B> {
-        self.iter_val()
-    }
-}
-
-impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, W, B> {
-    /// Convenience method that delegates to [`IntoValueIterator::iter_val_from`].
-    #[inline(always)]
-    pub fn iter_from(&self, from: usize) -> BitFieldVecIterator<'_, W, W, B> {
-        self.iter_val_from(from)
-    }
-}
-
-impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, W, B> {
+impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, B> {
     // We reimplement set as we have the mask in the structure.
 
     /// Set the element of the slice at the specified index.
@@ -315,8 +334,8 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
     }
 }
 
-impl<W: Word + IntoAtomic, T: AsRef<[W::AtomicType]>> BitFieldSliceAtomic<W>
-    for BitFieldVec<W::AtomicType, W, T>
+impl<W: Word + IntoAtomic, T: AsRef<[W::AtomicType]>> AtomicBitFieldSlice<W>
+    for AtomicBitFieldVec<W, T>
 where
     W::AtomicType: AtomicUnsignedInt + AsBytes,
 {
@@ -427,52 +446,67 @@ where
 ///
 /// Many implementations of this trait are then used to
 /// implement by delegation a corresponding [`From`].
-impl<V, W, M, B, C> ConvertTo<BitFieldVec<W, M, C>> for BitFieldVec<V, M, B>
+impl<W: IntoAtomic, B, C> ConvertTo<AtomicBitFieldVec<W, C>> for BitFieldVec<W, B>
 where
     B: ConvertTo<C>,
 {
     #[inline]
-    fn convert_to(self) -> Result<BitFieldVec<W, M, C>> {
+    fn convert_to(self) -> Result<AtomicBitFieldVec<W, C>> {
+        Ok(AtomicBitFieldVec {
+            len: self.len,
+            bit_width: self.bit_width,
+            mask: self.mask,
+            data: self.data.convert_to()?,
+        })
+    }
+}
+
+/// Provide conversion betweeen compact arrays whose backends
+/// are [convertible](ConvertTo) into one another.
+///
+/// Many implementations of this trait are then used to
+/// implement by delegation a corresponding [`From`].
+impl<W: IntoAtomic, B, C> ConvertTo<BitFieldVec<W, C>> for AtomicBitFieldVec<W, B>
+where
+    B: ConvertTo<C>,
+{
+    #[inline]
+    fn convert_to(self) -> Result<BitFieldVec<W, C>> {
         Ok(BitFieldVec {
             len: self.len,
             bit_width: self.bit_width,
             mask: self.mask,
             data: self.data.convert_to()?,
-            _marker: PhantomData,
         })
     }
 }
 
 macro_rules! impl_from {
     ($std:ty, $atomic:ty) => {
-        impl From<BitFieldVec<$std>> for BitFieldVec<$atomic, $std> {
+        impl From<BitFieldVec<$std>> for AtomicBitFieldVec<$std> {
             #[inline]
             fn from(bm: BitFieldVec<$std>) -> Self {
                 bm.convert_to().unwrap()
             }
         }
 
-        impl From<BitFieldVec<$atomic, $std>> for BitFieldVec<$std> {
+        impl From<AtomicBitFieldVec<$std>> for BitFieldVec<$std> {
             #[inline]
-            fn from(bm: BitFieldVec<$atomic, $std>) -> Self {
+            fn from(bm: AtomicBitFieldVec<$std>) -> Self {
                 bm.convert_to().unwrap()
             }
         }
 
-        impl<'a> From<BitFieldVec<$std, $std, &'a [$std]>>
-            for BitFieldVec<$atomic, $std, &'a [$atomic]>
-        {
+        impl<'a> From<BitFieldVec<$std, &'a [$std]>> for AtomicBitFieldVec<$std, &'a [$atomic]> {
             #[inline]
-            fn from(bm: BitFieldVec<$std, $std, &'a [$std]>) -> Self {
+            fn from(bm: BitFieldVec<$std, &'a [$std]>) -> Self {
                 bm.convert_to().unwrap()
             }
         }
 
-        impl<'a> From<BitFieldVec<$atomic, $std, &'a [$atomic]>>
-            for BitFieldVec<$std, $std, &'a [$std]>
-        {
+        impl<'a> From<AtomicBitFieldVec<$std, &'a [$atomic]>> for BitFieldVec<$std, &'a [$std]> {
             #[inline]
-            fn from(bm: BitFieldVec<$atomic, $std, &'a [$atomic]>) -> Self {
+            fn from(bm: AtomicBitFieldVec<$std, &'a [$atomic]>) -> Self {
                 bm.convert_to().unwrap()
             }
         }

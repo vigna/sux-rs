@@ -20,7 +20,7 @@ in our main use case, [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec),
 we cannot implement [`Index`](core::ops::Index) because there is no way to
 return a reference to a bit segment.
 
-There are three end-user traits: [`BitFieldSlice`], [`BitFieldSliceMut`] and [`BitFieldSliceAtomic`].
+There are three end-user traits: [`BitFieldSlice`], [`BitFieldSliceMut`] and [`AtomicBitFieldSlice`].
 The trait [`BitFieldSliceCore`] contains the common methods, and in particular
 [`BitFieldSliceCore::bit_width`], which returns the bit width the values stored in the slice.
  All stored values must fit within this bit width.
@@ -29,10 +29,10 @@ All the traits depends on a type parameter `W` that must implement [`Word`], and
 default to `usize`, but any type satisfying the [`Word`] trait
 can be used, with the restriction that the bit width of the slice can be at most
 the bit width of `W` as defined by [`AsBytes::BITS`]. Additionally,
-to implement [`BitFieldSliceAtomic`], `W` must implement [`IntoAtomic`].
+to implement [`AtomicBitFieldSlice`], `W` must implement [`IntoAtomic`].
 The methods of all traits accept and return values of type `W`.
 
-Note that [`BitFieldSliceAtomic`] has methods with the same names as those in
+Note that [`AtomicBitFieldSlice`] has methods with the same names as those in
 [`BitFieldSlice`] and [`BitFieldSliceMut`]. Due to the way methods are resolved,
 this might cause problems if you have have imported all traits. We suggest that,
 unless you are using only of the two variants, you import globally only [`BitFieldSliceCore`],
@@ -50,7 +50,7 @@ equal to that of the type; for those, we also implement
 [`IntoValueIterator`](crate::traits::iter::IntoValueIterator)
 using a [helper](BitFieldSliceIterator) structure
 that might be useful for other implementations, too. We cannot, however, implement
-[`BitFieldSliceAtomic`] for `u128` because there is no atomic type for it.
+[`AtomicBitFieldSlice`] for `u128` because there is no atomic type for it.
 
 */
 use common_traits::*;
@@ -62,7 +62,7 @@ use std::marker::PhantomData;
 pub trait Word: UnsignedInt + FiniteRangeNumber + AsBytes {}
 impl<W: UnsignedInt + FiniteRangeNumber + AsBytes> Word for W {}
 
-/// Common methods for [`BitFieldSlice`], [`BitFieldSliceMut`], and [`BitFieldSliceAtomic`].
+/// Common methods for [`BitFieldSlice`], [`BitFieldSliceMut`], and [`AtomicBitFieldSlice`].
 ///
 /// The dependence on `W` is necessary to implement this trait on vectors and slices, as
 /// we need the bit width of the values stored in the slice.
@@ -161,7 +161,7 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
 ///
 /// Different implementations might provide different atomicity guarantees. See
 /// [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec) for an example.
-pub trait BitFieldSliceAtomic<W: Word + IntoAtomic>: BitFieldSliceCore<W::AtomicType>
+pub trait AtomicBitFieldSlice<W: Word + IntoAtomic>: BitFieldSliceCore<W::AtomicType>
 where
     W::AtomicType: AtomicUnsignedInt + AsBytes,
 {
@@ -300,7 +300,7 @@ impl_ref!(u8, u16, u32, u64, u128, usize);
 
 macro_rules! impl_atomic {
     ($std:ty, $atomic:ty) => {
-        impl<T: AsRef<[$atomic]>> BitFieldSliceAtomic<$std> for T {
+        impl<T: AsRef<[$atomic]>> AtomicBitFieldSlice<$std> for T {
             #[inline(always)]
             unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> $std {
                 debug_assert_bounds!(index, self.len());
