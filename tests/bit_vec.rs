@@ -11,6 +11,7 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngCore, SeedableRng};
 use sux::bits::bit_vec::BitVec;
+use sux::prelude::AtomicBitVec;
 
 #[test]
 fn test_bit_vec() {
@@ -59,7 +60,7 @@ fn test_bit_vec() {
         }
     }
 
-    let bm: BitVec<Vec<AtomicUsize>> = bm.into();
+    let bm: AtomicBitVec = bm.into();
     for _ in 0..10 {
         let mut values = (0..u).collect::<Vec<_>>();
         let (indices, _) = values.partial_shuffle(&mut rng, n2);

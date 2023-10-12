@@ -21,7 +21,7 @@ makes it possible to access its values with [`IndexedDict::get`].
 use crate::prelude::*;
 use crate::traits::bit_field_slice::*;
 use anyhow::{bail, Result};
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::Ordering;
 use epserde::*;
 
 /// A sequential builder for [`EliasFano`].
@@ -115,8 +115,8 @@ pub struct EliasFanoAtomicBuilder {
     u: usize,
     n: usize,
     l: usize,
-    low_bits: BitFieldVec<AtomicUsize, usize>,
-    high_bits: BitVec<Vec<AtomicUsize>>,
+    low_bits: AtomicBitFieldVec,
+    high_bits: AtomicBitVec,
 }
 
 impl EliasFanoAtomicBuilder {
@@ -133,8 +133,8 @@ impl EliasFanoAtomicBuilder {
             u,
             n,
             l,
-            low_bits: BitFieldVec::new_atomic(l, n),
-            high_bits: BitVec::new_atomic(n + (u >> l) + 1),
+            low_bits: AtomicBitFieldVec::new(l, n),
+            high_bits: AtomicBitVec::new(n + (u >> l) + 1),
         }
     }
 

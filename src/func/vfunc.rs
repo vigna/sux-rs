@@ -118,7 +118,7 @@ impl<
     > VFunc<T, O, S>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
-    BitFieldVec<O>: From<BitFieldVec<<O as common_traits::IntoAtomic>::AtomicType, O>>,
+    BitFieldVec<O>: From<AtomicBitFieldVec<O, Vec<O::AtomicType>>>,
 {
     #[inline(always)]
     #[must_use]
@@ -172,7 +172,7 @@ where
         into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
     ) -> VFunc<T, O> {
-        use crate::traits::bit_field_slice::BitFieldSliceAtomic;
+        use crate::traits::bit_field_slice::AtomicBitFieldSlice;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         for seed in 0.. {
@@ -308,7 +308,7 @@ where
                 (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * c)
             );
 
-            let data = BitFieldVec::<O>::new_atomic(bit_width, num_vertices * num_chunks);
+            let data = AtomicBitFieldVec::<O>::new(bit_width, num_vertices * num_chunks);
 
             let chunk = AtomicUsize::new(0);
             let fail = AtomicBool::new(false);
@@ -463,7 +463,7 @@ where
         into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
     ) -> anyhow::Result<VFunc<T, O>> {
-        use crate::traits::bit_field_slice::BitFieldSliceAtomic;
+        use crate::traits::bit_field_slice::AtomicBitFieldSlice;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         for seed in 0.. {
@@ -583,7 +583,7 @@ where
                 pl.done_with_count(num_keys);
             }
 
-            let data = BitFieldVec::<O>::new_atomic(bit_width, num_vertices * num_chunks);
+            let data = AtomicBitFieldVec::<O>::new(bit_width, num_vertices * num_chunks);
 
             let fail = AtomicBool::new(false);
             let mutex = std::sync::Arc::new(Mutex::new(chunk_store));
