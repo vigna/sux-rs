@@ -13,7 +13,6 @@ use rand::Rng;
 use rand::SeedableRng;
 use std::sync::atomic::Ordering;
 use sux::prelude::BitFieldVec;
-use sux::prelude::CountBitVec;
 use sux::prelude::*;
 
 #[test]

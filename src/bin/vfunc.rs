@@ -9,7 +9,7 @@ use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::ProgressLogger;
 use epserde::ser::Serialize;
-use sux::func::vfunc::VFunc;
+use sux::func::VFunc;
 use sux::utils::file::FilenameIntoIterator;
 use sux::utils::FilenameZstdIntoIterator;
 
