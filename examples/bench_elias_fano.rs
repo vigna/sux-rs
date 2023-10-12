@@ -98,7 +98,7 @@ fn main() {
         pl.done_with_count(args.t);
 
         pl.start("Benchmarking iter()...");
-        for i in elias_fano.iter() {
+        for i in &elias_fano {
             u ^= i;
         }
         pl.done_with_count(args.n);

@@ -34,7 +34,10 @@ pub trait UncheckedValueIterator {
 /// To avoid clashes in types that implement both [`IntoValueIterator`] and
 /// [`IntoIterator`](core::iter::IntoIterator), the methods of this trait have the
 /// infix `_val`. However, implementors are invited, if it is convenient,
-/// to add `iter`/`iter_from` methods delegating to `iter_val`/`iter_val_from`.
+/// to implement [`IntoIterator`](core::iter::IntoIterator) on a reference to the type
+/// delegating to the implementation of this trait, and implement also on the type
+/// an `into_iter_from` method (see, for examples, the implementation in
+/// [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec)).
 pub trait IntoValueIterator {
     type Item;
     type IntoValueIter<'a>: Iterator<Item = Self::Item> + 'a

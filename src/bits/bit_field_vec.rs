@@ -255,18 +255,20 @@ impl<W: Word, B: AsRef<[W]>> IntoValueIterator for BitFieldVec<W, W, B> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, W, B> {
-    /// Convenience method that delegates to [`IntoValueIterator::iter_val`]
-    /// and returns an [`ExactSizeIterator`].
+impl<'a, W: Word, B: AsRef<[W]>> IntoIterator for &'a BitFieldVec<W, W, B> {
+    type Item = W;
+    type IntoIter = BitFieldVecIterator<'a, W, W, B>;
+    /// Convenience method that delegates to [`IntoValueIterator::iter_val`].
     #[inline(always)]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = W> + '_ {
+    fn into_iter(self) -> BitFieldVecIterator<'a, W, W, B> {
         self.iter_val()
     }
+}
 
-    /// Convenience method that delegates to [`IntoValueIterator::iter_val_from`]
-    /// and returns an [`ExactSizeIterator`].
+impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, W, B> {
+    /// Convenience method that delegates to [`IntoValueIterator::iter_val_from`].
     #[inline(always)]
-    pub fn iter_from(&self, from: usize) -> impl ExactSizeIterator<Item = W> + '_ {
+    pub fn iter_from(&self, from: usize) -> BitFieldVecIterator<'_, W, W, B> {
         self.iter_val_from(from)
     }
 }
