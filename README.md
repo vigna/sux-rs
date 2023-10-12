@@ -13,7 +13,7 @@ we provide:
   [`Select`](crate::traits::rank_sel::Select), and [`IndexedDict`](crate::traits::indexed_dict::IndexedDict);
 - an implementation of the [Elias--Fano representation of monotone sequences](crate::dict::elias_fano::EliasFano);
 - an implementation of list of [strings compressed by rear-coded prefix omission](crate::dict::rear_coded_list::RearCodedList);
-- an implementation of [static functions](crate::func::vfunc::VFunc).
+- an implementation of [static functions](crate::func::VFunc).
 
 The focus is on efficiency (in particular, there are unchecked version of all methods) and
 on flexible composability (e.g., you can fine tune your Elias–Fano instance choosing different

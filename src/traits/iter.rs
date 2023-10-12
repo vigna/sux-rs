@@ -30,6 +30,11 @@ pub trait UncheckedValueIterator {
 }
 
 /// A trait for types that can generate an iterator on values, rather than on references.
+///
+/// To avoid clashes in types that implement both [`IntoValueIterator`] and
+/// [`IntoIterator`](core::iter::IntoIterator), the methods of this trait have the
+/// infix `_val`. However, implementors are invited, if it is convenient,
+/// to add `iter`/`iter_from` methods delegating to `iter_val`/`iter_val_from`.
 pub trait IntoValueIterator {
     type Item;
     type IntoValueIter<'a>: Iterator<Item = Self::Item> + 'a
@@ -43,7 +48,7 @@ pub trait IntoValueIterator {
 }
 
 /// A trait for types that can generate an
-/// (unchecked iterator on values)[UncheckedValueIterator], rather than on references.
+/// [unchecked iterator on values](UncheckedValueIterator), rather than on references.
 pub trait IntoUncheckedValueIterator {
     type Item;
     type IntoUncheckedValueIter<'a>: UncheckedValueIterator<Item = Self::Item> + 'a

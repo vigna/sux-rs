@@ -262,14 +262,30 @@ impl<H, L> EliasFano<H, L> {
 impl<
         H: AsRef<[usize]> + Select,
         L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
+    > EliasFano<H, L>
+{
+    /// Convenience method that delegates to [`IntoValueIterator::iter_val`]
+    /// and returns an [`ExactSizeIterator`].
+    #[inline(always)]
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
+        self.iter_val()
+    }
+
+    /// Convenience method that delegates to [`IntoValueIterator::iter_val_from`]
+    /// and returns an [`ExactSizeIterator`].
+    #[inline(always)]
+    pub fn iter_from(&self, from: usize) -> impl ExactSizeIterator<Item = usize> + '_ {
+        self.iter_val_from(from)
+    }
+}
+
+impl<
+        H: AsRef<[usize]> + Select,
+        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
     > IndexedDict for EliasFano<H, L>
 {
     type Output = usize;
     type Input = usize;
-
-    type Iterator<'a> = EliasFanoIterator<'a, H, L>
-    where
-        Self: 'a;
 
     #[inline]
     fn len(&self) -> usize {
@@ -282,14 +298,25 @@ impl<
         let low_bits = self.low_bits.get_unchecked(index);
         (high_bits << self.l) | low_bits
     }
+}
 
+impl<
+        H: AsRef<[usize]> + Select,
+        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
+    > IntoValueIterator for EliasFano<H, L>
+{
+    type Item = usize;
+    type IntoValueIter<'a> = EliasFanoIterator<'a, H, L>
+    where
+        Self: 'a;
     #[inline(always)]
-    fn iter(&self) -> Self::Iterator<'_> {
+
+    fn iter_val(&self) -> Self::IntoValueIter<'_> {
         EliasFanoIterator::new(self)
     }
 
     #[inline(always)]
-    fn iter_from(&self, start_index: usize) -> Self::Iterator<'_> {
+    fn iter_val_from(&self, start_index: usize) -> Self::IntoValueIter<'_> {
         EliasFanoIterator::new_from(self, start_index)
     }
 }

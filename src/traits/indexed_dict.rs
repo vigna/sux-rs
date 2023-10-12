@@ -12,6 +12,8 @@ operations such as predecessor and successor.
 
 */
 
+use crate::prelude::IntoValueIterator;
+
 /**
 
 A dictionary of values indexed by a `usize`.
@@ -20,15 +22,9 @@ The input and output values may be different, to make it easier to implement
 compressed structures (see, e.g., [rear-coded lists](crate::dict::rear_coded_list::RearCodedList)).
 
 */
-pub trait IndexedDict {
+pub trait IndexedDict: IntoValueIterator<Item = Self::Output> {
     type Input: PartialEq<Self::Output> + PartialEq + ?Sized;
     type Output: PartialEq<Self::Input> + PartialEq;
-
-    /// The type of the iterator returned by [`iter`](`IndexedDict::iter`).
-    /// and [`iter_from`](`IndexedDict::iter_from`).
-    type Iterator<'a>: ExactSizeIterator<Item = Self::Output> + 'a
-    where
-        Self: 'a;
 
     /// Return the value at the specified index.
     ///
@@ -64,16 +60,10 @@ pub trait IndexedDict {
     /// Return the length (number of items) of the dictionary.
     fn len(&self) -> usize;
 
-    /// Return true of [`len`](`IndexedDict::len`) is zero.
+    /// Return true if [`len`](`IndexedDict::len`) is zero.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
-
-    /// Return an iterator on the whole dictionary.
-    fn iter(&self) -> Self::Iterator<'_>;
-
-    /// Return an iterator on the dictionary starting from the specified index.
-    fn iter_from(&self, from: usize) -> Self::Iterator<'_>;
 }
 
 /// Successor computation for dictionaries whose values are monotonically increasing.
