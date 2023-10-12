@@ -12,12 +12,12 @@ fast parallel construction, and fast queries.
 
 */
 
+use crate::bits::*;
 use crate::prelude::*;
 use crate::traits::bit_field_slice::{self, Word};
 use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
 use dsi_progress_logger::ProgressLogger;
 use epserde::prelude::*;
-use epserde::Epserde;
 use log::warn;
 use log::*;
 use rayon::prelude::*;

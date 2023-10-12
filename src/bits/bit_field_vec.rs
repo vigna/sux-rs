@@ -5,13 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::prelude::*;
-use crate::traits::bit_field_slice::*;
-use anyhow::Result;
-use common_traits::*;
-use epserde::*;
-use std::sync::atomic::*;
-/**
+/*!
 
 A vector of values of fixed bit width.
 
@@ -25,7 +19,7 @@ based on `AsRef<[usize]>`, `AsMut<[usize]>`, and
 [`BitFieldSlice`], [`BitFieldSliceMut`], and [`AtomicBitFieldSlice`], respectively. Constructors are provided
 for storing data in a [`Vec<usize>`](BitFieldVec::new) (for the first
 two implementations) or in a
-[`Vec<AtomicUsize>`](BitFieldVec::new_atomic) (for the third implementation).
+[`Vec<AtomicUsize>`](AtomicBitFieldVec::new) (for the third implementation).
 
 In the latter case we can provide some concurrency guarantees,
 albeit not full-fledged thread safety: more precisely, we can
@@ -36,6 +30,13 @@ If the user can guarantee that no two threads ever write to the same
 boundary-crossing value, then no race condition can happen.
 
 */
+
+use crate::prelude::*;
+use crate::traits::bit_field_slice::*;
+use anyhow::Result;
+use common_traits::*;
+use epserde::*;
+use std::sync::atomic::*;
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BitFieldVec<W = usize, B = Vec<W>> {
     /// The underlying storage.

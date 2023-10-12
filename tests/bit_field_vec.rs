@@ -66,9 +66,9 @@ fn test_bit_field_vec() {
 fn test_atomic_bit_field_vec() {
     use sux::traits::bit_field_slice::AtomicBitFieldSlice;
 
-    for bit_width in 0..64 {
-        let n = 100;
-        let u = 1 << bit_width;
+    for bit_width in 0..usize::BITS as usize {
+        let n: usize = 100;
+        let u: usize = 1 << bit_width;
         let mut rng = SmallRng::seed_from_u64(0);
 
         let cp = AtomicBitFieldVec::new(bit_width, n);
