@@ -62,14 +62,14 @@ fn test_elias_fano() -> Result<()> {
             assert_eq!({ ef.get(i) }, *v);
         }
         // Add the ones indices
-        let ef: EliasFano<QuantumIndex, BitFieldVec> = ef.convert_to().unwrap();
+        let ef: EliasFano<QuantumIndex> = ef.convert_to().unwrap();
 
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.get(i), *v);
         }
 
         // Add the indices
-        let ef: sux::dict::elias_fano::EliasFano<QuantumZeroIndex<QuantumIndex>, BitFieldVec> =
+        let ef: sux::dict::elias_fano::EliasFano<QuantumZeroIndex<QuantumIndex>> =
             ef.convert_to().unwrap();
         // do a fast select
         for (i, v) in values.iter().enumerate() {
@@ -77,14 +77,14 @@ fn test_elias_fano() -> Result<()> {
         }
         println!("{:?}", ef);
 
-        let mut iterator = ef.iter().enumerate();
+        let mut iterator = ef.into_iter().enumerate();
         while let Some((i, v)) = iterator.next() {
             assert_eq!(v, values[i]);
             assert_eq!(iterator.len(), ef.len() - i - 1);
         }
 
         for from in 0..ef.len() {
-            let mut iterator = ef.iter_from(from).enumerate();
+            let mut iterator = ef.into_iter_from(from).enumerate();
             while let Some((i, v)) = iterator.next() {
                 assert_eq!(v, values[i + from]);
                 assert_eq!(iterator.len(), ef.len() - i - from - 1);

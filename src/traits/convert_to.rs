@@ -13,7 +13,7 @@ use std::sync::atomic::*;
 /// Like [`Into`], but we need to avoid the orphan rule and error
 /// [E0210](https://github.com/rust-lang/rust/blob/master/compiler/rustc_error_codes/src/error_codes/E0210.md).
 ///
-/// We provide implementations performing converesions between vectors and (mutable) references
+/// We provide implementations performing conversions between vectors and (mutable) references
 /// to slices of atomic and non-atomic unsigned integers.
 ///
 /// Other structures, such as [`EliasFano`](crate::dict::elias_fano::EliasFano),
