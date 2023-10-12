@@ -42,7 +42,7 @@ pub struct QuantumZeroIndex<
 
 impl<
         B: SelectZeroHinted + AsRef<[usize]>,
-        O: BitFieldSlice<usize> + BitFieldSliceMut<usize> + core::fmt::Debug,
+        O: BitFieldSlice<usize> + BitFieldSliceMut<usize>,
         const QUANTUM_LOG2: usize,
     > QuantumZeroIndex<B, O, QUANTUM_LOG2>
 {

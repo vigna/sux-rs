@@ -441,10 +441,10 @@ where
     }
 }
 
-/// Provide conversion betweeen compact arrays whose backends
-/// are [convertible](ConvertTo) into one another.
+/// Provide conversion from non-atomic to atomic bitfield vectors, provided their
+/// backends are [convertible](ConvertTo) into one another.
 ///
-/// Many implementations of this trait are then used to
+/// Implementations of this trait are then used to
 /// implement by delegation a corresponding [`From`].
 impl<W: IntoAtomic, B, C> ConvertTo<AtomicBitFieldVec<W, C>> for BitFieldVec<W, B>
 where
@@ -461,12 +461,34 @@ where
     }
 }
 
-/// Provide conversion betweeen compact arrays whose backends
-/// are [convertible](ConvertTo) into one another.
+/// Provide conversion from atomic to non-atomic bitfield vectors, provided their
+/// backends are [convertible](ConvertTo) into one another.
 ///
-/// Many implementations of this trait are then used to
+/// Implementations of this trait are then used to
 /// implement by delegation a corresponding [`From`].
 impl<W: IntoAtomic, B, C> ConvertTo<BitFieldVec<W, C>> for AtomicBitFieldVec<W, B>
+where
+    B: ConvertTo<C>,
+{
+    #[inline]
+    fn convert_to(self) -> Result<BitFieldVec<W, C>> {
+        Ok(BitFieldVec {
+            len: self.len,
+            bit_width: self.bit_width,
+            mask: self.mask,
+            data: self.data.convert_to()?,
+        })
+    }
+}
+
+/// Provide conversion betweeen bitfields vectors with different
+/// backends, provided that such backends
+/// are [convertible](ConvertTo) into one another.
+///
+/// This is a generalized form of reflexivity of [`ConvertTo`] for bitfield
+/// vectors. It is necessary, among other things, for the mechanism with which indexing
+/// structures can be added to [`EliasFano`].
+impl<W: Word, B, C> ConvertTo<BitFieldVec<W, C>> for BitFieldVec<W, B>
 where
     B: ConvertTo<C>,
 {
