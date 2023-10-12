@@ -499,18 +499,19 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IntoValueIterator for RearCodedList<D, P
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
-    /// Convenience method that delegates to [`IntoValueIterator::iter_val`]
-    /// and returns an [`ExactSizeIterator`].
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D, P> {
+    type Item = String;
+    type IntoIter = Iterator<'a, D, P>;
     #[inline(always)]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = String> + '_ {
+    fn into_iter(self) -> Self::IntoIter {
         self.iter_val()
     }
+}
 
-    /// Convenience method that delegates to [`IntoValueIterator::iter_val_from`]
-    /// and returns an [`ExactSizeIterator`].
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
+    /// Convenience method that delegates to [`IntoValueIterator::iter_val_from`].
     #[inline(always)]
-    pub fn iter_from(&self, from: usize) -> impl ExactSizeIterator<Item = String> + '_ {
+    pub fn into_iter_from(&self, from: usize) -> impl ExactSizeIterator<Item = String> + '_ {
         self.iter_val_from(from)
     }
 }

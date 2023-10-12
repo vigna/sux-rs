@@ -260,21 +260,28 @@ impl<H, L> EliasFano<H, L> {
 }
 
 impl<
+        'a,
+        H: AsRef<[usize]> + Select,
+        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
+    > IntoIterator for &'a EliasFano<H, L>
+{
+    type Item = usize;
+    type IntoIter = EliasFanoIterator<'a, H, L>;
+    /// Commodity method that delegates to [`IntoValueIterator::iter_val`].
+    #[inline(always)]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_val()
+    }
+}
+
+impl<
         H: AsRef<[usize]> + Select,
         L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
     > EliasFano<H, L>
 {
-    /// Convenience method that delegates to [`IntoValueIterator::iter_val`]
-    /// and returns an [`ExactSizeIterator`].
+    /// Commodity method that delegates to [`IntoValueIterator::iter_val_from`].
     #[inline(always)]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
-        self.iter_val()
-    }
-
-    /// Convenience method that delegates to [`IntoValueIterator::iter_val_from`]
-    /// and returns an [`ExactSizeIterator`].
-    #[inline(always)]
-    pub fn iter_from(&self, from: usize) -> impl ExactSizeIterator<Item = usize> + '_ {
+    pub fn into_iter_from(&self, from: usize) -> EliasFanoIterator<'_, H, L> {
         self.iter_val_from(from)
     }
 }
