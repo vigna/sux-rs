@@ -9,7 +9,7 @@
 
 /*!
 
-Implementation of the Elias--Fano representation of monotone sequences.
+Implementation of the Elias–Fano representation of monotone sequences.
 
 There are two ways to build an [`EliasFano`] structure: using
 an [`EliasFanoBuilder`] or an [`EliasFanoAtomicBuilder`].
@@ -111,7 +111,7 @@ impl EliasFanoBuilder {
 /// to set the values concurrently. However, this operation is inherently
 /// unsafe as no check is performed on the provided data (e.g., duplicate
 /// indices and lack of monotonicity are not detected).
-pub struct EliasFanoAtomicBuilder {
+pub struct EliasFanoConcurrentBuilder {
     u: usize,
     n: usize,
     l: usize,
@@ -119,7 +119,7 @@ pub struct EliasFanoAtomicBuilder {
     high_bits: AtomicBitVec,
 }
 
-impl EliasFanoAtomicBuilder {
+impl EliasFanoConcurrentBuilder {
     /// Create a builder for an [`EliasFano`] containing
     /// `n` numbers smaller than `u`.
     pub fn new(n: usize, u: usize) -> Self {

@@ -19,7 +19,7 @@ use sux::prelude::*;
 #[cfg(feature = "rayon")]
 fn test_elias_fano_concurrent() -> Result<()> {
     use rayon::prelude::*;
-    use sux::dict::elias_fano::EliasFanoAtomicBuilder;
+    use sux::dict::elias_fano::EliasFanoConcurrentBuilder;
     let mut rng = SmallRng::seed_from_u64(0);
     for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
         let mut values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
@@ -27,7 +27,7 @@ fn test_elias_fano_concurrent() -> Result<()> {
         values.sort();
 
         // create the builder for the "in memory" elias-fano
-        let efb = EliasFanoAtomicBuilder::new(n, u);
+        let efb = EliasFanoConcurrentBuilder::new(n, u);
         // push concurrently the values
         values
             .par_iter()

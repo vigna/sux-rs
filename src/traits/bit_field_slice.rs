@@ -57,8 +57,8 @@ use common_traits::*;
 use core::sync::atomic::*;
 use std::marker::PhantomData;
 
-// A derived trait collecting the type of unsigned integer types that
-// can be used as a backend for a bit field slice.
+/// A derived trait that the types used as a parameter for [`BitFieldSlice`] must satisfy.
+/// To be usable in an [`AtomicBitFieldSlice`], the type must also implement [`IntoAtomic`].
 pub trait Word: UnsignedInt + FiniteRangeNumber + AsBytes {}
 impl<W: UnsignedInt + FiniteRangeNumber + AsBytes> Word for W {}
 
