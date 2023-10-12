@@ -11,6 +11,6 @@ pub mod elias_fano;
 pub mod rear_coded_list;
 
 pub mod prelude {
-    pub use super::elias_fano::{EliasFano, EliasFanoAtomicBuilder, EliasFanoBuilder};
+    pub use super::elias_fano::{EliasFano, EliasFanoBuilder, EliasFanoConcurrentBuilder};
     pub use super::rear_coded_list::{RearCodedList, RearCodedListBuilder};
 }

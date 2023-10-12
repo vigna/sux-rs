@@ -8,7 +8,7 @@
 /*!
 
 Classes for [bit vectors](`bit_vec::BitVec`) and
-[arrays of values of bounded bit width](`bit_field_vec::BitFieldVec`).
+[vectors of values of bounded bit width](`bit_field_vec::BitFieldVec`).
 
 */
 

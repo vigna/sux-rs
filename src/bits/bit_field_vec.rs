@@ -14,12 +14,14 @@ unless the bit width is a power of two some elements will be stored
 across word boundaries).
 
 We provide implementations
-based on `AsRef<[usize]>`, `AsMut<[usize]>`, and
-`AsRef<[AtomicUsize]>`. They implement
-[`BitFieldSlice`], [`BitFieldSliceMut`], and [`AtomicBitFieldSlice`], respectively. Constructors are provided
-for storing data in a [`Vec<usize>`](BitFieldVec::new) (for the first
-two implementations) or in a
-[`Vec<AtomicUsize>`](AtomicBitFieldVec::new) (for the third implementation).
+based on `AsRef<[T]>`, `AsMut<[T]>`, and
+`AsRef<[A]>`, where `T` is an unsigned type (default: [`usize`]) and `A` is an atomic
+unsigned type (default: [`AtomicUsize`]); more generally, the underlying type
+must satisfy the trait [`Word`], and additional [`IntoAtomic`] in the second case.
+[`BitFieldSlice`], [`BitFieldSliceMut`], and [`AtomicBitFieldSlice`], respectively.
+Constructors are provided
+for storing data in a [`Vec<T>`](BitFieldVec::new) or
+[`Vec<A>`](AtomicBitFieldVec::new).
 
 In the latter case we can provide some concurrency guarantees,
 albeit not full-fledged thread safety: more precisely, we can
