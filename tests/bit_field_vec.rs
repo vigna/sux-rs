@@ -71,7 +71,7 @@ fn test_atomic_bit_field_vec() {
         let u = 1 << bit_width;
         let mut rng = SmallRng::seed_from_u64(0);
 
-        let mut cp = BitFieldVec::<usize>::new_atomic(bit_width, n);
+        let cp = BitFieldVec::<usize>::new_atomic(bit_width, n);
         for _ in 0..10 {
             let values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
 

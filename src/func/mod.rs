@@ -9,4 +9,5 @@
 
 //! Static functions.
 
-pub mod vfunc;
+mod vfunc;
+pub use vfunc::VFunc;

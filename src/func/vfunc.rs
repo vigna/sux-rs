@@ -346,7 +346,6 @@ where
                             "Peeling graph for chunk {}/{}...",
                             chunk, num_chunks
                         ));
-                        let stacks = Mutex::new(vec![]);
 
                         let mut stack = Vec::new();
                         loop {
@@ -396,42 +395,36 @@ where
                         if sigs.len() != stack.len() {
                             fail.store(true, Ordering::Relaxed);
                         }
-                        stacks.lock().unwrap().push(stack);
-
                         pl.done_with_count(sigs.len());
 
                         pl.start(format!(
                             "Assigning values for chunk {}/{}...",
                             chunk, num_chunks
                         ));
-                        let mut stacks = stacks.lock().unwrap();
-                        while let Some(mut stack) = stacks.pop() {
-                            while let Some(mut v) = stack.pop() {
-                                let edge_index = edge_lists[v].edge_index();
-                                let mut edge =
-                                    Self::edge(&sigs[edge_index].0, log2_l, segment_size);
-                                let chunk_offset = chunk * num_vertices;
-                                v += chunk_offset;
-                                edge.iter_mut().for_each(|v| {
-                                    *v += chunk_offset;
-                                });
-                                let value = if v == edge[0] {
-                                    data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
-                                } else if v == edge[1] {
-                                    data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
-                                } else {
-                                    data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
-                                };
-                                // TODO
-                                data.set(v, sigs[edge_index].1 ^ value, Relaxed);
+                        while let Some(mut v) = stack.pop() {
+                            let edge_index = edge_lists[v].edge_index();
+                            let mut edge = Self::edge(&sigs[edge_index].0, log2_l, segment_size);
+                            let chunk_offset = chunk * num_vertices;
+                            v += chunk_offset;
+                            edge.iter_mut().for_each(|v| {
+                                *v += chunk_offset;
+                            });
+                            let value = if v == edge[0] {
+                                data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
+                            } else if v == edge[1] {
+                                data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
+                            } else {
+                                data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
+                            };
+                            // TODO
+                            data.set(v, sigs[edge_index].1 ^ value, Relaxed);
 
-                                assert_eq!(
-                                    data.get(edge[0], Relaxed)
-                                        ^ data.get(edge[1], Relaxed)
-                                        ^ data.get(edge[2], Relaxed),
-                                    sigs[edge_index].1
-                                );
-                            }
+                            assert_eq!(
+                                data.get(edge[0], Relaxed)
+                                    ^ data.get(edge[1], Relaxed)
+                                    ^ data.get(edge[2], Relaxed),
+                                sigs[edge_index].1
+                            );
                         }
                         pl.done_with_count(sigs.len());
                         pl.start(format!("Completed chunk {}/{}.", chunk, num_chunks));
@@ -631,7 +624,6 @@ where
                                 "Peeling graph for chunk {}/{}...",
                                 chunk_index, num_chunks
                             ));
-                            let stacks = Mutex::new(vec![]);
 
                             let mut stack = Vec::new();
                             loop {
@@ -682,7 +674,6 @@ where
                             if chunk.len() != stack.len() {
                                 fail.store(true, Ordering::Relaxed);
                             }
-                            stacks.lock().unwrap().push(stack);
 
                             pl.done_with_count(chunk.len());
 
@@ -690,34 +681,31 @@ where
                                 "Assigning values for chunk {}/{}...",
                                 chunk_index, num_chunks
                             ));
-                            let mut stacks = stacks.lock().unwrap();
-                            while let Some(mut stack) = stacks.pop() {
-                                while let Some(mut v) = stack.pop() {
-                                    let edge_index = edge_lists[v].edge_index();
-                                    let mut edge =
-                                        Self::edge(&chunk[edge_index].0, log2_l, segment_size);
-                                    let chunk_offset = chunk_index * num_vertices;
-                                    v += chunk_offset;
-                                    edge.iter_mut().for_each(|v| {
-                                        *v += chunk_offset;
-                                    });
-                                    let value = if v == edge[0] {
-                                        data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
-                                    } else if v == edge[1] {
-                                        data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
-                                    } else {
-                                        data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
-                                    };
-                                    // TODO
-                                    data.set(v, chunk[edge_index].1 ^ value, Relaxed);
+                            while let Some(mut v) = stack.pop() {
+                                let edge_index = edge_lists[v].edge_index();
+                                let mut edge =
+                                    Self::edge(&chunk[edge_index].0, log2_l, segment_size);
+                                let chunk_offset = chunk_index * num_vertices;
+                                v += chunk_offset;
+                                edge.iter_mut().for_each(|v| {
+                                    *v += chunk_offset;
+                                });
+                                let value = if v == edge[0] {
+                                    data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
+                                } else if v == edge[1] {
+                                    data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
+                                } else {
+                                    data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
+                                };
+                                // TODO
+                                data.set(v, chunk[edge_index].1 ^ value, Relaxed);
 
-                                    assert_eq!(
-                                        data.get(edge[0], Relaxed)
-                                            ^ data.get(edge[1], Relaxed)
-                                            ^ data.get(edge[2], Relaxed),
-                                        chunk[edge_index].1
-                                    );
-                                }
+                                assert_eq!(
+                                    data.get(edge[0], Relaxed)
+                                        ^ data.get(edge[1], Relaxed)
+                                        ^ data.get(edge[2], Relaxed),
+                                    chunk[edge_index].1
+                                );
                             }
                             pl.done_with_count(chunk.len());
                             pl.start(format!("Completed chunk {}/{}.", chunk_index, num_chunks));

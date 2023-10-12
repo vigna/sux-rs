@@ -7,7 +7,7 @@
 
 use dsi_progress_logger::ProgressLogger;
 use epserde::prelude::*;
-use sux::func::vfunc::VFunc;
+use sux::func::VFunc;
 
 #[test]
 fn test_func() {
