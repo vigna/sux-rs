@@ -13,9 +13,7 @@ Classes for [bit vectors](`bit_vec::BitVec`) and
 */
 
 pub mod bit_field_vec;
-pub mod bit_vec;
+pub use bit_field_vec::*;
 
-pub mod prelude {
-    pub use super::bit_field_vec::*;
-    pub use super::bit_vec::*;
-}
+pub mod bit_vec;
+pub use bit_vec::*;

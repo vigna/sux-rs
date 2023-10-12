@@ -9,7 +9,7 @@
 
 use crate::traits::bit_field_slice::BitFieldSlice;
 use crate::traits::bit_field_slice::BitFieldSliceMut;
-use crate::{bits::prelude::CountBitVec, traits::prelude::*};
+use crate::{bits::CountBitVec, traits::prelude::*};
 use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
