@@ -7,14 +7,17 @@
 
 /*!
 
-Bit vector implementations. There are four flavors:
+Bit vector implementations.
 
-- `BitVec<Vec<usize>>`: a mutable bit vector with a `Vec<usize>` as underlying storage;
+There are two flavors, [`BitVec`], which is mutable, and [`CountBitVec`], which is immutable
+but implements [`BitCount`]. Both depends on an underlying storage, and presently we provide:
+
+- `BitVec<Vec<usize>>`: a mutable, growable bit vector with a `Vec<usize>` as underlying storage;
 - `BitVec<&[usize]>`: a mutable bit vector with a `&[usize]` as underlying storage,
    mainly useful for [`epserde`];
 - `BitVec<Vec<AtomicUsize>>`: a thread-safe mutable bit vector
    with a `Vec<AtomicUsize>` as underlying storage;
-- `CountBitVec<Vec<usize>, usize>`: an immutable bit vector with a `Vec<usize>`
+- `CountBitVec<Vec<usize>>`: an immutable bit vector with a `Vec<usize>`
    as underlying storage that implements [`BitCount`].
 
 It is possible to juggle between the three flavors using [`From`].
@@ -59,6 +62,17 @@ impl<B> BitLength for BitVec<B> {
 }
 
 impl Index<usize> for BitVec<Vec<usize>> {
+    type Output = bool;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match self.get(index) {
+            false => &false,
+            true => &true,
+        }
+    }
+}
+
+impl Index<usize> for BitVec<&[usize]> {
     type Output = bool;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -145,6 +159,23 @@ impl BitVec<Vec<usize>> {
     }
 }
 
+impl BitVec<&[usize]> {
+    /// Return the number of bits set to 1 in this bit vector.
+    ///
+    /// If the feature "rayon" is enabled, this function is parallelized.
+    pub fn count_ones(&self) -> usize {
+        #[cfg(feature = "rayon")]
+        {
+            self.data.par_iter().map(|x| x.count_ones() as usize).sum()
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            self.data.iter().map(|x| x.count_ones() as usize).sum()
+        }
+    }
+}
+
 impl BitVec<Vec<AtomicUsize>> {
     /// Return the number of bits set to 1 in this bit vector.
     ///
@@ -222,6 +253,29 @@ impl BitVec<&[usize]> {
         let word_index = index / BITS;
         let word = self.data.get_unchecked(word_index);
         (word >> (index % BITS)) & 1 != 0
+    }
+}
+
+impl BitVec<&mut [usize]> {
+    pub fn set(&mut self, index: usize, value: bool) {
+        panic_if_out_of_bounds!(index, self.len);
+        unsafe { self.set_unchecked(index, value) }
+    }
+
+    /// # Safety
+    ///
+    /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
+    #[inline(always)]
+    pub unsafe fn set_unchecked(&mut self, index: usize, value: bool) {
+        let word_index = index / BITS;
+        let bit_index = index % BITS;
+
+        // For constant values, this should be inlined with no test.
+        if value {
+            *self.data.get_unchecked_mut(word_index) |= 1 << bit_index;
+        } else {
+            *self.data.get_unchecked_mut(word_index) &= !(1 << bit_index);
+        }
     }
 }
 
@@ -443,6 +497,17 @@ impl Index<usize> for CountBitVec<Vec<usize>> {
     }
 }
 
+impl Index<usize> for CountBitVec<&[usize]> {
+    type Output = bool;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match self.get(index) {
+            false => &false,
+            true => &true,
+        }
+    }
+}
+
 impl<B> CountBitVec<B> {
     /// # Safety
     /// `len` must be between 0 (included) the number of
@@ -462,7 +527,7 @@ impl<B> CountBitVec<B> {
     }
 }
 
-impl CountBitVec<Vec<usize>> {
+impl<B: AsRef<[usize]>> CountBitVec<B> {
     pub fn get(&self, index: usize) -> bool {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.get_unchecked(index) }
@@ -471,7 +536,7 @@ impl CountBitVec<Vec<usize>> {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> bool {
         let word_index = index / BITS;
-        let word = self.data.get_unchecked(word_index);
+        let word = self.data.as_ref().get_unchecked(word_index);
         (word >> (index % BITS)) & 1 != 0
     }
 }
@@ -636,14 +701,16 @@ impl<B: AsRef<[usize]>> AsRef<[usize]> for BitVec<B> {
     }
 }
 
-pub struct BitVecOnesIterator<B> {
+/// An iterator over the ones in an underlying storage.
+pub struct OnesIterator<B> {
     mem_words: B,
     word_idx: usize,
-    /// This is an usize because BitVec is implemented only for `Vec<usize>` and `&[usize]`.
+    /// This is a usize because BitVec is currently implemented only for `Vec<usize>` and `&[usize]`.
     word: usize,
     len: usize,
 }
-impl<B: AsRef<[usize]>> BitVecOnesIterator<B> {
+
+impl<B: AsRef<[usize]>> OnesIterator<B> {
     pub fn new(mem_words: B, len: usize) -> Self {
         let word = if mem_words.as_ref().is_empty() {
             0
@@ -659,7 +726,7 @@ impl<B: AsRef<[usize]>> BitVecOnesIterator<B> {
     }
 }
 
-impl<B: AsRef<[usize]>> Iterator for BitVecOnesIterator<B> {
+impl<B: AsRef<[usize]>> Iterator for OnesIterator<B> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
