@@ -10,7 +10,7 @@ Immutable lists of strings compressed by prefix omission via rear coding.
 
 */
 
-use crate::traits::indexed_dict::IndexedDict;
+use crate::{prelude::IntoValueIterator, traits::indexed_dict::IndexedDict};
 use epserde::*;
 
 #[derive(Debug, Clone, Default)]
@@ -322,7 +322,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
 
     fn contains_unsorted(&self, string: &<Self as IndexedDict>::Input) -> bool {
         let string = string.as_bytes();
-        let mut iter = self.iter();
+        let mut iter = self.iter_val();
         while let Some(buffer) = iter.next_weak() {
             if matches!(strcmp(string, buffer), core::cmp::Ordering::Equal) {
                 return true;
@@ -381,9 +381,6 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
     type Output = String;
     type Input = str;
-    type Iterator<'a> = Iterator<'a, D, P>
-    where
-        Self: 'a;
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
         let mut result = Vec::with_capacity(128);
@@ -394,16 +391,6 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
-    }
-
-    #[inline(always)]
-    fn iter(&self) -> Iterator<'_, D, P> {
-        Iterator::new(self)
-    }
-
-    #[inline(always)]
-    fn iter_from(&self, start_index: usize) -> Iterator<'_, D, P> {
-        Iterator::new_from(self, start_index)
     }
 
     /// Return whether the string is contained in the array.
@@ -492,6 +479,39 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeIterator for Iterator<'a, D, P> {
     fn len(&self) -> usize {
         self.rca.len() - self.index
+    }
+}
+
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IntoValueIterator for RearCodedList<D, P> {
+    type Item = String;
+    type IntoValueIter<'a> = Iterator<'a, D, P>
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn iter_val(&self) -> Iterator<'_, D, P> {
+        Iterator::new(self)
+    }
+
+    #[inline(always)]
+    fn iter_val_from(&self, start_index: usize) -> Iterator<'_, D, P> {
+        Iterator::new_from(self, start_index)
+    }
+}
+
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
+    /// Convenience method that delegates to [`IntoValueIterator::iter_val`]
+    /// and returns an [`ExactSizeIterator`].
+    #[inline(always)]
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = String> + '_ {
+        self.iter_val()
+    }
+
+    /// Convenience method that delegates to [`IntoValueIterator::iter_val_from`]
+    /// and returns an [`ExactSizeIterator`].
+    #[inline(always)]
+    pub fn iter_from(&self, from: usize) -> impl ExactSizeIterator<Item = String> + '_ {
+        self.iter_val_from(from)
     }
 }
 

@@ -255,6 +255,22 @@ impl<W: Word, B: AsRef<[W]>> IntoValueIterator for BitFieldVec<W, W, B> {
     }
 }
 
+impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, W, B> {
+    /// Convenience method that delegates to [`IntoValueIterator::iter_val`]
+    /// and returns an [`ExactSizeIterator`].
+    #[inline(always)]
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = W> + '_ {
+        self.iter_val()
+    }
+
+    /// Convenience method that delegates to [`IntoValueIterator::iter_val_from`]
+    /// and returns an [`ExactSizeIterator`].
+    #[inline(always)]
+    pub fn iter_from(&self, from: usize) -> impl ExactSizeIterator<Item = W> + '_ {
+        self.iter_val_from(from)
+    }
+}
+
 impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, W, B> {
     // We reimplement set as we have the mask in the structure.
 

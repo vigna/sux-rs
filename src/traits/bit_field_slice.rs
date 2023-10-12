@@ -14,16 +14,23 @@ when indexed with [`get`](BitFieldSlice::get) return an owned value
 of a [fixed bit width](BitFieldSliceCore::bit_width). The associated
 implementation is [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec).
 
-Implementing the [`core::ops::Index`]/[`core::ops::IndexMut`] traits
+Implementing the [`Index`](core::ops::Index)/[`IndexMut`](core::ops::IndexMut) traits
 would be more natural and practical, but in certain cases it is impossible:
 in our main use case, [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec),
-we cannot implement [`core::ops::Index`] because there is no way to
+we cannot implement [`Index`](core::ops::Index) because there is no way to
 return a reference to a bit segment.
 
 There are three end-user traits: [`BitFieldSlice`], [`BitFieldSliceMut`] and [`BitFieldSliceAtomic`].
 The trait [`BitFieldSliceCore`] contains the common methods, and in particular
 [`BitFieldSliceCore::bit_width`], which returns the bit width the values stored in the slice.
  All stored values must fit within this bit width.
+
+All the traits depends on a type parameter `W` that must implement [`Word`], and which
+default to `usize`, but any type satisfying the [`Word`] trait
+can be used, with the restriction that the bit width of the slice can be at most
+the bit width of `W` as defined by [`AsBytes::BITS`]. Additionally,
+to implement [`BitFieldSliceAtomic`], `W` must implement [`IntoAtomic`].
+The methods of all traits accept and return values of type `W`.
 
 Note that [`BitFieldSliceAtomic`] has methods with the same names as those in
 [`BitFieldSlice`] and [`BitFieldSliceMut`]. Due to the way methods are resolved,
@@ -37,28 +44,27 @@ If you need to iterate over a [`BitFieldSlice`], you can use [`BitFieldSliceIter
 Implementations must return always zero on a [`BitFieldSlice::get`] when the bit
 width is zero. The behavior of a [`BitFieldSliceMut::set`] in the same context is not defined.
 
-We provide implementations for `Vec<usize>`, `Vec<AtomicUsize>`, `&[usize]`,
-and `&[AtomicUsize]` that view their elements as values with a bit width
-equal to that of `usize`; for those, we also implement
-[`IntoValueIterator`](crate::traits::iter::IntoValueIterator) using a [helper](BitFieldSliceIterator) structure
-that might be useful for other implementations, too.
-
-The implementations based on atomic types implement
-[`BitFieldSliceAtomic`].
+We provide implementations for vectors and slices of all primitive unsigned integer
+types that view their elements as values with a bit width
+equal to that of the type; for those, we also implement
+[`IntoValueIterator`](crate::traits::iter::IntoValueIterator)
+using a [helper](BitFieldSliceIterator) structure
+that might be useful for other implementations, too. We cannot, however, implement
+[`BitFieldSliceAtomic`] for `u128` because there is no atomic type for it.
 
 */
 use common_traits::*;
 use core::sync::atomic::*;
 use std::marker::PhantomData;
 
-// A compound trait collecting the type of unsigned integer types that
+// A derived trait collecting the type of unsigned integer types that
 // can be used as a backend for a bit field slice.
 pub trait Word: UnsignedInt + FiniteRangeNumber + AsBytes {}
 impl<W: UnsignedInt + FiniteRangeNumber + AsBytes> Word for W {}
 
 /// Common methods for [`BitFieldSlice`], [`BitFieldSliceMut`], and [`BitFieldSliceAtomic`].
 ///
-/// The dependence on `V` is necessary to implement this trait on slices, as
+/// The dependence on `W` is necessary to implement this trait on vectors and slices, as
 /// we need the bit width of the values stored in the slice.
 pub trait BitFieldSliceCore<W> {
     /// Return the width of the slice. All elements stored in the slice must
@@ -151,7 +157,7 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
     }
 }
 
-/// A thread-safe slice of bit fields of constant bit width supporting atomic operations.
+/// A (tentatively) thread-safe slice of bit fields of constant bit width supporting atomic operations.
 ///
 /// Different implementations might provide different atomicity guarantees. See
 /// [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec) for an example.
