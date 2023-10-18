@@ -325,7 +325,10 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         let string = string.as_bytes();
         let mut iter = self.iter_lend();
         while let Some(buffer) = iter.next() {
-            if matches!(strcmp(string, buffer), core::cmp::Ordering::Equal) {
+            if matches!(
+                strcmp(string, buffer.as_bytes()),
+                core::cmp::Ordering::Equal
+            ) {
                 return true;
             }
         }
@@ -478,7 +481,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iterator<'a,
 */
 
 impl<'a, 'b, D: AsRef<[u8]>, P: AsRef<[usize]>> LendingIteratorItem<'a> for Iterator<'b, D, P> {
-    type T = &'a [u8];
+    type T = &'a str;
 }
 
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> LendingIterator for Iterator<'a, D, P> {
@@ -486,7 +489,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> LendingIterator for Iterator<'a, D, 
     /// A next that returns a reference to the inner buffer containg the string.
     /// This is useful to avoid allocating a new string for every query if you
     /// don't need to keep the string around.
-    fn next(&mut self) -> Option<&[u8]> {
+    fn next(&mut self) -> Option<&'_ str> {
         if self.index >= self.rca.len() {
             return None;
         }
@@ -502,7 +505,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> LendingIterator for Iterator<'a, D, 
         }
         self.index += 1;
 
-        Some(&self.buffer)
+        Some(unsafe { std::str::from_utf8_unchecked(&self.buffer) })
     }
 }
 
