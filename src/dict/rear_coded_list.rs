@@ -12,6 +12,7 @@ Immutable lists of strings compressed by prefix omission via rear coding.
 
 use crate::{prelude::IntoValueIterator, traits::indexed_dict::IndexedDict};
 use epserde::*;
+use hrtb_lending_iterator::{ExactSizeLendingIterator, LendingIterator, LendingIteratorItem};
 
 #[derive(Debug, Clone, Default)]
 /// Statistics of the encoded data.
@@ -322,8 +323,8 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
 
     fn contains_unsorted(&self, string: &<Self as IndexedDict>::Input) -> bool {
         let string = string.as_bytes();
-        let mut iter = self.iter_val();
-        while let Some(buffer) = iter.next_weak() {
+        let mut iter = self.iter_lend();
+        while let Some(buffer) = iter.next() {
             if matches!(strcmp(string, buffer), core::cmp::Ordering::Equal) {
                 return true;
             }
@@ -376,6 +377,16 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         }
         false
     }
+
+    #[inline(always)]
+    pub fn iter_lend(&self) -> Iterator<'_, D, P> {
+        Iterator::new(self)
+    }
+
+    #[inline(always)]
+    pub fn iter_lend_from(&self, start_index: usize) -> Iterator<'_, D, P> {
+        Iterator::new_from(self, start_index)
+    }
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
@@ -414,6 +425,20 @@ pub struct Iterator<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
     index: usize,
 }
 
+pub struct ValueIterator<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
+    iter: Iterator<'a, D, P>,
+}
+
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for ValueIterator<'a, D, P> {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter
+            .next()
+            .map(|v| unsafe { String::from_utf8_unchecked(Vec::from(v)) })
+    }
+}
+
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
     pub fn new(rca: &'a RearCodedList<D, P>) -> Self {
         Self {
@@ -436,12 +461,12 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
             buffer: Vec::with_capacity(128),
         };
         for _ in 0..offset {
-            res.next_weak();
+            res.next();
         }
         res
     }
 }
-
+/*
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iterator<'a, D, P> {
     type Item = String;
     #[inline(always)]
@@ -450,13 +475,18 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iterator<'a,
             .map(|buffer| String::from_utf8(buffer.to_vec()).unwrap())
     }
 }
+*/
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
+impl<'a, 'b, D: AsRef<[u8]>, P: AsRef<[usize]>> LendingIteratorItem<'a> for Iterator<'b, D, P> {
+    type T = &'a [u8];
+}
+
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> LendingIterator for Iterator<'a, D, P> {
     #[inline]
     /// A next that returns a reference to the inner buffer containg the string.
     /// This is useful to avoid allocating a new string for every query if you
     /// don't need to keep the string around.
-    pub fn next_weak(&mut self) -> Option<&[u8]> {
+    fn next(&mut self) -> Option<&[u8]> {
         if self.index >= self.rca.len() {
             return None;
         }
@@ -476,7 +506,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeIterator for Iterator<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeLendingIterator for Iterator<'a, D, P> {
     fn len(&self) -> usize {
         self.rca.len() - self.index
     }
@@ -484,21 +514,26 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeIterator for Iterator<'a, D
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IntoValueIterator for RearCodedList<D, P> {
     type Item = String;
-    type IntoValueIter<'a> = Iterator<'a, D, P>
+    type IntoValueIter<'a> = ValueIterator<'a, D, P>
     where
         Self: 'a;
 
     #[inline(always)]
-    fn iter_val(&self) -> Iterator<'_, D, P> {
-        Iterator::new(self)
+    fn iter_val(&self) -> ValueIterator<'_, D, P> {
+        ValueIterator {
+            iter: Iterator::new(self),
+        }
     }
 
     #[inline(always)]
-    fn iter_val_from(&self, start_index: usize) -> Iterator<'_, D, P> {
-        Iterator::new_from(self, start_index)
+    fn iter_val_from(&self, start_index: usize) -> ValueIterator<'_, D, P> {
+        ValueIterator {
+            iter: Iterator::new_from(self, start_index),
+        }
     }
 }
 
+/*
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D, P> {
     type Item = String;
     type IntoIter = Iterator<'a, D, P>;
@@ -507,11 +542,11 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D
         self.iter_val()
     }
 }
-
+*/
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
     /// Convenience method that delegates to [`IntoValueIterator::iter_val_from`].
     #[inline(always)]
-    pub fn into_iter_from(&self, from: usize) -> impl ExactSizeIterator<Item = String> + '_ {
+    pub fn into_iter_from(&self, from: usize) -> ValueIterator<'_, D, P> {
         self.iter_val_from(from)
     }
 }

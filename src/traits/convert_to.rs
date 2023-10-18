@@ -18,6 +18,9 @@ use std::sync::atomic::*;
 ///
 /// Other structures, such as [`EliasFano`](crate::dict::elias_fano::EliasFano),
 /// use this trait to add features to a basic implementation.
+///
+/// Note that this trait is intentionally non-reflexive, that is, it does not provide
+/// a blanket implementation of `ConvertTo<A>` for `A`.
 pub trait ConvertTo<B> {
     fn convert_to(self) -> Result<B>;
 }
