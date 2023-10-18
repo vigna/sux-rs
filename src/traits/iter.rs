@@ -42,11 +42,11 @@ pub trait IntoValueIterator {
     type IntoValueIter<'a>: Iterator<Item = Self::Item> + 'a
     where
         Self: 'a;
-    fn iter_val(&self) -> Self::IntoValueIter<'_> {
-        self.iter_val_from(0)
+    fn into_val_iter(&self) -> Self::IntoValueIter<'_> {
+        self.into_val_iter_from(0)
     }
 
-    fn iter_val_from(&self, from: usize) -> Self::IntoValueIter<'_>;
+    fn into_val_iter_from(&self, from: usize) -> Self::IntoValueIter<'_>;
 }
 
 /// A trait for types that can generate an
@@ -57,9 +57,9 @@ pub trait IntoUncheckedValueIterator {
     where
         Self: 'a;
 
-    fn iter_val_unchecked(&self) -> Self::IntoUncheckedValueIter<'_> {
-        self.iter_val_from_unchecked(0)
+    fn into_val_iter_unchecked(&self) -> Self::IntoUncheckedValueIter<'_> {
+        self.into_val_iter_from_unchecked(0)
     }
 
-    fn iter_val_from_unchecked(&self, from: usize) -> Self::IntoUncheckedValueIter<'_>;
+    fn into_val_iter_from_unchecked(&self, from: usize) -> Self::IntoUncheckedValueIter<'_>;
 }

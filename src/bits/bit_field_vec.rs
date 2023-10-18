@@ -243,7 +243,7 @@ impl<W: Word, B: AsRef<[W]>> IntoUncheckedValueIterator for BitFieldVec<W, B> {
     type IntoUncheckedValueIter<'a> = BitFieldVecUncheckedIterator<'a, W, B>
         where B:'a, W:'a ;
 
-    fn iter_val_from_unchecked(&self, from: usize) -> Self::IntoUncheckedValueIter<'_> {
+    fn into_val_iter_from_unchecked(&self, from: usize) -> Self::IntoUncheckedValueIter<'_> {
         BitFieldVecUncheckedIterator::new(self, from)
     }
 }
@@ -290,7 +290,7 @@ impl<W: Word, B: AsRef<[W]>> IntoValueIterator for BitFieldVec<W, B> {
     type IntoValueIter<'a> = BitFieldVecIterator<'a, W, B>
         where B:'a, W: 'a;
 
-    fn iter_val_from(&self, from: usize) -> Self::IntoValueIter<'_> {
+    fn into_val_iter_from(&self, from: usize) -> Self::IntoValueIter<'_> {
         BitFieldVecIterator::new(self, from)
     }
 }

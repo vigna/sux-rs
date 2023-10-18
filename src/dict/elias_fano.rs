@@ -270,7 +270,7 @@ impl<
     /// Commodity method that delegates to [`IntoValueIterator::iter_val`].
     #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
-        self.iter_val()
+        self.into_val_iter()
     }
 }
 
@@ -282,7 +282,7 @@ impl<
     /// Commodity method that delegates to [`IntoValueIterator::iter_val_from`].
     #[inline(always)]
     pub fn into_iter_from(&self, from: usize) -> EliasFanoIterator<'_, H, L> {
-        self.iter_val_from(from)
+        self.into_val_iter_from(from)
     }
 }
 
@@ -318,12 +318,12 @@ impl<
         Self: 'a;
     #[inline(always)]
 
-    fn iter_val(&self) -> Self::IntoValueIter<'_> {
+    fn into_val_iter(&self) -> Self::IntoValueIter<'_> {
         EliasFanoIterator::new(self)
     }
 
     #[inline(always)]
-    fn iter_val_from(&self, start_index: usize) -> Self::IntoValueIter<'_> {
+    fn into_val_iter_from(&self, start_index: usize) -> Self::IntoValueIter<'_> {
         EliasFanoIterator::new_from(self, start_index)
     }
 }
@@ -379,7 +379,7 @@ impl<
             index: 0,
             word_idx: 0,
             window: word,
-            low_bits: ef.low_bits.iter_val_unchecked(),
+            low_bits: ef.low_bits.into_val_iter_unchecked(),
         }
     }
 
@@ -405,7 +405,7 @@ impl<
             index: start_index,
             word_idx,
             window,
-            low_bits: ef.low_bits.iter_val_from_unchecked(start_index),
+            low_bits: ef.low_bits.into_val_iter_from_unchecked(start_index),
         }
     }
 }
@@ -463,7 +463,7 @@ impl<
         };
 
         let mut rank = bit_pos - zeros_to_skip;
-        let mut iter = self.low_bits.iter_val_from_unchecked(rank);
+        let mut iter = self.low_bits.into_val_iter_from_unchecked(rank);
         let mut word_idx = bit_pos / (usize::BITS as usize);
         let bits_to_clean = bit_pos % (usize::BITS as usize);
 

@@ -12,7 +12,9 @@ Immutable lists of strings compressed by prefix omission via rear coding.
 
 use crate::{prelude::IntoValueIterator, traits::indexed_dict::IndexedDict};
 use epserde::*;
-use hrtb_lending_iterator::{ExactSizeLendingIterator, LendingIterator, LendingIteratorItem};
+use hrtb_lending_iterator::{
+    ExactSizeLendingIterator, IntoLendingIterator, LendingIterator, LendingIteratorItem,
+};
 
 #[derive(Debug, Clone, Default)]
 /// Statistics of the encoded data.
@@ -321,14 +323,11 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         }
     }
 
-    fn contains_unsorted(&self, string: &<Self as IndexedDict>::Input) -> bool {
-        let string = string.as_bytes();
-        let mut iter = self.iter_lend();
-        while let Some(buffer) = iter.next() {
-            if matches!(
-                strcmp(string, buffer.as_bytes()),
-                core::cmp::Ordering::Equal
-            ) {
+    fn contains_unsorted(&self, key: &<Self as IndexedDict>::Input) -> bool {
+        let key = key.as_bytes();
+        let mut iter = self.into_lend_iter();
+        while let Some(string) = iter.next() {
+            if matches!(strcmp(key, string.as_bytes()), core::cmp::Ordering::Equal) {
                 return true;
             }
         }
@@ -380,15 +379,14 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         }
         false
     }
+}
 
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLendingIterator for &'a RearCodedList<D, P> {
+    type Item<'b> = &'b str;
+    type IntoIter = Iterator<'a, D, P>;
     #[inline(always)]
-    pub fn iter_lend(&self) -> Iterator<'_, D, P> {
+    fn into_lend_iter(self) -> Iterator<'a, D, P> {
         Iterator::new(self)
-    }
-
-    #[inline(always)]
-    pub fn iter_lend_from(&self, start_index: usize) -> Iterator<'_, D, P> {
-        Iterator::new_from(self, start_index)
     }
 }
 
@@ -522,35 +520,34 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IntoValueIterator for RearCodedList<D, P
         Self: 'a;
 
     #[inline(always)]
-    fn iter_val(&self) -> ValueIterator<'_, D, P> {
+    fn into_val_iter(&self) -> ValueIterator<'_, D, P> {
         ValueIterator {
             iter: Iterator::new(self),
         }
     }
 
     #[inline(always)]
-    fn iter_val_from(&self, start_index: usize) -> ValueIterator<'_, D, P> {
+    fn into_val_iter_from(&self, start_index: usize) -> ValueIterator<'_, D, P> {
         ValueIterator {
             iter: Iterator::new_from(self, start_index),
         }
     }
 }
 
-/*
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D, P> {
     type Item = String;
-    type IntoIter = Iterator<'a, D, P>;
+    type IntoIter = ValueIterator<'a, D, P>;
     #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
-        self.iter_val()
+        self.into_val_iter()
     }
 }
-*/
+
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
     /// Convenience method that delegates to [`IntoValueIterator::iter_val_from`].
     #[inline(always)]
     pub fn into_iter_from(&self, from: usize) -> ValueIterator<'_, D, P> {
-        self.iter_val_from(from)
+        self.into_val_iter_from(from)
     }
 }
 
