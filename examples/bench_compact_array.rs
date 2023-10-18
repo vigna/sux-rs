@@ -75,7 +75,7 @@ pub fn main() {
         }
         pl.done_with_count(args.n);
 
-        let mut iter = a.iter_val_unchecked();
+        let mut iter = a.into_val_iter_unchecked();
         pl.item_name = "item";
         pl.start("Scanning (unchecked) ...");
         for _ in 0..args.n {
