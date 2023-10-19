@@ -793,16 +793,14 @@ fn test_longest_common_prefix() {
 }
 
 #[cfg(test)]
-fn read_into_lend_iter<I: LendingIterator, L: IntoLendingIterator<IntoIter = I>>(
-    into_iter: L,
-) -> usize
+fn read_into_lend_iter<L: IntoLendingIterator>(into_iter: L) -> usize
 where
-    for<'a> I: LendingIteratorItem<'a, T = &'a str>,
+    for<'a> <L::IntoIter as LendingIteratorItem<'a>>::T: AsRef<str>,
 {
     let mut iter = into_iter.into_lend_iter();
     let mut c = 0;
     while let Some(s) = iter.next() {
-        c += s.len();
+        c += s.as_ref().len();
     }
 
     return c;
@@ -817,5 +815,5 @@ fn test_into_lend() {
     builder.push("c");
     builder.push("d");
     let rcl = builder.build();
-    read_into_lend_iter(&rcl);
+    read_into_lend_iter::<&RearCodedList>(&rcl);
 }
