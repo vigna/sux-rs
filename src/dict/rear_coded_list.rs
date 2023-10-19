@@ -382,7 +382,6 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
 }
 
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLendingIterator for &'a RearCodedList<D, P> {
-    type Item<'b> = &'b str;
     type IntoIter = Iterator<'a, D, P>;
     #[inline(always)]
     fn into_lend_iter(self) -> Iterator<'a, D, P> {
@@ -791,4 +790,32 @@ fn test_longest_common_prefix() {
         longest_common_prefix(str2, str2),
         (str2.len(), core::cmp::Ordering::Equal)
     );
+}
+
+#[cfg(test)]
+fn read_into_lend_iter<I: LendingIterator, L: IntoLendingIterator<IntoIter = I>>(
+    into_iter: L,
+) -> usize
+where
+    for<'a> I: LendingIteratorItem<'a, T = &'a str>,
+{
+    let mut iter = into_iter.into_lend_iter();
+    let mut c = 0;
+    while let Some(s) = iter.next() {
+        c += s.len();
+    }
+
+    return c;
+}
+
+#[cfg(test)]
+#[cfg_attr(test, test)]
+fn test_into_lend() {
+    let mut builder = RearCodedListBuilder::new(4);
+    builder.push("a");
+    builder.push("b");
+    builder.push("c");
+    builder.push("d");
+    let rcl = builder.build();
+    read_into_lend_iter(&rcl);
 }
