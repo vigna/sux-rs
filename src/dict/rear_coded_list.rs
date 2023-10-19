@@ -382,7 +382,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
 }
 
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLendingIterator for &'a RearCodedList<D, P> {
-    type IntoIter = Iterator<'a, D, P>;
+    type IntoLendIter = Iterator<'a, D, P>;
     #[inline(always)]
     fn into_lend_iter(self) -> Iterator<'a, D, P> {
         Iterator::new(self)
@@ -478,7 +478,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iterator<'a,
 */
 
 impl<'a, 'b, D: AsRef<[u8]>, P: AsRef<[usize]>> LendingIteratorItem<'a> for Iterator<'b, D, P> {
-    type T = &'a str;
+    type Type = &'a str;
 }
 
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> LendingIterator for Iterator<'a, D, P> {
@@ -795,7 +795,7 @@ fn test_longest_common_prefix() {
 #[cfg(test)]
 fn read_into_lend_iter<L: IntoLendingIterator>(into_iter: L) -> usize
 where
-    for<'a> <L::IntoIter as LendingIteratorItem<'a>>::T: AsRef<str>,
+    for<'a> <L::IntoLendIter as LendingIteratorItem<'a>>::Type: AsRef<str>,
 {
     let mut iter = into_iter.into_lend_iter();
     let mut c = 0;

@@ -33,7 +33,6 @@ rand = {version="0.8.5", features=["small_rng"]}
 zstd = "0.12.4"
 tempfile = "3.8.0"
 xxh3 = "0.1.1"
-#hrtb-lending-iterator = "0.1.0"
-hrtb-lending-iterator = { git = "https://github.com/vigna/hrtb-lending-iterator-rs" }
+hrtb-lending-iterator = "0.2.0"
 [features]
 default = ["rayon"]
