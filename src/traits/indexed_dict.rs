@@ -120,9 +120,3 @@ where
     /// The predecessor must exist.
     unsafe fn pred_unchecked(&self, value: &Self::Input) -> (usize, Self::Output);
 }
-
-fn pippo<D: IndexedDict>(d: D)
-where
-    for<'a> &'a D: Iterator<Item = D::Output>,
-{
-}

@@ -107,7 +107,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         }
         let mut result = Self::new(max_len, slice.len());
         for i in 0..slice.len() {
-            unsafe { result.set(i, slice.get(i).cast()) };
+            unsafe { result.set_unchecked(i, slice.get_unchecked(i).cast()) };
         }
 
         Ok(result)
