@@ -17,9 +17,10 @@ pub mod utils;
 
 pub mod prelude {
     pub use crate::bits::*;
-    pub use crate::dict::prelude::*;
+    pub use crate::dict::*;
     pub use crate::func::*;
-    pub use crate::rank_sel::prelude::*;
-    pub use crate::traits::prelude::*;
+    pub use crate::rank_sel::*;
+    pub use crate::traits::bit_field_slice;
+    pub use crate::traits::*;
     pub use crate::utils::*;
 }

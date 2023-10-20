@@ -1,7 +1,14 @@
+/*
+ *
+ * SPDX-FileCopyrightText: 2023 Tommaso Fontana
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ */
+
 use crate::{bits::prelude::CountBitVec, traits::prelude::*};
 use common_traits::SelectInWord;
 use epserde::*;
-#[cfg(feature="rayon")]
+#[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
 /// Two layer index (with interleaved layers) optimized for
@@ -25,12 +32,11 @@ impl<
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > SimpleSelectHalf<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{   
+{
     const ONES_PER_INVENTORY: usize = 1 << LOG2_ONES_PER_INVENTORY;
     const U64_PER_SUBINVENTORY: usize = 1 << LOG2_U64_PER_SUBINVENTORY;
 
-    const LOG2_ONES_PER_SUB64: usize =
-        LOG2_ONES_PER_INVENTORY - LOG2_U64_PER_SUBINVENTORY;
+    const LOG2_ONES_PER_SUB64: usize = LOG2_ONES_PER_INVENTORY - LOG2_U64_PER_SUBINVENTORY;
     const ONES_PER_SUB64: usize = 1 << Self::LOG2_ONES_PER_SUB64;
 
     const LOG2_ONES_PER_SUB16: usize = Self::LOG2_ONES_PER_SUB64 - 2;
@@ -45,9 +51,10 @@ impl<
 {
     pub fn new(bitvec: B) -> Self {
         // estimate the number of ones with our core assumption!
-        let expected_ones = bitvec.len() / 2; 
+        let expected_ones = bitvec.len() / 2;
         // number of inventories we will create
-		let inventory_size = 1 + (expected_ones + Self::ONES_PER_INVENTORY - 1) / Self::ONES_PER_INVENTORY;
+        let inventory_size =
+            1 + (expected_ones + Self::ONES_PER_INVENTORY - 1) / Self::ONES_PER_INVENTORY;
         // inventory_size, an u64 for the first layer index, and Self::U64_PER_SUBINVENTORY for the sub layer
         let mut inventory = vec![0; inventory_size];
         // scan the bitvec and fill the first layer of the inventory
@@ -73,11 +80,11 @@ impl<
         inventory[ptr] = bitvec.len() as u64;
 
         // build the index (in parallel if rayon enabled)
-        #[cfg(feature="rayon")]
+        #[cfg(feature = "rayon")]
         let iter = (0..inventory_size).into_par_iter();
-        #[cfg(not(feature="rayon"))]
+        #[cfg(not(feature = "rayon"))]
         let iter = (0..inventory_size);
-    
+
         // fill the second layer of the index
         let data = bitvec.as_ref();
         iter.for_each(|inventory_idx| {
@@ -85,19 +92,13 @@ impl<
             let span = inventory[start_idx + 1] - inventory[start_idx];
             if span < u16::MAX as u64 {
                 // dense
-
             } else {
                 // sparse
-                for word in data.iter().enumerate() {
-                    
-                }
+                for word in data.iter().enumerate() {}
             }
         });
 
-        Self {
-            bitvec,
-            inventory,
-        }
+        Self { bitvec, inventory }
     }
 }
 
@@ -112,16 +113,19 @@ impl<
     #[inline(always)]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         // find the index of the first level inventory
-		let inventory_index = rank / Self::ONES_PER_INVENTORY;
+        let inventory_index = rank / Self::ONES_PER_INVENTORY;
         // find the index of the second level inventory
-		let subrank = rank % Self::ONES_PER_INVENTORY;
+        let subrank = rank % Self::ONES_PER_INVENTORY;
         // find the position of the first index value in the interleaved inventory
         let start_idx = inventory_index * (1 + Self::U64_PER_SUBINVENTORY);
         // read the potentially unaliged i64 (i.e. the first index value)
         let inventory_rank = *self.inventory.as_ref().get_unchecked(start_idx) as i64;
         // get a reference to the u64s in this subinventory
         let sub_start_idx = start_idx + 1 + subrank;
-        let u64s = self.inventory.as_ref().get_unchecked(sub_start_idx..sub_start_idx + Self::U64_PER_SUBINVENTORY);
+        let u64s = self
+            .inventory
+            .as_ref()
+            .get_unchecked(sub_start_idx..sub_start_idx + Self::U64_PER_SUBINVENTORY);
         // if the inventory_rank is positive, the subranks are u16s otherwise they are u64s
         let (pos, residual) = if inventory_rank >= 0 {
             // dense case, read the u16s
@@ -134,7 +138,7 @@ impl<
                 subrank % Self::ONES_PER_SUB16,
             )
         } else {
-			debug_assert!(subrank < Self::U64_PER_SUBINVENTORY);
+            debug_assert!(subrank < Self::U64_PER_SUBINVENTORY);
             // sparse case, read the u64s
             (
                 (-inventory_rank - 1) as u64 + *u64s.get_unchecked(subrank / Self::ONES_PER_SUB16),
@@ -142,7 +146,8 @@ impl<
             )
         };
         // linear scan to finish the search
-        self.bitvec.select_hinted_unchecked(rank, pos as usize, rank - residual)
+        self.bitvec
+            .select_hinted_unchecked(rank, pos as usize, rank - residual)
     }
 }
 

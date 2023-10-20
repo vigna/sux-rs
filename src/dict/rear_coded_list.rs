@@ -10,11 +10,9 @@ Immutable lists of strings compressed by prefix omission via rear coding.
 
 */
 
-use crate::{prelude::IntoValueIterator, traits::indexed_dict::IndexedDict};
+use crate::{traits::IndexedDict, traits::IntoValueIterator};
 use epserde::*;
-use hrtb_lending_iterator::{
-    ExactSizeLendingIterator, IntoLendingIterator, LendingIterator, LendingIteratorItem,
-};
+use hrtb_lending_iterator::*;
 
 #[derive(Debug, Clone, Default)]
 /// Statistics of the encoded data.

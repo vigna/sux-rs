@@ -15,9 +15,3 @@ pub use quantum_zero_index::*;
 
 //mod simple_select_half;
 //pub use simple_select_half::*;
-
-pub mod prelude {
-    pub use super::quantum_index::QuantumIndex;
-    pub use super::quantum_zero_index::QuantumZeroIndex;
-    //pub use super::simple_select_half::SimpleSelectHalf;
-}

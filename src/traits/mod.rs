@@ -12,16 +12,17 @@ Main traits for succinct data structures.
 */
 
 pub mod bit_field_slice;
-pub mod convert_to;
-pub mod indexed_dict;
-pub mod iter;
-pub mod rank_sel;
+pub use bit_field_slice::BitFieldSliceCore;
+pub use bit_field_slice::BitFieldSliceIterator;
 
-pub mod prelude {
-    pub use super::bit_field_slice::BitFieldSliceCore;
-    pub use super::bit_field_slice::BitFieldSliceIterator;
-    pub use super::convert_to::*;
-    pub use super::indexed_dict::*;
-    pub use super::iter::*;
-    pub use super::rank_sel::*;
-}
+pub mod convert_to;
+pub use convert_to::*;
+
+pub mod indexed_dict;
+pub use indexed_dict::*;
+
+pub mod iter;
+pub use iter::*;
+
+pub mod rank_sel;
+pub use rank_sel::*;
