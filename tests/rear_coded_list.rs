@@ -33,8 +33,14 @@ fn test_rear_coded_list() -> Result<()> {
     }
 
     // test that the iter is correct
-    for (i, word) in rca.into_val_iter().enumerate() {
+    for (i, word) in rca.into_iter().enumerate() {
         assert_eq!(word, words[i]);
+    }
+
+    for from in 0..rca.len() {
+        for (i, word) in rca.into_iter_from(from).enumerate() {
+            assert_eq!(word, words[i + from]);
+        }
     }
 
     assert!(!rca.contains(""));

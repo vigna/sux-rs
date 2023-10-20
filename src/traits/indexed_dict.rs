@@ -12,8 +12,6 @@ operations such as predecessor and successor.
 
 */
 
-use crate::prelude::IntoValueIterator;
-
 /**
 
 A dictionary of values indexed by a `usize`.
@@ -21,8 +19,14 @@ A dictionary of values indexed by a `usize`.
 The input and output values may be different, to make it easier to implement
 compressed structures (see, e.g., [rear-coded lists](crate::dict::rear_coded_list::RearCodedList)).
 
+It is suggested that any implementation of this trait also implements
+[`IntoIterator`] with `Item = Self::Output` on a reference. This property can be tested
+on a type `D` with the clause `where for<'a> &'a D: IntoIterator<Item = Self::Output>`.
+Many implementations offer also a method `into_iter_from` that returns an iterator
+starting at a given position in the dictionary.
+
 */
-pub trait IndexedDict: IntoValueIterator<Item = Self::Output> {
+pub trait IndexedDict {
     type Input: PartialEq<Self::Output> + PartialEq + ?Sized;
     type Output: PartialEq<Self::Input> + PartialEq;
 
