@@ -253,7 +253,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, B> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> UncheckedValueIterator for BitFieldVecUncheckedIterator<'a, W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> UncheckedIterator for BitFieldVecUncheckedIterator<'a, W, B> {
     type Item = W;
     unsafe fn next_unchecked(&mut self) -> W {
         if self.fill >= self.vec.bit_width {
@@ -274,12 +274,10 @@ impl<'a, W: Word, B: AsRef<[W]>> UncheckedValueIterator for BitFieldVecUnchecked
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> IntoUncheckedValueIterator for BitFieldVec<W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedIterator for &'a BitFieldVec<W, B> {
     type Item = W;
-    type IntoUncheckedValueIter<'a> = BitFieldVecUncheckedIterator<'a, W, B>
-        where B:'a, W:'a ;
-
-    fn into_val_iter_from_unchecked(&self, from: usize) -> Self::IntoUncheckedValueIter<'_> {
+    type IntoUncheckedIter = BitFieldVecUncheckedIterator<'a, W, B>;
+    fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter {
         BitFieldVecUncheckedIterator::new(self, from)
     }
 }

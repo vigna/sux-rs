@@ -18,7 +18,7 @@ Traits for iterators, possibly [unchecked](crate::traits::iter::IntoUncheckedVal
 /// that the iteration is safe, and can use this unsafe
 /// trait to iterate very cheaply over each structure. See the implementation
 /// of [`EliasFanoIterator`](crate::dict::elias_fano::EliasFanoIterator) for an example.
-pub trait UncheckedValueIterator {
+pub trait UncheckedIterator {
     type Item;
     /// Return the next item in the iterator. If there is no next item,
     /// the result is undefined.
@@ -27,17 +27,15 @@ pub trait UncheckedValueIterator {
     unsafe fn next_unchecked(&mut self) -> Self::Item;
 }
 
-/// A trait for types that can generate an
+/// A trait for types that can turn into an
 /// [unchecked iterator on values](UncheckedValueIterator), rather than on references.
-pub trait IntoUncheckedValueIterator {
+pub trait IntoUncheckedIterator: Sized {
     type Item;
-    type IntoUncheckedValueIter<'a>: UncheckedValueIterator<Item = Self::Item> + 'a
-    where
-        Self: 'a;
+    type IntoUncheckedIter: UncheckedIterator<Item = Self::Item>;
 
-    fn into_val_iter_unchecked(&self) -> Self::IntoUncheckedValueIter<'_> {
-        self.into_val_iter_from_unchecked(0)
+    fn into_unchecked_iter(self) -> Self::IntoUncheckedIter {
+        self.into_unchecked_iter_from(0)
     }
 
-    fn into_val_iter_from_unchecked(&self, from: usize) -> Self::IntoUncheckedValueIter<'_>;
+    fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter;
 }
