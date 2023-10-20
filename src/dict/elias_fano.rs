@@ -259,10 +259,9 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<
-        H: AsRef<[usize]> + Select,
-        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
-    > IndexedDict for EliasFano<H, L>
+impl<H: AsRef<[usize]> + Select, L: BitFieldSlice<usize>> IndexedDict for EliasFano<H, L>
+where
+    for<'a> &'a L: IntoUncheckedIterator<Item = usize>,
 {
     type Output = usize;
     type Input = usize;
@@ -280,11 +279,9 @@ impl<
     }
 }
 
-impl<
-        'a,
-        H: AsRef<[usize]> + Select,
-        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
-    > IntoIterator for &'a EliasFano<H, L>
+impl<'a, H: AsRef<[usize]> + Select, L: BitFieldSlice<usize>> IntoIterator for &'a EliasFano<H, L>
+where
+    &'a L: IntoUncheckedIterator<Item = usize>,
 {
     type Item = usize;
     type IntoIter = EliasFanoIterator<'a, H, L>;
@@ -295,10 +292,9 @@ impl<
     }
 }
 
-impl<
-        H: AsRef<[usize]> + Select,
-        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
-    > EliasFano<H, L>
+impl<H: AsRef<[usize]> + Select, L: BitFieldSlice<usize>> EliasFano<H, L>
+where
+    for<'a> &'a L: IntoUncheckedIterator<Item = usize>,
 {
     pub fn into_iter_from(&self, from: usize) -> EliasFanoIterator<'_, H, L> {
         EliasFanoIterator::new_from(self, from)
@@ -323,11 +319,10 @@ where
 }
 
 /// An iterator streaming over the Elias--Fano representation.
-pub struct EliasFanoIterator<
-    'a,
-    H: AsRef<[usize]>,
-    L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
-> {
+pub struct EliasFanoIterator<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize>>
+where
+    &'a L: IntoUncheckedIterator<Item = usize>,
+{
     ef: &'a EliasFano<H, L>,
     /// The index of the next value it will be returned when `next` is called.
     index: usize,
@@ -336,14 +331,12 @@ pub struct EliasFanoIterator<
     /// Current window on the high bits.
     /// This is an usize because BitVec is implemented only for `Vec<usize>` and `&[usize]`.
     window: usize,
-    low_bits: <L as IntoUncheckedValueIterator>::IntoUncheckedValueIter<'a>,
+    low_bits: <&'a L as IntoUncheckedIterator>::IntoUncheckedIter,
 }
 
-impl<
-        'a,
-        H: Select + AsRef<[usize]>,
-        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
-    > EliasFanoIterator<'a, H, L>
+impl<'a, H: Select + AsRef<[usize]>, L: BitFieldSlice<usize>> EliasFanoIterator<'a, H, L>
+where
+    &'a L: IntoUncheckedIterator<Item = usize>,
 {
     pub fn new(ef: &'a EliasFano<H, L>) -> Self {
         let word = if ef.high_bits.as_ref().is_empty() {
@@ -356,7 +349,7 @@ impl<
             index: 0,
             word_idx: 0,
             window: word,
-            low_bits: ef.low_bits.into_val_iter_unchecked(),
+            low_bits: ef.low_bits.into_unchecked_iter(),
         }
     }
 
@@ -382,13 +375,14 @@ impl<
             index: start_index,
             word_idx,
             window,
-            low_bits: ef.low_bits.into_val_iter_from_unchecked(start_index),
+            low_bits: ef.low_bits.into_unchecked_iter_from(start_index),
         }
     }
 }
 
-impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>>
-    Iterator for EliasFanoIterator<'a, H, L>
+impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize>> Iterator for EliasFanoIterator<'a, H, L>
+where
+    &'a L: IntoUncheckedIterator<Item = usize>,
 {
     type Item = usize;
 
@@ -416,8 +410,10 @@ impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize> + IntoUncheckedValueIterator
     }
 }
 
-impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>>
-    ExactSizeIterator for EliasFanoIterator<'a, H, L>
+impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize>> ExactSizeIterator
+    for EliasFanoIterator<'a, H, L>
+where
+    &'a L: IntoUncheckedIterator<Item = usize>,
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -425,10 +421,9 @@ impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize> + IntoUncheckedValueIterator
     }
 }
 
-impl<
-        H: SelectZero + Select + AsRef<[usize]>,
-        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
-    > Succ for EliasFano<H, L>
+impl<H: SelectZero + Select + AsRef<[usize]>, L: BitFieldSlice<usize>> Succ for EliasFano<H, L>
+where
+    for<'a> &'a L: IntoUncheckedIterator<Item = usize>,
 {
     unsafe fn succ_unchecked(&self, value: &Self::Input) -> (usize, Self::Output) {
         debug_assert!(*value <= self.get(self.len() - 1));
@@ -440,7 +435,7 @@ impl<
         };
 
         let mut rank = bit_pos - zeros_to_skip;
-        let mut iter = self.low_bits.into_val_iter_from_unchecked(rank);
+        let mut iter = self.low_bits.into_unchecked_iter_from(rank);
         let mut word_idx = bit_pos / (usize::BITS as usize);
         let bits_to_clean = bit_pos % (usize::BITS as usize);
 

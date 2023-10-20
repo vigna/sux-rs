@@ -45,7 +45,7 @@ fn test_bit_field_vec() {
             }
 
             for from in 0..cp.len() {
-                let mut iter = cp.into_val_iter_from_unchecked(from);
+                let mut iter = cp.into_unchecked_iter_from(from);
                 for v in &values[from..] {
                     unsafe {
                         assert_eq!(iter.next_unchecked(), *v);
