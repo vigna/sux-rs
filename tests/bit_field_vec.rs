@@ -145,3 +145,32 @@ fn test_from_slice() {
     }
     assert!(BitFieldVec::<u8>::from_slice(&c).is_err())
 }
+
+#[test]
+fn test_push() {
+    use sux::traits::bit_field_slice::BitFieldSlice;
+
+    let mut c = BitFieldVec::new(12, 0);
+    for i in 0..1000 {
+        c.push(i);
+    }
+    for i in 0..1000 {
+        assert_eq!(c.get(i), i);
+    }
+}
+
+#[test]
+fn test_resize() {
+    use sux::traits::bit_field_slice::BitFieldSlice;
+
+    let mut c = BitFieldVec::new(12, 0);
+    c.resize(100, 2_usize);
+    for i in 0..100 {
+        assert_eq!(c.get(i), 2);
+    }
+    c.resize(50, 0);
+    for i in 0..50 {
+        assert_eq!(c.get(i), 2);
+    }
+    assert_eq!(c.len(), 50);
+}

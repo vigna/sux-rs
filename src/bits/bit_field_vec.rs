@@ -118,6 +118,39 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         let word_index = pos / W::BITS;
         (&self.data[word_index]) as *const _
     }
+
+    pub fn push(&mut self, value: W) {
+        panic_if_value!(value, self.mask, self.bit_width);
+        if (self.len + 1) * self.bit_width > self.data.len() * W::BITS {
+            self.data.push(W::ZERO);
+        }
+        unsafe {
+            self.set_unchecked(self.len, value);
+        }
+        self.len += 1;
+    }
+
+    pub fn extend(&mut self, i: impl IntoIterator<Item = W>) {
+        for value in i {
+            self.push(value);
+        }
+    }
+
+    pub fn resize(&mut self, new_len: usize, value: W) {
+        panic_if_value!(value, self.mask, self.bit_width);
+        if new_len > self.len {
+            if new_len * self.bit_width > self.data.len() * W::BITS {
+                self.data
+                    .resize((new_len * self.bit_width + W::BITS - 1) / W::BITS, W::ZERO);
+            }
+            for i in self.len..new_len {
+                unsafe {
+                    self.set_unchecked(i, value);
+                }
+            }
+        }
+        self.len = new_len;
+    }
 }
 
 impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {

@@ -100,6 +100,35 @@ fn test_bit_vec() {
 }
 
 #[test]
+fn test_push() {
+    let mut b = BitVec::new(0);
+    b.push(true);
+    b.push(false);
+    assert!(b.get(0));
+    assert!(!b.get(1));
+    for i in 2..200 {
+        b.push(i % 2 == 0);
+    }
+    for i in 2..200 {
+        assert_eq!(b.get(i), i % 2 == 0);
+    }
+}
+
+#[test]
+fn test_resize() {
+    let mut c = BitVec::new(0);
+    c.resize(100, true);
+    for i in 0..100 {
+        assert!(c.get(i));
+    }
+    c.resize(50, false);
+    for i in 0..50 {
+        assert_eq!(c.get(i), true);
+    }
+    assert_eq!(c.len(), 50);
+}
+
+#[test]
 fn test_epserde() {
     let mut rng = SmallRng::seed_from_u64(0);
     let mut b = BitVec::new(200);
