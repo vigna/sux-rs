@@ -22,7 +22,7 @@ but implements [`BitCount`]. Both depends on an underlying storage, and presentl
 
 It is possible to juggle between the three flavors using [`From`].
  */
-use crate::traits::prelude::*;
+use crate::traits::*;
 use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
