@@ -35,11 +35,11 @@ boundary-crossing value, then no race condition can happen.
 
 use crate::prelude::*;
 use crate::traits::bit_field_slice::*;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use common_traits::*;
 use epserde::*;
 use std::sync::atomic::*;
-#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Epserde, Debug, Clone, Hash)]
 
 pub struct BitFieldVec<W = usize, B = Vec<W>> {
     /// The underlying storage.
@@ -82,6 +82,35 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
             mask: mask(bit_width),
             len,
         }
+    }
+
+    /// Create a new vector by copying a slice; the bit width will be the minimum
+    /// width sufficient to hold all values in the slice.
+    ///
+    /// Returns an error if the bit width of the values in `slice` is larger than
+    /// `W::BITS`.
+    pub fn from_slice<SW: Word>(slice: &impl BitFieldSlice<SW>) -> Result<Self>
+    where
+        SW: CastableInto<W>,
+    {
+        let mut max_len: usize = 0;
+        for i in 0..slice.len() {
+            max_len = Ord::max(max_len, unsafe { slice.get_unchecked(i).len() as usize });
+        }
+
+        if max_len > W::BITS {
+            bail!(
+                "Cannot convert a slice of bit width {} into a slice with W = {}",
+                max_len,
+                std::any::type_name::<W>()
+            );
+        }
+        let mut result = Self::new(max_len, slice.len());
+        for i in 0..slice.len() {
+            unsafe { result.set(i, slice.get(i).cast()) };
+        }
+
+        Ok(result)
     }
 
     pub fn address_of(&self, index: usize) -> *const W {

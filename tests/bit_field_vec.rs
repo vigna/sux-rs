@@ -124,3 +124,24 @@ fn test_width_zero() {
         assert_eq!(c.get(i), 0);
     }
 }
+
+#[test]
+fn test_from_slice() {
+    use sux::traits::bit_field_slice::BitFieldSlice;
+    use sux::traits::bit_field_slice::BitFieldSliceMut;
+
+    let mut c = BitFieldVec::new(12, 1000);
+    for i in 0..c.len() {
+        c.set(i, i)
+    }
+
+    let s = BitFieldVec::<usize>::from_slice(&c).unwrap();
+    for i in 0..c.len() {
+        assert_eq!(s.get(i) as usize, c.get(i));
+    }
+    let s = BitFieldVec::<u16>::from_slice(&c).unwrap();
+    for i in 0..c.len() {
+        assert_eq!(s.get(i) as usize, c.get(i));
+    }
+    assert!(BitFieldVec::<u8>::from_slice(&c).is_err())
+}
