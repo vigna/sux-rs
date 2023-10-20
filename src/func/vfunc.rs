@@ -246,7 +246,7 @@ where
                 .min(10.0) // More than 1000 chunks make no sense
                 .min((num_keys / PARAMS[PARAMS.len() - 1].0).ilog2() as f64) // Let's keep the chunks in the 1.10 regime
                     as u32;
-                max_num_threads = (1 << chunk_high_bits) / 8;
+                max_num_threads = 1.max((1 << chunk_high_bits) / 8);
                 (_, l, c) = PARAMS[PARAMS.len() - 1];
             }
 
@@ -313,9 +313,11 @@ where
 
             let chunk = AtomicUsize::new(0);
             let fail = AtomicBool::new(false);
+            let num_threads = num_chunks.min(num_cpus::get()).min(max_num_threads);
+            info!("Using {} threads", num_threads);
 
             thread::scope(|s| {
-                for _ in 0..num_chunks.min(num_cpus::get()).min(max_num_threads) {
+                for _ in 0..num_threads {
                     s.spawn(|| loop {
                         let chunk = chunk.fetch_add(1, Relaxed);
                         if chunk >= num_chunks {
@@ -536,7 +538,7 @@ where
                 .min(10.0) // More than 1000 chunks make no sense
                 .min((num_keys / PARAMS[PARAMS.len() - 1].0).ilog2() as f64) // Let's keep the chunks in the 1.10 regime
                     as u32;
-                max_num_threads = (1 << chunk_high_bits) / 8;
+                max_num_threads = 1.max((1 << chunk_high_bits) / 8);
                 (_, l, c) = PARAMS[PARAMS.len() - 1];
             }
 
@@ -588,9 +590,11 @@ where
 
             let fail = AtomicBool::new(false);
             let mutex = std::sync::Arc::new(Mutex::new(chunk_store));
+            let num_threads = num_chunks.min(num_cpus::get()).min(max_num_threads);
+            info!("Using {} threads", num_threads);
 
             thread::scope(|s| {
-                for _ in 0..num_chunks.min(num_cpus::get()).min(max_num_threads) {
+                for _ in 0..num_threads {
                     s.spawn(|| loop {
                         let chunks;
                         {
@@ -674,6 +678,7 @@ where
                             }
                             if chunk.len() != stack.len() {
                                 fail.store(true, Ordering::Relaxed);
+                                return;
                             }
 
                             pl.done_with_count(chunk.len());
