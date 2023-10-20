@@ -1,14 +1,15 @@
 # `sux-rs`
 
-A pure Rust implementation of succinct data structures.
+A pure Rust implementation of succinct and compressed data structures.
 
 This crate is a work in progress: 
-part of it  is a port from [Sux](https://sux.di.unimi.it/);
-new succinct data structures will be added over time. Presently,
+part of it  is a port from [Sux](https://sux.di.unimi.it/) and from [the DSI Utilities](https://dsiutils.di.unimi.it/);
+new data structures will be added over time. Presently,
 we provide:
 
 - the [`BitFieldSlice`](crate::traits::bit_field_slice::BitFieldSlice) trait---an
   alternative to [`Index`](core::ops::Index) returning values of fixed bit width;
+- an implementation of [bit vectors](crate::bits::BitVec) and of [vectors of bit fields of fixed with](crate::bits::BitFieldVec);
 - traits for building blocks and structures like [`Rank`](crate::traits::rank_sel::Rank) , 
   [`Select`](crate::traits::rank_sel::Select), and [`IndexedDict`](crate::traits::indexed_dict::IndexedDict);
 - an implementation of the [Elias--Fano representation of monotone sequences](crate::dict::elias_fano::EliasFano);

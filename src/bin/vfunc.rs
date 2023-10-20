@@ -14,7 +14,7 @@ use sux::utils::file::FilenameIntoIterator;
 use sux::utils::FilenameZstdIntoIterator;
 
 #[derive(Parser, Debug)]
-#[command(about = "Generate a function and serialize it with ε-serde", long_about = None)]
+#[command(about = "Generate a function mapping each input to its rank and serialize it with ε-serde", long_about = None)]
 #[clap(group(
             ArgGroup::new("input")
                 .required(true)
