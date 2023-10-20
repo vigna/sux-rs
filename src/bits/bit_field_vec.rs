@@ -7,7 +7,7 @@
 
 /*!
 
-A vector of values of fixed bit width.
+Vectors of values of fixed bit width.
 
 Elements are stored contiguously, with no padding bits (in particular,
 unless the bit width is a power of two some elements will be stored
@@ -40,6 +40,7 @@ use common_traits::*;
 use epserde::*;
 use std::sync::atomic::*;
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
+
 pub struct BitFieldVec<W = usize, B = Vec<W>> {
     /// The underlying storage.
     data: B,
@@ -81,6 +82,12 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
             mask: mask(bit_width),
             len,
         }
+    }
+
+    pub fn address_of(&self, index: usize) -> *const W {
+        let pos = index * W::BITS;
+        let word_index = pos / W::BITS;
+        (&self.data[word_index]) as *const _
     }
 }
 

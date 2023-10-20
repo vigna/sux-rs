@@ -5,13 +5,6 @@
 * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
 */
 
-/*!
-
-No-nonsense static functions with 10%-11% space overhead,
-fast parallel construction, and fast queries.
-
-*/
-
 use crate::bits::*;
 use crate::prelude::*;
 use crate::traits::bit_field_slice::{self, Word};
@@ -79,9 +72,17 @@ impl EdgeList {
 
 /**
 
-A static function from key implementing [ToSig] to arbitrary values.
+No-nonsense static functions with 10%-11% space overhead for large key sets,
+fast parallel construction, and fast queries.
+
+Keys must implement the [`ToSig`] trait, which provides a method to
+compute a 128-bit signature of the key.
+
+The output type `O` can be selected to be any of the unsigned integer types
+with an atomic counterpart; The default is `usize`.
 
 */
+
 #[derive(Epserde, Debug, Default)]
 pub struct VFunc<
     T: ToSig,

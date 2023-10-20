@@ -7,8 +7,8 @@
 
 /*!
 
-Classes for [bit vectors](`bit_vec::BitVec`) and
-[vectors of values of bounded bit width](`bit_field_vec::BitFieldVec`).
+Structures for [bit vectors](`bit_vec`) and
+[vectors of values of bounded bit width](`bit_field_vec`).
 
 */
 
