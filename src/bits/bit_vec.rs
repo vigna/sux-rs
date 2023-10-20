@@ -89,6 +89,39 @@ impl BitVec<Vec<usize>> {
             len,
         }
     }
+
+    pub fn push(&mut self, b: bool) {
+        if self.data.len() * usize::BITS as usize == self.len {
+            self.data.push(0);
+        }
+        let word_index = self.len / BITS;
+        let bit_index = self.len % BITS;
+        self.data[word_index] |= (b as usize) << bit_index;
+        self.len += 1;
+    }
+
+    pub fn extend(&mut self, i: impl IntoIterator<Item = bool>) {
+        for b in i {
+            self.push(b);
+        }
+    }
+
+    pub fn resize(&mut self, new_len: usize, value: bool) {
+        if new_len > self.len {
+            if new_len > self.data.len() * usize::BITS as usize {
+                self.data.resize(
+                    (new_len + usize::BITS as usize - 1) / usize::BITS as usize,
+                    0,
+                );
+            }
+            for i in self.len..new_len {
+                unsafe {
+                    self.set_unchecked(i, value);
+                }
+            }
+        }
+        self.len = new_len;
+    }
 }
 
 impl AtomicBitVec<Vec<AtomicUsize>> {
