@@ -7,8 +7,7 @@
 
 /*!
 
-Traits for iterators based on [values](crate::traits::iter::IntoValueIterator),
-possibly [unchecked](crate::traits::iter::IntoUncheckedValueIterator).
+Traits for iterators, possibly [unchecked](crate::traits::iter::IntoUncheckedValueIterator).
 
 */
 
@@ -26,27 +25,6 @@ pub trait UncheckedValueIterator {
     /// # Safety
     /// The caller must ensure that there is a next item.
     unsafe fn next_unchecked(&mut self) -> Self::Item;
-}
-
-/// A trait for types that can generate an iterator on values, rather than on references.
-///
-/// To avoid clashes in types that implement both [`IntoValueIterator`] and
-/// [`IntoIterator`], the methods of this trait have the
-/// infix `_val`. However, implementors are invited, if it is convenient,
-/// to implement [`IntoIterator`] on a reference to the type
-/// delegating to the implementation of this trait, and implement also on the type
-/// an `into_iter_from` method (see, for examples, the implementation in
-/// [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec)).
-pub trait IntoValueIterator {
-    type Item;
-    type IntoValueIter<'a>: Iterator<Item = Self::Item> + 'a
-    where
-        Self: 'a;
-    fn into_val_iter(&self) -> Self::IntoValueIter<'_> {
-        self.into_val_iter_from(0)
-    }
-
-    fn into_val_iter_from(&self, from: usize) -> Self::IntoValueIter<'_>;
 }
 
 /// A trait for types that can generate an

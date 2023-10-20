@@ -10,7 +10,7 @@ Immutable lists of strings compressed by prefix omission via rear coding.
 
 */
 
-use crate::{traits::IndexedDict, traits::IntoValueIterator};
+use crate::traits::IndexedDict;
 use epserde::*;
 use hrtb_lending_iterator::*;
 
@@ -510,41 +510,22 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeLendingIterator for Iterato
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IntoValueIterator for RearCodedList<D, P> {
-    type Item = String;
-    type IntoValueIter<'a> = ValueIterator<'a, D, P>
-    where
-        Self: 'a;
-
-    #[inline(always)]
-    fn into_val_iter(&self) -> ValueIterator<'_, D, P> {
-        ValueIterator {
-            iter: Iterator::new(self),
-        }
-    }
-
-    #[inline(always)]
-    fn into_val_iter_from(&self, start_index: usize) -> ValueIterator<'_, D, P> {
-        ValueIterator {
-            iter: Iterator::new_from(self, start_index),
-        }
-    }
-}
-
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D, P> {
     type Item = String;
     type IntoIter = ValueIterator<'a, D, P>;
     #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
-        self.into_val_iter()
+        ValueIterator {
+            iter: Iterator::new(self),
+        }
     }
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
-    /// Convenience method that delegates to [`IntoValueIterator::iter_val_from`].
-    #[inline(always)]
     pub fn into_iter_from(&self, from: usize) -> ValueIterator<'_, D, P> {
-        self.into_val_iter_from(from)
+        ValueIterator {
+            iter: Iterator::new_from(self, from),
+        }
     }
 }
 

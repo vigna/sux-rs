@@ -260,33 +260,6 @@ impl<H, L> EliasFano<H, L> {
 }
 
 impl<
-        'a,
-        H: AsRef<[usize]> + Select,
-        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
-    > IntoIterator for &'a EliasFano<H, L>
-{
-    type Item = usize;
-    type IntoIter = EliasFanoIterator<'a, H, L>;
-    /// Commodity method that delegates to [`IntoValueIterator::iter_val`].
-    #[inline(always)]
-    fn into_iter(self) -> Self::IntoIter {
-        self.into_val_iter()
-    }
-}
-
-impl<
-        H: AsRef<[usize]> + Select,
-        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
-    > EliasFano<H, L>
-{
-    /// Commodity method that delegates to [`IntoValueIterator::iter_val_from`].
-    #[inline(always)]
-    pub fn into_iter_from(&self, from: usize) -> EliasFanoIterator<'_, H, L> {
-        self.into_val_iter_from(from)
-    }
-}
-
-impl<
         H: AsRef<[usize]> + Select,
         L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
     > IndexedDict for EliasFano<H, L>
@@ -308,23 +281,27 @@ impl<
 }
 
 impl<
+        'a,
         H: AsRef<[usize]> + Select,
         L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
-    > IntoValueIterator for EliasFano<H, L>
+    > IntoIterator for &'a EliasFano<H, L>
 {
     type Item = usize;
-    type IntoValueIter<'a> = EliasFanoIterator<'a, H, L>
-    where
-        Self: 'a;
+    type IntoIter = EliasFanoIterator<'a, H, L>;
     #[inline(always)]
 
-    fn into_val_iter(&self) -> Self::IntoValueIter<'_> {
+    fn into_iter(self) -> Self::IntoIter {
         EliasFanoIterator::new(self)
     }
+}
 
-    #[inline(always)]
-    fn into_val_iter_from(&self, start_index: usize) -> Self::IntoValueIter<'_> {
-        EliasFanoIterator::new_from(self, start_index)
+impl<
+        H: AsRef<[usize]> + Select,
+        L: BitFieldSlice<usize> + IntoUncheckedValueIterator<Item = usize>,
+    > EliasFano<H, L>
+{
+    pub fn into_iter_from(&self, from: usize) -> EliasFanoIterator<'_, H, L> {
+        EliasFanoIterator::new_from(self, from)
     }
 }
 

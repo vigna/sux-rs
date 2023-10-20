@@ -44,11 +44,11 @@ use std::sync::atomic::*;
 pub struct BitFieldVec<W = usize, B = Vec<W>> {
     /// The underlying storage.
     data: B,
-    /// The bit width of the values stored in the array.
+    /// The bit width of the values stored in the vector.
     bit_width: usize,
     /// A mask with its lowest `bit_width` bits set to one.
     mask: W,
-    /// The length of the array.
+    /// The length of the vector.
     len: usize,
 }
 
@@ -56,11 +56,11 @@ pub struct BitFieldVec<W = usize, B = Vec<W>> {
 pub struct AtomicBitFieldVec<W: IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
     /// The underlying storage.
     data: B,
-    /// The bit width of the values stored in the array.
+    /// The bit width of the values stored in the vector.
     bit_width: usize,
     /// A mask with its lowest `bit_width` bits set to one.
     mask: W,
-    /// The length of the array.
+    /// The length of the vector.
     len: usize,
 }
 
@@ -219,21 +219,21 @@ impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
 }
 
 pub struct BitFieldVecUncheckedIterator<'a, W, B> {
-    array: &'a BitFieldVec<W, B>,
+    vec: &'a BitFieldVec<W, B>,
     word_index: usize,
     window: W,
     fill: usize,
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, B> {
-    fn new(array: &'a BitFieldVec<W, B>, index: usize) -> Self {
-        if index > array.len() {
-            panic!("Start index out of bounds: {} > {}", index, array.len());
+    fn new(vec: &'a BitFieldVec<W, B>, index: usize) -> Self {
+        if index > vec.len() {
+            panic!("Start index out of bounds: {} > {}", index, vec.len());
         }
-        let bit_offset = index * array.bit_width;
+        let bit_offset = index * vec.bit_width;
         let word_index = bit_offset / usize::BITS as usize;
         let fill;
-        let window = if index == array.len() {
+        let window = if index == vec.len() {
             fill = 0;
             W::ZERO
         } else {
@@ -241,11 +241,11 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, B> {
             fill = usize::BITS as usize - bit_index;
             unsafe {
                 // SAFETY: index has been check at the start and it is within bounds
-                *array.data.as_ref().get_unchecked(word_index) >> bit_index
+                *vec.data.as_ref().get_unchecked(word_index) >> bit_index
             }
         };
         Self {
-            array,
+            vec,
             word_index,
             window,
             fill,
@@ -256,18 +256,18 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, B> {
 impl<'a, W: Word, B: AsRef<[W]>> UncheckedValueIterator for BitFieldVecUncheckedIterator<'a, W, B> {
     type Item = W;
     unsafe fn next_unchecked(&mut self) -> W {
-        if self.fill >= self.array.bit_width {
-            self.fill -= self.array.bit_width;
-            let res = self.window & self.array.mask;
-            self.window >>= self.array.bit_width;
+        if self.fill >= self.vec.bit_width {
+            self.fill -= self.vec.bit_width;
+            let res = self.window & self.vec.mask;
+            self.window >>= self.vec.bit_width;
             return res;
         }
 
         let res = self.window;
         self.word_index += 1;
-        self.window = *self.array.data.as_ref().get_unchecked(self.word_index);
-        let res = (res | (self.window << self.fill)) & self.array.mask;
-        let used = self.array.bit_width - self.fill;
+        self.window = *self.vec.data.as_ref().get_unchecked(self.word_index);
+        let res = (res | (self.window << self.fill)) & self.vec.mask;
+        let used = self.vec.bit_width - self.fill;
         self.window >>= used;
         self.fill = usize::BITS as usize - used;
         res
@@ -290,13 +290,13 @@ pub struct BitFieldVecIterator<'a, W, B> {
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, B> {
-    fn new(array: &'a BitFieldVec<W, B>, index: usize) -> Self {
-        if index > array.len() {
-            panic!("Start index out of bounds: {} > {}", index, array.len());
+    fn new(vec: &'a BitFieldVec<W, B>, from: usize) -> Self {
+        if from > vec.len() {
+            panic!("Start index out of bounds: {} > {}", from, vec.len());
         }
         Self {
-            unchecked: BitFieldVecUncheckedIterator::new(array, index),
-            index,
+            unchecked: BitFieldVecUncheckedIterator::new(vec, from),
+            index: from,
         }
     }
 }
@@ -304,7 +304,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, B> {
 impl<'a, W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, B> {
     type Item = W;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.unchecked.array.len() {
+        if self.index < self.unchecked.vec.len() {
             // SAFETY: index has just been checked.
             let res = unsafe { self.unchecked.next_unchecked() };
             self.index += 1;
@@ -317,16 +317,21 @@ impl<'a, W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, B> {
 
 impl<'a, W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'a, W, B> {
     fn len(&self) -> usize {
-        self.unchecked.array.len() - self.index
+        self.unchecked.vec.len() - self.index
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> IntoValueIterator for BitFieldVec<W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> IntoIterator for &'a BitFieldVec<W, B> {
     type Item = W;
-    type IntoValueIter<'a> = BitFieldVecIterator<'a, W, B>
-        where B:'a, W: 'a;
+    type IntoIter = BitFieldVecIterator<'a, W, B>;
 
-    fn into_val_iter_from(&self, from: usize) -> Self::IntoValueIter<'_> {
+    fn into_iter(self) -> Self::IntoIter {
+        BitFieldVecIterator::new(self, 0)
+    }
+}
+
+impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
+    pub fn into_iter_from(&self, from: usize) -> BitFieldVecIterator<W, B> {
         BitFieldVecIterator::new(self, from)
     }
 }
