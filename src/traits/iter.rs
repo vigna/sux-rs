@@ -7,7 +7,7 @@
 
 /*!
 
-Traits for iterators, possibly [unchecked](crate::traits::iter::IntoUncheckedValueIterator).
+Unchecked iterators.
 
 */
 

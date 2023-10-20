@@ -7,7 +7,9 @@
 
 /*!
 
-Main traits for succinct data structures.
+Main traits used in the implementation of succinct and compressed data structures.
+
+See the discussion in [`bit_field_slice`] about the re-export of its traits.
 
 */
 
