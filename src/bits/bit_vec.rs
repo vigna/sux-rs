@@ -9,16 +9,19 @@
 
 Bit vector implementations.
 
-There are two flavors, [`BitVec`], which is mutable, and [`CountBitVec`], which is immutable
-but implements [`BitCount`]. Both depends on an underlying storage, and presently we provide:
+There are three flavors:
+- [`BitVec`], a mutable bit vector;
+- [`CountBitVec`], an immutable bit vector that sports a constant-time implementation of [`BitCount`];
+- [`AtomicBitVec`], a mutable, thread-safe bit vector.
 
-- `BitVec<Vec<usize>>`: a mutable, growable bit vector with a `Vec<usize>` as underlying storage;
-- `BitVec<&[usize]>`: a mutable bit vector with a `&[usize]` as underlying storage,
-   mainly useful for [`epserde`];
-- `AtomicBitVec<Vec<AtomicUsize>>`: a thread-safe mutable bit vector
-   with a `Vec<AtomicUsize>` as underlying storage;
-- `CountBitVec<Vec<usize>>`: an immutable bit vector with a `Vec<usize>`
-   as underlying storage that implements [`BitCount`].
+These flavors depends on a backend, and presently we provide:
+
+- `BitVec<Vec<usize>>`: a mutable, growable and resizable bit vector;
+- `BitVec<AsRef<[usize]>>`: an immutable bit vector mainly useful for [`epserde`];
+- `BitVec<AsRef<[usize]> + AsMut<[usize]>>`: a mutable (but not resizable) bit
+   vector;
+- `CountBitVec<AsRef<[usize]>>`: an immutable bit vector;
+- `AtomicBitVec<AsRef<[AtomicUsize]>>`: a thread-safe, mutable (but not resizable) bit vector.
 
 It is possible to juggle between the three flavors using [`From`].
  */
@@ -35,20 +38,15 @@ use std::{
 
 const BITS: usize = usize::BITS as usize;
 
-/// A bit vector with selectable backend. We provide implementations
-/// for slices and vectors of `usize`.
 #[derive(Epserde, Debug)]
+/// A bit vector.
 pub struct BitVec<B = Vec<usize>> {
     data: B,
     len: usize,
 }
 
-/// A bit vector with selectable backend. We provide implementations
-/// for `Vec<AtomicUsize>`.
-///
-/// [`AtomicBitVec::get`]
-/// and [`AtomicBitVec::set`] are both thread-safe, as they both take an immutable reference.
 #[derive(Debug)]
+/// A thread-safe bit vector.
 pub struct AtomicBitVec<B = Vec<AtomicUsize>> {
     data: B,
     len: usize,
@@ -468,7 +466,7 @@ impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
     }
 }
 
-/// An immutable bit vector that returns the number of ones.
+/// An immutable bit vector with a constant-time implementation of [`BitCount`].
 #[derive(Epserde, Debug)]
 pub struct CountBitVec<B = Vec<usize>> {
     data: B,

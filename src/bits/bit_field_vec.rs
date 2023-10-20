@@ -31,6 +31,10 @@ up in different threads succeding in writing only part of a value.
 If the user can guarantee that no two threads ever write to the same
 boundary-crossing value, then no race condition can happen.
 
+Note that some care must be exercised when using the methods of
+[`BitFieldSlice`], [`BitFieldSliceMut`] and [`AtomicBitFieldSlice`]:
+see the discussions in documentation of [`bit_field_slice`].
+
 */
 
 use crate::prelude::*;
@@ -41,6 +45,7 @@ use epserde::*;
 use std::sync::atomic::*;
 #[derive(Epserde, Debug, Clone, Hash)]
 
+/// A vector of bit fields of fixed width.
 pub struct BitFieldVec<W = usize, B = Vec<W>> {
     /// The underlying storage.
     data: B,
@@ -53,6 +58,7 @@ pub struct BitFieldVec<W = usize, B = Vec<W>> {
 }
 
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
+/// A tentatively thread-safe vector of bit fields of fixed width.
 pub struct AtomicBitFieldVec<W: IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
     /// The underlying storage.
     data: B,
@@ -251,6 +257,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
     }
 }
 
+/// An [`UncheckedIterator`] over the values of a [`BitFieldVec`].
 pub struct BitFieldVecUncheckedIterator<'a, W, B> {
     vec: &'a BitFieldVec<W, B>,
     word_index: usize,
@@ -315,6 +322,7 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedIterator for &'a BitFieldVec<W, B>
     }
 }
 
+/// An [`Iterator`] over the values of a [`BitFieldVec`].
 pub struct BitFieldVecIterator<'a, W, B> {
     unchecked: BitFieldVecUncheckedIterator<'a, W, B>,
     index: usize,
