@@ -35,6 +35,13 @@ Note that some care must be exercised when using the methods of
 [`BitFieldSlice`], [`BitFieldSliceMut`] and [`AtomicBitFieldSlice`]:
 see the discussions in documentation of [`bit_field_slice`].
 
+For high-speed unchecked scanning, we implement
+[`IntoUncheckedIterator`] and [`IntoReverseUncheckedIterator`] on a reference
+to this type. The are used, for example, to provide
+[predecessor](crate::traits::indexed_dict::Pred) and
+[successor](crate::traits::indexed_dict::Succ) primitives
+for [Elias-Fano](crate::dict::elias_fano::EliasFano).
+
 */
 
 use crate::prelude::*;
@@ -257,28 +264,32 @@ impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
     }
 }
 
+// Support for unchecked iterators
+
 /// An [`UncheckedIterator`] over the values of a [`BitFieldVec`].
-pub struct BitFieldVecUncheckedIterator<'a, W, B> {
+pub struct BitFieldVectorUncheckedIterator<'a, W, B> {
     vec: &'a BitFieldVec<W, B>,
     word_index: usize,
     window: W,
     fill: usize,
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> BitFieldVectorUncheckedIterator<'a, W, B> {
     fn new(vec: &'a BitFieldVec<W, B>, index: usize) -> Self {
         if index > vec.len() {
             panic!("Start index out of bounds: {} > {}", index, vec.len());
         }
-        let bit_offset = index * vec.bit_width;
-        let word_index = bit_offset / usize::BITS as usize;
-        let fill;
+        let (fill, word_index);
         let window = if index == vec.len() {
+            word_index = 0;
             fill = 0;
             W::ZERO
         } else {
-            let bit_index = bit_offset % usize::BITS as usize;
-            fill = usize::BITS as usize - bit_index;
+            let bit_offset = index * vec.bit_width;
+            let bit_index = bit_offset % W::BITS as usize;
+
+            word_index = bit_offset / W::BITS as usize;
+            fill = W::BITS as usize - bit_index;
             unsafe {
                 // SAFETY: index has been check at the start and it is within bounds
                 *vec.data.as_ref().get_unchecked(word_index) >> bit_index
@@ -293,13 +304,17 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIterator<'a, W, B> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> UncheckedIterator for BitFieldVecUncheckedIterator<'a, W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
+    for BitFieldVectorUncheckedIterator<'a, W, B>
+{
     type Item = W;
     unsafe fn next_unchecked(&mut self) -> W {
-        if self.fill >= self.vec.bit_width {
-            self.fill -= self.vec.bit_width;
+        let bit_width = self.vec.bit_width;
+
+        if self.fill >= bit_width {
+            self.fill -= bit_width;
             let res = self.window & self.vec.mask;
-            self.window >>= self.vec.bit_width;
+            self.window >>= bit_width;
             return res;
         }
 
@@ -307,24 +322,96 @@ impl<'a, W: Word, B: AsRef<[W]>> UncheckedIterator for BitFieldVecUncheckedItera
         self.word_index += 1;
         self.window = *self.vec.data.as_ref().get_unchecked(self.word_index);
         let res = (res | (self.window << self.fill)) & self.vec.mask;
-        let used = self.vec.bit_width - self.fill;
+        let used = bit_width - self.fill;
         self.window >>= used;
-        self.fill = usize::BITS as usize - used;
+        self.fill = W::BITS as usize - used;
         res
     }
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedIterator for &'a BitFieldVec<W, B> {
     type Item = W;
-    type IntoUncheckedIter = BitFieldVecUncheckedIterator<'a, W, B>;
+    type IntoUncheckedIter = BitFieldVectorUncheckedIterator<'a, W, B>;
     fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter {
-        BitFieldVecUncheckedIterator::new(self, from)
+        BitFieldVectorUncheckedIterator::new(self, from)
+    }
+}
+
+/// An [`UncheckedIterator`] moving backwards over the values of a [`BitFieldVec`].
+pub struct BitFieldVectorReverseUncheckedIterator<'a, W, B> {
+    vec: &'a BitFieldVec<W, B>,
+    word_index: usize,
+    window: W,
+    fill: usize,
+}
+
+impl<'a, W: Word, B: AsRef<[W]>> BitFieldVectorReverseUncheckedIterator<'a, W, B> {
+    fn new(vec: &'a BitFieldVec<W, B>, index: usize) -> Self {
+        if index > vec.len() {
+            panic!("Start index out of bounds: {} > {}", index, vec.len());
+        }
+        let (word_index, fill);
+
+        let window = if index == 0 {
+            word_index = 0;
+            fill = 0;
+            W::ZERO
+        } else {
+            // We have to handle the case of zero bit width
+            let bit_offset = (index * vec.bit_width).saturating_sub(1);
+            let bit_index = bit_offset % W::BITS as usize;
+
+            word_index = bit_offset / W::BITS as usize;
+            fill = bit_index + 1;
+            unsafe {
+                // SAFETY: index has been check at the start and it is within bounds
+                *vec.data.as_ref().get_unchecked(word_index) << (W::BITS - fill)
+            }
+        };
+        Self {
+            vec,
+            word_index,
+            window,
+            fill,
+        }
+    }
+}
+
+impl<'a, W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
+    for BitFieldVectorReverseUncheckedIterator<'a, W, B>
+{
+    type Item = W;
+    unsafe fn next_unchecked(&mut self) -> W {
+        let bit_width = self.vec.bit_width;
+
+        if self.fill >= bit_width {
+            self.fill -= bit_width;
+            self.window = self.window.rotate_left(bit_width as u32);
+            return self.window & self.vec.mask;
+        }
+
+        let mut res = self.window.rotate_left(self.fill as u32);
+        self.word_index -= 1;
+        self.window = *self.vec.data.as_ref().get_unchecked(self.word_index);
+        let used = bit_width - self.fill;
+        res = ((res << used) | self.window >> W::BITS - used) & self.vec.mask;
+        self.window <<= used;
+        self.fill = W::BITS as usize - used;
+        res
+    }
+}
+
+impl<'a, W: Word, B: AsRef<[W]>> IntoReverseUncheckedIterator for &'a BitFieldVec<W, B> {
+    type Item = W;
+    type IntoRevUncheckedIter = BitFieldVectorReverseUncheckedIterator<'a, W, B>;
+    fn into_rev_unchecked_iter_from(self, from: usize) -> Self::IntoRevUncheckedIter {
+        BitFieldVectorReverseUncheckedIterator::new(self, from)
     }
 }
 
 /// An [`Iterator`] over the values of a [`BitFieldVec`].
 pub struct BitFieldVecIterator<'a, W, B> {
-    unchecked: BitFieldVecUncheckedIterator<'a, W, B>,
+    unchecked: BitFieldVectorUncheckedIterator<'a, W, B>,
     index: usize,
 }
 
@@ -334,7 +421,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, B> {
             panic!("Start index out of bounds: {} > {}", from, vec.len());
         }
         Self {
-            unchecked: BitFieldVecUncheckedIterator::new(vec, from),
+            unchecked: BitFieldVectorUncheckedIterator::new(vec, from),
             index: from,
         }
     }
