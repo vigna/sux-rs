@@ -32,25 +32,25 @@ the bit width of `W` as defined by [`AsBytes::BITS`]. Additionally,
 to implement [`AtomicBitFieldSlice`], `W` must implement [`IntoAtomic`].
 The methods of all traits accept and return values of type `W`.
 
+If you need to iterate over a [`BitFieldSlice`], you can use [`BitFieldSliceIterator`].
+
 Note that [`AtomicBitFieldSlice`] has methods with the same names as those in
 [`BitFieldSlice`] and [`BitFieldSliceMut`]. Due to the way methods are resolved,
 this might cause problems if you have have imported all traits. We suggest that,
-unless you are using only of the two variants, you import globally only [`BitFieldSliceCore`],
-importing the other traits only in the functions of modules that needs them. For
-this reason, only [`BitFieldSliceCore`] is glob-imported in the prelude.
-
-If you need to iterate over a [`BitFieldSlice`], you can use [`BitFieldSliceIterator`].
+unless you are using only of the two variants, you import globally only [`BitFieldSliceCore`]
+and possibly [`BitFieldSliceIterator`],
+importing the other traits only in the functions of modules that needs them. This is what
+the re-exports in [`traits`](crate::traits) do.
 
 Implementations must return always zero on a [`BitFieldSlice::get`] when the bit
 width is zero. The behavior of a [`BitFieldSliceMut::set`] in the same context is not defined.
 
-We provide implementations for vectors and slices of all primitive unsigned integer
-types that view their elements as values with a bit width
-equal to that of the type; for those, we also implement
-[`IntoValueIterator`](crate::traits::iter::IntoValueIterator)
-using a [helper](BitFieldSliceIterator) structure
-that might be useful for other implementations, too. We cannot, however, implement
-[`AtomicBitFieldSlice`] for `u128` because there is no atomic type for it.
+It is suggested that types implementing [`BitFieldSlice`] implement on a reference
+[`IntoIterator`] with item `W` using [`BitFieldSliceIterator`] as helper.
+
+We provide implementations for vectors and slices of all primitive atomic and non-atomic
+unsigned integer types that view their elements as values with a bit width
+equal to that of the type.
 
 */
 use common_traits::*;
@@ -198,7 +198,7 @@ where
             panic_if_out_of_bounds!(index, self.len());
         }
         let bw = self.bit_width();
-        // TODO Maybe testless?
+
         let mask = if bw == 0 {
             W::ZERO
         } else {
@@ -211,12 +211,9 @@ where
     }
 }
 
-/// A ready-made implementation of [`BitFieldSliceIterator`].
+/// An [`Iterator`] implementation returning the elements of a [`BitFieldSlice`].
 ///
-/// We cannot implement [`IntoValueIterator`](crate::traits::iter::IntoValueIterator) for [`BitFieldSlice`]
-/// because it would be impossible to override in implementing classes,
-/// but you can implement [`IntoValueIterator`](crate::traits::iter::IntoValueIterator) for your implementation
-/// of [`BitFieldSlice`] by using this structure.
+/// You can easily implement [`IntoIterator`] on a reference to your type using this structure.
 pub struct BitFieldSliceIterator<'a, W: Word, B: BitFieldSlice<W>> {
     slice: &'a B,
     index: usize,
@@ -224,13 +221,13 @@ pub struct BitFieldSliceIterator<'a, W: Word, B: BitFieldSlice<W>> {
 }
 
 impl<'a, V: Word, B: BitFieldSlice<V>> BitFieldSliceIterator<'a, V, B> {
-    pub fn new(slice: &'a B, index: usize) -> Self {
-        if index > slice.len() {
-            panic!("Start index out of bounds: {} > {}", index, slice.len());
+    pub fn new(slice: &'a B, from: usize) -> Self {
+        if from > slice.len() {
+            panic!("Start index out of bounds: {} > {}", from, slice.len());
         }
         Self {
             slice,
-            index,
+            index: from,
             _marker: PhantomData,
         }
     }
@@ -250,6 +247,8 @@ impl<'a, W: Word, B: BitFieldSlice<W>> Iterator for BitFieldSliceIterator<'a, W,
     }
 }
 
+// Implementations for slices of non-atomic types
+
 macro_rules! impl_core {
     ($($ty:ty),*) => {$(
         impl<T: AsRef<[$ty]>> BitFieldSliceCore<$ty> for T {
@@ -267,6 +266,36 @@ macro_rules! impl_core {
 
 impl_core!(u8, u16, u32, u64, u128, usize);
 
+macro_rules! impl_ref {
+    ($($ty:ty),*) => {$(
+        impl<T: AsRef<[$ty]>> BitFieldSlice<$ty> for T {
+            #[inline(always)]
+            unsafe fn get_unchecked(&self, index: usize) -> $ty {
+                debug_assert_bounds!(index, self.len());
+                *self.as_ref().get_unchecked(index)
+            }
+        }
+    )*};
+}
+
+impl_ref!(u8, u16, u32, u64, u128, usize);
+
+macro_rules! impl_mut {
+    ($($ty:ty),*) => {$(
+        impl<T: AsMut<[$ty]> + AsRef<[$ty]>> BitFieldSliceMut<$ty> for T {
+            #[inline(always)]
+            unsafe fn set_unchecked(&mut self, index: usize, value: $ty) {
+                debug_assert_bounds!(index, self.len());
+                *self.as_mut().get_unchecked_mut(index) = value;
+            }
+        }
+    )*};
+}
+
+impl_mut!(u8, u16, u32, u64, u128, usize);
+
+// Implementations for slices of atomic types
+
 macro_rules! impl_core_atomic {
     ($($aty:ty),*) => {$(
         impl<T: AsRef<[$aty]>> BitFieldSliceCore<$aty> for T {
@@ -283,20 +312,6 @@ macro_rules! impl_core_atomic {
 }
 
 impl_core_atomic!(AtomicU8, AtomicU16, AtomicU32, AtomicU64, AtomicUsize);
-
-macro_rules! impl_ref {
-    ($($ty:ty),*) => {$(
-        impl<T: AsRef<[$ty]>> BitFieldSlice<$ty> for T {
-            #[inline(always)]
-            unsafe fn get_unchecked(&self, index: usize) -> $ty {
-                debug_assert_bounds!(index, self.len());
-                *self.as_ref().get_unchecked(index)
-            }
-        }
-    )*};
-}
-
-impl_ref!(u8, u16, u32, u64, u128, usize);
 
 macro_rules! impl_atomic {
     ($std:ty, $atomic:ty) => {
@@ -320,17 +335,3 @@ impl_atomic!(u16, AtomicU16);
 impl_atomic!(u32, AtomicU32);
 impl_atomic!(u64, AtomicU64);
 impl_atomic!(usize, AtomicUsize);
-
-macro_rules! impl_mut {
-    ($($ty:ty),*) => {$(
-        impl<T: AsMut<[$ty]> + AsRef<[$ty]>> BitFieldSliceMut<$ty> for T {
-            #[inline(always)]
-            unsafe fn set_unchecked(&mut self, index: usize, value: $ty) {
-                debug_assert_bounds!(index, self.len());
-                *self.as_mut().get_unchecked_mut(index) = value;
-            }
-        }
-    )*};
-}
-
-impl_mut!(u8, u16, u32, u64, u128, usize);
