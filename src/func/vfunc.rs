@@ -40,18 +40,20 @@ const PARAMS: [(usize, usize, f64); 15] = [
 #[derive(Debug, Default)]
 struct EdgeList(usize);
 impl EdgeList {
-    const DEG_SHIFT: usize = usize::BITS as usize - 10;
+    const DEG_SHIFT: usize = usize::BITS as usize - 16;
     const EDGE_INDEX_MASK: usize = (1_usize << EdgeList::DEG_SHIFT) - 1;
     const DEG: usize = 1_usize << EdgeList::DEG_SHIFT;
 
     #[inline(always)]
     fn add(&mut self, edge: usize) {
-        self.0 += EdgeList::DEG | edge;
+        self.0 += EdgeList::DEG;
+        self.0 ^= edge;
     }
 
     #[inline(always)]
     fn remove(&mut self, edge: usize) {
-        self.0 -= EdgeList::DEG | edge;
+        self.0 -= EdgeList::DEG;
+        self.0 ^= edge;
     }
 
     #[inline(always)]
