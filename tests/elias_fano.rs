@@ -55,7 +55,7 @@ fn test_elias_fano() -> Result<()> {
         }
         // Finish the creation of elias-fano
         let ef = efb.build();
-        println!("{:?}", ef);
+
         // do a slow select
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.get(i), *v);
@@ -75,7 +75,6 @@ fn test_elias_fano() -> Result<()> {
         for (i, v) in values.iter().enumerate() {
             assert_eq!({ ef.get(i) }, *v);
         }
-        println!("{:?}", ef);
 
         let mut iterator = ef.into_iter().enumerate();
         while let Some((i, v)) = iterator.next() {
@@ -107,6 +106,29 @@ fn test_elias_fano() -> Result<()> {
         }
 
         assert_eq!(None, ef.succ(&(last + 1)));
+
+        let first = *values.first().unwrap();
+        let mut upper_bound = first + 1;
+        for (i, v) in values.iter().enumerate() {
+            if upper_bound <= *v {
+                continue;
+            }
+            // Skip repeated items as we return the index of the last one
+            if i + 1 < values.len() && values[i] == values[i + 1] {
+                continue;
+            }
+            loop {
+                assert!(ef.pred(&upper_bound).unwrap() == (i, *v));
+                upper_bound += 1;
+                if i + 1 == values.len() || upper_bound > values[i + 1] {
+                    break;
+                }
+            }
+        }
+
+        for upper_bound in 0..first {
+            assert_eq!(None, ef.pred(&upper_bound));
+        }
     }
 
     Ok(())
