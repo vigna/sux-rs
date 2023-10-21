@@ -286,10 +286,10 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVectorUncheckedIterator<'a, W, B> {
             W::ZERO
         } else {
             let bit_offset = index * vec.bit_width;
-            let bit_index = bit_offset % W::BITS as usize;
+            let bit_index = bit_offset % W::BITS;
 
-            word_index = bit_offset / W::BITS as usize;
-            fill = W::BITS as usize - bit_index;
+            word_index = bit_offset / W::BITS;
+            fill = W::BITS - bit_index;
             unsafe {
                 // SAFETY: index has been check at the start and it is within bounds
                 *vec.data.as_ref().get_unchecked(word_index) >> bit_index
@@ -324,7 +324,7 @@ impl<'a, W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
         let res = (res | (self.window << self.fill)) & self.vec.mask;
         let used = bit_width - self.fill;
         self.window >>= used;
-        self.fill = W::BITS as usize - used;
+        self.fill = W::BITS - used;
         res
     }
 }
@@ -359,9 +359,9 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVectorReverseUncheckedIterator<'a, W, B
         } else {
             // We have to handle the case of zero bit width
             let bit_offset = (index * vec.bit_width).saturating_sub(1);
-            let bit_index = bit_offset % W::BITS as usize;
+            let bit_index = bit_offset % W::BITS;
 
-            word_index = bit_offset / W::BITS as usize;
+            word_index = bit_offset / W::BITS;
             fill = bit_index + 1;
             unsafe {
                 // SAFETY: index has been check at the start and it is within bounds
@@ -394,9 +394,9 @@ impl<'a, W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
         self.word_index -= 1;
         self.window = *self.vec.data.as_ref().get_unchecked(self.word_index);
         let used = bit_width - self.fill;
-        res = ((res << used) | self.window >> W::BITS - used) & self.vec.mask;
+        res = ((res << used) | self.window >> (W::BITS - used)) & self.vec.mask;
         self.window <<= used;
-        self.fill = W::BITS as usize - used;
+        self.fill = W::BITS - used;
         res
     }
 }

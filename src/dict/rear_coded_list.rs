@@ -782,7 +782,7 @@ where
         c += s.as_ref().len();
     }
 
-    return c;
+    c
 }
 
 #[cfg(test)]
