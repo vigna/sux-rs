@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use common_traits::CastableFrom;
+use common_traits::CastableInto;
 use core::sync::atomic::Ordering;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
@@ -12,19 +14,31 @@ use rand::Rng;
 use rand::SeedableRng;
 use sux::prelude::BitFieldVec;
 use sux::prelude::*;
+use sux::traits::bit_field_slice::Word;
 
 #[test]
 fn test_bit_field_vec() {
+    test_bit_field_vec_param::<u8>();
+    test_bit_field_vec_param::<u16>();
+    test_bit_field_vec_param::<u32>();
+    test_bit_field_vec_param::<u64>();
+    test_bit_field_vec_param::<u128>();
+    test_bit_field_vec_param::<usize>();
+}
+
+fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
     use sux::traits::bit_field_slice::BitFieldSlice;
     use sux::traits::bit_field_slice::BitFieldSliceMut;
-    for bit_width in 0..64 {
+    for bit_width in 0..W::BITS {
         let n = 100;
-        let u = 1 << bit_width;
+        let u = W::ONE << bit_width.saturating_sub(1).min(60);
         let mut rng = SmallRng::seed_from_u64(0);
 
-        let mut cp = BitFieldVec::<usize>::new(bit_width, n);
+        let mut cp = BitFieldVec::<W>::new(bit_width, n);
         for _ in 0..10 {
-            let values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
+            let values = (0..n)
+                .map(|_| rng.gen_range(0..u.cast()).cast())
+                .collect::<Vec<W>>();
 
             let mut indices = (0..n).collect::<Vec<_>>();
             indices.shuffle(&mut rng);
@@ -47,6 +61,15 @@ fn test_bit_field_vec() {
             for from in 0..cp.len() {
                 let mut iter = cp.into_unchecked_iter_from(from);
                 for v in &values[from..] {
+                    unsafe {
+                        assert_eq!(iter.next_unchecked(), *v);
+                    }
+                }
+            }
+
+            for from in 0..cp.len() {
+                let mut iter = cp.into_rev_unchecked_iter_from(from);
+                for v in values[..from].iter().rev() {
                     unsafe {
                         assert_eq!(iter.next_unchecked(), *v);
                     }

@@ -27,8 +27,10 @@ pub trait UncheckedIterator {
     unsafe fn next_unchecked(&mut self) -> Self::Item;
 }
 
-/// A trait for types that can turn into an
-/// [unchecked iterator on values](UncheckedValueIterator), rather than on references.
+/// A trait for types that can turn into an [`UncheckedIterator`].
+///
+/// Differently from [`IntoIterator`], this trait provides a way
+/// to obtain an iterator starting from a given position.
 pub trait IntoUncheckedIterator: Sized {
     type Item;
     type IntoUncheckedIter: UncheckedIterator<Item = Self::Item>;
@@ -38,4 +40,19 @@ pub trait IntoUncheckedIterator: Sized {
     }
 
     fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter;
+}
+
+/// A trait for types that can turn into an [`UncheckedIterator`] moving backwards.
+///
+/// Differently from [`IntoIterator`], this trait provides a way
+/// to obtain an iterator starting from a given position.
+pub trait IntoReverseUncheckedIterator: Sized {
+    type Item;
+    type IntoRevUncheckedIter: UncheckedIterator<Item = Self::Item>;
+
+    fn into_rev_unchecked_iter(self) -> Self::IntoRevUncheckedIter {
+        self.into_rev_unchecked_iter_from(0)
+    }
+
+    fn into_rev_unchecked_iter_from(self, from: usize) -> Self::IntoRevUncheckedIter;
 }

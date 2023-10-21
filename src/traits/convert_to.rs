@@ -20,7 +20,9 @@ use std::sync::atomic::*;
 /// use this trait to add features to a basic implementation.
 ///
 /// Note that this trait is intentionally non-reflexive, that is, it does not provide
-/// a blanket implementation of `ConvertTo<A>` for `A`.
+/// a blanket implementation of `ConvertTo<A>` for `A`. This property makes it possible
+/// to have multiple conversions for the same type, including the reflexive one, without
+/// ambiguity.
 pub trait ConvertTo<B> {
     fn convert_to(self) -> Result<B>;
 }
