@@ -80,6 +80,9 @@ where
     /// of the given value, or `None` if there is no successor.
     /// The successor is the first value in the dictionary
     /// that is greater than or equal to the given value.
+    ///
+    /// If there are repeated values, the index of the one returned
+    /// depends on the implementation.
     fn succ(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
         if self.is_empty() || value > &self.get(self.len() - 1) {
             None
@@ -92,6 +95,9 @@ where
     /// of the given value, or `None` if there is no successor.
     /// The successor is the first value in the dictionary
     /// that is greater than or equal to the given value.
+    ///
+    /// If there are repeated values, the index of the one returned
+    /// depends on the implementation.
     ///
     /// # Safety
     /// The successors must exist.
@@ -108,6 +114,9 @@ where
     /// of the given value, or `None` if there is no predecessor.
     /// The predecessor is the last value in the dictionary
     /// that is less than the given value.
+    ///
+    /// If there are repeated values, the index of the one returned
+    /// depends on the implementation.
     fn pred(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
         if self.is_empty() || value <= &self.get(0) {
             None
@@ -119,6 +128,9 @@ where
     /// of the given value, or `None` if there is no predecessor.
     /// The predecessor is the last value in the dictionary
     /// that is less than the given value.
+    ///
+    /// If there are repeated values, the index of the one returned
+    /// depends on the implementation.
     ///
     /// # Safety
     /// The predecessor must exist.
