@@ -72,7 +72,7 @@ impl EdgeList {
 
 /**
 
-No-nonsense static functions with 10%-11% space overhead for large key sets,
+Static functions with 10%-11% space overhead for large key sets,
 fast parallel construction, and fast queries.
 
 Keys must implement the [`ToSig`] trait, which provides a method to
