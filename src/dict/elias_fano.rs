@@ -259,10 +259,7 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<H: AsRef<[usize]> + Select, L: BitFieldSlice<usize>> IndexedDict for EliasFano<H, L>
-where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
-{
+impl<H: AsRef<[usize]> + Select, L: BitFieldSlice<usize>> IndexedDict for EliasFano<H, L> {
     type Output = usize;
     type Input = usize;
 
@@ -465,64 +462,51 @@ where
         }
     }
 }
-/*
-impl<
-        H: SelectZero + Select + AsRef<[usize]>,
-        L: BitFieldSlice + IntoUncheckedValueIterator<Item = usize>,
-    > Pred for EliasFano<H, L>
+
+impl<H: SelectZero + Select + AsRef<[usize]>, L: BitFieldSlice<usize>> Pred for EliasFano<H, L>
+where
+    for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
 {
-    unsafe fn pred_unchecked(&self, value: &Self::InputValue) -> (usize, Self::OutputValue) {
+    unsafe fn pred_unchecked(&self, value: &Self::Input) -> (usize, Self::Output) {
         debug_assert!(*value > self.get(0));
         let zeros_to_skip = value >> self.l;
-        let bit_pos = self.high_bits.select_zero(zeros_to_skip).unwrap() - 1;
+        let mut bit_pos = self.high_bits.select_zero(zeros_to_skip).unwrap() - 1;
 
         let mut rank = bit_pos - zeros_to_skip;
-        let mut iter = self.low_bits.iter_val_from_unchecked(rank);
-        let mut word_idx = bit_pos / (usize::BITS);
-        let bit_idx = bit_pos % (usize::BITS);
+        let mut iter = self.low_bits.into_rev_unchecked_iter_from(rank + 1);
 
         loop {
             let lower_bits = unsafe { iter.next_unchecked() };
-            if self.high_bits.get(word_idx) & (1 << bit_idx) == 0 {
-                // zeros =  - (64 - (position % 64))
-                let mut zeros = bit_pos | (usize::BITS).wrapping_neg();
-                word_idx = bit_pos / (usize::BITS);
-                let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
+            let mut word_idx = bit_pos / (usize::BITS as usize);
+            let bit_idx = bit_pos % (usize::BITS as usize);
+            if self.high_bits.get(word_idx) & (1_usize << bit_idx) == 0 {
+                // zeros =  - (usize::BITS - (position % usize::BITS))
+                let mut zeros = bit_idx;
+                let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) }
+                    & !(usize::MAX << bit_idx);
                 while window == 0 {
                     word_idx -= 1;
                     window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
-                    zeros += (usize::BITS) as usize;
+                    zeros += usize::BITS as usize;
                 }
-                return (rank, bit_pos - zeros - window.leading_zeros() - rank - 1 << self.l | lower_bits));
+                return (
+                    rank,
+                    (usize::BITS as usize) + bit_pos
+                        - zeros
+                        - window.leading_zeros() as usize
+                        - rank
+                        - 1
+                        << self.l
+                        | lower_bits,
+                );
             }
 
             if lower_bits < value & (1 << self.l) - 1 {
                 return (rank, bit_pos - rank << self.l | lower_bits);
             }
 
-
-        }
-        loop {
-            while window == 0 {
-                word_idx += 1;
-                debug_assert!(word_idx < self.high_bits.as_ref().len());
-                window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
-            }
-            // find the lowest bit set index in the word
-            let bit_idx = window.trailing_zeros() as usize;
-            // compute the global bit index
-            let high_bits = (word_idx * usize::BITS) + bit_idx - rank;
-            // compose the value
-            // SAFETY: we are certainly iterating within the length of the array
-            // because there is a successor for sure
-            let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
-            if res >= *value {
-                return (rank, res);
-            }
-            // clear the lowest bit set
-            window &= window - 1;
-            rank += 1;
+            bit_pos -= 1;
+            rank -= 1;
         }
     }
 }
-*/
