@@ -35,10 +35,12 @@ pub trait IntoUncheckedIterator: Sized {
     type Item;
     type IntoUncheckedIter: UncheckedIterator<Item = Self::Item>;
 
+    /// Create an unchecked iterator starting from the first position.
     fn into_unchecked_iter(self) -> Self::IntoUncheckedIter {
         self.into_unchecked_iter_from(0)
     }
 
+    /// Create an unchecked iterator starting from the given position.
     fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter;
 }
 
@@ -46,13 +48,16 @@ pub trait IntoUncheckedIterator: Sized {
 ///
 /// Differently from [`IntoIterator`], this trait provides a way
 /// to obtain an iterator starting from a given position.
+///
+/// Note that [`into_rev_unchecked_iter`](IntoReverseUncheckedIterator::into_rev_unchecked_iter_from)
+/// cannot be implemented in terms of [`into_rev_unchecked_iter_from`](IntoReverseUncheckedIterator::into_rev_unchecked_iter_from)
+/// because we cannot know which is the last position.
 pub trait IntoReverseUncheckedIterator: Sized {
     type Item;
     type IntoRevUncheckedIter: UncheckedIterator<Item = Self::Item>;
 
-    fn into_rev_unchecked_iter(self) -> Self::IntoRevUncheckedIter {
-        self.into_rev_unchecked_iter_from(0)
-    }
-
+    /// Create a reverse unchecked iterator starting from the end.
+    fn into_rev_unchecked_iter(self) -> Self::IntoRevUncheckedIter;
+    /// Create a reverse unchecked iterator starting from the given position.
     fn into_rev_unchecked_iter_from(self, from: usize) -> Self::IntoRevUncheckedIter;
 }

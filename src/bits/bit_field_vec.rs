@@ -404,6 +404,11 @@ impl<'a, W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
 impl<'a, W: Word, B: AsRef<[W]>> IntoReverseUncheckedIterator for &'a BitFieldVec<W, B> {
     type Item = W;
     type IntoRevUncheckedIter = BitFieldVectorReverseUncheckedIterator<'a, W, B>;
+
+    fn into_rev_unchecked_iter(self) -> Self::IntoRevUncheckedIter {
+        BitFieldVectorReverseUncheckedIterator::new(self, self.len())
+    }
+
     fn into_rev_unchecked_iter_from(self, from: usize) -> Self::IntoRevUncheckedIter {
         BitFieldVectorReverseUncheckedIterator::new(self, from)
     }

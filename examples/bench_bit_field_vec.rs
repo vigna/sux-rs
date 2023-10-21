@@ -82,6 +82,14 @@ pub fn main() {
             u += unsafe { iter.next_unchecked() };
         }
         pl.done_with_count(args.n);
+
+        let mut iter = a.into_rev_unchecked_iter();
+        pl.item_name = "item";
+        pl.start("Scanning (reverse unchecked) ...");
+        for _ in 0..args.n {
+            u += unsafe { iter.next_unchecked() };
+        }
+        pl.done_with_count(args.n);
     }
 
     black_box(u);
