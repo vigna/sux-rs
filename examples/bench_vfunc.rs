@@ -49,7 +49,7 @@ fn main() -> Result<()> {
     } else {
         let func = VFunc::<_>::load_mem(&args.func)?;
         pl.start("Querying...");
-        for i in 0..args.n as usize {
+        for i in 0..args.n {
             assert_eq!(i, func.get(&i));
         }
         pl.done_with_count(args.n);

@@ -12,7 +12,7 @@
 Implementation of the Elias–Fano representation of monotone sequences.
 
 There are two ways to build an [`EliasFano`] structure: using
-an [`EliasFanoBuilder`] or an [`EliasFanoAtomicBuilder`].
+an [`EliasFanoBuilder`] or an [`EliasFanoConcurrentBuilder`].
 
 The main trait implemented by [`EliasFano`] is [`IndexedDict`], which
 makes it possible to access its values with [`IndexedDict::get`].
@@ -107,7 +107,7 @@ impl EliasFanoBuilder {
 
 /// A parallel builder for [`EliasFano`].
 ///
-/// After creating an instance, you can use [`EliasFanoAtomicBuilder::set`]
+/// After creating an instance, you can use [`EliasFanoConcurrentBuilder::set`]
 /// to set the values concurrently. However, this operation is inherently
 /// unsafe as no check is performed on the provided data (e.g., duplicate
 /// indices and lack of monotonicity are not detected).
@@ -216,7 +216,7 @@ impl<H, L> EliasFano<H, L> {
 Implementation of the Elias--Fano representation of monotone sequences.
 
 There are two ways to build an [`EliasFano`] structure: using
-an [`EliasFanoBuilder`] or an [`EliasFanoAtomicBuilder`].
+an [`EliasFanoBuilder`] or an [`EliasFanoConcurrentBuilder`].
 
 Once the structure has been built, it is possible to enrich it with
 indices that will make operations faster. This is done by calling
@@ -494,17 +494,17 @@ where
                 }
                 return (
                     rank,
-                    (usize::BITS as usize) - 1 + bit_pos
+                    ((usize::BITS as usize) - 1 + bit_pos
                         - zeros
                         - window.leading_zeros() as usize
-                        - rank
+                        - rank)
                         << self.l
                         | lower_bits,
                 );
             }
 
-            if lower_bits < value & (1 << self.l) - 1 {
-                return (rank, bit_pos - rank << self.l | lower_bits);
+            if lower_bits < value & ((1 << self.l) - 1) {
+                return (rank, (bit_pos - rank) << self.l | lower_bits);
             }
 
             bit_pos -= 1;

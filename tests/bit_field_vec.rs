@@ -97,7 +97,7 @@ fn test_atomic_bit_field_vec() {
         let cp = AtomicBitFieldVec::new(bit_width, n);
         for _ in 0..10 {
             let values = (0..n)
-                .map(|_| rng.gen_range(0..u) as usize)
+                .map(|_| rng.gen_range(0..u))
                 .collect::<Vec<_>>();
 
             let mut indices = (0..n).collect::<Vec<_>>();
@@ -160,7 +160,7 @@ fn test_from_slice() {
 
     let s = BitFieldVec::<usize>::from_slice(&c).unwrap();
     for i in 0..c.len() {
-        assert_eq!(s.get(i) as usize, c.get(i));
+        assert_eq!({ s.get(i) }, c.get(i));
     }
     let s = BitFieldVec::<u16>::from_slice(&c).unwrap();
     for i in 0..c.len() {

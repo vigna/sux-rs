@@ -123,7 +123,7 @@ fn test_resize() {
     }
     c.resize(50, false);
     for i in 0..50 {
-        assert_eq!(c.get(i), true);
+        assert!(c.get(i));
     }
     assert_eq!(c.len(), 50);
 }
