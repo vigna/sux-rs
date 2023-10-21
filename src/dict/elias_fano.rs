@@ -436,6 +436,9 @@ where
         let mut word_idx = bit_pos / (usize::BITS as usize);
         let bits_to_clean = bit_pos % (usize::BITS as usize);
 
+        // SAFETY: we are certainly iterating within the length of the arrays
+        // and within the range of the iterator because there is a successor for sure.
+
         let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) }
             & (usize::MAX << bits_to_clean);
 
@@ -450,8 +453,6 @@ where
             // compute the global bit index
             let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
             // compose the value
-            // SAFETY: we are certainly iterating within the length of the array
-            // because there is a successor for sure
             let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
             if res >= *value {
                 return (rank, res);
@@ -475,12 +476,14 @@ where
         let mut rank = bit_pos - zeros_to_skip;
         let mut iter = self.low_bits.into_rev_unchecked_iter_from(rank + 1);
 
+        // SAFETY: we are certainly iterating within the length of the arrays
+        // and within the range of the iterator because there is a predecessor for sure.
+
         loop {
             let lower_bits = unsafe { iter.next_unchecked() };
             let mut word_idx = bit_pos / (usize::BITS as usize);
             let bit_idx = bit_pos % (usize::BITS as usize);
             if self.high_bits.get(word_idx) & (1_usize << bit_idx) == 0 {
-                // zeros =  - (usize::BITS - (position % usize::BITS))
                 let mut zeros = bit_idx;
                 let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) }
                     & !(usize::MAX << bit_idx);
@@ -491,11 +494,10 @@ where
                 }
                 return (
                     rank,
-                    (usize::BITS as usize) + bit_pos
+                    (usize::BITS as usize) - 1 + bit_pos
                         - zeros
                         - window.leading_zeros() as usize
                         - rank
-                        - 1
                         << self.l
                         | lower_bits,
                 );
