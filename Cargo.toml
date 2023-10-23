@@ -36,3 +36,11 @@ xxh3 = "0.1.1"
 lender = "0.1.7"
 [features]
 default = ["rayon"]
+
+[profile.release] # Used for the examples
+opt-level = 3             # like --release
+lto = "fat"               # Full LTO
+overflow-checks = false   # Disable integer overflow checks.
+debug = true              # Include debug info.
+debug-assertions = false  # Enables debug assertions.
+codegen-units=1           # slower compile times, but maybe better perf
