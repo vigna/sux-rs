@@ -49,15 +49,14 @@ impl EdgeList {
     fn add(&mut self, edge: usize) {
         debug_assert!(self.degree() <= Self::MAX_DEG);
         self.0 += EdgeList::DEG;
-        debug_assert!(self.0 + edge < Self::DEG);
-        self.0 += edge;
+        self.0 ^= edge;
     }
 
     #[inline(always)]
     fn remove(&mut self, edge: usize) {
         debug_assert!(self.degree() > 0);
         self.0 -= EdgeList::DEG;
-        self.0 -= edge;
+        self.0 ^= edge;
     }
 
     #[inline(always)]
