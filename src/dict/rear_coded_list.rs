@@ -12,7 +12,7 @@ Immutable lists of strings compressed by prefix omission via rear coding.
 
 use crate::traits::IndexedDict;
 use epserde::*;
-use hrtb_lending_iterator::*;
+use lender::{ExactSizeLender, IntoLender, Lender, Lending};
 
 #[derive(Debug, Clone, Default)]
 /// Statistics of the encoded data.
@@ -323,7 +323,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
 
     fn contains_unsorted(&self, key: &<Self as IndexedDict>::Input) -> bool {
         let key = key.as_bytes();
-        let mut iter = self.into_lend_iter();
+        let mut iter = self.into_lender();
         while let Some(string) = iter.next() {
             if matches!(strcmp(key, string.as_bytes()), core::cmp::Ordering::Equal) {
                 return true;
@@ -379,10 +379,14 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLendingIterator for &'a RearCodedList<D, P> {
-    type IntoLendIter = Iterator<'a, D, P>;
+impl<'a, 'all, D: AsRef<[u8]>, P: AsRef<[usize]>> Lending<'all> for &'a RearCodedList<D, P> {
+    type Lend = &'all str;
+}
+
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLender for &'a RearCodedList<D, P> {
+    type Lender = Iterator<'a, D, P>;
     #[inline(always)]
-    fn into_lend_iter(self) -> Iterator<'a, D, P> {
+    fn into_lender(self) -> Iterator<'a, D, P> {
         Iterator::new(self)
     }
 }
@@ -464,22 +468,12 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
         res
     }
 }
-/*
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iterator<'a, D, P> {
-    type Item = String;
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next_weak()
-            .map(|buffer| String::from_utf8(buffer.to_vec()).unwrap())
-    }
-}
-*/
 
-impl<'a, 'b, D: AsRef<[u8]>, P: AsRef<[usize]>> LendingIteratorItem<'a> for Iterator<'b, D, P> {
-    type Type = &'a str;
+impl<'a, 'b, D: AsRef<[u8]>, P: AsRef<[usize]>> Lending<'a> for Iterator<'b, D, P> {
+    type Lend = &'a str;
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> LendingIterator for Iterator<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Iterator<'a, D, P> {
     #[inline]
     /// A next that returns a reference to the inner buffer containg the string.
     /// This is useful to avoid allocating a new string for every query if you
@@ -504,7 +498,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> LendingIterator for Iterator<'a, D, 
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeLendingIterator for Iterator<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeLender for Iterator<'a, D, P> {
     fn len(&self) -> usize {
         self.rca.len() - self.index
     }
@@ -772,11 +766,11 @@ fn test_longest_common_prefix() {
 }
 
 #[cfg(test)]
-fn read_into_lend_iter<L: IntoLendingIterator>(into_iter: L) -> usize
+fn read_into_lender<L: IntoLender>(into_lender: L) -> usize
 where
-    for<'a> <L::IntoLendIter as LendingIteratorItem<'a>>::Type: AsRef<str>,
+    for<'a> <L::Lender as Lending<'a>>::Lend: AsRef<str>,
 {
-    let mut iter = into_iter.into_lend_iter();
+    let mut iter = into_lender.into_lender();
     let mut c = 0;
     while let Some(s) = iter.next() {
         c += s.as_ref().len();
@@ -794,5 +788,5 @@ fn test_into_lend() {
     builder.push("c");
     builder.push("d");
     let rcl = builder.build();
-    read_into_lend_iter::<&RearCodedList>(&rcl);
+    read_into_lender::<&RearCodedList>(&rcl);
 }
