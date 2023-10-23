@@ -33,6 +33,6 @@ rand = {version="0.8.5", features=["small_rng"]}
 zstd = "0.12.4"
 tempfile = "3.8.0"
 xxh3 = "0.1.1"
-hrtb-lending-iterator = "0.2.0"
+lender = "0.1.7"
 [features]
 default = ["rayon"]
