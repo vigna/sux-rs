@@ -83,11 +83,11 @@ where
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
-    fn succ(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn succ<const STRICT: bool>(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
         if self.is_empty() || value > &self.get(self.len() - 1) {
             None
         } else {
-            Some(unsafe { self.succ_unchecked(value) })
+            Some(unsafe { self.succ_unchecked::<STRICT>(value) })
         }
     }
 
@@ -101,7 +101,10 @@ where
     ///
     /// # Safety
     /// The successors must exist.
-    unsafe fn succ_unchecked(&self, value: &Self::Input) -> (usize, Self::Output);
+    unsafe fn succ_unchecked<const STRICT: bool>(
+        &self,
+        value: &Self::Input,
+    ) -> (usize, Self::Output);
 }
 
 /// Predecessor computation for dictionaries whoses value are monotonically increasing.
@@ -117,11 +120,11 @@ where
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
-    fn pred(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn pred<const WEAK: bool>(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
         if self.is_empty() || value <= &self.get(0) {
             None
         } else {
-            Some(unsafe { self.pred_unchecked(value) })
+            Some(unsafe { self.pred_unchecked::<WEAK>(value) })
         }
     }
     /// Return the index of the predecessor and the predecessor
@@ -134,5 +137,6 @@ where
     ///
     /// # Safety
     /// The predecessor must exist.
-    unsafe fn pred_unchecked(&self, value: &Self::Input) -> (usize, Self::Output);
+    unsafe fn pred_unchecked<const WEAK: bool>(&self, value: &Self::Input)
+        -> (usize, Self::Output);
 }

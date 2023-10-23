@@ -422,7 +422,10 @@ impl<H: SelectZero + Select + AsRef<[usize]>, L: BitFieldSlice<usize>> Succ for 
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
-    unsafe fn succ_unchecked(&self, value: &Self::Input) -> (usize, Self::Output) {
+    unsafe fn succ_unchecked<const STRICT: bool>(
+        &self,
+        value: &Self::Input,
+    ) -> (usize, Self::Output) {
         debug_assert!(*value <= self.get(self.len() - 1));
         let zeros_to_skip = value >> self.l;
         let bit_pos = if zeros_to_skip == 0 {
@@ -454,9 +457,16 @@ where
             let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
             // compose the value
             let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
-            if res >= *value {
-                return (rank, res);
+            if STRICT {
+                if res > *value {
+                    return (rank, res);
+                }
+            } else {
+                if res >= *value {
+                    return (rank, res);
+                }
             }
+
             // clear the lowest bit set
             window &= window - 1;
             rank += 1;
@@ -468,7 +478,10 @@ impl<H: SelectZero + Select + AsRef<[usize]>, L: BitFieldSlice<usize>> Pred for 
 where
     for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
 {
-    unsafe fn pred_unchecked(&self, value: &Self::Input) -> (usize, Self::Output) {
+    unsafe fn pred_unchecked<const WEAK: bool>(
+        &self,
+        value: &Self::Input,
+    ) -> (usize, Self::Output) {
         debug_assert!(*value > self.get(0));
         let zeros_to_skip = value >> self.l;
         let mut bit_pos = self.high_bits.select_zero(zeros_to_skip).unwrap() - 1;
@@ -503,8 +516,14 @@ where
                 );
             }
 
-            if lower_bits < value & ((1 << self.l) - 1) {
-                return (rank, (bit_pos - rank) << self.l | lower_bits);
+            if WEAK {
+                if lower_bits <= value & ((1 << self.l) - 1) {
+                    return (rank, (bit_pos - rank) << self.l | lower_bits);
+                }
+            } else {
+                if lower_bits < value & ((1 << self.l) - 1) {
+                    return (rank, (bit_pos - rank) << self.l | lower_bits);
+                }
             }
 
             bit_pos -= 1;

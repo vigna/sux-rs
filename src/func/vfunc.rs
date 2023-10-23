@@ -43,17 +43,21 @@ impl EdgeList {
     const DEG_SHIFT: usize = usize::BITS as usize - 16;
     const EDGE_INDEX_MASK: usize = (1_usize << EdgeList::DEG_SHIFT) - 1;
     const DEG: usize = 1_usize << EdgeList::DEG_SHIFT;
+    const MAX_DEG: usize = usize::MAX >> EdgeList::DEG_SHIFT;
 
     #[inline(always)]
     fn add(&mut self, edge: usize) {
+        debug_assert!(self.degree() <= Self::MAX_DEG);
         self.0 += EdgeList::DEG;
-        self.0 ^= edge;
+        debug_assert!(self.0 + edge < Self::DEG);
+        self.0 += edge;
     }
 
     #[inline(always)]
     fn remove(&mut self, edge: usize) {
+        debug_assert!(self.degree() > 0);
         self.0 -= EdgeList::DEG;
-        self.0 ^= edge;
+        self.0 -= edge;
     }
 
     #[inline(always)]
@@ -68,6 +72,7 @@ impl EdgeList {
 
     #[inline(always)]
     fn dec(&mut self) {
+        debug_assert!(self.degree() > 0);
         self.0 -= EdgeList::DEG;
     }
 }
@@ -424,7 +429,7 @@ where
                             // TODO
                             data.set(v, sigs[edge_index].1 ^ value, Relaxed);
 
-                            assert_eq!(
+                            debug_assert_eq!(
                                 data.get(edge[0], Relaxed)
                                     ^ data.get(edge[1], Relaxed)
                                     ^ data.get(edge[2], Relaxed),
@@ -580,14 +585,6 @@ where
                 (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
             );
 
-            if let Some(pl) = pl.as_mut() {
-                pl.start("Sorting...")
-            }
-
-            if let Some(pl) = pl.as_mut() {
-                pl.done_with_count(num_keys);
-            }
-
             let data = AtomicBitFieldVec::<O>::new(bit_width, num_vertices * num_chunks);
 
             let fail = AtomicBool::new(false);
@@ -708,7 +705,7 @@ where
                                 // TODO
                                 data.set(v, chunk[edge_index].1 ^ value, Relaxed);
 
-                                assert_eq!(
+                                debug_assert_eq!(
                                     data.get(edge[0], Relaxed)
                                         ^ data.get(edge[1], Relaxed)
                                         ^ data.get(edge[2], Relaxed),
