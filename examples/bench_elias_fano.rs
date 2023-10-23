@@ -84,7 +84,7 @@ fn main() {
         pl.start("Benchmarking succ()...");
         for _ in 0..args.t {
             u ^= elias_fano
-                .succ(&rng.gen_range(0..args.u))
+                .succ::<true>(&rng.gen_range(0..args.u))
                 .unwrap_or((0, 0))
                 .0;
         }
@@ -93,7 +93,11 @@ fn main() {
         pl.start("Benchmarking succ_unchecked()...");
         let upper_bound = *values.last().unwrap();
         for _ in 0..args.t {
-            u ^= unsafe { elias_fano.succ_unchecked(&rng.gen_range(0..upper_bound)).0 };
+            u ^= unsafe {
+                elias_fano
+                    .succ_unchecked::<true>(&rng.gen_range(0..upper_bound))
+                    .0
+            };
         }
         pl.done_with_count(args.t);
 
