@@ -418,6 +418,7 @@ where
     }
 }
 
+#[allow(clippy::collapsible_else_if)]
 impl<H: SelectZero + Select + AsRef<[usize]>, L: BitFieldSlice<usize>> Succ for EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
@@ -457,6 +458,7 @@ where
             let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
             // compose the value
             let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
+
             if STRICT {
                 if res > *value {
                     return (rank, res);
@@ -474,11 +476,12 @@ where
     }
 }
 
+#[allow(clippy::collapsible_else_if)]
 impl<H: SelectZero + Select + AsRef<[usize]>, L: BitFieldSlice<usize>> Pred for EliasFano<H, L>
 where
     for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
 {
-    unsafe fn pred_unchecked<const WEAK: bool>(
+    unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
         value: &Self::Input,
     ) -> (usize, Self::Output) {
@@ -516,12 +519,12 @@ where
                 );
             }
 
-            if WEAK {
-                if lower_bits <= value & ((1 << self.l) - 1) {
+            if STRICT {
+                if lower_bits < value & ((1 << self.l) - 1) {
                     return (rank, (bit_pos - rank) << self.l | lower_bits);
                 }
             } else {
-                if lower_bits < value & ((1 << self.l) - 1) {
+                if lower_bits <= value & ((1 << self.l) - 1) {
                     return (rank, (bit_pos - rank) << self.l | lower_bits);
                 }
             }
