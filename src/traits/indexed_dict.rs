@@ -12,6 +12,8 @@ operations such as predecessor and successor.
 
 */
 
+use std::ops::Deref;
+
 /**
 
 A dictionary of values indexed by a `usize`.
@@ -24,6 +26,9 @@ It is suggested that any implementation of this trait also implements
 on a type `D` with the clause `where for<'a> &'a D: IntoIterator<Item = Self::Output>`.
 Many implementations offer also a method `into_iter_from` that returns an iterator
 starting at a given position in the dictionary.
+
+We provide a blanket implementation for types that dereference to a slice of `T`'s,
+where `T` implements [`ToOwned`].
 
 */
 pub trait IndexedDict {
@@ -177,4 +182,20 @@ where
         &self,
         value: &Self::Input,
     ) -> (usize, Self::Output);
+}
+
+impl<T: ToOwned, S: ?Sized + Deref<Target = [T]>> IndexedDict for S
+where
+    T::Owned: PartialEq<T> + PartialEq,
+{
+    type Input = T::Owned;
+    type Output = T::Owned;
+
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
+        self.deref().get_unchecked(index).to_owned()
+    }
+
+    fn len(&self) -> usize {
+        self.deref().len()
+    }
 }
