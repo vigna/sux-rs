@@ -73,28 +73,46 @@ pub trait IndexedDict {
 /// Successor computation for dictionaries whose values are monotonically increasing.
 pub trait Succ: IndexedDict
 where
-    Self::Output: PartialOrd<Self::Input> + PartialOrd,
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
+    Self::Output: PartialOrd<Self::Input> + PartialOrd,
 {
     /// Return the index of the successor and the successor
     /// of the given value, or `None` if there is no successor.
-    /// The successor is the first value in the dictionary
+    /// The successor is the least value in the dictionary
     /// that is greater than or equal to the given value.
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
-    fn succ<const STRICT: bool>(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
-        if self.is_empty() || value > &self.get(self.len() - 1) {
+    fn succ(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        if self.is_empty() || *value > self.get(self.len() - 1) {
             None
         } else {
-            Some(unsafe { self.succ_unchecked::<STRICT>(value) })
+            Some(unsafe { self.succ_unchecked::<false>(value) })
+        }
+    }
+
+    /// Return the index of the strict successor and the strict successor
+    /// of the given value, or `None` if there is no strict successor.
+    /// The strict successor is the least value in the dictionary
+    /// that is greater than the given value.
+    ///
+    /// If there are repeated values, the index of the one returned
+    /// depends on the implementation.
+    fn succ_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        if self.is_empty() || *value >= self.get(self.len() - 1) {
+            None
+        } else {
+            Some(unsafe { self.succ_unchecked::<true>(value) })
         }
     }
 
     /// Return the index of the successor and the successor
     /// of the given value, or `None` if there is no successor.
-    /// The successor is the first value in the dictionary
-    /// that is greater than or equal to the given value.
+    ///
+    /// The successor is the least value in the dictionary
+    /// that is greater than or equal to the given value, if `STRICT` is `false`,
+    /// or the least value in the dictionary that is greater
+    /// than the given value, if `STRICT` is `true`.
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
@@ -107,7 +125,7 @@ where
     ) -> (usize, Self::Output);
 }
 
-/// Predecessor computation for dictionaries whoses value are monotonically increasing.
+/// Predecessor computation for dictionaries whose values are monotonically increasing.
 pub trait Pred: IndexedDict
 where
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
@@ -115,28 +133,48 @@ where
 {
     /// Return the index of the predecessor and the predecessor
     /// of the given value, or `None` if there is no predecessor.
-    /// The predecessor is the last value in the dictionary
-    /// that is less than the given value.
+    /// The predecessor is the greatest value in the dictionary
+    /// that is less than or equal to the given value.
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
-    fn pred<const WEAK: bool>(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
-        if self.is_empty() || value <= &self.get(0) {
+    fn pred(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        if self.is_empty() || *value < self.get(0) {
             None
         } else {
-            Some(unsafe { self.pred_unchecked::<WEAK>(value) })
+            Some(unsafe { self.pred_unchecked::<false>(value) })
         }
     }
+
+    /// Return the index of the strict predecessor and the strict predecessor
+    /// of the given value, or `None` if there is no strict predecessor.
+    /// The strict predecessor is the greatest value in the dictionary
+    /// that is less than or equal to the given value.
+    ///
+    /// If there are repeated values, the index of the one returned
+    /// depends on the implementation.
+    fn pred_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        if self.is_empty() || *value <= self.get(0) {
+            None
+        } else {
+            Some(unsafe { self.pred_unchecked::<true>(value) })
+        }
+    }
+
     /// Return the index of the predecessor and the predecessor
     /// of the given value, or `None` if there is no predecessor.
-    /// The predecessor is the last value in the dictionary
-    /// that is less than the given value.
+    /// The predecessor is the greatest value in the dictionary
+    /// that is less than or equal to the given value, if `STRICT` is `false`,
+    /// or the greatest value in the dictionary that is less
+    /// than the given value, if `STRICT` is `true`.
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
     ///
     /// # Safety
     /// The predecessor must exist.
-    unsafe fn pred_unchecked<const WEAK: bool>(&self, value: &Self::Input)
-        -> (usize, Self::Output);
+    unsafe fn pred_unchecked<const STRICT: bool>(
+        &self,
+        value: &Self::Input,
+    ) -> (usize, Self::Output);
 }
