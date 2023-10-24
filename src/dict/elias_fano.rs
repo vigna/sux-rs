@@ -427,7 +427,11 @@ where
         &self,
         value: &Self::Input,
     ) -> (usize, Self::Output) {
-        debug_assert!(*value <= self.get(self.len() - 1));
+        if STRICT {
+            debug_assert!(*value < self.get(self.len() - 1));
+        } else {
+            debug_assert!(*value <= self.get(self.len() - 1));
+        }
         let zeros_to_skip = value >> self.l;
         let bit_pos = if zeros_to_skip == 0 {
             0
@@ -485,7 +489,12 @@ where
         &self,
         value: &Self::Input,
     ) -> (usize, Self::Output) {
-        debug_assert!(*value > self.get(0));
+        if STRICT {
+            debug_assert!(*value > self.get(0));
+        } else {
+            debug_assert!(*value >= self.get(0));
+        }
+
         let zeros_to_skip = value >> self.l;
         let mut bit_pos = self.high_bits.select_zero(zeros_to_skip).unwrap() - 1;
 

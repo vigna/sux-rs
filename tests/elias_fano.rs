@@ -97,7 +97,7 @@ fn test_elias_fano() -> Result<()> {
                 continue;
             }
             loop {
-                assert!(ef.succ::<false>(&lower_bound).unwrap() == (i, *v));
+                assert!(ef.succ(&lower_bound).unwrap() == (i, *v));
                 lower_bound += 1;
                 if lower_bound > values[i] {
                     break;
@@ -105,7 +105,23 @@ fn test_elias_fano() -> Result<()> {
             }
         }
 
-        assert_eq!(None, ef.succ::<false>(&(last + 1)));
+        assert_eq!(None, ef.succ(&(last + 1)));
+
+        let mut lower_bound = 0;
+        for (i, v) in values.iter().enumerate() {
+            if lower_bound >= *v {
+                continue;
+            }
+            loop {
+                assert!(ef.succ_strict(&lower_bound).unwrap() == (i, *v));
+                lower_bound += 1;
+                if lower_bound >= values[i] {
+                    break;
+                }
+            }
+        }
+
+        assert_eq!(None, ef.succ_strict(last));
 
         let first = *values.first().unwrap();
         let mut upper_bound = first + 1;
@@ -118,7 +134,7 @@ fn test_elias_fano() -> Result<()> {
                 continue;
             }
             loop {
-                assert!(ef.pred::<false>(&upper_bound).unwrap() == (i, *v));
+                assert!(ef.pred_strict(&upper_bound).unwrap() == (i, *v));
                 upper_bound += 1;
                 if i + 1 == values.len() || upper_bound > values[i + 1] {
                     break;
@@ -126,8 +142,31 @@ fn test_elias_fano() -> Result<()> {
             }
         }
 
+        for upper_bound in 0..first + 1 {
+            assert_eq!(None, ef.pred_strict(&upper_bound));
+        }
+
+        let first = *values.first().unwrap();
+        let mut upper_bound = first;
+        for (i, v) in values.iter().enumerate() {
+            if upper_bound < *v {
+                continue;
+            }
+            // Skip repeated items as we return the index of the last one
+            if i + 1 < values.len() && values[i] == values[i + 1] {
+                continue;
+            }
+            loop {
+                assert!(ef.pred(&upper_bound).unwrap() == (i, *v));
+                upper_bound += 1;
+                if i + 1 == values.len() || upper_bound >= values[i + 1] {
+                    break;
+                }
+            }
+        }
+
         for upper_bound in 0..first {
-            assert_eq!(None, ef.pred::<false>(&upper_bound));
+            assert_eq!(None, ef.pred(&upper_bound));
         }
     }
 
