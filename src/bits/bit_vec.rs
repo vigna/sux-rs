@@ -718,6 +718,14 @@ impl<B: AsRef<[usize]>> AsRef<[usize]> for BitVec<B> {
     }
 }
 
+impl FromIterator<bool> for BitVec<Vec<usize>> {
+    fn from_iter<T: IntoIterator<Item = bool>>(iter: T) -> Self {
+        let mut res = Self::new(0);
+        res.extend(iter);
+        res
+    }
+}
+
 /// An iterator over the ones in an underlying storage.
 pub struct OnesIterator<B> {
     mem_words: B,
