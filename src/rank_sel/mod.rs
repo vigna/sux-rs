@@ -13,5 +13,5 @@ pub use quantum_index::*;
 mod quantum_zero_index;
 pub use quantum_zero_index::*;
 
-//mod simple_select_half;
-//pub use simple_select_half::*;
+mod simple_select_half;
+pub use simple_select_half::*;

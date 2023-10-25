@@ -5,11 +5,11 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::{bits::prelude::CountBitVec, traits::prelude::*};
+use crate::{bits::CountBitVec, traits::*};
 use common_traits::SelectInWord;
 use epserde::*;
-#[cfg(feature = "rayon")]
-use rayon::prelude::*;
+//#[cfg(feature = "rayon")]
+//use rayon::prelude::*;
 
 /// Two layer index (with interleaved layers) optimized for
 /// a bitmap with approximately half ones and half zeros.
@@ -80,21 +80,63 @@ impl<
         inventory[ptr] = bitvec.len() as u64;
 
         // build the index (in parallel if rayon enabled)
-        #[cfg(feature = "rayon")]
-        let iter = (0..inventory_size).into_par_iter();
-        #[cfg(not(feature = "rayon"))]
-        let iter = (0..inventory_size);
+        let iter = 0..inventory_size;
+        //#[cfg(feature = "rayon")]
+        //let iter = iter.into_par_iter();
 
         // fill the second layer of the index
-        let data = bitvec.as_ref();
         iter.for_each(|inventory_idx| {
             let start_idx = inventory_idx * (1 + Self::U64_PER_SUBINVENTORY);
-            let span = inventory[start_idx + 1] - inventory[start_idx];
-            if span < u16::MAX as u64 {
-                // dense
+            let end_idx = start_idx + 1 + Self::U64_PER_SUBINVENTORY;
+            let start_bit_idx = inventory[start_idx];
+            let end_bit_idx = inventory[start_idx + 1];
+            let end_word_idx = end_bit_idx / usize::BITS as u64;
+            let span = end_bit_idx - start_bit_idx;
+
+            let mut word_idx = start_bit_idx / usize::BITS as u64;
+            let bit_idx = start_bit_idx % usize::BITS as u64;
+
+            // cleanup the lower bits
+            let mut word = (bitvec.as_ref()[word_idx as usize] >> bit_idx) << bit_idx;
+            //
+            let mut number_of_ones = inventory_idx * Self::ONES_PER_INVENTORY;
+            let mut next_quantum = number_of_ones;
+
+            let subinventory = unsafe{inventory[start_idx..end_idx].align_to_mut().1};
+
+
+            let (quantum, size) = if span < u16::MAX as u64 {
+                (Self::ONES_PER_SUB16, core::mem::size_of::<u16>())
             } else {
-                // sparse
-                for word in data.iter().enumerate() {}
+                (Self::ONES_PER_SUB64, core::mem::size_of::<u64>())
+            };
+
+            let mut inventory_idx = 0;
+            loop {
+                next_quantum += quantum;
+
+                let ones_in_word = word.count_ones() as usize;
+                while number_of_ones + ones_in_word > next_quantum {
+                    let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
+                    let index = (word_idx * usize::BITS as u64) + in_word_index as u64;
+                    let sub_offset = index - start_bit_idx;
+
+                    
+                    subinventory[inventory_idx..inventory_idx + size].copy_from_slice(
+                        &sub_offset.to_le_bytes()
+                    );
+
+                    inventory_idx += size;
+                    next_quantum += quantum;
+                }
+                number_of_ones += ones_in_word;
+
+                if word_idx == end_word_idx {
+                    break;
+                }
+
+                word = bitvec.as_ref()[word_idx as usize];
+                word_idx += 1;
             }
         });
 

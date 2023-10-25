@@ -42,6 +42,22 @@ pub struct QuantumIndex<
 
 impl<
         B: SelectHinted + AsRef<[usize]>,
+        const QUANTUM_LOG2: usize,
+    > QuantumIndex<B, Vec<usize>, QUANTUM_LOG2>
+{
+    pub fn new(bitvec: B, number_of_ones: usize) -> Result<Self> {
+        let mut res = QuantumIndex {
+            ones: vec![0; (number_of_ones + (1 << QUANTUM_LOG2) - 1) >> QUANTUM_LOG2],
+            bits: bitvec,
+            _marker: core::marker::PhantomData,
+        };
+        res.build_ones()?;
+        Ok(res)
+    }
+}
+
+impl<
+        B: SelectHinted + AsRef<[usize]>,
         O: BitFieldSlice<usize> + BitFieldSliceMut<usize>,
         const QUANTUM_LOG2: usize,
     > QuantumIndex<B, O, QUANTUM_LOG2>

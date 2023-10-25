@@ -28,3 +28,4 @@ pub use iter::*;
 
 pub mod rank_sel;
 pub use rank_sel::*;
+mod rank_sel_impl;
