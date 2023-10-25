@@ -459,7 +459,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
         let start = rca.pointers.as_ref()[block];
         let mut res = Iterator {
             rca,
-            index: start_index,
+            index: block * rca.k,
             data: &rca.data.as_ref()[start..],
             buffer: Vec::with_capacity(128),
         };
@@ -489,7 +489,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Iterator<'a, D, P> {
             self.buffer.clear();
             self.data = strcpy(self.data, &mut self.buffer);
         } else {
-            let (len, tmp) = dbg!(decode_int(self.data));
+            let (len, tmp) = decode_int(self.data);
             self.buffer.resize(self.buffer.len() - len, 0);
             self.data = strcpy(tmp, &mut self.buffer);
         }
