@@ -186,9 +186,10 @@ impl RearCodedListBuilder {
 
             // compute the redundancy
             let rear_length = self.last_str.len() - lcp;
-            self.stats.redundancy += lcp as isize;
-            self.stats.redundancy -= encode_int_len(rear_length) as isize;
-
+            if self.len != 0 {
+                self.stats.redundancy += lcp as isize;
+                self.stats.redundancy -= encode_int_len(rear_length) as isize;
+            }
             // just encode the whole string
             string.as_bytes()
         } else {
@@ -488,7 +489,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Iterator<'a, D, P> {
             self.buffer.clear();
             self.data = strcpy(self.data, &mut self.buffer);
         } else {
-            let (len, tmp) = decode_int(self.data);
+            let (len, tmp) = dbg!(decode_int(self.data));
             self.buffer.resize(self.buffer.len() - len, 0);
             self.data = strcpy(tmp, &mut self.buffer);
         }
