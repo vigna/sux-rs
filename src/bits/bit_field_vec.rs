@@ -126,12 +126,6 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         Ok(result)
     }
 
-    pub fn address_of(&self, index: usize) -> *const W {
-        let pos = index * W::BITS;
-        let word_index = pos / W::BITS;
-        (&self.data[word_index]) as *const _
-    }
-
     pub fn push(&mut self, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
         if (self.len + 1) * self.bit_width > self.data.len() * W::BITS {
@@ -163,6 +157,32 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
             }
         }
         self.len = new_len;
+    }
+}
+
+impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
+    /// Get the address of the item storing (the first part of)
+    /// the element of given index.
+    ///
+    /// This method is mainly useful for manually prefetching
+    /// parts of the data structure.
+    pub fn address_of(&self, index: usize) -> *const W {
+        let pos = index * W::BITS;
+        let word_index = pos / W::BITS;
+        (&self.data.as_ref()[word_index]) as *const _
+    }
+
+    /// Like [`BitFieldSlice::get`], but using unaligned reads.
+    ///
+    /// # Safety
+    /// This methods can be used only if the bit width is at most
+    /// `W::BITS - 7`.
+    pub unsafe fn get_unaligned(&self, index: usize) -> W {
+        debug_assert!(self.bit_width <= (W::BITS - 7));
+        let base_ptr = self.data.as_ref().as_ptr() as *const u8;
+        let ptr = base_ptr.add(index / W::BYTES) as *const W;
+        let word = core::ptr::read_unaligned(ptr);
+        (word >> (index % W::BITS)) & self.mask
     }
 }
 
