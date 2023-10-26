@@ -5,12 +5,13 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::Ordering;
 use epserde::prelude::*;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngCore, SeedableRng};
 use sux::bits::bit_vec::BitVec;
+use sux::prelude::AtomicBitVec;
 
 #[test]
 fn test_bit_vec() {
@@ -59,7 +60,7 @@ fn test_bit_vec() {
         }
     }
 
-    let bm: BitVec<Vec<AtomicUsize>> = bm.into();
+    let bm: AtomicBitVec = bm.into();
     for _ in 0..10 {
         let mut values = (0..u).collect::<Vec<_>>();
         let (indices, _) = values.partial_shuffle(&mut rng, n2);
@@ -96,6 +97,35 @@ fn test_bit_vec() {
             assert!(!bm.get(i, Ordering::Relaxed));
         }
     }
+}
+
+#[test]
+fn test_push() {
+    let mut b = BitVec::new(0);
+    b.push(true);
+    b.push(false);
+    assert!(b.get(0));
+    assert!(!b.get(1));
+    for i in 2..200 {
+        b.push(i % 2 == 0);
+    }
+    for i in 2..200 {
+        assert_eq!(b.get(i), i % 2 == 0);
+    }
+}
+
+#[test]
+fn test_resize() {
+    let mut c = BitVec::new(0);
+    c.resize(100, true);
+    for i in 0..100 {
+        assert!(c.get(i));
+    }
+    c.resize(50, false);
+    for i in 0..50 {
+        assert!(c.get(i));
+    }
+    assert_eq!(c.len(), 50);
 }
 
 #[test]

@@ -11,8 +11,10 @@ use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
 use std::hint::black_box;
-use sux::prelude::CompactArray;
+use sux::prelude::BitFieldVec;
 use sux::prelude::*;
+use sux::traits::bit_field_slice::BitFieldSlice;
+use sux::traits::bit_field_slice::BitFieldSliceMut;
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks compact arrays", long_about = None)]
@@ -40,7 +42,7 @@ pub fn main() {
 
     let args = Args::parse();
 
-    let mut a = CompactArray::new(args.width, 1 << args.log2_size);
+    let mut a = BitFieldVec::<usize>::new(args.width, 1 << args.log2_size);
     let mask = (1 << args.log2_size) - 1;
 
     let mut pl = ProgressLogger::default();
@@ -73,9 +75,17 @@ pub fn main() {
         }
         pl.done_with_count(args.n);
 
-        let mut iter = a.iter_val_unchecked();
+        let mut iter = a.into_unchecked_iter();
         pl.item_name = "item";
         pl.start("Scanning (unchecked) ...");
+        for _ in 0..args.n {
+            u += unsafe { iter.next_unchecked() };
+        }
+        pl.done_with_count(args.n);
+
+        let mut iter = a.into_rev_unchecked_iter();
+        pl.item_name = "item";
+        pl.start("Scanning (reverse unchecked) ...");
         for _ in 0..args.n {
             u += unsafe { iter.next_unchecked() };
         }

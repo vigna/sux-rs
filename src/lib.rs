@@ -16,41 +16,11 @@ pub mod traits;
 pub mod utils;
 
 pub mod prelude {
-    pub use crate::bits::prelude::*;
-    pub use crate::dict::prelude::*;
+    pub use crate::bits::*;
+    pub use crate::dict::*;
     pub use crate::func::*;
-    pub use crate::rank_sel::prelude::*;
-    pub use crate::traits::prelude::*;
+    pub use crate::rank_sel::*;
+    pub use crate::traits::bit_field_slice;
+    pub use crate::traits::*;
     pub use crate::utils::*;
 }
-
-#[allow(clippy::len_without_is_empty)]
-pub trait BitOps {
-    /// Ceiling of the logarithm in base 2 (zero for input zero).
-    fn ceil_log2(self) -> u32;
-    /// The number of bits needed to represent `self`.
-    fn len(self) -> u32;
-}
-
-macro_rules! impl_bit_ops {
-    ($($ty:ty),*) => {$(
-        impl BitOps for $ty {
-            fn ceil_log2(self) -> u32 {
-                if self <= 2 {
-                    self as u32
-                } else {
-                    (self - 1).ilog2() + 1
-                }
-            }
-            fn len(self) -> u32 {
-                if self == 0 {
-                    1
-                } else {
-                    self.ilog2() + 1
-                }
-            }
-        }
-    )*};
-}
-
-impl_bit_ops!(isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);

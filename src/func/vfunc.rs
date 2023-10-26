@@ -5,24 +5,15 @@
 * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
 */
 
-/*!
-
-No-nonsense static functions with 10%-11% space overhead,
-fast parallel construction, and fast queries.
-
-*/
-
-use crate::prelude::{
-    BitFieldSlice, BitFieldSliceAtomic, BitFieldSliceCore, CompactArray, SigStore, ToSig,
-};
-use crate::traits::convert_to::ConvertTo;
-use crate::BitOps;
+use crate::bits::*;
+use crate::prelude::*;
+use crate::traits::bit_field_slice::{self, Word};
+use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
 use dsi_progress_logger::ProgressLogger;
-use epserde::Epserde;
+use epserde::prelude::*;
 use log::warn;
 use log::*;
 use rayon::prelude::*;
-use std::mem::{self};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::thread;
@@ -30,37 +21,42 @@ use Ordering::Relaxed;
 
 const PARAMS: [(usize, usize, f64); 15] = [
     (0, 1, 1.23),
-    (13, 32, 1.22),
-    (14, 32, 1.21),
-    (15, 32, 1.20),
-    (16, 64, 1.18),
-    (17, 64, 1.16),
-    (18, 64, 1.15),
-    (19, 128, 1.14),
-    (20, 128, 1.13),
-    (21, 256, 1.12),
-    (22, 512, 1.12),
-    (23, 256, 1.11),
-    (24, 512, 1.11),
-    (25, 256, 1.11),
-    (26, 512, 1.10),
+    (10000, 32, 1.23),
+    (12500, 32, 1.22),
+    (19531, 32, 1.21),
+    (30516, 32, 1.20),
+    (38145, 64, 1.19),
+    (47681, 64, 1.18),
+    (74501, 64, 1.17),
+    (116407, 64, 1.16),
+    (227356, 64, 1.15),
+    (355243, 128, 1.14),
+    (693832, 128, 1.13),
+    (2117406, 128, 1.12),
+    (6461807, 256, 1.11),
+    (60180252, 512, 1.10),
 ];
 
 #[derive(Debug, Default)]
 struct EdgeList(usize);
 impl EdgeList {
-    const DEG_SHIFT: usize = usize::BITS as usize - 10;
+    const DEG_SHIFT: usize = usize::BITS as usize - 16;
     const EDGE_INDEX_MASK: usize = (1_usize << EdgeList::DEG_SHIFT) - 1;
     const DEG: usize = 1_usize << EdgeList::DEG_SHIFT;
+    const MAX_DEG: usize = usize::MAX >> EdgeList::DEG_SHIFT;
 
     #[inline(always)]
     fn add(&mut self, edge: usize) {
-        self.0 += EdgeList::DEG | edge;
+        debug_assert!(self.degree() <= Self::MAX_DEG);
+        self.0 += EdgeList::DEG;
+        self.0 ^= edge;
     }
 
     #[inline(always)]
     fn remove(&mut self, edge: usize) {
-        self.0 -= EdgeList::DEG | edge;
+        debug_assert!(self.degree() > 0);
+        self.0 -= EdgeList::DEG;
+        self.0 ^= edge;
     }
 
     #[inline(always)]
@@ -75,17 +71,30 @@ impl EdgeList {
 
     #[inline(always)]
     fn dec(&mut self) {
+        debug_assert!(self.degree() > 0);
         self.0 -= EdgeList::DEG;
     }
 }
 
 /**
 
-A static function from key implementing [ToSig] to arbitrary values.
+Static functions with 10%-11% space overhead for large key sets,
+fast parallel construction, and fast queries.
+
+Keys must implement the [`ToSig`] trait, which provides a method to
+compute a 128-bit signature of the key.
+
+The output type `O` can be selected to be any of the unsigned integer types
+with an atomic counterpart; The default is `usize`.
 
 */
+
 #[derive(Epserde, Debug, Default)]
-pub struct VFunc<T: ToSig, S: BitFieldSlice = CompactArray<Vec<usize>>> {
+pub struct VFunc<
+    T: ToSig,
+    O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic = usize,
+    S: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
+> {
     seed: u64,
     log2_l: u32,
     high_bits: u32,
@@ -93,7 +102,8 @@ pub struct VFunc<T: ToSig, S: BitFieldSlice = CompactArray<Vec<usize>>> {
     num_keys: usize,
     segment_size: usize,
     values: S,
-    _phantom: std::marker::PhantomData<T>,
+    _marker_t: std::marker::PhantomData<T>,
+    _marker_o: std::marker::PhantomData<O>,
 }
 
 /**
@@ -108,7 +118,15 @@ More precisely, each signature is made of two 64-bit integers `h` and `l`, and t
 - the lower 32 bits of `l` are used to select the third vertex.
 
 */
-impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
+impl<
+        T: ToSig,
+        O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic,
+        S: bit_field_slice::BitFieldSlice<O>,
+    > VFunc<T, O, S>
+where
+    O::AtomicType: AtomicUnsignedInt + AsBytes,
+    BitFieldVec<O>: From<AtomicBitFieldVec<O, Vec<O::AtomicType>>>,
+{
     #[inline(always)]
     #[must_use]
     fn chunk(sig: &[u64; 2], high_bits: u32, chunk_mask: u32) -> usize {
@@ -129,7 +147,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
         ]
     }
 
-    pub fn get_by_sig(&self, sig: &[u64; 2]) -> usize {
+    pub fn get_by_sig(&self, sig: &[u64; 2]) -> O {
         let edge = Self::edge(sig, self.log2_l, self.segment_size);
         let chunk = Self::chunk(sig, self.high_bits, self.chunk_mask);
         // chunk * self.segment_size * (2^log2_l + 2)
@@ -140,7 +158,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
     }
 
     #[inline(always)]
-    pub fn get(&self, key: &T) -> usize {
+    pub fn get(&self, key: &T) -> O {
         self.get_by_sig(&T::to_sig(key, self.seed))
     }
 
@@ -155,12 +173,13 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
     /// Creates a new function with given keys and values.
     pub fn new<
         I: std::iter::IntoIterator<Item = T> + Clone,
-        V: std::iter::IntoIterator<Item = usize> + Clone,
+        V: std::iter::IntoIterator<Item = O> + Clone,
     >(
         keys: I,
         into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
-    ) -> VFunc<T> {
+    ) -> VFunc<T, O> {
+        use crate::traits::bit_field_slice::AtomicBitFieldSlice;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         for seed in 0.. {
@@ -169,7 +188,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             }
 
             let mut values = into_values.clone().into_iter();
-            let mut max_value = 0;
+            let mut max_value = O::ZERO;
             let mut sigs = keys
                 .clone()
                 .into_iter()
@@ -178,7 +197,7 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                     if let Some(pl) = pl.as_mut() {
                         pl.light_update();
                     }
-                    max_value = max_value.max(v);
+                    max_value = Ord::max(max_value, v);
                     (T::to_sig(&x, seed), v)
                 })
                 .collect::<Vec<_>>();
@@ -196,34 +215,46 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             }*/
 
             let num_keys = sigs.len();
+            let (chunk_high_bits, max_num_threads, l, c);
 
-            let eps = 0.001;
-            let mut chunk_high_bits = {
-                let t = (sigs.len() as f64 * eps * eps / 2.0).ln();
+            if num_keys < PARAMS[PARAMS.len() - 2].0 {
+                // Too few keys, we cannot split into chunks
+                chunk_high_bits = 0;
+                max_num_threads = 1;
+                (_, l, c) = PARAMS
+                    .iter()
+                    .rev()
+                    .filter(|(n, _l, _c)| n <= &num_keys)
+                    .copied()
+                    .next()
+                    .unwrap(); // first n is 0, so this is always valid
+            } else if num_keys < PARAMS[PARAMS.len() - 1].0 {
+                // We are in the 1.11 regime. We can reduce memory
+                // usage by doing single thread.
+                chunk_high_bits = (num_keys / PARAMS[PARAMS.len() - 2].0).ilog2();
+                max_num_threads = 1;
+                (_, l, c) = PARAMS[PARAMS.len() - 2];
+            } else {
+                // We are in the 1.10 regime. We can increase the number
+                // of threads, but we need to be careful not to use too
+                // much memory.
 
-                if t > 0.0 {
-                    ((t - t.ln()) / 2_f64.ln()).ceil()
-                } else {
-                    0.0
-                }
-            }
-            .min(10.0) as u32; // More than 1000 chunks make no sense
+                let eps = 0.001;
+                chunk_high_bits = {
+                    let t = (sigs.len() as f64 * eps * eps / 2.0).ln();
 
-            let (l, c) = {
-                loop {
-                    let (_, l, c) = PARAMS
-                        .iter()
-                        .rev()
-                        .filter(|(log_n, _l, _c)| (1 << log_n) <= (num_keys >> chunk_high_bits))
-                        .copied()
-                        .next()
-                        .unwrap(); // first log_n is 0, so this is always valid
-                    if chunk_high_bits == 0 || c <= 1.11 {
-                        break (l, c);
+                    if t > 0.0 {
+                        ((t - t.ln()) / 2_f64.ln()).ceil()
+                    } else {
+                        0.0
                     }
-                    chunk_high_bits -= 1;
                 }
-            };
+                .min(10.0) // More than 1000 chunks make no sense
+                .min((num_keys / PARAMS[PARAMS.len() - 1].0).ilog2() as f64) // Let's keep the chunks in the 1.10 regime
+                    as u32;
+                max_num_threads = 1.max((1 << chunk_high_bits) / 8);
+                (_, l, c) = PARAMS[PARAMS.len() - 1];
+            }
 
             info!("high bits = {}, l = {}, c = {}", chunk_high_bits, l, c);
 
@@ -284,13 +315,15 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * c)
             );
 
-            let data = CompactArray::new_atomic(bit_width, num_vertices * num_chunks);
+            let data = AtomicBitFieldVec::<O>::new(bit_width, num_vertices * num_chunks);
 
             let chunk = AtomicUsize::new(0);
             let fail = AtomicBool::new(false);
+            let num_threads = num_chunks.min(num_cpus::get()).min(max_num_threads);
+            info!("Using {} threads", num_threads);
 
             thread::scope(|s| {
-                for _ in 0..num_chunks.min(num_cpus::get()) {
+                for _ in 0..num_threads {
                     s.spawn(|| loop {
                         let chunk = chunk.fetch_add(1, Relaxed);
                         if chunk >= num_chunks {
@@ -322,7 +355,6 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                             "Peeling graph for chunk {}/{}...",
                             chunk, num_chunks
                         ));
-                        let stacks = Mutex::new(vec![]);
 
                         let mut stack = Vec::new();
                         loop {
@@ -372,42 +404,36 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                         if sigs.len() != stack.len() {
                             fail.store(true, Ordering::Relaxed);
                         }
-                        stacks.lock().unwrap().push(stack);
-
                         pl.done_with_count(sigs.len());
 
                         pl.start(format!(
                             "Assigning values for chunk {}/{}...",
                             chunk, num_chunks
                         ));
-                        let mut stacks = stacks.lock().unwrap();
-                        while let Some(mut stack) = stacks.pop() {
-                            while let Some(mut v) = stack.pop() {
-                                let edge_index = edge_lists[v].edge_index();
-                                let mut edge =
-                                    Self::edge(&sigs[edge_index].0, log2_l, segment_size);
-                                let chunk_offset = chunk * num_vertices;
-                                v += chunk_offset;
-                                edge.iter_mut().for_each(|v| {
-                                    *v += chunk_offset;
-                                });
-                                let value = if v == edge[0] {
-                                    data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
-                                } else if v == edge[1] {
-                                    data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
-                                } else {
-                                    data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
-                                };
-                                // TODO
-                                data.set(v, sigs[edge_index].1 ^ value, Relaxed);
+                        while let Some(mut v) = stack.pop() {
+                            let edge_index = edge_lists[v].edge_index();
+                            let mut edge = Self::edge(&sigs[edge_index].0, log2_l, segment_size);
+                            let chunk_offset = chunk * num_vertices;
+                            v += chunk_offset;
+                            edge.iter_mut().for_each(|v| {
+                                *v += chunk_offset;
+                            });
+                            let value = if v == edge[0] {
+                                data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
+                            } else if v == edge[1] {
+                                data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
+                            } else {
+                                data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
+                            };
+                            // TODO
+                            data.set(v, sigs[edge_index].1 ^ value, Relaxed);
 
-                                assert_eq!(
-                                    data.get(edge[0], Relaxed)
-                                        ^ data.get(edge[1], Relaxed)
-                                        ^ data.get(edge[2], Relaxed),
-                                    sigs[edge_index].1
-                                );
-                            }
+                            debug_assert_eq!(
+                                data.get(edge[0], Relaxed)
+                                    ^ data.get(edge[1], Relaxed)
+                                    ^ data.get(edge[2], Relaxed),
+                                sigs[edge_index].1
+                            );
                         }
                         pl.done_with_count(sigs.len());
                         pl.start(format!("Completed chunk {}/{}.", chunk, num_chunks));
@@ -429,8 +455,9 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                     chunk_mask,
                     num_keys: sigs.len(),
                     segment_size,
-                    values: data.convert_to().unwrap(),
-                    _phantom: std::marker::PhantomData,
+                    values: data.into(),
+                    _marker_t: std::marker::PhantomData,
+                    _marker_o: std::marker::PhantomData,
                 };
             }
         }
@@ -439,12 +466,13 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
 
     pub fn new_offline<
         I: std::iter::IntoIterator<Item = T> + Clone,
-        V: std::iter::IntoIterator<Item = usize> + Clone,
+        V: std::iter::IntoIterator<Item = O> + Clone,
     >(
         keys: I,
         into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
-    ) -> anyhow::Result<VFunc<T>> {
+    ) -> anyhow::Result<VFunc<T, O>> {
+        use crate::traits::bit_field_slice::AtomicBitFieldSlice;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         for seed in 0.. {
@@ -453,16 +481,16 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
             }
 
             let store_bits = 12;
-            let mut sig_sorter = SigStore::new(8, store_bits).unwrap();
+            let mut sig_sorter = SigStore::<O>::new(8, store_bits).unwrap();
             let mut values = into_values.clone().into_iter();
-            let mut max_value = 0;
+            let mut max_value = O::ZERO;
             sig_sorter.extend(keys.clone().into_iter().map(|x| {
                 if let Some(pl) = pl.as_mut() {
                     pl.light_update();
                 }
                 let v = values.next().expect("Not enough values");
-                max_value = max_value.max(v);
-                (T::to_sig(&x, seed), v as u64)
+                max_value = Ord::max(max_value, v);
+                (T::to_sig(&x, seed), v)
             }))?;
 
             let num_keys = sig_sorter.num_keys();
@@ -479,33 +507,46 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 panic!("Too many values");
             }*/
 
-            let eps = 0.001;
-            let mut chunk_high_bits = {
-                let t = (num_keys as f64 * eps * eps / 2.0).ln();
+            let (chunk_high_bits, max_num_threads, l, c);
 
-                if t > 0.0 {
-                    ((t - t.ln()) / 2_f64.ln()).ceil()
-                } else {
-                    0.0
-                }
-            }
-            .min(10.0) as u32; // More than 1000 chunks make no sense
+            if num_keys < PARAMS[PARAMS.len() - 2].0 {
+                // Too few keys, we cannot split into chunks
+                chunk_high_bits = 0;
+                max_num_threads = 1;
+                (_, l, c) = PARAMS
+                    .iter()
+                    .rev()
+                    .filter(|(n, _l, _c)| n <= &num_keys)
+                    .copied()
+                    .next()
+                    .unwrap(); // first n is 0, so this is always valid
+            } else if num_keys < PARAMS[PARAMS.len() - 1].0 {
+                // We are in the 1.11 regime. We can reduce memory
+                // usage by doing single thread.
+                chunk_high_bits = (num_keys / PARAMS[PARAMS.len() - 2].0).ilog2();
+                max_num_threads = 1;
+                (_, l, c) = PARAMS[PARAMS.len() - 2];
+            } else {
+                // We are in the 1.10 regime. We can increase the number
+                // of threads, but we need to be careful not to use too
+                // much memory.
 
-            let (l, c) = {
-                loop {
-                    let (_, l, c) = PARAMS
-                        .iter()
-                        .rev()
-                        .filter(|(log_n, _l, _c)| (1 << log_n) <= (num_keys >> chunk_high_bits))
-                        .copied()
-                        .next()
-                        .unwrap(); // first log_n is 0, so this is always valid
-                    if chunk_high_bits == 0 || c <= 1.11 {
-                        break (l, c);
+                let eps = 0.001;
+                chunk_high_bits = {
+                    let t = (num_keys as f64 * eps * eps / 2.0).ln();
+
+                    if t > 0.0 {
+                        ((t - t.ln()) / 2_f64.ln()).ceil()
+                    } else {
+                        0.0
                     }
-                    chunk_high_bits -= 1;
                 }
-            };
+                .min(10.0) // More than 1000 chunks make no sense
+                .min((num_keys / PARAMS[PARAMS.len() - 1].0).ilog2() as f64) // Let's keep the chunks in the 1.10 regime
+                    as u32;
+                max_num_threads = 1.max((1 << chunk_high_bits) / 8);
+                (_, l, c) = PARAMS[PARAMS.len() - 1];
+            }
 
             info!(
                 "chunk high bits = {}, l = {}, c = {}",
@@ -543,21 +584,15 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                 (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
             );
 
-            if let Some(pl) = pl.as_mut() {
-                pl.start("Sorting...")
-            }
-
-            if let Some(pl) = pl.as_mut() {
-                pl.done_with_count(num_keys);
-            }
-
-            let data = CompactArray::new_atomic(bit_width, num_vertices * num_chunks);
+            let data = AtomicBitFieldVec::<O>::new(bit_width, num_vertices * num_chunks);
 
             let fail = AtomicBool::new(false);
             let mutex = std::sync::Arc::new(Mutex::new(chunk_store));
+            let num_threads = num_chunks.min(num_cpus::get()).min(max_num_threads);
+            info!("Using {} threads", num_threads);
 
             thread::scope(|s| {
-                for _ in 0..num_chunks.min(num_cpus::get()) {
+                for _ in 0..num_threads {
                     s.spawn(|| loop {
                         let chunks;
                         {
@@ -592,7 +627,6 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                                 "Peeling graph for chunk {}/{}...",
                                 chunk_index, num_chunks
                             ));
-                            let stacks = Mutex::new(vec![]);
 
                             let mut stack = Vec::new();
                             loop {
@@ -642,8 +676,8 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                             }
                             if chunk.len() != stack.len() {
                                 fail.store(true, Ordering::Relaxed);
+                                return;
                             }
-                            stacks.lock().unwrap().push(stack);
 
                             pl.done_with_count(chunk.len());
 
@@ -651,34 +685,31 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                                 "Assigning values for chunk {}/{}...",
                                 chunk_index, num_chunks
                             ));
-                            let mut stacks = stacks.lock().unwrap();
-                            while let Some(mut stack) = stacks.pop() {
-                                while let Some(mut v) = stack.pop() {
-                                    let edge_index = edge_lists[v].edge_index();
-                                    let mut edge =
-                                        Self::edge(&chunk[edge_index].0, log2_l, segment_size);
-                                    let chunk_offset = chunk_index * num_vertices;
-                                    v += chunk_offset;
-                                    edge.iter_mut().for_each(|v| {
-                                        *v += chunk_offset;
-                                    });
-                                    let value = if v == edge[0] {
-                                        data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
-                                    } else if v == edge[1] {
-                                        data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
-                                    } else {
-                                        data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
-                                    };
-                                    // TODO
-                                    data.set(v, chunk[edge_index].1 as usize ^ value, Relaxed);
+                            while let Some(mut v) = stack.pop() {
+                                let edge_index = edge_lists[v].edge_index();
+                                let mut edge =
+                                    Self::edge(&chunk[edge_index].0, log2_l, segment_size);
+                                let chunk_offset = chunk_index * num_vertices;
+                                v += chunk_offset;
+                                edge.iter_mut().for_each(|v| {
+                                    *v += chunk_offset;
+                                });
+                                let value = if v == edge[0] {
+                                    data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
+                                } else if v == edge[1] {
+                                    data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
+                                } else {
+                                    data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
+                                };
+                                // TODO
+                                data.set(v, chunk[edge_index].1 ^ value, Relaxed);
 
-                                    assert_eq!(
-                                        data.get(edge[0], Relaxed)
-                                            ^ data.get(edge[1], Relaxed)
-                                            ^ data.get(edge[2], Relaxed),
-                                        chunk[edge_index].1 as usize
-                                    );
-                                }
+                                debug_assert_eq!(
+                                    data.get(edge[0], Relaxed)
+                                        ^ data.get(edge[1], Relaxed)
+                                        ^ data.get(edge[2], Relaxed),
+                                    chunk[edge_index].1
+                                );
                             }
                             pl.done_with_count(chunk.len());
                             pl.start(format!("Completed chunk {}/{}.", chunk_index, num_chunks));
@@ -701,51 +732,12 @@ impl<T: ToSig, S: BitFieldSlice> VFunc<T, S> {
                     chunk_mask,
                     num_keys,
                     segment_size,
-                    values: data.convert_to().unwrap(),
-                    _phantom: std::marker::PhantomData,
+                    values: data.into(),
+                    _marker_t: std::marker::PhantomData,
+                    _marker_o: std::marker::PhantomData,
                 });
             }
         }
         unreachable!("There are infinite possible seeds.")
     }
-}
-
-fn _count_sort<T: Copy + Clone, F: Fn(&T) -> usize>(
-    data: &mut [T],
-    num_keys: usize,
-    key: F,
-) -> (Vec<usize>, Vec<usize>) {
-    if num_keys == 1 {
-        return (vec![data.len()], vec![0, data.len()]);
-    }
-    let mut counts = vec![0; num_keys];
-
-    for sig in &*data {
-        counts[key(sig)] += 1;
-    }
-
-    let mut cumul = vec![0; counts.len() + 1];
-    for i in 1..cumul.len() {
-        cumul[i] += cumul[i - 1] + counts[i - 1];
-    }
-    let end = data.len() - counts.last().unwrap();
-
-    let mut pos = cumul[1..].to_vec();
-    let mut i = 0;
-    while i < end {
-        let mut sig = data[i];
-
-        loop {
-            let slot = key(&sig);
-            pos[slot] -= 1;
-            if pos[slot] <= i {
-                break;
-            }
-            mem::swap(&mut data[pos[slot]], &mut sig);
-        }
-        data[i] = sig;
-        i += counts[key(&sig)];
-    }
-
-    (counts, cumul)
 }

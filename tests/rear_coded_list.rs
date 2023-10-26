@@ -1,6 +1,7 @@
 /*
  * SPDX-FileCopyrightText: 2023 Inria
  * SPDX-FileCopyrightText: 2023 Sebastiano Vigna
+ * SPDX-FileCopyrightText: 2023 Tommaso Fontana
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
@@ -10,6 +11,22 @@ use epserde::prelude::*;
 use std::io::prelude::*;
 use std::io::BufReader;
 use sux::prelude::*;
+
+#[test]
+fn test_negative_redundancy() {
+    let mut rclb = RearCodedListBuilder::new(10000);
+    rclb.push("UkVBRE1FLm1k");
+    rclb.push("VE9ETy50eHQ=");
+    rclb.push("b2xk");
+    rclb.push("b2xkcHJvamVjdA==");
+    rclb.push("cGFyc2VyLmM=");
+    rclb.push("cmVmcy90YWdzL3YxLjA=");
+    rclb.push("cmVmcy90YWdzL3YyLjAtYW5vbnltb3Vz");
+    rclb.push("cmVmcy9oZWFkcy9tYXN0ZXI=");
+    rclb.push("dGVzdHM=");
+
+    rclb.print_stats();
+}
 
 #[test]
 fn test_rear_coded_list() -> Result<()> {
@@ -33,8 +50,14 @@ fn test_rear_coded_list() -> Result<()> {
     }
 
     // test that the iter is correct
-    for (i, word) in rca.iter().enumerate() {
+    for (i, word) in rca.into_iter().enumerate() {
         assert_eq!(word, words[i]);
+    }
+
+    for from in 0..rca.len() {
+        for (i, word) in rca.into_iter_from(from).enumerate() {
+            assert_eq!(word, words[i + from]);
+        }
     }
 
     assert!(!rca.contains(""));

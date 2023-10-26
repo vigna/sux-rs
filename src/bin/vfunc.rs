@@ -9,13 +9,12 @@ use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::ProgressLogger;
 use epserde::ser::Serialize;
-use sux::func::vfunc::VFunc;
-use sux::prelude::CompactArray;
+use sux::func::VFunc;
 use sux::utils::file::FilenameIntoIterator;
 use sux::utils::FilenameZstdIntoIterator;
 
 #[derive(Parser, Debug)]
-#[command(about = "Generate a function and serialize it with ε-serde", long_about = None)]
+#[command(about = "Generate a function mapping each input to its rank and serialize it with ε-serde", long_about = None)]
 #[clap(group(
             ArgGroup::new("input")
                 .required(true)
@@ -60,11 +59,7 @@ fn main() -> Result<()> {
     }
 
     if let Some(n) = args.n {
-        let func = VFunc::<_, CompactArray<Vec<usize>>>::new_offline(
-            0..n as u64,
-            &(0..),
-            &mut Some(&mut pl),
-        )?;
+        let func = VFunc::<_>::new_offline(0..n, &(0..), &mut Some(&mut pl))?;
 
         func.store(&args.func)?;
     }

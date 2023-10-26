@@ -7,15 +7,13 @@
 
 /*!
 
-Classes for [bit vectors](`bit_vec::BitVec`) and
-[arrays of values of bounded bit width](`compact_array::CompactArray`).
+Structures for [bit vectors](`bit_vec`) and
+[vectors of values of bounded bit width](`bit_field_vec`).
 
 */
 
-pub mod bit_vec;
-pub mod compact_array;
+pub mod bit_field_vec;
+pub use bit_field_vec::*;
 
-pub mod prelude {
-    pub use super::bit_vec::*;
-    pub use super::compact_array::*;
-}
+pub mod bit_vec;
+pub use bit_vec::*;

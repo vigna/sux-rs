@@ -90,15 +90,40 @@ fn main() {
         }
         pl.done_with_count(args.t);
 
-        pl.start("Benchmarking succ_unchecked()...");
+        pl.start("Benchmarking succ_unchecked::<false>()...");
         let upper_bound = *values.last().unwrap();
         for _ in 0..args.t {
-            u ^= unsafe { elias_fano.succ_unchecked(&rng.gen_range(0..upper_bound)).0 };
+            u ^= unsafe {
+                elias_fano
+                    .succ_unchecked::<false>(&rng.gen_range(0..upper_bound))
+                    .0
+            };
+        }
+        pl.done_with_count(args.t);
+
+        let first = *values.first().unwrap();
+
+        pl.start("Benchmarking pred()...");
+        for _ in 0..args.t {
+            u ^= elias_fano
+                .pred(&(rng.gen_range(first..args.u)))
+                .unwrap_or((0, 0))
+                .0;
+        }
+        pl.done_with_count(args.t);
+
+        pl.start("Benchmarking pred_unchecked::<false>()...");
+        for _ in 0..args.t {
+            u ^= unsafe {
+                elias_fano
+                    .pred_unchecked::<false>(&rng.gen_range(first..args.u))
+                    .0
+            };
         }
         pl.done_with_count(args.t);
 
         pl.start("Benchmarking iter()...");
-        for i in elias_fano.iter() {
+        for i in &elias_fano {
             u ^= i;
         }
         pl.done_with_count(args.n);

@@ -7,14 +7,14 @@
 
 use dsi_progress_logger::ProgressLogger;
 use epserde::prelude::*;
-use sux::func::vfunc::VFunc;
+use sux::func::VFunc;
 
 #[test]
 fn test_func() {
     let mut pl = ProgressLogger::default();
 
     for n in [10, 100, 1000, 100000] {
-        let func = VFunc::<_>::new(0..n as u64, &(0..), &mut Some(&mut pl));
+        let func = VFunc::<_>::new(0..n, &(0..), &mut Some(&mut pl));
         let mut cursor = epserde::new_aligned_cursor();
         func.serialize(&mut cursor).unwrap();
         cursor.set_position(0);
