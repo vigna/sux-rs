@@ -1,5 +1,6 @@
 /*
  * SPDX-FileCopyrightText: 2023 Inria
+ * SPDX-FileCopyrightText: 2023 Tommaso Fontana
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
@@ -10,8 +11,9 @@ Immutable lists of strings compressed by prefix omission via rear coding.
 
 */
 
-use crate::traits::indexed_dict::IndexedDict;
+use crate::traits::IndexedDict;
 use epserde::*;
+use lender::{ExactSizeLender, IntoLender, Lender, Lending};
 
 #[derive(Debug, Clone, Default)]
 /// Statistics of the encoded data.
@@ -185,9 +187,10 @@ impl RearCodedListBuilder {
 
             // compute the redundancy
             let rear_length = self.last_str.len() - lcp;
-            self.stats.redundancy += lcp as isize;
-            self.stats.redundancy -= encode_int_len(rear_length) as isize;
-
+            if self.len != 0 {
+                self.stats.redundancy += lcp as isize;
+                self.stats.redundancy -= encode_int_len(rear_length) as isize;
+            }
             // just encode the whole string
             string.as_bytes()
         } else {
@@ -320,11 +323,11 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         }
     }
 
-    fn contains_unsorted(&self, string: &<Self as IndexedDict>::Input) -> bool {
-        let string = string.as_bytes();
-        let mut iter = self.iter();
-        while let Some(buffer) = iter.next_weak() {
-            if matches!(strcmp(string, buffer), core::cmp::Ordering::Equal) {
+    fn contains_unsorted(&self, key: &<Self as IndexedDict>::Input) -> bool {
+        let key = key.as_bytes();
+        let mut iter = self.into_lender();
+        while let Some(string) = iter.next() {
+            if matches!(strcmp(key, string.as_bytes()), core::cmp::Ordering::Equal) {
                 return true;
             }
         }
@@ -378,12 +381,21 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
     }
 }
 
+impl<'a, 'all, D: AsRef<[u8]>, P: AsRef<[usize]>> Lending<'all> for &'a RearCodedList<D, P> {
+    type Lend = &'all str;
+}
+
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLender for &'a RearCodedList<D, P> {
+    type Lender = Iterator<'a, D, P>;
+    #[inline(always)]
+    fn into_lender(self) -> Iterator<'a, D, P> {
+        Iterator::new(self)
+    }
+}
+
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
     type Output = String;
     type Input = str;
-    type Iterator<'a> = Iterator<'a, D, P>
-    where
-        Self: 'a;
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
         let mut result = Vec::with_capacity(128);
@@ -394,16 +406,6 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
-    }
-
-    #[inline(always)]
-    fn iter(&self) -> Iterator<'_, D, P> {
-        Iterator::new(self)
-    }
-
-    #[inline(always)]
-    fn iter_from(&self, start_index: usize) -> Iterator<'_, D, P> {
-        Iterator::new_from(self, start_index)
     }
 
     /// Return whether the string is contained in the array.
@@ -427,6 +429,20 @@ pub struct Iterator<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
     index: usize,
 }
 
+pub struct ValueIterator<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
+    iter: Iterator<'a, D, P>,
+}
+
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for ValueIterator<'a, D, P> {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter
+            .next()
+            .map(|v| unsafe { String::from_utf8_unchecked(Vec::from(v)) })
+    }
+}
+
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
     pub fn new(rca: &'a RearCodedList<D, P>) -> Self {
         Self {
@@ -444,32 +460,27 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
         let start = rca.pointers.as_ref()[block];
         let mut res = Iterator {
             rca,
-            index: start_index,
+            index: block * rca.k,
             data: &rca.data.as_ref()[start..],
             buffer: Vec::with_capacity(128),
         };
         for _ in 0..offset {
-            res.next_weak();
+            res.next();
         }
         res
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iterator<'a, D, P> {
-    type Item = String;
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next_weak()
-            .map(|buffer| String::from_utf8(buffer.to_vec()).unwrap())
-    }
+impl<'a, 'b, D: AsRef<[u8]>, P: AsRef<[usize]>> Lending<'a> for Iterator<'b, D, P> {
+    type Lend = &'a str;
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Iterator<'a, D, P> {
     #[inline]
     /// A next that returns a reference to the inner buffer containg the string.
     /// This is useful to avoid allocating a new string for every query if you
     /// don't need to keep the string around.
-    pub fn next_weak(&mut self) -> Option<&[u8]> {
+    fn next(&mut self) -> Option<&'_ str> {
         if self.index >= self.rca.len() {
             return None;
         }
@@ -485,13 +496,32 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
         }
         self.index += 1;
 
-        Some(&self.buffer)
+        Some(unsafe { std::str::from_utf8_unchecked(&self.buffer) })
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeIterator for Iterator<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeLender for Iterator<'a, D, P> {
     fn len(&self) -> usize {
         self.rca.len() - self.index
+    }
+}
+
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D, P> {
+    type Item = String;
+    type IntoIter = ValueIterator<'a, D, P>;
+    #[inline(always)]
+    fn into_iter(self) -> Self::IntoIter {
+        ValueIterator {
+            iter: Iterator::new(self),
+        }
+    }
+}
+
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
+    pub fn into_iter_from(&self, from: usize) -> ValueIterator<'_, D, P> {
+        ValueIterator {
+            iter: Iterator::new_from(self, from),
+        }
     }
 }
 
@@ -735,4 +765,30 @@ fn test_longest_common_prefix() {
         longest_common_prefix(str2, str2),
         (str2.len(), core::cmp::Ordering::Equal)
     );
+}
+
+#[cfg(test)]
+fn read_into_lender<L: IntoLender>(into_lender: L) -> usize
+where
+    for<'a> <L::Lender as Lending<'a>>::Lend: AsRef<str>,
+{
+    let mut iter = into_lender.into_lender();
+    let mut c = 0;
+    while let Some(s) = iter.next() {
+        c += s.as_ref().len();
+    }
+
+    c
+}
+
+#[cfg(test)]
+#[cfg_attr(test, test)]
+fn test_into_lend() {
+    let mut builder = RearCodedListBuilder::new(4);
+    builder.push("a");
+    builder.push("b");
+    builder.push("c");
+    builder.push("d");
+    let rcl = builder.build();
+    read_into_lender::<&RearCodedList>(&rcl);
 }

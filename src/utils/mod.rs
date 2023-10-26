@@ -12,8 +12,9 @@ Utility traits and implementations.
 */
 
 pub mod file;
-pub mod sig_store;
 pub use crate::utils::file::*;
+
+pub mod sig_store;
 pub use crate::utils::sig_store::*;
 
 pub mod spooky;

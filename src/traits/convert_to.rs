@@ -8,17 +8,21 @@
 //! Custom conversion trait.
 
 use anyhow::Result;
-use std::sync::atomic::{AtomicU64, AtomicUsize};
+use std::sync::atomic::*;
 
 /// Like [`Into`], but we need to avoid the orphan rule and error
 /// [E0210](https://github.com/rust-lang/rust/blob/master/compiler/rustc_error_codes/src/error_codes/E0210.md).
 ///
-/// Reference: <https://rust-lang.github.io/chalk/book/clauses/coherence.html>
+/// We provide implementations performing conversions between vectors and (mutable) references
+/// to slices of atomic and non-atomic unsigned integers.
 ///
-/// We provide implementations between vectors and (mutable) references to slices of atomic and non-atomic integers
-/// of type `u64` and `usize`.
+/// Other structures, such as [`EliasFano`](crate::dict::elias_fano::EliasFano),
+/// use this trait to add features to a basic implementation.
 ///
-/// Other structures, such as [`EliasFano`](crate::dict::elias_fano::EliasFano), use this trait to add features to a basic implementation.
+/// Note that this trait is intentionally non-reflexive, that is, it does not provide
+/// a blanket implementation of `ConvertTo<A>` for `A`. This property makes it possible
+/// to have multiple conversions for the same type, including the reflexive one, without
+/// ambiguity.
 pub trait ConvertTo<B> {
     fn convert_to(self) -> Result<B>;
 }
@@ -71,5 +75,8 @@ macro_rules! convert_to {
     };
 }
 
+convert_to!(u8, AtomicU8);
+convert_to!(u16, AtomicU16);
+convert_to!(u32, AtomicU32);
 convert_to!(u64, AtomicU64);
 convert_to!(usize, AtomicUsize);

@@ -8,9 +8,7 @@
 //! Indexed dictionaries.
 
 pub mod elias_fano;
-pub mod rear_coded_list;
+pub use elias_fano::{EliasFano, EliasFanoBuilder, EliasFanoConcurrentBuilder};
 
-pub mod prelude {
-    pub use super::elias_fano::{EliasFano, EliasFanoAtomicBuilder, EliasFanoBuilder};
-    pub use super::rear_coded_list::{RearCodedList, RearCodedListBuilder};
-}
+pub mod rear_coded_list;
+pub use rear_coded_list::{RearCodedList, RearCodedListBuilder};

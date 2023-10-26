@@ -11,41 +11,62 @@ Traits for slices of bit fields of constant width.
 
 Slices of bit fields are accessed with a logic similar to slices, but
 when indexed with [`get`](BitFieldSlice::get) return an owned value
-of a [fixed bit width](BitFieldSliceCore::bit_width).
+of a [fixed bit width](BitFieldSliceCore::bit_width). The associated
+implementation is [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec).
 
-Implementing the [`core::ops::Index`]/[`core::ops::IndexMut`] traits
+Implementing the [`Index`](core::ops::Index)/[`IndexMut`](core::ops::IndexMut) traits
 would be more natural and practical, but in certain cases it is impossible:
-in our main use case, [`CompactArray`],
-we cannot implement [`core::ops::Index`] because there is no way to
+in our main use case, [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec),
+we cannot implement [`Index`](core::ops::Index) because there is no way to
 return a reference to a bit segment.
 
-There are three end-user traits: [`BitFieldSlice`], [`BitFieldSliceMut`] and [`BitFieldSliceAtomic`].
+There are three end-user traits: [`BitFieldSlice`], [`BitFieldSliceMut`] and [`AtomicBitFieldSlice`].
 The trait [`BitFieldSliceCore`] contains the common methods, and in particular
 [`BitFieldSliceCore::bit_width`], which returns the bit width the values stored in the slice.
  All stored values must fit within this bit width.
 
+All the traits depends on a type parameter `W` that must implement [`Word`], and which
+default to `usize`, but any type satisfying the [`Word`] trait
+can be used, with the restriction that the bit width of the slice can be at most
+the bit width of `W` as defined by [`AsBytes::BITS`]. Additionally,
+to implement [`AtomicBitFieldSlice`], `W` must implement [`IntoAtomic`].
+The methods of all traits accept and return values of type `W`.
+
+If you need to iterate over a [`BitFieldSlice`], you can use [`BitFieldSliceIterator`].
+
+Note that [`AtomicBitFieldSlice`] has methods with the same names as those in
+[`BitFieldSlice`] and [`BitFieldSliceMut`]. Due to the way methods are resolved,
+this might cause problems if you have have imported all traits. We suggest that,
+unless you are using only of the two variants, you import globally only [`BitFieldSliceCore`]
+and possibly [`BitFieldSliceIterator`],
+importing the other traits only in the functions of modules that needs them. This is what
+the re-exports in [`traits`](crate::traits) do.
+
 Implementations must return always zero on a [`BitFieldSlice::get`] when the bit
 width is zero. The behavior of a [`BitFieldSliceMut::set`] in the same context is not defined.
 
-We provide implementations for `Vec<usize>`, `Vec<AtomicUsize>`, `&[usize]`,
-and `&[AtomicUsize]` that view their elements as values with a bit width
-equal to that of `usize`; for those, we also implement
-[`IntoValueIterator`] using a [helper](BitFieldSliceIterator) structure
-that might be useful for other implementations, too.
+It is suggested that types implementing [`BitFieldSlice`] implement on a reference
+[`IntoIterator`] with item `W` using [`BitFieldSliceIterator`] as helper.
 
-The implementations based on atomic types implement
-[`BitFieldSliceAtomic`].
+We provide implementations for vectors and slices of all primitive atomic and non-atomic
+unsigned integer types that view their elements as values with a bit width
+equal to that of the type.
 
 */
+use common_traits::*;
+use core::sync::atomic::*;
+use std::marker::PhantomData;
 
-use crate::prelude::*;
-use core::sync::atomic::{AtomicUsize, Ordering};
-use std::iter::Copied;
+/// A derived trait that the types used as a parameter for [`BitFieldSlice`] must satisfy.
+/// To be usable in an [`AtomicBitFieldSlice`], the type must also implement [`IntoAtomic`].
+pub trait Word: UnsignedInt + FiniteRangeNumber + AsBytes {}
+impl<W: UnsignedInt + FiniteRangeNumber + AsBytes> Word for W {}
 
-const BITS: usize = core::mem::size_of::<usize>() * 8;
-
-/// Common methods for [`BitFieldSlice`], [`BitFieldSliceMut`], and [`BitFieldSliceAtomic`]
-pub trait BitFieldSliceCore {
+/// Common methods for [`BitFieldSlice`], [`BitFieldSliceMut`], and [`AtomicBitFieldSlice`].
+///
+/// The dependence on `W` is necessary to implement this trait on vectors and slices, as
+/// we need the bit width of the values stored in the slice.
+pub trait BitFieldSliceCore<W> {
     /// Return the width of the slice. All elements stored in the slice must
     /// fit within this bit width.
     fn bit_width(&self) -> usize;
@@ -87,25 +108,25 @@ macro_rules! debug_assert_bounds {
 }
 
 /// A slice of bit fields of constant bit width.
-pub trait BitFieldSlice: BitFieldSliceCore {
+pub trait BitFieldSlice<W: Word>: BitFieldSliceCore<W> {
     /// Return the value at the specified index.
     ///
     /// # Safety
     /// `index` must be in [0..[len](`BitFieldSliceCore::len`)). No bounds checking is performed.
-    unsafe fn get_unchecked(&self, index: usize) -> usize;
+    unsafe fn get_unchecked(&self, index: usize) -> W;
 
     /// Return the value at the specified index.
     ///
     /// # Panics
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
-    fn get(&self, index: usize) -> usize {
+    fn get(&self, index: usize) -> W {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_unchecked(index) }
     }
 }
 
 /// A mutable slice of bit fields of constant bit width.
-pub trait BitFieldSliceMut: BitFieldSliceCore {
+pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
     /// Set the element of the slice at the specified index.
     /// No bounds checking is performed.
     ///
@@ -113,17 +134,22 @@ pub trait BitFieldSliceMut: BitFieldSliceCore {
     /// - `index` must be in [0..[len](`BitFieldSliceCore::len`));
     /// - `value` must fit withing [`BitFieldSliceCore::bit_width`] bits.
     /// No bound or bit-width check is performed.
-    unsafe fn set_unchecked(&mut self, index: usize, value: usize);
+    unsafe fn set_unchecked(&mut self, index: usize, value: W);
 
     /// Set the element of the slice at the specified index.
     ///
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
-    fn set(&mut self, index: usize, value: usize) {
+    fn set(&mut self, index: usize, value: W) {
         panic_if_out_of_bounds!(index, self.len());
         let bw = self.bit_width();
-        let mask = usize::MAX.wrapping_shr(BITS as u32 - bw as u32)
-            & !((bw as isize - 1) >> (BITS - 1)) as usize;
+        // TODO: Maybe testless?
+        let mask = if bw == 0 {
+            W::ZERO
+        } else {
+            W::MAX >> (W::BITS as u32 - bw as u32)
+        };
+
         panic_if_value!(value, mask, bw);
         unsafe {
             self.set_unchecked(index, value);
@@ -131,23 +157,26 @@ pub trait BitFieldSliceMut: BitFieldSliceCore {
     }
 }
 
-/// A thread-safe slice of bit fields of constant bit width supporting atomic operations.
+/// A (tentatively) thread-safe slice of bit fields of constant bit width supporting atomic operations.
 ///
 /// Different implementations might provide different atomicity guarantees. See
-/// [`CompactArray`] for an example.
-pub trait BitFieldSliceAtomic: BitFieldSliceCore {
+/// [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec) for an example.
+pub trait AtomicBitFieldSlice<W: Word + IntoAtomic>: BitFieldSliceCore<W::AtomicType>
+where
+    W::AtomicType: AtomicUnsignedInt + AsBytes,
+{
     /// Return the value at the specified index.
     ///
     /// # Safety
     /// `index` must be in [0..[len](`BitFieldSliceCore::len`)).
     /// No bound or bit-width check is performed.
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize;
+    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W;
 
     /// Return the value at the specified index.
     ///
     /// # Panics
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
-    fn get(&self, index: usize, order: Ordering) -> usize {
+    fn get(&self, index: usize, order: Ordering) -> W {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_unchecked(index, order) }
     }
@@ -158,19 +187,23 @@ pub trait BitFieldSliceAtomic: BitFieldSliceCore {
     /// - `index` must be in [0..[len](`BitFieldSliceCore::len`));
     /// - `value` must fit withing [`BitFieldSliceCore::bit_width`] bits.
     /// No bound or bit-width check is performed.
-    unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering);
+    unsafe fn set_unchecked(&self, index: usize, value: W, order: Ordering);
 
     /// Set the element of the slice at the specified index.
     ///
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
-    fn set(&self, index: usize, value: usize, order: Ordering) {
+    fn set(&self, index: usize, value: W, order: Ordering) {
         if index >= self.len() {
             panic_if_out_of_bounds!(index, self.len());
         }
         let bw = self.bit_width();
-        let mask = usize::MAX.wrapping_shr(BITS as u32 - bw as u32)
-            & !((bw as isize - 1) >> (BITS - 1)) as usize;
+
+        let mask = if bw == 0 {
+            W::ZERO
+        } else {
+            W::MAX >> (W::BITS as u32 - bw as u32)
+        };
         panic_if_value!(value, mask, bw);
         unsafe {
             self.set_unchecked(index, value, order);
@@ -178,31 +211,34 @@ pub trait BitFieldSliceAtomic: BitFieldSliceCore {
     }
 }
 
-/// A ready-made implementation of [`BitFieldSliceIterator`].
+/// An [`Iterator`] implementation returning the elements of a [`BitFieldSlice`].
 ///
-/// We cannot implement [`IntoValueIterator`] for [`BitFieldSlice`]
-/// because it would be impossible to override in implementing classes,
-/// but you can implement [`IntoValueIterator`] for your implementation
-/// of [`BitFieldSlice`] by using this structure.
-pub struct BitFieldSliceIterator<'a, B: BitFieldSlice> {
+/// You can easily implement [`IntoIterator`] on a reference to your type using this structure.
+pub struct BitFieldSliceIterator<'a, W: Word, B: BitFieldSlice<W>> {
     slice: &'a B,
     index: usize,
+    _marker: PhantomData<W>,
 }
 
-impl<'a, B: BitFieldSlice> BitFieldSliceIterator<'a, B> {
-    pub fn new(slice: &'a B, index: usize) -> Self {
-        if index > slice.len() {
-            panic!("Start index out of bounds: {} > {}", index, slice.len());
+impl<'a, V: Word, B: BitFieldSlice<V>> BitFieldSliceIterator<'a, V, B> {
+    pub fn new(slice: &'a B, from: usize) -> Self {
+        if from > slice.len() {
+            panic!("Start index out of bounds: {} > {}", from, slice.len());
         }
-        Self { slice, index }
+        Self {
+            slice,
+            index: from,
+            _marker: PhantomData,
+        }
     }
 }
 
-impl<'a, B: BitFieldSlice> Iterator for BitFieldSliceIterator<'a, B> {
-    type Item = usize;
-    fn next(&mut self) -> Option<usize> {
+impl<'a, W: Word, B: BitFieldSlice<W>> Iterator for BitFieldSliceIterator<'a, W, B> {
+    type Item = W;
+    fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.slice.len() {
-            let res = self.slice.get(self.index);
+            // SAFETY: self.index is always within bounds
+            let res = unsafe { self.slice.get_unchecked(self.index) };
             self.index += 1;
             Some(res)
         } else {
@@ -211,63 +247,91 @@ impl<'a, B: BitFieldSlice> Iterator for BitFieldSliceIterator<'a, B> {
     }
 }
 
-impl<T: AsRef<[usize]>> BitFieldSliceCore for T {
-    #[inline(always)]
-    fn bit_width(&self) -> usize {
-        BITS
-    }
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.as_ref().len()
-    }
+// Implementations for slices of non-atomic types
+
+macro_rules! impl_core {
+    ($($ty:ty),*) => {$(
+        impl<T: AsRef<[$ty]>> BitFieldSliceCore<$ty> for T {
+            #[inline(always)]
+            fn bit_width(&self) -> usize {
+                <$ty>::BITS as usize
+            }
+            #[inline(always)]
+            fn len(&self) -> usize {
+                self.as_ref().len()
+            }
+        }
+    )*};
 }
 
-impl<T: AsRef<[usize]>> BitFieldSlice for T {
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> usize {
-        debug_assert_bounds!(index, self.len());
-        *self.as_ref().get_unchecked(index)
-    }
+impl_core!(u8, u16, u32, u64, u128, usize);
+
+macro_rules! impl_ref {
+    ($($ty:ty),*) => {$(
+        impl<T: AsRef<[$ty]>> BitFieldSlice<$ty> for T {
+            #[inline(always)]
+            unsafe fn get_unchecked(&self, index: usize) -> $ty {
+                debug_assert_bounds!(index, self.len());
+                *self.as_ref().get_unchecked(index)
+            }
+        }
+    )*};
 }
 
-impl<T: AsRef<[usize]>> IntoValueIterator for T {
-    type Item = usize;
-    type IntoValueIter<'a> = Copied<core::slice::Iter<'a, usize>>
-        where
-            T: 'a;
-    #[inline(always)]
-    fn iter_val(&self) -> Self::IntoValueIter<'_> {
-        <Self as AsRef<[usize]>>::as_ref(self).iter().copied()
-    }
+impl_ref!(u8, u16, u32, u64, u128, usize);
 
-    fn iter_val_from(&self, from: usize) -> Self::IntoValueIter<'_> {
-        <Self as AsRef<[usize]>>::as_ref(self)[from..]
-            .iter()
-            .copied()
-    }
+macro_rules! impl_mut {
+    ($($ty:ty),*) => {$(
+        impl<T: AsMut<[$ty]> + AsRef<[$ty]>> BitFieldSliceMut<$ty> for T {
+            #[inline(always)]
+            unsafe fn set_unchecked(&mut self, index: usize, value: $ty) {
+                debug_assert_bounds!(index, self.len());
+                *self.as_mut().get_unchecked_mut(index) = value;
+            }
+        }
+    )*};
 }
 
-impl<T: AsRef<[AtomicUsize]> + AsRef<[usize]>> BitFieldSliceAtomic for T {
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> usize {
-        debug_assert_bounds!(index, self.len());
-        <T as AsRef<[AtomicUsize]>>::as_ref(self)
-            .get_unchecked(index)
-            .load(order)
-    }
-    #[inline(always)]
-    unsafe fn set_unchecked(&self, index: usize, value: usize, order: Ordering) {
-        debug_assert_bounds!(index, self.len());
-        <T as AsRef<[AtomicUsize]>>::as_ref(self)
-            .get_unchecked(index)
-            .store(value, order);
-    }
+impl_mut!(u8, u16, u32, u64, u128, usize);
+
+// Implementations for slices of atomic types
+
+macro_rules! impl_core_atomic {
+    ($($aty:ty),*) => {$(
+        impl<T: AsRef<[$aty]>> BitFieldSliceCore<$aty> for T {
+            #[inline(always)]
+            fn bit_width(&self) -> usize {
+                <$aty>::BITS as usize
+            }
+            #[inline(always)]
+            fn len(&self) -> usize {
+                self.as_ref().len()
+            }
+        }
+    )*};
 }
 
-impl<T: AsMut<[usize]> + AsRef<[usize]>> BitFieldSliceMut for T {
-    #[inline(always)]
-    unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
-        debug_assert_bounds!(index, self.len());
-        *self.as_mut().get_unchecked_mut(index) = value;
-    }
+impl_core_atomic!(AtomicU8, AtomicU16, AtomicU32, AtomicU64, AtomicUsize);
+
+macro_rules! impl_atomic {
+    ($std:ty, $atomic:ty) => {
+        impl<T: AsRef<[$atomic]>> AtomicBitFieldSlice<$std> for T {
+            #[inline(always)]
+            unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> $std {
+                debug_assert_bounds!(index, self.len());
+                self.as_ref().get_unchecked(index).load(order)
+            }
+            #[inline(always)]
+            unsafe fn set_unchecked(&self, index: usize, value: $std, order: Ordering) {
+                debug_assert_bounds!(index, self.len());
+                self.as_ref().get_unchecked(index).store(value, order);
+            }
+        }
+    };
 }
+
+impl_atomic!(u8, AtomicU8);
+impl_atomic!(u16, AtomicU16);
+impl_atomic!(u32, AtomicU32);
+impl_atomic!(u64, AtomicU64);
+impl_atomic!(usize, AtomicUsize);
