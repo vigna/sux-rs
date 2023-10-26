@@ -149,7 +149,7 @@ impl EliasFanoConcurrentBuilder {
         let low = value & ((1 << self.l) - 1);
         // Note that the concurrency guarantees of BitFieldVec
         // are sufficient for us.
-        self.low_bits.set_unchecked(index, low, order);
+        self.low_bits.set_atomic_unchecked(index, low, order);
 
         let high = (value >> self.l) + index;
         self.high_bits.set(high, true, order);

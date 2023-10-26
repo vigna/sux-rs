@@ -117,7 +117,7 @@ impl<
 
                 let ones_in_word = word.count_ones() as usize;
                 while number_of_ones + ones_in_word > next_quantum {
-                    let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
+                    let in_word_index = word.select_in_word(next_quantum - number_of_ones);
                     let index = (word_idx * usize::BITS as u64) + in_word_index as u64;
                     let sub_offset = index - start_bit_idx;
 

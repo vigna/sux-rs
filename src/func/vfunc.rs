@@ -5,9 +5,11 @@
 * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
 */
 
+// We import selectively to be able to use AtomicHelper
 use crate::bits::*;
-use crate::prelude::*;
-use crate::traits::bit_field_slice::{self, Word};
+use crate::traits::bit_field_slice;
+use crate::utils::*;
+use bit_field_slice::{BitFieldSliceCore, Word};
 use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
 use dsi_progress_logger::ProgressLogger;
 use epserde::prelude::*;
@@ -179,7 +181,7 @@ where
         into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
     ) -> VFunc<T, O> {
-        use crate::traits::bit_field_slice::AtomicBitFieldSlice;
+        use crate::traits::bit_field_slice::AtomicHelper;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         for seed in 0.. {
@@ -472,7 +474,7 @@ where
         into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
     ) -> anyhow::Result<VFunc<T, O>> {
-        use crate::traits::bit_field_slice::AtomicBitFieldSlice;
+        use crate::traits::bit_field_slice::AtomicHelper;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         for seed in 0.. {
