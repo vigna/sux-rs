@@ -515,7 +515,7 @@ where
     W::AtomicType: AtomicUnsignedInt + AsBytes,
 {
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W {
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> W {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
         let bit_index = pos % W::BITS;
@@ -538,16 +538,16 @@ where
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
     #[inline(always)]
-    fn set(&self, index: usize, value: W, order: Ordering) {
+    fn set_atomic(&self, index: usize, value: W, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len);
         panic_if_value!(value, self.mask, self.bit_width);
         unsafe {
-            self.set_unchecked(index, value, order);
+            self.set_atomic_unchecked(index, value, order);
         }
     }
 
     #[inline]
-    unsafe fn set_unchecked(&self, index: usize, value: W, order: Ordering) {
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering) {
         debug_assert!(self.bit_width != W::BITS);
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
