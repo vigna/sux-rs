@@ -11,6 +11,8 @@ use crate::traits::bit_field_slice::{self, Word};
 use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
 use dsi_progress_logger::ProgressLogger;
 use epserde::prelude::*;
+use lender::Chunk;
+use lender::Lender;
 use log::warn;
 use log::*;
 use rayon::prelude::*;
@@ -47,7 +49,7 @@ impl EdgeList {
 
     #[inline(always)]
     fn add(&mut self, edge: usize) {
-        debug_assert!(self.degree() <= Self::MAX_DEG);
+        debug_assert!(self.degree() < Self::MAX_DEG);
         self.0 += EdgeList::DEG;
         self.0 ^= edge;
     }
@@ -104,6 +106,171 @@ pub struct VFunc<
     values: S,
     _marker_t: std::marker::PhantomData<T>,
     _marker_o: std::marker::PhantomData<O>,
+}
+
+fn compute_params(num_keys: usize) -> (u32, usize, usize, f64) {
+    let (chunk_high_bits, max_num_threads, l, c);
+
+    if num_keys < PARAMS[PARAMS.len() - 2].0 {
+        // Too few keys, we cannot split into chunks
+        chunk_high_bits = 0;
+        max_num_threads = 1;
+        (_, l, c) = PARAMS
+            .iter()
+            .rev()
+            .filter(|(n, _l, _c)| n <= &num_keys)
+            .copied()
+            .next()
+            .unwrap(); // first n is 0, so this is always valid
+    } else if num_keys < PARAMS[PARAMS.len() - 1].0 {
+        // We are in the 1.11 regime. We can reduce memory
+        // usage by doing single thread.
+        chunk_high_bits = (num_keys / PARAMS[PARAMS.len() - 2].0).ilog2();
+        max_num_threads = 1;
+        (_, l, c) = PARAMS[PARAMS.len() - 2];
+    } else {
+        // We are in the 1.10 regime. We can increase the number
+        // of threads, but we need to be careful not to use too
+        // much memory.
+
+        let eps = 0.001;
+        chunk_high_bits = {
+                    let t = (num_keys as f64 * eps * eps / 2.0).ln();
+
+                    if t > 0.0 {
+                        ((t - t.ln()) / 2_f64.ln()).ceil()
+                    } else {
+                        0.0
+                    }
+                }
+                .min(10.0) // More than 1000 chunks make no sense
+                .min((num_keys / PARAMS[PARAMS.len() - 1].0).ilog2() as f64) // Let's keep the chunks in the 1.10 regime
+                    as u32;
+        max_num_threads = 1.max((1 << chunk_high_bits) / 8);
+        (_, l, c) = PARAMS[PARAMS.len() - 1];
+    }
+
+    info!(
+        "chunk high bits = {}, l = {}, c = {}",
+        chunk_high_bits, l, c
+    );
+
+    (chunk_high_bits, max_num_threads, l, c)
+}
+
+fn solve<
+    O: Word + ZeroCopy + Send + Sync + IntoAtomic,
+    I: Lender<Lend = (usize, &[([u64; 2], O)])>,
+>(
+    chunk_iter: I,
+    bit_width: usize,
+    num_chunks: usize,
+    num_vertices: usize,
+    num_threads: usize,
+    segment_size: usize,
+    log2_l: u32,
+) -> Option<AtomicBitFieldVec<O>> {
+    let data = AtomicBitFieldVec::<O>::new(bit_width, num_vertices * num_chunks);
+    let mutex = std::sync::Arc::new(Mutex::new(chunk_iter));
+    let fail = AtomicBool::new(false);
+    thread::scope(|s| {
+        for _ in 0..num_threads {
+            s.spawn(|| loop {
+                let next = mutex.lock().unwrap().next();
+                if next.is_none() {
+                    return;
+                }
+                let (chunk, sigs) = next.unwrap();
+                let mut pl = ProgressLogger::default();
+                pl.expected_updates = Some(sigs.len());
+                pl.start(format!(
+                    "Generating graph for chunk {}/{}...",
+                    chunk + 1,
+                    num_chunks
+                ));
+                let mut edge_lists = Vec::new();
+                edge_lists.resize_with(num_vertices, EdgeList::default);
+                sigs.iter().enumerate().for_each(|(edge_index, sig)| {
+                    for &v in VFunc::edge(&sig.0, log2_l, segment_size).iter() {
+                        edge_lists[v].add(edge_index);
+                    }
+                });
+                pl.done_with_count(sigs.len());
+                pl.start(format!(
+                    "Peeling graph for chunk {}/{}...",
+                    chunk + 1,
+                    num_chunks
+                ));
+                let mut stack = Vec::new();
+                for v in 0..num_vertices {
+                    if edge_lists[v].degree() != 1 {
+                        continue;
+                    }
+                    let mut pos = stack.len();
+                    let mut curr = stack.len();
+                    stack.push(v);
+                    while pos < stack.len() {
+                        let v = stack[pos];
+                        pos += 1;
+                        if edge_lists[v].degree() == 0 {
+                            continue; // Skip no longer useful entries
+                        }
+                        edge_lists[v].dec();
+                        let edge_index = edge_lists[v].edge_index();
+                        stack[curr] = v;
+                        curr += 1;
+                        // Degree is necessarily 0
+                        for &x in VFunc::edge(&sigs[edge_index].0, log2_l, segment_size).iter() {
+                            if x != v {
+                                edge_lists[x].remove(edge_index);
+                                if edge_lists[x].degree() == 1 {
+                                    stack.push(x);
+                                }
+                            }
+                        }
+                    }
+                    stack.truncate(curr);
+                }
+                if sigs.len() != stack.len() {
+                    fail.store(true, Ordering::Relaxed);
+                    return;
+                }
+                pl.done_with_count(sigs.len());
+                pl.start(format!(
+                    "Assigning values for chunk {}/{}...",
+                    chunk + 1,
+                    num_chunks
+                ));
+                while let Some(mut v) = stack.pop() {
+                    let edge_index = edge_lists[v].edge_index();
+                    let mut edge = VFunc::edge(&sigs[edge_index].0, log2_l, segment_size);
+                    let chunk_offset = chunk * num_vertices;
+                    v += chunk_offset;
+                    edge.iter_mut().for_each(|v| {
+                        *v += chunk_offset;
+                    });
+                    let value = if v == edge[0] {
+                        data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
+                    } else if v == edge[1] {
+                        data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
+                    } else {
+                        data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
+                    };
+                    // TODO
+                    data.set(v, sigs[edge_index].1 ^ value, Relaxed);
+                    debug_assert_eq!(
+                        data.get(edge[0], Relaxed)
+                            ^ data.get(edge[1], Relaxed)
+                            ^ data.get(edge[2], Relaxed),
+                        sigs[edge_index].1
+                    );
+                }
+                pl.done_with_count(sigs.len());
+                pl.start(format!("Completed chunk {}/{}.", chunk + 1, num_chunks));
+            });
+        }
+    });
+    return if fail.get(Relaxed) { None } else { Some(data) };
 }
 
 /**
@@ -178,7 +345,8 @@ where
         keys: I,
         into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
-    ) -> VFunc<T, O> {
+    ) -> anyhow::Result<VFunc<T, O>> {
+        let offline = true;
         use crate::traits::bit_field_slice::AtomicBitFieldSlice;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
@@ -186,129 +354,131 @@ where
             if let Some(pl) = pl.as_mut() {
                 pl.start("Reading input...")
             }
-
-            let mut values = into_values.clone().into_iter();
+            let (num_keys, num_chunks);
             let mut max_value = O::ZERO;
-            let mut sigs = keys
-                .clone()
-                .into_iter()
-                .map(|x| {
-                    let v = values.next().expect("Not enough values");
+            let mut chunk_sizes;
+            let (chunk_high_bits, max_num_threads, l, c);
+
+            if offline {
+                let store_bits = 12;
+                let mut sig_sorter = SigStore::<O>::new(8, store_bits).unwrap();
+                let mut values = into_values.clone().into_iter();
+                sig_sorter.extend(keys.clone().into_iter().map(|x| {
                     if let Some(pl) = pl.as_mut() {
                         pl.light_update();
                     }
+                    let v = values.next().expect("Not enough values");
                     max_value = Ord::max(max_value, v);
                     (T::to_sig(&x, seed), v)
-                })
-                .collect::<Vec<_>>();
+                }))?;
+                num_keys = sig_sorter.num_keys();
+
+                (chunk_high_bits, max_num_threads, l, c) = compute_params(num_keys);
+
+                info!(
+                    "chunk high bits = {}, l = {}, c = {}",
+                    chunk_high_bits, l, c
+                );
+
+                let log2_l = l.ilog2();
+                let num_chunks = 1 << chunk_high_bits;
+                let chunk_mask = (1u32 << chunk_high_bits) - 1;
+
+                let (chunk_store, chunk_sizes);
+                if let Ok(t) = sig_sorter.into_chunk_store(chunk_high_bits) {
+                    (chunk_store, chunk_sizes) = t;
+                } else {
+                    if dup_count >= 3 {
+                        panic!(
+                        "Duplicate keys (duplicate 128-bit signatures with four different seeds)"
+                    );
+                    }
+                    warn!("Duplicate 128-bit signature, trying again...");
+                    dup_count += 1;
+                    continue;
+                }
+            } else {
+                let mut values = into_values.clone().into_iter();
+                let mut sigs = keys
+                    .clone()
+                    .into_iter()
+                    .map(|x| {
+                        let v = values.next().expect("Not enough values");
+                        if let Some(pl) = pl.as_mut() {
+                            pl.light_update();
+                        }
+                        max_value = Ord::max(max_value, v);
+                        (T::to_sig(&x, seed), v)
+                    })
+                    .collect::<Vec<_>>();
+                num_keys = sigs.len();
+
+                (chunk_high_bits, max_num_threads, l, c) = compute_params(num_keys);
+
+                info!(
+                    "chunk high bits = {}, l = {}, c = {}",
+                    chunk_high_bits, l, c
+                );
+
+                let log2_l = l.ilog2();
+                let num_chunks = 1 << chunk_high_bits;
+                let chunk_mask = (1u32 << chunk_high_bits) - 1;
+
+                if let Some(pl) = pl.as_mut() {
+                    pl.start("Sorting...")
+                }
+                sigs.par_sort_unstable();
+                if let Some(pl) = pl.as_mut() {
+                    pl.done_with_count(num_keys);
+                }
+
+                if let Some(pl) = pl.as_mut() {
+                    pl.start("Checking for duplicates...")
+                }
+
+                let mut chunk_sizes = vec![0; num_chunks];
+                let mut dup = false;
+
+                chunk_sizes[Self::chunk(&sigs[0].0, chunk_high_bits, chunk_mask)] += 1;
+
+                for w in sigs.windows(2) {
+                    chunk_sizes[Self::chunk(&w[1].0, chunk_high_bits, chunk_mask)] += 1;
+                    if w[0].0 == w[1].0 {
+                        dup = true;
+                        break;
+                    }
+                }
+
+                if let Some(pl) = pl.as_mut() {
+                    pl.done_with_count(num_keys);
+                }
+
+                if dup {
+                    if dup_count >= 3 {
+                        panic!(
+                        "Duplicate keys (duplicate 128-bit signatures with four different seeds)"
+                    );
+                    }
+                    warn!("Duplicate 128-bit signature, trying again...");
+                    dup_count += 1;
+                    continue;
+                }
+            }
 
             let bit_width = max_value.len() as usize;
             info!("max value = {}, bit width = {}", max_value, bit_width);
 
             if let Some(pl) = pl.as_mut() {
-                pl.done_with_count(sigs.len());
-            }
-
-            /*if values.next().is_some() {
-                // TODO
-                panic!("Too many values");
-            }*/
-
-            let num_keys = sigs.len();
-            let (chunk_high_bits, max_num_threads, l, c);
-
-            if num_keys < PARAMS[PARAMS.len() - 2].0 {
-                // Too few keys, we cannot split into chunks
-                chunk_high_bits = 0;
-                max_num_threads = 1;
-                (_, l, c) = PARAMS
-                    .iter()
-                    .rev()
-                    .filter(|(n, _l, _c)| n <= &num_keys)
-                    .copied()
-                    .next()
-                    .unwrap(); // first n is 0, so this is always valid
-            } else if num_keys < PARAMS[PARAMS.len() - 1].0 {
-                // We are in the 1.11 regime. We can reduce memory
-                // usage by doing single thread.
-                chunk_high_bits = (num_keys / PARAMS[PARAMS.len() - 2].0).ilog2();
-                max_num_threads = 1;
-                (_, l, c) = PARAMS[PARAMS.len() - 2];
-            } else {
-                // We are in the 1.10 regime. We can increase the number
-                // of threads, but we need to be careful not to use too
-                // much memory.
-
-                let eps = 0.001;
-                chunk_high_bits = {
-                    let t = (sigs.len() as f64 * eps * eps / 2.0).ln();
-
-                    if t > 0.0 {
-                        ((t - t.ln()) / 2_f64.ln()).ceil()
-                    } else {
-                        0.0
-                    }
-                }
-                .min(10.0) // More than 1000 chunks make no sense
-                .min((num_keys / PARAMS[PARAMS.len() - 1].0).ilog2() as f64) // Let's keep the chunks in the 1.10 regime
-                    as u32;
-                max_num_threads = 1.max((1 << chunk_high_bits) / 8);
-                (_, l, c) = PARAMS[PARAMS.len() - 1];
-            }
-
-            info!("high bits = {}, l = {}, c = {}", chunk_high_bits, l, c);
-
-            let log2_l = l.ilog2();
-            let num_chunks = 1 << chunk_high_bits;
-            let chunk_mask = (1u32 << chunk_high_bits) - 1;
-
-            if let Some(pl) = pl.as_mut() {
-                pl.start("Sorting...")
-            }
-            sigs.par_sort_unstable();
-            if let Some(pl) = pl.as_mut() {
                 pl.done_with_count(num_keys);
-            }
-
-            if let Some(pl) = pl.as_mut() {
-                pl.start("Checking for duplicates...")
-            }
-
-            let mut counts = vec![0; num_chunks];
-            let mut dup = false;
-
-            counts[Self::chunk(&sigs[0].0, chunk_high_bits, chunk_mask)] += 1;
-
-            for w in sigs.windows(2) {
-                counts[Self::chunk(&w[1].0, chunk_high_bits, chunk_mask)] += 1;
-                if w[0].0 == w[1].0 {
-                    dup = true;
-                    break;
-                }
-            }
-
-            if let Some(pl) = pl.as_mut() {
-                pl.done_with_count(num_keys);
-            }
-
-            if dup {
-                if dup_count >= 3 {
-                    panic!(
-                        "Duplicate keys (duplicate 128-bit signatures with four different seeds)"
-                    );
-                }
-                warn!("Duplicate 128-bit signature, trying again...");
-                dup_count += 1;
-                continue;
             }
 
             let mut cumul = vec![0; num_chunks + 1];
             for i in 0..num_chunks {
-                cumul[i + 1] = cumul[i] + counts[i];
+                cumul[i + 1] = cumul[i] + chunk_sizes[i];
             }
 
             let segment_size =
-                ((*counts.iter().max().unwrap() as f64 * c).ceil() as usize + l + 1) / (l + 2);
+                ((*chunk_sizes.iter().max().unwrap() as f64 * c).ceil() as usize + l + 1) / (l + 2);
             let num_vertices = segment_size * (l + 2);
             info!(
                 "Size {:.2}%",
