@@ -42,6 +42,12 @@ to this type. The are used, for example, to provide
 [successor](crate::traits::indexed_dict::Succ) primitives
 for [Elias-Fano](crate::dict::elias_fano::EliasFano).
 
+## Low-level support
+
+The methods [`address_of`](BitFieldVec::address_of)
+and [`get_unaligned`](BitFieldVec::get_unaligned) can be used to manually
+prefetch parts of the data structure, or read values using unaligned
+read, when the bit width makes it possible.
 */
 
 use crate::prelude::*;
@@ -174,10 +180,22 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 
     /// Like [`BitFieldSlice::get`], but using unaligned reads.
     ///
+    /// # Panic
+    /// This methods will panic if the index is out of bounds
+    /// or if the bit width is [incompatible with unaligned
+    /// reads](BitFieldVec::get_unaligned_unchecked).
+    pub fn get_unaligned(&self, index: usize) -> W {
+        panic_if_out_of_bounds!(index, self.len);
+        assert!(self.bit_width <= (W::BITS - 7));
+        unsafe { self.get_unaligned_unchecked(index) }
+    }
+
+    /// Like [`BitFieldSlice::get`], but using unaligned reads.
+    ///
     /// # Safety
     /// This methods can be used only if the bit width is at most
     /// `W::BITS - 7`.
-    pub unsafe fn get_unaligned(&self, index: usize) -> W {
+    pub unsafe fn get_unaligned_unchecked(&self, index: usize) -> W {
         debug_assert!(self.bit_width <= (W::BITS - 7));
         let base_ptr = self.data.as_ref().as_ptr() as *const u8;
         let ptr = base_ptr.add(index / W::BYTES) as *const W;
