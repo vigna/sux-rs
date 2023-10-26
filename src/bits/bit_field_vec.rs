@@ -53,7 +53,7 @@ use std::sync::atomic::*;
 #[derive(Epserde, Debug, Clone, Hash)]
 
 /// A vector of bit fields of fixed width.
-pub struct BitFieldVec<W = usize, B = Vec<W>> {
+pub struct BitFieldVec<W: Word = usize, B = Vec<W>> {
     /// The underlying storage.
     data: B,
     /// The bit width of the values stored in the vector.
@@ -66,7 +66,7 @@ pub struct BitFieldVec<W = usize, B = Vec<W>> {
 
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 /// A tentatively thread-safe vector of bit fields of fixed width.
-pub struct AtomicBitFieldVec<W: IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
+pub struct AtomicBitFieldVec<W: Word + IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
     /// The underlying storage.
     data: B,
     /// The bit width of the values stored in the vector.
@@ -77,11 +77,11 @@ pub struct AtomicBitFieldVec<W: IntoAtomic = usize, B = Vec<<W as IntoAtomic>::A
     len: usize,
 }
 
-fn mask<M: Word>(bit_width: usize) -> M {
+fn mask<W: Word>(bit_width: usize) -> W {
     if bit_width == 0 {
-        M::ZERO
+        W::ZERO
     } else {
-        M::MAX >> (M::BITS - bit_width)
+        W::MAX >> (W::BITS - bit_width)
     }
 }
 
@@ -221,7 +221,7 @@ impl<W: Word + IntoAtomic, B> AtomicBitFieldVec<W, B> {
     }
 }
 
-impl<W: AsBytes, T> BitFieldSliceCore<W> for BitFieldVec<W, T> {
+impl<W: Word, T> BitFieldSliceCore<W> for BitFieldVec<W, T> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= W::BITS);
@@ -234,7 +234,7 @@ impl<W: AsBytes, T> BitFieldSliceCore<W> for BitFieldVec<W, T> {
     }
 }
 
-impl<W: AsBytes + IntoAtomic, T> BitFieldSliceCore<W::AtomicType> for AtomicBitFieldVec<W, T> {
+impl<W: Word + IntoAtomic, T> BitFieldSliceCore<W::AtomicType> for AtomicBitFieldVec<W, T> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= W::BITS);
@@ -267,7 +267,10 @@ impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
 // Support for unchecked iterators
 
 /// An [`UncheckedIterator`] over the values of a [`BitFieldVec`].
-pub struct BitFieldVectorUncheckedIterator<'a, W, B> {
+pub struct BitFieldVectorUncheckedIterator<'a, W, B>
+where
+    W: Word,
+{
     vec: &'a BitFieldVec<W, B>,
     word_index: usize,
     window: W,
@@ -338,7 +341,7 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedIterator for &'a BitFieldVec<W, B>
 }
 
 /// An [`UncheckedIterator`] moving backwards over the values of a [`BitFieldVec`].
-pub struct BitFieldVectorReverseUncheckedIterator<'a, W, B> {
+pub struct BitFieldVectorReverseUncheckedIterator<'a, W: Word, B> {
     vec: &'a BitFieldVec<W, B>,
     word_index: usize,
     window: W,
@@ -415,7 +418,10 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoReverseUncheckedIterator for &'a BitFieldVe
 }
 
 /// An [`Iterator`] over the values of a [`BitFieldVec`].
-pub struct BitFieldVecIterator<'a, W, B> {
+pub struct BitFieldVecIterator<'a, W, B>
+where
+    W: Word,
+{
     unchecked: BitFieldVectorUncheckedIterator<'a, W, B>,
     index: usize,
 }
@@ -621,7 +627,7 @@ where
 ///
 /// Implementations of this trait are then used to
 /// implement by delegation a corresponding [`From`].
-impl<W: IntoAtomic, B, C> ConvertTo<AtomicBitFieldVec<W, C>> for BitFieldVec<W, B>
+impl<W: Word + IntoAtomic, B, C> ConvertTo<AtomicBitFieldVec<W, C>> for BitFieldVec<W, B>
 where
     B: ConvertTo<C>,
 {
@@ -641,7 +647,7 @@ where
 ///
 /// Implementations of this trait are then used to
 /// implement by delegation a corresponding [`From`].
-impl<W: IntoAtomic, B, C> ConvertTo<BitFieldVec<W, C>> for AtomicBitFieldVec<W, B>
+impl<W: Word + IntoAtomic, B, C> ConvertTo<BitFieldVec<W, C>> for AtomicBitFieldVec<W, B>
 where
     B: ConvertTo<C>,
 {
