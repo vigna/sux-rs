@@ -32,7 +32,7 @@ pub struct EliasFanoBuilder {
     n: usize,
     l: usize,
     low_bits: BitFieldVec,
-    high_bits: BitVec<Vec<usize>>,
+    high_bits: BitVec,
     last_value: usize,
     count: usize,
 }
@@ -156,7 +156,7 @@ impl EliasFanoConcurrentBuilder {
     }
 
     pub fn build(self) -> EliasFano {
-        let bit_vec: BitVec<Vec<usize>> = self.high_bits.into();
+        let bit_vec: BitVec = self.high_bits.into();
         EliasFano {
             u: self.u,
             n: self.n,
