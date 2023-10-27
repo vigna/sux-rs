@@ -186,17 +186,27 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     /// reads](BitFieldVec::get_unaligned_unchecked).
     pub fn get_unaligned(&self, index: usize) -> W {
         panic_if_out_of_bounds!(index, self.len);
-        assert!(self.bit_width <= (W::BITS - 7));
+        assert!(
+            self.bit_width % 8 != 3
+                && self.bit_width % 8 != 5
+                && self.bit_width != 6
+                && self.bit_width != 7
+        );
         unsafe { self.get_unaligned_unchecked(index) }
     }
 
     /// Like [`BitFieldSlice::get`], but using unaligned reads.
     ///
     /// # Safety
-    /// This methods can be used only if the bit width is at most
-    /// `W::BITS - 7`.
+    /// This methods can be used only if the `bit width % 8` is not
+    /// 3, 5, 6, or 7.
     pub unsafe fn get_unaligned_unchecked(&self, index: usize) -> W {
-        debug_assert!(self.bit_width <= (W::BITS - 7));
+        debug_assert!(
+            self.bit_width % 8 != 3
+                && self.bit_width % 8 != 5
+                && self.bit_width != 6
+                && self.bit_width != 7
+        );
         let base_ptr = self.data.as_ref().as_ptr() as *const u8;
         let ptr = base_ptr.add(index / W::BYTES) as *const W;
         let word = core::ptr::read_unaligned(ptr);
