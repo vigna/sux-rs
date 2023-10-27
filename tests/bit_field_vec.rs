@@ -27,8 +27,6 @@ fn test_bit_field_vec() {
 }
 
 fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
-    use sux::traits::bit_field_slice::BitFieldSlice;
-    use sux::traits::bit_field_slice::BitFieldSliceMut;
     for bit_width in 0..W::BITS {
         let n = 100;
         let u = W::ONE << bit_width.saturating_sub(1).min(60);
@@ -96,26 +94,24 @@ fn test_atomic_bit_field_vec() {
 
         let cp = AtomicBitFieldVec::new(bit_width, n);
         for _ in 0..10 {
-            let values = (0..n)
-                .map(|_| rng.gen_range(0..u))
-                .collect::<Vec<_>>();
+            let values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
 
             let mut indices = (0..n).collect::<Vec<_>>();
             indices.shuffle(&mut rng);
 
             for i in indices {
-                cp.set(i, values[i], Ordering::Relaxed);
+                cp.set_atomic(i, values[i], Ordering::Relaxed);
             }
 
             for (i, value) in values.iter().enumerate() {
-                assert_eq!(cp.get(i, Ordering::Relaxed), *value);
+                assert_eq!(cp.get_atomic(i, Ordering::Relaxed), *value);
             }
 
             let mut indices = (0..n).collect::<Vec<_>>();
             indices.shuffle(&mut rng);
 
             for i in indices {
-                assert_eq!(cp.get(i, Ordering::Relaxed), values[i]);
+                assert_eq!(cp.get_atomic(i, Ordering::Relaxed), values[i]);
             }
         }
     }

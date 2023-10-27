@@ -42,6 +42,12 @@ to this type. The are used, for example, to provide
 [successor](crate::traits::indexed_dict::Succ) primitives
 for [Elias-Fano](crate::dict::elias_fano::EliasFano).
 
+## Low-level support
+
+The methods [`address_of`](BitFieldVec::address_of)
+and [`get_unaligned`](BitFieldVec::get_unaligned) can be used to manually
+prefetch parts of the data structure, or read values using unaligned
+read, when the bit width makes it possible.
 */
 
 use crate::prelude::*;
@@ -53,7 +59,7 @@ use std::sync::atomic::*;
 #[derive(Epserde, Debug, Clone, Hash)]
 
 /// A vector of bit fields of fixed width.
-pub struct BitFieldVec<W = usize, B = Vec<W>> {
+pub struct BitFieldVec<W: Word = usize, B = Vec<W>> {
     /// The underlying storage.
     data: B,
     /// The bit width of the values stored in the vector.
@@ -66,7 +72,7 @@ pub struct BitFieldVec<W = usize, B = Vec<W>> {
 
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 /// A tentatively thread-safe vector of bit fields of fixed width.
-pub struct AtomicBitFieldVec<W: IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
+pub struct AtomicBitFieldVec<W: Word + IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
     /// The underlying storage.
     data: B,
     /// The bit width of the values stored in the vector.
@@ -77,11 +83,11 @@ pub struct AtomicBitFieldVec<W: IntoAtomic = usize, B = Vec<<W as IntoAtomic>::A
     len: usize,
 }
 
-fn mask<M: Word>(bit_width: usize) -> M {
+fn mask<W: Word>(bit_width: usize) -> W {
     if bit_width == 0 {
-        M::ZERO
+        W::ZERO
     } else {
-        M::MAX >> (M::BITS - bit_width)
+        W::MAX >> (W::BITS - bit_width)
     }
 }
 
@@ -126,12 +132,6 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         Ok(result)
     }
 
-    pub fn address_of(&self, index: usize) -> *const W {
-        let pos = index * W::BITS;
-        let word_index = pos / W::BITS;
-        (&self.data[word_index]) as *const _
-    }
-
     pub fn push(&mut self, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
         if (self.len + 1) * self.bit_width > self.data.len() * W::BITS {
@@ -163,6 +163,54 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
             }
         }
         self.len = new_len;
+    }
+}
+
+impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
+    /// Get the address of the item storing (the first part of)
+    /// the element of given index.
+    ///
+    /// This method is mainly useful for manually prefetching
+    /// parts of the data structure.
+    pub fn address_of(&self, index: usize) -> *const W {
+        let pos = index * W::BITS;
+        let word_index = pos / W::BITS;
+        (&self.data.as_ref()[word_index]) as *const _
+    }
+
+    /// Like [`BitFieldSlice::get`], but using unaligned reads.
+    ///
+    /// # Panic
+    /// This methods will panic if the index is out of bounds
+    /// or if the bit width is [incompatible with unaligned
+    /// reads](BitFieldVec::get_unaligned_unchecked).
+    pub fn get_unaligned(&self, index: usize) -> W {
+        panic_if_out_of_bounds!(index, self.len);
+        assert!(
+            self.bit_width % 8 != 3
+                && self.bit_width % 8 != 5
+                && self.bit_width != 6
+                && self.bit_width != 7
+        );
+        unsafe { self.get_unaligned_unchecked(index) }
+    }
+
+    /// Like [`BitFieldSlice::get`], but using unaligned reads.
+    ///
+    /// # Safety
+    /// This methods can be used only if the `bit width % 8` is not
+    /// 3, 5, 6, or 7.
+    pub unsafe fn get_unaligned_unchecked(&self, index: usize) -> W {
+        debug_assert!(
+            self.bit_width % 8 != 3
+                && self.bit_width % 8 != 5
+                && self.bit_width != 6
+                && self.bit_width != 7
+        );
+        let base_ptr = self.data.as_ref().as_ptr() as *const u8;
+        let ptr = base_ptr.add(index / W::BYTES) as *const W;
+        let word = core::ptr::read_unaligned(ptr);
+        (word >> (index % W::BITS)) & self.mask
     }
 }
 
@@ -221,7 +269,7 @@ impl<W: Word + IntoAtomic, B> AtomicBitFieldVec<W, B> {
     }
 }
 
-impl<W: AsBytes, T> BitFieldSliceCore<W> for BitFieldVec<W, T> {
+impl<W: Word, T> BitFieldSliceCore<W> for BitFieldVec<W, T> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= W::BITS);
@@ -234,7 +282,7 @@ impl<W: AsBytes, T> BitFieldSliceCore<W> for BitFieldVec<W, T> {
     }
 }
 
-impl<W: AsBytes + IntoAtomic, T> BitFieldSliceCore<W::AtomicType> for AtomicBitFieldVec<W, T> {
+impl<W: Word + IntoAtomic, T> BitFieldSliceCore<W::AtomicType> for AtomicBitFieldVec<W, T> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= W::BITS);
@@ -267,7 +315,10 @@ impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
 // Support for unchecked iterators
 
 /// An [`UncheckedIterator`] over the values of a [`BitFieldVec`].
-pub struct BitFieldVectorUncheckedIterator<'a, W, B> {
+pub struct BitFieldVectorUncheckedIterator<'a, W, B>
+where
+    W: Word,
+{
     vec: &'a BitFieldVec<W, B>,
     word_index: usize,
     window: W,
@@ -338,7 +389,7 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedIterator for &'a BitFieldVec<W, B>
 }
 
 /// An [`UncheckedIterator`] moving backwards over the values of a [`BitFieldVec`].
-pub struct BitFieldVectorReverseUncheckedIterator<'a, W, B> {
+pub struct BitFieldVectorReverseUncheckedIterator<'a, W: Word, B> {
     vec: &'a BitFieldVec<W, B>,
     word_index: usize,
     window: W,
@@ -415,7 +466,10 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoReverseUncheckedIterator for &'a BitFieldVe
 }
 
 /// An [`Iterator`] over the values of a [`BitFieldVec`].
-pub struct BitFieldVecIterator<'a, W, B> {
+pub struct BitFieldVecIterator<'a, W, B>
+where
+    W: Word,
+{
     unchecked: BitFieldVectorUncheckedIterator<'a, W, B>,
     index: usize,
 }
@@ -515,7 +569,7 @@ where
     W::AtomicType: AtomicUnsignedInt + AsBytes,
 {
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W {
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> W {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
         let bit_index = pos % W::BITS;
@@ -538,16 +592,16 @@ where
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
     #[inline(always)]
-    fn set(&self, index: usize, value: W, order: Ordering) {
+    fn set_atomic(&self, index: usize, value: W, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len);
         panic_if_value!(value, self.mask, self.bit_width);
         unsafe {
-            self.set_unchecked(index, value, order);
+            self.set_atomic_unchecked(index, value, order);
         }
     }
 
     #[inline]
-    unsafe fn set_unchecked(&self, index: usize, value: W, order: Ordering) {
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering) {
         debug_assert!(self.bit_width != W::BITS);
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
@@ -621,7 +675,7 @@ where
 ///
 /// Implementations of this trait are then used to
 /// implement by delegation a corresponding [`From`].
-impl<W: IntoAtomic, B, C> ConvertTo<AtomicBitFieldVec<W, C>> for BitFieldVec<W, B>
+impl<W: Word + IntoAtomic, B, C> ConvertTo<AtomicBitFieldVec<W, C>> for BitFieldVec<W, B>
 where
     B: ConvertTo<C>,
 {
@@ -641,7 +695,7 @@ where
 ///
 /// Implementations of this trait are then used to
 /// implement by delegation a corresponding [`From`].
-impl<W: IntoAtomic, B, C> ConvertTo<BitFieldVec<W, C>> for AtomicBitFieldVec<W, B>
+impl<W: Word + IntoAtomic, B, C> ConvertTo<BitFieldVec<W, C>> for AtomicBitFieldVec<W, B>
 where
     B: ConvertTo<C>,
 {

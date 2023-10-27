@@ -10,11 +10,11 @@ use epserde::prelude::*;
 use sux::func::VFunc;
 
 #[test]
-fn test_func() {
+fn test_func() -> anyhow::Result<()> {
     let mut pl = ProgressLogger::default();
 
     for n in [10, 100, 1000, 100000] {
-        let func = VFunc::<_>::new(0..n, &(0..), &mut Some(&mut pl));
+        let func = VFunc::<_>::new(0..n, &(0..), &mut Some(&mut pl))?;
         let mut cursor = epserde::new_aligned_cursor();
         func.serialize(&mut cursor).unwrap();
         cursor.set_position(0);
@@ -26,4 +26,6 @@ fn test_func() {
         }
         pl.done_with_count(n as usize);
     }
+
+    Ok(())
 }
