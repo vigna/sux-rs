@@ -34,14 +34,6 @@ The methods of all traits accept and return values of type `W`.
 
 If you need to iterate over a [`BitFieldSlice`], you can use [`BitFieldSliceIterator`].
 
-Note that [`AtomicBitFieldSlice`] has methods with the same names as those in
-[`BitFieldSlice`] and [`BitFieldSliceMut`]. Due to the way methods are resolved,
-this might cause problems if you have have imported all traits. We suggest that,
-unless you are using only of the two variants, you import globally only [`BitFieldSliceCore`]
-and possibly [`BitFieldSliceIterator`],
-importing the other traits only in the functions of modules that needs them. This is what
-the re-exports in [`traits`](crate::traits) do.
-
 Implementations must return always zero on a [`BitFieldSlice::get`] when the bit
 width is zero. The behavior of a [`BitFieldSliceMut::set`] in the same context is not defined.
 
@@ -51,6 +43,22 @@ It is suggested that types implementing [`BitFieldSlice`] implement on a referen
 We provide implementations for vectors and slices of all primitive atomic and non-atomic
 unsigned integer types that view their elements as values with a bit width
 equal to that of the type.
+
+## Simpler methods for atomic slices
+
+[`AtomicBitFieldSlice`] has rather cumbersome method names. There is however a trait [`AtomicHelper`]
+that can be imported that will add to [`AtomicBitFieldSlice`] equivalent methods without the `_atomic`
+infix. You should be however careful to not mix [`AtomicHelper`] and [`BitFieldSlice`] or a number
+of ambiguities in trait resolution will arise. In particular, if you plan to use [`AtomicHelper`], we
+suggest that you do not import the prelude.
+```rust
+use sux::traits::bit_field_slice::{AtomicBitFieldSlice,AtomicHelper};
+use std::sync::atomic::Ordering;
+
+let slice = sux::bits::AtomicBitFieldVec::<usize>::new(3, 3);
+slice.set(0, 1, Ordering::Relaxed);
+assert_eq!(slice.get(0, Ordering::Relaxed), 1);
+```
 
 */
 use common_traits::*;
@@ -170,15 +178,15 @@ where
     /// # Safety
     /// `index` must be in [0..[len](`BitFieldSliceCore::len`)).
     /// No bound or bit-width check is performed.
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W;
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> W;
 
     /// Return the value at the specified index.
     ///
     /// # Panics
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
-    fn get(&self, index: usize, order: Ordering) -> W {
+    fn get_atomic(&self, index: usize, order: Ordering) -> W {
         panic_if_out_of_bounds!(index, self.len());
-        unsafe { self.get_unchecked(index, order) }
+        unsafe { self.get_atomic_unchecked(index, order) }
     }
 
     /// Set the element of the slice at the specified index.
@@ -187,13 +195,13 @@ where
     /// - `index` must be in [0..[len](`BitFieldSliceCore::len`));
     /// - `value` must fit withing [`BitFieldSliceCore::bit_width`] bits.
     /// No bound or bit-width check is performed.
-    unsafe fn set_unchecked(&self, index: usize, value: W, order: Ordering);
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering);
 
     /// Set the element of the slice at the specified index.
     ///
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
-    fn set(&self, index: usize, value: W, order: Ordering) {
+    fn set_atomic(&self, index: usize, value: W, order: Ordering) {
         if index >= self.len() {
             panic_if_out_of_bounds!(index, self.len());
         }
@@ -206,7 +214,7 @@ where
         };
         panic_if_value!(value, mask, bw);
         unsafe {
-            self.set_unchecked(index, value, order);
+            self.set_atomic_unchecked(index, value, order);
         }
     }
 }
@@ -317,12 +325,12 @@ macro_rules! impl_atomic {
     ($std:ty, $atomic:ty) => {
         impl<T: AsRef<[$atomic]>> AtomicBitFieldSlice<$std> for T {
             #[inline(always)]
-            unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> $std {
+            unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> $std {
                 debug_assert_bounds!(index, self.len());
                 self.as_ref().get_unchecked(index).load(order)
             }
             #[inline(always)]
-            unsafe fn set_unchecked(&self, index: usize, value: $std, order: Ordering) {
+            unsafe fn set_atomic_unchecked(&self, index: usize, value: $std, order: Ordering) {
                 debug_assert_bounds!(index, self.len());
                 self.as_ref().get_unchecked(index).store(value, order);
             }
@@ -335,3 +343,48 @@ impl_atomic!(u16, AtomicU16);
 impl_atomic!(u32, AtomicU32);
 impl_atomic!(u64, AtomicU64);
 impl_atomic!(usize, AtomicUsize);
+
+/// Helper trait eliminating `_atomic` from all methods of [`AtomicBitFieldSlice`]
+/// using a blanked implementation.
+///
+/// Note that using this trait and [`BitFieldSlice`] in the same module might cause
+/// ambiguity problems.
+pub trait AtomicHelper<W: Word + IntoAtomic>: AtomicBitFieldSlice<W>
+where
+    W::AtomicType: AtomicUnsignedInt + AsBytes,
+{
+    /// Delegates to [`AtomicBitFieldSlice::get_atomic_unchecked`]
+    /// # Safety
+    /// See [`AtomicBitFieldSlice::get_atomic_unchecked`]
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W {
+        self.get_atomic_unchecked(index, order)
+    }
+
+    /// Delegates to [`AtomicBitFieldSlice::set_atomic`]
+    #[inline(always)]
+    fn get(&self, index: usize, order: Ordering) -> W {
+        self.get_atomic(index, order)
+    }
+
+    /// Delegates to [`AtomicBitFieldSlice::set_atomic_unchecked`]
+    /// # Safety
+    /// See [`AtomicBitFieldSlice::get_atomic_unchecked`]
+    #[inline(always)]
+    unsafe fn set_unchecked(&self, index: usize, value: W, order: Ordering) {
+        self.set_atomic_unchecked(index, value, order)
+    }
+
+    /// Delegates to [`AtomicBitFieldSlice::set_atomic`]
+    #[inline(always)]
+    fn set(&self, index: usize, value: W, order: Ordering) {
+        self.set_atomic(index, value, order)
+    }
+}
+
+impl<T, W: Word + IntoAtomic> AtomicHelper<W> for T
+where
+    T: AtomicBitFieldSlice<W>,
+    W::AtomicType: AtomicUnsignedInt + AsBytes,
+{
+}

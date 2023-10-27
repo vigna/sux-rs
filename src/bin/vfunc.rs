@@ -47,19 +47,19 @@ fn main() -> Result<()> {
 
     if let Some(filename) = args.filename {
         let func = if args.zstd {
-            VFunc::<_>::new_offline(
+            VFunc::<_>::new(
                 FilenameZstdIntoIterator(&filename),
                 &(0..),
                 &mut Some(&mut pl),
             )?
         } else {
-            VFunc::<_>::new_offline(FilenameIntoIterator(&filename), &(0..), &mut Some(&mut pl))?
+            VFunc::<_>::new(FilenameIntoIterator(&filename), &(0..), &mut Some(&mut pl))?
         };
         func.store(&args.func)?;
     }
 
     if let Some(n) = args.n {
-        let func = VFunc::<_>::new_offline(0..n, &(0..), &mut Some(&mut pl))?;
+        let func = VFunc::<_>::new(0..n, &(0..), &mut Some(&mut pl))?;
 
         func.store(&args.func)?;
     }
