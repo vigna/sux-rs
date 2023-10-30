@@ -24,7 +24,7 @@ use epserde::traits::ZeroCopy;
 use rayon::prelude::ParallelIterator;
 use rayon::slice::ParallelSlice;
 use rayon::slice::ParallelSliceMut;
-use std::iter;
+use std::mem::size_of;
 use std::{
     collections::VecDeque,
     fmt::{Display, Formatter},
@@ -196,7 +196,6 @@ impl<T> ChunkStore<T> {
             store: self,
             next_file: 0,
             next_chunk: 0,
-            next_chunk_start: 0,
             chunks: VecDeque::from(vec![]),
             _marker: PhantomData,
         })
@@ -210,8 +209,6 @@ pub struct ChunkIterator<'a, T> {
     next_file: usize,
     /// The next chunk to return.
     next_chunk: usize,
-    /// The position where the next chunk to return start, in case buckets must be split.
-    next_chunk_start: usize,
     /// The currently loaded buffer.
     chunks: VecDeque<Vec<([u64; 2], T)>>,
     _marker: PhantomData<T>,
@@ -223,6 +220,7 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
     fn next(&mut self) -> Option<Self::Item> {
         let store = &mut self.store;
         if store.bucket_high_bits >= store.chunk_high_bits {
+            eprintln!("**********");
             // We need to aggregate some buckets to get a chunk
             if self.next_file >= store.files.len() {
                 return None;
@@ -263,6 +261,7 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
             self.next_chunk += 1;
             return Some(res);
         } else {
+            eprintln!("++++++++++");
             if self.chunks.is_empty() {
                 if self.next_file == store.files.len() {
                     return None;
@@ -275,30 +274,38 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
                         .push_back(Vec::with_capacity(store.chunk_sizes[chunk]));
                 }
 
-                let len = store.buf_sizes[self.next_file];
-                let mut data = Vec::<([u64; 2], T)>::with_capacity(1);
+                let mut len = store.buf_sizes[self.next_file];
+                let buf_size = 1024;
+                let mut buffer = Vec::<([u64; 2], T)>::with_capacity(buf_size);
                 unsafe {
-                    data.set_len(1);
+                    buffer.set_len(buf_size);
                 }
                 let chunk_mask = (1 << store.chunk_high_bits) - 1;
                 store.files[self.next_file]
                     .seek(SeekFrom::Start(0))
                     .unwrap();
-                for i in 0..len {
-                    {
-                        let (pre, buf, after) = unsafe { data.align_to_mut::<u8>() };
-                        assert!(pre.is_empty());
-                        assert!(after.is_empty());
 
-                        store.files[self.next_file].read_exact(buf).unwrap();
-                        let chunk = (data[0].0[0].rotate_left(store.chunk_high_bits) as usize
+                while len > 0 {
+                    let to_read = buf_size.min(len);
+                    unsafe {
+                        buffer.set_len(to_read);
+                    }
+                    let (pre, buf, after) = unsafe { buffer.align_to_mut::<u8>() };
+                    debug_assert!(pre.is_empty());
+                    debug_assert!(after.is_empty());
+
+                    store.files[self.next_file].read_exact(buf).unwrap();
+
+                    for &v in &buffer {
+                        let chunk = (v.0[0].rotate_left(store.chunk_high_bits) as usize
                             & chunk_mask)
                             - offset;
-                        self.chunks[chunk].push(data[0]);
+                        self.chunks[chunk].push(v);
                     }
+                    len -= to_read;
                 }
+
                 self.next_file += 1;
-                self.next_chunk = 0;
             }
 
             let mut chunk = self.chunks.pop_front().unwrap();
