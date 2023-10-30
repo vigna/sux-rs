@@ -25,3 +25,8 @@ types of internal indices, and whether to index zeros or ones).
 All structures in this crate are designed to work well with [ε-serde](https://crates.io/crates/epserde):
 in particular, once you have created and serialized them, you can easily map them into memory
 or load them in memory regions with specific `mmap()` attributes.
+
+# Acknowledgments
+
+This software has been partially supported by project SERICS (PE00000014) under the NRRP MUR program funded by the EU - NGEU,
+and by project ANR COREGRAPHIE, grant ANR-20-CE23-0002 of the French Agence Nationale de la Recherche.

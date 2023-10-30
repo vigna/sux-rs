@@ -188,7 +188,7 @@ enum ParSolveResult<O: Word + IntoAtomic> {
 fn par_solve<
     'a,
     O: Word + ZeroCopy + Send + Sync + IntoAtomic + 'a,
-    I: Iterator<Item = (usize, &'a [([u64; 2], O)])> + Send + Sync,
+    I: Iterator<Item = (usize, Vec<([u64; 2], O)>)> + Send,
 >(
     chunk_iter: I,
     bit_width: usize,
@@ -201,7 +201,7 @@ fn par_solve<
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
 {
-    use crate::traits::bit_field_slice::{AtomicBitFieldSlice, AtomicHelper};
+    use crate::traits::bit_field_slice::AtomicHelper;
     let data = AtomicBitFieldVec::<O>::new(bit_width, num_vertices * num_chunks);
     let mutex = std::sync::Arc::new(Mutex::new(chunk_iter));
     let fail = AtomicBool::new(false);
@@ -362,7 +362,7 @@ where
         into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
     ) -> anyhow::Result<VFunc<T, O>> {
-        let offline = false;
+        let offline = true;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         let mut seed = 0;
@@ -379,7 +379,7 @@ where
                 pl.start("Reading input...")
             }
             let mut max_value = O::ZERO;
-            let mut chunk_sizes;
+            //let mut chunk_sizes;
             let (max_num_threads, c);
 
             if offline {
@@ -401,31 +401,11 @@ where
                 let num_chunks = 1 << chunk_high_bits;
                 chunk_mask = (1u32 << chunk_high_bits) - 1;
 
-                let (chunk_store);
-                if let Ok(t) = sig_sorter.into_chunk_store(chunk_high_bits) {
-                    (chunk_store, chunk_sizes) = t;
-                } else {
-                    if dup_count >= 3 {
-                        panic!(
-                        "Duplicate keys (duplicate 128-bit signatures with four different seeds)"
-                    );
-                    }
-                    warn!("Duplicate 128-bit signature, trying again...");
-                    dup_count += 1;
-                    continue;
-                }
+                let (mut chunk_store, chunk_sizes) =
+                    sig_sorter.into_chunk_store(chunk_high_bits)?;
 
                 bit_width = max_value.len() as usize;
                 info!("max value = {}, bit width = {}", max_value, bit_width);
-
-                if let Some(pl) = pl.as_mut() {
-                    pl.done_with_count(num_keys);
-                }
-
-                let mut cumul = vec![0; num_chunks + 1];
-                for i in 0..num_chunks {
-                    cumul[i + 1] = cumul[i] + chunk_sizes[i];
-                }
 
                 let l = 1 << log2_l;
                 segment_size =
@@ -437,7 +417,7 @@ where
                     (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
                 );
 
-                let chunk_iter = std::iter::empty();
+                let mut chunk_iter = chunk_store.iter().unwrap();
 
                 match par_solve(
                     chunk_iter,
@@ -525,11 +505,6 @@ where
                 bit_width = max_value.len() as usize;
                 info!("max value = {}, bit width = {}", max_value, bit_width);
 
-                let mut cumul = vec![0; num_chunks + 1];
-                for i in 0..num_chunks {
-                    cumul[i + 1] = cumul[i] + chunk_sizes[i];
-                }
-
                 let l = 1 << log2_l;
                 segment_size =
                     ((*chunk_sizes.iter().max().unwrap() as f64 * c).ceil() as usize + l + 1)
@@ -540,8 +515,9 @@ where
                     (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * c)
                 );
 
-                match par_solve(
-                    sigs.arbitrary_chunks(&chunk_sizes).enumerate(),
+                unreachable!("Can't happen");
+                /*match par_solve(
+                    sigs.arbitrary_chunks(&chunk_sizes),
                     bit_width,
                     num_chunks,
                     num_vertices,
@@ -554,7 +530,7 @@ where
                     }
                     ParSolveResult::CantPeel => {}
                     ParSolveResult::Ok(data) => break data,
-                }
+                }*/
             }
 
             seed += 1;
