@@ -189,7 +189,7 @@ enum ParSolveResult<O: Word + IntoAtomic> {
 fn par_solve<
     'a,
     O: Word + ZeroCopy + Send + Sync + IntoAtomic + 'a,
-    I: Iterator<Item = (usize, Vec<([u64; 2], O)>)> + Send,
+    I: Iterator<Item = (usize, Cow<'a, [([u64; 2], O)]>)> + Send,
 >(
     chunk_iter: I,
     bit_width: usize,
@@ -363,7 +363,7 @@ where
         into_values: &V,
         pl: &mut Option<&mut ProgressLogger>,
     ) -> anyhow::Result<VFunc<T, O>> {
-        let offline = true;
+        let offline = false;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         let mut seed = 0;
@@ -516,9 +516,10 @@ where
                     (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * c)
                 );
 
-                unreachable!("Can't happen");
-                /*match par_solve(
-                    sigs.arbitrary_chunks(&chunk_sizes),
+                match par_solve(
+                    sigs.arbitrary_chunks(&chunk_sizes)
+                        .map(|x| Cow::Borrowed(x))
+                        .enumerate(),
                     bit_width,
                     num_chunks,
                     num_vertices,
@@ -531,7 +532,7 @@ where
                     }
                     ParSolveResult::CantPeel => {}
                     ParSolveResult::Ok(data) => break data,
-                }*/
+                }
             }
 
             seed += 1;
