@@ -24,6 +24,7 @@ use epserde::traits::ZeroCopy;
 use rayon::prelude::ParallelIterator;
 use rayon::slice::ParallelSlice;
 use rayon::slice::ParallelSliceMut;
+use std::borrow::Cow;
 use std::mem::size_of;
 use std::{
     collections::VecDeque,
@@ -215,7 +216,7 @@ pub struct ChunkIterator<'a, T> {
 }
 
 impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkIterator<'a, T> {
-    type Item = (usize, Vec<([u64; 2], T)>);
+    type Item = (usize, Cow<'a, [([u64; 2], T)]>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let store = &mut self.store;
@@ -253,10 +254,10 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
             chunk.par_sort_unstable_by_key(|x| x.0);
 
             if chunk.par_windows(2).any(|w| w[0].0 == w[1].0) {
-                return Some((usize::MAX, chunk));
+                return Some((usize::MAX, Cow::Owned(chunk)));
             }
 
-            let res = (self.next_chunk, chunk);
+            let res = (self.next_chunk, Cow::Owned(chunk));
             self.next_file += to_aggr;
             self.next_chunk += 1;
             return Some(res);
@@ -312,10 +313,10 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
             chunk.par_sort_unstable_by_key(|x| x.0);
 
             if chunk.par_windows(2).any(|w| w[0].0 == w[1].0) {
-                return Some((usize::MAX, chunk));
+                return Some((usize::MAX, Cow::Owned(chunk)));
             }
 
-            let res = (self.next_chunk, chunk);
+            let res = (self.next_chunk, Cow::Owned(chunk));
             self.next_chunk += 1;
             return Some(res);
         }
