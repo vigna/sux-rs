@@ -11,3 +11,4 @@
 
 mod vfunc;
 pub use vfunc::VFunc;
+pub use vfunc::VFuncBuilder;

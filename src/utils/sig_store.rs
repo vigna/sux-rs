@@ -28,14 +28,7 @@ use rayon::prelude::ParallelIterator;
 use rayon::slice::ParallelSlice;
 use rayon::slice::ParallelSliceMut;
 use std::borrow::Cow;
-use std::mem::size_of;
-use std::{
-    collections::VecDeque,
-    fmt::{Display, Formatter},
-    fs::File,
-    io::*,
-    marker::PhantomData,
-};
+use std::{collections::VecDeque, fs::File, io::*, marker::PhantomData};
 
 use crate::prelude::spooky_short;
 
@@ -266,7 +259,7 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
             let res = (self.next_chunk, Cow::Owned(chunk));
             self.next_file += to_aggr;
             self.next_chunk += 1;
-            return Some(res);
+            Some(res)
         } else {
             // We need to split buckets in several chunks
             if self.chunks.is_empty() {
@@ -328,7 +321,7 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
 
             let res = (self.next_chunk, Cow::Owned(chunk));
             self.next_chunk += 1;
-            return Some(res);
+            Some(res)
         }
     }
 }
@@ -401,6 +394,10 @@ impl<T: ZeroCopy> SigStore<T> {
     /// The number of signature/value pairs added to the store so far.
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
     /// Flush the buffers and return a pair given by [`ChunkStore`] whose chunks are defined by

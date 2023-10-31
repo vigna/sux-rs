@@ -9,6 +9,7 @@
 use crate::bits::*;
 use crate::traits::bit_field_slice;
 use crate::utils::*;
+use anyhow::bail;
 use arbitrary_chunks::ArbitraryChunks;
 use bit_field_slice::Word;
 use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
@@ -110,8 +111,9 @@ The output type `O` can be selected to be any of the unsigned integer types
 with an atomic counterpart; The default is `usize`.
 
 */
+use derive_builder::Builder;
 
-#[derive(Epserde, Debug, Default)]
+#[derive(Builder, Epserde, Debug, Default)]
 pub struct VFunc<
     T: ToSig,
     O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic = usize,
@@ -205,15 +207,24 @@ where
     use crate::traits::bit_field_slice::AtomicHelper;
     let data = AtomicBitFieldVec::<O>::new(bit_width, num_vertices * num_chunks);
     let mutex = std::sync::Arc::new(Mutex::new(chunk_iter));
-    let fail = AtomicBool::new(false);
+    let failed_peeling = AtomicBool::new(false);
+    let duplicate_signature = AtomicBool::new(false);
+    info!("Using {} threads", num_threads);
     thread::scope(|s| {
         for _ in 0..num_threads {
             s.spawn(|| loop {
+                if failed_peeling.load(Relaxed) || duplicate_signature.load(Relaxed) {
+                    return;
+                }
                 let next = mutex.lock().unwrap().next();
                 if next.is_none() {
                     return;
                 }
                 let (chunk, sigs) = next.unwrap();
+                if chunk == usize::MAX {
+                    duplicate_signature.store(true, Ordering::Relaxed);
+                    return;
+                }
                 let mut pl = ProgressLogger::default();
                 pl.expected_updates = Some(sigs.len());
                 pl.start(format!(
@@ -265,7 +276,7 @@ where
                     stack.truncate(curr);
                 }
                 if sigs.len() != stack.len() {
-                    fail.store(true, Ordering::Relaxed);
+                    failed_peeling.store(true, Ordering::Relaxed);
                     return;
                 }
                 pl.done_with_count(sigs.len());
@@ -303,11 +314,14 @@ where
             });
         }
     });
-    return if fail.load(Relaxed) {
+
+    if failed_peeling.load(Relaxed) {
         ParSolveResult::CantPeel
+    } else if duplicate_signature.load(Relaxed) {
+        ParSolveResult::DuplicateSignature
     } else {
         ParSolveResult::Ok(data)
-    };
+    }
 }
 
 /**
@@ -429,9 +443,7 @@ where
                 ) {
                     ParSolveResult::DuplicateSignature => {
                         if dup_count >= 3 {
-                            panic!(
-                        "Duplicate keys (duplicate 128-bit signatures with four different seeds)"
-                    );
+                            bail!("Duplicate keys (duplicate 128-bit signatures with four different seeds");
                         }
                         warn!("Duplicate 128-bit signature, trying again...");
                         dup_count += 1;
@@ -492,9 +504,7 @@ where
 
                 if dup {
                     if dup_count >= 3 {
-                        panic!(
-                        "Duplicate keys (duplicate 128-bit signatures with four different seeds)"
-                    );
+                        bail!("Duplicate keys (duplicate 128-bit signatures with four different seeds)");
                     }
                     warn!("Duplicate 128-bit signature, trying again...");
                     dup_count += 1;
@@ -516,7 +526,7 @@ where
 
                 match par_solve(
                     sigs.arbitrary_chunks(&chunk_sizes)
-                        .map(|x| Cow::Borrowed(x))
+                        .map(Cow::Borrowed)
                         .enumerate(),
                     bit_width,
                     num_chunks,
@@ -536,7 +546,7 @@ where
             seed += 1;
         };
 
-        return Ok(VFunc {
+        Ok(VFunc {
             seed,
             log2_l,
             high_bits: chunk_high_bits,
@@ -546,6 +556,6 @@ where
             values: data.into(),
             _marker_t: std::marker::PhantomData,
             _marker_o: std::marker::PhantomData,
-        });
+        })
     }
 }
