@@ -395,15 +395,15 @@ where
                     max_value = Ord::max(max_value, v);
                     (T::to_sig(&x, seed), v)
                 }))?;
-                num_keys = sig_sorter.num_keys();
+                num_keys = sig_sorter.len();
 
                 (chunk_high_bits, max_num_threads, log2_l, c) = compute_params(num_keys);
 
                 let num_chunks = 1 << chunk_high_bits;
                 chunk_mask = (1u32 << chunk_high_bits) - 1;
 
-                let (mut chunk_store, chunk_sizes) =
-                    sig_sorter.into_chunk_store(chunk_high_bits)?;
+                let mut chunk_store = sig_sorter.into_chunk_store(chunk_high_bits)?;
+                let chunk_sizes = chunk_store.chunk_sizes();
 
                 bit_width = max_value.len() as usize;
                 info!("max value = {}, bit width = {}", max_value, bit_width);
@@ -418,10 +418,8 @@ where
                     (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
                 );
 
-                let mut chunk_iter = chunk_store.iter().unwrap();
-
                 match par_solve(
-                    chunk_iter,
+                    chunk_store.iter().unwrap(),
                     bit_width,
                     num_chunks,
                     num_vertices,
