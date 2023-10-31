@@ -29,3 +29,8 @@ fn test_func() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_dup_key() {
+    assert!(VFunc::<_>::new(std::iter::repeat(0).take(10), &(0..), &mut None).is_err());
+}

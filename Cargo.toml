@@ -35,6 +35,7 @@ tempfile = "3.8.0"
 xxh3 = "0.1.1"
 lender = "0.2.0"
 arbitrary-chunks = "0.4.1"
+derive_builder = "0.12.0"
 [features]
 default = ["rayon"]
 unaligned = []
