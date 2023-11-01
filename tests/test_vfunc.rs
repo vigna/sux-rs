@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use dsi_progress_logger::ProgressLogger;
+use dsi_progress_logger::*;
 use epserde::prelude::*;
 use sux::{func::VFunc, prelude::VFuncBuilder};
 
@@ -18,7 +18,7 @@ fn test_func() -> anyhow::Result<()> {
             let func =
                 VFuncBuilder::<_>::default()
                     .offline(offline)
-                    .build(0..n, &(0..), Some(&mut pl))?;
+                    .build(0..n, &(0..), &mut pl)?;
             let mut cursor = epserde::new_aligned_cursor();
             func.serialize(&mut cursor).unwrap();
             cursor.set_position(0);
@@ -38,6 +38,10 @@ fn test_func() -> anyhow::Result<()> {
 #[test]
 fn test_dup_key() {
     assert!(VFuncBuilder::<_>::default()
-        .build(std::iter::repeat(0).take(10), &(0..), None)
+        .build(
+            std::iter::repeat(0).take(10),
+            &(0..),
+            &mut Option::<ProgressLogger>::None
+        )
         .is_err());
 }

@@ -6,7 +6,7 @@
  */
 
 use clap::Parser;
-use dsi_progress_logger::ProgressLogger;
+use dsi_progress_logger::*;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
@@ -39,8 +39,8 @@ pub fn main() {
     let args = Args::parse();
 
     let mut rcab = RearCodedListBuilder::new(args.k);
-    let mut pl = ProgressLogger::default().display_memory();
-    pl.item_name = "line";
+    let mut pl = ProgressLogger::default();
+    pl.display_memory(true).item_name("line");
 
     let lines = std::io::BufReader::new(std::fs::File::open(&args.file_path).unwrap())
         .lines()

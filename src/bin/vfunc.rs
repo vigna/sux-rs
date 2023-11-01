@@ -7,7 +7,7 @@
 
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
-use dsi_progress_logger::ProgressLogger;
+use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use sux::prelude::VFuncBuilder;
 use sux::utils::file::FilenameIntoIterator;
@@ -50,6 +50,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     let mut pl = ProgressLogger::default();
+    pl.display_memory(true);
 
     if let Some(filename) = args.filename {
         let mut builder = VFuncBuilder::default().offline(args.offline);
@@ -57,13 +58,9 @@ fn main() -> Result<()> {
             builder = builder.num_threads(threads);
         }
         let func = if args.zstd {
-            builder.build(
-                FilenameZstdIntoIterator(&filename),
-                &(0_usize..),
-                Some(&mut pl),
-            )?
+            builder.build(FilenameZstdIntoIterator(&filename), &(0_usize..), &mut pl)?
         } else {
-            builder.build(FilenameIntoIterator(&filename), &(0..), Some(&mut pl))?
+            builder.build(FilenameIntoIterator(&filename), &(0..), &mut pl)?
         };
         func.store(&args.func)?;
     }
@@ -73,7 +70,7 @@ fn main() -> Result<()> {
         if let Some(threads) = args.threads {
             builder = builder.num_threads(threads);
         }
-        let func = builder.build(0..n, &(0_usize..), Some(&mut pl))?;
+        let func = builder.build(0..n, &(0_usize..), &mut pl)?;
 
         func.store(&args.func)?;
     }

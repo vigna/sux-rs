@@ -7,7 +7,7 @@
 
 use anyhow::Result;
 use clap::Parser;
-use dsi_progress_logger::ProgressLogger;
+use dsi_progress_logger::*;
 use epserde::prelude::*;
 use sux::func::VFunc;
 
