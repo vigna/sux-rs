@@ -422,6 +422,7 @@ where
             mut log2_l,
         );
         let data = loop {
+            pl.item_name("key");
             pl.start("Reading input...");
             let mut max_value = O::ZERO;
             //let mut chunk_sizes;
