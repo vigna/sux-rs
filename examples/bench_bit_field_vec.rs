@@ -6,7 +6,7 @@
  */
 
 use clap::Parser;
-use dsi_progress_logger::ProgressLogger;
+use dsi_progress_logger::*;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
@@ -50,7 +50,7 @@ pub fn main() {
 
     for _ in 0..args.repeats {
         let mut rand = SmallRng::seed_from_u64(0);
-        pl.item_name = "write";
+        pl.item_name("write");
         pl.start("Writing...");
         for _ in 0..args.n {
             let x = rand.gen::<usize>() & mask;
@@ -58,7 +58,7 @@ pub fn main() {
         }
         pl.done_with_count(args.n);
 
-        pl.item_name = "read";
+        pl.item_name("read");
         pl.start("Reading (random)...");
         for _ in 0..args.n {
             unsafe {
@@ -76,7 +76,7 @@ pub fn main() {
         pl.done_with_count(args.n);
 
         let mut iter = a.into_unchecked_iter();
-        pl.item_name = "item";
+        pl.item_name("item");
         pl.start("Scanning (unchecked) ...");
         for _ in 0..args.n {
             u += unsafe { iter.next_unchecked() };
@@ -84,7 +84,7 @@ pub fn main() {
         pl.done_with_count(args.n);
 
         let mut iter = a.into_rev_unchecked_iter();
-        pl.item_name = "item";
+        pl.item_name("item");
         pl.start("Scanning (reverse unchecked) ...");
         for _ in 0..args.n {
             u += unsafe { iter.next_unchecked() };

@@ -6,7 +6,7 @@
  */
 
 use clap::Parser;
-use dsi_progress_logger::ProgressLogger;
+use dsi_progress_logger::*;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;

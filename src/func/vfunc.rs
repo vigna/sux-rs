@@ -14,10 +14,9 @@ use arbitrary_chunks::ArbitraryChunks;
 use bit_field_slice::BitFieldSliceCore;
 use bit_field_slice::Word;
 use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
-use dsi_progress_logger::ProgressLogger;
+use dsi_progress_logger::*;
 use epserde::prelude::*;
 use log::warn;
-use log::*;
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -151,7 +150,7 @@ pub struct VFunc<
     _marker_o: std::marker::PhantomData<O>,
 }
 
-fn compute_params(num_keys: usize) -> (u32, usize, u32, f64) {
+fn compute_params(num_keys: usize, pl: &mut impl ProgressLog) -> (u32, usize, u32, f64) {
     let (chunk_high_bits, max_num_threads, log2_l, c);
 
     if num_keys < PARAMS[PARAMS.len() - 2].0 {
@@ -193,12 +192,12 @@ fn compute_params(num_keys: usize) -> (u32, usize, u32, f64) {
         (_, log2_l, c) = PARAMS[PARAMS.len() - 1];
     }
 
-    info!(
+    pl.info(format_args!(
         "chunk high bits = {}, l = {}, c = {}",
         chunk_high_bits,
         1 << log2_l,
         c
-    );
+    ));
 
     (chunk_high_bits, max_num_threads, log2_l, c)
 }
@@ -221,6 +220,7 @@ fn par_solve<
     num_threads: usize,
     segment_size: usize,
     log2_l: u32,
+    main_pl: &mut (impl ProgressLog + Send),
 ) -> ParSolveResult<O>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
@@ -230,7 +230,8 @@ where
     let mutex = std::sync::Arc::new(Mutex::new(chunk_iter));
     let failed_peeling = AtomicBool::new(false);
     let duplicate_signature = AtomicBool::new(false);
-    info!("Using {} threads", num_threads);
+    main_pl.info(format_args!("Using {} threads", num_threads));
+    let main_pl = std::sync::Arc::new(Mutex::new(main_pl));
     thread::scope(|s| {
         for _ in 0..num_threads {
             s.spawn(|| loop {
@@ -246,8 +247,8 @@ where
                     duplicate_signature.store(true, Ordering::Relaxed);
                     return;
                 }
-                let mut pl = ProgressLogger::default();
-                pl.expected_updates = Some(sigs.len());
+                let mut pl = main_pl.lock().unwrap().clone();
+                pl.item_name("edge");
                 pl.start(format!(
                     "Generating graph for chunk {}/{}...",
                     chunk + 1,
@@ -261,6 +262,7 @@ where
                     }
                 });
                 pl.done_with_count(sigs.len());
+
                 pl.start(format!(
                     "Peeling graph for chunk {}/{}...",
                     chunk + 1,
@@ -301,6 +303,7 @@ where
                     return;
                 }
                 pl.done_with_count(sigs.len());
+
                 pl.start(format!(
                     "Assigning values for chunk {}/{}...",
                     chunk + 1,
@@ -331,6 +334,7 @@ where
                     );
                 }
                 pl.done_with_count(sigs.len());
+
                 pl.start(format!("Completed chunk {}/{}.", chunk + 1, num_chunks));
             });
         }
@@ -404,7 +408,7 @@ where
         self,
         keys: I,
         into_values: &V,
-        mut pl: Option<&mut ProgressLogger>,
+        pl: &mut (impl ProgressLog + Send),
     ) -> anyhow::Result<VFunc<T, O>> {
         // Loop until success or duplicate detection
         let mut dup_count = 0;
@@ -418,9 +422,7 @@ where
             mut log2_l,
         );
         let data = loop {
-            if let Some(pl) = pl.as_mut() {
-                pl.start("Reading input...")
-            }
+            pl.start("Reading input...");
             let mut max_value = O::ZERO;
             //let mut chunk_sizes;
             let (max_num_threads, c);
@@ -432,19 +434,15 @@ where
                 let mut sig_sorter = SigStore::<O>::new(8, store_bits).unwrap();
                 let mut values = into_values.clone().into_iter();
                 sig_sorter.extend(keys.clone().into_iter().map(|x| {
-                    if let Some(pl) = pl.as_mut() {
-                        pl.light_update();
-                    }
+                    pl.light_update();
                     let v = values.next().expect("Not enough values");
                     max_value = Ord::max(max_value, v);
                     (T::to_sig(&x, seed), v)
                 }))?;
                 num_keys = sig_sorter.len();
-                if let Some(pl) = pl.as_mut() {
-                    pl.done();
-                }
+                pl.done();
 
-                (chunk_high_bits, max_num_threads, log2_l, c) = compute_params(num_keys);
+                (chunk_high_bits, max_num_threads, log2_l, c) = compute_params(num_keys, pl);
 
                 let num_chunks = 1 << chunk_high_bits;
                 chunk_mask = (1u32 << chunk_high_bits) - 1;
@@ -453,17 +451,20 @@ where
                 let chunk_sizes = chunk_store.chunk_sizes();
 
                 bit_width = max_value.len() as usize;
-                info!("max value = {}, bit width = {}", max_value, bit_width);
+                pl.info(format_args!(
+                    "max value = {}, bit width = {}",
+                    max_value, bit_width
+                ));
 
                 let l = 1 << log2_l;
                 segment_size =
                     ((*chunk_sizes.iter().max().unwrap() as f64 * c).ceil() as usize + l + 1)
                         / (l + 2);
                 let num_vertices = segment_size * (l + 2);
-                info!(
+                pl.info(format_args!(
                     "Size {:.2}%",
                     (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
-                );
+                ));
 
                 match par_solve(
                     chunk_store.iter().unwrap(),
@@ -476,6 +477,7 @@ where
                     },
                     segment_size,
                     log2_l,
+                    pl,
                 ) {
                     ParSolveResult::DuplicateSignature => {
                         if dup_count >= 3 {
@@ -495,31 +497,23 @@ where
                     .into_iter()
                     .map(|x| {
                         let v = values.next().expect("Not enough values");
-                        if let Some(pl) = pl.as_mut() {
-                            pl.light_update();
-                        }
+                        pl.light_update();
                         max_value = Ord::max(max_value, v);
                         (T::to_sig(&x, seed), v)
                     })
                     .collect::<Vec<_>>();
                 num_keys = sigs.len();
 
-                (chunk_high_bits, max_num_threads, log2_l, c) = compute_params(num_keys);
+                (chunk_high_bits, max_num_threads, log2_l, c) = compute_params(num_keys, pl);
 
                 let num_chunks = 1 << chunk_high_bits;
                 chunk_mask = (1u32 << chunk_high_bits) - 1;
 
-                if let Some(pl) = pl.as_mut() {
-                    pl.start("Sorting...")
-                }
+                pl.start("Sorting...");
                 sigs.par_sort_unstable();
-                if let Some(pl) = pl.as_mut() {
-                    pl.done_with_count(num_keys);
-                }
+                pl.done_with_count(num_keys);
 
-                if let Some(pl) = pl.as_mut() {
-                    pl.start("Checking for duplicates...")
-                }
+                pl.start("Checking for duplicates...");
 
                 let mut chunk_sizes = vec![0_usize; num_chunks];
                 let mut dup = false;
@@ -534,9 +528,7 @@ where
                     }
                 }
 
-                if let Some(pl) = pl.as_mut() {
-                    pl.done_with_count(num_keys);
-                }
+                pl.done_with_count(num_keys);
 
                 if dup {
                     if dup_count >= 3 {
@@ -548,17 +540,20 @@ where
                 }
 
                 bit_width = max_value.len() as usize;
-                info!("max value = {}, bit width = {}", max_value, bit_width);
+                pl.info(format_args!(
+                    "max value = {}, bit width = {}",
+                    max_value, bit_width
+                ));
 
                 let l = 1 << log2_l;
                 segment_size =
                     ((*chunk_sizes.iter().max().unwrap() as f64 * c).ceil() as usize + l + 1)
                         / (l + 2);
                 let num_vertices = segment_size * (l + 2);
-                info!(
+                pl.info(format_args!(
                     "Size {:.2}%",
                     (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * c)
-                );
+                ));
 
                 match par_solve(
                     sigs.arbitrary_chunks(&chunk_sizes)
@@ -573,6 +568,7 @@ where
                     },
                     segment_size,
                     log2_l,
+                    pl,
                 ) {
                     ParSolveResult::DuplicateSignature => {
                         unreachable!("Already checked for duplicates")
@@ -585,10 +581,10 @@ where
             seed += 1;
         };
 
-        info!(
+        pl.info(format_args!(
             "bits/keys: {}",
             data.len() as f64 * bit_width as f64 / num_keys as f64
-        );
+        ));
 
         Ok(VFunc {
             seed,

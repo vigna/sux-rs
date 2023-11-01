@@ -27,7 +27,7 @@ yoke = "0.7.1"
 epserde = "0.1.2"
 bitvec = "1.0.1"
 clap = { version = "4.2.7", features = ["derive"] }
-dsi-progress-logger = "0.1.0"
+dsi-progress-logger = "0.2.0"
 stderrlog = "0.5.4"
 rand = {version="0.8.5", features=["small_rng"]}
 zstd = "0.12.4"
