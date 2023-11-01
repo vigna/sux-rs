@@ -7,24 +7,29 @@
 
 use dsi_progress_logger::ProgressLogger;
 use epserde::prelude::*;
-use sux::func::VFunc;
+use sux::{func::VFunc, prelude::VFuncBuilder};
 
 #[test]
 fn test_func() -> anyhow::Result<()> {
     let mut pl = ProgressLogger::default();
 
-    for n in [10, 100, 1000, 100000] {
-        let func = VFunc::<_>::new(0..n, &(0..), &mut Some(&mut pl))?;
-        let mut cursor = epserde::new_aligned_cursor();
-        func.serialize(&mut cursor).unwrap();
-        cursor.set_position(0);
-        let buf = cursor.into_inner();
-        let func = VFunc::<u64>::deserialize_eps(&buf).unwrap();
-        pl.start("Querying...");
-        for i in 0..n {
-            assert_eq!(i, func.get(&i) as u64);
+    for offline in [false, true] {
+        for n in [10, 100, 1000, 100000] {
+            let func =
+                VFuncBuilder::<_>::default()
+                    .offline(offline)
+                    .build(0..n, &(0..), Some(&mut pl))?;
+            let mut cursor = epserde::new_aligned_cursor();
+            func.serialize(&mut cursor).unwrap();
+            cursor.set_position(0);
+            let buf = cursor.into_inner();
+            let func = VFunc::<u64>::deserialize_eps(&buf).unwrap();
+            pl.start("Querying...");
+            for i in 0..n {
+                assert_eq!(i, func.get(&i) as u64);
+            }
+            pl.done_with_count(n as usize);
         }
-        pl.done_with_count(n as usize);
     }
 
     Ok(())
@@ -32,5 +37,7 @@ fn test_func() -> anyhow::Result<()> {
 
 #[test]
 fn test_dup_key() {
-    assert!(VFunc::<_>::new(std::iter::repeat(0).take(10), &(0..), &mut None).is_err());
+    assert!(VFuncBuilder::<_>::default()
+        .build(std::iter::repeat(0).take(10), &(0..), None)
+        .is_err());
 }

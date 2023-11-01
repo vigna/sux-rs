@@ -9,7 +9,7 @@ use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::ProgressLogger;
 use epserde::ser::Serialize;
-use sux::func::VFunc;
+use sux::prelude::VFuncBuilder;
 use sux::utils::file::FilenameIntoIterator;
 use sux::utils::FilenameZstdIntoIterator;
 
@@ -27,11 +27,17 @@ struct Args {
     #[arg(short)]
     /// Use the 64-bit keys [0..n).
     n: Option<usize>,
+    /// Use this number of threads.
+    #[arg(short, long)]
+    threads: Option<usize>,
     /// A name for the ε-serde serialized function.
     func: String,
     /// The filename containing the keys is compressed with zstd.
     #[arg(short, long)]
     zstd: bool,
+    /// Use disk buffers to reduce memory usage at construction time.
+    #[arg(short, long)]
+    offline: bool,
 }
 
 fn main() -> Result<()> {
@@ -46,20 +52,28 @@ fn main() -> Result<()> {
     let mut pl = ProgressLogger::default();
 
     if let Some(filename) = args.filename {
+        let mut builder = VFuncBuilder::default().offline(args.offline);
+        if let Some(threads) = args.threads {
+            builder = builder.num_threads(threads);
+        }
         let func = if args.zstd {
-            VFunc::<_>::new(
+            builder.build(
                 FilenameZstdIntoIterator(&filename),
-                &(0..),
-                &mut Some(&mut pl),
+                &(0_usize..),
+                Some(&mut pl),
             )?
         } else {
-            VFunc::<_>::new(FilenameIntoIterator(&filename), &(0..), &mut Some(&mut pl))?
+            builder.build(FilenameIntoIterator(&filename), &(0..), Some(&mut pl))?
         };
         func.store(&args.func)?;
     }
 
     if let Some(n) = args.n {
-        let func = VFunc::<_>::new(0..n, &(0..), &mut Some(&mut pl))?;
+        let mut builder = VFuncBuilder::default().offline(args.offline);
+        if let Some(threads) = args.threads {
+            builder = builder.num_threads(threads);
+        }
+        let func = builder.build(0..n, &(0_usize..), Some(&mut pl))?;
 
         func.store(&args.func)?;
     }

@@ -11,6 +11,7 @@ use crate::traits::bit_field_slice;
 use crate::utils::*;
 use anyhow::bail;
 use arbitrary_chunks::ArbitraryChunks;
+use bit_field_slice::BitFieldSliceCore;
 use bit_field_slice::Word;
 use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
 use dsi_progress_logger::ProgressLogger;
@@ -111,9 +112,29 @@ The output type `O` can be selected to be any of the unsigned integer types
 with an atomic counterpart; The default is `usize`.
 
 */
-use derive_builder::Builder;
+use derive_setters::*;
 
-#[derive(Builder, Epserde, Debug, Default)]
+#[derive(Setters, Epserde, Debug, Default)]
+#[setters(generate = false)]
+pub struct VFuncBuilder<
+    T: ToSig,
+    O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic = usize,
+> {
+    segment_size: usize,
+    #[setters(generate = true)]
+    /// The number of parallel threads to use.
+    num_threads: usize,
+    #[setters(generate = true)]
+    /// Use disk buffers to reduce core memory usage at construction time.
+    offline: bool,
+    /// The base-2 logarithm of the number of disk buffers.
+    #[setters(generate = true)]
+    log2_buffers: Option<usize>,
+    _marker_t: std::marker::PhantomData<T>,
+    _marker_o: std::marker::PhantomData<O>,
+}
+
+#[derive(Epserde, Debug, Default)]
 pub struct VFunc<
     T: ToSig,
     O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic = usize,
@@ -367,17 +388,24 @@ where
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+}
 
-    /// Creates a new function with given keys and values.
-    pub fn new<
+impl<T: ToSig, O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic>
+    VFuncBuilder<T, O>
+where
+    O::AtomicType: AtomicUnsignedInt + AsBytes,
+    BitFieldVec<O>: From<AtomicBitFieldVec<O, Vec<O::AtomicType>>>,
+{
+    /// Build and return a new function with given keys and values.
+    pub fn build<
         I: std::iter::IntoIterator<Item = T> + Clone,
         V: std::iter::IntoIterator<Item = O> + Clone,
     >(
+        self,
         keys: I,
         into_values: &V,
-        pl: &mut Option<&mut ProgressLogger>,
+        mut pl: Option<&mut ProgressLogger>,
     ) -> anyhow::Result<VFunc<T, O>> {
-        let offline = false;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         let mut seed = 0;
@@ -397,7 +425,9 @@ where
             //let mut chunk_sizes;
             let (max_num_threads, c);
 
-            if offline {
+            //let (input_time, build_time);
+
+            if self.offline {
                 let store_bits = 12;
                 let mut sig_sorter = SigStore::<O>::new(8, store_bits).unwrap();
                 let mut values = into_values.clone().into_iter();
@@ -410,6 +440,9 @@ where
                     (T::to_sig(&x, seed), v)
                 }))?;
                 num_keys = sig_sorter.len();
+                if let Some(pl) = pl.as_mut() {
+                    pl.done();
+                }
 
                 (chunk_high_bits, max_num_threads, log2_l, c) = compute_params(num_keys);
 
@@ -437,7 +470,10 @@ where
                     bit_width,
                     num_chunks,
                     num_vertices,
-                    max_num_threads,
+                    match self.num_threads {
+                        0 => max_num_threads,
+                        _ => self.num_threads,
+                    },
                     segment_size,
                     log2_l,
                 ) {
@@ -531,7 +567,10 @@ where
                     bit_width,
                     num_chunks,
                     num_vertices,
-                    max_num_threads,
+                    match self.num_threads {
+                        0 => max_num_threads,
+                        _ => self.num_threads,
+                    },
                     segment_size,
                     log2_l,
                 ) {
@@ -545,6 +584,11 @@ where
 
             seed += 1;
         };
+
+        info!(
+            "bits/keys: {}",
+            data.len() as f64 * bit_width as f64 / num_keys as f64
+        );
 
         Ok(VFunc {
             seed,
