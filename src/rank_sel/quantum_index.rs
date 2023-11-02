@@ -40,10 +40,8 @@ pub struct QuantumIndex<
     _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,
 }
 
-impl<
-        B: SelectHinted + AsRef<[usize]>,
-        const QUANTUM_LOG2: usize,
-    > QuantumIndex<B, Vec<usize>, QUANTUM_LOG2>
+impl<B: SelectHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
+    QuantumIndex<B, Vec<usize>, QUANTUM_LOG2>
 {
     pub fn new(bitvec: B, number_of_ones: usize) -> Result<Self> {
         let mut res = QuantumIndex {

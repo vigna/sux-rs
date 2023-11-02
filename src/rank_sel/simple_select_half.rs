@@ -102,8 +102,7 @@ impl<
             let mut number_of_ones = inventory_idx * Self::ONES_PER_INVENTORY;
             let mut next_quantum = number_of_ones;
 
-            let subinventory = unsafe{inventory[start_idx..end_idx].align_to_mut().1};
-
+            let subinventory = unsafe { inventory[start_idx..end_idx].align_to_mut().1 };
 
             let (quantum, size) = if span < u16::MAX as u64 {
                 (Self::ONES_PER_SUB16, core::mem::size_of::<u16>())
@@ -121,10 +120,8 @@ impl<
                     let index = (word_idx * usize::BITS as u64) + in_word_index as u64;
                     let sub_offset = index - start_bit_idx;
 
-                    
-                    subinventory[inventory_idx..inventory_idx + size].copy_from_slice(
-                        &sub_offset.to_le_bytes()
-                    );
+                    subinventory[inventory_idx..inventory_idx + size]
+                        .copy_from_slice(&sub_offset.to_le_bytes());
 
                     inventory_idx += size;
                     next_quantum += quantum;

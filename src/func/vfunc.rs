@@ -42,6 +42,16 @@ const PARAMS: [(usize, u32, f64); 15] = [
     (60180252, 9, 1.10),
 ];
 
+/**
+
+An edge list represented by a 64-bit integer. The lower DEG_SHIFT bits
+contian a XOR of the edges, while the upper bits contain the degree.
+
+The degree can be stored with a small number of bits because the
+graph is random, so the maximum degree is O(log log n).
+
+*/
+
 #[derive(Debug, Default)]
 struct EdgeList(usize);
 impl EdgeList {
@@ -69,22 +79,39 @@ impl EdgeList {
         self.0 >> EdgeList::DEG_SHIFT
     }
 
+    /// Return the edge index after a call to `zero`.
     #[inline(always)]
     fn edge_index(&self) -> usize {
+        debug_assert!(self.degree() == 0);
         self.0 & EdgeList::EDGE_INDEX_MASK
     }
 
     #[inline(always)]
-    fn dec(&mut self) {
-        debug_assert!(self.degree() > 0);
+    /// Set the degree of a list of degree one to zero,
+    /// leaving the edge index unchanged.
+    fn zero(&mut self) {
+        debug_assert!(self.degree() == 1);
         self.0 -= EdgeList::DEG;
     }
 }
 
+/*
+
+Chunk and edge information is derived from the 128-bit signatures of the keys.
+More precisely, each signature is made of two 64-bit integers `h` and `l`, and then:
+
+- the `high_bits` most significant bits of `h` are used to select a chunk;
+- the `log2_l` least significant bits of the upper 32 bits of `h` are used to select a segment;
+- the lower 32 bits of `h` are used to select the virst vertex;
+- the upper 32 bits of `l` are used to select the second vertex;
+- the lower 32 bits of `l` are used to select the third vertex.
+
+*/
+
 #[inline(always)]
 #[must_use]
-fn chunk(sig: &[u64; 2], high_bits: u32, chunk_mask: u32) -> usize {
-    (sig[0].rotate_left(high_bits) & chunk_mask as u64) as usize
+fn chunk(sig: &[u64; 2], chunk_high_bits: u32, chunk_mask: u32) -> usize {
+    (sig[0].rotate_left(chunk_high_bits) & chunk_mask as u64) as usize
 }
 
 #[inline(always)]
@@ -99,6 +126,28 @@ fn edge(sig: &[u64; 2], log2_l: u32, segment_size: usize) -> [usize; 3] {
     ]
 }
 
+use derive_setters::*;
+
+#[derive(Setters, Epserde, Debug, Default)]
+#[setters(generate = false)]
+pub struct VFuncBuilder<
+    T: ToSig,
+    O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic = usize,
+> {
+    #[setters(generate = true)]
+    /// The number of parallel threads to use.
+    num_threads: usize,
+    #[setters(generate = true)]
+    /// Use disk-based buckets to reduce core memory usage at construction time.
+    offline: bool,
+    /// The base-2 logarithm of the number of buckets. Used only if `offline` is `true`.
+    #[setters(generate = true, strip_option)]
+    log2_buckets: Option<u32>,
+    segment_size: usize,
+    _marker_t: std::marker::PhantomData<T>,
+    _marker_o: std::marker::PhantomData<O>,
+}
+
 /**
 
 Static functions with 10%-11% space overhead for large key sets,
@@ -111,27 +160,6 @@ The output type `O` can be selected to be any of the unsigned integer types
 with an atomic counterpart; The default is `usize`.
 
 */
-use derive_setters::*;
-
-#[derive(Setters, Epserde, Debug, Default)]
-#[setters(generate = false)]
-pub struct VFuncBuilder<
-    T: ToSig,
-    O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic = usize,
-> {
-    segment_size: usize,
-    #[setters(generate = true)]
-    /// The number of parallel threads to use.
-    num_threads: usize,
-    #[setters(generate = true)]
-    /// Use disk buffers to reduce core memory usage at construction time.
-    offline: bool,
-    /// The base-2 logarithm of the number of disk buffers.
-    #[setters(generate = true)]
-    log2_buffers: Option<usize>,
-    _marker_t: std::marker::PhantomData<T>,
-    _marker_o: std::marker::PhantomData<O>,
-}
 
 #[derive(Epserde, Debug, Default)]
 pub struct VFunc<
@@ -208,6 +236,7 @@ enum ParSolveResult<O: Word + IntoAtomic> {
     Ok(AtomicBitFieldVec<O>),
 }
 
+#[allow(clippy::too_many_arguments)]
 fn par_solve<
     'a,
     O: Word + ZeroCopy + Send + Sync + IntoAtomic + 'a,
@@ -282,7 +311,7 @@ where
                         if edge_lists[v].degree() == 0 {
                             continue; // Skip no longer useful entries
                         }
-                        edge_lists[v].dec();
+                        edge_lists[v].zero();
                         let edge_index = edge_lists[v].edge_index();
                         stack[curr] = v;
                         curr += 1;
@@ -349,18 +378,6 @@ where
     }
 }
 
-/**
-
-Chunk and edge information is derived from the 128-bit signatures of the keys.
-More precisely, each signature is made of two 64-bit integers `h` and `l`, and then:
-
-- the `high_bits` most significant bits of `h` are used to select a chunk;
-- the `log2_l` least significant bits of the upper 32 bits of `h` are used to select a segment;
-- the lower 32 bits of `h` are used to select the virst vertex;
-- the upper 32 bits of `l` are used to select the second vertex;
-- the lower 32 bits of `l` are used to select the third vertex.
-
-*/
 impl<
         T: ToSig,
         O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic,
@@ -370,25 +387,34 @@ where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
     BitFieldVec<O>: From<AtomicBitFieldVec<O, Vec<O::AtomicType>>>,
 {
+    /// Return the value associated with the given signature.
+    ///
+    /// This method is mainly useful in the construction of compound functions.
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> O {
         let edge = edge(sig, self.log2_l, self.segment_size);
         let chunk = chunk(sig, self.high_bits, self.chunk_mask);
         // chunk * self.segment_size * (2^log2_l + 2)
         let chunk_offset = chunk * ((self.segment_size << self.log2_l) + (self.segment_size << 1));
-        self.values.get(edge[0] + chunk_offset)
-            ^ self.values.get(edge[1] + chunk_offset)
-            ^ self.values.get(edge[2] + chunk_offset)
+
+        unsafe {
+            self.values.get_unchecked(edge[0] + chunk_offset)
+                ^ self.values.get_unchecked(edge[1] + chunk_offset)
+                ^ self.values.get_unchecked(edge[2] + chunk_offset)
+        }
     }
 
+    /// Return the value associated with the given key, or a random value if the key is not present.
     #[inline(always)]
     pub fn get(&self, key: &T) -> O {
         self.get_by_sig(&T::to_sig(key, self.seed))
     }
 
+    /// Return the number of keys in the function.
     pub fn len(&self) -> usize {
         self.num_keys
     }
 
+    /// Return whether the function has no keys.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -431,8 +457,10 @@ where
             //let (input_time, build_time);
 
             if self.offline {
-                let store_bits = 12;
-                let mut sig_sorter = SigStore::<O>::new(8, store_bits).unwrap();
+                let max_chunk_high_bits = 12;
+                let log2_buckets = self.log2_buckets.unwrap_or(8);
+                pl.info(format_args!("Using {} buckets", 1 << log2_buckets));
+                let mut sig_sorter = SigStore::<O>::new(log2_buckets, max_chunk_high_bits).unwrap();
                 let mut values = into_values.clone().into_iter();
                 sig_sorter.extend(keys.clone().into_iter().map(|x| {
                     pl.light_update();
