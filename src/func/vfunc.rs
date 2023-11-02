@@ -16,6 +16,8 @@ use bit_field_slice::Word;
 use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
 use dsi_progress_logger::*;
 use epserde::prelude::*;
+use lender::IntoLender;
+use lender::*;
 use log::warn;
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -432,15 +434,16 @@ where
     BitFieldVec<O>: From<AtomicBitFieldVec<O, Vec<O::AtomicType>>>,
 {
     /// Build and return a new function with given keys and values.
-    pub fn build<
-        I: std::iter::IntoIterator<Item = T> + Clone,
-        V: std::iter::IntoIterator<Item = O> + Clone,
-    >(
+    pub fn build<I: IntoLender + Clone, V: IntoLender + Clone>(
         self,
-        keys: I,
+        into_keys: I,
         into_values: &V,
         pl: &mut (impl ProgressLog + Send),
-    ) -> anyhow::Result<VFunc<T, O>> {
+    ) -> anyhow::Result<VFunc<T, O>>
+    where
+        for<'lend> I::Lender: Lending<'lend, Lend = std::io::Result<&'lend T>>,
+        for<'lend> V::Lender: Lending<'lend, Lend = std::io::Result<&'lend O>>,
+    {
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         let mut seed = 0;
@@ -466,13 +469,21 @@ where
                 let log2_buckets = self.log2_buckets.unwrap_or(8);
                 pl.info(format_args!("Using {} buckets", 1 << log2_buckets));
                 let mut sig_sorter = SigStore::<O>::new(log2_buckets, max_chunk_high_bits).unwrap();
-                let mut values = into_values.clone().into_iter();
-                sig_sorter.extend(keys.clone().into_iter().map(|x| {
-                    pl.light_update();
-                    let v = values.next().expect("Not enough values");
-                    max_value = Ord::max(max_value, v);
-                    (T::to_sig(&x, seed), v)
-                }))?;
+                let mut values = into_values.clone().into_lender();
+                let mut keys = into_keys.clone().into_lender();
+                while let Some(result) = keys.next() {
+                    match result {
+                        Ok(key) => {
+                            pl.light_update();
+                            let v = values.next().expect("Not enough values")?;
+                            max_value = Ord::max(max_value, *v);
+                            sig_sorter.push(&(T::to_sig(&key, seed), *v))?;
+                        }
+                        Err(e) => {
+                            bail!("Error reading input: {}", e);
+                        }
+                    }
+                }
                 num_keys = sig_sorter.len();
                 pl.done();
 
@@ -525,17 +536,22 @@ where
                     ParSolveResult::Ok(data) => break data,
                 }
             } else {
-                let mut values = into_values.clone().into_iter();
-                let mut sigs = keys
-                    .clone()
-                    .into_iter()
-                    .map(|x| {
-                        let v = values.next().expect("Not enough values");
-                        pl.light_update();
-                        max_value = Ord::max(max_value, v);
-                        (T::to_sig(&x, seed), v)
-                    })
-                    .collect::<Vec<_>>();
+                let mut values = into_values.clone().into_lender();
+                let mut keys = into_keys.clone().into_lender();
+                let mut sigs = vec![];
+                while let Some(result) = keys.next() {
+                    match result {
+                        Ok(key) => {
+                            pl.light_update();
+                            let v = values.next().expect("Not enough values")?;
+                            max_value = Ord::max(max_value, *v);
+                            sigs.push((T::to_sig(&key, seed), *v));
+                        }
+                        Err(e) => {
+                            bail!("Error reading input: {}", e);
+                        }
+                    }
+                }
                 pl.done();
                 num_keys = sigs.len();
 

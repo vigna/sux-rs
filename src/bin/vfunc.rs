@@ -5,13 +5,17 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use std::error::Error;
+use std::iter::Map;
+
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
+use lender::{from_iter, FromIntoIter, FromIter, IntoIteratorExt, IntoLender, IteratorExt};
 use sux::prelude::VFuncBuilder;
-use sux::utils::file::FilenameIntoIterator;
-use sux::utils::FilenameZstdIntoIterator;
+use sux::utils::file::FilenameIntoLender;
+use sux::utils::FilenameZstdIntoLender;
 
 #[derive(Parser, Debug)]
 #[command(about = "Generate a VFunc mapping each input to its rank and serialize it with ε-serde", long_about = None)]
@@ -63,9 +67,13 @@ fn main() -> Result<()> {
             builder = builder.num_threads(threads);
         }
         let func = if args.zstd {
-            builder.build(FilenameZstdIntoIterator(&filename), &(0_usize..), &mut pl)?
+            builder.build(
+                FilenameZstdIntoLender(&filename),
+                &(0_usize..).into(),
+                &mut pl,
+            )?
         } else {
-            builder.build(FilenameIntoIterator(&filename), &(0..), &mut pl)?
+            builder.build(FilenameIntoLender(&filename), &(0..).into(), &mut pl)?
         };
         func.store(&args.func)?;
     }
@@ -77,7 +85,7 @@ fn main() -> Result<()> {
         if let Some(threads) = args.threads {
             builder = builder.num_threads(threads);
         }
-        let func = builder.build(0..n, &(0_usize..), &mut pl)?;
+        let func = builder.build((0..n).into(), &(0_usize..).into(), &mut pl)?;
 
         func.store(&args.func)?;
     }
