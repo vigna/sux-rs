@@ -14,7 +14,7 @@ use sux::utils::file::FilenameIntoIterator;
 use sux::utils::FilenameZstdIntoIterator;
 
 #[derive(Parser, Debug)]
-#[command(about = "Generate a function mapping each input to its rank and serialize it with ε-serde", long_about = None)]
+#[command(about = "Generate a VFunc mapping each input to its rank and serialize it with ε-serde", long_about = None)]
 #[clap(group(
             ArgGroup::new("input")
                 .required(true)
@@ -25,7 +25,7 @@ struct Args {
     /// A file containing UTF-8 keys, one per line.
     filename: Option<String>,
     #[arg(short)]
-    /// Use the 64-bit keys [0..n).
+    /// Use the 64-bit keys [0..n). Mainly useful for testing and debugging.
     n: Option<usize>,
     /// Use this number of threads.
     #[arg(short, long)]
@@ -35,9 +35,12 @@ struct Args {
     /// The filename containing the keys is compressed with zstd.
     #[arg(short, long)]
     zstd: bool,
-    /// Use disk buffers to reduce memory usage at construction time.
+    /// Use disk-based buckets to reduce memory usage at construction time.
     #[arg(short, long)]
     offline: bool,
+    /// The number of high bits defining the number of buckets. Very large key sets may benefit from a larger number of buckets.
+    #[arg(short, long, default_value_t = 8)]
+    high_bits: u32,
 }
 
 fn main() -> Result<()> {
@@ -53,7 +56,9 @@ fn main() -> Result<()> {
     pl.display_memory(true);
 
     if let Some(filename) = args.filename {
-        let mut builder = VFuncBuilder::default().offline(args.offline);
+        let mut builder = VFuncBuilder::default()
+            .offline(args.offline)
+            .log2_buckets(args.high_bits);
         if let Some(threads) = args.threads {
             builder = builder.num_threads(threads);
         }
@@ -66,7 +71,9 @@ fn main() -> Result<()> {
     }
 
     if let Some(n) = args.n {
-        let mut builder = VFuncBuilder::default().offline(args.offline);
+        let mut builder = VFuncBuilder::default()
+            .offline(args.offline)
+            .log2_buckets(args.high_bits);
         if let Some(threads) = args.threads {
             builder = builder.num_threads(threads);
         }
