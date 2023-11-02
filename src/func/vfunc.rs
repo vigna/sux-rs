@@ -256,10 +256,14 @@ where
 {
     use crate::traits::bit_field_slice::AtomicHelper;
     let data = AtomicBitFieldVec::<O>::new(bit_width, num_vertices * num_chunks);
-    let mutex = std::sync::Arc::new(Mutex::new(chunk_iter));
+    let chunk_iter = std::sync::Arc::new(Mutex::new(chunk_iter));
     let failed_peeling = AtomicBool::new(false);
     let duplicate_signature = AtomicBool::new(false);
     main_pl.info(format_args!("Using {} threads", num_threads));
+    main_pl
+        .item_name("chunk")
+        .expected_updates(Some(num_chunks));
+    main_pl.start("Analyzing chunks...");
     let main_pl = std::sync::Arc::new(Mutex::new(main_pl));
     thread::scope(|s| {
         for _ in 0..num_threads {
@@ -267,11 +271,10 @@ where
                 if failed_peeling.load(Relaxed) || duplicate_signature.load(Relaxed) {
                     return;
                 }
-                let next = mutex.lock().unwrap().next();
-                if next.is_none() {
-                    return;
-                }
-                let (chunk, sigs) = next.unwrap();
+                let (chunk, sigs) = match chunk_iter.lock().unwrap().next() {
+                    None => return,
+                    Some((chunk, sigs)) => (chunk, sigs),
+                };
                 if chunk == usize::MAX {
                     duplicate_signature.store(true, Ordering::Relaxed);
                     return;
@@ -365,6 +368,7 @@ where
                 pl.done_with_count(sigs.len());
 
                 pl.start(format!("Completed chunk {}/{}.", chunk + 1, num_chunks));
+                main_pl.lock().unwrap().update_and_display();
             });
         }
     });
@@ -374,6 +378,7 @@ where
     } else if duplicate_signature.load(Relaxed) {
         ParSolveResult::DuplicateSignature
     } else {
+        main_pl.lock().unwrap().done();
         ParSolveResult::Ok(data)
     }
 }
