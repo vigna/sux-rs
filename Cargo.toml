@@ -33,7 +33,8 @@ rand = {version="0.8.5", features=["small_rng"]}
 zstd = "0.12.4"
 tempfile = "3.8.0"
 xxh3 = "0.1.1"
-lender = "0.2.0"
+#lender = "0.2.0"
+lender = { path = "../Lender" }
 arbitrary-chunks = "0.4.1"
 derive_setters = "0.1.6"
 [features]

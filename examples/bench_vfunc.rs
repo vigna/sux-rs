@@ -9,6 +9,7 @@ use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
+use lender::IntoLender;
 use sux::func::VFunc;
 
 #[derive(Parser, Debug)]
@@ -37,8 +38,8 @@ fn main() -> Result<()> {
 
     if let Some(filename) = args.filename {
         let func = VFunc::<_>::load_mem(&args.func)?;
-        let keys = sux::utils::file::FilenameIntoIterator(&filename)
-            .into_iter()
+        let keys = sux::utils::file::FilenameIntoLender(&filename)
+            .into_lender()
             .take(args.n)
             .collect::<Vec<_>>();
         pl.start("Querying...");
