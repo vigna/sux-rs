@@ -531,6 +531,7 @@ where
                         (T::to_sig(&x, seed), v)
                     })
                     .collect::<Vec<_>>();
+                pl.done();
                 num_keys = sigs.len();
 
                 (chunk_high_bits, max_num_threads, log2_l, c) = compute_params(num_keys, pl);
