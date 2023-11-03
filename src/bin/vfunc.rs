@@ -7,15 +7,19 @@
 
 use std::error::Error;
 use std::iter::Map;
+use std::ops::RangeFrom;
 
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
-use lender::{from_iter, FromIntoIter, FromIter, IntoIteratorExt, IntoLender, IteratorExt};
+use lender::{
+    from_into_iter, from_iter, lend_iter, FromIntoIter, FromIter, IntoIteratorExt, IntoLender,
+    IteratorExt,
+};
 use sux::prelude::VFuncBuilder;
 use sux::utils::file::FilenameIntoLender;
-use sux::utils::FilenameZstdIntoLender;
+use sux::utils::{FilenameZstdIntoLender, IntoOkIterator, IntoOkLender, IntoRefLender};
 
 #[derive(Parser, Debug)]
 #[command(about = "Generate a VFunc mapping each input to its rank and serialize it with ε-serde", long_about = None)]
@@ -63,29 +67,39 @@ fn main() -> Result<()> {
         let mut builder = VFuncBuilder::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
+
         if let Some(threads) = args.threads {
             builder = builder.num_threads(threads);
         }
+
         let func = if args.zstd {
             builder.build(
-                FilenameZstdIntoLender(&filename),
-                &(0_usize..).into(),
+                &mut FilenameZstdIntoLender(&filename),
+                &mut IntoOkIterator(0_usize..),
                 &mut pl,
             )?
         } else {
-            builder.build(FilenameIntoLender(&filename), &(0..).into(), &mut pl)?
+            builder.build(
+                &mut FilenameIntoLender(&filename),
+                &mut IntoOkIterator(0..),
+                &mut pl,
+            )?
         };
         func.store(&args.func)?;
     }
 
     if let Some(n) = args.n {
-        let mut builder = VFuncBuilder::default()
+        let mut builder = VFuncBuilder::<usize, usize>::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
         if let Some(threads) = args.threads {
             builder = builder.num_threads(threads);
         }
-        let func = builder.build((0..n).into(), &(0_usize..).into(), &mut pl)?;
+        let func = builder.build(
+            &mut IntoOkLender(IntoRefLender(0..n)),
+            &mut IntoOkIterator(0_usize..),
+            &mut pl,
+        )?;
 
         func.store(&args.func)?;
     }

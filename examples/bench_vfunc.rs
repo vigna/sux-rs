@@ -5,11 +5,11 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
-use lender::IntoLender;
+use lender::*;
 use sux::func::VFunc;
 
 #[derive(Parser, Debug)]
@@ -38,10 +38,16 @@ fn main() -> Result<()> {
 
     if let Some(filename) = args.filename {
         let func = VFunc::<_>::load_mem(&args.func)?;
-        let keys = sux::utils::file::FilenameIntoLender(&filename)
+        let mut iter = sux::utils::file::FilenameIntoLender(&filename)
             .into_lender()
-            .take(args.n)
-            .collect::<Vec<_>>();
+            .take(args.n);
+        let mut keys = Vec::with_capacity(args.n);
+        while let Some(result) = iter.next() {
+            match result {
+                Ok(key) => keys.push(key.to_owned()),
+                Err(e) => bail!(e),
+            }
+        }
         pl.start("Querying...");
         for (i, key) in keys.iter().enumerate() {
             assert_eq!(i, func.get(key));
