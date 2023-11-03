@@ -21,6 +21,7 @@ use lender::*;
 use log::warn;
 use rayon::prelude::*;
 use std::borrow::Cow;
+use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::thread;
@@ -273,33 +274,39 @@ where
                 if failed_peeling.load(Relaxed) || duplicate_signature.load(Relaxed) {
                     return;
                 }
-                let (chunk, sigs) = match chunk_iter.lock().unwrap().next() {
+                let (chunk_index, mut chunk) = match chunk_iter.lock().unwrap().next() {
                     None => return,
-                    Some((chunk, sigs)) => (chunk, sigs),
+                    Some((chunk_index, chunk)) => (chunk_index, chunk),
                 };
-                if chunk == usize::MAX {
+
+                if let Cow::Owned(chunk) = &mut chunk {
+                    chunk.par_sort_unstable_by_key(|x| x.0);
+                }
+
+                if chunk.par_windows(2).any(|w| w[0].0 == w[1].0) {
                     duplicate_signature.store(true, Ordering::Relaxed);
                     return;
                 }
+
                 let mut pl = main_pl.lock().unwrap().clone();
                 pl.item_name("edge");
                 pl.start(format!(
                     "Generating graph for chunk {}/{}...",
-                    chunk + 1,
+                    chunk_index + 1,
                     num_chunks
                 ));
                 let mut edge_lists = Vec::new();
                 edge_lists.resize_with(num_vertices, EdgeList::default);
-                sigs.iter().enumerate().for_each(|(edge_index, sig)| {
+                chunk.iter().enumerate().for_each(|(edge_index, sig)| {
                     for &v in edge(&sig.0, log2_l, segment_size).iter() {
                         edge_lists[v].add(edge_index);
                     }
                 });
-                pl.done_with_count(sigs.len());
+                pl.done_with_count(chunk.len());
 
                 pl.start(format!(
                     "Peeling graph for chunk {}/{}...",
-                    chunk + 1,
+                    chunk_index + 1,
                     num_chunks
                 ));
                 let mut stack = Vec::new();
@@ -321,7 +328,7 @@ where
                         stack[curr] = v;
                         curr += 1;
                         // Degree is necessarily 0
-                        for &x in edge(&sigs[edge_index].0, log2_l, segment_size).iter() {
+                        for &x in edge(&chunk[edge_index].0, log2_l, segment_size).iter() {
                             if x != v {
                                 edge_lists[x].remove(edge_index);
                                 if edge_lists[x].degree() == 1 {
@@ -332,21 +339,21 @@ where
                     }
                     stack.truncate(curr);
                 }
-                if sigs.len() != stack.len() {
+                if chunk.len() != stack.len() {
                     failed_peeling.store(true, Ordering::Relaxed);
                     return;
                 }
-                pl.done_with_count(sigs.len());
+                pl.done_with_count(chunk.len());
 
                 pl.start(format!(
                     "Assigning values for chunk {}/{}...",
-                    chunk + 1,
+                    chunk_index + 1,
                     num_chunks
                 ));
                 while let Some(mut v) = stack.pop() {
                     let edge_index = edge_lists[v].edge_index();
-                    let mut edge = edge(&sigs[edge_index].0, log2_l, segment_size);
-                    let chunk_offset = chunk * num_vertices;
+                    let mut edge = edge(&chunk[edge_index].0, log2_l, segment_size);
+                    let chunk_offset = chunk_index * num_vertices;
                     v += chunk_offset;
                     edge.iter_mut().for_each(|v| {
                         *v += chunk_offset;
@@ -359,17 +366,21 @@ where
                         data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
                     };
 
-                    data.set(v, sigs[edge_index].1 ^ value, Relaxed);
+                    data.set(v, chunk[edge_index].1 ^ value, Relaxed);
                     debug_assert_eq!(
                         data.get(edge[0], Relaxed)
                             ^ data.get(edge[1], Relaxed)
                             ^ data.get(edge[2], Relaxed),
-                        sigs[edge_index].1
+                        chunk[edge_index].1
                     );
                 }
-                pl.done_with_count(sigs.len());
+                pl.done_with_count(chunk.len());
 
-                pl.start(format!("Completed chunk {}/{}.", chunk + 1, num_chunks));
+                pl.start(format!(
+                    "Completed chunk {}/{}.",
+                    chunk_index + 1,
+                    num_chunks
+                ));
                 main_pl.lock().unwrap().update_and_display();
             });
         }
@@ -434,15 +445,14 @@ where
     BitFieldVec<O>: From<AtomicBitFieldVec<O, Vec<O::AtomicType>>>,
 {
     /// Build and return a new function with given keys and values.
-    pub fn build<I: IntoLender + Clone, V: IntoLender + Clone>(
+    pub fn build<I: IntoLender + Clone, V: IntoIterator<Item = io::Result<O>> + Clone>(
         self,
-        into_keys: I,
-        into_values: &V,
+        into_keys: &mut I,
+        into_values: &mut V,
         pl: &mut (impl ProgressLog + Send),
     ) -> anyhow::Result<VFunc<T, O>>
     where
-        for<'lend> I::Lender: Lending<'lend, Lend = std::io::Result<&'lend T>>,
-        for<'lend> V::Lender: Lending<'lend, Lend = std::io::Result<&'lend O>>,
+        for<'lend> I::Lender: Lending<'lend, Lend = io::Result<&'lend T>>,
     {
         // Loop until success or duplicate detection
         let mut dup_count = 0;
@@ -469,15 +479,15 @@ where
                 let log2_buckets = self.log2_buckets.unwrap_or(8);
                 pl.info(format_args!("Using {} buckets", 1 << log2_buckets));
                 let mut sig_sorter = SigStore::<O>::new(log2_buckets, max_chunk_high_bits).unwrap();
-                let mut values = into_values.clone().into_lender();
+                let mut values = into_values.clone().into_iter();
                 let mut keys = into_keys.clone().into_lender();
                 while let Some(result) = keys.next() {
                     match result {
                         Ok(key) => {
                             pl.light_update();
                             let v = values.next().expect("Not enough values")?;
-                            max_value = Ord::max(max_value, *v);
-                            sig_sorter.push(&(T::to_sig(&key, seed), *v))?;
+                            max_value = Ord::max(max_value, v);
+                            sig_sorter.push(&(T::to_sig(&key, seed), v))?;
                         }
                         Err(e) => {
                             bail!("Error reading input: {}", e);
@@ -536,16 +546,16 @@ where
                     ParSolveResult::Ok(data) => break data,
                 }
             } else {
-                let mut values = into_values.clone().into_lender();
                 let mut keys = into_keys.clone().into_lender();
+                let mut values = into_values.clone().into_iter();
                 let mut sigs = vec![];
                 while let Some(result) = keys.next() {
                     match result {
                         Ok(key) => {
                             pl.light_update();
                             let v = values.next().expect("Not enough values")?;
-                            max_value = Ord::max(max_value, *v);
-                            sigs.push((T::to_sig(&key, seed), *v));
+                            max_value = Ord::max(max_value, v);
+                            sigs.push((T::to_sig(&key, seed), v));
                         }
                         Err(e) => {
                             bail!("Error reading input: {}", e);

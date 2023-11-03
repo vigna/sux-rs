@@ -249,13 +249,6 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
                 }
             }
 
-            // Test for duplicates
-            chunk.par_sort_unstable_by_key(|x| x.0);
-
-            if chunk.par_windows(2).any(|w| w[0].0 == w[1].0) {
-                return Some((usize::MAX, Cow::Owned(vec![])));
-            }
-
             let res = (self.next_chunk, Cow::Owned(chunk));
             self.next_file += to_aggr;
             self.next_chunk += 1;
@@ -312,14 +305,10 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
                 self.next_file += 1;
             }
 
-            let mut chunk = self.chunks.pop_front().unwrap();
-            chunk.par_sort_unstable_by_key(|x| x.0);
-
-            if chunk.par_windows(2).any(|w| w[0].0 == w[1].0) {
-                return Some((usize::MAX, Cow::Owned(vec![])));
-            }
-
-            let res = (self.next_chunk, Cow::Owned(chunk));
+            let res = (
+                self.next_chunk,
+                Cow::Owned(self.chunks.pop_front().unwrap()),
+            );
             self.next_chunk += 1;
             Some(res)
         }
@@ -329,6 +318,9 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
 impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> ExactSizeIterator
     for ChunkIterator<'a, T>
 {
+    fn len(&self) -> usize {
+        self.store.chunk_sizes.len() - self.next_chunk
+    }
 }
 
 fn write_binary<T: ZeroCopy>(
@@ -459,10 +451,11 @@ fn test_sig_sorter() {
                 let mut iter = chunk_store.iter().unwrap();
                 while let Some(chunk) = iter.next() {
                     count += 1;
-                    for w in chunk.1.windows(2) {
-                        assert!(
-                            w[0].0[0] < w[1].0[0]
-                                || w[0].0[0] == w[1].0[0] && w[0].0[1] < w[1].0[1]
+                    for &w in chunk.1.iter() {
+                        assert_eq!(
+                            chunk.0,
+                            w.0[0].rotate_left(chunk_high_bits) as usize
+                                & ((1 << chunk_high_bits) - 1)
                         );
                     }
                 }
@@ -487,27 +480,9 @@ fn test_u8() {
     let mut iter = chunk_store.iter().unwrap();
     while let Some(chunk) = iter.next() {
         count += 1;
-        for w in chunk.1.windows(2) {
-            assert!(w[0].0[0] < w[1].0[0] || w[0].0[0] == w[1].0[0] && w[0].0[1] < w[1].0[1]);
+        for &w in chunk.1.iter() {
+            assert_eq!(chunk.0, w.0[0].rotate_left(2) as usize & ((1 << 2) - 1));
         }
     }
     assert_eq!(count, 4);
-}
-
-#[test]
-
-fn test_dup() {
-    let mut sig_sorter = SigStore::new(0, 0).unwrap();
-    sig_sorter.push(&([0, 0], 0)).unwrap();
-    sig_sorter.push(&([0, 0], 0)).unwrap();
-    let mut dup = false;
-    let mut chunk_store = sig_sorter.into_chunk_store(0).unwrap();
-    let mut iter = chunk_store.iter().unwrap();
-    while let Some(chunk) = iter.next() {
-        if chunk.0 == usize::MAX {
-            dup = true;
-            break;
-        }
-    }
-    assert!(dup);
 }

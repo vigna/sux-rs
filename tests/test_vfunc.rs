@@ -7,25 +7,31 @@
 
 use dsi_progress_logger::*;
 use epserde::prelude::*;
-use sux::{func::VFunc, prelude::VFuncBuilder, utils::IntoOkLender};
+use sux::{
+    func::VFunc,
+    prelude::VFuncBuilder,
+    utils::{IntoOkIterator, IntoOkLender, IntoRefLender},
+};
 
 #[test]
 fn test_func() -> anyhow::Result<()> {
     let mut pl = ProgressLogger::default();
 
     for offline in [false, true] {
-        for n in [10, 100, 1000, 100000] {
-            let func = VFuncBuilder::<usize, usize>::default()
-                .offline(offline)
-                .build(IntoOkLender::from((0..n)), &(0..).into(), &mut pl)?;
+        for n in [10_usize, 100, 1000, 100000] {
+            let func = VFuncBuilder::default().offline(offline).build(
+                &mut IntoOkLender(IntoRefLender(0..n)),
+                &mut IntoOkIterator(0_usize..),
+                &mut pl,
+            )?;
             let mut cursor = epserde::new_aligned_cursor();
             func.serialize(&mut cursor).unwrap();
             cursor.set_position(0);
             let buf = cursor.into_inner();
-            let func = VFunc::<u64>::deserialize_eps(&buf).unwrap();
+            let func = VFunc::<usize>::deserialize_eps(&buf).unwrap();
             pl.start("Querying...");
             for i in 0..n {
-                assert_eq!(i, func.get(&i) as u64);
+                assert_eq!(i, func.get(&i));
             }
             pl.done_with_count(n as usize);
         }
@@ -38,8 +44,8 @@ fn test_func() -> anyhow::Result<()> {
 fn test_dup_key() {
     assert!(VFuncBuilder::<usize, usize>::default()
         .build(
-            std::iter::repeat(0).take(10).into(),
-            &(0..).into(),
+            &mut IntoOkLender(IntoRefLender(std::iter::repeat(0).take(10))),
+            &mut IntoOkIterator(0..),
             &mut Option::<ProgressLogger>::None
         )
         .is_err());
