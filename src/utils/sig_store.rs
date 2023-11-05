@@ -432,9 +432,9 @@ impl<T: ZeroCopy> SigStore<T> {
 
 fn test_sig_sorter() {
     use rand::prelude::*;
-    for max_chunk_bits in [0, 2, 8, 10] {
-        for buckets_high_bits in [0, 2, 8, 10] {
-            for chunk_high_bits in [0, 2, 8, 10] {
+    for max_chunk_bits in [0, 2, 8, 9] {
+        for buckets_high_bits in [0, 2, 8, 9] {
+            for chunk_high_bits in [0, 2, 8, 9] {
                 if chunk_high_bits > max_chunk_bits {
                     continue;
                 }

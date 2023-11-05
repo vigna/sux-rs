@@ -14,6 +14,7 @@ use arbitrary_chunks::ArbitraryChunks;
 use bit_field_slice::BitFieldSliceCore;
 use bit_field_slice::Word;
 use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
+use derivative::Derivative;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
 use lender::IntoLender;
@@ -131,10 +132,11 @@ fn edge(sig: &[u64; 2], log2_l: u32, segment_size: usize) -> [usize; 3] {
 
 use derive_setters::*;
 
-#[derive(Setters, Epserde, Debug, Default)]
+#[derive(Setters, Debug, Derivative)]
+#[derivative(Default)]
 #[setters(generate = false)]
 pub struct VFuncBuilder<
-    T: ToSig,
+    T: ?Sized + ToSig,
     O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic = usize,
 > {
     #[setters(generate = true)]
@@ -146,7 +148,6 @@ pub struct VFuncBuilder<
     /// The base-2 logarithm of the number of buckets. Used only if `offline` is `true`.
     #[setters(generate = true, strip_option)]
     log2_buckets: Option<u32>,
-    segment_size: usize,
     _marker_t: std::marker::PhantomData<T>,
     _marker_o: std::marker::PhantomData<O>,
 }
@@ -164,9 +165,9 @@ with an atomic counterpart; The default is `usize`.
 
 */
 
-#[derive(Epserde, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct VFunc<
-    T: ToSig,
+    T: ?Sized + ToSig,
     O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic = usize,
     S: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
 > {
@@ -179,6 +180,212 @@ pub struct VFunc<
     values: S,
     _marker_t: std::marker::PhantomData<T>,
     _marker_o: std::marker::PhantomData<O>,
+}
+
+#[automatically_derived]
+impl<
+        T: ?Sized + ToSig,
+        O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic,
+        S: bit_field_slice::BitFieldSlice<O>,
+    > epserde::traits::CopyType for VFunc<T, O, S>
+{
+    type Copy = epserde::traits::Deep;
+}
+#[automatically_derived]
+impl<
+        T: ?Sized + ToSig + TypeHash + ReprHash,
+        O: ZeroCopy
+            + SerializeInner
+            + DeserializeInner
+            + Word
+            + IntoAtomic
+            + epserde::ser::SerializeInner,
+        S: bit_field_slice::BitFieldSlice<O> + epserde::ser::SerializeInner,
+    > epserde::ser::SerializeInner for VFunc<T, O, S>
+where
+    std::marker::PhantomData<T>: SerializeInner,
+{
+    const IS_ZERO_COPY: bool = false
+        && <u64>::IS_ZERO_COPY
+        && <u32>::IS_ZERO_COPY
+        && <u32>::IS_ZERO_COPY
+        && <u32>::IS_ZERO_COPY
+        && <usize>::IS_ZERO_COPY
+        && <usize>::IS_ZERO_COPY
+        && <S>::IS_ZERO_COPY
+        && <std::marker::PhantomData<T>>::IS_ZERO_COPY
+        && <std::marker::PhantomData<O>>::IS_ZERO_COPY;
+    const ZERO_COPY_MISMATCH: bool = !false
+        && <u64>::IS_ZERO_COPY
+        && <u32>::IS_ZERO_COPY
+        && <u32>::IS_ZERO_COPY
+        && <u32>::IS_ZERO_COPY
+        && <usize>::IS_ZERO_COPY
+        && <usize>::IS_ZERO_COPY
+        && <S>::IS_ZERO_COPY
+        && <std::marker::PhantomData<T>>::IS_ZERO_COPY
+        && <std::marker::PhantomData<O>>::IS_ZERO_COPY;
+    #[inline(always)]
+    fn _serialize_inner(
+        &self,
+        backend: &mut impl epserde::ser::WriteWithNames,
+    ) -> epserde::ser::Result<()> {
+        epserde::ser::helpers::check_mismatch::<Self>();
+        backend.write("seed", &self.seed)?;
+        backend.write("log2_l", &self.log2_l)?;
+        backend.write("high_bits", &self.high_bits)?;
+        backend.write("chunk_mask", &self.chunk_mask)?;
+        backend.write("num_keys", &self.num_keys)?;
+        backend.write("segment_size", &self.segment_size)?;
+        backend.write("values", &self.values)?;
+        backend.write("_marker_t", &self._marker_t)?;
+        backend.write("_marker_o", &self._marker_o)?;
+        Ok(())
+    }
+}
+#[automatically_derived]
+impl<
+        T: ?Sized + ToSig + TypeHash + ReprHash,
+        O: ZeroCopy
+            + SerializeInner
+            + DeserializeInner
+            + Word
+            + IntoAtomic
+            + epserde::deser::DeserializeInner,
+        S: bit_field_slice::BitFieldSlice<O> + epserde::deser::DeserializeInner,
+    > epserde::deser::DeserializeInner for VFunc<T, O, S>
+where
+    for<'epserde_desertype> <S as epserde::deser::DeserializeInner>::DeserType<'epserde_desertype>:
+        bit_field_slice::BitFieldSlice<O>,
+    std::marker::PhantomData<T>: DeserializeInner,
+{
+    fn _deserialize_full_inner(
+        backend: &mut impl epserde::deser::ReadWithPos,
+    ) -> core::result::Result<Self, epserde::deser::Error> {
+        use epserde::deser::DeserializeInner;
+        let seed = <u64>::_deserialize_full_inner(backend)?;
+        let log2_l = <u32>::_deserialize_full_inner(backend)?;
+        let high_bits = <u32>::_deserialize_full_inner(backend)?;
+        let chunk_mask = <u32>::_deserialize_full_inner(backend)?;
+        let num_keys = <usize>::_deserialize_full_inner(backend)?;
+        let segment_size = <usize>::_deserialize_full_inner(backend)?;
+        let values = <S>::_deserialize_full_inner(backend)?;
+        let _marker_t = <std::marker::PhantomData<T>>::_deserialize_full_inner(backend)?;
+        let _marker_o = <std::marker::PhantomData<O>>::_deserialize_full_inner(backend)?;
+        Ok(VFunc {
+            seed,
+            log2_l,
+            high_bits,
+            chunk_mask,
+            num_keys,
+            segment_size,
+            values,
+            _marker_t,
+            _marker_o,
+        })
+    }
+    type DeserType<'epserde_desertype> =
+        VFunc<T, O, <S as epserde::deser::DeserializeInner>::DeserType<'epserde_desertype>>;
+    fn _deserialize_eps_inner<'a>(
+        backend: &mut epserde::deser::SliceWithPos<'a>,
+    ) -> core::result::Result<Self::DeserType<'a>, epserde::deser::Error>
+    where
+        std::marker::PhantomData<T>: DeserializeInner,
+    {
+        use epserde::deser::DeserializeInner;
+        let seed = <u64>::_deserialize_full_inner(backend)?;
+        let log2_l = <u32>::_deserialize_full_inner(backend)?;
+        let high_bits = <u32>::_deserialize_full_inner(backend)?;
+        let chunk_mask = <u32>::_deserialize_full_inner(backend)?;
+        let num_keys = <usize>::_deserialize_full_inner(backend)?;
+        let segment_size = <usize>::_deserialize_full_inner(backend)?;
+        let values = <S>::_deserialize_eps_inner(backend)?;
+        let _marker_t = <std::marker::PhantomData<T>>::_deserialize_full_inner(backend)?;
+        let _marker_o = <std::marker::PhantomData<O>>::_deserialize_full_inner(backend)?;
+        Ok(VFunc {
+            seed,
+            log2_l,
+            high_bits,
+            chunk_mask,
+            num_keys,
+            segment_size,
+            values,
+            _marker_t,
+            _marker_o,
+        })
+    }
+}
+#[automatically_derived]
+impl<
+        T: ?Sized + ToSig + epserde::traits::TypeHash + epserde::traits::ReprHash,
+        O: ZeroCopy
+            + SerializeInner
+            + DeserializeInner
+            + Word
+            + IntoAtomic
+            + epserde::traits::TypeHash
+            + epserde::traits::ReprHash,
+        S: bit_field_slice::BitFieldSlice<O> + epserde::traits::TypeHash + epserde::traits::ReprHash,
+    > epserde::traits::TypeHash for VFunc<T, O, S>
+{
+    #[inline(always)]
+    fn type_hash(hasher: &mut impl core::hash::Hasher) {
+        use core::hash::Hash;
+        "DeepCopy".hash(hasher);
+        "\"format!\n(\"VFunc<{}, {}, {}>\", T :: type_name(), O :: type_name(), S :: type_name())\""
+                    .hash(hasher);
+        "seed".hash(hasher);
+        "log2_l".hash(hasher);
+        "high_bits".hash(hasher);
+        "chunk_mask".hash(hasher);
+        "num_keys".hash(hasher);
+        "segment_size".hash(hasher);
+        "values".hash(hasher);
+        "_marker_t".hash(hasher);
+        "_marker_o".hash(hasher);
+        <u64 as epserde::traits::TypeHash>::type_hash(hasher);
+        <u32 as epserde::traits::TypeHash>::type_hash(hasher);
+        <u32 as epserde::traits::TypeHash>::type_hash(hasher);
+        <u32 as epserde::traits::TypeHash>::type_hash(hasher);
+        <usize as epserde::traits::TypeHash>::type_hash(hasher);
+        <usize as epserde::traits::TypeHash>::type_hash(hasher);
+        <S as epserde::traits::TypeHash>::type_hash(hasher);
+        <std::marker::PhantomData<T> as epserde::traits::TypeHash>::type_hash(hasher);
+        <std::marker::PhantomData<O> as epserde::traits::TypeHash>::type_hash(hasher);
+    }
+}
+impl<
+        T: ?Sized + ToSig + epserde::traits::TypeHash + epserde::traits::ReprHash,
+        O: ZeroCopy
+            + SerializeInner
+            + DeserializeInner
+            + Word
+            + IntoAtomic
+            + epserde::traits::TypeHash
+            + epserde::traits::ReprHash,
+        S: bit_field_slice::BitFieldSlice<O> + epserde::traits::TypeHash + epserde::traits::ReprHash,
+    > epserde::traits::ReprHash for VFunc<T, O, S>
+{
+    fn repr_hash(hasher: &mut impl core::hash::Hasher, offset_of: &mut usize) {
+        *offset_of = 0;
+        <u64 as epserde::traits::ReprHash>::repr_hash(hasher, offset_of);
+        *offset_of = 0;
+        <u32 as epserde::traits::ReprHash>::repr_hash(hasher, offset_of);
+        *offset_of = 0;
+        <u32 as epserde::traits::ReprHash>::repr_hash(hasher, offset_of);
+        *offset_of = 0;
+        <u32 as epserde::traits::ReprHash>::repr_hash(hasher, offset_of);
+        *offset_of = 0;
+        <usize as epserde::traits::ReprHash>::repr_hash(hasher, offset_of);
+        *offset_of = 0;
+        <usize as epserde::traits::ReprHash>::repr_hash(hasher, offset_of);
+        *offset_of = 0;
+        <S as epserde::traits::ReprHash>::repr_hash(hasher, offset_of);
+        *offset_of = 0;
+        <std::marker::PhantomData<T> as epserde::traits::ReprHash>::repr_hash(hasher, offset_of);
+        *offset_of = 0;
+        <std::marker::PhantomData<O> as epserde::traits::ReprHash>::repr_hash(hasher, offset_of);
+    }
 }
 
 fn compute_params(num_keys: usize, pl: &mut impl ProgressLog) -> (u32, usize, u32, f64) {
@@ -397,7 +604,7 @@ where
 }
 
 impl<
-        T: ToSig,
+        T: ?Sized + ToSig,
         O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic,
         S: bit_field_slice::BitFieldSlice<O>,
     > VFunc<T, O, S>
@@ -438,7 +645,7 @@ where
     }
 }
 
-impl<T: ToSig, O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic>
+impl<T: ?Sized + ToSig, O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic>
     VFuncBuilder<T, O>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,

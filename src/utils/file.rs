@@ -11,9 +11,10 @@ Utility wrappers for files.
 
 */
 
+use flate2::read::GzDecoder;
 use io::{BufRead, BufReader};
-use lender::{higher_order::FnMutHKA, *};
-use std::{io, mem::MaybeUninit, path::Path};
+use lender::*;
+use std::{io, path::Path};
 use zstd::stream::read::Decoder;
 
 pub struct LineLender<B> {
@@ -22,7 +23,7 @@ pub struct LineLender<B> {
 }
 
 impl<'lend, B: BufRead> Lending<'lend> for LineLender<B> {
-    type Lend = io::Result<&'lend String>;
+    type Lend = io::Result<&'lend str>;
 }
 
 impl<B: BufRead> Lender for LineLender<B> {
@@ -58,6 +59,12 @@ impl<P: AsRef<Path>> IntoLender for FilenameIntoLender<P> {
     }
 }
 
+impl<P: AsRef<Path>> From<P> for FilenameIntoLender<P> {
+    fn from(path: P) -> Self {
+        FilenameIntoLender(path)
+    }
+}
+
 /// Adapter to iterate over the lines of a file compressed with Zstandard.
 #[derive(Clone)]
 pub struct FilenameZstdIntoLender<P: AsRef<Path>>(pub P);
@@ -70,6 +77,33 @@ impl<P: AsRef<Path>> IntoLender for FilenameZstdIntoLender<P> {
             buf: BufReader::new(Decoder::new(std::fs::File::open(self.0).unwrap()).unwrap()),
             line: String::new(),
         }
+    }
+}
+
+impl<P: AsRef<Path>> From<P> for FilenameZstdIntoLender<P> {
+    fn from(path: P) -> Self {
+        FilenameZstdIntoLender(path)
+    }
+}
+
+/// Adapter to iterate over the lines of a file compressed with Gzip.
+#[derive(Clone)]
+pub struct FilenameGzipIntoLender<P: AsRef<Path>>(pub P);
+
+impl<P: AsRef<Path>> IntoLender for FilenameGzipIntoLender<P> {
+    type Lender = LineLender<BufReader<GzDecoder<std::fs::File>>>;
+
+    fn into_lender(self) -> Self::Lender {
+        LineLender {
+            buf: BufReader::new(GzDecoder::new(std::fs::File::open(self.0).unwrap())),
+            line: String::new(),
+        }
+    }
+}
+
+impl<P: AsRef<Path>> From<P> for FilenameGzipIntoLender<P> {
+    fn from(path: P) -> Self {
+        FilenameGzipIntoLender(path)
     }
 }
 
