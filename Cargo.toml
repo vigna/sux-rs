@@ -24,7 +24,8 @@ num-traits = "0.2.15"
 rayon = {version="1.7.0", optional=true}
 stable_deref_trait = "1.2.0"
 yoke = "0.7.1"
-epserde = "0.1.2"
+#epserde = "0.1.2"
+epserde = { path = "../epserde-rs/epserde" }
 bitvec = "1.0.1"
 clap = { version = "4.2.7", features = ["derive"] }
 dsi-progress-logger = "0.2.1"
@@ -37,6 +38,8 @@ xxh3 = "0.1.1"
 lender = { path = "../Lender" }
 arbitrary-chunks = "0.4.1"
 derive_setters = "0.1.6"
+flate2 = "1.0.28"
+derivative = "2.2.0"
 [features]
 default = ["rayon"]
 unaligned = []
