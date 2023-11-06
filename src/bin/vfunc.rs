@@ -64,7 +64,7 @@ fn main() -> Result<()> {
     pl.display_memory(true);
 
     if let Some(filename) = args.filename {
-        let mut builder = VFuncBuilder::default()
+        let mut builder = VFuncBuilder::<str, usize, _>::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
 
@@ -74,7 +74,7 @@ fn main() -> Result<()> {
 
         let func = if args.zstd {
             builder.build(
-                &mut FilenameZstdIntoLender(&filename),
+                &mut FilenameIntoLender(&filename),
                 &mut IntoOkIterator(0_usize..),
                 &mut pl,
             )?
@@ -89,7 +89,7 @@ fn main() -> Result<()> {
     }
 
     if let Some(n) = args.n {
-        let mut builder = VFuncBuilder::<usize, usize>::default()
+        let mut builder = VFuncBuilder::<usize, usize, _>::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
         if let Some(threads) = args.threads {

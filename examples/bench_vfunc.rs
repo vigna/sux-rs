@@ -39,7 +39,7 @@ fn main() -> Result<()> {
     if let Some(filename) = args.filename {
         let func = VFunc::<_>::load_mem(&args.func)?;
         let mut iter = sux::utils::file::FilenameIntoLender(&filename)
-            .into_lender()
+            .try_into()?
             .take(args.n);
         let mut keys = Vec::with_capacity(args.n);
         while let Some(result) = iter.next() {
