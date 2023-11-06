@@ -17,9 +17,34 @@ use lender::*;
 use std::{io, path::Path};
 use zstd::stream::read::Decoder;
 
+/**
+
+A structure lending the lines coming from a [`BufRead`] as `&str`.
+
+The lines are read into a reusable internal string buffer that
+grows as needed.
+
+For convenience, we implement [`From`] from [`BufRead`].
+
+*/
 pub struct LineLender<B> {
     buf: B,
     line: String,
+}
+
+impl<B> LineLender<B> {
+    pub fn new(buf: B) -> Self {
+        LineLender {
+            buf,
+            line: String::with_capacity(128),
+        }
+    }
+}
+
+impl<B> From<B> for LineLender<B> {
+    fn from(buf: B) -> Self {
+        LineLender::new(buf)
+    }
 }
 
 impl<'lend, B: BufRead> Lending<'lend> for LineLender<B> {
@@ -27,20 +52,21 @@ impl<'lend, B: BufRead> Lending<'lend> for LineLender<B> {
 }
 
 impl<B: BufRead> Lender for LineLender<B> {
-    fn next<'lend>(&'lend mut self) -> Option<Lend<'_, Self>> {
+    fn next(&mut self) -> Option<Lend<'_, Self>> {
         self.line.clear();
         match self.buf.read_line(&mut self.line) {
-            Err(e) => return Some(Err(e)),
-            Ok(0) => return None,
-            Ok(_) => (),
-        };
-        if self.line.ends_with('\n') {
-            self.line.pop();
-            if self.line.ends_with('\r') {
-                self.line.pop();
+            Err(e) => Some(Err(e)),
+            Ok(0) => None,
+            Ok(_) => {
+                if self.line.ends_with('\n') {
+                    self.line.pop();
+                    if self.line.ends_with('\r') {
+                        self.line.pop();
+                    }
+                }
+                Some(Ok(&self.line))
             }
         }
-        Some(Ok(&self.line))
     }
 }
 
@@ -48,20 +74,10 @@ impl<B: BufRead> Lender for LineLender<B> {
 #[derive(Clone)]
 pub struct FilenameIntoLender<P: AsRef<Path>>(pub P);
 
-impl<P: AsRef<Path>> IntoLender for FilenameIntoLender<P> {
-    type Lender = LineLender<BufReader<std::fs::File>>;
-
-    fn into_lender(self) -> Self::Lender {
-        LineLender {
-            buf: BufReader::new(std::fs::File::open(self.0).unwrap()),
-            line: String::new(),
-        }
-    }
-}
-
-impl<P: AsRef<Path>> From<P> for FilenameIntoLender<P> {
-    fn from(path: P) -> Self {
-        FilenameIntoLender(path)
+impl<P: AsRef<Path>> TryFrom<FilenameIntoLender<P>> for LineLender<BufReader<std::fs::File>> {
+    type Error = io::Error;
+    fn try_from(path: FilenameIntoLender<P>) -> io::Result<LineLender<BufReader<std::fs::File>>> {
+        Ok(BufReader::new(std::fs::File::open(path.0)?).into())
     }
 }
 
@@ -101,9 +117,14 @@ impl<P: AsRef<Path>> IntoLender for FilenameGzipIntoLender<P> {
     }
 }
 
-impl<P: AsRef<Path>> From<P> for FilenameGzipIntoLender<P> {
-    fn from(path: P) -> Self {
-        FilenameGzipIntoLender(path)
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+pub struct OkIterator<I>(pub I);
+
+impl<I: Iterator> Iterator for OkIterator<I> {
+    type Item = io::Result<I::Item>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|x| Ok(x))
     }
 }
 
@@ -113,19 +134,12 @@ pub struct IntoOkIterator<I>(pub I);
 
 impl<I: IntoIterator> IntoIterator for IntoOkIterator<I> {
     type Item = io::Result<I::Item>;
-    type IntoIter = std::iter::Map<I::IntoIter, fn(I::Item) -> io::Result<I::Item>>;
+    type IntoIter = OkIterator<I::IntoIter>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter().map(|x| Ok(x))
+        OkIterator(self.0.into_iter())
     }
 }
-
-impl<I: IntoIterator> From<I> for IntoOkIterator<I> {
-    fn from(into_iter: I) -> Self {
-        IntoOkIterator(into_iter)
-    }
-}
-
 #[derive(Clone, Debug)]
 #[repr(transparent)]
 pub struct OkLender<I>(pub I);
