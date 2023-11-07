@@ -7,11 +7,7 @@
 
 use dsi_progress_logger::*;
 use epserde::prelude::*;
-use sux::{
-    func::VFunc,
-    prelude::VFuncBuilder,
-    utils::{IntoOkIterator, IntoOkLender, IntoRefLender},
-};
+use sux::{func::VFunc, prelude::VFuncBuilder, utils::FromIntoIterator};
 
 #[test]
 fn test_func() -> anyhow::Result<()> {
@@ -20,8 +16,8 @@ fn test_func() -> anyhow::Result<()> {
     for offline in [false, true] {
         for n in [10_usize, 100, 1000, 100000] {
             let func = VFuncBuilder::default().offline(offline).build(
-                &mut IntoOkLender(IntoRefLender(0..n)),
-                &mut IntoOkIterator(0_usize..),
+                &mut FromIntoIterator::from(0..n),
+                &mut FromIntoIterator::from(0_usize..),
                 &mut pl,
             )?;
             let mut cursor = epserde::new_aligned_cursor();
@@ -44,8 +40,8 @@ fn test_func() -> anyhow::Result<()> {
 fn test_dup_key() {
     assert!(VFuncBuilder::<usize, usize>::default()
         .build(
-            &mut IntoOkLender(IntoRefLender(std::iter::repeat(0).take(10))),
-            &mut IntoOkIterator(0..),
+            &mut FromIntoIterator::from(std::iter::repeat(0).take(10)),
+            &mut FromIntoIterator::from(0..),
             &mut Option::<ProgressLogger>::None
         )
         .is_err());

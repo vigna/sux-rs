@@ -5,21 +5,15 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::error::Error;
-use std::iter::Map;
-use std::ops::RangeFrom;
+use std::fs::File;
+use std::io::BufReader;
 
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
-use lender::{
-    from_into_iter, from_iter, lend_iter, FromIntoIter, FromIter, IntoIteratorExt, IntoLender,
-    IteratorExt,
-};
 use sux::prelude::VFuncBuilder;
-use sux::utils::file::FilenameIntoLender;
-use sux::utils::{FilenameZstdIntoLender, IntoOkIterator, IntoOkLender, IntoRefLender};
+use sux::utils::{FromIntoIterator, LineLender};
 
 #[derive(Parser, Debug)]
 #[command(about = "Generate a VFunc mapping each input to its rank and serialize it with ε-serde", long_about = None)]
@@ -64,7 +58,7 @@ fn main() -> Result<()> {
     pl.display_memory(true);
 
     if let Some(filename) = args.filename {
-        let mut builder = VFuncBuilder::<str, usize, _>::default()
+        let mut builder = VFuncBuilder::<str, _>::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
 
@@ -74,14 +68,14 @@ fn main() -> Result<()> {
 
         let func = if args.zstd {
             builder.build(
-                &mut FilenameIntoLender(&filename),
-                &mut IntoOkIterator(0_usize..),
+                &mut LineLender::from(BufReader::new(File::open(&filename)?)),
+                &mut FromIntoIterator::from(0_usize..),
                 &mut pl,
             )?
         } else {
             builder.build(
-                &mut FilenameIntoLender(&filename),
-                &mut IntoOkIterator(0..),
+                &mut LineLender::from(BufReader::new(File::open(&filename)?)),
+                &mut FromIntoIterator::from(0_usize..),
                 &mut pl,
             )?
         };
@@ -89,15 +83,15 @@ fn main() -> Result<()> {
     }
 
     if let Some(n) = args.n {
-        let mut builder = VFuncBuilder::<usize, usize, _>::default()
+        let mut builder = VFuncBuilder::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
         if let Some(threads) = args.threads {
             builder = builder.num_threads(threads);
         }
         let func = builder.build(
-            &mut IntoOkLender(IntoRefLender(0..n)),
-            &mut IntoOkIterator(0_usize..),
+            &mut FromIntoIterator::from(0_usize..n),
+            &mut FromIntoIterator::from(0_usize..),
             &mut pl,
         )?;
 

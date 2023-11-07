@@ -17,12 +17,9 @@ use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
 use derivative::Derivative;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
-use lender::IntoLender;
-use lender::*;
 use log::warn;
 use rayon::prelude::*;
 use std::borrow::Cow;
-use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::thread;
@@ -138,7 +135,6 @@ use derive_setters::*;
 pub struct VFuncBuilder<
     T: ?Sized + ToSig,
     O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic,
-    L: Lender,
 > {
     #[setters(generate = true)]
     /// The number of parallel threads to use.
@@ -151,7 +147,6 @@ pub struct VFuncBuilder<
     log2_buckets: Option<u32>,
     _marker_t: std::marker::PhantomData<T>,
     _marker_o: std::marker::PhantomData<O>,
-    _marker_l: std::marker::PhantomData<L>,
 }
 
 /**
@@ -441,27 +436,19 @@ where
     }
 }
 
-impl<
-        T: ?Sized + ToSig,
-        O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic,
-        L: Lender,
-    > VFuncBuilder<T, O, L>
+impl<T: ?Sized + ToSig, O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic>
+    VFuncBuilder<T, O>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
     BitFieldVec<O>: From<AtomicBitFieldVec<O, Vec<O::AtomicType>>>,
 {
     /// Build and return a new function with given keys and values.
-    pub fn build<I: Clone, V: IntoIterator<Item = io::Result<O>> + Clone>(
+    pub fn build(
         self,
-        into_keys: &mut I,
-        into_values: &mut V,
+        into_keys: &mut impl RewindableIOLender<T>,
+        into_values: &mut impl RewindableIOLender<O>,
         pl: &mut (impl ProgressLog + Send),
-    ) -> anyhow::Result<VFunc<T, O>>
-    where
-        L: TryFrom<I>,
-        <L as TryFrom<I>>::Error: std::error::Error + Send + Sync + 'static,
-        for<'lend> L: Lending<'lend, Lend = io::Result<&'lend T>>,
-    {
+    ) -> anyhow::Result<VFunc<T, O>> {
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         let mut seed = 0;
@@ -487,15 +474,15 @@ where
                 let log2_buckets = self.log2_buckets.unwrap_or(8);
                 pl.info(format_args!("Using {} buckets", 1 << log2_buckets));
                 let mut sig_sorter = SigStore::<O>::new(log2_buckets, max_chunk_high_bits).unwrap();
-                let mut values = into_values.clone().into_iter();
-                let mut keys: L = into_keys.clone().try_into()?;
-                while let Some(result) = keys.next() {
+                into_values.rewind()?;
+                into_keys.rewind()?;
+                while let Some(result) = into_keys.next() {
                     match result {
                         Ok(key) => {
                             pl.light_update();
-                            let v = values.next().expect("Not enough values")?;
-                            max_value = Ord::max(max_value, v);
-                            sig_sorter.push(&(T::to_sig(&key, seed), v))?;
+                            let v = into_values.next().expect("Not enough values")?;
+                            max_value = Ord::max(max_value, *v);
+                            sig_sorter.push(&(T::to_sig(&key, seed), *v))?;
                         }
                         Err(e) => {
                             bail!("Error reading input: {}", e);
@@ -554,16 +541,16 @@ where
                     ParSolveResult::Ok(data) => break data,
                 }
             } else {
-                let mut keys: L = into_keys.clone().try_into()?;
-                let mut values = into_values.clone().into_iter();
+                into_keys.rewind()?;
+                into_values.rewind()?;
                 let mut sigs = vec![];
-                while let Some(result) = keys.next() {
+                while let Some(result) = into_keys.next() {
                     match result {
                         Ok(key) => {
                             pl.light_update();
-                            let v = values.next().expect("Not enough values")?;
-                            max_value = Ord::max(max_value, v);
-                            sigs.push((T::to_sig(&key, seed), v));
+                            let v = into_values.next().expect("Not enough values")?;
+                            max_value = Ord::max(max_value, *v);
+                            sigs.push((T::to_sig(&key, seed), *v));
                         }
                         Err(e) => {
                             bail!("Error reading input: {}", e);

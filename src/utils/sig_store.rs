@@ -24,9 +24,6 @@ The trait [`ToSig`] provides a standard way to generate signatures for a [`SigSt
 
 use anyhow::Result;
 use epserde::traits::ZeroCopy;
-use rayon::prelude::ParallelIterator;
-use rayon::slice::ParallelSlice;
-use rayon::slice::ParallelSliceMut;
 use std::borrow::Cow;
 use std::{collections::VecDeque, fs::File, io::*, marker::PhantomData};
 

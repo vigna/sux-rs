@@ -5,12 +5,14 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use std::{fs::File, io::BufReader};
+
 use anyhow::{bail, Result};
 use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
 use lender::*;
-use sux::func::VFunc;
+use sux::{func::VFunc, utils::LineLender};
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
@@ -38,16 +40,10 @@ fn main() -> Result<()> {
 
     if let Some(filename) = args.filename {
         let func = VFunc::<_>::load_mem(&args.func)?;
-        let mut iter = sux::utils::file::FilenameIntoLender(&filename)
-            .try_into()?
-            .take(args.n);
-        let mut keys = Vec::with_capacity(args.n);
-        while let Some(result) = iter.next() {
-            match result {
-                Ok(key) => keys.push(key.to_owned()),
-                Err(e) => bail!(e),
-            }
-        }
+        let keys: Vec<_> = LineLender::from(BufReader::new(File::open(&filename)?))
+            .map_into_iter(|x| x.unwrap().to_owned())
+            .take(args.n)
+            .collect();
         pl.start("Querying...");
         for (i, key) in keys.iter().enumerate() {
             assert_eq!(i, func.get(key));
