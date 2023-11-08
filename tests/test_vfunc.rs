@@ -16,8 +16,8 @@ fn test_func() -> anyhow::Result<()> {
     for offline in [false, true] {
         for n in [10_usize, 100, 1000, 100000] {
             let func = VFuncBuilder::default().offline(offline).build(
-                &mut FromIntoIterator::from(0..n),
-                &mut FromIntoIterator::from(0_usize..),
+                FromIntoIterator::from(0..n),
+                FromIntoIterator::from(0_usize..),
                 &mut pl,
             )?;
             let mut cursor = epserde::new_aligned_cursor();
@@ -40,8 +40,8 @@ fn test_func() -> anyhow::Result<()> {
 fn test_dup_key() {
     assert!(VFuncBuilder::<usize, usize>::default()
         .build(
-            &mut FromIntoIterator::from(std::iter::repeat(0).take(10)),
-            &mut FromIntoIterator::from(0..),
+            FromIntoIterator::from(std::iter::repeat(0).take(10)),
+            FromIntoIterator::from(0..),
             &mut Option::<ProgressLogger>::None
         )
         .is_err());

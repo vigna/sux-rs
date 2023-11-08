@@ -445,8 +445,8 @@ where
     /// Build and return a new function with given keys and values.
     pub fn build(
         self,
-        into_keys: &mut impl RewindableIOLender<T>,
-        into_values: &mut impl RewindableIOLender<O>,
+        mut into_keys: impl RewindableIOLender<T>,
+        mut into_values: impl RewindableIOLender<O>,
         pl: &mut (impl ProgressLog + Send),
     ) -> anyhow::Result<VFunc<T, O>> {
         // Loop until success or duplicate detection
