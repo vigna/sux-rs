@@ -15,7 +15,8 @@ use flate2::read::GzDecoder;
 use io::{BufRead, BufReader};
 use lender::*;
 use std::{
-    io::{self, Seek},
+    fs::File,
+    io::{self, Read, Seek, SeekFrom},
     path::Path,
 };
 use zstd::stream::read::Decoder;
@@ -23,6 +24,10 @@ use zstd::stream::read::Decoder;
 pub trait RewindableIOLender<T: ?Sized>:
     Lender + for<'lend> Lending<'lend, Lend = io::Result<&'lend T>>
 {
+    fn rewind(&mut self) -> io::Result<()>;
+}
+
+pub trait RewindableIOIterator<T>: Iterator<Item = io::Result<T>> {
     fn rewind(&mut self) -> io::Result<()>;
 }
 
@@ -50,9 +55,13 @@ impl<B> LineLender<B> {
     }
 }
 
-impl<B> From<B> for LineLender<B> {
-    fn from(buf: B) -> Self {
-        LineLender::new(buf)
+impl LineLender<BufReader<File>> {
+    pub fn from_path(path: impl AsRef<Path>) -> io::Result<LineLender<BufReader<File>>> {
+        Ok(LineLender::new(BufReader::new(File::open(path)?)))
+    }
+
+    pub fn from_file(file: File) -> LineLender<BufReader<File>> {
+        LineLender::new(BufReader::new(file))
     }
 }
 
@@ -79,51 +88,55 @@ impl<B: BufRead> Lender for LineLender<B> {
     }
 }
 
-impl<B: Seek> Seek for LineLender<B> {
-    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
-        self.buf.seek(pos)
-    }
-}
-
 impl<B: BufRead + Seek> RewindableIOLender<str> for LineLender<B> {
     fn rewind(&mut self) -> io::Result<()> {
         self.buf.seek(io::SeekFrom::Start(0)).map(|_| ())
     }
 }
 
-/// Adapter to iterate over the lines of a file compressed with Zstandard.
-#[derive(Clone)]
-pub struct FilenameZstdIntoLender<P: AsRef<Path>>(pub P);
+pub struct ZstdLineLender<R: Read> {
+    buf: BufReader<Decoder<'static, BufReader<R>>>,
+    line: String,
+}
 
-impl<P: AsRef<Path>> IntoLender for FilenameZstdIntoLender<P> {
-    type Lender = LineLender<BufReader<Decoder<'static, BufReader<std::fs::File>>>>;
+impl<R: Read> ZstdLineLender<R> {
+    pub fn new(read: R) -> io::Result<Self> {
+        Ok(ZstdLineLender {
+            buf: BufReader::new(Decoder::new(read)?),
+            line: String::with_capacity(128),
+        })
+    }
+}
 
-    fn into_lender(self) -> Self::Lender {
-        LineLender {
-            buf: BufReader::new(Decoder::new(std::fs::File::open(self.0).unwrap()).unwrap()),
-            line: String::new(),
+impl<'lend, R: Read> Lending<'lend> for ZstdLineLender<R> {
+    type Lend = io::Result<&'lend str>;
+}
+
+impl<R: Read> Lender for ZstdLineLender<R> {
+    fn next(&mut self) -> Option<<Self as Lending<'_>>::Lend> {
+        self.line.clear();
+        match self.buf.read_line(&mut self.line) {
+            Err(e) => Some(Err(e)),
+            Ok(0) => None,
+            Ok(_) => {
+                if self.line.ends_with('\n') {
+                    self.line.pop();
+                    if self.line.ends_with('\r') {
+                        self.line.pop();
+                    }
+                }
+                Some(Ok(&self.line))
+            }
         }
     }
 }
 
-impl<P: AsRef<Path>> From<P> for FilenameZstdIntoLender<P> {
-    fn from(path: P) -> Self {
-        FilenameZstdIntoLender(path)
-    }
-}
-
-/// Adapter to iterate over the lines of a file compressed with Gzip.
-#[derive(Clone)]
-pub struct FilenameGzipIntoLender<P: AsRef<Path>>(pub P);
-
-impl<P: AsRef<Path>> IntoLender for FilenameGzipIntoLender<P> {
-    type Lender = LineLender<BufReader<GzDecoder<std::fs::File>>>;
-
-    fn into_lender(self) -> Self::Lender {
-        LineLender {
-            buf: BufReader::new(GzDecoder::new(std::fs::File::open(self.0).unwrap())),
-            line: String::new(),
-        }
+impl<R: Read + Seek> RewindableIOLender<str> for ZstdLineLender<R> {
+    fn rewind(&mut self) -> io::Result<()> {
+        let mut read = self.buf.into_inner().finish();
+        read.seek(SeekFrom::Current(0)).map(|_| ())?;
+        self.buf = BufReader::new(Decoder::with_buffer(read)?);
+        Ok(())
     }
 }
 

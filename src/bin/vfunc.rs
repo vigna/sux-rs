@@ -68,13 +68,13 @@ fn main() -> Result<()> {
 
         let func = if args.zstd {
             builder.build(
-                &mut LineLender::from(BufReader::new(File::open(&filename)?)),
+                &mut LineLender::from_path(&filename)?,
                 &mut FromIntoIterator::from(0_usize..),
                 &mut pl,
             )?
         } else {
             builder.build(
-                &mut LineLender::from(BufReader::new(File::open(&filename)?)),
+                &mut LineLender::from_path(&filename)?,
                 &mut FromIntoIterator::from(0_usize..),
                 &mut pl,
             )?
