@@ -68,7 +68,7 @@ impl<
             while number_of_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
                 let index = (i * usize::BITS as usize) + in_word_index;
-                
+
                 // write the one in the inventory
                 inventory[ptr] = index as u64;
 
@@ -79,7 +79,7 @@ impl<
         }
         // in the last inventory write the number of bits
         inventory[ptr] = BitLength::len(&bitvec) as u64;
-        
+
         dbg!(&inventory);
 
         // build the index (in parallel if rayon enabled)
@@ -106,11 +106,7 @@ impl<
             let mut number_of_ones = inventory_idx * Self::ONES_PER_INVENTORY;
             let mut next_quantum = number_of_ones;
 
-<<<<<<< Updated upstream
             let subinventory = unsafe { inventory[start_idx..end_idx].align_to_mut().1 };
-=======
-            let subinventory = unsafe{inventory[start_idx..end_idx].align_to_mut().1};
->>>>>>> Stashed changes
 
             let (quantum, size) = if span < u16::MAX as u64 {
                 (Self::ONES_PER_SUB16, core::mem::size_of::<u16>())
