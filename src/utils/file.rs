@@ -17,6 +17,7 @@ use lender::*;
 use std::{
     fs::File,
     io::{self, Read, Seek, SeekFrom},
+    mem::MaybeUninit,
     path::Path,
 };
 use zstd::stream::read::Decoder;
@@ -24,10 +25,6 @@ use zstd::stream::read::Decoder;
 pub trait RewindableIOLender<T: ?Sized>:
     Lender + for<'lend> Lending<'lend, Lend = io::Result<&'lend T>>
 {
-    fn rewind(&mut self) -> io::Result<()>;
-}
-
-pub trait RewindableIOIterator<T>: Iterator<Item = io::Result<T>> {
     fn rewind(&mut self) -> io::Result<()>;
 }
 
@@ -108,6 +105,16 @@ impl<R: Read> ZstdLineLender<R> {
     }
 }
 
+impl ZstdLineLender<BufReader<Decoder<'static, BufReader<File>>>> {
+    pub fn from_path(path: impl AsRef<Path>) -> io::Result<ZstdLineLender<File>> {
+        ZstdLineLender::new(File::open(path)?)
+    }
+
+    pub fn from_file(file: File) -> io::Result<ZstdLineLender<File>> {
+        ZstdLineLender::new(file)
+    }
+}
+
 impl<'lend, R: Read> Lending<'lend> for ZstdLineLender<R> {
     type Lend = io::Result<&'lend str>;
 }
@@ -133,7 +140,11 @@ impl<R: Read> Lender for ZstdLineLender<R> {
 
 impl<R: Read + Seek> RewindableIOLender<str> for ZstdLineLender<R> {
     fn rewind(&mut self) -> io::Result<()> {
-        let mut read = self.buf.into_inner().finish();
+        #[allow(invalid_value)]
+        let buf = std::mem::replace(&mut self.buf, unsafe {
+            MaybeUninit::uninit().assume_init()
+        });
+        let mut read = buf.into_inner().finish();
         read.seek(SeekFrom::Current(0)).map(|_| ())?;
         self.buf = BufReader::new(Decoder::with_buffer(read)?);
         Ok(())
