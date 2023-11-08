@@ -40,7 +40,7 @@ fn main() -> Result<()> {
 
     if let Some(filename) = args.filename {
         let func = VFunc::<_>::load_mem(&args.func)?;
-        let keys: Vec<_> = LineLender::from(BufReader::new(File::open(&filename)?))
+        let keys: Vec<_> = LineLender::from_path(&filename)?
             .map_into_iter(|x| x.unwrap().to_owned())
             .take(args.n)
             .collect();
