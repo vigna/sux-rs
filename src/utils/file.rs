@@ -17,15 +17,15 @@ use lender::*;
 use std::{
     fs::File,
     io::{self, Read, Seek, SeekFrom},
-    mem::MaybeUninit,
     path::Path,
 };
 use zstd::stream::read::Decoder;
 
 pub trait RewindableIOLender<T: ?Sized>:
-    Lender + for<'lend> Lending<'lend, Lend = io::Result<&'lend T>>
+    Sized + Lender + for<'lend> Lending<'lend, Lend = Result<&'lend T, Self::Error>>
 {
-    fn rewind(&mut self) -> io::Result<()>;
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn rewind(self) -> Result<Self, Self::Error>;
 }
 
 /**
@@ -86,8 +86,10 @@ impl<B: BufRead> Lender for LineLender<B> {
 }
 
 impl<B: BufRead + Seek> RewindableIOLender<str> for LineLender<B> {
-    fn rewind(&mut self) -> io::Result<()> {
-        self.buf.seek(io::SeekFrom::Start(0)).map(|_| ())
+    type Error = io::Error;
+    fn rewind(mut self) -> io::Result<Self> {
+        self.buf.seek(io::SeekFrom::Start(0)).map(|_| ())?;
+        Ok(self)
     }
 }
 
@@ -139,15 +141,12 @@ impl<R: Read> Lender for ZstdLineLender<R> {
 }
 
 impl<R: Read + Seek> RewindableIOLender<str> for ZstdLineLender<R> {
-    fn rewind(&mut self) -> io::Result<()> {
-        #[allow(invalid_value)]
-        let buf = std::mem::replace(&mut self.buf, unsafe {
-            MaybeUninit::uninit().assume_init()
-        });
-        let mut read = buf.into_inner().finish();
-        read.seek(SeekFrom::Current(0)).map(|_| ())?;
+    type Error = io::Error;
+    fn rewind(mut self) -> io::Result<Self> {
+        let mut read = self.buf.into_inner().finish();
+        read.seek(SeekFrom::Current(0))?;
         self.buf = BufReader::new(Decoder::with_buffer(read)?);
-        Ok(())
+        Ok(self)
     }
 }
 
@@ -158,7 +157,7 @@ pub struct FromIntoIterator<I: IntoIterator + Clone> {
 }
 
 impl<'lend, T: 'lend, I: IntoIterator<Item = T> + Clone> Lending<'lend> for FromIntoIterator<I> {
-    type Lend = io::Result<&'lend T>;
+    type Lend = Result<&'lend T, core::convert::Infallible>;
 }
 
 impl<T: 'static, I: IntoIterator<Item = T> + Clone> Lender for FromIntoIterator<I> {
@@ -169,9 +168,10 @@ impl<T: 'static, I: IntoIterator<Item = T> + Clone> Lender for FromIntoIterator<
 }
 
 impl<T: 'static, I: IntoIterator<Item = T> + Clone> RewindableIOLender<T> for FromIntoIterator<I> {
-    fn rewind(&mut self) -> io::Result<()> {
+    type Error = core::convert::Infallible;
+    fn rewind(mut self) -> Result<Self, Self::Error> {
         self.iter = self.into_iter.clone().into_iter();
-        Ok(())
+        Ok(self)
     }
 }
 

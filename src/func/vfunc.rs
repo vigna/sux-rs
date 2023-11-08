@@ -474,8 +474,8 @@ where
                 let log2_buckets = self.log2_buckets.unwrap_or(8);
                 pl.info(format_args!("Using {} buckets", 1 << log2_buckets));
                 let mut sig_sorter = SigStore::<O>::new(log2_buckets, max_chunk_high_bits).unwrap();
-                into_values.rewind()?;
-                into_keys.rewind()?;
+                into_values = into_values.rewind()?;
+                into_keys = into_keys.rewind()?;
                 while let Some(result) = into_keys.next() {
                     match result {
                         Ok(key) => {
@@ -541,8 +541,8 @@ where
                     ParSolveResult::Ok(data) => break data,
                 }
             } else {
-                into_keys.rewind()?;
-                into_values.rewind()?;
+                into_keys = into_keys.rewind()?;
+                into_values = into_values.rewind()?;
                 let mut sigs = vec![];
                 while let Some(result) = into_keys.next() {
                     match result {
