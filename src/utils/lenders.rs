@@ -7,7 +7,27 @@
 
 /*!
 
-Utility wrappers for files.
+Support for [rewindable I/O lenders](RewindableIOLender).
+
+Some data structures in this crate have two features in common:
+- they must be able to read their input more than once;
+- they do not store the input they read, but rather some derived data, such as hashes.
+
+For this kind of structures, we provide a [`RewindableIOLender`] trait, which is a
+[`Lender`] that can be rewound to the beginning. Rewindability solves the first
+problem while lending solves the second problem. For example, [`LineLender`] returns
+lines from a [`BufRead`] as `&str`, but lends an internal buffer, rather than allocating
+a new string for each line.
+
+The basic implementation for strings is [`LineLender`], which lends lines from a [`BufRead`].
+Convenience constructors are provided for [`File`] and [`Path`]. Analogously, we provide
+[`ZstdLineLender`], which lends lines from a zstd-compressed [`Read`], and [`GzipLineLender`],
+which lends lines from a gzip-compressed [`Read`].
+
+If you have a clonable [`IntoIterator`], you can use [`FromIntoIterator`] to lend its items;
+rewinding is implemented by cloning the iterator. Note that [`FromIntoIterator`] implements
+the [`From`] trait, but at this time due to the complex trait bounds of [`Lender`] type
+inference rarely works; you'll need to call [`FromIntoIterator::from`] explicitly.
 
 */
 
@@ -21,11 +41,40 @@ use std::{
 };
 use zstd::stream::read::Decoder;
 
+/**
+
+The main trait: a [`Lender`] that can be rewound to the beginning.
+
+Note that [`rewind`](RewindableIOLender::rewind) consumes `self` and returns it.
+This slightly inconvenient behavior is necessary to handle cleanly all implementations,
+and in particular those involving compression.
+
+ */
+
 pub trait RewindableIOLender<T: ?Sized>:
     Sized + Lender + for<'lend> Lending<'lend, Lend = Result<&'lend T, Self::Error>>
 {
     type Error: std::error::Error + Send + Sync + 'static;
     fn rewind(self) -> Result<Self, Self::Error>;
+}
+
+// Common next function for all lenders
+
+fn next<'a>(buf: &mut impl BufRead, line: &'a mut String) -> Option<io::Result<&'a str>> {
+    line.clear();
+    match buf.read_line(line) {
+        Err(e) => Some(Err(e)),
+        Ok(0) => None,
+        Ok(_) => {
+            if line.ends_with('\n') {
+                line.pop();
+                if line.ends_with('\r') {
+                    line.pop();
+                }
+            }
+            Some(Ok(line))
+        }
+    }
 }
 
 /**
@@ -34,8 +83,6 @@ A structure lending the lines coming from a [`BufRead`] as `&str`.
 
 The lines are read into a reusable internal string buffer that
 grows as needed.
-
-For convenience, we implement [`From`] from [`BufRead`].
 
 */
 pub struct LineLender<B> {
@@ -68,20 +115,7 @@ impl<'lend, B: BufRead> Lending<'lend> for LineLender<B> {
 
 impl<B: BufRead> Lender for LineLender<B> {
     fn next(&mut self) -> Option<Lend<'_, Self>> {
-        self.line.clear();
-        match self.buf.read_line(&mut self.line) {
-            Err(e) => Some(Err(e)),
-            Ok(0) => None,
-            Ok(_) => {
-                if self.line.ends_with('\n') {
-                    self.line.pop();
-                    if self.line.ends_with('\r') {
-                        self.line.pop();
-                    }
-                }
-                Some(Ok(&self.line))
-            }
-        }
+        next(&mut self.buf, &mut self.line)
     }
 }
 
@@ -92,6 +126,15 @@ impl<B: BufRead + Seek> RewindableIOLender<str> for LineLender<B> {
         Ok(self)
     }
 }
+
+/**
+
+A structure lending the lines coming from a zstd-compressed [`Read`] as `&str`.
+
+The lines are read into a reusable internal string buffer that
+grows as needed.
+
+*/
 
 pub struct ZstdLineLender<R: Read> {
     buf: BufReader<Decoder<'static, BufReader<R>>>,
@@ -123,20 +166,7 @@ impl<'lend, R: Read> Lending<'lend> for ZstdLineLender<R> {
 
 impl<R: Read> Lender for ZstdLineLender<R> {
     fn next(&mut self) -> Option<<Self as Lending<'_>>::Lend> {
-        self.line.clear();
-        match self.buf.read_line(&mut self.line) {
-            Err(e) => Some(Err(e)),
-            Ok(0) => None,
-            Ok(_) => {
-                if self.line.ends_with('\n') {
-                    self.line.pop();
-                    if self.line.ends_with('\r') {
-                        self.line.pop();
-                    }
-                }
-                Some(Ok(&self.line))
-            }
-        }
+        next(&mut self.buf, &mut self.line)
     }
 }
 
@@ -150,6 +180,64 @@ impl<R: Read + Seek> RewindableIOLender<str> for ZstdLineLender<R> {
     }
 }
 
+/**
+
+A structure lending the lines coming from a gzip-compressed [`Read`] as `&str`.
+
+The lines are read into a reusable internal string buffer that
+grows as needed.
+
+*/
+
+pub struct GzipLineLender<R: Read> {
+    buf: BufReader<GzDecoder<R>>,
+    line: String,
+}
+
+impl<R: Read> GzipLineLender<R> {
+    pub fn new(read: R) -> io::Result<Self> {
+        Ok(GzipLineLender {
+            buf: BufReader::new(GzDecoder::new(read)),
+            line: String::with_capacity(128),
+        })
+    }
+}
+
+impl GzipLineLender<BufReader<Decoder<'static, BufReader<File>>>> {
+    pub fn from_path(path: impl AsRef<Path>) -> io::Result<GzipLineLender<File>> {
+        GzipLineLender::new(File::open(path)?)
+    }
+
+    pub fn from_file(file: File) -> io::Result<GzipLineLender<File>> {
+        GzipLineLender::new(file)
+    }
+}
+
+impl<'lend, R: Read> Lending<'lend> for GzipLineLender<R> {
+    type Lend = io::Result<&'lend str>;
+}
+
+impl<R: Read> Lender for GzipLineLender<R> {
+    fn next(&mut self) -> Option<<Self as Lending<'_>>::Lend> {
+        next(&mut self.buf, &mut self.line)
+    }
+}
+
+impl<R: Read + Seek> RewindableIOLender<str> for GzipLineLender<R> {
+    type Error = io::Error;
+    fn rewind(mut self) -> io::Result<Self> {
+        let mut read = self.buf.into_inner().into_inner();
+        read.seek(SeekFrom::Current(0))?;
+        self.buf = BufReader::new(GzDecoder::new(read));
+        Ok(self)
+    }
+}
+
+/**
+
+An adapter lending the items of a clonable [`IntoIterator`].
+
+*/
 pub struct FromIntoIterator<I: IntoIterator + Clone> {
     into_iter: I,
     iter: I::IntoIter,
