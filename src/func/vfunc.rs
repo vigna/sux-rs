@@ -15,6 +15,7 @@ use bit_field_slice::BitFieldSliceCore;
 use bit_field_slice::Word;
 use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
 use derivative::Derivative;
+use derive_setters::*;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
 use log::warn;
@@ -50,6 +51,9 @@ contian a XOR of the edges, while the upper bits contain the degree.
 
 The degree can be stored with a small number of bits because the
 graph is random, so the maximum degree is O(log log n).
+
+This approach reduces the core memory usage for the hypergraph to
+a `usize` per vertex. Edges are derived on the fly from the 128-bit signatures.
 
 */
 
@@ -127,8 +131,30 @@ fn edge(sig: &[u64; 2], log2_l: u32, segment_size: usize) -> [usize; 3] {
     ]
 }
 
-use derive_setters::*;
+/**
 
+A builder for [`VFunc`].
+
+Keys must implement the [`ToSig`] trait, which provides a method to
+compute a 128-bit signature of the key.
+
+The output type `O` can be selected to be any of the unsigned integer types
+with an atomic counterpart; the default is `usize`.
+
+There are two construction modes: in core memory (default) and [offline](VFuncBuilder::offline). In the first case,
+space will be allocated in core memory for 128-bit signatures and associated values for all keys;
+in the second case, such information will be stored in a number of on-disk buckets.
+
+Once signatures have been computed, each parallel thread will process a chunk of the signatures;
+for each signature in a chunk, a thread will allocate about two `usize` values in core memory;
+in the case of offline construction, also signatures and values in the chunk
+will be stored in core memory.
+
+For very large key sets chunks will be significantly smaller than the number of keys,
+so the memory usage, in particular in offline mode, can be significantly reduced. Note that
+using too many threads might actually be harmful due to memory contention: eight is usually a good value.
+
+ */
 #[derive(Setters, Debug, Derivative)]
 #[derivative(Default)]
 #[setters(generate = false)]
@@ -142,7 +168,7 @@ pub struct VFuncBuilder<
     #[setters(generate = true)]
     /// Use disk-based buckets to reduce core memory usage at construction time.
     offline: bool,
-    /// The base-2 logarithm of the number of buckets. Used only if `offline` is `true`.
+    /// The base-2 logarithm of the number of buckets. Used only if `offline` is `true`. The default is 8.
     #[setters(generate = true, strip_option)]
     log2_buckets: Option<u32>,
     _marker_t: std::marker::PhantomData<T>,
@@ -154,11 +180,8 @@ pub struct VFuncBuilder<
 Static functions with 10%-11% space overhead for large key sets,
 fast parallel construction, and fast queries.
 
-Keys must implement the [`ToSig`] trait, which provides a method to
-compute a 128-bit signature of the key.
-
-The output type `O` can be selected to be any of the unsigned integer types
-with an atomic counterpart; The default is `usize`.
+Instances of this structure are immutable; they are built using a [`VFuncBuilder`],
+and can be serialized using [ε-serde](`epserde`).
 
 */
 
@@ -217,7 +240,8 @@ fn compute_params(num_keys: usize, pl: &mut impl ProgressLog) -> (u32, usize, u3
                 .min(10.0) // More than 1000 chunks make no sense
                 .min((num_keys / PARAMS[PARAMS.len() - 1].0).ilog2() as f64) // Let's keep the chunks in the 1.10 regime
                     as u32;
-        max_num_threads = 1.max((1 << chunk_high_bits) / 8);
+        // By default no more than 8 threads
+        max_num_threads = 1.max((1 << chunk_high_bits) / 8).min(8);
         (_, log2_l, c) = PARAMS[PARAMS.len() - 1];
     }
 
