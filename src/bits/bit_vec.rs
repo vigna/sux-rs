@@ -24,10 +24,10 @@ These flavors depends on a backend, and presently we provide:
 - `AtomicBitVec<AsRef<[AtomicUsize]>>`: a thread-safe, mutable (but not resizable) bit vector.
 
 It is possible to juggle between the three flavors using [`From`].
- */
-use crate::traits::*;
+*/
 use anyhow::Result;
 use common_traits::SelectInWord;
+use core::fmt;
 use epserde::*;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -35,6 +35,8 @@ use std::{
     ops::Index,
     sync::atomic::{AtomicUsize, Ordering},
 };
+
+use crate::{prelude::ConvertTo, traits::rank_sel::*};
 
 const BITS: usize = usize::BITS as usize;
 
@@ -772,5 +774,52 @@ impl<B: AsRef<[usize]>> Iterator for OnesIterator<B> {
         self.word &= self.word - 1;
         self.len -= 1;
         Some(res)
+    }
+}
+
+// Iterates over the bits as booleans.
+
+pub struct BitIterator<'a, B> {
+    mem_words: &'a B,
+    next_bit_pos: usize,
+    len: usize,
+}
+
+impl<'a> IntoIterator for &'a BitVec<Vec<usize>> {
+    type IntoIter = BitIterator<'a, Vec<usize>>;
+    type Item = bool;
+
+    fn into_iter(self) -> Self::IntoIter {
+        BitIterator {
+            mem_words: &self.data,
+            next_bit_pos: 0,
+            len: self.len,
+        }
+    }
+}
+
+impl<'a> Iterator for BitIterator<'a, Vec<usize>> {
+    type Item = bool;
+    fn next(&mut self) -> Option<bool> {
+        if self.next_bit_pos == self.len {
+            return None;
+        }
+        let word_idx = self.next_bit_pos / BITS;
+        let bit_idx = self.next_bit_pos % BITS;
+        let word = unsafe { *self.mem_words.get_unchecked(word_idx) };
+        let bit = (word >> bit_idx) & 1;
+        self.next_bit_pos += 1;
+        Some(bit != 0)
+    }
+}
+
+impl fmt::Display for BitVec<Vec<usize>> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[")?;
+        for b in self {
+            write!(f, "{:b}", b as usize)?;
+        }
+        write!(f, "]")?;
+        Ok(())
     }
 }

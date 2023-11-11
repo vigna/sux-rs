@@ -72,7 +72,7 @@ impl<
                 // write the one in the inventory
                 inventory[ptr] = index as u64;
 
-                ptr += Self::U64_PER_SUBINVENTORY;
+                ptr += Self::U64_PER_SUBINVENTORY + 1;
                 next_quantum += Self::ONES_PER_INVENTORY as u64;
             }
             number_of_ones += ones_in_word;
@@ -83,7 +83,7 @@ impl<
         dbg!(&inventory);
 
         // build the index (in parallel if rayon enabled)
-        let iter = 0..inventory_size;
+        let iter = 0..inventory_size - 1;
         //#[cfg(feature = "rayon")]
         //let iter = iter.into_par_iter();
 
@@ -94,6 +94,7 @@ impl<
 
             let start_bit_idx = inventory[start_idx];
             let end_bit_idx = inventory[start_idx + 1];
+            dbg!(start_bit_idx, end_bit_idx);
             let end_word_idx = end_bit_idx / usize::BITS as u64;
             let span = end_bit_idx - start_bit_idx;
 
@@ -164,11 +165,12 @@ impl<
         // read the potentially unaliged i64 (i.e. the first index value)
         let inventory_rank = *self.inventory.as_ref().get_unchecked(start_idx) as i64;
         // get a reference to the u64s in this subinventory
-        let sub_start_idx = start_idx + 1 + subrank;
         let u64s = self
             .inventory
             .as_ref()
-            .get_unchecked(sub_start_idx..sub_start_idx + Self::U64_PER_SUBINVENTORY);
+            .get_unchecked(start_idx + 1..start_idx + 1 + Self::U64_PER_SUBINVENTORY);
+
+        dbg!(inventory_rank, u64s);
         // if the inventory_rank is positive, the subranks are u16s otherwise they are u64s
         let (pos, residual) = if inventory_rank >= 0 {
             // dense case, read the u16s
@@ -177,17 +179,19 @@ impl<
             debug_assert!(pre.is_empty());
             debug_assert!(post.is_empty());
             (
-                inventory_rank as u64 + *u16s.get_unchecked(subrank / Self::ONES_PER_SUB16) as u64,
+                inventory_rank as u64 + u16s[subrank / Self::ONES_PER_SUB16] as u64,
                 subrank % Self::ONES_PER_SUB16,
             )
         } else {
             debug_assert!(subrank < Self::U64_PER_SUBINVENTORY);
             // sparse case, read the u64s
             (
-                (-inventory_rank - 1) as u64 + *u64s.get_unchecked(subrank / Self::ONES_PER_SUB16),
+                (-inventory_rank - 1) as u64 + u64s[subrank / Self::ONES_PER_SUB16],
                 subrank % Self::ONES_PER_SUB64,
             )
         };
+
+        dbg!(rank, pos, residual);
         // linear scan to finish the search
         self.bitvec
             .select_hinted_unchecked(rank, pos as usize, rank - residual)
