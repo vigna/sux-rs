@@ -34,7 +34,7 @@ zstd = "0.12.4"
 tempfile = "3.8.0"
 xxh3 = "0.1.1"
 #lender = "0.2.0"
-lender = { path = "../Lender" }
+lender = "0.2.0"
 arbitrary-chunks = "0.4.1"
 derive_setters = "0.1.6"
 flate2 = "1.0.28"
