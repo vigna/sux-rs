@@ -15,11 +15,14 @@ fn test_func() -> anyhow::Result<()> {
 
     for offline in [false, true] {
         for n in [10_usize, 100, 1000, 100000] {
-            let func = VFuncBuilder::default().offline(offline).build(
-                FromIntoIterator::from(0..n),
-                FromIntoIterator::from(0_usize..),
-                &mut pl,
-            )?;
+            let func = VFuncBuilder::default()
+                .log2_buckets(4)
+                .offline(offline)
+                .build(
+                    FromIntoIterator::from(0..n),
+                    FromIntoIterator::from(0_usize..),
+                    &mut pl,
+                )?;
             let mut cursor = epserde::new_aligned_cursor();
             func.serialize(&mut cursor).unwrap();
             cursor.set_position(0);

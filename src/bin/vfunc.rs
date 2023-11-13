@@ -5,9 +5,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::fs::File;
-use std::io::BufReader;
-
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
@@ -41,7 +38,7 @@ struct Args {
     #[arg(short, long)]
     offline: bool,
     /// The number of high bits defining the number of buckets. Very large key sets may benefit from a larger number of buckets.
-    #[arg(short, long, default_value_t = 8)]
+    #[arg(short = 'H', long, default_value_t = 8)]
     high_bits: u32,
 }
 
