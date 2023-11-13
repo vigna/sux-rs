@@ -5,9 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::{fs::File, io::BufReader};
-
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
