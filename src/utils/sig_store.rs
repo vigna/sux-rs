@@ -48,7 +48,7 @@ impl<T: ZeroCopy + 'static> RadixKey for SigVal<T> {
     const LEVELS: usize = 16;
 
     fn get_level(&self, level: usize) -> u8 {
-        (self.sig[level / 8] >> level % 8) as u8
+        (self.sig[level / 8] >> (7 - level % 8) * 8) as u8
     }
 }
 
