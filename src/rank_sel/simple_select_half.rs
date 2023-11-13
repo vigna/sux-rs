@@ -67,7 +67,7 @@ impl<
             // skip the word if we can
             while number_of_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
-                let index = (i * usize::BITS as usize) + in_word_index;
+                let index = (i * u64::BITS as usize) + in_word_index;
 
                 // write the one in the inventory
                 inventory[ptr] = index as u64;
@@ -80,8 +80,6 @@ impl<
         // in the last inventory write the number of bits
         inventory[ptr] = BitLength::len(&bitvec) as u64;
 
-        dbg!(&inventory);
-
         // build the index (in parallel if rayon enabled)
         let iter = 0..inventory_size - 1;
         //#[cfg(feature = "rayon")]
@@ -93,13 +91,13 @@ impl<
             let end_idx = start_idx + 1 + Self::U64_PER_SUBINVENTORY;
 
             let start_bit_idx = inventory[start_idx];
-            let end_bit_idx = inventory[start_idx + 1];
+            let end_bit_idx = inventory[start_idx + Self::U64_PER_SUBINVENTORY + 1];
             dbg!(start_bit_idx, end_bit_idx);
-            let end_word_idx = end_bit_idx / usize::BITS as u64;
+            let end_word_idx = end_bit_idx.div_ceil(u64::BITS as u64);
             let span = end_bit_idx - start_bit_idx;
 
-            let mut word_idx = start_bit_idx / usize::BITS as u64;
-            let bit_idx = start_bit_idx % usize::BITS as u64;
+            let mut word_idx = start_bit_idx / u64::BITS as u64;
+            let bit_idx = start_bit_idx % u64::BITS as u64;
 
             // cleanup the lower bits
             let mut word = (bitvec.as_ref()[word_idx as usize] >> bit_idx) << bit_idx;
@@ -107,7 +105,7 @@ impl<
             let mut number_of_ones = inventory_idx * Self::ONES_PER_INVENTORY;
             let mut next_quantum = number_of_ones;
 
-            let subinventory = unsafe { inventory[start_idx..end_idx].align_to_mut().1 };
+            let subinventory = unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
 
             let (quantum, size) = if span < u16::MAX as u64 {
                 (Self::ONES_PER_SUB16, core::mem::size_of::<u16>())
@@ -115,32 +113,36 @@ impl<
                 (Self::ONES_PER_SUB64, core::mem::size_of::<u64>())
             };
 
-            let mut inventory_idx = 0;
+            dbg!(quantum, size, Self::ONES_PER_SUB16, Self::ONES_PER_SUB64);
+            assert_eq!(quantum, Self::ONES_PER_SUB16);
+            let mut subinventory_idx = 0;
             loop {
-                next_quantum += quantum;
-
                 let ones_in_word = word.count_ones() as usize;
+                dbg!(next_quantum, number_of_ones, ones_in_word);
                 while number_of_ones + ones_in_word > next_quantum {
                     let in_word_index = word.select_in_word(next_quantum - number_of_ones);
-                    let index = (word_idx * usize::BITS as u64) + in_word_index as u64;
-                    let sub_offset = index - start_bit_idx;
+                    let index = (word_idx * u64::BITS as u64) + in_word_index as u64;
+                    let sub_offset = (index - start_bit_idx) as u16;
+                    dbg!(sub_offset);
+                    subinventory[subinventory_idx..subinventory_idx + size]
+                        .copy_from_slice(&sub_offset.to_ne_bytes());
 
-                    subinventory[inventory_idx..inventory_idx + size]
-                        .copy_from_slice(&sub_offset.to_le_bytes());
-
-                    inventory_idx += size;
+                    subinventory_idx += size;
                     next_quantum += quantum;
                 }
                 number_of_ones += ones_in_word;
 
+                word_idx += 1;
                 if word_idx == end_word_idx {
                     break;
                 }
 
+                dbg!(word_idx, end_word_idx, bitvec.as_ref().len());
                 word = bitvec.as_ref()[word_idx as usize];
-                word_idx += 1;
             }
         });
+
+        dbg!(&inventory);
 
         Self { bitvec, inventory }
     }
@@ -170,7 +172,8 @@ impl<
             .as_ref()
             .get_unchecked(start_idx + 1..start_idx + 1 + Self::U64_PER_SUBINVENTORY);
 
-        dbg!(inventory_rank, u64s);
+        dbg!(inventory_rank);
+        eprintln!("{:x?}", &u64s);
         // if the inventory_rank is positive, the subranks are u16s otherwise they are u64s
         let (pos, residual) = if inventory_rank >= 0 {
             // dense case, read the u16s
@@ -178,6 +181,7 @@ impl<
             // u16 should always be aligned with u64s ...
             debug_assert!(pre.is_empty());
             debug_assert!(post.is_empty());
+            dbg!(u16s[subrank / Self::ONES_PER_SUB16] as u64);
             (
                 inventory_rank as u64 + u16s[subrank / Self::ONES_PER_SUB16] as u64,
                 subrank % Self::ONES_PER_SUB16,

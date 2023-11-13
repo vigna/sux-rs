@@ -12,7 +12,7 @@ use sux::prelude::*;
 
 #[test]
 fn test_selects() {
-    const MAX: usize = 1000;
+    const MAX: usize = 10000;
     let mut rng = SmallRng::seed_from_u64(0);
     let bitvec = (0..MAX).map(|_| rng.gen_bool(0.5)).collect::<BitVec>();
     println!("{}", &bitvec);
