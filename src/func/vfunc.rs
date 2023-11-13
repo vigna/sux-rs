@@ -303,7 +303,7 @@ where
                 };
 
                 if let Cow::Owned(chunk) = &mut chunk {
-                    chunk.par_sort_unstable_by_key(|x| x.sig);
+                    chunk.radix_sort_unstable();
                 }
 
                 if chunk.par_windows(2).any(|w| w[0].sig == w[1].sig) {
@@ -599,7 +599,7 @@ where
                 chunk_mask = (1u32 << chunk_high_bits) - 1;
 
                 pl.start("Sorting...");
-                sig_vals.par_sort_unstable_by_key(|x| x.sig);
+                sig_vals.radix_sort_unstable();
                 pl.done_with_count(num_keys);
 
                 pl.start("Checking for duplicates...");
