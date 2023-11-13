@@ -20,6 +20,7 @@ use dsi_progress_logger::*;
 use epserde::prelude::*;
 use log::warn;
 use rayon::prelude::*;
+use rdst::*;
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -264,8 +265,8 @@ enum ParSolveResult<O: Word + IntoAtomic> {
 #[allow(clippy::too_many_arguments)]
 fn par_solve<
     'a,
-    O: Word + ZeroCopy + Send + Sync + IntoAtomic + 'a,
-    I: Iterator<Item = (usize, Cow<'a, [([u64; 2], O)]>)> + Send,
+    O: Word + ZeroCopy + Send + Sync + IntoAtomic + 'static,
+    I: Iterator<Item = (usize, Cow<'a, [SigVal<O>]>)> + Send,
 >(
     chunk_iter: I,
     bit_width: usize,
@@ -302,10 +303,10 @@ where
                 };
 
                 if let Cow::Owned(chunk) = &mut chunk {
-                    chunk.par_sort_unstable_by_key(|x| x.0);
+                    chunk.radix_sort_unstable();
                 }
 
-                if chunk.par_windows(2).any(|w| w[0].0 == w[1].0) {
+                if chunk.par_windows(2).any(|w| w[0].sig == w[1].sig) {
                     duplicate_signature.store(true, Ordering::Relaxed);
                     return;
                 }
@@ -319,8 +320,8 @@ where
                 ));
                 let mut edge_lists = Vec::new();
                 edge_lists.resize_with(num_vertices, EdgeList::default);
-                chunk.iter().enumerate().for_each(|(edge_index, sig)| {
-                    for &v in edge(&sig.0, log2_l, segment_size).iter() {
+                chunk.iter().enumerate().for_each(|(edge_index, sig_val)| {
+                    for &v in edge(&sig_val.sig, log2_l, segment_size).iter() {
                         edge_lists[v].add(edge_index);
                     }
                 });
@@ -350,7 +351,7 @@ where
                         stack[curr] = v;
                         curr += 1;
                         // Degree is necessarily 0
-                        for &x in edge(&chunk[edge_index].0, log2_l, segment_size).iter() {
+                        for &x in edge(&chunk[edge_index].sig, log2_l, segment_size).iter() {
                             if x != v {
                                 edge_lists[x].remove(edge_index);
                                 if edge_lists[x].degree() == 1 {
@@ -374,7 +375,7 @@ where
                 ));
                 while let Some(mut v) = stack.pop() {
                     let edge_index = edge_lists[v].edge_index();
-                    let mut edge = edge(&chunk[edge_index].0, log2_l, segment_size);
+                    let mut edge = edge(&chunk[edge_index].sig, log2_l, segment_size);
                     let chunk_offset = chunk_index * num_vertices;
                     v += chunk_offset;
                     edge.iter_mut().for_each(|v| {
@@ -388,12 +389,12 @@ where
                         data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
                     };
 
-                    data.set(v, chunk[edge_index].1 ^ value, Relaxed);
+                    data.set(v, chunk[edge_index].val ^ value, Relaxed);
                     debug_assert_eq!(
                         data.get(edge[0], Relaxed)
                             ^ data.get(edge[1], Relaxed)
                             ^ data.get(edge[2], Relaxed),
-                        chunk[edge_index].1
+                        chunk[edge_index].val
                     );
                 }
                 pl.done_with_count(chunk.len());
@@ -460,8 +461,10 @@ where
     }
 }
 
-impl<T: ?Sized + ToSig, O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic>
-    VFuncBuilder<T, O>
+impl<
+        T: ?Sized + ToSig,
+        O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic + 'static,
+    > VFuncBuilder<T, O>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
     BitFieldVec<O>: From<AtomicBitFieldVec<O, Vec<O::AtomicType>>>,
@@ -506,7 +509,10 @@ where
                             pl.light_update();
                             let v = into_values.next().expect("Not enough values")?;
                             max_value = Ord::max(max_value, *v);
-                            sig_sorter.push(&(T::to_sig(&key, seed), *v))?;
+                            sig_sorter.push(&SigVal {
+                                sig: T::to_sig(&key, seed),
+                                val: *v,
+                            })?;
                         }
                         Err(e) => {
                             bail!("Error reading input: {}", e);
@@ -567,14 +573,17 @@ where
             } else {
                 into_keys = into_keys.rewind()?;
                 into_values = into_values.rewind()?;
-                let mut sigs = vec![];
+                let mut sig_vals = vec![];
                 while let Some(result) = into_keys.next() {
                     match result {
                         Ok(key) => {
                             pl.light_update();
                             let v = into_values.next().expect("Not enough values")?;
                             max_value = Ord::max(max_value, *v);
-                            sigs.push((T::to_sig(&key, seed), *v));
+                            sig_vals.push(SigVal {
+                                sig: T::to_sig(&key, seed),
+                                val: *v,
+                            });
                         }
                         Err(e) => {
                             bail!("Error reading input: {}", e);
@@ -582,7 +591,7 @@ where
                     }
                 }
                 pl.done();
-                num_keys = sigs.len();
+                num_keys = sig_vals.len();
 
                 (chunk_high_bits, max_num_threads, log2_l, c) = compute_params(num_keys, pl);
 
@@ -590,7 +599,7 @@ where
                 chunk_mask = (1u32 << chunk_high_bits) - 1;
 
                 pl.start("Sorting...");
-                sigs.par_sort_unstable();
+                sig_vals.radix_sort_unstable();
                 pl.done_with_count(num_keys);
 
                 pl.start("Checking for duplicates...");
@@ -598,11 +607,11 @@ where
                 let mut chunk_sizes = vec![0_usize; num_chunks];
                 let mut dup = false;
 
-                chunk_sizes[chunk(&sigs[0].0, chunk_high_bits, chunk_mask)] += 1;
+                chunk_sizes[chunk(&sig_vals[0].sig, chunk_high_bits, chunk_mask)] += 1;
 
-                for w in sigs.windows(2) {
-                    chunk_sizes[chunk(&w[1].0, chunk_high_bits, chunk_mask)] += 1;
-                    if w[0].0 == w[1].0 {
+                for w in sig_vals.windows(2) {
+                    chunk_sizes[chunk(&w[1].sig, chunk_high_bits, chunk_mask)] += 1;
+                    if w[0].sig == w[1].sig {
                         dup = true;
                         break;
                     }
@@ -632,11 +641,12 @@ where
                 let num_vertices = segment_size * (l + 2);
                 pl.info(format_args!(
                     "Size {:.2}%",
-                    (100.0 * (num_vertices * num_chunks) as f64) / (sigs.len() as f64 * c)
+                    (100.0 * (num_vertices * num_chunks) as f64) / (sig_vals.len() as f64 * c)
                 ));
 
                 match par_solve(
-                    sigs.arbitrary_chunks(&chunk_sizes)
+                    sig_vals
+                        .arbitrary_chunks(&chunk_sizes)
                         .map(Cow::Borrowed)
                         .enumerate(),
                     bit_width,
