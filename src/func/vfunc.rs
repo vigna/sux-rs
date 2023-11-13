@@ -610,6 +610,7 @@ where
                 chunk_sizes[chunk(&sig_vals[0].sig, chunk_high_bits, chunk_mask)] += 1;
 
                 for w in sig_vals.windows(2) {
+                    assert!(w[0].sig[0] <= w[1].sig[0]);
                     chunk_sizes[chunk(&w[1].sig, chunk_high_bits, chunk_mask)] += 1;
                     if w[0].sig == w[1].sig {
                         dup = true;
