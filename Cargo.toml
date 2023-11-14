@@ -32,7 +32,7 @@ stderrlog = "0.5.4"
 rand = {version="0.8.5", features=["small_rng"]}
 zstd = "0.12.4"
 tempfile = "3.8.0"
-xxh3 = "0.1.1"
+xxhash-rust = { version = "0.8.7", features=["xxh3"] }
 #lender = "0.2.0"
 lender = "0.2.0"
 arbitrary-chunks = "0.4.1"
