@@ -363,6 +363,11 @@ where
                     stack.truncate(curr);
                 }
                 if chunk.len() != stack.len() {
+                    warn!(
+                        "Peeling failed for chunk {}/{}",
+                        chunk_index + 1,
+                        num_chunks
+                    );
                     failed_peeling.store(true, Ordering::Relaxed);
                     return;
                 }
