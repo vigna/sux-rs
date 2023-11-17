@@ -87,63 +87,82 @@ impl<
 
         // fill the second layer of the index
         iter.for_each(|inventory_idx| {
+            // get the start and end u64 index of the current inventory
             let start_idx = inventory_idx * (1 + Self::U64_PER_SUBINVENTORY);
             let end_idx = start_idx + 1 + Self::U64_PER_SUBINVENTORY;
-
+            // read the first level index to get the start and end bit index
             let start_bit_idx = inventory[start_idx];
             let end_bit_idx = inventory[start_idx + Self::U64_PER_SUBINVENTORY + 1];
-            dbg!(start_bit_idx, end_bit_idx);
-            let end_word_idx = end_bit_idx.div_ceil(u64::BITS as u64);
+            // compute the span of the inventory
             let span = end_bit_idx - start_bit_idx;
-
+            // compute were we should the word boundaries of where we should 
+            // scan
+            let end_word_idx = end_bit_idx.div_ceil(u64::BITS as u64);
             let mut word_idx = start_bit_idx / u64::BITS as u64;
-            let bit_idx = start_bit_idx % u64::BITS as u64;
+
+            dbg!(start_bit_idx, end_bit_idx, end_word_idx);
 
             // cleanup the lower bits
+            let bit_idx = start_bit_idx % u64::BITS as u64;
             let mut word = (bitvec.as_ref()[word_idx as usize] >> bit_idx) << bit_idx;
-            //
+            // compute the global number of ones
             let mut number_of_ones = inventory_idx * Self::ONES_PER_INVENTORY;
+            // and what's the next bit rank which index should log in the sub
+            // inventory (the first subinventory element is always 0)
             let mut next_quantum = number_of_ones;
 
-            let subinventory = unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
+            if span < u16::MAX as u64 {
+                let quantum = Self::ONES_PER_SUB16;
+                next_quantum += quantum;
+                // get a mutable reference to the subinventory as u16s, since
+                // it's a u64 slice it's always aligned
+                let subinventory: &mut [u16] = unsafe { 
+                    inventory[start_idx + 1..end_idx].align_to_mut().1 
+                };
+                let mut subinventory_idx = 0;
+                loop {
+                    let ones_in_word = word.count_ones() as usize;
 
-            let (quantum, size) = if span < u16::MAX as u64 {
-                (Self::ONES_PER_SUB16, core::mem::size_of::<u16>())
+                    dbg!(next_quantum, number_of_ones, ones_in_word);
+                    // if the quantum is in this word, write it in the subinventory
+                    // this can happen multiple times if the quantum is small
+                    while number_of_ones + ones_in_word > next_quantum {
+                        debug_assert!(next_quantum <= end_bit_idx as _);
+                        // find the quantum bit in the word
+                        let in_word_index = word.select_in_word(next_quantum - number_of_ones);
+                        // compute the global index of the quantum bit in the bitvec
+                        let index = (word_idx * u64::BITS as u64) + in_word_index as u64;
+                        // compute the offset of the quantum bit 
+                        // from the start of the subinventory
+                        let sub_offset = (index - start_bit_idx) as u16;
+
+                        dbg!(subinventory_idx, sub_offset);
+                        // write the offset in the subinventory
+                        subinventory[subinventory_idx] = sub_offset;
+
+                        // update the subinventory index and the next quantum
+                        subinventory_idx += 1;
+                        next_quantum += quantum;
+                    }
+                    
+                    // we are done with the word, so update the number of ones
+                    number_of_ones += ones_in_word;
+                    // move to the next word and boundcheck
+                    word_idx += 1;
+                    if word_idx == end_word_idx {
+                        break;
+                    }
+
+                    dbg!(word_idx, end_word_idx, bitvec.as_ref().len());
+                    // read the next word
+                    word = bitvec.as_ref()[word_idx as usize];
+                }
             } else {
-                (Self::ONES_PER_SUB64, core::mem::size_of::<u64>())
+                let quantum = Self::ONES_PER_SUB64;
+                panic!();
             };
-
-            dbg!(quantum, size, Self::ONES_PER_SUB16, Self::ONES_PER_SUB64);
-            assert_eq!(quantum, Self::ONES_PER_SUB16);
-            let mut subinventory_idx = 0;
-            loop {
-                let ones_in_word = word.count_ones() as usize;
-                dbg!(next_quantum, number_of_ones, ones_in_word);
-                while number_of_ones + ones_in_word > next_quantum {
-                    let in_word_index = word.select_in_word(next_quantum - number_of_ones);
-                    let index = (word_idx * u64::BITS as u64) + in_word_index as u64;
-                    let sub_offset = (index - start_bit_idx) as u16;
-                    dbg!(sub_offset);
-                    subinventory[subinventory_idx..subinventory_idx + size]
-                        .copy_from_slice(&sub_offset.to_ne_bytes());
-
-                    subinventory_idx += size;
-                    next_quantum += quantum;
-                }
-                number_of_ones += ones_in_word;
-
-                word_idx += 1;
-                if word_idx == end_word_idx {
-                    break;
-                }
-
-                dbg!(word_idx, end_word_idx, bitvec.as_ref().len());
-                word = bitvec.as_ref()[word_idx as usize];
-            }
         });
-
         dbg!(&inventory);
-
         Self { bitvec, inventory }
     }
 }
