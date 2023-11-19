@@ -35,6 +35,7 @@ impl<
 {
     const ONES_PER_INVENTORY: usize = 1 << LOG2_ONES_PER_INVENTORY;
     const U64_PER_SUBINVENTORY: usize = 1 << LOG2_U64_PER_SUBINVENTORY;
+    const U64_PER_INVENTORY: usize = 1 + Self::U64_PER_SUBINVENTORY;
 
     const LOG2_ONES_PER_SUB64: usize = LOG2_ONES_PER_INVENTORY - LOG2_U64_PER_SUBINVENTORY;
     const ONES_PER_SUB64: usize = 1 << Self::LOG2_ONES_PER_SUB64;
@@ -53,9 +54,8 @@ impl<
         // estimate the number of ones with our core assumption!
         let expected_ones = BitLength::len(&bitvec) / 2;
         // number of inventories we will create
-        let inventory_size =
-            1 + (expected_ones + Self::ONES_PER_INVENTORY - 1) / Self::ONES_PER_INVENTORY;
-        let inventory_len = inventory_size * (Self::U64_PER_SUBINVENTORY + 1);
+        let inventory_size = 1 + expected_ones.div_ceil(Self::ONES_PER_INVENTORY);
+        let inventory_len = inventory_size * Self::U64_PER_INVENTORY;
         // inventory_size, an u64 for the first layer index, and Self::U64_PER_SUBINVENTORY for the sub layer
         let mut inventory = vec![0; inventory_len];
         // scan the bitvec and fill the first layer of the inventory
@@ -72,7 +72,7 @@ impl<
                 // write the one in the inventory
                 inventory[ptr] = index as u64;
 
-                ptr += Self::U64_PER_SUBINVENTORY + 1;
+                ptr += Self::U64_PER_INVENTORY;
                 next_quantum += Self::ONES_PER_INVENTORY as u64;
             }
             number_of_ones += ones_in_word;
@@ -88,19 +88,16 @@ impl<
         // fill the second layer of the index
         iter.for_each(|inventory_idx| {
             // get the start and end u64 index of the current inventory
-            let start_idx = inventory_idx * (1 + Self::U64_PER_SUBINVENTORY);
-            let end_idx = start_idx + 1 + Self::U64_PER_SUBINVENTORY;
+            let start_idx = inventory_idx * Self::U64_PER_INVENTORY;
+            let end_idx = start_idx + Self::U64_PER_INVENTORY;
             // read the first level index to get the start and end bit index
             let start_bit_idx = inventory[start_idx];
-            let end_bit_idx = inventory[start_idx + Self::U64_PER_SUBINVENTORY + 1];
+            let end_bit_idx = inventory[end_idx];
             // compute the span of the inventory
             let span = end_bit_idx - start_bit_idx;
-            // compute were we should the word boundaries of where we should 
+            // compute were we should the word boundaries of where we should
             // scan
-            let end_word_idx = end_bit_idx.div_ceil(u64::BITS as u64);
             let mut word_idx = start_bit_idx / u64::BITS as u64;
-
-            dbg!(start_bit_idx, end_bit_idx, end_word_idx);
 
             // cleanup the lower bits
             let bit_idx = start_bit_idx % u64::BITS as u64;
@@ -113,17 +110,20 @@ impl<
 
             if span < u16::MAX as u64 {
                 let quantum = Self::ONES_PER_SUB16;
-                next_quantum += quantum;
+                let end_word_idx = (end_bit_idx - quantum as u64).div_ceil(u64::BITS as u64);
                 // get a mutable reference to the subinventory as u16s, since
                 // it's a u64 slice it's always aligned
-                let subinventory: &mut [u16] = unsafe { 
-                    inventory[start_idx + 1..end_idx].align_to_mut().1 
-                };
-                let mut subinventory_idx = 0;
+                // + 1 to skip the first index value
+                let subinventory: &mut [u16] =
+                    unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
+
+                // the first subinventory element is always 0
+                let mut subinventory_idx = 1;
+                next_quantum += quantum;
+
                 loop {
                     let ones_in_word = word.count_ones() as usize;
 
-                    dbg!(next_quantum, number_of_ones, ones_in_word);
                     // if the quantum is in this word, write it in the subinventory
                     // this can happen multiple times if the quantum is small
                     while number_of_ones + ones_in_word > next_quantum {
@@ -131,12 +131,11 @@ impl<
                         // find the quantum bit in the word
                         let in_word_index = word.select_in_word(next_quantum - number_of_ones);
                         // compute the global index of the quantum bit in the bitvec
-                        let index = (word_idx * u64::BITS as u64) + in_word_index as u64;
-                        // compute the offset of the quantum bit 
+                        let bit_index = (word_idx * u64::BITS as u64) + in_word_index as u64;
+                        // compute the offset of the quantum bit
                         // from the start of the subinventory
-                        let sub_offset = (index - start_bit_idx) as u16;
+                        let sub_offset = (bit_index - start_bit_idx) as u16;
 
-                        dbg!(subinventory_idx, sub_offset);
                         // write the offset in the subinventory
                         subinventory[subinventory_idx] = sub_offset;
 
@@ -144,7 +143,7 @@ impl<
                         subinventory_idx += 1;
                         next_quantum += quantum;
                     }
-                    
+
                     // we are done with the word, so update the number of ones
                     number_of_ones += ones_in_word;
                     // move to the next word and boundcheck
@@ -153,7 +152,6 @@ impl<
                         break;
                     }
 
-                    dbg!(word_idx, end_word_idx, bitvec.as_ref().len());
                     // read the next word
                     word = bitvec.as_ref()[word_idx as usize];
                 }
@@ -162,7 +160,6 @@ impl<
                 panic!();
             };
         });
-        dbg!(&inventory);
         Self { bitvec, inventory }
     }
 }
@@ -191,8 +188,6 @@ impl<
             .as_ref()
             .get_unchecked(start_idx + 1..start_idx + 1 + Self::U64_PER_SUBINVENTORY);
 
-        dbg!(inventory_rank);
-        eprintln!("{:x?}", &u64s);
         // if the inventory_rank is positive, the subranks are u16s otherwise they are u64s
         let (pos, residual) = if inventory_rank >= 0 {
             // dense case, read the u16s
@@ -200,7 +195,6 @@ impl<
             // u16 should always be aligned with u64s ...
             debug_assert!(pre.is_empty());
             debug_assert!(post.is_empty());
-            dbg!(u16s[subrank / Self::ONES_PER_SUB16] as u64);
             (
                 inventory_rank as u64 + u16s[subrank / Self::ONES_PER_SUB16] as u64,
                 subrank % Self::ONES_PER_SUB16,
@@ -214,7 +208,6 @@ impl<
             )
         };
 
-        dbg!(rank, pos, residual);
         // linear scan to finish the search
         self.bitvec
             .select_hinted_unchecked(rank, pos as usize, rank - residual)
