@@ -6,6 +6,8 @@
  */
 
 use crate::{bits::CountBitVec, traits::*};
+use anyhow::Result;
+use bitvec::view::AsBits;
 use common_traits::SelectInWord;
 use epserde::*;
 //#[cfg(feature = "rayon")]
@@ -21,7 +23,7 @@ pub struct SimpleSelectHalf<
     const LOG2_ONES_PER_INVENTORY: usize = 10,
     const LOG2_U64_PER_SUBINVENTORY: usize = 2,
 > {
-    bitvec: B,
+    bits: B,
     inventory: I,
 }
 
@@ -160,7 +162,10 @@ impl<
                 panic!();
             };
         });
-        Self { bitvec, inventory }
+        Self {
+            bits: bitvec,
+            inventory,
+        }
     }
 }
 
@@ -209,7 +214,7 @@ impl<
         };
 
         // linear scan to finish the search
-        self.bitvec
+        self.bits
             .select_hinted_unchecked(rank, pos as usize, rank - residual)
     }
 }
@@ -224,11 +229,11 @@ impl<
 {
     #[inline(always)]
     fn select_zero(&self, rank: usize) -> Option<usize> {
-        self.bitvec.select_zero(rank)
+        self.bits.select_zero(rank)
     }
     #[inline(always)]
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
-        self.bitvec.select_zero_unchecked(rank)
+        self.bits.select_zero_unchecked(rank)
     }
 }
 
@@ -242,7 +247,7 @@ impl<
 {
     #[inline(always)]
     fn len(&self) -> usize {
-        self.bitvec.len()
+        self.bits.len()
     }
 }
 
@@ -256,7 +261,7 @@ impl<
 {
     #[inline(always)]
     fn count(&self) -> usize {
-        self.bitvec.count()
+        self.bits.count()
     }
 }
 
@@ -270,6 +275,28 @@ impl<
     for SimpleSelectHalf<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     fn as_ref(&self) -> &[usize] {
-        self.bitvec.as_ref()
+        self.bits.as_ref()
+    }
+}
+
+/// Forget the index.
+impl<B: SelectHinted, T, const QUANTUM_LOG2: usize> ConvertTo<B>
+    for SimpleSelectHalf<B, T, QUANTUM_LOG2>
+where
+    T: AsRef<[u64]>,
+{
+    #[inline(always)]
+    fn convert_to(self) -> Result<B> {
+        Ok(self.bits)
+    }
+}
+
+/// Create and add a quantum index.
+impl<B: SelectHinted + AsRef<[usize]> + BitLength, const QUANTUM_LOG2: usize>
+    ConvertTo<SimpleSelectHalf<B, Vec<u64>, QUANTUM_LOG2>> for B
+{
+    #[inline(always)]
+    fn convert_to(self) -> Result<SimpleSelectHalf<B, Vec<u64>, QUANTUM_LOG2>> {
+        Ok(SimpleSelectHalf::new(self))
     }
 }
