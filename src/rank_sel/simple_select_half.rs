@@ -95,6 +95,8 @@ impl<
             // read the first level index to get the start and end bit index
             let start_bit_idx = inventory[start_idx];
             let end_bit_idx = inventory[end_idx];
+            dbg!(start_bit_idx, end_bit_idx);
+            debug_assert!(end_bit_idx >= start_bit_idx, "Start: {} End: {}", start_bit_idx, end_bit_idx);
             // compute the span of the inventory
             let span = end_bit_idx - start_bit_idx;
             // compute were we should the word boundaries of where we should

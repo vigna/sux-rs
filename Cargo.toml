@@ -39,8 +39,11 @@ derive_setters = "0.1.6"
 flate2 = "1.0.28"
 derivative = "2.2.0"
 rdst = "0.20.11"
+arbitrary = { version = "1", features = ["derive"], optional=true }
+
 [features]
 default = ["rayon"]
+fuzz = ["dep:arbitrary"]
 unaligned = []
 
 [profile.release] # Used for the examples
