@@ -59,11 +59,10 @@ impl<
         let inventory_size = 1 + expected_ones.div_ceil(Self::ONES_PER_INVENTORY);
         let inventory_len = inventory_size * Self::U64_PER_INVENTORY;
         // inventory_size, an u64 for the first layer index, and Self::U64_PER_SUBINVENTORY for the sub layer
-        let mut inventory = vec![0; inventory_len];
+        let mut inventory = Vec::with_capacity(inventory_len);
         // scan the bitvec and fill the first layer of the inventory
         let mut number_of_ones = 0;
         let mut next_quantum = 0;
-        let mut ptr = 0;
         for (i, word) in bitvec.as_ref().iter().copied().enumerate() {
             let ones_in_word = word.count_ones() as u64;
             // skip the word if we can
@@ -72,18 +71,20 @@ impl<
                 let index = (i * u64::BITS as usize) + in_word_index;
 
                 // write the one in the inventory
-                inventory[ptr] = index as u64;
+                inventory.push(index as u64);
+                for _ in 0..Self::U64_PER_SUBINVENTORY {
+                    inventory.push(0);
+                }
 
-                ptr += Self::U64_PER_INVENTORY;
                 next_quantum += Self::ONES_PER_INVENTORY as u64;
             }
             number_of_ones += ones_in_word;
         }
         // in the last inventory write the number of bits
-        inventory[ptr] = BitLength::len(&bitvec) as u64;
+        inventory.push(BitLength::len(&bitvec) as u64);
 
         // build the index (in parallel if rayon enabled)
-        let iter = 0..inventory_size - 1;
+        let iter = 0..inventory.len().div_ceil(Self::U64_PER_INVENTORY) - 1;
         //#[cfg(feature = "rayon")]
         //let iter = iter.into_par_iter();
 
@@ -96,7 +97,12 @@ impl<
             let start_bit_idx = inventory[start_idx];
             let end_bit_idx = inventory[end_idx];
             dbg!(start_bit_idx, end_bit_idx);
-            debug_assert!(end_bit_idx >= start_bit_idx, "Start: {} End: {}", start_bit_idx, end_bit_idx);
+            debug_assert!(
+                end_bit_idx >= start_bit_idx,
+                "Start: {} End: {}",
+                start_bit_idx,
+                end_bit_idx
+            );
             // compute the span of the inventory
             let span = end_bit_idx - start_bit_idx;
             // compute were we should the word boundaries of where we should
