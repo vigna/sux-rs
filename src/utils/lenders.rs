@@ -36,7 +36,7 @@ use io::{BufRead, BufReader};
 use lender::*;
 use std::{
     fs::File,
-    io::{self, Read, Seek, SeekFrom},
+    io::{self, Read, Seek},
     path::Path,
 };
 use zstd::stream::read::Decoder;
@@ -174,7 +174,7 @@ impl<R: Read + Seek> RewindableIOLender<str> for ZstdLineLender<R> {
     type Error = io::Error;
     fn rewind(mut self) -> io::Result<Self> {
         let mut read = self.buf.into_inner().finish();
-        read.seek(SeekFrom::Current(0))?;
+        read.stream_position()?;
         self.buf = BufReader::new(Decoder::with_buffer(read)?);
         Ok(self)
     }
@@ -227,7 +227,7 @@ impl<R: Read + Seek> RewindableIOLender<str> for GzipLineLender<R> {
     type Error = io::Error;
     fn rewind(mut self) -> io::Result<Self> {
         let mut read = self.buf.into_inner().into_inner();
-        read.seek(SeekFrom::Current(0))?;
+        read.stream_position()?;
         self.buf = BufReader::new(GzDecoder::new(read));
         Ok(self)
     }

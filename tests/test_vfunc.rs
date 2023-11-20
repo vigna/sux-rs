@@ -32,7 +32,7 @@ fn test_func() -> anyhow::Result<()> {
             for i in 0..n {
                 assert_eq!(i, func.get(&i));
             }
-            pl.done_with_count(n as usize);
+            pl.done_with_count(n);
         }
     }
 

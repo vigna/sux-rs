@@ -515,7 +515,7 @@ where
                             let v = into_values.next().expect("Not enough values")?;
                             max_value = Ord::max(max_value, *v);
                             sig_sorter.push(&SigVal {
-                                sig: T::to_sig(&key, seed),
+                                sig: T::to_sig(key, seed),
                                 val: *v,
                             })?;
                         }
@@ -586,7 +586,7 @@ where
                             let v = into_values.next().expect("Not enough values")?;
                             max_value = Ord::max(max_value, *v);
                             sig_vals.push(SigVal {
-                                sig: T::to_sig(&key, seed),
+                                sig: T::to_sig(key, seed),
                                 val: *v,
                             });
                         }
