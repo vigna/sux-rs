@@ -7,7 +7,6 @@
 
 use crate::{bits::CountBitVec, traits::*};
 use anyhow::Result;
-use bitvec::view::AsBits;
 use common_traits::SelectInWord;
 use epserde::*;
 //#[cfg(feature = "rayon")]
@@ -81,11 +80,10 @@ impl<
                 let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
                 let index = (i * u64::BITS as usize) + in_word_index;
 
-                // write the one in the inventory
+                // write the position of the one in the inventory
                 inventory.push(index as u64);
-                for _ in 0..Self::U64_PER_SUBINVENTORY {
-                    inventory.push(0);
-                }
+                // make space for the subinventory
+                inventory.resize(inventory.len() + Self::U64_PER_SUBINVENTORY, 0);
 
                 next_quantum += Self::ONES_PER_INVENTORY as u64;
             }
@@ -126,22 +124,18 @@ impl<
 
             match span {
                 0..=256 => {
-                    eprintln!("sub8");
                     quantum = Self::ONES_PER_SUB8;
                     inventory[start_idx] |= Self::SUB8 << 62;
                 }
                 257..=65536 => {
-                    eprintln!("sub16");
                     quantum = Self::ONES_PER_SUB16;
                     inventory[start_idx] |= Self::SUB16 << 62;
                 }
                 65537..=4294967296 => {
-                    eprintln!("sub32");
                     quantum = Self::ONES_PER_SUB32;
                     inventory[start_idx] |= Self::SUB32 << 62;
                 }
                 _ => {
-                    eprintln!("sub64");
                     quantum = Self::ONES_PER_SUB64;
                     inventory[start_idx] |= Self::SUB64 << 62;
                 }
@@ -209,7 +203,7 @@ impl<
                 }
             }
         });
-        eprintln!("{:x?}", inventory);
+
         Self {
             bits: bitvec,
             inventory,

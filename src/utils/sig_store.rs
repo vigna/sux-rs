@@ -48,7 +48,7 @@ impl<T: ZeroCopy + 'static> RadixKey for SigVal<T> {
     const LEVELS: usize = 16;
 
     fn get_level(&self, level: usize) -> u8 {
-        (self.sig[1 - level / 8] >> (level % 8) * 8) as u8
+        (self.sig[1 - level / 8] >> ((level % 8) * 8)) as u8
     }
 }
 
@@ -466,8 +466,8 @@ fn test_sig_sorter() {
                 }
                 let mut chunk_store = sig_sorter.into_chunk_store(chunk_high_bits).unwrap();
                 let mut count = 0;
-                let mut iter = chunk_store.iter().unwrap();
-                while let Some(chunk) = iter.next() {
+                let iter = chunk_store.iter().unwrap();
+                for chunk in iter {
                     count += 1;
                     for &w in chunk.1.iter() {
                         assert_eq!(
@@ -498,8 +498,8 @@ fn test_u8() {
     }
     let mut chunk_store = sig_sorter.into_chunk_store(2).unwrap();
     let mut count = 0;
-    let mut iter = chunk_store.iter().unwrap();
-    while let Some(chunk) = iter.next() {
+    let iter = chunk_store.iter().unwrap();
+    for chunk in iter {
         count += 1;
         for &w in chunk.1.iter() {
             assert_eq!(chunk.0, w.sig[0].rotate_left(2) as usize & ((1 << 2) - 1));
