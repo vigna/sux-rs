@@ -12,18 +12,22 @@ use sux::prelude::*;
 
 #[test]
 fn test_selects() {
-    const MAX: usize = 1_000_000;
-    let mut rng = SmallRng::seed_from_u64(0);
-    let bitvec = (0..MAX).map(|_| rng.gen_bool(0.5)).collect::<BitVec>();
-    println!("{}", &bitvec);
-    let ones = bitvec.count_ones();
+    for size in [0, 1, 2, 3, 4, 7, 8, 9, 10, 100, 10000, 100000] {
+        let mut rng = SmallRng::seed_from_u64(0);
+        let bitvec = (0..size).map(|_| rng.gen_bool(0.5)).collect::<BitVec>();
+        let ones = bitvec.count_ones();
+        let mut pos = Vec::with_capacity(ones);
+        for i in 0..size {
+            if bitvec[i] {
+                pos.push(i);
+            }
+        }
 
-    let simple = <SimpleSelectHalf<_, _, 10, 2>>::new(&bitvec);
-    let quantum = <QuantumIndex<_, _, 8>>::new(&bitvec, ones).unwrap();
+        let simple = <SimpleSelectHalf<_, _, 10, 2>>::new(&bitvec);
 
-    for i in 0..ones {
-        dbg!(i);
-        assert_eq!(bitvec.select(i), simple.select(i));
-        assert_eq!(bitvec.select(i), quantum.select(i));
+        for i in 0..ones {
+            assert_eq!(simple.select(i), Some(pos[i]), "i: {} ones : {}", i, ones);
+        }
+        assert_eq!(simple.select(ones + 1), None);
     }
 }
