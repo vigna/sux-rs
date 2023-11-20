@@ -56,8 +56,8 @@ impl<
         // estimate the number of ones with our core assumption!
         let expected_ones = BitLength::len(&bitvec) / 2;
         // number of inventories we will create
-        let inventory_size = 1 + expected_ones.div_ceil(Self::ONES_PER_INVENTORY);
-        let inventory_len = inventory_size * Self::U64_PER_INVENTORY;
+        let inventory_size = expected_ones.div_ceil(Self::ONES_PER_INVENTORY);
+        let inventory_len = inventory_size * Self::U64_PER_INVENTORY + 1;
         // inventory_size, an u64 for the first layer index, and Self::U64_PER_SUBINVENTORY for the sub layer
         let mut inventory = Vec::with_capacity(inventory_len);
         // scan the bitvec and fill the first layer of the inventory
@@ -84,7 +84,7 @@ impl<
         inventory.push(BitLength::len(&bitvec) as u64);
 
         // build the index (in parallel if rayon enabled)
-        let iter = 0..inventory.len().div_ceil(Self::U64_PER_INVENTORY) - 1;
+        let iter = 0..inventory_size;
         //#[cfg(feature = "rayon")]
         //let iter = iter.into_par_iter();
 
