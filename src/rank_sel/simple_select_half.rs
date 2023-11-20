@@ -42,8 +42,21 @@ impl<
     const LOG2_ONES_PER_SUB64: usize = LOG2_ONES_PER_INVENTORY - LOG2_U64_PER_SUBINVENTORY;
     const ONES_PER_SUB64: usize = 1 << Self::LOG2_ONES_PER_SUB64;
 
+    const LOG2_ONES_PER_SUB8: usize = Self::LOG2_ONES_PER_SUB64 - 3;
+    const ONES_PER_SUB8: usize = 1 << Self::LOG2_ONES_PER_SUB8;
+
     const LOG2_ONES_PER_SUB16: usize = Self::LOG2_ONES_PER_SUB64 - 2;
     const ONES_PER_SUB16: usize = 1 << Self::LOG2_ONES_PER_SUB16;
+
+    const LOG2_ONES_PER_SUB32: usize = Self::LOG2_ONES_PER_SUB64 - 1;
+    const ONES_PER_SUB32: usize = 1 << Self::LOG2_ONES_PER_SUB32;
+
+    const SUB8: u64 = 0;
+    const SUB16: u64 = 1;
+    const SUB32: u64 = 2;
+    const SUB64: u64 = 3;
+
+    const INVENTORY_MASK: u64 = (1 << 62) - 1;
 }
 
 impl<
@@ -109,60 +122,92 @@ impl<
             // inventory (the first subinventory element is always 0)
             let mut next_quantum = number_of_ones;
 
-            if span < u16::MAX as u64 {
-                let quantum = Self::ONES_PER_SUB16;
-                if quantum as u64 <= end_bit_idx {
-                    let end_word_idx =
-                        (end_bit_idx - quantum as u64 + 1).div_ceil(u64::BITS as u64);
-                    // get a mutable reference to the subinventory as u16s, since
-                    // it's a u64 slice it's always aligned
-                    // + 1 to skip the first index value
-                    let subinventory: &mut [u16] =
-                        unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
+            let quantum;
 
-                    // the first subinventory element is always 0
-                    let mut subinventory_idx = 1;
-                    next_quantum += quantum;
-
-                    loop {
-                        let ones_in_word = word.count_ones() as usize;
-
-                        // if the quantum is in this word, write it in the subinventory
-                        // this can happen multiple times if the quantum is small
-                        while number_of_ones + ones_in_word > next_quantum {
-                            debug_assert!(next_quantum <= end_bit_idx as _);
-                            // find the quantum bit in the word
-                            let in_word_index = word.select_in_word(next_quantum - number_of_ones);
-                            // compute the global index of the quantum bit in the bitvec
-                            let bit_index = (word_idx * u64::BITS as u64) + in_word_index as u64;
-                            // compute the offset of the quantum bit
-                            // from the start of the subinventory
-                            let sub_offset = (bit_index - start_bit_idx) as u16;
-
-                            // write the offset in the subinventory
-                            subinventory[subinventory_idx] = sub_offset;
-
-                            // update the subinventory index and the next quantum
-                            subinventory_idx += 1;
-                            next_quantum += quantum;
-                        }
-
-                        // we are done with the word, so update the number of ones
-                        number_of_ones += ones_in_word;
-                        // move to the next word and boundcheck
-                        word_idx += 1;
-                        if word_idx == end_word_idx {
-                            break;
-                        }
-
-                        // read the next word
-                        word = bitvec.as_ref()[word_idx as usize];
-                    }
+            match span {
+                0..=256 => {
+                    eprintln!("sub8");
+                    quantum = Self::ONES_PER_SUB8;
+                    inventory[start_idx] |= Self::SUB8 << 62;
                 }
-            } else {
-                let quantum = Self::ONES_PER_SUB64;
-                panic!();
-            };
+                257..=65536 => {
+                    eprintln!("sub16");
+                    quantum = Self::ONES_PER_SUB16;
+                    inventory[start_idx] |= Self::SUB16 << 62;
+                }
+                65537..=4294967296 => {
+                    eprintln!("sub32");
+                    quantum = Self::ONES_PER_SUB32;
+                    inventory[start_idx] |= Self::SUB32 << 62;
+                }
+                _ => {
+                    eprintln!("sub64");
+                    quantum = Self::ONES_PER_SUB64;
+                    inventory[start_idx] |= Self::SUB64 << 62;
+                }
+            }
+
+            if quantum as u64 <= end_bit_idx {
+                let end_word_idx = (end_bit_idx - quantum as u64 + 1).div_ceil(u64::BITS as u64);
+
+                // the first subinventory element is always 0
+                let mut subinventory_idx = 1;
+                next_quantum += quantum;
+
+                loop {
+                    let ones_in_word = word.count_ones() as usize;
+
+                    // if the quantum is in this word, write it in the subinventory
+                    // this can happen multiple times if the quantum is small
+                    while number_of_ones + ones_in_word > next_quantum {
+                        debug_assert!(next_quantum <= end_bit_idx as _);
+                        // find the quantum bit in the word
+                        let in_word_index = word.select_in_word(next_quantum - number_of_ones);
+                        // compute the global index of the quantum bit in the bitvec
+                        let bit_index = (word_idx * u64::BITS as u64) + in_word_index as u64;
+                        // compute the offset of the quantum bit
+                        // from the start of the subinventory
+                        let sub_offset = bit_index - start_bit_idx;
+
+                        match span {
+                            0..=256 => {
+                                let subinventory: &mut [u8] =
+                                    unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
+                                subinventory[subinventory_idx] = sub_offset as u8;
+                            }
+                            257..=65536 => {
+                                let subinventory: &mut [u16] =
+                                    unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
+                                subinventory[subinventory_idx] = sub_offset as u16;
+                            }
+                            65537..=4294967296 => {
+                                let subinventory: &mut [u32] =
+                                    unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
+                                subinventory[subinventory_idx] = sub_offset as u32;
+                            }
+                            _ => {
+                                inventory[start_idx + 1 + subinventory_idx] = sub_offset;
+                            }
+                        }
+                        // write the offset in the subinventory
+
+                        // update the subinventory index and the next quantum
+                        subinventory_idx += 1;
+                        next_quantum += quantum;
+                    }
+
+                    // we are done with the word, so update the number of ones
+                    number_of_ones += ones_in_word;
+                    // move to the next word and boundcheck
+                    word_idx += 1;
+                    if word_idx == end_word_idx {
+                        break;
+                    }
+
+                    // read the next word
+                    word = bitvec.as_ref()[word_idx as usize];
+                }
+            }
         });
         eprintln!("{:x?}", inventory);
         Self {
@@ -189,7 +234,7 @@ impl<
         // find the position of the first index value in the interleaved inventory
         let start_idx = inventory_index * (1 + Self::U64_PER_SUBINVENTORY);
         // read the potentially unaliged i64 (i.e. the first index value)
-        let inventory_rank = *self.inventory.as_ref().get_unchecked(start_idx) as i64;
+        let inventory_rank = *self.inventory.as_ref().get_unchecked(start_idx);
         // get a reference to the u64s in this subinventory
         let u64s = self
             .inventory
@@ -197,23 +242,35 @@ impl<
             .get_unchecked(start_idx + 1..start_idx + 1 + Self::U64_PER_SUBINVENTORY);
 
         // if the inventory_rank is positive, the subranks are u16s otherwise they are u64s
-        let (pos, residual) = if inventory_rank >= 0 {
-            // dense case, read the u16s
-            let (pre, u16s, post) = u64s.align_to::<u16>();
-            // u16 should always be aligned with u64s ...
-            debug_assert!(pre.is_empty());
-            debug_assert!(post.is_empty());
-            (
-                inventory_rank as u64 + u16s[subrank / Self::ONES_PER_SUB16] as u64,
-                subrank % Self::ONES_PER_SUB16,
-            )
-        } else {
-            debug_assert!(subrank < Self::U64_PER_SUBINVENTORY);
-            // sparse case, read the u64s
-            (
-                (-inventory_rank - 1) as u64 + u64s[subrank / Self::ONES_PER_SUB16],
+        let (pos, residual) = match inventory_rank >> 62 {
+            Self::SUB8 => {
+                let (_pre, u8s, _post) = u64s.align_to::<u8>();
+                (
+                    (inventory_rank & Self::INVENTORY_MASK)
+                        + u8s[subrank / Self::ONES_PER_SUB8] as u64,
+                    subrank % Self::ONES_PER_SUB8,
+                )
+            }
+            Self::SUB16 => {
+                let (_pre, u16s, _post) = u64s.align_to::<u16>();
+                (
+                    (inventory_rank & Self::INVENTORY_MASK)
+                        + u16s[subrank / Self::ONES_PER_SUB16] as u64,
+                    subrank % Self::ONES_PER_SUB16,
+                )
+            }
+            Self::SUB32 => {
+                let (_pre, u32s, _post) = u64s.align_to::<u32>();
+                (
+                    (inventory_rank & Self::INVENTORY_MASK)
+                        + u32s[subrank / Self::ONES_PER_SUB32] as u64,
+                    subrank % Self::ONES_PER_SUB32,
+                )
+            }
+            _ => (
+                (inventory_rank & Self::INVENTORY_MASK) + u64s[subrank / Self::ONES_PER_SUB64],
                 subrank % Self::ONES_PER_SUB64,
-            )
+            ),
         };
 
         // linear scan to finish the search
