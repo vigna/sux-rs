@@ -25,10 +25,10 @@ use epserde::*;
 /// The index takes a backend parameter `B` that can be any type that implements
 /// [`SelectHinted`]. This will usually be something like [`CountBitVec`](crate::bits::bit_vec::CountBitVec), or possibly
 /// a [`CountBitVec`](crate::bits::bit_vec::CountBitVec) wrapped in another index structure for which
-/// this structure has delegation (e.g., [`QuantumIndex`](crate::rank_sel::QuantumIndex)). See the documentation
+/// this structure has delegation (e.g., [`SelectFixed1`](crate::rank_sel::SelectFixed1)). See the documentation
 /// of [`EliasFano`](crate::dict::elias_fano::EliasFano) for an example of this approach.
 ///
-/// See [`QuantumIndex`](crate::rank_sel::QuantumIndex) for the same index for ones.
+/// See [`SelectFixed1`](crate::rank_sel::SelectFixed1) for the same index for ones.
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SelectZeroFixed1<
     B: SelectZeroHinted = CountBitVec,
