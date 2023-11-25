@@ -7,11 +7,14 @@
 
 //! Support for rank and select operations.
 
-mod quantum_index;
-pub use quantum_index::*;
+mod select_fixed1;
+pub use select_fixed1::*;
 
-mod quantum_zero_index;
-pub use quantum_zero_index::*;
+mod select_zero_fixed1;
+pub use select_zero_fixed1::*;
 
-mod simple_select_half;
-pub use simple_select_half::*;
+mod select_fixed2;
+pub use select_fixed2::*;
+
+mod select_zero_fixed2;
+pub use select_zero_fixed2::*;

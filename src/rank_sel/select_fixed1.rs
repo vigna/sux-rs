@@ -30,7 +30,7 @@ use epserde::*;
 ///
 /// See [`QuantumZeroIndex`](crate::rank_sel::QuantumZeroIndex) for the same index for zeros.
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct QuantumIndex<
+pub struct SelectFixed1<
     B: SelectHinted = CountBitVec,
     O: BitFieldSlice<usize> = Vec<usize>,
     const QUANTUM_LOG2: usize = 8,
@@ -41,10 +41,10 @@ pub struct QuantumIndex<
 }
 
 impl<B: SelectHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
-    QuantumIndex<B, Vec<usize>, QUANTUM_LOG2>
+    SelectFixed1<B, Vec<usize>, QUANTUM_LOG2>
 {
     pub fn new(bitvec: B, number_of_ones: usize) -> Result<Self> {
-        let mut res = QuantumIndex {
+        let mut res = SelectFixed1 {
             ones: vec![0; (number_of_ones + (1 << QUANTUM_LOG2) - 1) >> QUANTUM_LOG2],
             bits: bitvec,
             _marker: core::marker::PhantomData,
@@ -58,7 +58,7 @@ impl<
         B: SelectHinted + AsRef<[usize]>,
         O: BitFieldSlice<usize> + BitFieldSliceMut<usize>,
         const QUANTUM_LOG2: usize,
-    > QuantumIndex<B, O, QUANTUM_LOG2>
+    > SelectFixed1<B, O, QUANTUM_LOG2>
 {
     fn build_ones(&mut self) -> Result<()> {
         let mut number_of_ones = 0;
@@ -84,7 +84,7 @@ impl<
 
 /// Provide the hint to the underlying structure
 impl<B: SelectHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> Select
-    for QuantumIndex<B, O, QUANTUM_LOG2>
+    for SelectFixed1<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -98,7 +98,7 @@ impl<B: SelectHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> Select
 
 /// If the underlying implementation has select zero, forward the methods.
 impl<B: SelectHinted + SelectZero, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> SelectZero
-    for QuantumIndex<B, O, QUANTUM_LOG2>
+    for SelectFixed1<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     fn select_zero(&self, rank: usize) -> Option<usize> {
@@ -112,7 +112,7 @@ impl<B: SelectHinted + SelectZero, O: BitFieldSlice<usize>, const QUANTUM_LOG2: 
 
 /// If the underlying implementation has hint for select zero, forward the methods.
 impl<B: SelectHinted + SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize>
-    SelectZeroHinted for QuantumIndex<B, O, QUANTUM_LOG2>
+    SelectZeroHinted for SelectFixed1<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     unsafe fn select_zero_hinted_unchecked(
@@ -132,7 +132,7 @@ impl<B: SelectHinted + SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_
 }
 
 impl<B: SelectHinted + BitLength, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitLength
-    for QuantumIndex<B, O, QUANTUM_LOG2>
+    for SelectFixed1<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -141,7 +141,7 @@ impl<B: SelectHinted + BitLength, O: BitFieldSlice<usize>, const QUANTUM_LOG2: u
 }
 
 impl<B: SelectHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitCount
-    for QuantumIndex<B, O, QUANTUM_LOG2>
+    for SelectFixed1<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     fn count(&self) -> usize {
@@ -151,7 +151,7 @@ impl<B: SelectHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitCou
 
 /// Forget the index.
 impl<B: SelectHinted, T, const QUANTUM_LOG2: usize> ConvertTo<B>
-    for QuantumIndex<B, T, QUANTUM_LOG2>
+    for SelectFixed1<B, T, QUANTUM_LOG2>
 where
     T: AsRef<[usize]>,
 {
@@ -163,11 +163,11 @@ where
 
 /// Create and add a quantum index.
 impl<B: SelectHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
-    ConvertTo<QuantumIndex<B, Vec<usize>, QUANTUM_LOG2>> for B
+    ConvertTo<SelectFixed1<B, Vec<usize>, QUANTUM_LOG2>> for B
 {
     #[inline(always)]
-    fn convert_to(self) -> Result<QuantumIndex<B, Vec<usize>, QUANTUM_LOG2>> {
-        let mut res = QuantumIndex {
+    fn convert_to(self) -> Result<SelectFixed1<B, Vec<usize>, QUANTUM_LOG2>> {
+        let mut res = SelectFixed1 {
             ones: vec![0; (self.count() + (1 << QUANTUM_LOG2) - 1) >> QUANTUM_LOG2],
             bits: self,
             _marker: core::marker::PhantomData,
@@ -177,7 +177,7 @@ impl<B: SelectHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
     }
 }
 
-impl<B, O, const QUANTUM_LOG2: usize> AsRef<[usize]> for QuantumIndex<B, O, QUANTUM_LOG2>
+impl<B, O, const QUANTUM_LOG2: usize> AsRef<[usize]> for SelectFixed1<B, O, QUANTUM_LOG2>
 where
     B: AsRef<[usize]> + SelectHinted,
     O: BitFieldSlice<usize>,

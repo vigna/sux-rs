@@ -16,8 +16,8 @@ use epserde::*;
 /// a bitmap with approximately half ones and half zeros.
 /// This is meant for elias-fano high-bits.
 #[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SimpleSelectHalf<
-    B: SelectHinted = CountBitVec,
+pub struct SelectZeroFixed2<
+    B: SelectZeroHinted = CountBitVec,
     I: AsRef<[u64]> = Vec<u64>,
     const LOG2_ONES_PER_INVENTORY: usize = 10,
     const LOG2_U64_PER_SUBINVENTORY: usize = 2,
@@ -28,11 +28,11 @@ pub struct SimpleSelectHalf<
 
 /// constants used throughout the code
 impl<
-        B: SelectHinted,
+        B: SelectZeroHinted,
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SimpleSelectHalf<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     const ONES_PER_INVENTORY: usize = 1 << LOG2_ONES_PER_INVENTORY;
     const U64_PER_SUBINVENTORY: usize = 1 << LOG2_U64_PER_SUBINVENTORY;
@@ -41,42 +41,36 @@ impl<
     const LOG2_ONES_PER_SUB64: usize = LOG2_ONES_PER_INVENTORY - LOG2_U64_PER_SUBINVENTORY;
     const ONES_PER_SUB64: usize = 1 << Self::LOG2_ONES_PER_SUB64;
 
-    const LOG2_ONES_PER_SUB8: usize = Self::LOG2_ONES_PER_SUB64 - 3;
-    const ONES_PER_SUB8: usize = 1 << Self::LOG2_ONES_PER_SUB8;
-
     const LOG2_ONES_PER_SUB16: usize = Self::LOG2_ONES_PER_SUB64 - 2;
     const ONES_PER_SUB16: usize = 1 << Self::LOG2_ONES_PER_SUB16;
 
-    const LOG2_ONES_PER_SUB32: usize = Self::LOG2_ONES_PER_SUB64 - 1;
-    const ONES_PER_SUB32: usize = 1 << Self::LOG2_ONES_PER_SUB32;
-
-    const SUB8: u64 = 0;
-    const SUB16: u64 = 1;
-    const SUB32: u64 = 2;
-    const SUB64: u64 = 3;
-
-    const INVENTORY_MASK: u64 = (1 << 62) - 1;
+    /// We use the sign bit to store the type of the subinventory (u16 vs. u64).
+    const INVENTORY_MASK: u64 = (1 << 63) - 1;
 }
 
 impl<
-        B: SelectHinted + AsRef<[usize]> + BitLength,
+        B: SelectZeroHinted + AsRef<[usize]> + BitLength,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SimpleSelectHalf<B, Vec<u64>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SelectZeroFixed2<B, Vec<u64>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     pub fn new(bitvec: B) -> Self {
         // number of inventories we will create
-        let inventory_size = bitvec.count().div_ceil(Self::ONES_PER_INVENTORY);
+        let num_zeros = bitvec.len() - bitvec.count();
+        dbg!(num_zeros);
+        let inventory_size = (bitvec.len() - bitvec.count()).div_ceil(Self::ONES_PER_INVENTORY);
         let inventory_len = inventory_size * Self::U64_PER_INVENTORY + 1;
         // inventory_size, an u64 for the first layer index, and Self::U64_PER_SUBINVENTORY for the sub layer
         let mut inventory = Vec::with_capacity(inventory_len);
         // scan the bitvec and fill the first layer of the inventory
         let mut number_of_ones = 0;
         let mut next_quantum = 0;
-        for (i, word) in bitvec.as_ref().iter().copied().enumerate() {
+        'outer: for (i, word) in bitvec.as_ref().iter().copied().map(|x| !x).enumerate() {
             let ones_in_word = word.count_ones() as u64;
+            //if i == bitvec.len() - 1 {}
+            //dbg!(i, word, number_of_ones, ones_in_word, next_quantum);
             // skip the word if we can
-            while number_of_ones + ones_in_word > next_quantum {
+            while (number_of_ones + ones_in_word).min(num_zeros as u64) > next_quantum {
                 let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
                 let index = (i * u64::BITS as usize) + in_word_index;
 
@@ -86,12 +80,15 @@ impl<
                 inventory.resize(inventory.len() + Self::U64_PER_SUBINVENTORY, 0);
 
                 next_quantum += Self::ONES_PER_INVENTORY as u64;
+                if next_quantum >= num_zeros as u64 {
+                    break 'outer;
+                }
             }
             number_of_ones += ones_in_word;
         }
         // in the last inventory write the number of bits
         inventory.push(BitLength::len(&bitvec) as u64);
-        assert_eq!(inventory_len, inventory.len());
+        debug_assert_eq!(inventory_len, inventory.len());
         // build the index (in parallel if rayon enabled)
         let iter = 0..inventory_size;
         //#[cfg(feature = "rayon")]
@@ -113,32 +110,19 @@ impl<
 
             // cleanup the lower bits
             let bit_idx = start_bit_idx % u64::BITS as u64;
-            let mut word = (bitvec.as_ref()[word_idx as usize] >> bit_idx) << bit_idx;
+            let mut word = !(bitvec.as_ref()[word_idx as usize]) >> bit_idx << bit_idx;
             // compute the global number of ones
             let mut number_of_ones = inventory_idx * Self::ONES_PER_INVENTORY;
             // and what's the next bit rank which index should log in the sub
             // inventory (the first subinventory element is always 0)
             let mut next_quantum = number_of_ones;
-
             let quantum;
 
-            match span {
-                0..=256 => {
-                    quantum = Self::ONES_PER_SUB8;
-                    inventory[start_idx] |= Self::SUB8 << 62;
-                }
-                257..=65536 => {
-                    quantum = Self::ONES_PER_SUB16;
-                    inventory[start_idx] |= Self::SUB16 << 62;
-                }
-                65537..=4294967296 => {
-                    quantum = Self::ONES_PER_SUB32;
-                    inventory[start_idx] |= Self::SUB32 << 62;
-                }
-                _ => {
-                    quantum = Self::ONES_PER_SUB64;
-                    inventory[start_idx] |= Self::SUB64 << 62;
-                }
+            if span <= u16::MAX as u64 {
+                quantum = Self::ONES_PER_SUB16;
+            } else {
+                quantum = Self::ONES_PER_SUB64;
+                inventory[start_idx] |= 1_u64 << 63;
             }
 
             if quantum as u64 <= end_bit_idx {
@@ -153,7 +137,7 @@ impl<
 
                     // if the quantum is in this word, write it in the subinventory
                     // this can happen multiple times if the quantum is small
-                    while number_of_ones + ones_in_word > next_quantum {
+                    while (number_of_ones + ones_in_word).min(num_zeros) > next_quantum {
                         debug_assert!(next_quantum <= end_bit_idx as _);
                         // find the quantum bit in the word
                         let in_word_index = word.select_in_word(next_quantum - number_of_ones);
@@ -163,27 +147,14 @@ impl<
                         // from the start of the subinventory
                         let sub_offset = bit_index - start_bit_idx;
 
-                        match span {
-                            0..=256 => {
-                                let subinventory: &mut [u8] =
-                                    unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
-                                subinventory[subinventory_idx] = sub_offset as u8;
-                            }
-                            257..=65536 => {
-                                let subinventory: &mut [u16] =
-                                    unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
-                                subinventory[subinventory_idx] = sub_offset as u16;
-                            }
-                            65537..=4294967296 => {
-                                let subinventory: &mut [u32] =
-                                    unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
-                                subinventory[subinventory_idx] = sub_offset as u32;
-                            }
-                            _ => {
-                                inventory[start_idx + 1 + subinventory_idx] = sub_offset;
-                            }
+                        if span < u16::MAX as u64 {
+                            let subinventory: &mut [u16] =
+                                unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
+
+                            subinventory[subinventory_idx] = sub_offset as u16;
+                        } else {
+                            inventory[start_idx + 1 + subinventory_idx] = sub_offset;
                         }
-                        // write the offset in the subinventory
 
                         // update the subinventory index and the next quantum
                         subinventory_idx += 1;
@@ -199,7 +170,7 @@ impl<
                     }
 
                     // read the next word
-                    word = bitvec.as_ref()[word_idx as usize];
+                    word = !bitvec.as_ref()[word_idx as usize];
                 }
             }
         });
@@ -213,14 +184,14 @@ impl<
 
 /// Provide the hint to the underlying structure
 impl<
-        B: SelectHinted,
+        B: SelectZeroHinted + BitLength,
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > Select for SimpleSelectHalf<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SelectZero for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
-    unsafe fn select_unchecked(&self, rank: usize) -> usize {
+    unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
         // find the index of the first level inventory
         let inventory_index = rank / Self::ONES_PER_INVENTORY;
         // find the index of the second level inventory
@@ -236,68 +207,50 @@ impl<
             .get_unchecked(start_idx + 1..start_idx + 1 + Self::U64_PER_SUBINVENTORY);
 
         // if the inventory_rank is positive, the subranks are u16s otherwise they are u64s
-        let (pos, residual) = match inventory_rank >> 62 {
-            Self::SUB8 => {
-                let (_pre, u8s, _post) = u64s.align_to::<u8>();
-                (
-                    (inventory_rank & Self::INVENTORY_MASK)
-                        + u8s[subrank / Self::ONES_PER_SUB8] as u64,
-                    subrank % Self::ONES_PER_SUB8,
-                )
-            }
-            Self::SUB16 => {
-                let (_pre, u16s, _post) = u64s.align_to::<u16>();
-                (
-                    (inventory_rank & Self::INVENTORY_MASK)
-                        + u16s[subrank / Self::ONES_PER_SUB16] as u64,
-                    subrank % Self::ONES_PER_SUB16,
-                )
-            }
-            Self::SUB32 => {
-                let (_pre, u32s, _post) = u64s.align_to::<u32>();
-                (
-                    (inventory_rank & Self::INVENTORY_MASK)
-                        + u32s[subrank / Self::ONES_PER_SUB32] as u64,
-                    subrank % Self::ONES_PER_SUB32,
-                )
-            }
-            _ => (
+        let (pos, residual) = if inventory_rank as isize >= 0 {
+            let (_pre, u16s, _post) = u64s.align_to::<u16>();
+            (
+                inventory_rank + u16s[subrank / Self::ONES_PER_SUB16] as u64,
+                subrank % Self::ONES_PER_SUB16,
+            )
+        } else {
+            (
                 (inventory_rank & Self::INVENTORY_MASK) + u64s[subrank / Self::ONES_PER_SUB64],
                 subrank % Self::ONES_PER_SUB64,
-            ),
+            )
         };
 
         // linear scan to finish the search
         self.bits
-            .select_hinted_unchecked(rank, pos as usize, rank - residual)
+            .select_zero_hinted_unchecked(rank, pos as usize, rank - residual)
     }
 }
 
-/// If the underlying implementation has select zero, forward the methods.
+/// If the underlying implementation has select, forward the methods.
 impl<
-        B: SelectHinted + SelectZero,
+        B: SelectZeroHinted + Select,
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectZero for SimpleSelectHalf<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > Select for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
-    fn select_zero(&self, rank: usize) -> Option<usize> {
-        self.bits.select_zero(rank)
+    fn select(&self, rank: usize) -> Option<usize> {
+        self.bits.select(rank)
     }
     #[inline(always)]
-    unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
-        self.bits.select_zero_unchecked(rank)
+    unsafe fn select_unchecked(&self, rank: usize) -> usize {
+        self.bits.select_unchecked(rank)
     }
 }
 
 /// If the underlying implementation has BitLength, forward the methods.
 impl<
-        B: SelectHinted + BitLength,
+        B: SelectZeroHinted + BitLength,
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitLength for SimpleSelectHalf<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > BitLength for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -307,11 +260,11 @@ impl<
 
 /// If the underlying implementation has BitCount, forward the methods.
 impl<
-        B: SelectHinted + BitCount,
+        B: SelectZeroHinted + BitCount,
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitCount for SimpleSelectHalf<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > BitCount for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     fn count(&self) -> usize {
@@ -321,12 +274,12 @@ impl<
 
 /// If the underlying implementation has AsRef<[usize]>, forward the methods.
 impl<
-        B: SelectHinted + AsRef<[usize]>,
+        B: SelectZeroHinted + AsRef<[usize]>,
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > AsRef<[usize]>
-    for SimpleSelectHalf<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     fn as_ref(&self) -> &[usize] {
         self.bits.as_ref()
@@ -334,8 +287,8 @@ impl<
 }
 
 /// Forget the index.
-impl<B: SelectHinted, T, const QUANTUM_LOG2: usize> ConvertTo<B>
-    for SimpleSelectHalf<B, T, QUANTUM_LOG2>
+impl<B: SelectZeroHinted, T, const QUANTUM_LOG2: usize> ConvertTo<B>
+    for SelectZeroFixed2<B, T, QUANTUM_LOG2>
 where
     T: AsRef<[u64]>,
 {
@@ -346,11 +299,11 @@ where
 }
 
 /// Create and add a quantum index.
-impl<B: SelectHinted + AsRef<[usize]> + BitLength, const QUANTUM_LOG2: usize>
-    ConvertTo<SimpleSelectHalf<B, Vec<u64>, QUANTUM_LOG2>> for B
+impl<B: SelectZeroHinted + AsRef<[usize]> + BitLength, const QUANTUM_LOG2: usize>
+    ConvertTo<SelectZeroFixed2<B, Vec<u64>, QUANTUM_LOG2>> for B
 {
     #[inline(always)]
-    fn convert_to(self) -> Result<SimpleSelectHalf<B, Vec<u64>, QUANTUM_LOG2>> {
-        Ok(SimpleSelectHalf::new(self))
+    fn convert_to(self) -> Result<SelectZeroFixed2<B, Vec<u64>, QUANTUM_LOG2>> {
+        Ok(SelectZeroFixed2::new(self))
     }
 }

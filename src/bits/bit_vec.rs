@@ -90,6 +90,10 @@ impl BitVec<Vec<usize>> {
         }
     }
 
+    pub fn capacity(&self) -> usize {
+        self.data.capacity() * BITS
+    }
+
     pub fn push(&mut self, b: bool) {
         if self.data.len() * usize::BITS as usize == self.len {
             self.data.push(0);
@@ -283,6 +287,20 @@ impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
             *data.get_unchecked_mut(word_index) |= 1 << bit_index;
         } else {
             *data.get_unchecked_mut(word_index) &= !(1 << bit_index);
+        }
+    }
+
+    pub fn fill(&mut self, value: bool) {
+        let data: &mut [usize] = self.data.as_mut();
+        if value {
+            let end = self.len / BITS;
+            let residual = self.len % BITS;
+            data[0..end].fill(!0);
+            if residual != 0 {
+                data[end] = !0 >> (BITS - residual);
+            }
+        } else {
+            data[0..self.len.div_ceil(BITS)].fill(0);
         }
     }
 }
