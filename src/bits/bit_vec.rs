@@ -40,14 +40,14 @@ use crate::{prelude::ConvertTo, traits::rank_sel::*};
 
 const BITS: usize = usize::BITS as usize;
 
-#[derive(Epserde, Debug)]
+#[derive(Epserde, Debug, Clone)]
 /// A bit vector.
 pub struct BitVec<B = Vec<usize>> {
     data: B,
     len: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A thread-safe bit vector.
 pub struct AtomicBitVec<B = Vec<AtomicUsize>> {
     data: B,
@@ -303,6 +303,16 @@ impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
             data[0..self.len.div_ceil(BITS)].fill(0);
         }
     }
+
+    pub fn flip(&mut self) {
+        let data: &mut [usize] = self.data.as_mut();
+        let end = self.len / BITS;
+        let residual = self.len % BITS;
+        data[0..end].iter_mut().for_each(|x| *x ^= !0);
+        if residual != 0 {
+            data[end] ^= (1 << residual) - 1;
+        }
+    }
 }
 
 impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
@@ -335,6 +345,32 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
         } else {
             data.get_unchecked(word_index)
                 .fetch_and(!(1 << bit_index), order);
+        }
+    }
+
+    pub fn fill(&mut self, value: bool, order: Ordering) {
+        let data: &[AtomicUsize] = self.data.as_ref();
+        if value {
+            let end = self.len / BITS;
+            let residual = self.len % BITS;
+            data[0..end].iter().for_each(|x| x.store(!0, order));
+            if residual != 0 {
+                data[end].store(!0 >> (BITS - residual), order);
+            }
+        } else {
+            data[0..self.len.div_ceil(BITS)]
+                .iter()
+                .for_each(|x| x.store(0, order));
+        }
+    }
+
+    pub fn flip(&mut self, order: Ordering) {
+        let data: &[AtomicUsize] = self.data.as_ref();
+        let end = self.len / BITS;
+        let residual = self.len % BITS;
+        data[0..end].iter().for_each(|x| _ = x.fetch_xor(!0, order));
+        if residual != 0 {
+            data[end].fetch_xor((1 << residual) - 1, order);
         }
     }
 }
@@ -722,7 +758,6 @@ where
     }
 }
 
-/// Needed so that the sparse index can build the ones.
 impl<B: AsRef<[usize]>> AsRef<[usize]> for CountBitVec<B> {
     #[inline(always)]
     fn as_ref(&self) -> &[usize] {
@@ -730,10 +765,16 @@ impl<B: AsRef<[usize]>> AsRef<[usize]> for CountBitVec<B> {
     }
 }
 
-/// Needed so that the sparse index can build the ones.
 impl<B: AsRef<[usize]>> AsRef<[usize]> for BitVec<B> {
     #[inline(always)]
     fn as_ref(&self) -> &[usize] {
+        self.data.as_ref()
+    }
+}
+
+impl<B: AsRef<[AtomicUsize]>> AsRef<[AtomicUsize]> for AtomicBitVec<B> {
+    #[inline(always)]
+    fn as_ref(&self) -> &[AtomicUsize] {
         self.data.as_ref()
     }
 }
