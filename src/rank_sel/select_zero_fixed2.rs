@@ -49,7 +49,7 @@ impl<
 }
 
 impl<
-        B: SelectZeroHinted + AsRef<[usize]> + BitLength,
+        B: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > SelectZeroFixed2<B, Vec<u64>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
@@ -181,7 +181,7 @@ impl<
 
 /// Provide the hint to the underlying structure.
 impl<
-        B: SelectZeroHinted + BitLength,
+        B: SelectZeroHinted + BitLength + BitCount,
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
@@ -234,7 +234,7 @@ impl<B: SelectZeroHinted, const QUANTUM_LOG2: usize> ConvertTo<B>
 }
 
 /// Create and add a selection structure.
-impl<B: SelectZeroHinted + AsRef<[usize]> + BitLength, const QUANTUM_LOG2: usize>
+impl<B: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>, const QUANTUM_LOG2: usize>
     ConvertTo<SelectZeroFixed2<B, Vec<u64>, QUANTUM_LOG2>> for B
 {
     #[inline(always)]

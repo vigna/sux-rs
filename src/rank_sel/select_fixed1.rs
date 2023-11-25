@@ -83,7 +83,7 @@ impl<
 }
 
 /// Provide the hint to the underlying structure
-impl<B: SelectHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> Select
+impl<B: SelectHinted + BitCount, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> Select
     for SelectFixed1<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
@@ -109,7 +109,7 @@ where
 }
 
 /// Create and add a selection structure.
-impl<B: SelectHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
+impl<B: SelectHinted + BitCount + AsRef<[usize]>, const QUANTUM_LOG2: usize>
     ConvertTo<SelectFixed1<B, Vec<usize>, QUANTUM_LOG2>> for B
 {
     #[inline(always)]
@@ -130,7 +130,7 @@ impl<B: SelectHinted + BitLength, O: BitFieldSlice<usize>, const QUANTUM_LOG2: u
 }
 
 /// Forward [`BitCount`] to the underlying implementation.
-impl<B: SelectHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitCount
+impl<B: SelectHinted + BitCount, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitCount
     for SelectFixed1<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]

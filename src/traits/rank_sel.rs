@@ -103,7 +103,7 @@ pub trait SelectZero: BitLength + BitCount {
 /// indices of different kind. For example,
 /// [`SelectFixed1`](crate::rank_sel::SelectFixed1) adds hints
 /// for the positions of ones at fixed intervals.
-pub trait SelectHinted: Select {
+pub trait SelectHinted {
     /// Select the one of given rank, provided the position of a preceding one
     /// and its rank.
     ///
@@ -126,7 +126,7 @@ pub trait SelectHinted: Select {
 /// indices of different kind. For example,
 /// [`SelectZeroFixed1`](crate::rank_sel::SelectZeroFixed1) adds hints
 /// for the positions of zeros at regular intervals.
-pub trait SelectZeroHinted: SelectZero {
+pub trait SelectZeroHinted {
     /// Select the zero of given rank, provided the position of a preceding zero
     /// and its rank.
     ///
