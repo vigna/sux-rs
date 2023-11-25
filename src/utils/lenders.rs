@@ -15,11 +15,10 @@ Some data structures in this crate have two features in common:
 
 For this kind of structures, we provide a [`RewindableIOLender`] trait, which is a
 [`Lender`] that can be rewound to the beginning. Rewindability solves the first
-problem while lending solves the second problem. For example, [`LineLender`] returns
-lines from a [`BufRead`] as `&str`, but lends an internal buffer, rather than allocating
-a new string for each line.
+problem while lending solves the second problem.
 
-The basic implementation for strings is [`LineLender`], which lends lines from a [`BufRead`].
+The basic implementation for strings is [`LineLender`], which lends lines from a [`BufRead`] as a
+`&str`, but lends an internal buffer, rather than allocating a new string for each line.
 Convenience constructors are provided for [`File`] and [`Path`]. Analogously, we provide
 [`ZstdLineLender`], which lends lines from a zstd-compressed [`Read`], and [`GzipLineLender`],
 which lends lines from a gzip-compressed [`Read`].
