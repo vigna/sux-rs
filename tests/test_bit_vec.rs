@@ -129,6 +129,30 @@ fn test_resize() {
 }
 
 #[test]
+fn test_fill() {
+    for size in [0, 1, 64, 65, 100, 127, 128, 1000] {
+        let mut c = BitVec::new(size);
+        dbg!(size);
+        c.fill(true);
+        for (i, b) in c.into_iter().enumerate() {
+            assert_eq!(b, true, "{}", i);
+        }
+
+        if c.len() != c.capacity() {
+            assert_eq!(
+                c.as_ref()[size / usize::BITS as usize] & 1 << size % usize::BITS as usize,
+                0
+            );
+        }
+
+        c.fill(false);
+        for (i, b) in c.into_iter().enumerate() {
+            assert_eq!(b, false, "{}", i);
+        }
+    }
+}
+
+#[test]
 fn test_epserde() {
     let mut rng = SmallRng::seed_from_u64(0);
     let mut b = BitVec::new(200);

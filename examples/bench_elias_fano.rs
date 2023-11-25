@@ -54,9 +54,9 @@ fn main() {
         elias_fano_builder.push(*value).unwrap();
     }
     // Add an index on ones
-    let elias_fano_q: EliasFano<QuantumIndex> = elias_fano_builder.build().convert_to().unwrap();
+    let elias_fano_q: EliasFano<SelectFixed1> = elias_fano_builder.build().convert_to().unwrap();
     // Add an index on zeros
-    let elias_fano_q: EliasFano<QuantumZeroIndex<QuantumIndex>> =
+    let elias_fano_q: EliasFano<SelectZeroFixed1<SelectFixed1>> =
         elias_fano_q.convert_to().unwrap();
 
     let mut elias_fano_builder = EliasFanoBuilder::new(args.n, args.u);
@@ -64,8 +64,7 @@ fn main() {
         elias_fano_builder.push(*value).unwrap();
     }
     // Add an index on ones
-    let elias_fano_s: EliasFano<SimpleSelectHalf> =
-        elias_fano_builder.build().convert_to().unwrap();
+    let elias_fano_s: EliasFano<SelectFixed2> = elias_fano_builder.build().convert_to().unwrap();
 
     let mut ranks = Vec::with_capacity(args.t);
     for _ in 0..args.t {
