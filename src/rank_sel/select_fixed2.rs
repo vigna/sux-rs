@@ -7,7 +7,7 @@
 
 use crate::{bits::CountBitVec, traits::*};
 use anyhow::Result;
-use common_traits::{SelectInWord, Sequence};
+use common_traits::SelectInWord;
 use epserde::*;
 
 /// Two layer index (with interleaved layers) optimized for
