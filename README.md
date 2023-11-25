@@ -3,7 +3,7 @@
 A pure Rust implementation of succinct and compressed data structures.
 
 This crate is a work in progress: 
-part of it  is a port from [Sux](https://sux.di.unimi.it/) and from [the DSI Utilities](https://dsiutils.di.unimi.it/);
+part of it is a port from [Sux](https://sux.di.unimi.it/) and from [the DSI Utilities](https://dsiutils.di.unimi.it/);
 new data structures will be added over time. Presently,
 we provide:
 
@@ -16,8 +16,8 @@ we provide:
 - an implementation of list of [strings compressed by rear-coded prefix omission](crate::dict::rear_coded_list::RearCodedList);
 - an implementation of [static functions](crate::func::VFunc).
 
-The focus is on efficiency (in particular, there are unchecked version of all methods) and
-on flexible composability (e.g., you can fine tune your Elias–Fano instance choosing different
+The focus is on efficiency (in particular, there are unchecked versions of all methods) and
+on flexible composability (e.g., you can fine-tune your Elias–Fano instance by choosing different
 types of internal indices, and whether to index zeros or ones).
 
 ## ε-serde support
