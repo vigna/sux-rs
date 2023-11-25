@@ -7,10 +7,8 @@
 
 use crate::{bits::CountBitVec, traits::*};
 use anyhow::Result;
-use common_traits::SelectInWord;
+use common_traits::{SelectInWord, Sequence};
 use epserde::*;
-//#[cfg(feature = "rayon")]
-//use rayon::prelude::*;
 
 /// Two layer index (with interleaved layers) optimized for
 /// a bitmap with approximately half ones and half zeros.
@@ -82,10 +80,8 @@ impl<
         // in the last inventory write the number of bits
         inventory.push(BitLength::len(&bitvec) as u64);
         assert_eq!(inventory_len, inventory.len());
-        // build the index (in parallel if rayon enabled)
+        // build the index
         let iter = 0..inventory_size;
-        //#[cfg(feature = "rayon")]
-        //let iter = iter.into_par_iter();
 
         // fill the second layer of the index
         iter.for_each(|inventory_idx| {
@@ -118,53 +114,55 @@ impl<
                 inventory[start_idx] |= 1_u64 << 63;
             }
 
-            if quantum as u64 <= end_bit_idx {
-                let end_word_idx = (end_bit_idx - quantum as u64 + 1).div_ceil(u64::BITS as u64);
+            let end_word_idx = end_bit_idx.div_ceil(u64::BITS as u64);
 
-                // the first subinventory element is always 0
-                let mut subinventory_idx = 1;
-                next_quantum += quantum;
+            // the first subinventory element is always 0
+            let mut subinventory_idx = 1;
+            next_quantum += quantum;
 
-                loop {
-                    let ones_in_word = word.count_ones() as usize;
+            'outer: loop {
+                let ones_in_word = word.count_ones() as usize;
 
-                    // if the quantum is in this word, write it in the subinventory
-                    // this can happen multiple times if the quantum is small
-                    while number_of_ones + ones_in_word > next_quantum {
-                        debug_assert!(next_quantum <= end_bit_idx as _);
-                        // find the quantum bit in the word
-                        let in_word_index = word.select_in_word(next_quantum - number_of_ones);
-                        // compute the global index of the quantum bit in the bitvec
-                        let bit_index = (word_idx * u64::BITS as u64) + in_word_index as u64;
-                        // compute the offset of the quantum bit
-                        // from the start of the subinventory
-                        let sub_offset = bit_index - start_bit_idx;
+                // if the quantum is in this word, write it in the subinventory
+                // this can happen multiple times if the quantum is small
+                while number_of_ones + ones_in_word > next_quantum {
+                    debug_assert!(next_quantum <= end_bit_idx as _);
+                    // find the quantum bit in the word
+                    let in_word_index = word.select_in_word(next_quantum - number_of_ones);
+                    // compute the global index of the quantum bit in the bitvec
+                    let bit_index = (word_idx * u64::BITS as u64) + in_word_index as u64;
+                    // compute the offset of the quantum bit
+                    // from the start of the subinventory
+                    let sub_offset = bit_index - start_bit_idx;
 
-                        if span < u16::MAX as u64 {
-                            let subinventory: &mut [u16] =
-                                unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
+                    if span <= u16::MAX as u64 {
+                        let subinventory: &mut [u16] =
+                            unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
 
-                            subinventory[subinventory_idx] = sub_offset as u16;
-                        } else {
-                            inventory[start_idx + 1 + subinventory_idx] = sub_offset;
-                        }
-
-                        // update the subinventory index and the next quantum
-                        subinventory_idx += 1;
-                        next_quantum += quantum;
+                        subinventory[subinventory_idx] = sub_offset as u16;
+                    } else {
+                        inventory[start_idx + 1 + subinventory_idx] = sub_offset;
                     }
 
-                    // we are done with the word, so update the number of ones
-                    number_of_ones += ones_in_word;
-                    // move to the next word and boundcheck
-                    word_idx += 1;
-                    if word_idx == end_word_idx {
-                        break;
+                    // update the subinventory index and the next quantum
+                    subinventory_idx += 1;
+                    if subinventory_idx == (1 << LOG2_ONES_PER_INVENTORY) / quantum {
+                        break 'outer;
                     }
 
-                    // read the next word
-                    word = bitvec.as_ref()[word_idx as usize];
+                    next_quantum += quantum;
                 }
+
+                // we are done with the word, so update the number of ones
+                number_of_ones += ones_in_word;
+                // move to the next word and boundcheck
+                word_idx += 1;
+                if word_idx == end_word_idx {
+                    break;
+                }
+
+                // read the next word
+                word = bitvec.as_ref()[word_idx as usize];
             }
         });
 
@@ -203,12 +201,13 @@ impl<
         let (pos, residual) = if inventory_rank as isize >= 0 {
             let (_pre, u16s, _post) = u64s.align_to::<u16>();
             (
-                inventory_rank + u16s[subrank / Self::ONES_PER_SUB16] as u64,
+                inventory_rank + *u16s.get_unchecked(subrank / Self::ONES_PER_SUB16) as u64,
                 subrank % Self::ONES_PER_SUB16,
             )
         } else {
             (
-                (inventory_rank & Self::INVENTORY_MASK) + u64s[subrank / Self::ONES_PER_SUB64],
+                (inventory_rank & Self::INVENTORY_MASK)
+                    + u64s.get_unchecked(subrank / Self::ONES_PER_SUB64),
                 subrank % Self::ONES_PER_SUB64,
             )
         };
@@ -219,7 +218,57 @@ impl<
     }
 }
 
-/// If the underlying implementation has select zero, forward the methods.
+/// Forget the index.
+impl<B: SelectHinted, T, const QUANTUM_LOG2: usize> ConvertTo<B>
+    for SelectFixed2<B, T, QUANTUM_LOG2>
+where
+    T: AsRef<[u64]>,
+{
+    #[inline(always)]
+    fn convert_to(self) -> Result<B> {
+        Ok(self.bits)
+    }
+}
+
+/// Create and add a selection structure.
+impl<B: SelectHinted + AsRef<[usize]> + BitLength, const QUANTUM_LOG2: usize>
+    ConvertTo<SelectFixed2<B, Vec<u64>, QUANTUM_LOG2>> for B
+{
+    #[inline(always)]
+    fn convert_to(self) -> Result<SelectFixed2<B, Vec<u64>, QUANTUM_LOG2>> {
+        Ok(SelectFixed2::new(self))
+    }
+}
+
+/// Forward [`BitLength`] to the underlying implementation.
+impl<
+        B: SelectHinted + BitLength,
+        I: AsRef<[u64]>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_U64_PER_SUBINVENTORY: usize,
+    > BitLength for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+{
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.bits.len()
+    }
+}
+
+/// Forward [`BitCount`] to the underlying implementation.
+impl<
+        B: SelectHinted + BitCount,
+        I: AsRef<[u64]>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_U64_PER_SUBINVENTORY: usize,
+    > BitCount for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+{
+    #[inline(always)]
+    fn count(&self) -> usize {
+        self.bits.count()
+    }
+}
+
+/// Forward [`SelectZero`] to the underlying implementation.
 impl<
         B: SelectHinted + SelectZero,
         I: AsRef<[u64]>,
@@ -237,35 +286,32 @@ impl<
     }
 }
 
-/// If the underlying implementation has BitLength, forward the methods.
+/// Forward [`SelectHinted`] to the underlying implementation.
 impl<
-        B: SelectHinted + BitLength,
+        B: SelectHinted + SelectZeroHinted,
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitLength for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SelectZeroHinted for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
-    fn len(&self) -> usize {
-        self.bits.len()
+    unsafe fn select_zero_hinted_unchecked(
+        &self,
+        rank: usize,
+        pos: usize,
+        rank_at_pos: usize,
+    ) -> usize {
+        self.bits
+            .select_zero_hinted_unchecked(rank, pos, rank_at_pos)
+    }
+
+    #[inline(always)]
+    fn select_zero_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
+        self.bits.select_zero_hinted(rank, pos, rank_at_pos)
     }
 }
 
-/// If the underlying implementation has BitCount, forward the methods.
-impl<
-        B: SelectHinted + BitCount,
-        I: AsRef<[u64]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitCount for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    #[inline(always)]
-    fn count(&self) -> usize {
-        self.bits.count()
-    }
-}
-
-/// If the underlying implementation has AsRef<[usize]>, forward the methods.
+/// Forward `AsRef<[usize]>` to the underlying implementation.
 impl<
         B: SelectHinted + AsRef<[usize]>,
         I: AsRef<[u64]>,
@@ -275,27 +321,5 @@ impl<
 {
     fn as_ref(&self) -> &[usize] {
         self.bits.as_ref()
-    }
-}
-
-/// Forget the index.
-impl<B: SelectHinted, T, const QUANTUM_LOG2: usize> ConvertTo<B>
-    for SelectFixed2<B, T, QUANTUM_LOG2>
-where
-    T: AsRef<[u64]>,
-{
-    #[inline(always)]
-    fn convert_to(self) -> Result<B> {
-        Ok(self.bits)
-    }
-}
-
-/// Create and add a quantum index.
-impl<B: SelectHinted + AsRef<[usize]> + BitLength, const QUANTUM_LOG2: usize>
-    ConvertTo<SelectFixed2<B, Vec<u64>, QUANTUM_LOG2>> for B
-{
-    #[inline(always)]
-    fn convert_to(self) -> Result<SelectFixed2<B, Vec<u64>, QUANTUM_LOG2>> {
-        Ok(SelectFixed2::new(self))
     }
 }

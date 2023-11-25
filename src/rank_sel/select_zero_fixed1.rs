@@ -40,6 +40,23 @@ pub struct SelectZeroFixed1<
     _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,
 }
 
+impl<B: SelectZeroHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
+    SelectZeroFixed1<B, Vec<usize>, QUANTUM_LOG2>
+{
+    pub fn new(bitvec: B) -> Result<Self> {
+        let mut res = SelectZeroFixed1 {
+            zeros: vec![
+                0;
+                (bitvec.len() - bitvec.count() + (1 << QUANTUM_LOG2) - 1) >> QUANTUM_LOG2
+            ],
+            bits: bitvec,
+            _marker: core::marker::PhantomData,
+        };
+        res.build_zeros()?;
+        Ok(res)
+    }
+}
+
 impl<
         B: SelectZeroHinted + AsRef<[usize]>,
         O: BitFieldSlice<usize> + BitFieldSliceMut<usize>,
@@ -72,7 +89,7 @@ impl<
     }
 }
 
-/// Provide the hint to the underlying structure
+/// Provide the hint to the underlying structure.
 impl<B: SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> SelectZero
     for SelectZeroFixed1<B, O, QUANTUM_LOG2>
 {
@@ -87,7 +104,47 @@ impl<B: SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> Se
     }
 }
 
-/// If the underlying implementation has select, forward the methods
+/// Forget the index.
+impl<B: SelectZeroHinted, const QUANTUM_LOG2: usize> ConvertTo<B>
+    for SelectZeroFixed1<B, Vec<usize>, QUANTUM_LOG2>
+{
+    #[inline(always)]
+    fn convert_to(self) -> Result<B> {
+        Ok(self.bits)
+    }
+}
+
+/// Create and add a selection structure.
+impl<B: SelectZeroHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
+    ConvertTo<SelectZeroFixed1<B, Vec<usize>, QUANTUM_LOG2>> for B
+{
+    #[inline(always)]
+    fn convert_to(self) -> Result<SelectZeroFixed1<B, Vec<usize>, QUANTUM_LOG2>> {
+        SelectZeroFixed1::new(self)
+    }
+}
+
+/// Forward [`BitLength`] to the underlying implementation.
+impl<B: SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitLength
+    for SelectZeroFixed1<B, O, QUANTUM_LOG2>
+{
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.bits.len()
+    }
+}
+
+/// Forward [`BitCount`] to the underlying implementation.
+impl<B: SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitCount
+    for SelectZeroFixed1<B, O, QUANTUM_LOG2>
+{
+    #[inline(always)]
+    fn count(&self) -> usize {
+        self.bits.count()
+    }
+}
+
+/// Forward [`Select`] to the underlying implementation.
 impl<B: SelectZeroHinted + Select, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> Select
     for SelectZeroFixed1<B, O, QUANTUM_LOG2>
 {
@@ -101,50 +158,7 @@ impl<B: SelectZeroHinted + Select, O: BitFieldSlice<usize>, const QUANTUM_LOG2: 
     }
 }
 
-impl<B: SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitLength
-    for SelectZeroFixed1<B, O, QUANTUM_LOG2>
-{
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.bits.len()
-    }
-}
-
-impl<B: SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitCount
-    for SelectZeroFixed1<B, O, QUANTUM_LOG2>
-{
-    #[inline(always)]
-    fn count(&self) -> usize {
-        self.bits.count()
-    }
-}
-
-/// Forget the index.
-impl<B: SelectZeroHinted, const QUANTUM_LOG2: usize> ConvertTo<B>
-    for SelectZeroFixed1<B, Vec<usize>, QUANTUM_LOG2>
-{
-    #[inline(always)]
-    fn convert_to(self) -> Result<B> {
-        Ok(self.bits)
-    }
-}
-
-/// Create and add a quantum index.
-impl<B: SelectZeroHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
-    ConvertTo<SelectZeroFixed1<B, Vec<usize>, QUANTUM_LOG2>> for B
-{
-    #[inline(always)]
-    fn convert_to(self) -> Result<SelectZeroFixed1<B, Vec<usize>, QUANTUM_LOG2>> {
-        let mut res = SelectZeroFixed1 {
-            zeros: vec![0; (self.len() - self.count() + (1 << QUANTUM_LOG2) - 1) >> QUANTUM_LOG2],
-            bits: self,
-            _marker: core::marker::PhantomData,
-        };
-        res.build_zeros()?;
-        Ok(res)
-    }
-}
-
+/// Forward `AsRef<[usize]>` to the underlying implementation.
 impl<B, O, const QUANTUM_LOG2: usize> AsRef<[usize]> for SelectZeroFixed1<B, O, QUANTUM_LOG2>
 where
     B: AsRef<[usize]> + SelectZeroHinted,
