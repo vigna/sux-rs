@@ -9,15 +9,30 @@
 
 /*!
 
-Implementation of the Elias–Fano representation of monotone sequences.
+Implementation of an [`IndexedDict`] using the Elias–Fano representation of monotone sequences.
 
-There are two ways to build an [`EliasFano`] structure: using
+There are two ways to build a base [`EliasFano`] structure: using
 an [`EliasFanoBuilder`] or an [`EliasFanoConcurrentBuilder`].
 
-The main trait implemented by [`EliasFano`] is [`IndexedDict`], which
-makes it possible to access its values with [`IndexedDict::get`].
+Once the base structure has been built, it is possible to enrich it with
+indices that will make operations faster. This is done by calling
+[`ConvertTo::convert_to`] towards the desired type. For example,
+```rust
+use sux::prelude::*;
+let mut efb = EliasFanoBuilder::new(2, 5);
+efb.push(0);
+efb.push(2);
+let ef = efb.build();
+// Add a selection structure for ones (accelerates get operations).
+let ef: EliasFano<SelectFixed2> =
+    ef.convert_to().unwrap();
+// Add also a selection structure for zeros (accelerates precedessor and successor).
+let ef: EliasFano<SelectZeroFixed2<SelectFixed2>> =
+    ef.convert_to().unwrap();
+```
 
- */
+*/
+
 use crate::prelude::*;
 use crate::traits::bit_field_slice::*;
 use anyhow::{bail, Result};
@@ -212,34 +227,6 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-/**
-Implementation of the Elias--Fano representation of monotone sequences.
-
-There are two ways to build an [`EliasFano`] structure: using
-an [`EliasFanoBuilder`] or an [`EliasFanoConcurrentBuilder`].
-
-Once the structure has been built, it is possible to enrich it with
-indices that will make operations faster. This is done by calling
-[ConvertTo::convert_to] towards the desired type. For example,
-```rust
-use sux::prelude::*;
-let mut efb = EliasFanoBuilder::new(2, 5);
-efb.push(0);
-efb.push(1);
-let ef = efb.build();
-// Add an index on the ones (accelerates get operations).
-let efo: EliasFano<QuantumIndex<CountBitVec>, BitFieldVec> =
-    ef.convert_to().unwrap();
-// Add also an index on the zeros  (accelerates precedessor and successor).
-let efoz: EliasFano<QuantumZeroIndex<QuantumIndex<CountBitVec>>, BitFieldVec> =
-    efo.convert_to().unwrap();
-```
-You have either of the indices, both, or none of them, but in the latter
-case all operations will be very slow, except iterating over the whole sequence.
-
-The main trait implemented is [`IndexedDict`], which
-makes it possible to access values with [`IndexedDict::get`].
- */
 impl<H, L> EliasFano<H, L> {
     /// # Safety
     /// No check is performed.
