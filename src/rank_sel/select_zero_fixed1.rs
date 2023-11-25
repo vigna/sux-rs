@@ -40,7 +40,7 @@ pub struct SelectZeroFixed1<
     _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,
 }
 
-impl<B: SelectZeroHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
+impl<B: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>, const QUANTUM_LOG2: usize>
     SelectZeroFixed1<B, Vec<usize>, QUANTUM_LOG2>
 {
     pub fn new(bitvec: B) -> Result<Self> {
@@ -58,7 +58,7 @@ impl<B: SelectZeroHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
 }
 
 impl<
-        B: SelectZeroHinted + AsRef<[usize]>,
+        B: SelectZeroHinted + BitLength + AsRef<[usize]>,
         O: BitFieldSlice<usize> + BitFieldSliceMut<usize>,
         const QUANTUM_LOG2: usize,
     > SelectZeroFixed1<B, O, QUANTUM_LOG2>
@@ -90,8 +90,11 @@ impl<
 }
 
 /// Provide the hint to the underlying structure.
-impl<B: SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> SelectZero
-    for SelectZeroFixed1<B, O, QUANTUM_LOG2>
+impl<
+        B: SelectZeroHinted + BitLength + BitCount,
+        O: BitFieldSlice<usize>,
+        const QUANTUM_LOG2: usize,
+    > SelectZero for SelectZeroFixed1<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
@@ -115,7 +118,7 @@ impl<B: SelectZeroHinted, const QUANTUM_LOG2: usize> ConvertTo<B>
 }
 
 /// Create and add a selection structure.
-impl<B: SelectZeroHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
+impl<B: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>, const QUANTUM_LOG2: usize>
     ConvertTo<SelectZeroFixed1<B, Vec<usize>, QUANTUM_LOG2>> for B
 {
     #[inline(always)]
@@ -125,7 +128,7 @@ impl<B: SelectZeroHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
 }
 
 /// Forward [`BitLength`] to the underlying implementation.
-impl<B: SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitLength
+impl<B: SelectZeroHinted + BitLength, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitLength
     for SelectZeroFixed1<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
@@ -135,7 +138,7 @@ impl<B: SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> Bi
 }
 
 /// Forward [`BitCount`] to the underlying implementation.
-impl<B: SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitCount
+impl<B: SelectZeroHinted + BitCount, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitCount
     for SelectZeroFixed1<B, O, QUANTUM_LOG2>
 {
     #[inline(always)]
