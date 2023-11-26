@@ -13,6 +13,7 @@ use crate::traits::bit_field_slice::BitFieldSliceMut;
 use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
+use mem_dbg::*;
 
 /// An index that records the position of the ones in a bit vector at a fixed
 /// set of positions.
@@ -29,7 +30,7 @@ use epserde::*;
 /// of [`EliasFano`](crate::dict::elias_fano::EliasFano) for an example of this approach.
 ///
 /// See [`SelectZeroFixed1`](crate::rank_sel::SelectZeroFixed1) for the same index for zeros.
-#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 pub struct SelectFixed1<
     B: SelectHinted = CountBitVec,
     O: BitFieldSlice<usize> = Vec<usize>,

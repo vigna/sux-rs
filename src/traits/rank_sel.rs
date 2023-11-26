@@ -61,7 +61,7 @@ pub trait RankZero: Rank {
 ///
 /// This trait is used to implement fast ranking by adding to bit vectors
 /// counters of different kind.
-pub trait RankHinted {
+pub trait RankHinted<const HINT_SIZE: usize> {
     /// Return the number of ones preceding the specified position,
     /// provided a preceding position and its associated rank.
     ///
