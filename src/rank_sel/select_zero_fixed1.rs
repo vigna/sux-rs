@@ -161,6 +161,32 @@ impl<B: SelectZeroHinted + Select, O: BitFieldSlice<usize>, const QUANTUM_LOG2: 
     }
 }
 
+/// Forward [`Rank`] to the underlying implementation.
+impl<B: SelectZeroHinted + Rank, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> Rank
+    for SelectZeroFixed1<B, O, QUANTUM_LOG2>
+{
+    fn rank(&self, pos: usize) -> usize {
+        self.bits.rank(pos)
+    }
+
+    unsafe fn rank_unchecked(&self, pos: usize) -> usize {
+        self.bits.rank_unchecked(pos)
+    }
+}
+
+/// Forward [`RankZero`] to the underlying implementation.
+impl<B: SelectZeroHinted + RankZero, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> RankZero
+    for SelectZeroFixed1<B, O, QUANTUM_LOG2>
+{
+    fn rank_zero(&self, pos: usize) -> usize {
+        self.bits.rank_zero(pos)
+    }
+
+    unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
+        self.bits.rank_zero_unchecked(pos)
+    }
+}
+
 /// Forward `AsRef<[usize]>` to the underlying implementation.
 impl<B, O, const QUANTUM_LOG2: usize> AsRef<[usize]> for SelectZeroFixed1<B, O, QUANTUM_LOG2>
 where

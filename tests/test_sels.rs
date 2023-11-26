@@ -37,7 +37,11 @@ fn test_select_fixed1() {
         }
         assert_eq!(simple.select(ones + 1), None);
     }
+}
 
+#[cfg(feature = "slow")]
+#[test]
+fn test_select_fixed1_slow() {
     for len in [6_000_000_000] {
         let mut bitvec = BitVec::new(len);
         let mut pos = vec![];
@@ -105,7 +109,11 @@ fn test_select_zero_fixed1() {
 
         assert_eq!(simple.select_zero(zeros + 1), None);
     }
+}
 
+#[cfg(feature = "slow")]
+#[test]
+fn test_select_zero_fixed1_slo() {
     for len in [6_000_000_000] {
         let mut bitvec = BitVec::new(len);
         bitvec.fill(true);
@@ -156,7 +164,11 @@ fn test_select_fixed2() {
         }
         assert_eq!(simple.select(ones + 1), None);
     }
+}
 
+#[cfg(feature = "slow")]
+#[test]
+fn test_select_fixed2_slow() {
     for len in [6_000_000_000] {
         let mut bitvec = BitVec::new(len);
         let mut pos = vec![];
@@ -221,7 +233,11 @@ fn test_select_zero_fixed2() {
 
         assert_eq!(simple.select_zero(zeros + 1), None);
     }
+}
 
+#[cfg(feature = "slow")]
+#[test]
+fn test_select_zero_fixed2_slow() {
     for len in [6_000_000_000] {
         let mut bitvec = BitVec::new(len);
         bitvec.fill(true);

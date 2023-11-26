@@ -45,6 +45,7 @@ arbitrary = { version = "1", features = ["derive"], optional=true }
 default = ["rayon"]
 fuzz = ["dep:arbitrary"]
 unaligned = []
+slow = []
 
 [profile.release] # Used for the examples
 opt-level = 3             # like --release

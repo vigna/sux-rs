@@ -289,6 +289,40 @@ impl<
     }
 }
 
+/// Forward [`Rank`] to the underlying implementation.
+impl<
+        B: SelectZeroHinted + Rank,
+        I: AsRef<[u64]>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_U64_PER_SUBINVENTORY: usize,
+    > Rank for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+{
+    fn rank(&self, pos: usize) -> usize {
+        self.bits.rank(pos)
+    }
+
+    unsafe fn rank_unchecked(&self, pos: usize) -> usize {
+        self.bits.rank_unchecked(pos)
+    }
+}
+
+/// Forward [`RankZero`] to the underlying implementation.
+impl<
+        B: SelectZeroHinted + RankZero,
+        I: AsRef<[u64]>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_U64_PER_SUBINVENTORY: usize,
+    > RankZero for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+{
+    fn rank_zero(&self, pos: usize) -> usize {
+        self.bits.rank_zero(pos)
+    }
+
+    unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
+        self.bits.rank_zero_unchecked(pos)
+    }
+}
+
 /// Forward `AsRef<[usize]>` to the underlying implementation.
 impl<
         B: SelectZeroHinted + AsRef<[usize]>,
