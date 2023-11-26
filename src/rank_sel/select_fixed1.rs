@@ -30,7 +30,7 @@ use mem_dbg::*;
 /// of [`EliasFano`](crate::dict::elias_fano::EliasFano) for an example of this approach.
 ///
 /// See [`SelectZeroFixed1`](crate::rank_sel::SelectZeroFixed1) for the same index for zeros.
-#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
+#[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SelectFixed1<
     B: SelectHinted = CountBitVec,
     O: BitFieldSlice<usize> = Vec<usize>,

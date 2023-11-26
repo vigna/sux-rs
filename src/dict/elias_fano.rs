@@ -183,7 +183,7 @@ impl EliasFanoConcurrentBuilder {
     }
 }
 
-#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash, MemDbg, MemSize)]
+#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 pub struct EliasFano<H = CountBitVec, L = BitFieldVec> {
     /// An upper bound to the values.
     u: usize,

@@ -48,7 +48,7 @@ pub struct BitVec<B = Vec<usize>> {
     len: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, MemDbg, MemSize)]
 /// A thread-safe bit vector.
 pub struct AtomicBitVec<B = Vec<AtomicUsize>> {
     data: B,
@@ -529,7 +529,7 @@ impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
 }
 
 /// An immutable bit vector with a constant-time implementation of [`BitCount`].
-#[derive(Epserde, Debug, MemDbg, MemSize)]
+#[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct CountBitVec<B = Vec<usize>> {
     data: B,
     len: usize,
