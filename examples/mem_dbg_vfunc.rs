@@ -28,10 +28,9 @@ fn main() -> Result<()> {
         .init()
         .unwrap();
 
-    let e =
-        <EliasFano<SelectZeroFixed2<SelectFixed2>>>::load_full(Args::parse().filename)?.as_ref();
+    let e = <VFunc<usize>>::load_full(Args::parse().filename)?;
 
-    println!("{}", e.mem_dbg(),);
+    e.mem_dbg()?;
 
     Ok(())
 }
