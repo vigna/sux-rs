@@ -19,6 +19,7 @@ use derive_setters::*;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
 use log::warn;
+use mem_dbg::*;
 use rayon::prelude::*;
 use rdst::*;
 use std::borrow::Cow;
@@ -186,7 +187,7 @@ and can be serialized using [ε-serde](`epserde`).
 
 */
 
-#[derive(Epserde, Debug, Default)]
+#[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFunc<
     T: ?Sized + ToSig,
     O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic = usize,

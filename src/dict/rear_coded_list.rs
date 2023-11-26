@@ -14,6 +14,7 @@ Immutable lists of strings compressed by prefix omission via rear coding.
 use crate::traits::IndexedDict;
 use epserde::*;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
+use mem_dbg::*;
 
 #[derive(Debug, Clone, Default)]
 /// Statistics of the encoded data.
@@ -56,7 +57,7 @@ without compression, wheres the other strings are encoded with the common prefix
 removed.
 
 */
-#[derive(Debug, Clone, Epserde)]
+#[derive(Debug, Clone, Epserde, MemDbg, MemSize)]
 pub struct RearCodedList<D: AsRef<[u8]> = Vec<u8>, P: AsRef<[usize]> = Vec<usize>> {
     /// The number of strings in a block; this value trades off compression for speed.
     k: usize,

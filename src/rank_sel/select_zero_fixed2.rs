@@ -9,13 +9,12 @@ use crate::{bits::CountBitVec, traits::*};
 use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
-//#[cfg(feature = "rayon")]
-//use rayon::prelude::*;
+use mem_dbg::*;
 
 /// Two layer index (with interleaved layers) optimized for
 /// a bitmap with approximately half ones and half zeros.
 /// This is meant for elias-fano high-bits.
-#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 pub struct SelectZeroFixed2<
     B: SelectZeroHinted = CountBitVec,
     I: AsRef<[u64]> = Vec<u64>,
@@ -86,10 +85,7 @@ impl<
         // in the last inventory write the number of bits
         inventory.push(BitLength::len(&bitvec) as u64);
         debug_assert_eq!(inventory_len, inventory.len());
-        // build the index (in parallel if rayon enabled)
         let iter = 0..inventory_size;
-        //#[cfg(feature = "rayon")]
-        //let iter = iter.into_par_iter();
 
         // fill the second layer of the index
         iter.for_each(|inventory_idx| {

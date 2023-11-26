@@ -29,6 +29,7 @@ use anyhow::Result;
 use common_traits::SelectInWord;
 use core::fmt;
 use epserde::*;
+use mem_dbg::*;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use std::{
@@ -40,7 +41,7 @@ use crate::{prelude::ConvertTo, traits::rank_sel::*};
 
 const BITS: usize = usize::BITS as usize;
 
-#[derive(Epserde, Debug, Clone)]
+#[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 /// A bit vector.
 pub struct BitVec<B = Vec<usize>> {
     data: B,
@@ -528,7 +529,7 @@ impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
 }
 
 /// An immutable bit vector with a constant-time implementation of [`BitCount`].
-#[derive(Epserde, Debug)]
+#[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct CountBitVec<B = Vec<usize>> {
     data: B,
     len: usize,

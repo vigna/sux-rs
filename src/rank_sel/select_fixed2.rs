@@ -9,11 +9,12 @@ use crate::{bits::CountBitVec, traits::*};
 use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
+use mem_dbg::*;
 
 /// Two layer index (with interleaved layers) optimized for
 /// a bitmap with approximately half ones and half zeros.
 /// This is meant for elias-fano high-bits.
-#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 pub struct SelectFixed2<
     B: SelectHinted = CountBitVec,
     I: AsRef<[u64]> = Vec<u64>,

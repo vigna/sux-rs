@@ -38,6 +38,7 @@ use crate::traits::bit_field_slice::*;
 use anyhow::{bail, Result};
 use core::sync::atomic::Ordering;
 use epserde::*;
+use mem_dbg::*;
 
 /// A sequential builder for [`EliasFano`].
 ///
@@ -182,7 +183,7 @@ impl EliasFanoConcurrentBuilder {
     }
 }
 
-#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash, MemDbg, MemSize)]
 pub struct EliasFano<H = CountBitVec, L = BitFieldVec> {
     /// An upper bound to the values.
     u: usize,

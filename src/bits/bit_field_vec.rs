@@ -55,8 +55,9 @@ use crate::traits::bit_field_slice::*;
 use anyhow::{bail, Result};
 use common_traits::*;
 use epserde::*;
+use mem_dbg::*;
 use std::sync::atomic::*;
-#[derive(Epserde, Debug, Clone, Hash)]
+#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 
 /// A vector of bit fields of fixed width.
 pub struct BitFieldVec<W: Word = usize, B = Vec<W>> {
@@ -70,7 +71,7 @@ pub struct BitFieldVec<W: Word = usize, B = Vec<W>> {
     len: usize,
 }
 
-#[derive(Epserde, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 /// A tentatively thread-safe vector of bit fields of fixed width.
 pub struct AtomicBitFieldVec<W: Word + IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
     /// The underlying storage.
