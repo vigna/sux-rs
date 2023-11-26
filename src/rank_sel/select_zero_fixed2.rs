@@ -224,8 +224,12 @@ impl<
 }
 
 /// Forget the index.
-impl<B: SelectZeroHinted, const QUANTUM_LOG2: usize> ConvertTo<B>
-    for SelectZeroFixed2<B, Vec<u64>, QUANTUM_LOG2>
+impl<
+        B: SelectZeroHinted + BitLength + BitCount,
+        I: AsRef<[u64]>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_U64_PER_SUBINVENTORY: usize,
+    > ConvertTo<B> for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     fn convert_to(self) -> Result<B> {
@@ -234,11 +238,18 @@ impl<B: SelectZeroHinted, const QUANTUM_LOG2: usize> ConvertTo<B>
 }
 
 /// Create and add a selection structure.
-impl<B: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>, const QUANTUM_LOG2: usize>
-    ConvertTo<SelectZeroFixed2<B, Vec<u64>, QUANTUM_LOG2>> for B
+impl<
+        B: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_U64_PER_SUBINVENTORY: usize,
+    > ConvertTo<SelectZeroFixed2<B, Vec<u64>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>>
+    for B
 {
     #[inline(always)]
-    fn convert_to(self) -> Result<SelectZeroFixed2<B, Vec<u64>, QUANTUM_LOG2>> {
+    fn convert_to(
+        self,
+    ) -> Result<SelectZeroFixed2<B, Vec<u64>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>>
+    {
         Ok(SelectZeroFixed2::new(self))
     }
 }

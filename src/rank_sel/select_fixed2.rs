@@ -219,10 +219,12 @@ impl<
 }
 
 /// Forget the index.
-impl<B: SelectHinted, T, const QUANTUM_LOG2: usize> ConvertTo<B>
-    for SelectFixed2<B, T, QUANTUM_LOG2>
-where
-    T: AsRef<[u64]>,
+impl<
+        B: SelectHinted + BitCount,
+        I: AsRef<[u64]>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_U64_PER_SUBINVENTORY: usize,
+    > ConvertTo<B> for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     fn convert_to(self) -> Result<B> {
@@ -231,11 +233,18 @@ where
 }
 
 /// Create and add a selection structure.
-impl<B: SelectHinted + BitLength + BitCount + AsRef<[usize]>, const QUANTUM_LOG2: usize>
-    ConvertTo<SelectFixed2<B, Vec<u64>, QUANTUM_LOG2>> for B
+
+impl<
+        B: SelectHinted + BitLength + BitCount + AsRef<[usize]>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_U64_PER_SUBINVENTORY: usize,
+    > ConvertTo<SelectFixed2<B, Vec<u64>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>>
+    for B
 {
     #[inline(always)]
-    fn convert_to(self) -> Result<SelectFixed2<B, Vec<u64>, QUANTUM_LOG2>> {
+    fn convert_to(
+        self,
+    ) -> Result<SelectFixed2<B, Vec<u64>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>> {
         Ok(SelectFixed2::new(self))
     }
 }
