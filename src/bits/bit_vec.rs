@@ -441,12 +441,12 @@ fn select_hinted(
 unsafe fn select_zero_hinted_unchecked(
     data: impl AsRef<[usize]>,
     rank: usize,
-    pos: usize,
-    rank_at_pos: usize,
+    hint_pos: usize,
+    hint_rank: usize,
 ) -> usize {
-    let mut word_index = pos / BITS;
-    let bit_index = pos % BITS;
-    let mut residual = rank - rank_at_pos;
+    let mut word_index = hint_pos / BITS;
+    let bit_index = hint_pos % BITS;
+    let mut residual = rank - hint_rank;
     let mut word = (!*data.as_ref().get_unchecked(word_index) >> bit_index) << bit_index;
     loop {
         let bit_count = word.count_ones() as usize;
@@ -465,12 +465,12 @@ fn select_zero_hinted(
     data: impl AsRef<[usize]>,
     len: usize,
     rank: usize,
-    pos: usize,
-    rank_at_pos: usize,
+    hint_pos: usize,
+    hint_rank: usize,
 ) -> Option<usize> {
-    let mut word_index = pos / BITS;
-    let bit_index = pos % BITS;
-    let mut residual = rank - rank_at_pos;
+    let mut word_index = hint_pos / BITS;
+    let bit_index = hint_pos % BITS;
+    let mut residual = rank - hint_rank;
     let mut word = (!data.as_ref().get(word_index)? >> bit_index) << bit_index;
     loop {
         let bit_count = word.count_ones() as usize;
@@ -491,12 +491,17 @@ fn select_zero_hinted(
 }
 
 impl<B: AsRef<[usize]>> SelectHinted for BitVec<B> {
-    unsafe fn select_hinted_unchecked(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
-        select_hinted_unchecked(self.data.as_ref(), rank, pos, rank_at_pos)
+    unsafe fn select_hinted_unchecked(
+        &self,
+        rank: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
+        select_hinted_unchecked(self.data.as_ref(), rank, hint_pos, hint_rank)
     }
 
-    fn select_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
-        select_hinted(self.data.as_ref(), rank, pos, rank_at_pos)
+    fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
+        select_hinted(self.data.as_ref(), rank, hint_pos, hint_rank)
     }
 }
 
@@ -511,14 +516,14 @@ impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
     unsafe fn select_zero_hinted_unchecked(
         &self,
         rank: usize,
-        pos: usize,
-        rank_at_pos: usize,
+        hint_pos: usize,
+        hint_rank: usize,
     ) -> usize {
-        select_zero_hinted_unchecked(self.data.as_ref(), rank, pos, rank_at_pos)
+        select_zero_hinted_unchecked(self.data.as_ref(), rank, hint_pos, hint_rank)
     }
 
-    fn select_zero_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
-        select_zero_hinted(self.data.as_ref(), self.len(), rank, pos, rank_at_pos)
+    fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
+        select_zero_hinted(self.data.as_ref(), self.len(), rank, hint_pos, hint_rank)
     }
 }
 
