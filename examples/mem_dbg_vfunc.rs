@@ -29,7 +29,7 @@ fn main() -> Result<()> {
         .unwrap();
 
     <VFunc<usize>>::load_mmap(Args::parse().filename, Flags::default())?
-        .mem_dbg(mem_dbg::Flags::FOLLOW_REFS)?;
+        .mem_dbg(mem_dbg::DbgFlags::FOLLOW_REFS)?;
 
     Ok(())
 }

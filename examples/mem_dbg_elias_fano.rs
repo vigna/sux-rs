@@ -6,7 +6,7 @@
  */
 
 use anyhow::Result;
-use mem_dbg::{Flags, MemDbg};
+use mem_dbg::{DbgFlags, MemDbg};
 use sux::prelude::*;
 
 fn main() -> Result<()> {
@@ -19,7 +19,12 @@ fn main() -> Result<()> {
     // Add an index on zeros
     let elias_fano: EliasFano<SelectZeroFixed2<SelectFixed2>> = elias_fano.convert_to()?;
 
-    elias_fano.mem_dbg(Flags::default())?;
+    elias_fano.mem_dbg(DbgFlags::default())?;
+
+    let mut v = Vec::<usize>::new();
+    v.extend(std::iter::repeat(0).take(100_000));
+    let s = v.as_slice();
+    s.mem_dbg(DbgFlags::FOLLOW_REFS)?;
 
     Ok(())
 }
