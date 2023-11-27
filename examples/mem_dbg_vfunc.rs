@@ -28,9 +28,8 @@ fn main() -> Result<()> {
         .init()
         .unwrap();
 
-    let e = <VFunc<usize>>::load_full(Args::parse().filename)?;
-
-    e.mem_dbg()?;
+    <VFunc<usize>>::load_mmap(Args::parse().filename, Flags::default())?
+        .mem_dbg(mem_dbg::Flags::FOLLOW_REFS)?;
 
     Ok(())
 }

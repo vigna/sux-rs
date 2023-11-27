@@ -11,9 +11,12 @@ use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
 
-/// Two layer index (with interleaved layers) optimized for
-/// a bitmap with approximately half ones and half zeros.
-/// This is meant for elias-fano high-bits.
+/// A selection structure based on a two-levels index.
+///
+/// More precisely, given a constant quantum <var>q</var>, this index records the position
+/// of the ones at positions 0, <var>q</var>, <var>2q</var>, &hellip;, and so on.
+/// The positions are recorded in a provided [`BitFieldSliceMut`] whose [bit width](BitFieldSliceCore::bit_width)
+/// must be sufficient to record all the positions.
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SelectFixed2<
     B: SelectHinted = CountBitVec,

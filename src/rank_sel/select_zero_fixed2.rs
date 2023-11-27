@@ -11,14 +11,11 @@ use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
 
-/// Two layer index (with interleaved layers) optimized for
-/// a bitmap with approximately half ones and half zeros.
-/// This is meant for elias-fano high-bits.
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SelectZeroFixed2<
     B: SelectZeroHinted = CountBitVec,
     I: AsRef<[u64]> = Vec<u64>,
-    const LOG2_ONES_PER_INVENTORY: usize = 10,
+    const LOG2_ZEROS_PER_INVENTORY: usize = 10,
     const LOG2_U64_PER_SUBINVENTORY: usize = 2,
 > {
     bits: B,
@@ -29,19 +26,19 @@ pub struct SelectZeroFixed2<
 impl<
         B: SelectZeroHinted,
         I: AsRef<[u64]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SelectZeroFixed2<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
-    const ONES_PER_INVENTORY: usize = 1 << LOG2_ONES_PER_INVENTORY;
+    const ONES_PER_INVENTORY: usize = 1 << LOG2_ZEROS_PER_INVENTORY;
     const U64_PER_SUBINVENTORY: usize = 1 << LOG2_U64_PER_SUBINVENTORY;
     const U64_PER_INVENTORY: usize = 1 + Self::U64_PER_SUBINVENTORY;
 
-    const LOG2_ONES_PER_SUB64: usize = LOG2_ONES_PER_INVENTORY - LOG2_U64_PER_SUBINVENTORY;
-    const ONES_PER_SUB64: usize = 1 << Self::LOG2_ONES_PER_SUB64;
+    const LOG2_ZEROS_PER_SUB64: usize = LOG2_ZEROS_PER_INVENTORY - LOG2_U64_PER_SUBINVENTORY;
+    const ONES_PER_SUB64: usize = 1 << Self::LOG2_ZEROS_PER_SUB64;
 
-    const LOG2_ONES_PER_SUB16: usize = Self::LOG2_ONES_PER_SUB64 - 2;
-    const ONES_PER_SUB16: usize = 1 << Self::LOG2_ONES_PER_SUB16;
+    const LOG2_ZEROS_PER_SUB16: usize = Self::LOG2_ZEROS_PER_SUB64 - 2;
+    const ONES_PER_SUB16: usize = 1 << Self::LOG2_ZEROS_PER_SUB16;
 
     /// We use the sign bit to store the type of the subinventory (u16 vs. u64).
     const INVENTORY_MASK: u64 = (1 << 63) - 1;
@@ -49,9 +46,9 @@ impl<
 
 impl<
         B: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectZeroFixed2<B, Vec<u64>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SelectZeroFixed2<B, Vec<u64>, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     pub fn new(bitvec: B) -> Self {
         // number of inventories we will create
@@ -150,7 +147,7 @@ impl<
 
                     // update the subinventory index and the next quantum
                     subinventory_idx += 1;
-                    if subinventory_idx == (1 << LOG2_ONES_PER_INVENTORY) / quantum {
+                    if subinventory_idx == (1 << LOG2_ZEROS_PER_INVENTORY) / quantum {
                         break 'outer;
                     }
                     next_quantum += quantum;
@@ -179,9 +176,9 @@ impl<
 impl<
         B: SelectZeroHinted + BitLength + BitCount,
         I: AsRef<[u64]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectZero for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SelectZero for SelectZeroFixed2<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
@@ -223,9 +220,9 @@ impl<
 impl<
         B: SelectZeroHinted + BitLength + BitCount,
         I: AsRef<[u64]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > ConvertTo<B> for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > ConvertTo<B> for SelectZeroFixed2<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     fn convert_to(self) -> Result<B> {
@@ -236,15 +233,15 @@ impl<
 /// Create and add a selection structure.
 impl<
         B: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > ConvertTo<SelectZeroFixed2<B, Vec<u64>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>>
+    > ConvertTo<SelectZeroFixed2<B, Vec<u64>, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>>
     for B
 {
     #[inline(always)]
     fn convert_to(
         self,
-    ) -> Result<SelectZeroFixed2<B, Vec<u64>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>>
+    ) -> Result<SelectZeroFixed2<B, Vec<u64>, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>>
     {
         Ok(SelectZeroFixed2::new(self))
     }
@@ -254,9 +251,9 @@ impl<
 impl<
         B: SelectZeroHinted + BitLength,
         I: AsRef<[u64]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitLength for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > BitLength for SelectZeroFixed2<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -268,9 +265,9 @@ impl<
 impl<
         B: SelectZeroHinted + BitCount,
         I: AsRef<[u64]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitCount for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > BitCount for SelectZeroFixed2<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     fn count(&self) -> usize {
@@ -282,9 +279,9 @@ impl<
 impl<
         B: SelectZeroHinted + Select,
         I: AsRef<[u64]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > Select for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > Select for SelectZeroFixed2<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     fn select(&self, rank: usize) -> Option<usize> {
@@ -300,9 +297,9 @@ impl<
 impl<
         B: SelectZeroHinted + Rank,
         I: AsRef<[u64]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > Rank for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > Rank for SelectZeroFixed2<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     fn rank(&self, pos: usize) -> usize {
         self.bits.rank(pos)
@@ -317,9 +314,9 @@ impl<
 impl<
         B: SelectZeroHinted + RankZero,
         I: AsRef<[u64]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > RankZero for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > RankZero for SelectZeroFixed2<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     fn rank_zero(&self, pos: usize) -> usize {
         self.bits.rank_zero(pos)
@@ -334,10 +331,10 @@ impl<
 impl<
         B: SelectZeroHinted + AsRef<[usize]>,
         I: AsRef<[u64]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > AsRef<[usize]>
-    for SelectZeroFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    for SelectZeroFixed2<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     fn as_ref(&self) -> &[usize] {
         self.bits.as_ref()

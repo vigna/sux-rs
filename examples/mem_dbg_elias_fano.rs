@@ -6,32 +6,20 @@
  */
 
 use anyhow::Result;
-use clap::Parser;
-use epserde::{
-    deser::{Deserialize, Flags},
-    ser::Serialize,
-};
-use mem_dbg::MemDbg;
+use mem_dbg::{Flags, MemDbg};
 use sux::prelude::*;
 
-#[derive(Parser, Debug)]
-#[command(about = "Prints layout information for an Elias-Fano structure", long_about = None)]
-struct Args {
-    /// The number of elements
-    filename: String,
-}
-
 fn main() -> Result<()> {
-    stderrlog::new()
-        .verbosity(2)
-        .timestamp(stderrlog::Timestamp::Second)
-        .init()
-        .unwrap();
+    let mut elias_fano_builder = EliasFanoBuilder::new(100_000, 10_000_000);
+    for value in 0..100_000 {
+        elias_fano_builder.push(value * 100).unwrap();
+    }
+    // Add an index on ones
+    let elias_fano: EliasFano<SelectFixed2> = elias_fano_builder.build().convert_to()?;
+    // Add an index on zeros
+    let elias_fano: EliasFano<SelectZeroFixed2<SelectFixed2>> = elias_fano.convert_to()?;
 
-    let e =
-        <EliasFano<SelectZeroFixed2<SelectFixed2>>>::load_full(Args::parse().filename)?.as_ref();
-
-    println!("{}", e.mem_dbg(),);
+    elias_fano.mem_dbg(Flags::default())?;
 
     Ok(())
 }
