@@ -15,11 +15,10 @@ use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
 
-/// An index that records the position of the ones in a bit vector at a fixed
-/// set of positions.
+/// A selection structure based on a one-level index.
 ///
-/// More precisely, given a constant quantum <var>q</var>, this index records the position
-/// of the ones at positions 0, <var>q</var>, <var>2q</var>, &hellip;, and so on.
+/// More precisely, given a constant `LOG2_ONES_PER_INVENTORY`, this index records the position
+/// of one every 2<sup>`LOG2_ONES_PER_INVENTORY`</sup>.
 /// The positions are recorded in a provided [`BitFieldSliceMut`] whose [bit width](BitFieldSliceCore::bit_width)
 /// must be sufficient to record all the positions.
 ///
@@ -34,19 +33,23 @@ use mem_dbg::*;
 pub struct SelectFixed1<
     B: SelectHinted = CountBitVec,
     O: BitFieldSlice<usize> = Vec<usize>,
-    const QUANTUM_LOG2: usize = 8,
+    const LOG2_ONES_PER_INVENTORY: usize = 8,
 > {
     bits: B,
     ones: O,
-    _marker: core::marker::PhantomData<[(); QUANTUM_LOG2]>,
+    _marker: core::marker::PhantomData<[(); LOG2_ONES_PER_INVENTORY]>,
 }
 
-impl<B: SelectHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
-    SelectFixed1<B, Vec<usize>, QUANTUM_LOG2>
+impl<B: SelectHinted + AsRef<[usize]>, const LOG2_ONES_PER_INVENTORY: usize>
+    SelectFixed1<B, Vec<usize>, LOG2_ONES_PER_INVENTORY>
 {
     pub fn new(bitvec: B, number_of_ones: usize) -> Result<Self> {
         let mut res = SelectFixed1 {
-            ones: vec![0; (number_of_ones + (1 << QUANTUM_LOG2) - 1) >> QUANTUM_LOG2],
+            ones: vec![
+                0;
+                (number_of_ones + (1 << LOG2_ONES_PER_INVENTORY) - 1)
+                    >> LOG2_ONES_PER_INVENTORY
+            ],
             bits: bitvec,
             _marker: core::marker::PhantomData,
         };
@@ -58,8 +61,8 @@ impl<B: SelectHinted + AsRef<[usize]>, const QUANTUM_LOG2: usize>
 impl<
         B: SelectHinted + AsRef<[usize]>,
         O: BitFieldSlice<usize> + BitFieldSliceMut<usize>,
-        const QUANTUM_LOG2: usize,
-    > SelectFixed1<B, O, QUANTUM_LOG2>
+        const LOG2_ONES_PER_INVENTORY: usize,
+    > SelectFixed1<B, O, LOG2_ONES_PER_INVENTORY>
 {
     fn build_ones(&mut self) -> Result<()> {
         let mut number_of_ones = 0;
@@ -73,7 +76,7 @@ impl<
                 let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
                 let index = (i * usize::BITS as usize) + in_word_index;
                 self.ones.set(ones_index, index);
-                next_quantum += 1 << QUANTUM_LOG2;
+                next_quantum += 1 << LOG2_ONES_PER_INVENTORY;
                 ones_index += 1;
             }
 
@@ -84,22 +87,22 @@ impl<
 }
 
 /// Provide the hint to the underlying structure
-impl<B: SelectHinted + BitCount, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> Select
-    for SelectFixed1<B, O, QUANTUM_LOG2>
+impl<B: SelectHinted + BitCount, O: BitFieldSlice<usize>, const LOG2_ONES_PER_INVENTORY: usize>
+    Select for SelectFixed1<B, O, LOG2_ONES_PER_INVENTORY>
 {
     #[inline(always)]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
-        let index = rank >> QUANTUM_LOG2;
+        let index = rank >> LOG2_ONES_PER_INVENTORY;
         let pos = self.ones.get_unchecked(index);
-        let rank_at_pos = index << QUANTUM_LOG2;
+        let rank_at_pos = index << LOG2_ONES_PER_INVENTORY;
 
         self.bits.select_hinted_unchecked(rank, pos, rank_at_pos)
     }
 }
 
 /// Forget the index.
-impl<B: SelectHinted, T, const QUANTUM_LOG2: usize> ConvertTo<B>
-    for SelectFixed1<B, T, QUANTUM_LOG2>
+impl<B: SelectHinted, T, const LOG2_ONES_PER_INVENTORY: usize> ConvertTo<B>
+    for SelectFixed1<B, T, LOG2_ONES_PER_INVENTORY>
 where
     T: AsRef<[usize]>,
 {
@@ -110,19 +113,22 @@ where
 }
 
 /// Create and add a selection structure.
-impl<B: SelectHinted + BitCount + AsRef<[usize]>, const QUANTUM_LOG2: usize>
-    ConvertTo<SelectFixed1<B, Vec<usize>, QUANTUM_LOG2>> for B
+impl<B: SelectHinted + BitCount + AsRef<[usize]>, const LOG2_ONES_PER_INVENTORY: usize>
+    ConvertTo<SelectFixed1<B, Vec<usize>, LOG2_ONES_PER_INVENTORY>> for B
 {
     #[inline(always)]
-    fn convert_to(self) -> Result<SelectFixed1<B, Vec<usize>, QUANTUM_LOG2>> {
+    fn convert_to(self) -> Result<SelectFixed1<B, Vec<usize>, LOG2_ONES_PER_INVENTORY>> {
         let count = self.count();
         SelectFixed1::new(self, count)
     }
 }
 
 /// Forward [`BitLength`] to the underlying implementation.
-impl<B: SelectHinted + BitLength, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitLength
-    for SelectFixed1<B, O, QUANTUM_LOG2>
+impl<
+        B: SelectHinted + BitLength,
+        O: BitFieldSlice<usize>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+    > BitLength for SelectFixed1<B, O, LOG2_ONES_PER_INVENTORY>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -131,8 +137,8 @@ impl<B: SelectHinted + BitLength, O: BitFieldSlice<usize>, const QUANTUM_LOG2: u
 }
 
 /// Forward [`BitCount`] to the underlying implementation.
-impl<B: SelectHinted + BitCount, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> BitCount
-    for SelectFixed1<B, O, QUANTUM_LOG2>
+impl<B: SelectHinted + BitCount, O: BitFieldSlice<usize>, const LOG2_ONES_PER_INVENTORY: usize>
+    BitCount for SelectFixed1<B, O, LOG2_ONES_PER_INVENTORY>
 {
     #[inline(always)]
     fn count(&self) -> usize {
@@ -141,8 +147,11 @@ impl<B: SelectHinted + BitCount, O: BitFieldSlice<usize>, const QUANTUM_LOG2: us
 }
 
 /// Forward [`SelectZero`] to the underlying implementation.
-impl<B: SelectHinted + SelectZero, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> SelectZero
-    for SelectFixed1<B, O, QUANTUM_LOG2>
+impl<
+        B: SelectHinted + SelectZero,
+        O: BitFieldSlice<usize>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+    > SelectZero for SelectFixed1<B, O, LOG2_ONES_PER_INVENTORY>
 {
     #[inline(always)]
     fn select_zero(&self, rank: usize) -> Option<usize> {
@@ -155,8 +164,11 @@ impl<B: SelectHinted + SelectZero, O: BitFieldSlice<usize>, const QUANTUM_LOG2: 
 }
 
 /// Forward [`SelectZeroHinted`] to the underlying implementation.
-impl<B: SelectHinted + SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize>
-    SelectZeroHinted for SelectFixed1<B, O, QUANTUM_LOG2>
+impl<
+        B: SelectHinted + SelectZeroHinted,
+        O: BitFieldSlice<usize>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+    > SelectZeroHinted for SelectFixed1<B, O, LOG2_ONES_PER_INVENTORY>
 {
     #[inline(always)]
     unsafe fn select_zero_hinted_unchecked(
@@ -176,8 +188,8 @@ impl<B: SelectHinted + SelectZeroHinted, O: BitFieldSlice<usize>, const QUANTUM_
 }
 
 /// Forward [`Rank`] to the underlying implementation.
-impl<B: SelectHinted + Rank, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> Rank
-    for SelectFixed1<B, O, QUANTUM_LOG2>
+impl<B: SelectHinted + Rank, O: BitFieldSlice<usize>, const LOG2_ONES_PER_INVENTORY: usize> Rank
+    for SelectFixed1<B, O, LOG2_ONES_PER_INVENTORY>
 {
     fn rank(&self, pos: usize) -> usize {
         self.bits.rank(pos)
@@ -189,8 +201,8 @@ impl<B: SelectHinted + Rank, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize>
 }
 
 /// Forward [`RankZero`] to the underlying implementation.
-impl<B: SelectHinted + RankZero, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize> RankZero
-    for SelectFixed1<B, O, QUANTUM_LOG2>
+impl<B: SelectHinted + RankZero, O: BitFieldSlice<usize>, const LOG2_ONES_PER_INVENTORY: usize>
+    RankZero for SelectFixed1<B, O, LOG2_ONES_PER_INVENTORY>
 {
     fn rank_zero(&self, pos: usize) -> usize {
         self.bits.rank_zero(pos)
@@ -202,8 +214,11 @@ impl<B: SelectHinted + RankZero, O: BitFieldSlice<usize>, const QUANTUM_LOG2: us
 }
 
 /// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<B: SelectHinted + AsRef<[usize]>, O: BitFieldSlice<usize>, const QUANTUM_LOG2: usize>
-    AsRef<[usize]> for SelectFixed1<B, O, QUANTUM_LOG2>
+impl<
+        B: SelectHinted + AsRef<[usize]>,
+        O: BitFieldSlice<usize>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+    > AsRef<[usize]> for SelectFixed1<B, O, LOG2_ONES_PER_INVENTORY>
 {
     fn as_ref(&self) -> &[usize] {
         self.bits.as_ref()
