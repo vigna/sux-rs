@@ -7,11 +7,8 @@
 
 use anyhow::Result;
 use clap::Parser;
-use epserde::{
-    deser::{Deserialize, Flags},
-    ser::Serialize,
-};
-use mem_dbg::MemDbg;
+use epserde::deser::{Deserialize, Flags};
+use mem_dbg::{DbgFlags, MemDbg};
 use sux::prelude::*;
 
 #[derive(Parser, Debug)]
@@ -29,7 +26,7 @@ fn main() -> Result<()> {
         .unwrap();
 
     <VFunc<usize>>::load_mmap(Args::parse().filename, Flags::default())?
-        .mem_dbg(mem_dbg::DbgFlags::FOLLOW_REFS)?;
+        .mem_dbg(DbgFlags::default() | DbgFlags::FOLLOW_REFS)?;
 
     Ok(())
 }

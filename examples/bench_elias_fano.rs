@@ -7,6 +7,8 @@
 
 use clap::Parser;
 use dsi_progress_logger::*;
+use mem_dbg::DbgFlags;
+use mem_dbg::MemDbg;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
@@ -53,11 +55,18 @@ fn main() {
     for value in &values {
         elias_fano_builder.push(*value).unwrap();
     }
+
+    // Frequency of ones in the inventory for one-level index
+    const LOG2_ONES_PER_INVENTORY: usize = 7;
     // Add an index on ones
-    let elias_fano_q: EliasFano<SelectFixed1> = elias_fano_builder.build().convert_to().unwrap();
+    let elias_fano_q: EliasFano<SelectFixed1<_, _, LOG2_ONES_PER_INVENTORY>> =
+        elias_fano_builder.build().convert_to().unwrap();
     // Add an index on zeros
-    let elias_fano_q: EliasFano<SelectZeroFixed1<SelectFixed1>> =
-        elias_fano_q.convert_to().unwrap();
+    let elias_fano_q: EliasFano<
+        SelectZeroFixed1<SelectFixed1<_, _, LOG2_ONES_PER_INVENTORY>, _, LOG2_ONES_PER_INVENTORY>,
+    > = elias_fano_q.convert_to().unwrap();
+
+    elias_fano_q.mem_dbg(DbgFlags::default()).unwrap();
 
     let mut elias_fano_builder = EliasFanoBuilder::new(args.n, args.u);
     for value in &values {
@@ -68,6 +77,8 @@ fn main() {
     // Add an index on zeros
     let elias_fano_s: EliasFano<SelectZeroFixed2<SelectFixed2>> =
         elias_fano_s.convert_to().unwrap();
+
+    elias_fano_s.mem_dbg(DbgFlags::default()).unwrap();
 
     let mut ranks = Vec::with_capacity(args.t);
     for _ in 0..args.t {
