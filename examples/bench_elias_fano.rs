@@ -66,7 +66,9 @@ fn main() {
         SelectZeroFixed1<SelectFixed1<_, _, LOG2_ONES_PER_INVENTORY>, _, LOG2_ONES_PER_INVENTORY>,
     > = elias_fano_q.convert_to().unwrap();
 
-    elias_fano_q.mem_dbg(DbgFlags::default()).unwrap();
+    elias_fano_q
+        .mem_dbg(DbgFlags::default() | DbgFlags::PERCENTAGE)
+        .unwrap();
 
     let mut elias_fano_builder = EliasFanoBuilder::new(args.n, args.u);
     for value in &values {
@@ -78,7 +80,10 @@ fn main() {
     let elias_fano_s: EliasFano<SelectZeroFixed2<SelectFixed2>> =
         elias_fano_s.convert_to().unwrap();
 
-    elias_fano_s.mem_dbg(DbgFlags::default()).unwrap();
+    println!();
+    elias_fano_s
+        .mem_dbg(DbgFlags::default() | DbgFlags::PERCENTAGE)
+        .unwrap();
 
     let mut ranks = Vec::with_capacity(args.t);
     for _ in 0..args.t {
