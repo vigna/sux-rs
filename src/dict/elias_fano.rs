@@ -15,8 +15,9 @@ There are two ways to build a base [`EliasFano`] structure: using
 an [`EliasFanoBuilder`] or an [`EliasFanoConcurrentBuilder`].
 
 Once the base structure has been built, it is possible to enrich it with
-indices that will make operations faster. This is done by calling
-[`ConvertTo::convert_to`] towards the desired type. For example,
+indices that will make operations faster, using the same mechanism with which
+[you can add ranking and selection structures to bit vectors](`crate::rank_sel`),
+that is, by calling [`ConvertTo::convert_to`] towards the desired type. For example,
 ```rust
 use sux::prelude::*;
 let mut efb = EliasFanoBuilder::new(2, 5);
@@ -87,7 +88,11 @@ impl EliasFanoBuilder {
             bail!("Value too large: {} >= {}", value, self.u);
         }
         if value < self.last_value {
-            bail!("The values given to elias-fano are not monotone");
+            bail!(
+                "The values provided are not monotone: {} < {}",
+                value,
+                self.last_value
+            );
         }
         unsafe {
             self.push_unchecked(value);

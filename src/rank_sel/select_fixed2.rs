@@ -11,12 +11,29 @@ use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
 
-/// A selection structure based on a two-levels index.
-///
-/// More precisely, given a constant quantum <var>q</var>, this index records the position
-/// of the ones at positions 0, <var>q</var>, <var>2q</var>, &hellip;, and so on.
-/// The positions are recorded in a provided [`BitFieldSliceMut`] whose [bit width](BitFieldSliceCore::bit_width)
-/// must be sufficient to record all the positions.
+/**
+
+A selection structure based on a two-levels index.
+
+This is a fixed-density version of the structure described by
+by Sebastiano Vigna in “<a href="https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12">Broadword
+Implementation of Rank/Select Queries</a>”, _Proc. of the 7th International Workshop
+on Experimental Algorithms, WEA 2008_, volume 5038 of Lecture Notes in Computer Science, pages
+154–168. Springer, 2008.
+
+It records the position of one every 2<sup>`LOG2_ONES_PER_INVENTORY`</sup> ones in a first-level
+inventory of `u64`'s; then, for each first-level inventory a subinventory of 2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup>
+`u64`'s is allocated. The subinventory will store either 4·2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup> `u16`'s recording
+the position of one every 2<sup>`LOG2_ONES_PER_INVENTORY`</sup>/(4·2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup>) ones,
+if the distance between the first and last one in the inventory is less than 2<sup>16</sup>, or
+2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup> `u64`'s recording
+the position of one every 2<sup>`LOG2_ONES_PER_INVENTORY`</sup>/2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup> otherwise.
+
+Thus, the objective of sizing the first-level inventory is to obtain the second-level inventory with a
+span of less than 2<sup>16</sup> elements as often as possible. The default parameters are a good choice for a vector
+with approximately the same number of zeroes and ones.
+
+*/
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SelectFixed2<
     B: SelectHinted = CountBitVec,

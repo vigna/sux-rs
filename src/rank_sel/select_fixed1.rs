@@ -19,7 +19,7 @@ use mem_dbg::*;
 ///
 /// More precisely, given a constant `LOG2_ONES_PER_INVENTORY`, this index records the position
 /// of one every 2<sup>`LOG2_ONES_PER_INVENTORY`</sup>.
-/// The positions are recorded in a provided [`BitFieldSliceMut`] whose [bit width](BitFieldSliceCore::bit_width)
+/// The positions are recorded in a provided [`BitFieldSlice`] whose [bit width](BitFieldSliceCore::bit_width)
 /// must be sufficient to record all the positions.
 ///
 /// The index takes a backend parameter `B` that can be any type that implements
