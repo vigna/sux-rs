@@ -24,6 +24,9 @@ of one every 2<sup>`LOG2_ONES_PER_INVENTORY`</sup>.
 The positions are recorded in a [`BitFieldSlice`] whose [bit width](BitFieldSliceCore::bit_width)
 must be sufficient to record all the positions.
 
+Note that [`SelectFixed2`] has usually better performance than this structure, which is mainly
+useful for testing, benchmarking and debugging.
+
 The current implementation uses a [`Vec<usize>`] as the underlying [`BitFieldSlice`]. Thus,
 the overhead of the structure is [`BitCount::count()`] * [`usize::BITS`] / 2<sup>`LOG2_ONES_PER_INVENTORY`</sup> bits.
 
