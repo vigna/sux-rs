@@ -15,20 +15,27 @@ use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
 
-/// A selection structure based on a one-level index.
-///
-/// More precisely, given a constant `LOG2_ONES_PER_INVENTORY`, this index records the position
-/// of one every 2<sup>`LOG2_ONES_PER_INVENTORY`</sup>.
-/// The positions are recorded in a provided [`BitFieldSlice`] whose [bit width](BitFieldSliceCore::bit_width)
-/// must be sufficient to record all the positions.
-///
-/// The index takes a backend parameter `B` that can be any type that implements
-/// [`SelectHinted`]. This will usually be something like [`CountBitVec`](crate::bits::bit_vec::CountBitVec), or possibly
-/// a [`CountBitVec`](crate::bits::bit_vec::CountBitVec) wrapped in another index structure for which
-/// this structure has delegation (e.g., [`SelectZeroFixed1`](crate::rank_sel::SelectZeroFixed1)). See the documentation
-/// of [`EliasFano`](crate::dict::elias_fano::EliasFano) for an example of this approach.
-///
-/// See [`SelectZeroFixed1`](crate::rank_sel::SelectZeroFixed1) for the same index for zeros.
+/**
+
+A selection structure based on a one-level index.
+
+More precisely, given a constant `LOG2_ONES_PER_INVENTORY`, this index records the position
+of one every 2<sup>`LOG2_ONES_PER_INVENTORY`</sup>.
+The positions are recorded in a [`BitFieldSlice`] whose [bit width](BitFieldSliceCore::bit_width)
+must be sufficient to record all the positions.
+
+The current implementation uses a [`Vec<usize>`] as the underlying [`BitFieldSlice`]. Thus,
+the overhead of the structure is [`BitCount::count()`] * [`usize::BITS`] / 2<sup>`LOG2_ONES_PER_INVENTORY`</sup>.
+
+The index takes a backend parameter `B` that can be any type that implements
+[`SelectHinted`]. This will usually be something like [`CountBitVec`](crate::bits::bit_vec::CountBitVec), or possibly
+a [`CountBitVec`](crate::bits::bit_vec::CountBitVec) wrapped in another index structure for which
+this structure has delegation (e.g., [`SelectZeroFixed1`](crate::rank_sel::SelectZeroFixed1)). See the documentation
+of [`EliasFano`](crate::dict::elias_fano::EliasFano) for an example of this approach.
+
+See [`SelectZeroFixed1`](crate::rank_sel::SelectZeroFixed1) for the same structure for zeros.
+
+*/
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SelectFixed1<
     B: SelectHinted = CountBitVec,

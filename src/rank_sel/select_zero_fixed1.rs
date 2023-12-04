@@ -15,10 +15,12 @@ use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
 
-/// An index that records the position of the zeros in a bit vector at a fixed
-/// set of positions.
-///
-/// See [`SelectFixed1`](crate::rank_sel::SelectFixed1) for implementation details.
+/**
+A selection structure for zeros based on a one-level index.
+
+See [`SelectFixed1`](crate::rank_sel::SelectFixed1).
+
+*/
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SelectZeroFixed1<
     B: SelectZeroHinted = CountBitVec,
