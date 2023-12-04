@@ -1,6 +1,6 @@
 [package]
 name = "sux"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "A pure Rust implementation of succinct and compressed data structures"
 repository = "https://github.com/vigna/sux-rs/"
@@ -43,7 +43,7 @@ mem_dbg = "0.1"
 [features]
 default = ["rayon"]
 fuzz = ["dep:arbitrary"]
-slow = [] # Run slow tests
+slow = [] # Run slow tests (use --release)
 
 [profile.release]
 opt-level = 3             # like --release

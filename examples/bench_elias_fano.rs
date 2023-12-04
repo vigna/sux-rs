@@ -63,7 +63,11 @@ fn main() {
         elias_fano_builder.build().convert_to().unwrap();
     // Add an index on zeros
     let elias_fano_q: EliasFano<
-        SelectZeroFixed1<SelectFixed1<_, _, FIXED1_LOG2_ONES_PER_INVENTORY>, _, FIXED1_LOG2_ONES_PER_INVENTORY>,
+        SelectZeroFixed1<
+            SelectFixed1<_, _, FIXED1_LOG2_ONES_PER_INVENTORY>,
+            _,
+            FIXED1_LOG2_ONES_PER_INVENTORY,
+        >,
     > = elias_fano_q.convert_to().unwrap();
 
     elias_fano_q
@@ -77,10 +81,18 @@ fn main() {
     const FIXED2_LOG2_ONES_PER_INVENTORY: usize = 10;
     const FIXED2_LOG2_U64_PER_INVENTORY: usize = 2;
     // Add an index on ones
-    let elias_fano_s: EliasFano<SelectFixed2<_, _, FIXED2_LOG2_ONES_PER_INVENTORY, FIXED2_LOG2_U64_PER_INVENTORY>> = elias_fano_builder.build().convert_to().unwrap();
+    let elias_fano_s: EliasFano<
+        SelectFixed2<_, _, FIXED2_LOG2_ONES_PER_INVENTORY, FIXED2_LOG2_U64_PER_INVENTORY>,
+    > = elias_fano_builder.build().convert_to().unwrap();
     // Add an index on zeros
-    let elias_fano_s: EliasFano<SelectZeroFixed2<SelectFixed2<_, _, FIXED2_LOG2_ONES_PER_INVENTORY, FIXED2_LOG2_U64_PER_INVENTORY>, _, FIXED2_LOG2_ONES_PER_INVENTORY, FIXED2_LOG2_U64_PER_INVENTORY>> =
-        elias_fano_s.convert_to().unwrap();
+    let elias_fano_s: EliasFano<
+        SelectZeroFixed2<
+            SelectFixed2<_, _, FIXED2_LOG2_ONES_PER_INVENTORY, FIXED2_LOG2_U64_PER_INVENTORY>,
+            _,
+            FIXED2_LOG2_ONES_PER_INVENTORY,
+            FIXED2_LOG2_U64_PER_INVENTORY,
+        >,
+    > = elias_fano_s.convert_to().unwrap();
 
     println!();
     elias_fano_s

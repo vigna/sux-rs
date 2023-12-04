@@ -74,7 +74,7 @@ impl<
         const LOG2_ONES_PER_INVENTORY: usize,
     > SelectFixed1<B, O, LOG2_ONES_PER_INVENTORY>
 {
-    fn build_ones(&mut self) -> () {
+    fn build_ones(&mut self) {
         let mut number_of_ones = 0;
         let mut next_quantum = 0;
         let mut ones_index = 0;
