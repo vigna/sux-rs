@@ -2,14 +2,12 @@
 name = "sux"
 version = "0.1.0"
 edition = "2021"
-description = "A pure Rust implementation of succinct data structures from the Sux project (https://sux.di.unimi.it/)."
+description = "A pure Rust implementation of succinct and compressed data structures"
 repository = "https://github.com/vigna/sux-rs/"
 license = "Apache-2.0 OR LGPL-2.1-or-later"
 readme = "README.md"
 keywords = ["succinct", "rank", "select"]
 categories = ["compression", "data-structures"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 anyhow = "1.0.71"
@@ -45,10 +43,9 @@ mem_dbg = "0.1"
 [features]
 default = ["rayon"]
 fuzz = ["dep:arbitrary"]
-unaligned = []
-slow = []
+slow = [] # Run slow tests
 
-[profile.release] # Used for the examples
+[profile.release]
 opt-level = 3             # like --release
 lto = "fat"               # Full LTO
 overflow-checks = false   # Disable integer overflow checks.
