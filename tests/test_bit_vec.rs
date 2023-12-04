@@ -129,6 +129,94 @@ fn test_resize() {
 }
 
 #[test]
+fn test_fill() {
+    for len in [0, 1, 64, 65, 100, 127, 128, 1000] {
+        let mut c = BitVec::new(len);
+        c.fill(true);
+        for (i, b) in c.into_iter().enumerate() {
+            assert_eq!(b, true, "{}", i);
+        }
+
+        if len != c.capacity() {
+            assert_eq!(
+                c.as_ref()[len / usize::BITS as usize] & 1 << len % usize::BITS as usize,
+                0
+            );
+        }
+
+        c.fill(false);
+        for (i, b) in c.into_iter().enumerate() {
+            assert_eq!(b, false, "{}", i);
+        }
+    }
+
+    for len in [0, 1, 64, 65, 100, 127, 128, 1000] {
+        let mut c = AtomicBitVec::new(len);
+        c.fill(true, Ordering::Relaxed);
+        for i in 0..c.len() {
+            assert_eq!(c.get(i, Ordering::Relaxed), true, "{}", i);
+        }
+
+        if len % usize::BITS as usize != 0 {
+            assert_eq!(
+                c.as_ref()[len / usize::BITS as usize].load(Ordering::Relaxed)
+                    & 1 << len % usize::BITS as usize,
+                0
+            );
+        }
+
+        c.fill(false, Ordering::Relaxed);
+        for i in 0..c.len() {
+            assert_eq!(c.get(i, Ordering::Relaxed), false, "{}", i);
+        }
+    }
+}
+
+#[test]
+fn test_flip() {
+    for len in [0, 1, 64, 65, 100, 127, 128, 1000] {
+        let mut c = BitVec::new(len);
+        c.flip();
+        for (i, b) in c.into_iter().enumerate() {
+            assert_eq!(b, true, "{}", i);
+        }
+
+        if len != c.capacity() {
+            assert_eq!(
+                c.as_ref()[len / usize::BITS as usize] & 1 << len % usize::BITS as usize,
+                0
+            );
+        }
+
+        c.flip();
+        for (i, b) in c.into_iter().enumerate() {
+            assert_eq!(b, false, "{}", i);
+        }
+    }
+
+    for len in [0, 1, 64, 65, 100, 127, 128, 1000] {
+        let mut c = AtomicBitVec::new(len);
+        c.flip(Ordering::Relaxed);
+        for i in 0..c.len() {
+            assert_eq!(c.get(i, Ordering::Relaxed), true, "{}", i);
+        }
+
+        if len % usize::BITS as usize != 0 {
+            assert_eq!(
+                c.as_ref()[len / usize::BITS as usize].load(Ordering::Relaxed)
+                    & 1 << len % usize::BITS as usize,
+                0
+            );
+        }
+
+        c.flip(Ordering::Relaxed);
+        for i in 0..c.len() {
+            assert_eq!(c.get(i, Ordering::Relaxed), false, "{}", i);
+        }
+    }
+}
+
+#[test]
 fn test_epserde() {
     let mut rng = SmallRng::seed_from_u64(0);
     let mut b = BitVec::new(200);

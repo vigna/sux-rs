@@ -10,8 +10,7 @@ use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use sux::prelude::VFuncBuilder;
-use sux::utils::file::FilenameIntoIterator;
-use sux::utils::FilenameZstdIntoIterator;
+use sux::utils::{FromIntoIterator, LineLender, ZstdLineLender};
 
 #[derive(Parser, Debug)]
 #[command(about = "Generate a VFunc mapping each input to its rank and serialize it with ε-serde", long_about = None)]
@@ -39,7 +38,7 @@ struct Args {
     #[arg(short, long)]
     offline: bool,
     /// The number of high bits defining the number of buckets. Very large key sets may benefit from a larger number of buckets.
-    #[arg(short, long, default_value_t = 8)]
+    #[arg(short = 'H', long, default_value_t = 8)]
     high_bits: u32,
 }
 
@@ -56,16 +55,26 @@ fn main() -> Result<()> {
     pl.display_memory(true);
 
     if let Some(filename) = args.filename {
-        let mut builder = VFuncBuilder::default()
+        let mut builder = VFuncBuilder::<str, _>::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
+
         if let Some(threads) = args.threads {
             builder = builder.num_threads(threads);
         }
+
         let func = if args.zstd {
-            builder.build(FilenameZstdIntoIterator(&filename), &(0_usize..), &mut pl)?
+            builder.build(
+                ZstdLineLender::from_path(&filename)?,
+                FromIntoIterator::from(0_usize..),
+                &mut pl,
+            )?
         } else {
-            builder.build(FilenameIntoIterator(&filename), &(0..), &mut pl)?
+            builder.build(
+                LineLender::from_path(&filename)?,
+                FromIntoIterator::from(0_usize..),
+                &mut pl,
+            )?
         };
         func.store(&args.func)?;
     }
@@ -77,7 +86,11 @@ fn main() -> Result<()> {
         if let Some(threads) = args.threads {
             builder = builder.num_threads(threads);
         }
-        let func = builder.build(0..n, &(0_usize..), &mut pl)?;
+        let func = builder.build(
+            FromIntoIterator::from(0_usize..n),
+            FromIntoIterator::from(0_usize..),
+            &mut pl,
+        )?;
 
         func.store(&args.func)?;
     }

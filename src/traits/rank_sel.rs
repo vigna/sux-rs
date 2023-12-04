@@ -57,6 +57,28 @@ pub trait RankZero: Rank {
     }
 }
 
+/// Rank over a bit vector, with a hint.
+///
+/// This trait is used to implement fast ranking by adding to bit vectors
+/// counters of different kind.
+pub trait RankHinted<const HINT_BIT_SIZE: usize> {
+    /// Return the number of ones preceding the specified position,
+    /// provided a preceding position and its associated rank.
+    ///
+    /// # Safety
+    /// `pos` must be between 0 (included) and
+    /// the [length of the underlying bit vector](`BitLength::len`) (included).
+    /// `hint_pos` * `HINT_BIT_SIZE` must be between 0 (included) and
+    /// `pos` (included).
+    /// `hint_rank` must be the number of ones in the underlying bit vector
+    /// before `hint_pos` * `HINT_BIT_SIZE`.
+    unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize;
+    /// Return the number of ones preceding the specified position,
+    /// provided a preceding position `hint_pos` * `HINT_BIT_SIZE` and
+    /// the associated rank.
+    fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
+}
+
 /// Select over a bit vector.
 pub trait Select: BitCount {
     /// Return the position of the one of given rank, or `None` if no such
@@ -101,54 +123,55 @@ pub trait SelectZero: BitLength + BitCount {
 ///
 /// This trait is used to implement fast selection by adding to bit vectors
 /// indices of different kind. For example,
-/// [`QuantumIndex`](crate::rank_sel::QuantumIndex) add hints
-/// for the positions of ones at regular intervals. Implementations
-/// of data structures can ask for a hint from the index, and then
-/// complete the computation.
-pub trait SelectHinted: Select {
+/// [`SelectFixed1`](crate::rank_sel::SelectFixed1) adds hints
+/// for the positions of ones at fixed intervals.
+pub trait SelectHinted {
     /// Select the one of given rank, provided the position of a preceding one
     /// and its rank.
     ///
     /// # Safety
     /// `rank` must be between zero (included) and the number of ones in the
-    /// underlying bit vector (excluded). `pos` must be between 0 (included) and
+    /// underlying bit vector (excluded). `hint_pos` must be between 0 (included) and
     /// the [length of the underlying bit vector](`BitLength::len`) (included),
     /// and must be the position of a one in the underlying bit vector.
-    /// `rank_at_pos` must be the number of ones in the underlying bit vector
-    /// before `pos`.
-    unsafe fn select_hinted_unchecked(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize;
+    /// `hint_rank` must be the number of ones in the underlying bit vector
+    /// before `hint_pos`, and must be less than or equal to `rank`.
+    unsafe fn select_hinted_unchecked(
+        &self,
+        rank: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize;
     /// Select the one of given rank, provided the position of a preceding one
     /// and its rank.
-    fn select_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize>;
+    fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
 }
 
 /// Select zeros over a bit vector, with a hint.
 ///
 /// This trait is used to implement fast selection by adding to bit vectors
 /// indices of different kind. For example,
-/// [`QuantumZeroIndex`](crate::rank_sel::QuantumZeroIndex) add hints
-/// for the positions of zeros at regular intervals. Implementations
-/// of data structures can ask for a hint from the index, and then
-/// complete the computation.
-pub trait SelectZeroHinted: SelectZero {
+/// [`SelectZeroFixed1`](crate::rank_sel::SelectZeroFixed1) adds hints
+/// for the positions of zeros at regular intervals.
+pub trait SelectZeroHinted {
     /// Select the zero of given rank, provided the position of a preceding zero
     /// and its rank.
     ///
     /// # Safety
     /// `rank` must be between zero (included) and the number of zeros in the
-    /// underlying bit vector (excluded). `pos` must be between 0 (included) and
+    /// underlying bit vector (excluded). `hint_pos` must be between 0 (included) and
     /// the [length of the underlying bit vector](`BitLength::len`) (included),
     /// and must be the position of a zero in the underlying bit vector.
-    /// `rank_at_pos` must be the number of zeros in the underlying bit vector
-    /// before `pos`.
+    /// `hint_rank` must be the number of zeros in the underlying bit vector
+    /// before `hint_pos`, and must be less than or equal to `rank`.
     unsafe fn select_zero_hinted_unchecked(
         &self,
         rank: usize,
-        pos: usize,
-        rank_at_pos: usize,
+        hint_pos: usize,
+        hint_rank: usize,
     ) -> usize;
 
     /// Select the zero of given rank, provided the position of a preceding zero
     /// and its rank.
-    fn select_zero_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize>;
+    fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
 }

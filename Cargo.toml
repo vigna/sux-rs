@@ -36,9 +36,17 @@ xxh3 = "0.1.1"
 lender = "0.2.0"
 arbitrary-chunks = "0.4.1"
 derive_setters = "0.1.6"
+flate2 = "1.0.28"
+derivative = "2.2.0"
+rdst = "0.20.11"
+arbitrary = { version = "1", features = ["derive"], optional=true }
+mem_dbg = "0.1"
+
 [features]
 default = ["rayon"]
+fuzz = ["dep:arbitrary"]
 unaligned = []
+slow = []
 
 [profile.release] # Used for the examples
 opt-level = 3             # like --release

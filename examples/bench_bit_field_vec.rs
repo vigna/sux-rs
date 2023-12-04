@@ -46,7 +46,6 @@ pub fn main() {
     let mask = (1 << args.log2_size) - 1;
 
     let mut pl = ProgressLogger::default();
-    let mut u = 0;
 
     for _ in 0..args.repeats {
         let mut rand = SmallRng::seed_from_u64(0);
@@ -54,7 +53,7 @@ pub fn main() {
         pl.start("Writing...");
         for _ in 0..args.n {
             let x = rand.gen::<usize>() & mask;
-            unsafe { a.set_unchecked(x, 1) };
+            black_box(unsafe { a.set_unchecked(x, 1) });
         }
         pl.done_with_count(args.n);
 
@@ -62,16 +61,14 @@ pub fn main() {
         pl.start("Reading (random)...");
         for _ in 0..args.n {
             unsafe {
-                u += a.get_unchecked(rand.gen::<usize>() & mask);
+                black_box(a.get_unchecked(rand.gen::<usize>() & mask));
             }
         }
         pl.done_with_count(args.n);
 
         pl.start("Reading (sequential)...");
         for i in 0..args.n {
-            unsafe {
-                u += a.get_unchecked(i);
-            }
+            black_box(unsafe { a.get_unchecked(i) });
         }
         pl.done_with_count(args.n);
 
@@ -79,7 +76,7 @@ pub fn main() {
         pl.item_name("item");
         pl.start("Scanning (unchecked) ...");
         for _ in 0..args.n {
-            u += unsafe { iter.next_unchecked() };
+            black_box(unsafe { iter.next_unchecked() });
         }
         pl.done_with_count(args.n);
 
@@ -87,10 +84,8 @@ pub fn main() {
         pl.item_name("item");
         pl.start("Scanning (reverse unchecked) ...");
         for _ in 0..args.n {
-            u += unsafe { iter.next_unchecked() };
+            black_box(unsafe { iter.next_unchecked() });
         }
         pl.done_with_count(args.n);
     }
-
-    black_box(u);
 }

@@ -1,5 +1,17 @@
-//! This module contains implementations of the rank and select traits for
-//! references to types that implement the traits.
+/*
+ * SPDX-FileCopyrightText: 2023 Tommaso Fontana
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ */
+
+/*!
+
+Implementations of basic traits for references to types that implement such traits.
+
+See <https://www.judy.co.uk/blog/rust-traits-and-references/>
+
+*/
+
 use crate::traits::*;
 
 macro_rules! impl_for_refs {
@@ -125,6 +137,6 @@ macro_rules! impl_for_refs {
     };
 }
 
-impl_for_refs!(&mut T);
 impl_for_refs!(&T);
+impl_for_refs!(&mut T);
 impl_for_refs!(Box<T>);
