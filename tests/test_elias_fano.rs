@@ -62,14 +62,14 @@ fn test_elias_fano() -> Result<()> {
             assert_eq!({ ef.get(i) }, *v);
         }
         // Add the ones indices
-        let ef: EliasFano<QuantumIndex> = ef.convert_to().unwrap();
+        let ef: EliasFano<SelectFixed1> = ef.convert_to().unwrap();
 
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.get(i), *v);
         }
 
         // Add the indices
-        let ef: sux::dict::elias_fano::EliasFano<QuantumZeroIndex<QuantumIndex>> =
+        let ef: sux::dict::elias_fano::EliasFano<SelectZeroFixed1<SelectFixed1>> =
             ef.convert_to().unwrap();
         // do a fast select
         for (i, v) in values.iter().enumerate() {
@@ -190,7 +190,7 @@ fn test_epserde() -> Result<()> {
         // Finish the creation of elias-fano
         let ef: EliasFano = efb.build();
         // Add the ones indices
-        let ef: EliasFano<QuantumIndex, BitFieldVec> = ef.convert_to().unwrap();
+        let ef: EliasFano<SelectFixed1, BitFieldVec> = ef.convert_to().unwrap();
 
         let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
         let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);
@@ -198,7 +198,7 @@ fn test_epserde() -> Result<()> {
         drop(file);
         println!("{}", schema.to_csv());
 
-        let c = <EliasFano<QuantumIndex, BitFieldVec>>::mmap(
+        let c = <EliasFano<SelectFixed1, BitFieldVec>>::mmap(
             &tmp_file,
             epserde::deser::Flags::empty(),
         )?;

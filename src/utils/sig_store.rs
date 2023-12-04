@@ -23,14 +23,34 @@ The trait [`ToSig`] provides a standard way to generate signatures for a [`SigSt
 */
 
 use anyhow::Result;
-use epserde::traits::ZeroCopy;
-use rayon::prelude::ParallelIterator;
-use rayon::slice::ParallelSlice;
-use rayon::slice::ParallelSliceMut;
+use epserde::prelude::*;
+use rdst::RadixKey;
 use std::borrow::Cow;
 use std::{collections::VecDeque, fs::File, io::*, marker::PhantomData};
 
 use crate::prelude::spooky_short;
+
+/**
+
+A signature and a value.
+
+*/
+
+#[derive(Epserde, Debug, Clone, Copy)]
+#[repr(C)]
+#[zero_copy]
+pub struct SigVal<T: ZeroCopy + 'static> {
+    pub sig: [u64; 2],
+    pub val: T,
+}
+
+impl<T: ZeroCopy + 'static> RadixKey for SigVal<T> {
+    const LEVELS: usize = 16;
+
+    fn get_level(&self, level: usize) -> u8 {
+        (self.sig[1 - level / 8] >> ((level % 8) * 8)) as u8
+    }
+}
 
 /**
 
@@ -166,7 +186,7 @@ pub struct ChunkStore<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T> ChunkStore<T> {
+impl<T: ZeroCopy + 'static> ChunkStore<T> {
     /// Return the chunk sizes.
     pub fn chunk_sizes(&self) -> &Vec<usize> {
         &self.chunk_sizes
@@ -203,19 +223,19 @@ usually return borrowed variants.
 */
 
 #[derive(Debug)]
-pub struct ChunkIterator<'a, T> {
+pub struct ChunkIterator<'a, T: ZeroCopy + 'static> {
     store: &'a mut ChunkStore<T>,
     /// The next file to examine.
     next_file: usize,
     /// The index of the next chunk to return.
     next_chunk: usize,
     /// The remaining chunks to emit, if there are several chunks per bucket.
-    chunks: VecDeque<Vec<([u64; 2], T)>>,
+    chunks: VecDeque<Vec<SigVal<T>>>,
     _marker: PhantomData<T>,
 }
 
-impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkIterator<'a, T> {
-    type Item = (usize, Cow<'a, [([u64; 2], T)]>);
+impl<'a, T: ZeroCopy + Send + Sync + 'static> Iterator for ChunkIterator<'a, T> {
+    type Item = (usize, Cow<'a, [SigVal<T>]>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let store = &mut self.store;
@@ -228,7 +248,7 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
             let to_aggr = 1 << (store.bucket_high_bits - store.chunk_high_bits);
 
             let len = store.chunk_sizes[self.next_chunk];
-            let mut chunk = Vec::<([u64; 2], T)>::with_capacity(len);
+            let mut chunk = Vec::<SigVal<T>>::with_capacity(len);
 
             // SAFETY: we just allocated this vector so it is safe to set the length.
             // read_exact guarantees that the vector will be filled with data.
@@ -243,17 +263,10 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
                 assert!(post.is_empty());
                 for i in self.next_file..self.next_file + to_aggr {
                     let mut reader = &store.files[i];
-                    let bytes = store.buf_sizes[i] * core::mem::size_of::<([u64; 2], T)>();
+                    let bytes = store.buf_sizes[i] * core::mem::size_of::<SigVal<T>>();
                     reader.read_exact(&mut buf[..bytes]).unwrap();
                     buf = &mut buf[bytes..];
                 }
-            }
-
-            // Test for duplicates
-            chunk.par_sort_unstable_by_key(|x| x.0);
-
-            if chunk.par_windows(2).any(|w| w[0].0 == w[1].0) {
-                return Some((usize::MAX, Cow::Owned(vec![])));
             }
 
             let res = (self.next_chunk, Cow::Owned(chunk));
@@ -278,7 +291,7 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
 
                 let mut len = store.buf_sizes[self.next_file];
                 let buf_size = 1024;
-                let mut buffer = Vec::<([u64; 2], T)>::with_capacity(buf_size);
+                let mut buffer = Vec::<SigVal<T>>::with_capacity(buf_size);
                 #[allow(clippy::uninit_vec)]
                 unsafe {
                     buffer.set_len(buf_size);
@@ -301,7 +314,7 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
 
                     // We move each signature/value pair into its chunk
                     for &v in &buffer {
-                        let chunk = (v.0[0].rotate_left(store.chunk_high_bits) as usize
+                        let chunk = (v.sig[0].rotate_left(store.chunk_high_bits) as usize
                             & chunk_mask)
                             - chunk_offset;
                         self.chunks[chunk].push(v);
@@ -312,36 +325,30 @@ impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> Iterator for ChunkI
                 self.next_file += 1;
             }
 
-            let mut chunk = self.chunks.pop_front().unwrap();
-            chunk.par_sort_unstable_by_key(|x| x.0);
-
-            if chunk.par_windows(2).any(|w| w[0].0 == w[1].0) {
-                return Some((usize::MAX, Cow::Owned(vec![])));
-            }
-
-            let res = (self.next_chunk, Cow::Owned(chunk));
+            let res = (
+                self.next_chunk,
+                Cow::Owned(self.chunks.pop_front().unwrap()),
+            );
             self.next_chunk += 1;
             Some(res)
         }
     }
 }
 
-impl<'a, T: ToOwned + ZeroCopy + Copy + Clone + Send + Sync> ExactSizeIterator
-    for ChunkIterator<'a, T>
-{
+impl<'a, T: ZeroCopy + Send + Sync> ExactSizeIterator for ChunkIterator<'a, T> {
+    fn len(&self) -> usize {
+        self.store.chunk_sizes.len() - self.next_chunk
+    }
 }
 
-fn write_binary<T: ZeroCopy>(
-    writer: &mut impl Write,
-    tuples: &[([u64; 2], T)],
-) -> std::io::Result<()> {
+fn write_binary<T: ZeroCopy>(writer: &mut impl Write, tuples: &[SigVal<T>]) -> std::io::Result<()> {
     let (pre, buf, post) = unsafe { tuples.align_to::<u8>() };
     debug_assert!(pre.is_empty());
     debug_assert!(post.is_empty());
     writer.write_all(buf)
 }
 
-impl<T: ZeroCopy> SigStore<T> {
+impl<T: ZeroCopy + 'static> SigStore<T> {
     /// Create a new store with 2<sup>`buckets_high_bits`</sup> buffers, keeping
     /// counts for chunks defined by at most `max_chunk_high_bits` high bits.
     pub fn new(buckets_high_bits: u32, max_chunk_high_bits: u32) -> Result<Self> {
@@ -369,24 +376,24 @@ impl<T: ZeroCopy> SigStore<T> {
     }
 
     /// Adds a signature/value pair to this store.
-    pub fn push(&mut self, value: &([u64; 2], T)) -> std::io::Result<()> {
+    pub fn push(&mut self, sig_val: &SigVal<T>) -> std::io::Result<()> {
         self.len += 1;
         // high_bits can be 0
         let buffer =
-            ((value.0[0].rotate_left(self.buckets_high_bits)) & self.buckets_mask) as usize;
+            ((sig_val.sig[0].rotate_left(self.buckets_high_bits)) & self.buckets_mask) as usize;
         let chunk =
-            ((value.0[0].rotate_left(self.max_chunk_high_bits)) & self.max_chunk_mask) as usize;
+            ((sig_val.sig[0].rotate_left(self.max_chunk_high_bits)) & self.max_chunk_mask) as usize;
 
         self.bucket_sizes[buffer] += 1;
         self.chunk_sizes[chunk] += 1;
 
-        write_binary(&mut self.writers[buffer], std::slice::from_ref(value))
+        write_binary(&mut self.writers[buffer], std::slice::from_ref(sig_val))
     }
 
     /// Adds signature/value pairs to this store.
-    pub fn extend(&mut self, iter: impl IntoIterator<Item = ([u64; 2], T)>) -> Result<()> {
-        for value in iter {
-            self.push(&value)?;
+    pub fn extend(&mut self, iter: impl IntoIterator<Item = SigVal<T>>) -> Result<()> {
+        for sig_val in iter {
+            self.push(&sig_val)?;
         }
         Ok(())
     }
@@ -440,9 +447,9 @@ impl<T: ZeroCopy> SigStore<T> {
 
 fn test_sig_sorter() {
     use rand::prelude::*;
-    for max_chunk_bits in [0, 2, 8, 10] {
-        for buckets_high_bits in [0, 2, 8, 10] {
-            for chunk_high_bits in [0, 2, 8, 10] {
+    for max_chunk_bits in [0, 2, 8, 9] {
+        for buckets_high_bits in [0, 2, 8, 9] {
+            for chunk_high_bits in [0, 2, 8, 9] {
                 if chunk_high_bits > max_chunk_bits {
                     continue;
                 }
@@ -451,18 +458,22 @@ fn test_sig_sorter() {
 
                 for _ in (0..10000).rev() {
                     sig_sorter
-                        .push(&([rand.next_u64(), rand.next_u64()], rand.next_u64()))
+                        .push(&SigVal {
+                            sig: [rand.next_u64(), rand.next_u64()],
+                            val: rand.next_u64(),
+                        })
                         .unwrap();
                 }
                 let mut chunk_store = sig_sorter.into_chunk_store(chunk_high_bits).unwrap();
                 let mut count = 0;
-                let mut iter = chunk_store.iter().unwrap();
-                while let Some(chunk) = iter.next() {
+                let iter = chunk_store.iter().unwrap();
+                for chunk in iter {
                     count += 1;
-                    for w in chunk.1.windows(2) {
-                        assert!(
-                            w[0].0[0] < w[1].0[0]
-                                || w[0].0[0] == w[1].0[0] && w[0].0[1] < w[1].0[1]
+                    for &w in chunk.1.iter() {
+                        assert_eq!(
+                            chunk.0,
+                            w.sig[0].rotate_left(chunk_high_bits) as usize
+                                & ((1 << chunk_high_bits) - 1)
                         );
                     }
                 }
@@ -479,35 +490,20 @@ fn test_u8() {
     let mut rand = SmallRng::seed_from_u64(0);
     for _ in (0..1000).rev() {
         sig_sorter
-            .push(&([rand.next_u64(), rand.next_u64()], rand.next_u64() as u8))
+            .push(&SigVal {
+                sig: [rand.next_u64(), rand.next_u64()],
+                val: rand.next_u64() as u8,
+            })
             .unwrap();
     }
     let mut chunk_store = sig_sorter.into_chunk_store(2).unwrap();
     let mut count = 0;
-    let mut iter = chunk_store.iter().unwrap();
-    while let Some(chunk) = iter.next() {
+    let iter = chunk_store.iter().unwrap();
+    for chunk in iter {
         count += 1;
-        for w in chunk.1.windows(2) {
-            assert!(w[0].0[0] < w[1].0[0] || w[0].0[0] == w[1].0[0] && w[0].0[1] < w[1].0[1]);
+        for &w in chunk.1.iter() {
+            assert_eq!(chunk.0, w.sig[0].rotate_left(2) as usize & ((1 << 2) - 1));
         }
     }
     assert_eq!(count, 4);
-}
-
-#[test]
-
-fn test_dup() {
-    let mut sig_sorter = SigStore::new(0, 0).unwrap();
-    sig_sorter.push(&([0, 0], 0)).unwrap();
-    sig_sorter.push(&([0, 0], 0)).unwrap();
-    let mut dup = false;
-    let mut chunk_store = sig_sorter.into_chunk_store(0).unwrap();
-    let mut iter = chunk_store.iter().unwrap();
-    while let Some(chunk) = iter.next() {
-        if chunk.0 == usize::MAX {
-            dup = true;
-            break;
-        }
-    }
-    assert!(dup);
 }

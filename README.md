@@ -3,7 +3,7 @@
 A pure Rust implementation of succinct and compressed data structures.
 
 This crate is a work in progress: 
-part of it  is a port from [Sux](https://sux.di.unimi.it/) and from [the DSI Utilities](https://dsiutils.di.unimi.it/);
+part of it is a port from [Sux](https://sux.di.unimi.it/) and from [the DSI Utilities](https://dsiutils.di.unimi.it/);
 new data structures will be added over time. Presently,
 we provide:
 
@@ -16,8 +16,8 @@ we provide:
 - an implementation of list of [strings compressed by rear-coded prefix omission](crate::dict::rear_coded_list::RearCodedList);
 - an implementation of [static functions](crate::func::VFunc).
 
-The focus is on efficiency (in particular, there are unchecked version of all methods) and
-on flexible composability (e.g., you can fine tune your Elias–Fano instance choosing different
+The focus is on efficiency (in particular, there are unchecked versions of all methods) and
+on flexible composability (e.g., you can fine-tune your Elias–Fano instance by choosing different
 types of internal indices, and whether to index zeros or ones).
 
 ## ε-serde support
@@ -26,7 +26,14 @@ All structures in this crate are designed to work well with [ε-serde](https://c
 in particular, once you have created and serialized them, you can easily map them into memory
 or load them in memory regions with specific `mmap()` attributes.
 
-# Acknowledgments
+## [`MemDbg`]/[`MemSize`] support
+
+All structures in this crate support the [`MemDbg`] and [`MemSize`] traits from the
+[`mem_dbg` crate](https://crates.io/crates/mem_dbg), which provide convient facilities
+for inspecting memory usage and debugging memory-related issues.
+
+
+## Acknowledgments
 
 This software has been partially supported by project SERICS (PE00000014) under the NRRP MUR program funded by the EU - NGEU,
 and by project ANR COREGRAPHIE, grant ANR-20-CE23-0002 of the French Agence Nationale de la Recherche.

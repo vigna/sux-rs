@@ -9,7 +9,8 @@ use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
-use sux::func::VFunc;
+use lender::*;
+use sux::{func::VFunc, utils::LineLender};
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
@@ -37,10 +38,10 @@ fn main() -> Result<()> {
 
     if let Some(filename) = args.filename {
         let func = VFunc::<_>::load_mem(&args.func)?;
-        let keys = sux::utils::file::FilenameIntoIterator(&filename)
-            .into_iter()
+        let keys: Vec<_> = LineLender::from_path(filename)?
+            .map_into_iter(|x| x.unwrap().to_owned())
             .take(args.n)
-            .collect::<Vec<_>>();
+            .collect();
         pl.start("Querying...");
         for (i, key) in keys.iter().enumerate() {
             assert_eq!(i, func.get(key));
