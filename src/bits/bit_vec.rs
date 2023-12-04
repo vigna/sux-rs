@@ -778,6 +778,13 @@ impl<B: AsRef<[usize]>> AsRef<[usize]> for BitVec<B> {
     }
 }
 
+impl<B: AsMut<[usize]>> AsMut<[usize]> for BitVec<B> {
+    #[inline(always)]
+    fn as_mut(&mut self) -> &mut [usize] {
+        self.data.as_mut()
+    }
+}
+
 impl<B: AsRef<[AtomicUsize]>> AsRef<[AtomicUsize]> for AtomicBitVec<B> {
     #[inline(always)]
     fn as_ref(&self) -> &[AtomicUsize] {
