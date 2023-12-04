@@ -68,13 +68,14 @@ pub trait RankHinted<const HINT_BIT_SIZE: usize> {
     /// # Safety
     /// `pos` must be between 0 (included) and
     /// the [length of the underlying bit vector](`BitLength::len`) (included).
-    /// `hint_pos` * `HINT_SIZE` must be between 0 (included) and
+    /// `hint_pos` * `HINT_BIT_SIZE` must be between 0 (included) and
     /// `pos` (included).
     /// `hint_rank` must be the number of ones in the underlying bit vector
-    /// before `hint_pos` * `HINT_SIZE`.
+    /// before `hint_pos` * `HINT_BIT_SIZE`.
     unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize;
     /// Return the number of ones preceding the specified position,
-    /// provided a preceding position and the associated rank.
+    /// provided a preceding position `hint_pos` * `HINT_BIT_SIZE` and
+    /// the associated rank.
     fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
 }
 

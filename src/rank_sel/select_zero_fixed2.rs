@@ -11,6 +11,13 @@ use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
 
+/**
+
+A selection structure for zeros based on a two-level index.
+
+See [`SelectFixed2`](crate::rank_sel::SelectFixed2).
+
+*/
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SelectZeroFixed2<
     B: SelectZeroHinted = CountBitVec,

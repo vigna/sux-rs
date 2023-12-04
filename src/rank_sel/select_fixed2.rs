@@ -13,7 +13,7 @@ use mem_dbg::*;
 
 /**
 
-A selection structure based on a two-levels index.
+A selection structure based on a two-level index.
 
 This is a fixed-density version of the structure described by
 by Sebastiano Vigna in “<a href="https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12">Broadword
@@ -32,6 +32,11 @@ the position of one every 2<sup>`LOG2_ONES_PER_INVENTORY`</sup>/2<sup>`LOG2_U64_
 Thus, the objective of sizing the first-level inventory is to obtain the second-level inventory with a
 span of less than 2<sup>16</sup> elements as often as possible. The default parameters are a good choice for a vector
 with approximately the same number of zeroes and ones.
+
+The size of the structure is [`BitCount::count()`] *
+(1 + 2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup>) * 64 / 2<sup>`LOG2_ONES_PER_INVENTORY`</sup> bits.
+
+See [`SelectZeroFixed2`](crate::rank_sel::SelectZeroFixed2) for the same structure for zeros.
 
 */
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
