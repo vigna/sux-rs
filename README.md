@@ -1,4 +1,4 @@
-# `sux-rs`
+# `sux`
 
 A pure Rust implementation of succinct and compressed data structures.
 
