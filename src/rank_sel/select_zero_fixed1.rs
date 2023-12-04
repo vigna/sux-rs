@@ -28,7 +28,7 @@ pub struct SelectZeroFixed1<
     const LOG2_ZEROS_PER_INVENTORY: usize = 8,
 > {
     bits: B,
-    zeros: O,
+    inventory: O,
     _marker: core::marker::PhantomData<[(); LOG2_ZEROS_PER_INVENTORY]>,
 }
 
@@ -37,9 +37,9 @@ impl<
         const LOG2_ZEROS_PER_INVENTORY: usize,
     > SelectZeroFixed1<B, Vec<usize>, LOG2_ZEROS_PER_INVENTORY>
 {
-    pub fn new(bitvec: B) -> Result<Self> {
+    pub fn new(bitvec: B) -> Self {
         let mut res = SelectZeroFixed1 {
-            zeros: vec![
+            inventory: vec![
                 0;
                 (bitvec.len() - bitvec.count() + (1 << LOG2_ZEROS_PER_INVENTORY) - 1)
                     >> LOG2_ZEROS_PER_INVENTORY
@@ -47,8 +47,8 @@ impl<
             bits: bitvec,
             _marker: core::marker::PhantomData,
         };
-        res.build_zeros()?;
-        Ok(res)
+        res.build_zeros();
+        res
     }
 }
 
@@ -58,7 +58,7 @@ impl<
         const LOG2_ZEROS_PER_INVENTORY: usize,
     > SelectZeroFixed1<B, O, LOG2_ZEROS_PER_INVENTORY>
 {
-    fn build_zeros(&mut self) -> Result<()> {
+    fn build_zeros(&mut self) -> () {
         let mut number_of_zeros = 0;
         let mut next_quantum = 0;
         let mut zeros_index = 0;
@@ -70,17 +70,15 @@ impl<
                 let in_word_index = word.select_in_word((next_quantum - number_of_zeros) as usize);
                 let index = (i * usize::BITS as usize) + in_word_index;
                 if index >= <Self as BitLength>::len(self) as _ {
-                    return Ok(());
+                    return;
                 }
-                self.zeros.set(zeros_index, index);
+                self.inventory.set(zeros_index, index);
                 next_quantum += 1 << LOG2_ZEROS_PER_INVENTORY;
                 zeros_index += 1;
             }
 
             number_of_zeros += zeros_in_word;
         }
-
-        Ok(())
     }
 }
 
@@ -94,7 +92,7 @@ impl<
     #[inline(always)]
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
         let index = rank >> LOG2_ZEROS_PER_INVENTORY;
-        let pos = self.zeros.get_unchecked(index);
+        let pos = self.inventory.get_unchecked(index);
         let rank_at_pos = index << LOG2_ZEROS_PER_INVENTORY;
 
         self.bits
@@ -120,7 +118,7 @@ impl<
 {
     #[inline(always)]
     fn convert_to(self) -> Result<SelectZeroFixed1<B, Vec<usize>, LOG2_ZEROS_PER_INVENTORY>> {
-        SelectZeroFixed1::new(self)
+        Ok(SelectZeroFixed1::new(self))
     }
 }
 

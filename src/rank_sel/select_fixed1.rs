@@ -25,7 +25,7 @@ The positions are recorded in a [`BitFieldSlice`] whose [bit width](BitFieldSlic
 must be sufficient to record all the positions.
 
 The current implementation uses a [`Vec<usize>`] as the underlying [`BitFieldSlice`]. Thus,
-the overhead of the structure is [`BitCount::count()`] * [`usize::BITS`] / 2<sup>`LOG2_ONES_PER_INVENTORY`</sup>.
+the overhead of the structure is [`BitCount::count()`] * [`usize::BITS`] / 2<sup>`LOG2_ONES_PER_INVENTORY`</sup> bits.
 
 The index takes a backend parameter `B` that can be any type that implements
 [`SelectHinted`]. This will usually be something like [`CountBitVec`](crate::bits::bit_vec::CountBitVec), or possibly
@@ -43,16 +43,16 @@ pub struct SelectFixed1<
     const LOG2_ONES_PER_INVENTORY: usize = 8,
 > {
     bits: B,
-    ones: O,
+    inventory: O,
     _marker: core::marker::PhantomData<[(); LOG2_ONES_PER_INVENTORY]>,
 }
 
 impl<B: SelectHinted + AsRef<[usize]>, const LOG2_ONES_PER_INVENTORY: usize>
     SelectFixed1<B, Vec<usize>, LOG2_ONES_PER_INVENTORY>
 {
-    pub fn new(bitvec: B, number_of_ones: usize) -> Result<Self> {
+    pub fn new(bitvec: B, number_of_ones: usize) -> Self {
         let mut res = SelectFixed1 {
-            ones: vec![
+            inventory: vec![
                 0;
                 (number_of_ones + (1 << LOG2_ONES_PER_INVENTORY) - 1)
                     >> LOG2_ONES_PER_INVENTORY
@@ -60,8 +60,8 @@ impl<B: SelectHinted + AsRef<[usize]>, const LOG2_ONES_PER_INVENTORY: usize>
             bits: bitvec,
             _marker: core::marker::PhantomData,
         };
-        res.build_ones()?;
-        Ok(res)
+        res.build_ones();
+        res
     }
 }
 
@@ -71,7 +71,7 @@ impl<
         const LOG2_ONES_PER_INVENTORY: usize,
     > SelectFixed1<B, O, LOG2_ONES_PER_INVENTORY>
 {
-    fn build_ones(&mut self) -> Result<()> {
+    fn build_ones(&mut self) -> () {
         let mut number_of_ones = 0;
         let mut next_quantum = 0;
         let mut ones_index = 0;
@@ -82,14 +82,13 @@ impl<
             while number_of_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
                 let index = (i * usize::BITS as usize) + in_word_index;
-                self.ones.set(ones_index, index);
+                self.inventory.set(ones_index, index);
                 next_quantum += 1 << LOG2_ONES_PER_INVENTORY;
                 ones_index += 1;
             }
 
             number_of_ones += ones_in_word;
         }
-        Ok(())
     }
 }
 
@@ -100,7 +99,7 @@ impl<B: SelectHinted + BitCount, O: BitFieldSlice<usize>, const LOG2_ONES_PER_IN
     #[inline(always)]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         let index = rank >> LOG2_ONES_PER_INVENTORY;
-        let pos = self.ones.get_unchecked(index);
+        let pos = self.inventory.get_unchecked(index);
         let rank_at_pos = index << LOG2_ONES_PER_INVENTORY;
 
         self.bits.select_hinted_unchecked(rank, pos, rank_at_pos)
@@ -126,7 +125,7 @@ impl<B: SelectHinted + BitCount + AsRef<[usize]>, const LOG2_ONES_PER_INVENTORY:
     #[inline(always)]
     fn convert_to(self) -> Result<SelectFixed1<B, Vec<usize>, LOG2_ONES_PER_INVENTORY>> {
         let count = self.count();
-        SelectFixed1::new(self, count)
+        Ok(SelectFixed1::new(self, count))
     }
 }
 
