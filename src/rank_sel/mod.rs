@@ -20,6 +20,12 @@ structure, in this order. The structures implement the ranking or selection trai
 a hint and then delegating to the base class. Moreover, each class forwards the methods it
 does not implement to the next class in the chain.
 
+A few of the structures in module are based on _broadword programming_ and have been described
+by Sebastiano Vigna in “<a href="https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12">Broadword
+Implementation of Rank/Select Queries</a>”, _Proc. of the 7th International Workshop
+on Experimental Algorithms, WEA 2008_, volume 5038 of Lecture Notes in Computer Science, pages
+154–168. Springer, 2008.
+
 ## Select
 
 Selection is supported by means of structures implementing the
