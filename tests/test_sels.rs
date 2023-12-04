@@ -31,8 +31,8 @@ fn test_select_fixed1() {
         let simple =
             SelectFixed1::<CountBitVec, Vec<usize>, 8>::new(CountBitVec::from(bitvec), ones);
 
-        for i in 0..ones {
-            assert_eq!(simple.select(i), Some(pos[i]), "i: {} ones : {}", i, ones);
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select(i), Some(p), "i: {} ones : {}", i, ones);
         }
         assert_eq!(simple.select(ones + 1), None);
     }
@@ -51,11 +51,10 @@ fn test_select_fixed1_slow() {
         let ones = pos.len();
 
         let simple =
-            SelectFixed1::<CountBitVec, Vec<usize>, 8>::new(CountBitVec::from(bitvec), ones)
-                .unwrap();
+            SelectFixed1::<CountBitVec, Vec<usize>, 8>::new(CountBitVec::from(bitvec), ones);
 
-        for i in 0..ones {
-            assert_eq!(simple.select(i), Some(pos[i]), "i: {} ones : {}", i, ones);
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select(i), Some(p), "i: {} ones : {}", i, ones);
         }
         assert_eq!(simple.select(ones + 1), None);
     }
@@ -85,24 +84,12 @@ fn test_select_zero_fixed1() {
         bitvec_clone.flip();
         let simple_ones = <SelectFixed2<_, _, 10, 2>>::new(&bitvec_clone);
 
-        for i in 0..zeros {
-            assert_eq!(
-                simple_ones.select(i),
-                Some(pos[i]),
-                "i: {} ones : {}",
-                i,
-                zeros
-            );
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple_ones.select(i), Some(p), "i: {} ones : {}", i, zeros);
         }
 
-        for i in 0..zeros {
-            assert_eq!(
-                simple.select_zero(i),
-                Some(pos[i]),
-                "i: {} ones : {}",
-                i,
-                zeros
-            );
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select_zero(i), Some(p), "i: {} ones : {}", i, zeros);
         }
 
         assert_eq!(simple.select_zero(zeros + 1), None);
@@ -111,7 +98,7 @@ fn test_select_zero_fixed1() {
 
 #[cfg(feature = "slow")]
 #[test]
-fn test_select_zero_fixed1_slo() {
+fn test_select_zero_fixed1_slow() {
     for len in [6_000_000_000] {
         let mut bitvec = BitVec::new(len);
         bitvec.fill(true);
@@ -124,14 +111,8 @@ fn test_select_zero_fixed1_slo() {
 
         let simple = <SelectZeroFixed2<_, _, 10, 2>>::new(&bitvec);
 
-        for i in 0..zeros {
-            assert_eq!(
-                simple.select_zero(i),
-                Some(pos[i]),
-                "i: {} zeros : {}",
-                i,
-                zeros
-            );
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select_zero(i), Some(p), "i: {} zeros : {}", i, zeros);
         }
         assert_eq!(simple.select_zero(zeros + 1), None);
     }
@@ -157,8 +138,8 @@ fn test_select_fixed2() {
 
         let simple = <SelectFixed2<_, _, 10, 2>>::new(&bitvec);
 
-        for i in 0..ones {
-            assert_eq!(simple.select(i), Some(pos[i]), "i: {} ones : {}", i, ones);
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select(i), Some(p), "i: {} ones : {}", i, ones);
         }
         assert_eq!(simple.select(ones + 1), None);
     }
@@ -178,8 +159,8 @@ fn test_select_fixed2_slow() {
 
         let simple = <SelectFixed2<_, _, 10, 2>>::new(&bitvec);
 
-        for i in 0..ones {
-            assert_eq!(simple.select(i), Some(pos[i]), "i: {} ones : {}", i, ones);
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select(i), Some(p), "i: {} ones : {}", i, ones);
         }
         assert_eq!(simple.select(ones + 1), None);
     }
@@ -209,24 +190,12 @@ fn test_select_zero_fixed2() {
         bitvec_clone.flip();
         let simple_ones = <SelectFixed2<_, _, 10, 2>>::new(&bitvec_clone);
 
-        for i in 0..zeros {
-            assert_eq!(
-                simple_ones.select(i),
-                Some(pos[i]),
-                "i: {} ones : {}",
-                i,
-                zeros
-            );
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple_ones.select(i), Some(p), "i: {} ones : {}", i, zeros);
         }
 
-        for i in 0..zeros {
-            assert_eq!(
-                simple.select_zero(i),
-                Some(pos[i]),
-                "i: {} ones : {}",
-                i,
-                zeros
-            );
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select_zero(i), Some(p), "i: {} ones : {}", i, zeros);
         }
 
         assert_eq!(simple.select_zero(zeros + 1), None);
@@ -248,14 +217,8 @@ fn test_select_zero_fixed2_slow() {
 
         let simple = <SelectZeroFixed2<_, _, 10, 2>>::new(&bitvec);
 
-        for i in 0..zeros {
-            assert_eq!(
-                simple.select_zero(i),
-                Some(pos[i]),
-                "i: {} zeros : {}",
-                i,
-                zeros
-            );
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select_zero(i), Some(p), "i: {} zeros : {}", i, zeros);
         }
         assert_eq!(simple.select_zero(zeros + 1), None);
     }
