@@ -895,3 +895,37 @@ impl fmt::Display for BitVec<Vec<usize>> {
         Ok(())
     }
 }
+
+unsafe fn rank_hinted_unchecked(
+    data: impl AsRef<[usize]>,
+    pos: usize,
+    hint_pos: usize,
+    hint_rank: usize,
+    hint_bit_size: usize,
+) -> usize {
+    let data = data.as_ref();
+    let mut rank = hint_rank;
+    let mut hint_pos = hint_pos;
+
+    while (hint_pos + 1) * hint_bit_size <= pos {
+        rank += data.get_unchecked(hint_pos).count_ones() as usize;
+        hint_pos += 1;
+    }
+
+    rank + (data.get_unchecked(hint_pos) & ((1 << (pos % hint_bit_size)) - 1)).count_ones() as usize
+}
+
+impl<B: AsRef<[usize]>, const HINT_BIT_SIZE: usize> RankHinted<HINT_BIT_SIZE> for BitVec<B> {
+    unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
+        rank_hinted_unchecked(self.data.as_ref(), pos, hint_pos, hint_rank, HINT_BIT_SIZE)
+    }
+
+    fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
+        if pos > self.len() || hint_pos * HINT_BIT_SIZE > pos {
+            return None;
+        }
+        Some(unsafe {
+            rank_hinted_unchecked(self.data.as_ref(), pos, hint_pos, hint_rank, HINT_BIT_SIZE)
+        })
+    }
+}
