@@ -8,6 +8,7 @@
 
 use anyhow::Result;
 use epserde::prelude::*;
+use lender::from_iter;
 use std::io::prelude::*;
 use std::io::BufReader;
 use sux::prelude::*;
@@ -30,14 +31,14 @@ fn test_negative_redundancy() {
 
 #[test]
 fn test_rear_coded_list() -> Result<()> {
-    let words = BufReader::new(std::fs::File::open("tests/data/wordlist.10000").unwrap())
+    let words = BufReader::new(std::fs::File::open("tests/data/wordlist.10000")?)
         .lines()
         .map(|line| line.unwrap())
         .collect::<Vec<_>>();
 
     // create a new rca with u16 as pointers (this limit data to u16::MAX bytes max size)
     let mut rcab = <RearCodedListBuilder>::new(8);
-    rcab.extend(words.iter());
+    rcab.extend(from_iter(words.iter()));
 
     rcab.print_stats();
     let rca = rcab.build();

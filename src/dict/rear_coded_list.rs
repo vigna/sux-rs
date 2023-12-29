@@ -14,6 +14,7 @@ Immutable lists of strings compressed by prefix omission via rear coding.
 use crate::traits::IndexedDict;
 use epserde::*;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
+use lender_derive::for_;
 use mem_dbg::*;
 
 #[derive(Debug, Clone, Default)]
@@ -163,7 +164,7 @@ impl RearCodedListBuilder {
 
     #[inline]
     /// Encode and append a string to the end of the list.
-    pub fn push<S: AsRef<str>>(&mut self, string: S) {
+    pub fn push(&mut self, string: impl AsRef<str>) {
         let string = string.as_ref();
         // update stats
         self.stats.max_str_len = self.stats.max_str_len.max(string.len());
@@ -221,10 +222,13 @@ impl RearCodedListBuilder {
 
     #[inline]
     /// Append all the strings from an iterator to the end of the list
-    pub fn extend<S: AsRef<str>, I: std::iter::Iterator<Item = S>>(&mut self, iter: I) {
-        for string in iter {
+    pub fn extend<S: AsRef<str>, L: IntoLender>(&mut self, into_lender: L)
+    where
+        L::Lender: for<'lend> Lending<'lend, Lend = S>,
+    {
+        for_!(string in into_lender {
             self.push(string);
-        }
+        });
     }
 
     /// Print in an human readable format the statistics of the RCL
