@@ -5,16 +5,13 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use anyhow::bail;
 use clap::Parser;
 use dsi_progress_logger::*;
-use lender::Lender;
-use lender_derive::for_;
+use lender::prelude::*;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
 use std::hint::black_box;
-use std::io::prelude::*;
 use sux::prelude::*;
 
 #[derive(Parser, Debug)]
