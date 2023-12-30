@@ -10,7 +10,6 @@ use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::{Lender, Lending};
-use lender_derive::for_;
 use std::io::BufReader;
 use sux::prelude::*;
 

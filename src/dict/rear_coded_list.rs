@@ -13,8 +13,8 @@ Immutable lists of strings compressed by prefix omission via rear coding.
 
 use crate::traits::IndexedDict;
 use epserde::*;
+use lender::for_;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
-use lender_derive::for_;
 use mem_dbg::*;
 
 #[derive(Debug, Clone, Default)]
