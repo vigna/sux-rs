@@ -1,4 +1,4 @@
-use crate::prelude::{BitCount, BitLength, BitVec, RankHinted};
+use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
 
 pub struct Rank9<
     B: RankHinted<HINT_BIT_SIZE> + BitLength + BitCount + AsRef<[usize]> = BitVec,
@@ -33,12 +33,20 @@ impl<const HINT_BIT_SIZE: usize> Rank9<BitVec, HINT_BIT_SIZE> {
 
         Self { bits, counts }
     }
+}
 
-    pub fn rank(&self, index: usize) -> usize {
+impl<const HINT_BIT_SIZE: usize> BitLength for Rank9<BitVec, HINT_BIT_SIZE> {
+    fn len(&self) -> usize {
+        self.bits.len()
+    }
+}
+
+impl<const HINT_BIT_SIZE: usize> Rank for Rank9<BitVec, HINT_BIT_SIZE> {
+    fn rank(&self, index: usize) -> usize {
         unsafe { self.rank_unchecked(index.min(self.bits.len())) }
     }
 
-    pub unsafe fn rank_unchecked(&self, index: usize) -> usize {
+    unsafe fn rank_unchecked(&self, index: usize) -> usize {
         let word = index / 64;
         let block = (word / 4 & !1) as usize;
         let offset = (word % 8).wrapping_sub(1);
