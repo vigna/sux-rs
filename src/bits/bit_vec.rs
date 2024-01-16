@@ -896,28 +896,27 @@ impl fmt::Display for BitVec<Vec<usize>> {
     }
 }
 
-unsafe fn rank_hinted_unchecked(
+unsafe fn rank_hinted_unchecked<const HINT_BIT_SIZE: usize>(
     data: impl AsRef<[usize]>,
     pos: usize,
     hint_pos: usize,
     hint_rank: usize,
-    hint_bit_size: usize,
 ) -> usize {
     let data = data.as_ref();
     let mut rank = hint_rank;
     let mut hint_pos = hint_pos;
 
-    while (hint_pos + 1) * hint_bit_size <= pos {
+    while (hint_pos + 1) * HINT_BIT_SIZE <= pos {
         rank += data.get_unchecked(hint_pos).count_ones() as usize;
         hint_pos += 1;
     }
 
-    rank + (data.get_unchecked(hint_pos) & ((1 << (pos % hint_bit_size)) - 1)).count_ones() as usize
+    rank + (data.get_unchecked(hint_pos) & ((1 << (pos % HINT_BIT_SIZE)) - 1)).count_ones() as usize
 }
 
 impl<B: AsRef<[usize]>, const HINT_BIT_SIZE: usize> RankHinted<HINT_BIT_SIZE> for BitVec<B> {
     unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        rank_hinted_unchecked(self.data.as_ref(), pos, hint_pos, hint_rank, HINT_BIT_SIZE)
+        rank_hinted_unchecked::<HINT_BIT_SIZE>(self.data.as_ref(), pos, hint_pos, hint_rank)
     }
 
     fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
@@ -925,7 +924,20 @@ impl<B: AsRef<[usize]>, const HINT_BIT_SIZE: usize> RankHinted<HINT_BIT_SIZE> fo
             return None;
         }
         Some(unsafe {
-            rank_hinted_unchecked(self.data.as_ref(), pos, hint_pos, hint_rank, HINT_BIT_SIZE)
+            rank_hinted_unchecked::<HINT_BIT_SIZE>(self.data.as_ref(), pos, hint_pos, hint_rank)
         })
+    }
+}
+
+impl<B: AsRef<[usize]>> Rank for BitVec<B> {
+    fn rank(&self, pos: usize) -> usize {
+        // TODO: this is gross
+        <Self as RankHinted<{ usize::BITS as usize }>>::rank_hinted(self, pos, 0, 0)
+            .unwrap_or(self.count())
+    }
+
+    unsafe fn rank_unchecked(&self, pos: usize) -> usize {
+        // TODO: this is gross
+        <Self as RankHinted<{ usize::BITS as usize }>>::rank_hinted_unchecked(self, pos, 0, 0)
     }
 }

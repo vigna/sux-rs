@@ -29,6 +29,10 @@ pub trait BitCount {
 /// Rank over a bit vector.
 pub trait Rank: BitLength {
     /// Return the number of ones preceding the specified position.
+    ///
+    /// The bit vector is virtually zero-extended. If `pos` is greater than or equal to the
+    /// [length of the underlying bit vector](`BitLength::len`), the number of
+    /// ones in the underlying bit vector is returned.
     fn rank(&self, pos: usize) -> usize {
         unsafe { self.rank_unchecked(pos.min(self.len())) }
     }
