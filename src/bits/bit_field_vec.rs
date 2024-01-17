@@ -57,9 +57,9 @@ use common_traits::*;
 use epserde::*;
 use mem_dbg::*;
 use std::sync::atomic::*;
-#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 
 /// A vector of bit fields of fixed width.
+#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 pub struct BitFieldVec<W: Word = usize, B = Vec<W>> {
     /// The underlying storage.
     data: B,
@@ -71,8 +71,8 @@ pub struct BitFieldVec<W: Word = usize, B = Vec<W>> {
     len: usize,
 }
 
-#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 /// A tentatively thread-safe vector of bit fields of fixed width.
+#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 pub struct AtomicBitFieldVec<W: Word + IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
     /// The underlying storage.
     data: B,
@@ -93,6 +93,7 @@ fn mask<W: Word>(bit_width: usize) -> W {
 }
 
 impl<W: Word> BitFieldVec<W, Vec<W>> {
+    /// Create a new zero-initialized vector of given bit width and length.
     pub fn new(bit_width: usize, len: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
@@ -102,6 +103,91 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
             mask: mask(bit_width),
             len,
         }
+    }
+
+    /// Create an empty BitFieldVec that doesn't need to reallocate for up to
+    /// `capacity` elements.
+    pub fn with_capacity(bit_width: usize, capacity: usize) -> Self {
+        // We need at least one word to handle the case of bit width zero.
+        let n_of_words = Ord::max(1, (capacity * bit_width + W::BITS - 1) / W::BITS);
+        Self {
+            data: Vec::with_capacity(n_of_words),
+            bit_width,
+            mask: mask(bit_width),
+            len: 0,
+        }
+    }
+
+    /// Create a new uninitialized vector of given bit width and length.
+    /// 
+    /// # Safety
+    /// this is intherently unsafe as you might read
+    /// uninitialized data or write out of bounds.
+    pub unsafe fn new_uninit(bit_width: usize, len: usize) -> Self {
+        // We need at least one word to handle the case of bit width zero.
+        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
+        let mut data = Vec::with_capacity(n_of_words);
+        #[allow(clippy::uninit_vec)] // this is what we want to do, and it's much cleaner than maybeuninit
+        data.set_len(n_of_words);
+        Self {
+            data,
+            bit_width,
+            mask: mask(bit_width),
+            len,
+        }
+    }
+
+    /// Create a new all-ones-initialized vector of given bit width and length.
+    /// This is useful for testing / it's slightly faster than creatin an 
+    /// uninit vector and then setting all values to ones because we can iterate
+    /// over the words and set them all at once.
+    pub fn new_ones(bit_width: usize, len: usize) -> Self {
+        // We need at least one word to handle the case of bit width zero.
+        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
+        Self {
+            data: vec![!W::ZERO; n_of_words],
+            bit_width,
+            mask: mask(bit_width),
+            len,
+        }
+    }
+
+    /// Set the inner len.
+    /// 
+    /// # Safety
+    /// this is intherently unsafe as you might read
+    /// uninitialized data or write out of bounds.
+    pub unsafe fn set_len(&mut self, len: usize) {
+        debug_assert!(len * self.bit_width <= self.data.len() * W::BITS);
+        self.len = len;
+    }
+
+    /// Write 0 to all bits in the vector
+    pub fn reset(&mut self) {
+        self.data.iter_mut().for_each(|x| *x = W::ZERO);
+    }
+
+    /// Write 1 to all bits in the vector
+    pub fn reset_ones(&mut self) {
+        self.data.iter_mut().for_each(|x| *x = !W::ZERO);
+    }
+
+    /// Set len to 0
+    pub fn clear(&mut self) {
+        self.data.clear();
+        self.len = 0;
+    }
+
+    /// Return the bit-width of the values inside this vector.
+    pub fn bit_width(&self) -> usize {
+        debug_assert!(self.bit_width <= W::BITS);
+        self.bit_width
+    }
+
+    /// Return the mask used to extract values from this vector.
+    /// This will keep the lowest `bit_width` bits.
+    pub fn mask(&self) -> W {
+        self.mask
     }
 
     /// Create a new vector by copying a slice; the bit width will be the minimum
@@ -227,6 +313,92 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
             mask: mask(bit_width),
             len,
         }
+    }
+
+    /// Create an empty BitFieldVec that doesn't need to reallocate for up to
+    /// `capacity` elements.
+    pub fn with_capacity(bit_width: usize, capacity: usize) -> Self {
+        // We need at least one word to handle the case of bit width zero.
+        let n_of_words = Ord::max(1, (capacity * bit_width + W::BITS - 1) / W::BITS);
+        Self {
+            data: Vec::with_capacity(n_of_words),
+            bit_width,
+            mask: mask(bit_width),
+            len: 0,
+        }
+    }
+
+    /// Create a new uninitialized vector of given bit width and length.
+    /// 
+    /// # Safety
+    /// this is intherently unsafe as you might read
+    /// uninitialized data or write out of bounds.
+    pub unsafe fn new_uninit(bit_width: usize, len: usize) -> Self {
+        // We need at least one word to handle the case of bit width zero.
+        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
+        let mut data = Vec::with_capacity(n_of_words);
+        #[allow(clippy::uninit_vec)] // this is what we want to do, and it's much cleaner than maybeuninit
+        data.set_len(n_of_words);
+        Self {
+            data,
+            bit_width,
+            mask: mask(bit_width),
+            len,
+        }
+    }
+
+    /// Create a new all-ones-initialized vector of given bit width and length.
+    /// This is useful for testing / it's slightly faster than creatin an 
+    /// uninit vector and then setting all values to ones because we can iterate
+    /// over the words and set them all at once.
+    pub fn new_ones(bit_width: usize, len: usize) -> Self {
+        // We need at least one word to handle the case of bit width zero.
+        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
+        Self {
+            data: (0..n_of_words)
+                .map(|_| W::AtomicType::new(!W::ZERO))
+                .collect(),
+            bit_width,
+            mask: mask(bit_width),
+            len,
+        }
+    }
+
+    /// Set the inner len.
+    /// # Safety
+    /// this is intherently unsafe as you might read
+    /// uninitialized data or write out of bounds.
+    pub unsafe fn set_len(&mut self, len: usize) {
+        debug_assert!(len * self.bit_width <= self.data.len() * W::BITS);
+        self.len = len;
+    }
+
+    /// Write 0 to all bits in the vector
+    pub fn reset(&mut self) {
+        self.data.iter_mut().for_each(|x| x.store(W::ZERO, Ordering::Relaxed));
+    }
+
+    /// Write 1 to all bits in the vector
+    pub fn reset_ones(&mut self) {
+        self.data.iter_mut().for_each(|x| x.store(!W::ZERO, Ordering::Relaxed));
+    }
+
+    /// Set len to 0
+    pub fn clear(&mut self) {
+        self.data.clear();
+        self.len = 0;
+    }    
+    
+    /// Return the bit-width of the values inside this vector.
+    pub fn bit_width(&self) -> usize {
+        debug_assert!(self.bit_width <= W::BITS);
+        self.bit_width
+    }
+
+    /// Return the mask used to extract values from this vector.
+    /// This will keep the lowest `bit_width` bits.
+    pub fn mask(&self) -> W {
+        self.mask
     }
 }
 
