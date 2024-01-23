@@ -46,7 +46,7 @@ mem_dbg = "0.1"
 criterion = { version = "0.4", features = ["html_reports"] }
 
 [[bench]]
-name = "my_benchmark"
+name = "select_fixed2"
 harness = false
 
 [features]
