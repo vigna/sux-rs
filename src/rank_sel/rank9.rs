@@ -1,14 +1,20 @@
-use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
+use common_traits::Sequence;
+use epserde::*;
+use mem_dbg::*;
 
+use crate::prelude::{BitLength, BitVec, Rank, RankHinted};
+
+#[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct Rank9<
-    B: RankHinted<HINT_BIT_SIZE> + BitLength + BitCount + AsRef<[usize]> = BitVec,
+    B: RankHinted<HINT_BIT_SIZE> + Rank + AsRef<[usize]> = BitVec,
+    C: AsRef<[u64]> = Vec<u64>,
     const HINT_BIT_SIZE: usize = 64,
 > {
     bits: B,
-    counts: Vec<u64>,
+    counts: C,
 }
 
-impl<const HINT_BIT_SIZE: usize> Rank9<BitVec, HINT_BIT_SIZE> {
+impl<const HINT_BIT_SIZE: usize> Rank9<BitVec, Vec<u64>, HINT_BIT_SIZE> {
     pub fn new(bits: BitVec, num_bits: u64) -> Self {
         let num_words = (num_bits + 63) / 64;
         let num_counts = ((num_bits + 64 * 8 - 1) / (64 * 8)) * 2;
@@ -35,24 +41,27 @@ impl<const HINT_BIT_SIZE: usize> Rank9<BitVec, HINT_BIT_SIZE> {
     }
 }
 
-impl<const HINT_BIT_SIZE: usize> BitLength for Rank9<BitVec, HINT_BIT_SIZE> {
+impl<const HINT_BIT_SIZE: usize> BitLength for Rank9<BitVec, Vec<u64>, HINT_BIT_SIZE> {
     fn len(&self) -> usize {
         self.bits.len()
     }
 }
 
-impl<const HINT_BIT_SIZE: usize> Rank for Rank9<BitVec, HINT_BIT_SIZE> {
+impl<const HINT_BIT_SIZE: usize> Rank for Rank9<BitVec, Vec<u64>, HINT_BIT_SIZE> {
     fn rank(&self, index: usize) -> usize {
         unsafe { self.rank_unchecked(index.min(self.bits.len())) }
     }
 
+    #[inline(always)]
     unsafe fn rank_unchecked(&self, index: usize) -> usize {
         let word = index / 64;
         let block = (word / 4 & !1) as usize;
         let offset = (word % 8).wrapping_sub(1);
 
-        let hint_rank = self.counts[block]
-            + (self.counts[block + 1] >> (offset.wrapping_add(offset >> 60 & 0x8)) * 9 & 0x1FF);
+        let hint_rank = self.counts.get_unchecked(block)
+            + (self.counts.get_unchecked(block + 1)
+                >> (offset.wrapping_add(offset >> 60 & 0x8)) * 9
+                & 0x1FF);
 
         <BitVec as RankHinted<HINT_BIT_SIZE>>::rank_hinted_unchecked(
             &self.bits,
@@ -70,42 +79,42 @@ mod test_rank9 {
     #[test]
     fn test_rank9_1() {
         let bitvec = unsafe { BitVec::from_raw_parts(vec![usize::MAX; 100], 64 * 100) };
-        let rank9: Rank9<BitVec, 64> = Rank9::new(bitvec, 64 * 100);
+        let rank9: Rank9<BitVec, Vec<u64>, 64> = Rank9::new(bitvec, 64 * 100);
         assert_eq!(rank9.rank(0), 0);
     }
 
     #[test]
     fn test_rank9_2() {
         let bitvec = unsafe { BitVec::from_raw_parts(vec![usize::MAX; 100], 64 * 100) };
-        let rank9: Rank9<BitVec, 64> = Rank9::new(bitvec, 64 * 100);
+        let rank9: Rank9<BitVec, Vec<u64>, 64> = Rank9::new(bitvec, 64 * 100);
         assert_eq!(rank9.rank(64 * 7 + 63), 64 * 7 + 63);
     }
 
     #[test]
     fn test_rank9_3() {
         let bitvec = unsafe { BitVec::from_raw_parts(vec![usize::MAX; 100], 64 * 100) };
-        let rank9: Rank9<BitVec, 64> = Rank9::new(bitvec, 64 * 100);
+        let rank9: Rank9<BitVec, Vec<u64>, 64> = Rank9::new(bitvec, 64 * 100);
         assert_eq!(rank9.rank(64 * 8), 64 * 8);
     }
 
     #[test]
     fn test_rank9_4() {
         let bitvec = unsafe { BitVec::from_raw_parts(vec![usize::MAX; 100], 64 * 100) };
-        let rank9: Rank9<BitVec, 64> = Rank9::new(bitvec, 64 * 100);
+        let rank9: Rank9<BitVec, Vec<u64>, 64> = Rank9::new(bitvec, 64 * 100);
         assert_eq!(rank9.rank(64 * 99 + 63), 64 * 99 + 63);
     }
 
     #[test]
     fn test_rank9_5() {
         let bitvec = unsafe { BitVec::from_raw_parts(vec![usize::MAX; 100], 64 * 100) };
-        let rank9: Rank9<BitVec, 64> = Rank9::new(bitvec, 64 * 100);
+        let rank9: Rank9<BitVec, Vec<u64>, 64> = Rank9::new(bitvec, 64 * 100);
         assert_eq!(rank9.rank(64 * 100), 64 * 100);
     }
 
     #[test]
     fn test_rank9_6() {
         let bitvec = unsafe { BitVec::from_raw_parts(vec![usize::MAX; 100], 64 * 100) };
-        let rank9: Rank9<BitVec, 64> = Rank9::new(bitvec, 64 * 100);
+        let rank9: Rank9<BitVec, Vec<u64>, 64> = Rank9::new(bitvec, 64 * 100);
         assert_eq!(rank9.rank(64 * 101), 64 * 100);
     }
 
@@ -113,7 +122,7 @@ mod test_rank9 {
     fn test_rank9_7() {
         let bitvec =
             unsafe { BitVec::from_raw_parts(vec![0x0101010101010101usize; 100], 64 * 100) };
-        let rank9: Rank9<BitVec, 64> = Rank9::new(bitvec, 64 * 100);
+        let rank9: Rank9<BitVec, Vec<u64>, 64> = Rank9::new(bitvec, 64 * 100);
         assert_eq!(rank9.rank(64 * 15 + 1), 15 * 8 + 1);
     }
 }
