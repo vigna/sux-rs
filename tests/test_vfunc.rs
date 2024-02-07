@@ -23,11 +23,10 @@ fn test_func() -> anyhow::Result<()> {
                     FromIntoIterator::from(0_usize..),
                     &mut pl,
                 )?;
-            let mut cursor = epserde::new_aligned_cursor();
+            let mut cursor = <AlignedCursor<maligned::A16>>::new();
             func.serialize(&mut cursor).unwrap();
             cursor.set_position(0);
-            let buf = cursor.into_inner();
-            let func = VFunc::<usize>::deserialize_eps(&buf).unwrap();
+            let func = VFunc::<usize>::deserialize_eps(cursor.as_bytes()).unwrap();
             pl.start("Querying...");
             for i in 0..n {
                 assert_eq!(i, func.get(&i));

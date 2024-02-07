@@ -36,6 +36,7 @@ derivative = "2.2.0"
 rdst = "0.20.12"
 arbitrary = { version = "1.3.2", features = ["derive"], optional=true }
 mem_dbg = "0.1.3"
+maligned = "0.2.1"
 
 [features]
 default = ["rayon"]
