@@ -2,7 +2,7 @@
 name = "sux"
 authors = ["Tommaso Fontana <tommaso.fontana.96@gmail.com>", "Sebastiano Vigna <sebastiano.vigna@unimi.it>"]
 description = "A pure Rust implementation of succinct and compressed data structures"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2021"
 repository = "https://github.com/vigna/sux-rs/"
 license = "Apache-2.0 OR LGPL-2.1-or-later"
@@ -21,7 +21,7 @@ mmap-rs = "0.6.1"
 num_cpus = "1.16.0"
 num-traits = "0.2.15"
 rayon = {version = "1.8.1", optional=true}
-epserde = "0.3.1"
+epserde = "0.4.0"
 clap = { version = "4.4.18", features = ["derive"] }
 dsi-progress-logger = "0.2.2"
 stderrlog = "0.5.4"
