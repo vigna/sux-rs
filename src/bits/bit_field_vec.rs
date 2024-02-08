@@ -700,6 +700,12 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, B> {
     // We reimplement set as we have the mask in the structure.
 
+    fn reset(&mut self) {
+        for idx in 0..self.len() {
+            unsafe { self.set_unchecked(idx, W::ZERO) };
+        }
+    }
+
     /// Set the element of the slice at the specified index.
     ///
     ///
@@ -842,6 +848,12 @@ where
                 }
             }
             fence(Ordering::Release);
+        }
+    }
+
+    fn reset_atomic(&mut self, order: Ordering) {
+        for idx in 0..self.len() {
+            unsafe { self.set_atomic_unchecked(idx, W::ZERO, order) };
         }
     }
 }

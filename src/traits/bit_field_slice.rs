@@ -163,6 +163,9 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
             self.set_unchecked(index, value);
         }
     }
+
+    /// Set all values to zero
+    fn reset(&mut self);
 }
 
 /// A (tentatively) thread-safe slice of bit fields of constant bit width supporting atomic operations.
@@ -217,6 +220,13 @@ where
             self.set_atomic_unchecked(index, value, order);
         }
     }
+
+    /// Set all values to zero.
+    ///
+    /// This takes a mutable reference because usually
+    /// we need to reset a data structure to re-use it, so this makes it
+    /// impossible to have left any other reference to it.
+    fn reset_atomic(&mut self, order: Ordering);
 }
 
 /// An [`Iterator`] implementation returning the elements of a [`BitFieldSlice`].
@@ -296,6 +306,12 @@ macro_rules! impl_mut {
                 debug_assert_bounds!(index, self.len());
                 *self.as_mut().get_unchecked_mut(index) = value;
             }
+
+            fn reset(&mut self) {
+                for idx in 0..self.len() {
+                    unsafe{self.set_unchecked(idx, 0)};
+                }
+            }
         }
     )*};
 }
@@ -333,6 +349,12 @@ macro_rules! impl_atomic {
             unsafe fn set_atomic_unchecked(&self, index: usize, value: $std, order: Ordering) {
                 debug_assert_bounds!(index, self.len());
                 self.as_ref().get_unchecked(index).store(value, order);
+            }
+
+            fn reset_atomic(&mut self, order: Ordering) {
+                for idx in 0..self.len() {
+                    unsafe { self.set_atomic_unchecked(idx, 0, order) };
+                }
             }
         }
     };
