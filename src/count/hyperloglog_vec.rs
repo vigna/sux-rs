@@ -286,6 +286,11 @@ impl<V: Hash, H: NewHasher, B: BitFieldSlice<usize> + BitFieldSliceMut<usize>>
         }
         debug_assert!(regs_iter.next().is_none());
     }
+
+    /// Set all registers to zero
+    pub fn reset(&mut self) {
+        self.regs.reset()
+    }
 }
 
 impl<V: Hash, H: NewHasher, B: AtomicBitFieldSlice<usize> + AsRef<[usize]>>
@@ -327,6 +332,11 @@ impl<V: Hash, H: NewHasher, B: AtomicBitFieldSlice<usize> + AsRef<[usize]>>
                 .set_atomic(reg_idx, regs_iter.next().unwrap(), order);
         }
         debug_assert!(regs_iter.next().is_none());
+    }
+
+    /// Set all registers to zero
+    pub fn reset_atomic(&mut self, order: Ordering) {
+        self.regs.reset_atomic(order)
     }
 }
 
