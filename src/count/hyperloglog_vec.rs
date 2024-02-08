@@ -6,11 +6,12 @@
 
 use crate::{
     bits::BitFieldVec,
-    traits::{BitFieldSlice, BitFieldSliceCore, BitFieldSliceMut},
+    traits::{AtomicBitFieldSlice, BitFieldSlice, BitFieldSliceCore, BitFieldSliceMut, ConvertTo},
 };
 use anyhow::{ensure, Result};
 use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
+use core::sync::atomic::Ordering;
 use epserde::prelude::*;
 use mem_dbg::{MemDbg, MemSize};
 
@@ -61,6 +62,24 @@ pub struct HyperLogLogVec<
     _marker: PhantomData<(V, H)>,
 }
 
+impl<V: Hash, H: NewHasher, B: BitFieldSliceCore<usize>, B2: BitFieldSliceCore<usize>>
+    ConvertTo<HyperLogLogVec<V, H, B2>> for HyperLogLogVec<V, H, B>
+where
+    B: ConvertTo<B2>,
+{
+    fn convert_to(self) -> Result<HyperLogLogVec<V, H, B2>> {
+        Ok(HyperLogLogVec {
+            regs: self.regs.convert_to()?,
+            precision: self.precision,
+            log2_precision: self.log2_precision,
+            precision_mask: self.precision_mask,
+            alpha: self.alpha,
+            linear_counting_threshold: self.linear_counting_threshold,
+            small_corrections: self.small_corrections,
+            _marker: PhantomData,
+        })
+    }
+}
 impl<V: Hash> HyperLogLogVec<V> {
     /// Create a new HyperLogLogVec.
     ///
@@ -117,27 +136,11 @@ impl<V: Hash> HyperLogLogVec<V> {
     }
 }
 
-impl<V: Hash, H: NewHasher, B: BitFieldSlice<usize>> HyperLogLogVec<V, H, B> {
-    /// Return an iterator over the registers of the counter with index `idx`
-    pub fn iter_regs(&self, idx: usize) -> impl Iterator<Item = usize> + '_ {
-        // get the start and end indices of the regs of this counter
-        let start = idx * self.precision;
-        let end = start + self.precision;
-        // TODO!: use a real iterator, this will improve speed
-        (start..end).map(|idx| self.regs.get(idx))
-    }
-
-    pub fn estimate_cardinality(&self, idx: usize) -> f32 {
-        // fixed point float for speed and precision
-        let mut raw_estimate: u64 = 0;
-        let mut zero_regs = 0;
-        for reg in self.iter_regs(idx) {
-            // keep track of the regs that are at zero
-            zero_regs += (reg == 0) as usize;
-            // += 2**(-reg)
-            raw_estimate += 1 << (32 - reg);
-        }
-
+impl<V: Hash, H: NewHasher, B: BitFieldSliceCore<usize>> HyperLogLogVec<V, H, B> {
+    #[inline]
+    /// Get the raw fixed point sum of 1/2**reg and the number of regs equal to zero
+    /// and apply all the corrections, returning the estimate
+    fn adjust_estimate(&self, raw_estimate: u64, zero_regs: usize) -> f32 {
         // apply small range corrections
         if zero_regs > 0 {
             let low_range_correction = self.small_corrections[zero_regs - 1];
@@ -195,6 +198,60 @@ impl<V: Hash, H: NewHasher, B: BitFieldSlice<usize>> HyperLogLogVec<V, H, B> {
     }
 }
 
+impl<V: Hash, H: NewHasher, B: BitFieldSlice<usize>> HyperLogLogVec<V, H, B> {
+    /// Return an iterator over the registers of the counter with index `idx`
+    pub fn iter_regs(&self, idx: usize) -> impl Iterator<Item = usize> + '_ {
+        // get the start and end indices of the regs of this counter
+        let start = idx * self.precision;
+        let end = start + self.precision;
+        // TODO!: use a real iterator, this will improve speed
+        (start..end).map(|idx| self.regs.get(idx))
+    }
+
+    pub fn estimate_cardinality(&self, idx: usize) -> f32 {
+        // fixed point float for speed and precision
+        let mut raw_estimate: u64 = 0;
+        let mut zero_regs = 0;
+        for reg in self.iter_regs(idx) {
+            // keep track of the regs that are at zero
+            zero_regs += (reg == 0) as usize;
+            // += 2**(-reg)
+            raw_estimate += 1 << (32 - reg);
+        }
+        self.adjust_estimate(raw_estimate, zero_regs)
+    }
+}
+
+impl<V: Hash, H: NewHasher, B: AtomicBitFieldSlice<usize> + AsRef<[usize]>>
+    HyperLogLogVec<V, H, B>
+{
+    /// Return an iterator over the registers of the counter with index `idx`
+    pub fn iter_regs_atomic(
+        &self,
+        idx: usize,
+        order: Ordering,
+    ) -> impl Iterator<Item = usize> + '_ {
+        // get the start and end indices of the regs of this counter
+        let start = idx * self.precision;
+        let end = start + self.precision;
+        // TODO!: use a real iterator, this will improve speed
+        (start..end).map(move |idx| self.regs.get_atomic(idx, order))
+    }
+
+    pub fn estimate_cardinality_atomic(&self, idx: usize, order: Ordering) -> f32 {
+        // fixed point float for speed and precision
+        let mut raw_estimate: u64 = 0;
+        let mut zero_regs = 0;
+        for reg in self.iter_regs_atomic(idx, order) {
+            // keep track of the regs that are at zero
+            zero_regs += (reg == 0) as usize;
+            // += 2**(-reg)
+            raw_estimate += 1 << (32 - reg);
+        }
+        self.adjust_estimate(raw_estimate, zero_regs)
+    }
+}
+
 impl<V: Hash, H: NewHasher, B: BitFieldSlice<usize> + BitFieldSliceMut<usize>>
     HyperLogLogVec<V, H, B>
 {
@@ -226,6 +283,48 @@ impl<V: Hash, H: NewHasher, B: BitFieldSlice<usize> + BitFieldSliceMut<usize>>
         let end = start + self.precision;
         for reg_idx in start..end {
             self.regs.set(reg_idx, regs_iter.next().unwrap());
+        }
+        debug_assert!(regs_iter.next().is_none());
+    }
+}
+
+impl<V: Hash, H: NewHasher, B: AtomicBitFieldSlice<usize> + AsRef<[usize]>>
+    HyperLogLogVec<V, H, B>
+{
+    /// Insert a value in the counter of index `idx`
+    pub fn insert_atomic(&self, idx: usize, value: &V, order: Ordering) {
+        // compute the hash of the value
+        let mut hasher = H::new();
+        value.hash(&mut hasher);
+        let hash = hasher.finish();
+        let base_idx = idx * self.precision;
+        // get the reg_idx
+        let reg_idx = base_idx + (hash & self.precision_mask) as usize;
+        // count how many zeros we have from the MSB
+        // because LZCOUNT is more supported and this way we don't need to clean
+        // the lower bits
+        let number_of_zeros =
+            (1 + hash.leading_zeros() as usize).min((1 << self.regs.bit_width()) - 1);
+        // get the old value
+        let old_value = self.regs.get_atomic(reg_idx, order);
+        // store the current value only if bigger
+        if number_of_zeros > old_value {
+            self.regs.set_atomic(reg_idx, number_of_zeros, order);
+        }
+    }
+
+    /// Write the registers from an iterator to the counter with index `idx`
+    pub fn from_iter_atomic(
+        &self,
+        idx: usize,
+        mut regs_iter: impl Iterator<Item = usize>,
+        order: Ordering,
+    ) {
+        let start = idx * self.precision;
+        let end = start + self.precision;
+        for reg_idx in start..end {
+            self.regs
+                .set_atomic(reg_idx, regs_iter.next().unwrap(), order);
         }
         debug_assert!(regs_iter.next().is_none());
     }
