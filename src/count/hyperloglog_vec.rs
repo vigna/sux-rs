@@ -6,12 +6,11 @@
 
 use crate::{
     bits::BitFieldVec,
-    traits::{BitFieldSliceCore, BitFieldSlice, BitFieldSliceMut},
+    traits::{BitFieldSlice, BitFieldSliceCore, BitFieldSliceMut},
 };
 use anyhow::{ensure, Result};
 use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
-use std::os::linux::raw;
 use epserde::prelude::*;
 use mem_dbg::{MemDbg, MemSize};
 
@@ -120,14 +119,14 @@ impl<V: Hash> HyperLogLogVec<V> {
 
 impl<V: Hash, H: NewHasher, B: BitFieldSlice<usize>> HyperLogLogVec<V, H, B> {
     /// Return an iterator over the registers of the counter with index `idx`
-    pub fn iter_regs(&self, idx: usize) -> impl Iterator<Item=usize> + '_ {
+    pub fn iter_regs(&self, idx: usize) -> impl Iterator<Item = usize> + '_ {
         // get the start and end indices of the regs of this counter
         let start = idx * self.precision;
         let end = start + self.precision;
         // TODO!: use a real iterator, this will improve speed
         (start..end).map(|idx| self.regs.get(idx))
     }
-    
+
     pub fn estimate_cardinality(&self, idx: usize) -> f32 {
         // fixed point float for speed and precision
         let mut raw_estimate: u64 = 0;
@@ -159,8 +158,7 @@ impl<V: Hash, H: NewHasher, B: BitFieldSlice<usize>> HyperLogLogVec<V, H, B> {
         let raw_estimate = f32::from_ne_bytes((raw_estimate as u32).to_ne_bytes());
 
         // apply the correction
-        let estimate = self.alpha * 
-        ((self.precision as f32).powi(2) / raw_estimate);
+        let estimate = self.alpha * ((self.precision as f32).powi(2) / raw_estimate);
 
         // apply mid range corrections
         if estimate <= (5 * self.precision) as f32 {
@@ -190,14 +188,16 @@ impl<V: Hash, H: NewHasher, B: BitFieldSlice<usize>> HyperLogLogVec<V, H, B> {
             // Calculate bias.
             return estimate
                 - (biases[partition_index - 1]
-                    + ratio * (biases[partition_index] as f32 - biases[partition_index - 1]));
+                    + ratio * (biases[partition_index] - biases[partition_index - 1]));
         }
 
         estimate
     }
 }
 
-impl<V: Hash, H: NewHasher, B: BitFieldSlice<usize> + BitFieldSliceMut<usize>> HyperLogLogVec<V, H, B> {
+impl<V: Hash, H: NewHasher, B: BitFieldSlice<usize> + BitFieldSliceMut<usize>>
+    HyperLogLogVec<V, H, B>
+{
     /// Insert a value in the counter of index `idx`
     pub fn insert(&mut self, idx: usize, value: &V) {
         // compute the hash of the value
@@ -210,7 +210,8 @@ impl<V: Hash, H: NewHasher, B: BitFieldSlice<usize> + BitFieldSliceMut<usize>> H
         // count how many zeros we have from the MSB
         // because LZCOUNT is more supported and this way we don't need to clean
         // the lower bits
-        let number_of_zeros = (1 + hash.leading_zeros() as usize).min((1 << self.regs.bit_width()) - 1);
+        let number_of_zeros =
+            (1 + hash.leading_zeros() as usize).min((1 << self.regs.bit_width()) - 1);
         // get the old value
         let old_value = self.regs.get(reg_idx);
         // store the current value only if bigger
