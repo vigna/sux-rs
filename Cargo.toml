@@ -21,8 +21,7 @@ mmap-rs = "0.6.1"
 num_cpus = "1.16.0"
 num-traits = "0.2.15"
 rayon = {version = "1.8.1", optional=true}
-#epserde = "0.4.0"
-epserde = {git = "https://github.com/vigna/epserde-rs"}
+epserde = "0.4.0"
 clap = { version = "4.4.18", features = ["derive"] }
 dsi-progress-logger = "0.2.2"
 stderrlog = "0.5.4"
