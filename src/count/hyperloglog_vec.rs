@@ -30,7 +30,7 @@ pub struct DefaultStrategy;
 impl HashStrategy for DefaultStrategy {
     #[deny(unconditional_recursion)]
     fn hash(value: &impl Hash) -> u64 {
-        let mut hasher = std::hash::DefaultHasher::new();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
         value.hash(&mut hasher);
         hasher.finish()
     }
