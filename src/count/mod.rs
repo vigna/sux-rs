@@ -8,4 +8,4 @@
 //! These are used to estimate the cardinality of unique elements of a stream.
 
 mod hyperloglog_vec;
-pub use hyperloglog_vec::{HyperLogLogVec, NewHasher};
+pub use hyperloglog_vec::{AtomicHyperLogLogVec, DefaultStrategy, HashStrategy, HyperLogLogVec};
