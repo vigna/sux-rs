@@ -10,7 +10,7 @@ use sux::prelude::HyperLogLogVec;
 
 #[test]
 fn test_hyperloglog_vec() -> Result<()> {
-    //let path = "hyperloglogvec";
+    let path = "hyperloglogvec";
     for end in [
         5, 10, 50, 100, 500, 1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000,
     ] {
@@ -23,7 +23,7 @@ fn test_hyperloglog_vec() -> Result<()> {
         println!("{:.4} {}: {}", approx_ratio, end, estimate);
         assert!(approx_ratio < 0.3);
 
-        /* DECOMMENT WHEN EPSERDE IS UPDATED
+      
         hll.store(path)?;
 
         let hll2 = <HyperLogLogVec>::load_mem(path)?;
@@ -35,7 +35,6 @@ fn test_hyperloglog_vec() -> Result<()> {
             );
         }
         std::fs::remove_file(path)?; 
-        */
     }
 
     Ok(())
