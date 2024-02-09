@@ -38,7 +38,7 @@ impl NewHasher for std::hash::DefaultHasher {
 ///
 /// If you need just a single hyperloglog counter use: <https://github.com/LucaCappelletti94/hyperloglog-rs>
 pub struct HyperLogLogVec<
-    V: Hash,
+    V: Hash = usize,
     H: NewHasher = std::hash::DefaultHasher,
     B: BitFieldSliceCore<usize> = BitFieldVec<usize>,
 > {
