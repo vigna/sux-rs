@@ -896,6 +896,7 @@ impl fmt::Display for BitVec<Vec<usize>> {
     }
 }
 
+#[inline(always)]
 unsafe fn rank_hinted_unchecked<const HINT_BIT_SIZE: usize>(
     data: impl AsRef<[usize]>,
     pos: usize,
@@ -915,6 +916,7 @@ unsafe fn rank_hinted_unchecked<const HINT_BIT_SIZE: usize>(
 }
 
 impl<B: AsRef<[usize]>, const HINT_BIT_SIZE: usize> RankHinted<HINT_BIT_SIZE> for BitVec<B> {
+    #[inline(always)]
     unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
         rank_hinted_unchecked::<HINT_BIT_SIZE>(self.data.as_ref(), pos, hint_pos, hint_rank)
     }

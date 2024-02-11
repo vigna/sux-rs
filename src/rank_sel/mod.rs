@@ -54,3 +54,6 @@ pub use select_zero_fixed2::*;
 
 mod rank9;
 pub use rank9::*;
+
+mod rank9sel;
+pub use rank9sel::*;
