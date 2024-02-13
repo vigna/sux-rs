@@ -1,21 +1,21 @@
+use criterion::black_box;
 use criterion::BenchmarkId;
 use criterion::Criterion;
-use criterion::{black_box, criterion_group, criterion_main};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::SelectFixed2;
 use sux::traits::Select;
 
-macro_rules! bench_select {
+macro_rules! bench_select_fixed2 {
     ([$($inv_size:literal),+], $subinv_size:tt, $bitvecs:ident, $bitvec_ids:ident, $bench_group:expr) => {
         $(
-            bench_select!($inv_size, $subinv_size, $bitvecs, $bitvec_ids, $bench_group);
+            bench_select_fixed2!($inv_size, $subinv_size, $bitvecs, $bitvec_ids, $bench_group);
         )+
     };
     ($inv_size:literal, [$($subinv_size:literal),+], $bitvecs:ident, $bitvec_ids:ident, $bench_group:expr) => {
         $(
-            bench_select!($inv_size, $subinv_size, $bitvecs, $bitvec_ids, $bench_group);
+            bench_select_fixed2!($inv_size, $subinv_size, $bitvecs, $bitvec_ids, $bench_group);
         )+
     };
     ($log_inv_size:literal, $log_subinv_size:literal, $bitvecs:ident, $bitvec_ids:ident, $bench_group:expr) => {{
@@ -43,10 +43,9 @@ macro_rules! bench_select {
     }};
 }
 
-fn bench_select(c: &mut Criterion) {
-    let mut group = c.benchmark_group("select");
+pub fn bench_select_fixed2(c: &mut Criterion) {
+    let mut group = c.benchmark_group("select_fixed2");
 
-    //let lens = [1u64 << 20, 1 << 22, 1 << 24, 1 << 26, 1 << 28, 1 << 30];
     let lens = [
         1u64 << 20,
         1 << 21,
@@ -67,7 +66,7 @@ fn bench_select(c: &mut Criterion) {
     for len in lens {
         for density in [0.25, 0.5, 0.75] {
             // possible repetitions
-            for i in 0..1 {
+            for i in 0..5 {
                 let bitvec = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
                 bitvecs.push(bitvec);
                 bitvec_ids.push((len, density, i));
@@ -75,11 +74,7 @@ fn bench_select(c: &mut Criterion) {
         }
     }
 
-    bench_select!([8, 9, 10, 11, 12], [1, 2, 3], bitvecs, bitvec_ids, group);
-    //bench_select!([10, 11], [1, 2], bitvecs, bitvec_ids, group);
+    bench_select_fixed2!([8, 9, 10, 11, 12], [1, 2, 3], bitvecs, bitvec_ids, group);
 
     group.finish();
 }
-
-criterion_group!(benches, bench_select);
-criterion_main!(benches);
