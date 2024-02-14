@@ -214,117 +214,124 @@ impl<
         let mut count_left: u64;
         let rank_in_block: u64;
 
-        if span < 2 {
-            block_left &= !7;
-            count_left = (block_left / 4) & !1;
+        match span {
+            0..=1 => {
+                block_left &= !7;
+                count_left = (block_left / 4) & !1;
 
-            assert!(
-                rank < *self
-                    .rank9
-                    .counts
-                    .as_ref()
-                    .get_unchecked(count_left as usize + 2) as usize
-            );
+                assert!(
+                    rank < *self
+                        .rank9
+                        .counts
+                        .as_ref()
+                        .get_unchecked(count_left as usize + 2) as usize
+                );
 
-            rank_in_block = rank as u64
-                - *self
-                    .rank9
-                    .counts
-                    .as_ref()
-                    .get_unchecked(count_left as usize);
-        } else if span < 16 {
-            block_left &= !7;
-            count_left = (block_left / 4) & !1;
-            let rank_in_superblock = rank as u64
-                - *self
-                    .rank9
-                    .counts
-                    .as_ref()
-                    .get_unchecked(count_left as usize);
+                rank_in_block = rank as u64
+                    - *self
+                        .rank9
+                        .counts
+                        .as_ref()
+                        .get_unchecked(count_left as usize);
+            }
+            2..=15 => {
+                block_left &= !7;
+                count_left = (block_left / 4) & !1;
+                let rank_in_superblock = rank as u64
+                    - *self
+                        .rank9
+                        .counts
+                        .as_ref()
+                        .get_unchecked(count_left as usize);
 
-            let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
+                let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
 
-            let first = *subinv_ref.get_unchecked(subinv_pos);
-            let second = *subinv_ref.get_unchecked(subinv_pos + 1);
+                let first = *subinv_ref.get_unchecked(subinv_pos);
+                let second = *subinv_ref.get_unchecked(subinv_pos + 1);
 
-            let where_: u64 = (ULEQ_STEP_16!(first, rank_in_superblock_step_16)
-                + ULEQ_STEP_16!(second, rank_in_superblock_step_16))
-            .wrapping_mul(ONES_STEP_16)
-                >> 47;
-
-            assert!(where_ <= 16);
-
-            block_left += where_ * 4;
-            count_left += where_;
-
-            rank_in_block = rank as u64
-                - *self
-                    .rank9
-                    .counts
-                    .as_ref()
-                    .get_unchecked(count_left as usize);
-
-            assert!(rank_in_block < 512);
-        } else if span < 128 {
-            block_left &= !7;
-            count_left = (block_left / 4) & !1;
-            let rank_in_superblock = rank as u64
-                - *self
-                    .rank9
-                    .counts
-                    .as_ref()
-                    .get_unchecked(count_left as usize);
-            let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
-
-            let first = *subinv_ref.get_unchecked(subinv_pos);
-            let second = *subinv_ref.get_unchecked(subinv_pos + 1);
-
-            let where0 = ((ULEQ_STEP_16!(first, rank_in_superblock_step_16)
-                + ULEQ_STEP_16!(second, rank_in_superblock_step_16))
-                * ONES_STEP_16)
-                >> 47;
-
-            assert!(where0 <= 16);
-
-            let first_bis = *self
-                .subinventory
-                .as_ref()
-                .get_unchecked(subinv_pos + where0 as usize + 2);
-            let second_bis = *self
-                .subinventory
-                .as_ref()
-                .get_unchecked(subinv_pos + where0 as usize + 2 + 1);
-
-            let where1 = where0 * 8
-                + ((ULEQ_STEP_16!(first_bis, rank_in_superblock_step_16)
-                    + ULEQ_STEP_16!(second_bis, rank_in_superblock_step_16))
+                let where_: u64 = (ULEQ_STEP_16!(first, rank_in_superblock_step_16)
+                    + ULEQ_STEP_16!(second, rank_in_superblock_step_16))
                 .wrapping_mul(ONES_STEP_16)
-                    >> 47);
+                    >> 47;
 
-            block_left += where1 * 4;
-            count_left += where1;
-            rank_in_block = rank as u64
-                - *self
-                    .rank9
-                    .counts
+                assert!(where_ <= 16);
+
+                block_left += where_ * 4;
+                count_left += where_;
+
+                rank_in_block = rank as u64
+                    - *self
+                        .rank9
+                        .counts
+                        .as_ref()
+                        .get_unchecked(count_left as usize);
+
+                assert!(rank_in_block < 512);
+            }
+            16..=127 => {
+                block_left &= !7;
+                count_left = (block_left / 4) & !1;
+                let rank_in_superblock = rank as u64
+                    - *self
+                        .rank9
+                        .counts
+                        .as_ref()
+                        .get_unchecked(count_left as usize);
+                let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
+
+                let first = *subinv_ref.get_unchecked(subinv_pos);
+                let second = *subinv_ref.get_unchecked(subinv_pos + 1);
+
+                let where0 = ((ULEQ_STEP_16!(first, rank_in_superblock_step_16)
+                    + ULEQ_STEP_16!(second, rank_in_superblock_step_16))
+                    * ONES_STEP_16)
+                    >> 47;
+
+                assert!(where0 <= 16);
+
+                let first_bis = *self
+                    .subinventory
                     .as_ref()
-                    .get_unchecked(count_left as usize);
+                    .get_unchecked(subinv_pos + where0 as usize + 2);
+                let second_bis = *self
+                    .subinventory
+                    .as_ref()
+                    .get_unchecked(subinv_pos + where0 as usize + 2 + 1);
 
-            assert!(rank_in_block < 512);
-        } else if span < 256 {
-            let (_, s, _) = subinv_ref
-                .get_range_unchecked(subinv_pos..self.subinventory_size)
-                .align_to::<u16>();
-            return *s.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize
-                + inventory_left as usize;
-        } else if span < 512 {
-            let (_, s, _) = subinv_ref
-                .get_range_unchecked(subinv_pos..self.subinventory_size)
-                .align_to::<u32>();
-            return *s.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize
-                + inventory_left as usize;
-        } else {
-            return *subinv_ref.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize;
+                let where1 = where0 * 8
+                    + ((ULEQ_STEP_16!(first_bis, rank_in_superblock_step_16)
+                        + ULEQ_STEP_16!(second_bis, rank_in_superblock_step_16))
+                    .wrapping_mul(ONES_STEP_16)
+                        >> 47);
+
+                block_left += where1 * 4;
+                count_left += where1;
+                rank_in_block = rank as u64
+                    - *self
+                        .rank9
+                        .counts
+                        .as_ref()
+                        .get_unchecked(count_left as usize);
+
+                assert!(rank_in_block < 512);
+            }
+            128..=255 => {
+                let (_, s, _) = subinv_ref
+                    .get_range_unchecked(subinv_pos..self.subinventory_size)
+                    .align_to::<u16>();
+                return *s.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize
+                    + inventory_left as usize;
+            }
+            256..=511 => {
+                let (_, s, _) = subinv_ref
+                    .get_range_unchecked(subinv_pos..self.subinventory_size)
+                    .align_to::<u32>();
+                return *s.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize
+                    + inventory_left as usize;
+            }
+            _ => {
+                return *subinv_ref.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize;
+            }
         }
 
         let rank_in_block_step_9 = rank_in_block * ONES_STEP_9;

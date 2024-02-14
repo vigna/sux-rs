@@ -57,13 +57,13 @@ impl<
         const HINT_BIT_SIZE: usize,
     > Rank for Rank9<B, C, HINT_BIT_SIZE>
 {
-    fn rank(&self, index: usize) -> usize {
-        unsafe { self.rank_unchecked(index.min(self.bits.len())) }
+    fn rank(&self, pos: usize) -> usize {
+        unsafe { self.rank_unchecked(pos.min(self.bits.len())) }
     }
 
     #[inline(always)]
-    unsafe fn rank_unchecked(&self, index: usize) -> usize {
-        let word = index / 64;
+    unsafe fn rank_unchecked(&self, pos: usize) -> usize {
+        let word = pos / 64;
         let block = (word / 4) & !1;
         let offset = (word % 8).wrapping_sub(1);
 
@@ -74,7 +74,7 @@ impl<
 
         RankHinted::<HINT_BIT_SIZE>::rank_hinted_unchecked(
             &self.bits,
-            index,
+            pos,
             word,
             hint_rank as usize,
         )
