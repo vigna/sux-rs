@@ -1,11 +1,11 @@
-use criterion::{black_box, BenchmarkId, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::{Rank11, Rank9};
 use sux::traits::Rank;
 
-pub fn bench_rank9(c: &mut Criterion) {
+fn bench_rank9(c: &mut Criterion) {
     let mut bench_group = c.benchmark_group("rank9");
 
     let lens = [
@@ -36,9 +36,9 @@ pub fn bench_rank9(c: &mut Criterion) {
                     |b| {
                         b.iter(|| {
                             // use fastrange
-                            let r = ((rng.gen::<u64>() as u128).wrapping_mul(len as u128) >> 64)
+                            let p = ((rng.gen::<u64>() as u128).wrapping_mul(len as u128) >> 64)
                                 as usize;
-                            black_box(unsafe { rank9.rank_unchecked(r) });
+                            black_box(unsafe { rank9.rank_unchecked(p) });
                         })
                     },
                 );
@@ -80,9 +80,9 @@ pub fn bench_rank11(c: &mut Criterion) {
                     |b| {
                         b.iter(|| {
                             // use fastrange
-                            let r = ((rng.gen::<u64>() as u128).wrapping_mul(len as u128) >> 64)
+                            let p = ((rng.gen::<u64>() as u128).wrapping_mul(len as u128) >> 64)
                                 as usize;
-                            black_box(unsafe { rank11.rank_unchecked(r) });
+                            black_box(unsafe { rank11.rank_unchecked(p) });
                         })
                     },
                 );
@@ -92,3 +92,6 @@ pub fn bench_rank11(c: &mut Criterion) {
 
     bench_group.finish();
 }
+
+criterion_group!(benches, bench_rank9, bench_rank11);
+criterion_main!(benches);

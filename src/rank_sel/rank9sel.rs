@@ -1,6 +1,6 @@
-use common_traits::{SelectInWord, Sequence};
-
 use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted, Select, SelectHinted};
+use common_traits::{SelectInWord, Sequence};
+use mem_dbg::{MemDbg, MemSize};
 
 use super::Rank9;
 
@@ -27,6 +27,7 @@ macro_rules! ULEQ_STEP_16 {
     };
 }
 
+#[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct Rank9Sel<
     B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]> = BitVec,
     I: AsRef<[u64]> = Vec<u64>,
@@ -413,7 +414,9 @@ impl<
 mod test_rank9sel {
     use super::*;
     use crate::prelude::BitVec;
-    use rand::{Rng, SeedableRng};
+    use criterion::black_box;
+    use mem_dbg::*;
+    use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     #[test]
     fn test_rank9sel() {
@@ -436,5 +439,102 @@ mod test_rank9sel {
             }
             assert_eq!(rank9sel.select(ones + 1), None);
         }
+    }
+
+    #[test]
+    fn test_rank9sel_non_uniform() {
+        let lens = [1u64 << 20];
+
+        let mut rng = SmallRng::seed_from_u64(0);
+        for len in lens {
+            for density in [0.25, 0.5, 0.75] {
+                let density0 = density * 0.01;
+                let density1 = density * 0.99;
+
+                let first_half = loop {
+                    let b = (0..len / 2)
+                        .map(|_| rng.gen_bool(density0))
+                        .collect::<BitVec>();
+                    if b.count_ones() > 0 {
+                        break b;
+                    }
+                };
+                let num_ones_first_half = first_half.count_ones();
+                let second_half = (0..len / 2)
+                    .map(|_| rng.gen_bool(density1))
+                    .collect::<BitVec>();
+                let num_ones_second_half = second_half.count_ones();
+
+                assert!(num_ones_first_half > 0);
+                assert!(num_ones_second_half > 0);
+
+                let bits = first_half
+                    .into_iter()
+                    .chain(second_half.into_iter())
+                    .collect::<BitVec>();
+
+                assert_eq!(
+                    num_ones_first_half + num_ones_second_half,
+                    bits.count_ones()
+                );
+
+                let num_ones = num_ones_first_half + num_ones_second_half;
+
+                let rank9sel: Rank9Sel = Rank9Sel::new(bits);
+
+                for r in 0..num_ones {
+                    black_box(unsafe { rank9sel.select_unchecked(r) });
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn show_mem() {
+        let mut rng = SmallRng::seed_from_u64(0);
+        let density = 0.5;
+        let len = 1_000_000_000;
+        let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+
+        let rank9sel: Rank9Sel = Rank9Sel::new(bits);
+
+        println!("size:     {}", rank9sel.mem_size(SizeFlags::default()));
+        println!("capacity: {}", rank9sel.mem_size(SizeFlags::CAPACITY));
+
+        rank9sel.mem_dbg(DbgFlags::default()).unwrap();
+    }
+
+    #[test]
+    fn show_mem_non_uniform() {
+        let mut rng = SmallRng::seed_from_u64(0);
+        let density = 0.5;
+        let len = 100_000_000;
+
+        let density0 = density * 0.01;
+        let density1 = density * 0.99;
+
+        let first_half = loop {
+            let b = (0..len / 2)
+                .map(|_| rng.gen_bool(density0))
+                .collect::<BitVec>();
+            if b.count_ones() > 0 {
+                break b;
+            }
+        };
+        let second_half = (0..len / 2)
+            .map(|_| rng.gen_bool(density1))
+            .collect::<BitVec>();
+
+        let bits = first_half
+            .into_iter()
+            .chain(second_half.into_iter())
+            .collect::<BitVec>();
+
+        let rank9sel: Rank9Sel = Rank9Sel::new(bits);
+
+        println!("size:     {}", rank9sel.mem_size(SizeFlags::default()));
+        println!("capacity: {}", rank9sel.mem_size(SizeFlags::CAPACITY));
+
+        rank9sel.mem_dbg(DbgFlags::default()).unwrap();
     }
 }
