@@ -258,11 +258,13 @@ impl<B: SelectHinted + Select + BitLength + AsRef<[usize]>, I: AsRef<[u64]>> Sel
 mod test_simple_select {
     use super::*;
     use crate::prelude::BitVec;
+    use mem_dbg::*;
+    use rand::rngs::SmallRng;
     use rand::{Rng, SeedableRng};
 
     #[test]
     fn test_simple_select() {
-        let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+        let mut rng = SmallRng::seed_from_u64(0);
         let density = 0.5;
         for len in (1..10000).chain((10000..100000).step_by(100)) {
             let bits: BitVec = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
@@ -282,5 +284,54 @@ mod test_simple_select {
             }
             assert_eq!(simple.select(ones + 1), None);
         }
+    }
+
+    #[test]
+    fn show_mem() {
+        let mut rng = SmallRng::seed_from_u64(0);
+        let density = 0.5;
+        let len = 1_000_000_000;
+        let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+
+        let simple: SimpleSelect = SimpleSelect::new(bits, 3);
+
+        println!("size:     {}", simple.mem_size(SizeFlags::default()));
+        println!("capacity: {}", simple.mem_size(SizeFlags::CAPACITY));
+
+        simple.mem_dbg(DbgFlags::default()).unwrap();
+    }
+
+    #[test]
+    fn show_mem_non_uniform() {
+        let mut rng = SmallRng::seed_from_u64(0);
+        let density = 0.5;
+        let len = 100_000_000;
+
+        let density0 = density * 0.01;
+        let density1 = density * 0.99;
+
+        let first_half = loop {
+            let b = (0..len / 2)
+                .map(|_| rng.gen_bool(density0))
+                .collect::<BitVec>();
+            if b.count_ones() > 0 {
+                break b;
+            }
+        };
+        let second_half = (0..len / 2)
+            .map(|_| rng.gen_bool(density1))
+            .collect::<BitVec>();
+
+        let bits = first_half
+            .into_iter()
+            .chain(second_half.into_iter())
+            .collect::<BitVec>();
+
+        let simple: SimpleSelect = SimpleSelect::new(bits, 3);
+
+        println!("size:     {}", simple.mem_size(SizeFlags::default()));
+        println!("capacity: {}", simple.mem_size(SizeFlags::CAPACITY));
+
+        simple.mem_dbg(DbgFlags::default()).unwrap();
     }
 }

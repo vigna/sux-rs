@@ -46,7 +46,13 @@ mem_dbg = "0.1"
 criterion = { version = "0.4", features = ["html_reports"] }
 
 [[bench]]
-name = "my_benchmarks"
+name = "bench_rank"
+harness = false
+[[bench]]
+name = "bench_select"
+harness = false
+[[bench]]
+name = "bench_rng_overhead"
 harness = false
 
 [features]
