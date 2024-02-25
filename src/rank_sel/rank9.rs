@@ -58,7 +58,11 @@ impl<
     > Rank for Rank9<B, C, HINT_BIT_SIZE>
 {
     fn rank(&self, pos: usize) -> usize {
-        unsafe { self.rank_unchecked(pos.min(self.bits.len())) }
+        if pos >= self.bits.len() {
+            self.counts.as_ref()[self.counts.as_ref().len() - 2] as usize
+        } else {
+            unsafe { self.rank_unchecked(pos) }
+        }
     }
 
     #[inline(always)]
@@ -95,13 +99,18 @@ impl<
 #[cfg(test)]
 mod test_rank9 {
     use crate::prelude::*;
-    use rand::{Rng, SeedableRng};
+    use mem_dbg::*;
+    use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     #[test]
     fn test_rank9() {
-        let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+        let mut rng = SmallRng::seed_from_u64(0);
         let density = 0.5;
-        for len in 1..10000 {
+        for len in (1..1000)
+            .chain((10_000..100_000).step_by(1000))
+            .chain((100_000..1_000_000).step_by(10_000))
+            .chain((1_000_000..10_000_000).step_by(100_000))
+        {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
             let rank9: Rank9 = Rank9::new(bits.clone());
 
@@ -115,16 +124,33 @@ mod test_rank9 {
             }
 
             for i in 0..bits.len() {
-                assert_eq!(
-                    rank9.rank(i),
-                    ranks[i],
-                    "\n***** Assertion Error *****\n\tlen of bitvec: {}, i: {}, ranks[i]: {}",
-                    len,
-                    i,
-                    ranks[i]
-                );
+                assert_eq!(rank9.rank(i), ranks[i]);
             }
             assert_eq!(rank9.rank(bits.len() + 1), bits.count_ones());
         }
+    }
+
+    #[test]
+    fn test_last() {
+        let bits = unsafe { BitVec::from_raw_parts(vec![!1usize; 1000], 1000 * 64) };
+
+        let rank9: Rank9 = Rank9::new(bits);
+
+        assert_eq!(rank9.rank(rank9.len()), rank9.bits.count());
+    }
+
+    #[test]
+    fn show_mem() {
+        let mut rng = SmallRng::seed_from_u64(0);
+        let density = 0.5;
+        let len = 1_000_000_000;
+        let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+
+        let rank9: Rank9 = Rank9::new(bits);
+
+        println!("size:     {}", rank9.mem_size(SizeFlags::default()));
+        println!("capacity: {}", rank9.mem_size(SizeFlags::CAPACITY));
+
+        rank9.mem_dbg(DbgFlags::default()).unwrap();
     }
 }
