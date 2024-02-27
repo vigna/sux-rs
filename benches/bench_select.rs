@@ -1,8 +1,6 @@
 use criterion::black_box;
 use criterion::criterion_group;
 use criterion::criterion_main;
-use criterion::measurement::WallTime;
-use criterion::BenchmarkGroup;
 use criterion::BenchmarkId;
 use criterion::Criterion;
 use rand::rngs::SmallRng;
@@ -128,7 +126,7 @@ pub fn bench_rank9sel(c: &mut Criterion) {
             for i in 0..reps {
                 let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
                 let num_ones = bits.count_ones();
-                let rank9sel: Rank9Sel = Rank9Sel::new(bits);
+                let rank9sel: Rank9Sel<_, _> = Rank9Sel::new(bits);
                 bench_group.bench_function(
                     BenchmarkId::from_parameter(format!("{}_{}_{}", len, density, i)),
                     |b| {
@@ -235,7 +233,7 @@ pub fn bench_rank9sel_non_uniform(c: &mut Criterion) {
                     .chain(second_half.into_iter())
                     .collect::<BitVec>();
 
-                let rank9sel: Rank9Sel = Rank9Sel::new(bits);
+                let rank9sel: Rank9Sel<_, _> = Rank9Sel::new(bits);
                 bench_group.bench_function(
                     BenchmarkId::from_parameter(format!("{}_{}_{}", len, density, i)),
                     |b| {
