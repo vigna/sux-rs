@@ -1,5 +1,6 @@
 use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted, Select, SelectHinted};
 use common_traits::{SelectInWord, Sequence};
+use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
 use super::Rank9;
@@ -27,13 +28,9 @@ macro_rules! ULEQ_STEP_16 {
     };
 }
 
-#[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct Rank9Sel<
-    B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]> = BitVec,
-    I: AsRef<[u64]> = Vec<u64>,
-    const HINT_BIT_SIZE: usize = 64,
-> {
-    rank9: Rank9<B, I, HINT_BIT_SIZE>,
+#[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
+pub struct Rank9Sel<R: Rank, I: AsRef<[u64]> = Vec<u64>, const HINT_BIT_SIZE: usize = 64> {
+    rank9: R,
     inventory: I,
     subinventory: I,
     inventory_size: usize,
@@ -44,14 +41,16 @@ impl<
         B: RankHinted<HINT_BIT_SIZE> + Rank + Select + AsRef<[usize]>,
         I: AsRef<[u64]>,
         const HINT_BIT_SIZE: usize,
-    > Rank9Sel<B, I, HINT_BIT_SIZE>
+    > Rank9Sel<Rank9<B, I, HINT_BIT_SIZE>, I, HINT_BIT_SIZE>
 {
     const LOG2_ONES_PER_INVENTORY: usize = 9;
     const ONES_PER_INVENTORY: usize = 1 << Self::LOG2_ONES_PER_INVENTORY;
     const INVENTORY_MASK: usize = Self::ONES_PER_INVENTORY - 1;
 }
 
-impl<const HINT_BIT_SIZE: usize> Rank9Sel<BitVec, Vec<u64>, HINT_BIT_SIZE> {
+impl<const HINT_BIT_SIZE: usize>
+    Rank9Sel<Rank9<BitVec, Vec<u64>, HINT_BIT_SIZE>, Vec<u64>, HINT_BIT_SIZE>
+{
     pub fn new(bits: BitVec) -> Self {
         let rank9 = Rank9::new(bits);
 
@@ -193,7 +192,7 @@ impl<
         B: RankHinted<HINT_BIT_SIZE> + SelectHinted + Rank + Select + BitCount + AsRef<[usize]>,
         C: AsRef<[u64]>,
         const HINT_BIT_SIZE: usize,
-    > Select for Rank9Sel<B, C, HINT_BIT_SIZE>
+    > Select for Rank9Sel<Rank9<B, C, HINT_BIT_SIZE>, C, HINT_BIT_SIZE>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         let inventory_index_left = rank >> Self::LOG2_ONES_PER_INVENTORY;
@@ -377,7 +376,7 @@ impl<
         B: RankHinted<HINT_BIT_SIZE> + Rank + Select + AsRef<[usize]>,
         C: AsRef<[u64]>,
         const HINT_BIT_SIZE: usize,
-    > Rank for Rank9Sel<B, C, HINT_BIT_SIZE>
+    > Rank for Rank9Sel<Rank9<B, C, HINT_BIT_SIZE>, C, HINT_BIT_SIZE>
 {
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
         self.rank9.rank_unchecked(pos)
@@ -392,7 +391,7 @@ impl<
         B: RankHinted<HINT_BIT_SIZE> + Rank + Select + AsRef<[usize]>,
         C: AsRef<[u64]>,
         const HINT_BIT_SIZE: usize,
-    > BitCount for Rank9Sel<B, C, HINT_BIT_SIZE>
+    > BitCount for Rank9Sel<Rank9<B, C, HINT_BIT_SIZE>, C, HINT_BIT_SIZE>
 {
     fn count(&self) -> usize {
         self.rank9.count()
@@ -403,7 +402,7 @@ impl<
         B: RankHinted<HINT_BIT_SIZE> + Rank + Select + AsRef<[usize]>,
         C: AsRef<[u64]>,
         const HINT_BIT_SIZE: usize,
-    > BitLength for Rank9Sel<B, C, HINT_BIT_SIZE>
+    > BitLength for Rank9Sel<Rank9<B, C, HINT_BIT_SIZE>, C, HINT_BIT_SIZE>
 {
     fn len(&self) -> usize {
         self.rank9.len()
@@ -424,7 +423,7 @@ mod test_rank9sel {
         let density = 0.5;
         for len in 1..10000 {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let rank9sel: Rank9Sel<BitVec, Vec<u64>, 64> = Rank9Sel::new(bits.clone());
+            let rank9sel: Rank9Sel<_, _> = Rank9Sel::new(bits.clone());
 
             let ones = bits.count_ones();
             let mut pos = Vec::with_capacity(ones);
@@ -480,7 +479,7 @@ mod test_rank9sel {
 
                 let num_ones = num_ones_first_half + num_ones_second_half;
 
-                let rank9sel: Rank9Sel = Rank9Sel::new(bits);
+                let rank9sel: Rank9Sel<_, _> = Rank9Sel::new(bits);
 
                 for r in 0..num_ones {
                     black_box(unsafe { rank9sel.select_unchecked(r) });
@@ -496,7 +495,7 @@ mod test_rank9sel {
         let len = 1_000_000_000;
         let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
 
-        let rank9sel: Rank9Sel = Rank9Sel::new(bits);
+        let rank9sel: Rank9Sel<_, _> = Rank9Sel::new(bits);
 
         println!("size:     {}", rank9sel.mem_size(SizeFlags::default()));
         println!("capacity: {}", rank9sel.mem_size(SizeFlags::CAPACITY));
@@ -530,7 +529,7 @@ mod test_rank9sel {
             .chain(second_half.into_iter())
             .collect::<BitVec>();
 
-        let rank9sel: Rank9Sel = Rank9Sel::new(bits);
+        let rank9sel: Rank9Sel<_, _> = Rank9Sel::new(bits);
 
         println!("size:     {}", rank9sel.mem_size(SizeFlags::default()));
         println!("capacity: {}", rank9sel.mem_size(SizeFlags::CAPACITY));
