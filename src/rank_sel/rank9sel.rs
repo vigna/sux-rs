@@ -197,7 +197,7 @@ impl<
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         let inventory_index_left = rank >> Self::LOG2_ONES_PER_INVENTORY;
 
-        assert!(inventory_index_left <= self.inventory_size);
+        debug_assert!(inventory_index_left <= self.inventory_size);
         let inventory_left = *self.inventory.as_ref().get_unchecked(inventory_index_left);
 
         let block_right = (*self
@@ -219,7 +219,7 @@ impl<
                 block_left &= !7;
                 count_left = (block_left / 4) & !1;
 
-                assert!(
+                debug_assert!(
                     rank < *self
                         .rank9
                         .counts
@@ -254,7 +254,7 @@ impl<
                 .wrapping_mul(ONES_STEP_16)
                     >> 47;
 
-                assert!(where_ <= 16);
+                debug_assert!(where_ <= 16);
 
                 block_left += where_ * 4;
                 count_left += where_;
@@ -266,7 +266,7 @@ impl<
                         .as_ref()
                         .get_unchecked(count_left as usize);
 
-                assert!(rank_in_block < 512);
+                debug_assert!(rank_in_block < 512);
             }
             16..=127 => {
                 block_left &= !7;
@@ -287,7 +287,7 @@ impl<
                     * ONES_STEP_16)
                     >> 47;
 
-                assert!(where0 <= 16);
+                debug_assert!(where0 <= 16);
 
                 let first_bis = *self
                     .subinventory
@@ -313,7 +313,7 @@ impl<
                         .as_ref()
                         .get_unchecked(count_left as usize);
 
-                assert!(rank_in_block < 512);
+                debug_assert!(rank_in_block < 512);
             }
             128..=255 => {
                 let (_, s, _) = subinv_ref
@@ -345,14 +345,13 @@ impl<
         let offset_in_block =
             (ULEQ_STEP_9!(subcounts, rank_in_block_step_9).wrapping_mul(ONES_STEP_9) >> 54u64)
                 & 0x7u64;
-        assert!(offset_in_block <= 7);
+        debug_assert!(offset_in_block <= 7);
 
         let word = block_left + offset_in_block;
-        //assert!(word <= (self.rank9.bits.len() as u64 + 63) / 64);
 
         let rank_in_word = rank_in_block
             - ((subcounts >> (((offset_in_block.wrapping_sub(1)) & 7) * 9u64)) & 0x1FF);
-        assert!(rank_in_word < 64);
+        debug_assert!(rank_in_word < 64);
 
         word as usize * 64
             + self

@@ -219,7 +219,7 @@ impl<B: SelectHinted + Select + BitLength + AsRef<[usize]>, I: AsRef<[u64]>> Sel
         let inventory_index = rank >> self.log2_ones_per_inventory;
         let inventory_start_pos =
             (inventory_index << self.log2_u64_per_subinventory) + inventory_index;
-        assert!(inventory_index <= self.inventory_size);
+        debug_assert!(inventory_index <= self.inventory_size);
 
         let inventory_rank = *inventory_ref.get_unchecked(inventory_start_pos) as usize;
         let subrank = rank & self.ones_per_inventory_mask;
@@ -232,7 +232,7 @@ impl<B: SelectHinted + Select + BitLength + AsRef<[usize]>, I: AsRef<[u64]>> Sel
             if self.ones_per_sub64 == 1 {
                 return *inventory_ref.get_unchecked(inventory_start_pos + 1 + subrank) as usize;
             }
-            assert!(
+            debug_assert!(
                 *inventory_ref.get_unchecked(inventory_start_pos + 1) as usize + subrank
                     < self.exact_spill_size
             );
