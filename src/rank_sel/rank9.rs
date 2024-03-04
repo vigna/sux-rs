@@ -99,7 +99,6 @@ impl<
 #[cfg(test)]
 mod test_rank9 {
     use crate::prelude::*;
-    use mem_dbg::*;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     #[test]
@@ -137,20 +136,5 @@ mod test_rank9 {
         let rank9: Rank9 = Rank9::new(bits);
 
         assert_eq!(rank9.rank(rank9.len()), rank9.bits.count());
-    }
-
-    #[test]
-    fn show_mem() {
-        let mut rng = SmallRng::seed_from_u64(0);
-        let density = 0.5;
-        let len = 1_000_000_000;
-        let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-
-        let rank9: Rank9 = Rank9::new(bits);
-
-        println!("size:     {}", rank9.mem_size(SizeFlags::default()));
-        println!("capacity: {}", rank9.mem_size(SizeFlags::CAPACITY));
-
-        rank9.mem_dbg(DbgFlags::default()).unwrap();
     }
 }

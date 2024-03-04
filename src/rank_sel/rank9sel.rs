@@ -29,7 +29,7 @@ macro_rules! ULEQ_STEP_16 {
 }
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct Rank9Sel<R: Rank, I: AsRef<[u64]> = Vec<u64>, const HINT_BIT_SIZE: usize = 64> {
+pub struct Rank9Sel<R: Rank = Rank9, I: AsRef<[u64]> = Vec<u64>, const HINT_BIT_SIZE: usize = 64> {
     rank9: R,
     inventory: I,
     subinventory: I,
@@ -414,7 +414,6 @@ mod test_rank9sel {
     use super::*;
     use crate::prelude::BitVec;
     use criterion::black_box;
-    use mem_dbg::*;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     #[test]
@@ -486,54 +485,5 @@ mod test_rank9sel {
                 }
             }
         }
-    }
-
-    #[test]
-    fn show_mem() {
-        let mut rng = SmallRng::seed_from_u64(0);
-        let density = 0.5;
-        let len = 1_000_000_000;
-        let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-
-        let rank9sel: Rank9Sel<_, _> = Rank9Sel::new(bits);
-
-        println!("size:     {}", rank9sel.mem_size(SizeFlags::default()));
-        println!("capacity: {}", rank9sel.mem_size(SizeFlags::CAPACITY));
-
-        rank9sel.mem_dbg(DbgFlags::default()).unwrap();
-    }
-
-    #[test]
-    fn show_mem_non_uniform() {
-        let mut rng = SmallRng::seed_from_u64(0);
-        let density = 0.5;
-        let len = 100_000_000;
-
-        let density0 = density * 0.01;
-        let density1 = density * 0.99;
-
-        let first_half = loop {
-            let b = (0..len / 2)
-                .map(|_| rng.gen_bool(density0))
-                .collect::<BitVec>();
-            if b.count_ones() > 0 {
-                break b;
-            }
-        };
-        let second_half = (0..len / 2)
-            .map(|_| rng.gen_bool(density1))
-            .collect::<BitVec>();
-
-        let bits = first_half
-            .into_iter()
-            .chain(second_half.into_iter())
-            .collect::<BitVec>();
-
-        let rank9sel: Rank9Sel<_, _> = Rank9Sel::new(bits);
-
-        println!("size:     {}", rank9sel.mem_size(SizeFlags::default()));
-        println!("capacity: {}", rank9sel.mem_size(SizeFlags::CAPACITY));
-
-        rank9sel.mem_dbg(DbgFlags::default()).unwrap();
     }
 }
