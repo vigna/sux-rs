@@ -32,6 +32,28 @@ use std::sync::Mutex;
 use std::thread;
 use Ordering::Relaxed;
 
+#[inline]
+pub fn log2_segment_length(arity: usize, size: usize) -> u32 {
+    if size == 0 {
+        return 4;
+    }
+
+    match arity {
+        3 => ((size as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
+        4 => ((size as f64).ln() / (2.91_f64).ln() - 0.5).floor() as u32,
+        _ => unimplemented!(),
+    }
+}
+
+#[inline]
+pub fn size_factor(arity: usize, size: usize) -> f64 {
+    match arity {
+        3 => 1.125_f64.max(0.875 + 0.25 * (1000000_f64).ln() / (size as f64).ln()),
+        4 => 1.075_f64.max(0.77 + 0.305 * (600000_f64).ln() / (size as f64).ln()),
+        _ => unimplemented!(),
+    }
+}
+
 const PARAMS: [(usize, u32, f64); 15] = [
     (0, 0, 1.23),
     (10000, 5, 1.23),
@@ -127,13 +149,16 @@ fn chunk(sig: &[u64; 2], chunk_high_bits: u32, chunk_mask: u32) -> usize {
 
 #[inline(always)]
 #[must_use]
-fn edge(sig: &[u64; 2], log2_l: u32, segment_size: usize) -> [usize; 3] {
-    let first_segment = (sig[0] >> 32 & ((1 << log2_l) - 1)) as usize;
-    let start = first_segment * segment_size;
+fn edge(sig: &[u64; 2], chunk_high_bits: usize, l: usize, log2_seg_len: usize) -> [usize; 3] {
+    let first_segment = (sig[0] << chunk_high_bits >> 32) as usize * l >> 32;
+    let start = first_segment << log2_seg_len;
+    let segment_size = 1 << log2_seg_len;
+    let segment_mask = segment_size - 1;
+
     [
-        (((sig[0] & 0xFFFFFFFF) * segment_size as u64) >> 32) as usize + start,
-        (((sig[1] >> 32) * segment_size as u64) >> 32) as usize + start + segment_size,
-        (((sig[1] & 0xFFFFFFFF) * segment_size as u64) >> 32) as usize + start + 2 * segment_size,
+        (sig[0] as usize & segment_mask) + start,
+        ((sig[1] >> 32) as usize & segment_mask) + start + segment_size,
+        (sig[1] as usize & segment_mask) + start + 2 * segment_size,
     ]
 }
 
@@ -198,12 +223,12 @@ pub struct VFunc<
     O: ZeroCopy + Word + IntoAtomic = usize,
     D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
 > {
-    seed: u64,
-    log2_l: u32,
     high_bits: u32,
     chunk_mask: u32,
+    seed: u64,
+    l: usize,
     num_keys: usize,
-    segment_size: usize,
+    log2_segment_size: usize,
     data: D,
     _marker_t: std::marker::PhantomData<T>,
     _marker_o: std::marker::PhantomData<O>,
@@ -283,13 +308,14 @@ fn par_solve<
     num_chunks: usize,
     num_vertices: usize,
     num_threads: usize,
-    segment_size: usize,
-    log2_l: u32,
+    log2_segment_size: usize,
+    l: usize,
     main_pl: &mut (impl ProgressLog + Send),
 ) -> ParSolveResult<O, D>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
 {
+    let chunk_high_bits = num_chunks.ilog2() as usize;
     let chunk_iter = std::sync::Arc::new(Mutex::new(chunk_iter));
     let failed_peeling = AtomicBool::new(false);
     let duplicate_signature = AtomicBool::new(false);
@@ -330,7 +356,7 @@ where
                     let mut edge_lists = Vec::new();
                     edge_lists.resize_with(num_vertices, EdgeList::default);
                     chunk.iter().enumerate().for_each(|(edge_index, sig_val)| {
-                        for &v in edge(&sig_val.sig, log2_l, segment_size).iter() {
+                        for &v in edge(&sig_val.sig, chunk_high_bits, l, log2_segment_size).iter() {
                             edge_lists[v].add(edge_index);
                         }
                     });
@@ -360,7 +386,14 @@ where
                             stack[curr] = v;
                             curr += 1;
                             // Degree is necessarily 0
-                            for &x in edge(&chunk[edge_index].sig, log2_l, segment_size).iter() {
+                            for &x in edge(
+                                &chunk[edge_index].sig,
+                                chunk_high_bits,
+                                l,
+                                log2_segment_size,
+                            )
+                            .iter()
+                            {
                                 if x != v {
                                     edge_lists[x].remove(edge_index);
                                     if edge_lists[x].degree() == 1 {
@@ -389,7 +422,12 @@ where
                     ));
                     while let Some(mut v) = stack.pop() {
                         let edge_index = edge_lists[v].edge_index();
-                        let mut edge = edge(&chunk[edge_index].sig, log2_l, segment_size);
+                        let mut edge = edge(
+                            &chunk[edge_index].sig,
+                            chunk_high_bits,
+                            l,
+                            log2_segment_size,
+                        );
                         let chunk_offset = chunk_index * num_vertices;
                         v += chunk_offset;
                         edge.iter_mut().for_each(|v| {
@@ -444,10 +482,10 @@ where
     /// This method is mainly useful in the construction of compound functions.
     #[inline(always)]
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> O {
-        let edge = edge(sig, self.log2_l, self.segment_size);
+        let edge = edge(sig, self.high_bits as usize, self.l, self.log2_segment_size);
         let chunk = chunk(sig, self.high_bits, self.chunk_mask);
         // chunk * self.segment_size * (2^log2_l + 2)
-        let chunk_offset = chunk * ((self.segment_size << self.log2_l) + (self.segment_size << 1));
+        let chunk_offset = chunk * ((self.l + 2) << self.log2_segment_size);
 
         unsafe {
             self.data.get_unchecked(edge[0] + chunk_offset)
@@ -540,10 +578,10 @@ where
         let (
             mut num_keys,
             mut bit_width,
-            mut segment_size,
+            mut log2_seg_len,
             mut chunk_high_bits,
             mut chunk_mask,
-            mut log2_l,
+            mut l,
         );
         let data = loop {
             pl.item_name("key");
@@ -580,7 +618,11 @@ where
                 num_keys = sig_sorter.len();
                 pl.done();
 
-                (chunk_high_bits, max_num_threads, log2_l, c) = compute_params(num_keys, pl);
+                chunk_high_bits = 0;
+                max_num_threads = 1;
+                log2_seg_len = log2_segment_length(3, num_keys);
+                c = size_factor(3, num_keys);
+                dbg!(c, log2_seg_len);
 
                 let num_chunks = 1 << chunk_high_bits;
                 chunk_mask = (1u32 << chunk_high_bits) - 1;
@@ -594,11 +636,8 @@ where
                     max_value, bit_width
                 ));
 
-                let l = 1 << log2_l;
-                segment_size =
-                    ((*chunk_sizes.iter().max().unwrap() as f64 * c).ceil() as usize + l + 1)
-                        / (l + 2);
-                let num_vertices = segment_size * (l + 2);
+                l = ((num_keys as f64 * c).ceil() as usize).div_ceil(1 << log2_seg_len);
+                let num_vertices = (1 << log2_seg_len) * (l + 2);
                 pl.info(format_args!(
                     "Size {:.2}%",
                     (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
@@ -613,8 +652,8 @@ where
                         0 => max_num_threads,
                         _ => self.num_threads,
                     },
-                    segment_size,
-                    log2_l,
+                    log2_seg_len as usize,
+                    l,
                     pl,
                 ) {
                     ParSolveResult::DuplicateSignature => {
@@ -651,10 +690,14 @@ where
                 pl.done();
                 num_keys = sig_vals.len();
 
-                (chunk_high_bits, max_num_threads, log2_l, c) = compute_params(num_keys, pl);
+                chunk_high_bits = 0;
+                max_num_threads = 1;
+                log2_seg_len = log2_segment_length(3, num_keys);
+                c = size_factor(3, num_keys);
+                dbg!(c, log2_seg_len);
 
                 let num_chunks = 1 << chunk_high_bits;
-                chunk_mask = (1u32 << chunk_high_bits) - 1;
+                chunk_mask = 0; //(1u32 << chunk_high_bits) - 1;
 
                 pl.start("Sorting...");
                 sig_vals.radix_sort_unstable();
@@ -693,14 +736,11 @@ where
                     max_value, bit_width
                 ));
 
-                let l = 1 << log2_l;
-                segment_size =
-                    ((*chunk_sizes.iter().max().unwrap() as f64 * c).ceil() as usize + l + 1)
-                        / (l + 2);
-                let num_vertices = segment_size * (l + 2);
+                l = ((num_keys as f64 * c).ceil() as usize).div_ceil(1 << log2_seg_len);
+                let num_vertices = (1 << log2_seg_len) * (l + 2);
                 pl.info(format_args!(
                     "Size {:.2}%",
-                    (100.0 * (num_vertices * num_chunks) as f64) / (sig_vals.len() as f64 * c)
+                    (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
                 ));
 
                 match par_solve(
@@ -715,8 +755,8 @@ where
                         0 => max_num_threads,
                         _ => self.num_threads,
                     },
-                    segment_size,
-                    log2_l,
+                    log2_seg_len as usize,
+                    l,
                     pl,
                 ) {
                     ParSolveResult::DuplicateSignature => {
@@ -737,11 +777,11 @@ where
 
         Ok(VFunc {
             seed,
-            log2_l,
+            l,
             high_bits: chunk_high_bits,
             chunk_mask,
             num_keys,
-            segment_size,
+            log2_segment_size: log2_seg_len as usize,
             data: data.convert_to().unwrap(),
             _marker_t: std::marker::PhantomData,
             _marker_o: std::marker::PhantomData,
