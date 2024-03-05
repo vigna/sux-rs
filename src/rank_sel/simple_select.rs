@@ -38,11 +38,12 @@ impl SimpleSelect<BitVec, Vec<u64>> {
         let num_bits = bits.len();
         let num_ones = bits.count();
 
-        let ones_per_inventory = if num_bits == 0 {
-            0
-        } else {
-            (num_ones * Self::MAX_ONES_PER_INVENTORY + num_bits - 1) / num_bits
-        };
+        if num_ones == 0 || num_bits == 0 {
+            todo!("Empty bitvector");
+        }
+
+        let ones_per_inventory =
+            (num_ones * Self::MAX_ONES_PER_INVENTORY + num_bits - 1) / num_bits;
 
         // Make ones_per_inventory into a power of 2
         let log2_ones_per_inventory = max(0, most_significant_one(ones_per_inventory)) as usize;
@@ -86,10 +87,6 @@ impl SimpleSelect<BitVec, Vec<u64>> {
         assert_eq!(num_ones, d);
 
         inventory[(inventory_size * u64_per_inventory) as usize] = num_bits as u64;
-
-        if ones_per_inventory <= 1 {
-            todo!("early return");
-        }
 
         d = 0;
         let mut ones;
