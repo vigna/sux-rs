@@ -17,22 +17,16 @@ pub struct SimpleSelect<B: SelectHinted = BitVec, I: AsRef<[u64]> = Vec<u64>> {
     bits: B,
     inventory: I,
     exact_spill: I,
+    num_ones: usize,
     log2_ones_per_inventory: usize,
     log2_ones_per_sub16: usize,
-    log2_ones_per_sub64: usize,
     log2_u64_per_subinventory: usize,
-    ones_per_inventory: usize,
-    ones_per_sub16: usize,
     ones_per_sub64: usize,
-    u64_per_subinventory: usize,
     u64_per_inventory: usize,
     ones_per_inventory_mask: usize,
     ones_per_sub16_mask: usize,
-    ones_per_sub64_mask: usize,
-    num_words: usize,
     inventory_size: usize,
     exact_spill_size: usize,
-    num_ones: usize,
 }
 
 impl<B: SelectHinted, I: AsRef<[u64]>> SimpleSelect<B, I> {
@@ -42,7 +36,6 @@ impl<B: SelectHinted, I: AsRef<[u64]>> SimpleSelect<B, I> {
 impl SimpleSelect<BitVec, Vec<u64>> {
     pub fn new(bits: BitVec, max_log2_u64_per_subinventory: u64) -> Self {
         let num_bits = bits.len();
-        let num_words = (num_bits + 63) / 64;
         let num_ones = bits.count();
 
         let ones_per_inventory = if num_bits == 0 {
@@ -73,7 +66,6 @@ impl SimpleSelect<BitVec, Vec<u64>> {
         let log2_ones_per_sub16 = max(0, (log2_ones_per_sub64 as i32) - 2) as usize;
         let ones_per_sub64 = 1usize << log2_ones_per_sub64;
         let ones_per_sub16 = 1usize << log2_ones_per_sub16;
-        let ones_per_sub64_mask = ones_per_sub64 - 1;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
         let mut inventory = vec![0u64; inventory_size * u64_per_inventory + 1];
@@ -177,22 +169,16 @@ impl SimpleSelect<BitVec, Vec<u64>> {
             bits,
             inventory,
             exact_spill,
+            num_ones,
             log2_ones_per_inventory,
             log2_ones_per_sub16,
-            log2_ones_per_sub64,
             log2_u64_per_subinventory,
-            ones_per_inventory,
-            ones_per_sub16,
             ones_per_sub64,
-            u64_per_subinventory,
             u64_per_inventory,
             ones_per_inventory_mask,
             ones_per_sub16_mask,
-            ones_per_sub64_mask,
-            num_words,
             inventory_size,
             exact_spill_size,
-            num_ones,
         }
     }
 }
