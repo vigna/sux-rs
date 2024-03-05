@@ -284,7 +284,7 @@ impl<
 
                 let where0 = ((ULEQ_STEP_16!(first, rank_in_superblock_step_16)
                     + ULEQ_STEP_16!(second, rank_in_superblock_step_16))
-                    * ONES_STEP_16)
+                .wrapping_mul(ONES_STEP_16))
                     >> 47;
 
                 debug_assert!(where0 <= 16);
@@ -412,16 +412,15 @@ impl<
 mod test_rank9sel {
     use super::*;
     use crate::prelude::BitVec;
-    use criterion::black_box;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     #[test]
     fn test_rank9sel() {
         let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
         let density = 0.5;
-        for len in 1..10000 {
+        for len in (1..10000).chain((10000..100000).step_by(100)) {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let rank9sel: Rank9Sel<_, _> = Rank9Sel::new(bits.clone());
+            let rank9sel: Rank9Sel = Rank9Sel::new(bits.clone());
 
             let ones = bits.count_ones();
             let mut pos = Vec::with_capacity(ones);
@@ -440,16 +439,26 @@ mod test_rank9sel {
 
     #[test]
     fn test_rank9sel_non_uniform() {
-        let lens = [1u64 << 20];
+        let lens = 1000..10000;
 
         let mut rng = SmallRng::seed_from_u64(0);
         for len in lens {
-            for density in [0.25, 0.5, 0.75] {
+            for density in [0.5] {
                 let density0 = density * 0.01;
                 let density1 = density * 0.99;
 
+                let len1;
+                let len2;
+                if len % 2 != 0 {
+                    len1 = len / 2 + 1;
+                    len2 = len / 2;
+                } else {
+                    len1 = len / 2;
+                    len2 = len / 2;
+                }
+
                 let first_half = loop {
-                    let b = (0..len / 2)
+                    let b = (0..len1)
                         .map(|_| rng.gen_bool(density0))
                         .collect::<BitVec>();
                     if b.count_ones() > 0 {
@@ -457,7 +466,7 @@ mod test_rank9sel {
                     }
                 };
                 let num_ones_first_half = first_half.count_ones();
-                let second_half = (0..len / 2)
+                let second_half = (0..len2)
                     .map(|_| rng.gen_bool(density1))
                     .collect::<BitVec>();
                 let num_ones_second_half = second_half.count_ones();
@@ -475,13 +484,22 @@ mod test_rank9sel {
                     bits.count_ones()
                 );
 
-                let num_ones = num_ones_first_half + num_ones_second_half;
+                assert_eq!(bits.len(), len as usize);
 
-                let rank9sel: Rank9Sel<_, _> = Rank9Sel::new(bits);
-
-                for r in 0..num_ones {
-                    black_box(unsafe { rank9sel.select_unchecked(r) });
+                let ones = bits.count_ones();
+                let mut pos = Vec::with_capacity(ones);
+                for i in 0..(len as usize) {
+                    if bits[i] {
+                        pos.push(i);
+                    }
                 }
+
+                let rank9sel: Rank9Sel = Rank9Sel::new(bits);
+
+                for i in 0..(ones) {
+                    assert!(rank9sel.select(i) == Some(pos[i]), "i = {}", i);
+                }
+                assert_eq!(rank9sel.select(ones + 1), None);
             }
         }
     }
