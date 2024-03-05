@@ -280,7 +280,6 @@ fn par_solve<
 >(
     chunk_iter: I,
     data: D,
-    bit_width: usize,
     num_chunks: usize,
     num_vertices: usize,
     num_threads: usize,
@@ -535,7 +534,6 @@ where
     where
         A: ConvertTo<D>,
     {
-        use bit_field_slice::BitFieldSliceCore;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         let mut seed = 0;
@@ -609,7 +607,6 @@ where
                 match par_solve(
                     chunk_store.iter().unwrap(),
                     new(bit_width, num_vertices * num_chunks),
-                    bit_width,
                     num_chunks,
                     num_vertices,
                     match self.num_threads {
@@ -712,7 +709,6 @@ where
                         .map(Cow::Borrowed)
                         .enumerate(),
                     new(bit_width, num_vertices * num_chunks),
-                    bit_width,
                     num_chunks,
                     num_vertices,
                     match self.num_threads {
