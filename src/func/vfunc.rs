@@ -7,12 +7,15 @@
 
 // We import selectively to be able to use AtomicHelper
 use crate::bits::*;
+use crate::prelude::ConvertTo;
 use crate::traits::bit_field_slice;
 use crate::utils::*;
 use anyhow::bail;
 use arbitrary_chunks::ArbitraryChunks;
-use bit_field_slice::BitFieldSliceCore;
+use bit_field_slice::AtomicBitFieldSlice;
+use bit_field_slice::BitFieldSlice;
 use bit_field_slice::Word;
+use common_traits::Atomic;
 use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
 use derivative::Derivative;
 use derive_setters::*;
@@ -23,6 +26,7 @@ use mem_dbg::*;
 use rayon::prelude::*;
 use rdst::*;
 use std::borrow::Cow;
+use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::thread;
@@ -162,7 +166,8 @@ using too many threads might actually be harmful due to memory contention: eight
 #[setters(generate = false)]
 pub struct VFuncBuilder<
     T: ?Sized + ToSig,
-    O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic,
+    O: ZeroCopy + Word + IntoAtomic,
+    D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
 > {
     #[setters(generate = true)]
     /// The number of parallel threads to use.
@@ -173,8 +178,8 @@ pub struct VFuncBuilder<
     /// The base-2 logarithm of the number of buckets. Used only if `offline` is `true`. The default is 8.
     #[setters(generate = true, strip_option)]
     log2_buckets: Option<u32>,
-    _marker_t: std::marker::PhantomData<T>,
-    _marker_o: std::marker::PhantomData<O>,
+    _marker_t: PhantomData<T>,
+    _marker_od: PhantomData<(O, D)>,
 }
 
 /**
@@ -190,8 +195,8 @@ and can be serialized using [ε-serde](`epserde`).
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFunc<
     T: ?Sized + ToSig,
-    O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic = usize,
-    S: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
+    O: ZeroCopy + Word + IntoAtomic = usize,
+    D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
 > {
     seed: u64,
     log2_l: u32,
@@ -199,7 +204,7 @@ pub struct VFunc<
     chunk_mask: u32,
     num_keys: usize,
     segment_size: usize,
-    values: S,
+    data: D,
     _marker_t: std::marker::PhantomData<T>,
     _marker_o: std::marker::PhantomData<O>,
 }
@@ -257,10 +262,13 @@ fn compute_params(num_keys: usize, pl: &mut impl ProgressLog) -> (u32, usize, u3
     (chunk_high_bits, max_num_threads, log2_l, c)
 }
 
-enum ParSolveResult<O: Word + IntoAtomic> {
+enum ParSolveResult<O: Word + IntoAtomic, D: AtomicBitFieldSlice<O>>
+where
+    O::AtomicType: AtomicUnsignedInt + AsBytes,
+{
     DuplicateSignature,
     CantPeel,
-    Ok(AtomicBitFieldVec<O>),
+    Ok(D, PhantomData<O>),
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -268,8 +276,10 @@ fn par_solve<
     'a,
     O: Word + ZeroCopy + Send + Sync + IntoAtomic + 'static,
     I: Iterator<Item = (usize, Cow<'a, [SigVal<O>]>)> + Send,
+    D: AtomicBitFieldSlice<O> + Send + Sync,
 >(
     chunk_iter: I,
+    data: D,
     bit_width: usize,
     num_chunks: usize,
     num_vertices: usize,
@@ -277,12 +287,10 @@ fn par_solve<
     segment_size: usize,
     log2_l: u32,
     main_pl: &mut (impl ProgressLog + Send),
-) -> ParSolveResult<O>
+) -> ParSolveResult<O, D>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
 {
-    use crate::traits::bit_field_slice::AtomicHelper;
-    let data = AtomicBitFieldVec::<O>::new(bit_width, num_vertices * num_chunks);
     let chunk_iter = std::sync::Arc::new(Mutex::new(chunk_iter));
     let failed_peeling = AtomicBool::new(false);
     let duplicate_signature = AtomicBool::new(false);
@@ -294,123 +302,125 @@ where
     let main_pl = std::sync::Arc::new(Mutex::new(main_pl));
     thread::scope(|s| {
         for _ in 0..num_threads {
-            s.spawn(|| loop {
-                if failed_peeling.load(Relaxed) || duplicate_signature.load(Relaxed) {
-                    return;
-                }
-                let (chunk_index, mut chunk) = match chunk_iter.lock().unwrap().next() {
-                    None => return,
-                    Some((chunk_index, chunk)) => (chunk_index, chunk),
-                };
-
-                if let Cow::Owned(chunk) = &mut chunk {
-                    chunk.radix_sort_unstable();
-                }
-
-                if chunk.par_windows(2).any(|w| w[0].sig == w[1].sig) {
-                    duplicate_signature.store(true, Ordering::Relaxed);
-                    return;
-                }
-
-                let mut pl = main_pl.lock().unwrap().clone();
-                pl.item_name("edge");
-                pl.start(format!(
-                    "Generating graph for chunk {}/{}...",
-                    chunk_index + 1,
-                    num_chunks
-                ));
-                let mut edge_lists = Vec::new();
-                edge_lists.resize_with(num_vertices, EdgeList::default);
-                chunk.iter().enumerate().for_each(|(edge_index, sig_val)| {
-                    for &v in edge(&sig_val.sig, log2_l, segment_size).iter() {
-                        edge_lists[v].add(edge_index);
+            s.spawn(|| {
+                loop {
+                    if failed_peeling.load(Relaxed) || duplicate_signature.load(Relaxed) {
+                        return;
                     }
-                });
-                pl.done_with_count(chunk.len());
+                    let (chunk_index, mut chunk) = match chunk_iter.lock().unwrap().next() {
+                        None => return,
+                        Some((chunk_index, chunk)) => (chunk_index, chunk),
+                    };
 
-                pl.start(format!(
-                    "Peeling graph for chunk {}/{}...",
-                    chunk_index + 1,
-                    num_chunks
-                ));
-                let mut stack = Vec::new();
-                for v in 0..num_vertices {
-                    if edge_lists[v].degree() != 1 {
-                        continue;
+                    if let Cow::Owned(chunk) = &mut chunk {
+                        chunk.radix_sort_unstable();
                     }
-                    let mut pos = stack.len();
-                    let mut curr = stack.len();
-                    stack.push(v);
-                    while pos < stack.len() {
-                        let v = stack[pos];
-                        pos += 1;
-                        if edge_lists[v].degree() == 0 {
-                            continue; // Skip no longer useful entries
+
+                    if chunk.par_windows(2).any(|w| w[0].sig == w[1].sig) {
+                        duplicate_signature.store(true, Ordering::Relaxed);
+                        return;
+                    }
+
+                    let mut pl = main_pl.lock().unwrap().clone();
+                    pl.item_name("edge");
+                    pl.start(format!(
+                        "Generating graph for chunk {}/{}...",
+                        chunk_index + 1,
+                        num_chunks
+                    ));
+                    let mut edge_lists = Vec::new();
+                    edge_lists.resize_with(num_vertices, EdgeList::default);
+                    chunk.iter().enumerate().for_each(|(edge_index, sig_val)| {
+                        for &v in edge(&sig_val.sig, log2_l, segment_size).iter() {
+                            edge_lists[v].add(edge_index);
                         }
-                        edge_lists[v].zero();
-                        let edge_index = edge_lists[v].edge_index();
-                        stack[curr] = v;
-                        curr += 1;
-                        // Degree is necessarily 0
-                        for &x in edge(&chunk[edge_index].sig, log2_l, segment_size).iter() {
-                            if x != v {
-                                edge_lists[x].remove(edge_index);
-                                if edge_lists[x].degree() == 1 {
-                                    stack.push(x);
+                    });
+                    pl.done_with_count(chunk.len());
+
+                    pl.start(format!(
+                        "Peeling graph for chunk {}/{}...",
+                        chunk_index + 1,
+                        num_chunks
+                    ));
+                    let mut stack = Vec::new();
+                    for v in 0..num_vertices {
+                        if edge_lists[v].degree() != 1 {
+                            continue;
+                        }
+                        let mut pos = stack.len();
+                        let mut curr = stack.len();
+                        stack.push(v);
+                        while pos < stack.len() {
+                            let v = stack[pos];
+                            pos += 1;
+                            if edge_lists[v].degree() == 0 {
+                                continue; // Skip no longer useful entries
+                            }
+                            edge_lists[v].zero();
+                            let edge_index = edge_lists[v].edge_index();
+                            stack[curr] = v;
+                            curr += 1;
+                            // Degree is necessarily 0
+                            for &x in edge(&chunk[edge_index].sig, log2_l, segment_size).iter() {
+                                if x != v {
+                                    edge_lists[x].remove(edge_index);
+                                    if edge_lists[x].degree() == 1 {
+                                        stack.push(x);
+                                    }
                                 }
                             }
                         }
+                        stack.truncate(curr);
                     }
-                    stack.truncate(curr);
-                }
-                if chunk.len() != stack.len() {
-                    warn!(
-                        "Peeling failed for chunk {}/{}",
+                    if chunk.len() != stack.len() {
+                        warn!(
+                            "Peeling failed for chunk {}/{}",
+                            chunk_index + 1,
+                            num_chunks
+                        );
+                        failed_peeling.store(true, Ordering::Relaxed);
+                        return;
+                    }
+                    pl.done_with_count(chunk.len());
+
+                    pl.start(format!(
+                        "Assigning values for chunk {}/{}...",
                         chunk_index + 1,
                         num_chunks
-                    );
-                    failed_peeling.store(true, Ordering::Relaxed);
-                    return;
+                    ));
+                    while let Some(mut v) = stack.pop() {
+                        let edge_index = edge_lists[v].edge_index();
+                        let mut edge = edge(&chunk[edge_index].sig, log2_l, segment_size);
+                        let chunk_offset = chunk_index * num_vertices;
+                        v += chunk_offset;
+                        edge.iter_mut().for_each(|v| {
+                            *v += chunk_offset;
+                        });
+                        let value = if v == edge[0] {
+                            data.get_atomic(edge[1], Relaxed) ^ data.get_atomic(edge[2], Relaxed)
+                        } else if v == edge[1] {
+                            data.get_atomic(edge[0], Relaxed) ^ data.get_atomic(edge[2], Relaxed)
+                        } else {
+                            data.get_atomic(edge[0], Relaxed) ^ data.get_atomic(edge[1], Relaxed)
+                        };
+
+                        data.set_atomic(v, chunk[edge_index].val ^ value, Relaxed);
+                        debug_assert_eq!(
+                            data.get_atomic(edge[0], Relaxed)
+                                ^ data.get_atomic(edge[1], Relaxed)
+                                ^ data.get_atomic(edge[2], Relaxed),
+                            chunk[edge_index].val
+                        );
+                    }
+                    pl.done_with_count(chunk.len());
+
+                    pl.start(format!(
+                        "Completed chunk {}/{}.",
+                        chunk_index + 1,
+                        num_chunks
+                    ));
+                    main_pl.lock().unwrap().update_and_display();
                 }
-                pl.done_with_count(chunk.len());
-
-                pl.start(format!(
-                    "Assigning values for chunk {}/{}...",
-                    chunk_index + 1,
-                    num_chunks
-                ));
-                while let Some(mut v) = stack.pop() {
-                    let edge_index = edge_lists[v].edge_index();
-                    let mut edge = edge(&chunk[edge_index].sig, log2_l, segment_size);
-                    let chunk_offset = chunk_index * num_vertices;
-                    v += chunk_offset;
-                    edge.iter_mut().for_each(|v| {
-                        *v += chunk_offset;
-                    });
-                    let value = if v == edge[0] {
-                        data.get(edge[1], Relaxed) ^ data.get(edge[2], Relaxed)
-                    } else if v == edge[1] {
-                        data.get(edge[0], Relaxed) ^ data.get(edge[2], Relaxed)
-                    } else {
-                        data.get(edge[0], Relaxed) ^ data.get(edge[1], Relaxed)
-                    };
-
-                    data.set(v, chunk[edge_index].val ^ value, Relaxed);
-                    debug_assert_eq!(
-                        data.get(edge[0], Relaxed)
-                            ^ data.get(edge[1], Relaxed)
-                            ^ data.get(edge[2], Relaxed),
-                        chunk[edge_index].val
-                    );
-                }
-                pl.done_with_count(chunk.len());
-
-                pl.start(format!(
-                    "Completed chunk {}/{}.",
-                    chunk_index + 1,
-                    num_chunks
-                ));
-                main_pl.lock().unwrap().update_and_display();
             });
         }
     });
@@ -421,22 +431,19 @@ where
         ParSolveResult::DuplicateSignature
     } else {
         main_pl.lock().unwrap().done();
-        ParSolveResult::Ok(data)
+        ParSolveResult::Ok(data, PhantomData)
     }
 }
 
-impl<
-        T: ?Sized + ToSig,
-        O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic,
-        S: bit_field_slice::BitFieldSlice<O>,
-    > VFunc<T, O, S>
+impl<T: ?Sized + ToSig, O: ZeroCopy + Word + IntoAtomic, D: bit_field_slice::BitFieldSlice<O>>
+    VFunc<T, O, D>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
-    BitFieldVec<O>: From<AtomicBitFieldVec<O, Vec<O::AtomicType>>>,
 {
     /// Return the value associated with the given signature.
     ///
     /// This method is mainly useful in the construction of compound functions.
+    #[inline(always)]
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> O {
         let edge = edge(sig, self.log2_l, self.segment_size);
         let chunk = chunk(sig, self.high_bits, self.chunk_mask);
@@ -444,9 +451,9 @@ where
         let chunk_offset = chunk * ((self.segment_size << self.log2_l) + (self.segment_size << 1));
 
         unsafe {
-            self.values.get_unchecked(edge[0] + chunk_offset)
-                ^ self.values.get_unchecked(edge[1] + chunk_offset)
-                ^ self.values.get_unchecked(edge[2] + chunk_offset)
+            self.data.get_unchecked(edge[0] + chunk_offset)
+                ^ self.data.get_unchecked(edge[1] + chunk_offset)
+                ^ self.data.get_unchecked(edge[2] + chunk_offset)
         }
     }
 
@@ -467,21 +474,68 @@ where
     }
 }
 
-impl<
-        T: ?Sized + ToSig,
-        O: ZeroCopy + SerializeInner + DeserializeInner + Word + IntoAtomic + 'static,
-    > VFuncBuilder<T, O>
+impl<T: ?Sized + ToSig, O: ZeroCopy + Word + IntoAtomic + 'static> VFuncBuilder<T, O, Vec<O>>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
-    BitFieldVec<O>: From<AtomicBitFieldVec<O, Vec<O::AtomicType>>>,
+    Vec<O>: BitFieldSlice<O>,
+    Vec<O::AtomicType>: AtomicBitFieldSlice<O> + ConvertTo<Vec<O>>,
+{
+    pub fn build(
+        self,
+        into_keys: impl RewindableIOLender<T>,
+        into_values: impl RewindableIOLender<O>,
+        pl: &mut (impl ProgressLog + Send),
+    ) -> anyhow::Result<VFunc<T, O, Vec<O>>> {
+        self._build::<Vec<O::AtomicType>>(
+            into_keys,
+            into_values,
+            |_bit_width: usize, len: usize| (0..len).map(|_| O::AtomicType::new(O::ZERO)).collect(),
+            pl,
+        )
+    }
+}
+
+impl<T: ?Sized + ToSig, O: ZeroCopy + Word + IntoAtomic + 'static>
+    VFuncBuilder<T, O, BitFieldVec<O>>
+where
+    O::AtomicType: AtomicUnsignedInt + AsBytes,
+    Vec<O::AtomicType>: AtomicBitFieldSlice<O> + ConvertTo<Vec<O>>,
+{
+    pub fn build(
+        self,
+        into_keys: impl RewindableIOLender<T>,
+        into_values: impl RewindableIOLender<O>,
+        pl: &mut (impl ProgressLog + Send),
+    ) -> anyhow::Result<VFunc<T, O, BitFieldVec<O>>> {
+        self._build::<AtomicBitFieldVec<O>>(
+            into_keys,
+            into_values,
+            |bit_width: usize, len: usize| AtomicBitFieldVec::<O>::new(bit_width, len),
+            pl,
+        )
+    }
+}
+
+impl<
+        T: ?Sized + ToSig,
+        O: ZeroCopy + Word + IntoAtomic + 'static,
+        D: bit_field_slice::BitFieldSlice<O>,
+    > VFuncBuilder<T, O, D>
+where
+    O::AtomicType: AtomicUnsignedInt + AsBytes,
 {
     /// Build and return a new function with given keys and values.
-    pub fn build(
+    fn _build<A: AtomicBitFieldSlice<O> + Send + Sync>(
         self,
         mut into_keys: impl RewindableIOLender<T>,
         mut into_values: impl RewindableIOLender<O>,
+        new: fn(usize, usize) -> A,
         pl: &mut (impl ProgressLog + Send),
-    ) -> anyhow::Result<VFunc<T, O>> {
+    ) -> anyhow::Result<VFunc<T, O, D>>
+    where
+        A: ConvertTo<D>,
+    {
+        use bit_field_slice::BitFieldSliceCore;
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         let mut seed = 0;
@@ -554,6 +608,7 @@ where
 
                 match par_solve(
                     chunk_store.iter().unwrap(),
+                    new(bit_width, num_vertices * num_chunks),
                     bit_width,
                     num_chunks,
                     num_vertices,
@@ -574,7 +629,7 @@ where
                         continue;
                     }
                     ParSolveResult::CantPeel => {}
-                    ParSolveResult::Ok(data) => break data,
+                    ParSolveResult::Ok(data, PhantomData) => break data,
                 }
             } else {
                 into_keys = into_keys.rewind()?;
@@ -656,6 +711,7 @@ where
                         .arbitrary_chunks(&chunk_sizes)
                         .map(Cow::Borrowed)
                         .enumerate(),
+                    new(bit_width, num_vertices * num_chunks),
                     bit_width,
                     num_chunks,
                     num_vertices,
@@ -671,7 +727,7 @@ where
                         unreachable!("Already checked for duplicates")
                     }
                     ParSolveResult::CantPeel => {}
-                    ParSolveResult::Ok(data) => break data,
+                    ParSolveResult::Ok(data, PhantomData) => break data,
                 }
             }
 
@@ -680,7 +736,7 @@ where
 
         pl.info(format_args!(
             "bits/keys: {}",
-            data.len() as f64 * bit_width as f64 / num_keys as f64
+            0 //data.len() as f64 * bit_width as f64 / num_keys as f64
         ));
 
         Ok(VFunc {
@@ -690,7 +746,7 @@ where
             chunk_mask,
             num_keys,
             segment_size,
-            values: data.into(),
+            data: data.convert_to().unwrap(),
             _marker_t: std::marker::PhantomData,
             _marker_o: std::marker::PhantomData,
         })

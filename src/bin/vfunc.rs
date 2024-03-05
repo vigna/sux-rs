@@ -9,7 +9,9 @@ use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
+use sux::bits::BitFieldVec;
 use sux::prelude::VFuncBuilder;
+use sux::traits::BitFieldSlice;
 use sux::utils::{FromIntoIterator, LineLender, ZstdLineLender};
 
 #[derive(Parser, Debug)]
@@ -55,7 +57,7 @@ fn main() -> Result<()> {
     pl.display_memory(true);
 
     if let Some(filename) = args.filename {
-        let mut builder = VFuncBuilder::<str, _>::default()
+        let mut builder = VFuncBuilder::<_, _, BitFieldVec<usize>>::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
 
@@ -80,7 +82,7 @@ fn main() -> Result<()> {
     }
 
     if let Some(n) = args.n {
-        let mut builder = VFuncBuilder::default()
+        let mut builder = VFuncBuilder::<_, _, BitFieldVec<usize>>::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
         if let Some(threads) = args.threads {
