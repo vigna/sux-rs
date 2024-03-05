@@ -104,53 +104,60 @@ impl<const HINT_BIT_SIZE: usize>
                 block_span = (inventory[index + 1] / 64) / 8 - (inventory[index] / 64) / 8;
                 block_left = (inventory[index] / 64) / 8;
 
-                if span >= 512 {
-                    state = 0;
-                } else if span >= 256 {
-                    state = 1;
-                } else if span >= 128 {
-                    state = 2;
-                } else if span >= 16 {
-                    assert!(((block_span + 8) & !7u64) + 8 <= span * 4);
-                    let (_, s, _) = unsafe { subinventory[subinv_pos..].align_to_mut::<u16>() };
+                match span {
+                    0..=1 => {}
+                    2..=15 => {
+                        assert!(((block_span + 8) & !7u64) <= span * 4);
 
-                    for k in 0..(block_span as usize) {
-                        assert!(s[k + 8] == 0);
-                        s[k + 8] = (rank9.counts[(block_left as usize + k + 1) * 2]
-                            - counts_at_start) as u16;
+                        let (_, s, _) = unsafe { subinventory[subinv_pos..].align_to_mut::<u16>() };
+
+                        for k in 0..(block_span as usize) {
+                            assert!(s[k] == 0);
+                            s[k] = (rank9.counts[(block_left as usize + k + 1) * 2]
+                                - counts_at_start) as u16;
+                        }
+
+                        for k in (block_span as usize)..(((block_span + 8) & !7u64) as usize) {
+                            assert!(s[k] == 0);
+                            s[k] = 0xFFFFu16;
+                        }
                     }
+                    16..=127 => {
+                        assert!(((block_span + 8) & !7u64) + 8 <= span * 4);
+                        let (_, s, _) = unsafe { subinventory[subinv_pos..].align_to_mut::<u16>() };
 
-                    for k in (block_span as usize)..(((block_span + 8) & !7u64) as usize) {
-                        assert!(s[k + 8] == 0);
-                        s[k + 8] = 0xFFFFu16;
+                        for k in 0..(block_span as usize) {
+                            assert!(s[k + 8] == 0);
+                            s[k + 8] = (rank9.counts[(block_left as usize + k + 1) * 2]
+                                - counts_at_start) as u16;
+                        }
+
+                        for k in (block_span as usize)..(((block_span + 8) & !7u64) as usize) {
+                            assert!(s[k + 8] == 0);
+                            s[k + 8] = 0xFFFFu16;
+                        }
+
+                        assert!(block_span / 8 <= 8);
+
+                        for k in 0..(block_span as usize / 8) {
+                            assert!(s[k] == 0);
+                            s[k] = (rank9.counts[(block_left as usize + (k + 1) * 8) * 2]
+                                - counts_at_start) as u16;
+                        }
+
+                        for k in (block_span as usize / 8)..8 {
+                            assert!(s[k] == 0);
+                            s[k] = 0xFFFFu16;
+                        }
                     }
-
-                    assert!(block_span / 8 <= 8);
-
-                    for k in 0..(block_span as usize / 8) {
-                        assert!(s[k] == 0);
-                        s[k] = (rank9.counts[(block_left as usize + (k + 1) * 8) * 2]
-                            - counts_at_start) as u16;
+                    128..=255 => {
+                        state = 2;
                     }
-
-                    for k in (block_span as usize / 8)..8 {
-                        assert!(s[k] == 0);
-                        s[k] = 0xFFFFu16;
+                    256..=511 => {
+                        state = 1;
                     }
-                } else if span >= 2 {
-                    assert!(((block_span + 8) & !7u64) <= span * 4);
-
-                    let (_, s, _) = unsafe { subinventory[subinv_pos..].align_to_mut::<u16>() };
-
-                    for k in 0..(block_span as usize) {
-                        assert!(s[k] == 0);
-                        s[k] = (rank9.counts[(block_left as usize + k + 1) * 2] - counts_at_start)
-                            as u16;
-                    }
-
-                    for k in (block_span as usize)..(((block_span + 8) & !7u64) as usize) {
-                        assert!(s[k] == 0);
-                        s[k] = 0xFFFFu16;
+                    _ => {
+                        state = 0;
                     }
                 }
             }
