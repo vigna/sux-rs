@@ -534,7 +534,7 @@ where
             pl.start("Reading input...");
             let mut max_value = O::ZERO;
             //let mut chunk_sizes;
-            let (max_num_threads, c);
+            let (mut max_num_threads, c);
 
             //let (input_time, build_time);
 
@@ -565,6 +565,8 @@ where
                 pl.done();
 
                 (chunk_high_bits, max_num_threads) = compute_params(num_keys, pl);
+                chunk_high_bits = 0;
+                max_num_threads = 1;
                 log2_seg_size = comp_log2_seg_size(3, num_keys);
                 c = size_factor(3, num_keys);
                 dbg!(c, log2_seg_size);
@@ -636,6 +638,8 @@ where
                 num_keys = sig_vals.len();
 
                 (chunk_high_bits, max_num_threads) = compute_params(num_keys, pl);
+                chunk_high_bits = 0;
+                max_num_threads = 1;
                 log2_seg_size = comp_log2_seg_size(3, num_keys);
                 c = size_factor(3, num_keys);
                 dbg!(c, log2_seg_size);
