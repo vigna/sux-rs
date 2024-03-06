@@ -33,14 +33,14 @@ use std::thread;
 use Ordering::Relaxed;
 
 #[inline]
-pub fn log2_segment_length(arity: usize, size: usize) -> u32 {
-    if size == 0 {
-        return 4;
+pub fn comp_log2_seg_size(arity: usize, num_keys: usize) -> u32 {
+    if num_keys == 0 {
+        return 2;
     }
 
     match arity {
-        3 => ((size as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
-        4 => ((size as f64).ln() / (2.91_f64).ln() - 0.5).floor() as u32,
+        3 => ((num_keys as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
+        4 => ((num_keys as f64).ln() / (2.91_f64).ln() - 0.5).floor() as u32,
         _ => unimplemented!(),
     }
 }
@@ -53,24 +53,6 @@ pub fn size_factor(arity: usize, size: usize) -> f64 {
         _ => unimplemented!(),
     }
 }
-
-const PARAMS: [(usize, u32, f64); 15] = [
-    (0, 0, 1.23),
-    (10000, 5, 1.23),
-    (12500, 5, 1.22),
-    (19531, 5, 1.21),
-    (30516, 5, 1.20),
-    (38145, 6, 1.19),
-    (47681, 6, 1.18),
-    (74501, 6, 1.17),
-    (116407, 6, 1.16),
-    (227356, 6, 1.15),
-    (355243, 7, 1.14),
-    (693832, 7, 1.13),
-    (2117406, 7, 1.12),
-    (6461807, 8, 1.11),
-    (60180252, 9, 1.10),
-];
 
 /**
 
@@ -149,10 +131,10 @@ fn chunk(sig: &[u64; 2], chunk_high_bits: u32, chunk_mask: u32) -> usize {
 
 #[inline(always)]
 #[must_use]
-fn edge(sig: &[u64; 2], chunk_high_bits: usize, l: usize, log2_seg_len: usize) -> [usize; 3] {
-    let first_segment = (sig[0] << chunk_high_bits >> 32) as usize * l >> 32;
-    let start = first_segment << log2_seg_len;
-    let segment_size = 1 << log2_seg_len;
+fn edge(sig: &[u64; 2], chunk_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3] {
+    let first_segment = ((sig[0] << chunk_high_bits >> 32) * l as u64 >> 32) as usize;
+    let start = first_segment << log2_seg_size;
+    let segment_size = 1 << log2_seg_size;
     let segment_mask = segment_size - 1;
 
     [
@@ -224,67 +206,31 @@ pub struct VFunc<
     D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
 > {
     high_bits: u32,
+    log2_segment_size: u32,
     chunk_mask: u32,
     seed: u64,
     l: usize,
     num_keys: usize,
-    log2_segment_size: usize,
     data: D,
     _marker_t: std::marker::PhantomData<T>,
     _marker_o: std::marker::PhantomData<O>,
 }
 
-fn compute_params(num_keys: usize, pl: &mut impl ProgressLog) -> (u32, usize, u32, f64) {
-    let (chunk_high_bits, max_num_threads, log2_l, c);
+fn compute_params(num_keys: usize, pl: &mut impl ProgressLog) -> (u32, usize) {
+    let eps = 0.001;
+    let chunk_high_bits = {
+        let t = (num_keys as f64 * eps * eps / 2.0).ln();
 
-    if num_keys < PARAMS[PARAMS.len() - 2].0 {
-        // Too few keys, we cannot split into chunks
-        chunk_high_bits = 0;
-        max_num_threads = 1;
-        (_, log2_l, c) = PARAMS
-            .iter()
-            .rev()
-            .filter(|(n, _l, _c)| n <= &num_keys)
-            .copied()
-            .next()
-            .unwrap(); // first n is 0, so this is always valid
-    } else if num_keys < PARAMS[PARAMS.len() - 1].0 {
-        // We are in the 1.11 regime. We can reduce memory
-        // usage by doing single thread.
-        chunk_high_bits = (num_keys / PARAMS[PARAMS.len() - 2].0).ilog2();
-        max_num_threads = 1;
-        (_, log2_l, c) = PARAMS[PARAMS.len() - 2];
-    } else {
-        // We are in the 1.10 regime. We can increase the number
-        // of threads, but we need to be careful not to use too
-        // much memory.
-
-        let eps = 0.001;
-        chunk_high_bits = {
-                    let t = (num_keys as f64 * eps * eps / 2.0).ln();
-
-                    if t > 0.0 {
-                        ((t - t.ln()) / 2_f64.ln()).ceil()
-                    } else {
-                        0.0
-                    }
-                }
-                .min(10.0) // More than 1000 chunks make no sense
-                .min((num_keys / PARAMS[PARAMS.len() - 1].0).ilog2() as f64) // Let's keep the chunks in the 1.10 regime
-                    as u32;
-        // By default no more than 8 threads
-        max_num_threads = 1.max((1 << chunk_high_bits) / 8).min(8);
-        (_, log2_l, c) = PARAMS[PARAMS.len() - 1];
+        if t > 0.0 {
+            ((t - t.ln()) / 2_f64.ln()).ceil()
+        } else {
+            0.0
+        }
     }
+    .min(10.0) as u32; // More than 1000 chunks make no sense
+    let max_num_threads = 1; //1.max((1 << chunk_high_bits) / 8).min(8); TODO
 
-    pl.info(format_args!(
-        "chunk high bits = {}, l = {}, c = {}",
-        chunk_high_bits,
-        1 << log2_l,
-        c
-    ));
-
-    (chunk_high_bits, max_num_threads, log2_l, c)
+    dbg!((chunk_high_bits, max_num_threads))
 }
 
 enum ParSolveResult<O: Word + IntoAtomic, D: AtomicBitFieldSlice<O>>
@@ -308,14 +254,14 @@ fn par_solve<
     num_chunks: usize,
     num_vertices: usize,
     num_threads: usize,
-    log2_segment_size: usize,
+    log2_segment_size: u32,
     l: usize,
     main_pl: &mut (impl ProgressLog + Send),
 ) -> ParSolveResult<O, D>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
 {
-    let chunk_high_bits = num_chunks.ilog2() as usize;
+    let chunk_high_bits = num_chunks.ilog2();
     let chunk_iter = std::sync::Arc::new(Mutex::new(chunk_iter));
     let failed_peeling = AtomicBool::new(false);
     let duplicate_signature = AtomicBool::new(false);
@@ -482,7 +428,7 @@ where
     /// This method is mainly useful in the construction of compound functions.
     #[inline(always)]
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> O {
-        let edge = edge(sig, self.high_bits as usize, self.l, self.log2_segment_size);
+        let edge = edge(sig, self.high_bits, self.l, self.log2_segment_size);
         let chunk = chunk(sig, self.high_bits, self.chunk_mask);
         // chunk * self.segment_size * (2^log2_l + 2)
         let chunk_offset = chunk * ((self.l + 2) << self.log2_segment_size);
@@ -578,7 +524,7 @@ where
         let (
             mut num_keys,
             mut bit_width,
-            mut log2_seg_len,
+            mut log2_seg_size,
             mut chunk_high_bits,
             mut chunk_mask,
             mut l,
@@ -618,11 +564,10 @@ where
                 num_keys = sig_sorter.len();
                 pl.done();
 
-                chunk_high_bits = 0;
-                max_num_threads = 1;
-                log2_seg_len = log2_segment_length(3, num_keys);
+                (chunk_high_bits, max_num_threads) = compute_params(num_keys, pl);
+                log2_seg_size = comp_log2_seg_size(3, num_keys);
                 c = size_factor(3, num_keys);
-                dbg!(c, log2_seg_len);
+                dbg!(c, log2_seg_size);
 
                 let num_chunks = 1 << chunk_high_bits;
                 chunk_mask = (1u32 << chunk_high_bits) - 1;
@@ -636,8 +581,8 @@ where
                     max_value, bit_width
                 ));
 
-                l = ((num_keys as f64 * c).ceil() as usize).div_ceil(1 << log2_seg_len);
-                let num_vertices = (1 << log2_seg_len) * (l + 2);
+                l = ((num_keys as f64 * c).ceil() as usize).div_ceil(1 << log2_seg_size);
+                let num_vertices = (1 << log2_seg_size) * (l + 2);
                 pl.info(format_args!(
                     "Size {:.2}%",
                     (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
@@ -652,7 +597,7 @@ where
                         0 => max_num_threads,
                         _ => self.num_threads,
                     },
-                    log2_seg_len as usize,
+                    log2_seg_size,
                     l,
                     pl,
                 ) {
@@ -690,11 +635,10 @@ where
                 pl.done();
                 num_keys = sig_vals.len();
 
-                chunk_high_bits = 0;
-                max_num_threads = 1;
-                log2_seg_len = log2_segment_length(3, num_keys);
+                (chunk_high_bits, max_num_threads) = compute_params(num_keys, pl);
+                log2_seg_size = comp_log2_seg_size(3, num_keys);
                 c = size_factor(3, num_keys);
-                dbg!(c, log2_seg_len);
+                dbg!(c, log2_seg_size);
 
                 let num_chunks = 1 << chunk_high_bits;
                 chunk_mask = 0; //(1u32 << chunk_high_bits) - 1;
@@ -736,8 +680,8 @@ where
                     max_value, bit_width
                 ));
 
-                l = ((num_keys as f64 * c).ceil() as usize).div_ceil(1 << log2_seg_len);
-                let num_vertices = (1 << log2_seg_len) * (l + 2);
+                l = ((num_keys as f64 * c).ceil() as usize).div_ceil(1 << log2_seg_size);
+                let num_vertices = (1 << log2_seg_size) * (l + 2);
                 pl.info(format_args!(
                     "Size {:.2}%",
                     (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
@@ -755,7 +699,7 @@ where
                         0 => max_num_threads,
                         _ => self.num_threads,
                     },
-                    log2_seg_len as usize,
+                    log2_seg_size,
                     l,
                     pl,
                 ) {
@@ -781,7 +725,7 @@ where
             high_bits: chunk_high_bits,
             chunk_mask,
             num_keys,
-            log2_segment_size: log2_seg_len as usize,
+            log2_segment_size: log2_seg_size,
             data: data.convert_to().unwrap(),
             _marker_t: std::marker::PhantomData,
             _marker_o: std::marker::PhantomData,
