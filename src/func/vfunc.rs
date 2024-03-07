@@ -638,14 +638,14 @@ where
                 num_keys = sig_vals.len();
 
                 (chunk_high_bits, max_num_threads) = compute_params(num_keys, pl);
-                chunk_high_bits = 0;
+                chunk_high_bits = 1;
                 max_num_threads = 1;
                 log2_seg_size = comp_log2_seg_size(3, num_keys);
                 c = size_factor(3, num_keys);
                 dbg!(c, log2_seg_size);
 
                 let num_chunks = 1 << chunk_high_bits;
-                chunk_mask = 0; //(1u32 << chunk_high_bits) - 1;
+                chunk_mask = (1u32 << chunk_high_bits) - 1;
 
                 pl.start("Sorting...");
                 sig_vals.radix_sort_unstable();
