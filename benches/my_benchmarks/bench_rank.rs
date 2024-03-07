@@ -1,34 +1,38 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{black_box, BenchmarkId, Criterion};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::{Rank11, Rank9};
 use sux::traits::Rank;
 
-fn bench_rank9(c: &mut Criterion) {
+const LENS: [u64; 13] = [
+    1u64 << 20,
+    1 << 21,
+    1 << 22,
+    1 << 23,
+    1 << 24,
+    1 << 25,
+    1 << 26,
+    1 << 27,
+    1 << 28,
+    1 << 29,
+    1 << 30,
+    1 << 31,
+    1 << 32,
+];
+
+const DENSITIES: [f64; 3] = [0.25, 0.5, 0.75];
+
+const REPS: usize = 5;
+
+pub fn bench_rank9(c: &mut Criterion) {
     let mut bench_group = c.benchmark_group("rank9");
 
-    let lens = [
-        1u64 << 20,
-        1 << 21,
-        1 << 22,
-        1 << 23,
-        1 << 24,
-        1 << 25,
-        1 << 26,
-        1 << 27,
-        1 << 28,
-        1 << 29,
-        1 << 30,
-        1 << 31,
-        1 << 32,
-    ];
-
     let mut rng = SmallRng::seed_from_u64(0);
-    for len in lens {
-        for density in [0.25, 0.5, 0.75] {
+    for len in LENS {
+        for density in DENSITIES {
             // possible repetitions
-            for i in 0..5 {
+            for i in 0..REPS {
                 let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
                 let rank9: Rank9 = Rank9::new(bits);
                 bench_group.bench_function(
@@ -52,27 +56,11 @@ fn bench_rank9(c: &mut Criterion) {
 pub fn bench_rank11(c: &mut Criterion) {
     let mut bench_group = c.benchmark_group("rank11");
 
-    let lens = [
-        1u64 << 20,
-        1 << 21,
-        1 << 22,
-        1 << 23,
-        1 << 24,
-        1 << 25,
-        1 << 26,
-        1 << 27,
-        1 << 28,
-        1 << 29,
-        1 << 30,
-        1 << 31,
-        1 << 32,
-    ];
-
     let mut rng = SmallRng::seed_from_u64(0);
-    for len in lens {
-        for density in [0.25, 0.5, 0.75] {
+    for len in LENS {
+        for density in DENSITIES {
             // possible repetitions
-            for i in 0..5 {
+            for i in 0..REPS {
                 let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
                 let rank11: Rank11 = Rank11::new(bits);
                 bench_group.bench_function(
@@ -92,6 +80,3 @@ pub fn bench_rank11(c: &mut Criterion) {
 
     bench_group.finish();
 }
-
-criterion_group!(benches, bench_rank9, bench_rank11);
-criterion_main!(benches);

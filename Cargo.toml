@@ -43,16 +43,13 @@ arbitrary = { version = "1", features = ["derive"], optional=true }
 mem_dbg = "0.1"
 
 [dev-dependencies]
-criterion = { version = "0.4", features = ["html_reports"] }
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[lib]
+bench = false
 
 [[bench]]
-name = "bench_rank"
-harness = false
-[[bench]]
-name = "bench_select"
-harness = false
-[[bench]]
-name = "bench_rng_overhead"
+name = "my_benchmarks"
 harness = false
 
 [features]
