@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import subprocess
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 benches = [
     "rank9",
@@ -15,6 +15,13 @@ benches = [
 ]
 
 if __name__ == "__main__":
-    for bench in tqdm(benches):
-        subprocess.run(
-            "cargo bench --bench my_benchmarks -- {} --noplot --quiet --exact --nocapture".format(bench), shell=True)
+    with tqdm(total=len(benches)) as pbar:
+        for bench in benches:
+            pbar.write("Running bench: {}...".format(bench))
+            subprocess.run(
+                "cargo bench --bench my_benchmarks -- {} --noplot --quiet --exact --nocapture".format(
+                    bench),
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT)
+            pbar.update(1)

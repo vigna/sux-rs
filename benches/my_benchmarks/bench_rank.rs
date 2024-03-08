@@ -5,7 +5,7 @@ use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::{Rank11, Rank9};
 use sux::traits::Rank;
 
-const LENS: [u64; 13] = [
+const LENS: [u64; 11] = [
     1u64 << 20,
     1 << 21,
     1 << 22,
@@ -17,8 +17,6 @@ const LENS: [u64; 13] = [
     1 << 28,
     1 << 29,
     1 << 30,
-    1 << 31,
-    1 << 32,
 ];
 
 const DENSITIES: [f64; 3] = [0.25, 0.5, 0.75];
