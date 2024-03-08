@@ -329,7 +329,6 @@ where
                             }
                             peeled.push(t);
                             max_stack = max_stack.max(stack.len());
-                            edge_lists[t].zero();
                             let edge_index = edge_lists[t].edge_index();
                             // Degree is necessarily 0
                             for &x in edge(
@@ -340,13 +339,12 @@ where
                             )
                             .iter()
                             {
-                                if x != t {
-                                    edge_lists[x].remove(edge_index);
-                                    if edge_lists[x].degree() == 1 {
-                                        stack.push(x);
-                                    }
+                                edge_lists[x].remove(edge_index);
+                                if edge_lists[x].degree() == 1 {
+                                    stack.push(x);
                                 }
                             }
+                            edge_lists[t] = EdgeList(edge_index);
                         }
                     }
                     if chunk.len() != peeled.len() {
