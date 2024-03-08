@@ -268,6 +268,7 @@ fn par_solve<
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
 {
+    const SIDE_PERM: [usize; 4] = [1, 2, 0, 1];
     let chunk_high_bits = num_chunks.ilog2();
     let chunk_iter = std::sync::Arc::new(Mutex::new(chunk_iter));
     let failed_peeling = AtomicBool::new(false);
@@ -340,20 +341,26 @@ where
                             let (edge_index, side) = edge_lists[v].edge_index_side();
                             stack[curr] = v;
                             curr += 1;
-                            for (side, &x) in edge(
+                            let [u0, u1, u2] = edge(
                                 &chunk[edge_index].sig,
                                 chunk_high_bits,
                                 l,
                                 log2_segment_size,
-                            )
-                            .iter()
-                            .enumerate()
-                            {
-                                edge_lists[x].remove(edge_index, side);
-                                if edge_lists[x].degree() == 1 {
-                                    stack.push(x);
-                                }
+                            );
+                            let perm = [u1, u2, u0, u1];
+
+                            let u = perm[side];
+                            edge_lists[u].remove(edge_index, SIDE_PERM[side]);
+                            if edge_lists[u].degree() == 1 {
+                                stack.push(u);
                             }
+
+                            let u = perm[side + 1];
+                            edge_lists[u].remove(edge_index, SIDE_PERM[side + 1]);
+                            if edge_lists[u].degree() == 1 {
+                                stack.push(u);
+                            }
+
                             edge_lists[v].store(edge_index, side);
                         }
                         stack.truncate(curr);
