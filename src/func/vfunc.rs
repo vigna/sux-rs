@@ -56,57 +56,64 @@ pub fn size_factor(arity: usize, size: usize) -> f64 {
 
 /**
 
-An edge list represented by a 64-bit integer. The lower DEG_SHIFT bits
-contian a XOR of the edges, while the upper bits contain the degree.
+An edge list represented by a 64-bit integer. The lower SIDE_SHIFT bits
+contain a XOR of the edges; the next two bits contain a XOR of the side
+of the edges; the remaining DEG_SHIFT the upper bits contain the degree.
 
 The degree can be stored with a small number of bits because the
 graph is random, so the maximum degree is O(log log n).
 
 This approach reduces the core memory usage for the hypergraph to
-a `usize` per vertex. Edges are derived on the fly from the 128-bit signatures.
+a `u64` per vertex. Edges are derived on the fly from the 128-bit signatures.
 
 */
 
 #[derive(Debug, Default)]
-struct EdgeList(usize);
+struct EdgeList(u64);
 impl EdgeList {
-    const DEG_SHIFT: usize = usize::BITS as usize - 16;
-    const EDGE_INDEX_MASK: usize = (1_usize << EdgeList::DEG_SHIFT) - 1;
-    const DEG: usize = 1_usize << EdgeList::DEG_SHIFT;
-    const MAX_DEG: usize = usize::MAX >> EdgeList::DEG_SHIFT;
+    const DEG_SHIFT: u32 = u64::BITS as u32 - 16;
+    const SIDE_SHIFT: u32 = u64::BITS as u32 - 18;
+    const SIDE_MASK: usize = 3;
+    const EDGE_INDEX_MASK: u64 = (1_u64 << Self::SIDE_SHIFT) - 1;
+    const DEG: u64 = 1_u64 << Self::DEG_SHIFT;
+    const MAX_DEG: usize = (u64::MAX >> Self::DEG_SHIFT) as usize;
 
-    #[inline(always)]
-    fn add(&mut self, edge: usize) {
-        debug_assert!(self.degree() < Self::MAX_DEG);
-        self.0 += EdgeList::DEG;
-        self.0 ^= edge;
+    fn store(&mut self, edge: usize, side: usize) {
+        debug_assert!(side as u64 <= Self::EDGE_INDEX_MASK);
+        *self = EdgeList((side as u64) << Self::SIDE_SHIFT | edge as u64);
     }
 
     #[inline(always)]
-    fn remove(&mut self, edge: usize) {
+    fn add(&mut self, edge: usize, side: usize) {
+        debug_assert!(self.degree() < Self::MAX_DEG);
+        self.0 += Self::DEG;
+        self.0 ^= (side as u64) << Self::SIDE_SHIFT | edge as u64;
+    }
+
+    #[inline(always)]
+    fn remove(&mut self, edge: usize, side: usize) {
         debug_assert!(self.degree() > 0);
-        self.0 -= EdgeList::DEG;
-        self.0 ^= edge;
+        self.0 -= Self::DEG;
+        self.0 ^= (side as u64) << Self::SIDE_SHIFT | edge as u64;
     }
 
     #[inline(always)]
     fn degree(&self) -> usize {
-        self.0 >> EdgeList::DEG_SHIFT
+        (self.0 >> Self::DEG_SHIFT) as usize
     }
 
-    /// Return the edge index after a call to `zero`.
     #[inline(always)]
     fn edge_index(&self) -> usize {
         debug_assert!(self.degree() == 0);
-        self.0 & EdgeList::EDGE_INDEX_MASK
+        (self.0 & Self::EDGE_INDEX_MASK) as usize
     }
 
     #[inline(always)]
-    /// Set the degree of a list of degree one to zero,
-    /// leaving the edge index unchanged.
-    fn zero(&mut self) {
-        debug_assert!(self.degree() == 1);
-        self.0 -= EdgeList::DEG;
+    fn edge_index_side(&self) -> (usize, usize) {
+        (
+            (self.0 & EdgeList::EDGE_INDEX_MASK) as usize,
+            (self.0 >> Self::SIDE_SHIFT) as usize & Self::SIDE_MASK,
+        )
     }
 }
 
@@ -293,84 +300,81 @@ where
                     }
 
                     let mut pl = main_pl.lock().unwrap().clone();
-                    loop {
-                        pl.item_name("edge");
-                        pl.start(format!(
-                            "Generating graph for chunk {}/{}...",
-                            chunk_index + 1,
-                            num_chunks
-                        ));
-                        let mut edge_lists = Vec::new();
-                        edge_lists.resize_with(num_vertices, EdgeList::default);
-                        chunk.iter().enumerate().for_each(|(edge_index, sig_val)| {
-                            for &v in
-                                edge(&sig_val.sig, chunk_high_bits, l, log2_segment_size).iter()
-                            {
-                                edge_lists[v].add(edge_index);
-                            }
-                        });
-                        pl.done_with_count(chunk.len());
+                    pl.item_name("edge");
+                    pl.start(format!(
+                        "Generating graph for chunk {}/{}...",
+                        chunk_index + 1,
+                        num_chunks
+                    ));
+                    let mut edge_lists = Vec::new();
+                    edge_lists.resize_with(num_vertices, EdgeList::default);
+                    chunk.iter().enumerate().for_each(|(edge_index, sig_val)| {
+                        for (side, &v) in edge(&sig_val.sig, chunk_high_bits, l, log2_segment_size)
+                            .iter()
+                            .enumerate()
+                        {
+                            edge_lists[v].add(edge_index, side);
+                        }
+                    });
+                    pl.done_with_count(chunk.len());
 
-                        pl.start(format!(
-                            "Peeling graph for chunk {}/{}...",
+                    pl.start(format!(
+                        "Peeling graph for chunk {}/{}...",
+                        chunk_index + 1,
+                        num_chunks
+                    ));
+                    let mut stack = Vec::new();
+                    for v in (0..num_vertices).rev() {
+                        if edge_lists[v].degree() != 1 {
+                            continue;
+                        }
+                        let mut pos = stack.len();
+                        let mut curr = stack.len();
+                        stack.push(v);
+                        while pos < stack.len() {
+                            let v = stack[pos];
+                            pos += 1;
+                            if edge_lists[v].degree() == 0 {
+                                continue; // Skip no longer useful entries
+                            }
+                            let (edge_index, side) = edge_lists[v].edge_index_side();
+                            stack[curr] = v;
+                            curr += 1;
+                            for (side, &x) in edge(
+                                &chunk[edge_index].sig,
+                                chunk_high_bits,
+                                l,
+                                log2_segment_size,
+                            )
+                            .iter()
+                            .enumerate()
+                            {
+                                edge_lists[x].remove(edge_index, side);
+                                if edge_lists[x].degree() == 1 {
+                                    stack.push(x);
+                                }
+                            }
+                            edge_lists[v].store(edge_index, side);
+                        }
+                        stack.truncate(curr);
+                    }
+                    if chunk.len() != stack.len() {
+                        warn!(
+                            "Peeling failed for chunk {}/{}",
                             chunk_index + 1,
                             num_chunks
-                        ));
-                        let mut stack = Vec::new();
-                        for v in (0..num_vertices).rev() {
-                            if edge_lists[v].degree() != 1 {
-                                continue;
-                            }
-                            let mut pos = stack.len();
-                            let mut curr = stack.len();
-                            stack.push(v);
-                            while pos < stack.len() {
-                                let v = stack[pos];
-                                pos += 1;
-                                if edge_lists[v].degree() == 0 {
-                                    continue; // Skip no longer useful entries
-                                }
-                                let edge_index = edge_lists[v].edge_index();
-                                stack[curr] = v;
-                                curr += 1;
-                                // Degree is necessarily 0
-                                for &x in edge(
-                                    &chunk[edge_index].sig,
-                                    chunk_high_bits,
-                                    l,
-                                    log2_segment_size,
-                                )
-                                .iter()
-                                {
-                                    edge_lists[x].remove(edge_index);
-                                    if edge_lists[x].degree() == 1 {
-                                        stack.push(x);
-                                    }
-                                }
-                                edge_lists[v] = EdgeList(edge_index);
-                            }
-                            stack.truncate(curr);
-                        }
-                        if chunk.len() != stack.len() {
-                            warn!(
-                                "Peeling failed for chunk {}/{}",
-                                chunk_index + 1,
-                                num_chunks
-                            );
-                            failed_peeling.store(true, Ordering::Relaxed);
-                            return;
-                        }
-                        pl.done_with_count(chunk.len());
-                        if chunk_index > 1000 {
-                            break;
-                        }
+                        );
+                        failed_peeling.store(true, Ordering::Relaxed);
+                        return;
                     }
+                    pl.done_with_count(chunk.len());
+
                     pl.start(format!(
                         "Assigning values for chunk {}/{}...",
                         chunk_index + 1,
                         num_chunks
                     ));
-                    /*while let Some(mut v) = stack.pop() {
+                    while let Some(mut v) = stack.pop() {
                         let edge_index = edge_lists[v].edge_index();
                         let mut edge = edge(
                             &chunk[edge_index].sig,
@@ -400,7 +404,7 @@ where
                         );
                     }
                     pl.done_with_count(chunk.len());
-                    */
+
                     pl.start(format!(
                         "Completed chunk {}/{}.",
                         chunk_index + 1,
