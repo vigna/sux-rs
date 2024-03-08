@@ -319,6 +319,7 @@ where
                     });
                     pl.done_with_count(chunk.len());
 
+                    let mut perm: [usize; 4];
                     pl.start(format!(
                         "Peeling graph for chunk {}/{}...",
                         chunk_index + 1,
@@ -347,7 +348,7 @@ where
                                 l,
                                 log2_segment_size,
                             );
-                            let perm = [u1, u2, u0, u1];
+                            perm = [u1, u2, u0, u1];
 
                             let u = perm[side];
                             edge_lists[u].remove(edge_index, SIDE_PERM[side]);
