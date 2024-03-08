@@ -313,24 +313,24 @@ where
                         chunk_index + 1,
                         num_chunks
                     ));
+                    let mut peeled = Vec::new();
                     let mut stack = Vec::new();
-                    for v in 0..num_vertices {
+                    let mut max_stack = 0;
+                    for v in (0..num_vertices).rev() {
                         if edge_lists[v].degree() != 1 {
                             continue;
                         }
-                        let mut pos = stack.len();
-                        let mut curr = stack.len();
+                        stack.clear();
                         stack.push(v);
-                        while pos < stack.len() {
-                            let v = stack[pos];
-                            pos += 1;
-                            if edge_lists[v].degree() == 0 {
-                                continue; // Skip no longer useful entries
+
+                        while let Some(t) = stack.pop() {
+                            if edge_lists[t].degree() == 0 {
+                                continue;
                             }
-                            edge_lists[v].zero();
-                            let edge_index = edge_lists[v].edge_index();
-                            stack[curr] = v;
-                            curr += 1;
+                            peeled.push(t);
+                            max_stack = max_stack.max(stack.len());
+                            edge_lists[t].zero();
+                            let edge_index = edge_lists[t].edge_index();
                             // Degree is necessarily 0
                             for &x in edge(
                                 &chunk[edge_index].sig,
@@ -340,7 +340,7 @@ where
                             )
                             .iter()
                             {
-                                if x != v {
+                                if x != t {
                                     edge_lists[x].remove(edge_index);
                                     if edge_lists[x].degree() == 1 {
                                         stack.push(x);
@@ -348,25 +348,28 @@ where
                                 }
                             }
                         }
-                        stack.truncate(curr);
                     }
-                    if chunk.len() != stack.len() {
+                    if chunk.len() != peeled.len() {
                         warn!(
-                            "Peeling failed for chunk {}/{}",
+                            "Peeling failed for chunk {}/{} ({} vertices peeled, {} edges left)",
                             chunk_index + 1,
-                            num_chunks
+                            num_chunks,
+                            peeled.len(),
+                            chunk.len() - peeled.len()
                         );
                         failed_peeling.store(true, Ordering::Relaxed);
                         return;
                     }
+
                     pl.done_with_count(chunk.len());
+                    pl.info(format_args!("Peeling completed, max_stack = {}", max_stack));
 
                     pl.start(format!(
                         "Assigning values for chunk {}/{}...",
                         chunk_index + 1,
                         num_chunks
                     ));
-                    while let Some(mut v) = stack.pop() {
+                    while let Some(mut v) = peeled.pop() {
                         let edge_index = edge_lists[v].edge_index();
                         let mut edge = edge(
                             &chunk[edge_index].sig,
@@ -638,7 +641,7 @@ where
                 num_keys = sig_vals.len();
 
                 (chunk_high_bits, max_num_threads) = compute_params(num_keys, pl);
-                chunk_high_bits = 1;
+                chunk_high_bits = 0;
                 max_num_threads = 1;
                 log2_seg_size = comp_log2_seg_size(3, num_keys);
                 c = size_factor(3, num_keys);
