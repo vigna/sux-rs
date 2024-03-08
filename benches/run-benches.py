@@ -19,9 +19,7 @@ if __name__ == "__main__":
         for bench in benches:
             pbar.write("Running bench: {}...".format(bench))
             subprocess.run(
-                "cargo bench --bench my_benchmarks -- {} --noplot --quiet --exact --nocapture".format(
+                "cargo bench --bench my_benchmarks -- {} --quiet".format(
                     bench),
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.STDOUT)
+                shell=True)
             pbar.update(1)
