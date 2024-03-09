@@ -1,9 +1,10 @@
+use clap::{arg, Parser, ValueEnum};
 use mem_dbg::*;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use sux::{
     bits::BitVec,
     rank_sel::{Rank9Sel, SimpleSelect},
-    traits::Select,
+    traits::*,
 };
 
 trait SelStruct<B>: Select {
@@ -20,10 +21,28 @@ impl SelStruct<BitVec> for Rank9Sel {
     }
 }
 
-fn show_mem<S: SelStruct<BitVec> + MemSize + MemDbg>(uniform: bool) {
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum SelType {
+    Simpleselect,
+    Rank9sel,
+}
+
+#[derive(Parser)]
+struct Cli {
+    len: usize,
+    density: f64,
+    #[arg(short, long)]
+    uniform: bool,
+    #[arg(value_enum)]
+    sel_type: SelType,
+}
+
+fn create_sel_struct<S: SelStruct<BitVec> + MemSize + MemDbg>(
+    len: usize,
+    density: f64,
+    uniform: bool,
+) -> S {
     let mut rng = SmallRng::seed_from_u64(0);
-    let density = 0.5;
-    let len = 10_000_000;
     let (density0, density1) = if uniform {
         (density, density)
     } else {
@@ -47,17 +66,35 @@ fn show_mem<S: SelStruct<BitVec> + MemSize + MemDbg>(uniform: bool) {
         .chain(second_half.into_iter())
         .collect::<BitVec>();
 
-    let rank9sel: S = S::new(bits);
+    S::new(bits)
+}
 
-    println!("size:     {}", rank9sel.mem_size(SizeFlags::default()));
-    println!("capacity: {}", rank9sel.mem_size(SizeFlags::CAPACITY));
-
-    rank9sel.mem_dbg(DbgFlags::default()).unwrap();
+fn mem_cost<S: SelStruct<BitVec> + MemSize + MemDbg + BitLength>(sel_struct: &S) -> f64 {
+    (((sel_struct.mem_size(SizeFlags::default()) * 8 - sel_struct.len()) * 100) as f64)
+        / (sel_struct.len() as f64)
 }
 
 fn main() {
-    show_mem::<SimpleSelect>(true);
-    show_mem::<Rank9Sel>(true);
-    show_mem::<SimpleSelect>(false);
-    show_mem::<Rank9Sel>(false);
+    let cli = Cli::parse();
+
+    match cli.sel_type {
+        SelType::Simpleselect => {
+            let sel_struct = create_sel_struct::<SimpleSelect>(cli.len, cli.density, cli.uniform);
+            let mem_cost = mem_cost(&sel_struct);
+            println!(
+                "BitVec with length: {}, density: {}, uniform: {}",
+                cli.len, cli.density, cli.uniform
+            );
+            println!("Memory cost of SimpleSelect: {}%", mem_cost);
+        }
+        SelType::Rank9sel => {
+            let sel_struct = create_sel_struct::<Rank9Sel>(cli.len, cli.density, cli.uniform);
+            let mem_cost = mem_cost(&sel_struct);
+            println!(
+                "BitVec with length: {}, density: {}, uniform: {}",
+                cli.len, cli.density, cli.uniform
+            );
+            println!("Memory cost of Rank9Sel: {}%", mem_cost);
+        }
+    }
 }
