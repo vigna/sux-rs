@@ -249,6 +249,16 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         }
         self.len = new_len;
     }
+
+    pub fn pop(&mut self) -> Option<W> {
+        if self.len == 0 {
+            None
+        } else {
+            let value = self.get(self.len - 1);
+            self.len -= 1;
+            Some(value)
+        }
+    }
 }
 
 impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
