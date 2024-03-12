@@ -1,3 +1,4 @@
+use common_traits::SelectInWord;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 use std::cmp::{max, min};
@@ -69,98 +70,144 @@ impl SimpleSelect<BitVec, Vec<u64>> {
         let ones_per_sub16 = 1usize << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
-        let mut inventory = vec![0u64; inventory_size * u64_per_inventory + 1];
-        let end_of_inventory_pos = inventory_size * u64_per_inventory + 1;
+        let mut inventory = Vec::with_capacity(inventory_size * u64_per_inventory + 1);
 
-        let mut d = 0;
+        let mut curr_num_ones: usize = 0;
+        let mut next_quantum: usize = 0;
+        let mut spilled = 0;
 
         // First phase: we build an inventory for each one out of ones_per_inventory.
-        for (i, bit) in bits.into_iter().enumerate() {
-            if !bit {
-                continue;
+        for (i, word) in bits.as_ref().iter().copied().enumerate() {
+            let ones_in_word = word.count_ones() as usize;
+
+            while curr_num_ones + ones_in_word > next_quantum {
+                let in_word_index = word.select_in_word((next_quantum - curr_num_ones) as usize);
+                let index = (i * u64::BITS as usize) + in_word_index;
+
+                inventory.push(index as u64);
+                inventory.resize(inventory.len() + u64_per_subinventory, 0);
+
+                next_quantum += ones_per_inventory;
             }
-            if (d & ones_per_inventory_mask) == 0 {
-                inventory[(d >> log2_ones_per_inventory) * u64_per_inventory] = i as u64;
-            }
-            d += 1;
+            curr_num_ones += ones_in_word;
         }
-        assert_eq!(num_ones, d);
-
-        inventory[(inventory_size * u64_per_inventory) as usize] = num_bits as u64;
-
-        d = 0;
-        let mut ones;
-        let mut spilled = 0;
-        let mut start = 0usize;
-        let mut span = 0usize;
-        let mut inventory_index = 0usize;
+        assert_eq!(num_ones, curr_num_ones);
+        // in the last inventory write the number of bits
+        inventory.push(num_bits as u64);
+        assert_eq!(inventory.len(), inventory_size * u64_per_inventory + 1);
 
         // We estimate the subinventory and exact spill size
-        for bit in bits.into_iter() {
-            if !bit {
-                continue;
-            }
-            if (d & ones_per_inventory_mask) == 0 {
-                inventory_index = d >> log2_ones_per_inventory;
-                start = inventory[inventory_index * u64_per_inventory] as usize;
-                span = inventory[(inventory_index + 1) * u64_per_inventory] as usize - start;
-                ones = min(num_ones - d, ones_per_inventory);
+        for (i, inv) in inventory[..inventory_size * u64_per_inventory]
+            .iter()
+            .copied()
+            .enumerate()
+            .step_by(u64_per_inventory)
+        {
+            let start = inv as usize;
+            let span = inventory[i + u64_per_inventory] as usize - start;
+            curr_num_ones = (i / u64_per_inventory) * ones_per_inventory;
+            let ones = min(num_ones - curr_num_ones, ones_per_inventory);
 
-                assert!(start + span == num_bits || ones == ones_per_inventory);
+            assert!(start + span == num_bits || ones == ones_per_inventory);
 
-                // We accumulate space for exact pointers ONLY if necessary.
-                if span >= (1 << 16) && ones_per_sub64 > 1 {
-                    spilled += ones;
-                }
+            // We accumulate space for exact pointers only if necessary.
+            if span >= (1 << 16) && ones_per_sub64 > 1 {
+                spilled += ones;
             }
-            d += 1;
         }
 
         let exact_spill_size = spilled;
         let mut exact_spill = vec![0u64; exact_spill_size];
 
-        let mut offset = 0usize;
-        let mut inv_pos = 0usize;
         spilled = 0;
-        d = 0;
+        let iter = 0..inventory_size;
 
-        for (i, bit) in bits.into_iter().enumerate() {
-            if !bit {
-                continue;
-            }
-            if (d & ones_per_inventory_mask) == 0 {
-                inventory_index = d >> log2_ones_per_inventory;
-                start = inventory[inventory_index * u64_per_inventory] as usize;
-                span = inventory[(inventory_index + 1) * u64_per_inventory] as usize - start;
-                inv_pos = inventory_index * u64_per_inventory + 1;
-                offset = 0;
-            }
-            if span < (1 << 16) {
-                assert!(i - start <= (1 << 16));
-                if (d & ones_per_sub16_mask) == 0 {
-                    assert!(offset < u64_per_subinventory * 4);
-                    //assert!(p16 + offset < (uint16_t *)end_of_inventory);
-                    let (_, p16, _) = unsafe { inventory[inv_pos..].align_to_mut::<u16>() };
-                    p16[offset] = (i - start) as u16;
-                    offset += 1;
-                }
-            } else if ones_per_sub64 == 1 {
-                assert!(inv_pos + offset < end_of_inventory_pos);
-                inventory[inv_pos + offset] = i as u64;
-                offset += 1;
+        // Second phase: we fill the subinventories and the exact spill
+        iter.for_each(|inventory_idx| {
+            // get the start and end u64 index of the current inventory
+            let start_idx = inventory_idx * u64_per_inventory;
+            let end_idx = start_idx + u64_per_inventory;
+            // read the first level index to get the start and end bit index
+            let start_bit_idx = inventory[start_idx];
+            let end_bit_idx = inventory[end_idx];
+            // compute the span of the inventory
+            let span = end_bit_idx - start_bit_idx;
+            let mut word_idx = start_bit_idx / u64::BITS as u64;
+
+            // cleanup the lower bits
+            let bit_idx = start_bit_idx % u64::BITS as u64;
+            let mut word = (bits.as_ref()[word_idx as usize] >> bit_idx) << bit_idx;
+
+            // compute the global number of ones
+            let mut number_of_ones = inventory_idx * ones_per_inventory;
+            let mut next_quantum = number_of_ones;
+            let quantum;
+
+            if span <= u16::MAX as u64 {
+                quantum = ones_per_sub16;
             } else {
-                assert!(inv_pos < end_of_inventory_pos);
-                if (d & ones_per_inventory_mask) == 0 {
-                    inventory[inventory_index * u64_per_inventory] |= 1u64 << 63;
-                    inventory[inv_pos] = spilled as u64;
-                }
-                assert!(spilled < exact_spill_size);
-                exact_spill[spilled] = i as u64;
-                spilled += 1;
+                quantum = ones_per_sub64;
+            }
+            if span > u16::MAX as u64 && ones_per_sub64 != 1 {
+                inventory[start_idx] |= 1u64 << 63;
+                inventory[start_idx + 1] = spilled as u64;
             }
 
-            d += 1;
-        }
+            let end_word_idx = end_bit_idx.div_ceil(u64::BITS as u64);
+
+            // the first subinventory element is always 0
+            let mut subinventory_idx = 1;
+            next_quantum += quantum;
+
+            'outer: loop {
+                let ones_in_word = word.count_ones() as usize;
+
+                // if the quantum is in this word, write it in the subinventory
+                // this can happen multiple times if the quantum is small
+                while number_of_ones + ones_in_word > next_quantum {
+                    assert!(next_quantum <= end_bit_idx as _);
+                    // find the quantum bit in the word
+                    let in_word_index = word.select_in_word(next_quantum - number_of_ones);
+                    // compute the global index of the quantum bit in the bitvec
+                    let bit_index = (word_idx * u64::BITS as u64) + in_word_index as u64;
+                    // compute the offset of the quantum bit
+                    // from the start of the subinventory
+                    let sub_offset = bit_index - start_bit_idx;
+
+                    if span <= u16::MAX as u64 {
+                        let subinventory: &mut [u16] =
+                            unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
+
+                        subinventory[subinventory_idx] = sub_offset as u16;
+                    } else if ones_per_sub64 == 1 {
+                        inventory[start_idx + 1 + subinventory_idx] = bit_index;
+                    } else {
+                        assert!(spilled < exact_spill_size);
+                        exact_spill[spilled] = bit_index;
+                        spilled += 1;
+                    }
+
+                    // update the subinventory index and the next quantum
+                    subinventory_idx += 1;
+                    if subinventory_idx == (1 << log2_ones_per_inventory) / quantum {
+                        break 'outer;
+                    }
+
+                    next_quantum += quantum;
+                }
+
+                // we are done with the word, so update the number of ones
+                number_of_ones += ones_in_word;
+                // move to the next word and boundcheck
+                word_idx += 1;
+                if word_idx == end_word_idx {
+                    break;
+                }
+
+                // read the next word
+                word = bits.as_ref()[word_idx as usize];
+            }
+        });
 
         Self {
             bits,
@@ -265,6 +312,73 @@ mod test_simple_select {
                 assert_eq!(simple.select(i), Some(pos[i]));
             }
             assert_eq!(simple.select(ones + 1), None);
+        }
+    }
+
+    #[test]
+    fn test_simple_non_uniform() {
+        let lens = 1000..10000;
+
+        let mut rng = SmallRng::seed_from_u64(0);
+        for len in lens {
+            for density in [0.5] {
+                let density0 = density * 0.01;
+                let density1 = density * 0.99;
+
+                let len1;
+                let len2;
+                if len % 2 != 0 {
+                    len1 = len / 2 + 1;
+                    len2 = len / 2;
+                } else {
+                    len1 = len / 2;
+                    len2 = len / 2;
+                }
+
+                let first_half = loop {
+                    let b = (0..len1)
+                        .map(|_| rng.gen_bool(density0))
+                        .collect::<BitVec>();
+                    if b.count_ones() > 0 {
+                        break b;
+                    }
+                };
+                let num_ones_first_half = first_half.count_ones();
+                let second_half = (0..len2)
+                    .map(|_| rng.gen_bool(density1))
+                    .collect::<BitVec>();
+                let num_ones_second_half = second_half.count_ones();
+
+                assert!(num_ones_first_half > 0);
+                assert!(num_ones_second_half > 0);
+
+                let bits = first_half
+                    .into_iter()
+                    .chain(second_half.into_iter())
+                    .collect::<BitVec>();
+
+                assert_eq!(
+                    num_ones_first_half + num_ones_second_half,
+                    bits.count_ones()
+                );
+
+                assert_eq!(bits.len(), len as usize);
+
+                let ones = bits.count_ones();
+                let mut pos = Vec::with_capacity(ones);
+                for i in 0..(len as usize) {
+                    if bits[i] {
+                        pos.push(i);
+                    }
+                }
+
+                let simple: SimpleSelect = SimpleSelect::new(bits, 3);
+
+                for i in 0..(ones) {
+                    assert!(simple.select(i) == Some(pos[i]), "i = {}", i);
+                }
+                assert_eq!(simple.select(ones + 1), None);
+            }
         }
     }
 }
