@@ -251,7 +251,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     pub fn pop(&mut self) -> Option<W> {
         if self.len == 0 {
             return None;
-        } 
+        }
         let value = self.get(self.len - 1);
         self.len -= 1;
         Some(value)
