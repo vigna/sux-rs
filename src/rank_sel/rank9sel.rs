@@ -45,7 +45,7 @@ impl<
 {
     const LOG2_ONES_PER_INVENTORY: usize = 9;
     const ONES_PER_INVENTORY: usize = 1 << Self::LOG2_ONES_PER_INVENTORY;
-    const INVENTORY_MASK: usize = Self::ONES_PER_INVENTORY - 1;
+    //const INVENTORY_MASK: usize = Self::ONES_PER_INVENTORY - 1;
 }
 
 impl<const HINT_BIT_SIZE: usize>
@@ -58,132 +58,150 @@ impl<const HINT_BIT_SIZE: usize>
         let num_words = (num_bits + 63) / 64;
         let inventory_size =
             (rank9.count() + Self::ONES_PER_INVENTORY - 1) / Self::ONES_PER_INVENTORY;
-        let subinventory_size = (num_words + 3) / 4;
 
-        let mut inventory: Vec<u64> = vec![0; inventory_size + 1];
+        let u64_per_subinventory = 4;
+        let subinventory_size = (num_words + u64_per_subinventory - 1) / u64_per_subinventory;
+
+        let mut inventory: Vec<u64> = Vec::with_capacity(inventory_size + 1);
         let mut subinventory: Vec<u64> = vec![0; subinventory_size];
 
         // construct the inventory
-        let mut d = 0;
-        for (i, bit) in rank9.bits.into_iter().enumerate() {
-            if bit {
-                if d & Self::INVENTORY_MASK == 0 {
-                    inventory[d >> Self::LOG2_ONES_PER_INVENTORY] = i as u64;
-                }
-                d += 1;
+        let mut curr_num_ones = 0;
+        let mut next_quantum = 0;
+        for (i, word) in rank9.bits.as_ref().iter().copied().enumerate() {
+            let ones_in_word = word.count_ones() as usize;
+
+            while curr_num_ones + ones_in_word > next_quantum {
+                let in_word_index = word.select_in_word((next_quantum - curr_num_ones) as usize);
+                let index = (i * u64::BITS as usize) + in_word_index;
+
+                inventory.push(index as u64);
+
+                next_quantum += Self::ONES_PER_INVENTORY;
             }
+            curr_num_ones += ones_in_word;
         }
-        assert!(rank9.count() == d);
-        inventory[inventory_size] = ((num_words as u64 + 3) & !3u64) * 64;
+        inventory.push(((num_words as u64 + 3) & !3u64) * 64);
+        assert!(inventory.len() == inventory_size + 1);
+
+        let iter = 0..inventory_size;
 
         // construct the subinventory
-        d = 0;
-        let mut state = -1i32;
-        let mut index: usize;
-        let mut span: u64;
-        let mut block_span: u64;
-        let mut block_left: u64;
-        let mut counts_at_start: u64;
-        let mut subinv_pos = 0usize;
-        let mut first_bit = 0usize;
+        iter.for_each(|inventory_idx| {
+            let subinv_start = (inventory[inventory_idx] as usize / 64) / u64_per_subinventory;
+            let subinv_end = (inventory[inventory_idx + 1] as usize / 64) / u64_per_subinventory;
+            let span = subinv_end - subinv_start;
+            let block_left = (inventory[inventory_idx] as usize / 64) / 8;
+            let block_span = (inventory[inventory_idx + 1] as usize / 64) / 8 - block_left;
+            let counts_at_start = rank9.counts[block_left * 2];
 
-        for (i, bit) in rank9.bits.into_iter().enumerate() {
-            if !bit {
-                continue;
-            }
-            if d & Self::INVENTORY_MASK == 0 {
-                first_bit = i;
-                index = d >> Self::LOG2_ONES_PER_INVENTORY;
-                assert!(inventory[index] == first_bit as u64);
-
-                subinv_pos = (inventory[index] as usize / 64) / 4;
-
-                span = (inventory[index + 1] / 64) / 4 - (inventory[index] / 64) / 4;
-                state = -1;
-                counts_at_start = rank9.counts[((inventory[index] as usize / 64) / 8) * 2];
-                block_span = (inventory[index + 1] / 64) / 8 - (inventory[index] / 64) / 8;
-                block_left = (inventory[index] / 64) / 8;
-
-                match span {
-                    0..=1 => {}
-                    2..=15 => {
-                        assert!(((block_span + 8) & !7u64) <= span * 4);
-
-                        let (_, s, _) = unsafe { subinventory[subinv_pos..].align_to_mut::<u16>() };
-
-                        for k in 0..(block_span as usize) {
-                            assert!(s[k] == 0);
-                            s[k] = (rank9.counts[(block_left as usize + k + 1) * 2]
-                                - counts_at_start) as u16;
-                        }
-
-                        for k in (block_span as usize)..(((block_span + 8) & !7u64) as usize) {
-                            assert!(s[k] == 0);
-                            s[k] = 0xFFFFu16;
-                        }
+            let mut state = -1;
+            let s16: &mut [u16] =
+                unsafe { subinventory[subinv_start..subinv_end].align_to_mut().1 };
+            match span {
+                0..=1 => {}
+                2..=15 => {
+                    assert!(((block_span + 8) & !7) <= span * 4);
+                    for k in 0..block_span {
+                        assert!(s16[k] == 0);
+                        s16[k] = (rank9.counts[(block_left + k + 1) * 2] - counts_at_start) as u16;
                     }
-                    16..=127 => {
-                        assert!(((block_span + 8) & !7u64) + 8 <= span * 4);
-                        let (_, s, _) = unsafe { subinventory[subinv_pos..].align_to_mut::<u16>() };
-
-                        for k in 0..(block_span as usize) {
-                            assert!(s[k + 8] == 0);
-                            s[k + 8] = (rank9.counts[(block_left as usize + k + 1) * 2]
-                                - counts_at_start) as u16;
-                        }
-
-                        for k in (block_span as usize)..(((block_span + 8) & !7u64) as usize) {
-                            assert!(s[k + 8] == 0);
-                            s[k + 8] = 0xFFFFu16;
-                        }
-
-                        assert!(block_span / 8 <= 8);
-
-                        for k in 0..(block_span as usize / 8) {
-                            assert!(s[k] == 0);
-                            s[k] = (rank9.counts[(block_left as usize + (k + 1) * 8) * 2]
-                                - counts_at_start) as u16;
-                        }
-
-                        for k in (block_span as usize / 8)..8 {
-                            assert!(s[k] == 0);
-                            s[k] = 0xFFFFu16;
-                        }
+                    for k in block_span..((block_span + 8) & !7) {
+                        assert!(s16[k] == 0);
+                        s16[k] = 0xFFFFu16;
                     }
-                    128..=255 => {
-                        state = 2;
+                }
+                16..=127 => {
+                    assert!(((block_span + 8) & !7) + 8 <= span * 4);
+                    assert!(block_span / 8 <= 8);
+                    for k in 0..block_span {
+                        assert!(s16[k + 8] == 0);
+                        s16[k + 8] =
+                            (rank9.counts[(block_left + k + 1) * 2] - counts_at_start) as u16;
                     }
-                    256..=511 => {
-                        state = 1;
+                    for k in block_span..((block_span + 8) & !7) {
+                        assert!(s16[k + 8] == 0);
+                        s16[k + 8] = 0xFFFFu16;
                     }
-                    _ => {
-                        state = 0;
+                    for k in 0..(block_span / 8) {
+                        assert!(s16[k] == 0);
+                        s16[k] =
+                            (rank9.counts[(block_left + (k + 1) * 8) * 2] - counts_at_start) as u16;
                     }
+                    for k in (block_span / 8)..8 {
+                        assert!(s16[k] == 0);
+                        s16[k] = 0xFFFFu16;
+                    }
+                }
+                128..=255 => {
+                    state = 2;
+                }
+                256..=511 => {
+                    state = 1;
+                }
+                _ => {
+                    state = 0;
                 }
             }
 
-            match state {
-                0 => {
-                    assert!(subinventory[subinv_pos + (d & Self::INVENTORY_MASK)] == 0);
-                    subinventory[subinv_pos + (d & Self::INVENTORY_MASK)] = i as u64;
-                }
-                1 => {
-                    let (_, s, _) = unsafe { subinventory[subinv_pos..].align_to_mut::<u32>() };
-                    assert!(s[d & Self::INVENTORY_MASK] == 0);
-                    assert!((i as u64 - first_bit as u64) < (1u64 << 32));
-                    s[d & Self::INVENTORY_MASK] = (i - first_bit) as u32;
-                }
-                2 => {
-                    let (_, s, _) = unsafe { subinventory[subinv_pos..].align_to_mut::<u16>() };
-                    assert!(s[d & Self::INVENTORY_MASK] == 0);
-                    assert!(i - first_bit < (1 << 16));
-                    s[d & Self::INVENTORY_MASK] = (i - first_bit) as u16;
-                }
-                _ => {}
-            }
+            if state != -1 {
+                // clean up the lower bits
+                let mut word_idx = inventory[inventory_idx] / u64::BITS as u64;
+                let bit_idx = inventory[inventory_idx] % u64::BITS as u64;
+                let mut word = (rank9.bits.as_ref()[word_idx as usize] >> bit_idx) << bit_idx;
 
-            d += 1;
-        }
+                let start_bit_idx = inventory[inventory_idx];
+                let end_bit_idx = inventory[inventory_idx + 1];
+                let end_word_idx = end_bit_idx.div_ceil(u64::BITS as u64);
+                let mut subinventory_idx = 0;
+                'outer: loop {
+                    while word != 0 {
+                        let in_word_index = word.trailing_zeros() as usize;
+                        let bit_index = (word_idx * u64::BITS as u64) + in_word_index as u64;
+                        let sub_offset = bit_index - start_bit_idx;
+                        match state {
+                            0 => {
+                                assert!(subinventory[subinv_start + subinventory_idx] == 0);
+                                subinventory[subinv_start + subinventory_idx] = bit_index;
+                            }
+                            1 => {
+                                let s32: &mut [u32] = unsafe {
+                                    subinventory[subinv_start..subinv_end].align_to_mut().1
+                                };
+                                assert!(s32[subinventory_idx] == 0);
+                                assert!((bit_index - start_bit_idx) < (1 << 32));
+                                s32[subinventory_idx] = sub_offset as u32;
+                            }
+                            2 => {
+                                let s16: &mut [u16] = unsafe {
+                                    subinventory[subinv_start..subinv_end].align_to_mut().1
+                                };
+                                assert!(s16[subinventory_idx] == 0);
+                                assert!(bit_index - start_bit_idx < (1 << 16));
+                                s16[subinventory_idx] = (bit_index - start_bit_idx) as u16;
+                            }
+                            _ => {}
+                        }
+
+                        subinventory_idx += 1;
+                        if subinventory_idx == Self::ONES_PER_INVENTORY {
+                            break 'outer;
+                        }
+
+                        word ^= 1usize << in_word_index;
+                    }
+
+                    // move to the next word and boundcheck
+                    word_idx += 1;
+                    if word_idx == end_word_idx {
+                        break;
+                    }
+
+                    // read the next word
+                    word = rank9.bits.as_ref()[word_idx as usize];
+                }
+            }
+        });
 
         Self {
             rank9,
