@@ -260,7 +260,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
 
 impl<W: Word> core::iter::Extend for BitFieldVec<W, Vec<W>> {
     /// Add values from
-    fn extend<T: IntoIterator<Item = A>>(&mut self, iter: T);
+    fn extend<T: IntoIterator<Item = W>>(&mut self, iter: T) {
         for value in iter {
             self.push(value);
         }
