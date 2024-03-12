@@ -252,8 +252,8 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         if self.len == 0 {
             return None;
         } 
+        let value = self.get(self.len - 1);
         self.len -= 1;
-        let value = self.get(self.len);
         Some(value)
     }
 }
