@@ -217,6 +217,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         Ok(result)
     }
 
+    /// Add a value at the end of the BitFieldVec
     pub fn push(&mut self, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
         if (self.len + 1) * self.bit_width > self.data.len() * W::BITS {
@@ -228,12 +229,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         self.len += 1;
     }
 
-    pub fn extend(&mut self, i: impl IntoIterator<Item = W>) {
-        for value in i {
-            self.push(value);
-        }
-    }
-
+    /// Truncate or exted with `value` the BitFieldVec
     pub fn resize(&mut self, new_len: usize, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
         if new_len > self.len {
@@ -250,13 +246,23 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         self.len = new_len;
     }
 
+    /// Remove and return a value from the end of the [`BitFieldVec`].
+    /// Return None if the [`BitFieldVec`] is empty.
     pub fn pop(&mut self) -> Option<W> {
         if self.len == 0 {
-            None
-        } else {
-            let value = self.get(self.len - 1);
-            self.len -= 1;
-            Some(value)
+            return None;
+        } 
+        self.len -= 1;
+        let value = self.get(self.len);
+        Some(value)
+    }
+}
+
+impl<W: Word> core::iter::Extend for BitFieldVec<W, Vec<W>> {
+    /// Add values from
+    fn extend<T: IntoIterator<Item = A>>(&mut self, iter: T);
+        for value in iter {
+            self.push(value);
         }
     }
 }
