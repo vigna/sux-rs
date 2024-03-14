@@ -14,6 +14,7 @@ use anyhow::bail;
 use arbitrary_chunks::ArbitraryChunks;
 use bit_field_slice::AtomicBitFieldSlice;
 use bit_field_slice::BitFieldSlice;
+use bit_field_slice::BitFieldSliceMut;
 use bit_field_slice::Word;
 use common_traits::Atomic;
 use common_traits::{AsBytes, AtomicUnsignedInt, IntoAtomic};
@@ -225,6 +226,12 @@ enum ParSolveResult<O: Word + IntoAtomic, D: AtomicBitFieldSlice<O>>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
 {
+    DuplicateSignature,
+    CantPeel,
+    Ok(D, PhantomData<O>),
+}
+
+enum SolveResult<O: Word, D: BitFieldSlice<O>> {
     DuplicateSignature,
     CantPeel,
     Ok(D, PhantomData<O>),
@@ -443,6 +450,120 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn solve<
+    'a,
+    O: Word + ZeroCopy + Send + Sync + 'static,
+    S: Signature + ChunkEdge,
+    D: BitFieldSlice<O> + BitFieldSliceMut<O>,
+>(
+    mut chunk: Vec<SigVal<S, O>>,
+    mut data: D,
+    num_vertices: usize,
+    log2_segment_size: u32,
+    l: usize,
+    pl: &mut (impl ProgressLog + Send),
+) -> SolveResult<O, D>
+where
+    SigVal<S, O>: RadixKey + Send + Sync,
+{
+    pl.item_name("edge");
+    pl.start("Generating graph...");
+    let mut edge_lists = Vec::new();
+    edge_lists.resize_with(num_vertices, EdgeList::default);
+    chunk.iter().enumerate().for_each(|(edge_index, sig_val)| {
+        for (side, &v) in sig_val.sig.edge(0, l, log2_segment_size).iter().enumerate() {
+            edge_lists[v].add(edge_index, side);
+        }
+    });
+    pl.done_with_count(chunk.len());
+
+    pl.start("Peeling graph...");
+    let mut stack = Vec::new();
+    for v in (0..num_vertices).rev() {
+        if edge_lists[v].degree() != 1 {
+            continue;
+        }
+        let mut pos = stack.len();
+        let mut curr = stack.len();
+        stack.push(v);
+        while pos < stack.len() {
+            let v = stack[pos];
+            pos += 1;
+            if edge_lists[v].degree() == 0 {
+                continue; // Skip no longer useful entries
+            }
+            let (edge_index, side) = edge_lists[v].edge_index_side();
+            edge_lists[v].zero();
+            stack[curr] = v;
+            curr += 1;
+
+            let e = chunk[edge_index].sig.edge(0, l, log2_segment_size);
+            match side {
+                0 => {
+                    edge_lists[e[1]].remove(edge_index, 1);
+                    if edge_lists[e[1]].degree() == 1 {
+                        stack.push(e[1]);
+                    }
+                    edge_lists[e[2]].remove(edge_index, 2);
+                    if edge_lists[e[2]].degree() == 1 {
+                        stack.push(e[2]);
+                    }
+                }
+                1 => {
+                    edge_lists[e[0]].remove(edge_index, 0);
+                    if edge_lists[e[0]].degree() == 1 {
+                        stack.push(e[0]);
+                    }
+                    edge_lists[e[2]].remove(edge_index, 2);
+                    if edge_lists[e[2]].degree() == 1 {
+                        stack.push(e[2]);
+                    }
+                }
+                2 => {
+                    edge_lists[e[0]].remove(edge_index, 0);
+                    if edge_lists[e[0]].degree() == 1 {
+                        stack.push(e[0]);
+                    }
+                    edge_lists[e[1]].remove(edge_index, 1);
+                    if edge_lists[e[1]].degree() == 1 {
+                        stack.push(e[1]);
+                    }
+                }
+                _ => unreachable!("{}", side),
+            }
+        }
+        stack.truncate(curr);
+    }
+    if chunk.len() != stack.len() {
+        warn!("Peeling failed");
+        return SolveResult::CantPeel;
+    }
+    pl.done_with_count(chunk.len());
+
+    pl.start("Assigning values...");
+    while let Some(v) = stack.pop() {
+        let (edge_index, side) = edge_lists[v].edge_index_side();
+        let edge = chunk[edge_index].sig.edge(0, l, log2_segment_size);
+        let value = match side {
+            0 => data.get(edge[1]) ^ data.get(edge[2]),
+            1 => data.get(edge[0]) ^ data.get(edge[2]),
+            2 => data.get(edge[0]) ^ data.get(edge[1]),
+            _ => unreachable!(),
+        };
+
+        data.set(v, chunk[edge_index].val ^ value);
+        debug_assert_eq!(
+            data.get(edge[0]) ^ data.get(edge[1]) ^ data.get(edge[2]),
+            chunk[edge_index].val
+        );
+    }
+    pl.done_with_count(chunk.len());
+
+    pl.start("Completed.");
+    SolveResult::Ok(data, PhantomData)
+}
+
 trait ChunkEdge {
     fn chunk(&self, chunk_high_bits: u32, chunk_mask: u32) -> usize;
     fn edge(&self, chunk_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3];
@@ -556,7 +677,7 @@ impl<
     > VFuncBuilder<T, O, S, Vec<O>, SHARDED>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
-    Vec<O>: BitFieldSlice<O>,
+    Vec<O>: BitFieldSlice<O> + BitFieldSliceMut<O>,
     Vec<O::AtomicType>: AtomicBitFieldSlice<O> + ConvertTo<Vec<O>>,
     SigVal<S, O>: RadixKey + Send + Sync,
 {
@@ -605,7 +726,7 @@ impl<
         T: ?Sized + ToSig<S>,
         O: ZeroCopy + Word + IntoAtomic + 'static,
         S: Signature + ChunkEdge,
-        D: bit_field_slice::BitFieldSlice<O>,
+        D: bit_field_slice::BitFieldSlice<O> + bit_field_slice::BitFieldSliceMut<O>,
         const SHARDED: bool,
     > VFuncBuilder<T, O, S, D, SHARDED>
 where
@@ -797,27 +918,57 @@ where
                     (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
                 ));
 
-                match par_solve(
-                    sig_vals
-                        .arbitrary_chunks(&chunk_sizes)
-                        .map(Cow::Borrowed)
-                        .enumerate(),
-                    new(bit_width, num_vertices * num_chunks),
-                    num_chunks,
-                    num_vertices,
-                    match self.num_threads {
-                        0 => max_num_threads,
-                        _ => self.num_threads,
-                    },
-                    log2_seg_size,
-                    l,
-                    pl,
-                ) {
-                    ParSolveResult::DuplicateSignature => {
-                        unreachable!("Already checked for duplicates")
+                if SHARDED {
+                    match par_solve(
+                        sig_vals
+                            .arbitrary_chunks(&chunk_sizes)
+                            .map(Cow::Borrowed)
+                            .enumerate(),
+                        new(bit_width, num_vertices * num_chunks),
+                        num_chunks,
+                        num_vertices,
+                        match self.num_threads {
+                            0 => max_num_threads,
+                            _ => self.num_threads,
+                        },
+                        log2_seg_size,
+                        l,
+                        pl,
+                    ) {
+                        ParSolveResult::DuplicateSignature => {
+                            unreachable!("Already checked for duplicates")
+                        }
+                        ParSolveResult::CantPeel => {}
+                        ParSolveResult::Ok(data, PhantomData) => break data,
                     }
-                    ParSolveResult::CantPeel => {}
-                    ParSolveResult::Ok(data, PhantomData) => break data,
+                } else {
+                    let data: D = new(bit_width, num_vertices * num_chunks)
+                        .convert_to()
+                        .unwrap();
+                    match solve(sig_vals, data, num_vertices, log2_seg_size, l, pl) {
+                        SolveResult::DuplicateSignature => {
+                            unreachable!("Already checked for duplicates")
+                        }
+                        SolveResult::CantPeel => {}
+                        SolveResult::Ok(data, PhantomData) => {
+                            pl.info(format_args!(
+                                "bits/keys: {}",
+                                0 //data.len() as f64 * bit_width as f64 / num_keys as f64
+                            ));
+
+                            return Ok(VFunc {
+                                seed,
+                                l,
+                                high_bits: chunk_high_bits,
+                                chunk_mask,
+                                num_keys,
+                                log2_segment_size: log2_seg_size,
+                                data,
+                                _marker_t: std::marker::PhantomData,
+                                _marker_os: std::marker::PhantomData,
+                            });
+                        }
+                    }
                 }
             }
 
