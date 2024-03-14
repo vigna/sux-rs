@@ -156,6 +156,7 @@ pub struct VFuncBuilder<
     O: ZeroCopy + Word + IntoAtomic,
     S = [u64; 2],
     D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
+    const SHARDED: bool = false,
 > {
     #[setters(generate = true)]
     /// The number of parallel threads to use.
@@ -186,6 +187,7 @@ pub struct VFunc<
     O: ZeroCopy + Word + IntoAtomic = usize,
     S = [u64; 2],
     D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
+    const SHARDED: bool = false,
 > {
     high_bits: u32,
     log2_segment_size: u32,
@@ -198,18 +200,22 @@ pub struct VFunc<
     _marker_os: std::marker::PhantomData<(O, S)>,
 }
 
-fn compute_params(num_keys: usize, pl: &mut impl ProgressLog) -> (u32, usize) {
+fn compute_params(num_keys: usize, sharded: bool) -> (u32, usize) {
     let eps = 0.001;
-    let chunk_high_bits = {
-        let t = (num_keys as f64 * eps * eps / 2.0).ln();
+    let chunk_high_bits = if sharded {
+        {
+            let t = (num_keys as f64 * eps * eps / 2.0).ln();
 
-        if t > 0.0 {
-            ((t - t.ln()) / 2_f64.ln()).ceil()
-        } else {
-            0.0
+            if t > 0.0 {
+                ((t - t.ln()) / 2_f64.ln()).ceil()
+            } else {
+                0.0
+            }
         }
-    }
-    .min(10.0) as u32; // More than 1000 chunks make no sense
+        .min(10.0) as u32 // More than 1000 chunks make no sense}
+    } else {
+        0
+    };
     let max_num_threads = 1; //1.max((1 << chunk_high_bits) / 8).min(8); TODO
 
     dbg!((chunk_high_bits, max_num_threads))
@@ -493,7 +499,8 @@ impl<
         O: ZeroCopy + Word + IntoAtomic,
         S: Signature + ChunkEdge,
         D: bit_field_slice::BitFieldSlice<O>,
-    > VFunc<T, O, S, D>
+        const SHARDED: bool,
+    > VFunc<T, O, S, D, SHARDED>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
 {
@@ -502,15 +509,25 @@ where
     /// This method is mainly useful in the construction of compound functions.
     #[inline(always)]
     pub fn get_by_sig(&self, sig: &S) -> O {
-        let edge = sig.edge(self.high_bits, self.l, self.log2_segment_size);
-        let chunk = sig.chunk(self.high_bits, self.chunk_mask);
-        // chunk * self.segment_size * (2^log2_l + 2)
-        let chunk_offset = chunk * ((self.l + 2) << self.log2_segment_size);
+        if SHARDED {
+            let edge = sig.edge(self.high_bits, self.l, self.log2_segment_size);
+            let chunk = sig.chunk(self.high_bits, self.chunk_mask);
+            // chunk * self.segment_size * (2^log2_l + 2)
+            let chunk_offset = chunk * ((self.l + 2) << self.log2_segment_size);
 
-        unsafe {
-            self.data.get_unchecked(edge[0] + chunk_offset)
-                ^ self.data.get_unchecked(edge[1] + chunk_offset)
-                ^ self.data.get_unchecked(edge[2] + chunk_offset)
+            unsafe {
+                self.data.get_unchecked(edge[0] + chunk_offset)
+                    ^ self.data.get_unchecked(edge[1] + chunk_offset)
+                    ^ self.data.get_unchecked(edge[2] + chunk_offset)
+            }
+        } else {
+            let edge = sig.edge(0, self.l, self.log2_segment_size);
+
+            unsafe {
+                self.data.get_unchecked(edge[0])
+                    ^ self.data.get_unchecked(edge[1])
+                    ^ self.data.get_unchecked(edge[2])
+            }
         }
     }
 
@@ -531,8 +548,12 @@ where
     }
 }
 
-impl<T: ?Sized + ToSig<S>, O: ZeroCopy + Word + IntoAtomic + 'static, S: Signature + ChunkEdge>
-    VFuncBuilder<T, O, S, Vec<O>>
+impl<
+        T: ?Sized + ToSig<S>,
+        O: ZeroCopy + Word + IntoAtomic + 'static,
+        S: Signature + ChunkEdge,
+        const SHARDED: bool,
+    > VFuncBuilder<T, O, S, Vec<O>, SHARDED>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
     Vec<O>: BitFieldSlice<O>,
@@ -554,8 +575,12 @@ where
     }
 }
 
-impl<T: ?Sized + ToSig<S>, O: ZeroCopy + Word + IntoAtomic + 'static, S: Signature + ChunkEdge>
-    VFuncBuilder<T, O, S, BitFieldVec<O>>
+impl<
+        T: ?Sized + ToSig<S>,
+        O: ZeroCopy + Word + IntoAtomic + 'static,
+        S: Signature + ChunkEdge,
+        const SHARDED: bool,
+    > VFuncBuilder<T, O, S, BitFieldVec<O>, SHARDED>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
     Vec<O::AtomicType>: AtomicBitFieldSlice<O> + ConvertTo<Vec<O>>,
@@ -581,7 +606,8 @@ impl<
         O: ZeroCopy + Word + IntoAtomic + 'static,
         S: Signature + ChunkEdge,
         D: bit_field_slice::BitFieldSlice<O>,
-    > VFuncBuilder<T, O, S, D>
+        const SHARDED: bool,
+    > VFuncBuilder<T, O, S, D, SHARDED>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
     SigVal<S, O>: RadixKey + Send + Sync,
@@ -644,7 +670,7 @@ where
                 num_keys = sig_sorter.len();
                 pl.done();
 
-                (chunk_high_bits, max_num_threads) = compute_params(num_keys, pl);
+                (chunk_high_bits, max_num_threads) = compute_params(num_keys, SHARDED);
                 chunk_high_bits = 0;
                 max_num_threads = 1;
                 log2_seg_size = comp_log2_seg_size(3, num_keys);
@@ -718,7 +744,7 @@ where
                 pl.done();
                 num_keys = sig_vals.len();
 
-                (chunk_high_bits, max_num_threads) = compute_params(num_keys, pl);
+                (chunk_high_bits, max_num_threads) = compute_params(num_keys, SHARDED);
                 chunk_high_bits = 0;
                 max_num_threads = 1;
                 log2_seg_size = comp_log2_seg_size(3, num_keys);
