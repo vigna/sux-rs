@@ -139,7 +139,7 @@ macro_rules! to_sig_prim {
         // TODO u128
         impl ToSig<u64> for $ty {
             fn to_sig(key: &Self, seed: u64) -> u64 {
-                mix64(*key as u64)
+                mix64(*key as u64 ^ seed)
             }
         }
     )*};
