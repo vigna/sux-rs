@@ -34,7 +34,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     pl.start("Building...");
-    let builder = VFuncBuilder::<u64, u16, u64, Vec<_>>::default();
+    let builder = VFuncBuilder::<u64, u16, u64, Vec<_>, false>::default();
 
     let vfunc = builder.build(
         FromIntoIterator::from(0..args.n as u64),
