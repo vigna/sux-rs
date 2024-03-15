@@ -232,7 +232,6 @@ where
 }
 
 enum SolveResult<O: Word, D: BitFieldSlice<O>> {
-    DuplicateSignature,
     CantPeel,
     Ok(D, PhantomData<O>),
 }
@@ -240,7 +239,7 @@ enum SolveResult<O: Word, D: BitFieldSlice<O>> {
 #[allow(clippy::too_many_arguments)]
 fn par_solve<
     'a,
-    O: Word + ZeroCopy + Send + Sync + IntoAtomic + 'static,
+    O: Word + ZeroCopy + Send + Sync + IntoAtomic,
     I: Iterator<Item = (usize, Cow<'a, [SigVal<S, O>]>)> + Send,
     S: Signature + ChunkEdge,
     D: AtomicBitFieldSlice<O> + Send + Sync,
@@ -258,7 +257,6 @@ where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
     SigVal<S, O>: RadixKey + Send + Sync,
 {
-    const SIDE_PERM: [usize; 4] = [1, 2, 0, 1];
     let chunk_high_bits = num_chunks.ilog2();
     let chunk_iter = std::sync::Arc::new(Mutex::new(chunk_iter));
     let failed_peeling = AtomicBool::new(false);
@@ -453,7 +451,7 @@ where
 #[allow(clippy::too_many_arguments)]
 fn solve<
     'a,
-    O: Word + ZeroCopy + Send + Sync + 'static,
+    O: Word + ZeroCopy + Send + Sync,
     S: Signature + ChunkEdge,
     D: BitFieldSlice<O> + BitFieldSliceMut<O>,
 >(
@@ -671,7 +669,7 @@ where
 
 impl<
         T: ?Sized + ToSig<S>,
-        O: ZeroCopy + Word + IntoAtomic + 'static,
+        O: ZeroCopy + Word + IntoAtomic,
         S: Signature + ChunkEdge,
         const SHARDED: bool,
     > VFuncBuilder<T, O, S, Vec<O>, SHARDED>
@@ -698,7 +696,7 @@ where
 
 impl<
         T: ?Sized + ToSig<S>,
-        O: ZeroCopy + Word + IntoAtomic + 'static,
+        O: ZeroCopy + Word + IntoAtomic,
         S: Signature + ChunkEdge,
         const SHARDED: bool,
     > VFuncBuilder<T, O, S, BitFieldVec<O>, SHARDED>
@@ -724,7 +722,7 @@ where
 
 impl<
         T: ?Sized + ToSig<S>,
-        O: ZeroCopy + Word + IntoAtomic + 'static,
+        O: ZeroCopy + Word + IntoAtomic,
         S: Signature + ChunkEdge,
         D: bit_field_slice::BitFieldSlice<O> + bit_field_slice::BitFieldSliceMut<O>,
         const SHARDED: bool,
@@ -946,9 +944,6 @@ where
                         .convert_to()
                         .unwrap();
                     match solve(sig_vals, data, num_vertices, log2_seg_size, l, pl) {
-                        SolveResult::DuplicateSignature => {
-                            unreachable!("Already checked for duplicates")
-                        }
                         SolveResult::CantPeel => {}
                         SolveResult::Ok(data, PhantomData) => {
                             pl.info(format_args!(

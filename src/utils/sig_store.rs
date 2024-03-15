@@ -30,7 +30,7 @@ use std::{collections::VecDeque, fs::File, io::*, marker::PhantomData};
 
 use crate::prelude::spooky_short;
 
-pub trait Signature: Eq + ZeroCopy + 'static + Send + Sync {
+pub trait Signature: Eq + ZeroCopy + Send + Sync {
     fn upper_bits(&self) -> u64;
 }
 
@@ -55,12 +55,12 @@ A signature and a value.
 #[derive(Epserde, Debug, Clone, Copy)]
 #[repr(C)]
 #[zero_copy]
-pub struct SigVal<S: Signature, T: ZeroCopy + 'static> {
+pub struct SigVal<S: Signature, T: ZeroCopy> {
     pub sig: S,
     pub val: T,
 }
 
-impl<T: ZeroCopy + 'static> RadixKey for SigVal<[u64; 2], T> {
+impl<T: ZeroCopy> RadixKey for SigVal<[u64; 2], T> {
     const LEVELS: usize = 16;
 
     fn get_level(&self, level: usize) -> u8 {
@@ -68,7 +68,7 @@ impl<T: ZeroCopy + 'static> RadixKey for SigVal<[u64; 2], T> {
     }
 }
 
-impl<T: ZeroCopy + 'static> RadixKey for SigVal<u64, T> {
+impl<T: ZeroCopy> RadixKey for SigVal<u64, T> {
     const LEVELS: usize = 8;
 
     fn get_level(&self, level: usize) -> u8 {
@@ -226,7 +226,7 @@ pub struct ChunkStore<S, T> {
     _marker: PhantomData<(S, T)>,
 }
 
-impl<S: Signature, T: ZeroCopy + 'static> ChunkStore<S, T> {
+impl<S: Signature, T: ZeroCopy> ChunkStore<S, T> {
     /// Return the chunk sizes.
     pub fn chunk_sizes(&self) -> &Vec<usize> {
         &self.chunk_sizes
@@ -263,7 +263,7 @@ usually return borrowed variants.
 */
 
 #[derive(Debug)]
-pub struct ChunkIterator<'a, S: Signature, T: ZeroCopy + 'static> {
+pub struct ChunkIterator<'a, S: Signature, T: ZeroCopy> {
     store: &'a mut ChunkStore<S, T>,
     /// The next file to examine.
     next_file: usize,
@@ -394,7 +394,7 @@ fn write_binary<S: Signature, T: ZeroCopy>(
     writer.write_all(buf)
 }
 
-impl<S: Signature, T: ZeroCopy + 'static> SigStore<S, T> {
+impl<S: Signature, T: ZeroCopy> SigStore<S, T> {
     /// Create a new store with 2<sup>`buckets_high_bits`</sup> buffers, keeping
     /// counts for chunks defined by at most `max_chunk_high_bits` high bits.
     pub fn new(buckets_high_bits: u32, max_chunk_high_bits: u32) -> Result<Self> {
@@ -493,7 +493,7 @@ impl<S: Signature, T: ZeroCopy + 'static> SigStore<S, T> {
     }
 }
 
-impl<T: ZeroCopy + 'static> SigStore<[u64; 2], T> {}
+impl<T: ZeroCopy> SigStore<[u64; 2], T> {}
 #[test]
 
 fn test_sig_sorter() {
