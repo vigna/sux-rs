@@ -274,9 +274,7 @@ pub struct ChunkIterator<'a, S: Signature, T: ZeroCopy> {
     _marker: PhantomData<T>,
 }
 
-impl<'a, S: Signature + 'static, T: ZeroCopy + Send + Sync + 'static> Iterator
-    for ChunkIterator<'a, S, T>
-{
+impl<'a, S: Signature, T: ZeroCopy + Send + Sync> Iterator for ChunkIterator<'a, S, T> {
     type Item = (usize, Cow<'a, [SigVal<S, T>]>);
 
     fn next(&mut self) -> Option<Self::Item> {
