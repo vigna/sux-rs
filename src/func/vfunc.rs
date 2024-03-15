@@ -7,7 +7,6 @@
 
 // We import selectively to be able to use AtomicHelper
 use crate::bits::*;
-use crate::prelude::ConvertTo;
 use crate::traits::bit_field_slice;
 use crate::utils::*;
 use anyhow::bail;
@@ -153,7 +152,7 @@ using too many threads might actually be harmful due to memory contention: eight
 #[derivative(Default)]
 #[setters(generate = false)]
 pub struct VFuncBuilder<
-    T: ?Sized + ToSig<S>,
+    T: ?Sized + ToSig,
     O: ZeroCopy + Word + IntoAtomic,
     S = [u64; 2],
     D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
@@ -184,7 +183,7 @@ and can be serialized using [ε-serde](`epserde`).
 
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFunc<
-    T: ?Sized + ToSig<S>,
+    T: ?Sized + ToSig,
     O: ZeroCopy + Word + IntoAtomic = usize,
     S = [u64; 2],
     D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
@@ -232,7 +231,6 @@ where
 }
 
 enum SolveResult<O: Word, D: BitFieldSlice<O>> {
-    DuplicateSignature,
     CantPeel,
     Ok(D, PhantomData<O>),
 }
@@ -240,9 +238,8 @@ enum SolveResult<O: Word, D: BitFieldSlice<O>> {
 #[allow(clippy::too_many_arguments)]
 fn par_solve<
     'a,
-    O: Word + ZeroCopy + Send + Sync + IntoAtomic + 'static,
-    I: Iterator<Item = (usize, Cow<'a, [SigVal<S, O>]>)> + Send,
-    S: Signature + ChunkEdge,
+    O: Word + ZeroCopy + Send + Sync + IntoAtomic,
+    I: Iterator<Item = (usize, Cow<'a, [SigVal<O>]>)> + Send,
     D: AtomicBitFieldSlice<O> + Send + Sync,
 >(
     chunk_iter: I,
@@ -252,13 +249,12 @@ fn par_solve<
     num_threads: usize,
     log2_segment_size: u32,
     l: usize,
-    main_pl: &mut (impl ProgressLog + Send),
+    main_pl: &mut impl ProgressLog,
 ) -> ParSolveResult<O, D>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
-    SigVal<S, O>: RadixKey + Send + Sync,
+    SigVal<O>: RadixKey + Send + Sync,
 {
-    const SIDE_PERM: [usize; 4] = [1, 2, 0, 1];
     let chunk_high_bits = num_chunks.ilog2();
     let chunk_iter = std::sync::Arc::new(Mutex::new(chunk_iter));
     let failed_peeling = AtomicBool::new(false);
@@ -268,10 +264,16 @@ where
         .item_name("chunk")
         .expected_updates(Some(num_chunks));
     main_pl.start("Analyzing chunks...");
-    let main_pl = std::sync::Arc::new(Mutex::new(main_pl));
+
     thread::scope(|s| {
+        let failed_peeling = &failed_peeling;
+        let duplicate_signature = &duplicate_signature;
+        let chunk_iter = &chunk_iter;
+        let data = &data;
+
         for _ in 0..num_threads {
-            s.spawn(|| {
+            let mut pl = main_pl.concurrent();
+            s.spawn(move || {
                 loop {
                     if failed_peeling.load(Relaxed) || duplicate_signature.load(Relaxed) {
                         return;
@@ -290,7 +292,6 @@ where
                         return;
                     }
 
-                    let mut pl = main_pl.lock().unwrap().clone();
                     pl.item_name("edge");
                     pl.start(format!(
                         "Generating graph for chunk {}/{}...",
@@ -434,7 +435,7 @@ where
                         chunk_index + 1,
                         num_chunks
                     ));
-                    main_pl.lock().unwrap().update_and_display();
+                    pl.update_and_display();
                 }
             });
         }
@@ -445,19 +446,14 @@ where
     } else if duplicate_signature.load(Relaxed) {
         ParSolveResult::DuplicateSignature
     } else {
-        main_pl.lock().unwrap().done();
+        main_pl.done();
         ParSolveResult::Ok(data, PhantomData)
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn solve<
-    'a,
-    O: Word + ZeroCopy + Send + Sync + 'static,
-    S: Signature + ChunkEdge,
-    D: BitFieldSlice<O> + BitFieldSliceMut<O>,
->(
-    mut chunk: Vec<SigVal<S, O>>,
+fn solve<'a, O: Word + ZeroCopy + Send + Sync, D: BitFieldSlice<O> + BitFieldSliceMut<O>>(
+    mut chunk: Vec<SigVal<O>>,
     mut data: D,
     num_vertices: usize,
     log2_segment_size: u32,
@@ -465,7 +461,7 @@ fn solve<
     pl: &mut (impl ProgressLog + Send),
 ) -> SolveResult<O, D>
 where
-    SigVal<S, O>: RadixKey + Send + Sync,
+    SigVal<O>: RadixKey + Send + Sync,
 {
     pl.item_name("edge");
     pl.start("Generating graph...");
@@ -616,9 +612,9 @@ impl ChunkEdge for u64 {
 }
 
 impl<
-        T: ?Sized + ToSig<S>,
+        T: ?Sized + ToSig,
         O: ZeroCopy + Word + IntoAtomic,
-        S: Signature + ChunkEdge,
+        S: ChunkEdge,
         D: bit_field_slice::BitFieldSlice<O>,
         const SHARDED: bool,
     > VFunc<T, O, S, D, SHARDED>
@@ -629,7 +625,7 @@ where
     ///
     /// This method is mainly useful in the construction of compound functions.
     #[inline(always)]
-    pub fn get_by_sig(&self, sig: &S) -> O {
+    pub fn get_by_sig(&self, sig: &[u64; 2]) -> O {
         if SHARDED {
             let edge = sig.edge(self.high_bits, self.l, self.log2_segment_size);
             let chunk = sig.chunk(self.high_bits, self.chunk_mask);
@@ -669,22 +665,18 @@ where
     }
 }
 
-impl<
-        T: ?Sized + ToSig<S>,
-        O: ZeroCopy + Word + IntoAtomic + 'static,
-        S: Signature + ChunkEdge,
-        const SHARDED: bool,
-    > VFuncBuilder<T, O, S, Vec<O>, SHARDED>
+impl<T: ?Sized + ToSig, O: ZeroCopy + Word + IntoAtomic, S: ChunkEdge, const SHARDED: bool>
+    VFuncBuilder<T, O, S, Vec<O>, SHARDED>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
     Vec<O>: BitFieldSlice<O> + BitFieldSliceMut<O>,
-    Vec<O::AtomicType>: AtomicBitFieldSlice<O> + ConvertTo<Vec<O>>,
-    SigVal<S, O>: RadixKey + Send + Sync,
+    Vec<O::AtomicType>: AtomicBitFieldSlice<O> + Into<Vec<O>>,
+    SigVal<O>: RadixKey + Send + Sync,
 {
     pub fn build(
         self,
-        into_keys: impl RewindableIOLender<T>,
-        into_values: impl RewindableIOLender<O>,
+        into_keys: impl RewindableIoLender<T>,
+        into_values: impl RewindableIoLender<O>,
         pl: &mut (impl ProgressLog + Send),
     ) -> anyhow::Result<VFunc<T, O, S, Vec<O>>> {
         self._build::<Vec<O::AtomicType>>(
@@ -696,21 +688,17 @@ where
     }
 }
 
-impl<
-        T: ?Sized + ToSig<S>,
-        O: ZeroCopy + Word + IntoAtomic + 'static,
-        S: Signature + ChunkEdge,
-        const SHARDED: bool,
-    > VFuncBuilder<T, O, S, BitFieldVec<O>, SHARDED>
+impl<T: ?Sized + ToSig, O: ZeroCopy + Word + IntoAtomic, S: ChunkEdge, const SHARDED: bool>
+    VFuncBuilder<T, O, S, BitFieldVec<O>, SHARDED>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
-    Vec<O::AtomicType>: AtomicBitFieldSlice<O> + ConvertTo<Vec<O>>,
-    SigVal<S, O>: RadixKey + Send + Sync,
+    Vec<O::AtomicType>: AtomicBitFieldSlice<O> + Into<Vec<O>>,
+    SigVal<O>: RadixKey + Send + Sync,
 {
     pub fn build(
         self,
-        into_keys: impl RewindableIOLender<T>,
-        into_values: impl RewindableIOLender<O>,
+        into_keys: impl RewindableIoLender<T>,
+        into_values: impl RewindableIoLender<O>,
         pl: &mut (impl ProgressLog + Send),
     ) -> anyhow::Result<VFunc<T, O, S, BitFieldVec<O>>> {
         self._build::<AtomicBitFieldVec<O>>(
@@ -723,26 +711,26 @@ where
 }
 
 impl<
-        T: ?Sized + ToSig<S>,
-        O: ZeroCopy + Word + IntoAtomic + 'static,
-        S: Signature + ChunkEdge,
+        T: ?Sized + ToSig,
+        O: ZeroCopy + Word + IntoAtomic,
+        S: ChunkEdge,
         D: bit_field_slice::BitFieldSlice<O> + bit_field_slice::BitFieldSliceMut<O>,
         const SHARDED: bool,
     > VFuncBuilder<T, O, S, D, SHARDED>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
-    SigVal<S, O>: RadixKey + Send + Sync,
+    SigVal<O>: RadixKey + Send + Sync,
 {
     /// Build and return a new function with given keys and values.
     fn _build<A: AtomicBitFieldSlice<O> + Send + Sync>(
         self,
-        mut into_keys: impl RewindableIOLender<T>,
-        mut into_values: impl RewindableIOLender<O>,
+        mut into_keys: impl RewindableIoLender<T>,
+        mut into_values: impl RewindableIoLender<O>,
         new: fn(usize, usize) -> A,
         pl: &mut (impl ProgressLog + Send),
     ) -> anyhow::Result<VFunc<T, O, S, D>>
     where
-        A: ConvertTo<D>,
+        A: Into<D>,
     {
         // Loop until success or duplicate detection
         let mut dup_count = 0;
@@ -768,8 +756,7 @@ where
                 let max_chunk_high_bits = 12;
                 let log2_buckets = self.log2_buckets.unwrap_or(8);
                 pl.info(format_args!("Using {} buckets", 1 << log2_buckets));
-                let mut sig_sorter =
-                    SigStore::<S, O>::new(log2_buckets, max_chunk_high_bits).unwrap();
+                let mut sig_sorter = SigStore::<O>::new(log2_buckets, max_chunk_high_bits).unwrap();
                 into_values = into_values.rewind()?;
                 into_keys = into_keys.rewind()?;
                 while let Some(result) = into_keys.next() {
@@ -942,13 +929,8 @@ where
                         ParSolveResult::Ok(data, PhantomData) => break data,
                     }
                 } else {
-                    let data: D = new(bit_width, num_vertices * num_chunks)
-                        .convert_to()
-                        .unwrap();
+                    let data: D = new(bit_width, num_vertices * num_chunks).into();
                     match solve(sig_vals, data, num_vertices, log2_seg_size, l, pl) {
-                        SolveResult::DuplicateSignature => {
-                            unreachable!("Already checked for duplicates")
-                        }
                         SolveResult::CantPeel => {}
                         SolveResult::Ok(data, PhantomData) => {
                             pl.info(format_args!(
@@ -987,7 +969,7 @@ where
             chunk_mask,
             num_keys,
             log2_segment_size: log2_seg_size,
-            data: data.convert_to().unwrap(),
+            data: data.into(),
             _marker_t: std::marker::PhantomData,
             _marker_os: std::marker::PhantomData,
         })
