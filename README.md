@@ -15,7 +15,7 @@ we provide:
 
 - the [`BitFieldSlice`](crate::traits::bit_field_slice::BitFieldSlice) trait—an
   alternative to [`Index`](core::ops::Index) returning values of fixed bit width;
-- an implementation of [bit vectors](crate::bits::BitVec) and of [vectors of bit fields of fixed with](crate::bits::BitFieldVec);
+- an implementation of [bit vectors](crate::bits::BitVec) and of [vectors of bit fields of fixed width](crate::bits::BitFieldVec);
 - traits for building blocks and structures like [`Rank`](crate::traits::rank_sel::Rank) , 
   [`Select`](crate::traits::rank_sel::Select), and [`IndexedDict`](crate::traits::indexed_dict::IndexedDict);
 - an implementation of the [Elias–Fano representation of monotone sequences](crate::dict::elias_fano::EliasFano);
