@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
 use rand::rngs::SmallRng;
@@ -33,12 +34,10 @@ struct Args {
     n: usize,
 }
 
-pub fn main() {
-    stderrlog::new()
-        .verbosity(2)
-        .timestamp(stderrlog::Timestamp::Second)
-        .init()
-        .unwrap();
+pub fn main() -> Result<()> {
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .try_init()?;
 
     let args = Args::parse();
 
@@ -89,4 +88,6 @@ pub fn main() {
         }
         pl.done_with_count(args.n);
     }
+
+    Ok(())
 }

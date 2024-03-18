@@ -4,6 +4,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
+#![cfg(feature = "cli")]
 
 use anyhow::{bail, Result};
 use clap::Parser;
@@ -70,11 +71,9 @@ fn compress<
 }
 
 fn main() -> Result<()> {
-    stderrlog::new()
-        .verbosity(2)
-        .timestamp(stderrlog::Timestamp::Second)
-        .init()
-        .unwrap();
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .try_init()?;
 
     let args = Args::parse();
 

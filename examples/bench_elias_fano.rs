@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
 use mem_dbg::DbgFlags;
@@ -36,12 +37,10 @@ struct Args {
     repeats: usize,
 }
 
-fn main() {
-    stderrlog::new()
-        .verbosity(2)
-        .timestamp(stderrlog::Timestamp::Second)
-        .init()
-        .unwrap();
+fn main() -> Result<()> {
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .try_init()?;
 
     let args = Args::parse();
     let mut values = Vec::with_capacity(args.n);
@@ -53,14 +52,14 @@ fn main() {
     // Build Elias-Fano
     let mut elias_fano_builder = EliasFanoBuilder::new(args.n, args.u);
     for value in &values {
-        elias_fano_builder.push(*value).unwrap();
+        elias_fano_builder.push(*value)?;
     }
 
     // Frequency of ones in the inventory for one-level index
     const FIXED1_LOG2_ONES_PER_INVENTORY: usize = 8;
     // Add an index on ones
     let elias_fano_q: EliasFano<SelectFixed1<_, _, FIXED1_LOG2_ONES_PER_INVENTORY>> =
-        elias_fano_builder.build().convert_to().unwrap();
+        elias_fano_builder.build().convert_to()?;
     // Add an index on zeros
     let elias_fano_q: EliasFano<
         SelectZeroFixed1<
@@ -68,22 +67,20 @@ fn main() {
             _,
             FIXED1_LOG2_ONES_PER_INVENTORY,
         >,
-    > = elias_fano_q.convert_to().unwrap();
+    > = elias_fano_q.convert_to()?;
 
-    elias_fano_q
-        .mem_dbg(DbgFlags::default() | DbgFlags::PERCENTAGE)
-        .unwrap();
+    elias_fano_q.mem_dbg(DbgFlags::default() | DbgFlags::PERCENTAGE)?;
 
     let mut elias_fano_builder = EliasFanoBuilder::new(args.n, args.u);
     for value in &values {
-        elias_fano_builder.push(*value).unwrap();
+        elias_fano_builder.push(*value)?;
     }
     const FIXED2_LOG2_ONES_PER_INVENTORY: usize = 10;
     const FIXED2_LOG2_U64_PER_INVENTORY: usize = 2;
     // Add an index on ones
     let elias_fano_s: EliasFano<
         SelectFixed2<_, _, FIXED2_LOG2_ONES_PER_INVENTORY, FIXED2_LOG2_U64_PER_INVENTORY>,
-    > = elias_fano_builder.build().convert_to().unwrap();
+    > = elias_fano_builder.build().convert_to()?;
     // Add an index on zeros
     let elias_fano_s: EliasFano<
         SelectZeroFixed2<
@@ -92,12 +89,10 @@ fn main() {
             FIXED2_LOG2_ONES_PER_INVENTORY,
             FIXED2_LOG2_U64_PER_INVENTORY,
         >,
-    > = elias_fano_s.convert_to().unwrap();
+    > = elias_fano_s.convert_to()?;
 
     println!();
-    elias_fano_s
-        .mem_dbg(DbgFlags::default() | DbgFlags::PERCENTAGE)
-        .unwrap();
+    elias_fano_s.mem_dbg(DbgFlags::default() | DbgFlags::PERCENTAGE)?;
 
     let mut ranks = Vec::with_capacity(args.t);
     for _ in 0..args.t {
@@ -235,4 +230,6 @@ fn main() {
         }
         pl.done_with_count(args.n);
     }
+
+    Ok(())
 }
