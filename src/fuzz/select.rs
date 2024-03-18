@@ -27,8 +27,8 @@ pub fn harness(mut data: Data) {
 
     let number_of_ones = bitvec.count_ones();
 
-    let quantum = <QuantumIndex<_, _, 8>>::new(&bitvec, number_of_ones).unwrap();
-    let simple = <SimpleSelectHalf<_, _, 10, 2>>::new(&bitvec);
+    let quantum = <SelectFixed1<_, _, 8>>::new(&bitvec, number_of_ones);
+    let simple = <SelectFixed2<_, _, 10, 2>>::new(&bitvec);
 
     for i in 0..number_of_ones {
         assert_eq!(
