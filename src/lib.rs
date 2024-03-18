@@ -9,7 +9,6 @@
 #![deny(unconditional_recursion)]
 
 pub mod bits;
-pub mod count;
 pub mod dict;
 pub mod func;
 pub mod rank_sel;
@@ -21,7 +20,6 @@ pub mod fuzz;
 
 pub mod prelude {
     pub use crate::bits::*;
-    pub use crate::count::*;
     pub use crate::dict::*;
     pub use crate::func::*;
     pub use crate::rank_sel::*;
