@@ -12,9 +12,7 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand::SeedableRng;
-use sux::prelude::BitFieldVec;
 use sux::prelude::*;
-use sux::traits::bit_field_slice::Word;
 
 #[test]
 fn test_bit_field_vec() {

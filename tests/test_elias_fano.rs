@@ -12,7 +12,6 @@ use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
 use std::sync::atomic::Ordering;
-use sux::prelude::BitFieldVec;
 use sux::prelude::*;
 
 #[test]
