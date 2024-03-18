@@ -8,8 +8,6 @@
  */
 
 use crate::prelude::*;
-use crate::traits::bit_field_slice::BitFieldSlice;
-use crate::traits::bit_field_slice::BitFieldSliceMut;
 use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;

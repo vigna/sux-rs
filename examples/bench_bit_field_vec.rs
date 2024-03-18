@@ -12,10 +12,7 @@ use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
 use std::hint::black_box;
-use sux::prelude::BitFieldVec;
 use sux::prelude::*;
-use sux::traits::bit_field_slice::BitFieldSlice;
-use sux::traits::bit_field_slice::BitFieldSliceMut;
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks compact arrays", long_about = None)]

@@ -193,9 +193,9 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     ///
     /// Returns an error if the bit width of the values in `slice` is larger than
     /// `W::BITS`.
-    pub fn from_slice<SW: Word>(slice: &impl BitFieldSlice<SW>) -> Result<Self>
+    pub fn from_slice<SW>(slice: &impl BitFieldSlice<SW>) -> Result<Self>
     where
-        SW: CastableInto<W>,
+        SW: Word + CastableInto<W>,
     {
         let mut max_len: usize = 0;
         for i in 0..slice.len() {
