@@ -26,11 +26,9 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    stderrlog::new()
-        .verbosity(2)
-        .timestamp(stderrlog::Timestamp::Second)
-        .init()
-        .unwrap();
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .try_init()?;
 
     let mut pl = ProgressLogger::default();
 
