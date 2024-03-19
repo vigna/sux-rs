@@ -11,9 +11,12 @@ Basic traits for succinct operations on bit vectors, including [`Rank`] and [`Se
 
 */
 
+use impl_tools::autoimpl;
+
 /// A trait for succinct data structures that expose the
 /// length of the underlying bit vector.
 #[allow(clippy::len_without_is_empty)]
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait BitLength {
     /// Return the length in bits of the underlying bit vector.
     fn len(&self) -> usize;
@@ -21,12 +24,14 @@ pub trait BitLength {
 
 /// A trait for succinct data structures that expose the
 /// numer of ones of the underlying bit vector.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait BitCount {
     /// Return the number of ones in the underlying bit vector.
     fn count(&self) -> usize;
 }
 
 /// Rank over a bit vector.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait Rank: BitLength {
     /// Return the number of ones preceding the specified position.
     fn rank(&self, pos: usize) -> usize {
@@ -42,6 +47,7 @@ pub trait Rank: BitLength {
 }
 
 /// Rank zeros over a bit vector.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait RankZero: Rank {
     /// Return the number of zeros preceding the specified position.
     fn rank_zero(&self, pos: usize) -> usize {
@@ -61,6 +67,7 @@ pub trait RankZero: Rank {
 ///
 /// This trait is used to implement fast ranking by adding to bit vectors
 /// counters of different kind.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait RankHinted<const HINT_BIT_SIZE: usize> {
     /// Return the number of ones preceding the specified position,
     /// provided a preceding position and its associated rank.
@@ -80,6 +87,7 @@ pub trait RankHinted<const HINT_BIT_SIZE: usize> {
 }
 
 /// Select over a bit vector.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait Select: BitCount {
     /// Return the position of the one of given rank, or `None` if no such
     /// bit exist.
@@ -100,6 +108,7 @@ pub trait Select: BitCount {
 }
 
 /// Select zeros over a bit vector.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait SelectZero: BitLength + BitCount {
     /// Return the position of the zero of given rank, or `None` if no such
     /// bit exist.
@@ -125,6 +134,7 @@ pub trait SelectZero: BitLength + BitCount {
 /// indices of different kind. For example,
 /// [`SelectFixed1`](crate::rank_sel::SelectFixed1) adds hints
 /// for the positions of ones at fixed intervals.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait SelectHinted {
     /// Select the one of given rank, provided the position of a preceding one
     /// and its rank.
@@ -153,6 +163,7 @@ pub trait SelectHinted {
 /// indices of different kind. For example,
 /// [`SelectZeroFixed1`](crate::rank_sel::SelectZeroFixed1) adds hints
 /// for the positions of zeros at regular intervals.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait SelectZeroHinted {
     /// Select the zero of given rank, provided the position of a preceding zero
     /// and its rank.
