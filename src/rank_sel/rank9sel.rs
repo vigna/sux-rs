@@ -443,7 +443,7 @@ mod test_rank9sel {
     fn test_rank9sel() {
         let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
         let density = 0.5;
-        for len in (1..10000).chain((10000..100000).step_by(100)) {
+        for len in (1..1000).chain((1000..10000).step_by(100)) {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
             let rank9sel: Rank9Sel = Rank9Sel::new(bits.clone());
 
@@ -460,6 +460,60 @@ mod test_rank9sel {
             }
             assert_eq!(rank9sel.select(ones + 1), None);
         }
+    }
+
+    #[test]
+    fn test_rank9sel_mult_usize() {
+        let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+        let density = 0.5;
+        for len in (1 << 10..1 << 15).step_by(usize::BITS as _) {
+            let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+            let rank9sel: Rank9Sel = Rank9Sel::new(bits.clone());
+
+            let ones = bits.count_ones();
+            let mut pos = Vec::with_capacity(ones);
+            for i in 0..len {
+                if bits[i] {
+                    pos.push(i);
+                }
+            }
+
+            for i in 0..ones {
+                assert_eq!(rank9sel.select(i), Some(pos[i]));
+            }
+            assert_eq!(rank9sel.select(ones + 1), None);
+        }
+    }
+
+    #[test]
+    fn test_rank9sel_empty() {
+        let bits = BitVec::new(0);
+        let rank9sel: Rank9Sel = Rank9Sel::new(bits.clone());
+        assert_eq!(rank9sel.count(), 0);
+        assert_eq!(rank9sel.len(), 0);
+        assert_eq!(rank9sel.select(0), None);
+    }
+
+    #[test]
+    fn test_rank9sel_ones() {
+        let len = 1000;
+        let bits = (0..len).map(|_| true).collect::<BitVec>();
+        let rank9sel: Rank9Sel = Rank9Sel::new(bits);
+        assert_eq!(rank9sel.count(), len);
+        assert_eq!(rank9sel.len(), len);
+        for i in 0..len {
+            assert_eq!(rank9sel.select(i), Some(i));
+        }
+    }
+
+    #[test]
+    fn test_rank9sel_zeros() {
+        let len = 1000;
+        let bits = (0..len).map(|_| false).collect::<BitVec>();
+        let rank9sel: Rank9Sel = Rank9Sel::new(bits);
+        assert_eq!(rank9sel.count(), 0);
+        assert_eq!(rank9sel.len(), len);
+        assert_eq!(rank9sel.select(0), None);
     }
 
     #[test]

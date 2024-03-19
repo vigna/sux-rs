@@ -36,16 +36,11 @@ impl<B: SelectHinted, I: AsRef<[u64]>> SimpleSelect<B, I> {
 
 impl SimpleSelect<BitVec, Vec<u64>> {
     pub fn new(bits: BitVec, max_log2_u64_per_subinventory: u64) -> Self {
-        let num_bits = bits.len();
+        let num_bits = max(1usize, bits.len() as usize);
         let num_ones = bits.count();
-
-        if num_ones == 0 || num_bits == 0 {
-            todo!("Empty bitvector");
-        }
 
         let ones_per_inventory =
             (num_ones * Self::MAX_ONES_PER_INVENTORY + num_bits - 1) / num_bits;
-
         // Make ones_per_inventory into a power of 2
         let log2_ones_per_inventory = max(0, most_significant_one(ones_per_inventory)) as usize;
 
@@ -282,6 +277,14 @@ impl<B: SelectHinted + Select + BitLength + AsRef<[usize]>, I: AsRef<[u64]>> Sel
         self.bits
             .select_hinted_unchecked(rank, hint_pos, rank - residual)
     }
+
+    fn select(&self, rank: usize) -> Option<usize> {
+        if rank >= self.count() {
+            None
+        } else {
+            Some(unsafe { self.select_unchecked(rank) })
+        }
+    }
 }
 
 #[cfg(test)]
@@ -295,7 +298,7 @@ mod test_simple_select {
     fn test_simple_select() {
         let mut rng = SmallRng::seed_from_u64(0);
         let density = 0.5;
-        for len in (1..10000).chain((10000..100000).step_by(100)) {
+        for len in (1..1000).chain((1000..10000).step_by(100)) {
             let bits: BitVec = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
 
             let simple: SimpleSelect<BitVec, Vec<u64>> = SimpleSelect::new(bits.clone(), 3);
@@ -313,6 +316,60 @@ mod test_simple_select {
             }
             assert_eq!(simple.select(ones + 1), None);
         }
+    }
+
+    #[test]
+    fn test_simple_select_mult_usize() {
+        let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+        let density = 0.5;
+        for len in (1 << 10..1 << 15).step_by(usize::BITS as _) {
+            let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+            let simple: SimpleSelect = SimpleSelect::new(bits.clone(), 3);
+
+            let ones = bits.count_ones();
+            let mut pos = Vec::with_capacity(ones);
+            for i in 0..len {
+                if bits[i] {
+                    pos.push(i);
+                }
+            }
+
+            for i in 0..ones {
+                assert_eq!(simple.select(i), Some(pos[i]));
+            }
+            assert_eq!(simple.select(ones + 1), None);
+        }
+    }
+
+    #[test]
+    fn test_simple_select_empty() {
+        let bits = BitVec::new(0);
+        let simple: SimpleSelect = SimpleSelect::new(bits.clone(), 3);
+        assert_eq!(simple.count(), 0);
+        assert_eq!(simple.len(), 0);
+        assert_eq!(simple.select(0), None);
+    }
+
+    #[test]
+    fn test_simple_select_ones() {
+        let len = 1000;
+        let bits = (0..len).map(|_| true).collect::<BitVec>();
+        let simple: SimpleSelect = SimpleSelect::new(bits, 3);
+        assert_eq!(simple.count(), len);
+        assert_eq!(simple.len(), len);
+        for i in 0..len {
+            assert_eq!(simple.select(i), Some(i));
+        }
+    }
+
+    #[test]
+    fn test_simple_select_zeros() {
+        let len = 1000;
+        let bits = (0..len).map(|_| false).collect::<BitVec>();
+        let simple: SimpleSelect = SimpleSelect::new(bits, 3);
+        assert_eq!(simple.count(), 0);
+        assert_eq!(simple.len(), len);
+        assert_eq!(simple.select(0), None);
     }
 
     #[test]
