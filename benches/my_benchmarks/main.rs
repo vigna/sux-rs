@@ -2,19 +2,13 @@ mod bench_rank;
 mod bench_rng_overhead;
 mod bench_select;
 
-use std::time::Duration;
-
 use bench_rank::*;
 use bench_rng_overhead::*;
 use bench_select::*;
 use criterion::Criterion;
 
 fn main() {
-    let mut criterion = Criterion::default()
-        .without_plots()
-        .warm_up_time(Duration::from_secs(1))
-        .measurement_time(Duration::from_secs(3))
-        .configure_from_args();
+    let mut criterion = Criterion::default().without_plots().configure_from_args();
 
     let filter = std::env::args().nth(1).unwrap_or_default();
     match filter.as_str() {

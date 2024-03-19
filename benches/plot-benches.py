@@ -48,8 +48,8 @@ def compare_benches(benches, compare_name):
              va='center', rotation='vertical')
 
     for i, (bench, bench_name) in enumerate(benches):
-        for d, (name, group) in enumerate(bench.groupby(["dense"])):
-            ax[0, i].plot(group["size"], group["mean"], label=f"density={float(name[0])*100}%",
+        for d, (name, group) in enumerate(bench.groupby("dense")):
+            ax[0, i].plot(group["size"], group["mean"], label=f"density={float(name)*100}%",
                           color=colors[d], marker="o", markersize=3, linewidth=1.0)
         ax[0, i].set_title(bench_name)
         ax[0, i].grid(True)
