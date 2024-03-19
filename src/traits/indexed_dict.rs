@@ -12,7 +12,7 @@ operations such as predecessor and successor.
 
 */
 
-use std::ops::Deref;
+use impl_tools::autoimpl;
 
 /**
 
@@ -31,6 +31,7 @@ We provide a blanket implementation for types that dereference to a slice of `T`
 where `T` implements [`ToOwned`].
 
 */
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait IndexedDict {
     type Input: PartialEq<Self::Output> + PartialEq + ?Sized;
     type Output: PartialEq<Self::Input> + PartialEq;
@@ -184,18 +185,169 @@ where
     ) -> (usize, Self::Output);
 }
 
-impl<T: ToOwned, S: ?Sized + Deref<Target = [T]>> IndexedDict for S
+impl<T: ToOwned> IndexedDict for [T]
 where
     T::Owned: PartialEq<T> + PartialEq,
 {
     type Input = T::Owned;
     type Output = T::Owned;
 
+    #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
-        self.deref().get_unchecked(index).to_owned()
+        self.get_unchecked(index).to_owned()
     }
 
+    #[inline(always)]
     fn len(&self) -> usize {
-        self.deref().len()
+        self.len()
+    }
+}
+
+impl<T: Succ> Succ for &T 
+where
+    T::Input: PartialOrd<T::Output> + PartialOrd,
+    T::Output: PartialOrd<T::Input> + PartialOrd,
+{
+    #[inline(always)]
+    fn succ(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        T::succ(*self, value)
+    }
+
+    #[inline(always)]
+    fn succ_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        T::succ_strict(*self, value)
+    }
+    
+    #[inline(always)]
+    unsafe fn succ_unchecked<const STRICT: bool>(
+        &self,
+        value: &Self::Input,
+    ) -> (usize, Self::Output) {
+        T::succ_unchecked::<STRICT>(*self, value)
+    }
+}
+
+impl<T: Succ> Succ for &mut T 
+where
+    T::Input: PartialOrd<T::Output> + PartialOrd,
+    T::Output: PartialOrd<T::Input> + PartialOrd,
+{
+
+    #[inline(always)]
+    fn succ(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        T::succ(*self, value)
+    }
+
+    #[inline(always)]
+    fn succ_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        T::succ_strict(*self, value)
+    }
+    
+    #[inline(always)]
+    unsafe fn succ_unchecked<const STRICT: bool>(
+        &self,
+        value: &Self::Input,
+    ) -> (usize, Self::Output) {
+        T::succ_unchecked::<STRICT>(*self, value)
+    }
+}
+
+impl<T: Succ> Succ for Box<T> 
+where
+    T::Input: PartialOrd<T::Output> + PartialOrd,
+    T::Output: PartialOrd<T::Input> + PartialOrd,
+{
+
+    #[inline(always)]
+    fn succ(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        T::succ(self, value)
+    }
+
+    #[inline(always)]
+    fn succ_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        T::succ_strict(self, value)
+    }
+    
+    #[inline(always)]
+    unsafe fn succ_unchecked<const STRICT: bool>(
+        &self,
+        value: &Self::Input,
+    ) -> (usize, Self::Output) {
+        T::succ_unchecked::<STRICT>(self, value)
+    }
+}
+
+impl<T: Pred> Pred for &T 
+where
+    T::Input: PartialOrd<T::Output> + PartialOrd,
+    T::Output: PartialOrd<T::Input> + PartialOrd,
+{
+
+    #[inline(always)]
+    fn pred(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        T::pred(*self, value)
+    }
+
+    #[inline(always)]
+    fn pred_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        T::pred_strict(*self, value)
+    }
+    
+    #[inline(always)]
+    unsafe fn pred_unchecked<const STRICT: bool>(
+        &self,
+        value: &Self::Input,
+    ) -> (usize, Self::Output) {
+        T::pred_unchecked::<STRICT>(*self, value)
+    }
+}
+
+impl<T: Pred> Pred for &mut T 
+where
+    T::Input: PartialOrd<T::Output> + PartialOrd,
+    T::Output: PartialOrd<T::Input> + PartialOrd,
+{
+
+    #[inline(always)]
+    fn pred(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        T::pred(*self, value)
+    }
+
+    #[inline(always)]
+    fn pred_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        T::pred_strict(*self, value)
+    }
+    
+    #[inline(always)]
+    unsafe fn pred_unchecked<const STRICT: bool>(
+        &self,
+        value: &Self::Input,
+    ) -> (usize, Self::Output) {
+        T::pred_unchecked::<STRICT>(*self, value)
+    }
+}
+
+impl<T: Pred> Pred for Box<T> 
+where
+    T::Input: PartialOrd<T::Output> + PartialOrd,
+    T::Output: PartialOrd<T::Input> + PartialOrd,
+{
+
+    #[inline(always)]
+    fn pred(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        T::pred(self, value)
+    }
+
+    #[inline(always)]
+    fn pred_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+        T::pred_strict(self, value)
+    }
+    
+    #[inline(always)]
+    unsafe fn pred_unchecked<const STRICT: bool>(
+        &self,
+        value: &Self::Input,
+    ) -> (usize, Self::Output) {
+        T::pred_unchecked::<STRICT>(self, value)
     }
 }
