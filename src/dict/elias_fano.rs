@@ -56,7 +56,7 @@ pub struct EliasFanoBuilder {
 
 impl EliasFanoBuilder {
     /// Create a builder for an [`EliasFano`] containing
-    /// `n` numbers smaller than `u`.
+    /// `n` numbers smaller than or equal to `u`.
     pub fn new(n: usize, u: usize) -> Self {
         let l = if u >= n {
             (u as f64 / n as f64).log2().floor() as usize
@@ -84,8 +84,8 @@ impl EliasFanoBuilder {
         if self.count == self.n {
             bail!("Too many values");
         }
-        if value >= self.u {
-            bail!("Value too large: {} >= {}", value, self.u);
+        if value > self.u {
+            bail!("Value too large: {} > {}", value, self.u);
         }
         if value < self.last_value {
             bail!(
@@ -102,7 +102,7 @@ impl EliasFanoBuilder {
 
     /// # Safety
     ///
-    /// Values passed to this function must be smaller than `u` and must be monotone.
+    /// Values passed to this function must be smaller than or equal `u` and must be monotone.
     /// Moreover, the function should not be called more than `n` times.
     pub unsafe fn push_unchecked(&mut self, value: usize) {
         let low = value & ((1 << self.l) - 1);
@@ -142,7 +142,7 @@ pub struct EliasFanoConcurrentBuilder {
 
 impl EliasFanoConcurrentBuilder {
     /// Create a builder for an [`EliasFano`] containing
-    /// `n` numbers smaller than `u`.
+    /// `n` numbers smaller than or equal to `u`.
     pub fn new(n: usize, u: usize) -> Self {
         let l = if u >= n {
             (u as f64 / n as f64).log2().floor() as usize
@@ -163,7 +163,7 @@ impl EliasFanoConcurrentBuilder {
     ///
     /// # Safety
     /// - All indices must be distinct.
-    /// - All values must be smaller than `u`.
+    /// - All values must be smaller than or equal to `u`.
     /// - All indices must be smaller than `n`.
     /// - You must call this function exactly `n` times.
     pub unsafe fn set(&self, index: usize, value: usize, order: Ordering) {
