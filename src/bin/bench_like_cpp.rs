@@ -101,8 +101,12 @@ fn main() {
     std::fs::create_dir_all("target/bench_like_cpp").unwrap();
     let mut rng = SmallRng::seed_from_u64(0);
 
+    print!("rank9sel... ");
+    std::io::stdout().flush().unwrap();
     let mut file = std::fs::File::create("target/bench_like_cpp/rank9sel.csv").unwrap();
-    for len in &LENS {
+    for (i, len) in LENS.iter().enumerate() {
+        print!("{}/{}\rrank9sel... ", i + 1, LENS.len());
+        std::io::stdout().flush().unwrap();
         for density in &DENSITIES {
             let time =
                 bench_select::<Rank9Sel>(*len as usize, numpos, *density, *density, &mut rng);
@@ -110,9 +114,14 @@ fn main() {
         }
     }
     file.flush().unwrap();
+    println!("done");
 
+    print!("simple_select... ");
+    std::io::stdout().flush().unwrap();
     let mut file = std::fs::File::create("target/bench_like_cpp/simple_select.csv").unwrap();
-    for len in &LENS {
+    for (i, len) in LENS.iter().enumerate() {
+        print!("{}/{}\rsimple_select... ", i + 1, LENS.len());
+        std::io::stdout().flush().unwrap();
         for density in &DENSITIES {
             let time =
                 bench_select::<SimpleSelect>(*len as usize, numpos, *density, *density, &mut rng);
@@ -120,9 +129,14 @@ fn main() {
         }
     }
     file.flush().unwrap();
+    println!("done");
 
+    print!("rank9sel_non_uniform... ");
+    std::io::stdout().flush().unwrap();
     let mut file = std::fs::File::create("target/bench_like_cpp/rank9sel_non_uniform.csv").unwrap();
-    for len in &LENS {
+    for (i, len) in LENS.iter().enumerate() {
+        print!("{}/{}\rrank9sel_non_uniform... ", i + 1, LENS.len());
+        std::io::stdout().flush().unwrap();
         for density in &DENSITIES {
             let density0 = *density * 0.01;
             let density1 = *density * 0.99;
@@ -132,10 +146,15 @@ fn main() {
         }
     }
     file.flush().unwrap();
+    println!("done");
 
+    print!("simple_select_non_uniform... ");
+    std::io::stdout().flush().unwrap();
     let mut file =
         std::fs::File::create("target/bench_like_cpp/simple_select_non_uniform.csv").unwrap();
-    for len in &LENS {
+    for (i, len) in LENS.iter().enumerate() {
+        print!("{}/{}\rsimple_select_non_uniform... ", i + 1, LENS.len());
+        std::io::stdout().flush().unwrap();
         for density in &DENSITIES {
             let density0 = *density * 0.01;
             let density1 = *density * 0.99;
@@ -145,4 +164,5 @@ fn main() {
         }
     }
     file.flush().unwrap();
+    println!("done");
 }
