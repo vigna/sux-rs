@@ -188,7 +188,7 @@ impl<const HINT_BIT_SIZE: usize>
                             break 'outer;
                         }
 
-                        word ^= 1usize << in_word_index;
+                        word &= word - 1;
                     }
 
                     // move to the next word and boundcheck
