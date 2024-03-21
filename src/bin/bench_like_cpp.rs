@@ -97,7 +97,7 @@ fn bench_select<S: SelStruct<BitVec>>(
 }
 
 fn main() {
-    let numpos = 10;
+    let numpos = 70_000_000;
     std::fs::create_dir_all("target/bench_like_cpp").unwrap();
     let mut rng = SmallRng::seed_from_u64(0);
 
