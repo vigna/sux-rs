@@ -25,6 +25,8 @@ const DENSITIES: [f64; 3] = [0.25, 0.5, 0.75];
 
 const REPEATS: usize = 10;
 
+const NUMPOS: usize = 70_000_000;
+
 trait SelStruct<B>: Select {
     fn new(bits: B) -> Self;
 }
@@ -72,97 +74,64 @@ fn bench_select<S: SelStruct<BitVec>>(
     let mut u: u64 = 0;
 
     let begin = std::time::Instant::now();
-    for _ in 0..REPEATS {
-        for _ in 0..numpos {
-            u ^= if u & 1 != 0 {
-                unsafe {
-                    sel.select_unchecked(
-                        (num_ones_first_half + remap128(rng.gen::<u64>(), num_ones_second_half))
-                            as usize,
-                    ) as u64
-                }
-            } else {
-                unsafe {
-                    sel.select_unchecked((remap128(rng.gen::<u64>(), num_ones_first_half)) as usize)
-                        as u64
-                }
-            };
-        }
+    for _ in 0..numpos {
+        u ^= if u & 1 != 0 {
+            unsafe {
+                sel.select_unchecked(
+                    (num_ones_first_half + remap128(rng.gen::<u64>(), num_ones_second_half))
+                        as usize,
+                ) as u64
+            }
+        } else {
+            unsafe {
+                sel.select_unchecked((remap128(rng.gen::<u64>(), num_ones_first_half)) as usize)
+                    as u64
+            }
+        };
     }
     let elapsed = begin.elapsed().as_nanos();
-    let secs = elapsed as f64 / 1E9;
     black_box(u);
 
-    1E9 * secs / (REPEATS * numpos) as f64
+    elapsed as f64 / numpos as f64
+}
+
+fn bench_select_batch<S: SelStruct<BitVec>>(rng: &mut SmallRng, sel_name: &str, uniform: bool) {
+    print!("{}... ", sel_name);
+    std::io::stdout().flush().unwrap();
+    let mut file =
+        std::fs::File::create(format!("target/bench_like_cpp/{}.csv", sel_name)).unwrap();
+    for (i, len) in LENS.iter().enumerate() {
+        for (j, density) in DENSITIES.iter().enumerate() {
+            print!(
+                "{}/{}\r{}... ",
+                i * DENSITIES.len() + j + 1,
+                LENS.len() * DENSITIES.len(),
+                sel_name
+            );
+            std::io::stdout().flush().unwrap();
+            let (density0, density1) = if uniform {
+                (*density, *density)
+            } else {
+                (*density * 0.01, *density * 0.99)
+            };
+            let mut time = 0f64;
+            for _ in 0..REPEATS {
+                time += bench_select::<S>(*len as usize, NUMPOS, density0, density1, rng);
+            }
+            time /= REPEATS as f64;
+            writeln!(file, "{}, {}, {}", len, density, time).unwrap();
+        }
+    }
+    file.flush().unwrap();
+    println!("\r{}... done        ", sel_name);
 }
 
 fn main() {
-    let numpos = 70_000_000;
     std::fs::create_dir_all("target/bench_like_cpp").unwrap();
     let mut rng = SmallRng::seed_from_u64(0);
 
-    print!("rank9sel... ");
-    std::io::stdout().flush().unwrap();
-    let mut file = std::fs::File::create("target/bench_like_cpp/rank9sel.csv").unwrap();
-    for (i, len) in LENS.iter().enumerate() {
-        print!("{}/{}\rrank9sel... ", i + 1, LENS.len());
-        std::io::stdout().flush().unwrap();
-        for density in &DENSITIES {
-            let time =
-                bench_select::<Rank9Sel>(*len as usize, numpos, *density, *density, &mut rng);
-            writeln!(file, "{}, {}, {}", len, density, time).unwrap();
-        }
-    }
-    file.flush().unwrap();
-    println!("done");
-
-    print!("simple_select... ");
-    std::io::stdout().flush().unwrap();
-    let mut file = std::fs::File::create("target/bench_like_cpp/simple_select.csv").unwrap();
-    for (i, len) in LENS.iter().enumerate() {
-        print!("{}/{}\rsimple_select... ", i + 1, LENS.len());
-        std::io::stdout().flush().unwrap();
-        for density in &DENSITIES {
-            let time =
-                bench_select::<SimpleSelect>(*len as usize, numpos, *density, *density, &mut rng);
-            writeln!(file, "{}, {}, {}", len, density, time).unwrap();
-        }
-    }
-    file.flush().unwrap();
-    println!("done");
-
-    print!("rank9sel_non_uniform... ");
-    std::io::stdout().flush().unwrap();
-    let mut file = std::fs::File::create("target/bench_like_cpp/rank9sel_non_uniform.csv").unwrap();
-    for (i, len) in LENS.iter().enumerate() {
-        print!("{}/{}\rrank9sel_non_uniform... ", i + 1, LENS.len());
-        std::io::stdout().flush().unwrap();
-        for density in &DENSITIES {
-            let density0 = *density * 0.01;
-            let density1 = *density * 0.99;
-            let time =
-                bench_select::<Rank9Sel>(*len as usize, numpos, density0, density1, &mut rng);
-            writeln!(file, "{}, {}, {}", len, density, time).unwrap();
-        }
-    }
-    file.flush().unwrap();
-    println!("done");
-
-    print!("simple_select_non_uniform... ");
-    std::io::stdout().flush().unwrap();
-    let mut file =
-        std::fs::File::create("target/bench_like_cpp/simple_select_non_uniform.csv").unwrap();
-    for (i, len) in LENS.iter().enumerate() {
-        print!("{}/{}\rsimple_select_non_uniform... ", i + 1, LENS.len());
-        std::io::stdout().flush().unwrap();
-        for density in &DENSITIES {
-            let density0 = *density * 0.01;
-            let density1 = *density * 0.99;
-            let time =
-                bench_select::<SimpleSelect>(*len as usize, numpos, density0, density1, &mut rng);
-            writeln!(file, "{}, {}, {}", len, density, time).unwrap();
-        }
-    }
-    file.flush().unwrap();
-    println!("done");
+    bench_select_batch::<SimpleSelect>(&mut rng, "simple_select", true);
+    bench_select_batch::<SimpleSelect>(&mut rng, "simple_select_non_uniform", false);
+    bench_select_batch::<Rank9Sel>(&mut rng, "rank9sel", true);
+    bench_select_batch::<Rank9Sel>(&mut rng, "rank9sel_non_uniform", false);
 }
