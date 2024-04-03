@@ -99,8 +99,11 @@ mod test_rank11 {
     #[test]
     fn test_rank11() {
         let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+        let lens = (1..1000)
+            .chain((10_000..100_000).step_by(1000))
+            .chain((100_000..1_000_000).step_by(100_000));
         let density = 0.5;
-        for len in (1000..100000).step_by(100) {
+        for len in lens {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
             let rank11: Rank11 = Rank11::new(bits.clone());
 

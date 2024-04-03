@@ -496,7 +496,7 @@ mod test_rank9sel {
 
     #[test]
     fn test_rank9sel_ones() {
-        let len = 1000;
+        let len = 300_000;
         let bits = (0..len).map(|_| true).collect::<BitVec>();
         let rank9sel: Rank9Sel = Rank9Sel::new(bits);
         assert_eq!(rank9sel.count(), len);
@@ -508,7 +508,7 @@ mod test_rank9sel {
 
     #[test]
     fn test_rank9sel_zeros() {
-        let len = 1000;
+        let len = 300_000;
         let bits = (0..len).map(|_| false).collect::<BitVec>();
         let rank9sel: Rank9Sel = Rank9Sel::new(bits);
         assert_eq!(rank9sel.count(), 0);
@@ -517,8 +517,24 @@ mod test_rank9sel {
     }
 
     #[test]
+    fn test_rank9sel_one_per_inventory() {
+        let len = 1 << 18;
+        for num_ones in [1, 2, 4, 8] {
+            let bits = (0..len)
+                .map(|i| i % (len / num_ones) == 0)
+                .collect::<BitVec>();
+            let simple: Rank9Sel = Rank9Sel::new(bits);
+            assert_eq!(simple.count(), num_ones);
+            assert_eq!(simple.len(), len);
+            for i in 0..num_ones {
+                assert_eq!(simple.select(i), Some(i * (len / num_ones)));
+            }
+        }
+    }
+
+    #[test]
     fn test_rank9sel_non_uniform() {
-        let lens = 1000..10000;
+        let lens = [1 << 18, 1 << 19, 1 << 20, 1 << 25];
 
         let mut rng = SmallRng::seed_from_u64(0);
         for len in lens {
@@ -576,7 +592,7 @@ mod test_rank9sel {
                 let rank9sel: Rank9Sel = Rank9Sel::new(bits);
 
                 for i in 0..(ones) {
-                    assert!(rank9sel.select(i) == Some(pos[i]), "i = {}", i);
+                    assert!(rank9sel.select(i) == Some(pos[i]));
                 }
                 assert_eq!(rank9sel.select(ones + 1), None);
             }
