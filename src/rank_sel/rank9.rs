@@ -104,12 +104,11 @@ mod test_rank9 {
     #[test]
     fn test_rank9() {
         let mut rng = SmallRng::seed_from_u64(0);
-        let density = 0.5;
-        for len in (1..1000)
+        let lens = (1..1000)
             .chain((10_000..100_000).step_by(1000))
-            .chain((100_000..1_000_000).step_by(10_000))
-            .chain((1_000_000..10_000_000).step_by(100_000))
-        {
+            .chain((100_000..1_000_000).step_by(100_000));
+        let density = 0.5;
+        for len in lens {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
             let rank9: Rank9 = Rank9::new(bits.clone());
 

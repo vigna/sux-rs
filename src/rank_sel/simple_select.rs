@@ -141,9 +141,7 @@ impl SimpleSelect<BitVec, Vec<u64>> {
             if span <= u16::MAX as u64 {
                 quantum = ones_per_sub16;
             } else {
-                quantum = ones_per_sub64;
-            }
-            if span > u16::MAX as u64 && ones_per_sub64 != 1 {
+                quantum = 1;
                 inventory[start_idx] |= 1u64 << 63;
                 inventory[start_idx + 1] = spilled as u64;
             }
@@ -152,7 +150,11 @@ impl SimpleSelect<BitVec, Vec<u64>> {
 
             // the first subinventory element is always 0
             let mut subinventory_idx = 1;
-            next_quantum += quantum;
+
+            // pre increment the next quantum only when using the subinventories
+            if span <= u16::MAX as u64 || ones_per_sub64 == 1 {
+                next_quantum += quantum;
+            }
 
             'outer: loop {
                 let ones_in_word = word.count_ones() as usize;
@@ -165,6 +167,9 @@ impl SimpleSelect<BitVec, Vec<u64>> {
                     let in_word_index = word.select_in_word(next_quantum - number_of_ones);
                     // compute the global index of the quantum bit in the bitvec
                     let bit_index = (word_idx * u64::BITS as u64) + in_word_index as u64;
+                    if bit_index >= end_bit_idx as u64 {
+                        break 'outer;
+                    }
                     // compute the offset of the quantum bit
                     // from the start of the subinventory
                     let sub_offset = bit_index - start_bit_idx;
@@ -174,18 +179,22 @@ impl SimpleSelect<BitVec, Vec<u64>> {
                             unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
 
                         subinventory[subinventory_idx] = sub_offset as u16;
-                    } else if ones_per_sub64 == 1 {
-                        inventory[start_idx + 1 + subinventory_idx] = bit_index;
                     } else {
-                        assert!(spilled < exact_spill_size);
-                        exact_spill[spilled] = bit_index;
-                        spilled += 1;
+                        if ones_per_sub64 == 1 {
+                            inventory[start_idx + subinventory_idx] = bit_index;
+                        } else {
+                            assert!(spilled < exact_spill_size);
+                            exact_spill[spilled] = bit_index;
+                            spilled += 1;
+                        }
                     }
 
-                    // update the subinventory index and the next quantum
-                    subinventory_idx += 1;
-                    if subinventory_idx == (1 << log2_ones_per_inventory) / quantum {
-                        break 'outer;
+                    // update the subinventory index if used
+                    if span <= u16::MAX as u64 || ones_per_sub64 == 1 {
+                        subinventory_idx += 1;
+                        if subinventory_idx == (1 << log2_ones_per_inventory) / quantum {
+                            break 'outer;
+                        }
                     }
 
                     next_quantum += quantum;
@@ -203,6 +212,8 @@ impl SimpleSelect<BitVec, Vec<u64>> {
                 word = bits.as_ref()[word_idx as usize];
             }
         });
+
+        assert_eq!(spilled, exact_spill_size);
 
         Self {
             bits,
@@ -296,9 +307,10 @@ mod test_simple_select {
 
     #[test]
     fn test_simple_select() {
+        let lens = (100_000..1_000_000).step_by(100_000);
         let mut rng = SmallRng::seed_from_u64(0);
         let density = 0.5;
-        for len in (1..1000).chain((1000..10000).step_by(100)) {
+        for len in lens {
             let bits: BitVec = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
 
             let simple: SimpleSelect<BitVec, Vec<u64>> = SimpleSelect::new(bits.clone(), 3);
@@ -352,7 +364,7 @@ mod test_simple_select {
 
     #[test]
     fn test_simple_select_ones() {
-        let len = 1000;
+        let len = 300_000;
         let bits = (0..len).map(|_| true).collect::<BitVec>();
         let simple: SimpleSelect = SimpleSelect::new(bits, 3);
         assert_eq!(simple.count(), len);
@@ -364,7 +376,7 @@ mod test_simple_select {
 
     #[test]
     fn test_simple_select_zeros() {
-        let len = 1000;
+        let len = 300_000;
         let bits = (0..len).map(|_| false).collect::<BitVec>();
         let simple: SimpleSelect = SimpleSelect::new(bits, 3);
         assert_eq!(simple.count(), 0);
@@ -373,8 +385,47 @@ mod test_simple_select {
     }
 
     #[test]
+    fn test_simple_select_few_ones() {
+        let lens = [1 << 18, 1 << 19, 1 << 20];
+        for len in lens {
+            for num_ones in [1, 2, 4, 8, 16, 32, 64, 128, 256] {
+                let bits = (0..len)
+                    .map(|i| i % (len / num_ones) == 0)
+                    .collect::<BitVec>();
+                let simple: SimpleSelect = SimpleSelect::new(bits, 3);
+                assert_eq!(simple.count(), num_ones);
+                assert_eq!(simple.len(), len);
+                for i in 0..num_ones {
+                    assert_eq!(simple.select(i), Some(i * (len / num_ones)));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_simple_select_ones_per_sub64() {
+        let len = 1 << 18;
+        let bits = (0..len / 2)
+            .map(|_| false)
+            .chain([true])
+            .chain((0..1 << 17).map(|_| false))
+            .chain([true, true])
+            .chain((0..1 << 18).map(|_| false))
+            .chain([true])
+            .chain((0..len / 2).map(|_| false))
+            .collect::<BitVec>();
+        let simple: SimpleSelect = SimpleSelect::new(bits, 3);
+
+        assert_eq!(simple.ones_per_sub64, 1);
+        assert_eq!(simple.count(), 4);
+        assert_eq!(simple.select(0), Some(len / 2));
+        assert_eq!(simple.select(1), Some(len / 2 + (1 << 17) + 1));
+        assert_eq!(simple.select(2), Some(len / 2 + (1 << 17) + 2));
+    }
+
+    #[test]
     fn test_simple_non_uniform() {
-        let lens = 1000..10000;
+        let lens = [1 << 18, 1 << 19, 1 << 20, 1 << 25];
 
         let mut rng = SmallRng::seed_from_u64(0);
         for len in lens {
@@ -430,9 +481,8 @@ mod test_simple_select {
                 }
 
                 let simple: SimpleSelect = SimpleSelect::new(bits, 3);
-
                 for i in 0..(ones) {
-                    assert!(simple.select(i) == Some(pos[i]), "i = {}", i);
+                    assert_eq!(simple.select(i), Some(pos[i]));
                 }
                 assert_eq!(simple.select(ones + 1), None);
             }
