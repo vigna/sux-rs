@@ -662,39 +662,103 @@ pub struct BitFieldVecIterator<'a, W, B>
 where
     W: Word,
 {
-    unchecked: BitFieldVectorUncheckedIterator<'a, W, B>,
-    index: usize,
+    directed: BitFieldVectorUncheckedIterator<'a, W, B>,
+    reversed: BitFieldVectorReverseUncheckedIterator<'a, W, B>,
+    start: usize,
+    end: usize
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, B> {
-    fn new(vec: &'a BitFieldVec<W, B>, from: usize) -> Self {
-        if from > vec.len() {
-            panic!("Start index out of bounds: {} > {}", from, vec.len());
+    /// Create a new iterator over the values of a [`BitFieldVec`].
+    /// 
+    /// # Arguments
+    /// * `vec` - The vector to iterate over.
+    /// * `start` - The index of the first element to return.
+    /// * `end` - The index of the last element to return.
+    /// 
+    /// # Panics
+    /// * If `start` is greater than the length of the vector.
+    /// * If `end` is greater than the length of the vector.
+    fn from_range(vec: &'a BitFieldVec<W, B>, start: usize, end: usize) -> Self {
+        if start > vec.len() {
+            panic!("Start index out of bounds: {} > {}", start, vec.len());
+        }
+        if end > vec.len() {
+            panic!("End index out of bounds: {} > {}", end, vec.len());
         }
         Self {
-            unchecked: BitFieldVectorUncheckedIterator::new(vec, from),
-            index: from,
+            directed: BitFieldVectorUncheckedIterator::new(vec, start),
+            reversed: BitFieldVectorReverseUncheckedIterator::new(vec, end),
+            start,
+            end,
         }
+    }
+
+    /// Create a new iterator over the values of a [`BitFieldVec`], starting from the beginning.
+    /// 
+    /// # Arguments
+    /// * `vec` - The vector to iterate over.
+    /// * `end` - The index of the last element to return.
+    /// 
+    /// # Panics
+    /// * If `end` is greater than the length of the vector.
+    fn from_start(vec: &'a BitFieldVec<W, B>, start: usize) -> Self {
+        Self::from_range(vec, start, vec.len())
+    }
+
+    /// Create a new iterator over the values of a [`BitFieldVec`], ending at the end.
+    /// 
+    /// # Arguments
+    /// * `vec` - The vector to iterate over.
+    /// * `end` - The index of the last element to return.
+    /// 
+    /// # Panics
+    /// * If `end` is greater than the length of the vector.
+    fn from_end(vec: &'a BitFieldVec<W, B>, end: usize) -> Self {
+        Self::from_range(vec, 0, end)
+    }
+}
+
+impl<'a, W: Word, B: AsRef<[W]>> From<&'a BitFieldVec<W, B>> for BitFieldVecIterator<'a, W, B> {
+    fn from(vec: &'a BitFieldVec<W, B>) -> Self {
+        BitFieldVecIterator::from_range(vec, 0, vec.len())
     }
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, B> {
     type Item = W;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.unchecked.vec.len() {
-            // SAFETY: index has just been checked.
-            let res = unsafe { self.unchecked.next_unchecked() };
-            self.index += 1;
-            Some(res)
-        } else {
-            None
+        if self.start >= self.end {
+            return None;
         }
+
+        // SAFETY: index has just been checked.
+        let res = unsafe { self.directed.next_unchecked() };
+        self.start += 1;
+        Some(res)
+    }
+}
+
+impl<'a, W: Word, B: AsRef<[W]>> DoubleEndedIterator for BitFieldVecIterator<'a, W, B> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.start >= self.end {
+            return None;
+        }
+
+        // SAFETY: index has just been checked.
+        let res = unsafe { self.reversed.next_unchecked() };
+        self.end -= 1;
+        Some(res)
     }
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'a, W, B> {
     fn len(&self) -> usize {
-        self.unchecked.vec.len() - self.index
+        // We use a saturating sub to handle the case where start > end because
+        // of peculiar initialization choices. In these cases, the behaviour is
+        // still fully defined i.e. the iterator will return None on the first
+        // call to next, so there is no need to panic.
+        self.end.saturating_sub(self.start)
     }
 }
 
@@ -703,19 +767,55 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoIterator for &'a BitFieldVec<W, B> {
     type IntoIter = BitFieldVecIterator<'a, W, B>;
 
     fn into_iter(self) -> Self::IntoIter {
-        BitFieldVecIterator::new(self, 0)
+        BitFieldVecIterator::from(self)
     }
 }
 
 impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
-    pub fn into_iter_from(&self, from: usize) -> BitFieldVecIterator<W, B> {
-        BitFieldVecIterator::new(self, from)
+
+    /// Create a new iterator over the values of a [`BitFieldVec`].
+    pub fn iter(&self) -> BitFieldVecIterator<W, B> {
+        BitFieldVecIterator::from(self)
+    }
+
+    /// Create a new iterator over the values of a [`BitFieldVec`] within given range.
+    /// 
+    /// # Arguments
+    /// * `start` - The index of the first element to return.
+    /// * `end` - The index of the last element to return.
+    /// 
+    /// # Panics
+    /// * If `start` is greater than the length of the vector.
+    /// * If `end` is greater than the length of the vector.
+    pub fn iter_range(&self, start: usize, end: usize) -> BitFieldVecIterator<W, B> {
+        BitFieldVecIterator::from_range(self, start, end)
+    }
+
+    /// Create a new iterator over the values of a [`BitFieldVec`], ending at the end.
+    /// 
+    /// # Arguments
+    /// * `end` - The index of the last element to return.
+    /// 
+    /// # Panics
+    /// * If `end` is greater than the length of the vector.
+    pub fn iter_to_end(&self, end: usize) -> BitFieldVecIterator<W, B> {
+        BitFieldVecIterator::from_end(self, end)
+    }
+
+    /// Create a new iterator over the values of a [`BitFieldVec`].
+    /// 
+    /// # Arguments
+    /// * `start` - The index of the first element to return.
+    /// 
+    /// # Panics
+    /// * If `start` is greater than the length of the vector.
+    pub fn iter_from_start(&self, start: usize) -> BitFieldVecIterator<W, B> {
+        BitFieldVecIterator::from_start(self, start)
     }
 }
 
 impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, B> {
     // We reimplement set as we have the mask in the structure.
-
     fn reset(&mut self) {
         for idx in 0..self.len() {
             unsafe { self.set_unchecked(idx, W::ZERO) };
