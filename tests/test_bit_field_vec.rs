@@ -73,7 +73,7 @@ fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
             }
 
             for from in 0..cp.len() {
-                for (i, v) in cp.into_iter_from(from).enumerate() {
+                for (i, v) in cp.iter_from(from).enumerate() {
                     assert_eq!(v, values[i + from]);
                 }
             }

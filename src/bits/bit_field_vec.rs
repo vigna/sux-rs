@@ -708,8 +708,12 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoIterator for &'a BitFieldVec<W, B> {
 }
 
 impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
-    pub fn into_iter_from(&self, from: usize) -> BitFieldVecIterator<W, B> {
+    pub fn iter_from(&self, from: usize) -> BitFieldVecIterator<W, B> {
         BitFieldVecIterator::new(self, from)
+    }
+
+    pub fn iter(&self) -> BitFieldVecIterator<W, B> {
+        self.iter_from(0)
     }
 }
 
