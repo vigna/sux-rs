@@ -152,7 +152,7 @@ impl SimpleSelect<BitVec, Vec<u64>> {
             let mut subinventory_idx = 1;
 
             // pre increment the next quantum only when using the subinventories
-            if span <= u16::MAX as u64 || ones_per_sub64 == 1 {
+            if span <= u16::MAX as u64 {
                 next_quantum += quantum;
             }
 
@@ -179,18 +179,14 @@ impl SimpleSelect<BitVec, Vec<u64>> {
                             unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
 
                         subinventory[subinventory_idx] = sub_offset as u16;
-                    } else {
-                        if ones_per_sub64 == 1 {
-                            inventory[start_idx + subinventory_idx] = bit_index;
-                        } else {
-                            assert!(spilled < exact_spill_size);
-                            exact_spill[spilled] = bit_index;
-                            spilled += 1;
-                        }
+                    } else if ones_per_sub64 != 1 {
+                        assert!(spilled < exact_spill_size);
+                        exact_spill[spilled] = bit_index;
+                        spilled += 1;
                     }
 
                     // update the subinventory index if used
-                    if span <= u16::MAX as u64 || ones_per_sub64 == 1 {
+                    if span <= u16::MAX as u64 {
                         subinventory_idx += 1;
                         if subinventory_idx == (1 << log2_ones_per_inventory) / quantum {
                             break 'outer;
@@ -260,13 +256,9 @@ impl<B: SelectHinted + Select + BitLength + AsRef<[usize]>, I: AsRef<[u64]>> Sel
         let inventory_rank = *inventory_ref.get_unchecked(inventory_start_pos) as usize;
         let subrank = rank & self.ones_per_inventory_mask;
 
-        if subrank == 0 {
-            return inventory_rank & !(1usize << 63);
-        }
-
         if (inventory_rank as isize) < 0 {
-            if self.ones_per_sub64 == 1 {
-                return *inventory_ref.get_unchecked(inventory_start_pos + 1 + subrank) as usize;
+            if subrank == 0 {
+                return inventory_rank & !(1usize << 63);
             }
             debug_assert!(
                 *inventory_ref.get_unchecked(inventory_start_pos + 1) as usize + subrank
