@@ -800,7 +800,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     /// 
     /// # Panics
     /// * If `end` is greater than the length of the vector.
-    pub fn iter_to_end(&self, end: usize) -> BitFieldVecIterator<W, B> {
+    pub fn iter_to(&self, end: usize) -> BitFieldVecIterator<W, B> {
         BitFieldVecIterator::from_end(self, end)
     }
 
@@ -811,10 +811,9 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     /// 
     /// # Panics
     /// * If `start` is greater than the length of the vector.
-    pub fn iter_from_start(&self, start: usize) -> BitFieldVecIterator<W, B> {
+    pub fn iter_from(&self, start: usize) -> BitFieldVecIterator<W, B> {
         BitFieldVecIterator::from_start(self, start)
     }
-
 }
 
 impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, B> {
