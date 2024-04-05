@@ -63,8 +63,18 @@ fn test_elias_fano() -> Result<()> {
         // Add the ones indices
         let ef: EliasFano<SelectFixed1> = ef.convert_to().unwrap();
 
-        for (i, v) in values.iter().enumerate() {
-            assert_eq!(ef.get(i), *v);
+        for v in 0..u {
+            let res = values.binary_search(&v);
+            let contains = res.is_ok();
+            assert_eq!(ef.contains(&v), contains);
+
+            if contains {
+                let i = res.unwrap();
+                assert_eq!(ef.get(i), v);
+                assert_eq!(ef.get(ef.index_of(&v).unwrap()), v);
+            } else {
+                assert_eq!(ef.index_of(&v), None);
+            }
         }
 
         // Add the indices
