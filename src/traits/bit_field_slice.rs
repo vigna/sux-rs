@@ -232,6 +232,7 @@ where
 /// An [`Iterator`] implementation returning the elements of a [`BitFieldSlice`].
 ///
 /// You can easily implement [`IntoIterator`] on a reference to your type using this structure.
+#[derive(Debug, Clone)]
 pub struct BitFieldSliceIterator<'a, W: Word, B: BitFieldSlice<W>> {
     slice: &'a B,
     index: usize,

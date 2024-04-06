@@ -507,6 +507,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
 // Support for unchecked iterators
 
 /// An [`UncheckedIterator`] over the values of a [`BitFieldVec`].
+#[derive(Debug, Clone)]
 pub struct BitFieldVectorUncheckedIterator<'a, W, B>
 where
     W: Word,
@@ -581,6 +582,7 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedIterator for &'a BitFieldVec<W, B>
 }
 
 /// An [`UncheckedIterator`] moving backwards over the values of a [`BitFieldVec`].
+#[derive(Debug, Clone)]
 pub struct BitFieldVectorReverseUncheckedIterator<'a, W: Word, B> {
     vec: &'a BitFieldVec<W, B>,
     word_index: usize,
@@ -658,6 +660,7 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoReverseUncheckedIterator for &'a BitFieldVe
 }
 
 /// An [`Iterator`] over the values of a [`BitFieldVec`].
+#[derive(Debug, Clone)]
 pub struct BitFieldVecIterator<'a, W, B>
 where
     W: Word,
@@ -772,7 +775,6 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoIterator for &'a BitFieldVec<W, B> {
 }
 
 impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
-
     /// Create a new iterator over the values of a [`BitFieldVec`].
     pub fn iter(&self) -> BitFieldVecIterator<W, B> {
         BitFieldVecIterator::from(self)
@@ -798,7 +800,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     /// 
     /// # Panics
     /// * If `end` is greater than the length of the vector.
-    pub fn iter_to_end(&self, end: usize) -> BitFieldVecIterator<W, B> {
+    pub fn iter_to(&self, end: usize) -> BitFieldVecIterator<W, B> {
         BitFieldVecIterator::from_end(self, end)
     }
 
@@ -809,7 +811,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     /// 
     /// # Panics
     /// * If `start` is greater than the length of the vector.
-    pub fn iter_from_start(&self, start: usize) -> BitFieldVecIterator<W, B> {
+    pub fn iter_from(&self, start: usize) -> BitFieldVecIterator<W, B> {
         BitFieldVecIterator::from_start(self, start)
     }
 }

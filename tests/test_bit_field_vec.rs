@@ -73,22 +73,22 @@ fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
             }
 
             for from in 0..cp.len() {
-                for (i, v) in cp.iter_from_start(from).enumerate() {
+                for (i, v) in cp.iter_from(from).enumerate() {
                     assert_eq!(v, values[i + from]);
                 }
 
-                for (i, v) in cp.iter_to_end(from).enumerate() {
+                for (i, v) in cp.iter_to(from).enumerate() {
                     assert_eq!(v, values[i]);
                 }
 
                 // We also test the double ended iterator, i.e. we check
                 // that the values iterated backwards are the same as the
                 // values iterated forwards in reverse order.
-                for (i, v) in cp.iter_from_start(from).enumerate().rev() {
+                for (i, v) in cp.iter_from(from).enumerate().rev() {
                     assert_eq!(v, values[i + from]);
                 }
 
-                for (i, v) in cp.iter_to_end(from).enumerate().rev() {
+                for (i, v) in cp.iter_to(from).enumerate().rev() {
                     assert_eq!(v, values[i]);
                 }
             }
