@@ -44,6 +44,7 @@ use mem_dbg::*;
 /// A sequential builder for [`EliasFano`].
 ///
 /// After creating an instance, you can use [`EliasFanoBuilder::push`] to add new values.
+#[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct EliasFanoBuilder {
     u: usize,
     n: usize,
@@ -132,6 +133,7 @@ impl EliasFanoBuilder {
 /// to set the values concurrently. However, this operation is inherently
 /// unsafe as no check is performed on the provided data (e.g., duplicate
 /// indices and lack of monotonicity are not detected).
+#[derive(MemDbg, MemSize)]
 pub struct EliasFanoConcurrentBuilder {
     u: usize,
     n: usize,
@@ -412,6 +414,7 @@ where
 }
 
 /// An iterator streaming over the Elias--Fano representation.
+#[derive(MemDbg, MemSize)]
 pub struct EliasFanoIterator<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize>>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,

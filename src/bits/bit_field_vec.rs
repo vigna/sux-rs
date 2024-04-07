@@ -507,7 +507,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
 // Support for unchecked iterators
 
 /// An [`UncheckedIterator`] over the values of a [`BitFieldVec`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct BitFieldVectorUncheckedIterator<'a, W, B>
 where
     W: Word,
@@ -582,7 +582,7 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedIterator for &'a BitFieldVec<W, B>
 }
 
 /// An [`UncheckedIterator`] moving backwards over the values of a [`BitFieldVec`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct BitFieldVectorReverseUncheckedIterator<'a, W: Word, B> {
     vec: &'a BitFieldVec<W, B>,
     word_index: usize,
@@ -660,7 +660,7 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoReverseUncheckedIterator for &'a BitFieldVe
 }
 
 /// An [`Iterator`] over the values of a [`BitFieldVec`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct BitFieldVecIterator<'a, W, B>
 where
     W: Word,

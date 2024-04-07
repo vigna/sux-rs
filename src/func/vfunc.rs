@@ -59,7 +59,7 @@ a `usize` per vertex. Edges are derived on the fly from the 128-bit signatures.
 
 */
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, MemDbg, MemSize, Default)]
 struct EdgeList(usize);
 impl EdgeList {
     const DEG_SHIFT: usize = usize::BITS as usize - 16;
