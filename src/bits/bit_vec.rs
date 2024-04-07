@@ -801,6 +801,7 @@ impl FromIterator<bool> for BitVec<Vec<usize>> {
 }
 
 /// An iterator over the ones in an underlying storage.
+#[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct OnesIterator<B> {
     mem_words: B,
     word_idx: usize,
@@ -850,7 +851,7 @@ impl<B: AsRef<[usize]>> Iterator for OnesIterator<B> {
 }
 
 // Iterates over the bits as booleans.
-
+#[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct BitIterator<'a, B> {
     mem_words: &'a B,
     next_bit_pos: usize,

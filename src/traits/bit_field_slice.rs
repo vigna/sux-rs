@@ -63,6 +63,7 @@ assert_eq!(slice.get(0, Ordering::Relaxed), 1);
 */
 use common_traits::*;
 use core::sync::atomic::*;
+use mem_dbg::{MemDbg, MemSize};
 use std::marker::PhantomData;
 
 /// A derived trait that the types used as a parameter for [`BitFieldSlice`] must satisfy.
@@ -232,7 +233,7 @@ where
 /// An [`Iterator`] implementation returning the elements of a [`BitFieldSlice`].
 ///
 /// You can easily implement [`IntoIterator`] on a reference to your type using this structure.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct BitFieldSliceIterator<'a, W: Word, B: BitFieldSlice<W>> {
     slice: &'a B,
     index: usize,
