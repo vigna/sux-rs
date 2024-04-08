@@ -100,6 +100,17 @@ fn test_bit_vec() {
 }
 
 #[test]
+fn test_atomic_swap() {
+    let b = AtomicBitVec::new(10);
+    assert_eq!(b.get(1, Ordering::Relaxed), false);
+    assert_eq!(b.swap(1, true, Ordering::Relaxed), false);
+    assert_eq!(b.get(1, Ordering::Relaxed), true);
+    assert_eq!(b.swap(1, true, Ordering::Relaxed), true);
+    assert_eq!(b.swap(1, false, Ordering::Relaxed), true);
+    assert_eq!(b.get(1, Ordering::Relaxed), false);
+}
+
+#[test]
 fn test_push() {
     let mut b = BitVec::new(0);
     b.push(true);
