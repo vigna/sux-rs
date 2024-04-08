@@ -327,6 +327,11 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
         unsafe { self.set_unchecked(index, value, order) }
     }
 
+    pub fn swap(&self, index: usize, value: bool, order: Ordering) -> bool {
+        panic_if_out_of_bounds!(index, self.len);
+        unsafe { self.swap_unchecked(index, value, order) }
+    }
+
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> bool {
         let word_index = index / BITS;
         let data: &[AtomicUsize] = self.data.as_ref();
@@ -347,6 +352,23 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
             data.get_unchecked(word_index)
                 .fetch_and(!(1 << bit_index), order);
         }
+    }
+
+    #[inline(always)]
+    unsafe fn swap_unchecked(&self, index: usize, value: bool, order: Ordering) -> bool {
+        let word_index = index / BITS;
+        let bit_index = index % BITS;
+        let data: &[AtomicUsize] = self.data.as_ref();
+
+        let old_word = if value {
+            data.get_unchecked(word_index)
+                .fetch_or(1 << bit_index, order)
+        } else {
+            data.get_unchecked(word_index)
+                .fetch_and(!(1 << bit_index), order)
+        };
+
+        (old_word >> (bit_index)) & 1 != 0
     }
 
     pub fn fill(&mut self, value: bool, order: Ordering) {
