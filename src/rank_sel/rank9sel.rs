@@ -180,7 +180,7 @@ impl<const HINT_BIT_SIZE: usize>
                                 assert!(bit_index - start_bit_idx < (1 << 16));
                                 s16[subinventory_idx] = (bit_index - start_bit_idx) as u16;
                             }
-                            _ => {}
+                            _ => unreachable!(),
                         }
 
                         subinventory_idx += 1;
@@ -407,7 +407,7 @@ impl<
     }
 
     fn rank(&self, pos: usize) -> usize {
-        unsafe { self.rank_unchecked(pos.min(self.len())) }
+        self.rank9.rank(pos)
     }
 }
 
@@ -517,17 +517,19 @@ mod test_rank9sel {
     }
 
     #[test]
-    fn test_rank9sel_one_per_inventory() {
-        let len = 1 << 18;
-        for num_ones in [1, 2, 4, 8] {
-            let bits = (0..len)
-                .map(|i| i % (len / num_ones) == 0)
-                .collect::<BitVec>();
-            let simple: Rank9Sel = Rank9Sel::new(bits);
-            assert_eq!(simple.count(), num_ones);
-            assert_eq!(simple.len(), len);
-            for i in 0..num_ones {
-                assert_eq!(simple.select(i), Some(i * (len / num_ones)));
+    fn test_rank9sel_few_ones() {
+        let lens = [1 << 18, 1 << 19, 1 << 20];
+        for len in lens {
+            for num_ones in [1, 2, 4, 8, 16, 32, 64, 128, 256] {
+                let bits = (0..len)
+                    .map(|i| i % (len / num_ones) == 0)
+                    .collect::<BitVec>();
+                let rank9sel: Rank9Sel = Rank9Sel::new(bits);
+                assert_eq!(rank9sel.count(), num_ones);
+                assert_eq!(rank9sel.len(), len);
+                for i in 0..num_ones {
+                    assert_eq!(rank9sel.select(i), Some(i * (len / num_ones)));
+                }
             }
         }
     }
@@ -596,6 +598,30 @@ mod test_rank9sel {
                 }
                 assert_eq!(rank9sel.select(ones + 1), None);
             }
+        }
+    }
+
+    #[test]
+    fn test_rank9sel_rank() {
+        let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+        let density = 0.5;
+        for len in (10_000..100_000).step_by(1000) {
+            let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+            let rank9sel: Rank9Sel = Rank9Sel::new(bits.clone());
+
+            let mut ranks = Vec::with_capacity(len);
+            let mut r = 0;
+            for bit in bits.into_iter() {
+                ranks.push(r);
+                if bit {
+                    r += 1;
+                }
+            }
+
+            for i in 0..len {
+                assert_eq!(rank9sel.rank(i), ranks[i]);
+            }
+            assert_eq!(rank9sel.rank(len + 1), rank9sel.count());
         }
     }
 }

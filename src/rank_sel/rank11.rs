@@ -67,6 +67,14 @@ impl<
             hint_rank as usize,
         )
     }
+
+    fn rank(&self, pos: usize) -> usize {
+        if pos >= self.bits.len() {
+            self.counts.as_ref()[self.counts.as_ref().len() - 2] as usize
+        } else {
+            unsafe { self.rank_unchecked(pos) }
+        }
+    }
 }
 
 impl<
@@ -121,5 +129,14 @@ mod test_rank11 {
             }
             assert_eq!(rank11.rank(bits.len() + 1), bits.count_ones());
         }
+    }
+
+    #[test]
+    fn test_last() {
+        let bits = unsafe { BitVec::from_raw_parts(vec![!1usize; 1 << 16], (1 << 16) * 64) };
+
+        let rank11: Rank11 = Rank11::new(bits);
+
+        assert_eq!(rank11.rank(rank11.len()), rank11.bits.count());
     }
 }
