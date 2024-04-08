@@ -130,7 +130,7 @@ mod test_rank9 {
 
     #[test]
     fn test_last() {
-        let bits = unsafe { BitVec::from_raw_parts(vec![!1usize; 1000], 1000 * 64) };
+        let bits = unsafe { BitVec::from_raw_parts(vec![!1usize; 1 << 10], (1 << 10) * 64) };
 
         let rank9: Rank9 = Rank9::new(bits);
 

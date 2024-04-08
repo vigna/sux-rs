@@ -907,6 +907,13 @@ unsafe fn rank_hinted_unchecked<const HINT_BIT_SIZE: usize>(
     let mut rank = hint_rank;
     let mut hint_pos = hint_pos;
 
+    debug_assert!(
+        hint_pos < data.len(),
+        "hint_pos: {}, len: {}",
+        hint_pos,
+        data.len()
+    );
+
     while (hint_pos + 1) * HINT_BIT_SIZE <= pos {
         rank += data.get_unchecked(hint_pos).count_ones() as usize;
         hint_pos += 1;
