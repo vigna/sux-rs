@@ -526,7 +526,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
-    pub fn into_iter_from(&self, from: usize) -> ValueIterator<'_, D, P> {
+    pub fn iter_from(&self, from: usize) -> ValueIterator<'_, D, P> {
         ValueIterator {
             iter: Iterator::new_from(self, from),
         }
