@@ -93,20 +93,102 @@ fn mask<W: Word>(bit_width: usize) -> W {
 }
 
 impl<W: Word> BitFieldVec<W, Vec<W>> {
-    /// Create a new zero-initialized vector of given bit width and length.
-    pub fn new(bit_width: usize, len: usize) -> Self {
-        // We need at least one word to handle the case of bit width zero.
+    /// Returns a new BitFieldVec filled with `word`
+    ///
+    /// # Arguments
+    /// * `bit_width` - The bit width of the values stored in the vector.
+    /// * `len` - The length of the vector.
+    /// * `word` - The value to fill the vector with.
+    ///
+    /// # Example
+    /// In the following example, we show how to create a new BitFieldVec
+    /// filled with a given word. In this case, we create a vector with length
+    /// 10 and bit width 4, filled with the value 0b11110000. Do note that the
+    /// number of bits in the word must be equal to the bit width of the vector.
+    ///
+    /// ```rust
+    /// use sux::prelude::*;
+    /// let vec = BitFieldVec::<u8>::fill(4, 10, 0b11110000);
+    ///
+    /// assert_eq!(vec.len(), 10);
+    /// for i in 0..10 {
+    ///     if i % 2 == 0 {
+    ///         assert_eq!(vec.get(i), 0b0000);
+    ///     } else {
+    ///         assert_eq!(vec.get(i), 0b1111);
+    ///     }
+    /// }
+    /// ```
+    pub fn fill(bit_width: usize, len: usize, word: W) -> Self {
+        // we need at least two words to avoid branches in the gets
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
         Self {
-            data: vec![W::ZERO; n_of_words],
+            data: vec![word; n_of_words],
             bit_width,
             mask: mask(bit_width),
             len,
         }
     }
 
+    /// Create a new zero-initialized vector of given bit width and length.
+    ///
+    /// # Arguments
+    /// * `bit_width` - The bit width of the values stored in the vector.
+    /// * `len` - The length of the vector.
+    ///
+    /// # Example
+    /// In the following example, we show how to create a new BitFieldVec
+    /// filled with zeros. In this case, we create a vector with length 10 and
+    /// bit width 4.
+    ///
+    /// ```rust
+    /// use sux::prelude::*;
+    /// let vec = BitFieldVec::<u8>::new(4, 10);
+    ///
+    /// assert_eq!(vec.len(), 10);
+    /// for i in 0..10 {
+    ///     assert_eq!(vec.get(i), 0);
+    /// }
+    /// ```
+    pub fn new(bit_width: usize, len: usize) -> Self {
+        Self::fill(bit_width, len, W::ZERO)
+    }
+
+    /// Returns the capacity of the current vector.
+    ///
+    /// # Example
+    /// In the following example, we show how to get the capacity of a BitFieldVec.
+    /// In this case, we create a vector with capacity 10 and bit width 4. Since we
+    /// allocate a vector of words, which in this case are u64, the capacity of the
+    /// vector is not equal to 10 but 16.
+    pub fn capacity(&self) -> usize {
+        self.data.capacity() * W::BITS / self.bit_width
+    }
+
     /// Create an empty BitFieldVec that doesn't need to reallocate for up to
     /// `capacity` elements.
+    ///
+    /// # Arguments
+    /// * `bit_width` - The bit width of the values stored in the vector.
+    /// * `capacity` - The capacity of the vector.
+    ///
+    /// # Example
+    /// In the following example, we show how to create a new BitFieldVec with a
+    /// given capacity. In this case, we create a vector with capacity 10 and bit
+    /// width 4.
+    ///
+    /// ```rust
+    /// use sux::prelude::*;
+    /// let vec = BitFieldVec::<u8>::with_capacity(4, 10);
+    ///
+    /// assert_eq!(vec.len(), 0);
+    /// assert_eq!(
+    ///     vec.capacity(),
+    ///     10,
+    ///     "We expect the capacity to be 10, but got {}.",
+    ///     vec.capacity()
+    /// );
+    /// ```
     pub fn with_capacity(bit_width: usize, capacity: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
         let n_of_words = Ord::max(1, (capacity * bit_width + W::BITS - 1) / W::BITS);
@@ -119,15 +201,26 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     }
 
     /// Create a new all-ones-initialized vector of given bit width and length.
+    ///
+    /// # Arguments
+    /// * `bit_width` - The bit width of the values stored in the vector.
+    /// * `len` - The length of the vector.
+    ///
+    /// # Example
+    /// In the following example, we show how to create a new BitFieldVec filled
+    /// with ones. In this case, we create a vector with length 10 and bit width 4.
+    ///
+    /// ```rust
+    /// use sux::prelude::*;
+    /// let vec = BitFieldVec::<u8>::new_ones(4, 10);
+    ///
+    /// assert_eq!(vec.len(), 10);
+    /// for i in 0..10 {
+    ///     assert_eq!(vec.get(i), 0b1111);
+    /// }
+    /// ```
     pub fn new_ones(bit_width: usize, len: usize) -> Self {
-        // We need at least one word to handle the case of bit width zero.
-        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
-        Self {
-            data: vec![!W::ZERO; n_of_words],
-            bit_width,
-            mask: mask(bit_width),
-            len,
-        }
+        Self::fill(bit_width, len, W::MAX)
     }
 
     /// Create a new uninitialized vector of given bit width and length.
@@ -135,6 +228,28 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     /// # Safety
     /// this is intherently unsafe as you might read
     /// uninitialized data or write out of bounds.
+    ///
+    /// # Arguments
+    /// * `bit_width` - The bit width of the values stored in the vector.
+    /// * `len` - The length of the vector.
+    ///
+    /// # Example
+    /// In the following example, we show how to create a new BitFieldVec with
+    /// uninitialized values. In this case, we create a vector with length 10 and
+    /// bit width 4. Do note that the values are uninitialized and must be set before
+    /// being used in any meaningful way. Still, you will be able to access the values
+    /// in the vector, altough they will be random values.
+    ///
+    /// ```rust
+    /// use sux::prelude::*;
+    ///
+    /// let vec = unsafe { BitFieldVec::<u8>::new_uninit(4, 10) };
+    ///
+    /// assert_eq!(vec.len(), 10);
+    /// for i in 0..10 {
+    ///     let _ = vec.get(i);
+    /// }
+    /// ```
     pub unsafe fn new_uninit(bit_width: usize, len: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
@@ -489,25 +604,25 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
     /// This is useful for testing / it's slightly faster than creatin an
     /// uninit vector and then setting all values to ones because we can iterate
     /// over the words and set them all at once.
-    /// 
+    ///
     /// # Arguments
     /// * `bit_width` - The bit width of the values stored in the vector.
     /// * `len` - The length of the vector.
-    /// 
+    ///
     /// # Example
     /// In the following example, we show how to create a new AtomicBitFieldVec
     /// filled with ones. In this case, we create a vector with length 10 and
     /// bit width 4.
-    /// 
+    ///
     /// ```rust
     /// use crate::sux::traits::bit_field_slice::AtomicHelper;
     /// use std::sync::atomic::Ordering;
     /// use sux::prelude::*;
     /// let vec = AtomicBitFieldVec::<u8>::new_ones(4, 10);
-    /// 
+    ///
     /// assert_eq!(vec.len(), 10);
     /// for i in 0..10 {
-    ///    assert_eq!(vec.get(i, Ordering::Relaxed), 0b1111);
+    ///     assert_eq!(vec.get(i, Ordering::Relaxed), 0b1111);
     /// }
     /// ```
     pub fn new_ones(bit_width: usize, len: usize) -> Self {
