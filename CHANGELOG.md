@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.3.2] - 2024-03-21
+
+### Improved
+
+* Updated epserde and mem_dbg
+
 ## [0.3.1] - 2024-03-21
 
 ### Improved

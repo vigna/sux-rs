@@ -17,7 +17,7 @@ use lender::for_;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
 use mem_dbg::*;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, MemDbg, MemSize, Default)]
 /// Statistics of the encoded data.
 struct Stats {
     /// Maximum block size in bytes.
@@ -72,6 +72,7 @@ pub struct RearCodedList<D: AsRef<[u8]> = Vec<u8>, P: AsRef<[usize]> = Vec<usize
     pointers: P,
 }
 
+#[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct RearCodedListBuilder {
     /// The number of strings in a block; this value trades off compression for speed.
     k: usize,
@@ -427,6 +428,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
 }
 
 /// Sequential iterator over the strings.
+#[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct Iterator<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
     rca: &'a RearCodedList<D, P>,
     buffer: Vec<u8>,
@@ -434,6 +436,7 @@ pub struct Iterator<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
     index: usize,
 }
 
+#[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct ValueIterator<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
     iter: Iterator<'a, D, P>,
 }
@@ -523,7 +526,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
-    pub fn into_iter_from(&self, from: usize) -> ValueIterator<'_, D, P> {
+    pub fn iter_from(&self, from: usize) -> ValueIterator<'_, D, P> {
         ValueIterator {
             iter: Iterator::new_from(self, from),
         }

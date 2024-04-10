@@ -24,6 +24,7 @@ The trait [`ToSig`] provides a standard way to generate signatures for a [`SigSt
 
 use anyhow::Result;
 use epserde::prelude::*;
+use mem_dbg::{MemDbg, MemSize};
 use rdst::RadixKey;
 use std::borrow::Cow;
 use std::{collections::VecDeque, fs::File, io::*, marker::PhantomData};
@@ -36,7 +37,7 @@ A signature and a value.
 
 */
 
-#[derive(Epserde, Debug, Clone, Copy)]
+#[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize)]
 #[repr(C)]
 #[zero_copy]
 pub struct SigVal<T: ZeroCopy + 'static> {
@@ -143,6 +144,7 @@ to use for grouping signatures into chunks, and the necessary buffer splitting o
 will be handled automatically by the resulting [`ChunkStore`].
 
 */
+#[derive(Debug)]
 pub struct SigStore<T> {
     /// Number of keys added so far.
     len: usize,
@@ -221,7 +223,6 @@ using [`Cow`] is easier interoperability with in-memory construction methods, wh
 usually return borrowed variants.
 
 */
-
 #[derive(Debug)]
 pub struct ChunkIterator<'a, T: ZeroCopy + 'static> {
     store: &'a mut ChunkStore<T>,
