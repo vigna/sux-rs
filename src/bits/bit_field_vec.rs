@@ -316,21 +316,121 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 }
 
 impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
-    pub fn new(bit_width: usize, len: usize) -> AtomicBitFieldVec<W> {
+    /// Returns a new AtomicBitFieldVec filled with `word`
+    ///
+    /// # Arguments
+    /// * `bit_width` - The bit width of the values stored in the vector.
+    /// * `len` - The length of the vector.
+    /// * `word` - The value to fill the vector with.
+    ///
+    /// # Example
+    /// In the following example, we show how to create a new AtomicBitFieldVec
+    /// filled with a given word. In this case, we create a vector with length
+    /// 10 and bit width 4, filled with the value 0b11110000. Do note that the
+    /// number of bits in the word must be equal to the bit width of the vector.
+    ///
+    /// ```rust
+    /// use crate::sux::traits::bit_field_slice::AtomicHelper;
+    /// use std::sync::atomic::Ordering;
+    /// use sux::prelude::*;
+    /// let vec = AtomicBitFieldVec::<u8>::fill(4, 10, 0b11110000);
+    ///
+    /// assert_eq!(vec.len(), 10);
+    /// for i in 0..10 {
+    ///     if i % 2 == 0 {
+    ///         assert_eq!(vec.get(i, Ordering::Relaxed), 0b0000);
+    ///     } else {
+    ///         assert_eq!(vec.get(i, Ordering::Relaxed), 0b1111);
+    ///     }
+    /// }
+    /// ```
+    pub fn fill(bit_width: usize, len: usize, word: W) -> AtomicBitFieldVec<W> {
         // we need at least two words to avoid branches in the gets
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
         AtomicBitFieldVec::<W> {
-            data: (0..n_of_words)
-                .map(|_| W::AtomicType::new(W::ZERO))
-                .collect(),
+            data: (0..n_of_words).map(|_| W::AtomicType::new(word)).collect(),
             bit_width,
             mask: mask(bit_width),
             len,
         }
     }
 
+    /// Returns the capacity of the current vector.
+    ///
+    /// # Example
+    /// In the following example, we show how to get the capacity of an
+    /// AtomicBitFieldVec. In this case, we create a vector with capacity 10
+    /// and bit width 4. Since we allocate a vector of words, which in this
+    /// case are u64, the capacity of the vector is not equal to 10 but 16.
+    ///
+    /// ```rust
+    /// use sux::prelude::*;
+    ///
+    /// let vec = AtomicBitFieldVec::<u64>::with_capacity(4, 10);
+    ///
+    /// assert_eq!(
+    ///     vec.capacity(),
+    ///     16,
+    ///     "We expect the capacity to be 16, but got {}.",
+    ///     vec.capacity()
+    /// );
+    /// ```
+    pub fn capacity(&self) -> usize {
+        self.data.capacity() * W::BITS / self.bit_width
+    }
+
+    /// Returns a new AtomicBitFieldVec filled with zeros
+    ///
+    /// # Arguments
+    /// * `bit_width` - The bit width of the values stored in the vector.
+    /// * `len` - The length of the vector.
+    ///
+    /// # Example
+    /// In the following example, we show how to create a new AtomicBitFieldVec
+    /// filled with zeros. In this case, we create a vector with length 10 and
+    /// bit width 4.
+    ///
+    /// ```rust
+    /// use crate::sux::traits::bit_field_slice::AtomicHelper;
+    /// use std::sync::atomic::Ordering;
+    /// use sux::prelude::*;
+    /// let vec = AtomicBitFieldVec::<u8>::new(4, 10);
+    ///
+    /// assert_eq!(vec.len(), 10);
+    ///
+    /// for i in 0..10 {
+    ///     assert_eq!(vec.get(i, Ordering::Relaxed), 0);
+    /// }
+    /// ```
+    pub fn new(bit_width: usize, len: usize) -> AtomicBitFieldVec<W> {
+        Self::fill(bit_width, len, W::ZERO)
+    }
+
     /// Create an empty BitFieldVec that doesn't need to reallocate for up to
     /// `capacity` elements.
+    ///
+    /// # Arguments
+    /// * `bit_width` - The bit width of the values stored in the vector.
+    /// * `capacity` - The capacity of the vector.
+    ///
+    /// # Example
+    /// In the following example, we show how to create a new AtomicBitFieldVec
+    /// with a given capacity. In this case, we create a vector with capacity 10
+    /// and bit width 4.
+    ///
+    /// ```rust
+    /// use sux::prelude::*;
+    ///
+    /// let vec = AtomicBitFieldVec::<u8>::with_capacity(4, 10);
+    ///
+    /// assert_eq!(vec.len(), 0);
+    /// assert_eq!(
+    ///     vec.capacity(),
+    ///     10,
+    ///     "We expect the capacity to be 10, but got {}.",
+    ///     vec.capacity()
+    /// );
+    /// ```
     pub fn with_capacity(bit_width: usize, capacity: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
         let n_of_words = Ord::max(1, (capacity * bit_width + W::BITS - 1) / W::BITS);
@@ -347,6 +447,29 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
     /// # Safety
     /// this is intherently unsafe as you might read
     /// uninitialized data or write out of bounds.
+    ///
+    /// # Arguments
+    /// * `bit_width` - The bit width of the values stored in the vector.
+    /// * `len` - The length of the vector.
+    ///
+    /// # Example
+    /// In the following example, we show how to create a new AtomicBitFieldVec
+    /// with uninitialized values. In this case, we create a vector with length
+    /// 10 and bit width 4. Do note that the values are uninitialized and must
+    /// be set before being used in any meaningful way. Still, you will be able
+    /// to access the values in the vector, altough they will be random values.
+    ///
+    /// ```rust
+    /// use crate::sux::traits::bit_field_slice::AtomicHelper;
+    /// use std::sync::atomic::Ordering;
+    /// use sux::prelude::*;
+    /// let vec = unsafe { AtomicBitFieldVec::<u8>::new_uninit(4, 10) };
+    ///
+    /// assert_eq!(vec.len(), 10);
+    /// for i in 0..10 {
+    ///     let _ = vec.get(i, Ordering::Relaxed);
+    /// }
+    /// ```
     pub unsafe fn new_uninit(bit_width: usize, len: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
@@ -366,17 +489,29 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
     /// This is useful for testing / it's slightly faster than creatin an
     /// uninit vector and then setting all values to ones because we can iterate
     /// over the words and set them all at once.
+    /// 
+    /// # Arguments
+    /// * `bit_width` - The bit width of the values stored in the vector.
+    /// * `len` - The length of the vector.
+    /// 
+    /// # Example
+    /// In the following example, we show how to create a new AtomicBitFieldVec
+    /// filled with ones. In this case, we create a vector with length 10 and
+    /// bit width 4.
+    /// 
+    /// ```rust
+    /// use crate::sux::traits::bit_field_slice::AtomicHelper;
+    /// use std::sync::atomic::Ordering;
+    /// use sux::prelude::*;
+    /// let vec = AtomicBitFieldVec::<u8>::new_ones(4, 10);
+    /// 
+    /// assert_eq!(vec.len(), 10);
+    /// for i in 0..10 {
+    ///    assert_eq!(vec.get(i, Ordering::Relaxed), 0b1111);
+    /// }
+    /// ```
     pub fn new_ones(bit_width: usize, len: usize) -> Self {
-        // We need at least one word to handle the case of bit width zero.
-        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
-        Self {
-            data: (0..n_of_words)
-                .map(|_| W::AtomicType::new(!W::ZERO))
-                .collect(),
-            bit_width,
-            mask: mask(bit_width),
-            len,
-        }
+        Self::fill(bit_width, len, W::MAX)
     }
 
     /// Set the inner len.
@@ -668,17 +803,17 @@ where
     directed: BitFieldVectorUncheckedIterator<'a, W, B>,
     reversed: BitFieldVectorReverseUncheckedIterator<'a, W, B>,
     start: usize,
-    end: usize
+    end: usize,
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, B> {
     /// Create a new iterator over the values of a [`BitFieldVec`].
-    /// 
+    ///
     /// # Arguments
     /// * `vec` - The vector to iterate over.
     /// * `start` - The index of the first element to return.
     /// * `end` - The index of the last element to return.
-    /// 
+    ///
     /// # Panics
     /// * If `start` is greater than the length of the vector.
     /// * If `end` is greater than the length of the vector.
@@ -698,11 +833,11 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, B> {
     }
 
     /// Create a new iterator over the values of a [`BitFieldVec`], starting from the beginning.
-    /// 
+    ///
     /// # Arguments
     /// * `vec` - The vector to iterate over.
     /// * `end` - The index of the last element to return.
-    /// 
+    ///
     /// # Panics
     /// * If `end` is greater than the length of the vector.
     fn from_start(vec: &'a BitFieldVec<W, B>, start: usize) -> Self {
@@ -710,11 +845,11 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, B> {
     }
 
     /// Create a new iterator over the values of a [`BitFieldVec`], ending at the end.
-    /// 
+    ///
     /// # Arguments
     /// * `vec` - The vector to iterate over.
     /// * `end` - The index of the last element to return.
-    /// 
+    ///
     /// # Panics
     /// * If `end` is greater than the length of the vector.
     fn from_end(vec: &'a BitFieldVec<W, B>, end: usize) -> Self {
@@ -781,11 +916,11 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     }
 
     /// Create a new iterator over the values of a [`BitFieldVec`] within given range.
-    /// 
+    ///
     /// # Arguments
     /// * `start` - The index of the first element to return.
     /// * `end` - The index of the last element to return.
-    /// 
+    ///
     /// # Panics
     /// * If `start` is greater than the length of the vector.
     /// * If `end` is greater than the length of the vector.
@@ -794,10 +929,10 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     }
 
     /// Create a new iterator over the values of a [`BitFieldVec`], ending at the end.
-    /// 
+    ///
     /// # Arguments
     /// * `end` - The index of the last element to return.
-    /// 
+    ///
     /// # Panics
     /// * If `end` is greater than the length of the vector.
     pub fn iter_to(&self, end: usize) -> BitFieldVecIterator<W, B> {
@@ -805,10 +940,10 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     }
 
     /// Create a new iterator over the values of a [`BitFieldVec`].
-    /// 
+    ///
     /// # Arguments
     /// * `start` - The index of the first element to return.
-    /// 
+    ///
     /// # Panics
     /// * If `start` is greater than the length of the vector.
     pub fn iter_from(&self, start: usize) -> BitFieldVecIterator<W, B> {
