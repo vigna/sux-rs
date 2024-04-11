@@ -138,6 +138,6 @@ With the exception of the cases where the bitsize is equal to 8, 16, 32 or 64, t
 
 ### Visualization
 The following graph shows the average time taken by the apply function and the get_set function for different word sizes and window sizes.
-It has been realized with the Jupyter Notebook `Visualizations of apply benches.ipynb` in the same folder of this document.
+It has been realized with the python script `visualization_bench_apply.py` in the same folder of this document.
 
 ![apply_vs_get_set](bench_apply.jpg)
