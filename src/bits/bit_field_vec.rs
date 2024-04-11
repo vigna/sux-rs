@@ -56,10 +56,8 @@ use anyhow::{bail, Result};
 use common_traits::*;
 use epserde::*;
 use mem_dbg::*;
-use std::{
-    ops::{Add, AddAssign},
-    sync::atomic::*,
-};
+use std::sync::atomic::*;
+mod ops;
 
 /// A vector of bit fields of fixed width.
 #[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
@@ -101,17 +99,18 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     /// # Arguments
     /// * `bit_width` - The bit width of the values stored in the vector.
     /// * `len` - The length of the vector.
-    /// * `word` - The value to fill the vector with.
+    /// * `word` - The word to fill the vector with.
     ///
     /// # Examples
     /// In the following example, we show how to create a new BitFieldVec
-    /// filled with a given word. In this case, we create a vector with length
-    /// 10 and bit width 4, filled with the value 0b11110000. Do note that the
-    /// number of bits in the word must be equal to the bit width of the vector.
+    /// filled with a given word. If you want to fill the vector with some
+    /// specific value (and NOT the word), you can use the `fill` method.
+    /// In this case, we create a vector with length 10 and bit width 4,
+    /// filled with the value 0b11110000.
     ///
     /// ```rust
     /// use sux::prelude::*;
-    /// let vec = BitFieldVec::<u8>::fill(4, 10, 0b11110000);
+    /// let vec = BitFieldVec::<u8>::fill_words(4, 10, 0b11110000);
     ///
     /// assert_eq!(vec.len(), 10);
     /// for i in 0..10 {
@@ -122,8 +121,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     ///     }
     /// }
     /// ```
-    pub fn fill(bit_width: usize, len: usize, word: W) -> Self {
-        // we need at least two words to avoid branches in the gets
+    pub fn fill_words(bit_width: usize, len: usize, word: W) -> Self {
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
         Self {
             data: vec![word; n_of_words],
@@ -131,6 +129,41 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
             mask: mask(bit_width),
             len,
         }
+    }
+
+    /// Returns a new BitFieldVec filled with the given value.
+    ///
+    /// # Arguments
+    /// * `bit_width` - The bit width of the values stored in the vector.
+    /// * `len` - The length of the vector.
+    /// * `value` - The value to fill the vector with.
+    ///
+    /// # Examples
+    /// In the following example, we show how to create a new BitFieldVec
+    /// filled with a given word. If you want to fill the vector with some
+    /// specific word (and NOT the value), you can use the `fill_words` method.
+    /// In this case, we create a vector with length 10 and bit width 4,
+    /// filled with the value 3.
+    ///
+    /// ```rust
+    /// use sux::prelude::*;
+    /// let vec = BitFieldVec::<u8>::fill(4, 10, 3);
+    ///
+    /// assert_eq!(vec.len(), 10);
+    /// for i in 0..10 {
+    ///    assert_eq!(vec.get(i), 3);
+    /// }
+    /// ```
+    pub fn fill(bit_width: usize, len: usize, value: W) -> Self
+    where
+        BitFieldVec<W>: Into<Self>,
+    {
+        panic_if_value!(value, mask(bit_width), bit_width);
+        let mut vec = unsafe { Self::new_uninit(bit_width, len) };
+        unsafe {
+            vec.apply_inplace_unchecked(|_| value);
+        }
+        vec
     }
 
     /// Create a new zero-initialized vector of given bit width and length.
@@ -154,7 +187,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     /// }
     /// ```
     pub fn new(bit_width: usize, len: usize) -> Self {
-        Self::fill(bit_width, len, W::ZERO)
+        Self::fill_words(bit_width, len, W::ZERO)
     }
 
     /// Returns the capacity of the current vector.
@@ -223,7 +256,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     /// }
     /// ```
     pub fn new_ones(bit_width: usize, len: usize) -> Self {
-        Self::fill(bit_width, len, W::MAX)
+        Self::fill_words(bit_width, len, W::MAX)
     }
 
     /// Create a new uninitialized vector of given bit width and length.
@@ -434,24 +467,25 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 }
 
 impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
-    /// Returns a new AtomicBitFieldVec filled with `word`
+    /// Returns a new AtomicBitFieldVec filled with the given word.
     ///
     /// # Arguments
     /// * `bit_width` - The bit width of the values stored in the vector.
     /// * `len` - The length of the vector.
-    /// * `word` - The value to fill the vector with.
+    /// * `word` - The word to fill the vector with.
     ///
     /// # Examples
     /// In the following example, we show how to create a new AtomicBitFieldVec
-    /// filled with a given word. In this case, we create a vector with length
-    /// 10 and bit width 4, filled with the value 0b11110000. Do note that the
-    /// number of bits in the word must be equal to the bit width of the vector.
+    /// filled with a given word. If you want to fill the vector with some
+    /// specific value (and NOT the word), you can use the `fill` method.
+    /// In this case, we create a vector with length 10 and bit width 4,
+    /// filled with the word 0b11110000.
     ///
     /// ```rust
     /// use crate::sux::traits::bit_field_slice::AtomicHelper;
     /// use std::sync::atomic::Ordering;
     /// use sux::prelude::*;
-    /// let vec = AtomicBitFieldVec::<u8>::fill(4, 10, 0b11110000);
+    /// let vec = AtomicBitFieldVec::<u8>::fill_words(4, 10, 0b11110000);
     ///
     /// assert_eq!(vec.len(), 10);
     /// for i in 0..10 {
@@ -462,8 +496,7 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
     ///     }
     /// }
     /// ```
-    pub fn fill(bit_width: usize, len: usize, word: W) -> AtomicBitFieldVec<W> {
-        // we need at least two words to avoid branches in the gets
+    pub fn fill_words(bit_width: usize, len: usize, word: W) -> Self {
         let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
         AtomicBitFieldVec::<W> {
             data: (0..n_of_words).map(|_| W::AtomicType::new(word)).collect(),
@@ -471,6 +504,38 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
             mask: mask(bit_width),
             len,
         }
+    }
+
+    /// Returns a new AtomicBitFieldVec filled with the given value.
+    ///
+    /// # Arguments
+    /// * `bit_width` - The bit width of the values stored in the vector.
+    /// * `len` - The length of the vector.
+    /// * `value` - The value to fill the vector with.
+    ///
+    /// # Examples
+    /// In the following example, we show how to create a new AtomicBitFieldVec
+    /// filled with a given word. If you want to fill the vector with some
+    /// specific word (and NOT the value), you can use the `fill_words` method.
+    /// In this case, we create a vector with length 10 and bit width 4,
+    /// filled with the value 3.
+    ///
+    /// ```rust
+    /// use crate::sux::traits::bit_field_slice::AtomicHelper;
+    /// use std::sync::atomic::Ordering;
+    /// use sux::prelude::*;
+    /// let vec = AtomicBitFieldVec::<u8>::fill(4, 10, 3);
+    ///
+    /// assert_eq!(vec.len(), 10);
+    /// for i in 0..10 {
+    ///    assert_eq!(vec.get(i, Ordering::Relaxed), 3);
+    /// }
+    /// ```
+    pub fn fill(bit_width: usize, len: usize, value: W) -> Self
+    where
+        BitFieldVec<W>: Into<Self>,
+    {
+        BitFieldVec::<W>::fill(bit_width, len, value).into()
     }
 
     /// Returns the capacity of the current vector.
@@ -520,8 +585,8 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
     ///     assert_eq!(vec.get(i, Ordering::Relaxed), 0);
     /// }
     /// ```
-    pub fn new(bit_width: usize, len: usize) -> AtomicBitFieldVec<W> {
-        Self::fill(bit_width, len, W::ZERO)
+    pub fn new(bit_width: usize, len: usize) -> Self {
+        Self::fill_words(bit_width, len, W::ZERO)
     }
 
     /// Create an empty BitFieldVec that doesn't need to reallocate for up to
@@ -629,7 +694,7 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
     /// }
     /// ```
     pub fn new_ones(bit_width: usize, len: usize) -> Self {
-        Self::fill(bit_width, len, W::MAX)
+        Self::fill_words(bit_width, len, W::MAX)
     }
 
     /// Set the inner len.
@@ -1225,31 +1290,6 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceApply<W> for BitFieldVec<
                 res
             });
         }
-    }
-}
-
-/// Implementation of the [`BitFieldSliceApply`] trait for [`BitFieldVec`].
-impl<E: Copy, W: Word, B: AsRef<[W]> + AsMut<[W]>> AddAssign<E> for BitFieldVec<W, B>
-where
-    W: Add<E, Output = W>,
-{
-    #[inline]
-    fn add_assign(&mut self, rhs: E) {
-        self.apply_inplace(|x| x + rhs);
-    }
-}
-
-/// Implementation of the [`BitFieldSliceApply`] trait for [`BitFieldVec`].
-impl<E: Copy, W: Word, B: AsRef<[W]> + AsMut<[W]>> Add<E> for BitFieldVec<W, B>
-where
-    W: Add<E, Output = W>,
-{
-    type Output = Self;
-
-    #[inline]
-    fn add(mut self, rhs: E) -> Self::Output {
-        self.add_assign(rhs);
-        self
     }
 }
 
