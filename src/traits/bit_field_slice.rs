@@ -81,6 +81,7 @@ pub trait BitFieldSliceCore<W> {
     fn bit_width(&self) -> usize;
     /// Return the length of the slice.
     fn len(&self) -> usize;
+    #[inline(always)]
     /// Return if the slice has length zero
     fn is_empty(&self) -> bool {
         self.len() == 0
@@ -167,6 +168,92 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
 
     /// Set all values to zero
     fn reset(&mut self);
+}
+
+/// A mutable slice of bit fields of constant bit width.
+pub trait BitFieldSliceApply<W: Word>: BitFieldSlice<W> + BitFieldSliceMut<W> {
+    /// Applies sequentially inplace a given function to all elements of the slice without checks.
+    ///
+    /// # Arguments
+    /// * `f` - The function to apply to all elements.
+    ///
+    /// # Safety
+    /// This method does not perform any checks on the values returned by the function.
+    ///
+    unsafe fn apply_inplace_unchecked<F>(&mut self, f: F)
+    where
+        F: FnMut(W) -> W;
+
+    /// Applies sequentially inplace a given function to all elements of the slice.
+    ///
+    /// # Arguments
+    /// * `f` - The function to apply to all elements.
+    ///
+    /// # Implementative details
+    /// This method employes a read and a write buffer to avoid multiple reads and writes
+    /// to the same memory location, instead of executing several get and set calls. Note
+    /// that this method operates sequentially - if you would rather have a parallel
+    /// implementation, you can use either the `par_apply_inplace` method or the
+    /// `par_apply_inplace_unchecked` method.
+    ///
+    /// # Panics
+    /// This method will panic if the value returned from the function does not fit in the
+    /// bit width of the vector. If you are sure that the function will always return values
+    /// that fit in the bit width, you can use the `apply_inplace_unchecked` unsafe method.
+    ///
+    /// # Example
+    /// In the following example, we show how to apply a function to all elements of a
+    /// BitFieldVec. In this case, we create a vector with length 10 and variable bit width,
+    /// and we apply a function that increments all elements by one. Since the vector
+    /// is initialized with zeros, the result will be a vector with all elements equal
+    /// to one.
+    ///
+    /// ```rust
+    /// use sux::prelude::*;
+    /// use sux::traits::bit_field_slice::BitFieldSliceApply;
+    ///
+    /// for bit_width in 2..=8 {
+    ///     let mut vec = BitFieldVec::<u8>::new(bit_width, 10);
+    ///     vec.apply_inplace(|x| x + 1);
+    ///
+    ///     for i in 0..10 {
+    ///         assert_eq!(
+    ///             vec.get(i),
+    ///             1,
+    ///             concat!(
+    ///                 "We expected for all elements to be equal to 1, but the element at index ",
+    ///                 "{} is equal to {}, with bit width {}. The binary representation of this ",
+    ///                 "array is {:?}"
+    ///             ),
+    ///             i,
+    ///             vec.get(i),
+    ///             bit_width,
+    ///             vec
+    ///         );
+    ///     }
+    ///
+    ///     vec.apply_inplace(|x| x + 1);
+    ///
+    ///     for i in 0..10 {
+    ///         assert_eq!(
+    ///             vec.get(i),
+    ///             2,
+    ///             concat!(
+    ///                 "1) We expected for all elements to be equal to 2, but the element at index ",
+    ///                 "{} is equal to {}, with bit width {}. The binary representation of this ",
+    ///                 "array is {:?}"
+    ///             ),
+    ///             i,
+    ///             vec.get(i),
+    ///             bit_width,
+    ///             vec
+    ///         );
+    ///     }
+    /// }
+    /// ```
+    fn apply_inplace<F>(&mut self, f: F)
+    where
+        F: FnMut(W) -> W;
 }
 
 /// A (tentatively) thread-safe slice of bit fields of constant bit width supporting atomic operations.

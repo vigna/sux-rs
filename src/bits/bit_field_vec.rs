@@ -56,7 +56,10 @@ use anyhow::{bail, Result};
 use common_traits::*;
 use epserde::*;
 use mem_dbg::*;
-use std::sync::atomic::*;
+use std::{
+    ops::{Add, AddAssign},
+    sync::atomic::*,
+};
 
 /// A vector of bit fields of fixed width.
 #[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
@@ -100,7 +103,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     /// * `len` - The length of the vector.
     /// * `word` - The value to fill the vector with.
     ///
-    /// # Example
+    /// # Examples
     /// In the following example, we show how to create a new BitFieldVec
     /// filled with a given word. In this case, we create a vector with length
     /// 10 and bit width 4, filled with the value 0b11110000. Do note that the
@@ -136,7 +139,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     /// * `bit_width` - The bit width of the values stored in the vector.
     /// * `len` - The length of the vector.
     ///
-    /// # Example
+    /// # Examples
     /// In the following example, we show how to create a new BitFieldVec
     /// filled with zeros. In this case, we create a vector with length 10 and
     /// bit width 4.
@@ -156,7 +159,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
 
     /// Returns the capacity of the current vector.
     ///
-    /// # Example
+    /// # Examples
     /// In the following example, we show how to get the capacity of a BitFieldVec.
     /// In this case, we create a vector with capacity 10 and bit width 4. Since we
     /// allocate a vector of words, which in this case are u64, the capacity of the
@@ -172,7 +175,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     /// * `bit_width` - The bit width of the values stored in the vector.
     /// * `capacity` - The capacity of the vector.
     ///
-    /// # Example
+    /// # Examples
     /// In the following example, we show how to create a new BitFieldVec with a
     /// given capacity. In this case, we create a vector with capacity 10 and bit
     /// width 4.
@@ -206,7 +209,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     /// * `bit_width` - The bit width of the values stored in the vector.
     /// * `len` - The length of the vector.
     ///
-    /// # Example
+    /// # Examples
     /// In the following example, we show how to create a new BitFieldVec filled
     /// with ones. In this case, we create a vector with length 10 and bit width 4.
     ///
@@ -233,7 +236,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     /// * `bit_width` - The bit width of the values stored in the vector.
     /// * `len` - The length of the vector.
     ///
-    /// # Example
+    /// # Examples
     /// In the following example, we show how to create a new BitFieldVec with
     /// uninitialized values. In this case, we create a vector with length 10 and
     /// bit width 4. Do note that the values are uninitialized and must be set before
@@ -438,7 +441,7 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
     /// * `len` - The length of the vector.
     /// * `word` - The value to fill the vector with.
     ///
-    /// # Example
+    /// # Examples
     /// In the following example, we show how to create a new AtomicBitFieldVec
     /// filled with a given word. In this case, we create a vector with length
     /// 10 and bit width 4, filled with the value 0b11110000. Do note that the
@@ -472,7 +475,7 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
 
     /// Returns the capacity of the current vector.
     ///
-    /// # Example
+    /// # Examples
     /// In the following example, we show how to get the capacity of an
     /// AtomicBitFieldVec. In this case, we create a vector with capacity 10
     /// and bit width 4. Since we allocate a vector of words, which in this
@@ -500,7 +503,7 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
     /// * `bit_width` - The bit width of the values stored in the vector.
     /// * `len` - The length of the vector.
     ///
-    /// # Example
+    /// # Examples
     /// In the following example, we show how to create a new AtomicBitFieldVec
     /// filled with zeros. In this case, we create a vector with length 10 and
     /// bit width 4.
@@ -528,7 +531,7 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
     /// * `bit_width` - The bit width of the values stored in the vector.
     /// * `capacity` - The capacity of the vector.
     ///
-    /// # Example
+    /// # Examples
     /// In the following example, we show how to create a new AtomicBitFieldVec
     /// with a given capacity. In this case, we create a vector with capacity 10
     /// and bit width 4.
@@ -567,7 +570,7 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
     /// * `bit_width` - The bit width of the values stored in the vector.
     /// * `len` - The length of the vector.
     ///
-    /// # Example
+    /// # Examples
     /// In the following example, we show how to create a new AtomicBitFieldVec
     /// with uninitialized values. In this case, we create a vector with length
     /// 10 and bit width 4. Do note that the values are uninitialized and must
@@ -609,7 +612,7 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
     /// * `bit_width` - The bit width of the values stored in the vector.
     /// * `len` - The length of the vector.
     ///
-    /// # Example
+    /// # Examples
     /// In the following example, we show how to create a new AtomicBitFieldVec
     /// filled with ones. In this case, we create a vector with length 10 and
     /// bit width 4.
@@ -1110,6 +1113,143 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
             word |= value >> (W::BITS - bit_index);
             *self.data.as_mut().get_unchecked_mut(word_index + 1) = word;
         }
+    }
+}
+
+/// Implementation of the [`BitFieldSliceApply`] trait for [`BitFieldVec`].
+impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceApply<W> for BitFieldVec<W, B> {
+    #[inline]
+    unsafe fn apply_inplace_unchecked<F>(&mut self, mut f: F)
+    where
+        F: FnMut(W) -> W,
+    {
+        if self.is_empty() {
+            return;
+        }
+        // The word which is being processed. We use this value to avoid
+        // multiple reads from the same memory location. We treat this as
+        // a read buffer.
+        let mut current_word: W = *self.data.as_ref().get_unchecked(0);
+        // The word which is being written. We use this value to avoid
+        // multiple writes to the same memory location. We treat this as
+        // a write buffer.
+        let mut write_buffer: W = W::ZERO;
+        // The position inside the word. In most parametrization of the
+        // BitFieldVec, since the bit_width is not necessarily a integer
+        // divisor of the word size, we need to keep track of the position
+        // inside the word. As we scroll through the bits, due to the bits
+        // remainder, we may need to operate on two words at the same time.
+        let mut global_bit_index: usize = 0;
+
+        // The number of words in the bitvec.
+        let number_of_words: usize = (self.len() * self.bit_width).div_ceil(W::BITS);
+
+        let mut lower_word_limit = 0;
+        let mut upper_word_limit = W::BITS;
+        let is_not_power_of_two = !self.bit_width.is_power_of_two();
+
+        // We iterate across the words
+        for word_number in 0..(number_of_words - 1) {
+            // We iterate across the elements in the word.
+            while global_bit_index + self.bit_width <= upper_word_limit {
+                // We retrieve the value from the current word.
+                let offset = global_bit_index - lower_word_limit;
+                global_bit_index += self.bit_width;
+                let element = self.mask & (current_word >> offset);
+
+                // We apply the function to the element.
+                let new_element = f(element);
+
+                // We set the element in the new word.
+                write_buffer |= new_element << offset;
+            }
+
+            // We retrieve the next word from the bitvec.
+            let next_word = *self.data.as_ref().get_unchecked(word_number + 1);
+
+            let mut new_write_buffer = W::ZERO;
+            if is_not_power_of_two && upper_word_limit != global_bit_index {
+                let remainder = upper_word_limit - global_bit_index;
+                let offset = global_bit_index - lower_word_limit;
+                // We compose the element from the remaining elements in the
+                // current word and the elements in the next word.
+                let element = ((current_word >> offset) | (next_word << remainder)) & self.mask;
+                global_bit_index += self.bit_width;
+
+                // We apply the function to the element.
+                let new_element = f(element);
+
+                write_buffer |= new_element << offset;
+
+                new_write_buffer = new_element >> remainder;
+            };
+
+            current_word = next_word;
+
+            *self.data.as_mut().get_unchecked_mut(word_number) = write_buffer;
+
+            write_buffer = new_write_buffer;
+            lower_word_limit = upper_word_limit;
+            upper_word_limit += W::BITS;
+        }
+
+        let mut offset = global_bit_index - lower_word_limit;
+
+        // We iterate across the elements in the word.
+        while offset < self.len() * self.bit_width - global_bit_index {
+            // We retrieve the value from the current word.
+            let element = self.mask & (current_word >> offset);
+
+            // We apply the function to the element.
+            let new_element = f(element);
+
+            // We set the element in the new word.
+            write_buffer |= new_element << offset;
+            offset += self.bit_width;
+        }
+
+        *self.data.as_mut().get_unchecked_mut(number_of_words - 1) = write_buffer;
+    }
+
+    #[inline]
+    fn apply_inplace<F>(&mut self, mut f: F)
+    where
+        F: FnMut(W) -> W,
+    {
+        unsafe {
+            let mask = self.mask;
+            let bit_width = self.bit_width;
+            self.apply_inplace_unchecked(|x| {
+                let res = f(x);
+                panic_if_value!(res, mask, bit_width);
+                res
+            });
+        }
+    }
+}
+
+/// Implementation of the [`BitFieldSliceApply`] trait for [`BitFieldVec`].
+impl<E: Copy, W: Word, B: AsRef<[W]> + AsMut<[W]>> AddAssign<E> for BitFieldVec<W, B>
+where
+    W: Add<E, Output = W>,
+{
+    #[inline]
+    fn add_assign(&mut self, rhs: E) {
+        self.apply_inplace(|x| x + rhs);
+    }
+}
+
+/// Implementation of the [`BitFieldSliceApply`] trait for [`BitFieldVec`].
+impl<E: Copy, W: Word, B: AsRef<[W]> + AsMut<[W]>> Add<E> for BitFieldVec<W, B>
+where
+    W: Add<E, Output = W>,
+{
+    type Output = Self;
+
+    #[inline]
+    fn add(mut self, rhs: E) -> Self::Output {
+        self.add_assign(rhs);
+        self
     }
 }
 
