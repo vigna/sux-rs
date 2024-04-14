@@ -11,8 +11,8 @@ use epserde::prelude::*;
 use lender::from_iter;
 use std::io::prelude::*;
 use std::io::BufReader;
-use sux::dict::compressed_rcl;
 use sux::prelude::*;
+use dsi_bitstream::prelude::huffman::HuffmanTree;
 
 #[test]
 fn test_negative_redundancy() {
@@ -88,6 +88,7 @@ fn test_rear_coded_list() -> Result<()> {
 
 #[test]
 fn test_compressed_rear_coded_list() -> Result<()> {
+    use sux::dict::compressed_rcl;
     let words = BufReader::new(std::fs::File::open("tests/data/wordlist.10000")?)
         .lines()
         .map(|line| line.unwrap())
@@ -100,11 +101,13 @@ fn test_compressed_rear_coded_list() -> Result<()> {
         }
     }
 
+    let huffman = HuffmanTree::new(&counts)?;
+
     // create a new rca with u16 as pointers (this limit data to u16::MAX bytes max size)
     let mut rcab = <CompressedRearCodedListBuilder>::new(
         8,
-        compressed_rcl::gamma::Encoder::new(
-            compressed_rcl::compute_permutation(counts),
+        compressed_rcl::huffman::Encoder::new(
+            huffman,
             compressed_rcl::ef::OffsetsBuilder::default(),
         ),
     );

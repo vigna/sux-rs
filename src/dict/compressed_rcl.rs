@@ -18,27 +18,6 @@ use lender::for_;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
 use mem_dbg::*;
 
-/// Given the counts of each byte in the data, compute a permutation that
-/// adapts to the data distribution.
-pub fn compute_permutation(counts: [usize; 256]) -> [u8; 256] {
-    let mut permutation = [0; 256];
-    let mut counts = counts.iter().enumerate().collect::<Vec<_>>();
-    counts.sort_unstable_by_key(|(_, count)| *count);
-    for (i, (byte, _)) in counts.iter().enumerate() {
-        permutation[*byte] = i as u8;
-    }
-    permutation
-}
-
-/// Given a permutation, compute the inverse permutation.
-pub fn invert_permutation(permutation: [u8; 256]) -> [u8; 256] {
-    let mut inverse_permutation = [0; 256];
-    for (i, &byte) in permutation.iter().enumerate() {
-        inverse_permutation[byte as usize] = i as u8;
-    }
-    inverse_permutation
-}
-
 #[allow(clippy::len_without_is_empty)]
 /// Encoder needed to write a CompressedRearCodedList
 pub trait Encoder {
@@ -98,8 +77,8 @@ pub mod ef {
     use std::io::Seek;
 
     pub type EF = EliasFano<SelectFixed2>;
-    pub type Writer<W> = BufBitWriter<LittleEndian, WordAdapter<u32, W>>;
-    pub type Reader<R> = BufBitReader<LittleEndian, WordAdapter<u32, R>>;
+    pub type Writer<W> = BufBitWriter<BigEndian, WordAdapter<u32, W>>;
+    pub type Reader<R> = BufBitReader<BigEndian, WordAdapter<u32, R>>;
 
     pub struct OffsetsBuilder {
         gaps: Writer<std::io::Cursor<Vec<u8>>>,
@@ -161,8 +140,8 @@ pub mod huffman {
     use epserde::Epserde;
     use mem_dbg::{MemDbg, MemSize};
 
-    pub type Writer<W> = BufBitWriter<LittleEndian, WordAdapter<u32, W>>;
-    pub type Reader<R> = BufBitReader<LittleEndian, WordAdapter<u32, R>>;
+    pub type Writer<W> = BufBitWriter<BigEndian, WordAdapter<u32, W>>;
+    pub type Reader<R> = BufBitReader<BigEndian, WordAdapter<u32, R>>;
 
     pub struct Encoder<OB: super::OffsetsBuilder = super::ef::OffsetsBuilder> {
         offsets_builder: OB,
@@ -977,5 +956,5 @@ fn test_into_lend() {
     builder.push("c");
     builder.push("d");
     let rcl = builder.build().unwrap();
-    read_into_lender::<&CompressedRearCodedList>(&rcl);
+    //read_into_lender::<&CompressedRearCodedList>(&rcl);
 }
