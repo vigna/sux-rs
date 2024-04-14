@@ -32,6 +32,7 @@ flate2 = "1.0.28"
 derivative = "2.2.0"
 rdst = "0.20.12"
 mem_dbg = "0.1.8"
+dsi-bitstream = {git = "https://github.com/vigna/dsi-bitstream-rs.git", branch = "huffman"}
 
 rayon = {version = "1.8.1", optional=true}
 

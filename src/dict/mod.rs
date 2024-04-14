@@ -12,3 +12,6 @@ pub use elias_fano::{EliasFano, EliasFanoBuilder, EliasFanoConcurrentBuilder};
 
 pub mod rear_coded_list;
 pub use rear_coded_list::{RearCodedList, RearCodedListBuilder};
+
+pub mod compressed_rcl;
+pub use compressed_rcl::{CompressedRearCodedList, CompressedRearCodedListBuilder};

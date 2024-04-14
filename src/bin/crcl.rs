@@ -8,6 +8,7 @@
 
 use anyhow::{bail, Result};
 use clap::Parser;
+use dsi_bitstream::codes::huffman::HuffmanTree;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::{Lender, Lending};
@@ -36,10 +37,10 @@ fn compress<
     S: AsRef<str> + ?Sized,
     L: Lender + for<'lend> Lending<'lend, Lend = Result<&'lend S, std::io::Error>>,
 >(
-    mut lines: L,
+    mut lender_func: impl FnMut() -> L,
     args: Args,
 ) -> anyhow::Result<()> {
-    let dst_file_path = args.dst.unwrap_or(format!("{}.rcl", args.filename));
+    let dst_file_path = args.dst.unwrap_or(format!("{}.crcl", args.filename));
     let dst_file = std::fs::File::create(dst_file_path).unwrap();
     let mut dst_file = std::io::BufWriter::new(dst_file);
 
@@ -47,13 +48,15 @@ fn compress<
     pl.display_memory(true);
     pl.start("Reading the input file...");
 
-    let mut rclb = RearCodedListBuilder::new(args.k);
-
+    let mut lines = lender_func();
+    let mut counts = [0; 256];
     while let Some(result) = lines.next() {
         match result {
             Ok(line) => {
                 pl.light_update();
-                rclb.push(line);
+                for c in line.as_ref().bytes() {
+                    counts[c as usize] += 1;
+                }
             }
             Err(e) => {
                 bail!("Error reading input: {}", e);
@@ -63,11 +66,38 @@ fn compress<
 
     pl.done();
 
-    rclb.print_stats();
+    pl.start("Reading the input file...");
 
-    let rcl = rclb.build();
+    let huffman = HuffmanTree::new(&counts)?;
+    let mut rcab = <CompressedRearCodedListBuilder>::new(
+        args.k,
+        compressed_rcl::huffman::Encoder::new(
+            huffman,
+            compressed_rcl::ef::OffsetsBuilder::default(),
+        ),
+    );
+
+    let mut lines = lender_func();
+    while let Some(result) = lines.next() {
+        match result {
+            Ok(line) => {
+                pl.light_update();
+                rcab.push(line);
+            }
+            Err(e) => {
+                bail!("Error reading input: {}", e);
+            }
+        }
+    }
+
+    pl.done();
+
+    dbg!(rcab.stats());
+
+    let rcl = rcab.build().unwrap();
 
     rcl.mem_dbg(DbgFlags::default()).unwrap();
+
     rcl.serialize(&mut dst_file)?;
     Ok(())
 }
@@ -79,11 +109,17 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let file = std::fs::File::open(&args.filename).unwrap();
+    let filename = args.filename.clone();
     if args.zstd {
-        compress(ZstdLineLender::new(file)?, args)?;
+        compress(
+            move || ZstdLineLender::new(std::fs::File::open(&filename).unwrap()).unwrap(),
+            args,
+        )?;
     } else {
-        compress(LineLender::new(BufReader::new(file)), args)?;
+        compress(
+            || LineLender::new(BufReader::new(std::fs::File::open(&filename).unwrap())),
+            args,
+        )?;
     }
 
     Ok(())
