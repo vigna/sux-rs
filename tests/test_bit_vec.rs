@@ -21,6 +21,14 @@ fn test_bit_vec() {
 
     let mut rng = SmallRng::seed_from_u64(0);
 
+    let bm = BitVec::with_value(u, true);
+
+    assert_eq!(bm.len(), u);
+
+    for i in 0..u {
+        assert_eq!(bm[i], true);
+    }
+
     let mut bm = BitVec::new(u);
 
     for _ in 0..10 {
@@ -96,6 +104,14 @@ fn test_bit_vec() {
         for i in 0..u {
             assert!(!bm.get(i, Ordering::Relaxed));
         }
+    }
+
+    let bm = AtomicBitVec::with_value(u, true);
+
+    assert_eq!(bm.len(), u);
+
+    for i in 0..u {
+        assert_eq!(bm.get(i, Ordering::Relaxed), true);
     }
 }
 

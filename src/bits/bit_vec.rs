@@ -82,11 +82,17 @@ impl<B: AsRef<[usize]>> Index<usize> for BitVec<B> {
 }
 
 impl BitVec<Vec<usize>> {
-    /// Create a new bit vector of length `len`.
+    /// Create a new bit vector of length `len` initialized to `false`.
     pub fn new(len: usize) -> Self {
+        Self::with_value(len, false)
+    }
+
+    /// Create a new bit vector of length `len` initialized to `value`.
+    pub fn with_value(len: usize, value: bool) -> Self {
         let n_of_words = (len + BITS - 1) / BITS;
+        let word_value = if value { !0 } else { 0 };
         Self {
-            data: vec![0; n_of_words],
+            data: vec![word_value; n_of_words],
             len,
         }
     }
@@ -130,11 +136,19 @@ impl BitVec<Vec<usize>> {
 }
 
 impl AtomicBitVec<Vec<AtomicUsize>> {
-    /// Create a new atomic bit vector of length `len`.
+    /// Create a new atomic bit vector of length `len` initialized to `false`.
     pub fn new(len: usize) -> Self {
+        Self::with_value(len, false)
+    }
+
+    /// Create a new atomic bit vector of length `len` initialized to `value`.
+    pub fn with_value(len: usize, value: bool) -> Self {
         let n_of_words = (len + BITS - 1) / BITS;
+        let word_value = if value { !0 } else { 0 };
         Self {
-            data: (0..n_of_words).map(|_| AtomicUsize::new(0)).collect(),
+            data: (0..n_of_words)
+                .map(|_| AtomicUsize::new(word_value))
+                .collect(),
             len,
         }
     }
