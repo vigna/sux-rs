@@ -90,11 +90,14 @@ impl BitVec<Vec<usize>> {
     /// Create a new bit vector of length `len` initialized to `value`.
     pub fn with_value(len: usize, value: bool) -> Self {
         let n_of_words = (len + BITS - 1) / BITS;
+        let extra_bits = (n_of_words * BITS) - len;
         let word_value = if value { !0 } else { 0 };
-        Self {
-            data: vec![word_value; n_of_words],
-            len,
+        let mut data = vec![word_value; n_of_words];
+        if extra_bits > 0 {
+            let last_word_value = word_value >> extra_bits;
+            data[n_of_words - 1] = last_word_value;
         }
+        Self { data, len }
     }
 
     pub fn capacity(&self) -> usize {
@@ -144,13 +147,16 @@ impl AtomicBitVec<Vec<AtomicUsize>> {
     /// Create a new atomic bit vector of length `len` initialized to `value`.
     pub fn with_value(len: usize, value: bool) -> Self {
         let n_of_words = (len + BITS - 1) / BITS;
+        let extra_bits = (n_of_words * BITS) - len;
         let word_value = if value { !0 } else { 0 };
-        Self {
-            data: (0..n_of_words)
-                .map(|_| AtomicUsize::new(word_value))
-                .collect(),
-            len,
+        let mut data = (0..n_of_words)
+            .map(|_| AtomicUsize::new(word_value))
+            .collect::<Vec<_>>();
+        if extra_bits > 0 {
+            let last_word_value = word_value >> extra_bits;
+            data[n_of_words - 1] = AtomicUsize::new(last_word_value);
         }
+        Self { data, len }
     }
 }
 
