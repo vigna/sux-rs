@@ -24,6 +24,7 @@ fn test_bit_vec() {
     let bm = BitVec::with_value(u, true);
 
     assert_eq!(bm.len(), u);
+    assert_eq!(bm.count_ones(), u);
 
     for i in 0..u {
         assert_eq!(bm[i], true);
@@ -109,6 +110,7 @@ fn test_bit_vec() {
     let bm = AtomicBitVec::with_value(u, true);
 
     assert_eq!(bm.len(), u);
+    assert_eq!(bm.count_ones(), u);
 
     for i in 0..u {
         assert_eq!(bm.get(i, Ordering::Relaxed), true);
