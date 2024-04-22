@@ -228,6 +228,7 @@ impl<B: AsRef<[usize]>> BitVec<B> {
 impl<B: AsRef<[AtomicUsize]>> Index<usize> for AtomicBitVec<B> {
     type Output = bool;
 
+    /// Shorthand for [`Self::get`] using [`Ordering::Relaxed`].
     fn index(&self, index: usize) -> &Self::Output {
         match self.get(index, Ordering::Relaxed) {
             false => &false,
