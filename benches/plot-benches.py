@@ -89,13 +89,15 @@ def compare_select():
 
 
 def compare_rank():
-    # Compare rank9 and rank11
     rank9 = load_benches("../target/criterion/rank9/")
     rank11 = load_benches("../target/criterion/rank11/")
+    rank12 = load_benches("../target/criterion/rank12/")
+    rank16 = load_benches("../target/criterion/rank16/")
 
-    compare_benches([(rank9, "rank9"), (rank11, "rank11")], "compare_rank")
+    compare_benches([(rank9, "rank9"), (rank11, "rank11"), (rank12, "rank12"),
+                    (rank16, "rank16")], "compare_rank")
 
 
 if __name__ == "__main__":
-    compare_select()
+    # compare_select()
     compare_rank()

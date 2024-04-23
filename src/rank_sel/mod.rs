@@ -61,5 +61,11 @@ pub use rank9::*;
 mod rank11;
 pub use rank11::*;
 
+mod rank12;
+pub use rank12::*;
+
+mod rank16;
+pub use rank16::*;
+
 mod rank9sel;
 pub use rank9sel::*;
