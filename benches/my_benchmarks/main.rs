@@ -8,9 +8,15 @@ use bench_select::*;
 use criterion::Criterion;
 
 fn main() {
-    let mut criterion = Criterion::default().without_plots().configure_from_args();
+    let mut criterion = Criterion::default()
+        .without_plots()
+        .configure_from_args()
+        .with_filter("");
 
     let filter = std::env::args().nth(1).unwrap_or_default();
+
+    println!("Filter: {}", filter);
+
     match filter.as_str() {
         filter if filter.contains("-") || filter.is_empty() => {
             bench_rank9(&mut criterion);
@@ -25,6 +31,14 @@ fn main() {
         }
         "rank9" => bench_rank9(&mut criterion),
         "rank11" => bench_rank11(&mut criterion),
+        "rank12" => bench_rank12(&mut criterion),
+        "rank16" => bench_rank16(&mut criterion),
+        "rank" => {
+            bench_rank9(&mut criterion);
+            bench_rank11(&mut criterion);
+            bench_rank12(&mut criterion);
+            bench_rank16(&mut criterion);
+        }
         "simple_select" => bench_simple_select(&mut criterion),
         "rank9sel" => bench_rank9sel(&mut criterion),
         "simple_select_non_uniform" => bench_simple_select_non_uniform(&mut criterion),
