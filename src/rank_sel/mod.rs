@@ -58,6 +58,9 @@ pub use simple_select::*;
 mod rank9;
 pub use rank9::*;
 
+mod rank10;
+pub use rank10::*;
+
 mod rank11;
 pub use rank11::*;
 
