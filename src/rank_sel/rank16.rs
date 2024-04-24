@@ -4,7 +4,7 @@ use mem_dbg::{MemDbg, MemSize};
 use crate::prelude::*;
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct Block196 {
+pub struct Count192 {
     pub upper: u64,
     pub lower: u128,
 }
@@ -15,7 +15,7 @@ pub struct Rank16<
     const HINT_BIT_SIZE: usize = 64,
 > {
     pub(super) bits: B,
-    pub(super) counts: Vec<Block196>,
+    pub(super) counts: Vec<Count192>,
 }
 
 impl<
@@ -38,27 +38,27 @@ impl<const HINT_BIT_SIZE: usize> Rank16<BitVec, HINT_BIT_SIZE> {
         let num_words = (num_bits + 63) / 64;
         let num_counts = (num_bits + Self::UPPER_BLOCK_SIZE - 1) / Self::UPPER_BLOCK_SIZE;
 
-        let mut counts = Vec::<Block196>::with_capacity(num_counts + 1);
+        let mut counts = Vec::<Count192>::with_capacity(num_counts + 1);
         let mut num_ones = 0u64;
 
         for i in (0..num_words).step_by(Self::WORD_UPPER_BLOCK_SIZE) {
-            let mut block = Block196 {
+            let mut count = Count192 {
                 upper: num_ones,
                 lower: 0,
             };
             num_ones += bits.as_ref()[i].count_ones() as u64;
             for j in 1..Self::WORD_UPPER_BLOCK_SIZE {
                 if j % Self::WORD_LOWER_BLOCK_SIZE == 0 {
-                    block.lower |= ((num_ones - block.upper) as u128)
+                    count.lower |= ((num_ones - count.upper) as u128)
                         << (Self::LOG2_UPPER_BLOCK_SIZE * (j / Self::WORD_LOWER_BLOCK_SIZE));
                 }
                 if i + j < num_words {
                     num_ones += bits.as_ref()[i + j].count_ones() as u64;
                 }
             }
-            counts.push(block);
+            counts.push(count);
         }
-        counts.push(Block196 {
+        counts.push(Count192 {
             upper: num_ones,
             lower: 0,
         });
@@ -97,7 +97,7 @@ impl<
         let word = pos / 64;
         let block = word / Self::WORD_UPPER_BLOCK_SIZE;
 
-        let counts_ref = <Vec<Block196> as AsRef<[Block196]>>::as_ref(&self.counts);
+        let counts_ref = <Vec<Count192> as AsRef<[Count192]>>::as_ref(&self.counts);
         let upper = counts_ref.get_unchecked(block).upper;
         let lower = counts_ref.get_unchecked(block).lower;
 
