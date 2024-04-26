@@ -30,11 +30,13 @@ fn main() {
             bench_rng_non_uniform(&mut criterion);
         }
         "rank9" => bench_rank9(&mut criterion),
+        "rank10" => bench_rank10(&mut criterion),
         "rank11" => bench_rank11(&mut criterion),
         "rank12" => bench_rank12(&mut criterion),
         "rank16" => bench_rank16(&mut criterion),
         "rank" => {
             bench_rank9(&mut criterion);
+            bench_rank10(&mut criterion);
             bench_rank11(&mut criterion);
             bench_rank12(&mut criterion);
             bench_rank16(&mut criterion);
