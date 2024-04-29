@@ -3,6 +3,13 @@ use mem_dbg::{MemDbg, MemSize};
 
 use crate::prelude::*;
 
+const UPPER_BLOCK_SIZE: usize = 896;
+const WORD_UPPER_BLOCK_SIZE: usize = UPPER_BLOCK_SIZE / 64;
+const LOWER_BLOCK_SIZE: usize = UPPER_BLOCK_SIZE / 7;
+const WORD_LOWER_BLOCK_SIZE: usize = LOWER_BLOCK_SIZE / 64;
+// used to compute word % WORD_UPPER_BLOCK_SIZE
+// const REC_WORD_UPPER_BLOCK_SIZE: u64 = u64::MAX / (WORD_UPPER_BLOCK_SIZE as u64) + 1;
+
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct Counts {
     major: Vec<u64>,
@@ -66,30 +73,19 @@ pub struct Rank10<
     pub(super) num_ones: u64,
 }
 
-impl<
-        B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]>,
-        const HINT_BIT_SIZE: usize,
-    > Rank10<B, HINT_BIT_SIZE>
-{
-    const UPPER_BLOCK_SIZE: usize = 896;
-    const WORD_UPPER_BLOCK_SIZE: usize = 14; // Self::UPPER_BLOCK_SIZE / 64
-    const LOWER_BLOCK_SIZE: usize = 128; // Self::UPPER_BLOCK_SIZE / 7;
-    const WORD_LOWER_BLOCK_SIZE: usize = 2; //Self::LOWER_BLOCK_SIZE / 64
-}
-
 impl<const HINT_BIT_SIZE: usize> Rank10<BitVec, HINT_BIT_SIZE> {
     pub fn new(bits: BitVec) -> Self {
         let num_bits = bits.len();
         let num_words = (num_bits + 63) / 64;
         let num_major_counts = (num_bits + (1 << 32) - 1) / (1 << 32);
-        let num_counts = (num_bits + 896 - 1) / 896;
+        let num_counts = (num_bits + UPPER_BLOCK_SIZE - 1) / UPPER_BLOCK_SIZE;
 
         let mut counts = Counts::new(num_major_counts, num_counts);
 
         let mut num_ones = 0u64;
         let mut major_block = 0u64;
 
-        for (i, block) in (0..num_words).step_by(Self::WORD_UPPER_BLOCK_SIZE).zip(0..) {
+        for (i, block) in (0..num_words).step_by(WORD_UPPER_BLOCK_SIZE).zip(0..) {
             if i % (1 << 26) == 0 {
                 major_block = num_ones;
                 counts.set_major(major_block, i / (1 << 26));
@@ -97,12 +93,12 @@ impl<const HINT_BIT_SIZE: usize> Rank10<BitVec, HINT_BIT_SIZE> {
             let upper = (num_ones - major_block) as u32;
             counts.set_upper(upper, block);
             num_ones += bits.as_ref()[i].count_ones() as u64;
-            for j in 1..Self::WORD_UPPER_BLOCK_SIZE {
-                if j % Self::WORD_LOWER_BLOCK_SIZE == 0 {
+            for j in 1..WORD_UPPER_BLOCK_SIZE {
+                if j % WORD_LOWER_BLOCK_SIZE == 0 {
                     counts.set_lower(
                         (num_ones - major_block) as u32 - upper,
                         block,
-                        j / Self::WORD_LOWER_BLOCK_SIZE - 1,
+                        j / WORD_LOWER_BLOCK_SIZE - 1,
                     );
                 }
                 if i + j < num_words {
@@ -113,7 +109,6 @@ impl<const HINT_BIT_SIZE: usize> Rank10<BitVec, HINT_BIT_SIZE> {
 
         Self {
             bits,
-            //major_counts,
             counts,
             num_ones: num_ones as u64,
         }
@@ -147,9 +142,16 @@ impl<
 {
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
         let word = pos / 64;
-        let block = word / Self::WORD_UPPER_BLOCK_SIZE;
+        let block = word / WORD_UPPER_BLOCK_SIZE;
         let major_block = word >> 26;
-        let idx = (pos % Self::UPPER_BLOCK_SIZE) / Self::LOWER_BLOCK_SIZE;
+
+        // computes word % WORD_UPPER_BLOCK_SIZE
+        // let fastmod = ((((REC_WORD_UPPER_BLOCK_SIZE).wrapping_mul(word as u64) as u128)
+        //     .wrapping_mul(WORD_UPPER_BLOCK_SIZE as u128))
+        //     >> 64) as usize;
+        let upper_block_remainder = word % WORD_UPPER_BLOCK_SIZE;
+
+        let idx = upper_block_remainder / WORD_LOWER_BLOCK_SIZE;
 
         let major = self.counts.major(major_block);
         let upper = self.counts.upper(block);
@@ -157,14 +159,7 @@ impl<
 
         let hint_rank = major + (upper + lower) as u64;
 
-        // computes word % Self::WORD_UPPER_BLOCK_SIZE
-        // const REC_WORD_UPPER_BLOCK_SIZE: u64 = u64::MAX / (Self::WORD_UPPER_BLOCK_SIZE as u64) + 1;
-        // let fastmod = ((((Self::REC_WORD_UPPER_BLOCK_SIZE).wrapping_mul(word as u64) as u128)
-        //     * (Self::WORD_UPPER_BLOCK_SIZE as u128))
-        //     >> 64) as usize;
-
-        let hint_pos =
-            word - ((word % Self::WORD_UPPER_BLOCK_SIZE) & (Self::WORD_LOWER_BLOCK_SIZE - 1));
+        let hint_pos = word - (upper_block_remainder % WORD_LOWER_BLOCK_SIZE);
 
         RankHinted::<HINT_BIT_SIZE>::rank_hinted_unchecked(
             &self.bits,
@@ -186,7 +181,6 @@ impl<
 #[cfg(test)]
 mod test_rank10 {
     use crate::prelude::*;
-    use mem_dbg::{DbgFlags, MemDbg};
     use rand::{Rng, SeedableRng};
 
     #[test]
@@ -225,15 +219,5 @@ mod test_rank10 {
         let rank10: Rank10 = Rank10::new(bits);
 
         assert_eq!(rank10.rank(rank10.len()), rank10.bits.count());
-    }
-
-    #[test]
-    fn debug() {
-        let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
-        let len = 1 << 28;
-        let density = 0.5;
-        let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-        let rank10: Rank10 = Rank10::new(bits);
-        rank10.mem_dbg(DbgFlags::default()).unwrap();
     }
 }
