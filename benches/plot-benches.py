@@ -153,5 +153,9 @@ def compare_rank():
 
 
 if __name__ == "__main__":
-    compare_select()
-    compare_rank()
+    # compare_select()
+    rank10_unopt = load_benches("../target/criterion/rank10_unopt/")
+    rank10 = load_benches("../target/criterion/rank10/")
+
+    compare_benches_same_plot(
+        (rank10_unopt, "rank10_unopt"), (rank10, "rank10"), "rank10_unopt_vs_rank10")
