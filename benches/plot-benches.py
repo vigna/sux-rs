@@ -126,32 +126,11 @@ def compare_benches_same_plot(bench1, bench2, compare_name):
     plt.close(fig)
 
 
-def compare_select():
-    simple_benches = load_benches("../target/criterion/simple_select/")
-    rank9sel_benches = load_benches("../target/criterion/rank9sel/")
-
-    simple_non_uniform_benches = load_benches(
-        "../target/criterion/simple_select_non_uniform/")
-    rank9sel_non_uniform_benches = load_benches(
-        "../target/criterion/rank9sel_non_uniform/")
-
-    compare_benches([(simple_benches, "simple_select"),
-                    (rank9sel_benches, "rank9sel"),
-                    (simple_non_uniform_benches, "simple_select_non_uniform"),
-                    (rank9sel_non_uniform_benches, "rank9sel_non_uniform")], "compare_select")
-
-
-def compare_rank():
-    rank9 = load_benches("../target/criterion/rank9/")
-    rank10 = load_benches("../target/criterion/rank10/")
-    rank11 = load_benches("../target/criterion/rank11/")
-    rank12 = load_benches("../target/criterion/rank12/")
-    rank16 = load_benches("../target/criterion/rank16/")
-
-    compare_benches([(rank9, "rank9"), (rank10, "rank10"), (rank11, "rank11"), (rank12, "rank12"),
-                    (rank16, "rank16")], "compare_rank")
-
-
 if __name__ == "__main__":
-    compare_select()
-    compare_rank()
+    benches = []
+    for file in os.listdir("../target/criterion/"):
+        if os.path.isdir(f"../target/criterion/{file}/"):
+            benches.append(
+                (load_benches(f"../target/criterion/{file}/"), file))
+
+    compare_benches(benches, "benches")

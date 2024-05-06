@@ -58,6 +58,9 @@ pub use simple_select::*;
 mod rank9;
 pub use rank9::*;
 
+mod poppy_revisited;
+pub use poppy_revisited::*;
+
 mod rank10;
 pub use rank10::*;
 
