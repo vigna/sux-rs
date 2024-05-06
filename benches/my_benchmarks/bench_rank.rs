@@ -1,8 +1,9 @@
-use criterion::{black_box, BenchmarkId, Criterion};
+use criterion::measurement::WallTime;
+use criterion::{black_box, BenchmarkGroup, BenchmarkId, Criterion};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sux::bits::bit_vec::BitVec;
-use sux::rank_sel::{Rank10, Rank11, Rank12, Rank16, Rank9};
+use sux::rank_sel::{PoppyRevisited, Rank10, Rank11, Rank12, Rank16, Rank9};
 use sux::traits::Rank;
 
 const LENS: [u64; 11] = [
@@ -23,16 +24,63 @@ const DENSITIES: [f64; 3] = [0.25, 0.5, 0.75];
 
 const REPS: usize = 5;
 
-pub fn bench_rank9(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank9");
+trait RankStruct<B>: Rank {
+    fn new(bits: B) -> Self;
+}
+impl RankStruct<BitVec> for Rank9 {
+    fn new(bits: BitVec) -> Self {
+        Rank9::new(bits)
+    }
+}
+impl RankStruct<BitVec> for PoppyRevisited {
+    fn new(bits: BitVec) -> Self {
+        PoppyRevisited::new(bits)
+    }
+}
+impl RankStruct<BitVec> for Rank10<256> {
+    fn new(bits: BitVec) -> Self {
+        Rank10::new(bits)
+    }
+}
+impl RankStruct<BitVec> for Rank10<512> {
+    fn new(bits: BitVec) -> Self {
+        Rank10::new(bits)
+    }
+}
+impl RankStruct<BitVec> for Rank10<1024> {
+    fn new(bits: BitVec) -> Self {
+        Rank10::new(bits)
+    }
+}
+impl RankStruct<BitVec> for Rank11 {
+    fn new(bits: BitVec) -> Self {
+        Rank11::new(bits)
+    }
+}
+impl RankStruct<BitVec> for Rank12 {
+    fn new(bits: BitVec) -> Self {
+        Rank12::new(bits)
+    }
+}
+impl RankStruct<BitVec> for Rank16 {
+    fn new(bits: BitVec) -> Self {
+        Rank16::new(bits)
+    }
+}
 
+fn bench_rank<R: RankStruct<BitVec>>(
+    bench_group: &mut BenchmarkGroup<'_, WallTime>,
+    lens: &[u64],
+    densities: &[f64],
+    reps: usize,
+) {
     let mut rng = SmallRng::seed_from_u64(0);
-    for len in LENS {
-        for density in DENSITIES {
+    for len in lens.iter().copied() {
+        for density in densities.iter().copied() {
             // possible repetitions
-            for i in 0..REPS {
+            for i in 0..reps {
                 let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-                let rank9: Rank9 = Rank9::new(bits);
+                let rank: R = R::new(bits);
                 bench_group.bench_function(
                     BenchmarkId::from_parameter(format!("{}_{}_{}", len, density, i)),
                     |b| {
@@ -40,41 +88,51 @@ pub fn bench_rank9(c: &mut Criterion) {
                             // use fastrange
                             let p = ((rng.gen::<u64>() as u128).wrapping_mul(len as u128) >> 64)
                                 as usize;
-                            black_box(unsafe { rank9.rank_unchecked(p) });
+                            black_box(unsafe { rank.rank_unchecked(p) });
                         })
                     },
                 );
             }
         }
     }
+}
+
+pub fn bench_rank9(c: &mut Criterion) {
+    let mut bench_group = c.benchmark_group("rank9");
+
+    bench_rank::<Rank9>(&mut bench_group, &LENS, &DENSITIES, REPS);
 
     bench_group.finish();
 }
 
-pub fn bench_rank10(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank10");
+pub fn bench_poppy_revisited(c: &mut Criterion) {
+    let mut bench_group = c.benchmark_group("poppy_revisited");
 
-    let mut rng = SmallRng::seed_from_u64(0);
-    for len in LENS {
-        for density in DENSITIES {
-            // possible repetitions
-            for i in 0..REPS {
-                let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-                let rank10: Rank10 = Rank10::new(bits);
-                bench_group.bench_function(
-                    BenchmarkId::from_parameter(format!("{}_{}_{}", len, density, i)),
-                    |b| {
-                        b.iter(|| {
-                            // use fastrange
-                            let p = ((rng.gen::<u64>() as u128).wrapping_mul(len as u128) >> 64)
-                                as usize;
-                            black_box(unsafe { rank10.rank_unchecked(p) });
-                        })
-                    },
-                );
-            }
-        }
-    }
+    bench_rank::<PoppyRevisited>(&mut bench_group, &LENS, &DENSITIES, REPS);
+
+    bench_group.finish();
+}
+
+pub fn bench_rank10_256(c: &mut Criterion) {
+    let mut bench_group = c.benchmark_group("rank10_256");
+
+    bench_rank::<Rank10<256>>(&mut bench_group, &LENS, &DENSITIES, REPS);
+
+    bench_group.finish();
+}
+
+pub fn bench_rank10_512(c: &mut Criterion) {
+    let mut bench_group = c.benchmark_group("rank10_512");
+
+    bench_rank::<Rank10<512>>(&mut bench_group, &LENS, &DENSITIES, REPS);
+
+    bench_group.finish();
+}
+
+pub fn bench_rank10_1024(c: &mut Criterion) {
+    let mut bench_group = c.benchmark_group("rank10_1024");
+
+    bench_rank::<Rank10<1024>>(&mut bench_group, &LENS, &DENSITIES, REPS);
 
     bench_group.finish();
 }
@@ -82,27 +140,7 @@ pub fn bench_rank10(c: &mut Criterion) {
 pub fn bench_rank11(c: &mut Criterion) {
     let mut bench_group = c.benchmark_group("rank11");
 
-    let mut rng = SmallRng::seed_from_u64(0);
-    for len in LENS {
-        for density in DENSITIES {
-            // possible repetitions
-            for i in 0..REPS {
-                let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-                let rank11: Rank11 = Rank11::new(bits);
-                bench_group.bench_function(
-                    BenchmarkId::from_parameter(format!("{}_{}_{}", len, density, i)),
-                    |b| {
-                        b.iter(|| {
-                            // use fastrange
-                            let p = ((rng.gen::<u64>() as u128).wrapping_mul(len as u128) >> 64)
-                                as usize;
-                            black_box(unsafe { rank11.rank_unchecked(p) });
-                        })
-                    },
-                );
-            }
-        }
-    }
+    bench_rank::<Rank11>(&mut bench_group, &LENS, &DENSITIES, REPS);
 
     bench_group.finish();
 }
@@ -110,27 +148,7 @@ pub fn bench_rank11(c: &mut Criterion) {
 pub fn bench_rank12(c: &mut Criterion) {
     let mut bench_group = c.benchmark_group("rank12");
 
-    let mut rng = SmallRng::seed_from_u64(0);
-    for len in LENS {
-        for density in DENSITIES {
-            // possible repetitions
-            for i in 0..REPS {
-                let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-                let rank12: Rank12 = Rank12::new(bits);
-                bench_group.bench_function(
-                    BenchmarkId::from_parameter(format!("{}_{}_{}", len, density, i)),
-                    |b| {
-                        b.iter(|| {
-                            // use fastrange
-                            let p = ((rng.gen::<u64>() as u128).wrapping_mul(len as u128) >> 64)
-                                as usize;
-                            black_box(unsafe { rank12.rank_unchecked(p) });
-                        })
-                    },
-                );
-            }
-        }
-    }
+    bench_rank::<Rank12>(&mut bench_group, &LENS, &DENSITIES, REPS);
 
     bench_group.finish();
 }
@@ -138,27 +156,7 @@ pub fn bench_rank12(c: &mut Criterion) {
 pub fn bench_rank16(c: &mut Criterion) {
     let mut bench_group = c.benchmark_group("rank16");
 
-    let mut rng = SmallRng::seed_from_u64(0);
-    for len in LENS {
-        for density in DENSITIES {
-            // possible repetitions
-            for i in 0..REPS {
-                let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-                let rank16: Rank16 = Rank16::new(bits);
-                bench_group.bench_function(
-                    BenchmarkId::from_parameter(format!("{}_{}_{}", len, density, i)),
-                    |b| {
-                        b.iter(|| {
-                            // use fastrange
-                            let p = ((rng.gen::<u64>() as u128).wrapping_mul(len as u128) >> 64)
-                                as usize;
-                            black_box(unsafe { rank16.rank_unchecked(p) });
-                        })
-                    },
-                );
-            }
-        }
-    }
+    bench_rank::<Rank16>(&mut bench_group, &LENS, &DENSITIES, REPS);
 
     bench_group.finish();
 }

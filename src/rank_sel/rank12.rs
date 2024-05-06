@@ -21,7 +21,6 @@ impl Counts256 {
             (self.inner[block * 2] & ((1u128 << 72) - 1)) | ((upper as u128) << 72);
     }
     pub fn set_lower(&mut self, lower: u128, block: usize, idx: usize) {
-        // there are 16 lower counts of 12 bits in a Count256, the first 6 are in d1, the rest are in d2
         debug_assert!(block < self.inner.len() / 2);
         debug_assert!(idx < 16);
         debug_assert!(lower < 1 << 12);
