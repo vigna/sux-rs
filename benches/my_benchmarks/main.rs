@@ -23,7 +23,6 @@ fn main() {
             bench_rank9sel(&mut criterion);
             bench_simple_select_non_uniform(&mut criterion);
             bench_rank9sel_non_uniform(&mut criterion);
-            bench_select_fixed2(&mut criterion);
             bench_rng(&mut criterion);
             bench_rng_non_uniform(&mut criterion);
         }
@@ -53,7 +52,29 @@ fn main() {
         "rank9sel" => bench_rank9sel(&mut criterion),
         "simple_select_non_uniform" => bench_simple_select_non_uniform(&mut criterion),
         "rank9sel_non_uniform" => bench_rank9sel_non_uniform(&mut criterion),
-        "select_fixed2" => bench_select_fixed2(&mut criterion),
+        "rank10sel_256" => bench_rank10sel_256(&mut criterion),
+        "rank10sel_512" => bench_rank10sel_512(&mut criterion),
+        "rank10sel_1024" => bench_rank10sel_1024(&mut criterion),
+        "rank10sel" => {
+            bench_rank10sel_256(&mut criterion);
+            bench_rank10sel_512(&mut criterion);
+            bench_rank10sel_1024(&mut criterion);
+            bench_rank10sel_256_non_uniform(&mut criterion);
+            bench_rank10sel_512_non_uniform(&mut criterion);
+            bench_rank10sel_1024_non_uniform(&mut criterion);
+        }
+        "batch" => {
+            bench_rank10sel_256(&mut criterion);
+            bench_rank10sel_512(&mut criterion);
+            bench_rank10sel_1024(&mut criterion);
+            bench_rank10sel_256_non_uniform(&mut criterion);
+            bench_rank10sel_512_non_uniform(&mut criterion);
+            bench_rank10sel_1024_non_uniform(&mut criterion);
+            bench_simple_select(&mut criterion);
+            bench_rank9sel(&mut criterion);
+            bench_simple_select_non_uniform(&mut criterion);
+            bench_rank9sel_non_uniform(&mut criterion);
+        }
         "rng" => bench_rng(&mut criterion),
         "rng_non_uniform" => bench_rng_non_uniform(&mut criterion),
         _ => {}

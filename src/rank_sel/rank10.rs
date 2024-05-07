@@ -5,8 +5,8 @@ use crate::prelude::*;
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct Counts64 {
-    major: Vec<u64>,
-    minor: Vec<u64>,
+    pub(super) major: Vec<u64>,
+    pub(super) minor: Vec<u64>,
 }
 
 impl Counts64 {
@@ -70,11 +70,11 @@ impl<
         B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]>,
     > Rank10<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
 {
-    const MAJOR_BLOCK_SIZE: usize = 1 << 32;
-    const WORD_MAJOR_BLOCK_SIZE: usize = Self::MAJOR_BLOCK_SIZE / 64;
-    const WORD_UPPER_BLOCK_SIZE: usize = UPPER_BLOCK_SIZE / 64;
-    const LOWER_BLOCK_SIZE: usize = UPPER_BLOCK_SIZE / 4;
-    const WORD_LOWER_BLOCK_SIZE: usize = Self::LOWER_BLOCK_SIZE / 64;
+    pub(super) const MAJOR_BLOCK_SIZE: usize = 1 << 32;
+    pub(super) const WORD_MAJOR_BLOCK_SIZE: usize = Self::MAJOR_BLOCK_SIZE / 64;
+    pub(super) const WORD_UPPER_BLOCK_SIZE: usize = UPPER_BLOCK_SIZE / 64;
+    pub(super) const LOWER_BLOCK_SIZE: usize = UPPER_BLOCK_SIZE / 4;
+    pub(super) const WORD_LOWER_BLOCK_SIZE: usize = Self::LOWER_BLOCK_SIZE / 64;
 }
 
 impl<const UPPER_BLOCK_SIZE: usize, const HINT_BIT_SIZE: usize>

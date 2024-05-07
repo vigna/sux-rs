@@ -55,6 +55,9 @@ pub use select_zero_fixed2::*;
 mod simple_select;
 pub use simple_select::*;
 
+mod rank10sel;
+pub use rank10sel::*;
+
 mod rank9;
 pub use rank9::*;
 
