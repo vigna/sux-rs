@@ -148,7 +148,7 @@ pub fn bench_rank9sel_non_uniform(c: &mut Criterion) {
 }
 
 pub fn bench_rank10sel_256(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank10sel");
+    let mut bench_group = c.benchmark_group("rank10sel_256");
 
     bench_select::<Rank10Sel<256>>(&mut bench_group, &LENS, &DENSITIES, REPS, false);
 
@@ -156,7 +156,7 @@ pub fn bench_rank10sel_256(c: &mut Criterion) {
 }
 
 pub fn bench_rank10sel_512(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank10sel");
+    let mut bench_group = c.benchmark_group("rank10sel_512");
 
     bench_select::<Rank10Sel<512>>(&mut bench_group, &LENS, &DENSITIES, REPS, false);
 
@@ -164,7 +164,7 @@ pub fn bench_rank10sel_512(c: &mut Criterion) {
 }
 
 pub fn bench_rank10sel_1024(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank10sel");
+    let mut bench_group = c.benchmark_group("rank10sel_1024");
 
     bench_select::<Rank10Sel<1024>>(&mut bench_group, &LENS, &DENSITIES, REPS, false);
 
@@ -172,7 +172,7 @@ pub fn bench_rank10sel_1024(c: &mut Criterion) {
 }
 
 pub fn bench_rank10sel_256_non_uniform(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank10sel_non_uniform");
+    let mut bench_group = c.benchmark_group("rank10sel_256_non_uniform");
 
     bench_select::<Rank10Sel<256>>(&mut bench_group, &LENS, &DENSITIES, REPS, false);
 
@@ -180,7 +180,7 @@ pub fn bench_rank10sel_256_non_uniform(c: &mut Criterion) {
 }
 
 pub fn bench_rank10sel_512_non_uniform(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank10sel_non_uniform");
+    let mut bench_group = c.benchmark_group("rank10sel_512_non_uniform");
 
     bench_select::<Rank10Sel<512>>(&mut bench_group, &LENS, &DENSITIES, REPS, false);
 
@@ -188,7 +188,7 @@ pub fn bench_rank10sel_512_non_uniform(c: &mut Criterion) {
 }
 
 pub fn bench_rank10sel_1024_non_uniform(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank10sel_non_uniform");
+    let mut bench_group = c.benchmark_group("rank10sel_1024_non_uniform");
 
     bench_select::<Rank10Sel<1024>>(&mut bench_group, &LENS, &DENSITIES, REPS, false);
 
