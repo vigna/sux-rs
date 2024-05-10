@@ -31,13 +31,13 @@ def load_benches(base_path):
         path = base_path + dir + "/new/estimates.json"
         with open(path, "r") as f:
             estimates = json.load(f)
-            data["mean"] = estimates["mean"]["point_estimate"]
+            data["time"] = estimates["median"]["point_estimate"]
 
         benches_list.append(data)
 
     benches_df = pd.DataFrame(benches_list)
     benches_df = benches_df.groupby(
-        ["size", "dense"], as_index=False)["mean"].mean()
+        ["size", "dense"], as_index=False)["time"].median()
     benches_df = benches_df.sort_values(by="size", ignore_index=True)
     return benches_df
 
@@ -52,16 +52,16 @@ def compare_benches(benches, compare_name):
 
     for i, (bench, bench_name) in enumerate(benches):
         for d, (name, group) in enumerate(bench.groupby("dense")):
-            ax[0, i].plot(group["size"], group["mean"], label=f"density={float(name)*100}%",
+            ax[0, i].plot(group["size"], group["time"], label=f"density={float(name)*100}%",
                           color=colors[d], marker="o", markersize=3, linewidth=1.0)
         ax[0, i].set_title(bench_name)
         ax[0, i].grid(True)
         ax[0, i].set_xscale("log")
         ax[0, i].set_yscale("log")
 
-    means = np.sort(np.concatenate(
-        list(map(lambda x: x[0]["mean"].unique(), benches)), axis=0))
-    ticks = np.logspace(np.log10(means[0]), np.log10(means[-1]), num=6)
+    times = np.sort(np.concatenate(
+        list(map(lambda x: x[0]["time"].unique(), benches)), axis=0))
+    ticks = np.logspace(np.log10(times[0]), np.log10(times[-1]), num=6)
     ticks = list(map(lambda x: math.ceil(x), ticks))
     ax[0, 0].set_yticks(ticks)
     ax[0, 0].set_yticklabels(ticks)
@@ -83,19 +83,19 @@ def compare_benches_same_plot(bench1, bench2, compare_name):
              va='center', rotation='vertical')
 
     for d, (name, group) in enumerate(bench1[0].groupby("dense")):
-        ax.plot(group["size"], group["mean"], label=f"density={float(name)*100}%",
+        ax.plot(group["size"], group["time"], label=f"density={float(name)*100}%",
                 color=colors[d], marker=markers[0], markersize=3, linewidth=1.0, linestyle="-")
 
     for d, (name, group) in enumerate(bench2[0].groupby("dense")):
-        ax.plot(group["size"], group["mean"], label=f"density={float(name)*100}%",
+        ax.plot(group["size"], group["time"], label=f"density={float(name)*100}%",
                 color=colors[d], marker=markers[1], markersize=3, linewidth=1.0, linestyle="--")
 
-    means = []
-    means.append(bench1[0]["mean"].unique())
-    means.append(bench2[0]["mean"].unique())
+    times = []
+    times.append(bench1[0]["time"].unique())
+    times.append(bench2[0]["time"].unique())
 
-    means = np.unique(np.concatenate(means), axis=0)
-    ticks = np.logspace(np.log10(means[0]), np.log10(means[-1]), num=6)
+    times = np.unique(np.concatenate(times), axis=0)
+    ticks = np.logspace(np.log10(times[0]), np.log10(times[-1]), num=6)
     ticks = list(map(lambda x: round(x, 1), ticks))
 
     ax.set_xscale("log")
