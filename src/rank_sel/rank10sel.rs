@@ -7,6 +7,7 @@ use crate::prelude::*;
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct Rank10Sel<
     const UPPER_BLOCK_SIZE: usize,
+    const LOG2_ONES_PER_INVENTORY: usize = 12,
     const HINT_BIT_SIZE: usize = 64,
     B: RankHinted<HINT_BIT_SIZE> + SelectHinted + Rank + Select + BitCount + AsRef<[usize]> = BitVec,
 > {
@@ -16,17 +17,21 @@ pub struct Rank10Sel<
 
 impl<
         const UPPER_BLOCK_SIZE: usize,
+        const LOG2_ONES_PER_INVENTORY: usize,
         const HINT_BIT_SIZE: usize,
         B: RankHinted<HINT_BIT_SIZE> + SelectHinted + Rank + Select + BitCount + AsRef<[usize]>,
-    > Rank10Sel<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
+    > Rank10Sel<UPPER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
 {
     const MAJOR_BLOCK_SIZE: usize = Rank10::<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>::MAJOR_BLOCK_SIZE;
     const LOWER_BLOCK_SIZE: usize = Rank10::<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>::LOWER_BLOCK_SIZE;
-    const ONES_PER_INVENTORY: usize = 8192;
+    const ONES_PER_INVENTORY: usize = 1 << LOG2_ONES_PER_INVENTORY;
 }
 
-impl<const UPPER_BLOCK_SIZE: usize, const HINT_BIT_SIZE: usize>
-    Rank10Sel<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, BitVec>
+impl<
+        const UPPER_BLOCK_SIZE: usize,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        const HINT_BIT_SIZE: usize,
+    > Rank10Sel<UPPER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, BitVec>
 {
     pub fn new(bits: BitVec) -> Self {
         let rank10 = Rank10::<UPPER_BLOCK_SIZE, HINT_BIT_SIZE>::new(bits);
@@ -68,9 +73,10 @@ impl<const UPPER_BLOCK_SIZE: usize, const HINT_BIT_SIZE: usize>
 
 impl<
         const UPPER_BLOCK_SIZE: usize,
+        const LOG2_ONES_PER_INVENTORY: usize,
         const HINT_BIT_SIZE: usize,
         B: RankHinted<HINT_BIT_SIZE> + SelectHinted + Rank + Select + BitCount + AsRef<[usize]>,
-    > Select for Rank10Sel<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
+    > Select for Rank10Sel<UPPER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         let inventory_index = rank / Self::ONES_PER_INVENTORY;
@@ -114,9 +120,10 @@ impl<
 
 impl<
         const UPPER_BLOCK_SIZE: usize,
+        const LOG2_ONES_PER_INVENTORY: usize,
         const HINT_BIT_SIZE: usize,
         B: RankHinted<HINT_BIT_SIZE> + SelectHinted + Rank + Select + BitCount + AsRef<[usize]>,
-    > Rank for Rank10Sel<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
+    > Rank for Rank10Sel<UPPER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
 {
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
         self.rank10.rank_unchecked(pos)
@@ -128,9 +135,10 @@ impl<
 
 impl<
         const UPPER_BLOCK_SIZE: usize,
+        const LOG2_ONES_PER_INVENTORY: usize,
         const HINT_BIT_SIZE: usize,
         B: RankHinted<HINT_BIT_SIZE> + SelectHinted + Rank + Select + BitCount + AsRef<[usize]>,
-    > BitCount for Rank10Sel<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
+    > BitCount for Rank10Sel<UPPER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
 {
     fn count(&self) -> usize {
         self.rank10.count()
@@ -139,9 +147,10 @@ impl<
 
 impl<
         const UPPER_BLOCK_SIZE: usize,
+        const LOG2_ONES_PER_INVENTORY: usize,
         const HINT_BIT_SIZE: usize,
         B: RankHinted<HINT_BIT_SIZE> + SelectHinted + Rank + Select + BitCount + AsRef<[usize]>,
-    > BitLength for Rank10Sel<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
+    > BitLength for Rank10Sel<UPPER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
 {
     fn len(&self) -> usize {
         self.rank10.len()
@@ -154,7 +163,7 @@ mod test_rank10sel {
     use crate::prelude::BitVec;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
-    const TEST_UPPER_BLOCK_SIZE: usize = 512;
+    const TEST_UPPER_BLOCK_SIZE: usize = 1024;
 
     #[test]
     fn test_rank10sel() {
@@ -163,7 +172,7 @@ mod test_rank10sel {
         let lens = (1..1000).chain((1000..10000).step_by(100));
         for len in lens {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let rank10sel: Rank10Sel<TEST_UPPER_BLOCK_SIZE> = Rank10Sel::new(bits.clone());
+            let rank10sel: Rank10Sel<TEST_UPPER_BLOCK_SIZE, 11> = Rank10Sel::new(bits.clone());
 
             let ones = bits.count_ones();
             let mut pos = Vec::with_capacity(ones);
