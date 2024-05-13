@@ -37,17 +37,7 @@ impl RankStruct<BitVec> for PoppyRevisited {
         PoppyRevisited::new(bits)
     }
 }
-impl RankStruct<BitVec> for Rank10<256> {
-    fn new(bits: BitVec) -> Self {
-        Rank10::new(bits)
-    }
-}
-impl RankStruct<BitVec> for Rank10<512> {
-    fn new(bits: BitVec) -> Self {
-        Rank10::new(bits)
-    }
-}
-impl RankStruct<BitVec> for Rank10<1024> {
+impl<const LOG2_UPPER_BLOCK_SIZE: usize> RankStruct<BitVec> for Rank10<LOG2_UPPER_BLOCK_SIZE> {
     fn new(bits: BitVec) -> Self {
         Rank10::new(bits)
     }
@@ -113,28 +103,11 @@ pub fn bench_poppy_revisited(c: &mut Criterion) {
     bench_group.finish();
 }
 
-pub fn bench_rank10_256(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank10_256");
-
-    bench_rank::<Rank10<256>>(&mut bench_group, &LENS, &DENSITIES, REPS);
-
-    bench_group.finish();
-}
-
-pub fn bench_rank10_512(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank10_512");
-
-    bench_rank::<Rank10<512>>(&mut bench_group, &LENS, &DENSITIES, REPS);
-
-    bench_group.finish();
-}
-
-pub fn bench_rank10_1024(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank10_1024");
-
-    bench_rank::<Rank10<1024>>(&mut bench_group, &LENS, &DENSITIES, REPS);
-
-    bench_group.finish();
+pub fn bench_rank10<const LOG2_UPPER_BLOCK_SIZE: usize>(c: &mut Criterion) {
+    let name = format!("rank10_{}", LOG2_UPPER_BLOCK_SIZE);
+    let mut group = c.benchmark_group(name);
+    bench_rank::<Rank10<LOG2_UPPER_BLOCK_SIZE>>(&mut group, &LENS, &DENSITIES, REPS);
+    group.finish();
 }
 
 pub fn bench_rank11(c: &mut Criterion) {
