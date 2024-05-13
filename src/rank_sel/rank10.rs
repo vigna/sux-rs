@@ -55,7 +55,7 @@ impl Counts64 {
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct Rank10<
-    const UPPER_BLOCK_SIZE: usize,
+    const LOG2_UPPER_BLOCK_SIZE: usize,
     const HINT_BIT_SIZE: usize = 64,
     B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]> = BitVec,
 > {
@@ -65,26 +65,31 @@ pub struct Rank10<
 }
 
 impl<
-        const UPPER_BLOCK_SIZE: usize,
+        const LOG2_UPPER_BLOCK_SIZE: usize,
         const HINT_BIT_SIZE: usize,
         B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]>,
-    > Rank10<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
+    > Rank10<LOG2_UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
 {
+    pub(super) const UPPER_BLOCK_SIZE: usize = 1 << LOG2_UPPER_BLOCK_SIZE;
     pub(super) const MAJOR_BLOCK_SIZE: usize = 1 << 32;
     pub(super) const WORD_MAJOR_BLOCK_SIZE: usize = Self::MAJOR_BLOCK_SIZE / 64;
-    pub(super) const WORD_UPPER_BLOCK_SIZE: usize = UPPER_BLOCK_SIZE / 64;
-    pub(super) const LOWER_BLOCK_SIZE: usize = UPPER_BLOCK_SIZE / 4;
+    pub(super) const WORD_UPPER_BLOCK_SIZE: usize = Self::UPPER_BLOCK_SIZE / 64;
+    pub(super) const LOWER_BLOCK_SIZE: usize = Self::UPPER_BLOCK_SIZE / 4;
     pub(super) const WORD_LOWER_BLOCK_SIZE: usize = Self::LOWER_BLOCK_SIZE / 64;
 }
 
-impl<const UPPER_BLOCK_SIZE: usize, const HINT_BIT_SIZE: usize>
-    Rank10<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, BitVec>
+impl<const LOG2_UPPER_BLOCK_SIZE: usize, const HINT_BIT_SIZE: usize>
+    Rank10<LOG2_UPPER_BLOCK_SIZE, HINT_BIT_SIZE, BitVec>
 {
     pub fn new(bits: BitVec) -> Self {
+        assert!(
+            LOG2_UPPER_BLOCK_SIZE >= 8 && LOG2_UPPER_BLOCK_SIZE <= 10,
+            "LOG2_UPPER_BLOCK_SIZE must be between 8 and 10 (inclusive)"
+        );
         let num_bits = bits.len();
         let num_words = (num_bits + 63) / 64;
         let num_major_counts = (num_bits + Self::MAJOR_BLOCK_SIZE - 1) / Self::MAJOR_BLOCK_SIZE;
-        let num_counts = (num_bits + UPPER_BLOCK_SIZE - 1) / UPPER_BLOCK_SIZE;
+        let num_counts = (num_bits + Self::UPPER_BLOCK_SIZE - 1) / Self::UPPER_BLOCK_SIZE;
 
         let mut counts = Counts64::new(num_major_counts, num_counts);
 
@@ -119,10 +124,10 @@ impl<const UPPER_BLOCK_SIZE: usize, const HINT_BIT_SIZE: usize>
 }
 
 impl<
-        const UPPER_BLOCK_SIZE: usize,
+        const LOG2_UPPER_BLOCK_SIZE: usize,
         const HINT_BIT_SIZE: usize,
         B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]>,
-    > BitLength for Rank10<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
+    > BitLength for Rank10<LOG2_UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
 {
     fn len(&self) -> usize {
         self.bits.len()
@@ -130,10 +135,10 @@ impl<
 }
 
 impl<
-        const UPPER_BLOCK_SIZE: usize,
+        const LOG2_UPPER_BLOCK_SIZE: usize,
         const HINT_BIT_SIZE: usize,
         B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]>,
-    > BitCount for Rank10<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
+    > BitCount for Rank10<LOG2_UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
 {
     fn count(&self) -> usize {
         self.rank(self.bits.len())
@@ -141,10 +146,10 @@ impl<
 }
 
 impl<
-        const UPPER_BLOCK_SIZE: usize,
+        const LOG2_UPPER_BLOCK_SIZE: usize,
         const HINT_BIT_SIZE: usize,
         B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]>,
-    > Rank for Rank10<UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
+    > Rank for Rank10<LOG2_UPPER_BLOCK_SIZE, HINT_BIT_SIZE, B>
 {
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
         let word = pos / 64;
@@ -185,7 +190,7 @@ mod test_rank10 {
     use crate::prelude::*;
     use rand::{Rng, SeedableRng};
 
-    const TEST_UPPER_BLOCK_SIZE: usize = 256;
+    const TEST_LOG2_UPPER_BLOCK_SIZE: usize = 10;
 
     #[test]
     fn test_rank10() {
@@ -198,7 +203,7 @@ mod test_rank10 {
         let density = 0.5;
         for len in lens {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let rank10: Rank10<TEST_UPPER_BLOCK_SIZE> = Rank10::new(bits.clone());
+            let rank10: Rank10<TEST_LOG2_UPPER_BLOCK_SIZE> = Rank10::new(bits.clone());
 
             let mut ranks = Vec::with_capacity(len);
             let mut r = 0;
@@ -220,7 +225,7 @@ mod test_rank10 {
     fn test_empty() {
         let len = (1 << 16) * 64;
         let bits = unsafe { BitVec::from_raw_parts(vec![0usize; len / 64], len) };
-        let rank10: Rank10<TEST_UPPER_BLOCK_SIZE> = Rank10::new(bits.clone());
+        let rank10: Rank10<TEST_LOG2_UPPER_BLOCK_SIZE> = Rank10::new(bits.clone());
 
         let mut ranks = Vec::with_capacity(len);
         let mut r = 0;
@@ -241,7 +246,7 @@ mod test_rank10 {
     fn test_full() {
         let len = (1 << 16) * 64;
         let bits = unsafe { BitVec::from_raw_parts(vec![usize::MAX; len / 64], len) };
-        let rank10: Rank10<TEST_UPPER_BLOCK_SIZE> = Rank10::new(bits.clone());
+        let rank10: Rank10<TEST_LOG2_UPPER_BLOCK_SIZE> = Rank10::new(bits.clone());
 
         let mut ranks = Vec::with_capacity(len);
         let mut r = 0;
@@ -262,7 +267,7 @@ mod test_rank10 {
     fn test_last() {
         let bits = unsafe { BitVec::from_raw_parts(vec![!1usize; 1 << 16], (1 << 16) * 64) };
 
-        let rank10: Rank10<TEST_UPPER_BLOCK_SIZE> = Rank10::new(bits);
+        let rank10: Rank10<TEST_LOG2_UPPER_BLOCK_SIZE> = Rank10::new(bits);
 
         assert_eq!(rank10.rank(rank10.len()), rank10.bits.count());
     }
