@@ -42,8 +42,8 @@ impl SelStruct<BitVec> for Rank9Sel {
         Rank9Sel::new(bits)
     }
 }
-impl<const LOG2_UPPER_BLOCK_SIZE: usize, const LOG2_ONES_PER_INVENTORY: usize> SelStruct<BitVec>
-    for Rank10Sel<LOG2_UPPER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY>
+impl<const LOG2_LOWER_BLOCK_SIZE: usize, const LOG2_ONES_PER_INVENTORY: usize> SelStruct<BitVec>
+    for Rank10Sel<LOG2_LOWER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY>
 {
     fn new(bits: BitVec) -> Self {
         Rank10Sel::new(bits)
@@ -139,19 +139,19 @@ pub fn bench_rank9sel_non_uniform(c: &mut Criterion) {
     bench_group.finish();
 }
 
-pub fn bench_rank10sel<const LOG2_UPPER_BLOCK_SIZE: usize, const LOG2_ONES_PER_INVENTORY: usize>(
+pub fn bench_rank10sel<const LOG2_LOWER_BLOCK_SIZE: usize, const LOG2_ONES_PER_INVENTORY: usize>(
     c: &mut Criterion,
     uniform: bool,
 ) {
     let mut name = format!(
         "rank10sel_{}_{}",
-        LOG2_UPPER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY
+        LOG2_LOWER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY
     );
     if !uniform {
         name.push_str("_non_uniform");
     }
     let mut group = c.benchmark_group(&name);
-    bench_select::<sux::rank_sel::Rank10Sel<LOG2_UPPER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY>>(
+    bench_select::<sux::rank_sel::Rank10Sel<LOG2_LOWER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY>>(
         &mut group, &LENS, &DENSITIES, REPS, uniform,
     );
     group.finish();
