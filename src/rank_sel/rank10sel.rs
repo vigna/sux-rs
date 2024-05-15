@@ -80,11 +80,12 @@ impl<
         let inventory_index = rank / Self::ONES_PER_INVENTORY;
         let jump = (rank % Self::ONES_PER_INVENTORY) - (rank % Self::LOWER_BLOCK_SIZE);
 
-        let inv_pos = self.inventory[inventory_index] as usize;
-        let next_inv_pos = self.inventory[inventory_index + 1] as usize;
+        let inv_ref = <Vec<u64> as AsRef<[u64]>>::as_ref(&self.inventory);
+        let inv_pos = *inv_ref.get_unchecked(inventory_index) as usize;
+        let next_inv_pos = *inv_ref.get_unchecked(inventory_index + 1) as usize;
         let mut hint_pos = inv_pos - (inv_pos % Self::LOWER_BLOCK_SIZE) + jump;
         let upper_block_idx = hint_pos / Self::UPPER_BLOCK_SIZE;
-        let mut lower_block_idx = (hint_pos % Self::UPPER_BLOCK_SIZE) / Self::LOWER_BLOCK_SIZE;
+        let mut lower_block_idx = hint_pos / Self::LOWER_BLOCK_SIZE;
 
         let mut hint_rank =
             self.rank10.counts.upper(upper_block_idx) + self.rank10.counts.lower(lower_block_idx);
@@ -99,10 +100,10 @@ impl<
             }
             next_pos = hint_pos + Self::LOWER_BLOCK_SIZE;
             next_upper_block_idx = next_pos / Self::UPPER_BLOCK_SIZE;
-            next_lower_block_idx = (next_pos % Self::UPPER_BLOCK_SIZE) / Self::LOWER_BLOCK_SIZE;
+            next_lower_block_idx = next_pos / Self::LOWER_BLOCK_SIZE;
             next_rank = self.rank10.counts.upper(next_upper_block_idx)
                 + self.rank10.counts.lower(next_lower_block_idx);
-            if next_rank >= rank as u64 {
+            if next_rank > rank as u64 {
                 break;
             }
             hint_rank = next_rank;
@@ -166,6 +167,7 @@ mod test_rank10sel {
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     const TEST_LOG2_LOWER_BLOCK_SIZE: usize = 10;
+    const TEST_LOG2_ONES_PER_INVENTORY: usize = 13;
 
     #[test]
     fn test_rank10sel() {
@@ -174,7 +176,8 @@ mod test_rank10sel {
         let lens = (1..1000).chain((1000..10000).step_by(100));
         for len in lens {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, 11> = Rank10Sel::new(bits.clone());
+            let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, TEST_LOG2_ONES_PER_INVENTORY> =
+                Rank10Sel::new(bits.clone());
 
             let ones = bits.count_ones();
             let mut pos = Vec::with_capacity(ones);
@@ -197,7 +200,8 @@ mod test_rank10sel {
         let density = 0.5;
         for len in (1 << 10..1 << 15).step_by(usize::BITS as _) {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE> = Rank10Sel::new(bits.clone());
+            let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, TEST_LOG2_ONES_PER_INVENTORY> =
+                Rank10Sel::new(bits.clone());
 
             let ones = bits.count_ones();
             let mut pos = Vec::with_capacity(ones);
@@ -217,7 +221,8 @@ mod test_rank10sel {
     #[test]
     fn test_rank10sel_empty() {
         let bits = BitVec::new(0);
-        let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE> = Rank10Sel::new(bits.clone());
+        let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, TEST_LOG2_ONES_PER_INVENTORY> =
+            Rank10Sel::new(bits.clone());
         assert_eq!(rank10sel.count(), 0);
         assert_eq!(rank10sel.len(), 0);
         assert_eq!(rank10sel.select(0), None);
@@ -227,7 +232,8 @@ mod test_rank10sel {
     fn test_rank10sel_ones() {
         let len = 300_000;
         let bits = (0..len).map(|_| true).collect::<BitVec>();
-        let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE> = Rank10Sel::new(bits);
+        let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, TEST_LOG2_ONES_PER_INVENTORY> =
+            Rank10Sel::new(bits);
         assert_eq!(rank10sel.count(), len);
         assert_eq!(rank10sel.len(), len);
         for i in 0..len {
@@ -239,7 +245,8 @@ mod test_rank10sel {
     fn test_rank10sel_zeros() {
         let len = 300_000;
         let bits = (0..len).map(|_| false).collect::<BitVec>();
-        let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE> = Rank10Sel::new(bits);
+        let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, TEST_LOG2_ONES_PER_INVENTORY> =
+            Rank10Sel::new(bits);
         assert_eq!(rank10sel.count(), 0);
         assert_eq!(rank10sel.len(), len);
         assert_eq!(rank10sel.select(0), None);
@@ -253,7 +260,8 @@ mod test_rank10sel {
                 let bits = (0..len)
                     .map(|i| i % (len / num_ones) == 0)
                     .collect::<BitVec>();
-                let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE> = Rank10Sel::new(bits);
+                let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, TEST_LOG2_ONES_PER_INVENTORY> =
+                    Rank10Sel::new(bits);
                 assert_eq!(rank10sel.count(), num_ones);
                 assert_eq!(rank10sel.len(), len);
                 for i in 0..num_ones {
@@ -320,7 +328,8 @@ mod test_rank10sel {
                     }
                 }
 
-                let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE> = Rank10Sel::new(bits);
+                let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, TEST_LOG2_ONES_PER_INVENTORY> =
+                    Rank10Sel::new(bits);
 
                 for i in 0..ones {
                     assert!(rank10sel.select(i) == Some(pos[i]));
