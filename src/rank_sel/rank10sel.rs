@@ -78,46 +78,73 @@ impl<
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         let inventory_index = rank / Self::ONES_PER_INVENTORY;
-        let jump = (rank % Self::ONES_PER_INVENTORY) - (rank % Self::LOWER_BLOCK_SIZE);
+        let jump = (rank % Self::ONES_PER_INVENTORY) / Self::LOWER_BLOCK_SIZE;
 
         let inv_ref = <Vec<u64> as AsRef<[u64]>>::as_ref(&self.inventory);
         let inv_pos = *inv_ref.get_unchecked(inventory_index) as usize;
         let next_inv_pos = *inv_ref.get_unchecked(inventory_index + 1) as usize;
-        let mut hint_pos = inv_pos - (inv_pos % Self::LOWER_BLOCK_SIZE) + jump;
-        let upper_block_idx = hint_pos / Self::UPPER_BLOCK_SIZE;
-        let mut lower_block_idx = hint_pos / Self::LOWER_BLOCK_SIZE;
+        let last_lower_block = next_inv_pos / Self::LOWER_BLOCK_SIZE;
+
+        let mut lower_block_idx = inv_pos / Self::LOWER_BLOCK_SIZE + jump;
+        let upper_block_idx = lower_block_idx * Self::LOWER_BLOCK_SIZE / Self::UPPER_BLOCK_SIZE;
 
         let mut hint_rank =
             self.rank10.counts.upper(upper_block_idx) + self.rank10.counts.lower(lower_block_idx);
 
         let mut next_rank;
-        let mut next_pos;
         let mut next_upper_block_idx;
         let mut next_lower_block_idx;
         loop {
-            if hint_pos + Self::LOWER_BLOCK_SIZE >= next_inv_pos {
+            if lower_block_idx + 1 >= last_lower_block {
                 break;
             }
-            next_pos = hint_pos + Self::LOWER_BLOCK_SIZE;
-            next_upper_block_idx = next_pos / Self::UPPER_BLOCK_SIZE;
-            next_lower_block_idx = next_pos / Self::LOWER_BLOCK_SIZE;
+            next_lower_block_idx = lower_block_idx + 1;
+            next_upper_block_idx =
+                next_lower_block_idx * Self::LOWER_BLOCK_SIZE / Self::UPPER_BLOCK_SIZE;
             next_rank = self.rank10.counts.upper(next_upper_block_idx)
                 + self.rank10.counts.lower(next_lower_block_idx);
             if next_rank > rank as u64 {
                 break;
             }
             hint_rank = next_rank;
-            hint_pos = next_pos;
             lower_block_idx = next_lower_block_idx;
         }
 
-        let basic_block_idx = hint_pos % Self::BASIC_BLOCK_SIZE;
-        hint_rank += self.rank10.counts.basic(lower_block_idx, basic_block_idx);
-        hint_pos += basic_block_idx * Self::BASIC_BLOCK_SIZE;
+        let hint_pos;
+        // second basic block
+        let b1 = self.rank10.counts.basic(lower_block_idx, 1);
+        if hint_rank + b1 > rank as u64 {
+            hint_pos = lower_block_idx * Self::LOWER_BLOCK_SIZE;
+            return self
+                .rank10
+                .bits
+                .select_hinted_unchecked(rank, hint_pos, hint_rank as usize);
+        }
+        // third basic block
+        let b2 = self.rank10.counts.basic(lower_block_idx, 2);
+        if hint_rank + b2 > rank as u64 {
+            hint_pos = lower_block_idx * Self::LOWER_BLOCK_SIZE + 1 * Self::BASIC_BLOCK_SIZE;
+            return self.rank10.bits.select_hinted_unchecked(
+                rank,
+                hint_pos,
+                (hint_rank + b1) as usize,
+            );
+        }
+        // fourth basic block
+        let b3 = self.rank10.counts.basic(lower_block_idx, 3);
+        if hint_rank + b3 > rank as u64 {
+            hint_pos = lower_block_idx * Self::LOWER_BLOCK_SIZE + 2 * Self::BASIC_BLOCK_SIZE;
+            return self.rank10.bits.select_hinted_unchecked(
+                rank,
+                hint_pos,
+                (hint_rank + b2) as usize,
+            );
+        }
 
+        hint_pos = lower_block_idx * Self::LOWER_BLOCK_SIZE + 3 * Self::BASIC_BLOCK_SIZE;
         self.rank10
             .bits
-            .select_hinted_unchecked(rank, hint_pos, hint_rank as usize)
+            .select_hinted_unchecked(rank, hint_pos, (hint_rank + b3) as usize)
     }
 }
 
@@ -166,8 +193,8 @@ mod test_rank10sel {
     use crate::prelude::BitVec;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
-    const TEST_LOG2_LOWER_BLOCK_SIZE: usize = 10;
-    const TEST_LOG2_ONES_PER_INVENTORY: usize = 13;
+    const TEST_LOG2_LOWER_BLOCK_SIZE: usize = 8;
+    const TEST_LOG2_ONES_PER_INVENTORY: usize = 9;
 
     #[test]
     fn test_rank10sel() {
