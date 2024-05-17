@@ -12,7 +12,7 @@ pub struct Rank10Sel<
     B: RankHinted<HINT_BIT_SIZE> + SelectHinted + Rank + Select + BitCount + AsRef<[usize]> = BitVec,
 > {
     rank10: Rank10<LOG2_LOWER_BLOCK_SIZE, HINT_BIT_SIZE, B>,
-    inventory: Vec<u64>,
+    inventory: Vec<u32>,
 }
 
 impl<
@@ -39,31 +39,38 @@ impl<
     pub fn new(bits: BitVec) -> Self {
         let rank10 = Rank10::<LOG2_LOWER_BLOCK_SIZE, HINT_BIT_SIZE>::new(bits);
 
-        let num_bits = rank10.bits.len();
+        // let num_bits = rank10.bits.len();
         let num_ones = rank10.bits.count_ones() as usize;
 
         let inventory_size = (num_ones + Self::ONES_PER_INVENTORY - 1) / Self::ONES_PER_INVENTORY;
-        let mut inventory = Vec::<u64>::with_capacity(inventory_size + 1);
+        let mut inventory = Vec::<u32>::with_capacity(inventory_size + 1);
 
         let mut curr_num_ones: usize = 0;
         let mut next_quantum: usize = 0;
+        let mut l0_idx;
 
         for (i, word) in rank10.bits.as_ref().iter().copied().enumerate() {
             let ones_in_word = word.count_ones() as usize;
 
+            l0_idx = i * (usize::BITS as usize) / Self::UPPER_BLOCK_SIZE;
+
             while curr_num_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word((next_quantum - curr_num_ones) as usize);
-                let index = (i * u64::BITS as usize) + in_word_index;
+                let index = ((i * u64::BITS as usize) + in_word_index) as u64;
 
-                inventory.push(index as u64);
+                inventory.push((index - rank10.counts.l0[l0_idx]) as u32);
 
                 next_quantum += Self::ONES_PER_INVENTORY;
             }
             curr_num_ones += ones_in_word;
         }
         assert_eq!(num_ones, curr_num_ones);
-        inventory.push(num_bits as u64);
-        assert_eq!(inventory.len(), inventory_size + 1);
+        // inventory.push(num_bits as u64);
+        if inventory.len() != 0 {
+            inventory.push(inventory[inventory.len() - 1]);
+        } else {
+            inventory.push(0);
+        }
 
         Self { rank10, inventory }
     }
@@ -77,37 +84,60 @@ impl<
     > Select for Rank10Sel<LOG2_LOWER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
-        let inventory_index = rank / Self::ONES_PER_INVENTORY;
-        let jump = (rank % Self::ONES_PER_INVENTORY) / Self::LOWER_BLOCK_SIZE;
-
-        let inv_ref = <Vec<u64> as AsRef<[u64]>>::as_ref(&self.inventory);
-        let inv_pos = *inv_ref.get_unchecked(inventory_index) as usize;
-        let next_inv_pos = *inv_ref.get_unchecked(inventory_index + 1) as usize;
-        let last_lower_block = next_inv_pos / Self::LOWER_BLOCK_SIZE;
-
-        let mut lower_block_idx = inv_pos / Self::LOWER_BLOCK_SIZE + jump;
-        let upper_block_idx = lower_block_idx * Self::LOWER_BLOCK_SIZE / Self::UPPER_BLOCK_SIZE;
-
-        let mut hint_rank =
-            self.rank10.counts.upper(upper_block_idx) + self.rank10.counts.lower(lower_block_idx);
-
-        let mut next_rank;
+        let mut upper_block_idx = 0;
         let mut next_upper_block_idx;
-        let mut next_lower_block_idx;
+        let mut last_upper_block_idx = self.rank10.counts.l0.len() - 1;
+        let mut upper_rank = self.rank10.counts.upper(upper_block_idx) as usize;
         loop {
-            if lower_block_idx + 1 >= last_lower_block {
+            if last_upper_block_idx - upper_block_idx <= 1 {
                 break;
             }
-            next_lower_block_idx = lower_block_idx + 1;
-            next_upper_block_idx =
-                next_lower_block_idx * Self::LOWER_BLOCK_SIZE / Self::UPPER_BLOCK_SIZE;
-            next_rank = self.rank10.counts.upper(next_upper_block_idx)
-                + self.rank10.counts.lower(next_lower_block_idx);
-            if next_rank > rank as u64 {
+            next_upper_block_idx = (upper_block_idx + last_upper_block_idx) / 2;
+            upper_rank = self.rank10.counts.upper(next_upper_block_idx) as usize;
+            if rank >= upper_rank {
+                upper_block_idx = next_upper_block_idx;
+            } else {
+                last_upper_block_idx = next_upper_block_idx;
+            }
+        }
+
+        let inv_ref = <Vec<u32> as AsRef<[u32]>>::as_ref(&self.inventory);
+        let rel_inv_pos = *inv_ref.get_unchecked(rank / Self::ONES_PER_INVENTORY) as usize;
+        let inv_pos = rel_inv_pos + upper_block_idx * Self::UPPER_BLOCK_SIZE;
+
+        let next_rel_inv_pos = *inv_ref.get_unchecked(rank / Self::ONES_PER_INVENTORY + 1) as usize;
+        let next_inv_pos = if next_rel_inv_pos > rel_inv_pos {
+            next_rel_inv_pos + upper_block_idx * Self::UPPER_BLOCK_SIZE
+        } else if next_rel_inv_pos < rel_inv_pos {
+            (upper_block_idx + 1) * Self::UPPER_BLOCK_SIZE
+        } else {
+            // the two last elements of the inventory are the same
+            // because at construction time we add the last element twice
+            self.rank10.bits.len()
+        };
+        let mut last_lower_block_idx = next_inv_pos / Self::LOWER_BLOCK_SIZE;
+
+        let jump = (rank % Self::ONES_PER_INVENTORY) / Self::LOWER_BLOCK_SIZE;
+        let mut lower_block_idx = inv_pos / Self::LOWER_BLOCK_SIZE + jump;
+
+        let mut hint_rank = upper_rank as u64 + self.rank10.counts.lower(lower_block_idx);
+        let mut next_rank;
+        let mut next_lower_block_idx;
+
+        debug_assert!(lower_block_idx <= last_lower_block_idx);
+
+        loop {
+            if last_lower_block_idx - lower_block_idx <= 1 {
                 break;
             }
-            hint_rank = next_rank;
-            lower_block_idx = next_lower_block_idx;
+            next_lower_block_idx = (lower_block_idx + last_lower_block_idx) / 2;
+            next_rank = upper_rank as u64 + self.rank10.counts.lower(next_lower_block_idx);
+            if rank >= next_rank as usize {
+                lower_block_idx = next_lower_block_idx;
+                hint_rank = next_rank;
+            } else {
+                last_lower_block_idx = next_lower_block_idx;
+            }
         }
 
         let hint_pos;
@@ -193,8 +223,26 @@ mod test_rank10sel {
     use crate::prelude::BitVec;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
-    const TEST_LOG2_LOWER_BLOCK_SIZE: usize = 8;
-    const TEST_LOG2_ONES_PER_INVENTORY: usize = 9;
+    const TEST_LOG2_LOWER_BLOCK_SIZE: usize = 10;
+    const TEST_LOG2_ONES_PER_INVENTORY: usize = 13;
+
+    #[test]
+    fn test_inventory() {
+        let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+        let density = 0.5;
+        let lens = [1 << 20];
+        for len in lens {
+            let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+            let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, TEST_LOG2_ONES_PER_INVENTORY> =
+                Rank10Sel::new(bits);
+
+            let last = rank10sel.inventory.len() - 1;
+            for el in rank10sel.inventory[..(last - 1)].windows(2) {
+                assert!(el[0] != el[1]);
+            }
+            assert!(rank10sel.inventory[last - 1] == rank10sel.inventory[last]);
+        }
+    }
 
     #[test]
     fn test_rank10sel() {

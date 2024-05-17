@@ -3,7 +3,7 @@ use mem_dbg::*;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use sux::{
     bits::BitVec,
-    rank_sel::{Rank9Sel, SimpleSelect},
+    rank_sel::{Rank10Sel, Rank9Sel, SimpleSelect},
     traits::*,
 };
 
@@ -20,11 +20,19 @@ impl SelStruct<BitVec> for Rank9Sel {
         Rank9Sel::new(bits)
     }
 }
+impl<const LOG2_UPPER_BLOCK_SIZE: usize, const LOG2_ONES_PER_INVENTORY: usize> SelStruct<BitVec>
+    for Rank10Sel<LOG2_UPPER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY>
+{
+    fn new(bits: BitVec) -> Self {
+        Rank10Sel::<LOG2_UPPER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY>::new(bits)
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum SelType {
     Simpleselect,
     Rank9sel,
+    Rank10sel,
 }
 
 #[derive(Parser)]
@@ -95,6 +103,16 @@ fn main() {
                 cli.len, cli.density, cli.uniform
             );
             println!("Memory cost of Rank9Sel: {}%", mem_cost);
+        }
+        SelType::Rank10sel => {
+            let sel_struct =
+                create_sel_struct::<Rank10Sel<10, 13>>(cli.len, cli.density, cli.uniform);
+            let mem_cost = mem_cost(&sel_struct);
+            println!(
+                "BitVec with length: {}, density: {}, uniform: {}",
+                cli.len, cli.density, cli.uniform
+            );
+            println!("Memory cost of Rank10Sel: {}%", mem_cost);
         }
     }
 }

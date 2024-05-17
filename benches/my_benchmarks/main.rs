@@ -51,6 +51,10 @@ fn main() {
             bench_rank10sel::<8, 11>(&mut criterion, true);
             bench_rank10sel::<8, 11>(&mut criterion, false);
         }
+        "rank10sel_10_12" => {
+            bench_rank10sel::<10, 12>(&mut criterion, true);
+            bench_rank10sel::<10, 12>(&mut criterion, false);
+        }
         "rng" => bench_rng(&mut criterion),
         "rng_non_uniform" => bench_rng_non_uniform(&mut criterion),
         _ => {}
