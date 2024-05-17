@@ -61,7 +61,6 @@ pub struct Rank10<
 > {
     pub(super) bits: B,
     pub(super) counts: Counts64,
-    pub(super) num_ones: u64,
 }
 
 impl<
@@ -91,7 +90,7 @@ impl<const LOG2_LOWER_BLOCK_SIZE: usize, const HINT_BIT_SIZE: usize>
         let num_upper_counts = (num_bits + Self::UPPER_BLOCK_SIZE - 1) / Self::UPPER_BLOCK_SIZE;
         let num_counts = (num_bits + Self::LOWER_BLOCK_SIZE - 1) / Self::LOWER_BLOCK_SIZE;
 
-        let mut counts = Counts64::new(num_upper_counts, num_counts);
+        let mut counts = Counts64::new(num_upper_counts + 1, num_counts);
 
         let mut num_ones = 0u64;
         let mut upper_block = 0u64;
@@ -115,11 +114,9 @@ impl<const LOG2_LOWER_BLOCK_SIZE: usize, const HINT_BIT_SIZE: usize>
             }
         }
 
-        Self {
-            bits,
-            counts,
-            num_ones,
-        }
+        counts.set_upper(num_ones, num_upper_counts);
+
+        Self { bits, counts }
     }
 }
 
@@ -175,7 +172,7 @@ impl<
 
     fn rank(&self, pos: usize) -> usize {
         if pos >= self.bits.len() {
-            self.num_ones as usize
+            self.counts.l0[self.counts.l0.len() - 1] as usize
         } else {
             unsafe { self.rank_unchecked(pos) }
         }
