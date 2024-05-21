@@ -94,6 +94,7 @@ fn main() {
                 cli.len, cli.density, cli.uniform
             );
             println!("Memory cost of SimpleSelect: {}%", mem_cost);
+            sel_struct.mem_dbg(DbgFlags::PERCENTAGE).unwrap();
         }
         SelType::Rank9sel => {
             let sel_struct = create_sel_struct::<Rank9Sel>(cli.len, cli.density, cli.uniform);
@@ -103,6 +104,7 @@ fn main() {
                 cli.len, cli.density, cli.uniform
             );
             println!("Memory cost of Rank9Sel: {}%", mem_cost);
+            sel_struct.mem_dbg(DbgFlags::PERCENTAGE).unwrap();
         }
         SelType::Rank10sel => {
             let sel_struct =
@@ -113,6 +115,7 @@ fn main() {
                 cli.len, cli.density, cli.uniform
             );
             println!("Memory cost of Rank10Sel: {}%", mem_cost);
+            sel_struct.mem_dbg(DbgFlags::PERCENTAGE).unwrap();
         }
     }
 }
