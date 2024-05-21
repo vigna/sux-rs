@@ -1,3 +1,11 @@
+/*
+ *
+ * SPDX-FileCopyrightText: 2024 Michele Andreata
+ * SPDX-FileCopyrightText: 2024 Sebastiano Vigna
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ */
+
 use common_traits::SelectInWord;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
@@ -5,13 +13,37 @@ use std::cmp::{max, min};
 
 use crate::prelude::{BitCount, BitFieldSlice, BitLength, BitVec, Select, SelectHinted};
 
-fn most_significant_one(word: usize) -> i32 {
-    if word == 0 {
-        -1
-    } else {
-        63 ^ word.leading_zeros() as i32
-    }
-}
+/// A simple select implementation based on a two-level inventory.
+///
+/// # Implementation Details
+///
+/// The first-level inventory is sized so that the distance between two indexed
+/// ones is on average a given value `L` (a power of 2). For each indexed one in
+/// the first-level inventory (for which we use a 64-bit integer), we allocate
+/// `M` (a power of 2) 64-bit integers for the second-level inventory. The space occupied by
+/// the structure relatively to the bit length is thus `64 * (1 + M) / L`.
+///
+/// Given a specific indexed ones, the distance to the next indexed one can be
+/// smaller than 2^16, in which case we use the 'M' words associated to the
+/// second-level inventory to store `4M` 16-bit integers, each representing the
+/// offset of a one from the start of the inventory. Otherwise, we store the
+/// exact position of all ones either using the 'M' available words, or, if they
+/// are not sufficient, using a spill vector.
+///
+/// Note that in the 16-bit case, the average distance between two ones indexed
+/// by the second-level inventory is `L/4M`. Within this range, we perform a
+/// sequential broadword search.
+///
+/// This implementation uses around 13.75% additional space on evenly
+/// distributed bit arrays, and, under the same conditions, provide very fast
+/// selects. For very unevenly distributed arrays the space occupancy will grow
+/// significantly, and access time might vary wildly.
+///
+/// The structure has been described by Sebastiano Vigna in “[Broadword
+/// Implementation of Rank/Select
+/// Queries](http://vigna.di.unimi.it/papers.php#VigBIRSQ)”, _Proc. of the 7th
+/// International Workshop on Experimental Algorithms, WEA 2008_, volume 5038 of
+/// Lecture Notes in Computer Science, pages 154–168, Springer, 2008.
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SimpleSelect<B: SelectHinted = BitVec, I: AsRef<[u64]> = Vec<u64>> {
@@ -31,15 +63,27 @@ pub struct SimpleSelect<B: SelectHinted = BitVec, I: AsRef<[u64]> = Vec<u64>> {
 }
 
 impl<B: SelectHinted, I: AsRef<[u64]>> SimpleSelect<B, I> {
-    const MAX_ONES_PER_INVENTORY: usize = 8192;
+    const DEFAULT_LOG2_AVG_INVENTORY_SPAN: usize = 13;
 }
 
 impl SimpleSelect<BitVec, Vec<u64>> {
-    pub fn new(bits: BitVec, max_log2_u64_per_subinventory: u64) -> Self {
+    pub fn new(bits: BitVec, max_log2_u64_per_subinventory: usize) -> Self {
+        Self::new_with_span(
+            bits,
+            Self::DEFAULT_LOG2_AVG_INVENTORY_SPAN,
+            max_log2_u64_per_subinventory,
+        )
+    }
+
+    pub fn new_with_span(
+        bits: BitVec,
+        log2_avg_inventory_span: usize,
+        max_log2_u64_per_subinventory: usize,
+    ) -> Self {
         let num_bits = max(1usize, bits.len() as usize);
         let num_ones = bits.count();
 
-        let log2_ones_per_inventory = (num_ones * Self::MAX_ONES_PER_INVENTORY)
+        let log2_ones_per_inventory = (num_ones << log2_avg_inventory_span)
             .div_ceil(num_bits)
             .max(1)
             .ilog2() as usize;
