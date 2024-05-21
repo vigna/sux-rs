@@ -110,6 +110,7 @@ impl SimpleSelect<BitVec, Vec<u64>> {
         let ones_per_sub16 = 1usize << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
+        dbg!(u64_per_inventory);
         let mut inventory = Vec::with_capacity(inventory_size * u64_per_inventory + 1);
 
         let mut curr_num_ones: usize = 0;
