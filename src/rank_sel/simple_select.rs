@@ -39,14 +39,14 @@ impl SimpleSelect<BitVec, Vec<u64>> {
         let num_bits = max(1usize, bits.len() as usize);
         let num_ones = bits.count();
 
-        let ones_per_inventory =
-            (num_ones * Self::MAX_ONES_PER_INVENTORY + num_bits - 1) / num_bits;
-        // Make ones_per_inventory into a power of 2
-        let log2_ones_per_inventory = max(0, most_significant_one(ones_per_inventory)) as usize;
+        let log2_ones_per_inventory = (num_ones * Self::MAX_ONES_PER_INVENTORY)
+            .div_ceil(num_bits)
+            .max(1)
+            .ilog2() as usize;
 
         let ones_per_inventory = 1usize << log2_ones_per_inventory;
         let ones_per_inventory_mask = ones_per_inventory - 1;
-        let inventory_size = (num_ones + ones_per_inventory - 1) / ones_per_inventory;
+        let inventory_size = num_ones.div_ceil(ones_per_inventory - 1);
 
         let log2_u64_per_subinventory = min(
             max_log2_u64_per_subinventory as i32,
