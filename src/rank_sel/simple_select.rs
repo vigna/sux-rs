@@ -23,6 +23,7 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, BitVec, Select, SelectH
 /// `M` (a power of 2) 64-bit integers for the second-level inventory. The space occupied by
 /// the structure relatively to the bit length is thus `64 * (1 + M) / L`.
 ///
+///
 /// Given a specific indexed ones, the distance to the next indexed one can be
 /// smaller than 2^16, in which case we use the 'M' words associated to the
 /// second-level inventory to store `4M` 16-bit integers, each representing the
@@ -90,7 +91,7 @@ impl SimpleSelect<BitVec, Vec<u64>> {
 
         let ones_per_inventory = 1usize << log2_ones_per_inventory;
         let ones_per_inventory_mask = ones_per_inventory - 1;
-        let inventory_size = num_ones.div_ceil(ones_per_inventory - 1);
+        let inventory_size = num_ones.div_ceil(ones_per_inventory);
 
         let log2_u64_per_subinventory = min(
             max_log2_u64_per_subinventory as i32,
