@@ -316,6 +316,13 @@ impl SimpleSelect<BitVec, Vec<u64>> {
             exact_spill_size,
         }
     }
+
+    pub fn get_log2_ones_per_inventory(&self) -> usize {
+        self.log2_ones_per_inventory
+    }
+    pub fn get_log2_u64_per_subinventory(&self) -> usize {
+        self.log2_u64_per_subinventory
+    }
 }
 
 impl<B: SelectHinted + Select + AsRef<[usize]>, I: AsRef<[u64]>> BitCount for SimpleSelect<B, I> {
@@ -385,6 +392,27 @@ mod test_simple_select {
     use crate::prelude::BitVec;
     use rand::rngs::SmallRng;
     use rand::{Rng, SeedableRng};
+
+    #[test]
+    fn test_params() {
+        let lens = [1_000_000, 10_000_000, 100_000_000];
+        let density = 0.5;
+        let mut rng = SmallRng::seed_from_u64(0);
+
+        for len in lens {
+            println!("len: {}", len);
+            let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+            let simple: SimpleSelect = SimpleSelect::new(bits, 3);
+            println!(
+                "log2_ones_per_inventory: {}",
+                simple.get_log2_ones_per_inventory()
+            );
+            println!(
+                "log2_u64_per_subinventory: {}",
+                simple.get_log2_u64_per_subinventory()
+            );
+        }
+    }
 
     #[test]
     fn test_simple_select() {
