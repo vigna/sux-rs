@@ -57,6 +57,7 @@ fn main() {
         }
         "rng" => bench_rng(&mut criterion),
         "rng_non_uniform" => bench_rng_non_uniform(&mut criterion),
+        "compare_simple_fixed" => compare_simple_fixed(&mut criterion),
         _ => {}
     }
 
