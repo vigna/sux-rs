@@ -176,13 +176,12 @@ macro_rules! bench_select_fixed2 {
             let num_ones = bits.count_ones();
             let sel: SelectFixed2<BitVec, Vec<u64>, $log_inv_size, $log_subinv_size> =
                 SelectFixed2::new(bits);
-            $bench_group.bench_with_input(
+            $bench_group.bench_function(
                 BenchmarkId::from_parameter(format!(
                     "{}_{}_{}_{}",
                     $log_inv_size, $log_subinv_size, bitvec_id.0, bitvec_id.1
                 )),
-                &$log_inv_size,
-                |b, _| {
+                |b| {
                     b.iter(|| {
                         // use fastrange
                         let r =  ((rng.gen::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64) as usize;
@@ -212,4 +211,22 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
 
     bench_select_fixed2!([10, 11, 12], [3], bitvecs, bitvec_ids, group);
     group.finish();
+
+    let mut group = c.benchmark_group("simple_select");
+    for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
+        let bits = bitvec.clone();
+        let num_ones = bits.count_ones();
+        let sel: SimpleSelect = SimpleSelect::new(bits, 3);
+        group.bench_function(
+            BenchmarkId::from_parameter(format!("{}_{}", bitvec_id.0, bitvec_id.1)),
+            |b| {
+                b.iter(|| {
+                    // use fastrange
+                    let r =
+                        ((rng.gen::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64) as usize;
+                    black_box(unsafe { sel.select_unchecked(r) });
+                })
+            },
+        );
+    }
 }
