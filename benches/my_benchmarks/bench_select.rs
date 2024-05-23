@@ -216,7 +216,7 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
         }
     }
 
-    bench_select_fixed2!([10, 11, 12], [3], bitvecs, bitvec_ids, group);
+    bench_select_fixed2!([10], [3], bitvecs, bitvec_ids, group);
     group.finish();
 
     let mut rng = SmallRng::seed_from_u64(0);
@@ -224,7 +224,7 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
     for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
         let bits = bitvec.clone();
         let num_ones = bits.count_ones();
-        let sel: SimpleSelect = SimpleSelect::new(bits, 3);
+        let sel: SimpleSelect = SimpleSelect::with_inv(bits, num_ones, 10, 3);
         group.bench_function(
             BenchmarkId::from_parameter(format!("{}_{}_0", bitvec_id.0, bitvec_id.1)),
             |b| {

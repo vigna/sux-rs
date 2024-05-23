@@ -103,7 +103,7 @@ impl SimpleSelect<BitVec, Vec<u64>> {
     /// value approximately doubles the space occupancy and halves the length of
     /// sequential broadword searches. Typical values are 3 and 4.
     pub fn new(bits: BitVec, max_log2_u64_per_subinventory: usize) -> Self {
-        Self::new_with_span(
+        Self::with_span(
             bits,
             Self::DEFAULT_TARGET_INVENTORY_SPAN,
             max_log2_u64_per_subinventory,
@@ -120,7 +120,7 @@ impl SimpleSelect<BitVec, Vec<u64>> {
     /// number [`M`](SimpleSelect) of 64-bit words in each subinventory. Increasing by one this
     /// value approximately doubles the space occupancy and halves the length of
     /// sequential broadword searches. Typical values are 3 and 4.
-    pub fn new_with_span(
+    pub fn with_span(
         bits: BitVec,
         target_inventory_span: usize,
         max_log2_u64_per_subinventory: usize,
@@ -133,6 +133,21 @@ impl SimpleSelect<BitVec, Vec<u64>> {
             .max(1)
             .ilog2() as usize;
 
+        Self::with_inv(
+            bits,
+            num_ones,
+            log2_ones_per_inventory,
+            max_log2_u64_per_subinventory,
+        )
+    }
+
+    pub fn with_inv(
+        bits: BitVec,
+        num_ones: usize,
+        log2_ones_per_inventory: usize,
+        max_log2_u64_per_subinventory: usize,
+    ) -> Self {
+        let num_bits = max(1usize, bits.len() as usize);
         let ones_per_inventory = 1usize << log2_ones_per_inventory;
         let ones_per_inventory_mask = ones_per_inventory - 1;
         let inventory_size = num_ones.div_ceil(ones_per_inventory);
