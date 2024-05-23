@@ -237,4 +237,5 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
             },
         );
     }
+    group.finish();
 }
