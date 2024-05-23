@@ -178,7 +178,7 @@ macro_rules! bench_select_fixed2 {
                 SelectFixed2::new(bits);
             $bench_group.bench_function(
                 BenchmarkId::from_parameter(format!(
-                    "{}_{}_{}_{}",
+                    "{}_{}_{}_{}_0",
                     $log_inv_size, $log_subinv_size, bitvec_id.0, bitvec_id.1
                 )),
                 |b| {
@@ -194,15 +194,22 @@ macro_rules! bench_select_fixed2 {
 }
 
 pub fn compare_simple_fixed(c: &mut Criterion) {
-    let lens = [1_000_000, 10_000_000, 100_000_000, 1_000_000_000];
+    let lens = [
+        1_000_000,
+        3_000_000,
+        10_000_000,
+        30_000_000,
+        100_000_000,
+        300_000_000,
+        1_000_000_000,
+    ];
     let mut group = c.benchmark_group("select_fixed2");
 
     let mut bitvecs = Vec::<BitVec>::new();
     let mut bitvec_ids = Vec::<(u64, f64)>::new();
     let mut rng = SmallRng::seed_from_u64(0);
     for len in lens {
-        for density in [0.5] {
-            // possible repetitions
+        for density in [0.2, 0.5, 0.8] {
             let bitvec = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
             bitvecs.push(bitvec);
             bitvec_ids.push((len, density));
@@ -212,13 +219,14 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
     bench_select_fixed2!([10, 11, 12], [3], bitvecs, bitvec_ids, group);
     group.finish();
 
+    let mut rng = SmallRng::seed_from_u64(0);
     let mut group = c.benchmark_group("simple_select");
     for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
         let bits = bitvec.clone();
         let num_ones = bits.count_ones();
         let sel: SimpleSelect = SimpleSelect::new(bits, 3);
         group.bench_function(
-            BenchmarkId::from_parameter(format!("{}_{}", bitvec_id.0, bitvec_id.1)),
+            BenchmarkId::from_parameter(format!("{}_{}_0", bitvec_id.0, bitvec_id.1)),
             |b| {
                 b.iter(|| {
                     // use fastrange
