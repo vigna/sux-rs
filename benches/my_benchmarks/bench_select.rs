@@ -158,40 +158,8 @@ pub fn bench_rank10sel<const LOG2_LOWER_BLOCK_SIZE: usize, const LOG2_ONES_PER_I
     group.finish();
 }
 
-macro_rules! bench_select_fixed2 {
-    ([$($inv_size:literal),+], $subinv_size:tt, $bitvecs:ident, $bitvec_ids:ident, $bench_group:expr) => {
-        $(
-            bench_select_fixed2!($inv_size, $subinv_size, $bitvecs, $bitvec_ids, $bench_group);
-        )+
-    };
-    ($inv_size:literal, [$($subinv_size:literal),+], $bitvecs:ident, $bitvec_ids:ident, $bench_group:expr) => {
-        $(
-            bench_select_fixed2!($inv_size, $subinv_size, $bitvecs, $bitvec_ids, $bench_group);
-        )+
-    };
-    ($log_inv_size:literal, $log_subinv_size:literal, $bitvecs:ident, $bitvec_ids:ident, $bench_group:expr) => {{
-        let mut rng = SmallRng::seed_from_u64(0);
-        for (bitvec, bitvec_id) in std::iter::zip(&$bitvecs, &$bitvec_ids) {
-            let bits = bitvec.clone();
-            let num_ones = bits.count_ones();
-            let sel: SelectFixed2<BitVec, Vec<u64>, $log_inv_size, $log_subinv_size> =
-                SelectFixed2::new(bits);
-            $bench_group.bench_function(
-                BenchmarkId::from_parameter(format!(
-                    "{}_{}_{}_{}_0",
-                    $log_inv_size, $log_subinv_size, bitvec_id.0, bitvec_id.1
-                )),
-                |b| {
-                    b.iter(|| {
-                        // use fastrange
-                        let r =  ((rng.gen::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64) as usize;
-                        black_box(unsafe { sel.select_unchecked(r) });
-                    })
-                },
-            );
-        }
-    }};
-}
+const LOG2_ONES_PER_INVENTORY: usize = 10;
+const LOG2_U64_PER_SUBINVENTORY: usize = 3;
 
 pub fn compare_simple_fixed(c: &mut Criterion) {
     let lens = [
@@ -203,7 +171,10 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
         300_000_000,
         1_000_000_000,
     ];
-    let mut group = c.benchmark_group("select_fixed2");
+    let mut group = c.benchmark_group(format!(
+        "select_fixed2_{}_{}",
+        LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY,
+    ));
 
     let mut bitvecs = Vec::<BitVec>::new();
     let mut bitvec_ids = Vec::<(u64, f64)>::new();
@@ -216,15 +187,44 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
         }
     }
 
-    bench_select_fixed2!([10], [3], bitvecs, bitvec_ids, group);
-    group.finish();
-
     let mut rng = SmallRng::seed_from_u64(0);
-    let mut group = c.benchmark_group("simple_select");
     for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
         let bits = bitvec.clone();
         let num_ones = bits.count_ones();
-        let sel: SimpleSelect = SimpleSelect::with_inv(bits, num_ones, 10, 3);
+        let sel: SelectFixed2<
+            BitVec,
+            Vec<u64>,
+            LOG2_ONES_PER_INVENTORY,
+            LOG2_U64_PER_SUBINVENTORY,
+        > = SelectFixed2::new(bits);
+        group.bench_function(
+            BenchmarkId::from_parameter(format!("{}_{}_0", bitvec_id.0, bitvec_id.1)),
+            |b| {
+                b.iter(|| {
+                    // use fastrange
+                    let r =
+                        ((rng.gen::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64) as usize;
+                    black_box(unsafe { sel.select_unchecked(r) });
+                })
+            },
+        );
+    }
+    group.finish();
+
+    let mut rng = SmallRng::seed_from_u64(0);
+    let mut group = c.benchmark_group(format!(
+        "simple_select_{}_{}",
+        LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY
+    ));
+    for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
+        let bits = bitvec.clone();
+        let num_ones = bits.count_ones();
+        let sel: SimpleSelect = SimpleSelect::with_inv(
+            bits,
+            num_ones,
+            LOG2_ONES_PER_INVENTORY,
+            LOG2_U64_PER_SUBINVENTORY,
+        );
         group.bench_function(
             BenchmarkId::from_parameter(format!("{}_{}_0", bitvec_id.0, bitvec_id.1)),
             |b| {
