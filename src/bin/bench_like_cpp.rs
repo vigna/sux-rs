@@ -1,29 +1,25 @@
 use rand::{rngs::SmallRng, Rng, SeedableRng};
+use std::env;
 use std::hint::black_box;
 use std::io::Write;
 use sux::{
     bits::BitVec,
-    rank_sel::{Rank9Sel, SimpleSelect},
-    traits::Select,
+    rank_sel::{Rank9, Rank9Sel, SimpleSelect},
+    traits::{Rank, Select},
 };
 
-const LENS: [u64; 11] = [
-    (1u64 << 20) + 2,
-    (1 << 21) + 2,
-    (1 << 22) + 2,
-    (1 << 23) + 2,
-    (1 << 24) + 2,
-    (1 << 25) + 2,
-    (1 << 26) + 2,
-    (1 << 27) + 2,
-    (1 << 28) + 2,
-    (1 << 29) + 2,
-    (1 << 30) + 2,
+const LENS: [u64; 6] = [
+    1_000_000,
+    4_000_000,
+    16_000_000,
+    64_000_000,
+    256_000_000,
+    1_024_000_000,
 ];
 
-const DENSITIES: [f64; 3] = [0.25, 0.5, 0.75];
+const DENSITIES: [f64; 3] = [0.1, 0.5, 0.9];
 
-const REPEATS: usize = 10;
+const REPEATS: usize = 7;
 
 const NUMPOS: usize = 70_000_000;
 
@@ -126,12 +122,64 @@ fn bench_select_batch<S: SelStruct<BitVec>>(rng: &mut SmallRng, sel_name: &str, 
     println!("\r{}... done        ", sel_name);
 }
 
-fn main() {
-    std::fs::create_dir_all("target/bench_like_cpp").unwrap();
+fn bench_rank9() {
     let mut rng = SmallRng::seed_from_u64(0);
+    let mut file = std::fs::File::create("target/bench_like_cpp/rank9.csv").unwrap();
 
-    bench_select_batch::<SimpleSelect>(&mut rng, "simple_select", true);
-    bench_select_batch::<SimpleSelect>(&mut rng, "simple_select_non_uniform", false);
-    bench_select_batch::<Rank9Sel>(&mut rng, "rank9sel", true);
-    bench_select_batch::<Rank9Sel>(&mut rng, "rank9sel_non_uniform", false);
+    for len in LENS.iter().copied() {
+        for density in DENSITIES.iter().copied() {
+            let mut time = 0f64;
+            for _ in 0..REPEATS {
+                let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+                let rank9: Rank9<BitVec, Vec<u64>, 64> = Rank9::new(bits);
+                let mut u = 0;
+                let begin = std::time::Instant::now();
+                for _ in 0..NUMPOS {
+                    u ^= rank9.rank(remap128(rng.gen::<u64>() ^ u, len) as usize) as u64;
+                }
+                black_box(u);
+                let elapsed = begin.elapsed().as_nanos();
+                time += elapsed as f64 / NUMPOS as f64;
+            }
+            time /= REPEATS as f64;
+            writeln!(file, "{}, {}, {}", len, density, time).unwrap();
+        }
+    }
+}
+
+fn main() {
+    if let Some(core_ids) = core_affinity::get_core_ids() {
+        // Not core 0. Anything goes.
+        let core_id = core_ids[1];
+        if !core_affinity::set_for_current(core_id) {
+            eprintln!("Cannot pin thread to core {:?}", core_id);
+        }
+    } else {
+        eprintln!("Cannot retrieve core ids");
+    }
+
+    std::fs::create_dir_all("target/bench_like_cpp").unwrap();
+
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 2 {
+        println!("Please provide a benchmark option: 'select' or 'rank'");
+        return;
+    }
+
+    match args[1].as_str() {
+        "select" => {
+            bench_select_batch::<SimpleSelect>(&mut rng, "simple_select", true);
+            bench_select_batch::<SimpleSelect>(&mut rng, "simple_select_non_uniform", false);
+            bench_select_batch::<Rank9Sel>(&mut rng, "rank9sel", true);
+            bench_select_batch::<Rank9Sel>(&mut rng, "rank9sel_non_uniform", false);
+        }
+        "rank" => {
+            bench_rank9();
+        }
+        _ => {
+            println!("Invalid benchmark option: '{}'", args[1]);
+        }
+    }
 }
