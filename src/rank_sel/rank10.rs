@@ -6,45 +6,44 @@ use crate::prelude::*;
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct Counts64 {
     pub(super) l0: Vec<u64>,
-    pub(super) l1_l2: Vec<u64>,
+    pub(super) l1_l2: Vec<u32>,
 }
 
 impl Counts64 {
     pub fn new(num_upper_counts: usize, num_counts: usize) -> Self {
         Self {
             l0: vec![0; num_upper_counts],
-            l1_l2: vec![0; num_counts],
+            l1_l2: vec![0; num_counts * 2],
         }
     }
     pub fn set_upper(&mut self, upper: u64, idx: usize) {
         self.l0[idx] = upper;
     }
-    pub fn set_lower(&mut self, count: u64, lower_block_idx: usize) {
-        debug_assert!(count < (1 << 32));
-        self.l1_l2[lower_block_idx] = count << 32;
+    pub fn set_lower(&mut self, count: u32, lower_block_idx: usize) {
+        self.l1_l2[lower_block_idx * 2] = count;
     }
-    pub fn set_basic(&mut self, count: u64, lower_block_idx: usize, basic_block_idx: usize) {
+    pub fn set_basic(&mut self, count: u32, lower_block_idx: usize, basic_block_idx: usize) {
         debug_assert!(basic_block_idx < 3);
         debug_assert!(count <= (1 << 10));
 
-        self.l1_l2[lower_block_idx] |= count << (10 * basic_block_idx);
+        self.l1_l2[lower_block_idx * 2 + 1] |= count << (10 * basic_block_idx);
     }
     #[inline(always)]
     pub unsafe fn upper(&self, upper_block_idx: usize) -> u64 {
         *<Vec<u64> as AsRef<[u64]>>::as_ref(&self.l0).get_unchecked(upper_block_idx)
     }
     #[inline(always)]
-    pub unsafe fn lower(&self, lower_block_idx: usize) -> u64 {
+    pub unsafe fn lower(&self, lower_block_idx: usize) -> u32 {
         debug_assert!(lower_block_idx < self.l1_l2.len());
-        *<Vec<u64> as AsRef<[u64]>>::as_ref(&self.l1_l2).get_unchecked(lower_block_idx) >> 32
+        *<Vec<u32> as AsRef<[u32]>>::as_ref(&self.l1_l2).get_unchecked(lower_block_idx * 2)
     }
     #[inline(always)]
-    pub unsafe fn basic(&self, lower_block_idx: usize, basic_block_idx: usize) -> u64 {
+    pub unsafe fn basic(&self, lower_block_idx: usize, basic_block_idx: usize) -> u32 {
         debug_assert!(lower_block_idx < self.l1_l2.len());
         debug_assert!(basic_block_idx < 4);
 
-        let counts_ref = <Vec<u64> as AsRef<[u64]>>::as_ref(&self.l1_l2);
-        let basic = *counts_ref.get_unchecked(lower_block_idx) & 0x00000000FFFFFFFF;
+        let counts_ref = <Vec<u32> as AsRef<[u32]>>::as_ref(&self.l1_l2);
+        let basic = *counts_ref.get_unchecked(lower_block_idx * 2 + 1);
 
         let mut offset = basic_block_idx.wrapping_sub(1) as u64;
         offset = offset.wrapping_add(offset >> 61 & 0x4);
@@ -100,12 +99,12 @@ impl<const LOG2_LOWER_BLOCK_SIZE: usize, const HINT_BIT_SIZE: usize>
                 upper_block = num_ones;
                 counts.set_upper(upper_block, i / Self::WORD_UPPER_BLOCK_SIZE);
             }
-            let lower = num_ones - upper_block;
+            let lower = (num_ones - upper_block) as u32;
             counts.set_lower(lower, lower_block_idx);
             num_ones += bits.as_ref()[i].count_ones() as u64;
             for j in 1..Self::WORD_LOWER_BLOCK_SIZE {
                 if j % Self::WORD_BASIC_BLOCK_SIZE == 0 {
-                    let basic = num_ones - upper_block - lower;
+                    let basic = (num_ones - upper_block) as u32 - lower;
                     counts.set_basic(basic, lower_block_idx, j / Self::WORD_BASIC_BLOCK_SIZE - 1);
                 }
                 if i + j < num_words {
@@ -154,20 +153,15 @@ impl<
         let lower_block_idx = word / Self::WORD_LOWER_BLOCK_SIZE;
         let basic_block_idx = (word % Self::WORD_LOWER_BLOCK_SIZE) / Self::WORD_BASIC_BLOCK_SIZE;
 
-        let upper = self.counts.upper(upper_block_idx);
-        let lower = self.counts.lower(lower_block_idx);
-        let basic = self.counts.basic(lower_block_idx, basic_block_idx);
+        let upper = self.counts.upper(upper_block_idx) as usize;
+        let lower = self.counts.lower(lower_block_idx) as usize;
+        let basic = self.counts.basic(lower_block_idx, basic_block_idx) as usize;
 
         let hint_rank = upper + lower + basic;
 
         let hint_pos = word - (word % Self::WORD_BASIC_BLOCK_SIZE);
 
-        RankHinted::<HINT_BIT_SIZE>::rank_hinted_unchecked(
-            &self.bits,
-            pos,
-            hint_pos,
-            hint_rank as usize,
-        )
+        RankHinted::<HINT_BIT_SIZE>::rank_hinted_unchecked(&self.bits, pos, hint_pos, hint_rank)
     }
 
     fn rank(&self, pos: usize) -> usize {
@@ -193,7 +187,6 @@ mod test_rank10 {
             .chain((10_000..100_000).step_by(1000))
             .chain((100_000..1_000_000).step_by(100_000))
             .chain([1 << 20, 1 << 22]);
-        // let lens = [1 << 33];
         let density = 0.5;
         for len in lens {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();

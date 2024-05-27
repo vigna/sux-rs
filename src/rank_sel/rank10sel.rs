@@ -120,7 +120,7 @@ impl<
         let jump = (rank % Self::ONES_PER_INVENTORY) / Self::LOWER_BLOCK_SIZE;
         let mut lower_block_idx = inv_pos / Self::LOWER_BLOCK_SIZE + jump;
 
-        let mut hint_rank = upper_rank as u64 + self.rank10.counts.lower(lower_block_idx);
+        let mut hint_rank = upper_rank + self.rank10.counts.lower(lower_block_idx) as usize;
         let mut next_rank;
         let mut next_lower_block_idx;
 
@@ -131,8 +131,8 @@ impl<
                 break;
             }
             next_lower_block_idx = (lower_block_idx + last_lower_block_idx) / 2;
-            next_rank = upper_rank as u64 + self.rank10.counts.lower(next_lower_block_idx);
-            if rank >= next_rank as usize {
+            next_rank = upper_rank + self.rank10.counts.lower(next_lower_block_idx) as usize;
+            if rank >= next_rank {
                 lower_block_idx = next_lower_block_idx;
                 hint_rank = next_rank;
             } else {
@@ -142,8 +142,8 @@ impl<
 
         let hint_pos;
         // second basic block
-        let b1 = self.rank10.counts.basic(lower_block_idx, 1);
-        if hint_rank + b1 > rank as u64 {
+        let b1 = self.rank10.counts.basic(lower_block_idx, 1) as usize;
+        if hint_rank + b1 > rank {
             hint_pos = lower_block_idx * Self::LOWER_BLOCK_SIZE;
             return self
                 .rank10
@@ -151,8 +151,8 @@ impl<
                 .select_hinted_unchecked(rank, hint_pos, hint_rank as usize);
         }
         // third basic block
-        let b2 = self.rank10.counts.basic(lower_block_idx, 2);
-        if hint_rank + b2 > rank as u64 {
+        let b2 = self.rank10.counts.basic(lower_block_idx, 2) as usize;
+        if hint_rank + b2 > rank {
             hint_pos = lower_block_idx * Self::LOWER_BLOCK_SIZE + 1 * Self::BASIC_BLOCK_SIZE;
             return self.rank10.bits.select_hinted_unchecked(
                 rank,
@@ -161,14 +161,13 @@ impl<
             );
         }
         // fourth basic block
-        let b3 = self.rank10.counts.basic(lower_block_idx, 3);
-        if hint_rank + b3 > rank as u64 {
+        let b3 = self.rank10.counts.basic(lower_block_idx, 3) as usize;
+        if hint_rank + b3 > rank {
             hint_pos = lower_block_idx * Self::LOWER_BLOCK_SIZE + 2 * Self::BASIC_BLOCK_SIZE;
-            return self.rank10.bits.select_hinted_unchecked(
-                rank,
-                hint_pos,
-                (hint_rank + b2) as usize,
-            );
+            return self
+                .rank10
+                .bits
+                .select_hinted_unchecked(rank, hint_pos, hint_rank + b2);
         }
 
         hint_pos = lower_block_idx * Self::LOWER_BLOCK_SIZE + 3 * Self::BASIC_BLOCK_SIZE;
