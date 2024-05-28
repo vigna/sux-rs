@@ -1,3 +1,11 @@
+/*
+ *
+ * SPDX-FileCopyrightText: 2024 Michele AndreataInria
+ * SPDX-FileCopyrightText: 2024 Sebastiano Vigna
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ */
+
 use std::ops::Index;
 
 use epserde::*;
@@ -5,39 +13,62 @@ use mem_dbg::*;
 
 use crate::prelude::{BitCount, BitLength, BitVec, Rank};
 
+/// A ranking structure using 25% of additional space and providing the fastest
+/// available rank operations.
+///
+/// `Rank9` stores 64-bit absolute cumulative counters for 512-bit blocks, and
+/// relative cumulative 9-bit counters for each 64-bit word in a block. The
+/// first relative counter is stored implicitly using zero extension, so eight
+/// 9-bit counters can be stored in just 64 bits. Moreover, absolute and
+/// relative counters are interleaved. These two ideas make it possible to rank
+/// using a most two cache misses and no tests or loops.
+///
+/// This structure has been described by Sebastiano Vigna in “[Broadword
+/// Implementation of Rank/Select
+/// Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
+/// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
+/// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
+/// Springer, 2008.
+
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct Rank9<B: AsRef<[usize]> = BitVec, C: AsRef<[usize]> = Vec<usize>> {
+pub struct Rank9<B: AsRef<[usize]> = BitVec, C: AsRef<[BlockCounts]> = Vec<BlockCounts>> {
     pub(super) bits: B,
     pub(super) counts: C,
 }
 
-impl Rank9<BitVec, Vec<usize>> {
-    const NUM_BLOCKS: usize = 8;
+#[derive(Epserde, Debug, Clone, MemDbg, MemSize, Default)]
+pub struct BlockCounts {
+    pub(super) absolute: usize,
+    pub(super) relative: usize,
+}
+
+impl Rank9<BitVec, Vec<BlockCounts>> {
+    pub(super) const WORDS_PER_BLOCK: usize = 8;
 
     /// Creates a new Rank9 structure from a given bit vector.
     pub fn new(bits: BitVec) -> Self {
         let num_bits = bits.len();
         let num_words = num_bits.div_ceil(usize::BITS as usize);
-        let num_counts = ((num_bits + usize::BITS as usize * Self::NUM_BLOCKS - 1)
-            / (usize::BITS as usize * Self::NUM_BLOCKS))
-            * 2;
+        let num_counts = num_bits.div_ceil(usize::BITS as usize * Self::WORDS_PER_BLOCK);
 
-        let mut counts = vec![0_usize; num_counts + 2];
+        // We use the last counter to store the total number of ones
+        let mut counts = vec![BlockCounts::default(); num_counts + 1];
 
         let mut num_ones = 0;
 
-        for (i, pos) in (0..num_words).step_by(8).zip((0..).step_by(2)) {
-            counts[pos] = num_ones;
+        for (i, pos) in (0..num_words).step_by(Self::WORDS_PER_BLOCK).zip(0..) {
+            counts[pos].absolute = num_ones;
             num_ones += bits.as_ref()[i].count_ones() as usize;
+
             for j in 1..8 {
-                counts[pos + 1] |= (num_ones - counts[pos]) << (9 * (j - 1));
+                counts[pos].relative |= (num_ones - counts[pos].absolute) << (9 * (j - 1));
                 if i + j < num_words {
                     num_ones += bits.as_ref()[i + j].count_ones() as usize;
                 }
             }
         }
 
-        counts[num_counts] = num_ones;
+        counts[num_counts].absolute = num_ones;
 
         Self { bits, counts }
     }
@@ -48,7 +79,7 @@ impl Rank9<BitVec, Vec<usize>> {
     }
 }
 
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[usize]>> Rank for Rank9<B, C> {
+impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounts]>> Rank for Rank9<B, C> {
     #[inline(always)]
     fn rank(&self, pos: usize) -> usize {
         if pos >= self.bits.len() {
@@ -60,13 +91,13 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[usize]>> Rank for Rank9<B, C> {
 
     #[inline(always)]
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-        let word = pos / 64;
-        let block = (word / 4) & !1;
-        let offset = (word % 8).wrapping_sub(1);
+        let word = pos / usize::BITS as usize;
+        let block = word / Rank9::WORDS_PER_BLOCK;
+        let offset = (word % Rank9::WORDS_PER_BLOCK).wrapping_sub(1);
 
-        let base_rank = *self.counts.as_ref().get_unchecked(block)
-            + (*self.counts.as_ref().get_unchecked(block + 1)
-                >> ((offset.wrapping_add(offset >> 60 & 0x8)) * 9)
+        let base_rank = self.counts.as_ref().get_unchecked(block).absolute
+            + (self.counts.as_ref().get_unchecked(block).relative
+                >> ((offset.wrapping_add((offset >> 60) & Rank9::WORDS_PER_BLOCK)) * 9)
                 & 0x1FF);
 
         base_rank
@@ -75,15 +106,15 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[usize]>> Rank for Rank9<B, C> {
     }
 }
 
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[usize]>> BitCount for Rank9<B, C> {
+impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounts]>> BitCount for Rank9<B, C> {
     #[inline(always)]
     fn count(&self) -> usize {
-        self.counts.as_ref()[self.counts.as_ref().len() - 2] as usize
+        self.counts.as_ref().last().unwrap().absolute as usize
     }
 }
 
 /// Forward [`BitLength`] to the underlying implementation.
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[usize]>> BitLength for Rank9<B, C> {
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounts]>> BitLength for Rank9<B, C> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.bits.len()
@@ -91,7 +122,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[usize]>> BitLength for Rank9<B, C>
 }
 
 /// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<B: AsRef<[usize]>, C: AsRef<[usize]>> AsRef<[usize]> for Rank9<B, C> {
+impl<B: AsRef<[usize]>, C: AsRef<[BlockCounts]>> AsRef<[usize]> for Rank9<B, C> {
     #[inline(always)]
     fn as_ref(&self) -> &[usize] {
         self.bits.as_ref()
@@ -99,7 +130,7 @@ impl<B: AsRef<[usize]>, C: AsRef<[usize]>> AsRef<[usize]> for Rank9<B, C> {
 }
 
 /// Forward `Index<usize, Output = bool>` to the underlying implementation.
-impl<B: AsRef<[usize]> + Index<usize, Output = bool>, C: AsRef<[usize]>> Index<usize>
+impl<B: AsRef<[usize]> + Index<usize, Output = bool>, C: AsRef<[BlockCounts]>> Index<usize>
     for Rank9<B, C>
 {
     type Output = bool;
