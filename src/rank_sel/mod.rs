@@ -76,5 +76,5 @@ pub use rank12::*;
 mod rank16;
 pub use rank16::*;
 
-mod rank9sel;
-pub use rank9sel::*;
+mod select9;
+pub use select9::*;
