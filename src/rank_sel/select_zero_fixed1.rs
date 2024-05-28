@@ -58,7 +58,7 @@ impl<
         const LOG2_ZEROS_PER_INVENTORY: usize,
     > SelectZeroFixed1<B, O, LOG2_ZEROS_PER_INVENTORY>
 {
-    fn build_zeros(&mut self) -> () {
+    fn build_zeros(&mut self) {
         let mut number_of_zeros = 0;
         let mut next_quantum = 0;
         let mut zeros_index = 0;

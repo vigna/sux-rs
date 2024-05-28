@@ -40,7 +40,7 @@ impl<
         let rank10 = Rank10::<LOG2_LOWER_BLOCK_SIZE, HINT_BIT_SIZE>::new(bits);
 
         // let num_bits = rank10.bits.len();
-        let num_ones = rank10.bits.count_ones() as usize;
+        let num_ones = rank10.bits.count_ones();
 
         let inventory_size = (num_ones + Self::ONES_PER_INVENTORY - 1) / Self::ONES_PER_INVENTORY;
         let mut inventory = Vec::<u32>::with_capacity(inventory_size + 1);
@@ -55,7 +55,7 @@ impl<
             l0_idx = i * (usize::BITS as usize) / Self::UPPER_BLOCK_SIZE;
 
             while curr_num_ones + ones_in_word > next_quantum {
-                let in_word_index = word.select_in_word((next_quantum - curr_num_ones) as usize);
+                let in_word_index = word.select_in_word(next_quantum - curr_num_ones);
                 let index = ((i * u64::BITS as usize) + in_word_index) as u64;
 
                 inventory.push((index - rank10.counts.l0[l0_idx]) as u32);
@@ -66,7 +66,7 @@ impl<
         }
         assert_eq!(num_ones, curr_num_ones);
         // inventory.push(num_bits as u64);
-        if inventory.len() != 0 {
+        if !inventory.is_empty() {
             inventory.push(inventory[inventory.len() - 1]);
         } else {
             inventory.push(0);
@@ -148,17 +148,16 @@ impl<
             return self
                 .rank10
                 .bits
-                .select_hinted_unchecked(rank, hint_pos, hint_rank as usize);
+                .select_hinted_unchecked(rank, hint_pos, hint_rank);
         }
         // third basic block
         let b2 = self.rank10.counts.basic(lower_block_idx, 2) as usize;
         if hint_rank + b2 > rank {
-            hint_pos = lower_block_idx * Self::LOWER_BLOCK_SIZE + 1 * Self::BASIC_BLOCK_SIZE;
-            return self.rank10.bits.select_hinted_unchecked(
-                rank,
-                hint_pos,
-                (hint_rank + b1) as usize,
-            );
+            hint_pos = lower_block_idx * Self::LOWER_BLOCK_SIZE + Self::BASIC_BLOCK_SIZE;
+            return self
+                .rank10
+                .bits
+                .select_hinted_unchecked(rank, hint_pos, hint_rank + b1);
         }
         // fourth basic block
         let b3 = self.rank10.counts.basic(lower_block_idx, 3) as usize;
@@ -173,7 +172,7 @@ impl<
         hint_pos = lower_block_idx * Self::LOWER_BLOCK_SIZE + 3 * Self::BASIC_BLOCK_SIZE;
         self.rank10
             .bits
-            .select_hinted_unchecked(rank, hint_pos, (hint_rank + b3) as usize)
+            .select_hinted_unchecked(rank, hint_pos, hint_rank + b3)
     }
 }
 

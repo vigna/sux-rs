@@ -101,7 +101,7 @@ fn bench_select<S: SelStruct<BitVec>>(
                 };
                 bench_group.bench_function(
                     BenchmarkId::from_parameter(format!("{}_{}_{}", *len, *density, i)),
-                    |b| b.iter(|| routine()),
+                    |b| b.iter(&mut routine),
                 );
             }
         }
