@@ -5,12 +5,17 @@ use mem_dbg::{MemDbg, MemSize};
 
 use super::Rank9;
 
-const ONES_STEP_9: u64 =
-    1u64 << 0 | 1u64 << 9 | 1u64 << 18 | 1u64 << 27 | 1u64 << 36 | 1u64 << 45 | 1u64 << 54;
-const MSBS_STEP_9: u64 = 0x100u64 * ONES_STEP_9;
+const ONES_STEP_9: usize = 1usize << 0
+    | 1usize << 9
+    | 1usize << 18
+    | 1usize << 27
+    | 1usize << 36
+    | 1usize << 45
+    | 1usize << 54;
+const MSBS_STEP_9: usize = 0x100usize * ONES_STEP_9;
 
-const ONES_STEP_16: u64 = 1u64 << 0 | 1u64 << 16 | 1u64 << 32 | 1u64 << 48;
-const MSBS_STEP_16: u64 = 0x8000u64 * ONES_STEP_16;
+const ONES_STEP_16: usize = 1usize << 0 | 1usize << 16 | 1usize << 32 | 1usize << 48;
+const MSBS_STEP_16: usize = 0x8000usize * ONES_STEP_16;
 
 macro_rules! ULEQ_STEP_9 {
     ($x:ident, $y:ident) => {
@@ -29,7 +34,11 @@ macro_rules! ULEQ_STEP_16 {
 }
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct Rank9Sel<R: Rank = Rank9, I: AsRef<[u64]> = Vec<u64>, const HINT_BIT_SIZE: usize = 64> {
+pub struct Rank9Sel<
+    R: Rank = Rank9,
+    I: AsRef<[usize]> = Vec<usize>,
+    const HINT_BIT_SIZE: usize = 64,
+> {
     rank9: R,
     inventory: I,
     subinventory: I,
@@ -39,7 +48,7 @@ pub struct Rank9Sel<R: Rank = Rank9, I: AsRef<[u64]> = Vec<u64>, const HINT_BIT_
 
 impl<
         B: RankHinted<HINT_BIT_SIZE> + Rank + Select + AsRef<[usize]>,
-        I: AsRef<[u64]>,
+        I: AsRef<[usize]>,
         const HINT_BIT_SIZE: usize,
     > Rank9Sel<Rank9<B, I, HINT_BIT_SIZE>, I, HINT_BIT_SIZE>
 {
@@ -49,7 +58,7 @@ impl<
 }
 
 impl<const HINT_BIT_SIZE: usize>
-    Rank9Sel<Rank9<BitVec, Vec<u64>, HINT_BIT_SIZE>, Vec<u64>, HINT_BIT_SIZE>
+    Rank9Sel<Rank9<BitVec, Vec<usize>, HINT_BIT_SIZE>, Vec<usize>, HINT_BIT_SIZE>
 {
     pub fn new(bits: BitVec) -> Self {
         let rank9 = Rank9::new(bits);
@@ -62,8 +71,8 @@ impl<const HINT_BIT_SIZE: usize>
         let u64_per_subinventory = 4;
         let subinventory_size = (num_words + u64_per_subinventory - 1) / u64_per_subinventory;
 
-        let mut inventory: Vec<u64> = Vec::with_capacity(inventory_size + 1);
-        let mut subinventory: Vec<u64> = vec![0; subinventory_size];
+        let mut inventory: Vec<usize> = Vec::with_capacity(inventory_size + 1);
+        let mut subinventory: Vec<usize> = vec![0; subinventory_size];
 
         // construct the inventory
         let mut curr_num_ones = 0;
@@ -75,13 +84,13 @@ impl<const HINT_BIT_SIZE: usize>
                 let in_word_index = word.select_in_word((next_quantum - curr_num_ones) as usize);
                 let index = (i * u64::BITS as usize) + in_word_index;
 
-                inventory.push(index as u64);
+                inventory.push(index);
 
                 next_quantum += Self::ONES_PER_INVENTORY;
             }
             curr_num_ones += ones_in_word;
         }
-        inventory.push(((num_words as u64 + 3) & !3u64) * 64);
+        inventory.push(((num_words + 3) & !3) * 64);
         assert!(inventory.len() == inventory_size + 1);
 
         let iter = 0..inventory_size;
@@ -146,18 +155,18 @@ impl<const HINT_BIT_SIZE: usize>
 
             if state != -1 {
                 // clean up the lower bits
-                let mut word_idx = inventory[inventory_idx] / u64::BITS as u64;
-                let bit_idx = inventory[inventory_idx] % u64::BITS as u64;
+                let mut word_idx = inventory[inventory_idx] / usize::BITS as usize;
+                let bit_idx = inventory[inventory_idx] % usize::BITS as usize;
                 let mut word = (rank9.bits.as_ref()[word_idx as usize] >> bit_idx) << bit_idx;
 
                 let start_bit_idx = inventory[inventory_idx];
                 let end_bit_idx = inventory[inventory_idx + 1];
-                let end_word_idx = end_bit_idx.div_ceil(u64::BITS as u64);
+                let end_word_idx = end_bit_idx.div_ceil(u64::BITS as usize);
                 let mut subinventory_idx = 0;
                 'outer: loop {
                     while word != 0 {
                         let in_word_index = word.trailing_zeros() as usize;
-                        let bit_index = (word_idx * u64::BITS as u64) + in_word_index as u64;
+                        let bit_index = (word_idx * u64::BITS as usize) + in_word_index;
                         let sub_offset = bit_index - start_bit_idx;
                         match state {
                             0 => {
@@ -215,7 +224,7 @@ impl<const HINT_BIT_SIZE: usize>
 
 impl<
         B: RankHinted<HINT_BIT_SIZE> + SelectHinted + Rank + Select + BitCount + AsRef<[usize]>,
-        C: AsRef<[u64]>,
+        C: AsRef<[usize]>,
         const HINT_BIT_SIZE: usize,
     > Select for Rank9Sel<Rank9<B, C, HINT_BIT_SIZE>, C, HINT_BIT_SIZE>
 {
@@ -236,8 +245,8 @@ impl<
         let subinv_pos = block_left as usize / 4;
         let subinv_ref = self.subinventory.as_ref();
 
-        let mut count_left: u64;
-        let rank_in_block: u64;
+        let mut count_left;
+        let rank_in_block;
 
         match span {
             0..=1 => {
@@ -252,7 +261,7 @@ impl<
                         .get_unchecked(count_left as usize + 2) as usize
                 );
 
-                rank_in_block = rank as u64
+                rank_in_block = rank
                     - *self
                         .rank9
                         .counts
@@ -262,7 +271,7 @@ impl<
             2..=15 => {
                 block_left &= !7;
                 count_left = (block_left / 4) & !1;
-                let rank_in_superblock = rank as u64
+                let rank_in_superblock = rank
                     - *self
                         .rank9
                         .counts
@@ -274,7 +283,7 @@ impl<
                 let first = *subinv_ref.get_unchecked(subinv_pos);
                 let second = *subinv_ref.get_unchecked(subinv_pos + 1);
 
-                let where_: u64 = (ULEQ_STEP_16!(first, rank_in_superblock_step_16)
+                let where_: usize = (ULEQ_STEP_16!(first, rank_in_superblock_step_16)
                     + ULEQ_STEP_16!(second, rank_in_superblock_step_16))
                 .wrapping_mul(ONES_STEP_16)
                     >> 47;
@@ -284,7 +293,7 @@ impl<
                 block_left += where_ * 4;
                 count_left += where_;
 
-                rank_in_block = rank as u64
+                rank_in_block = rank
                     - *self
                         .rank9
                         .counts
@@ -296,7 +305,7 @@ impl<
             16..=127 => {
                 block_left &= !7;
                 count_left = (block_left / 4) & !1;
-                let rank_in_superblock = rank as u64
+                let rank_in_superblock = rank
                     - *self
                         .rank9
                         .counts
@@ -331,7 +340,7 @@ impl<
 
                 block_left += where1 * 4;
                 count_left += where1;
-                rank_in_block = rank as u64
+                rank_in_block = rank
                     - *self
                         .rank9
                         .counts
@@ -369,13 +378,13 @@ impl<
 
         let offset_in_block =
             (ULEQ_STEP_9!(subcounts, rank_in_block_step_9).wrapping_mul(ONES_STEP_9) >> 54u64)
-                & 0x7u64;
+                & 0x7;
         debug_assert!(offset_in_block <= 7);
 
         let word = block_left + offset_in_block;
 
-        let rank_in_word = rank_in_block
-            - ((subcounts >> (((offset_in_block.wrapping_sub(1)) & 7) * 9u64)) & 0x1FF);
+        let rank_in_word =
+            rank_in_block - ((subcounts >> (((offset_in_block.wrapping_sub(1)) & 7) * 9)) & 0x1FF);
         debug_assert!(rank_in_word < 64);
 
         word as usize * 64
@@ -398,7 +407,7 @@ impl<
 
 impl<
         B: RankHinted<HINT_BIT_SIZE> + Rank + Select + AsRef<[usize]>,
-        C: AsRef<[u64]>,
+        C: AsRef<[usize]>,
         const HINT_BIT_SIZE: usize,
     > Rank for Rank9Sel<Rank9<B, C, HINT_BIT_SIZE>, C, HINT_BIT_SIZE>
 {
@@ -413,7 +422,7 @@ impl<
 
 impl<
         B: RankHinted<HINT_BIT_SIZE> + Rank + Select + AsRef<[usize]>,
-        C: AsRef<[u64]>,
+        C: AsRef<[usize]>,
         const HINT_BIT_SIZE: usize,
     > BitCount for Rank9Sel<Rank9<B, C, HINT_BIT_SIZE>, C, HINT_BIT_SIZE>
 {
@@ -424,7 +433,7 @@ impl<
 
 impl<
         B: RankHinted<HINT_BIT_SIZE> + Rank + Select + AsRef<[usize]>,
-        C: AsRef<[u64]>,
+        C: AsRef<[usize]>,
         const HINT_BIT_SIZE: usize,
     > BitLength for Rank9Sel<Rank9<B, C, HINT_BIT_SIZE>, C, HINT_BIT_SIZE>
 {
