@@ -246,6 +246,8 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
         let subinv_pos = block_left / 4;
         let subinv_ref = self.subinventory.as_ref();
 
+        let counts = self.rank9.counts.as_ref();
+
         let mut count_left;
         let rank_in_block;
 
@@ -254,33 +256,13 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
                 block_left &= !7;
                 count_left = block_left / Rank9::WORDS_PER_BLOCK;
 
-                debug_assert!(
-                    rank < self
-                        .rank9
-                        .counts
-                        .as_ref()
-                        .get_unchecked(count_left + 1)
-                        .absolute
-                );
-
-                rank_in_block = rank
-                    - self
-                        .rank9
-                        .counts
-                        .as_ref()
-                        .get_unchecked(count_left)
-                        .absolute;
+                debug_assert!(rank < counts.get_unchecked(count_left + 1).absolute);
+                rank_in_block = rank - counts.get_unchecked(count_left).absolute;
             }
             2..=15 => {
                 block_left &= !7;
                 count_left = block_left / Rank9::WORDS_PER_BLOCK;
-                let rank_in_superblock = rank
-                    - self
-                        .rank9
-                        .counts
-                        .as_ref()
-                        .get_unchecked(count_left)
-                        .absolute;
+                let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute;
 
                 let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
 
@@ -297,26 +279,13 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
                 block_left += where_ * 4;
                 count_left += where_ / 2;
 
-                rank_in_block = rank
-                    - self
-                        .rank9
-                        .counts
-                        .as_ref()
-                        .get_unchecked(count_left)
-                        .absolute;
-
+                rank_in_block = rank - counts.get_unchecked(count_left).absolute;
                 debug_assert!(rank_in_block < 512);
             }
             16..=127 => {
                 block_left &= !7;
                 count_left = block_left / Rank9::WORDS_PER_BLOCK;
-                let rank_in_superblock = rank
-                    - self
-                        .rank9
-                        .counts
-                        .as_ref()
-                        .get_unchecked(count_left)
-                        .absolute;
+                let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute;
                 let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
 
                 let first = *subinv_ref.get_unchecked(subinv_pos);
@@ -346,13 +315,7 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
 
                 block_left += where1 * 4;
                 count_left += where1 / 2;
-                rank_in_block = rank
-                    - self
-                        .rank9
-                        .counts
-                        .as_ref()
-                        .get_unchecked(count_left)
-                        .absolute;
+                rank_in_block = rank - counts.get_unchecked(count_left).absolute;
 
                 debug_assert!(rank_in_block < 512);
             }
@@ -374,9 +337,7 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
         }
 
         let rank_in_block_step_9 = rank_in_block * ONES_STEP_9;
-
-        let counts = self.rank9.counts.as_ref().get_unchecked(count_left);
-        let relative = counts.relative;
+        let relative = counts.get_unchecked(count_left).relative;
 
         let offset_in_block =
             (ULEQ_STEP_9!(relative, rank_in_block_step_9).wrapping_mul(ONES_STEP_9) >> 54u64) & 0x7;
@@ -384,7 +345,7 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
 
         let word = block_left + offset_in_block;
 
-        let rank_in_word = rank_in_block - counts.rel(offset_in_block);
+        let rank_in_word = rank_in_block - counts.get_unchecked(count_left).rel(offset_in_block);
         debug_assert!(rank_in_word < 64);
 
         word * 64
