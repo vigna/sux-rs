@@ -1,3 +1,5 @@
+#![cfg(target_pointer_width = "32")]
+
 use clap::{arg, Parser, ValueEnum};
 use mem_dbg::*;
 use rand::{rngs::SmallRng, Rng, SeedableRng};

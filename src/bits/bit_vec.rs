@@ -144,6 +144,8 @@ impl<B> BitVec<B> {
     #[inline(always)]
     #[allow(clippy::len_without_is_empty)]
     /// Return the number of bits in this bit vector.
+    ///
+    /// This method is necessary to avoid ambiguity.
     pub fn len(&self) -> usize {
         self.len
     }

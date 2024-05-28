@@ -1,3 +1,4 @@
+#![cfg(target_pointer_width = "32")]
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use std::env;
 use std::hint::black_box;

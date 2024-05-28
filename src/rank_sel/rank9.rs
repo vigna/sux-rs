@@ -5,31 +5,36 @@ use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct Rank9<
-    B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]> = BitVec,
-    C: AsRef<[u64]> = Vec<u64>,
+    B: AsRef<[usize]> = BitVec,
+    C: AsRef<[usize]> = Vec<usize>,
     const HINT_BIT_SIZE: usize = 64,
 > {
     pub(super) bits: B,
     pub(super) counts: C,
 }
 
-impl<const HINT_BIT_SIZE: usize> Rank9<BitVec, Vec<u64>, HINT_BIT_SIZE> {
+impl<const HINT_BIT_SIZE: usize> Rank9<BitVec, Vec<usize>, HINT_BIT_SIZE> {
+    const NUM_BLOCKS: usize = 8;
+
+    /// Creates a new Rank9 structure from a given bit vector.
     pub fn new(bits: BitVec) -> Self {
         let num_bits = bits.len();
-        let num_words = (num_bits + 63) / 64;
-        let num_counts = ((num_bits + 64 * 8 - 1) / (64 * 8)) * 2;
+        let num_words = num_bits.div_ceil(usize::BITS as usize);
+        let num_counts = ((num_bits + usize::BITS as usize * Self::NUM_BLOCKS - 1)
+            / (usize::BITS as usize * Self::NUM_BLOCKS))
+            * 2;
 
-        let mut counts = vec![0u64; num_counts + 2];
+        let mut counts = vec![0_usize; num_counts + 2];
 
-        let mut num_ones = 0u64;
+        let mut num_ones = 0;
 
         for (i, pos) in (0..num_words).step_by(8).zip((0..).step_by(2)) {
             counts[pos] = num_ones;
-            num_ones += bits.as_ref()[i].count_ones() as u64;
+            num_ones += bits.as_ref()[i].count_ones() as usize;
             for j in 1..8 {
                 counts[pos + 1] |= (num_ones - counts[pos]) << (9 * (j - 1));
                 if i + j < num_words {
-                    num_ones += bits.as_ref()[i + j].count_ones() as u64;
+                    num_ones += bits.as_ref()[i + j].count_ones() as usize;
                 }
             }
         }
@@ -38,22 +43,15 @@ impl<const HINT_BIT_SIZE: usize> Rank9<BitVec, Vec<u64>, HINT_BIT_SIZE> {
 
         Self { bits, counts }
     }
-}
 
-impl<
-        B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]>,
-        C: AsRef<[u64]>,
-        const HINT_BIT_SIZE: usize,
-    > BitLength for Rank9<B, C, HINT_BIT_SIZE>
-{
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.bits.len()
     }
 }
 
 impl<
         B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]>,
-        C: AsRef<[u64]>,
+        C: AsRef<[usize]>,
         const HINT_BIT_SIZE: usize,
     > Rank for Rank9<B, C, HINT_BIT_SIZE>
 {
@@ -87,12 +85,30 @@ impl<
 
 impl<
         B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]>,
-        C: AsRef<[u64]>,
+        C: AsRef<[usize]>,
         const HINT_BIT_SIZE: usize,
     > BitCount for Rank9<B, C, HINT_BIT_SIZE>
 {
     fn count(&self) -> usize {
         self.rank(self.bits.len())
+    }
+}
+
+/// Forward [`BitLength`] to the underlying implementation.
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[usize]>, const HINT_BIT_SIZE: usize> BitLength
+    for Rank9<B, C, HINT_BIT_SIZE>
+{
+    fn len(&self) -> usize {
+        self.bits.len()
+    }
+}
+
+/// Forward `AsRef<[usize]>` to the underlying implementation.
+impl<B: AsRef<[usize]>, C: AsRef<[usize]>, const HINT_BIT_SIZE: usize> AsRef<[usize]>
+    for Rank9<B, C, HINT_BIT_SIZE>
+{
+    fn as_ref(&self) -> &[usize] {
+        self.bits.as_ref()
     }
 }
 
