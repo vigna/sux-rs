@@ -1,19 +1,17 @@
+use std::ops::Index;
+
 use epserde::*;
 use mem_dbg::*;
 
-use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
+use crate::prelude::{BitCount, BitLength, BitVec, Rank};
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct Rank9<
-    B: AsRef<[usize]> = BitVec,
-    C: AsRef<[usize]> = Vec<usize>,
-    const HINT_BIT_SIZE: usize = 64,
-> {
+pub struct Rank9<B: AsRef<[usize]> = BitVec, C: AsRef<[usize]> = Vec<usize>> {
     pub(super) bits: B,
     pub(super) counts: C,
 }
 
-impl<const HINT_BIT_SIZE: usize> Rank9<BitVec, Vec<usize>, HINT_BIT_SIZE> {
+impl Rank9<BitVec, Vec<usize>> {
     const NUM_BLOCKS: usize = 8;
 
     /// Creates a new Rank9 structure from a given bit vector.
@@ -44,20 +42,17 @@ impl<const HINT_BIT_SIZE: usize> Rank9<BitVec, Vec<usize>, HINT_BIT_SIZE> {
         Self { bits, counts }
     }
 
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.bits.len()
     }
 }
 
-impl<
-        B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]>,
-        C: AsRef<[usize]>,
-        const HINT_BIT_SIZE: usize,
-    > Rank for Rank9<B, C, HINT_BIT_SIZE>
-{
+impl<B: BitLength + AsRef<[usize]>, C: AsRef<[usize]>> Rank for Rank9<B, C> {
+    #[inline(always)]
     fn rank(&self, pos: usize) -> usize {
         if pos >= self.bits.len() {
-            self.counts.as_ref()[self.counts.as_ref().len() - 2] as usize
+            self.count()
         } else {
             unsafe { self.rank_unchecked(pos) }
         }
@@ -69,46 +64,49 @@ impl<
         let block = (word / 4) & !1;
         let offset = (word % 8).wrapping_sub(1);
 
-        let hint_rank = *self.counts.as_ref().get_unchecked(block)
+        let base_rank = *self.counts.as_ref().get_unchecked(block)
             + (*self.counts.as_ref().get_unchecked(block + 1)
                 >> ((offset.wrapping_add(offset >> 60 & 0x8)) * 9)
                 & 0x1FF);
 
-        RankHinted::<HINT_BIT_SIZE>::rank_hinted_unchecked(
-            &self.bits,
-            pos,
-            word,
-            hint_rank as usize,
-        )
+        base_rank
+            + (self.bits.as_ref().get_unchecked(word) & ((1 << (pos % usize::BITS as usize)) - 1))
+                .count_ones() as usize
     }
 }
 
-impl<
-        B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]>,
-        C: AsRef<[usize]>,
-        const HINT_BIT_SIZE: usize,
-    > BitCount for Rank9<B, C, HINT_BIT_SIZE>
-{
+impl<B: BitLength + AsRef<[usize]>, C: AsRef<[usize]>> BitCount for Rank9<B, C> {
+    #[inline(always)]
     fn count(&self) -> usize {
-        self.rank(self.bits.len())
+        self.counts.as_ref()[self.counts.as_ref().len() - 2] as usize
     }
 }
 
 /// Forward [`BitLength`] to the underlying implementation.
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[usize]>, const HINT_BIT_SIZE: usize> BitLength
-    for Rank9<B, C, HINT_BIT_SIZE>
-{
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[usize]>> BitLength for Rank9<B, C> {
+    #[inline(always)]
     fn len(&self) -> usize {
         self.bits.len()
     }
 }
 
 /// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<B: AsRef<[usize]>, C: AsRef<[usize]>, const HINT_BIT_SIZE: usize> AsRef<[usize]>
-    for Rank9<B, C, HINT_BIT_SIZE>
-{
+impl<B: AsRef<[usize]>, C: AsRef<[usize]>> AsRef<[usize]> for Rank9<B, C> {
+    #[inline(always)]
     fn as_ref(&self) -> &[usize] {
         self.bits.as_ref()
+    }
+}
+
+/// Forward `Index<usize, Output = bool>` to the underlying implementation.
+impl<B: AsRef<[usize]> + Index<usize, Output = bool>, C: AsRef<[usize]>> Index<usize>
+    for Rank9<B, C>
+{
+    type Output = bool;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        // TODO: why is & necessary?
+        &self.bits[index]
     }
 }
 

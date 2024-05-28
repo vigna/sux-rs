@@ -7,7 +7,7 @@ use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::Rank10Sel;
-use sux::rank_sel::Rank9Sel;
+use sux::rank_sel::Select9;
 use sux::rank_sel::SelectFixed2;
 use sux::rank_sel::SimpleSelect;
 use sux::traits::Select;
@@ -38,9 +38,9 @@ impl SelStruct<BitVec> for SimpleSelect {
         SimpleSelect::new(bits, 3)
     }
 }
-impl SelStruct<BitVec> for Rank9Sel {
+impl SelStruct<BitVec> for Select9 {
     fn new(bits: BitVec) -> Self {
-        Rank9Sel::new(bits)
+        Select9::new(bits)
     }
 }
 impl<const LOG2_LOWER_BLOCK_SIZE: usize, const LOG2_ONES_PER_INVENTORY: usize> SelStruct<BitVec>
@@ -119,7 +119,7 @@ pub fn bench_simple_select(c: &mut Criterion) {
 pub fn bench_rank9sel(c: &mut Criterion) {
     let mut bench_group = c.benchmark_group("rank9sel");
 
-    bench_select::<Rank9Sel>(&mut bench_group, &LENS, &DENSITIES, REPS, false);
+    bench_select::<Select9>(&mut bench_group, &LENS, &DENSITIES, REPS, false);
 
     bench_group.finish();
 }
@@ -135,7 +135,7 @@ pub fn bench_simple_select_non_uniform(c: &mut Criterion) {
 pub fn bench_rank9sel_non_uniform(c: &mut Criterion) {
     let mut bench_group = c.benchmark_group("rank9sel_non_uniform");
 
-    bench_select::<Rank9Sel>(&mut bench_group, &LENS, &DENSITIES, REPS, true);
+    bench_select::<Select9>(&mut bench_group, &LENS, &DENSITIES, REPS, true);
 
     bench_group.finish();
 }
