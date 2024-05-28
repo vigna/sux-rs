@@ -3,7 +3,7 @@ use mem_dbg::*;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use sux::{
     bits::BitVec,
-    rank_sel::{Rank10Sel, Rank9Sel, SimpleSelect},
+    rank_sel::{Rank10Sel, Select9, SimpleSelect},
     traits::*,
 };
 
@@ -15,9 +15,9 @@ impl SelStruct<BitVec> for SimpleSelect {
         SimpleSelect::new(bits, 3)
     }
 }
-impl SelStruct<BitVec> for Rank9Sel {
+impl SelStruct<BitVec> for Select9 {
     fn new(bits: BitVec) -> Self {
-        Rank9Sel::new(bits)
+        Select9::new(bits)
     }
 }
 impl<const LOG2_UPPER_BLOCK_SIZE: usize, const LOG2_ONES_PER_INVENTORY: usize> SelStruct<BitVec>
@@ -97,13 +97,13 @@ fn main() {
             sel_struct.mem_dbg(DbgFlags::PERCENTAGE).unwrap();
         }
         SelType::Rank9sel => {
-            let sel_struct = create_sel_struct::<Rank9Sel>(cli.len, cli.density, cli.uniform);
+            let sel_struct = create_sel_struct::<Select9>(cli.len, cli.density, cli.uniform);
             let mem_cost = mem_cost(&sel_struct);
             println!(
                 "BitVec with length: {}, density: {}, uniform: {}",
                 cli.len, cli.density, cli.uniform
             );
-            println!("Memory cost of Rank9Sel: {}%", mem_cost);
+            println!("Memory cost of Select9: {}%", mem_cost);
             sel_struct.mem_dbg(DbgFlags::PERCENTAGE).unwrap();
         }
         SelType::Rank10sel => {

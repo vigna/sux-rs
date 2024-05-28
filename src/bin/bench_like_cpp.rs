@@ -8,7 +8,7 @@ use std::hint::black_box;
 use std::io::Write;
 use sux::{
     bits::BitVec,
-    rank_sel::{Rank9, Select9, SimpleSelect},
+    rank_sel::{BlockCounts, Rank9, Select9, SimpleSelect},
     traits::{Rank, Select},
 };
 
@@ -135,7 +135,7 @@ fn bench_rank9() {
             let mut time = 0.0;
             for _ in 0..REPEATS {
                 let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-                let rank9: Rank9<BitVec, Vec<usize>> = Rank9::new(bits);
+                let rank9 = Rank9::new(bits);
                 let mut u = 0;
                 let begin = std::time::Instant::now();
                 for _ in 0..NUMPOS {
