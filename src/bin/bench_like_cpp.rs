@@ -1,15 +1,15 @@
-#![cfg(target_pointer_width = "32")]
+#![cfg(target_pointer_width = "64")]
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use std::env;
 use std::hint::black_box;
 use std::io::Write;
 use sux::{
     bits::BitVec,
-    rank_sel::{Rank9, Rank9Sel, SimpleSelect},
+    rank_sel::{Rank9, Select9, SimpleSelect},
     traits::{Rank, Select},
 };
 
-const LENS: [u64; 6] = [
+const LENS: [usize; 6] = [
     1_000_000,
     4_000_000,
     16_000_000,
@@ -32,14 +32,14 @@ impl SelStruct<BitVec> for SimpleSelect {
         SimpleSelect::new(bits, 3)
     }
 }
-impl SelStruct<BitVec> for Rank9Sel {
+impl SelStruct<BitVec> for Select9 {
     fn new(bits: BitVec) -> Self {
-        Rank9Sel::new(bits)
+        Select9::new(bits)
     }
 }
 
-fn remap128(x: u64, n: u64) -> u64 {
-    ((x as u128).wrapping_mul(n as u128) >> 64) as u64
+fn remap128(x: usize, n: usize) -> usize {
+    ((x as u128).wrapping_mul(n as u128) >> 64) as usize
 }
 
 fn bench_select<S: SelStruct<BitVec>>(
@@ -57,11 +57,11 @@ fn bench_select<S: SelStruct<BitVec>>(
             break b;
         }
     };
-    let num_ones_first_half = first_half.count_ones() as u64;
+    let num_ones_first_half = first_half.count_ones();
     let second_half = (0..numbits / 2)
         .map(|_| rng.gen_bool(density1))
         .collect::<BitVec>();
-    let num_ones_second_half = second_half.count_ones() as u64;
+    let num_ones_second_half = second_half.count_ones();
     let bits = first_half
         .into_iter()
         .chain(second_half.into_iter())
@@ -75,13 +75,13 @@ fn bench_select<S: SelStruct<BitVec>>(
         u ^= if u & 1 != 0 {
             unsafe {
                 sel.select_unchecked(
-                    (num_ones_first_half + remap128(rng.gen::<u64>(), num_ones_second_half))
+                    (num_ones_first_half + remap128(rng.gen::<usize>(), num_ones_second_half))
                         as usize,
                 ) as u64
             }
         } else {
             unsafe {
-                sel.select_unchecked((remap128(rng.gen::<u64>(), num_ones_first_half)) as usize)
+                sel.select_unchecked((remap128(rng.gen::<usize>(), num_ones_first_half)) as usize)
                     as u64
             }
         };
@@ -111,7 +111,7 @@ fn bench_select_batch<S: SelStruct<BitVec>>(rng: &mut SmallRng, sel_name: &str, 
             } else {
                 (*density * 0.01, *density * 0.99)
             };
-            let mut time = 0f64;
+            let mut time = 0.0;
             for _ in 0..REPEATS {
                 time += bench_select::<S>(*len as usize, NUMPOS, density0, density1, rng);
             }
@@ -129,14 +129,14 @@ fn bench_rank9() {
 
     for len in LENS.iter().copied() {
         for density in DENSITIES.iter().copied() {
-            let mut time = 0f64;
+            let mut time = 0.0;
             for _ in 0..REPEATS {
                 let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-                let rank9: Rank9<BitVec, Vec<u64>, 64> = Rank9::new(bits);
+                let rank9: Rank9<BitVec, Vec<usize>> = Rank9::new(bits);
                 let mut u = 0;
                 let begin = std::time::Instant::now();
                 for _ in 0..NUMPOS {
-                    u ^= rank9.rank(remap128(rng.gen::<u64>() ^ u, len) as usize) as u64;
+                    u ^= rank9.rank(remap128(rng.gen::<usize>() ^ u, len) as usize);
                 }
                 black_box(u);
                 let elapsed = begin.elapsed().as_nanos();
@@ -173,8 +173,8 @@ fn main() {
         "select" => {
             bench_select_batch::<SimpleSelect>(&mut rng, "simple_select", true);
             bench_select_batch::<SimpleSelect>(&mut rng, "simple_select_non_uniform", false);
-            bench_select_batch::<Rank9Sel>(&mut rng, "rank9sel", true);
-            bench_select_batch::<Rank9Sel>(&mut rng, "rank9sel_non_uniform", false);
+            bench_select_batch::<Select9>(&mut rng, "rank9sel", true);
+            bench_select_batch::<Select9>(&mut rng, "rank9sel_non_uniform", false);
         }
         "rank" => {
             bench_rank9();
