@@ -54,7 +54,7 @@ pub struct Select9<R: Rank = Rank9, I: AsRef<[usize]> = Vec<usize>, const HINT_B
     subinventory_size: usize,
 }
 
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[super::rank9::BlockCounters]>, I: AsRef<[usize]>>
+impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>>
     Select9<Rank9<B, C>, I>
 {
     const LOG2_ONES_PER_INVENTORY: usize = 9;
@@ -62,7 +62,7 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[super::rank9::BlockCounters]>, I: 
     //const INVENTORY_MASK: usize = Self::ONES_PER_INVENTORY - 1;
 }
 
-impl Select9<Rank9<BitVec, Vec<super::rank9::BlockCounters>>, Vec<usize>> {
+impl Select9<Rank9<BitVec, Vec<BlockCounters>>, Vec<usize>> {
     pub fn new(bits: BitVec) -> Self {
         let rank9 = Rank9::new(bits);
 
@@ -375,22 +375,16 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
 
         let rank_in_block_step_9 = rank_in_block * ONES_STEP_9;
 
-        let subcounts = self
-            .rank9
-            .counts
-            .as_ref()
-            .get_unchecked(count_left)
-            .relative;
+        let counts = self.rank9.counts.as_ref().get_unchecked(count_left);
+        let relative = counts.relative;
 
         let offset_in_block =
-            (ULEQ_STEP_9!(subcounts, rank_in_block_step_9).wrapping_mul(ONES_STEP_9) >> 54u64)
-                & 0x7;
+            (ULEQ_STEP_9!(relative, rank_in_block_step_9).wrapping_mul(ONES_STEP_9) >> 54u64) & 0x7;
         debug_assert!(offset_in_block <= 7);
 
         let word = block_left + offset_in_block;
 
-        let rank_in_word =
-            rank_in_block - ((subcounts >> (((offset_in_block.wrapping_sub(1)) & 7) * 9)) & 0x1FF);
+        let rank_in_word = rank_in_block - counts.rel(offset_in_block);
         debug_assert!(rank_in_word < 64);
 
         word * 64
