@@ -32,8 +32,8 @@ fn main() {
 
     for (b, (len, d)) in zip(&bitvecs, &bitvec_ids) {
         let simple = SimpleSelect::new(b.clone(), 3);
-        let log2_ones_per_inventory = simple.get_log2_ones_per_inventory();
-        let log2_u64_per_subinventory = simple.get_log2_u64_per_subinventory();
+        let log2_ones_per_inventory = simple.log2_ones_per_inventory();
+        let log2_u64_per_subinventory = simple.log2_u64_per_subinventory();
         let source_folder_name = format!(
             "{}_{}_{}_{}_0/",
             log2_ones_per_inventory, log2_u64_per_subinventory, len, d

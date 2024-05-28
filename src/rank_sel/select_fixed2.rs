@@ -16,10 +16,11 @@ use mem_dbg::*;
 A selection structure based on a two-level index.
 
 This is a fixed-density version of the structure described by
-by Sebastiano Vigna in “<a href="https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12">Broadword
-Implementation of Rank/Select Queries</a>”, _Proc. of the 7th International Workshop
-on Experimental Algorithms, WEA 2008_, volume 5038 of Lecture Notes in Computer Science, pages
-154–168. Springer, 2008.
+Sebastiano Vigna in “[Broadword Implementation of Rank/Select
+Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
+_Proc. of the 7th International Workshop on Experimental Algorithms, WEA
+2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
+Springer, 2008.
 
 It records the position of one every 2<sup>`LOG2_ONES_PER_INVENTORY`</sup> ones in a first-level
 inventory of `u64`'s; then, for each first-level inventory a subinventory of 2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup>

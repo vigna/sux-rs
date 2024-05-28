@@ -20,9 +20,10 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, BitVec, Rank, Select, S
 ///
 /// The structure has been described by Sebastiano Vigna in “[Broadword
 /// Implementation of Rank/Select
-/// Queries](http://vigna.di.unimi.it/papers.php#VigBIRSQ)”, _Proc. of the 7th
-/// International Workshop on Experimental Algorithms, WEA 2008_, volume 5038 of
-/// Lecture Notes in Computer Science, pages 154–168, Springer, 2008.
+/// Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
+/// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
+/// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
+/// Springer, 2008.
 ///
 /// # Implementation Details
 ///
@@ -54,10 +55,10 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, BitVec, Rank, Select, S
 /// vector extremely dense, half of the vector extremely sparse) in which the
 /// spill vector uses a very large amount of space (more than 50%).
 ///
-/// In the 16-bit case, the average distance between two ones indexed
-/// by the subinventories is `L/4M` (again, the actual value might be twice as
-/// large because of rounding). Within this range, we perform a sequential
-/// broadword search, which has a linear cost.
+/// In the 16-bit case, the average distance between two ones indexed by the
+/// subinventories is `L/4M` (again, the actual value might be twice as large
+/// because of rounding). Within this range, we perform a sequential broadword
+/// search, which has a linear cost.
 ///
 /// # Choosing Parameters
 ///
@@ -69,9 +70,9 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, BitVec, Rank, Select, S
 ///
 /// The value `M` should be as high as possible, compatibly with the desired
 /// space occupancy, but values resulting in linear searches shorter than a
-/// couple of words will not generally improve performance. For example,
-/// using  [default value for `L`](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN)
-/// a reasonable choice for `M` is between 2 and 5, corrisponding to worst-case
+/// couple of words will not generally improve performance. For example, using
+/// [default value for `L`](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN) a
+/// reasonable choice for `M` is between 2 and 5, corrisponding to worst-case
 /// linear searches between 1024 and 128 bits.
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
