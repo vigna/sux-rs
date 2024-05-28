@@ -53,7 +53,8 @@ pub fn main() {
         pl.start("Writing...");
         for _ in 0..args.n {
             let x = rand.gen::<usize>() & mask;
-            black_box(unsafe { a.set_unchecked(x, 1) });
+            unsafe { a.set_unchecked(x, 1) };
+            black_box(());
         }
         pl.done_with_count(args.n);
 

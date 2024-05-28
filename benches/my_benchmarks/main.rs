@@ -16,7 +16,7 @@ fn main() {
     let filter = std::env::args().nth(1).unwrap_or_default();
 
     match filter.as_str() {
-        filter if filter.contains("-") || filter.is_empty() => {
+        filter if filter.contains('-') || filter.is_empty() => {
             bench_rank9(&mut criterion);
             bench_rank11(&mut criterion);
             bench_simple_select(&mut criterion);

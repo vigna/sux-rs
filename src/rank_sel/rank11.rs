@@ -55,7 +55,7 @@ impl<
 
         let hint_rank = *self.counts.as_ref().get_unchecked(block)
             + (*self.counts.as_ref().get_unchecked(block + 1)
-                >> 12 * (offset.wrapping_add((offset >> (32 - 4)) & 0x6))
+                >> (12 * (offset.wrapping_add((offset >> (32 - 4)) & 0x6)))
                 & 0x7FF);
 
         let hint_pos = word - ((word % 32) % 6);

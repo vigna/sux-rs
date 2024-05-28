@@ -129,7 +129,7 @@ impl SimpleSelect<BitVec, Vec<usize>> {
         target_inventory_span: usize,
         max_log2_u64_per_subinventory: usize,
     ) -> Self {
-        let num_bits = max(1usize, bits.len() as usize);
+        let num_bits = max(1usize, bits.len());
         let num_ones = bits.count();
 
         let log2_ones_per_inventory = (num_ones * target_inventory_span)
@@ -151,7 +151,7 @@ impl SimpleSelect<BitVec, Vec<usize>> {
         log2_ones_per_inventory: usize,
         max_log2_u64_per_subinventory: usize,
     ) -> Self {
-        let num_bits = max(1usize, bits.len() as usize);
+        let num_bits = max(1usize, bits.len());
         let ones_per_inventory = 1usize << log2_ones_per_inventory;
         let ones_per_inventory_mask = ones_per_inventory - 1;
         let inventory_size = num_ones.div_ceil(ones_per_inventory);
@@ -184,7 +184,7 @@ impl SimpleSelect<BitVec, Vec<usize>> {
             let ones_in_word = word.count_ones() as usize;
 
             while curr_num_ones + ones_in_word > next_quantum {
-                let in_word_index = word.select_in_word((next_quantum - curr_num_ones) as usize);
+                let in_word_index = word.select_in_word(next_quantum - curr_num_ones);
                 let index = (i * usize::BITS as usize) + in_word_index;
 
                 inventory.push(index);
@@ -206,7 +206,7 @@ impl SimpleSelect<BitVec, Vec<usize>> {
             .enumerate()
             .step_by(u64_per_inventory)
         {
-            let start = inv as usize;
+            let start = inv;
             let span = inventory[i + u64_per_inventory] as usize - start;
             curr_num_ones = (i / u64_per_inventory) * ones_per_inventory;
             let ones = min(num_ones - curr_num_ones, ones_per_inventory);
@@ -251,7 +251,7 @@ impl SimpleSelect<BitVec, Vec<usize>> {
             } else {
                 quantum = 1;
                 inventory[start_idx] |= 1_usize << 63;
-                inventory[start_idx + 1] = spilled as usize;
+                inventory[start_idx + 1] = spilled;
             }
 
             let end_word_idx = end_bit_idx.div_ceil(usize::BITS as usize);
@@ -354,7 +354,7 @@ impl<B: SelectHinted + BitLength + AsRef<[usize]>, I: AsRef<[usize]>> Select
             (inventory_index << self.log2_u64_per_subinventory) + inventory_index;
         debug_assert!(inventory_index <= self.inventory_size);
 
-        let inventory_rank = *inventory_ref.get_unchecked(inventory_start_pos) as usize;
+        let inventory_rank = { *inventory_ref.get_unchecked(inventory_start_pos) };
         let subrank = rank & self.ones_per_inventory_mask;
 
         if (inventory_rank as isize) < 0 {
@@ -362,12 +362,12 @@ impl<B: SelectHinted + BitLength + AsRef<[usize]>, I: AsRef<[usize]>> Select
                 return inventory_rank & !(1usize << 63);
             }
             debug_assert!(
-                *inventory_ref.get_unchecked(inventory_start_pos + 1) as usize + subrank
+                { *inventory_ref.get_unchecked(inventory_start_pos + 1) } + subrank
                     < self.exact_spill_size
             );
             return self.exact_spill.get_unchecked(
-                *inventory_ref.get_unchecked(inventory_start_pos + 1) as usize + subrank,
-            ) as usize;
+                { *inventory_ref.get_unchecked(inventory_start_pos + 1) } + subrank,
+            );
         }
 
         let (_, u16s, _) = inventory_ref

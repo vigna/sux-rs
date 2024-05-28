@@ -8,7 +8,7 @@ use std::hint::black_box;
 use std::io::Write;
 use sux::{
     bits::BitVec,
-    rank_sel::{BlockCounts, Rank9, Select9, SimpleSelect},
+    rank_sel::{BlockCounters, Rank9, Select9, SimpleSelect},
     traits::{Rank, Select},
 };
 

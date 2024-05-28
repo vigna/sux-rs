@@ -31,18 +31,28 @@ use crate::prelude::{BitCount, BitLength, BitVec, Rank};
 /// Springer, 2008.
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct Rank9<B: AsRef<[usize]> = BitVec, C: AsRef<[BlockCounts]> = Vec<BlockCounts>> {
+pub struct Rank9<B: AsRef<[usize]> = BitVec, C: AsRef<[BlockCounters]> = Vec<BlockCounters>> {
     pub(super) bits: B,
     pub(super) counts: C,
 }
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Default)]
-pub struct BlockCounts {
+pub struct BlockCounters {
     pub(super) absolute: usize,
     pub(super) relative: usize,
 }
 
-impl Rank9<BitVec, Vec<BlockCounts>> {
+impl BlockCounters {
+    pub fn rel(&self, word: usize) -> usize {
+        self.relative >> (9 * (word ^ 7)) & 0x1FF
+    }
+
+    pub fn set_rel(&mut self, word: usize, counter: usize) {
+        self.relative |= counter << (9 * (word ^ 7));
+    }
+}
+
+impl Rank9<BitVec, Vec<BlockCounters>> {
     pub(super) const WORDS_PER_BLOCK: usize = 8;
 
     /// Creates a new Rank9 structure from a given bit vector.
@@ -52,7 +62,7 @@ impl Rank9<BitVec, Vec<BlockCounts>> {
         let num_counts = num_bits.div_ceil(usize::BITS as usize * Self::WORDS_PER_BLOCK);
 
         // We use the last counter to store the total number of ones
-        let mut counts = vec![BlockCounts::default(); num_counts + 1];
+        let mut counts = vec![BlockCounters::default(); num_counts + 1];
 
         let mut num_ones = 0;
 
@@ -61,7 +71,8 @@ impl Rank9<BitVec, Vec<BlockCounts>> {
             num_ones += bits.as_ref()[i].count_ones() as usize;
 
             for j in 1..8 {
-                counts[pos].relative |= (num_ones - counts[pos].absolute) << (9 * (j - 1));
+                let rel_count = num_ones - counts[pos].absolute;
+                counts[pos].set_rel(j, rel_count);
                 if i + j < num_words {
                     num_ones += bits.as_ref()[i + j].count_ones() as usize;
                 }
@@ -79,7 +90,7 @@ impl Rank9<BitVec, Vec<BlockCounts>> {
     }
 }
 
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounts]>> Rank for Rank9<B, C> {
+impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> {
     #[inline(always)]
     fn rank(&self, pos: usize) -> usize {
         if pos >= self.bits.len() {
@@ -91,30 +102,27 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounts]>> Rank for Rank9<B, C
 
     #[inline(always)]
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-        let word = pos / usize::BITS as usize;
-        let block = word / Rank9::WORDS_PER_BLOCK;
-        let offset = (word % Rank9::WORDS_PER_BLOCK).wrapping_sub(1);
+        let word_pos = pos / usize::BITS as usize;
+        let block = word_pos / Rank9::WORDS_PER_BLOCK;
+        let offset = word_pos % Rank9::WORDS_PER_BLOCK;
+        let word = self.bits.as_ref().get_unchecked(word_pos);
+        let counts = self.counts.as_ref().get_unchecked(block);
 
-        let base_rank = self.counts.as_ref().get_unchecked(block).absolute
-            + (self.counts.as_ref().get_unchecked(block).relative
-                >> ((offset.wrapping_add((offset >> 60) & Rank9::WORDS_PER_BLOCK)) * 9)
-                & 0x1FF);
-
-        base_rank
-            + (self.bits.as_ref().get_unchecked(word) & ((1 << (pos % usize::BITS as usize)) - 1))
-                .count_ones() as usize
+        counts.absolute
+            + counts.rel(offset)
+            + (word & ((1 << (pos % usize::BITS as usize)) - 1)).count_ones() as usize
     }
 }
 
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounts]>> BitCount for Rank9<B, C> {
+impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>> BitCount for Rank9<B, C> {
     #[inline(always)]
     fn count(&self) -> usize {
-        self.counts.as_ref().last().unwrap().absolute as usize
+        self.counts.as_ref().last().unwrap().absolute
     }
 }
 
 /// Forward [`BitLength`] to the underlying implementation.
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounts]>> BitLength for Rank9<B, C> {
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> BitLength for Rank9<B, C> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.bits.len()
@@ -122,7 +130,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounts]>> BitLength for Rank9
 }
 
 /// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<B: AsRef<[usize]>, C: AsRef<[BlockCounts]>> AsRef<[usize]> for Rank9<B, C> {
+impl<B: AsRef<[usize]>, C: AsRef<[BlockCounters]>> AsRef<[usize]> for Rank9<B, C> {
     #[inline(always)]
     fn as_ref(&self) -> &[usize] {
         self.bits.as_ref()
@@ -130,7 +138,7 @@ impl<B: AsRef<[usize]>, C: AsRef<[BlockCounts]>> AsRef<[usize]> for Rank9<B, C> 
 }
 
 /// Forward `Index<usize, Output = bool>` to the underlying implementation.
-impl<B: AsRef<[usize]> + Index<usize, Output = bool>, C: AsRef<[BlockCounts]>> Index<usize>
+impl<B: AsRef<[usize]> + Index<usize, Output = bool>, C: AsRef<[BlockCounters]>> Index<usize>
     for Rank9<B, C>
 {
     type Output = bool;
