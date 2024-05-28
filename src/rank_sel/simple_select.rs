@@ -9,9 +9,12 @@
 use common_traits::SelectInWord;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
-use std::cmp::{max, min};
+use std::{
+    cmp::{max, min},
+    ops::Index,
+};
 
-use crate::prelude::{BitCount, BitFieldSlice, BitLength, BitVec, Select, SelectHinted};
+use crate::prelude::{BitCount, BitFieldSlice, BitLength, BitVec, Rank, Select, SelectHinted};
 
 /// A simple select implementation based on a two-level inventory.
 ///
@@ -72,7 +75,7 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, BitVec, Select, SelectH
 /// linear searches between 1024 and 128 bits.
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct SimpleSelect<B: SelectHinted = BitVec, I: AsRef<[u64]> = Vec<u64>> {
+pub struct SimpleSelect<B: SelectHinted = BitVec, I: AsRef<[usize]> = Vec<usize>> {
     bits: B,
     inventory: I,
     exact_spill: I,
@@ -88,11 +91,11 @@ pub struct SimpleSelect<B: SelectHinted = BitVec, I: AsRef<[u64]> = Vec<u64>> {
     exact_spill_size: usize,
 }
 
-impl<B: SelectHinted, I: AsRef<[u64]>> SimpleSelect<B, I> {
+impl<B: SelectHinted, I: AsRef<[usize]>> SimpleSelect<B, I> {
     const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
 }
 
-impl SimpleSelect<BitVec, Vec<u64>> {
+impl SimpleSelect<BitVec, Vec<usize>> {
     /// Creates a new selection structure over a bit vector using a [default
     /// target inventory span](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN).
     ///
@@ -181,9 +184,9 @@ impl SimpleSelect<BitVec, Vec<u64>> {
 
             while curr_num_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word((next_quantum - curr_num_ones) as usize);
-                let index = (i * u64::BITS as usize) + in_word_index;
+                let index = (i * usize::BITS as usize) + in_word_index;
 
-                inventory.push(index as u64);
+                inventory.push(index);
                 inventory.resize(inventory.len() + u64_per_subinventory, 0);
 
                 next_quantum += ones_per_inventory;
@@ -192,7 +195,7 @@ impl SimpleSelect<BitVec, Vec<u64>> {
         }
         assert_eq!(num_ones, curr_num_ones);
         // in the last inventory write the number of bits
-        inventory.push(num_bits as u64);
+        inventory.push(num_bits);
         assert_eq!(inventory.len(), inventory_size * u64_per_inventory + 1);
 
         // We estimate the subinventory and exact spill size
@@ -216,7 +219,7 @@ impl SimpleSelect<BitVec, Vec<u64>> {
         }
 
         let exact_spill_size = spilled;
-        let mut exact_spill = vec![0u64; exact_spill_size];
+        let mut exact_spill = vec![0; exact_spill_size];
 
         spilled = 0;
         let iter = 0..inventory_size;
@@ -231,10 +234,10 @@ impl SimpleSelect<BitVec, Vec<u64>> {
             let end_bit_idx = inventory[end_idx];
             // compute the span of the inventory
             let span = end_bit_idx - start_bit_idx;
-            let mut word_idx = start_bit_idx / u64::BITS as u64;
+            let mut word_idx = start_bit_idx / usize::BITS as usize;
 
             // cleanup the lower bits
-            let bit_idx = start_bit_idx % u64::BITS as u64;
+            let bit_idx = start_bit_idx % usize::BITS as usize;
             let mut word = (bits.as_ref()[word_idx as usize] >> bit_idx) << bit_idx;
 
             // compute the global number of ones
@@ -242,21 +245,21 @@ impl SimpleSelect<BitVec, Vec<u64>> {
             let mut next_quantum = number_of_ones;
             let quantum;
 
-            if span <= u16::MAX as u64 {
+            if span <= u16::MAX as usize {
                 quantum = ones_per_sub16;
             } else {
                 quantum = 1;
-                inventory[start_idx] |= 1u64 << 63;
-                inventory[start_idx + 1] = spilled as u64;
+                inventory[start_idx] |= 1_usize << 63;
+                inventory[start_idx + 1] = spilled as usize;
             }
 
-            let end_word_idx = end_bit_idx.div_ceil(u64::BITS as u64);
+            let end_word_idx = end_bit_idx.div_ceil(usize::BITS as usize);
 
             // the first subinventory element is always 0
             let mut subinventory_idx = 1;
 
             // pre increment the next quantum only when using the subinventories
-            if span <= u16::MAX as u64 {
+            if span <= u16::MAX as usize {
                 next_quantum += quantum;
             }
 
@@ -270,15 +273,15 @@ impl SimpleSelect<BitVec, Vec<u64>> {
                     // find the quantum bit in the word
                     let in_word_index = word.select_in_word(next_quantum - number_of_ones);
                     // compute the global index of the quantum bit in the bitvec
-                    let bit_index = (word_idx * u64::BITS as u64) + in_word_index as u64;
-                    if bit_index >= end_bit_idx as u64 {
+                    let bit_index = (word_idx * usize::BITS as usize) + in_word_index;
+                    if bit_index >= end_bit_idx {
                         break 'outer;
                     }
                     // compute the offset of the quantum bit
                     // from the start of the subinventory
                     let sub_offset = bit_index - start_bit_idx;
 
-                    if span <= u16::MAX as u64 {
+                    if span <= u16::MAX as usize {
                         let subinventory: &mut [u16] =
                             unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
 
@@ -290,7 +293,7 @@ impl SimpleSelect<BitVec, Vec<u64>> {
                     }
 
                     // update the subinventory index if used
-                    if span <= u16::MAX as u64 {
+                    if span <= u16::MAX as usize {
                         subinventory_idx += 1;
                         if subinventory_idx == (1 << log2_ones_per_inventory) / quantum {
                             break 'outer;
@@ -332,29 +335,15 @@ impl SimpleSelect<BitVec, Vec<u64>> {
         }
     }
 
-    pub fn get_log2_ones_per_inventory(&self) -> usize {
+    pub fn log2_ones_per_inventory(&self) -> usize {
         self.log2_ones_per_inventory
     }
-    pub fn get_log2_u64_per_subinventory(&self) -> usize {
+    pub fn log2_u64_per_subinventory(&self) -> usize {
         self.log2_u64_per_subinventory
     }
 }
 
-impl<B: SelectHinted + Select + AsRef<[usize]>, I: AsRef<[u64]>> BitCount for SimpleSelect<B, I> {
-    fn count(&self) -> usize {
-        self.num_ones
-    }
-}
-
-impl<B: SelectHinted + Select + BitLength + AsRef<[usize]>, I: AsRef<[u64]>> BitLength
-    for SimpleSelect<B, I>
-{
-    fn len(&self) -> usize {
-        self.bits.len()
-    }
-}
-
-impl<B: SelectHinted + Select + BitLength + AsRef<[usize]>, I: AsRef<[u64]>> Select
+impl<B: SelectHinted + BitLength + AsRef<[usize]>, I: AsRef<[usize]>> Select
     for SimpleSelect<B, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -392,12 +381,63 @@ impl<B: SelectHinted + Select + BitLength + AsRef<[usize]>, I: AsRef<[u64]>> Sel
             .select_hinted_unchecked(rank, hint_pos, rank - residual)
     }
 
+    #[inline(always)]
     fn select(&self, rank: usize) -> Option<usize> {
         if rank >= self.count() {
             None
         } else {
             Some(unsafe { self.select_unchecked(rank) })
         }
+    }
+}
+
+impl<B: SelectHinted + AsRef<[usize]>, I: AsRef<[usize]>> BitCount for SimpleSelect<B, I> {
+    #[inline(always)]
+    fn count(&self) -> usize {
+        self.num_ones
+    }
+}
+
+/// Forward [`BitLength`] to the underlying implementation.
+impl<B: SelectHinted + BitLength + AsRef<[usize]>, I: AsRef<[usize]>> BitLength
+    for SimpleSelect<B, I>
+{
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.bits.len()
+    }
+}
+
+/// Forward [`Rank`] to the underlying implementation.
+impl<B: Rank + SelectHinted + AsRef<[usize]>, I: AsRef<[usize]>> Rank for SimpleSelect<B, I> {
+    #[inline(always)]
+    unsafe fn rank_unchecked(&self, pos: usize) -> usize {
+        self.bits.rank_unchecked(pos)
+    }
+
+    #[inline(always)]
+    fn rank(&self, pos: usize) -> usize {
+        self.bits.rank(pos)
+    }
+}
+
+/// Forward `AsRef<[usize]>` to the underlying implementation.
+impl<B: SelectHinted + AsRef<[usize]>, I: AsRef<[usize]>> AsRef<[usize]> for SimpleSelect<B, I> {
+    #[inline(always)]
+    fn as_ref(&self) -> &[usize] {
+        self.bits.as_ref()
+    }
+}
+
+/// Forward `Index<usize, Output = bool>` to the underlying implementation.
+impl<B: SelectHinted + AsRef<[usize]> + Index<usize, Output = bool>, I: AsRef<[usize]>> Index<usize>
+    for SimpleSelect<B, I>
+{
+    type Output = bool;
+    #[inline(always)]
+    fn index(&self, index: usize) -> &Self::Output {
+        // TODO: why is & necessary?
+        &self.bits[index]
     }
 }
 
@@ -420,11 +460,11 @@ mod test_simple_select {
             let simple: SimpleSelect = SimpleSelect::new(bits, 3);
             println!(
                 "log2_ones_per_inventory: {}",
-                simple.get_log2_ones_per_inventory()
+                simple.log2_ones_per_inventory()
             );
             println!(
                 "log2_u64_per_subinventory: {}",
-                simple.get_log2_u64_per_subinventory()
+                simple.log2_u64_per_subinventory()
             );
         }
     }
@@ -437,7 +477,7 @@ mod test_simple_select {
         for len in lens {
             let bits: BitVec = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
 
-            let simple: SimpleSelect<BitVec, Vec<u64>> = SimpleSelect::new(bits.clone(), 3);
+            let simple: SimpleSelect<BitVec, Vec<usize>> = SimpleSelect::new(bits.clone(), 3);
 
             let ones = simple.count();
             let mut pos = Vec::with_capacity(ones);
