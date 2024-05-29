@@ -141,6 +141,7 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
     /// # Safety
     /// - `index` must be in [0..[len](`BitFieldSliceCore::len`));
     /// - `value` must fit withing [`BitFieldSliceCore::bit_width`] bits.
+    ///
     /// No bound or bit-width check is performed.
     unsafe fn set_unchecked(&mut self, index: usize, value: W);
 
@@ -194,6 +195,7 @@ where
     /// # Safety
     /// - `index` must be in [0..[len](`BitFieldSliceCore::len`));
     /// - `value` must fit withing [`BitFieldSliceCore::bit_width`] bits.
+    ///
     /// No bound or bit-width check is performed.
     unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering);
 

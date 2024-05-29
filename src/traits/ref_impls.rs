@@ -31,8 +31,13 @@ macro_rules! impl_for_refs {
             T: BitCount,
         {
             #[inline(always)]
-            fn count(&self) -> usize {
-                (**self).count()
+            fn count_ones(&self) -> usize {
+                (**self).count_ones()
+            }
+
+            #[inline(always)]
+            fn count_zeros(&self) -> usize {
+                (**self).count_zeros()
             }
         }
 
