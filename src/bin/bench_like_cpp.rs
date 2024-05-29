@@ -3,9 +3,9 @@
 //! Benchmarks the rank and select operations similarly to the C++ benchmarks.
 
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use std::env;
 use std::hint::black_box;
 use std::io::Write;
+use std::{env, path::PathBuf};
 use sux::{
     bits::BitVec,
     rank_sel::{Rank9, Select9, SimpleSelect},
@@ -95,11 +95,15 @@ fn bench_select<S: SelStruct<BitVec>>(
     elapsed as f64 / numpos as f64
 }
 
-fn bench_select_batch<S: SelStruct<BitVec>>(rng: &mut SmallRng, sel_name: &str, uniform: bool) {
+fn bench_select_batch<S: SelStruct<BitVec>>(
+    rng: &mut SmallRng,
+    sel_name: &str,
+    uniform: bool,
+    target_dir: &PathBuf,
+) {
     print!("{}... ", sel_name);
     std::io::stdout().flush().unwrap();
-    let mut file =
-        std::fs::File::create(format!("target/bench_like_cpp/{}.csv", sel_name)).unwrap();
+    let mut file = std::fs::File::create(target_dir.join(format!("{}.csv", sel_name))).unwrap();
     for (i, len) in LENS.iter().enumerate() {
         for (j, density) in DENSITIES.iter().enumerate() {
             print!(
@@ -126,9 +130,10 @@ fn bench_select_batch<S: SelStruct<BitVec>>(rng: &mut SmallRng, sel_name: &str, 
     println!("\r{}... done        ", sel_name);
 }
 
-fn bench_rank9() {
+fn bench_rank9(target_dir: &PathBuf) {
     let mut rng = SmallRng::seed_from_u64(0);
-    let mut file = std::fs::File::create("target/bench_like_cpp/rank9.csv").unwrap();
+
+    let mut file = std::fs::File::create(target_dir.join("rank9.csv")).unwrap();
 
     for len in LENS.iter().copied() {
         for density in DENSITIES.iter().copied() {
@@ -152,6 +157,10 @@ fn bench_rank9() {
 }
 
 fn main() {
+    let abs_project_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let abs_project_dir = std::path::Path::new(&abs_project_dir);
+    let target_dir = PathBuf::from(abs_project_dir).join("target/bench_like_cpp");
+
     if let Some(core_ids) = core_affinity::get_core_ids() {
         // Not core 0. Anything goes.
         let core_id = core_ids[1];
@@ -162,25 +171,32 @@ fn main() {
         eprintln!("Cannot retrieve core ids");
     }
 
-    std::fs::create_dir_all("target/bench_like_cpp").unwrap();
+    std::fs::create_dir_all(&target_dir).unwrap();
 
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
 
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        println!("Please provide a benchmark option: 'select' or 'rank'");
+        println!("Please provide a benchmark option: 'select', 'select_non_uniform' or 'rank'");
         return;
     }
 
     match args[1].as_str() {
         "select" => {
-            bench_select_batch::<SimpleSelect>(&mut rng, "simple_select", true);
-            bench_select_batch::<SimpleSelect>(&mut rng, "simple_select_non_uniform", false);
-            bench_select_batch::<Select9>(&mut rng, "rank9sel", true);
-            bench_select_batch::<Select9>(&mut rng, "rank9sel_non_uniform", false);
+            bench_select_batch::<SimpleSelect>(&mut rng, "simple_select", true, &target_dir);
+            bench_select_batch::<Select9>(&mut rng, "rank9sel", true, &target_dir);
+        }
+        "select_non_uniform" => {
+            bench_select_batch::<SimpleSelect>(
+                &mut rng,
+                "simple_select_non_uniform",
+                false,
+                &target_dir,
+            );
+            bench_select_batch::<Select9>(&mut rng, "rank9sel_non_uniform", false, &target_dir);
         }
         "rank" => {
-            bench_rank9();
+            bench_rank9(&target_dir);
         }
         _ => {
             println!("Invalid benchmark option: '{}'", args[1]);
