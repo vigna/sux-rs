@@ -44,6 +44,26 @@ macro_rules! ULEQ_STEP_16 {
     };
 }
 
+/// A selection structure over [`Rank9`] using 25%–37.5% additional space and
+/// providing constant-time selection.
+///
+/// [`Select9`] uses an absolute inventory and a relative subinventory to locate
+/// the [`Rank9`] block containing the desired bit, and then perform broadword
+/// operations using the [`Rank9`] counters.
+///
+/// Note that the additional space is in addition to [`Rank9`], so the overall
+/// cost of the selection structure is 50%–62.5% of the original bit vector. Due
+/// to the large space, unless the bit vector has a pathologically irregular bit
+/// distribution [`SimpleSelect`](super::SimpleSelect) is usually a better
+/// choice.
+///
+/// This structure has been described by Sebastiano Vigna in “[Broadword
+/// Implementation of Rank/Select
+/// Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
+/// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
+/// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
+/// Springer, 2008.
+
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct Select9<R: Rank = Rank9, I: AsRef<[usize]> = Vec<usize>, const HINT_BIT_SIZE: usize = 64>
 {
