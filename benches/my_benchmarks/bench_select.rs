@@ -23,7 +23,7 @@ const LENS: [u64; 6] = [
 
 const DENSITIES: [f64; 3] = [0.1, 0.5, 0.9];
 
-const REPS: usize = 7;
+const REPS: usize = 1;
 
 trait SelStruct<B>: Select {
     fn new(bits: B) -> Self;
@@ -51,15 +51,15 @@ fn bench_select<S: SelStruct<BitVec>>(
     lens: &[u64],
     densities: &[f64],
     reps: usize,
-    non_uniform: bool,
+    uniform: bool,
 ) {
     let mut rng = SmallRng::seed_from_u64(0);
     for len in lens {
         for density in densities {
-            let (density0, density1) = if non_uniform {
-                (density * 0.01, density * 0.99)
-            } else {
+            let (density0, density1) = if uniform {
                 (*density, *density)
+            } else {
+                (density * 0.01, density * 0.99)
             };
             // possible repetitions
             for i in 0..reps {
@@ -103,34 +103,27 @@ fn bench_select<S: SelStruct<BitVec>>(
     }
 }
 
-pub fn bench_simple_select(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("simple_select");
+pub fn bench_simple_select(c: &mut Criterion, uniform: bool) {
+    let mut name = String::from("simple_select");
+    if !uniform {
+        name.push_str("_non_uniform");
+    }
 
-    bench_select::<SimpleSelect>(&mut bench_group, &LENS, &DENSITIES, REPS, false);
+    let mut bench_group = c.benchmark_group(name);
 
-    bench_group.finish();
-}
-
-pub fn bench_rank9sel(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank9sel");
-
-    bench_select::<Select9>(&mut bench_group, &LENS, &DENSITIES, REPS, false);
+    bench_select::<SimpleSelect>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform);
 
     bench_group.finish();
 }
 
-pub fn bench_simple_select_non_uniform(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("simple_select_non_uniform");
+pub fn bench_select9(c: &mut Criterion, uniform: bool) {
+    let mut name = String::from("select9");
+    if !uniform {
+        name.push_str("_non_uniform");
+    }
+    let mut bench_group = c.benchmark_group(name);
 
-    bench_select::<SimpleSelect>(&mut bench_group, &LENS, &DENSITIES, REPS, true);
-
-    bench_group.finish();
-}
-
-pub fn bench_rank9sel_non_uniform(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank9sel_non_uniform");
-
-    bench_select::<Select9>(&mut bench_group, &LENS, &DENSITIES, REPS, true);
+    bench_select::<Select9>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform);
 
     bench_group.finish();
 }

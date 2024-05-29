@@ -14,7 +14,7 @@ markers = np.array(["v", "o", "+", "*", "^", "s", "D", "x"])
 def load_benches(base_path):
     benches_list = []
 
-    for dir in sorted([d for d in os.listdir(base_path) if os.path.isdir(base_path + d)]):
+    for dir in sorted([d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]):
         run_name = dir.split("_")
         data = {}
 
@@ -22,13 +22,14 @@ def load_benches(base_path):
         data["dense"] = float(run_name[1])
         data["rep"] = int(run_name[2], 10)
 
-        path = base_path + dir + "/new/estimates.json"
+        path = os.path.join(base_path, dir, "new/estimates.json")
         with open(path, "r") as f:
             estimates = json.load(f)
             data["time"] = estimates["mean"]["point_estimate"]
         benches_list.append(data)
 
     benches_df = pd.DataFrame(benches_list)
+
     benches_df = benches_df.groupby(
         ["size", "dense"], as_index=False)["time"].mean()
 
@@ -71,21 +72,36 @@ def compare_benches(benches, compare_name, op_type):
     plt.close(fig)
 
 
-if __name__ == "__main__":
-    def parse_args():
-        parser = argparse.ArgumentParser(description='Plot benchmark results.')
-        parser.add_argument('op_type', choices=[
-                            'rank', 'select'], help='Operation type')
-        parser.add_argument('plot_name', type=str, help='Name of the plot')
-        return parser.parse_args()
+def parse_args():
+    parser = argparse.ArgumentParser(description='Plot benchmark results.')
+    parser.add_argument('op_type', choices=[
+                        'rank', 'select'], help='Operation type')
+    parser.add_argument('benches_path', type=str,
+                        help='Path to the benches directory')
+    parser.add_argument('plot_name', type=str, help='Name of the plot')
+    return parser.parse_args()
 
-    if __name__ == "__main__":
-        args = parse_args()
-        plot_name = args.plot_name
-        op_type = args.op_type
-        benches = []
-        for file in os.listdir("target/criterion/"):
-            if os.path.isdir(f"target/criterion/{file}/"):
-                benches.append(
-                    (load_benches(f"target/criterion/{file}/"), file))
-        compare_benches(benches, plot_name, op_type)
+
+if __name__ == "__main__":
+    args = parse_args()
+    plot_name = args.plot_name
+    op_type = args.op_type
+    benches_path = args.benches_path
+
+    if not os.path.exists(benches_path):
+        print("The benches directory does not exist.")
+        exit(1)
+
+    bench_dirs = sorted([d for d in os.listdir(
+        benches_path) if os.path.isdir(os.path.join(benches_path, d))])
+
+    if len(bench_dirs) == 0:
+        print("The benches directory is empty.")
+        exit(1)
+
+    benches = []
+    for bench_dir in bench_dirs:
+        benches.append(
+            (load_benches(os.path.join(benches_path, bench_dir)), bench_dir))
+
+    compare_benches(benches, plot_name, op_type)
