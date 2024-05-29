@@ -47,13 +47,14 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, BitVec, Rank, Select, S
 /// Given a specific indexed one in the inventory, if the distance to the next
 /// indexed one is smaller than 2¹⁶ we use the 'M' words associated to the
 /// subinventory to store `4M` 16-bit integers, representing the offsets of
-/// regualarly spaced ones inside the inventory. Otherwise, we store the exact
+/// regularly spaced ones inside the inventory. Otherwise, we store the exact
 /// position of all such ones either using the 'M' available words, or, if they
 /// are not sufficient, using a spill vector.
 ///
 /// Note that is is possible to build pathological cases  (e.g., half of the bit
 /// vector extremely dense, half of the vector extremely sparse) in which the
-/// spill vector uses a very large amount of space (more than 50%).
+/// spill vector uses a very large amount of space (more than 50%). In these
+/// cases, [`Select9`](super::Select9) might be a better choice.
 ///
 /// In the 16-bit case, the average distance between two ones indexed by the
 /// subinventories is `L/4M` (again, the actual value might be twice as large
@@ -66,7 +67,7 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, BitVec, Rank, Select, S
 /// in the inventory is always smaller than 2¹⁶. The [default suggested
 /// value](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN) is a reasonable choice
 /// for vectors that reasonably uniform, but smaller values can be used for more
-/// irregular vectors.
+/// irregular vectors, at the cost of a larger space occupancy.
 ///
 /// The value `M` should be as high as possible, compatibly with the desired
 /// space occupancy, but values resulting in linear searches shorter than a
@@ -100,12 +101,16 @@ impl SimpleSelect<BitVec, Vec<usize>> {
     /// Creates a new selection structure over a bit vector using a [default
     /// target inventory span](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN).
     ///
-    /// # Arguments:
-    /// - `bits`: A bit vector.
-    /// - `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
-    /// number [`M`](SimpleSelect) of 64-bit words in each subinventory. Increasing by one this
-    /// value approximately doubles the space occupancy and halves the length of
-    /// sequential broadword searches. Typical values are 3 and 4.
+    /// # Arguments
+    ///
+    /// * `bits`: A bit vector.
+    ///
+    /// * `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
+    ///   number [`M`](SimpleSelect) of 64-bit words in each subinventory.
+    ///   Increasing by one this value approximately doubles the space occupancy
+    ///   and halves the length of sequential broadword searches. Typical values
+    ///   are 3 and 4.
+    ///
     pub fn new(bits: BitVec, max_log2_u64_per_subinventory: usize) -> Self {
         Self::with_span(
             bits,
@@ -114,16 +119,23 @@ impl SimpleSelect<BitVec, Vec<usize>> {
         )
     }
 
-    /// Creates a new selection structure over a bit vector.
+    /// Creates a new selection structure over a bit vector with a specified
+    /// target inventory span.
     ///
-    /// # Arguments:
-    /// - `bits`: A bit vector.
-    /// - `target_inventory_span`: The target span [`L`](SimpleSelect) of a first-level inventory
-    /// entry. The actual span might be smaller by a factor of 2.
-    /// - `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
-    /// number [`M`](SimpleSelect) of 64-bit words in each subinventory. Increasing by one this
-    /// value approximately doubles the space occupancy and halves the length of
-    /// sequential broadword searches. Typical values are 3 and 4.
+    /// # Arguments
+    ///
+    /// * `bits`: A bit vector.
+    ///
+    /// * `target_inventory_span`: The target span [`L`](SimpleSelect) of a
+    ///   first-level inventory entry. The actual span might be smaller by a
+    ///   factor of 2.
+    ///
+    /// * `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
+    ///   number [`M`](SimpleSelect) of 64-bit words in each subinventory.
+    ///   Increasing by one this value approximately doubles the space occupancy
+    ///   and halves the length of sequential broadword searches. Typical values
+    ///   are 3 and 4.
+    ///
     pub fn with_span(
         bits: BitVec,
         target_inventory_span: usize,
@@ -144,6 +156,31 @@ impl SimpleSelect<BitVec, Vec<usize>> {
             max_log2_u64_per_subinventory,
         )
     }
+
+    /// Creates a new selection structure over a bit vector with a specified
+    /// distance between indexed ones.
+    ///
+    /// This low-level constructor should be used with care, as the parameter
+    /// `log2_ones_per_inventory` is usually computed as the floor of the base-2
+    /// logarithm of ceiling of the target inventory span multiplied by the
+    /// density of ones in the bit vector. Thus, this constructor makes sense
+    /// only if the density is known in advance.
+    ///
+    /// Unless you understand all the implications, it is preferrable to use the
+    /// [standard constructor](SimpleSelect::new).
+    ///
+    /// # Arguments
+    ///
+    /// * `bits`: A bit vector.
+    ///
+    /// * `log2_ones_per_inventory`: The base-2 logarithm of the distance
+    ///   between two indexed ones.
+    ///
+    /// * `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
+    ///   number [`M`](SimpleSelect) of 64-bit words in each subinventory.
+    ///   Increasing by one this value approximately doubles the space occupancy
+    ///   and halves the length of sequential broadword searches. Typical values
+    ///   are 3 and 4.
 
     pub fn with_inv(
         bits: BitVec,
