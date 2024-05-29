@@ -25,8 +25,7 @@ These flavors depends on a backend, and presently we provide:
 
 It is possible to juggle between the three flavors using [`From`].
 */
-use anyhow::Result;
-use common_traits::SelectInWord;
+use common_traits::{IntoAtomic, SelectInWord};
 use core::fmt;
 use epserde::*;
 use mem_dbg::*;
@@ -37,7 +36,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use crate::{prelude::ConvertTo, traits::rank_sel::*};
+use crate::traits::rank_sel::*;
 
 const BITS: usize = usize::BITS as usize;
 
@@ -379,7 +378,7 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
 }
 
 impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
-    fn count(&self) -> usize {
+    fn count_ones(&self) -> usize {
         self.data
             .as_ref()
             .iter()
@@ -540,6 +539,19 @@ pub struct CountBitVec<B = Vec<usize>> {
 
 impl<B> CountBitVec<B> {
     #[inline(always)]
+    /// Return the number of bits set to 1 in this bit vector.
+    pub fn number_of_ones(&self) -> usize {
+        self.number_of_ones
+    }
+
+    #[inline(always)]
+    /// Return the number of bits set to 0 in this bit vector.
+    pub fn number_of_zeros(&self) -> usize {
+        self.len - self.number_of_ones
+    }
+
+    #[inline(always)]
+    /// Return the number of bits in this bit vector.
     fn len(&self) -> usize {
         self.len
     }
@@ -554,7 +566,7 @@ impl<B> BitLength for CountBitVec<B> {
 
 impl<B> BitCount for CountBitVec<B> {
     #[inline(always)]
-    fn count(&self) -> usize {
+    fn count_ones(&self) -> usize {
         self.number_of_ones
     }
 }
@@ -642,127 +654,121 @@ impl<B: AsRef<[usize]>> SelectZeroHinted for CountBitVec<B> {
     }
 }
 
-/// Provide conversion from [bit vectors](BitVec) to
-/// [atomic bit vectors](AtomicBitVec) whose backends
-/// are [convertible](ConvertTo).
-///
-/// Many implementations of this trait are then used to
-/// implement by delegation a corresponding [`From`].
-impl<B, C> ConvertTo<AtomicBitVec<C>> for BitVec<B>
-where
-    B: ConvertTo<C>,
-{
-    fn convert_to(self) -> Result<AtomicBitVec<C>> {
-        Ok(AtomicBitVec {
-            len: self.len,
-            data: self.data.convert_to()?,
-        })
+impl<W: IntoAtomic> From<BitVec<Vec<W>>> for AtomicBitVec<Vec<W::AtomicType>> {
+    fn from(value: BitVec<Vec<W>>) -> Self {
+        AtomicBitVec {
+            data: unsafe { core::mem::transmute::<Vec<W>, Vec<W::AtomicType>>(value.data) },
+            len: value.len,
+        }
     }
 }
 
-/// Provide conversion from [atomic bit vectors](AtomicBitVec) to
-/// [bit vectors](BitVec) whose backends
-/// are [convertible](ConvertTo).
-///
-/// Many implementations of this trait are then used to
-/// implement by delegation a corresponding [`From`].
-impl<B, C> ConvertTo<BitVec<C>> for AtomicBitVec<B>
-where
-    B: ConvertTo<C>,
-{
-    fn convert_to(self) -> Result<BitVec<C>> {
-        Ok(BitVec {
-            len: self.len,
-            data: self.data.convert_to()?,
-        })
+impl<'a, W: IntoAtomic> From<BitVec<&'a [W]>> for AtomicBitVec<&'a [W::AtomicType]> {
+    fn from(value: BitVec<&'a [W]>) -> Self {
+        AtomicBitVec {
+            data: unsafe { core::mem::transmute::<&'a [W], &'a [W::AtomicType]>(value.data) },
+            len: value.len,
+        }
     }
 }
 
-/// Provide conversion from standard to atomic bit vectors.
-impl From<BitVec<Vec<usize>>> for AtomicBitVec<Vec<AtomicUsize>> {
-    #[inline]
-    fn from(bm: BitVec<Vec<usize>>) -> Self {
-        bm.convert_to().unwrap()
+impl<'a, W: IntoAtomic> From<BitVec<&'a mut [W]>> for AtomicBitVec<&'a mut [W::AtomicType]> {
+    fn from(value: BitVec<&'a mut [W]>) -> Self {
+        AtomicBitVec {
+            data: unsafe {
+                core::mem::transmute::<&'a mut [W], &'a mut [W::AtomicType]>(value.data)
+            },
+            len: value.len,
+        }
     }
 }
 
-/// Provide conversion from standard to atomic bit vectors.
-impl From<AtomicBitVec<Vec<AtomicUsize>>> for BitVec<Vec<usize>> {
-    #[inline]
-    fn from(bm: AtomicBitVec<Vec<AtomicUsize>>) -> Self {
-        bm.convert_to().unwrap()
+impl<W: IntoAtomic> From<AtomicBitVec<Vec<W::AtomicType>>> for BitVec<Vec<W>> {
+    fn from(value: AtomicBitVec<Vec<W::AtomicType>>) -> Self {
+        BitVec {
+            data: unsafe { core::mem::transmute::<Vec<W::AtomicType>, Vec<W>>(value.data) },
+            len: value.len,
+        }
     }
 }
 
-/// Provide conversion from references to standard bit vectors
-/// to references to atomic bit vectors.
-impl<'a> From<BitVec<&'a [usize]>> for AtomicBitVec<&'a [AtomicUsize]> {
-    #[inline]
-    fn from(bm: BitVec<&'a [usize]>) -> Self {
-        bm.convert_to().unwrap()
+impl<'a, W: IntoAtomic> From<AtomicBitVec<&'a [W::AtomicType]>> for BitVec<&'a [W]> {
+    fn from(value: AtomicBitVec<&'a [W::AtomicType]>) -> Self {
+        BitVec {
+            data: unsafe { core::mem::transmute::<&'a [W::AtomicType], &'a [W]>(value.data) },
+            len: value.len,
+        }
     }
 }
 
-/// Provide conversion from references to atomic bit vectors
-/// to references to standard bit vectors.
-impl<'a> From<AtomicBitVec<&'a [AtomicUsize]>> for BitVec<&'a [usize]> {
-    #[inline]
-    fn from(bm: AtomicBitVec<&'a [AtomicUsize]>) -> Self {
-        bm.convert_to().unwrap()
+impl<'a, W: IntoAtomic> From<AtomicBitVec<&'a mut [W::AtomicType]>> for BitVec<&'a mut [W]> {
+    fn from(value: AtomicBitVec<&'a mut [W::AtomicType]>) -> Self {
+        BitVec {
+            data: unsafe {
+                core::mem::transmute::<&'a mut [W::AtomicType], &'a mut [W]>(value.data)
+            },
+            len: value.len,
+        }
     }
 }
 
-/// Forget the number of ones.
-impl<B> ConvertTo<BitVec<B>> for CountBitVec<B> {
-    fn convert_to(self) -> Result<BitVec<B>> {
-        Ok(BitVec {
-            data: self.data,
-            len: self.len,
-        })
+impl<W> From<CountBitVec<Vec<W>>> for BitVec<Vec<W>> {
+    fn from(value: CountBitVec<Vec<W>>) -> Self {
+        BitVec {
+            data: value.data,
+            len: value.len,
+        }
     }
 }
 
-/// Forget the number of ones.
-impl<B> From<CountBitVec<B>> for BitVec<B> {
-    fn from(cb: CountBitVec<B>) -> Self {
-        cb.convert_to().unwrap()
+impl<'a, W> From<CountBitVec<&'a [W]>> for BitVec<&'a [W]> {
+    fn from(value: CountBitVec<&'a [W]>) -> Self {
+        BitVec {
+            data: value.data,
+            len: value.len,
+        }
     }
 }
 
-/// Compute the number of ones and return a [`CountBitVec`].
-impl ConvertTo<CountBitVec<Vec<usize>>> for BitVec<Vec<usize>> {
-    fn convert_to(self) -> Result<CountBitVec<Vec<usize>>> {
-        let number_of_ones = self.count_ones();
-        Ok(CountBitVec {
-            data: self.data,
-            len: self.len,
-            number_of_ones,
-        })
+impl<'a, W> From<CountBitVec<&'a mut [W]>> for BitVec<&'a mut [W]> {
+    fn from(value: CountBitVec<&'a mut [W]>) -> Self {
+        BitVec {
+            data: value.data,
+            len: value.len,
+        }
     }
 }
 
-/// Compute the number of ones and return a [`CountBitVec`].
 impl From<BitVec<Vec<usize>>> for CountBitVec<Vec<usize>> {
-    fn from(bitmap: BitVec<Vec<usize>>) -> Self {
-        bitmap.convert_to().unwrap()
+    fn from(value: BitVec<Vec<usize>>) -> Self {
+        let number_of_ones = value.count_ones();
+        CountBitVec {
+            data: value.data,
+            len: value.len,
+            number_of_ones,
+        }
     }
 }
 
-/// Provide conversion betweeen bit vectors whose backends
-/// are [convertible](ConvertTo) into one another.
-///
-/// Many implementations of this trait are then used to
-/// implement by delegation a corresponding [`From`].
-impl<B, D> ConvertTo<CountBitVec<D>> for CountBitVec<B>
-where
-    B: ConvertTo<D>,
-{
-    fn convert_to(self) -> Result<CountBitVec<D>> {
-        Ok(CountBitVec {
-            number_of_ones: self.number_of_ones,
-            len: self.len,
-            data: self.data.convert_to()?,
-        })
+impl<'a> From<BitVec<&'a [usize]>> for CountBitVec<&'a [usize]> {
+    fn from(value: BitVec<&'a [usize]>) -> Self {
+        let number_of_ones = value.count_ones();
+        CountBitVec {
+            data: value.data,
+            len: value.len,
+            number_of_ones,
+        }
+    }
+}
+
+impl<'a> From<BitVec<&'a mut [usize]>> for CountBitVec<&'a mut [usize]> {
+    fn from(value: BitVec<&'a mut [usize]>) -> Self {
+        let number_of_ones = value.count_ones();
+        CountBitVec {
+            data: value.data,
+            len: value.len,
+            number_of_ones,
+        }
     }
 }
 
@@ -944,7 +950,7 @@ impl<B: AsRef<[usize]>> Rank for BitVec<B> {
     fn rank(&self, pos: usize) -> usize {
         // TODO: this is gross
         <Self as RankHinted<{ usize::BITS as usize }>>::rank_hinted(self, pos, 0, 0)
-            .unwrap_or(self.count())
+            .unwrap_or(self.count_ones())
     }
 
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {

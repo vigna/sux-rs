@@ -10,7 +10,6 @@
 use crate::prelude::*;
 use crate::traits::bit_field_slice::BitFieldSlice;
 use crate::traits::bit_field_slice::BitFieldSliceMut;
-use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
@@ -24,16 +23,16 @@ See [`SelectFixed1`](crate::rank_sel::SelectFixed1).
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SelectZeroFixed1<
     B: SelectZeroHinted = CountBitVec,
-    O: BitFieldSlice<usize> = Vec<usize>,
+    I: BitFieldSlice<usize> = Vec<usize>,
     const LOG2_ZEROS_PER_INVENTORY: usize = 8,
 > {
     bits: B,
-    inventory: O,
+    inventory: I,
     _marker: core::marker::PhantomData<[(); LOG2_ZEROS_PER_INVENTORY]>,
 }
 
 impl<
-        B: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>,
+        B: SelectZeroHinted + BitCount + BitLength + AsRef<[usize]>,
         const LOG2_ZEROS_PER_INVENTORY: usize,
     > SelectZeroFixed1<B, Vec<usize>, LOG2_ZEROS_PER_INVENTORY>
 {
@@ -41,7 +40,7 @@ impl<
         let mut res = SelectZeroFixed1 {
             inventory: vec![
                 0;
-                (bitvec.len() - bitvec.count() + (1 << LOG2_ZEROS_PER_INVENTORY) - 1)
+                (bitvec.count_zeros() + (1 << LOG2_ZEROS_PER_INVENTORY) - 1)
                     >> LOG2_ZEROS_PER_INVENTORY
             ],
             bits: bitvec,
@@ -54,10 +53,80 @@ impl<
 
 impl<
         B: SelectZeroHinted + BitLength + AsRef<[usize]>,
-        O: BitFieldSlice<usize> + BitFieldSliceMut<usize>,
+        I: BitFieldSlice<usize> + BitFieldSliceMut<usize>,
         const LOG2_ZEROS_PER_INVENTORY: usize,
-    > SelectZeroFixed1<B, O, LOG2_ZEROS_PER_INVENTORY>
+    > SelectZeroFixed1<B, I, LOG2_ZEROS_PER_INVENTORY>
 {
+    /// Return the inner BitVector
+    pub fn into_inner(self) -> B {
+        self.bits
+    }
+
+    /// Return raw bits and inventory
+    pub fn into_raw_parts(self) -> (B, I) {
+        (self.bits, self.inventory)
+    }
+
+    /// Create a new instance from raw bits and inventory
+    ///
+    /// # Safety
+    /// The inventory must be consistent with the bits otherwise you will get
+    /// wrong results, and possibly memory corruption.
+    pub unsafe fn from_raw_parts(bits: B, inventory: I) -> Self {
+        SelectZeroFixed1 {
+            bits,
+            inventory,
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    /// Modify the inner BitVector with possibly another type
+    pub fn map_bits<B2>(
+        self,
+        f: impl FnOnce(B) -> B2,
+    ) -> SelectZeroFixed1<B2, I, LOG2_ZEROS_PER_INVENTORY>
+    where
+        B2: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>,
+    {
+        SelectZeroFixed1 {
+            bits: f(self.bits),
+            inventory: self.inventory,
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    /// Modify the inner inventory with possibly another type
+    pub fn map_inventory<I2>(
+        self,
+        f: impl FnOnce(I) -> I2,
+    ) -> SelectZeroFixed1<B, I2, LOG2_ZEROS_PER_INVENTORY>
+    where
+        I2: BitFieldSlice<usize> + BitFieldSliceMut<usize>,
+    {
+        SelectZeroFixed1 {
+            bits: self.bits,
+            inventory: f(self.inventory),
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    /// Modify the inner BitVector and inventory with possibly other types
+    pub fn map<B2, I2>(
+        self,
+        f: impl FnOnce(B, I) -> (B2, I2),
+    ) -> SelectZeroFixed1<B2, I2, LOG2_ZEROS_PER_INVENTORY>
+    where
+        B2: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>,
+        I2: BitFieldSlice<usize> + BitFieldSliceMut<usize>,
+    {
+        let (bits, inventory) = f(self.bits, self.inventory);
+        SelectZeroFixed1 {
+            bits,
+            inventory,
+            _marker: core::marker::PhantomData,
+        }
+    }
+
     fn build_zeros(&mut self) {
         let mut number_of_zeros = 0;
         let mut next_quantum = 0;
@@ -85,9 +154,9 @@ impl<
 /// Provide the hint to the underlying structure.
 impl<
         B: SelectZeroHinted + BitLength + BitCount,
-        O: BitFieldSlice<usize>,
+        I: BitFieldSlice<usize>,
         const LOG2_ZEROS_PER_INVENTORY: usize,
-    > SelectZero for SelectZeroFixed1<B, O, LOG2_ZEROS_PER_INVENTORY>
+    > SelectZero for SelectZeroFixed1<B, I, LOG2_ZEROS_PER_INVENTORY>
 {
     #[inline(always)]
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
@@ -100,34 +169,12 @@ impl<
     }
 }
 
-/// Forget the index.
-impl<B: SelectZeroHinted, const LOG2_ZEROS_PER_INVENTORY: usize> ConvertTo<B>
-    for SelectZeroFixed1<B, Vec<usize>, LOG2_ZEROS_PER_INVENTORY>
-{
-    #[inline(always)]
-    fn convert_to(self) -> Result<B> {
-        Ok(self.bits)
-    }
-}
-
-/// Create and add a selection structure.
-impl<
-        B: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-    > ConvertTo<SelectZeroFixed1<B, Vec<usize>, LOG2_ZEROS_PER_INVENTORY>> for B
-{
-    #[inline(always)]
-    fn convert_to(self) -> Result<SelectZeroFixed1<B, Vec<usize>, LOG2_ZEROS_PER_INVENTORY>> {
-        Ok(SelectZeroFixed1::new(self))
-    }
-}
-
 /// Forward [`BitLength`] to the underlying implementation.
 impl<
         B: SelectZeroHinted + BitLength,
-        O: BitFieldSlice<usize>,
+        I: BitFieldSlice<usize>,
         const LOG2_ZEROS_PER_INVENTORY: usize,
-    > BitLength for SelectZeroFixed1<B, O, LOG2_ZEROS_PER_INVENTORY>
+    > BitLength for SelectZeroFixed1<B, I, LOG2_ZEROS_PER_INVENTORY>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -138,22 +185,27 @@ impl<
 /// Forward [`BitCount`] to the underlying implementation.
 impl<
         B: SelectZeroHinted + BitCount,
-        O: BitFieldSlice<usize>,
+        I: BitFieldSlice<usize>,
         const LOG2_ZEROS_PER_INVENTORY: usize,
-    > BitCount for SelectZeroFixed1<B, O, LOG2_ZEROS_PER_INVENTORY>
+    > BitCount for SelectZeroFixed1<B, I, LOG2_ZEROS_PER_INVENTORY>
 {
     #[inline(always)]
-    fn count(&self) -> usize {
-        self.bits.count()
+    fn count_ones(&self) -> usize {
+        self.bits.count_ones()
+    }
+
+    #[inline(always)]
+    fn count_zeros(&self) -> usize {
+        self.bits.count_zeros()
     }
 }
 
 /// Forward [`Select`] to the underlying implementation.
 impl<
         B: SelectZeroHinted + Select,
-        O: BitFieldSlice<usize>,
+        I: BitFieldSlice<usize>,
         const LOG2_ZEROS_PER_INVENTORY: usize,
-    > Select for SelectZeroFixed1<B, O, LOG2_ZEROS_PER_INVENTORY>
+    > Select for SelectZeroFixed1<B, I, LOG2_ZEROS_PER_INVENTORY>
 {
     #[inline(always)]
     fn select(&self, rank: usize) -> Option<usize> {
@@ -168,9 +220,9 @@ impl<
 /// Forward [`Rank`] to the underlying implementation.
 impl<
         B: SelectZeroHinted + Rank,
-        O: BitFieldSlice<usize>,
+        I: BitFieldSlice<usize>,
         const LOG2_ZEROS_PER_INVENTORY: usize,
-    > Rank for SelectZeroFixed1<B, O, LOG2_ZEROS_PER_INVENTORY>
+    > Rank for SelectZeroFixed1<B, I, LOG2_ZEROS_PER_INVENTORY>
 {
     fn rank(&self, pos: usize) -> usize {
         self.bits.rank(pos)
@@ -184,9 +236,9 @@ impl<
 /// Forward [`RankZero`] to the underlying implementation.
 impl<
         B: SelectZeroHinted + RankZero,
-        O: BitFieldSlice<usize>,
+        I: BitFieldSlice<usize>,
         const LOG2_ZEROS_PER_INVENTORY: usize,
-    > RankZero for SelectZeroFixed1<B, O, LOG2_ZEROS_PER_INVENTORY>
+    > RankZero for SelectZeroFixed1<B, I, LOG2_ZEROS_PER_INVENTORY>
 {
     fn rank_zero(&self, pos: usize) -> usize {
         self.bits.rank_zero(pos)
@@ -198,11 +250,11 @@ impl<
 }
 
 /// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<B, O, const LOG2_ZEROS_PER_INVENTORY: usize> AsRef<[usize]>
-    for SelectZeroFixed1<B, O, LOG2_ZEROS_PER_INVENTORY>
+impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize> AsRef<[usize]>
+    for SelectZeroFixed1<B, I, LOG2_ZEROS_PER_INVENTORY>
 where
     B: AsRef<[usize]> + SelectZeroHinted,
-    O: BitFieldSlice<usize>,
+    I: BitFieldSlice<usize>,
 {
     fn as_ref(&self) -> &[usize] {
         self.bits.as_ref()

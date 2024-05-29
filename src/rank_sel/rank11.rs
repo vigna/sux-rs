@@ -94,7 +94,7 @@ impl<
         const HINT_BIT_SIZE: usize,
     > BitCount for Rank11<B, C, HINT_BIT_SIZE>
 {
-    fn count(&self) -> usize {
+    fn count_ones(&self) -> usize {
         self.rank(self.bits.len())
     }
 }
@@ -137,6 +137,6 @@ mod test_rank11 {
 
         let rank11: Rank11 = Rank11::new(bits);
 
-        assert_eq!(rank11.rank(rank11.len()), rank11.bits.count());
+        assert_eq!(rank11.rank(rank11.len()), rank11.bits.count_ones());
     }
 }

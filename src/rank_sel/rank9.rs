@@ -43,10 +43,12 @@ pub struct BlockCounters {
 }
 
 impl BlockCounters {
+    #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
         self.relative >> (9 * (word ^ 7)) & 0x1FF
     }
 
+    #[inline(always)]
     pub fn set_rel(&mut self, word: usize, counter: usize) {
         self.relative |= counter << (9 * (word ^ 7));
     }
@@ -88,13 +90,18 @@ impl Rank9<BitVec, Vec<BlockCounters>> {
     pub fn len(&self) -> usize {
         self.bits.len()
     }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> {
     #[inline(always)]
     fn rank(&self, pos: usize) -> usize {
         if pos >= self.bits.len() {
-            self.count()
+            self.count_ones()
         } else {
             unsafe { self.rank_unchecked(pos) }
         }
@@ -114,9 +121,11 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>> Rank for Rank9<B,
     }
 }
 
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>> BitCount for Rank9<B, C> {
+impl<B: BitLength + BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>> BitCount
+    for Rank9<B, C>
+{
     #[inline(always)]
-    fn count(&self) -> usize {
+    fn count_ones(&self) -> usize {
         self.counts.as_ref().last().unwrap().absolute
     }
 }
@@ -143,6 +152,7 @@ impl<B: AsRef<[usize]> + Index<usize, Output = bool>, C: AsRef<[BlockCounters]>>
 {
     type Output = bool;
 
+    #[inline(always)]
     fn index(&self, index: usize) -> &Self::Output {
         // TODO: why is & necessary?
         &self.bits[index]
@@ -187,6 +197,6 @@ mod test_rank9 {
 
         let rank9: Rank9 = Rank9::new(bits);
 
-        assert_eq!(rank9.rank(rank9.len()), rank9.bits.count());
+        assert_eq!(rank9.rank(rank9.len()), rank9.bits.count_ones());
     }
 }

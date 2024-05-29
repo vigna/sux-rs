@@ -142,7 +142,7 @@ impl SimpleSelect<BitVec, Vec<usize>> {
         max_log2_u64_per_subinventory: usize,
     ) -> Self {
         let num_bits = max(1usize, bits.len());
-        let num_ones = bits.count();
+        let num_ones = bits.count_ones();
 
         let log2_ones_per_inventory = (num_ones * target_inventory_span)
             .div_ceil(num_bits)
@@ -418,20 +418,13 @@ impl<B: SelectHinted + BitLength + AsRef<[usize]>, I: AsRef<[usize]>> Select
         self.bits
             .select_hinted_unchecked(rank, hint_pos, rank - residual)
     }
-
-    #[inline(always)]
-    fn select(&self, rank: usize) -> Option<usize> {
-        if rank >= self.count() {
-            None
-        } else {
-            Some(unsafe { self.select_unchecked(rank) })
-        }
-    }
 }
 
-impl<B: SelectHinted + AsRef<[usize]>, I: AsRef<[usize]>> BitCount for SimpleSelect<B, I> {
+impl<B: SelectHinted + BitLength + AsRef<[usize]>, I: AsRef<[usize]>> BitCount
+    for SimpleSelect<B, I>
+{
     #[inline(always)]
-    fn count(&self) -> usize {
+    fn count_ones(&self) -> usize {
         self.num_ones
     }
 }
@@ -517,7 +510,7 @@ mod test_simple_select {
 
             let simple: SimpleSelect<BitVec, Vec<usize>> = SimpleSelect::new(bits.clone(), 3);
 
-            let ones = simple.count();
+            let ones = simple.count_ones();
             let mut pos = Vec::with_capacity(ones);
             for i in 0..len {
                 if bits[i] {
@@ -559,7 +552,7 @@ mod test_simple_select {
     fn test_simple_select_empty() {
         let bits = BitVec::new(0);
         let simple: SimpleSelect = SimpleSelect::new(bits.clone(), 3);
-        assert_eq!(simple.count(), 0);
+        assert_eq!(simple.count_ones(), 0);
         assert_eq!(simple.len(), 0);
         assert_eq!(simple.select(0), None);
     }
@@ -569,7 +562,7 @@ mod test_simple_select {
         let len = 300_000;
         let bits = (0..len).map(|_| true).collect::<BitVec>();
         let simple: SimpleSelect = SimpleSelect::new(bits, 3);
-        assert_eq!(simple.count(), len);
+        assert_eq!(simple.count_ones(), len);
         assert_eq!(simple.len(), len);
         for i in 0..len {
             assert_eq!(simple.select(i), Some(i));
@@ -581,7 +574,7 @@ mod test_simple_select {
         let len = 300_000;
         let bits = (0..len).map(|_| false).collect::<BitVec>();
         let simple: SimpleSelect = SimpleSelect::new(bits, 3);
-        assert_eq!(simple.count(), 0);
+        assert_eq!(simple.count_ones(), 0);
         assert_eq!(simple.len(), len);
         assert_eq!(simple.select(0), None);
     }
@@ -595,7 +588,7 @@ mod test_simple_select {
                     .map(|i| i % (len / num_ones) == 0)
                     .collect::<BitVec>();
                 let simple: SimpleSelect = SimpleSelect::new(bits, 3);
-                assert_eq!(simple.count(), num_ones);
+                assert_eq!(simple.count_ones(), num_ones);
                 assert_eq!(simple.len(), len);
                 for i in 0..num_ones {
                     assert_eq!(simple.select(i), Some(i * (len / num_ones)));
@@ -619,7 +612,7 @@ mod test_simple_select {
         let simple: SimpleSelect = SimpleSelect::new(bits, 3);
 
         assert_eq!(simple.ones_per_sub64, 1);
-        assert_eq!(simple.count(), 4);
+        assert_eq!(simple.count_ones(), 4);
         assert_eq!(simple.select(0), Some(len / 2));
         assert_eq!(simple.select(1), Some(len / 2 + (1 << 17) + 1));
         assert_eq!(simple.select(2), Some(len / 2 + (1 << 17) + 2));

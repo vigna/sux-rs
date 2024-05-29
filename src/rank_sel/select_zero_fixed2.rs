@@ -6,7 +6,6 @@
  */
 
 use crate::{bits::CountBitVec, traits::*};
-use anyhow::Result;
 use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
@@ -49,6 +48,66 @@ impl<
 
     /// We use the sign bit to store the type of the subinventory (u16 vs. u64).
     const INVENTORY_MASK: u64 = (1 << 63) - 1;
+
+    /// Return the inner BitVector
+    pub fn into_inner(self) -> B {
+        self.bits
+    }
+
+    /// Return raw bits and inventory
+    pub fn into_raw_parts(self) -> (B, I) {
+        (self.bits, self.inventory)
+    }
+
+    /// Create a new instance from raw bits and inventory
+    ///
+    /// # Safety
+    /// The inventory must be consistent with the bits otherwise you will get
+    /// wrong results, and possibly memory corruption.
+    pub unsafe fn from_raw_parts(bits: B, inventory: I) -> Self {
+        SelectZeroFixed2 { bits, inventory }
+    }
+
+    /// Modify the inner BitVector with possibly another type
+    pub fn map_bits<B2>(
+        self,
+        f: impl FnOnce(B) -> B2,
+    ) -> SelectZeroFixed2<B2, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    where
+        B2: SelectZeroHinted,
+    {
+        SelectZeroFixed2 {
+            bits: f(self.bits),
+            inventory: self.inventory,
+        }
+    }
+
+    /// Modify the inner inventory with possibly another type
+    pub fn map_inventory<I2>(
+        self,
+        f: impl FnOnce(I) -> I2,
+    ) -> SelectZeroFixed2<B, I2, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    where
+        I2: AsRef<[u64]>,
+    {
+        SelectZeroFixed2 {
+            bits: self.bits,
+            inventory: f(self.inventory),
+        }
+    }
+
+    /// Modify the inner BitVector and inventory with possibly other types
+    pub fn map<B2, I2>(
+        self,
+        f: impl FnOnce(B, I) -> (B2, I2),
+    ) -> SelectZeroFixed2<B2, I2, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    where
+        B2: SelectZeroHinted,
+        I2: AsRef<[u64]>,
+    {
+        let (bits, inventory) = f(self.bits, self.inventory);
+        SelectZeroFixed2 { bits, inventory }
+    }
 }
 
 impl<
@@ -58,9 +117,9 @@ impl<
     > SelectZeroFixed2<B, Vec<u64>, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     pub fn new(bitvec: B) -> Self {
+        let number_of_zeros = bitvec.count_zeros();
         // number of inventories we will create
-        let num_zeros = bitvec.len() - bitvec.count();
-        let inventory_size = (bitvec.len() - bitvec.count()).div_ceil(Self::ONES_PER_INVENTORY);
+        let inventory_size = (number_of_zeros).div_ceil(Self::ONES_PER_INVENTORY);
         let inventory_len = inventory_size * Self::U64_PER_INVENTORY + 1;
         // inventory_size, an u64 for the first layer index, and Self::U64_PER_SUBINVENTORY for the sub layer
         let mut inventory = Vec::with_capacity(inventory_len);
@@ -70,7 +129,7 @@ impl<
         'outer: for (i, word) in bitvec.as_ref().iter().copied().map(|x| !x).enumerate() {
             let ones_in_word = word.count_ones() as u64;
             // skip the word if we can
-            while (number_of_ones + ones_in_word).min(num_zeros as u64) > next_quantum {
+            while (number_of_ones + ones_in_word).min(number_of_zeros as u64) > next_quantum {
                 let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
                 let index = (i * u64::BITS as usize) + in_word_index;
 
@@ -80,7 +139,7 @@ impl<
                 inventory.resize(inventory.len() + Self::U64_PER_SUBINVENTORY, 0);
 
                 next_quantum += Self::ONES_PER_INVENTORY as u64;
-                if next_quantum >= num_zeros as u64 {
+                if next_quantum >= number_of_zeros as u64 {
                     break 'outer;
                 }
             }
@@ -133,7 +192,7 @@ impl<
 
                 // if the quantum is in this word, write it in the subinventory
                 // this can happen multiple times if the quantum is small
-                while (number_of_ones + ones_in_word).min(num_zeros) > next_quantum {
+                while (number_of_ones + ones_in_word).min(number_of_zeros) > next_quantum {
                     debug_assert!(next_quantum <= end_bit_idx as _);
                     // find the quantum bit in the word
                     let in_word_index = word.select_in_word(next_quantum - number_of_ones);
@@ -181,7 +240,7 @@ impl<
 
 /// Provide the hint to the underlying structure.
 impl<
-        B: SelectZeroHinted + BitLength + BitCount,
+        B: SelectZeroHinted + BitCount + BitLength,
         I: AsRef<[u64]>,
         const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
@@ -223,37 +282,6 @@ impl<
     }
 }
 
-/// Forget the index.
-impl<
-        B: SelectZeroHinted + BitLength + BitCount,
-        I: AsRef<[u64]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > ConvertTo<B> for SelectZeroFixed2<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    #[inline(always)]
-    fn convert_to(self) -> Result<B> {
-        Ok(self.bits)
-    }
-}
-
-/// Create and add a selection structure.
-impl<
-        B: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > ConvertTo<SelectZeroFixed2<B, Vec<u64>, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>>
-    for B
-{
-    #[inline(always)]
-    fn convert_to(
-        self,
-    ) -> Result<SelectZeroFixed2<B, Vec<u64>, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>>
-    {
-        Ok(SelectZeroFixed2::new(self))
-    }
-}
-
 /// Forward [`BitLength`] to the underlying implementation.
 impl<
         B: SelectZeroHinted + BitLength,
@@ -277,8 +305,13 @@ impl<
     > BitCount for SelectZeroFixed2<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
-    fn count(&self) -> usize {
-        self.bits.count()
+    fn count_ones(&self) -> usize {
+        self.bits.count_ones()
+    }
+
+    #[inline(always)]
+    fn count_zeros(&self) -> usize {
+        self.bits.count_zeros()
     }
 }
 
