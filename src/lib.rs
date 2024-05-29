@@ -8,6 +8,9 @@
 #![doc = include_str!("../README.md")]
 #![deny(unconditional_recursion)]
 
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("`target_pointer_width` must be 64");
+
 pub mod bits;
 pub mod dict;
 pub mod func;
