@@ -1,11 +1,10 @@
-from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import os
 import json
 import math
 import pandas as pd
 import numpy as np
+import argparse
 
 colors = ['b', 'g', 'r', 'c', 'm', 'purple',
           'gold', 'teal', 'orange', 'brown', 'pink']
@@ -73,9 +72,20 @@ def compare_benches(benches, compare_name, op_type):
 
 
 if __name__ == "__main__":
-    benches = []
-    for file in os.listdir("target/criterion/"):
-        if os.path.isdir(f"target/criterion/{file}/"):
-            benches.append(
-                (load_benches(f"target/criterion/{file}/"), file))
-    compare_benches(benches, "benches", "select")
+    def parse_args():
+        parser = argparse.ArgumentParser(description='Plot benchmark results.')
+        parser.add_argument('op_type', choices=[
+                            'rank', 'select'], help='Operation type')
+        parser.add_argument('plot_name', type=str, help='Name of the plot')
+        return parser.parse_args()
+
+    if __name__ == "__main__":
+        args = parse_args()
+        plot_name = args.plot_name
+        op_type = args.op_type
+        benches = []
+        for file in os.listdir("target/criterion/"):
+            if os.path.isdir(f"target/criterion/{file}/"):
+                benches.append(
+                    (load_benches(f"target/criterion/{file}/"), file))
+        compare_benches(benches, plot_name, op_type)

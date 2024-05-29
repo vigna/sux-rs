@@ -12,21 +12,16 @@ use sux::rank_sel::SelectFixed2;
 use sux::rank_sel::SimpleSelect;
 use sux::traits::Select;
 
-const LENS: [u64; 11] = [
-    (1u64 << 20) + 2,
-    (1 << 21) + 2,
-    (1 << 22) + 2,
-    (1 << 23) + 2,
-    (1 << 24) + 2,
-    (1 << 25) + 2,
-    (1 << 26) + 2,
-    (1 << 27) + 2,
-    (1 << 28) + 2,
-    (1 << 29) + 2,
-    (1 << 30) + 2,
+const LENS: [u64; 6] = [
+    1_000_000,
+    4_000_000,
+    16_000_000,
+    64_000_000,
+    256_000_000,
+    1_024_000_000,
 ];
 
-const DENSITIES: [f64; 3] = [0.25, 0.5, 0.75];
+const DENSITIES: [f64; 3] = [0.1, 0.5, 0.9];
 
 const REPS: usize = 7;
 
@@ -162,15 +157,6 @@ const LOG2_ONES_PER_INVENTORY: usize = 10;
 const LOG2_U64_PER_SUBINVENTORY: usize = 3;
 
 pub fn compare_simple_fixed(c: &mut Criterion) {
-    let lens = [
-        1_000_000,
-        3_000_000,
-        10_000_000,
-        30_000_000,
-        100_000_000,
-        300_000_000,
-        1_000_000_000,
-    ];
     let mut group = c.benchmark_group(format!(
         "select_fixed2_{}_{}",
         LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY,
@@ -179,8 +165,8 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
     let mut bitvecs = Vec::<BitVec>::new();
     let mut bitvec_ids = Vec::<(u64, f64)>::new();
     let mut rng = SmallRng::seed_from_u64(0);
-    for len in lens {
-        for density in [0.2, 0.5, 0.8] {
+    for len in LENS {
+        for density in DENSITIES {
             let bitvec = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
             bitvecs.push(bitvec);
             bitvec_ids.push((len, density));

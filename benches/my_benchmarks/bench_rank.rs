@@ -3,7 +3,7 @@ use criterion::{black_box, BenchmarkGroup, BenchmarkId, Criterion};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sux::bits::bit_vec::BitVec;
-use sux::rank_sel::{PoppyRevisited, Rank10, Rank11, Rank12, Rank16, Rank9};
+use sux::rank_sel::{Rank10, Rank11, Rank9};
 use sux::traits::Rank;
 
 const LENS: [u64; 11] = [
@@ -32,11 +32,6 @@ impl RankStruct<BitVec> for Rank9 {
         Rank9::new(bits)
     }
 }
-impl RankStruct<BitVec> for PoppyRevisited {
-    fn new(bits: BitVec) -> Self {
-        PoppyRevisited::new(bits)
-    }
-}
 impl<const LOG2_LOWER_BLOCK_SIZE: usize> RankStruct<BitVec> for Rank10<LOG2_LOWER_BLOCK_SIZE> {
     fn new(bits: BitVec) -> Self {
         Rank10::new(bits)
@@ -45,16 +40,6 @@ impl<const LOG2_LOWER_BLOCK_SIZE: usize> RankStruct<BitVec> for Rank10<LOG2_LOWE
 impl RankStruct<BitVec> for Rank11 {
     fn new(bits: BitVec) -> Self {
         Rank11::new(bits)
-    }
-}
-impl RankStruct<BitVec> for Rank12 {
-    fn new(bits: BitVec) -> Self {
-        Rank12::new(bits)
-    }
-}
-impl RankStruct<BitVec> for Rank16 {
-    fn new(bits: BitVec) -> Self {
-        Rank16::new(bits)
     }
 }
 
@@ -95,14 +80,6 @@ pub fn bench_rank9(c: &mut Criterion) {
     bench_group.finish();
 }
 
-pub fn bench_poppy_revisited(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("poppy_revisited");
-
-    bench_rank::<PoppyRevisited>(&mut bench_group, &LENS, &DENSITIES, REPS);
-
-    bench_group.finish();
-}
-
 pub fn bench_rank10<const LOG2_LOWER_BLOCK_SIZE: usize>(c: &mut Criterion) {
     let name = format!("rank10_{}", LOG2_LOWER_BLOCK_SIZE);
     let mut group = c.benchmark_group(name);
@@ -114,22 +91,6 @@ pub fn bench_rank11(c: &mut Criterion) {
     let mut bench_group = c.benchmark_group("rank11");
 
     bench_rank::<Rank11>(&mut bench_group, &LENS, &DENSITIES, REPS);
-
-    bench_group.finish();
-}
-
-pub fn bench_rank12(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank12");
-
-    bench_rank::<Rank12>(&mut bench_group, &LENS, &DENSITIES, REPS);
-
-    bench_group.finish();
-}
-
-pub fn bench_rank16(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank16");
-
-    bench_rank::<Rank16>(&mut bench_group, &LENS, &DENSITIES, REPS);
 
     bench_group.finish();
 }

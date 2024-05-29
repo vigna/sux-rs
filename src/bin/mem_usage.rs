@@ -1,3 +1,5 @@
+#![cfg(target_pointer_width = "64")]
+
 use clap::{arg, Parser, ValueEnum};
 use mem_dbg::*;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
@@ -31,7 +33,7 @@ impl<const LOG2_UPPER_BLOCK_SIZE: usize, const LOG2_ONES_PER_INVENTORY: usize> S
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum SelType {
     Simpleselect,
-    Rank9sel,
+    Select9,
     Rank10sel,
 }
 
@@ -96,7 +98,7 @@ fn main() {
             println!("Memory cost of SimpleSelect: {}%", mem_cost);
             sel_struct.mem_dbg(DbgFlags::PERCENTAGE).unwrap();
         }
-        SelType::Rank9sel => {
+        SelType::Select9 => {
             let sel_struct = create_sel_struct::<Select9>(cli.len, cli.density, cli.uniform);
             let mem_cost = mem_cost(&sel_struct);
             println!(

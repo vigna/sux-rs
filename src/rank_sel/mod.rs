@@ -62,20 +62,11 @@ pub use rank10sel::*;
 mod rank9;
 pub use rank9::*;
 
-mod poppy_revisited;
-pub use poppy_revisited::*;
-
 mod rank10;
 pub use rank10::*;
 
 mod rank11;
 pub use rank11::*;
-
-mod rank12;
-pub use rank12::*;
-
-mod rank16;
-pub use rank16::*;
 
 mod select9;
 pub use select9::*;
