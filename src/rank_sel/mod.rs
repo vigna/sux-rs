@@ -41,11 +41,6 @@ the high bits of the [Elias–Fano representation of monotone sequences](crate::
 but they can be tuned for other densities.
 
 */
-mod select_fixed1;
-pub use select_fixed1::*;
-
-mod select_zero_fixed1;
-pub use select_zero_fixed1::*;
 
 mod select_fixed2;
 pub use select_fixed2::*;
