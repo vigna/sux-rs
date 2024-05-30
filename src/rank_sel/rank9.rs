@@ -52,7 +52,9 @@ pub struct Rank9<B: AsRef<[usize]> = BitVec, C: AsRef<[BlockCounters]> = Vec<Blo
     pub(super) counts: C,
 }
 
-#[derive(Epserde, Debug, Clone, MemDbg, MemSize, Default)]
+#[derive(Epserde, Copy, Debug, Clone, MemDbg, MemSize, Default)]
+#[repr(C)]
+#[zero_copy]
 pub struct BlockCounters {
     pub(super) absolute: usize,
     pub(super) relative: usize,

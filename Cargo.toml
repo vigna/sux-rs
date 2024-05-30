@@ -8,7 +8,6 @@ license = "Apache-2.0 OR LGPL-2.1-or-later"
 readme = "README.md"
 keywords = ["succinct", "rank", "select"]
 categories = ["compression", "data-structures"]
-#autobins = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

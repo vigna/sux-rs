@@ -10,7 +10,7 @@ use std::ops::Index;
 
 use super::rank9::BlockCounters;
 use super::Rank9;
-use crate::prelude::{BitCount, BitLength, BitVec, Rank, Select};
+use crate::prelude::{BitCount, BitLength, Rank, Select};
 use common_traits::{SelectInWord, Sequence};
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
@@ -63,10 +63,15 @@ macro_rules! ULEQ_STEP_16 {
 /// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
 /// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
 /// Springer, 2008.
+///
+/// # Examples
+///
+/// ```rust
+/// use sux::prelude::{Select9, bit_vec};
+///
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct Select9<R: Rank = Rank9, I: AsRef<[usize]> = Vec<usize>, const HINT_BIT_SIZE: usize = 64>
-{
+pub struct Select9<R = Rank9, I: AsRef<[usize]> = Vec<usize>> {
     rank9: R,
     inventory: I,
     subinventory: I,
@@ -74,18 +79,13 @@ pub struct Select9<R: Rank = Rank9, I: AsRef<[usize]> = Vec<usize>, const HINT_B
     subinventory_size: usize,
 }
 
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>>
-    Select9<Rank9<B, C>, I>
-{
+impl<R, I: AsRef<[usize]>> Select9<R, I> {
     const LOG2_ONES_PER_INVENTORY: usize = 9;
     const ONES_PER_INVENTORY: usize = 1 << Self::LOG2_ONES_PER_INVENTORY;
-    //const INVENTORY_MASK: usize = Self::ONES_PER_INVENTORY - 1;
 }
 
-impl Select9<Rank9<BitVec, Vec<BlockCounters>>, Vec<usize>> {
-    pub fn new(bits: BitVec) -> Self {
-        let rank9 = Rank9::new(bits);
-
+impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>, Vec<usize>> {
+    pub fn new(rank9: Rank9<B, C>) -> Self {
         let num_bits = rank9.len();
         let num_words = (num_bits + 63) / 64;
         let inventory_size =
@@ -117,6 +117,7 @@ impl Select9<Rank9<BitVec, Vec<BlockCounters>>, Vec<usize>> {
         assert!(inventory.len() == inventory_size + 1);
 
         let iter = 0..inventory_size;
+        let counts = rank9.counts.as_ref();
 
         // construct the subinventory
         iter.for_each(|inventory_idx| {
@@ -125,7 +126,7 @@ impl Select9<Rank9<BitVec, Vec<BlockCounters>>, Vec<usize>> {
             let span = subinv_end - subinv_start;
             let block_left = (inventory[inventory_idx] / 64) / 8;
             let block_span = (inventory[inventory_idx + 1] / 64) / 8 - block_left;
-            let counts_at_start = rank9.counts[block_left].absolute;
+            let counts_at_start = counts[block_left].absolute;
 
             let mut state = -1;
             let s16: &mut [u16] =
@@ -136,7 +137,7 @@ impl Select9<Rank9<BitVec, Vec<BlockCounters>>, Vec<usize>> {
                     assert!(((block_span + 8) & !7) <= span * 4);
                     for (k, v) in s16.iter_mut().enumerate().take(block_span) {
                         assert!(*v == 0);
-                        *v = (rank9.counts[block_left + k + 1].absolute - counts_at_start) as u16;
+                        *v = (counts[block_left + k + 1].absolute - counts_at_start) as u16;
                     }
                     for v in s16.iter_mut().take((block_span + 8) & !7).skip(block_span) {
                         assert!(*v == 0);
@@ -148,8 +149,7 @@ impl Select9<Rank9<BitVec, Vec<BlockCounters>>, Vec<usize>> {
                     assert!(block_span / 8 <= 8);
                     for k in 0..block_span {
                         assert!(s16[k + 8] == 0);
-                        s16[k + 8] =
-                            (rank9.counts[block_left + k + 1].absolute - counts_at_start) as u16;
+                        s16[k + 8] = (counts[block_left + k + 1].absolute - counts_at_start) as u16;
                     }
                     for k in block_span..((block_span + 8) & !7) {
                         assert!(s16[k + 8] == 0);
@@ -157,8 +157,7 @@ impl Select9<Rank9<BitVec, Vec<BlockCounters>>, Vec<usize>> {
                     }
                     for (k, v) in s16.iter_mut().enumerate().take(block_span / 8) {
                         assert!(*v == 0);
-                        *v = (rank9.counts[block_left + (k + 1) * 8].absolute - counts_at_start)
-                            as u16;
+                        *v = (counts[block_left + (k + 1) * 8].absolute - counts_at_start) as u16;
                     }
                     for v in s16.iter_mut().take(8).skip(block_span / 8) {
                         assert!(*v == 0);
@@ -446,6 +445,7 @@ impl<
 mod test_select9 {
     use super::*;
     use crate::prelude::BitVec;
+    use epserde::deser::DeserializeInner;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     #[test]
@@ -454,7 +454,7 @@ mod test_select9 {
         let density = 0.5;
         for len in (1..1000).chain((1000..10000).step_by(100)) {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let select9: Select9 = Select9::new(bits.clone());
+            let select9 = Select9::new(Rank9::new(bits.clone()));
 
             let ones = bits.count_ones();
             let mut pos = Vec::with_capacity(ones);
@@ -477,7 +477,7 @@ mod test_select9 {
         let density = 0.5;
         for len in (1 << 10..1 << 15).step_by(usize::BITS as _) {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let select9: Select9 = Select9::new(bits.clone());
+            let select9 = Select9::new(Rank9::new(bits.clone()));
 
             let ones = bits.count_ones();
             let mut pos = Vec::with_capacity(ones);
@@ -497,7 +497,7 @@ mod test_select9 {
     #[test]
     fn test_select9_empty() {
         let bits = BitVec::new(0);
-        let select9: Select9 = Select9::new(bits.clone());
+        let select9 = Select9::new(Rank9::new(bits.clone()));
         assert_eq!(select9.count_ones(), 0);
         assert_eq!(select9.len(), 0);
         assert_eq!(select9.select(0), None);
@@ -507,7 +507,7 @@ mod test_select9 {
     fn test_select9_ones() {
         let len = 300_000;
         let bits = (0..len).map(|_| true).collect::<BitVec>();
-        let select9: Select9 = Select9::new(bits);
+        let select9 = Select9::new(Rank9::new(bits));
         assert_eq!(select9.count_ones(), len);
         assert_eq!(select9.len(), len);
         for i in 0..len {
@@ -519,7 +519,7 @@ mod test_select9 {
     fn test_select9_zeros() {
         let len = 300_000;
         let bits = (0..len).map(|_| false).collect::<BitVec>();
-        let select9: Select9 = Select9::new(bits);
+        let select9 = Select9::new(Rank9::new(bits));
         assert_eq!(select9.count_ones(), 0);
         assert_eq!(select9.len(), len);
         assert_eq!(select9.select(0), None);
@@ -533,7 +533,7 @@ mod test_select9 {
                 let bits = (0..len)
                     .map(|i| i % (len / num_ones) == 0)
                     .collect::<BitVec>();
-                let select9: Select9 = Select9::new(bits);
+                let select9 = Select9::new(Rank9::new(bits));
                 assert_eq!(select9.count_ones(), num_ones);
                 assert_eq!(select9.len(), len);
                 for i in 0..num_ones {
@@ -600,7 +600,7 @@ mod test_select9 {
                     }
                 }
 
-                let select9: Select9 = Select9::new(bits);
+                let select9 = Select9::new(Rank9::new(bits));
 
                 for i in 0..(ones) {
                     assert!(select9.select(i) == Some(pos[i]));
@@ -616,7 +616,7 @@ mod test_select9 {
         let density = 0.5;
         for len in (10_000..100_000).step_by(1000) {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let select9: Select9 = Select9::new(bits.clone());
+            let select9 = Select9::new(Rank9::new(bits.clone()));
 
             let mut ranks = Vec::with_capacity(len);
             let mut r = 0;

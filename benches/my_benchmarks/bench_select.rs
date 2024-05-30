@@ -7,6 +7,7 @@ use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::Rank10Sel;
+use sux::rank_sel::Rank9;
 use sux::rank_sel::Select9;
 use sux::rank_sel::SelectFixed2;
 use sux::rank_sel::SimpleSelect;
@@ -35,7 +36,7 @@ impl SelStruct<BitVec> for SimpleSelect {
 }
 impl SelStruct<BitVec> for Select9 {
     fn new(bits: BitVec) -> Self {
-        Select9::new(bits)
+        Select9::new(Rank9::new(bits))
     }
 }
 impl<const LOG2_LOWER_BLOCK_SIZE: usize, const LOG2_ONES_PER_INVENTORY: usize> SelStruct<BitVec>
