@@ -62,16 +62,16 @@ fn test_elias_fano() -> Result<()> {
             assert_eq!({ ef.get(i) }, *v);
         }
         // Add the ones indices
-        let ef: EliasFano<SelectFixed1> =
-            ef.map_high_bits(|high_bits| SelectFixed1::new(high_bits));
+        let ef: EliasFano<SelectFixed2> =
+            ef.map_high_bits(|high_bits| SelectFixed2::new(high_bits));
 
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.get(i), *v);
         }
 
         // Add the indices
-        let ef: EliasFano<SelectZeroFixed1<SelectFixed1>> =
-            ef.map_high_bits(|high_bits| SelectZeroFixed1::<_, _, 8>::new(high_bits));
+        let ef: EliasFano<SelectZeroFixed2<SelectFixed2>> =
+            ef.map_high_bits(|high_bits| SelectZeroFixed2::<_, _, 10>::new(high_bits));
         // do a fast select
         for (i, v) in values.iter().enumerate() {
             assert_eq!({ ef.get(i) }, *v);
@@ -191,7 +191,7 @@ fn test_epserde() -> Result<()> {
         // Finish the creation of elias-fano
         let ef = efb
             .build()
-            .map_high_bits(|high_bits| SelectFixed1::<_, _, 8>::new(high_bits));
+            .map_high_bits(|high_bits| SelectFixed2::<_, _, 8>::new(high_bits));
 
         let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
         let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);
@@ -199,7 +199,7 @@ fn test_epserde() -> Result<()> {
         drop(file);
         println!("{}", schema.to_csv());
 
-        let c = <EliasFano<SelectFixed1, BitFieldVec>>::mmap(
+        let c = <EliasFano<SelectFixed2, BitFieldVec>>::mmap(
             &tmp_file,
             epserde::deser::Flags::empty(),
         )?;
