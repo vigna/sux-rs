@@ -47,6 +47,66 @@ pub struct BitVec<B = Vec<usize>> {
     len: usize,
 }
 
+/// Convenient, [`vec!`](vec!)-like macro to initialize bit vectors.
+///
+/// # Examples
+///
+/// ```rust
+/// use sux::bit_vec;
+///
+/// // Empty bit vector
+/// let b = bit_vec![];
+///
+/// // 10 bits set to true
+/// let b = bit_vec![true; 10];
+/// assert_eq!(b.len(), 10);
+/// let b = bit_vec![1; 10];
+///
+/// // 10 bits set to false
+/// let b = bit_vec![false; 10];
+/// assert_eq!(b.len(), 10);
+/// let b = bit_vec![0; 10];
+///
+/// // Bit list
+/// let b = bit_vec![0, 1, 0, 1, 0, 0];
+/// ```
+
+#[macro_export]
+macro_rules! bit_vec {
+    () => (
+        sux::prelude::BitVec::new(0)
+    );
+    (false; $n:expr) => (
+        sux::prelude::BitVec::new($n)
+    );
+    (0; $n:expr) => (
+        sux::prelude::BitVec::new($n)
+    );
+    (true; $n:expr) => (
+        // TODO: improve using Matteo's constructors
+        {
+            let mut b = sux::prelude::BitVec::new($n);
+            b.fill(true);
+            b
+        }
+    );
+    (1; $n:expr) => (
+        // TODO: improve using Matteo's constructors
+        {
+            let mut b = sux::prelude::BitVec::new($n);
+            b.fill(true);
+            b
+        }
+    );
+    ($($x:expr),+ $(,)?) => (
+        {
+            let mut b = sux::prelude::BitVec::with_capacity([$($x),+].len());
+            $( b.push($x != 0); )*
+            b
+        }
+    );
+}
+
 #[derive(Debug, Clone, MemDbg, MemSize)]
 /// A thread-safe bit vector.
 pub struct AtomicBitVec<B = Vec<AtomicUsize>> {
@@ -81,12 +141,21 @@ impl<B: AsRef<[usize]>> Index<usize> for BitVec<B> {
 }
 
 impl BitVec<Vec<usize>> {
-    /// Create a new bit vector of length `len`.
+    /// Creates a new bit vector of given length.
     pub fn new(len: usize) -> Self {
-        let n_of_words = (len + BITS - 1) / BITS;
+        let n_of_words = len.div_ceil(BITS);
         Self {
             data: vec![0; n_of_words],
             len,
+        }
+    }
+
+    /// Creates a new zero-length bit vector of given capacity.
+    pub fn with_capacity(capacity: usize) -> Self {
+        let n_of_words = capacity.div_ceil(BITS);
+        Self {
+            data: vec![0; n_of_words],
+            len: 0,
         }
     }
 

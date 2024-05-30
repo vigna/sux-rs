@@ -29,7 +29,12 @@ use crate::prelude::{BitCount, BitLength, BitVec, Rank};
 /// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
 /// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
 /// Springer, 2008.
-
+///
+/// # Examples
+///
+/// ```rust
+///
+/// ```
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct Rank9<B: AsRef<[usize]> = BitVec, C: AsRef<[BlockCounters]> = Vec<BlockCounters>> {
     pub(super) bits: B,
