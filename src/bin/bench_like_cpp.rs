@@ -37,7 +37,7 @@ impl SelStruct<BitVec> for SimpleSelect {
 }
 impl SelStruct<BitVec> for Select9 {
     fn new(bits: BitVec) -> Self {
-        Select9::new(bits)
+        Select9::new(Rank9::new(bits))
     }
 }
 
