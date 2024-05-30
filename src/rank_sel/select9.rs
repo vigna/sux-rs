@@ -67,9 +67,10 @@ macro_rules! ULEQ_STEP_16 {
 /// # Examples
 ///
 /// ```rust
-/// use sux::prelude::{Select9, Rank9, bit_vec};
+/// use sux::bit_vec;
+/// use sux::prelude::{Select, Select9, Rank9};
 /// // A Select9 structure is built on a Rank9 structure
-/// let select9 = Select::new(Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]));
+/// let select9 = Select9::new(Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]));
 /// assert_eq!(select9.select(0), Some(0));
 /// assert_eq!(select9.select(1), Some(2));
 /// assert_eq!(select9.select(2), Some(3));

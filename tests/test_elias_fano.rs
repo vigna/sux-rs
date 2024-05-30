@@ -191,7 +191,7 @@ fn test_epserde() -> Result<()> {
         // Finish the creation of elias-fano
         let ef = efb
             .build()
-            .map_high_bits(|high_bits| SelectFixed2::<_, _, 8>::new(high_bits));
+            .map_high_bits(|high_bits| SelectFixed2::<_, _, 10>::new(high_bits));
 
         let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
         let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);
