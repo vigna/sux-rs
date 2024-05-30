@@ -67,8 +67,16 @@ macro_rules! ULEQ_STEP_16 {
 /// # Examples
 ///
 /// ```rust
-/// use sux::prelude::{Select9, bit_vec};
-///
+/// use sux::prelude::{Select9, Rank9, bit_vec};
+/// // A Select9 structure is built on a Rank9 structure
+/// let select9 = Select::new(Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]));
+/// assert_eq!(select9.select(0), Some(0));
+/// assert_eq!(select9.select(1), Some(2));
+/// assert_eq!(select9.select(2), Some(3));
+/// assert_eq!(select9.select(3), Some(5));
+/// assert_eq!(select9.select(4), Some(7));
+/// assert_eq!(select9.select(5), None);
+/// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct Select9<R = Rank9, I: AsRef<[usize]> = Vec<usize>> {
@@ -445,7 +453,6 @@ impl<
 mod test_select9 {
     use super::*;
     use crate::prelude::BitVec;
-    use epserde::deser::DeserializeInner;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     #[test]
