@@ -182,7 +182,7 @@ fn main() {
     match args[1].as_str() {
         "select" => {
             bench_select_batch::<SimpleSelect>(&mut rng, "simple_select", true, &target_dir);
-            bench_select_batch::<Select9>(&mut rng, "rank9sel", true, &target_dir);
+            bench_select_batch::<Select9>(&mut rng, "select9", true, &target_dir);
         }
         "select_non_uniform" => {
             bench_select_batch::<SimpleSelect>(
@@ -191,7 +191,7 @@ fn main() {
                 false,
                 &target_dir,
             );
-            bench_select_batch::<Select9>(&mut rng, "rank9sel_non_uniform", false, &target_dir);
+            bench_select_batch::<Select9>(&mut rng, "select9_non_uniform", false, &target_dir);
         }
         "rank" => {
             bench_rank9(&target_dir);
