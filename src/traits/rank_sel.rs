@@ -20,10 +20,15 @@ pub trait BitLength {
 }
 
 /// A trait for succinct data structures that expose the
-/// numer of ones of the underlying bit vector.
-pub trait BitCount {
+/// numer of ones and zeros of the underlying bit vector.
+pub trait BitCount: BitLength {
     /// Return the number of ones in the underlying bit vector.
-    fn count(&self) -> usize;
+    fn count_ones(&self) -> usize;
+    /// Return the number of zeros in the underlying bit vector.
+    #[inline(always)]
+    fn count_zeros(&self) -> usize {
+        self.len() - self.count_ones()
+    }
 }
 
 /// Rank over a bit vector.
@@ -88,7 +93,7 @@ pub trait Select: BitCount {
     /// Return the position of the one of given rank, or `None` if no such
     /// bit exist.
     fn select(&self, rank: usize) -> Option<usize> {
-        if rank >= self.count() {
+        if rank >= self.count_ones() {
             None
         } else {
             Some(unsafe { self.select_unchecked(rank) })
@@ -108,7 +113,7 @@ pub trait SelectZero: BitLength + BitCount {
     /// Return the position of the zero of given rank, or `None` if no such
     /// bit exist.
     fn select_zero(&self, rank: usize) -> Option<usize> {
-        if rank >= self.len() - self.count() {
+        if rank >= self.count_zeros() {
             None
         } else {
             Some(unsafe { self.select_zero_unchecked(rank) })

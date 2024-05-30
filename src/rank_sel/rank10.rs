@@ -136,7 +136,8 @@ impl<
         B: RankHinted<HINT_BIT_SIZE> + Rank + BitCount + AsRef<[usize]>,
     > BitCount for Rank10<LOG2_LOWER_BLOCK_SIZE, HINT_BIT_SIZE, B>
 {
-    fn count(&self) -> usize {
+    #[inline(always)]
+    fn count_ones(&self) -> usize {
         self.rank(self.bits.len())
     }
 }
@@ -164,6 +165,7 @@ impl<
         RankHinted::<HINT_BIT_SIZE>::rank_hinted_unchecked(&self.bits, pos, hint_pos, hint_rank)
     }
 
+    // TODO!: can this be replaced with the default impl?
     fn rank(&self, pos: usize) -> usize {
         if pos >= self.bits.len() {
             self.counts.l0[self.counts.l0.len() - 1] as usize
@@ -256,6 +258,6 @@ mod test_rank10 {
 
         let rank10: Rank10<TEST_LOG2_LOWER_BLOCK_SIZE> = Rank10::new(bits);
 
-        assert_eq!(rank10.rank(rank10.len()), rank10.bits.count());
+        assert_eq!(rank10.rank(rank10.len()), rank10.bits.count_ones());
     }
 }

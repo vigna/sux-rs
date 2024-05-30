@@ -28,8 +28,7 @@ fn test_select_fixed1() {
             }
         }
 
-        let simple =
-            SelectFixed1::<CountBitVec, Vec<usize>, 8>::new(CountBitVec::from(bitvec), ones);
+        let simple = SelectFixed1::<CountBitVec, Vec<usize>, 8>::new(CountBitVec::from(bitvec));
 
         for i in 0..ones {
             assert_eq!(simple.select(i), Some(pos[i]), "i: {} ones : {}", i, ones);
@@ -80,7 +79,8 @@ fn test_select_zero_fixed1() {
 
         let mut bitvec_clone = bitvec.clone();
 
-        let simple = SelectZeroFixed1::<CountBitVec, Vec<usize>, 8>::new(CountBitVec::from(bitvec));
+        let count_bitvec = CountBitVec::from(bitvec);
+        let simple = SelectZeroFixed1::<CountBitVec, Vec<usize>, 8>::new(count_bitvec);
 
         bitvec_clone.flip();
         let simple_ones = <SelectFixed2<_, _, 10, 2>>::new(&bitvec_clone);

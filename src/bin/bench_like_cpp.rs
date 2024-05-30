@@ -67,7 +67,7 @@ fn bench_select<S: SelStruct<BitVec>>(
     let num_ones_second_half = second_half.count_ones();
     let bits = first_half
         .into_iter()
-        .chain(second_half.into_iter())
+        .chain(&second_half)
         .collect::<BitVec>();
 
     let sel: S = S::new(bits);
@@ -78,14 +78,12 @@ fn bench_select<S: SelStruct<BitVec>>(
         u ^= if u & 1 != 0 {
             unsafe {
                 sel.select_unchecked(
-                    (num_ones_first_half + remap128(rng.gen::<usize>(), num_ones_second_half))
-                        as usize,
+                    num_ones_first_half + remap128(rng.gen::<usize>(), num_ones_second_half),
                 ) as u64
             }
         } else {
             unsafe {
-                sel.select_unchecked((remap128(rng.gen::<usize>(), num_ones_first_half)) as usize)
-                    as u64
+                sel.select_unchecked(remap128(rng.gen::<usize>(), num_ones_first_half)) as u64
             }
         };
     }
@@ -120,7 +118,7 @@ fn bench_select_batch<S: SelStruct<BitVec>>(
             };
             let mut time = 0.0;
             for _ in 0..REPEATS {
-                time += bench_select::<S>(*len as usize, NUMPOS, density0, density1, rng);
+                time += bench_select::<S>(*len, NUMPOS, density0, density1, rng);
             }
             time /= REPEATS as f64;
             writeln!(file, "{}, {}, {}", len, density, time).unwrap();
@@ -144,7 +142,7 @@ fn bench_rank9(target_dir: &PathBuf) {
                 let mut u = 0;
                 let begin = std::time::Instant::now();
                 for _ in 0..NUMPOS {
-                    u ^= rank9.rank(remap128(rng.gen::<usize>() ^ u, len) as usize);
+                    u ^= rank9.rank(remap128(rng.gen::<usize>() ^ u, len));
                 }
                 black_box(u);
                 let elapsed = begin.elapsed().as_nanos();

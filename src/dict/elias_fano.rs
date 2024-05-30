@@ -17,19 +17,18 @@ an [`EliasFanoBuilder`] or an [`EliasFanoConcurrentBuilder`].
 Once the base structure has been built, it is possible to enrich it with
 indices that will make operations faster, using the same mechanism with which
 [you can add ranking and selection structures to bit vectors](`crate::rank_sel`),
-that is, by calling [`ConvertTo::convert_to`] towards the desired type. For example,
+that is, by calling [`EliasFano::map_high_bits`] towards the desired type. For example,
 ```rust
 use sux::prelude::*;
 let mut efb = EliasFanoBuilder::new(2, 5);
 efb.push(0);
 efb.push(2);
-let ef = efb.build();
-// Add a selection structure for ones (accelerates get operations).
-let ef: EliasFano<SelectFixed2> =
-    ef.convert_to().unwrap();
-// Add also a selection structure for zeros (accelerates precedessor and successor).
-let ef: EliasFano<SelectZeroFixed2<SelectFixed2>> =
-    ef.convert_to().unwrap();
+let ef: EliasFano<SelectZeroFixed2<SelectFixed2>> = efb.build()
+    .map_high_bits(|high_bits| {
+        // Add a selection structure for ones (accelerates get operations).
+        // Also add a selection structure for zeros (accelerates predecessors and successor).
+        SelectZeroFixed2::new(SelectFixed2::new(high_bits))
+    });
 ```
 
 */
@@ -218,9 +217,39 @@ impl<H, L> EliasFano<H, L> {
         2 * n + (n * (u as f64 / n as f64).log2().ceil() as usize)
     }
 
-    pub fn transform<F, H2, L2>(self, func: F) -> EliasFano<H2, L2>
+    /// Change the high bits types, this can be used to add indices to speed
+    /// up the get operation.
+    pub fn map_high_bits<F, H2>(self, func: F) -> EliasFano<H2, L>
     where
-        F: Fn(H, L) -> (H2, L2),
+        F: FnOnce(H) -> H2,
+    {
+        EliasFano {
+            u: self.u,
+            n: self.n,
+            l: self.l,
+            low_bits: self.low_bits,
+            high_bits: func(self.high_bits),
+        }
+    }
+
+    /// Change the low bits types
+    pub fn map_low_bits<F, L2>(self, func: F) -> EliasFano<H, L2>
+    where
+        F: FnOnce(L) -> L2,
+    {
+        EliasFano {
+            u: self.u,
+            n: self.n,
+            l: self.l,
+            low_bits: func(self.low_bits),
+            high_bits: self.high_bits,
+        }
+    }
+
+    /// Change both the high and low bits types
+    pub fn map<F, H2, L2>(self, func: F) -> EliasFano<H2, L2>
+    where
+        F: FnOnce(H, L) -> (H2, L2),
     {
         let (high_bits, low_bits) = func(self.high_bits, self.low_bits);
         EliasFano {
@@ -288,23 +317,6 @@ where
 {
     pub fn into_iter_from(&self, from: usize) -> EliasFanoIterator<'_, H, L> {
         EliasFanoIterator::new_from(self, from)
-    }
-}
-
-impl<H1, L1, H2, L2> ConvertTo<EliasFano<H1, L1>> for EliasFano<H2, L2>
-where
-    H2: ConvertTo<H1>,
-    L2: ConvertTo<L1>,
-{
-    #[inline(always)]
-    fn convert_to(self) -> Result<EliasFano<H1, L1>> {
-        Ok(EliasFano {
-            u: self.u,
-            n: self.n,
-            l: self.l,
-            low_bits: self.low_bits.convert_to()?,
-            high_bits: self.high_bits.convert_to()?,
-        })
     }
 }
 
