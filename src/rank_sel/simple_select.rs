@@ -94,7 +94,7 @@ pub struct SimpleSelect<B: SelectHinted = BitVec, I: AsRef<[usize]> = Vec<usize>
 }
 
 impl<B: SelectHinted, I: AsRef<[usize]>> SimpleSelect<B, I> {
-    const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
+    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
 }
 
 impl SimpleSelect<BitVec, Vec<usize>> {

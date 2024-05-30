@@ -33,7 +33,7 @@ Thus, the objective of sizing the first-level inventory is to obtain the second-
 span of less than 2<sup>16</sup> elements as often as possible. The default parameters are a good choice for a vector
 with approximately the same number of zeroes and ones.
 
-The size of the structure is [`BitCount::count()`] *
+The size of the structure is [`BitCount::count_ones()`] *
 (1 + 2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup>) * 64 / 2<sup>`LOG2_ONES_PER_INVENTORY`</sup> bits.
 
 See [`SelectZeroFixed2`](crate::rank_sel::SelectZeroFixed2) for the same structure for zeros.

@@ -131,9 +131,8 @@ pub trait SelectZero: BitLength + BitCount {
 /// Select over a bit vector, with a hint.
 ///
 /// This trait is used to implement fast selection by adding to bit vectors
-/// indices of different kind. For example,
-/// [`SelectFixed1`](crate::rank_sel::SelectFixed1) adds hints
-/// for the positions of ones at fixed intervals.
+/// indices of different kind. See, for example,
+/// [`SimpleSelect`](crate::rank_sel::SimpleSelect).
 pub trait SelectHinted {
     /// Select the one of given rank, provided the position of a preceding one
     /// and its rank.
@@ -158,10 +157,8 @@ pub trait SelectHinted {
 
 /// Select zeros over a bit vector, with a hint.
 ///
-/// This trait is used to implement fast selection by adding to bit vectors
-/// indices of different kind. For example,
-/// [`SelectZeroFixed1`](crate::rank_sel::SelectZeroFixed1) adds hints
-/// for the positions of zeros at regular intervals.
+/// This trait is used to implement fast selection over zeros by adding to bit
+/// vectors indices of different kind.
 pub trait SelectZeroHinted {
     /// Select the zero of given rank, provided the position of a preceding zero
     /// and its rank.
