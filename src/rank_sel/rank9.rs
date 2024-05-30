@@ -33,18 +33,19 @@ use crate::prelude::{BitCount, BitLength, BitVec, Rank};
 /// # Examples
 ///
 /// ```rust
-/// use sux::prelude::{Rank9, bit_vec};
+/// use sux::bit_vec;
+/// use sux::prelude::{Rank, Rank9};
 ///
 /// let rank9 = Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]);
 /// assert_eq!(rank9.rank(0), 0);
 /// assert_eq!(rank9.rank(1), 1);
 /// assert_eq!(rank9.rank(2), 1);
 /// assert_eq!(rank9.rank(3), 2);
-/// assert_eq!(rank9.rank(4), 2);
+/// assert_eq!(rank9.rank(4), 3);
 /// assert_eq!(rank9.rank(5), 3);
-/// assert_eq!(rank9.rank(6), 3);
+/// assert_eq!(rank9.rank(6), 4);
 /// assert_eq!(rank9.rank(7), 4);
-/// assert_eq!(rank9.rank(8), 4);
+/// assert_eq!(rank9.rank(8), 5);
 /// ```
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct Rank9<B: AsRef<[usize]> = BitVec, C: AsRef<[BlockCounters]> = Vec<BlockCounters>> {
