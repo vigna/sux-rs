@@ -56,23 +56,6 @@ fn main() {
         elias_fano_builder.push(*value).unwrap();
     }
 
-    // Frequency of ones in the inventory for one-level index
-    const FIXED1_LOG2_ONES_PER_INVENTORY: usize = 8;
-    // Add indices on zeros and ones
-    let elias_fano_q: EliasFano<
-        SelectZeroFixed1<
-            SelectFixed1<_, _, FIXED1_LOG2_ONES_PER_INVENTORY>,
-            _,
-            FIXED1_LOG2_ONES_PER_INVENTORY,
-        >,
-    > = elias_fano_builder
-        .build()
-        .map_high_bits(|high_bits| SelectZeroFixed1::new(SelectFixed1::new(high_bits)));
-
-    elias_fano_q
-        .mem_dbg(DbgFlags::default() | DbgFlags::PERCENTAGE)
-        .unwrap();
-
     let mut elias_fano_builder = EliasFanoBuilder::new(args.n, args.u);
     for value in &values {
         elias_fano_builder.push(*value).unwrap();
@@ -104,20 +87,6 @@ fn main() {
     for _ in 0..args.repeats {
         let mut pl = ProgressLogger::default();
 
-        pl.start("Benchmarking q.get()...");
-        for &rank in &ranks {
-            black_box(elias_fano_q.get(rank));
-        }
-        pl.done_with_count(args.t);
-
-        pl.start("Benchmarking q.get_unchecked()...");
-        for &rank in &ranks {
-            unsafe {
-                black_box(elias_fano_q.get_unchecked(rank));
-            }
-        }
-        pl.done_with_count(args.t);
-
         pl.start("Benchmarking s.get()...");
         for &rank in &ranks {
             black_box(elias_fano_s.get(rank));
@@ -129,28 +98,6 @@ fn main() {
             unsafe {
                 black_box(elias_fano_s.get_unchecked(rank));
             }
-        }
-        pl.done_with_count(args.t);
-
-        pl.start("Benchmarking q.succ()...");
-        for _ in 0..args.t {
-            black_box(
-                elias_fano_q
-                    .succ(&rng.gen_range(0..args.u))
-                    .unwrap_or((0, 0))
-                    .0,
-            );
-        }
-        pl.done_with_count(args.t);
-
-        pl.start("Benchmarking q.succ_unchecked::<false>()...");
-        let upper_bound = *values.last().unwrap();
-        for _ in 0..args.t {
-            black_box(unsafe {
-                elias_fano_q
-                    .succ_unchecked::<false>(&rng.gen_range(0..upper_bound))
-                    .0
-            });
         }
         pl.done_with_count(args.t);
 
@@ -178,27 +125,6 @@ fn main() {
 
         let first = *values.first().unwrap();
 
-        pl.start("Benchmarking q.pred()...");
-        for _ in 0..args.t {
-            black_box(
-                elias_fano_q
-                    .pred(&(rng.gen_range(first..args.u)))
-                    .unwrap_or((0, 0))
-                    .0,
-            );
-        }
-        pl.done_with_count(args.t);
-
-        pl.start("Benchmarking q.pred_unchecked::<false>()...");
-        for _ in 0..args.t {
-            black_box(unsafe {
-                elias_fano_q
-                    .pred_unchecked::<false>(&rng.gen_range(first..args.u))
-                    .0
-            });
-        }
-        pl.done_with_count(args.t);
-
         pl.start("Benchmarkins s.pred()...");
         for _ in 0..args.t {
             black_box(
@@ -219,12 +145,6 @@ fn main() {
             });
         }
         pl.done_with_count(args.t);
-
-        pl.start("Benchmarking q.iter()...");
-        for i in &elias_fano_q {
-            black_box(i);
-        }
-        pl.done_with_count(args.n);
 
         pl.start("Benchmarking s.iter()...");
         for i in &elias_fano_s {
