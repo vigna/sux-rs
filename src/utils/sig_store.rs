@@ -359,6 +359,7 @@ impl<T: ZeroCopy + 'static> SigStore<T> {
                 .read(true)
                 .write(true)
                 .create(true)
+                .truncate(true)
                 .open(temp_dir.path().join(format!("{}.tmp", i)))?;
             writers.push_back(BufWriter::new(file));
         }

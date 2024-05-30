@@ -106,14 +106,14 @@ impl<
         let inv_pos = rel_inv_pos + upper_block_idx * Self::UPPER_BLOCK_SIZE;
 
         let next_rel_inv_pos = *inv_ref.get_unchecked(rank / Self::ONES_PER_INVENTORY + 1) as usize;
-        let next_inv_pos = if next_rel_inv_pos > rel_inv_pos {
-            next_rel_inv_pos + upper_block_idx * Self::UPPER_BLOCK_SIZE
-        } else if next_rel_inv_pos < rel_inv_pos {
-            (upper_block_idx + 1) * Self::UPPER_BLOCK_SIZE
-        } else {
+        let next_inv_pos = match next_rel_inv_pos.cmp(&rel_inv_pos) {
+            std::cmp::Ordering::Greater => {
+                next_rel_inv_pos + upper_block_idx * Self::UPPER_BLOCK_SIZE
+            }
+            std::cmp::Ordering::Less => (upper_block_idx + 1) * Self::UPPER_BLOCK_SIZE,
             // the two last elements of the inventory are the same
             // because at construction time we add the last element twice
-            self.rank10.bits.len()
+            std::cmp::Ordering::Equal => self.rank10.bits.len(),
         };
         let mut last_lower_block_idx = next_inv_pos / Self::LOWER_BLOCK_SIZE;
 
@@ -183,9 +183,11 @@ impl<
         B: RankHinted<HINT_BIT_SIZE> + SelectHinted + Rank + Select + BitCount + AsRef<[usize]>,
     > Rank for Rank10Sel<LOG2_LOWER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
 {
+    #[inline(always)]
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
         self.rank10.rank_unchecked(pos)
     }
+    #[inline(always)]
     fn rank(&self, pos: usize) -> usize {
         self.rank10.rank(pos)
     }
@@ -198,8 +200,13 @@ impl<
         B: RankHinted<HINT_BIT_SIZE> + SelectHinted + Rank + Select + BitCount + AsRef<[usize]>,
     > BitCount for Rank10Sel<LOG2_LOWER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
 {
-    fn count(&self) -> usize {
-        self.rank10.count()
+    #[inline(always)]
+    fn count_ones(&self) -> usize {
+        self.rank10.count_ones()
+    }
+    #[inline(always)]
+    fn count_zeros(&self) -> usize {
+        self.rank10.count_zeros()
     }
 }
 
@@ -210,6 +217,7 @@ impl<
         B: RankHinted<HINT_BIT_SIZE> + SelectHinted + Rank + Select + BitCount + AsRef<[usize]>,
     > BitLength for Rank10Sel<LOG2_LOWER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
 {
+    #[inline(always)]
     fn len(&self) -> usize {
         self.rank10.len()
     }
@@ -296,7 +304,7 @@ mod test_rank10sel {
         let bits = BitVec::new(0);
         let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, TEST_LOG2_ONES_PER_INVENTORY> =
             Rank10Sel::new(bits.clone());
-        assert_eq!(rank10sel.count(), 0);
+        assert_eq!(rank10sel.count_ones(), 0);
         assert_eq!(rank10sel.len(), 0);
         assert_eq!(rank10sel.select(0), None);
     }
@@ -307,7 +315,7 @@ mod test_rank10sel {
         let bits = (0..len).map(|_| true).collect::<BitVec>();
         let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, TEST_LOG2_ONES_PER_INVENTORY> =
             Rank10Sel::new(bits);
-        assert_eq!(rank10sel.count(), len);
+        assert_eq!(rank10sel.count_ones(), len);
         assert_eq!(rank10sel.len(), len);
         for i in 0..len {
             assert_eq!(rank10sel.select(i), Some(i));
@@ -320,7 +328,7 @@ mod test_rank10sel {
         let bits = (0..len).map(|_| false).collect::<BitVec>();
         let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, TEST_LOG2_ONES_PER_INVENTORY> =
             Rank10Sel::new(bits);
-        assert_eq!(rank10sel.count(), 0);
+        assert_eq!(rank10sel.count_ones(), 0);
         assert_eq!(rank10sel.len(), len);
         assert_eq!(rank10sel.select(0), None);
     }
@@ -335,7 +343,7 @@ mod test_rank10sel {
                     .collect::<BitVec>();
                 let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, TEST_LOG2_ONES_PER_INVENTORY> =
                     Rank10Sel::new(bits);
-                assert_eq!(rank10sel.count(), num_ones);
+                assert_eq!(rank10sel.count_ones(), num_ones);
                 assert_eq!(rank10sel.len(), len);
                 for i in 0..num_ones {
                     assert_eq!(rank10sel.select(i), Some(i * (len / num_ones)));

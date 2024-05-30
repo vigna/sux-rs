@@ -73,7 +73,7 @@ fn create_sel_struct<S: SelStruct<BitVec> + MemSize + MemDbg>(
 
     let bits = first_half
         .into_iter()
-        .chain(second_half.into_iter())
+        .chain(&second_half)
         .collect::<BitVec>();
 
     S::new(bits)
