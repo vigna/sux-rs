@@ -30,4 +30,6 @@ rm -rf ./bench-results/
 python3 ./bench-scripts.py rank
 ../sux-rs/scripts/move_benches.sh ./bench-results/ ../sux-rs/scripts/runs/c++_vs_rust/cpp/rank/
 
-cd ../sux-rs/scripts
+# Plot the benchmarks
+cd ../sux-rs/python-scripts
+python3 plot-benches.py --cpp-vs-rust
