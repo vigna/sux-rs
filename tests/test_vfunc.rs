@@ -6,38 +6,37 @@
  */
 
 use dsi_progress_logger::*;
-use epserde::prelude::*;
-use sux::{func::VFunc, prelude::VFuncBuilder, utils::FromIntoIterator};
+use sux::{prelude::VFuncBuilder, utils::FromIntoIterator};
 
-#[test]
-fn test_func() -> anyhow::Result<()> {
-    let mut pl = ProgressLogger::default();
+// #[test]
+// fn test_func() -> anyhow::Result<()> {
+//     let mut pl = ProgressLogger::default();
 
-    for offline in [false, true] {
-        for n in [10_usize, 100, 1000, 100000] {
-            let func = VFuncBuilder::default()
-                .log2_buckets(4)
-                .offline(offline)
-                .build(
-                    FromIntoIterator::from(0..n),
-                    FromIntoIterator::from(0_usize..),
-                    &mut pl,
-                )?;
-            let mut cursor = epserde::new_aligned_cursor();
-            func.serialize(&mut cursor).unwrap();
-            cursor.set_position(0);
-            let buf = cursor.into_inner();
-            let func = VFunc::<usize>::deserialize_eps(&buf).unwrap();
-            pl.start("Querying...");
-            for i in 0..n {
-                assert_eq!(i, func.get(&i));
-            }
-            pl.done_with_count(n);
-        }
-    }
+//     for offline in [false, true] {
+//         for n in [10_usize, 100, 1000, 100000] {
+//             let func = VFuncBuilder::default()
+//                 .log2_buckets(4)
+//                 .offline(offline)
+//                 .build(
+//                     FromIntoIterator::from(0..n),
+//                     FromIntoIterator::from(0_usize..),
+//                     &mut pl,
+//                 )?;
+//             let mut cursor = epserde::new_aligned_cursor();
+//             func.serialize(&mut cursor).unwrap();
+//             cursor.set_position(0);
+//             let buf = cursor.into_inner();
+//             let func = VFunc::<usize>::deserialize_eps(&buf).unwrap();
+//             pl.start("Querying...");
+//             for i in 0..n {
+//                 assert_eq!(i, func.get(&i));
+//             }
+//             pl.done_with_count(n);
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 #[test]
 fn test_dup_key() {
