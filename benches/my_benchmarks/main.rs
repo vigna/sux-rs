@@ -28,8 +28,10 @@ fn main() {
         }
         "rank" => {
             bench_rank9(&mut criterion);
-            bench_rank10::<10>(&mut criterion);
             bench_rank11(&mut criterion);
+            bench_rank_small::<1>(&mut criterion);
+            bench_rank_small::<2>(&mut criterion);
+            bench_rank_small::<3>(&mut criterion);
         }
         "simple" => {
             bench_simple_select(&mut criterion, true);

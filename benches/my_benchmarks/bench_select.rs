@@ -24,7 +24,7 @@ const LENS: [u64; 6] = [
 
 const DENSITIES: [f64; 3] = [0.1, 0.5, 0.9];
 
-const REPS: usize = 1;
+const REPS: usize = 5;
 
 trait SelStruct<B>: Select {
     fn new(bits: B) -> Self;
