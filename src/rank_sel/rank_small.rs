@@ -15,12 +15,12 @@ use static_assertions::{assert_impl_all, const_assert_eq};
 use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
 
 macro_rules! rank_small {
-    ($n: expr) => {
+    ($n: expr; $bv: expr) => {
         match $n {
-            9 => RankSmall::<2, 9>::new(),
-            10 => RankSmall::<1, 10>::new(),
-            11 => RankSmall::<1, 11>::new(),
-            13 => RankSmall::<3, 13>::new(),
+            9 => RankSmall::<2, 9>::new($bv),
+            10 => RankSmall::<1, 10>::new($bv),
+            11 => RankSmall::<1, 11>::new($bv),
+            13 => RankSmall::<3, 13>::new($bv),
             _ => panic!("Unsupported pointer size");
         }
     };
