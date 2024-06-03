@@ -36,9 +36,21 @@ impl Struct for Rank9 {
     }
 }
 
-impl<const NUM_U32S: usize> Struct for RankSmall<NUM_U32S> {
+impl Struct for RankSmall<1, 11> {
     fn build(bits: BitVec) -> Self {
-        RankSmall::<NUM_U32S>::new(bits)
+        RankSmall::<1, 11>::new(bits)
+    }
+}
+
+impl Struct for RankSmall<2, 9> {
+    fn build(bits: BitVec) -> Self {
+        RankSmall::<2, 9>::new(bits)
+    }
+}
+
+impl Struct for RankSmall<3, 13> {
+    fn build(bits: BitVec) -> Self {
+        RankSmall::<3, 13>::new(bits)
     }
 }
 
@@ -123,13 +135,13 @@ fn main() {
             mem_usage::<Rank9>(cli.len, cli.density, uniform, "Rank9");
         }
         StructType::RankSmall1 => {
-            mem_usage::<RankSmall<1>>(cli.len, cli.density, uniform, "RankSmall<1>");
+            mem_usage::<RankSmall<1, 11>>(cli.len, cli.density, uniform, "RankSmall<1>");
         }
         StructType::RankSmall2 => {
-            mem_usage::<RankSmall<2>>(cli.len, cli.density, uniform, "RankSmall<2>");
+            mem_usage::<RankSmall<2, 9>>(cli.len, cli.density, uniform, "RankSmall<2>");
         }
         StructType::RankSmall3 => {
-            mem_usage::<RankSmall<3>>(cli.len, cli.density, uniform, "RankSmall<3>");
+            mem_usage::<RankSmall<3, 13>>(cli.len, cli.density, uniform, "RankSmall<3>");
         }
     }
 }

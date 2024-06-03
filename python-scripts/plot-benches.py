@@ -131,11 +131,11 @@ def plot_cpp_vs_rust():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Plot benchmark results.')
 
-    group1 = parser.add_mutually_exclusive_group()
+    group1 = parser.add_argument_group()
     group1.add_argument('--cpp-vs-rust', action='store_true',
                         help='Compare C++ vs Rust benchmarks')
 
-    group2 = parser.add_mutually_exclusive_group()
+    group2 = parser.add_argument_group()
     group2.add_argument('--op_type', choices=[
         'rank', 'select'], help='Operation type')
     group2.add_argument('--benches_path', type=str,
