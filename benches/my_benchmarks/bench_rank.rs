@@ -38,9 +38,21 @@ impl RankStruct for Rank11 {
     }
 }
 
-impl<const NUM_U32S: usize> RankStruct for RankSmall<NUM_U32S> {
+impl RankStruct for RankSmall<1, 11> {
     fn new(bits: BitVec) -> Self {
-        RankSmall::<NUM_U32S>::new(bits)
+        RankSmall::<1, 11>::new(bits)
+    }
+}
+
+impl RankStruct for RankSmall<2, 9> {
+    fn new(bits: BitVec) -> Self {
+        RankSmall::<2, 9>::new(bits)
+    }
+}
+
+impl RankStruct for RankSmall<3, 13> {
+    fn new(bits: BitVec) -> Self {
+        RankSmall::<3, 13>::new(bits)
     }
 }
 
@@ -89,9 +101,23 @@ pub fn bench_rank11(c: &mut Criterion) {
     bench_group.finish();
 }
 
-pub fn bench_rank_small<const NUM_U32S: usize>(c: &mut Criterion) {
-    let name = format!("rank_small_{}", NUM_U32S);
+pub fn bench_rank_small9(c: &mut Criterion) {
+    let name = format!("rank_small_9");
     let mut group = c.benchmark_group(name);
-    bench_rank::<RankSmall<NUM_U32S>>(&mut group, &LENS, &DENSITIES, REPS);
+    bench_rank::<RankSmall<2, 9>>(&mut group, &LENS, &DENSITIES, REPS);
+    group.finish();
+}
+
+pub fn bench_rank_small11(c: &mut Criterion) {
+    let name = format!("rank_small_11");
+    let mut group = c.benchmark_group(name);
+    bench_rank::<RankSmall<1, 11>>(&mut group, &LENS, &DENSITIES, REPS);
+    group.finish();
+}
+
+pub fn bench_rank_small13(c: &mut Criterion) {
+    let name = format!("rank_small_13");
+    let mut group = c.benchmark_group(name);
+    bench_rank::<RankSmall<3, 13>>(&mut group, &LENS, &DENSITIES, REPS);
     group.finish();
 }
