@@ -10,16 +10,32 @@ use std::ops::Index;
 
 use epserde::*;
 use mem_dbg::*;
+use static_assertions::{assert_impl_all, const_assert_eq};
 
 use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
+
+macro_rules! rank_small {
+    ($n: expr) => {
+        match $n {
+            9 => RankSmall::<2, 9>::new(),
+            10 => RankSmall::<1, 10>::new(),
+            11 => RankSmall::<1, 11>::new(),
+            13 => RankSmall::<3, 13>::new(),
+            _ => panic!("Unsupported pointer size");
+        }
+    };
+}
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct RankSmall<
     const NUM_U32S: usize,
+    const COUNTER_WIDTH: usize,
     const HINT_BIT_SIZE: usize = 64,
     B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]> = BitVec,
     C1: AsRef<[usize]> = Vec<usize>,
-    C2: AsRef<[Block32Counters<NUM_U32S>]> = Vec<Block32Counters<NUM_U32S>>,
+    C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]> = Vec<
+        Block32Counters<NUM_U32S, COUNTER_WIDTH>,
+    >,
 > {
     pub(super) bits: B,
     pub(super) upper_counts: C1,
@@ -30,9 +46,21 @@ pub struct RankSmall<
 #[derive(Epserde, Copy, Debug, Clone, MemDbg, MemSize)]
 #[repr(C)]
 #[zero_copy]
-pub struct Block32Counters<const NUM_U32S: usize> {
+pub struct Block32Counters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     pub(super) absolute: u32,
     pub(super) relative: [u32; NUM_U32S],
+}
+
+impl Block32Counters<1, 11> {
+    #[inline(always)]
+    pub fn rel(&self, word: usize) -> usize {
+        self.relative[0] as usize >> (11 * (word ^ 3)) & ((1 << 11) - 1)
+    }
+
+    #[inline(always)]
+    pub fn set_rel(&mut self, word: usize, counter: usize) {
+        self.relative[0] |= (counter as u32) << (11 * (word ^ 3));
+    }
 }
 
 impl<const NUM_U32S: usize> Block32Counters<NUM_U32S> {
