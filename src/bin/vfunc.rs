@@ -10,7 +10,7 @@ use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use sux::prelude::VFuncBuilder;
-use sux::utils::{FromIntoIterator, LineLender, ZstdLineLender};
+use sux::utils::{FromIntoIterator, LineLender};
 
 #[derive(Parser, Debug)]
 #[command(about = "Generate a VFunc mapping each input to its rank and serialize it with ε-serde", long_about = None)]
@@ -63,19 +63,23 @@ fn main() -> Result<()> {
             builder = builder.num_threads(threads);
         }
 
-        let func = if args.zstd {
+        let func = /*if args.zstd {
+            #[cfg(feature = "zstd")]
             builder.build(
                 ZstdLineLender::from_path(&filename)?,
                 FromIntoIterator::from(0_usize..),
                 &mut pl,
             )?
-        } else {
+
+            #[cfg(not(feature = "zstd"))]
+            unimplemented!("No zstd support compiled in")
+        } else {*/
             builder.build(
                 LineLender::from_path(&filename)?,
                 FromIntoIterator::from(0_usize..),
                 &mut pl,
-            )?
-        };
+            )?;
+
         func.store(&args.func)?;
     }
 

@@ -21,7 +21,7 @@ log = "0.4.17"
 mmap-rs = "0.6.1"
 num_cpus = "1.16.0"
 num-traits = "0.2.15"
-rayon = {version="1.7.0", optional=true}
+rayon = { version = "1.7.0", optional = true }
 stable_deref_trait = "1.2.0"
 yoke = "0.7.1"
 epserde = "0.6.1"
@@ -30,7 +30,7 @@ clap = { version = "4.2.7", features = ["derive"] }
 dsi-progress-logger = "0.2.1"
 stderrlog = "0.6.0"
 rand = {version="0.8.5", features=["small_rng"]}
-zstd = "0.13.1"
+zstd = { version = "0.13.1", optional = true }
 tempfile = "3.8.0"
 xxh3 = "0.1.1"
 lender = "0.2.0"
