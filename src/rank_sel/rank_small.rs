@@ -10,7 +10,7 @@ use epserde::*;
 use mem_dbg::*;
 use std::{
     ops::Index,
-    ptr::{self, read, read_unaligned},
+    ptr::{self, read, read_unaligned, write_unaligned},
 };
 
 use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
@@ -179,17 +179,38 @@ impl Block32Counters<1, 11> {
 impl Block32Counters<3, 13> {
     #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
-        let packed = unsafe { read_unaligned(ptr::addr_of!(self.relative) as *const u128) }
-            & ((1 << 96) - 1);
+        #[cfg(target_endian = "little")]
+        let packed = unsafe { read_unaligned(ptr::addr_of!(*self) as *const u128) >> 32 };
+        #[cfg(target_endian = "big")]
+        let packed = unsafe { read_unaligned(ptr::addr_of!(*self) as *const u128) & (1 << 96) - 1 };
+
         (packed >> (13 * (word ^ 7)) & ((1 << 13) - 1)) as usize
     }
 
     #[inline(always)]
     pub fn set_rel(&mut self, word: usize, counter: usize) {
-        let mut packed = unsafe { read_unaligned(ptr::addr_of!(self.relative) as *const u128) }
-            & ((1 << 96) - 1);
+        #[cfg(target_endian = "little")]
+        let mut packed = unsafe { read_unaligned(ptr::addr_of!(*self) as *const u128) >> 32 };
+        #[cfg(target_endian = "big")]
+        let mut packed =
+            unsafe { read_unaligned(ptr::addr_of!(*self) as *const u128) & (1 << 96) - 1 };
+
         packed |= (counter as u128) << (13 * (word ^ 7));
-        self.relative = unsafe { read_unaligned(ptr::addr_of!(packed) as *const [u32; 3]) };
+
+        #[cfg(target_endian = "little")]
+        unsafe {
+            write_unaligned(
+                ptr::addr_of!(*self) as *mut u128,
+                packed << 32 | self.absolute as u128,
+            )
+        };
+        #[cfg(target_endian = "big")]
+        unsafe {
+            write_unaligned(
+                ptr::addr_of!(*self) as *mut u128,
+                packed | (self.absolute as u128) << 96,
+            );
+        };
     }
 }
 
