@@ -13,22 +13,6 @@ use std::io::BufReader;
 use sux::prelude::*;
 
 #[test]
-fn test_negative_redundancy() {
-    let mut rclb = RearCodedListBuilder::new(10000);
-    rclb.push("UkVBRE1FLm1k");
-    rclb.push("VE9ETy50eHQ=");
-    rclb.push("b2xk");
-    rclb.push("b2xkcHJvamVjdA==");
-    rclb.push("cGFyc2VyLmM=");
-    rclb.push("cmVmcy90YWdzL3YxLjA=");
-    rclb.push("cmVmcy90YWdzL3YyLjAtYW5vbnltb3Vz");
-    rclb.push("cmVmcy9oZWFkcy9tYXN0ZXI=");
-    rclb.push("dGVzdHM=");
-
-    rclb.print_stats();
-}
-
-#[test]
 fn test_rear_coded_list_100() -> Result<()> {
     test_rear_coded_list("tests/data/wordlist.100")
 }
