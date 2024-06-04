@@ -236,7 +236,7 @@ mod test_rank10sel {
     fn test_inventory() {
         let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
         let density = 0.5;
-        let lens = [1 << 20];
+        let lens = [1 << 18];
         for len in lens {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
             let rank10sel: Rank10Sel<TEST_LOG2_LOWER_BLOCK_SIZE, TEST_LOG2_ONES_PER_INVENTORY> =

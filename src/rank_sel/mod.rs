@@ -60,6 +60,9 @@ pub use rank9::*;
 mod rank_small;
 pub use rank_small::*;
 
+mod rank_small_sel;
+pub use rank_small_sel::*;
+
 mod rank10;
 pub use rank10::*;
 
