@@ -128,15 +128,15 @@ pub struct Block32Counters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 impl Block32Counters<2, 9> {
     #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
-        let packed = unsafe { read_unaligned(ptr::addr_of!(self.relative) as *const usize) };
-        packed >> (9 * (word ^ 7)) & ((1 << 9) - 1)
+        let packed = unsafe { read_unaligned(ptr::addr_of!(self.relative) as *const u64) };
+        (packed >> (9 * (word ^ 7)) & ((1 << 9) - 1)) as usize
     }
 
     #[inline(always)]
     pub fn set_rel(&mut self, word: usize, counter: usize) {
-        let mut packed = unsafe { read_unaligned(ptr::addr_of!(self.relative) as *const usize) };
-        packed |= counter << (9 * (word ^ 7));
-        unsafe { write_unaligned(ptr::addr_of!(self.relative) as *mut usize, packed) };
+        let mut packed = unsafe { read_unaligned(ptr::addr_of!(self.relative) as *const u64) };
+        packed |= (counter as u64) << (9 * (word ^ 7));
+        unsafe { write_unaligned(ptr::addr_of!(self.relative) as *mut u64, packed) };
     }
 }
 
