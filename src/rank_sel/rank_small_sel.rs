@@ -11,40 +11,57 @@ pub struct RankSmallSel<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
     const LOG2_ONES_PER_INVENTORY: usize = 12,
-    const HINT_BIT_SIZE: usize = 64,
-    B: RankHinted<HINT_BIT_SIZE> + SelectHinted + AsRef<[usize]> = BitVec,
-    I: AsRef<[u32]> = Vec<u32>,
+    R = RankSmall<NUM_U32S, COUNTER_WIDTH>,
+    I = Vec<u32>,
 > {
-    pub(super) rank_small: RankSmall<NUM_U32S, COUNTER_WIDTH, HINT_BIT_SIZE, B>,
-    pub(super) inventory: I,
+    rank_small: R,
+    inventory: I,
 }
 
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
         const LOG2_ONES_PER_INVENTORY: usize,
-        const HINT_BIT_SIZE: usize,
-        B: RankHinted<HINT_BIT_SIZE> + SelectHinted + AsRef<[usize]>,
-        I: AsRef<[u32]>,
-    > RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B, I>
+        R,
+        I,
+    > RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, R, I>
 {
-    pub(super) const WORDS_PER_BLOCK: usize =
-        RankSmall::<NUM_U32S, COUNTER_WIDTH, HINT_BIT_SIZE, B>::WORDS_PER_BLOCK;
-    pub(super) const WORDS_PER_SUBBLOCK: usize =
-        RankSmall::<NUM_U32S, COUNTER_WIDTH, HINT_BIT_SIZE, B>::WORDS_PER_SUBBLOCK;
-    pub(super) const BLOCK_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
-    pub(super) const SUBBLOCK_SIZE: usize = (Self::WORDS_PER_SUBBLOCK * usize::BITS as usize);
-    pub(super) const ONES_PER_INVENTORY: usize = 1 << LOG2_ONES_PER_INVENTORY;
+    const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
+    const WORDS_PER_SUBBLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_SUBBLOCK;
+    const BLOCK_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
+    const SUBBLOCK_SIZE: usize = (Self::WORDS_PER_SUBBLOCK * usize::BITS as usize);
+    const ONES_PER_INVENTORY: usize = 1 << LOG2_ONES_PER_INVENTORY;
+}
+
+impl<
+        const NUM_U32S: usize,
+        const COUNTER_WIDTH: usize,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        B,
+        I,
+    > RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
+{
+    pub fn into_inner(self) -> B {
+        self.rank_small
+    }
 }
 
 macro_rules! impl_rank_small_sel {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
-        impl<const LOG2_ONES_PER_INVENTORY: usize>
-            RankSmallSel<$NUM_U32S, $COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY>
+        impl<
+                const LOG2_ONES_PER_INVENTORY: usize,
+                B: RankHinted<64> + BitCount + BitLength + AsRef<[usize]>,
+                C1: AsRef<[usize]>,
+                C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
+            >
+            RankSmallSel<
+                $NUM_U32S,
+                $COUNTER_WIDTH,
+                LOG2_ONES_PER_INVENTORY,
+                RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
+            >
         {
-            pub fn new(bits: BitVec) -> Self {
-                let rank_small = RankSmall::<$NUM_U32S, $COUNTER_WIDTH>::new(bits);
-
+            pub fn new(rank_small: RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>) -> Self {
                 let num_ones = rank_small.bits.count_ones();
 
                 let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY);
@@ -63,7 +80,9 @@ macro_rules! impl_rank_small_sel {
                         let in_word_index = word.select_in_word(next_quantum - curr_num_ones);
                         let index = ((i * usize::BITS as usize) + in_word_index);
 
-                        inventory.push((index - rank_small.upper_counts[upper_counts_idx]) as u32);
+                        inventory.push(
+                            (index - rank_small.upper_counts.as_ref()[upper_counts_idx]) as u32,
+                        );
 
                         next_quantum += Self::ONES_PER_INVENTORY;
                     }
@@ -84,12 +103,13 @@ macro_rules! impl_rank_small_sel {
             }
         }
 
-        impl<
-                const LOG2_ONES_PER_INVENTORY: usize,
-                const HINT_BIT_SIZE: usize,
-                B: RankHinted<HINT_BIT_SIZE> + SelectHinted + Select + BitCount + AsRef<[usize]>,
-            > Select
-            for RankSmallSel<$NUM_U32S, $COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
+        impl<const LOG2_ONES_PER_INVENTORY: usize> Select
+            for RankSmallSel<
+                $NUM_U32S,
+                $COUNTER_WIDTH,
+                LOG2_ONES_PER_INVENTORY,
+                RankSmall<$NUM_U32S, $COUNTER_WIDTH>,
+            >
         {
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
                 let upper_counts_ref =
@@ -191,12 +211,13 @@ macro_rules! impl_rank_small_sel {
         }
 
         /// Forward [`Rank`] to the underlying implementation.
-        impl<
-                const LOG2_ONES_PER_INVENTORY: usize,
-                const HINT_BIT_SIZE: usize,
-                B: RankHinted<HINT_BIT_SIZE> + SelectHinted + BitLength + AsRef<[usize]>,
-            > Rank
-            for RankSmallSel<$NUM_U32S, $COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
+        impl<const LOG2_ONES_PER_INVENTORY: usize> Rank
+            for RankSmallSel<
+                $NUM_U32S,
+                $COUNTER_WIDTH,
+                LOG2_ONES_PER_INVENTORY,
+                RankSmall<$NUM_U32S, $COUNTER_WIDTH>,
+            >
         {
             #[inline(always)]
             unsafe fn rank_unchecked(&self, pos: usize) -> usize {
@@ -222,10 +243,9 @@ impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
         const LOG2_ONES_PER_INVENTORY: usize,
-        const HINT_BIT_SIZE: usize,
-        B: RankHinted<HINT_BIT_SIZE> + SelectHinted + BitCount + AsRef<[usize]>,
-    > BitCount
-    for RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
+        B: BitCount,
+        I,
+    > BitCount for RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
 {
     #[inline(always)]
     fn count_ones(&self) -> usize {
@@ -242,10 +262,9 @@ impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
         const LOG2_ONES_PER_INVENTORY: usize,
-        const HINT_BIT_SIZE: usize,
-        B: RankHinted<HINT_BIT_SIZE> + SelectHinted + AsRef<[usize]>,
-    > BitLength
-    for RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
+        B: BitLength,
+        I,
+    > BitLength for RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -258,10 +277,9 @@ impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
         const LOG2_ONES_PER_INVENTORY: usize,
-        const HINT_BIT_SIZE: usize,
-        B: RankHinted<HINT_BIT_SIZE> + SelectHinted + AsRef<[usize]>,
-    > AsRef<[usize]>
-    for RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
+        B: AsRef<[usize]>,
+        I,
+    > AsRef<[usize]> for RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
 {
     #[inline(always)]
     fn as_ref(&self) -> &[usize] {
@@ -274,10 +292,9 @@ impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
         const LOG2_ONES_PER_INVENTORY: usize,
-        const HINT_BIT_SIZE: usize,
-        B: RankHinted<HINT_BIT_SIZE> + SelectHinted + AsRef<[usize]> + Index<usize, Output = bool>,
-    > Index<usize>
-    for RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, HINT_BIT_SIZE, B>
+        B: Index<usize, Output = bool>,
+        I,
+    > Index<usize> for RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
 {
     type Output = bool;
     #[inline(always)]
@@ -288,13 +305,16 @@ impl<
 }
 
 #[cfg(test)]
-mod test_rank_small_sel {
-    use super::*;
+mod tests {
     use crate::prelude::BitVec;
+    use epserde::deser::DeserializeInner;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
+
+    use super::RankSmallSel;
 
     macro_rules! test_rank_small_sel {
         ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ONES_PER_INVENTORY: literal) => {
+            use $crate::traits::Select;
             let mut rng = SmallRng::seed_from_u64(0);
             let density = 0.5;
             let lens = (1..1000)
@@ -304,7 +324,7 @@ mod test_rank_small_sel {
                 let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
                 let rank_small_sel =
                     RankSmallSel::<$NUM_U32S, $COUNTER_WIDTH, $LOG2_ONES_PER_INVENTORY>::new(
-                        bits.clone(),
+                        $crate::prelude::RankSmall::<$NUM_U32S, $COUNTER_WIDTH>::new(bits.clone()),
                     );
 
                 let ones = bits.count_ones();

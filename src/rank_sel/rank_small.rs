@@ -59,12 +59,9 @@ use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
 pub struct RankSmall<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
-    const HINT_BIT_SIZE: usize = 64,
-    B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]> = BitVec,
-    C1: AsRef<[usize]> = Vec<usize>,
-    C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]> = Vec<
-        Block32Counters<NUM_U32S, COUNTER_WIDTH>,
-    >,
+    B = BitVec,
+    C1 = Vec<usize>,
+    C2 = Vec<Block32Counters<NUM_U32S, COUNTER_WIDTH>>,
 > {
     pub(super) bits: B,
     pub(super) upper_counts: C1,
@@ -210,11 +207,10 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize> Default
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
-        const HINT_BIT_SIZE: usize,
-        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]>,
+        B: RankHinted<64> + AsRef<[usize]>,
         C1: AsRef<[usize]>,
         C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > RankSmall<NUM_U32S, COUNTER_WIDTH, HINT_BIT_SIZE, B, C1, C2>
+    > RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     pub(super) const WORDS_PER_BLOCK: usize = 1 << (COUNTER_WIDTH - usize::BITS.ilog2() as usize);
     pub(super) const WORDS_PER_SUBBLOCK: usize = match NUM_U32S {
@@ -231,7 +227,6 @@ macro_rules! impl_rank_small {
             RankSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
-                64,
                 BitVec,
                 Vec<usize>,
                 Vec<Block32Counters<$NUM_U32S, $COUNTER_WIDTH>>,
@@ -240,9 +235,9 @@ macro_rules! impl_rank_small {
             /// Creates a new RankSmall structure from a given bit vector.
             pub fn new(bits: BitVec) -> Self {
                 let num_bits = bits.len();
-                let num_words = num_bits.div_ceil(usize::BITS as usize);
+                let num_words = num_bits.div_ceil(64 as usize);
                 let num_upper_counts = num_bits.div_ceil(1usize << 32);
-                let num_counts = num_bits.div_ceil(usize::BITS as usize * Self::WORDS_PER_BLOCK);
+                let num_counts = num_bits.div_ceil(64 as usize * Self::WORDS_PER_BLOCK);
 
                 let mut upper_counts = vec![0; num_upper_counts];
                 let mut counts =
@@ -279,11 +274,10 @@ macro_rules! impl_rank_small {
             }
         }
         impl<
-                const HINT_BIT_SIZE: usize,
-                B: RankHinted<HINT_BIT_SIZE> + BitLength + AsRef<[usize]>,
+                B: RankHinted<64> + BitLength + AsRef<[usize]>,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
-            > Rank for RankSmall<$NUM_U32S, $COUNTER_WIDTH, HINT_BIT_SIZE, B, C1, C2>
+            > Rank for RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
         {
             #[inline(always)]
             fn rank(&self, pos: usize) -> usize {
@@ -296,7 +290,7 @@ macro_rules! impl_rank_small {
 
             #[inline(always)]
             unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-                let word_pos = pos / usize::BITS as usize;
+                let word_pos = pos / 64 as usize;
                 let block = word_pos / Self::WORDS_PER_BLOCK;
                 let offset = (word_pos % Self::WORDS_PER_BLOCK) / Self::WORDS_PER_SUBBLOCK;
                 let counts = self.counts.as_ref().get_unchecked(block);
@@ -310,15 +304,13 @@ macro_rules! impl_rank_small {
                     upper_count
                         + counts.absolute as usize
                         + counts.rel(offset)
-                        + (word & ((1 << (pos % usize::BITS as usize)) - 1)).count_ones() as usize
+                        + (word & ((1 << (pos % 64 as usize)) - 1)).count_ones() as usize
                 } else {
                     let hint_rank = upper_count + counts.absolute as usize + counts.rel(offset);
                     let hint_pos =
                         word_pos - ((word_pos % Self::WORDS_PER_BLOCK) % Self::WORDS_PER_SUBBLOCK);
 
-                    RankHinted::<HINT_BIT_SIZE>::rank_hinted_unchecked(
-                        &self.bits, pos, hint_pos, hint_rank,
-                    )
+                    RankHinted::<64>::rank_hinted_unchecked(&self.bits, pos, hint_pos, hint_rank)
                 }
             }
         }
@@ -334,11 +326,10 @@ impl_rank_small!(3; 13);
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
-        const HINT_BIT_SIZE: usize,
-        B: RankHinted<HINT_BIT_SIZE> + BitLength + AsRef<[usize]>,
+        B: RankHinted<64> + BitLength + AsRef<[usize]>,
         C1: AsRef<[usize]>,
         C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > RankSmall<NUM_U32S, COUNTER_WIDTH, HINT_BIT_SIZE, B, C1, C2>
+    > RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     pub fn len(&self) -> usize {
@@ -354,11 +345,10 @@ impl<
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
-        const HINT_BIT_SIZE: usize,
-        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]>,
+        B: RankHinted<64> + AsRef<[usize]>,
         C1: AsRef<[usize]>,
         C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > RankSmall<NUM_U32S, COUNTER_WIDTH, HINT_BIT_SIZE, B, C1, C2>
+    > RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     pub fn into_inner(self) -> B {
         self.bits
@@ -368,11 +358,10 @@ impl<
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
-        const HINT_BIT_SIZE: usize,
-        B: RankHinted<HINT_BIT_SIZE> + BitLength + AsRef<[usize]>,
+        B: RankHinted<64> + BitLength + AsRef<[usize]>,
         C1: AsRef<[usize]>,
         C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > BitCount for RankSmall<NUM_U32S, COUNTER_WIDTH, HINT_BIT_SIZE, B, C1, C2>
+    > BitCount for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn count_ones(&self) -> usize {
@@ -384,11 +373,10 @@ impl<
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
-        const HINT_BIT_SIZE: usize,
-        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]> + BitLength,
+        B: RankHinted<64> + AsRef<[usize]> + BitLength,
         C1: AsRef<[usize]>,
         C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > BitLength for RankSmall<NUM_U32S, COUNTER_WIDTH, HINT_BIT_SIZE, B, C1, C2>
+    > BitLength for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -400,11 +388,10 @@ impl<
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
-        const HINT_BIT_SIZE: usize,
-        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]>,
+        B: RankHinted<64> + AsRef<[usize]>,
         C1: AsRef<[usize]>,
         C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > AsRef<[usize]> for RankSmall<NUM_U32S, COUNTER_WIDTH, HINT_BIT_SIZE, B, C1, C2>
+    > AsRef<[usize]> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn as_ref(&self) -> &[usize] {
@@ -416,11 +403,10 @@ impl<
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
-        const HINT_BIT_SIZE: usize,
-        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]> + Index<usize, Output = bool>,
+        B: RankHinted<64> + AsRef<[usize]> + Index<usize, Output = bool>,
         C1: AsRef<[usize]>,
         C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > Index<usize> for RankSmall<NUM_U32S, COUNTER_WIDTH, HINT_BIT_SIZE, B, C1, C2>
+    > Index<usize> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     type Output = bool;
 
