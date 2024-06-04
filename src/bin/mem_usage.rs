@@ -36,15 +36,27 @@ impl Struct for Rank9 {
     }
 }
 
-impl Struct for RankSmall<1, 11> {
-    fn build(bits: BitVec) -> Self {
-        RankSmall::<1, 11>::new(bits)
-    }
-}
-
 impl Struct for RankSmall<2, 9> {
     fn build(bits: BitVec) -> Self {
         RankSmall::<2, 9>::new(bits)
+    }
+}
+
+impl Struct for RankSmall<1, 9> {
+    fn build(bits: BitVec) -> Self {
+        RankSmall::<1, 9>::new(bits)
+    }
+}
+
+impl Struct for RankSmall<1, 10> {
+    fn build(bits: BitVec) -> Self {
+        RankSmall::<1, 10>::new(bits)
+    }
+}
+
+impl Struct for RankSmall<1, 11> {
+    fn build(bits: BitVec) -> Self {
+        RankSmall::<1, 11>::new(bits)
     }
 }
 
@@ -57,9 +69,11 @@ impl Struct for RankSmall<3, 13> {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 enum StructType {
     Rank9,
+    RankSmall0,
     RankSmall1,
     RankSmall2,
     RankSmall3,
+    RankSmall4,
     Simpleselect,
     Select9,
 }
@@ -134,14 +148,20 @@ fn main() {
         StructType::Rank9 => {
             mem_usage::<Rank9>(cli.len, cli.density, uniform, "Rank9");
         }
+        StructType::RankSmall0 => {
+            mem_usage::<RankSmall<2, 9>>(cli.len, cli.density, uniform, "RankSmall0");
+        }
         StructType::RankSmall1 => {
-            mem_usage::<RankSmall<1, 11>>(cli.len, cli.density, uniform, "RankSmall<1>");
+            mem_usage::<RankSmall<1, 9>>(cli.len, cli.density, uniform, "RankSmall1");
         }
         StructType::RankSmall2 => {
-            mem_usage::<RankSmall<2, 9>>(cli.len, cli.density, uniform, "RankSmall<2>");
+            mem_usage::<RankSmall<1, 10>>(cli.len, cli.density, uniform, "RankSmall2");
         }
         StructType::RankSmall3 => {
-            mem_usage::<RankSmall<3, 13>>(cli.len, cli.density, uniform, "RankSmall<3>");
+            mem_usage::<RankSmall<1, 11>>(cli.len, cli.density, uniform, "RankSmall3");
+        }
+        StructType::RankSmall4 => {
+            mem_usage::<RankSmall<3, 13>>(cli.len, cli.density, uniform, "RankSmall4");
         }
     }
 }

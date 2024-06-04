@@ -18,13 +18,19 @@ use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
 
 #[macro_export]
 macro_rules! rank_small {
-    (9 , $bits: expr) => {
+    (0 , $bits: expr) => {
         RankSmall::<2, 9>::new($bits)
     };
-    (11 , $bits: expr) => {
+    (1 , $bits: expr) => {
+        RankSmall::<1, 9>::new($bits)
+    };
+    (2 , $bits: expr) => {
+        RankSmall::<1, 10>::new($bits)
+    };
+    (3 , $bits: expr) => {
         RankSmall::<1, 11>::new($bits)
     };
-    (13 , $bits: expr) => {
+    (4 , $bits: expr) => {
         RankSmall::<3, 13>::new($bits)
     };
 }
@@ -94,19 +100,6 @@ pub struct RankSmall<
 pub struct Block32Counters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     pub(super) absolute: u32,
     pub(super) relative: [u32; NUM_U32S],
-    _marker: core::marker::PhantomData<[u8; COUNTER_WIDTH]>,
-}
-
-impl Block32Counters<1, 11> {
-    #[inline(always)]
-    pub fn rel(&self, word: usize) -> usize {
-        self.relative[0] as usize >> (11 * (word ^ 3)) & ((1 << 11) - 1)
-    }
-
-    #[inline(always)]
-    pub fn set_rel(&mut self, word: usize, counter: usize) {
-        self.relative[0] |= (counter as u32) << (11 * (word ^ 3));
-    }
 }
 
 impl Block32Counters<2, 9> {
@@ -121,6 +114,42 @@ impl Block32Counters<2, 9> {
         let mut packed = unsafe { read(&self.relative as *const [u32; 2] as *const usize) };
         packed |= counter << (9 * (word ^ 7));
         self.relative = unsafe { read(&packed as *const usize as *const [u32; 2]) };
+    }
+}
+
+impl Block32Counters<1, 9> {
+    #[inline(always)]
+    pub fn rel(&self, word: usize) -> usize {
+        self.relative[0] as usize >> (9 * (word ^ 3)) & ((1 << 9) - 1)
+    }
+
+    #[inline(always)]
+    pub fn set_rel(&mut self, word: usize, counter: usize) {
+        self.relative[0] |= (counter as u32) << (9 * (word ^ 3));
+    }
+}
+
+impl Block32Counters<1, 10> {
+    #[inline(always)]
+    pub fn rel(&self, word: usize) -> usize {
+        self.relative[0] as usize >> (10 * (word ^ 3)) & ((1 << 10) - 1)
+    }
+
+    #[inline(always)]
+    pub fn set_rel(&mut self, word: usize, counter: usize) {
+        self.relative[0] |= (counter as u32) << (10 * (word ^ 3));
+    }
+}
+
+impl Block32Counters<1, 11> {
+    #[inline(always)]
+    pub fn rel(&self, word: usize) -> usize {
+        self.relative[0] as usize >> (11 * (word ^ 3)) & ((1 << 11) - 1)
+    }
+
+    #[inline(always)]
+    pub fn set_rel(&mut self, word: usize, counter: usize) {
+        self.relative[0] |= (counter as u32) << (11 * (word ^ 3));
     }
 }
 
@@ -148,7 +177,6 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize> Default
         Self {
             absolute: 0,
             relative: [0; NUM_U32S],
-            _marker: core::marker::PhantomData,
         }
     }
 }
@@ -271,8 +299,10 @@ macro_rules! impl_rank_small {
     };
 }
 
-impl_rank_small!(1, 11);
 impl_rank_small!(2, 9);
+impl_rank_small!(1, 9);
+impl_rank_small!(1, 10);
+impl_rank_small!(1, 11);
 impl_rank_small!(3, 13);
 
 impl<
@@ -380,128 +410,96 @@ mod test_rank_small {
     use crate::prelude::*;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
-    #[test]
-    fn test_rank_small9() {
-        let mut rng = SmallRng::seed_from_u64(0);
-        let lens = (1..1000)
-            .chain((10_000..100_000).step_by(1000))
-            .chain((100_000..1_000_000).step_by(100_000));
-        let density = 0.5;
-        for len in lens {
-            let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let rank_small = rank_small![9, bits.clone()];
+    macro_rules! test_rank_small {
+        ($n: tt) => {
+            let mut rng = SmallRng::seed_from_u64(0);
+            let lens = (1..1000)
+                .chain((10_000..100_000).step_by(1000))
+                .chain((100_000..1_000_000).step_by(100_000));
+            let density = 0.5;
+            for len in lens {
+                let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+                let rank_small = rank_small![$n, bits.clone()];
 
-            let mut ranks = Vec::with_capacity(len);
-            let mut r = 0;
-            for bit in bits.into_iter() {
-                ranks.push(r);
-                if bit {
-                    r += 1;
+                let mut ranks = Vec::with_capacity(len);
+                let mut r = 0;
+                for bit in bits.into_iter() {
+                    ranks.push(r);
+                    if bit {
+                        r += 1;
+                    }
                 }
-            }
 
-            for i in 0..bits.len() {
-                assert_eq!(
-                    rank_small.rank(i),
-                    ranks[i],
-                    "i = {}, len = {}, left = {}, right = {}",
-                    i,
-                    len,
-                    rank_small.rank(i),
-                    ranks[i]
-                );
+                for i in 0..bits.len() {
+                    assert_eq!(
+                        rank_small.rank(i),
+                        ranks[i],
+                        "i = {}, len = {}, left = {}, right = {}",
+                        i,
+                        len,
+                        rank_small.rank(i),
+                        ranks[i]
+                    );
+                }
+                assert_eq!(rank_small.rank(bits.len() + 1), bits.count_ones());
             }
-            assert_eq!(rank_small.rank(bits.len() + 1), bits.count_ones());
-        }
+        };
     }
 
     #[test]
-    fn test_rank_small11() {
-        let mut rng = SmallRng::seed_from_u64(0);
-        let lens = (1..1000)
-            .chain((10_000..100_000).step_by(1000))
-            .chain((100_000..1_000_000).step_by(100_000));
-        let density = 0.5;
-        for len in lens {
-            let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let rank_small = rank_small![11, bits.clone()];
-
-            let mut ranks = Vec::with_capacity(len);
-            let mut r = 0;
-            for bit in bits.into_iter() {
-                ranks.push(r);
-                if bit {
-                    r += 1;
-                }
-            }
-
-            for i in 0..bits.len() {
-                assert_eq!(
-                    rank_small.rank(i),
-                    ranks[i],
-                    "i = {}, len = {}, left = {}, right = {}",
-                    i,
-                    len,
-                    rank_small.rank(i),
-                    ranks[i]
-                );
-            }
-            assert_eq!(rank_small.rank(bits.len() + 1), bits.count_ones());
-        }
+    fn test_rank_small0() {
+        test_rank_small![0];
     }
 
     #[test]
-    fn test_rank_small13() {
-        let mut rng = SmallRng::seed_from_u64(0);
-        let lens = (1..1000)
-            .chain((10_000..100_000).step_by(1000))
-            .chain((100_000..1_000_000).step_by(100_000));
-        let density = 0.5;
-        for len in lens {
-            let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let rank_small = rank_small![13, bits.clone()];
+    fn test_rank_small1() {
+        test_rank_small![1];
+    }
 
-            let mut ranks = Vec::with_capacity(len);
-            let mut r = 0;
-            for bit in bits.into_iter() {
-                ranks.push(r);
-                if bit {
-                    r += 1;
-                }
-            }
+    #[test]
+    fn test_rank_small2() {
+        test_rank_small![2];
+    }
 
-            for i in 0..bits.len() {
-                assert_eq!(
-                    rank_small.rank(i),
-                    ranks[i],
-                    "i = {}, len = {}, left = {}, right = {}",
-                    i,
-                    len,
-                    rank_small.rank(i),
-                    ranks[i]
-                );
-            }
-            assert_eq!(rank_small.rank(bits.len() + 1), bits.count_ones());
-        }
+    #[test]
+    fn test_rank_small3() {
+        test_rank_small![3];
+    }
+
+    #[test]
+    fn test_rank_small4() {
+        test_rank_small![4];
     }
 
     #[test]
     fn test_last() {
         let bits = unsafe { BitVec::from_raw_parts(vec![!1usize; 1 << 10], (1 << 10) * 64) };
 
-        let rank_small = rank_small![9, bits.clone()];
+        let rank_small = rank_small![0, bits.clone()];
         assert_eq!(
             rank_small.rank(rank_small.len()),
             rank_small.bits.count_ones()
         );
 
-        let rank_small = rank_small![11, bits.clone()];
+        let rank_small = rank_small![1, bits.clone()];
         assert_eq!(
             rank_small.rank(rank_small.len()),
             rank_small.bits.count_ones()
         );
 
-        let rank_small = rank_small![13, bits.clone()];
+        let rank_small = rank_small![2, bits.clone()];
+        assert_eq!(
+            rank_small.rank(rank_small.len()),
+            rank_small.bits.count_ones()
+        );
+
+        let rank_small = rank_small![3, bits.clone()];
+        assert_eq!(
+            rank_small.rank(rank_small.len()),
+            rank_small.bits.count_ones()
+        );
+
+        let rank_small = rank_small![4, bits.clone()];
         assert_eq!(
             rank_small.rank(rank_small.len()),
             rank_small.bits.count_ones()
