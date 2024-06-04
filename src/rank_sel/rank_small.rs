@@ -103,20 +103,20 @@ pub struct RankSmall<
 
 #[macro_export]
 macro_rules! rank_small {
-    (0 , $bits: expr) => {
-        sux::prelude::RankSmall::<2, 9>::new($bits)
+    (0 ; $bits: expr) => {
+        $crate::prelude::RankSmall::<2, 9>::new($bits)
     };
-    (1 , $bits: expr) => {
-        sux::prelude::RankSmall::<1, 9>::new($bits)
+    (1 ; $bits: expr) => {
+        $crate::prelude::RankSmall::<1, 9>::new($bits)
     };
-    (2 , $bits: expr) => {
-        sux::prelude::RankSmall::<1, 10>::new($bits)
+    (2 ; $bits: expr) => {
+        $crate::prelude::RankSmall::<1, 10>::new($bits)
     };
-    (3 , $bits: expr) => {
-        sux::prelude::RankSmall::<1, 11>::new($bits)
+    (3 ; $bits: expr) => {
+        $crate::prelude::RankSmall::<1, 11>::new($bits)
     };
-    (4 , $bits: expr) => {
-        sux::prelude::RankSmall::<3, 13>::new($bits)
+    (4 ; $bits: expr) => {
+        $crate::prelude::RankSmall::<3, 13>::new($bits)
     };
 }
 
@@ -226,7 +226,7 @@ impl<
 }
 
 macro_rules! impl_rank_small {
-    ($NUM_U32S: literal, $COUNTER_WIDTH: literal) => {
+    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         impl
             RankSmall<
                 $NUM_U32S,
@@ -325,11 +325,11 @@ macro_rules! impl_rank_small {
     };
 }
 
-impl_rank_small!(2, 9);
-impl_rank_small!(1, 9);
-impl_rank_small!(1, 10);
-impl_rank_small!(1, 11);
-impl_rank_small!(3, 13);
+impl_rank_small!(2; 9);
+impl_rank_small!(1; 9);
+impl_rank_small!(1; 10);
+impl_rank_small!(1; 11);
+impl_rank_small!(3; 13);
 
 impl<
         const NUM_U32S: usize,
@@ -428,5 +428,45 @@ impl<
     fn index(&self, index: usize) -> &Self::Output {
         // TODO: why is & necessary?
         &self.bits[index]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_last() {
+        let bits = unsafe { BitVec::from_raw_parts(vec![!1usize; 1 << 10], (1 << 10) * 64) };
+
+        let rank_small = rank_small![0; bits.clone()];
+        assert_eq!(
+            rank_small.rank(rank_small.len()),
+            rank_small.bits.count_ones()
+        );
+
+        let rank_small = rank_small![1; bits.clone()];
+        assert_eq!(
+            rank_small.rank(rank_small.len()),
+            rank_small.bits.count_ones()
+        );
+
+        let rank_small = rank_small![2; bits.clone()];
+        assert_eq!(
+            rank_small.rank(rank_small.len()),
+            rank_small.bits.count_ones()
+        );
+
+        let rank_small = rank_small![3; bits.clone()];
+        assert_eq!(
+            rank_small.rank(rank_small.len()),
+            rank_small.bits.count_ones()
+        );
+
+        let rank_small = rank_small![4; bits.clone()];
+        assert_eq!(
+            rank_small.rank(rank_small.len()),
+            rank_small.bits.count_ones()
+        );
     }
 }
