@@ -48,7 +48,7 @@ use crate::prelude::{BitCount, BitLength, BitVec, Rank};
 /// assert_eq!(rank9.rank(8), 5);
 /// ```
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct Rank9<B: AsRef<[usize]> = BitVec, C: AsRef<[BlockCounters]> = Vec<BlockCounters>> {
+pub struct Rank9<B = BitVec, C = Vec<BlockCounters>> {
     pub(super) bits: B,
     pub(super) counts: C,
 }
@@ -116,7 +116,7 @@ impl Rank9<BitVec, Vec<BlockCounters>> {
     }
 }
 
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>> Rank9<B, C> {
+impl<B, C> Rank9<B, C> {
     pub fn into_inner(self) -> B {
         self.bits
     }
