@@ -20,7 +20,7 @@ macro_rules! test_rank_small {
         let density = 0.5;
         for len in lens {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let rank_small = rank_small![$n, bits.clone()];
+            let rank_small = rank_small![$n; bits.clone()];
 
             let mut ranks = Vec::with_capacity(len);
             let mut r = 0;
@@ -71,40 +71,3 @@ fn test_rank_small3() {
 fn test_rank_small4() {
     test_rank_small![4];
 }
-
-/* TODO: fix after traitification of BitVec
-#[test]
-fn test_last() {
-    let bits = unsafe { BitVec::from_raw_parts(vec![!1usize; 1 << 10], (1 << 10) * 64) };
-
-    let rank_small = rank_small![0, bits.clone()];
-    assert_eq!(
-        rank_small.rank(rank_small.len()),
-        rank_small.bits.count_ones()
-    );
-
-    let rank_small = rank_small![1, bits.clone()];
-    assert_eq!(
-        rank_small.rank(rank_small.len()),
-        rank_small.bits.count_ones()
-    );
-
-    let rank_small = rank_small![2, bits.clone()];
-    assert_eq!(
-        rank_small.rank(rank_small.len()),
-        rank_small.bits.count_ones()
-    );
-
-    let rank_small = rank_small![3, bits.clone()];
-    assert_eq!(
-        rank_small.rank(rank_small.len()),
-        rank_small.bits.count_ones()
-    );
-
-    let rank_small = rank_small![4, bits.clone()];
-    assert_eq!(
-        rank_small.rank(rank_small.len()),
-        rank_small.bits.count_ones()
-    );
-}
-*/
