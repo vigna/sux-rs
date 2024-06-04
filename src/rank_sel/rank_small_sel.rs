@@ -306,7 +306,7 @@ impl<
 
 #[cfg(test)]
 mod tests {
-    use crate::prelude::BitVec;
+    use crate::{bit_vec, prelude::BitVec};
     use epserde::deser::DeserializeInner;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
