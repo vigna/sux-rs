@@ -29,6 +29,42 @@ macro_rules! rank_small {
     };
 }
 
+/// A family of ranking structures using very little additional space but with
+/// slower operations than [`Rank9`].
+///
+/// [`RankSmall`] structures combine two ideas from [`Rank9`], that is, the
+/// interleaving of absolute and relative counters and the storage of implicit
+/// counters using zero extension, and a design trick from from
+/// [cs-poppy](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15),
+/// that is, that the structures are actually designed around bit vectors of at
+/// most 2³² bits. This allows the use of 32-bit counters, which use less space,
+/// at the expense of a high-level additional list of 64-bit counters that
+/// contain the actual absolute cumulative counts for each block of 2³² bits.
+/// Since in most applications these counters will be very few, their additional
+/// space in neglibigle, and they will usually accessed without cache misses.
+///
+/// The [`RankSmall`] variants are parameterized by the number of 32-bit
+/// word per block and by the size of the relative counters. Only certain combinations
+/// are possible, and to simplify construction we provide a [`rank_small`] macro that
+/// selects the correct combination given the size of the relative counters.
+///
+/// Presently we support the following combinations:
+///
+/// - `rank_small![9; -]` (building `RankSmall<2, 9>`): 18.75% additional space,
+///   speed slightly slower than [`Rank9`].
+/// - `rank_small![9; -]` (building `RankSmall<1, 9>`): 12.5% additional space.
+/// - `rank_small![10; -]` (building `RankSmall<1, 10>`): 6.25% additional space.
+/// - `rank_small![11; -]` (building `RankSmall<1, 11>`): 3.125% additional space.
+/// - `rank_small![13; -]` (building `RankSmall<3, 13>`): 1.56% additional space.
+///
+/// The first structure is a space-savvy version of [`Rank9`], while the other
+/// three provide increasing less space usage at the expense of slower operations.
+///
+/// `RankSmall<1, 11>` is similar to `cs-poppy` but instead of storing counters
+/// and rebuilding cumulative counters on the fly it stores the cumulative
+/// counters directly using implicit zero extension, as in [`Rank9`].
+///
+
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct RankSmall<
     const NUM_U32S: usize,
