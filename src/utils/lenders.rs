@@ -38,6 +38,7 @@ use std::{
     io::{self, Read, Seek},
     path::Path,
 };
+#[cfg(feature = "zstd")]
 use zstd::stream::read::Decoder;
 
 /**
@@ -135,11 +136,13 @@ grows as needed.
 
 */
 
+#[cfg(feature = "zstd")]
 pub struct ZstdLineLender<R: Read> {
     buf: BufReader<Decoder<'static, BufReader<R>>>,
     line: String,
 }
 
+#[cfg(feature = "zstd")]
 impl<R: Read> ZstdLineLender<R> {
     pub fn new(read: R) -> io::Result<Self> {
         Ok(ZstdLineLender {
@@ -149,6 +152,7 @@ impl<R: Read> ZstdLineLender<R> {
     }
 }
 
+#[cfg(feature = "zstd")]
 impl ZstdLineLender<BufReader<Decoder<'static, BufReader<File>>>> {
     pub fn from_path(path: impl AsRef<Path>) -> io::Result<ZstdLineLender<File>> {
         ZstdLineLender::new(File::open(path)?)
@@ -159,16 +163,19 @@ impl ZstdLineLender<BufReader<Decoder<'static, BufReader<File>>>> {
     }
 }
 
+#[cfg(feature = "zstd")]
 impl<'lend, R: Read> Lending<'lend> for ZstdLineLender<R> {
     type Lend = io::Result<&'lend str>;
 }
 
+#[cfg(feature = "zstd")]
 impl<R: Read> Lender for ZstdLineLender<R> {
     fn next(&mut self) -> Option<<Self as Lending<'_>>::Lend> {
         next(&mut self.buf, &mut self.line)
     }
 }
 
+#[cfg(feature = "zstd")]
 impl<R: Read + Seek> RewindableIOLender<str> for ZstdLineLender<R> {
     type Error = io::Error;
     fn rewind(mut self) -> io::Result<Self> {
@@ -202,7 +209,7 @@ impl<R: Read> GzipLineLender<R> {
     }
 }
 
-impl GzipLineLender<BufReader<Decoder<'static, BufReader<File>>>> {
+impl GzipLineLender<BufReader<GzDecoder<BufReader<File>>>> {
     pub fn from_path(path: impl AsRef<Path>) -> io::Result<GzipLineLender<File>> {
         GzipLineLender::new(File::open(path)?)
     }

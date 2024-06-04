@@ -29,14 +29,24 @@ fn test_negative_redundancy() {
 }
 
 #[test]
-fn test_rear_coded_list() -> Result<()> {
-    let words = BufReader::new(std::fs::File::open("tests/data/wordlist.10000").unwrap())
+fn test_rear_coded_list_100() -> Result<()> {
+    test_rear_coded_list("tests/data/wordlist.100")
+}
+
+#[cfg(feature = "slow")]
+#[test]
+fn test_rear_coded_list_10000() -> Result<()> {
+    test_rear_coded_list("tests/data/wordlist.10000")
+}
+
+fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
+    let words = BufReader::new(std::fs::File::open(path.as_ref()).unwrap())
         .lines()
         .map(|line| line.unwrap())
         .collect::<Vec<_>>();
 
     // create a new rca with u16 as pointers (this limit data to u16::MAX bytes max size)
-    let mut rcab = <RearCodedListBuilder>::new(8);
+    let mut rcab = <RearCodedListBuilder>::new(4);
     rcab.extend(words.iter());
 
     rcab.print_stats();
