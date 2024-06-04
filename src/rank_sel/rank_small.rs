@@ -60,15 +60,13 @@ macro_rules! rank_small {
 /// - `rank_small![0; -]` (building `RankSmall<2, 9>`): 18.75% additional space,
 ///   speed slightly slower than [`Rank9`](super::Rank9).
 /// - `rank_small![1; -]` (building `RankSmall<1, 9>`): 12.5% additional space.
-/// - `rank_small![2; -]` (building `RankSmall<1, 10>`): 6.25% additional
-///   space.
+/// - `rank_small![2; -]` (building `RankSmall<1, 10>`): 6.25% additional space.
 /// - `rank_small![3; -]` (building `RankSmall<1, 11>`): 3.125% additional
 ///   space.
-/// - `rank_small![4; -]` (building `RankSmall<3, 13>`): 1.56% additional
-///   space.
+/// - `rank_small![4; -]` (building `RankSmall<3, 13>`): 1.56% additional space.
 ///
 /// The first structure is a space-savvy version of [`Rank9`](super::Rank9),
-/// while the other three provide increasing less space usage at the expense of
+/// while the other ones provide increasing less space usage at the expense of
 /// slower operations.
 ///
 /// `RankSmall<1, 11>` is similar to `cs-poppy` but instead of storing counters
