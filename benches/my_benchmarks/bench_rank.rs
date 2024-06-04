@@ -38,15 +38,27 @@ impl RankStruct for Rank11 {
     }
 }
 
-impl RankStruct for RankSmall<1, 11> {
-    fn new(bits: BitVec) -> Self {
-        RankSmall::<1, 11>::new(bits)
-    }
-}
-
 impl RankStruct for RankSmall<2, 9> {
     fn new(bits: BitVec) -> Self {
         RankSmall::<2, 9>::new(bits)
+    }
+}
+
+impl RankStruct for RankSmall<1, 9> {
+    fn new(bits: BitVec) -> Self {
+        RankSmall::<1, 9>::new(bits)
+    }
+}
+
+impl RankStruct for RankSmall<1, 10> {
+    fn new(bits: BitVec) -> Self {
+        RankSmall::<1, 10>::new(bits)
+    }
+}
+
+impl RankStruct for RankSmall<1, 11> {
+    fn new(bits: BitVec) -> Self {
+        RankSmall::<1, 11>::new(bits)
     }
 }
 
@@ -101,22 +113,36 @@ pub fn bench_rank11(c: &mut Criterion) {
     bench_group.finish();
 }
 
-pub fn bench_rank_small9(c: &mut Criterion) {
-    let name = format!("rank_small_9");
+pub fn bench_rank_small0(c: &mut Criterion) {
+    let name = format!("rank_small_0");
     let mut group = c.benchmark_group(name);
     bench_rank::<RankSmall<2, 9>>(&mut group, &LENS, &DENSITIES, REPS);
     group.finish();
 }
 
-pub fn bench_rank_small11(c: &mut Criterion) {
-    let name = format!("rank_small_11");
+pub fn bench_rank_small1(c: &mut Criterion) {
+    let name = format!("rank_small_1");
+    let mut group = c.benchmark_group(name);
+    bench_rank::<RankSmall<1, 9>>(&mut group, &LENS, &DENSITIES, REPS);
+    group.finish();
+}
+
+pub fn bench_rank_small2(c: &mut Criterion) {
+    let name = format!("rank_small_2");
+    let mut group = c.benchmark_group(name);
+    bench_rank::<RankSmall<1, 10>>(&mut group, &LENS, &DENSITIES, REPS);
+    group.finish();
+}
+
+pub fn bench_rank_small3(c: &mut Criterion) {
+    let name = format!("rank_small_3");
     let mut group = c.benchmark_group(name);
     bench_rank::<RankSmall<1, 11>>(&mut group, &LENS, &DENSITIES, REPS);
     group.finish();
 }
 
-pub fn bench_rank_small13(c: &mut Criterion) {
-    let name = format!("rank_small_13");
+pub fn bench_rank_small4(c: &mut Criterion) {
+    let name = format!("rank_small_4");
     let mut group = c.benchmark_group(name);
     bench_rank::<RankSmall<3, 13>>(&mut group, &LENS, &DENSITIES, REPS);
     group.finish();

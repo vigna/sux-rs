@@ -29,9 +29,11 @@ fn main() {
         "rank" => {
             bench_rank9(&mut criterion);
             bench_rank11(&mut criterion);
-            bench_rank_small9(&mut criterion);
-            bench_rank_small11(&mut criterion);
-            bench_rank_small13(&mut criterion);
+            bench_rank_small0(&mut criterion);
+            bench_rank_small1(&mut criterion);
+            bench_rank_small2(&mut criterion);
+            bench_rank_small3(&mut criterion);
+            bench_rank_small4(&mut criterion);
         }
         "simple" => {
             bench_simple_select(&mut criterion, true);
