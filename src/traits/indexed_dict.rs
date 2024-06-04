@@ -184,6 +184,10 @@ where
     ) -> (usize, Self::Output);
 }
 
+/*
+
+ALERT: this seems to generate a lot of ambiguity. Temporarily removed.
+
 impl<T: ToOwned, S: ?Sized + Deref<Target = [T]>> IndexedDict for S
 where
     T::Owned: PartialEq<T> + PartialEq,
@@ -199,3 +203,4 @@ where
         self.deref().len()
     }
 }
+*/
