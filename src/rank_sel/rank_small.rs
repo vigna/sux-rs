@@ -6,34 +6,14 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use epserde::*;
+use mem_dbg::*;
 use std::{
     ops::Index,
     ptr::{self, read, read_unaligned},
 };
 
-use epserde::*;
-use mem_dbg::*;
-
 use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
-
-#[macro_export]
-macro_rules! rank_small {
-    (0 , $bits: expr) => {
-        RankSmall::<2, 9>::new($bits)
-    };
-    (1 , $bits: expr) => {
-        RankSmall::<1, 9>::new($bits)
-    };
-    (2 , $bits: expr) => {
-        RankSmall::<1, 10>::new($bits)
-    };
-    (3 , $bits: expr) => {
-        RankSmall::<1, 11>::new($bits)
-    };
-    (4 , $bits: expr) => {
-        RankSmall::<3, 13>::new($bits)
-    };
-}
 
 /// A family of ranking structures using very little additional space but with
 /// slower operations than [`Rank9`](super::Rank9).
@@ -41,7 +21,7 @@ macro_rules! rank_small {
 /// [`RankSmall`] structures combine two ideas from [`Rank9`](super::Rank9),
 /// that is, the interleaving of absolute and relative counters and the storage
 /// of implicit counters using zero extension, and a design trick from from
-/// [cs-poppy](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15),
+/// [poppy](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15),
 /// that is, that the structures are actually designed around bit vectors of at
 /// most 2³² bits. This allows the use of 32-bit counters, which use less space,
 /// at the expense of a high-level additional list of 64-bit counters that
@@ -69,7 +49,7 @@ macro_rules! rank_small {
 /// while the other ones provide increasing less space usage at the expense of
 /// slower operations.
 ///
-/// `RankSmall<1, 11>` is similar to `cs-poppy` but instead of storing counters
+/// `RankSmall<1, 11>` is similar to `poppy`, but instead of storing counters
 /// and rebuilding cumulative counters on the fly it stores the cumulative
 /// counters directly using implicit zero extension, as in
 /// [`Rank9`](super::Rank9).
@@ -90,6 +70,54 @@ pub struct RankSmall<
     pub(super) upper_counts: C1,
     pub(super) counts: C2,
     pub(super) num_ones: usize,
+}
+
+/// A convenient macro to build a [`RankSmall`] structure with the correct
+/// parameters.
+///
+/// - `rank_small![0; -]` (builds `RankSmall<2, 9>`): 18.75% additional space,
+///   speed slightly slower than [`Rank9`](super::Rank9).
+/// - `rank_small![1; -]` (builds `RankSmall<1, 9>`): 12.5% additional space.
+/// - `rank_small![2; -]` (builds `RankSmall<1, 10>`): 6.25% additional space.
+/// - `rank_small![3; -]` (builds `RankSmall<1, 11>`): 3.125% additional
+///   space.
+/// - `rank_small![4; -]` (builds `RankSmall<3, 13>`): 1.56% additional space.
+///
+/// # Examples
+///
+/// ```rust
+/// use sux::{prelude::Rank,bit_vec,rank_small};
+/// let bv = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let rank_small = rank_small![0, bv];
+///
+/// assert_eq!(rank_small.rank(0), 0);
+/// assert_eq!(rank_small.rank(1), 1);
+/// assert_eq!(rank_small.rank(2), 1);
+/// assert_eq!(rank_small.rank(3), 2);
+/// assert_eq!(rank_small.rank(4), 3);
+/// assert_eq!(rank_small.rank(5), 3);
+/// assert_eq!(rank_small.rank(6), 4);
+/// assert_eq!(rank_small.rank(7), 4);
+/// assert_eq!(rank_small.rank(8), 5);
+/// ```
+
+#[macro_export]
+macro_rules! rank_small {
+    (0 , $bits: expr) => {
+        sux::prelude::RankSmall::<2, 9>::new($bits)
+    };
+    (1 , $bits: expr) => {
+        sux::prelude::RankSmall::<1, 9>::new($bits)
+    };
+    (2 , $bits: expr) => {
+        sux::prelude::RankSmall::<1, 10>::new($bits)
+    };
+    (3 , $bits: expr) => {
+        sux::prelude::RankSmall::<1, 11>::new($bits)
+    };
+    (4 , $bits: expr) => {
+        sux::prelude::RankSmall::<3, 13>::new($bits)
+    };
 }
 
 #[derive(Epserde, Copy, Debug, Clone, MemDbg, MemSize)]
@@ -404,8 +432,8 @@ impl<
 }
 
 #[cfg(test)]
-mod test_rank_small {
-    use crate::prelude::*;
+mod tests {
+    use super::*;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     macro_rules! test_rank_small {

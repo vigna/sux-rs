@@ -73,38 +73,38 @@ pub struct BitVec<B = Vec<usize>> {
 
 #[macro_export]
 macro_rules! bit_vec {
-    () => (
+    () => {
         sux::prelude::BitVec::new(0)
-    );
-    (false; $n:expr) => (
+    };
+    (false; $n:expr) => {
         sux::prelude::BitVec::new($n)
-    );
-    (0; $n:expr) => (
+    };
+    (0; $n:expr) => {
         sux::prelude::BitVec::new($n)
-    );
-    (true; $n:expr) => (
+    };
+    (true; $n:expr) => {
         // TODO: improve using Matteo's constructors
         {
             let mut b = sux::prelude::BitVec::new($n);
             b.fill(true);
             b
         }
-    );
-    (1; $n:expr) => (
+    };
+    (1; $n:expr) => {
         // TODO: improve using Matteo's constructors
         {
             let mut b = sux::prelude::BitVec::new($n);
             b.fill(true);
             b
         }
-    );
-    ($($x:expr),+ $(,)?) => (
+    };
+    ($($x:expr),+ $(,)?) => {
         {
             let mut b = sux::prelude::BitVec::with_capacity([$($x),+].len());
             $( b.push($x != 0); )*
             b
         }
-    );
+    };
 }
 
 #[derive(Debug, Clone, MemDbg, MemSize)]
