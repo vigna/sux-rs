@@ -11,9 +11,12 @@ Basic traits for succinct operations on bit vectors, including [`Rank`] and [`Se
 
 */
 
+use ambassador::delegatable_trait;
+
 /// A trait for succinct data structures that expose the
 /// length of the underlying bit vector.
 #[allow(clippy::len_without_is_empty)]
+#[delegatable_trait]
 pub trait BitLength {
     /// Return the length in bits of the underlying bit vector.
     fn len(&self) -> usize;

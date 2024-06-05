@@ -12,7 +12,7 @@ use sux::{
 trait Struct {
     fn build(bits: BitVec) -> Self;
 }
-impl Struct for SimpleSelect {
+impl Struct for SimpleSelect<BitVec> {
     fn build(bits: BitVec) -> Self {
         SimpleSelect::new(bits, 3)
     }
@@ -140,7 +140,7 @@ fn main() {
 
     match cli.sel_type {
         StructType::Simpleselect => {
-            mem_usage::<SimpleSelect>(cli.len, cli.density, uniform, "SimpleSelect");
+            mem_usage::<SimpleSelect<_>>(cli.len, cli.density, uniform, "SimpleSelect");
         }
         StructType::Select9 => {
             mem_usage::<Select9>(cli.len, cli.density, uniform, "Select9");

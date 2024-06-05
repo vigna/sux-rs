@@ -5,44 +5,73 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::{bits::CountBitVec, traits::*};
+use crate::traits::*;
 use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
 
-/**
+/// A constant-based version of [`SimpleSelect`].
+///
+/// [`SimpleSelectConst`] has almost the same implementation of
+/// [`SimpleSelect`](super::SimpleSelect), with two important differences:
+///
+/// - The number of ones per inventory and the number of u64s per subinventory
+///   are fixed at compile time.
+/// - There is no spill vector, so the space occupancy is fixed.
+///
+/// Because of these simplifications, [`SimpleSelectConst`] is slightly faster
+/// than [`SimpleSelect`](super::SimpleSelect). However, since the number of
+/// ones per inventory of a [`SimpleSelect`](super::SimpleSelect) is chosen
+/// depending on the density of the bit vector, [`SimpleSelectConst`] can be
+/// used only when the density of the bit vector is known in advance. A typical
+/// use case is the [Elias–Fano representation of monotone
+/// sequences](crate::dict::elias_fano::EliasFano), where the high bits have
+/// density approximately 1/2.
+///
+/// # Examples
+/// ```rust
+/// use sux::bit_vec;
+/// use sux::traits::{Rank, Select};
+/// use sux::rank_sel::{SimpleSelectConst, Rank9};
+///
+/// // Standalone select
+/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let select = SimpleSelectConst::new(bits);
+///
+/// assert_eq!(select.select(0), Some(0));
+/// assert_eq!(select.select(1), Some(2));
+/// assert_eq!(select.select(2), Some(3));
+/// assert_eq!(select.select(3), Some(5));
+/// assert_eq!(select.select(4), Some(7));
+/// assert_eq!(select.select(5), None);
+///
+/// // Select over a Rank9 structure, with alternative constants
+/// // (256 ones per inventory, subinventories made of 4 64-bit words).
+/// let rank9 = Rank9::new(bits);
+/// let rank_sel = SimpleSelectConst::<8, 2>::new(rank9);
+///
+/// assert_eq!(rank_sel.rank(0), 0);
+/// assert_eq!(rank_sel.rank(1), 1);
+/// assert_eq!(rank_sel.rank(2), 1);
+/// assert_eq!(rank_sel.rank(3), 2);
+/// assert_eq!(rank_sel.rank(4), 3);
+/// assert_eq!(rank_sel.rank(5), 3);
+/// assert_eq!(rank_sel.rank(6), 4);
+/// assert_eq!(rank_sel.rank(7), 4);
+/// assert_eq!(rank_sel.rank(8), 5);
+///
+/// assert_eq!(rank_sel.select(0), Some(0));
+/// assert_eq!(rank_sel.select(1), Some(2));
+/// assert_eq!(rank_sel.select(2), Some(3));
+/// assert_eq!(rank_sel.select(3), Some(5));
+/// assert_eq!(rank_sel.select(4), Some(7));
+/// assert_eq!(rank_sel.select(5), None);
+/// ```
 
-A selection structure based on a two-level index.
-
-This is a fixed-density version of the structure described by
-Sebastiano Vigna in “[Broadword Implementation of Rank/Select
-Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
-_Proc. of the 7th International Workshop on Experimental Algorithms, WEA
-2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
-Springer, 2008.
-
-It records the position of one every 2<sup>`LOG2_ONES_PER_INVENTORY`</sup> ones in a first-level
-inventory of `u64`'s; then, for each first-level inventory a subinventory of 2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup>
-`u64`'s is allocated. The subinventory will store either 4·2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup> `u16`'s recording
-the position of one every 2<sup>`LOG2_ONES_PER_INVENTORY`</sup>/(4·2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup>) ones,
-if the distance between the first and last one in the inventory is less than 2<sup>16</sup>, or
-2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup> `u64`'s recording
-the position of one every 2<sup>`LOG2_ONES_PER_INVENTORY`</sup>/2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup> otherwise.
-
-Thus, the objective of sizing the first-level inventory is to obtain the second-level inventory with a
-span of less than 2<sup>16</sup> elements as often as possible. The default parameters are a good choice for a vector
-with approximately the same number of zeroes and ones.
-
-The size of the structure is [`BitCount::count_ones()`] *
-(1 + 2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup>) * 64 / 2<sup>`LOG2_ONES_PER_INVENTORY`</sup> bits.
-
-See [`SimpleSelectZeroConst`](crate::rank_sel::SimpleSelectZeroConst) for the same structure for zeros.
-
-*/
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SimpleSelectConst<
-    B: SelectHinted = CountBitVec,
-    I: AsRef<[u64]> = Vec<u64>,
+    B,
+    I,
     const LOG2_ONES_PER_INVENTORY: usize = 10,
     const LOG2_U64_PER_SUBINVENTORY: usize = 2,
 > {

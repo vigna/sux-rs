@@ -35,11 +35,11 @@ use crate::prelude::*;
 /// # Examples
 ///
 /// ```rust
-/// use sux::bit_vec;
-/// use sux::prelude::{rank_small, SelectSmall};
+/// use sux::{rank_small, bit_vec};
+/// use sux::rank_sel::SelectSmall;
 ///
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
-/// let rank_small = rank_small[1; bits];
+/// let rank_small = rank_small![1; bits];
 /// let select_small = SelectSmall::new(rank_small);
 ///
 /// assert_eq!(select_small.select(0), Some(0));
@@ -94,7 +94,7 @@ macro_rules! impl_rank_small_sel {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         impl<
                 const LOG2_ONES_PER_INVENTORY: usize,
-                B: RankHinted<64> + BitCount + BitLength + AsRef<[usize]>,
+                B: RankHinted<64> + BitCount + AsRef<[usize]> + BitLength,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             >

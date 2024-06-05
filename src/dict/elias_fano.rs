@@ -23,7 +23,7 @@ use sux::prelude::*;
 let mut efb = EliasFanoBuilder::new(2, 5);
 efb.push(0);
 efb.push(2);
-let ef: EliasFano<SimpleSelectZeroConst<SimpleSelectConst>> = efb.build()
+let ef = efb.build()
     .map_high_bits(|high_bits| {
         // Add a selection structure for ones (accelerates get operations).
         // Also add a selection structure for zeros (accelerates predecessors and successor).

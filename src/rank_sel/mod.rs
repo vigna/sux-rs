@@ -42,11 +42,11 @@ but they can be tuned for other densities.
 
 */
 
-mod simple_sel_const;
-pub use simple_sel_const::*;
+mod simple_select_const;
+pub use simple_select_const::*;
 
-mod simple_sel_zero_const;
-pub use simple_sel_zero_const::*;
+mod simple_select_zero_const;
+pub use simple_select_zero_const::*;
 
 mod simple_select;
 pub use simple_select::*;

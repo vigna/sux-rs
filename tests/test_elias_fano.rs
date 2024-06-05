@@ -62,16 +62,14 @@ fn test_elias_fano() -> Result<()> {
             assert_eq!({ ef.get(i) }, *v);
         }
         // Add the ones indices
-        let ef: EliasFano<SimpleSelectConst> =
-            ef.map_high_bits(|high_bits| SimpleSelectConst::new(high_bits));
+        let ef = ef.map_high_bits(|high_bits| SimpleSelectConst::<_, _>::new(high_bits));
 
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.get(i), *v);
         }
 
         // Add the indices
-        let ef: EliasFano<SimpleSelectZeroConst<SimpleSelectConst>> =
-            ef.map_high_bits(|high_bits| SimpleSelectZeroConst::<_, _, 10>::new(high_bits));
+        let ef = ef.map_high_bits(|high_bits| SimpleSelectZeroConst::<_, _, 10>::new(high_bits));
         // do a fast select
         for (i, v) in values.iter().enumerate() {
             assert_eq!({ ef.get(i) }, *v);
@@ -199,7 +197,7 @@ fn test_epserde() -> Result<()> {
         drop(file);
         println!("{}", schema.to_csv());
 
-        let c = <EliasFano<SimpleSelectConst, BitFieldVec>>::mmap(
+        let c = <EliasFano<SimpleSelectConst<CountBitVec, Vec<u64>>, BitFieldVec>>::mmap(
             &tmp_file,
             epserde::deser::Flags::empty(),
         )?;
