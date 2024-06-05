@@ -20,8 +20,13 @@ use crate::prelude::*;
 /// [`SelectSmall`] adds a very sparse first-level inventory to a [`RankSmall`]
 /// structure locates approximately the position of the desired one; the bit is
 /// then located using binary searches over [`RankSmall`]'s counters; this
-/// technique is the same used by
-/// [cs-poppy](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15).
+/// technique is called _hinted bsearch_ and is described in Sebastiano Vigna in
+/// “[Broadword Implementation of Rank/Select
+/// Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
+/// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
+/// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
+/// Springer, 2008.
+///
 ///
 /// The resulting selection methods are very slow, and in general it is
 /// convenient and faster to use [`SimpleSelect`], even with `M` set to 1 (in

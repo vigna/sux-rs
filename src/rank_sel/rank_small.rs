@@ -32,8 +32,8 @@ use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
 /// The [`RankSmall`] variants are parameterized by the number of 32-bit word
 /// per block and by the size of the relative counters. Only certain
 /// combinations are possible, and to simplify construction we provide a
-/// [`rank_small`] macro that selects the correct combination given the size of
-/// the relative counters.
+/// [`rank_small`](crate::rank_small) macro that selects the correct
+/// combination.
 ///
 /// Presently we support the following combinations:
 ///
@@ -41,18 +41,18 @@ use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
 ///   speed slightly slower than [`Rank9`](super::Rank9).
 /// - `rank_small![1; -]` (builds `RankSmall<1, 9>`): 12.5% additional space.
 /// - `rank_small![2; -]` (builds `RankSmall<1, 10>`): 6.25% additional space.
-/// - `rank_small![3; -]` (builds `RankSmall<1, 11>`): 3.125% additional
-///   space.
+/// - `rank_small![3; -]` (builds `RankSmall<1, 11>`): 3.125% additional space.
 /// - `rank_small![4; -]` (builds `RankSmall<3, 13>`): 1.56% additional space.
 ///
 /// The first structure is a space-savvy version of [`Rank9`](super::Rank9),
 /// while the other ones provide increasing less space usage at the expense of
 /// slower operations.
 ///
-/// `RankSmall<1, 11>` is similar to `poppy`, but instead of storing counters
-/// and rebuilding cumulative counters on the fly it stores the cumulative
-/// counters directly using implicit zero extension, as in
-/// [`Rank9`](super::Rank9).
+/// `RankSmall<1, 11>` is similar to
+/// [`poppy`](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15),
+/// but instead of storing counters and rebuilding cumulative counters on the
+/// fly it stores the cumulative counters directly using implicit zero
+/// extension, as in [`Rank9`](super::Rank9).
 ///
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]

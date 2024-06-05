@@ -78,6 +78,44 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, BitVec, Rank, Select, S
 /// for `L`](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN) a reasonable choice
 /// for `M` is between 2 and 5, corrisponding to worst-case linear searches
 /// between 1024 and 128 bits.
+///
+/// # Examples
+/// ```rust
+/// /// use sux::bit_vec;
+/// use sux::prelude::{SimpleSelect, bit_vec};
+///
+/// // Standalone select
+/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let select = SimpleSelect::new(bits, 3);
+///
+/// assert_eq!(select_small.select(0), Some(0));
+/// assert_eq!(select_small.select(1), Some(2));
+/// assert_eq!(select_small.select(2), Some(3));
+/// assert_eq!(select_small.select(3), Some(5));
+/// assert_eq!(select_small.select(4), Some(7));
+/// assert_eq!(select_small.select(5), None);
+///
+/// // Simple select over a Rank9 structure
+/// let rank9 = Rank9::new(bits);
+/// let rank_sel = SimpleSelect::new(rank9, 0);
+///
+/// assert_eq(rank_sel.rank(0), 0);
+/// assert_eq(rank_sel.rank(1), 1);
+/// assert_eq(rank_sel.rank(2), 1);
+/// assert_eq(rank_sel.rank(3), 2);
+/// assert_eq(rank_sel.rank(4), 3);
+/// assert_eq(rank_sel.rank(5), 3);
+/// assert_eq(rank_sel.rank(6), 4);
+/// assert_eq(rank_sel.rank(7), 4);
+/// assert_eq(rank_sel.rank(8), 5);
+///
+/// assert_eq!(select_small.select(0), Some(0));
+/// assert_eq!(select_small.select(1), Some(2));
+/// assert_eq!(select_small.select(2), Some(3));
+/// assert_eq!(select_small.select(3), Some(5));
+/// assert_eq!(select_small.select(4), Some(7));
+/// assert_eq!(select_small.select(5), None);
+/// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SimpleSelect<B: SelectHinted = BitVec, I: AsRef<[usize]> = Vec<usize>> {
