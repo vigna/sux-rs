@@ -87,7 +87,7 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, Rank, Select, SelectHin
 ///
 /// // Standalone select
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
-/// let select = SimpleSelect::new(bits, 3);
+/// let select = SimpleSelect::new(bits.clone(), 3);
 ///
 /// assert_eq!(select.select(0), Some(0));
 /// assert_eq!(select.select(1), Some(2));
@@ -98,7 +98,7 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, Rank, Select, SelectHin
 ///
 /// // Select over a Rank9 structure
 /// let rank9 = Rank9::new(bits);
-/// let rank_sel = SimpleSelect::new(rank9, 0);
+/// let rank_sel = SimpleSelect::new(rank9, 3);
 ///
 /// assert_eq!(rank_sel.rank(0), 0);
 /// assert_eq!(rank_sel.rank(1), 1);
@@ -110,11 +110,11 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, Rank, Select, SelectHin
 /// assert_eq!(rank_sel.rank(7), 4);
 /// assert_eq!(rank_sel.rank(8), 5);
 ///
-/// assert_eq!(rank_sel.select(0), Some(0));
-/// assert_eq!(rank_sel.select(1), Some(2));
-/// assert_eq!(rank_sel.select(2), Some(3));
-/// assert_eq!(rank_sel.select(3), Some(5));
-/// assert_eq!(rank_sel.select(4), Some(7));
+/// assert_eq!(rank_sel.select(0), Some(0)); // FAILED ASSERTION
+/// assert_eq!(rank_sel.select(1), Some(2)); // FAILED ASSERTION
+/// assert_eq!(rank_sel.select(2), Some(3)); // FAILED ASSERTION
+/// assert_eq!(rank_sel.select(3), Some(5)); // FAILED ASSERTION
+/// assert_eq!(rank_sel.select(4), Some(7)); // FAILED ASSERTION
 /// assert_eq!(rank_sel.select(5), None);
 /// ```
 

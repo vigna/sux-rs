@@ -37,10 +37,11 @@ use mem_dbg::{MemDbg, MemSize};
 /// ```rust
 /// use sux::{rank_small, bit_vec};
 /// use sux::rank_sel::SelectSmall;
+/// use sux::traits::Select;
 ///
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![1; bits];
-/// let select_small = SelectSmall::new(rank_small);
+/// let select_small = SelectSmall::<1, 9>::new(rank_small);
 ///
 /// assert_eq!(select_small.select(0), Some(0));
 /// assert_eq!(select_small.select(1), Some(2));
