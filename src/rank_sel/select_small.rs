@@ -7,7 +7,7 @@ use mem_dbg::{MemDbg, MemSize};
 use crate::prelude::*;
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct RankSmallSel<
+pub struct SelectSmall<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
     const LOG2_ONES_PER_INVENTORY: usize = 12,
@@ -24,7 +24,7 @@ impl<
         const LOG2_ONES_PER_INVENTORY: usize,
         R,
         I,
-    > RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, R, I>
+    > SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, R, I>
 {
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
     const WORDS_PER_SUBBLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_SUBBLOCK;
@@ -39,7 +39,7 @@ impl<
         const LOG2_ONES_PER_INVENTORY: usize,
         B,
         I,
-    > RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
+    > SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
 {
     pub fn into_inner(self) -> B {
         self.rank_small
@@ -54,7 +54,7 @@ macro_rules! impl_rank_small_sel {
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             >
-            RankSmallSel<
+            SelectSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
                 LOG2_ONES_PER_INVENTORY,
@@ -104,7 +104,7 @@ macro_rules! impl_rank_small_sel {
         }
 
         impl<const LOG2_ONES_PER_INVENTORY: usize> Select
-            for RankSmallSel<
+            for SelectSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
                 LOG2_ONES_PER_INVENTORY,
@@ -212,7 +212,7 @@ macro_rules! impl_rank_small_sel {
 
         /// Forward [`Rank`] to the underlying implementation.
         impl<const LOG2_ONES_PER_INVENTORY: usize> Rank
-            for RankSmallSel<
+            for SelectSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
                 LOG2_ONES_PER_INVENTORY,
@@ -245,7 +245,7 @@ impl<
         const LOG2_ONES_PER_INVENTORY: usize,
         B: BitCount,
         I,
-    > BitCount for RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
+    > BitCount for SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
 {
     #[inline(always)]
     fn count_ones(&self) -> usize {
@@ -264,7 +264,7 @@ impl<
         const LOG2_ONES_PER_INVENTORY: usize,
         B: BitLength,
         I,
-    > BitLength for RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
+    > BitLength for SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -279,7 +279,7 @@ impl<
         const LOG2_ONES_PER_INVENTORY: usize,
         B: AsRef<[usize]>,
         I,
-    > AsRef<[usize]> for RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
+    > AsRef<[usize]> for SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
 {
     #[inline(always)]
     fn as_ref(&self) -> &[usize] {
@@ -294,7 +294,7 @@ impl<
         const LOG2_ONES_PER_INVENTORY: usize,
         B: Index<usize, Output = bool>,
         I,
-    > Index<usize> for RankSmallSel<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
+    > Index<usize> for SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
 {
     type Output = bool;
     #[inline(always)]
@@ -310,7 +310,7 @@ mod tests {
     use epserde::deser::DeserializeInner;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
-    use super::RankSmallSel;
+    use super::SelectSmall;
 
     macro_rules! test_rank_small_sel {
         ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ONES_PER_INVENTORY: literal) => {
@@ -323,7 +323,7 @@ mod tests {
             for len in lens {
                 let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
                 let rank_small_sel =
-                    RankSmallSel::<$NUM_U32S, $COUNTER_WIDTH, $LOG2_ONES_PER_INVENTORY>::new(
+                    SelectSmall::<$NUM_U32S, $COUNTER_WIDTH, $LOG2_ONES_PER_INVENTORY>::new(
                         $crate::prelude::RankSmall::<$NUM_U32S, $COUNTER_WIDTH>::new(bits.clone()),
                     );
 
