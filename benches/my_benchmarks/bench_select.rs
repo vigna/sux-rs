@@ -9,7 +9,7 @@ use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::Rank10Sel;
 use sux::rank_sel::Rank9;
 use sux::rank_sel::Select9;
-use sux::rank_sel::SelectFixed2;
+use sux::rank_sel::SimpleSelectConst;
 use sux::rank_sel::SimpleSelect;
 use sux::traits::Select;
 
@@ -171,12 +171,12 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
     for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
         let bits = bitvec.clone();
         let num_ones = bits.count_ones();
-        let sel: SelectFixed2<
+        let sel: SimpleSelectConst<
             BitVec,
             Vec<u64>,
             LOG2_ONES_PER_INVENTORY,
             LOG2_U64_PER_SUBINVENTORY,
-        > = SelectFixed2::new(bits);
+        > = SimpleSelectConst::new(bits);
         group.bench_function(
             BenchmarkId::from_parameter(format!("{}_{}_0", bitvec_id.0, bitvec_id.1)),
             |b| {

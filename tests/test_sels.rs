@@ -28,7 +28,7 @@ fn test_select_fixed2() {
             }
         }
 
-        let simple = <SelectFixed2<_, _, 10, 2>>::new(&bitvec);
+        let simple = <SimpleSelectConst<_, _, 10, 2>>::new(&bitvec);
 
         for i in 0..ones {
             assert_eq!(simple.select(i), Some(pos[i]), "i: {} ones : {}", i, ones);
@@ -49,7 +49,7 @@ fn test_select_fixed2_slow() {
         }
         let ones = pos.len();
 
-        let simple = <SelectFixed2<_, _, 10, 2>>::new(&bitvec);
+        let simple = <SimpleSelectConst<_, _, 10, 2>>::new(&bitvec);
 
         for i in 0..ones {
             assert_eq!(simple.select(i), Some(pos[i]), "i: {} ones : {}", i, ones);
@@ -77,10 +77,10 @@ fn test_select_zero_fixed2() {
 
         let mut bitvec_clone = bitvec.clone();
 
-        let simple = <SelectZeroFixed2<_, _, 10, 2>>::new(&bitvec);
+        let simple = <SimpleSelectZeroConst<_, _, 10, 2>>::new(&bitvec);
 
         bitvec_clone.flip();
-        let simple_ones = <SelectFixed2<_, _, 10, 2>>::new(&bitvec_clone);
+        let simple_ones = <SimpleSelectConst<_, _, 10, 2>>::new(&bitvec_clone);
 
         for i in 0..zeros {
             assert_eq!(
@@ -119,7 +119,7 @@ fn test_select_zero_fixed2_slow() {
         }
         let zeros = pos.len();
 
-        let simple = <SelectZeroFixed2<_, _, 10, 2>>::new(&bitvec);
+        let simple = <SimpleSelectZeroConst<_, _, 10, 2>>::new(&bitvec);
 
         for i in 0..zeros {
             assert_eq!(
