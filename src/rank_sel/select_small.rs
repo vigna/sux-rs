@@ -1,3 +1,11 @@
+/*
+ *
+ * SPDX-FileCopyrightText: 2024 Michele Andreata
+ * SPDX-FileCopyrightText: 2024 Sebastiano Vigna
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ */
+
 use std::ops::Index;
 
 use common_traits::SelectInWord;
@@ -5,6 +13,29 @@ use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
 use crate::prelude::*;
+
+/// A selection structure over [`RankSmall`] using negligible additional space
+/// and providing constant-time selection.
+///
+/// [`SelectSmall`] implements the selection idea from
+/// [cs-poppy](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15)
+///
+///
+/// Note that the additional space is in addition to [`Rank9`], so the overall
+/// cost of the selection structure is 50%–62.5% of the original bit vector. Due
+/// to the large space, unless the bit vector has a pathologically irregular bit
+/// distribution [`SimpleSelect`](super::SimpleSelect) is usually a better
+/// choice.
+///
+/// This structure has been described by Sebastiano Vigna in “[Broadword
+/// Implementation of Rank/Select
+/// Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
+/// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
+/// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
+/// Springer, 2008.
+///
+/// # Examples
+///
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SelectSmall<
@@ -301,70 +332,5 @@ impl<
     fn index(&self, index: usize) -> &Self::Output {
         // TODO: why is & necessary?
         &self.rank_small[index]
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{bit_vec, prelude::BitVec};
-    use epserde::deser::DeserializeInner;
-    use rand::{rngs::SmallRng, Rng, SeedableRng};
-
-    use super::SelectSmall;
-
-    macro_rules! test_rank_small_sel {
-        ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ONES_PER_INVENTORY: literal) => {
-            use $crate::traits::Select;
-            let mut rng = SmallRng::seed_from_u64(0);
-            let density = 0.5;
-            let lens = (1..1000)
-                .chain((1000..10000).step_by(100))
-                .chain([1 << 20, 1 << 24]);
-            for len in lens {
-                let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-                let rank_small_sel =
-                    SelectSmall::<$NUM_U32S, $COUNTER_WIDTH, $LOG2_ONES_PER_INVENTORY>::new(
-                        $crate::prelude::RankSmall::<$NUM_U32S, $COUNTER_WIDTH>::new(bits.clone()),
-                    );
-
-                let ones = bits.count_ones();
-                let mut pos = Vec::with_capacity(ones);
-                for i in 0..len {
-                    if bits[i] {
-                        pos.push(i);
-                    }
-                }
-
-                for i in 0..ones {
-                    assert_eq!(rank_small_sel.select(i), Some(pos[i]));
-                }
-                assert_eq!(rank_small_sel.select(ones + 1), None);
-            }
-        };
-    }
-
-    #[test]
-    fn rank_small_sel0() {
-        test_rank_small_sel!(2; 9; 13);
-    }
-
-    #[test]
-    fn rank_small_sel1() {
-        test_rank_small_sel!(1; 9; 13);
-    }
-
-    #[test]
-    fn rank_small_sel2() {
-        test_rank_small_sel!(1; 10; 13);
-    }
-
-    #[test]
-    fn rank_small_sel3() {
-        test_rank_small_sel!(1; 11; 13);
-    }
-
-    #[test]
-    fn rank_small_sel4() {
-        test_rank_small_sel!(3; 13; 13);
     }
 }

@@ -15,27 +15,6 @@ use sux::traits::BitLength;
 use sux::traits::Select;
 
 #[test]
-fn test_params() {
-    let lens = [1_000_000, 10_000_000, 100_000_000];
-    let density = 0.5;
-    let mut rng = SmallRng::seed_from_u64(0);
-
-    for len in lens {
-        println!("len: {}", len);
-        let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-        let simple: SimpleSelect = SimpleSelect::new(bits, 3);
-        println!(
-            "log2_ones_per_inventory: {}",
-            simple.log2_ones_per_inventory()
-        );
-        println!(
-            "log2_u64_per_subinventory: {}",
-            simple.log2_u64_per_subinventory()
-        );
-    }
-}
-
-#[test]
 fn test_simple_select() {
     let lens = (100_000..1_000_000).step_by(100_000);
     let mut rng = SmallRng::seed_from_u64(0);
