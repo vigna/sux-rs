@@ -93,7 +93,7 @@ impl<R, I: AsRef<[usize]>> Select9<R, I> {
     const ONES_PER_INVENTORY: usize = 1 << Self::LOG2_ONES_PER_INVENTORY;
 }
 
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>, Vec<usize>> {
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>, Vec<usize>> {
     pub fn new(rank9: Rank9<B, C>) -> Self {
         let num_bits = rank9.len();
         let num_words = (num_bits + 63) / 64;
@@ -253,7 +253,7 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
     }
 }
 
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> Select
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> Select
     for Select9<Rank9<B, C>, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -386,7 +386,7 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
 }
 
 /// Forward [`Rank`] to the underlying implementation.
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> Rank
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> Rank
     for Select9<Rank9<B, C>, I>
 {
     #[inline(always)]
@@ -401,7 +401,7 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
 }
 
 /// Forward [`BitCount`] to the underlying implementation.
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> BitCount
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> BitCount
     for Select9<Rank9<B, C>, I>
 {
     #[inline(always)]
@@ -416,7 +416,7 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
 }
 
 /// Forward [`BitLength`] to the underlying implementation.
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> BitLength
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> BitLength
     for Select9<Rank9<B, C>, I>
 {
     #[inline(always)]
@@ -426,7 +426,7 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
 }
 
 /// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> AsRef<[usize]>
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> AsRef<[usize]>
     for Select9<Rank9<B, C>, I>
 {
     #[inline(always)]
@@ -437,7 +437,7 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
 
 /// Forward `Index<usize, Output = bool>` to the underlying implementation.
 impl<
-        B: BitLength + AsRef<[usize]> + Index<usize, Output = bool>,
+        B: AsRef<[usize]> + BitLength + Index<usize, Output = bool>,
         C: AsRef<[BlockCounters]>,
         I: AsRef<[usize]>,
     > Index<usize> for Select9<Rank9<B, C>, I>

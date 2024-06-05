@@ -11,7 +11,7 @@ use std::ops::Index;
 use epserde::*;
 use mem_dbg::*;
 
-use crate::prelude::{BitCount, BitLength, BitVec, Rank};
+use crate::prelude::{BitCount, BitLength, BitVec, Rank, SelectHinted, SelectZeroHinted};
 
 /// A ranking structure using 25% of additional space and providing the fastest
 /// available rank operations.
@@ -122,7 +122,7 @@ impl<B, C> Rank9<B, C> {
     }
 }
 
-impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> {
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> {
     #[inline(always)]
     fn rank(&self, pos: usize) -> usize {
         if pos >= self.bits.len() {
@@ -146,7 +146,7 @@ impl<B: BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>> Rank for Rank9<B,
     }
 }
 
-impl<B: BitLength + BitLength + AsRef<[usize]>, C: AsRef<[BlockCounters]>> BitCount
+impl<B: BitLength + AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> BitCount
     for Rank9<B, C>
 {
     #[inline(always)]
@@ -181,6 +181,39 @@ impl<B: AsRef<[usize]> + Index<usize, Output = bool>, C: AsRef<[BlockCounters]>>
     fn index(&self, index: usize) -> &Self::Output {
         // TODO: why is & necessary?
         &self.bits[index]
+    }
+}
+
+/// Forward [`SelectHinted`] to the underlying implementation.
+impl SelectHinted for Rank9 {
+    #[inline(always)]
+    unsafe fn select_hinted_unchecked(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
+        self.bits
+            .select_zero_hinted_unchecked(rank, pos, rank_at_pos)
+    }
+
+    #[inline(always)]
+    fn select_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
+        self.bits.select_zero_hinted(rank, pos, rank_at_pos)
+    }
+}
+
+/// Forward [`SelectZeroHinted`] to the underlying implementation.
+impl SelectZeroHinted for Rank9 {
+    #[inline(always)]
+    unsafe fn select_zero_hinted_unchecked(
+        &self,
+        rank: usize,
+        pos: usize,
+        rank_at_pos: usize,
+    ) -> usize {
+        self.bits
+            .select_zero_hinted_unchecked(rank, pos, rank_at_pos)
+    }
+
+    #[inline(always)]
+    fn select_zero_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
+        self.bits.select_zero_hinted(rank, pos, rank_at_pos)
     }
 }
 

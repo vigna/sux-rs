@@ -116,7 +116,7 @@ impl<
 }
 
 impl<
-        B: RankHinted<HINT_BIT_SIZE> + BitLength + AsRef<[usize]>,
+        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]> + BitLength,
         C: AsRef<[BlockCounters11]>,
         const HINT_BIT_SIZE: usize,
     > Rank for Rank11<B, C, HINT_BIT_SIZE>
@@ -144,7 +144,7 @@ impl<
 }
 
 impl<
-        B: RankHinted<HINT_BIT_SIZE> + BitLength + AsRef<[usize]>,
+        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]> + BitLength,
         C: AsRef<[BlockCounters11]>,
         const HINT_BIT_SIZE: usize,
     > BitCount for Rank11<B, C, HINT_BIT_SIZE>
@@ -156,7 +156,7 @@ impl<
 
 /// Forward [`BitLength`] to the underlying implementation.
 impl<
-        B: RankHinted<HINT_BIT_SIZE> + BitLength + AsRef<[usize]>,
+        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]> + BitLength,
         C: AsRef<[BlockCounters11]>,
         const HINT_BIT_SIZE: usize,
     > BitLength for Rank11<B, C, HINT_BIT_SIZE>

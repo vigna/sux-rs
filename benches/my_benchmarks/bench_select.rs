@@ -9,8 +9,8 @@ use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::Rank10Sel;
 use sux::rank_sel::Rank9;
 use sux::rank_sel::Select9;
-use sux::rank_sel::SimpleSelectConst;
 use sux::rank_sel::SimpleSelect;
+use sux::rank_sel::SimpleSelectConst;
 use sux::traits::Select;
 
 const LENS: [u64; 6] = [
@@ -29,7 +29,7 @@ const REPS: usize = 5;
 trait SelStruct<B>: Select {
     fn new(bits: B) -> Self;
 }
-impl SelStruct<BitVec> for SimpleSelect {
+impl SelStruct<BitVec> for SimpleSelect<BitVec> {
     fn new(bits: BitVec) -> Self {
         SimpleSelect::new(bits, 3)
     }
@@ -112,7 +112,7 @@ pub fn bench_simple_select(c: &mut Criterion, uniform: bool) {
 
     let mut bench_group = c.benchmark_group(name);
 
-    bench_select::<SimpleSelect>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform);
+    bench_select::<SimpleSelect<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform);
 
     bench_group.finish();
 }
@@ -199,7 +199,7 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
     for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
         let bits = bitvec.clone();
         let num_ones = bits.count_ones();
-        let sel: SimpleSelect = SimpleSelect::with_inv(
+        let sel = SimpleSelect::with_inv(
             bits,
             num_ones,
             LOG2_ONES_PER_INVENTORY,

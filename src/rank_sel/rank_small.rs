@@ -294,7 +294,7 @@ macro_rules! impl_rank_small {
             }
         }
         impl<
-                B: RankHinted<64> + BitLength + AsRef<[usize]>,
+                B: RankHinted<64> + AsRef<[usize]> + BitLength,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             > Rank for RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
@@ -346,7 +346,7 @@ impl_rank_small!(3; 13);
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
-        B: RankHinted<64> + BitLength + AsRef<[usize]>,
+        B: RankHinted<64> + AsRef<[usize]> + BitLength,
         C1: AsRef<[usize]>,
         C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
     > RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
@@ -378,7 +378,7 @@ impl<
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
-        B: RankHinted<64> + BitLength + AsRef<[usize]>,
+        B: RankHinted<64> + AsRef<[usize]> + BitLength,
         C1: AsRef<[usize]>,
         C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
     > BitCount for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>

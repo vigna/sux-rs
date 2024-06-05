@@ -14,7 +14,7 @@ use std::{
     ops::Index,
 };
 
-use crate::prelude::{BitCount, BitFieldSlice, BitLength, BitVec, Rank, Select, SelectHinted};
+use crate::prelude::{BitCount, BitFieldSlice, BitLength, Rank, Select, SelectHinted};
 
 /// A simple select implementation based on a two-level inventory.
 ///
@@ -81,44 +81,45 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, BitVec, Rank, Select, S
 ///
 /// # Examples
 /// ```rust
-/// /// use sux::bit_vec;
-/// use sux::prelude::{SimpleSelect, bit_vec};
+/// use sux::bit_vec;
+/// use sux::traits::{Rank, Select};
+/// use sux::rank_sel::{SimpleSelect, Rank9};
 ///
 /// // Standalone select
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let select = SimpleSelect::new(bits, 3);
 ///
-/// assert_eq!(select_small.select(0), Some(0));
-/// assert_eq!(select_small.select(1), Some(2));
-/// assert_eq!(select_small.select(2), Some(3));
-/// assert_eq!(select_small.select(3), Some(5));
-/// assert_eq!(select_small.select(4), Some(7));
-/// assert_eq!(select_small.select(5), None);
+/// assert_eq!(select.select(0), Some(0));
+/// assert_eq!(select.select(1), Some(2));
+/// assert_eq!(select.select(2), Some(3));
+/// assert_eq!(select.select(3), Some(5));
+/// assert_eq!(select.select(4), Some(7));
+/// assert_eq!(select.select(5), None);
 ///
-/// // Simple select over a Rank9 structure
+/// // Select over a Rank9 structure
 /// let rank9 = Rank9::new(bits);
 /// let rank_sel = SimpleSelect::new(rank9, 0);
 ///
-/// assert_eq(rank_sel.rank(0), 0);
-/// assert_eq(rank_sel.rank(1), 1);
-/// assert_eq(rank_sel.rank(2), 1);
-/// assert_eq(rank_sel.rank(3), 2);
-/// assert_eq(rank_sel.rank(4), 3);
-/// assert_eq(rank_sel.rank(5), 3);
-/// assert_eq(rank_sel.rank(6), 4);
-/// assert_eq(rank_sel.rank(7), 4);
-/// assert_eq(rank_sel.rank(8), 5);
+/// assert_eq!(rank_sel.rank(0), 0);
+/// assert_eq!(rank_sel.rank(1), 1);
+/// assert_eq!(rank_sel.rank(2), 1);
+/// assert_eq!(rank_sel.rank(3), 2);
+/// assert_eq!(rank_sel.rank(4), 3);
+/// assert_eq!(rank_sel.rank(5), 3);
+/// assert_eq!(rank_sel.rank(6), 4);
+/// assert_eq!(rank_sel.rank(7), 4);
+/// assert_eq!(rank_sel.rank(8), 5);
 ///
-/// assert_eq!(select_small.select(0), Some(0));
-/// assert_eq!(select_small.select(1), Some(2));
-/// assert_eq!(select_small.select(2), Some(3));
-/// assert_eq!(select_small.select(3), Some(5));
-/// assert_eq!(select_small.select(4), Some(7));
-/// assert_eq!(select_small.select(5), None);
+/// assert_eq!(rank_sel.select(0), Some(0));
+/// assert_eq!(rank_sel.select(1), Some(2));
+/// assert_eq!(rank_sel.select(2), Some(3));
+/// assert_eq!(rank_sel.select(3), Some(5));
+/// assert_eq!(rank_sel.select(4), Some(7));
+/// assert_eq!(rank_sel.select(5), None);
 /// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct SimpleSelect<B: SelectHinted = BitVec, I: AsRef<[usize]> = Vec<usize>> {
+pub struct SimpleSelect<B, I = Vec<usize>> {
     bits: B,
     inventory: I,
     exact_spill: I,
@@ -134,13 +135,14 @@ pub struct SimpleSelect<B: SelectHinted = BitVec, I: AsRef<[usize]> = Vec<usize>
     exact_spill_size: usize,
 }
 
-impl<B: SelectHinted, I: AsRef<[usize]>> SimpleSelect<B, I> {
+impl<B, I> SimpleSelect<B, I> {
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
 }
 
-impl SimpleSelect<BitVec, Vec<usize>> {
-    /// Creates a new selection structure over a bit vector using a [default
-    /// target inventory span](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN).
+impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Vec<usize>> {
+    /// Creates a new selection structure over a [`SelectHinted`] using a
+    /// [default target inventory
+    /// span](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN).
     ///
     /// # Arguments
     ///
@@ -152,7 +154,7 @@ impl SimpleSelect<BitVec, Vec<usize>> {
     ///   and halves the length of sequential broadword searches. Typical values
     ///   are 3 and 4.
     ///
-    pub fn new(bits: BitVec, max_log2_u64_per_subinventory: usize) -> Self {
+    pub fn new(bits: B, max_log2_u64_per_subinventory: usize) -> Self {
         Self::with_span(
             bits,
             Self::DEFAULT_TARGET_INVENTORY_SPAN,
@@ -160,7 +162,7 @@ impl SimpleSelect<BitVec, Vec<usize>> {
         )
     }
 
-    /// Creates a new selection structure over a bit vector with a specified
+    /// Creates a new selection structure over a [`SelectHinted`] with a specified
     /// target inventory span.
     ///
     /// # Arguments
@@ -178,7 +180,7 @@ impl SimpleSelect<BitVec, Vec<usize>> {
     ///   are 3 and 4.
     ///
     pub fn with_span(
-        bits: BitVec,
+        bits: B,
         target_inventory_span: usize,
         max_log2_u64_per_subinventory: usize,
     ) -> Self {
@@ -198,7 +200,7 @@ impl SimpleSelect<BitVec, Vec<usize>> {
         )
     }
 
-    /// Creates a new selection structure over a bit vector with a specified
+    /// Creates a new selection structure over a [`SelectHinted`] with a specified
     /// distance between indexed ones.
     ///
     /// This low-level constructor should be used with care, as the parameter
@@ -212,7 +214,7 @@ impl SimpleSelect<BitVec, Vec<usize>> {
     ///
     /// # Arguments
     ///
-    /// * `bits`: A bit vector.
+    /// * `bits`: A [`SelectHinted`].
     ///
     /// * `log2_ones_per_inventory`: The base-2 logarithm of the distance
     ///   between two indexed ones.
@@ -224,7 +226,7 @@ impl SimpleSelect<BitVec, Vec<usize>> {
     ///   are 3 and 4.
 
     pub fn with_inv(
-        bits: BitVec,
+        bits: B,
         num_ones: usize,
         log2_ones_per_inventory: usize,
         max_log2_u64_per_subinventory: usize,
@@ -422,7 +424,7 @@ impl SimpleSelect<BitVec, Vec<usize>> {
     }
 }
 
-impl<B: SelectHinted + BitLength + AsRef<[usize]>, I: AsRef<[usize]>> Select
+impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> Select
     for SimpleSelect<B, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -461,7 +463,7 @@ impl<B: SelectHinted + BitLength + AsRef<[usize]>, I: AsRef<[usize]>> Select
     }
 }
 
-impl<B: SelectHinted + BitLength + AsRef<[usize]>, I: AsRef<[usize]>> BitCount
+impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> BitCount
     for SimpleSelect<B, I>
 {
     #[inline(always)]
@@ -471,7 +473,7 @@ impl<B: SelectHinted + BitLength + AsRef<[usize]>, I: AsRef<[usize]>> BitCount
 }
 
 /// Forward [`BitLength`] to the underlying implementation.
-impl<B: SelectHinted + BitLength + AsRef<[usize]>, I: AsRef<[usize]>> BitLength
+impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> BitLength
     for SimpleSelect<B, I>
 {
     #[inline(always)]
@@ -530,7 +532,7 @@ mod test_simple_select {
             .chain([true])
             .chain((0..len / 2).map(|_| false))
             .collect::<BitVec>();
-        let simple: SimpleSelect = SimpleSelect::new(bits, 3);
+        let simple = SimpleSelect::new(bits, 3);
 
         assert_eq!(simple.ones_per_sub64, 1);
         assert_eq!(simple.count_ones(), 4);
