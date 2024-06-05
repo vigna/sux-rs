@@ -350,7 +350,7 @@ impl<
     }
 }
 
-/// Forward [`SelectHinted`] to the underlying implementation.
+/// Forward [`SelectZeroHinted`] to the underlying implementation.
 impl<
         B: SelectHinted + SelectZeroHinted,
         I: AsRef<[u64]>,
