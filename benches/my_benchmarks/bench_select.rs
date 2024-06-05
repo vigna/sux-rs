@@ -173,7 +173,7 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
         let num_ones = bits.count_ones();
         let sel: SimpleSelectConst<
             BitVec,
-            Vec<u64>,
+            Vec<usize>,
             LOG2_ONES_PER_INVENTORY,
             LOG2_U64_PER_SUBINVENTORY,
         > = SimpleSelectConst::new(bits);
@@ -217,5 +217,63 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
             },
         );
     }
+    group.finish();
+}
+
+macro_rules! bench_simple_const {
+    ([$($inv_size:literal),+], $subinv_size:tt, $bitvecs:ident, $bitvec_ids:ident, $bench_group:expr) => {
+        $(
+            bench_simple_const!($inv_size, $subinv_size, $bitvecs, $bitvec_ids, $bench_group);
+        )+
+    };
+    ($inv_size:literal, [$($subinv_size:literal),+], $bitvecs:ident, $bitvec_ids:ident, $bench_group:expr) => {
+        $(
+            bench_simple_const!($inv_size, $subinv_size, $bitvecs, $bitvec_ids, $bench_group);
+        )+
+    };
+    ($log_inv_size:literal, $log_subinv_size:literal, $bitvecs:ident, $bitvec_ids:ident, $bench_group:expr) => {{
+        let mut rng = SmallRng::seed_from_u64(0);
+        for (bitvec, bitvec_id) in std::iter::zip(&$bitvecs, &$bitvec_ids) {
+            let bits = bitvec.clone();
+            let num_ones = bits.count_ones();
+            let sel: SimpleSelectConst<BitVec, Vec<usize>, $log_inv_size, $log_subinv_size> =
+                SimpleSelectConst::new(bits);
+            $bench_group.bench_with_input(
+                BenchmarkId::from_parameter(format!(
+                    "{}_{}_{}_{}_{}",
+                    $log_inv_size, $log_subinv_size, bitvec_id.0, bitvec_id.1, bitvec_id.2
+                )),
+                &$log_inv_size,
+                |b, _| {
+                    b.iter(|| {
+                        // use fastrange
+                        let r =  ((rng.gen::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64) as usize;
+                        black_box(unsafe { sel.select_unchecked(r) });
+                    })
+                },
+            );
+        }
+    }};
+}
+
+pub fn bench_simple_const(c: &mut Criterion) {
+    let mut group = c.benchmark_group("simple_select_const");
+
+    let mut bitvecs = Vec::<BitVec>::new();
+    let mut bitvec_ids = Vec::<(u64, f64, u64)>::new();
+    let mut rng = SmallRng::seed_from_u64(0);
+    for len in LENS {
+        for density in [0.25, 0.5, 0.75] {
+            // possible repetitions
+            for i in 0..5 {
+                let bitvec = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+                bitvecs.push(bitvec);
+                bitvec_ids.push((len, density, i));
+            }
+        }
+    }
+
+    bench_simple_const!([8, 9, 10, 11, 12], [1, 2, 3], bitvecs, bitvec_ids, group);
+
     group.finish();
 }
