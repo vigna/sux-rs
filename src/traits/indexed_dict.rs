@@ -12,8 +12,6 @@ operations such as predecessor and successor.
 
 */
 
-use std::ops::Deref;
-
 /**
 
 A dictionary of values indexed by a `usize`.
