@@ -17,25 +17,33 @@ use crate::prelude::*;
 /// A selection structure over [`RankSmall`] using negligible additional space
 /// and providing constant-time selection.
 ///
-/// [`SelectSmall`] implements the selection idea from
-/// [cs-poppy](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15)
+/// [`SelectSmall`] adds a very sparse first-level inventory to a [`RankSmall`]
+/// structure locates approximately the position of the desired one; the bit is
+/// then located using binary searches over [`RankSmall`]'s counters; this
+/// technique is the same used by
+/// [cs-poppy](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15).
 ///
-///
-/// Note that the additional space is in addition to [`Rank9`], so the overall
-/// cost of the selection structure is 50%–62.5% of the original bit vector. Due
-/// to the large space, unless the bit vector has a pathologically irregular bit
-/// distribution [`SimpleSelect`](super::SimpleSelect) is usually a better
-/// choice.
-///
-/// This structure has been described by Sebastiano Vigna in “[Broadword
-/// Implementation of Rank/Select
-/// Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
-/// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
-/// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
-/// Springer, 2008.
+/// The resulting selection methods are very slow, and in general it is
+/// convenient and faster to use [`SimpleSelect`], even with `M` set to 1 (in
+/// which case the additional space is 1.5-3% of the original bit vector).
 ///
 /// # Examples
 ///
+/// ```rust
+/// use sux::bit_vec;
+/// use sux::prelude::{rank_small, SelectSmall};
+///
+/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let rank_small = rank_small[1; bits];
+/// let select_small = SelectSmall::new(rank_small);
+///
+/// assert_eq!(select_small.select(0), Some(0));
+/// assert_eq!(select_small.select(1), Some(2));
+/// assert_eq!(select_small.select(2), Some(3));
+/// assert_eq!(select_small.select(3), Some(5));
+/// assert_eq!(select_small.select(4), Some(7));
+/// assert_eq!(select_small.select(5), None);
+/// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SelectSmall<
