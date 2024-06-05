@@ -185,13 +185,12 @@ impl<B: AsRef<[usize]> + Index<usize, Output = bool>, C: AsRef<[BlockCounters]>>
 impl SelectHinted for Rank9 {
     #[inline(always)]
     unsafe fn select_hinted_unchecked(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
-        self.bits
-            .select_zero_hinted_unchecked(rank, pos, rank_at_pos)
+        self.bits.select_hinted_unchecked(rank, pos, rank_at_pos)
     }
 
     #[inline(always)]
     fn select_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
-        self.bits.select_zero_hinted(rank, pos, rank_at_pos)
+        self.bits.select_hinted(rank, pos, rank_at_pos)
     }
 }
 
