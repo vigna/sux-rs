@@ -90,7 +90,7 @@ fn test_simple_select_const_empty() {
 #[test]
 fn test_simple_select_const_ones() {
     let len = 300_000;
-    let bits = (0..len).map(|_| true).collect::<BitVec>();
+    let bits: CountBitVec = (0..len).map(|_| true).collect::<BitVec>().into();
     let simple = SimpleSelectConst::<_, _, INV, SUB>::new(bits);
     assert_eq!(simple.count_ones(), len);
     assert_eq!(simple.len(), len);
@@ -102,7 +102,7 @@ fn test_simple_select_const_ones() {
 #[test]
 fn test_simple_select_const_zeros() {
     let len = 300_000;
-    let bits = (0..len).map(|_| false).collect::<BitVec>();
+    let bits: CountBitVec = (0..len).map(|_| false).collect::<BitVec>().into();
     let simple = SimpleSelectConst::<_, _, INV, SUB>::new(bits);
     assert_eq!(simple.count_ones(), 0);
     assert_eq!(simple.len(), len);

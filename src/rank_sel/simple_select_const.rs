@@ -93,8 +93,8 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
     const LOG2_ONES_PER_SUB16: usize = Self::LOG2_ONES_PER_SUB64 - 2;
     const ONES_PER_SUB16: usize = 1 << Self::LOG2_ONES_PER_SUB16;
 
-    /// We use the sign bit to store the type of the subinventory (u16 vs. u64).
-    const INVENTORY_MASK: u64 = (1 << 63) - 1;
+    /// We use the sign bit to store the type of the subinventory (u16 vs. usize).
+    const INVENTORY_MASK: usize = (1 << 63) - 1;
 
     /// Return the inner BitVector
     pub fn into_inner(self) -> B {
@@ -135,7 +135,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
         f: impl FnOnce(I) -> I2,
     ) -> SimpleSelectConst<B, I2, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
     where
-        I2: AsRef<[u64]>,
+        I2: AsRef<[usize]>,
     {
         SimpleSelectConst {
             bits: self.bits,
@@ -150,7 +150,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
     ) -> SimpleSelectConst<B2, I2, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
     where
         B2: SelectHinted,
-        I2: AsRef<[u64]>,
+        I2: AsRef<[usize]>,
     {
         let (bits, inventory) = f(self.bits, self.inventory);
         SimpleSelectConst { bits, inventory }
@@ -161,42 +161,42 @@ impl<
         B: SelectHinted + BitLength + BitCount + AsRef<[usize]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SimpleSelectConst<B, Vec<u64>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SimpleSelectConst<B, Vec<usize>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     pub fn new(bitvec: B) -> Self {
         // number of inventories we will create
         let inventory_size = bitvec.count_ones().div_ceil(Self::ONES_PER_INVENTORY);
         let inventory_len = inventory_size * Self::U64_PER_INVENTORY + 1;
-        // inventory_size, an u64 for the first layer index, and Self::U64_PER_SUBINVENTORY for the sub layer
+        // inventory_size, an usize for the first layer index, and Self::U64_PER_SUBINVENTORY for the sub layer
         let mut inventory = Vec::with_capacity(inventory_len);
         // scan the bitvec and fill the first layer of the inventory
         let mut number_of_ones = 0;
         let mut next_quantum = 0;
         for (i, word) in bitvec.as_ref().iter().copied().enumerate() {
-            let ones_in_word = word.count_ones() as u64;
+            let ones_in_word = word.count_ones() as usize;
             // skip the word if we can
             while number_of_ones + ones_in_word > next_quantum {
-                let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
-                let index = (i * u64::BITS as usize) + in_word_index;
+                let in_word_index = word.select_in_word(next_quantum - number_of_ones);
+                let index = (i * usize::BITS as usize) + in_word_index;
 
                 // write the position of the one in the inventory
-                inventory.push(index as u64);
+                inventory.push(index);
                 // make space for the subinventory
                 inventory.resize(inventory.len() + Self::U64_PER_SUBINVENTORY, 0);
 
-                next_quantum += Self::ONES_PER_INVENTORY as u64;
+                next_quantum += Self::ONES_PER_INVENTORY;
             }
             number_of_ones += ones_in_word;
         }
         // in the last inventory write the number of bits
-        inventory.push(BitLength::len(&bitvec) as u64);
+        inventory.push(BitLength::len(&bitvec));
         assert_eq!(inventory_len, inventory.len());
         // build the index
         let iter = 0..inventory_size;
 
         // fill the second layer of the index
         iter.for_each(|inventory_idx| {
-            // get the start and end u64 index of the current inventory
+            // get the start and end usize index of the current inventory
             let start_idx = inventory_idx * Self::U64_PER_INVENTORY;
             let end_idx = start_idx + Self::U64_PER_INVENTORY;
             // read the first level index to get the start and end bit index
@@ -206,11 +206,11 @@ impl<
             let span = end_bit_idx - start_bit_idx;
             // compute were we should the word boundaries of where we should
             // scan
-            let mut word_idx = start_bit_idx / u64::BITS as u64;
+            let mut word_idx = start_bit_idx / usize::BITS as usize;
 
             // cleanup the lower bits
-            let bit_idx = start_bit_idx % u64::BITS as u64;
-            let mut word = (bitvec.as_ref()[word_idx as usize] >> bit_idx) << bit_idx;
+            let bit_idx = start_bit_idx % usize::BITS as usize;
+            let mut word = (bitvec.as_ref()[word_idx] >> bit_idx) << bit_idx;
             // compute the global number of ones
             let mut number_of_ones = inventory_idx * Self::ONES_PER_INVENTORY;
             // and what's the next bit rank which index should log in the sub
@@ -218,14 +218,14 @@ impl<
             let mut next_quantum = number_of_ones;
             let quantum;
 
-            if span <= u16::MAX as u64 {
+            if span <= u16::MAX as usize {
                 quantum = Self::ONES_PER_SUB16;
             } else {
                 quantum = Self::ONES_PER_SUB64;
-                inventory[start_idx] |= 1_u64 << 63;
+                inventory[start_idx] |= 1_usize << 63;
             }
 
-            let end_word_idx = end_bit_idx.div_ceil(u64::BITS as u64);
+            let end_word_idx = end_bit_idx.div_ceil(usize::BITS as usize);
 
             // the first subinventory element is always 0
             let mut subinventory_idx = 1;
@@ -241,12 +241,12 @@ impl<
                     // find the quantum bit in the word
                     let in_word_index = word.select_in_word(next_quantum - number_of_ones);
                     // compute the global index of the quantum bit in the bitvec
-                    let bit_index = (word_idx * u64::BITS as u64) + in_word_index as u64;
+                    let bit_index = (word_idx * usize::BITS as usize) + in_word_index;
                     // compute the offset of the quantum bit
                     // from the start of the subinventory
                     let sub_offset = bit_index - start_bit_idx;
 
-                    if span <= u16::MAX as u64 {
+                    if span <= u16::MAX as usize {
                         let subinventory: &mut [u16] =
                             unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
 
@@ -273,7 +273,7 @@ impl<
                 }
 
                 // read the next word
-                word = bitvec.as_ref()[word_idx as usize];
+                word = bitvec.as_ref()[word_idx];
             }
         });
 
@@ -287,7 +287,7 @@ impl<
 /// Provide the hint to the underlying structure
 impl<
         B: SelectHinted + BitCount,
-        I: AsRef<[u64]>,
+        I: AsRef<[usize]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > Select for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
@@ -312,7 +312,7 @@ impl<
         let (pos, residual) = if inventory_rank as isize >= 0 {
             let (_pre, u16s, _post) = u64s.align_to::<u16>();
             (
-                inventory_rank + *u16s.get_unchecked(subrank / Self::ONES_PER_SUB16) as u64,
+                inventory_rank + *u16s.get_unchecked(subrank / Self::ONES_PER_SUB16) as usize,
                 subrank % Self::ONES_PER_SUB16,
             )
         } else {
@@ -335,7 +335,7 @@ forward_bit_count![SimpleSelectConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usiz
 /// Forward [`SelectZero`] to the underlying implementation.
 impl<
         B: SelectHinted + SelectZero,
-        I: AsRef<[u64]>,
+        I: AsRef<[usize]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > SelectZero for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
@@ -353,7 +353,7 @@ impl<
 /// Forward [`SelectZeroHinted`] to the underlying implementation.
 impl<
         B: SelectHinted + SelectZeroHinted,
-        I: AsRef<[u64]>,
+        I: AsRef<[usize]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > SelectZeroHinted
@@ -379,7 +379,7 @@ impl<
 /// Forward [`Rank`] to the underlying implementation.
 impl<
         B: SelectHinted + Rank,
-        I: AsRef<[u64]>,
+        I: AsRef<[usize]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > Rank for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
@@ -396,7 +396,7 @@ impl<
 /// Forward [`RankZero`] to the underlying implementation.
 impl<
         B: SelectHinted + RankZero,
-        I: AsRef<[u64]>,
+        I: AsRef<[usize]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > RankZero for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
@@ -413,7 +413,7 @@ impl<
 /// Forward `AsRef<[usize]>` to the underlying implementation.
 impl<
         B: SelectHinted + AsRef<[usize]>,
-        I: AsRef<[u64]>,
+        I: AsRef<[usize]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > AsRef<[usize]>
