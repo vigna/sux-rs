@@ -11,15 +11,29 @@ Basic traits for succinct operations on bit vectors, including [`Rank`] and [`Se
 
 */
 
-use ambassador::delegatable_trait;
-
 /// A trait for succinct data structures that expose the
 /// length of the underlying bit vector.
 #[allow(clippy::len_without_is_empty)]
-#[delegatable_trait]
 pub trait BitLength {
     /// Return the length in bits of the underlying bit vector.
     fn len(&self) -> usize;
+}
+
+#[macro_export]
+macro_rules! forward_bit_length {
+        ($name:ident
+        <
+            $( $([$const:ident])? $generic:ident $(:$t:ty)?  ),*
+        >;
+        $type:ident;
+        $field:ident) => {
+        impl <$( $($const)? $generic $(:$t)?,)* > BitLength for $name < $($generic,)* > where $type: BitLength {
+            #[inline(always)]
+            fn len(&self) -> usize {
+                    BitLength::len(&self.$field)
+                }
+            }
+    };
 }
 
 /// A trait for succinct data structures that expose the
@@ -32,6 +46,27 @@ pub trait BitCount: BitLength {
     fn count_zeros(&self) -> usize {
         self.len() - self.count_ones()
     }
+}
+
+#[macro_export]
+macro_rules! forward_bit_count {
+        ($name:ident
+        <
+            $( $([$const:ident])? $generic:ident $(:$t:ty)?  ),*
+        >;
+        $type:ident;
+        $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)?,)* > BitCount for $name < $($generic,)* > where $type: BitCount {
+            #[inline(always)]
+            fn count_ones(&self) -> usize {
+                BitCount::count_ones(&self.$field)
+            }
+            #[inline(always)]
+            fn count_zeros(&self) -> usize {
+                BitCount::count_zeros(&self.$field)
+            }
+        }
+    };
 }
 
 /// Rank over a bit vector.

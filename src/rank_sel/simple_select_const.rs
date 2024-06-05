@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::traits::*;
+use crate::{forward_bit_count, forward_bit_length, traits::*};
 use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
@@ -80,12 +80,8 @@ pub struct SimpleSelectConst<
 }
 
 /// constants used throughout the code
-impl<
-        B: SelectHinted,
-        I: AsRef<[u64]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY: usize>
+    SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     const ONES_PER_INVENTORY: usize = 1 << LOG2_ONES_PER_INVENTORY;
     const U64_PER_SUBINVENTORY: usize = 1 << LOG2_U64_PER_SUBINVENTORY;
@@ -333,38 +329,8 @@ impl<
     }
 }
 
-/// Forward [`BitLength`] to the underlying implementation.
-impl<
-        B: SelectHinted + BitLength,
-        I: AsRef<[u64]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitLength for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.bits.len()
-    }
-}
-
-/// Forward [`BitCount`] to the underlying implementation.
-impl<
-        B: SelectHinted + BitCount,
-        I: AsRef<[u64]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitCount for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.bits.count_ones()
-    }
-
-    #[inline(always)]
-    fn count_zeros(&self) -> usize {
-        self.bits.count_zeros()
-    }
-}
+forward_bit_length![SimpleSelectConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits];
+forward_bit_count![SimpleSelectConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits];
 
 /// Forward [`SelectZero`] to the underlying implementation.
 impl<

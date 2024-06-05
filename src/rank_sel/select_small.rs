@@ -8,11 +8,11 @@
 
 use std::ops::Index;
 
+use crate::forward_bit_count;
+use crate::prelude::*;
 use common_traits::SelectInWord;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
-
-use crate::prelude::*;
 
 /// A selection structure over [`RankSmall`] using negligible additional space
 /// and providing constant-time selection.
@@ -282,25 +282,6 @@ impl_rank_small_sel!(1; 10);
 impl_rank_small_sel!(1; 11);
 impl_rank_small_sel!(3; 13);
 
-/// Forward [`BitCount`] to the underlying implementation.
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        B: BitCount,
-        I,
-    > BitCount for SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
-{
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.rank_small.count_ones()
-    }
-    #[inline(always)]
-    fn count_zeros(&self) -> usize {
-        self.rank_small.count_zeros()
-    }
-}
-
 /// Forward [`BitLength`] to the underlying implementation.
 impl<
         const NUM_U32S: usize,
@@ -315,6 +296,8 @@ impl<
         self.rank_small.len()
     }
 }
+
+forward_bit_count![SelectSmall< [const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ONES_PER_INVENTORY: usize, R, I>; R; rank_small];
 
 /// Forward `AsRef<[usize]>` to the underlying implementation.
 impl<
