@@ -42,11 +42,11 @@ but they can be tuned for other densities.
 
 */
 
-mod select_fixed2;
-pub use select_fixed2::*;
+mod simple_sel_const;
+pub use simple_sel_const::*;
 
-mod select_zero_fixed2;
-pub use select_zero_fixed2::*;
+mod simple_sel_zero_const;
+pub use simple_sel_zero_const::*;
 
 mod simple_select;
 pub use simple_select::*;

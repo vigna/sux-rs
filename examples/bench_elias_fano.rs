@@ -64,15 +64,15 @@ fn main() {
     const FIXED2_LOG2_U64_PER_INVENTORY: usize = 2;
     // Add an index on zeros
     let elias_fano_s: EliasFano<
-        SelectZeroFixed2<
-            SelectFixed2<_, _, FIXED2_LOG2_ONES_PER_INVENTORY, FIXED2_LOG2_U64_PER_INVENTORY>,
+        SimpleSelectZeroConst<
+            SimpleSelectConst<_, _, FIXED2_LOG2_ONES_PER_INVENTORY, FIXED2_LOG2_U64_PER_INVENTORY>,
             _,
             FIXED2_LOG2_ONES_PER_INVENTORY,
             FIXED2_LOG2_U64_PER_INVENTORY,
         >,
     > = elias_fano_builder
         .build()
-        .map_high_bits(|high_bits| SelectZeroFixed2::new(SelectFixed2::new(high_bits)));
+        .map_high_bits(|high_bits| SimpleSelectZeroConst::new(SimpleSelectConst::new(high_bits)));
 
     println!();
     elias_fano_s

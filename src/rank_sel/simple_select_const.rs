@@ -36,11 +36,11 @@ with approximately the same number of zeroes and ones.
 The size of the structure is [`BitCount::count_ones()`] *
 (1 + 2<sup>`LOG2_U64_PER_SUBINVENTORY`</sup>) * 64 / 2<sup>`LOG2_ONES_PER_INVENTORY`</sup> bits.
 
-See [`SelectZeroFixed2`](crate::rank_sel::SelectZeroFixed2) for the same structure for zeros.
+See [`SimpleSelectZeroConst`](crate::rank_sel::SimpleSelectZeroConst) for the same structure for zeros.
 
 */
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct SelectFixed2<
+pub struct SimpleSelectConst<
     B: SelectHinted = CountBitVec,
     I: AsRef<[u64]> = Vec<u64>,
     const LOG2_ONES_PER_INVENTORY: usize = 10,
@@ -56,7 +56,7 @@ impl<
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     const ONES_PER_INVENTORY: usize = 1 << LOG2_ONES_PER_INVENTORY;
     const U64_PER_SUBINVENTORY: usize = 1 << LOG2_U64_PER_SUBINVENTORY;
@@ -87,18 +87,18 @@ impl<
     /// The inventory must be consistent with the bits otherwise you will get
     /// wrong results, and possibly memory corruption.
     pub unsafe fn from_raw_parts(bits: B, inventory: I) -> Self {
-        SelectFixed2 { bits, inventory }
+        SimpleSelectConst { bits, inventory }
     }
 
     /// Modify the inner BitVector with possibly another type
     pub fn map_bits<B2>(
         self,
         f: impl FnOnce(B) -> B2,
-    ) -> SelectFixed2<B2, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    ) -> SimpleSelectConst<B2, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
     where
         B2: SelectHinted,
     {
-        SelectFixed2 {
+        SimpleSelectConst {
             bits: f(self.bits),
             inventory: self.inventory,
         }
@@ -108,11 +108,11 @@ impl<
     pub fn map_inventory<I2>(
         self,
         f: impl FnOnce(I) -> I2,
-    ) -> SelectFixed2<B, I2, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    ) -> SimpleSelectConst<B, I2, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
     where
         I2: AsRef<[u64]>,
     {
-        SelectFixed2 {
+        SimpleSelectConst {
             bits: self.bits,
             inventory: f(self.inventory),
         }
@@ -122,13 +122,13 @@ impl<
     pub fn map<B2, I2>(
         self,
         f: impl FnOnce(B, I) -> (B2, I2),
-    ) -> SelectFixed2<B2, I2, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    ) -> SimpleSelectConst<B2, I2, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
     where
         B2: SelectHinted,
         I2: AsRef<[u64]>,
     {
         let (bits, inventory) = f(self.bits, self.inventory);
-        SelectFixed2 { bits, inventory }
+        SimpleSelectConst { bits, inventory }
     }
 }
 
@@ -136,7 +136,7 @@ impl<
         B: SelectHinted + BitLength + BitCount + AsRef<[usize]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectFixed2<B, Vec<u64>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SimpleSelectConst<B, Vec<u64>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     pub fn new(bitvec: B) -> Self {
         // number of inventories we will create
@@ -265,7 +265,7 @@ impl<
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > Select for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > Select for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -310,7 +310,7 @@ impl<
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitLength for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > BitLength for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -324,7 +324,7 @@ impl<
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitCount for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > BitCount for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     fn count_ones(&self) -> usize {
@@ -343,7 +343,7 @@ impl<
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectZero for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SelectZero for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     fn select_zero(&self, rank: usize) -> Option<usize> {
@@ -361,7 +361,8 @@ impl<
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectZeroHinted for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SelectZeroHinted
+    for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     unsafe fn select_zero_hinted_unchecked(
@@ -386,7 +387,7 @@ impl<
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > Rank for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > Rank for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     fn rank(&self, pos: usize) -> usize {
         self.bits.rank(pos)
@@ -403,7 +404,7 @@ impl<
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > RankZero for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > RankZero for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     fn rank_zero(&self, pos: usize) -> usize {
         self.bits.rank_zero(pos)
@@ -420,7 +421,8 @@ impl<
         I: AsRef<[u64]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > AsRef<[usize]> for SelectFixed2<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > AsRef<[usize]>
+    for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     fn as_ref(&self) -> &[usize] {
         self.bits.as_ref()
