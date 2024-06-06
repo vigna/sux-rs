@@ -44,6 +44,17 @@ use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankZero};
 /// assert_eq!(rank9.rank(6), 4);
 /// assert_eq!(rank9.rank(7), 4);
 /// assert_eq!(rank9.rank(8), 5);
+///
+/// // Access to the underlying bit vector is forwarded
+/// assert_eq!(rank9[0], true);
+/// assert_eq!(rank9[1], false);
+/// assert_eq!(rank9[2], true);
+/// assert_eq!(rank9[3], true);
+/// assert_eq!(rank9[4], false);
+/// assert_eq!(rank9[5], true);
+/// assert_eq!(rank9[6], false);
+/// assert_eq!(rank9[7], true);
+
 /// ```
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct Rank9<B = BitVec, C = Vec<BlockCounters>> {
