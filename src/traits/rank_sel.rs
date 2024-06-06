@@ -114,7 +114,8 @@ pub trait RankZero: Rank {
 
 macro_rules! forward_rank_zero {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::RankZero for $name < $($generic,)* > where $type: $crate::traits::rank_sel::RankZero {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::RankZero for $name < $($generic,)* >
+            where Self: $crate::traits::rank_sel::Rank, $type: $crate::traits::rank_sel::RankZero {
             #[inline(always)]
             fn rank_zero(&self, pos: usize) -> usize {
                 $crate::traits::rank_sel::RankZero::rank_zero(&self.$field, pos)

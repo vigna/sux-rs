@@ -6,8 +6,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::ops::Index;
-
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
@@ -24,11 +22,7 @@ use crate::prelude::*;
 /// It was proposed by Simon Gog and Matthias Petri in "Optimized succinct data structures
 /// for massive data", `Softw. Pract. Exper.`, 2014.
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct Rank11<
-    B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]> = BitVec,
-    C: AsRef<[BlockCounters11]> = Vec<BlockCounters11>,
-    const HINT_BIT_SIZE: usize = 64,
-> {
+pub struct Rank11<B = BitVec, C = Vec<BlockCounters11>> {
     pub(super) bits: B,
     pub(super) counts: C,
 }
@@ -53,16 +47,11 @@ impl BlockCounters11 {
     }
 }
 
-impl<
-        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]>,
-        C: AsRef<[BlockCounters11]>,
-        const HINT_BIT_SIZE: usize,
-    > Rank11<B, C, HINT_BIT_SIZE>
-{
+impl<B, C> Rank11<B, C> {
     const WORDS_PER_BLOCK: usize = 32;
 }
 
-impl<const HINT_BIT_SIZE: usize> Rank11<BitVec, Vec<BlockCounters11>, HINT_BIT_SIZE> {
+impl Rank11<BitVec, Vec<BlockCounters11>> {
     pub fn new(bits: BitVec) -> Self {
         let num_bits = bits.len();
         let num_words = num_bits.div_ceil(usize::BITS as usize);
@@ -104,22 +93,14 @@ impl<const HINT_BIT_SIZE: usize> Rank11<BitVec, Vec<BlockCounters11>, HINT_BIT_S
     }
 }
 
-impl<
-        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]>,
-        C: AsRef<[BlockCounters11]>,
-        const HINT_BIT_SIZE: usize,
-    > Rank11<B, C, HINT_BIT_SIZE>
-{
+impl<B, C> Rank11<B, C> {
     pub fn into_inner(self) -> B {
         self.bits
     }
 }
 
-impl<
-        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]> + BitLength,
-        C: AsRef<[BlockCounters11]>,
-        const HINT_BIT_SIZE: usize,
-    > Rank for Rank11<B, C, HINT_BIT_SIZE>
+impl<B: RankHinted<64> + AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters11]>> Rank
+    for Rank11<B, C>
 {
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
         let word_pos = pos / usize::BITS as usize;
@@ -131,7 +112,7 @@ impl<
 
         let hint_pos = word_pos - ((word_pos % 32) % 6);
 
-        RankHinted::<HINT_BIT_SIZE>::rank_hinted_unchecked(&self.bits, pos, hint_pos, hint_rank)
+        RankHinted::<64>::rank_hinted_unchecked(&self.bits, pos, hint_pos, hint_rank)
     }
 
     fn rank(&self, pos: usize) -> usize {
@@ -143,57 +124,25 @@ impl<
     }
 }
 
-impl<
-        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]> + BitLength,
-        C: AsRef<[BlockCounters11]>,
-        const HINT_BIT_SIZE: usize,
-    > BitCount for Rank11<B, C, HINT_BIT_SIZE>
+impl<B: RankHinted<64> + AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters11]>> BitCount
+    for Rank11<B, C>
 {
     fn count_ones(&self) -> usize {
         self.counts.as_ref().last().unwrap().absolute
     }
 }
 
-/// Forward [`BitLength`] to the underlying implementation.
-impl<
-        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]> + BitLength,
-        C: AsRef<[BlockCounters11]>,
-        const HINT_BIT_SIZE: usize,
-    > BitLength for Rank11<B, C, HINT_BIT_SIZE>
-{
-    fn len(&self) -> usize {
-        self.bits.len()
-    }
-}
-
-/// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<
-        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]>,
-        C: AsRef<[BlockCounters11]>,
-        const HINT_BIT_SIZE: usize,
-    > AsRef<[usize]> for Rank11<B, C, HINT_BIT_SIZE>
-{
-    #[inline(always)]
-    fn as_ref(&self) -> &[usize] {
-        self.bits.as_ref()
-    }
-}
-
-/// Forward `Index<usize, Output = bool>` to the underlying implementation.
-impl<
-        B: RankHinted<HINT_BIT_SIZE> + AsRef<[usize]> + Index<usize, Output = bool>,
-        C: AsRef<[BlockCounters11]>,
-        const HINT_BIT_SIZE: usize,
-    > Index<usize> for Rank11<B, C, HINT_BIT_SIZE>
-{
-    type Output = bool;
-
-    #[inline(always)]
-    fn index(&self, index: usize) -> &Self::Output {
-        // TODO: why is & necessary?
-        &self.bits[index]
-    }
-}
+crate::forward_mult![Rank11<B, C>; B; bits;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool,
+    crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_rank_hinted,
+    crate::traits::rank_sel::forward_rank_zero,
+    crate::traits::rank_sel::forward_select,
+    crate::traits::rank_sel::forward_select_zero,
+    crate::traits::rank_sel::forward_select_hinted,
+    crate::traits::rank_sel::forward_select_zero_hinted
+];
 
 #[cfg(test)]
 mod test_rank11 {
