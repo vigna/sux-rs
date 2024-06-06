@@ -155,60 +155,13 @@ impl<B: BitLength + AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> BitCo
     }
 }
 
-crate::forward_mult![Rank9<B, C>; B; bits; crate::traits::rank_sel::forward_bit_length];
-
-/// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<B: AsRef<[usize]>, C: AsRef<[BlockCounters]>> AsRef<[usize]> for Rank9<B, C> {
-    #[inline(always)]
-    fn as_ref(&self) -> &[usize] {
-        self.bits.as_ref()
-    }
-}
-
-/// Forward `Index<usize, Output = bool>` to the underlying implementation.
-impl<B: AsRef<[usize]> + Index<usize, Output = bool>, C: AsRef<[BlockCounters]>> Index<usize>
-    for Rank9<B, C>
-{
-    type Output = bool;
-
-    #[inline(always)]
-    fn index(&self, index: usize) -> &Self::Output {
-        // TODO: why is & necessary?
-        &self.bits[index]
-    }
-}
-
-/// Forward [`SelectHinted`] to the underlying implementation.
-impl SelectHinted for Rank9 {
-    #[inline(always)]
-    unsafe fn select_hinted_unchecked(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
-        self.bits.select_hinted_unchecked(rank, pos, rank_at_pos)
-    }
-
-    #[inline(always)]
-    fn select_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
-        self.bits.select_hinted(rank, pos, rank_at_pos)
-    }
-}
-
-/// Forward [`SelectZeroHinted`] to the underlying implementation.
-impl SelectZeroHinted for Rank9 {
-    #[inline(always)]
-    unsafe fn select_zero_hinted_unchecked(
-        &self,
-        rank: usize,
-        pos: usize,
-        rank_at_pos: usize,
-    ) -> usize {
-        self.bits
-            .select_zero_hinted_unchecked(rank, pos, rank_at_pos)
-    }
-
-    #[inline(always)]
-    fn select_zero_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
-        self.bits.select_zero_hinted(rank, pos, rank_at_pos)
-    }
-}
+crate::forward_mult![Rank9<B, C>; B; bits;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool,
+    crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_select_hinted,
+    crate::traits::rank_sel::forward_select_zero_hinted
+];
 
 #[cfg(test)]
 mod test_rank9 {

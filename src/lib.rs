@@ -41,3 +41,31 @@ macro_rules! forward_mult {
 }
 
 pub(crate) use forward_mult;
+
+macro_rules! forward_as_ref_slice_usize {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > AsRef<[usize]> for $name < $($generic,)* > where $type: AsRef<[usize]> {
+            #[inline(always)]
+            fn as_ref(&self) -> &[usize] {
+                AsRef::<[usize]>::as_ref(&self.$field)
+            }
+        }
+    };
+}
+
+pub(crate) use forward_as_ref_slice_usize;
+
+macro_rules! forward_index_bool {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > Index<usize> for $name < $($generic,)* > where $type: Index<usize, Output = bool> {
+            type Output = bool;
+
+            #[inline(always)]
+            fn index(&self, index: usize) -> &Self::Output {
+                Index::<usize>::index(&self.$field, index)
+            }
+        }
+    };
+}
+
+pub(crate) use forward_index_bool;
