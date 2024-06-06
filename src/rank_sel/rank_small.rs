@@ -389,53 +389,13 @@ impl<
     }
 }
 
-/// Forward [`BitLength`] to the underlying implementation.
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        B: RankHinted<64> + AsRef<[usize]> + BitLength,
-        C1: AsRef<[usize]>,
-        C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > BitLength for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
-{
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.bits.len()
-    }
-}
-
-/// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        B: RankHinted<64> + AsRef<[usize]>,
-        C1: AsRef<[usize]>,
-        C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > AsRef<[usize]> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
-{
-    #[inline(always)]
-    fn as_ref(&self) -> &[usize] {
-        self.bits.as_ref()
-    }
-}
-
-/// Forward `Index<usize, Output = bool>` to the underlying implementation.
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        B: RankHinted<64> + AsRef<[usize]> + Index<usize, Output = bool>,
-        C1: AsRef<[usize]>,
-        C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > Index<usize> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
-{
-    type Output = bool;
-
-    #[inline(always)]
-    fn index(&self, index: usize) -> &Self::Output {
-        // TODO: why is & necessary?
-        &self.bits[index]
-    }
-}
+crate::forward_mult![RankSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, B, C1, C2>; B; bits;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool,
+    crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_select_hinted,
+    crate::traits::rank_sel::forward_select_zero_hinted
+];
 
 #[cfg(test)]
 mod tests {
