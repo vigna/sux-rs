@@ -1,5 +1,6 @@
 mod bench_rank;
 mod bench_select;
+mod utils;
 
 use bench_rank::*;
 use bench_select::*;
@@ -17,14 +18,12 @@ fn main() {
 
     match filter.as_str() {
         "select" => {
-            bench_simple_select(&mut criterion, true);
+            bench_simple_select(&mut criterion, true, 3);
             bench_select9(&mut criterion, true);
-            bench_rank10sel::<10, 12>(&mut criterion, true);
         }
         "select_non_uniform" => {
-            bench_simple_select(&mut criterion, false);
+            bench_simple_select(&mut criterion, false, 3);
             bench_select9(&mut criterion, false);
-            bench_rank10sel::<10, 12>(&mut criterion, false);
         }
         "rank" => {
             bench_rank9(&mut criterion);
@@ -36,8 +35,8 @@ fn main() {
             bench_rank_small4(&mut criterion);
         }
         "simple" => {
-            bench_simple_select(&mut criterion, true);
-            bench_simple_select(&mut criterion, false);
+            bench_simple_select(&mut criterion, true, 3);
+            bench_simple_select(&mut criterion, false, 3);
         }
         "select9" => {
             bench_select9(&mut criterion, true);
@@ -46,7 +45,7 @@ fn main() {
         "rank9" => {
             bench_rank9(&mut criterion);
         }
-        "simple_select_const" => bench_simple_const(&mut criterion),
+        "simple_select_const" => bench_simple_const(&mut criterion, true),
         "compare_simple_fixed" => compare_simple_fixed(&mut criterion),
         filter if filter.contains("-") || filter.is_empty() => {
             println!("No filter provided.");
