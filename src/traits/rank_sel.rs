@@ -15,7 +15,7 @@ Basic traits for succinct operations on bit vectors, including [`Rank`] and [`Se
 /// length of the underlying bit vector.
 #[allow(clippy::len_without_is_empty)]
 pub trait BitLength {
-    /// Return the length in bits of the underlying bit vector.
+    /// Returns the length in bits of the underlying bit vector.
     fn len(&self) -> usize;
 }
 
@@ -34,9 +34,9 @@ pub(crate) use forward_bit_length;
 /// A trait for succinct data structures that expose the
 /// numer of ones and zeros of the underlying bit vector.
 pub trait BitCount: BitLength {
-    /// Return the number of ones in the underlying bit vector.
+    /// Returns the number of ones in the underlying bit vector.
     fn count_ones(&self) -> usize;
-    /// Return the number of zeros in the underlying bit vector.
+    /// Returns the number of zeros in the underlying bit vector.
     #[inline(always)]
     fn count_zeros(&self) -> usize {
         self.len() - self.count_ones()
@@ -62,7 +62,7 @@ pub(crate) use forward_bit_count;
 
 /// Rank over a bit vector.
 pub trait Rank: BitLength {
-    /// Return the number of ones preceding the specified position.
+    /// Returns the number of ones preceding the specified position.
     ///
     /// The bit vector is virtually zero-extended. If `pos` is greater than or equal to the
     /// [length of the underlying bit vector](`BitLength::len`), the number of
@@ -71,7 +71,7 @@ pub trait Rank: BitLength {
         unsafe { self.rank_unchecked(pos.min(self.len())) }
     }
 
-    /// Return the number of ones preceding the specified position.
+    /// Returns the number of ones preceding the specified position.
     ///
     /// # Safety
     /// `pos` must be between 0 (included) and the [length of the underlying bit
@@ -97,12 +97,14 @@ macro_rules! forward_rank {
 pub(crate) use forward_rank;
 
 /// Rank zeros over a bit vector.
+///
+/// Note that this is just an extension trait for [`Rank`].
 pub trait RankZero: Rank {
-    /// Return the number of zeros preceding the specified position.
+    /// Returns the number of zeros preceding the specified position.
     fn rank_zero(&self, pos: usize) -> usize {
         pos - self.rank(pos)
     }
-    /// Return the number of zeros preceding the specified position.
+    /// Returns the number of zeros preceding the specified position.
     ///
     /// # Safety
     /// `pos` must be between 0 and the [length of the underlying bit
@@ -135,7 +137,7 @@ pub(crate) use forward_rank_zero;
 /// This trait is used to implement fast ranking by adding to bit vectors
 /// counters of different kind.
 pub trait RankHinted<const HINT_BIT_SIZE: usize> {
-    /// Return the number of ones preceding the specified position,
+    /// Returns the number of ones preceding the specified position,
     /// provided a preceding position and its associated rank.
     ///
     /// # Safety
@@ -146,7 +148,7 @@ pub trait RankHinted<const HINT_BIT_SIZE: usize> {
     /// `hint_rank` must be the number of ones in the underlying bit vector
     /// before `hint_pos` * `HINT_BIT_SIZE`.
     unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize;
-    /// Return the number of ones preceding the specified position,
+    /// Returns the number of ones preceding the specified position,
     /// provided a preceding position `hint_pos` * `HINT_BIT_SIZE` and
     /// the associated rank.
     fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
@@ -171,7 +173,7 @@ pub(crate) use forward_rank_hinted;
 
 /// Select over a bit vector.
 pub trait Select: BitCount {
-    /// Return the position of the one of given rank, or `None` if no such
+    /// Returns the position of the one of given rank, or `None` if no such
     /// bit exist.
     fn select(&self, rank: usize) -> Option<usize> {
         if rank >= self.count_ones() {
@@ -181,7 +183,7 @@ pub trait Select: BitCount {
         }
     }
 
-    /// Return the position of the one of given rank.
+    /// Returns the position of the one of given rank.
     ///
     /// # Safety
     /// `rank` must be between zero (included) and the number of ones in the
@@ -209,7 +211,7 @@ pub(crate) use forward_select;
 
 /// Select zeros over a bit vector.
 pub trait SelectZero: BitLength + BitCount {
-    /// Return the position of the zero of given rank, or `None` if no such
+    /// Returns the position of the zero of given rank, or `None` if no such
     /// bit exist.
     fn select_zero(&self, rank: usize) -> Option<usize> {
         if rank >= self.count_zeros() {
@@ -219,7 +221,7 @@ pub trait SelectZero: BitLength + BitCount {
         }
     }
 
-    /// Return the position of the zero of given rank.
+    /// Returns the position of the zero of given rank.
     ///
     /// # Safety
     /// `rank` must be between zero (included) and the number of zeros in the
