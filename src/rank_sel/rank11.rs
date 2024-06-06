@@ -27,6 +27,8 @@ pub struct Rank11<B = BitVec, C = Vec<BlockCounters11>> {
     pub(super) counts: C,
 }
 
+impl<B, C> RankZero for Rank11<B, C> where Rank11<B, C>: Rank {}
+
 #[derive(Epserde, Copy, Debug, Clone, MemDbg, MemSize, Default)]
 #[repr(C)]
 #[zero_copy]
@@ -137,7 +139,6 @@ crate::forward_mult![Rank11<B, C>; B; bits;
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
     crate::traits::rank_sel::forward_rank_hinted,
-    crate::traits::rank_sel::forward_rank_zero,
     crate::traits::rank_sel::forward_select,
     crate::traits::rank_sel::forward_select_zero,
     crate::traits::rank_sel::forward_select_hinted,
