@@ -298,7 +298,7 @@ impl<
     }
 }
 
-forward_bit_count![SelectSmall< [const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ONES_PER_INVENTORY: usize, R, I>; R; rank_small];
+forward_bit_count![SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ONES_PER_INVENTORY: usize, R, I>; R; rank_small];
 
 /// Forward `AsRef<[usize]>` to the underlying implementation.
 impl<

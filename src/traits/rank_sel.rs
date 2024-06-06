@@ -21,13 +21,8 @@ pub trait BitLength {
 
 #[macro_export]
 macro_rules! forward_bit_length {
-        ($name:ident
-        <
-            $( $([$const:ident])? $generic:ident $(:$t:ty)?  ),*
-        >;
-        $type:ident;
-        $field:ident) => {
-        impl <$( $($const)? $generic $(:$t)?,)* > BitLength for $name < $($generic,)* > where $type: BitLength {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > BitLength for $name < $($generic),* > where $type: BitLength {
             #[inline(always)]
             fn len(&self) -> usize {
                     BitLength::len(&self.$field)
@@ -50,13 +45,8 @@ pub trait BitCount: BitLength {
 
 #[macro_export]
 macro_rules! forward_bit_count {
-        ($name:ident
-        <
-            $( $([$const:ident])? $generic:ident $(:$t:ty)?  ),*
-        >;
-        $type:ident;
-        $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)?,)* > BitCount for $name < $($generic,)* > where $type: BitCount {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > BitCount for $name < $($generic,)* > where $type: BitCount {
             #[inline(always)]
             fn count_ones(&self) -> usize {
                 BitCount::count_ones(&self.$field)
