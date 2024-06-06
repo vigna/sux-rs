@@ -6,8 +6,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::ops::Index;
-
 use crate::prelude::*;
 use common_traits::SelectInWord;
 use epserde::Epserde;
@@ -253,26 +251,6 @@ macro_rules! impl_rank_small_sel {
                     .select_hinted_unchecked(rank, hint_pos, hint_rank + b3)
             }
         }
-
-        /// Forward [`Rank`] to the underlying implementation.
-        impl<const LOG2_ONES_PER_INVENTORY: usize> Rank
-            for SelectSmall<
-                $NUM_U32S,
-                $COUNTER_WIDTH,
-                LOG2_ONES_PER_INVENTORY,
-                RankSmall<$NUM_U32S, $COUNTER_WIDTH>,
-            >
-        {
-            #[inline(always)]
-            unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-                self.rank_small.rank_unchecked(pos)
-            }
-
-            #[inline(always)]
-            fn rank(&self, pos: usize) -> usize {
-                self.rank_small.rank(pos)
-            }
-        }
     };
 }
 
@@ -284,38 +262,14 @@ impl_rank_small_sel!(3; 13);
 
 crate::forward_mult![
     SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ONES_PER_INVENTORY: usize, R, I>; R; rank_small;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
-    crate::traits::rank_sel::forward_bit_count
+    crate::traits::rank_sel::forward_bit_count,
+    crate::traits::rank_sel::forward_rank,
+    crate::traits::rank_sel::forward_rank_hinted,
+    crate::traits::rank_sel::forward_rank_zero,
+    crate::traits::rank_sel::forward_select_zero,
+    crate::traits::rank_sel::forward_select_hinted,
+    crate::traits::rank_sel::forward_select_zero_hinted
 ];
-
-/// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        B: AsRef<[usize]>,
-        I,
-    > AsRef<[usize]> for SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
-{
-    #[inline(always)]
-    fn as_ref(&self) -> &[usize] {
-        self.rank_small.as_ref()
-    }
-}
-
-/// Forward `Index<usize, Output = bool>` to the underlying implementation.
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        B: Index<usize, Output = bool>,
-        I,
-    > Index<usize> for SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
-{
-    type Output = bool;
-    #[inline(always)]
-    fn index(&self, index: usize) -> &Self::Output {
-        // TODO: why is & necessary?
-        &self.rank_small[index]
-    }
-}

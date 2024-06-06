@@ -62,14 +62,14 @@ fn test_elias_fano() -> Result<()> {
             assert_eq!({ ef.get(i) }, *v);
         }
         // Add the ones indices
-        let ef = ef.map_high_bits(|high_bits| SimpleSelectConst::<_, _>::new(high_bits));
+        let ef = ef.map_high_bits(SimpleSelectConst::<_, _>::new);
 
         for (i, v) in values.iter().enumerate() {
             assert_eq!(ef.get(i), *v);
         }
 
         // Add the indices
-        let ef = ef.map_high_bits(|high_bits| SimpleSelectZeroConst::<_, _, 10>::new(high_bits));
+        let ef = ef.map_high_bits(SimpleSelectZeroConst::<_, _, 10>::new);
         // do a fast select
         for (i, v) in values.iter().enumerate() {
             assert_eq!({ ef.get(i) }, *v);
@@ -189,7 +189,7 @@ fn test_epserde() -> Result<()> {
         // Finish the creation of elias-fano
         let ef = efb
             .build()
-            .map_high_bits(|high_bits| SimpleSelectConst::<_, _, 10>::new(high_bits));
+            .map_high_bits(SimpleSelectConst::<_, _, 10>::new);
 
         let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
         let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);

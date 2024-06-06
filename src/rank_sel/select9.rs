@@ -6,11 +6,9 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::ops::Index;
-
 use super::rank9::BlockCounters;
 use super::Rank9;
-use crate::prelude::{BitCount, BitLength, Rank, Select};
+use crate::prelude::{BitCount, BitLength, Select};
 use common_traits::{SelectInWord, Sequence};
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
@@ -80,7 +78,7 @@ macro_rules! ULEQ_STEP_16 {
 /// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct Select9<R = Rank9, I: AsRef<[usize]> = Vec<usize>> {
+pub struct Select9<R = Rank9, I = Vec<usize>> {
     rank9: R,
     inventory: I,
     subinventory: I,
@@ -385,75 +383,24 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
     }
 }
 
-/// Forward [`Rank`] to the underlying implementation.
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> Rank
-    for Select9<Rank9<B, C>, I>
-{
-    #[inline(always)]
-    unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-        self.rank9.rank_unchecked(pos)
-    }
-
-    #[inline(always)]
-    fn rank(&self, pos: usize) -> usize {
-        self.rank9.rank(pos)
-    }
-}
-
-/// Forward [`BitCount`] to the underlying implementation.
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> BitCount
-    for Select9<Rank9<B, C>, I>
-{
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.rank9.count_ones()
-    }
-
-    #[inline(always)]
-    fn count_zeros(&self) -> usize {
-        self.rank9.count_zeros()
-    }
-}
-
-/// Forward [`BitLength`] to the underlying implementation.
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> BitLength
-    for Select9<Rank9<B, C>, I>
-{
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.rank9.len()
-    }
-}
-
-/// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> AsRef<[usize]>
-    for Select9<Rank9<B, C>, I>
-{
-    #[inline(always)]
-    fn as_ref(&self) -> &[usize] {
-        self.rank9.as_ref()
-    }
-}
-
-/// Forward `Index<usize, Output = bool>` to the underlying implementation.
-impl<
-        B: AsRef<[usize]> + BitLength + Index<usize, Output = bool>,
-        C: AsRef<[BlockCounters]>,
-        I: AsRef<[usize]>,
-    > Index<usize> for Select9<Rank9<B, C>, I>
-{
-    type Output = bool;
-    #[inline(always)]
-    fn index(&self, index: usize) -> &Self::Output {
-        // TODO: why is & necessary?
-        &self.rank9[index]
-    }
-}
+crate::forward_mult![Select9<R, I>; R; rank9;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool,
+    crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_bit_count,
+    crate::traits::rank_sel::forward_rank,
+    crate::traits::rank_sel::forward_rank_hinted,
+    crate::traits::rank_sel::forward_rank_zero,
+    crate::traits::rank_sel::forward_select_zero,
+    crate::traits::rank_sel::forward_select_hinted,
+    crate::traits::rank_sel::forward_select_zero_hinted
+];
 
 #[cfg(test)]
 mod test_select9 {
     use super::*;
     use crate::prelude::BitVec;
+    use crate::traits::Rank;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     #[test]

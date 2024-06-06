@@ -8,10 +8,7 @@
 
 use epserde::*;
 use mem_dbg::*;
-use std::{
-    ops::Index,
-    ptr::{addr_of, read_unaligned, write_unaligned},
-};
+use std::ptr::{addr_of, read_unaligned, write_unaligned};
 
 use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
 
@@ -393,6 +390,8 @@ crate::forward_mult![RankSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: u
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_select,
+    crate::traits::rank_sel::forward_select_zero,
     crate::traits::rank_sel::forward_select_hinted,
     crate::traits::rank_sel::forward_select_zero_hinted
 ];
