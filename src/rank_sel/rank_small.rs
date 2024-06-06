@@ -88,8 +88,8 @@ where
 ///
 /// ```rust
 /// use sux::{prelude::Rank,bit_vec,rank_small};
-/// let bv = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
-/// let rank_small = rank_small![0; bv];
+/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let rank_small = rank_small![0; bits];
 ///
 /// assert_eq!(rank_small.rank(0), 0);
 /// assert_eq!(rank_small.rank(1), 1);

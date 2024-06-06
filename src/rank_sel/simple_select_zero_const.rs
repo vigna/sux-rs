@@ -12,13 +12,8 @@ use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
 
-/**
+/// The [`SelectZero`] version of [`SimpleSelect`](crate::rank_sel::SimpleSelect).
 
-A selection structure for zeros based on a two-level index.
-
-See [`SimpleSelectConst`](crate::rank_sel::SimpleSelectConst).
-
-*/
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SimpleSelectZeroConst<
     B,
@@ -31,12 +26,8 @@ pub struct SimpleSelectZeroConst<
 }
 
 /// constants used throughout the code
-impl<
-        B: SelectZeroHinted,
-        I: AsRef<[u64]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SimpleSelectZeroConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY: usize>
+    SimpleSelectZeroConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     const ONES_PER_INVENTORY: usize = 1 << LOG2_ZEROS_PER_INVENTORY;
     const U64_PER_SUBINVENTORY: usize = 1 << LOG2_U64_PER_SUBINVENTORY;
@@ -49,7 +40,7 @@ impl<
     const ONES_PER_SUB16: usize = 1 << Self::LOG2_ZEROS_PER_SUB16;
 
     /// We use the sign bit to store the type of the subinventory (u16 vs. u64).
-    const INVENTORY_MASK: u64 = (1 << 63) - 1;
+    const INVENTORY_MASK: usize = (1 << 63) - 1;
 
     /// Return the inner BitVector
     pub fn into_inner(self) -> B {
@@ -116,7 +107,7 @@ impl<
         B: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>,
         const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SimpleSelectZeroConst<B, Vec<u64>, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SimpleSelectZeroConst<B, Vec<usize>, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     pub fn new(bitvec: B) -> Self {
         let number_of_zeros = bitvec.count_zeros();
@@ -129,26 +120,26 @@ impl<
         let mut number_of_ones = 0;
         let mut next_quantum = 0;
         'outer: for (i, word) in bitvec.as_ref().iter().copied().map(|x| !x).enumerate() {
-            let ones_in_word = word.count_ones() as u64;
+            let ones_in_word = word.count_ones() as usize;
             // skip the word if we can
-            while (number_of_ones + ones_in_word).min(number_of_zeros as u64) > next_quantum {
+            while (number_of_ones + ones_in_word).min(number_of_zeros) > next_quantum {
                 let in_word_index = word.select_in_word((next_quantum - number_of_ones) as usize);
                 let index = (i * u64::BITS as usize) + in_word_index;
 
                 // write the position of the one in the inventory
-                inventory.push(index as u64);
+                inventory.push(index);
                 // make space for the subinventory
                 inventory.resize(inventory.len() + Self::U64_PER_SUBINVENTORY, 0);
 
-                next_quantum += Self::ONES_PER_INVENTORY as u64;
-                if next_quantum >= number_of_zeros as u64 {
+                next_quantum += Self::ONES_PER_INVENTORY;
+                if next_quantum >= number_of_zeros {
                     break 'outer;
                 }
             }
             number_of_ones += ones_in_word;
         }
         // in the last inventory write the number of bits
-        inventory.push(BitLength::len(&bitvec) as u64);
+        inventory.push(BitLength::len(&bitvec));
         debug_assert_eq!(inventory_len, inventory.len());
         let iter = 0..inventory_size;
 
@@ -164,10 +155,10 @@ impl<
             let span = end_bit_idx - start_bit_idx;
             // compute were we should the word boundaries of where we should
             // scan
-            let mut word_idx = start_bit_idx / u64::BITS as u64;
+            let mut word_idx = start_bit_idx / u64::BITS as usize;
 
             // cleanup the lower bits
-            let bit_idx = start_bit_idx % u64::BITS as u64;
+            let bit_idx = start_bit_idx % u64::BITS as usize;
             let mut word = !(bitvec.as_ref()[word_idx as usize]) >> bit_idx << bit_idx;
             // compute the global number of ones
             let mut number_of_ones = inventory_idx * Self::ONES_PER_INVENTORY;
@@ -176,14 +167,14 @@ impl<
             let mut next_quantum = number_of_ones;
             let quantum;
 
-            if span <= u16::MAX as u64 {
+            if span <= u16::MAX as usize {
                 quantum = Self::ONES_PER_SUB16;
             } else {
                 quantum = Self::ONES_PER_SUB64;
-                inventory[start_idx] |= 1_u64 << 63;
+                inventory[start_idx] |= 1 << 63;
             }
 
-            let end_word_idx = end_bit_idx.div_ceil(u64::BITS as u64);
+            let end_word_idx = end_bit_idx.div_ceil(u64::BITS as usize);
 
             // the first subinventory element is always 0
             let mut subinventory_idx = 1;
@@ -199,12 +190,12 @@ impl<
                     // find the quantum bit in the word
                     let in_word_index = word.select_in_word(next_quantum - number_of_ones);
                     // compute the global index of the quantum bit in the bitvec
-                    let bit_index = (word_idx * u64::BITS as u64) + in_word_index as u64;
+                    let bit_index = (word_idx * u64::BITS as usize) + in_word_index;
                     // compute the offset of the quantum bit
                     // from the start of the subinventory
                     let sub_offset = bit_index - start_bit_idx;
 
-                    if span <= u16::MAX as u64 {
+                    if span <= u16::MAX as usize {
                         let subinventory: &mut [u16] =
                             unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
 
@@ -243,7 +234,7 @@ impl<
 /// Provide the hint to the underlying structure.
 impl<
         B: SelectZeroHinted + BitCount + BitLength,
-        I: AsRef<[u64]>,
+        I: AsRef<[usize]>,
         const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > SelectZero
@@ -269,7 +260,7 @@ impl<
         let (pos, residual) = if inventory_rank as isize >= 0 {
             let (_pre, u16s, _post) = u64s.align_to::<u16>();
             (
-                inventory_rank + u16s[subrank / Self::ONES_PER_SUB16] as u64,
+                inventory_rank + u16s[subrank / Self::ONES_PER_SUB16] as usize,
                 subrank % Self::ONES_PER_SUB16,
             )
         } else {

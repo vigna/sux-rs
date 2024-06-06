@@ -154,6 +154,10 @@ pub struct SimpleSelect<B, I = Vec<usize>> {
 }
 
 impl<B, I> SimpleSelect<B, I> {
+    pub fn into_inner(self) -> B {
+        self.bits
+    }
+
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
 }
 
