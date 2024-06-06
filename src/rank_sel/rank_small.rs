@@ -10,7 +10,7 @@ use epserde::*;
 use mem_dbg::*;
 use std::ptr::{addr_of, read_unaligned, write_unaligned};
 
-use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted};
+use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted, RankZero};
 
 /// A family of ranking structures using very little additional space but with
 /// slower operations than [`Rank9`](super::Rank9).
@@ -64,6 +64,13 @@ pub struct RankSmall<
     pub(super) upper_counts: C1,
     pub(super) counts: C2,
     pub(super) num_ones: usize,
+}
+
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> RankZero
+    for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+where
+    RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>: Rank,
+{
 }
 
 /// A convenient macro to build a [`RankSmall`] structure with the correct
@@ -390,6 +397,7 @@ crate::forward_mult![RankSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: u
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_rank_hinted,
     crate::traits::rank_sel::forward_select,
     crate::traits::rank_sel::forward_select_zero,
     crate::traits::rank_sel::forward_select_hinted,
