@@ -79,6 +79,23 @@ pub trait Rank: BitLength {
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
 }
 
+macro_rules! forward_rank {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > Rank for $name < $($generic,)* > where $type: Rank {
+            #[inline(always)]
+            fn rank(&self, pos: usize) -> usize {
+                Rank::rank(&self.$field, pos)
+            }
+            #[inline(always)]
+            unsafe fn rank_unchecked(&self, pos: usize) -> usize {
+                Rank::rank_unchecked(&self.$field, pos)
+            }
+        }
+    };
+}
+
+pub(crate) use forward_rank;
+
 /// Rank zeros over a bit vector.
 pub trait RankZero: Rank {
     /// Return the number of zeros preceding the specified position.
@@ -94,6 +111,23 @@ pub trait RankZero: Rank {
         pos - self.rank_unchecked(pos)
     }
 }
+
+macro_rules! forward_rank_zero {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > RankZero for $name < $($generic,)* > where $type: RankZero {
+            #[inline(always)]
+            fn rank_zero(&self, pos: usize) -> usize {
+                RankZero::rank_zero(&self.$field, pos)
+            }
+            #[inline(always)]
+            unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
+                RankZero::rank_zero_unchecked(&self.$field, pos)
+            }
+        }
+    };
+}
+
+pub(crate) use forward_rank_zero;
 
 /// Rank over a bit vector, with a hint.
 ///
@@ -117,6 +151,23 @@ pub trait RankHinted<const HINT_BIT_SIZE: usize> {
     fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
 }
 
+macro_rules! forward_rank_hinted {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > RankHinted for $name < $($generic,)* > where $type: RankHinted {
+            #[inline(always)]
+            unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
+                RankHinted::rank_hinted_unchecked(&self.$field, pos, hint_pos, hint_rank)
+            }
+            #[inline(always)]
+            fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
+                RankHinted::rank_hinted(&self.$field, pos, hint_pos, hint_rank)
+            }
+        }
+    };
+}
+
+pub(crate) use forward_rank_hinted;
+
 /// Select over a bit vector.
 pub trait Select: BitCount {
     /// Return the position of the one of given rank, or `None` if no such
@@ -137,6 +188,23 @@ pub trait Select: BitCount {
     unsafe fn select_unchecked(&self, rank: usize) -> usize;
 }
 
+macro_rules! forward_select {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > Select for $name < $($generic,)* > where $type: Select {
+            #[inline(always)]
+            fn select(&self, rank: usize) -> Option<usize> {
+                Select::select(&self.$field, rank)
+            }
+            #[inline(always)]
+            unsafe fn select_unchecked(&self, rank: usize) -> usize {
+                Select::select_unchecked(&self.$field, rank)
+            }
+        }
+    };
+}
+
+pub(crate) use forward_select;
+
 /// Select zeros over a bit vector.
 pub trait SelectZero: BitLength + BitCount {
     /// Return the position of the zero of given rank, or `None` if no such
@@ -156,6 +224,23 @@ pub trait SelectZero: BitLength + BitCount {
     /// underlying bit vector (excluded).
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize;
 }
+
+macro_rules! forward_select_zero {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > SelectZero for $name < $($generic,)* > where $type: SelectZero {
+            #[inline(always)]
+            fn select_zero(&self, rank: usize) -> Option<usize> {
+                SelectZero::select_zero(&self.$field, rank)
+            }
+            #[inline(always)]
+            unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
+                SelectZero::select_zero_unchecked(&self.$field, rank)
+            }
+        }
+    };
+}
+
+pub(crate) use forward_select_zero;
 
 /// Select over a bit vector, with a hint.
 ///
@@ -184,6 +269,23 @@ pub trait SelectHinted {
     fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
 }
 
+macro_rules! forward_select_hinted {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > SelectHinted for $name < $($generic,)* > where $type: SelectHinted {
+            #[inline(always)]
+            unsafe fn select_hinted_unchecked(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
+                SelectHinted::select_hinted_unchecked(&self.$field, rank, hint_pos, hint_rank)
+            }
+            #[inline(always)]
+            fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
+                SelectHinted::select_hinted(&self.$field, rank, hint_pos, hint_rank)
+            }
+        }
+    };
+}
+
+pub(crate) use forward_select_hinted;
+
 /// Select zeros over a bit vector, with a hint.
 ///
 /// This trait is used to implement fast selection over zeros by adding to bit
@@ -210,3 +312,20 @@ pub trait SelectZeroHinted {
     /// and its rank.
     fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
 }
+
+macro_rules! forward_select_zero_hinted {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > SelectZeroHinted for $name < $($generic,)* > where $type: SelectZeroHinted {
+            #[inline(always)]
+            unsafe fn select_zero_hinted_unchecked(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
+                SelectZeroHinted::select_zero_hinted_unchecked(&self.$field, rank, hint_pos, hint_rank)
+            }
+            #[inline(always)]
+            fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
+                SelectZeroHinted::select_zero_hinted(&self.$field, rank, hint_pos, hint_rank)
+            }
+        }
+    };
+}
+
+pub(crate) use forward_select_zero_hinted;
