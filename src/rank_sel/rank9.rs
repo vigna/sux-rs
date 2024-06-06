@@ -11,10 +11,7 @@ use std::ops::Index;
 use epserde::*;
 use mem_dbg::*;
 
-use crate::{
-    forward_bit_length,
-    prelude::{BitCount, BitLength, BitVec, Rank, SelectHinted, SelectZeroHinted},
-};
+use crate::prelude::{BitCount, BitLength, BitVec, Rank, SelectHinted, SelectZeroHinted};
 
 /// A ranking structure using 25% of additional space and providing the fastest
 /// available rank operations.
@@ -158,7 +155,7 @@ impl<B: BitLength + AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> BitCo
     }
 }
 
-forward_bit_length![Rank9<B, C>; B; bits];
+crate::forward_mult![Rank9<B, C>; B; bits; crate::traits::rank_sel::forward_bit_length];
 
 /// Forward `AsRef<[usize]>` to the underlying implementation.
 impl<B: AsRef<[usize]>, C: AsRef<[BlockCounters]>> AsRef<[usize]> for Rank9<B, C> {

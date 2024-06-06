@@ -19,7 +19,6 @@ pub trait BitLength {
     fn len(&self) -> usize;
 }
 
-#[macro_export]
 macro_rules! forward_bit_length {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
         impl < $( $($const)? $generic $(:$t)? ),* > BitLength for $name < $($generic),* > where $type: BitLength {
@@ -31,6 +30,7 @@ macro_rules! forward_bit_length {
     };
 }
 
+pub(crate) use forward_bit_length;
 /// A trait for succinct data structures that expose the
 /// numer of ones and zeros of the underlying bit vector.
 pub trait BitCount: BitLength {
@@ -43,7 +43,6 @@ pub trait BitCount: BitLength {
     }
 }
 
-#[macro_export]
 macro_rules! forward_bit_count {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
         impl < $( $($const)? $generic $(:$t)? ),* > BitCount for $name < $($generic,)* > where $type: BitCount {
@@ -58,6 +57,8 @@ macro_rules! forward_bit_count {
         }
     };
 }
+
+pub(crate) use forward_bit_count;
 
 /// Rank over a bit vector.
 pub trait Rank: BitLength {

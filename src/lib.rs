@@ -30,3 +30,14 @@ pub mod prelude {
     pub use crate::traits::*;
     pub use crate::utils::*;
 }
+
+macro_rules! forward_mult {
+    ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident; $macro:path $(, $macros:path)*) => {
+		$macro![$name < $( $([$const])? $generic $(:$t)? ),* >; $type; $field];
+		crate::forward_mult![$name < $( $([$const])? $generic $(:$t)? ),* >; $type; $field; $($macros),* ];
+	};
+
+	($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident; ) => {}
+}
+
+pub(crate) use forward_mult;

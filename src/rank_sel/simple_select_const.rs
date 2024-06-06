@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::{forward_bit_count, forward_bit_length, traits::*};
+use crate::traits::*;
 use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
@@ -329,8 +329,11 @@ impl<
     }
 }
 
-forward_bit_length![SimpleSelectConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits];
-forward_bit_count![SimpleSelectConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits];
+crate::forward_mult![
+    SimpleSelectConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
+    crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_bit_count
+];
 
 /// Forward [`SelectZero`] to the underlying implementation.
 impl<

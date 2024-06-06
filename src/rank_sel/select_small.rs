@@ -8,7 +8,6 @@
 
 use std::ops::Index;
 
-use crate::forward_bit_count;
 use crate::prelude::*;
 use common_traits::SelectInWord;
 use epserde::Epserde;
@@ -283,22 +282,11 @@ impl_rank_small_sel!(1; 10);
 impl_rank_small_sel!(1; 11);
 impl_rank_small_sel!(3; 13);
 
-/// Forward [`BitLength`] to the underlying implementation.
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        B: BitLength,
-        I,
-    > BitLength for SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, B, I>
-{
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.rank_small.len()
-    }
-}
-
-forward_bit_count![SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ONES_PER_INVENTORY: usize, R, I>; R; rank_small];
+crate::forward_mult![
+    SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ONES_PER_INVENTORY: usize, R, I>; R; rank_small;
+    crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_bit_count
+];
 
 /// Forward `AsRef<[usize]>` to the underlying implementation.
 impl<
