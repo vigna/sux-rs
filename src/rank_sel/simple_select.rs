@@ -9,12 +9,9 @@
 use common_traits::SelectInWord;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
-use std::{
-    cmp::{max, min},
-    ops::Index,
-};
+use std::cmp::{max, min};
 
-use crate::prelude::{BitCount, BitFieldSlice, BitLength, Rank, Select, SelectHinted};
+use crate::prelude::{BitCount, BitFieldSlice, BitLength, Select, SelectHinted};
 
 /// A simple select implementation based on a two-level inventory.
 ///
@@ -424,7 +421,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
     }
 }
 
-impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> Select
+impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>> Select
     for SimpleSelect<B, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -463,57 +460,19 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> Select
     }
 }
 
-impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> BitCount
-    for SimpleSelect<B, I>
-{
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.num_ones
-    }
-}
-
-/// Forward [`BitLength`] to the underlying implementation.
-impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> BitLength
-    for SimpleSelect<B, I>
-{
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.bits.len()
-    }
-}
-
-/// Forward [`Rank`] to the underlying implementation.
-impl<B: Rank + SelectHinted + AsRef<[usize]>, I: AsRef<[usize]>> Rank for SimpleSelect<B, I> {
-    #[inline(always)]
-    unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-        self.bits.rank_unchecked(pos)
-    }
-
-    #[inline(always)]
-    fn rank(&self, pos: usize) -> usize {
-        self.bits.rank(pos)
-    }
-}
-
-/// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<B: SelectHinted + AsRef<[usize]>, I: AsRef<[usize]>> AsRef<[usize]> for SimpleSelect<B, I> {
-    #[inline(always)]
-    fn as_ref(&self) -> &[usize] {
-        self.bits.as_ref()
-    }
-}
-
-/// Forward `Index<usize, Output = bool>` to the underlying implementation.
-impl<B: SelectHinted + AsRef<[usize]> + Index<usize, Output = bool>, I: AsRef<[usize]>> Index<usize>
-    for SimpleSelect<B, I>
-{
-    type Output = bool;
-    #[inline(always)]
-    fn index(&self, index: usize) -> &Self::Output {
-        // TODO: why is & necessary?
-        &self.bits[index]
-    }
-}
+crate::forward_mult![
+    SimpleSelect<B, I>; B; bits;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool,
+    crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_bit_count,
+    crate::traits::rank_sel::forward_rank,
+    crate::traits::rank_sel::forward_rank_hinted,
+    crate::traits::rank_sel::forward_rank_zero,
+    crate::traits::rank_sel::forward_select_zero,
+    crate::traits::rank_sel::forward_select_hinted,
+    crate::traits::rank_sel::forward_select_zero_hinted
+];
 
 #[cfg(test)]
 mod test_simple_select {
