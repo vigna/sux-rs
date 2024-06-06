@@ -21,10 +21,10 @@ pub trait BitLength {
 
 macro_rules! forward_bit_length {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > BitLength for $name < $($generic),* > where $type: BitLength {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::BitLength for $name < $($generic),* > where $type: $crate::traits::rank_sel::BitLength {
             #[inline(always)]
             fn len(&self) -> usize {
-                    BitLength::len(&self.$field)
+                    $crate::traits::rank_sel::BitLength::len(&self.$field)
                 }
             }
     };
@@ -45,14 +45,14 @@ pub trait BitCount: BitLength {
 
 macro_rules! forward_bit_count {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > BitCount for $name < $($generic,)* > where $type: BitCount {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::BitCount for $name < $($generic,)* > where $type: $crate::traits::rank_sel::BitCount {
             #[inline(always)]
             fn count_ones(&self) -> usize {
-                BitCount::count_ones(&self.$field)
+                $crate::traits::rank_sel::BitCount::count_ones(&self.$field)
             }
             #[inline(always)]
             fn count_zeros(&self) -> usize {
-                BitCount::count_zeros(&self.$field)
+                $crate::traits::rank_sel::BitCount::count_zeros(&self.$field)
             }
         }
     };
@@ -81,14 +81,14 @@ pub trait Rank: BitLength {
 
 macro_rules! forward_rank {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > Rank for $name < $($generic,)* > where $type: Rank {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::Rank for $name < $($generic,)* > where $type: $crate::traits::rank_sel::Rank {
             #[inline(always)]
             fn rank(&self, pos: usize) -> usize {
-                Rank::rank(&self.$field, pos)
+                $crate::traits::rank_sel::Rank::rank(&self.$field, pos)
             }
             #[inline(always)]
             unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-                Rank::rank_unchecked(&self.$field, pos)
+                $crate::traits::rank_sel::Rank::rank_unchecked(&self.$field, pos)
             }
         }
     };
@@ -114,14 +114,14 @@ pub trait RankZero: Rank {
 
 macro_rules! forward_rank_zero {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > RankZero for $name < $($generic,)* > where $type: RankZero {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::RankZero for $name < $($generic,)* > where $type: $crate::traits::rank_sel::RankZero {
             #[inline(always)]
             fn rank_zero(&self, pos: usize) -> usize {
-                RankZero::rank_zero(&self.$field, pos)
+                $crate::traits::rank_sel::RankZero::rank_zero(&self.$field, pos)
             }
             #[inline(always)]
             unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
-                RankZero::rank_zero_unchecked(&self.$field, pos)
+                $crate::traits::rank_sel::RankZero::rank_zero_unchecked(&self.$field, pos)
             }
         }
     };
@@ -153,14 +153,14 @@ pub trait RankHinted<const HINT_BIT_SIZE: usize> {
 
 macro_rules! forward_rank_hinted {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > RankHinted for $name < $($generic,)* > where $type: RankHinted {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::RankHinted for $name < $($generic,)* > where $type: $crate::traits::rank_sel::RankHinted {
             #[inline(always)]
             unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
-                RankHinted::rank_hinted_unchecked(&self.$field, pos, hint_pos, hint_rank)
+                $crate::traits::rank_sel::RankHinted::rank_hinted_unchecked(&self.$field, pos, hint_pos, hint_rank)
             }
             #[inline(always)]
             fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
-                RankHinted::rank_hinted(&self.$field, pos, hint_pos, hint_rank)
+                $crate::traits::rank_sel::RankHinted::rank_hinted(&self.$field, pos, hint_pos, hint_rank)
             }
         }
     };
@@ -190,14 +190,14 @@ pub trait Select: BitCount {
 
 macro_rules! forward_select {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > Select for $name < $($generic,)* > where $type: Select {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::Select for $name < $($generic,)* > where $type: $crate::traits::rank_sel::Select {
             #[inline(always)]
             fn select(&self, rank: usize) -> Option<usize> {
-                Select::select(&self.$field, rank)
+                $crate::traits::rank_sel::Select::select(&self.$field, rank)
             }
             #[inline(always)]
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
-                Select::select_unchecked(&self.$field, rank)
+                $crate::traits::rank_sel::Select::select_unchecked(&self.$field, rank)
             }
         }
     };
@@ -227,14 +227,14 @@ pub trait SelectZero: BitLength + BitCount {
 
 macro_rules! forward_select_zero {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > SelectZero for $name < $($generic,)* > where $type: SelectZero {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::SelectZero for $name < $($generic,)* > where $type: $crate::traits::rank_sel::SelectZero {
             #[inline(always)]
             fn select_zero(&self, rank: usize) -> Option<usize> {
-                SelectZero::select_zero(&self.$field, rank)
+                $crate::traits::rank_sel::SelectZero::select_zero(&self.$field, rank)
             }
             #[inline(always)]
             unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
-                SelectZero::select_zero_unchecked(&self.$field, rank)
+                $crate::traits::rank_sel::SelectZero::select_zero_unchecked(&self.$field, rank)
             }
         }
     };
@@ -271,14 +271,14 @@ pub trait SelectHinted {
 
 macro_rules! forward_select_hinted {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > SelectHinted for $name < $($generic,)* > where $type: SelectHinted {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::SelectHinted for $name < $($generic,)* > where $type: $crate::traits::rank_sel::SelectHinted {
             #[inline(always)]
             unsafe fn select_hinted_unchecked(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
-                SelectHinted::select_hinted_unchecked(&self.$field, rank, hint_pos, hint_rank)
+                $crate::traits::rank_sel::SelectHinted::select_hinted_unchecked(&self.$field, rank, hint_pos, hint_rank)
             }
             #[inline(always)]
             fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
-                SelectHinted::select_hinted(&self.$field, rank, hint_pos, hint_rank)
+                $crate::traits::rank_sel::SelectHinted::select_hinted(&self.$field, rank, hint_pos, hint_rank)
             }
         }
     };
@@ -315,14 +315,14 @@ pub trait SelectZeroHinted {
 
 macro_rules! forward_select_zero_hinted {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > SelectZeroHinted for $name < $($generic,)* > where $type: SelectZeroHinted {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::SelectZeroHinted for $name < $($generic,)* > where $type: $crate::traits::rank_sel::SelectZeroHinted {
             #[inline(always)]
             unsafe fn select_zero_hinted_unchecked(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
-                SelectZeroHinted::select_zero_hinted_unchecked(&self.$field, rank, hint_pos, hint_rank)
+                $crate::traits::rank_sel::SelectZeroHinted::select_zero_hinted_unchecked(&self.$field, rank, hint_pos, hint_rank)
             }
             #[inline(always)]
             fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
-                SelectZeroHinted::select_zero_hinted(&self.$field, rank, hint_pos, hint_rank)
+                $crate::traits::rank_sel::SelectZeroHinted::select_zero_hinted(&self.$field, rank, hint_pos, hint_rank)
             }
         }
     };

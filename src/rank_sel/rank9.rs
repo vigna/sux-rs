@@ -146,9 +146,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B,
     }
 }
 
-impl<B: BitLength + AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> BitCount
-    for Rank9<B, C>
-{
+impl<B: BitLength, C: AsRef<[BlockCounters]>> BitCount for Rank9<B, C> {
     #[inline(always)]
     fn count_ones(&self) -> usize {
         self.counts.as_ref().last().unwrap().absolute
