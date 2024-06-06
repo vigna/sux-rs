@@ -6,12 +6,10 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::ops::Index;
-
 use epserde::*;
 use mem_dbg::*;
 
-use crate::prelude::{BitCount, BitLength, BitVec, Rank, SelectHinted, SelectZeroHinted};
+use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankZero};
 
 /// A ranking structure using 25% of additional space and providing the fastest
 /// available rank operations.
@@ -52,6 +50,8 @@ pub struct Rank9<B = BitVec, C = Vec<BlockCounters>> {
     pub(super) bits: B,
     pub(super) counts: C,
 }
+
+impl RankZero for Rank9 {}
 
 #[derive(Epserde, Copy, Debug, Clone, MemDbg, MemSize, Default)]
 #[repr(C)]
@@ -157,6 +157,8 @@ crate::forward_mult![Rank9<B, C>; B; bits;
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_select,
+    crate::traits::rank_sel::forward_select_zero,
     crate::traits::rank_sel::forward_select_hinted,
     crate::traits::rank_sel::forward_select_zero_hinted
 ];

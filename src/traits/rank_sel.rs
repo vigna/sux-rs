@@ -153,14 +153,14 @@ pub trait RankHinted<const HINT_BIT_SIZE: usize> {
 
 macro_rules! forward_rank_hinted {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::RankHinted for $name < $($generic,)* > where $type: $crate::traits::rank_sel::RankHinted {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::RankHinted<64> for $name < $($generic,)* > where $type: $crate::traits::rank_sel::RankHinted<64> {
             #[inline(always)]
             unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
-                $crate::traits::rank_sel::RankHinted::rank_hinted_unchecked(&self.$field, pos, hint_pos, hint_rank)
+                $crate::traits::rank_sel::RankHinted::<64>::rank_hinted_unchecked(&self.$field, pos, hint_pos, hint_rank)
             }
             #[inline(always)]
             fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
-                $crate::traits::rank_sel::RankHinted::rank_hinted(&self.$field, pos, hint_pos, hint_rank)
+                $crate::traits::rank_sel::RankHinted::<64>::rank_hinted(&self.$field, pos, hint_pos, hint_rank)
             }
         }
     };
@@ -190,7 +190,8 @@ pub trait Select: BitCount {
 
 macro_rules! forward_select {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::Select for $name < $($generic,)* > where $type: $crate::traits::rank_sel::Select {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::Select for $name < $($generic,)* >
+            where Self: $crate::traits::rank_sel::BitCount, $type: $crate::traits::rank_sel::Select {
             #[inline(always)]
             fn select(&self, rank: usize) -> Option<usize> {
                 $crate::traits::rank_sel::Select::select(&self.$field, rank)
@@ -227,7 +228,8 @@ pub trait SelectZero: BitLength + BitCount {
 
 macro_rules! forward_select_zero {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::SelectZero for $name < $($generic,)* > where $type: $crate::traits::rank_sel::SelectZero {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::SelectZero for $name < $($generic,)* >
+            where Self: $crate::traits::rank_sel::BitCount, $type: $crate::traits::rank_sel::SelectZero {
             #[inline(always)]
             fn select_zero(&self, rank: usize) -> Option<usize> {
                 $crate::traits::rank_sel::SelectZero::select_zero(&self.$field, rank)

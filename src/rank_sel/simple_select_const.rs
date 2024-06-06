@@ -1,6 +1,8 @@
 /*
  *
+ * SPDX-FileCopyrightText: 2024 Michele Andreata
  * SPDX-FileCopyrightText: 2023 Tommaso Fontana
+ * SPDX-FileCopyrightText: 2024 Sebastiano Vigna
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
@@ -325,104 +327,20 @@ impl<
 
         // linear scan to finish the search
         self.bits
-            .select_hinted_unchecked(rank, pos as usize, rank - residual)
+            .select_hinted_unchecked(rank, pos, rank - residual)
     }
 }
 
 crate::forward_mult![
     SimpleSelectConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
-    crate::traits::rank_sel::forward_bit_count
+    crate::traits::rank_sel::forward_bit_count,
+    crate::traits::rank_sel::forward_rank,
+    crate::traits::rank_sel::forward_rank_hinted,
+    crate::traits::rank_sel::forward_rank_zero,
+    crate::traits::rank_sel::forward_select_zero,
+    crate::traits::rank_sel::forward_select_hinted,
+    crate::traits::rank_sel::forward_select_zero_hinted
 ];
-
-/// Forward [`SelectZero`] to the underlying implementation.
-impl<
-        B: SelectHinted + SelectZero,
-        I: AsRef<[usize]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectZero for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    #[inline(always)]
-    fn select_zero(&self, rank: usize) -> Option<usize> {
-        self.bits.select_zero(rank)
-    }
-    #[inline(always)]
-    unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
-        self.bits.select_zero_unchecked(rank)
-    }
-}
-
-/// Forward [`SelectZeroHinted`] to the underlying implementation.
-impl<
-        B: SelectHinted + SelectZeroHinted,
-        I: AsRef<[usize]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectZeroHinted
-    for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    #[inline(always)]
-    unsafe fn select_zero_hinted_unchecked(
-        &self,
-        rank: usize,
-        pos: usize,
-        rank_at_pos: usize,
-    ) -> usize {
-        self.bits
-            .select_zero_hinted_unchecked(rank, pos, rank_at_pos)
-    }
-
-    #[inline(always)]
-    fn select_zero_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
-        self.bits.select_zero_hinted(rank, pos, rank_at_pos)
-    }
-}
-
-/// Forward [`Rank`] to the underlying implementation.
-impl<
-        B: SelectHinted + Rank,
-        I: AsRef<[usize]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > Rank for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    fn rank(&self, pos: usize) -> usize {
-        self.bits.rank(pos)
-    }
-
-    unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-        self.bits.rank_unchecked(pos)
-    }
-}
-
-/// Forward [`RankZero`] to the underlying implementation.
-impl<
-        B: SelectHinted + RankZero,
-        I: AsRef<[usize]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > RankZero for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    fn rank_zero(&self, pos: usize) -> usize {
-        self.bits.rank_zero(pos)
-    }
-
-    unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
-        self.bits.rank_zero_unchecked(pos)
-    }
-}
-
-/// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<
-        B: SelectHinted + AsRef<[usize]>,
-        I: AsRef<[usize]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > AsRef<[usize]>
-    for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    fn as_ref(&self) -> &[usize] {
-        self.bits.as_ref()
-    }
-}

@@ -1,11 +1,13 @@
 /*
  *
+ * SPDX-FileCopyrightText: 2024 Michele Andreata
  * SPDX-FileCopyrightText: 2023 Tommaso Fontana
+ * SPDX-FileCopyrightText: 2024 Sebastiano Vigna
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::{bits::CountBitVec, traits::*};
+use crate::traits::*;
 use common_traits::SelectInWord;
 use epserde::*;
 use mem_dbg::*;
@@ -19,8 +21,8 @@ See [`SimpleSelectConst`](crate::rank_sel::SimpleSelectConst).
 */
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct SimpleSelectZeroConst<
-    B: SelectZeroHinted = CountBitVec,
-    I: AsRef<[u64]> = Vec<u64>,
+    B,
+    I,
     const LOG2_ZEROS_PER_INVENTORY: usize = 10,
     const LOG2_U64_PER_SUBINVENTORY: usize = 2,
 > {
@@ -283,104 +285,16 @@ impl<
     }
 }
 
-/// Forward [`BitLength`] to the underlying implementation.
-impl<
-        B: SelectZeroHinted + BitLength,
-        I: AsRef<[u64]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitLength
-    for SimpleSelectZeroConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.bits.len()
-    }
-}
-
-/// Forward [`BitCount`] to the underlying implementation.
-impl<
-        B: SelectZeroHinted + BitCount,
-        I: AsRef<[u64]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitCount
-    for SimpleSelectZeroConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.bits.count_ones()
-    }
-
-    #[inline(always)]
-    fn count_zeros(&self) -> usize {
-        self.bits.count_zeros()
-    }
-}
-
-/// Forward [`Select`] to the underlying implementation.
-impl<
-        B: SelectZeroHinted + Select,
-        I: AsRef<[u64]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > Select for SimpleSelectZeroConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    #[inline(always)]
-    fn select(&self, rank: usize) -> Option<usize> {
-        self.bits.select(rank)
-    }
-    #[inline(always)]
-    unsafe fn select_unchecked(&self, rank: usize) -> usize {
-        self.bits.select_unchecked(rank)
-    }
-}
-
-/// Forward [`Rank`] to the underlying implementation.
-impl<
-        B: SelectZeroHinted + Rank,
-        I: AsRef<[u64]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > Rank for SimpleSelectZeroConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    fn rank(&self, pos: usize) -> usize {
-        self.bits.rank(pos)
-    }
-
-    unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-        self.bits.rank_unchecked(pos)
-    }
-}
-
-/// Forward [`RankZero`] to the underlying implementation.
-impl<
-        B: SelectZeroHinted + RankZero,
-        I: AsRef<[u64]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > RankZero
-    for SimpleSelectZeroConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    fn rank_zero(&self, pos: usize) -> usize {
-        self.bits.rank_zero(pos)
-    }
-
-    unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
-        self.bits.rank_zero_unchecked(pos)
-    }
-}
-
-/// Forward `AsRef<[usize]>` to the underlying implementation.
-impl<
-        B: SelectZeroHinted + AsRef<[usize]>,
-        I: AsRef<[u64]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > AsRef<[usize]>
-    for SimpleSelectZeroConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    fn as_ref(&self) -> &[usize] {
-        self.bits.as_ref()
-    }
-}
+crate::forward_mult![
+    SimpleSelectZeroConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool,
+    crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_bit_count,
+    crate::traits::rank_sel::forward_rank,
+    crate::traits::rank_sel::forward_rank_hinted,
+    crate::traits::rank_sel::forward_rank_zero,
+    crate::traits::rank_sel::forward_select,
+    crate::traits::rank_sel::forward_select_hinted,
+    crate::traits::rank_sel::forward_select_zero_hinted
+];
