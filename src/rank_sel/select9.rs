@@ -66,15 +66,37 @@ macro_rules! ULEQ_STEP_16 {
 ///
 /// ```rust
 /// use sux::bit_vec;
-/// use sux::prelude::{Select, Select9, Rank9};
+/// use sux::prelude::{Rank, Rank9, Select, Select9};
 /// // A Select9 structure is built on a Rank9 structure
 /// let select9 = Select9::new(Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]));
+///
 /// assert_eq!(select9.select(0), Some(0));
 /// assert_eq!(select9.select(1), Some(2));
 /// assert_eq!(select9.select(2), Some(3));
 /// assert_eq!(select9.select(3), Some(5));
 /// assert_eq!(select9.select(4), Some(7));
 /// assert_eq!(select9.select(5), None);
+///
+/// // Rank methods are forwarded
+/// assert_eq!(select9.rank(0), 0);
+/// assert_eq!(select9.rank(1), 1);
+/// assert_eq!(select9.rank(2), 1);
+/// assert_eq!(select9.rank(3), 2);
+/// assert_eq!(select9.rank(4), 3);
+/// assert_eq!(select9.rank(5), 3);
+/// assert_eq!(select9.rank(6), 4);
+/// assert_eq!(select9.rank(7), 4);
+/// assert_eq!(select9.rank(8), 5);
+///
+/// // Access to the underlying bit vector is forwarded, too
+/// assert_eq!(select9[0], true);
+/// assert_eq!(select9[1], false);
+/// assert_eq!(select9[2], true);
+/// assert_eq!(select9[3], true);
+/// assert_eq!(select9[4], false);
+/// assert_eq!(select9[5], true);
+/// assert_eq!(select9[6], false);
+/// assert_eq!(select9[7], true);
 /// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]

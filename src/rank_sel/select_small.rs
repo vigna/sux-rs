@@ -34,18 +34,39 @@ use mem_dbg::{MemDbg, MemSize};
 /// ```rust
 /// use sux::{rank_small, bit_vec};
 /// use sux::rank_sel::SelectSmall;
-/// use sux::traits::Select;
+/// use sux::traits::{Rank, Select};
 ///
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![1; bits];
-/// let select_small = SelectSmall::<1, 9>::new(rank_small);
+/// let rank_sel_small = SelectSmall::<1, 9>::new(rank_small);
 ///
-/// assert_eq!(select_small.select(0), Some(0));
-/// assert_eq!(select_small.select(1), Some(2));
-/// assert_eq!(select_small.select(2), Some(3));
-/// assert_eq!(select_small.select(3), Some(5));
-/// assert_eq!(select_small.select(4), Some(7));
-/// assert_eq!(select_small.select(5), None);
+/// assert_eq!(rank_sel_small.select(0), Some(0));
+/// assert_eq!(rank_sel_small.select(1), Some(2));
+/// assert_eq!(rank_sel_small.select(2), Some(3));
+/// assert_eq!(rank_sel_small.select(3), Some(5));
+/// assert_eq!(rank_sel_small.select(4), Some(7));
+/// assert_eq!(rank_sel_small.select(5), None);
+///
+/// // Rank methods are forwarded
+/// assert_eq!(rank_sel_small.rank(0), 0);
+/// assert_eq!(rank_sel_small.rank(1), 1);
+/// assert_eq!(rank_sel_small.rank(2), 1);
+/// assert_eq!(rank_sel_small.rank(3), 2);
+/// assert_eq!(rank_sel_small.rank(4), 3);
+/// assert_eq!(rank_sel_small.rank(5), 3);
+/// assert_eq!(rank_sel_small.rank(6), 4);
+/// assert_eq!(rank_sel_small.rank(7), 4);
+/// assert_eq!(rank_sel_small.rank(8), 5);
+///
+/// // Access to the underlying bit vector is forwarded, too
+/// assert_eq!(rank_sel_small[0], true);
+/// assert_eq!(rank_sel_small[1], false);
+/// assert_eq!(rank_sel_small[2], true);
+/// assert_eq!(rank_sel_small[3], true);
+/// assert_eq!(rank_sel_small[4], false);
+/// assert_eq!(rank_sel_small[5], true);
+/// assert_eq!(rank_sel_small[6], false);
+/// assert_eq!(rank_sel_small[7], true);
 /// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]

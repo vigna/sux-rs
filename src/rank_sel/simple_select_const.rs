@@ -38,7 +38,7 @@ use mem_dbg::*;
 ///
 /// // Standalone select
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
-/// let select = SimpleSelectConst::<_, _, 8, 2>::new(bits.clone());
+/// let select = SimpleSelectConst::<_, _, 8, 2>::new(bits);
 ///
 /// assert_eq!(select.select(0), Some(0));
 /// assert_eq!(select.select(1), Some(2));
@@ -47,27 +47,48 @@ use mem_dbg::*;
 /// assert_eq!(select.select(4), Some(7));
 /// assert_eq!(select.select(5), None);
 ///
+/// // Access to the underlying bit vector is forwarded
+/// assert_eq!(select[0], true);
+/// assert_eq!(select[1], false);
+/// assert_eq!(select[2], true);
+/// assert_eq!(select[3], true);
+/// assert_eq!(select[4], false);
+/// assert_eq!(select[5], true);
+/// assert_eq!(select[6], false);
+/// assert_eq!(select[7], true);
+///
 /// // Select over a Rank9 structure, with alternative constants
 /// // (256 ones per inventory, subinventories made of 4 64-bit words).
-/// let rank9 = Rank9::new(bits);
-/// let rank_sel = SimpleSelectConst::<_, _, 8, 2>::new(rank9);
+/// let rank9 = Rank9::new(select.into_inner());
+/// let rank9_sel = SimpleSelectConst::<_, _, 8, 2>::new(rank9);
 ///
-/// assert_eq!(rank_sel.rank(0), 0);
-/// assert_eq!(rank_sel.rank(1), 1);
-/// assert_eq!(rank_sel.rank(2), 1);
-/// assert_eq!(rank_sel.rank(3), 2);
-/// assert_eq!(rank_sel.rank(4), 3);
-/// assert_eq!(rank_sel.rank(5), 3);
-/// assert_eq!(rank_sel.rank(6), 4);
-/// assert_eq!(rank_sel.rank(7), 4);
-/// assert_eq!(rank_sel.rank(8), 5);
+/// assert_eq!(rank9_sel.select(0), Some(0));
+/// assert_eq!(rank9_sel.select(1), Some(2));
+/// assert_eq!(rank9_sel.select(2), Some(3));
+/// assert_eq!(rank9_sel.select(3), Some(5));
+/// assert_eq!(rank9_sel.select(4), Some(7));
+/// assert_eq!(rank9_sel.select(5), None);
 ///
-/// assert_eq!(rank_sel.select(0), Some(0));
-/// assert_eq!(rank_sel.select(1), Some(2));
-/// assert_eq!(rank_sel.select(2), Some(3));
-/// assert_eq!(rank_sel.select(3), Some(5));
-/// assert_eq!(rank_sel.select(4), Some(7));
-/// assert_eq!(rank_sel.select(5), None);
+/// // Rank methods are forwarded
+/// assert_eq!(rank9_sel.rank(0), 0);
+/// assert_eq!(rank9_sel.rank(1), 1);
+/// assert_eq!(rank9_sel.rank(2), 1);
+/// assert_eq!(rank9_sel.rank(3), 2);
+/// assert_eq!(rank9_sel.rank(4), 3);
+/// assert_eq!(rank9_sel.rank(5), 3);
+/// assert_eq!(rank9_sel.rank(6), 4);
+/// assert_eq!(rank9_sel.rank(7), 4);
+/// assert_eq!(rank9_sel.rank(8), 5);
+///
+/// // Access to the underlying bit vector is forwarded, too
+/// assert_eq!(rank9_sel[0], true);
+/// assert_eq!(rank9_sel[1], false);
+/// assert_eq!(rank9_sel[2], true);
+/// assert_eq!(rank9_sel[3], true);
+/// assert_eq!(rank9_sel[4], false);
+/// assert_eq!(rank9_sel[5], true);
+/// assert_eq!(rank9_sel[6], false);
+/// assert_eq!(rank9_sel[7], true);
 /// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
