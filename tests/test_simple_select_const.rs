@@ -59,11 +59,7 @@ fn debug() {
     let mut rng = SmallRng::seed_from_u64(0);
     let density = 0.1;
     for len in lens {
-        let bits: CountBitVec = (0..len)
-            .map(|_| rng.gen_bool(density))
-            .collect::<BitVec>()
-            .into();
-
+        let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
         let simple = SimpleSelectConst::<_, _, 13, 0>::new(bits.clone());
 
         let ones = simple.count_ones();
