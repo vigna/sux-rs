@@ -262,25 +262,6 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<H, L> EliasFano<H, L> {
-    /// # Safety
-    /// No check is performed.
-    #[inline(always)]
-    pub unsafe fn from_raw_parts(u: usize, n: usize, l: usize, low_bits: L, high_bits: H) -> Self {
-        Self {
-            u,
-            n,
-            l,
-            low_bits,
-            high_bits,
-        }
-    }
-    #[inline(always)]
-    pub fn into_raw_parts(self) -> (usize, usize, usize, L, H) {
-        (self.u, self.n, self.l, self.low_bits, self.high_bits)
-    }
-}
-
 impl<H: AsRef<[usize]> + Select, L: BitFieldSlice<usize>> IndexedDict for EliasFano<H, L> {
     type Output = usize;
     type Input = usize;

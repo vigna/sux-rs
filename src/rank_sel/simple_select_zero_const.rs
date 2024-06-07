@@ -47,20 +47,6 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTOR
         self.bits
     }
 
-    /// Return raw bits and inventory
-    pub fn into_raw_parts(self) -> (B, I) {
-        (self.bits, self.inventory)
-    }
-
-    /// Create a new instance from raw bits and inventory
-    ///
-    /// # Safety
-    /// The inventory must be consistent with the bits otherwise you will get
-    /// wrong results, and possibly memory corruption.
-    pub unsafe fn from_raw_parts(bits: B, inventory: I) -> Self {
-        SimpleSelectZeroConst { bits, inventory }
-    }
-
     /// Modify the inner BitVector with possibly another type
     pub fn map_bits<B2>(
         self,
