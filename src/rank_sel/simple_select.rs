@@ -543,7 +543,11 @@ crate::forward_mult![
 #[cfg(test)]
 mod test_simple_select {
     use super::*;
-    use crate::prelude::BitVec;
+    use crate::bits::BitVec;
+    use crate::bits::CountBitVec;
+    use rand::rngs::SmallRng;
+    use rand::Rng;
+    use rand::SeedableRng;
 
     #[test]
     fn test_simple_select_ones_per_sub64() {
@@ -564,5 +568,33 @@ mod test_simple_select {
         assert_eq!(simple.select(0), Some(len / 2));
         assert_eq!(simple.select(1), Some(len / 2 + (1 << 17) + 1));
         assert_eq!(simple.select(2), Some(len / 2 + (1 << 17) + 2));
+    }
+
+    #[test]
+    fn debug() {
+        let lens = [1_000_000];
+        let mut rng = SmallRng::seed_from_u64(0);
+        let density = 0.1;
+        for len in lens {
+            let bits: CountBitVec = (0..len)
+                .map(|_| rng.gen_bool(density))
+                .collect::<BitVec>()
+                .into();
+            let num_ones = bits.count_ones();
+            let simple = SimpleSelect::with_inv(bits.clone(), num_ones, 13, 0);
+
+            let ones = simple.count_ones();
+            let mut pos = Vec::with_capacity(ones);
+            for i in 0..len {
+                if bits[i] {
+                    pos.push(i);
+                }
+            }
+
+            for i in 0..ones {
+                assert_eq!(simple.select(i), Some(pos[i]));
+            }
+            assert_eq!(simple.select(ones + 1), None);
+        }
     }
 }

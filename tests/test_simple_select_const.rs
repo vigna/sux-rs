@@ -19,23 +19,52 @@ use sux::traits::Rank;
 use sux::traits::Select;
 use sux::traits::SelectZero;
 
-const INV: usize = 10;
-const SUB: usize = 2;
+const INV: usize = 13;
+const SUB: usize = 0;
 
 #[test]
 fn test_simple_select_const() {
     let lens = (1..100)
         .step_by(10)
-        .chain((100_000..1_000_000).step_by(100_000));
+        .chain((100_000..1_100_000).step_by(100_000));
     let mut rng = SmallRng::seed_from_u64(0);
-    let density = 0.5;
+    for len in lens {
+        for density in [0.1, 0.5, 0.9] {
+            let bits: CountBitVec = (0..len)
+                .map(|_| rng.gen_bool(density))
+                .collect::<BitVec>()
+                .into();
+
+            let simple = SimpleSelectConst::<_, _, INV, SUB>::new(bits.clone());
+
+            let ones = simple.count_ones();
+            let mut pos = Vec::with_capacity(ones);
+            for i in 0..len {
+                if bits[i] {
+                    pos.push(i);
+                }
+            }
+
+            for i in 0..ones {
+                assert_eq!(simple.select(i), Some(pos[i]));
+            }
+            assert_eq!(simple.select(ones + 1), None);
+        }
+    }
+}
+
+#[test]
+fn debug() {
+    let lens = [1_000_000];
+    let mut rng = SmallRng::seed_from_u64(0);
+    let density = 0.1;
     for len in lens {
         let bits: CountBitVec = (0..len)
             .map(|_| rng.gen_bool(density))
             .collect::<BitVec>()
             .into();
 
-        let simple = SimpleSelectConst::<_, _, INV, SUB>::new(bits.clone());
+        let simple = SimpleSelectConst::<_, _, 13, 0>::new(bits.clone());
 
         let ones = simple.count_ones();
         let mut pos = Vec::with_capacity(ones);
