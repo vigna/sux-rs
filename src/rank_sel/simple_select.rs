@@ -103,8 +103,22 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, Select, SelectHinted};
 /// assert_eq!(select[6], false);
 /// assert_eq!(select[7], true);
 ///
+/// // Map the backend to a different structure
+/// let sel_rank9 = select.map(Rank9::new);
+///
+/// // Rank methods are forwarded
+/// assert_eq!(sel_rank9.rank(0), 0);
+/// assert_eq!(sel_rank9.rank(1), 1);
+/// assert_eq!(sel_rank9.rank(2), 1);
+/// assert_eq!(sel_rank9.rank(3), 2);
+/// assert_eq!(sel_rank9.rank(4), 3);
+/// assert_eq!(sel_rank9.rank(5), 3);
+/// assert_eq!(sel_rank9.rank(6), 4);
+/// assert_eq!(sel_rank9.rank(7), 4);
+/// assert_eq!(sel_rank9.rank(8), 5);
+///
 /// // Select over a Rank9 structure
-/// let rank9 = Rank9::new(select.into_inner());
+/// let rank9 = Rank9::new(sel_rank9.into_inner().into_inner());
 /// let rank9_sel = SimpleSelect::new(rank9, 3);
 ///
 /// assert_eq!(rank9_sel.select(0), Some(0));
@@ -156,6 +170,28 @@ pub struct SimpleSelect<B, I = Vec<usize>> {
 impl<B, I> SimpleSelect<B, I> {
     pub fn into_inner(self) -> B {
         self.bits
+    }
+
+    /// Replaces the backend with a new one implementing [`SelectHinted`].
+    pub fn map<C>(self, f: impl FnOnce(B) -> C) -> SimpleSelect<C, I>
+    where
+        C: SelectHinted,
+    {
+        SimpleSelect {
+            bits: f(self.bits),
+            inventory: self.inventory,
+            exact_spill: self.exact_spill,
+            num_ones: self.num_ones,
+            log2_ones_per_inventory: self.log2_ones_per_inventory,
+            log2_ones_per_sub16: self.log2_ones_per_sub16,
+            log2_u64_per_subinventory: self.log2_u64_per_subinventory,
+            ones_per_sub64: self.ones_per_sub64,
+            u64_per_inventory: self.u64_per_inventory,
+            ones_per_inventory_mask: self.ones_per_inventory_mask,
+            ones_per_sub16_mask: self.ones_per_sub16_mask,
+            inventory_size: self.inventory_size,
+            exact_spill_size: self.exact_spill_size,
+        }
     }
 
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;

@@ -51,6 +51,44 @@ use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted, RankZero};
 /// fly it stores the cumulative counters directly using implicit zero
 /// extension, as in [`Rank9`](super::Rank9).
 ///
+/// # Examples
+///
+/// ```rust
+/// use sux::{prelude::Rank,bit_vec,rank_small};
+/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let rank_small = rank_small![0; bits];
+///
+/// assert_eq!(rank_small.rank(0), 0);
+/// assert_eq!(rank_small.rank(1), 1);
+/// assert_eq!(rank_small.rank(2), 1);
+/// assert_eq!(rank_small.rank(3), 2);
+/// assert_eq!(rank_small.rank(4), 3);
+/// assert_eq!(rank_small.rank(5), 3);
+/// assert_eq!(rank_small.rank(6), 4);
+/// assert_eq!(rank_small.rank(7), 4);
+/// assert_eq!(rank_small.rank(8), 5);
+///
+/// // Access to the underlying bit vector is forwarded
+/// assert_eq!(rank_small[0], true);
+/// assert_eq!(rank_small[1], false);
+/// assert_eq!(rank_small[2], true);
+/// assert_eq!(rank_small[3], true);
+/// assert_eq!(rank_small[4], false);
+/// assert_eq!(rank_small[5], true);
+/// assert_eq!(rank_small[6], false);
+/// assert_eq!(rank_small[7], true);
+///
+/// // Map the backend to a different structure
+/// let rank_small_sel = rank_small.map(|b| SimpleSelect::new(b, 2));
+///
+/// // Select methods are forwarded
+/// assert_eq!(rank_small_sel.select(0), 0);
+/// assert_eq!(rank_small_sel.select(1), 2);
+/// assert_eq!(rank_small_sel.select(2), 3);
+/// assert_eq!(rank_small_sel.select(3), 5)
+/// assert_eq!(rank_small_sel.select(4), 7);
+/// assert_eq!(rank_small_sel.select(5), None);
+/// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct RankSmall<
@@ -93,13 +131,6 @@ where
 ///
 /// assert_eq!(rank_small.rank(0), 0);
 /// assert_eq!(rank_small.rank(1), 1);
-/// assert_eq!(rank_small.rank(2), 1);
-/// assert_eq!(rank_small.rank(3), 2);
-/// assert_eq!(rank_small.rank(4), 3);
-/// assert_eq!(rank_small.rank(5), 3);
-/// assert_eq!(rank_small.rank(6), 4);
-/// assert_eq!(rank_small.rank(7), 4);
-/// assert_eq!(rank_small.rank(8), 5);
 /// ```
 
 #[macro_export]
@@ -376,6 +407,19 @@ impl<
 {
     pub fn into_inner(self) -> B {
         self.bits
+    }
+
+    /// Replaces the backend with a new one.
+    pub fn map<B1>(self, f: impl FnOnce(B) -> B1) -> RankSmall<NUM_U32S, COUNTER_WIDTH, B1, C1, C2>
+    where
+        B1: AsRef<[usize]> + BitLength,
+    {
+        RankSmall {
+            bits: f(self.bits),
+            upper_counts: self.upper_counts,
+            counts: self.counts,
+            num_ones: self.num_ones,
+        }
     }
 }
 

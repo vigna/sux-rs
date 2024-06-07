@@ -7,8 +7,12 @@
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
-use sux::prelude::*;
+use sux::bit_vec;
+use sux::bits::bit_vec::BitVec;
+use sux::rank_sel::SimpleSelect;
 use sux::rank_small;
+use sux::traits::Rank;
+use sux::traits::Select;
 
 macro_rules! test_rank_small {
     ($n: tt) => {
@@ -69,4 +73,18 @@ fn test_rank_small3() {
 #[test]
 fn test_rank_small4() {
     test_rank_small![4];
+}
+
+#[test]
+fn test_map() {
+    let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
+    let rank_small = rank_small![2; bits];
+    let rank_small_sel = rank_small.map(|b| SimpleSelect::new(b, 2));
+    assert_eq!(rank_small_sel.rank(0), 0);
+    assert_eq!(rank_small_sel.rank(1), 0);
+    assert_eq!(rank_small_sel.rank(2), 1);
+    assert_eq!(rank_small_sel.rank(10), 5);
+    assert_eq!(rank_small_sel.select(0), Some(1));
+    assert_eq!(rank_small_sel.select(1), Some(3));
+    assert_eq!(rank_small_sel.select(6), None);
 }

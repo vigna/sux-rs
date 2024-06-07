@@ -8,13 +8,16 @@
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
+use sux::bit_vec;
 use sux::bits::BitVec;
 use sux::bits::CountBitVec;
 use sux::rank_sel::Rank9;
 use sux::rank_sel::SimpleSelectConst;
 use sux::traits::BitCount;
 use sux::traits::BitLength;
+use sux::traits::Rank;
 use sux::traits::Select;
+use sux::traits::SelectZero;
 
 const INV: usize = 10;
 const SUB: usize = 2;
@@ -174,4 +177,23 @@ fn test_simple_select_const_non_uniform() {
             assert_eq!(simple.select(ones + 1), None);
         }
     }
+}
+
+#[test]
+fn test_map() {
+    let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
+    let sel = SimpleSelectConst::<_, _>::new(bits);
+    let rank_sel = sel.map(Rank9::new);
+    assert_eq!(rank_sel.rank(0), 0);
+    assert_eq!(rank_sel.rank(1), 0);
+    assert_eq!(rank_sel.rank(2), 1);
+    assert_eq!(rank_sel.rank(10), 5);
+
+    let rank_seol01 = rank_sel.map(SimpleSelectConst::<_, _>::new);
+    assert_eq!(rank_seol01.select_zero(0), Some(0));
+    assert_eq!(rank_seol01.select_zero(1), Some(2));
+    assert_eq!(rank_seol01.select_zero(2), Some(5));
+    assert_eq!(rank_seol01.select_zero(3), Some(7));
+    assert_eq!(rank_seol01.select_zero(4), Some(8));
+    assert_eq!(rank_seol01.select_zero(5), None);
 }
