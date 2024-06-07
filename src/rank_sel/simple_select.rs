@@ -518,7 +518,7 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
         let inventory_rank = { *inventory_ref.get_unchecked(inventory_start_pos) };
         let subrank = rank & self.ones_per_inventory_mask;
 
-        if inventory_rank.is_16_bit_span() {
+        if !inventory_rank.is_16_bit_span() {
             if subrank == 0 {
                 return inventory_rank & !(1usize << 63);
             }
