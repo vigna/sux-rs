@@ -518,29 +518,31 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
         let inventory_rank = { *inventory_ref.get_unchecked(inventory_start_pos) };
         let subrank = rank & self.ones_per_inventory_mask;
 
-        if !inventory_rank.is_16_bit_span() {
-            if subrank == 0 {
-                return inventory_rank & !(1usize << 63);
-            }
-            debug_assert!(
-                { *inventory_ref.get_unchecked(inventory_start_pos + 1) } + subrank
-                    < self.exact_spill_size
-            );
-            return self.exact_spill.get_unchecked(
-                { *inventory_ref.get_unchecked(inventory_start_pos + 1) } + subrank,
-            );
+        if inventory_rank.is_16_bit_span() {
+            let (_, u16s, _) = inventory_ref
+                .get_unchecked(
+                    inventory_start_pos + 1..(self.inventory_size * self.u64_per_inventory),
+                )
+                .align_to::<u16>();
+
+            let hint_pos =
+                inventory_rank + *u16s.get_unchecked(subrank >> self.log2_ones_per_sub16) as usize;
+            let residual = subrank & self.ones_per_sub16_mask;
+
+            return self
+                .bits
+                .select_hinted_unchecked(rank, hint_pos, rank - residual);
         }
 
-        let (_, u16s, _) = inventory_ref
-            .get_unchecked(inventory_start_pos + 1..(self.inventory_size * self.u64_per_inventory))
-            .align_to::<u16>();
-
-        let hint_pos =
-            inventory_rank + *u16s.get_unchecked(subrank >> self.log2_ones_per_sub16) as usize;
-        let residual = subrank & self.ones_per_sub16_mask;
-
-        self.bits
-            .select_hinted_unchecked(rank, hint_pos, rank - residual)
+        if subrank == 0 {
+            return inventory_rank & !(1usize << 63);
+        }
+        debug_assert!(
+            { *inventory_ref.get_unchecked(inventory_start_pos + 1) } + subrank
+                < self.exact_spill_size
+        );
+        self.exact_spill
+            .get_unchecked({ *inventory_ref.get_unchecked(inventory_start_pos + 1) } + subrank)
     }
 }
 
