@@ -252,6 +252,13 @@ impl<
 
                         subinventory[subinventory_idx] = sub_offset as u16;
                     } else {
+                        debug_assert!(
+                            start_idx + 1 + subinventory_idx < inventory.len(),
+                            "start_idx: {}, subinventory_idx: {}, inventory.len(): {}",
+                            start_idx,
+                            subinventory_idx,
+                            inventory.len()
+                        );
                         inventory[start_idx + 1 + subinventory_idx] = sub_offset;
                     }
 
