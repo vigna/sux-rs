@@ -167,6 +167,16 @@ pub struct SimpleSelect<B, I = Vec<usize>> {
     exact_spill_size: usize,
 }
 
+trait Inventory {
+    fn is_16_bit_span(&self) -> bool;
+}
+
+impl Inventory for usize {
+    fn is_16_bit_span(&self) -> bool {
+        *self as isize >= 0
+    }
+}
+
 impl<B, I> SimpleSelect<B, I> {
     pub fn into_inner(self) -> B {
         self.bits
@@ -507,7 +517,7 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
         let inventory_rank = { *inventory_ref.get_unchecked(inventory_start_pos) };
         let subrank = rank & self.ones_per_inventory_mask;
 
-        if (inventory_rank as isize) < 0 {
+        if inventory_rank.is_16_bit_span() {
             if subrank == 0 {
                 return inventory_rank & !(1usize << 63);
             }
