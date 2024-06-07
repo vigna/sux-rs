@@ -57,9 +57,23 @@ use mem_dbg::*;
 /// assert_eq!(select[6], false);
 /// assert_eq!(select[7], true);
 ///
+/// // Map the backend to a different structure
+/// let sel_rank_small = select.map(RankSmall::<1,10>::new);
+///
+/// // Rank methods are forwarded
+/// assert_eq!(sel_rank_small.rank(0), 0);
+/// assert_eq!(sel_rank_small.rank(1), 1);
+/// assert_eq!(sel_rank_small.rank(2), 1);
+/// assert_eq!(sel_rank_small.rank(3), 2);
+/// assert_eq!(sel_rank_small.rank(4), 3);
+/// assert_eq!(sel_rank_small.rank(5), 3);
+/// assert_eq!(sel_rank_small.rank(6), 4);
+/// assert_eq!(sel_rank_small.rank(7), 4);
+/// assert_eq!(sel_rank_small.rank(8), 5);
+///
 /// // Select over a Rank9 structure, with alternative constants
 /// // (256 ones per inventory, subinventories made of 4 64-bit words).
-/// let rank9 = Rank9::new(select.into_inner());
+/// let rank9 = Rank9::new(sel_rank_small.into_inner().into_inner());
 /// let rank9_sel = SimpleSelectConst::<_, _, 8, 2>::new(rank9);
 ///
 /// assert_eq!(rank9_sel.select(0), Some(0));
@@ -124,45 +138,18 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
         self.bits
     }
 
-    /// Modify the inner BitVector with possibly another type
-    pub fn map_bits<B2>(
+    /// Replaces the backend with a new one implementing [`SelectHinted`].
+    pub fn map<C>(
         self,
-        f: impl FnOnce(B) -> B2,
-    ) -> SimpleSelectConst<B2, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+        f: impl FnOnce(B) -> C,
+    ) -> SimpleSelectConst<C, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
     where
-        B2: SelectHinted,
+        C: SelectHinted,
     {
         SimpleSelectConst {
             bits: f(self.bits),
             inventory: self.inventory,
         }
-    }
-
-    /// Modify the inner inventory with possibly another type
-    pub fn map_inventory<I2>(
-        self,
-        f: impl FnOnce(I) -> I2,
-    ) -> SimpleSelectConst<B, I2, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-    where
-        I2: AsRef<[usize]>,
-    {
-        SimpleSelectConst {
-            bits: self.bits,
-            inventory: f(self.inventory),
-        }
-    }
-
-    /// Modify the inner BitVector and inventory with possibly other types
-    pub fn map<B2, I2>(
-        self,
-        f: impl FnOnce(B, I) -> (B2, I2),
-    ) -> SimpleSelectConst<B2, I2, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-    where
-        B2: SelectHinted,
-        I2: AsRef<[usize]>,
-    {
-        let (bits, inventory) = f(self.bits, self.inventory);
-        SimpleSelectConst { bits, inventory }
     }
 }
 
@@ -173,19 +160,20 @@ impl<
     > SimpleSelectConst<B, Vec<usize>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     pub fn new(bitvec: B) -> Self {
+        let ones = bitvec.count_ones();
         // number of inventories we will create
-        let inventory_size = bitvec.count_ones().div_ceil(Self::ONES_PER_INVENTORY);
+        let inventory_size = ones.div_ceil(Self::ONES_PER_INVENTORY);
         let inventory_len = inventory_size * Self::U64_PER_INVENTORY + 1;
         // inventory_size, an usize for the first layer index, and Self::U64_PER_SUBINVENTORY for the sub layer
         let mut inventory = Vec::with_capacity(inventory_len);
         // scan the bitvec and fill the first layer of the inventory
-        let mut number_of_ones = 0;
+        let mut past_ones = 0;
         let mut next_quantum = 0;
         for (i, word) in bitvec.as_ref().iter().copied().enumerate() {
             let ones_in_word = word.count_ones() as usize;
             // skip the word if we can
-            while number_of_ones + ones_in_word > next_quantum {
-                let in_word_index = word.select_in_word(next_quantum - number_of_ones);
+            while past_ones + ones_in_word > next_quantum {
+                let in_word_index = word.select_in_word(next_quantum - past_ones);
                 let index = (i * usize::BITS as usize) + in_word_index;
 
                 // write the position of the one in the inventory
@@ -195,7 +183,7 @@ impl<
 
                 next_quantum += Self::ONES_PER_INVENTORY;
             }
-            number_of_ones += ones_in_word;
+            past_ones += ones_in_word;
         }
         // in the last inventory write the number of bits
         inventory.push(BitLength::len(&bitvec));
@@ -205,7 +193,7 @@ impl<
 
         // fill the second layer of the index
         iter.for_each(|inventory_idx| {
-            // get the start and end usize index of the current inventory
+            // get the start and end index of the current inventory
             let start_idx = inventory_idx * Self::U64_PER_INVENTORY;
             let end_idx = start_idx + Self::U64_PER_INVENTORY;
             // read the first level index to get the start and end bit index
@@ -220,11 +208,11 @@ impl<
             // cleanup the lower bits
             let bit_idx = start_bit_idx % usize::BITS as usize;
             let mut word = (bitvec.as_ref()[word_idx] >> bit_idx) << bit_idx;
-            // compute the global number of ones
-            let mut number_of_ones = inventory_idx * Self::ONES_PER_INVENTORY;
+            // compute the global number of ones up to the current inventory
+            let mut past_ones = inventory_idx * Self::ONES_PER_INVENTORY;
             // and what's the next bit rank which index should log in the sub
             // inventory (the first subinventory element is always 0)
-            let mut next_quantum = number_of_ones;
+            let mut next_quantum = past_ones;
             let quantum;
 
             if span <= u16::MAX as usize {
@@ -245,10 +233,10 @@ impl<
 
                 // if the quantum is in this word, write it in the subinventory
                 // this can happen multiple times if the quantum is small
-                while number_of_ones + ones_in_word > next_quantum {
+                while past_ones + ones_in_word > next_quantum {
                     debug_assert!(next_quantum <= end_bit_idx as _);
                     // find the quantum bit in the word
-                    let in_word_index = word.select_in_word(next_quantum - number_of_ones);
+                    let in_word_index = word.select_in_word(next_quantum - past_ones);
                     // compute the global index of the quantum bit in the bitvec
                     let bit_index = (word_idx * usize::BITS as usize) + in_word_index;
                     // compute the offset of the quantum bit
@@ -274,7 +262,7 @@ impl<
                 }
 
                 // we are done with the word, so update the number of ones
-                number_of_ones += ones_in_word;
+                past_ones += ones_in_word;
                 // move to the next word and boundcheck
                 word_idx += 1;
                 if word_idx == end_word_idx {

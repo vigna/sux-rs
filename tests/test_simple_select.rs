@@ -8,10 +8,13 @@
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
+use sux::bit_vec;
 use sux::bits::BitVec;
+use sux::rank_sel::RankSmall;
 use sux::rank_sel::SimpleSelect;
 use sux::traits::BitCount;
 use sux::traits::BitLength;
+use sux::traits::Rank;
 use sux::traits::Select;
 
 #[test]
@@ -177,4 +180,15 @@ fn test_simple_non_uniform() {
             assert_eq!(simple.select(ones + 1), None);
         }
     }
+}
+
+#[test]
+fn test_map() {
+    let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
+    let sel = SimpleSelect::<_, _>::new(bits, 3);
+    let rank_sel = sel.map(RankSmall::<1, 10>::new);
+    assert_eq!(rank_sel.rank(0), 0);
+    assert_eq!(rank_sel.rank(1), 0);
+    assert_eq!(rank_sel.rank(2), 1);
+    assert_eq!(rank_sel.rank(10), 5);
 }

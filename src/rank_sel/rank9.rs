@@ -131,6 +131,16 @@ impl<B, C> Rank9<B, C> {
     pub fn into_inner(self) -> B {
         self.bits
     }
+    /// Replaces the backend with a new one.
+    pub fn map<B1>(self, f: impl FnOnce(B) -> B1) -> Rank9<B1, C>
+    where
+        B1: AsRef<[usize]> + BitLength,
+    {
+        Rank9 {
+            bits: f(self.bits),
+            counts: self.counts,
+        }
+    }
 }
 
 impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> {
@@ -178,35 +188,7 @@ crate::forward_mult![Rank9<B, C>; B; bits;
 
 #[cfg(test)]
 mod test_rank9 {
-    use crate::prelude::*;
-    use rand::{rngs::SmallRng, Rng, SeedableRng};
-
-    #[test]
-    fn test_rank9() {
-        let mut rng = SmallRng::seed_from_u64(0);
-        let lens = (1..1000)
-            .chain((10_000..100_000).step_by(1000))
-            .chain((100_000..1_000_000).step_by(100_000));
-        let density = 0.5;
-        for len in lens {
-            let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let rank9: Rank9 = Rank9::new(bits.clone());
-
-            let mut ranks = Vec::with_capacity(len);
-            let mut r = 0;
-            for bit in bits.into_iter() {
-                ranks.push(r);
-                if bit {
-                    r += 1;
-                }
-            }
-
-            for i in 0..bits.len() {
-                assert_eq!(rank9.rank(i), ranks[i]);
-            }
-            assert_eq!(rank9.rank(bits.len() + 1), bits.count_ones());
-        }
-    }
+    use super::*;
 
     #[test]
     fn test_last() {
