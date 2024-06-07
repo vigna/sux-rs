@@ -108,7 +108,11 @@ pub struct Select9<R = Rank9, I = Vec<usize>> {
     subinventory_size: usize,
 }
 
-impl<R, I: AsRef<[usize]>> Select9<R, I> {
+impl<R, I> Select9<R, I> {
+    pub fn into_inner(self) -> R {
+        self.rank9
+    }
+
     const LOG2_ONES_PER_INVENTORY: usize = 9;
     const ONES_PER_INVENTORY: usize = 1 << Self::LOG2_ONES_PER_INVENTORY;
 }
