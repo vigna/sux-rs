@@ -69,19 +69,22 @@ impl<
     > SimpleSelectZeroConst<B, Vec<usize>, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     pub fn new(bitvec: B) -> Self {
-        let zeros = bitvec.count_zeros();
+        let num_zeros = bitvec.count_zeros();
         // number of inventories we will create
-        let inventory_size = zeros.div_ceil(Self::ZEROS_PER_INVENTORY);
-        let inventory_len = inventory_size * Self::U64_PER_INVENTORY + 1;
-        // inventory_size, an u64 for the first layer index, and Self::U64_PER_SUBINVENTORY for the sub layer
-        let mut inventory = Vec::with_capacity(inventory_len);
-        // scan the bitvec and fill the first layer of the inventory
+        let inventory_size = num_zeros.div_ceil(Self::ZEROS_PER_INVENTORY);
+
+        // A u64 for the inventory, and Self::U64_PER_SUBINVENTORY u64's for the subinventory
+        let inventory_words = inventory_size * Self::U64_PER_INVENTORY + 1;
+        let mut inventory = Vec::with_capacity(inventory_words);
+
         let mut past_zeros = 0;
         let mut next_quantum = 0;
+
+        // First phase: we build an inventory for each one out of ones_per_inventory.
         'outer: for (i, word) in bitvec.as_ref().iter().copied().map(|x| !x).enumerate() {
             let zeros_in_word = word.count_ones() as usize;
             // skip the word if we can
-            while (past_zeros + zeros_in_word).min(zeros) > next_quantum {
+            while (past_zeros + zeros_in_word).min(num_zeros) > next_quantum {
                 let in_word_index = word.select_in_word((next_quantum - past_zeros) as usize);
                 let index = (i * u64::BITS as usize) + in_word_index;
 
@@ -91,19 +94,20 @@ impl<
                 inventory.resize(inventory.len() + Self::U64_PER_SUBINVENTORY, 0);
 
                 next_quantum += Self::ZEROS_PER_INVENTORY;
-                if next_quantum >= zeros {
+                if next_quantum >= num_zeros {
                     break 'outer;
                 }
             }
             past_zeros += zeros_in_word;
         }
+
+        // TODO assert_eq!(num_zeros, past_zeros.min(num_zeros));
         // in the last inventory write the number of bits
         inventory.push(BitLength::len(&bitvec));
-        debug_assert_eq!(inventory_len, inventory.len());
-        let iter = 0..inventory_size;
+        debug_assert_eq!(inventory_words, inventory.len());
 
         // fill the second layer of the index
-        iter.for_each(|inventory_idx| {
+        for inventory_idx in 0..inventory_size {
             // get the start and end index of the current inventory
             let start_idx = inventory_idx * Self::U64_PER_INVENTORY;
             let end_idx = start_idx + Self::U64_PER_INVENTORY;
@@ -144,7 +148,7 @@ impl<
 
                 // if the quantum is in this word, write it in the subinventory
                 // this can happen multiple times if the quantum is small
-                while (past_zeros + zeros_in_word).min(zeros) > next_quantum {
+                while (past_zeros + zeros_in_word).min(num_zeros) > next_quantum {
                     debug_assert!(next_quantum <= end_bit_idx as _);
                     // find the quantum bit in the word
                     let in_word_index = word.select_in_word(next_quantum - past_zeros);
@@ -181,7 +185,7 @@ impl<
                 // read the next word
                 word = !bitvec.as_ref()[word_idx as usize];
             }
-        });
+        }
 
         Self {
             bits: bitvec,

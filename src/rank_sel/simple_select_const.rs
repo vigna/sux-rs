@@ -34,7 +34,7 @@ use mem_dbg::*;
 /// ```rust
 /// use sux::bit_vec;
 /// use sux::traits::{Rank, Select};
-/// use sux::rank_sel::{SimpleSelectConst, Rank9};
+/// use sux::rank_sel::{SimpleSelectConst, Rank9, RankSmall};
 ///
 /// // Standalone select
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
@@ -160,15 +160,18 @@ impl<
     > SimpleSelectConst<B, Vec<usize>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     pub fn new(bitvec: B) -> Self {
-        let ones = bitvec.count_ones();
+        let num_ones = bitvec.count_ones();
         // number of inventories we will create
-        let inventory_size = ones.div_ceil(Self::ONES_PER_INVENTORY);
-        let inventory_len = inventory_size * Self::U64_PER_INVENTORY + 1;
-        // inventory_size, an usize for the first layer index, and Self::U64_PER_SUBINVENTORY for the sub layer
-        let mut inventory = Vec::with_capacity(inventory_len);
-        // scan the bitvec and fill the first layer of the inventory
+        let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY);
+
+        // A u64 for the inventory, and Self::U64_PER_SUBINVENTORY u64's for the subinventory
+        let inventory_words = inventory_size * Self::U64_PER_INVENTORY + 1;
+        let mut inventory = Vec::with_capacity(inventory_words);
+
         let mut past_ones = 0;
         let mut next_quantum = 0;
+
+        // First phase: we build an inventory for each one out of ones_per_inventory.
         for (i, word) in bitvec.as_ref().iter().copied().enumerate() {
             let ones_in_word = word.count_ones() as usize;
             // skip the word if we can
@@ -185,14 +188,14 @@ impl<
             }
             past_ones += ones_in_word;
         }
+
+        assert_eq!(num_ones, past_ones);
         // in the last inventory write the number of bits
         inventory.push(BitLength::len(&bitvec));
-        assert_eq!(inventory_len, inventory.len());
-        // build the index
-        let iter = 0..inventory_size;
+        assert_eq!(inventory_words, inventory.len());
 
         // fill the second layer of the index
-        iter.for_each(|inventory_idx| {
+        for inventory_idx in 0..inventory_size {
             // get the start and end index of the current inventory
             let start_idx = inventory_idx * Self::U64_PER_INVENTORY;
             let end_idx = start_idx + Self::U64_PER_INVENTORY;
@@ -272,7 +275,7 @@ impl<
                 // read the next word
                 word = bitvec.as_ref()[word_idx];
             }
-        });
+        }
 
         Self {
             bits: bitvec,

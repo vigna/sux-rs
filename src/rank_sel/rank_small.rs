@@ -54,7 +54,11 @@ use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted, RankZero};
 /// # Examples
 ///
 /// ```rust
-/// use sux::{prelude::Rank,bit_vec,rank_small};
+///
+/// use sux::{bit_vec,rank_small};
+/// use sux::traits::{Rank, Select};
+/// use sux::rank_sel::{SimpleSelect:
+///
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![0; bits];
 ///
@@ -85,7 +89,7 @@ use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted, RankZero};
 /// assert_eq!(rank_small_sel.select(0), 0);
 /// assert_eq!(rank_small_sel.select(1), 2);
 /// assert_eq!(rank_small_sel.select(2), 3);
-/// assert_eq!(rank_small_sel.select(3), 5)
+/// assert_eq!(rank_small_sel.select(3), 5);
 /// assert_eq!(rank_small_sel.select(4), 7);
 /// assert_eq!(rank_small_sel.select(5), None);
 /// ```

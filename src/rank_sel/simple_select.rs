@@ -311,9 +311,11 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
         let ones_per_sub16 = 1usize << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
-        let mut inventory = Vec::with_capacity(inventory_size * u64_per_inventory + 1);
+        // A u64 for the inventory, and u64_per_inventory for the subinventory
+        let inventory_words = inventory_size * u64_per_inventory + 1;
+        let mut inventory = Vec::with_capacity(inventory_words);
 
-        let mut curr_num_ones: usize = 0;
+        let mut past_ones: usize = 0;
         let mut next_quantum: usize = 0;
         let mut spilled = 0;
 
@@ -321,21 +323,24 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
         for (i, word) in bits.as_ref().iter().copied().enumerate() {
             let ones_in_word = word.count_ones() as usize;
 
-            while curr_num_ones + ones_in_word > next_quantum {
-                let in_word_index = word.select_in_word(next_quantum - curr_num_ones);
+            while past_ones + ones_in_word > next_quantum {
+                let in_word_index = word.select_in_word(next_quantum - past_ones);
                 let index = (i * usize::BITS as usize) + in_word_index;
 
+                // write the position of the one in the inventory
                 inventory.push(index);
+                // make space for the subinventory
                 inventory.resize(inventory.len() + u64_per_subinventory, 0);
 
                 next_quantum += ones_per_inventory;
             }
-            curr_num_ones += ones_in_word;
+            past_ones += ones_in_word;
         }
-        assert_eq!(num_ones, curr_num_ones);
+
+        assert_eq!(num_ones, past_ones);
         // in the last inventory write the number of bits
         inventory.push(num_bits);
-        assert_eq!(inventory.len(), inventory_size * u64_per_inventory + 1);
+        assert_eq!(inventory.len(), inventory_words);
 
         // We estimate the subinventory and exact spill size
         for (i, inv) in inventory[..inventory_size * u64_per_inventory]
@@ -346,8 +351,8 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
         {
             let start = inv;
             let span = inventory[i + u64_per_inventory] as usize - start;
-            curr_num_ones = (i / u64_per_inventory) * ones_per_inventory;
-            let ones = min(num_ones - curr_num_ones, ones_per_inventory);
+            past_ones = (i / u64_per_inventory) * ones_per_inventory;
+            let ones = min(num_ones - past_ones, ones_per_inventory);
 
             assert!(start + span == num_bits || ones == ones_per_inventory);
 
