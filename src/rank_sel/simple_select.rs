@@ -172,6 +172,7 @@ trait Inventory {
 }
 
 impl Inventory for usize {
+    #[inline(always)]
     fn is_16_bit_span(&self) -> bool {
         *self as isize >= 0
     }
