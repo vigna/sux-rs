@@ -197,6 +197,13 @@ impl<B, I> SimpleSelect<B, I> {
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
 }
 
+impl<B: BitLength, I> BitCount for SimpleSelect<B, I> {
+    #[inline(always)]
+    fn count_ones(&self) -> usize {
+        self.num_ones
+    }
+}
+
 impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Vec<usize>> {
     /// Creates a new selection structure over a [`SelectHinted`] using a
     /// [default target inventory
@@ -531,7 +538,6 @@ crate::forward_mult![
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
-    crate::traits::rank_sel::forward_bit_count,
     crate::traits::rank_sel::forward_rank,
     crate::traits::rank_sel::forward_rank_hinted,
     crate::traits::rank_sel::forward_rank_zero,

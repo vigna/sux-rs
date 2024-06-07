@@ -114,6 +114,7 @@ pub struct SimpleSelectConst<
 > {
     bits: B,
     inventory: I,
+    num_ones: usize,
 }
 
 /// constants used throughout the code
@@ -149,7 +150,21 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
         SimpleSelectConst {
             bits: f(self.bits),
             inventory: self.inventory,
+            num_ones: self.num_ones,
         }
+    }
+}
+
+impl<
+        B: BitLength,
+        I,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_U64_PER_SUBINVENTORY: usize,
+    > BitCount for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+{
+    #[inline(always)]
+    fn count_ones(&self) -> usize {
+        self.num_ones
     }
 }
 
@@ -287,6 +302,7 @@ impl<
         Self {
             bits: bitvec,
             inventory,
+            num_ones,
         }
     }
 }
@@ -341,7 +357,6 @@ crate::forward_mult![
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
-    crate::traits::rank_sel::forward_bit_count,
     crate::traits::rank_sel::forward_rank,
     crate::traits::rank_sel::forward_rank_hinted,
     crate::traits::rank_sel::forward_rank_zero,
