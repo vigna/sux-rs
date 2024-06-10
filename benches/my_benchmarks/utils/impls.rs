@@ -1,5 +1,5 @@
 use sux::bits::BitVec;
-use sux::rank_sel::{Rank10, Rank11, Rank9, RankSmall};
+use sux::rank_sel::{Rank9, RankSmall};
 use sux::rank_sel::{Select9, SimpleSelect};
 use sux::traits::{BitCount, BitLength, Select, SelectHinted};
 
@@ -54,16 +54,6 @@ impl Build<BitVec> for Select9 {
 impl Build<BitVec> for Rank9 {
     fn new(bits: BitVec) -> Self {
         Rank9::new(bits)
-    }
-}
-impl<const LOG2_LOWER_BLOCK_SIZE: usize> Build<BitVec> for Rank10<LOG2_LOWER_BLOCK_SIZE> {
-    fn new(bits: BitVec) -> Self {
-        Rank10::new(bits)
-    }
-}
-impl Build<BitVec> for Rank11 {
-    fn new(bits: BitVec) -> Self {
-        Rank11::new(bits)
     }
 }
 

@@ -5,7 +5,7 @@ use mem_dbg::*;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use sux::{
     bits::BitVec,
-    rank_sel::{Rank10Sel, Rank9, RankSmall, Select9, SimpleSelect},
+    rank_sel::{Rank9, RankSmall, Select9, SimpleSelect},
     traits::*,
 };
 
@@ -20,13 +20,6 @@ impl Struct for SimpleSelect<BitVec> {
 impl Struct for Select9 {
     fn build(bits: BitVec) -> Self {
         Select9::new(Rank9::new(bits))
-    }
-}
-impl<const LOG2_UPPER_BLOCK_SIZE: usize, const LOG2_ONES_PER_INVENTORY: usize> Struct
-    for Rank10Sel<LOG2_UPPER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY>
-{
-    fn build(bits: BitVec) -> Self {
-        Rank10Sel::<LOG2_UPPER_BLOCK_SIZE, LOG2_ONES_PER_INVENTORY>::new(bits)
     }
 }
 

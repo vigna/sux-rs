@@ -27,7 +27,6 @@ fn main() {
         }
         "rank" => {
             bench_rank9(&mut criterion);
-            bench_rank11(&mut criterion);
             bench_rank_small0(&mut criterion);
             bench_rank_small1(&mut criterion);
             bench_rank_small2(&mut criterion);

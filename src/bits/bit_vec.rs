@@ -83,19 +83,13 @@ macro_rules! bit_vec {
         $crate::prelude::BitVec::new($n)
     };
     (true; $n:expr) => {
-        // TODO: improve using Matteo's constructors
         {
-            let mut b = $crate::prelude::BitVec::new($n);
-            b.fill(true);
-            b
+            $crate::prelude::BitVec::with_value($n, true)
         }
     };
     (1; $n:expr) => {
-        // TODO: improve using Matteo's constructors
         {
-            let mut b = $crate::prelude::BitVec::new($n);
-            b.fill(true);
-            b
+            $crate::prelude::BitVec::with_value($n, true)
         }
     };
     ($($x:expr),+ $(,)?) => {
