@@ -1,19 +1,11 @@
 use crate::utils::*;
 use criterion::Criterion;
-use sux::rank_sel::{Rank11, Rank9, RankSmall};
+use sux::rank_sel::{Rank9, RankSmall};
 
 pub fn bench_rank9(c: &mut Criterion) {
     let mut bench_group = c.benchmark_group("rank9");
 
     bench_rank::<Rank9>(&mut bench_group, &LENS, &DENSITIES, REPS);
-
-    bench_group.finish();
-}
-
-pub fn bench_rank11(c: &mut Criterion) {
-    let mut bench_group = c.benchmark_group("rank11");
-
-    bench_rank::<Rank11>(&mut bench_group, &LENS, &DENSITIES, REPS);
 
     bench_group.finish();
 }

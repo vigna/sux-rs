@@ -51,23 +51,14 @@ pub use simple_select_zero_const::*;
 mod simple_select;
 pub use simple_select::*;
 
-mod rank10sel;
-pub use rank10sel::*;
-
-mod rank9;
-pub use rank9::*;
-
 mod rank_small;
 pub use rank_small::*;
 
 mod select_small;
 pub use select_small::*;
 
-mod rank10;
-pub use rank10::*;
-
-mod rank11;
-pub use rank11::*;
+mod rank9;
+pub use rank9::*;
 
 mod select9;
 pub use select9::*;
