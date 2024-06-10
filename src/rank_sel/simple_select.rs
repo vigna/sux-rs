@@ -55,8 +55,10 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, Select, SelectHinted};
 /// cases, [`Select9`](super::Select9) might be a better choice.
 ///
 /// In the 16-bit case, the average distance between two ones indexed by the
-/// subinventories is `L/4M` (again, the actual value might be twice as large
-/// because of rounding). Within this range, we perform a sequential broadword
+/// subinventories is `L/4M`, (again, the actual value might be twice as large
+/// because of rounding). However, the worst-case distance might as high as
+/// 2¹⁶/4M, as we use `4M` 16-bit integers until the width of the inventory span
+/// makes it possible. Within this range, we perform a sequential broadword
 /// search, which has a linear cost.
 ///
 /// # Choosing Parameters
