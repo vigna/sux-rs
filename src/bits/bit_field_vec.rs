@@ -881,102 +881,90 @@ where
     }
 }
 
-/// Provide conversion from non-atomic to atomic bitfield vectors, provided their
-/// backends are [convertible](ConvertTo) into one another.
-///
-/// Implementations of this trait are then used to
-/// implement by delegation a corresponding [`From`].
-impl<W: Word + IntoAtomic, B, C> ConvertTo<AtomicBitFieldVec<W, C>> for BitFieldVec<W, B>
-where
-    B: ConvertTo<C>,
+impl<W: Word + IntoAtomic> From<AtomicBitFieldVec<W, Vec<W::AtomicType>>>
+    for BitFieldVec<W, Vec<W>>
 {
     #[inline]
-    fn convert_to(self) -> Result<AtomicBitFieldVec<W, C>> {
-        Ok(AtomicBitFieldVec {
-            len: self.len,
-            bit_width: self.bit_width,
-            mask: self.mask,
-            data: self.data.convert_to()?,
-        })
+    fn from(value: AtomicBitFieldVec<W, Vec<W::AtomicType>>) -> Self {
+        BitFieldVec {
+            data: unsafe { core::mem::transmute::<Vec<W::AtomicType>, Vec<W>>(value.data) },
+            len: value.len,
+            bit_width: value.bit_width,
+            mask: value.mask,
+        }
     }
 }
 
-/// Provide conversion from atomic to non-atomic bitfield vectors, provided their
-/// backends are [convertible](ConvertTo) into one another.
-///
-/// Implementations of this trait are then used to
-/// implement by delegation a corresponding [`From`].
-impl<W: Word + IntoAtomic, B, C> ConvertTo<BitFieldVec<W, C>> for AtomicBitFieldVec<W, B>
-where
-    B: ConvertTo<C>,
+impl<'a, W: Word + IntoAtomic> From<AtomicBitFieldVec<W, &'a [W::AtomicType]>>
+    for BitFieldVec<W, &'a [W]>
 {
     #[inline]
-    fn convert_to(self) -> Result<BitFieldVec<W, C>> {
-        Ok(BitFieldVec {
-            len: self.len,
-            bit_width: self.bit_width,
-            mask: self.mask,
-            data: self.data.convert_to()?,
-        })
+    fn from(value: AtomicBitFieldVec<W, &'a [W::AtomicType]>) -> Self {
+        BitFieldVec {
+            data: unsafe { core::mem::transmute::<&'a [W::AtomicType], &'a [W]>(value.data) },
+            len: value.len,
+            bit_width: value.bit_width,
+            mask: value.mask,
+        }
     }
 }
 
-/// Provide conversion betweeen bitfields vectors with different
-/// backends, provided that such backends
-/// are [convertible](ConvertTo) into one another.
-///
-/// This is a generalized form of reflexivity of [`ConvertTo`] for bitfield
-/// vectors. It is necessary, among other things, for the mechanism with which indexing
-/// structures can be added to [`EliasFano`].
-impl<W: Word, B, C> ConvertTo<BitFieldVec<W, C>> for BitFieldVec<W, B>
-where
-    B: ConvertTo<C>,
+impl<'a, W: Word + IntoAtomic> From<AtomicBitFieldVec<W, &'a mut [W::AtomicType]>>
+    for BitFieldVec<W, &'a mut [W]>
 {
     #[inline]
-    fn convert_to(self) -> Result<BitFieldVec<W, C>> {
-        Ok(BitFieldVec {
-            len: self.len,
-            bit_width: self.bit_width,
-            mask: self.mask,
-            data: self.data.convert_to()?,
-        })
+    fn from(value: AtomicBitFieldVec<W, &'a mut [W::AtomicType]>) -> Self {
+        BitFieldVec {
+            data: unsafe {
+                core::mem::transmute::<&'a mut [W::AtomicType], &'a mut [W]>(value.data)
+            },
+            len: value.len,
+            bit_width: value.bit_width,
+            mask: value.mask,
+        }
     }
 }
 
-macro_rules! impl_from {
-    ($std:ty, $atomic:ty) => {
-        impl From<BitFieldVec<$std>> for AtomicBitFieldVec<$std> {
-            #[inline]
-            fn from(bm: BitFieldVec<$std>) -> Self {
-                bm.convert_to().unwrap()
-            }
+impl<W: Word + IntoAtomic> From<BitFieldVec<W, Vec<W>>>
+    for AtomicBitFieldVec<W, Vec<W::AtomicType>>
+{
+    #[inline]
+    fn from(value: BitFieldVec<W, Vec<W>>) -> Self {
+        AtomicBitFieldVec {
+            data: unsafe { core::mem::transmute::<Vec<W>, Vec<W::AtomicType>>(value.data) },
+            len: value.len,
+            bit_width: value.bit_width,
+            mask: value.mask,
         }
-
-        impl From<AtomicBitFieldVec<$std>> for BitFieldVec<$std> {
-            #[inline]
-            fn from(bm: AtomicBitFieldVec<$std>) -> Self {
-                bm.convert_to().unwrap()
-            }
-        }
-
-        impl<'a> From<BitFieldVec<$std, &'a [$std]>> for AtomicBitFieldVec<$std, &'a [$atomic]> {
-            #[inline]
-            fn from(bm: BitFieldVec<$std, &'a [$std]>) -> Self {
-                bm.convert_to().unwrap()
-            }
-        }
-
-        impl<'a> From<AtomicBitFieldVec<$std, &'a [$atomic]>> for BitFieldVec<$std, &'a [$std]> {
-            #[inline]
-            fn from(bm: AtomicBitFieldVec<$std, &'a [$atomic]>) -> Self {
-                bm.convert_to().unwrap()
-            }
-        }
-    };
+    }
 }
 
-impl_from!(u8, AtomicU8);
-impl_from!(u16, AtomicU16);
-impl_from!(u32, AtomicU32);
-impl_from!(u64, AtomicU64);
-impl_from!(usize, AtomicUsize);
+impl<'a, W: Word + IntoAtomic> From<BitFieldVec<W, &'a [W]>>
+    for AtomicBitFieldVec<W, &'a [W::AtomicType]>
+{
+    #[inline]
+    fn from(value: BitFieldVec<W, &'a [W]>) -> Self {
+        AtomicBitFieldVec {
+            data: unsafe { core::mem::transmute::<&'a [W], &'a [W::AtomicType]>(value.data) },
+            len: value.len,
+            bit_width: value.bit_width,
+            mask: value.mask,
+        }
+    }
+}
+
+impl<'a, W: Word + IntoAtomic> From<BitFieldVec<W, &'a mut [W]>>
+    for AtomicBitFieldVec<W, &'a mut [W::AtomicType]>
+{
+    #[inline]
+    fn from(value: BitFieldVec<W, &'a mut [W]>) -> Self {
+        AtomicBitFieldVec {
+            data: unsafe {
+                core::mem::transmute::<&'a mut [W], &'a mut [W::AtomicType]>(value.data)
+            },
+            len: value.len,
+            bit_width: value.bit_width,
+            mask: value.mask,
+        }
+    }
+}

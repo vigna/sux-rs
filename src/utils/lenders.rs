@@ -20,7 +20,8 @@ problem while lending solves the second problem.
 The basic implementation for strings is [`LineLender`], which lends lines from a [`BufRead`] as a
 `&str`, but lends an internal buffer, rather than allocating a new string for each line.
 Convenience constructors are provided for [`File`] and [`Path`]. Analogously, we provide
-[`ZstdLineLender`], which lends lines from a zstd-compressed [`Read`], and [`GzipLineLender`],
+`ZstdLineLender` (enabled by the `zstd` feature) that lends
+lines from a zstd-compressed [`Read`], and [`GzipLineLender`],
 which lends lines from a gzip-compressed [`Read`].
 
 If you have a clonable [`IntoIterator`], you can use [`FromIntoIterator`] to lend its items;
@@ -38,7 +39,9 @@ use std::{
     io::{self, Read, Seek},
     path::Path,
 };
+#[cfg(feature = "zstd")]
 use zstd::stream::read::Decoder;
+use zstd::Decoder;
 
 /**
 
@@ -202,7 +205,7 @@ impl<R: Read> GzipLineLender<R> {
     }
 }
 
-impl GzipLineLender<BufReader<Decoder<'static, BufReader<File>>>> {
+impl GzipLineLender<BufReader<GzDecoder<BufReader<File>>>> {
     pub fn from_path(path: impl AsRef<Path>) -> io::Result<GzipLineLender<File>> {
         GzipLineLender::new(File::open(path)?)
     }
