@@ -75,8 +75,9 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, Select, SelectHinted};
 /// interleaving inventories is not useful if `M` is so large that the
 /// subinventory takes several cache lines. For example, using [default value
 /// for `L`](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN) a reasonable choice
-/// for `M` is between 2 and 5, corrisponding to worst-case linear searches
-/// between 1024 and 128 bits.
+/// for `M` is between 4 and 32, corrisponding to worst-case linear searches
+/// between 1024 and 128 bits (note that the constructors take the base-2
+/// logarithm of `M`)
 ///
 /// # Examples
 /// ```rust
