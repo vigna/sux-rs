@@ -1,3 +1,5 @@
 target
 Cargo.lock
 .vscode
+lcov.info
+benches/plots/*

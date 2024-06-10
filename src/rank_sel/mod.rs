@@ -21,10 +21,11 @@ a hint and then delegating to the base class. Moreover, each class forwards the 
 does not implement to the next class in the chain.
 
 A few of the structures in module are based on _broadword programming_ and have been described
-by Sebastiano Vigna in “<a href="https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12">Broadword
-Implementation of Rank/Select Queries</a>”, _Proc. of the 7th International Workshop
-on Experimental Algorithms, WEA 2008_, volume 5038 of Lecture Notes in Computer Science, pages
-154–168. Springer, 2008.
+by Sebastiano Vigna in “[Broadword Implementation of Rank/Select
+Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
+_Proc. of the 7th International Workshop on Experimental Algorithms, WEA
+2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
+Springer, 2008.
 
 ## Select
 
@@ -40,14 +41,33 @@ the high bits of the [Elias–Fano representation of monotone sequences](crate::
 but they can be tuned for other densities.
 
 */
-mod select_fixed1;
-pub use select_fixed1::*;
 
-mod select_zero_fixed1;
-pub use select_zero_fixed1::*;
+mod simple_select_const;
+pub use simple_select_const::*;
 
-mod select_fixed2;
-pub use select_fixed2::*;
+mod simple_select_zero_const;
+pub use simple_select_zero_const::*;
 
-mod select_zero_fixed2;
-pub use select_zero_fixed2::*;
+mod simple_select;
+pub use simple_select::*;
+
+mod rank10sel;
+pub use rank10sel::*;
+
+mod rank9;
+pub use rank9::*;
+
+mod rank_small;
+pub use rank_small::*;
+
+mod select_small;
+pub use select_small::*;
+
+mod rank10;
+pub use rank10::*;
+
+mod rank11;
+pub use rank11::*;
+
+mod select9;
+pub use select9::*;

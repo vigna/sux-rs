@@ -8,37 +8,31 @@
 
 use anyhow::Result;
 use epserde::prelude::*;
-use lender::from_iter;
+use lender::*;
 use std::io::prelude::*;
 use std::io::BufReader;
 use sux::prelude::*;
 
 #[test]
-fn test_negative_redundancy() {
-    let mut rclb = RearCodedListBuilder::new(10000);
-    rclb.push("UkVBRE1FLm1k");
-    rclb.push("VE9ETy50eHQ=");
-    rclb.push("b2xk");
-    rclb.push("b2xkcHJvamVjdA==");
-    rclb.push("cGFyc2VyLmM=");
-    rclb.push("cmVmcy90YWdzL3YxLjA=");
-    rclb.push("cmVmcy90YWdzL3YyLjAtYW5vbnltb3Vz");
-    rclb.push("cmVmcy9oZWFkcy9tYXN0ZXI=");
-    rclb.push("dGVzdHM=");
-
-    rclb.print_stats();
+fn test_rear_coded_list_100() -> Result<()> {
+    test_rear_coded_list("tests/data/wordlist.100")
 }
 
+#[cfg(feature = "slow")]
 #[test]
-fn test_rear_coded_list() -> Result<()> {
-    let words = BufReader::new(std::fs::File::open("tests/data/wordlist.10000")?)
+fn test_rear_coded_list_10000() -> Result<()> {
+    test_rear_coded_list("tests/data/wordlist.10000")
+}
+
+fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
+    let words = BufReader::new(std::fs::File::open(path.as_ref()).unwrap())
         .lines()
         .map(|line| line.unwrap())
         .collect::<Vec<_>>();
 
     // create a new rca with u16 as pointers (this limit data to u16::MAX bytes max size)
-    let mut rcab = <RearCodedListBuilder>::new(8);
-    rcab.extend(from_iter(words.iter()));
+    let mut rcab = <RearCodedListBuilder>::new(4);
+    rcab.extend(words.iter().into_lender());
 
     rcab.print_stats();
     let rca = rcab.build();
