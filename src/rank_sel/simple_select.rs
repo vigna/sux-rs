@@ -157,7 +157,7 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, Select, SelectHinted};
 pub struct SimpleSelect<B, I = Box<[usize]>> {
     bits: B,
     inventory: I,
-    exact_spill: I,
+    spill: I,
     num_ones: usize,
     log2_ones_per_inventory: usize,
     log2_ones_per_sub16: usize,
@@ -167,7 +167,7 @@ pub struct SimpleSelect<B, I = Box<[usize]>> {
     ones_per_inventory_mask: usize,
     ones_per_sub16_mask: usize,
     inventory_size: usize,
-    exact_spill_size: usize,
+    spill_size: usize,
 }
 
 trait Inventory {
@@ -237,7 +237,7 @@ impl<B, I> SimpleSelect<B, I> {
         SimpleSelect {
             bits: f(self.bits),
             inventory: self.inventory,
-            exact_spill: self.exact_spill,
+            spill: self.spill,
             num_ones: self.num_ones,
             log2_ones_per_inventory: self.log2_ones_per_inventory,
             log2_ones_per_sub16: self.log2_ones_per_sub16,
@@ -247,7 +247,7 @@ impl<B, I> SimpleSelect<B, I> {
             ones_per_inventory_mask: self.ones_per_inventory_mask,
             ones_per_sub16_mask: self.ones_per_sub16_mask,
             inventory_size: self.inventory_size,
-            exact_spill_size: self.exact_spill_size,
+            spill_size: self.spill_size,
         }
     }
 
@@ -441,10 +441,10 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
             }
         }
 
-        let exact_spill_size = spilled;
+        let spill_size = spilled;
 
         let mut inventory: Box<[usize]> = inventory.into();
-        let mut exact_spill: Box<[usize]> = vec![0; exact_spill_size].into();
+        let mut spill: Box<[usize]> = vec![0; spill_size].into();
 
         spilled = 0;
 
@@ -536,9 +536,9 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                             subinventory[subinventory_idx] = sub_offset as u32;
                             subinventory_idx += 1;
                         } else {
-                            debug_assert!(spilled < exact_spill_size);
+                            debug_assert!(spilled < spill_size);
                             // Maybe pointer dereferencing?
-                            let u32_spill: &mut [u32] = unsafe { exact_spill.align_to_mut().1 };
+                            let u32_spill: &mut [u32] = unsafe { spill.align_to_mut().1 };
                             debug_assert_eq!(u32_spill[spilled * 2 + u32_odd_spill as usize], 0);
                             u32_spill[spilled * 2 + u32_odd_spill as usize] = sub_offset as u32;
                             spilled += u32_odd_spill as usize;
@@ -553,8 +553,8 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                             inventory[start_idx + 1 + subinventory_idx] = bit_index;
                             subinventory_idx += 1;
                         } else {
-                            assert!(spilled < exact_spill_size);
-                            exact_spill[spilled] = bit_index;
+                            assert!(spilled < spill_size);
+                            spill[spilled] = bit_index;
                             spilled += 1;
                         }
                     }
@@ -576,12 +576,12 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
         }
 
         // TODO: why does this assertion fail?
-        // debug_assert_eq!(spilled, exact_spill_size);
+        // debug_assert_eq!(spilled, spill_size);
 
         Self {
             bits,
             inventory,
-            exact_spill,
+            spill,
             num_ones,
             log2_ones_per_inventory,
             log2_ones_per_sub16,
@@ -591,7 +591,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
             ones_per_inventory_mask,
             ones_per_sub16_mask,
             inventory_size,
-            exact_spill_size,
+            spill_size: spill_size,
         }
     }
 
@@ -661,9 +661,9 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
                     *inventory.get_unchecked(inventory_start_pos + u64_per_subinventory);
 
                 let spilled_u32s = self
-                    .exact_spill
+                    .spill
                     .as_ref()
-                    .get_unchecked(start_spill_idx..self.exact_spill_size)
+                    .get_unchecked(start_spill_idx..self.spill_size)
                     .align_to::<u32>()
                     .1;
 
@@ -689,8 +689,8 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
         }
         let spill_idx =
             { *inventory.get_unchecked(inventory_start_pos + 1) } + subrank - u64_per_subinventory;
-        debug_assert!(spill_idx < self.exact_spill_size);
-        self.exact_spill.get_unchecked(spill_idx)
+        debug_assert!(spill_idx < self.spill_size);
+        self.spill.get_unchecked(spill_idx)
     }
 }
 
