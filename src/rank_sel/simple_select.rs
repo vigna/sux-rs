@@ -162,12 +162,9 @@ pub struct SimpleSelect<B, I = Box<[usize]>> {
     log2_ones_per_inventory: usize,
     log2_ones_per_sub16: usize,
     log2_u64_per_subinventory: usize,
-    ones_per_sub64: usize,
     u64_per_inventory: usize,
     ones_per_inventory_mask: usize,
     ones_per_sub16_mask: usize,
-    inventory_size: usize,
-    spill_size: usize,
 }
 
 trait Inventory {
@@ -242,12 +239,9 @@ impl<B, I> SimpleSelect<B, I> {
             log2_ones_per_inventory: self.log2_ones_per_inventory,
             log2_ones_per_sub16: self.log2_ones_per_sub16,
             log2_u64_per_subinventory: self.log2_u64_per_subinventory,
-            ones_per_sub64: self.ones_per_sub64,
             u64_per_inventory: self.u64_per_inventory,
             ones_per_inventory_mask: self.ones_per_inventory_mask,
             ones_per_sub16_mask: self.ones_per_sub16_mask,
-            inventory_size: self.inventory_size,
-            spill_size: self.spill_size,
         }
     }
 
@@ -363,23 +357,26 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
         // smaller value we can still index, in the 16-bit case, all bits the
         // subinventory. This can happen only in extremely sparse vectors, or
         // if a very small value of log2_ones_per_inventory is set directly.
+        //
+        // Note that as a consequence the subinventory space is never large
+        // enough to hold all 32-bit or 64-bit entries, so we always need a
+        // spill pointer, and we can avoid handling the case without one.
+
+        // log2_u64_per_subinventory = max_log2_u64_per_subinventory.min(max(0,
+        //    log2_ones_per_inventory - 2));
         let log2_u64_per_subinventory =
             max_log2_u64_per_subinventory.min(max(2, log2_ones_per_inventory) - 2);
 
         let u64_per_subinventory = 1 << log2_u64_per_subinventory;
+        // A u64 for the inventory, and u64_per_inventory for the subinventory
         let u64_per_inventory = u64_per_subinventory + 1;
 
-        let log2_ones_per_sub64 = max(
-            0,
-            log2_ones_per_inventory as i32 - log2_u64_per_subinventory as i32,
-        ) as usize;
-
-        let log2_ones_per_sub16 = max(0, (log2_ones_per_sub64 as i32) - 2) as usize;
-        let ones_per_sub64 = 1 << log2_ones_per_sub64;
+        //let log2_ones_per_sub16 = (log2_ones_per_inventory -
+        //    (log2_u64_per_subinventory + 2)).max(0);
+        let log2_ones_per_sub16 = (log2_ones_per_inventory - log2_u64_per_subinventory).max(2) - 2;
         let ones_per_sub16 = 1 << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
-        // A u64 for the inventory, and u64_per_inventory for the subinventory
         let inventory_words = inventory_size * u64_per_inventory + 1;
         let mut inventory = Vec::with_capacity(inventory_words);
 
@@ -419,7 +416,6 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
         {
             let start = inv;
             let span = inventory[i * u64_per_inventory + u64_per_inventory] - start;
-            // TODO: avoid this division
             past_ones = i * ones_per_inventory;
             let ones = min(num_ones - past_ones, ones_per_inventory);
 
@@ -586,12 +582,9 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
             log2_ones_per_inventory,
             log2_ones_per_sub16,
             log2_u64_per_subinventory,
-            ones_per_sub64,
             u64_per_inventory,
             ones_per_inventory_mask,
             ones_per_sub16_mask,
-            inventory_size,
-            spill_size: spill_size,
         }
     }
 
@@ -611,7 +604,6 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
         let inventory_index = rank >> self.log2_ones_per_inventory;
         let inventory_start_pos =
             (inventory_index << self.log2_u64_per_subinventory) + inventory_index;
-        debug_assert!(inventory_index <= self.inventory_size);
 
         let inventory_rank = { *inventory.get_unchecked(inventory_start_pos) };
         let subrank = rank & self.ones_per_inventory_mask;
@@ -663,7 +655,7 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
                 let spilled_u32s = self
                     .spill
                     .as_ref()
-                    .get_unchecked(start_spill_idx..self.spill_size)
+                    .get_unchecked(start_spill_idx..self.spill.as_ref().len()) // TODO: Maybe exact value?
                     .align_to::<u32>()
                     .1;
 
@@ -689,7 +681,7 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
         }
         let spill_idx =
             { *inventory.get_unchecked(inventory_start_pos + 1) } + subrank - u64_per_subinventory;
-        debug_assert!(spill_idx < self.spill_size);
+        debug_assert!(spill_idx < self.spill.as_ref().len());
         self.spill.get_unchecked(spill_idx)
     }
 }
@@ -709,6 +701,8 @@ crate::forward_mult![
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use crate::bits::BitVec;
     use rand::rngs::SmallRng;
@@ -717,6 +711,7 @@ mod tests {
 
     #[test]
     fn test_simple_select_ones_per_sub64() {
+        // TODO: What are we testing here?
         let len = 1 << 18;
         let bits = (0..len / 2)
             .map(|_| false)
@@ -729,7 +724,6 @@ mod tests {
             .collect::<BitVec>();
         let simple = SimpleSelect::new(bits, 3);
 
-        assert_eq!(simple.ones_per_sub64, 1);
         assert_eq!(simple.count_ones(), 4);
         assert_eq!(simple.select(0), Some(len / 2));
         assert_eq!(simple.select(1), Some(len / 2 + (1 << 17) + 1));
@@ -757,6 +751,30 @@ mod tests {
                 assert_eq!(simple.select(i), Some(pos[i]));
             }
             assert_eq!(simple.select(ones + 1), None);
+        }
+    }
+
+    #[test]
+    fn test_sub64s() {
+        let len = 5_000_000_000;
+        let mut rng = SmallRng::seed_from_u64(0);
+        let mut bits: BitVec = BitVec::new(len);
+        let mut pos = BTreeSet::new();
+        for _ in 0..(1 << 13) / 4 * 3 {
+            let p = rng.gen_range(0..len);
+            if pos.insert(p) {
+                bits.set(p, true);
+            }
+        }
+
+        for m in [0, 3, 16] {
+            let simple = SimpleSelect::with_inv(&bits, pos.len(), 13, m);
+            assert!(simple.inventory[0].is_64_bit_span());
+
+            for (i, &p) in pos.iter().enumerate() {
+                assert_eq!(simple.select(i), Some(p));
+            }
+            assert_eq!(simple.select(pos.len()), None);
         }
     }
 }

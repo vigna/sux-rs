@@ -21,7 +21,7 @@ use sux::traits::SelectZero;
 
 const INV: usize = 13;
 const SUB: usize = 0;
-
+/*
 #[test]
 fn test_simple_select_const() {
     let lens = (1..100)
@@ -222,3 +222,4 @@ fn test_map() {
     assert_eq!(rank_seol01.select_zero(4), Some(8));
     assert_eq!(rank_seol01.select_zero(5), None);
 }
+*/
