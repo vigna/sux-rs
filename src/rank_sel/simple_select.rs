@@ -154,7 +154,7 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, Select, SelectHinted};
 /// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct SimpleSelect<B, I = Vec<usize>> {
+pub struct SimpleSelect<B, I = Box<[usize]>> {
     bits: B,
     inventory: I,
     exact_spill: I,
@@ -219,7 +219,8 @@ impl Inventory for usize {
 fn calc_log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
     debug_assert!(span >= 1 << 16);
     // Since span >= 2^16, (span >> 15).ilog2() >= 1, which implies in any case
-    // at least doubling the frequency of the subinventory.
+    // at least doubling the frequency of the subinventory, unless
+    // log2_ones_per_u16 = 0, that is, we are inventoring the whole span.
     log2_ones_per_sub16 - ((span >> 15).ilog2() as usize).min(log2_ones_per_sub16)
 }
 
@@ -260,7 +261,7 @@ impl<B: BitLength, I> BitCount for SimpleSelect<B, I> {
     }
 }
 
-impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Vec<usize>> {
+impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Box<[usize]>> {
     /// Creates a new selection structure over a [`SelectHinted`] using a
     /// [default target inventory
     /// span](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN).
@@ -305,6 +306,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
         target_inventory_span: usize,
         max_log2_u64_per_subinventory: usize,
     ) -> Self {
+        // TODO: is this necessary? (everywhere)
         let num_bits = max(1usize, bits.len());
         let num_ones = bits.count_ones();
 
@@ -352,17 +354,19 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
         log2_ones_per_inventory: usize,
         max_log2_u64_per_subinventory: usize,
     ) -> Self {
-        let num_bits = max(1usize, bits.len());
-        let ones_per_inventory = 1usize << log2_ones_per_inventory;
+        let num_bits = max(1, bits.len());
+        let ones_per_inventory = 1 << log2_ones_per_inventory;
         let ones_per_inventory_mask = ones_per_inventory - 1;
         let inventory_size = num_ones.div_ceil(ones_per_inventory);
 
-        let log2_u64_per_subinventory = min(
-            max_log2_u64_per_subinventory as i32,
-            max(0, log2_ones_per_inventory as i32 - 2),
-        ) as usize;
+        // We use a smaller value than max_log2_u64_per_subinventory when with a
+        // smaller value we can still index, in the 16-bit case, all bits the
+        // subinventory. This can happen only in extremely sparse vectors, or
+        // if a very small value of log2_ones_per_inventory is set directly.
+        let log2_u64_per_subinventory =
+            max_log2_u64_per_subinventory.min(max(2, log2_ones_per_inventory) - 2);
 
-        let u64_per_subinventory = 1usize << log2_u64_per_subinventory;
+        let u64_per_subinventory = 1 << log2_u64_per_subinventory;
         let u64_per_inventory = u64_per_subinventory + 1;
 
         let log2_ones_per_sub64 = max(
@@ -371,8 +375,8 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
         ) as usize;
 
         let log2_ones_per_sub16 = max(0, (log2_ones_per_sub64 as i32) - 2) as usize;
-        let ones_per_sub64 = 1usize << log2_ones_per_sub64;
-        let ones_per_sub16 = 1usize << log2_ones_per_sub16;
+        let ones_per_sub64 = 1 << log2_ones_per_sub64;
+        let ones_per_sub16 = 1 << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
         // A u64 for the inventory, and u64_per_inventory for the subinventory
@@ -575,8 +579,8 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
 
         Self {
             bits,
-            inventory,
-            exact_spill,
+            inventory: inventory.into(),
+            exact_spill: exact_spill.into(),
             num_ones,
             log2_ones_per_inventory,
             log2_ones_per_sub16,
