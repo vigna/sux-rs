@@ -172,7 +172,7 @@ pub struct SimpleSelect<B, I = Vec<usize>> {
 
 trait Inventory {
     fn is_16_bit_span(&self) -> bool;
-    fn is_17_bit_span(&self) -> bool;
+    fn is_32_bit_span(&self) -> bool;
 }
 
 impl Inventory for usize {
@@ -181,9 +181,14 @@ impl Inventory for usize {
         *self & ((1usize << 63) + (1usize << 62)) == 0
     }
     #[inline(always)]
-    fn is_17_bit_span(&self) -> bool {
+    fn is_32_bit_span(&self) -> bool {
         *self & (1usize << 62) != 0
     }
+}
+
+#[inline(always)]
+fn calc_log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
+    log2_ones_per_sub16 - ((span >> 15).ilog2() as usize + 1).min(log2_ones_per_sub16)
 }
 
 impl<B, I> SimpleSelect<B, I> {
@@ -385,8 +390,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
 
             if span >= (1 << 16) {
                 if span < (1 << 32) {
-                    let log2_ones_per_sub32 =
-                        log2_ones_per_sub16 - (span.ilog2() as usize + 1).min(log2_ones_per_sub16);
+                    let log2_ones_per_sub32 = calc_log2_ones_per_sub32(span, log2_ones_per_sub16);
                     let num_u64s =
                         u64_per_subinventory << (1 + log2_ones_per_sub16 - log2_ones_per_sub32);
                     let spilled_u64s = (num_u64s - (u64_per_subinventory - 1)).max(0);
@@ -432,13 +436,11 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
             let mut next_quantum = number_of_ones;
             let quantum;
 
-            let log2_ones_per_sub32 =
-                log2_ones_per_sub16 - (span.ilog2() as usize + 1).min(log2_ones_per_sub16);
-            let ones_per_sub32 = 1usize << log2_ones_per_sub32;
-
             if span <= u16::MAX as usize {
                 quantum = ones_per_sub16;
             } else if span < 1 << 32 {
+                let log2_ones_per_sub32 = calc_log2_ones_per_sub32(span, log2_ones_per_sub16);
+                let ones_per_sub32 = 1usize << log2_ones_per_sub32;
                 quantum = ones_per_sub32;
                 inventory[start_idx] |= 1_usize << 62;
                 // the last word of the subinventory is used to store the spill index
@@ -591,12 +593,11 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
                 .select_hinted_unchecked(rank, hint_pos, rank - residual);
         }
         let u64_per_subinventory = 1 << self.log2_u64_per_subinventory;
-        if inventory_rank.is_17_bit_span() {
+        if inventory_rank.is_32_bit_span() {
             let hint_pos;
             let span = *inventory_ref.get_unchecked(inventory_start_pos + self.u64_per_inventory)
                 - (inventory_rank & !(1usize << 62));
-            let log2_ones_per_sub32 = self.log2_ones_per_sub16
-                - (span.ilog2() as usize + 1).min(self.log2_ones_per_sub16);
+            let log2_ones_per_sub32 = calc_log2_ones_per_sub32(span, self.log2_ones_per_sub16);
             let ones_per_sub32 = 1 << log2_ones_per_sub32;
             if subrank < ones_per_sub32 * (u64_per_subinventory - 1) * 2 {
                 let (_, u32s, _) = inventory_ref
