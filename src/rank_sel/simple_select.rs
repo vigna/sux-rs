@@ -414,13 +414,13 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
         for (i, inv) in inventory[..inventory_size * u64_per_inventory]
             .iter()
             .copied()
-            .enumerate()
             .step_by(u64_per_inventory)
+            .enumerate()
         {
             let start = inv;
-            let span = inventory[i + u64_per_inventory] - start;
+            let span = inventory[i * u64_per_inventory + u64_per_inventory] - start;
             // TODO: avoid this division
-            past_ones = (i / u64_per_inventory) * ones_per_inventory;
+            past_ones = i * ones_per_inventory;
             let ones = min(num_ones - past_ones, ones_per_inventory);
 
             debug_assert!(start + span == num_bits || ones == ones_per_inventory);
