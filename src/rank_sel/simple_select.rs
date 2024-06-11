@@ -215,10 +215,11 @@ impl Inventory for usize {
 #[inline(always)]
 fn calc_log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
     debug_assert!(span >= 1 << 16);
-    // Since span >= 2^16, (span >> 15).ilog2() >= 1, which implies in any case
+    // Since span >= 2^16, (span >> 15).ilog2() >= 0, which implies in any case
     // at least doubling the frequency of the subinventory, unless
-    // log2_ones_per_u16 = 0, that is, we are inventoring the whole span.
-    log2_ones_per_sub16 - ((span >> 15).ilog2() as usize).min(log2_ones_per_sub16)
+    // log2_ones_per_u16 = 0, that is, we are recording the position of
+    // every one in the subinventory.
+    log2_ones_per_sub16 - ((span >> 15).ilog2() as usize + 1).min(log2_ones_per_sub16)
 }
 
 impl<B, I> SimpleSelect<B, I> {
@@ -423,15 +424,18 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
 
             if span > u16::MAX as usize + 1 {
                 if span <= u32::MAX as usize + 1 {
+                    // We store entries first in the subinventory and then in
+                    // the spill buffer. The first u64 word will be used to
+                    // store the spill index.
                     let log2_ones_per_sub32 = calc_log2_ones_per_sub32(span, log2_ones_per_sub16);
                     let num_u64s =
                         u64_per_subinventory << (1 + log2_ones_per_sub16 - log2_ones_per_sub32);
                     let spilled_u64s = num_u64s - u64_per_subinventory + 1;
                     spilled += spilled_u64s;
                 } else {
-                    // we store the exact positions of the ones first in
-                    // the subinventory and then in the spill buffer.
-                    // the first u64 word is used to store the spill index
+                    // We store the exact positions of the ones first in the
+                    // subinventory and then in the spill buffer. The first u64
+                    // word will is used to store the spill index
                     spilled += max(0, ones - (u64_per_subinventory - 1));
                 }
             }
@@ -444,7 +448,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
 
         spilled = 0;
 
-        // Second phase: we fill the subinventories and the exact spill
+        // Second phase: we fill the subinventories and the spill.
         for inventory_idx in 0..inventory_size {
             // get the start and end u64 index of the current inventory
             let start_idx = inventory_idx * u64_per_inventory;
@@ -461,8 +465,8 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
             let mut word = (bits.as_ref()[word_idx] >> bit_idx) << bit_idx;
 
             // compute the global number of ones
-            let mut number_of_ones = inventory_idx * ones_per_inventory;
-            let mut next_quantum = number_of_ones;
+            let mut past_ones = inventory_idx * ones_per_inventory;
+            let mut next_quantum = past_ones;
             let quantum;
 
             if span <= u16::MAX as usize + 1 {
@@ -470,15 +474,14 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                 inventory[start_idx].set_16_bit_span();
             } else if span <= u32::MAX as usize + 1 {
                 let log2_ones_per_sub32 = calc_log2_ones_per_sub32(span, log2_ones_per_sub16);
-                let ones_per_sub32 = 1 << log2_ones_per_sub32;
-                quantum = ones_per_sub32;
+                quantum = 1 << log2_ones_per_sub32;
                 inventory[start_idx].set_32_bit_span();
-                // the last word of the subinventory is used to store the spill index
-                inventory[end_idx - 1] = spilled;
+                // The first word of the subinventory is used to store the spill index.
+                inventory[start_idx + 1] = spilled;
             } else {
                 quantum = 1;
                 inventory[start_idx].set_64_bit_span();
-                // the first word of the subinventory is used to store the spill index
+                // The first word of the subinventory is used to store the spill index.
                 inventory[start_idx + 1] = spilled;
             }
 
@@ -498,10 +501,10 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                 // If the quantum is in this word, write it in the subinventory.
                 // Note that this can happen multiple times in the same word if
                 // the quantum is small, hence the following loop.
-                while number_of_ones + ones_in_word > next_quantum {
+                while past_ones + ones_in_word > next_quantum {
                     debug_assert!(next_quantum <= end_bit_idx);
                     // find the quantum bit in the word
-                    let in_word_index = word.select_in_word(next_quantum - number_of_ones);
+                    let in_word_index = word.select_in_word(next_quantum - past_ones);
                     // compute the global index of the quantum bit in the bitvec
                     let bit_index = (word_idx * usize::BITS as usize) + in_word_index;
 
@@ -531,7 +534,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                     } else if span <= u32::MAX as usize + 1 {
                         if subinventory_idx < 2 * (u64_per_subinventory - 1) {
                             let subinventory: &mut [u32] =
-                                unsafe { inventory[start_idx + 1..(end_idx - 1)].align_to_mut().1 };
+                                unsafe { inventory[start_idx + 2..end_idx].align_to_mut().1 };
 
                             debug_assert_eq!(subinventory[subinventory_idx], 0);
                             subinventory[subinventory_idx] = sub_offset as u32;
@@ -565,7 +568,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                 }
 
                 // we are done with the word, so update the number of ones
-                number_of_ones += ones_in_word;
+                past_ones += ones_in_word;
                 // move to the next word and boundcheck
                 word_idx += 1;
                 if word_idx == end_word_idx {
@@ -646,7 +649,7 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
             if subrank < ones_per_sub32 * (u64_per_subinventory - 1) * 2 {
                 let u32s = inventory
                     .get_unchecked(
-                        inventory_start_pos + 1..(inventory_start_pos + 1 + u64_per_subinventory),
+                        inventory_start_pos + 2..(inventory_start_pos + 1 + u64_per_subinventory),
                     )
                     .align_to::<u32>()
                     .1;
@@ -655,8 +658,7 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
                     inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize;
             } else {
                 let inventory_rank = inventory_rank.get();
-                let start_spill_idx =
-                    *inventory.get_unchecked(inventory_start_pos + u64_per_subinventory);
+                let start_spill_idx = *inventory.get_unchecked(inventory_start_pos + 1);
 
                 let spilled_u32s = self
                     .spill
