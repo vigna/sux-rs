@@ -380,8 +380,8 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
         let inventory_words = inventory_size * u64_per_inventory + 1;
         let mut inventory = Vec::with_capacity(inventory_words);
 
-        let mut past_ones: usize = 0;
-        let mut next_quantum: usize = 0;
+        let mut past_ones = 0;
+        let mut next_quantum = 0;
         let mut spilled = 0;
 
         // First phase: we build an inventory for each one out of ones_per_inventory.
@@ -458,7 +458,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
 
             // cleanup the lower bits
             let bit_idx = start_bit_idx % usize::BITS as usize;
-            let mut word = (bits.as_ref()[word_idx as usize] >> bit_idx) << bit_idx;
+            let mut word = (bits.as_ref()[word_idx] >> bit_idx) << bit_idx;
 
             // compute the global number of ones
             let mut number_of_ones = inventory_idx * ones_per_inventory;
@@ -484,9 +484,8 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
 
             let end_word_idx = end_bit_idx.div_ceil(usize::BITS as usize);
 
-            // the first subinventory element is always 0 if the span is less than 2^32
-            // otherwise it is the spill index
-            // TODO this should be always true
+            // If the span is 16-bit or 32-bits the first subinventory element
+            // is always zero.
             let mut subinventory_idx = 1;
 
             next_quantum += quantum;
@@ -496,15 +495,21 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
             'outer: loop {
                 let ones_in_word = word.count_ones() as usize;
 
-                // if the quantum is in this word, write it in the subinventory
-                // this can happen multiple times if the quantum is small
+                // If the quantum is in this word, write it in the subinventory.
+                // Note that this can happen multiple times in the same word if
+                // the quantum is small, hence the following loop.
                 while number_of_ones + ones_in_word > next_quantum {
-                    debug_assert!(next_quantum <= end_bit_idx as _);
+                    debug_assert!(next_quantum <= end_bit_idx);
                     // find the quantum bit in the word
                     let in_word_index = word.select_in_word(next_quantum - number_of_ones);
                     // compute the global index of the quantum bit in the bitvec
                     let bit_index = (word_idx * usize::BITS as usize) + in_word_index;
-                    // TODO: Is this necessary?
+
+                    // This exit is necessary in case the number of ones per
+                    // inventory is larger than the number of available
+                    // subinventory entries, which can happen if the bit vector
+                    // is very sparse.
+
                     if bit_index >= end_bit_idx {
                         break 'outer;
                     }
@@ -541,6 +546,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                             u32_odd_spill = !u32_odd_spill;
                             subinventory_idx += 1;
                         }
+                        // TODO avoid division
                         if subinventory_idx == (1 << log2_ones_per_inventory) / quantum {
                             break 'outer;
                         }
@@ -567,7 +573,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                 }
 
                 // read the next word
-                word = bits.as_ref()[word_idx as usize];
+                word = bits.as_ref()[word_idx];
             }
         }
 
