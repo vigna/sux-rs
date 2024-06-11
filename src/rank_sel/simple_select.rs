@@ -165,7 +165,6 @@ pub struct SimpleSelect<B, I = Vec<usize>> {
     ones_per_sub16_mask: usize,
     inventory_size: usize,
     exact_spill_size: usize,
-    log2_ones_per_sub32: usize,
 }
 
 trait Inventory {
@@ -208,7 +207,6 @@ impl<B, I> SimpleSelect<B, I> {
             ones_per_sub16_mask: self.ones_per_sub16_mask,
             inventory_size: self.inventory_size,
             exact_spill_size: self.exact_spill_size,
-            log2_ones_per_sub32: self.log2_ones_per_sub32,
         }
     }
 
@@ -337,18 +335,6 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
         let ones_per_sub16 = 1usize << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
-        let log2_ones_per_sub32 = log2_ones_per_sub16;
-        let ones_per_sub32 = 1usize << log2_ones_per_sub32;
-        // let log2_ones_per_sub32 = max(0, (log2_ones_per_sub64 as i32) - 1) as usize;
-        // let ones_per_sub32 = 1usize << log2_ones_per_sub32;
-
-        // when the span is between 2^16 and 2^17 we store the same number of indexed ones
-        // as in the 16 bit case, but we store them in 32 bit words. for this reason
-        // we use the spill buffer to store the indexed ones that do not fit in the subinventory.
-        // the last u64 word of the subinventory is used to store the spill index.
-        let u32_subinventories = 4 * u64_per_subinventory;
-        let spilled_u32s = u32_subinventories - (u64_per_subinventory - 1) * 2;
-
         // A u64 for the inventory, and u64_per_inventory for the subinventory
         let inventory_words = inventory_size * u64_per_inventory + 1;
         let mut inventory = Vec::with_capacity(inventory_words);
@@ -395,12 +381,13 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
             assert!(start + span == num_bits || ones == ones_per_inventory);
 
             if span >= (1 << 16) {
-                if span < (1 << 17) {
-                    // if the span is between 2^16 and 2^17 we store the indexed ones
-                    // in 32 bit words part in the subinventory and part in the spill buffer.
-                    // the last u64 word is used to store the spill index.
-                    // the ones are indexed just like in the 16 bit case.
-                    spilled += spilled_u32s.div_ceil(2);
+                if span < (1 << 32) {
+                    let log2_ones_per_sub32 =
+                        log2_ones_per_sub16 - (span.ilog2() as usize + 1).min(log2_ones_per_sub16);
+                    let num_u64s =
+                        u64_per_subinventory << (1 + log2_ones_per_sub16 - log2_ones_per_sub32);
+                    let spilled_u64s = (num_u64s - (u64_per_subinventory - 1)).max(0);
+                    spilled += spilled_u64s;
                 } else {
                     // we store the exact positions of the ones first in
                     // the subinventory and then in the spill buffer.
@@ -442,9 +429,13 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
             let mut next_quantum = number_of_ones;
             let quantum;
 
+            let log2_ones_per_sub32 =
+                log2_ones_per_sub16 - (span.ilog2() as usize + 1).min(log2_ones_per_sub16);
+            let ones_per_sub32 = 1usize << log2_ones_per_sub32;
+
             if span <= u16::MAX as usize {
                 quantum = ones_per_sub16;
-            } else if span < 1 << 17 {
+            } else if span < 1 << 32 {
                 quantum = ones_per_sub32;
                 inventory[start_idx] |= 1_usize << 62;
                 // the last word of the subinventory is used to store the spill index
@@ -458,7 +449,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
 
             let end_word_idx = end_bit_idx.div_ceil(usize::BITS as usize);
 
-            // the first subinventory element is always 0 if the span is less than 2^17
+            // the first subinventory element is always 0 if the span is less than 2^32
             // otherwise it is the spill index
             let mut subinventory_idx = 1;
 
@@ -492,7 +483,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
                         if subinventory_idx == (1 << log2_ones_per_inventory) / quantum {
                             break 'outer;
                         }
-                    } else if span < 1 << 17 {
+                    } else if span < 1 << 32 {
                         if subinventory_idx < 2 * (u64_per_subinventory - 1) {
                             let subinventory: &mut [u32] =
                                 unsafe { inventory[start_idx + 1..(end_idx - 1)].align_to_mut().1 };
@@ -555,7 +546,6 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
             ones_per_sub16_mask,
             inventory_size,
             exact_spill_size,
-            log2_ones_per_sub32,
         }
     }
 
@@ -600,7 +590,11 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
         let u64_per_subinventory = 1 << self.log2_u64_per_subinventory;
         if inventory_rank.is_17_bit_span() {
             let hint_pos;
-            let ones_per_sub32 = 1 << self.log2_ones_per_sub32;
+            let span = *inventory_ref.get_unchecked(inventory_start_pos + self.u64_per_inventory)
+                - (inventory_rank & !(1usize << 62));
+            let log2_ones_per_sub32 = self.log2_ones_per_sub16
+                - (span.ilog2() as usize + 1).min(self.log2_ones_per_sub16);
+            let ones_per_sub32 = 1 << log2_ones_per_sub32;
             if subrank < ones_per_sub32 * (u64_per_subinventory - 1) * 2 {
                 let (_, u32s, _) = inventory_ref
                     .get_unchecked(
@@ -609,7 +603,7 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
                     .align_to::<u32>();
 
                 hint_pos = (inventory_rank & !(1usize << 62))
-                    + *u32s.get_unchecked(subrank >> self.log2_ones_per_sub32) as usize;
+                    + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize;
             } else {
                 let start_spill_idx =
                     *inventory_ref.get_unchecked(inventory_start_pos + u64_per_subinventory);
@@ -622,10 +616,10 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
 
                 hint_pos = (inventory_rank & !(1usize << 62))
                     + *spilled_u32s.get_unchecked(
-                        (subrank >> self.log2_ones_per_sub32) - (u64_per_subinventory - 1) * 2,
+                        (subrank >> log2_ones_per_sub32) - (u64_per_subinventory - 1) * 2,
                     ) as usize;
             }
-            let residual = subrank & ((1 << self.log2_ones_per_sub32) - 1);
+            let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
             return self
                 .bits
                 .select_hinted_unchecked(rank, hint_pos, rank - residual);
@@ -693,7 +687,7 @@ mod test_simple_select {
         let density = 0.1;
         for len in lens {
             let bits: BitVec = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let simple = SimpleSelect::new(bits.clone(), 3);
+            let simple = SimpleSelect::with_inv(bits.clone(), bits.count_ones(), 13, 3);
 
             let ones = simple.count_ones();
             let mut pos = Vec::with_capacity(ones);
