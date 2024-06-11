@@ -283,8 +283,7 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<H: AsRef<[usize]> + Select + SelectZero, L: BitFieldSlice<usize>> IndexedDict
-    for EliasFano<H, L>
+impl<H: AsRef<[usize]> + Select, L: BitFieldSlice<usize>> IndexedSeq for EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -302,57 +301,13 @@ where
         let low_bits = self.low_bits.get_unchecked(index);
         (high_bits << self.l) | low_bits
     }
+}
 
-    fn contains(&self, value: &Self::Input) -> bool {
-        if *value > self.u {
-            return false;
-        }
-        let zeros_to_skip = *value >> self.l;
-        let bit_pos = if zeros_to_skip == 0 {
-            0
-        } else {
-            self.high_bits.select_zero(zeros_to_skip - 1).unwrap() + 1
-        };
-
-        let mut rank = bit_pos - zeros_to_skip;
-        let mut iter = self.low_bits.into_unchecked_iter_from(rank);
-        let mut word_idx = bit_pos / (usize::BITS as usize);
-        let bits_to_clean = bit_pos % (usize::BITS as usize);
-
-        // SAFETY: we are certainly iterating within the length of the arrays
-        // and within the range of the iterator because there is a successor for sure.
-
-        let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) }
-            & (usize::MAX << bits_to_clean);
-
-        loop {
-            while window == 0 {
-                word_idx += 1;
-                if word_idx >= self.high_bits.as_ref().len() {
-                    return false;
-                }
-                window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
-            }
-            // find the lowest bit set index in the word
-            let bit_idx = window.trailing_zeros() as usize;
-            // compute the global bit index
-            let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
-            // compose the value
-            let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
-
-            if res == *value {
-                return true;
-            }
-            if res > *value {
-                return false;
-            }
-
-            // clear the lowest bit set
-            window &= window - 1;
-            rank += 1;
-        }
-    }
-
+impl<H: AsRef<[usize]> + Select + SelectZero, L: BitFieldSlice<usize>> IndexedDict
+    for EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+{
     fn index_of(&self, value: &Self::Input) -> Option<usize> {
         if *value > self.u {
             return None;
@@ -592,7 +547,7 @@ where
 }
 
 #[allow(clippy::collapsible_else_if)]
-impl<H: SelectZero + Select + AsRef<[usize]>, L: BitFieldSlice<usize>> Pred for EliasFano<H, L>
+impl<H: SelectZero + AsRef<[usize]>, L: BitFieldSlice<usize>> Pred for EliasFano<H, L>
 where
     for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
