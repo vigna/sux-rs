@@ -173,22 +173,54 @@ pub struct SimpleSelect<B, I = Vec<usize>> {
 trait Inventory {
     fn is_16_bit_span(&self) -> bool;
     fn is_32_bit_span(&self) -> bool;
+    fn is_64_bit_span(&self) -> bool;
+    fn set_16_bit_span(&mut self);
+    fn set_32_bit_span(&mut self);
+    fn set_64_bit_span(&mut self);
+    fn get(&self) -> usize;
 }
 
 impl Inventory for usize {
     #[inline(always)]
     fn is_16_bit_span(&self) -> bool {
-        *self & ((1usize << 63) + (1usize << 62)) == 0
+        *self as isize >= 0
     }
+
     #[inline(always)]
     fn is_32_bit_span(&self) -> bool {
-        *self & (1usize << 62) != 0
+        *self >> 62 == 2
+    }
+
+    #[inline(always)]
+    fn is_64_bit_span(&self) -> bool {
+        *self >> 62 == 3
+    }
+
+    #[inline(always)]
+    fn set_16_bit_span(&mut self) {}
+
+    #[inline(always)]
+    fn set_32_bit_span(&mut self) {
+        *self |= 1 << 63;
+    }
+
+    #[inline(always)]
+    fn set_64_bit_span(&mut self) {
+        *self |= 3 << 62;
+    }
+
+    #[inline(always)]
+    fn get(&self) -> usize {
+        *self & 0x3FFF_FFFF_FFFF_FFFF
     }
 }
 
 #[inline(always)]
 fn calc_log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
-    log2_ones_per_sub16 - ((span >> 15).ilog2() as usize + 1).min(log2_ones_per_sub16)
+    debug_assert!(span >= 1 << 16);
+    // Since span >= 2^16, (span >> 15).ilog2() >= 1, which implies in any case
+    // at least doubling the frequency of the subinventory.
+    log2_ones_per_sub16 - ((span >> 15).ilog2() as usize).min(log2_ones_per_sub16)
 }
 
 impl<B, I> SimpleSelect<B, I> {
@@ -383,13 +415,14 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
         {
             let start = inv;
             let span = inventory[i + u64_per_inventory] - start;
+            // TODO: avoid this division
             past_ones = (i / u64_per_inventory) * ones_per_inventory;
             let ones = min(num_ones - past_ones, ones_per_inventory);
 
-            assert!(start + span == num_bits || ones == ones_per_inventory);
+            debug_assert!(start + span == num_bits || ones == ones_per_inventory);
 
-            if span >= (1 << 16) {
-                if span < (1 << 32) {
+            if span > u16::MAX as usize + 1 {
+                if span <= u32::MAX as usize + 1 {
                     let log2_ones_per_sub32 = calc_log2_ones_per_sub32(span, log2_ones_per_sub16);
                     let num_u64s =
                         u64_per_subinventory << (1 + log2_ones_per_sub16 - log2_ones_per_sub32);
@@ -413,10 +446,10 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
 
         // Second phase: we fill the subinventories and the exact spill
         iter.for_each(|inventory_idx| {
-            if u32_odd_spill {
+            /*if u32_odd_spill {
                 spilled += 1;
                 u32_odd_spill = false;
-            }
+            }*/
             // get the start and end u64 index of the current inventory
             let start_idx = inventory_idx * u64_per_inventory;
             let end_idx = start_idx + u64_per_inventory;
@@ -436,18 +469,19 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
             let mut next_quantum = number_of_ones;
             let quantum;
 
-            if span <= u16::MAX as usize {
+            if span <= u16::MAX as usize + 1 {
                 quantum = ones_per_sub16;
-            } else if span < 1 << 32 {
+                inventory[start_idx].set_16_bit_span();
+            } else if span <= u32::MAX as usize + 1 {
                 let log2_ones_per_sub32 = calc_log2_ones_per_sub32(span, log2_ones_per_sub16);
-                let ones_per_sub32 = 1usize << log2_ones_per_sub32;
+                let ones_per_sub32 = 1 << log2_ones_per_sub32;
                 quantum = ones_per_sub32;
-                inventory[start_idx] |= 1_usize << 62;
+                inventory[start_idx].set_32_bit_span();
                 // the last word of the subinventory is used to store the spill index
                 inventory[end_idx - 1] = spilled;
             } else {
                 quantum = 1;
-                inventory[start_idx] |= 1_usize << 63;
+                inventory[start_idx].set_64_bit_span();
                 // the first word of the subinventory is used to store the spill index
                 inventory[start_idx + 1] = spilled;
             }
@@ -456,6 +490,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
 
             // the first subinventory element is always 0 if the span is less than 2^32
             // otherwise it is the spill index
+            // TODO this should be always true
             let mut subinventory_idx = 1;
 
             next_quantum += quantum;
@@ -466,7 +501,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
                 // if the quantum is in this word, write it in the subinventory
                 // this can happen multiple times if the quantum is small
                 while number_of_ones + ones_in_word > next_quantum {
-                    assert!(next_quantum <= end_bit_idx as _);
+                    debug_assert!(next_quantum <= end_bit_idx as _);
                     // find the quantum bit in the word
                     let in_word_index = word.select_in_word(next_quantum - number_of_ones);
                     // compute the global index of the quantum bit in the bitvec
@@ -478,17 +513,18 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
                     // from the start of the subinventory
                     let sub_offset = bit_index - start_bit_idx;
 
-                    if span <= u16::MAX as usize {
+                    if span <= u16::MAX as usize + 1 {
                         let subinventory: &mut [u16] =
                             unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
 
                         subinventory[subinventory_idx] = sub_offset as u16;
 
                         subinventory_idx += 1;
+                        // TODO avoid division
                         if subinventory_idx == (1 << log2_ones_per_inventory) / quantum {
                             break 'outer;
                         }
-                    } else if span < 1 << 32 {
+                    } else if span <= u32::MAX as usize + 1 {
                         if subinventory_idx < 2 * (u64_per_subinventory - 1) {
                             let subinventory: &mut [u32] =
                                 unsafe { inventory[start_idx + 1..(end_idx - 1)].align_to_mut().1 };
@@ -496,7 +532,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
                             subinventory[subinventory_idx] = sub_offset as u32;
                             subinventory_idx += 1;
                         } else {
-                            assert!(spilled < exact_spill_size);
+                            debug_assert!(spilled < exact_spill_size);
                             let u32_spill: &mut [u32] =
                                 unsafe { exact_spill[spilled..exact_spill_size].align_to_mut().1 };
                             u32_spill[u32_odd_spill as usize] = sub_offset as u32;
@@ -535,7 +571,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
         });
 
         // TODO: why does this assertion fail?
-        // assert_eq!(spilled, exact_spill_size);
+        // debug_assert_eq!(spilled, exact_spill_size);
 
         Self {
             bits,
@@ -594,9 +630,10 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
         }
         let u64_per_subinventory = 1 << self.log2_u64_per_subinventory;
         if inventory_rank.is_32_bit_span() {
+            let inventory_rank = inventory_rank.get();
             let hint_pos;
             let span = *inventory_ref.get_unchecked(inventory_start_pos + self.u64_per_inventory)
-                - (inventory_rank & !(1usize << 62));
+                - inventory_rank;
             let log2_ones_per_sub32 = calc_log2_ones_per_sub32(span, self.log2_ones_per_sub16);
             let ones_per_sub32 = 1 << log2_ones_per_sub32;
             if subrank < ones_per_sub32 * (u64_per_subinventory - 1) * 2 {
@@ -606,9 +643,10 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
                     )
                     .align_to::<u32>();
 
-                hint_pos = (inventory_rank & !(1usize << 62))
-                    + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize;
+                hint_pos =
+                    inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize;
             } else {
+                let inventory_rank = inventory_rank.get();
                 let start_spill_idx =
                     *inventory_ref.get_unchecked(inventory_start_pos + u64_per_subinventory);
 
@@ -618,7 +656,7 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
                     .get_unchecked(start_spill_idx..self.exact_spill_size)
                     .align_to::<u32>();
 
-                hint_pos = (inventory_rank & !(1usize << 62))
+                hint_pos = inventory_rank
                     + *spilled_u32s.get_unchecked(
                         (subrank >> log2_ones_per_sub32) - (u64_per_subinventory - 1) * 2,
                     ) as usize;
@@ -629,8 +667,11 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
                 .select_hinted_unchecked(rank, hint_pos, rank - residual);
         }
 
+        debug_assert!(inventory_rank.is_64_bit_span());
+        let inventory_rank = inventory_rank.get();
+
         if subrank == 0 {
-            return inventory_rank & !(1usize << 63);
+            return inventory_rank;
         }
         if subrank < u64_per_subinventory {
             return *inventory_ref.get_unchecked(inventory_start_pos + 1 + subrank);
