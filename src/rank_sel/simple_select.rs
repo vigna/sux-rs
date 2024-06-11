@@ -378,18 +378,16 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
         // enough to hold all 32-bit or 64-bit entries, so we always need a
         // spill pointer, and we can avoid handling the case without one.
 
-        // log2_u64_per_subinventory = max_log2_u64_per_subinventory.min(max(0,
-        //    log2_ones_per_inventory - 2));
         let log2_u64_per_subinventory =
-            max_log2_u64_per_subinventory.min(max(2, log2_ones_per_inventory) - 2);
+            max_log2_u64_per_subinventory.min(log2_ones_per_inventory.saturating_sub(2));
+        dbg!(log2_u64_per_subinventory);
 
         let u64_per_subinventory = 1 << log2_u64_per_subinventory;
         // A u64 for the inventory, and u64_per_inventory for the subinventory
         let u64_per_inventory = u64_per_subinventory + 1;
 
-        //let log2_ones_per_sub16 = (log2_ones_per_inventory -
-        //    (log2_u64_per_subinventory + 2)).max(0);
-        let log2_ones_per_sub16 = (log2_ones_per_inventory - log2_u64_per_subinventory).max(2) - 2;
+        let log2_ones_per_sub16 =
+            log2_ones_per_inventory.saturating_sub(log2_u64_per_subinventory + 2);
         let ones_per_sub16 = 1 << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
@@ -453,7 +451,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                 }
                 SpanType::U64 => {
                     // We store an inventory entry for each one after the first.
-                    spilled += max(0, ones - 1 - (u64_per_subinventory - 1));
+                    spilled += (ones - 1).saturating_sub(u64_per_subinventory - 1);
                 }
                 _ => {}
             }
@@ -606,27 +604,27 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                     next_quantum += quantum;
                 }
 
-                // we are done with the word, so update the number of ones
+                // We are done with the word, so update the number of ones
                 past_ones += ones_in_word;
-                // move to the next word and boundcheck
+                // Move to the next word and check whether it is the last one
                 word_idx += 1;
                 if word_idx == end_word_idx {
                     break;
                 }
 
-                // read the next word
+                // Read the next word
                 word = bits.as_ref()[word_idx];
             }
 
             // This test is necessary to handle two corner cases for 32-bit
             // spans:
-            // - the case in which an inventory entry contains a single one, as
-            // its zero subinventory entry is written implicitly, but we still
-            // need to increment spilled to allocate space for it (note that
-            // u32_odd_spill => span_type == SpanType::U32).
             // - the case in which the last inventory entry has a 32-bit span
             // and contains an odd number of ones greater than one, as spilled
-            // is not incremented by the loop code.
+            // is not incremented by the loop code (note that u32_odd_spill =>
+            // span_type == SpanType::U32);
+            // - the case in which an inventory entry contains a single one, as
+            // its zero subinventory entry is written implicitly, but we still
+            // need to increment spilled to allocate space for it.
             if u32_odd_spill || span_type == SpanType::U32 && subinventory_idx == 1 {
                 spilled += 1;
             }
@@ -768,8 +766,7 @@ mod tests {
     use rand::SeedableRng;
 
     #[test]
-    fn test_simple_select_ones_per_sub64() {
-        // TODO: What are we testing here?
+    fn test_extremely_sparse() {
         let len = 1 << 18;
         let bits = (0..len / 2)
             .map(|_| false)
@@ -780,7 +777,7 @@ mod tests {
             .chain([true])
             .chain((0..len / 2).map(|_| false))
             .collect::<BitVec>();
-        let simple = SimpleSelect::new(bits, 3);
+        let simple = SimpleSelect::new(bits, 0);
 
         assert_eq!(simple.count_ones(), 4);
         assert_eq!(simple.select(0), Some(len / 2));
