@@ -32,10 +32,12 @@ where `T` implements [`ToOwned`].
 
 */
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-pub trait IndexedDict {
+
+pub trait IndexTypes {
     type Input: PartialEq<Self::Output> + PartialEq + ?Sized;
     type Output: PartialEq<Self::Input> + PartialEq;
-
+}
+pub trait IndexedSeq: IndexTypes {
     /// Return the value at the specified index.
     ///
     /// # Panics
@@ -54,6 +56,16 @@ pub trait IndexedDict {
     /// `index` must be in [0..[len](`IndexedDict::len`)). No bounds checking is performed.
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output;
 
+    /// Return the length (number of items) of the dictionary.
+    fn len(&self) -> usize;
+
+    /// Return true if [`len`](`IndexedDict::len`) is zero.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+pub trait IndexedDict: IndexedSeq {
     /// Return the index of the given value if the dictionary contains it and
     /// `None` otherwise.
     ///
@@ -69,18 +81,10 @@ pub trait IndexedDict {
     fn contains(&self, value: &Self::Input) -> bool {
         self.index_of(value).is_some()
     }
-
-    /// Return the length (number of items) of the dictionary.
-    fn len(&self) -> usize;
-
-    /// Return true if [`len`](`IndexedDict::len`) is zero.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 }
 
 /// Successor computation for dictionaries whose values are monotonically increasing.
-pub trait Succ: IndexedDict
+pub trait Succ: IndexTypes
 where
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
     Self::Output: PartialOrd<Self::Input> + PartialOrd,

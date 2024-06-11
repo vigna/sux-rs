@@ -504,13 +504,6 @@ impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
     }
 }
 
-impl<B: AsRef<[usize]>> Select for BitVec<B> {
-    #[inline(always)]
-    unsafe fn select_unchecked(&self, rank: usize) -> usize {
-        self.select_hinted_unchecked(rank, 0, 0)
-    }
-}
-
 unsafe fn select_hinted_unchecked(
     data: impl AsRef<[usize]>,
     rank: usize,
@@ -1061,18 +1054,5 @@ impl<B: AsRef<[usize]>, const HINT_BIT_SIZE: usize> RankHinted<HINT_BIT_SIZE> fo
         Some(unsafe {
             rank_hinted_unchecked::<HINT_BIT_SIZE>(self.data.as_ref(), pos, hint_pos, hint_rank)
         })
-    }
-}
-
-impl<B: AsRef<[usize]>> Rank for BitVec<B> {
-    fn rank(&self, pos: usize) -> usize {
-        // TODO: this is gross
-        <Self as RankHinted<{ usize::BITS as usize }>>::rank_hinted(self, pos, 0, 0)
-            .unwrap_or(self.count_ones())
-    }
-
-    unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-        // TODO: this is gross
-        <Self as RankHinted<{ usize::BITS as usize }>>::rank_hinted_unchecked(self, pos, 0, 0)
     }
 }
