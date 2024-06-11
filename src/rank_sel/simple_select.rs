@@ -468,55 +468,57 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
 
         // Second phase: we fill the subinventories and the spill.
         for inventory_idx in 0..inventory_size {
-            // get the start and end u64 index of the current inventory
-            let start_idx = inventory_idx * u64_per_inventory;
-            let end_idx = start_idx + u64_per_inventory;
-            // read the first level index to get the start and end bit index
-            let start_bit_idx = inventory[start_idx];
-            let end_bit_idx = inventory[end_idx];
+            // Get the start and end indices of the current inventory
+            let start_inv_idx = inventory_idx * u64_per_inventory;
+            let end_inv_idx = start_inv_idx + u64_per_inventory;
+            // Read the first-level index to get the start and end bit indices
+            let start_bit_idx = inventory[start_inv_idx];
+            let end_bit_idx = inventory[end_inv_idx];
             // compute the span of the inventory
             let span = end_bit_idx - start_bit_idx;
             let span_type = span_type(span);
-            let mut word_idx = start_bit_idx / usize::BITS as usize;
 
-            // cleanup the lower bits
-            let bit_idx = start_bit_idx % usize::BITS as usize;
-            let mut word = (bits.as_ref()[word_idx] >> bit_idx) << bit_idx;
-
-            // compute the global number of ones
+            // Compute the number of ones before the current inventory
             let mut past_ones = inventory_idx * ones_per_inventory;
             let mut next_quantum = past_ones;
-            let quantum;
+            let log2_quantum;
 
             match span_type {
                 SpanType::U16 => {
-                    quantum = ones_per_sub16;
-                    inventory[start_idx].set_u16_span();
+                    log2_quantum = log2_ones_per_sub16;
+                    inventory[start_inv_idx].set_u16_span();
                 }
                 SpanType::U32 => {
-                    let log2_ones_per_sub32 = calc_log2_ones_per_sub32(span, log2_ones_per_sub16);
-                    quantum = 1 << log2_ones_per_sub32;
-                    inventory[start_idx].set_u32_span();
+                    log2_quantum = calc_log2_ones_per_sub32(span, log2_ones_per_sub16);
+                    inventory[start_inv_idx].set_u32_span();
                     // The first word of the subinventory is used to store the spill index.
-                    inventory[start_idx + 1] = spilled;
+                    inventory[start_inv_idx + 1] = spilled;
                 }
                 SpanType::U64 => {
-                    quantum = 1;
-                    inventory[start_idx].set_u64_span();
+                    log2_quantum = 0;
+                    inventory[start_inv_idx].set_u64_span();
                     // The first word of the subinventory is used to store the spill index.
-                    inventory[start_idx + 1] = spilled;
+                    inventory[start_inv_idx + 1] = spilled;
                 }
             }
 
-            let end_word_idx = end_bit_idx.div_ceil(usize::BITS as usize);
+            let quantum = 1 << log2_quantum;
 
-            // If the span is 16-bit or 32-bits the first subinventory element
-            // is always zero.
+            // If the span is 16-bit or 32-bit the first subinventory element is
+            // always zero, so we don't write it explicitly. Moreover, in the
+            // U64 case we don't write it at all.
             let mut subinventory_idx = 1;
-
             next_quantum += quantum;
 
+            // This is used only when span_type == SpanType::U32
             let mut u32_odd_spill = false;
+
+            let mut word_idx = start_bit_idx / usize::BITS as usize;
+            let end_word_idx = end_bit_idx.div_ceil(usize::BITS as usize);
+            let bit_idx = start_bit_idx % usize::BITS as usize;
+
+            // Clear the lower bits
+            let mut word = (bits.as_ref()[word_idx] >> bit_idx) << bit_idx;
 
             'outer: loop {
                 let ones_in_word = word.count_ones() as usize;
@@ -534,7 +536,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                     // This exit is necessary in case the number of ones per
                     // inventory is larger than the number of available
                     // subinventory entries, which can happen if the bit vector
-                    // is very sparse, or in the last inventory entry.
+                    // is very sparse, or if we are in the last inventory entry.
                     if bit_index >= end_bit_idx {
                         break 'outer;
                     }
@@ -545,20 +547,25 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
 
                     match span_type {
                         SpanType::U16 => {
-                            let subinventory: &mut [u16] =
-                                unsafe { inventory[start_idx + 1..end_idx].align_to_mut().1 };
+                            let subinventory: &mut [u16] = unsafe {
+                                inventory[start_inv_idx + 1..end_inv_idx].align_to_mut().1
+                            };
 
                             subinventory[subinventory_idx] = sub_offset as u16;
                             subinventory_idx += 1;
-                            // TODO avoid division
-                            if subinventory_idx == (1 << log2_ones_per_inventory) / quantum {
+                            // This exit is not necessary for correctness, but
+                            // it avoids the additional loop iterations that
+                            // would be necessary to find the position of the
+                            // next one (i.e., end_bit_idx).
+                            if subinventory_idx << log2_quantum == (1 << log2_ones_per_inventory) {
                                 break 'outer;
                             }
                         }
                         SpanType::U32 => {
                             if subinventory_idx < 2 * (u64_per_subinventory - 1) {
-                                let subinventory: &mut [u32] =
-                                    unsafe { inventory[start_idx + 2..end_idx].align_to_mut().1 };
+                                let subinventory: &mut [u32] = unsafe {
+                                    inventory[start_inv_idx + 2..end_inv_idx].align_to_mut().1
+                                };
 
                                 debug_assert_eq!(subinventory[subinventory_idx], 0);
                                 subinventory[subinventory_idx] = sub_offset as u32;
@@ -576,14 +583,17 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                                 u32_odd_spill = !u32_odd_spill;
                                 subinventory_idx += 1;
                             }
-                            // TODO avoid division
-                            if subinventory_idx == (1 << log2_ones_per_inventory) / quantum {
+                            // This exit is not necessary for correctness, but
+                            // it avoids the additional loop iterations that
+                            // would be necessary to find the position of the
+                            // next one (i.e., end_bit_idx).
+                            if subinventory_idx << log2_quantum == (1 << log2_ones_per_inventory) {
                                 break 'outer;
                             }
                         }
                         SpanType::U64 => {
                             if subinventory_idx < u64_per_subinventory {
-                                inventory[start_idx + 1 + subinventory_idx] = bit_index;
+                                inventory[start_inv_idx + 1 + subinventory_idx] = bit_index;
                                 subinventory_idx += 1;
                             } else {
                                 assert!(spilled < spill_size);
