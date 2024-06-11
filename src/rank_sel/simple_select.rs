@@ -673,10 +673,10 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
         debug_assert!(inventory_rank.is_64_bit_span());
         let inventory_rank = inventory_rank.get();
 
-        if subrank == 0 {
-            return inventory_rank;
-        }
         if subrank < u64_per_subinventory {
+            if subrank == 0 {
+                return inventory_rank;
+            }
             return *inventory.get_unchecked(inventory_start_pos + 1 + subrank);
         }
         let spill_idx =
