@@ -430,7 +430,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                     let log2_ones_per_sub32 = calc_log2_ones_per_sub32(span, log2_ones_per_sub16);
                     let num_u64s =
                         u64_per_subinventory << (1 + log2_ones_per_sub16 - log2_ones_per_sub32);
-                    let spilled_u64s = (num_u64s - (u64_per_subinventory - 1)).max(0);
+                    let spilled_u64s = num_u64s - u64_per_subinventory + 1;
                     spilled += spilled_u64s;
                 } else {
                     // we store the exact positions of the ones first in
@@ -442,18 +442,14 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
         }
 
         let exact_spill_size = spilled;
-        let mut exact_spill = vec![0; exact_spill_size];
+
+        let mut inventory: Box<[usize]> = inventory.into();
+        let mut exact_spill: Box<[usize]> = vec![0; exact_spill_size].into();
 
         spilled = 0;
-        let mut u32_odd_spill = false;
-        let iter = 0..inventory_size;
 
         // Second phase: we fill the subinventories and the exact spill
-        iter.for_each(|inventory_idx| {
-            /*if u32_odd_spill {
-                spilled += 1;
-                u32_odd_spill = false;
-            }*/
+        for inventory_idx in 0..inventory_size {
             // get the start and end u64 index of the current inventory
             let start_idx = inventory_idx * u64_per_inventory;
             let end_idx = start_idx + u64_per_inventory;
@@ -499,6 +495,8 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
 
             next_quantum += quantum;
 
+            let mut u32_odd_spill = false;
+
             'outer: loop {
                 let ones_in_word = word.count_ones() as usize;
 
@@ -510,6 +508,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                     let in_word_index = word.select_in_word(next_quantum - number_of_ones);
                     // compute the global index of the quantum bit in the bitvec
                     let bit_index = (word_idx * usize::BITS as usize) + in_word_index;
+                    // TODO: Is this necessary?
                     if bit_index >= end_bit_idx {
                         break 'outer;
                     }
@@ -533,13 +532,15 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                             let subinventory: &mut [u32] =
                                 unsafe { inventory[start_idx + 1..(end_idx - 1)].align_to_mut().1 };
 
+                            debug_assert_eq!(subinventory[subinventory_idx], 0);
                             subinventory[subinventory_idx] = sub_offset as u32;
                             subinventory_idx += 1;
                         } else {
                             debug_assert!(spilled < exact_spill_size);
-                            let u32_spill: &mut [u32] =
-                                unsafe { exact_spill[spilled..exact_spill_size].align_to_mut().1 };
-                            u32_spill[u32_odd_spill as usize] = sub_offset as u32;
+                            // Maybe pointer dereferencing?
+                            let u32_spill: &mut [u32] = unsafe { exact_spill.align_to_mut().1 };
+                            debug_assert_eq!(u32_spill[spilled * 2 + u32_odd_spill as usize], 0);
+                            u32_spill[spilled * 2 + u32_odd_spill as usize] = sub_offset as u32;
                             spilled += u32_odd_spill as usize;
                             u32_odd_spill = !u32_odd_spill;
                             subinventory_idx += 1;
@@ -572,15 +573,15 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
                 // read the next word
                 word = bits.as_ref()[word_idx as usize];
             }
-        });
+        }
 
         // TODO: why does this assertion fail?
         // debug_assert_eq!(spilled, exact_spill_size);
 
         Self {
             bits,
-            inventory: inventory.into(),
-            exact_spill: exact_spill.into(),
+            inventory,
+            exact_spill,
             num_ones,
             log2_ones_per_inventory,
             log2_ones_per_sub16,
@@ -606,59 +607,65 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
     for SimpleSelect<B, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
-        let inventory_ref = self.inventory.as_ref();
+        let inventory = self.inventory.as_ref();
         let inventory_index = rank >> self.log2_ones_per_inventory;
         let inventory_start_pos =
             (inventory_index << self.log2_u64_per_subinventory) + inventory_index;
         debug_assert!(inventory_index <= self.inventory_size);
 
-        let inventory_rank = { *inventory_ref.get_unchecked(inventory_start_pos) };
+        let inventory_rank = { *inventory.get_unchecked(inventory_start_pos) };
         let subrank = rank & self.ones_per_inventory_mask;
 
         if inventory_rank.is_16_bit_span() {
-            let (_, u16s, _) = inventory_ref
+            let subinventory = inventory
                 .get_unchecked(
-                    inventory_start_pos + 1..(self.inventory_size * self.u64_per_inventory),
+                    inventory_start_pos + 1..inventory_start_pos + self.u64_per_inventory,
                 )
-                .align_to::<u16>();
+                .align_to::<u16>()
+                .1;
 
-            debug_assert!(subrank >> self.log2_ones_per_sub16 < u16s.len());
+            debug_assert!(subrank >> self.log2_ones_per_sub16 < subinventory.len());
 
-            let hint_pos =
-                inventory_rank + *u16s.get_unchecked(subrank >> self.log2_ones_per_sub16) as usize;
+            let hint_pos = inventory_rank
+                + *subinventory.get_unchecked(subrank >> self.log2_ones_per_sub16) as usize;
             let residual = subrank & self.ones_per_sub16_mask;
 
             return self
                 .bits
                 .select_hinted_unchecked(rank, hint_pos, rank - residual);
         }
+
         let u64_per_subinventory = 1 << self.log2_u64_per_subinventory;
+
         if inventory_rank.is_32_bit_span() {
             let inventory_rank = inventory_rank.get();
             let hint_pos;
-            let span = *inventory_ref.get_unchecked(inventory_start_pos + self.u64_per_inventory)
+            let span = (*inventory.get_unchecked(inventory_start_pos + self.u64_per_inventory))
+                .get()
                 - inventory_rank;
             let log2_ones_per_sub32 = calc_log2_ones_per_sub32(span, self.log2_ones_per_sub16);
             let ones_per_sub32 = 1 << log2_ones_per_sub32;
             if subrank < ones_per_sub32 * (u64_per_subinventory - 1) * 2 {
-                let (_, u32s, _) = inventory_ref
+                let u32s = inventory
                     .get_unchecked(
                         inventory_start_pos + 1..(inventory_start_pos + 1 + u64_per_subinventory),
                     )
-                    .align_to::<u32>();
+                    .align_to::<u32>()
+                    .1;
 
                 hint_pos =
                     inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize;
             } else {
                 let inventory_rank = inventory_rank.get();
                 let start_spill_idx =
-                    *inventory_ref.get_unchecked(inventory_start_pos + u64_per_subinventory);
+                    *inventory.get_unchecked(inventory_start_pos + u64_per_subinventory);
 
-                let (_, spilled_u32s, _) = self
+                let spilled_u32s = self
                     .exact_spill
                     .as_ref()
                     .get_unchecked(start_spill_idx..self.exact_spill_size)
-                    .align_to::<u32>();
+                    .align_to::<u32>()
+                    .1;
 
                 hint_pos = inventory_rank
                     + *spilled_u32s.get_unchecked(
@@ -678,10 +685,10 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
             return inventory_rank;
         }
         if subrank < u64_per_subinventory {
-            return *inventory_ref.get_unchecked(inventory_start_pos + 1 + subrank);
+            return *inventory.get_unchecked(inventory_start_pos + 1 + subrank);
         }
-        let spill_idx = { *inventory_ref.get_unchecked(inventory_start_pos + 1) } + subrank
-            - u64_per_subinventory;
+        let spill_idx =
+            { *inventory.get_unchecked(inventory_start_pos + 1) } + subrank - u64_per_subinventory;
         debug_assert!(spill_idx < self.exact_spill_size);
         self.exact_spill.get_unchecked(spill_idx)
     }
@@ -701,7 +708,7 @@ crate::forward_mult![
 ];
 
 #[cfg(test)]
-mod test_simple_select {
+mod tests {
     use super::*;
     use crate::bits::BitVec;
     use rand::rngs::SmallRng;
