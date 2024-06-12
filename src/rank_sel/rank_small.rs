@@ -455,12 +455,12 @@ crate::forward_mult![RankSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: u
 mod tests {
 
     use super::*;
-    use crate::bits::NumBitVec;
+    use crate::traits::AddNumBits;
     use crate::traits::NumBits;
 
     #[test]
     fn test_last() {
-        let bits: NumBitVec<_> =
+        let bits: AddNumBits<_> =
             unsafe { BitVec::from_raw_parts(vec![!1usize; 1 << 10], (1 << 10) * 64) }.into();
 
         let rank_small = rank_small![1; bits.clone()];

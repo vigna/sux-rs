@@ -12,6 +12,7 @@
 //! mutable references, and boxes. Moreover, usually they are all forwarded to
 //! underlying implementations.
 
+use epserde::Epserde;
 use impl_tools::autoimpl;
 
 /// A trait expressing a length in bits.
@@ -440,3 +441,72 @@ macro_rules! forward_select_zero_hinted {
 }
 
 pub(crate) use forward_select_zero_hinted;
+use mem_dbg::{MemDbg, MemSize};
+
+/// A thin wrapper implementing [`NumBits`] by caching the result of [`BitCount::count_ones`].
+#[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
+pub struct AddNumBits<B> {
+    bits: B,
+    number_of_ones: usize,
+}
+
+impl<B: BitLength> NumBits for AddNumBits<B> {
+    #[inline(always)]
+    fn num_ones(&self) -> usize {
+        self.number_of_ones
+    }
+}
+
+impl<B: BitLength> BitCount for AddNumBits<B> {
+    #[inline(always)]
+    fn count_ones(&self) -> usize {
+        self.number_of_ones
+    }
+}
+
+impl<B> AddNumBits<B> {
+    pub fn into_inner(self) -> B {
+        self.bits
+    }
+
+    /// # Safety
+    /// `len` must be between 0 (included) the number of
+    /// bits in `data` (included). No test is performed
+    /// on the number of ones.
+    #[inline(always)]
+    pub unsafe fn from_raw_parts(bits: B, number_of_ones: usize) -> Self {
+        Self {
+            bits,
+            number_of_ones,
+        }
+    }
+    #[inline(always)]
+    pub fn into_raw_parts(self) -> (B, usize) {
+        (self.bits, self.number_of_ones)
+    }
+}
+
+impl<B: BitCount> From<B> for AddNumBits<B> {
+    fn from(bits: B) -> Self {
+        let number_of_ones = bits.count_ones();
+        AddNumBits {
+            bits,
+            number_of_ones,
+        }
+    }
+}
+
+crate::forward_mult![AddNumBits<B>; B; bits;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool,
+    crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_rank_hinted,
+    crate::traits::rank_sel::forward_rank,
+    crate::traits::rank_sel::forward_rank_zero,
+    crate::traits::rank_sel::forward_select_hinted,
+    crate::traits::rank_sel::forward_select_unchecked,
+    crate::traits::rank_sel::forward_select,
+    crate::traits::rank_sel::forward_select_zero_hinted,
+    crate::traits::rank_sel::forward_select_zero_unchecked,
+    crate::traits::rank_sel::forward_select_zero
+];

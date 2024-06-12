@@ -5,10 +5,10 @@ use criterion::Criterion;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sux::bits::bit_vec::BitVec;
-use sux::bits::NumBitVec;
 use sux::rank_sel::Select9;
 use sux::rank_sel::SimpleSelect;
 use sux::rank_sel::SimpleSelectConst;
+use sux::traits::AddNumBits;
 use sux::traits::NumBits;
 use sux::traits::SelectUnchecked;
 
@@ -75,10 +75,10 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(0);
     for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
         let bits = bitvec.clone();
-        let bits: NumBitVec = bits.into();
+        let bits: AddNumBits<_> = bits.into();
         let num_ones = bits.num_ones();
         let sel: SimpleSelectConst<
-            NumBitVec,
+            AddNumBits<_>,
             Vec<usize>,
             LOG2_ONES_PER_INVENTORY,
             LOG2_U64_PER_SUBINVENTORY,
@@ -104,7 +104,7 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
     ));
     for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
         let bits = bitvec.clone();
-        let bits: NumBitVec = bits.into();
+        let bits: AddNumBits<_> = bits.into();
         let num_ones = bits.num_ones();
         let sel = SimpleSelect::with_inv(
             bits,
@@ -143,8 +143,8 @@ macro_rules! bench_simple_const {
         let mut rng = SmallRng::seed_from_u64(0);
         for (bitvec, bitvec_id) in std::iter::zip(&$bitvecs, &$bitvec_ids) {
             let bits = bitvec.clone();
-            let bits: CountBitVec = bits.into();
-            let sel: SimpleSelectConst<CountBitVec, Vec<usize>, $log_inv_size, $log_subinv_size> =
+            let bits: AddNumBits<_> = bits.into();
+            let sel: SimpleSelectConst<AddNumBits<_>, Vec<usize>, $log_inv_size, $log_subinv_size> =
                 SimpleSelectConst::new(bits);
             group.bench_with_input(
                 BenchmarkId::from_parameter(format!(

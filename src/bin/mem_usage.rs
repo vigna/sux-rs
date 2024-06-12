@@ -4,7 +4,7 @@ use clap::{arg, Parser, ValueEnum};
 use mem_dbg::*;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use sux::{
-    bits::{BitVec, NumBitVec},
+    bits::BitVec,
     rank_sel::{Rank9, RankSmall, Select9, SimpleSelect},
     traits::*,
 };
@@ -12,7 +12,7 @@ use sux::{
 trait Struct {
     fn build(bits: BitVec) -> Self;
 }
-impl Struct for SimpleSelect<NumBitVec> {
+impl Struct for SimpleSelect<AddNumBits<BitVec>> {
     fn build(bits: BitVec) -> Self {
         SimpleSelect::new(bits.into(), 3)
     }

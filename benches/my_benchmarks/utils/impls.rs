@@ -1,7 +1,7 @@
-use sux::bits::{BitVec, NumBitVec};
+use sux::bits::BitVec;
 use sux::rank_sel::{Rank9, RankSmall};
 use sux::rank_sel::{Select9, SimpleSelect};
-use sux::traits::{BitLength, NumBits, Select, SelectHinted, SelectUnchecked};
+use sux::traits::{BitLength, AddNumBits, NumBits, Select, SelectHinted, SelectUnchecked};
 
 use super::Build;
 
@@ -11,9 +11,9 @@ macro_rules! impl_simple {
             inner: SimpleSelect<B>,
         }
 
-        impl Build<BitVec> for $name<CountBitVec<BitVec>> {
+        impl Build<BitVec> for $name<AddNumBits<BitVec>> {
             fn new(bits: BitVec) -> Self {
-                let bits: CountBitVec = bits.into();
+                let bits: AddNumBits<_> = bits.into();
                 Self {
                     inner: SimpleSelect::new(bits, $subinv),
                 }
@@ -24,17 +24,17 @@ macro_rules! impl_simple {
                 self.inner.len()
             }
         }
-        impl NumBits for $name<CountBitVec> {
+        impl NumBits for $name<AddNumBits<BitVec>> {
             fn num_ones(&self) -> usize {
                 self.inner.num_ones()
             }
         }
-        impl SelectUnchecked for $name<CountBitVec> {
+        impl SelectUnchecked for $name<AddNumBits<BitVec>> {
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
                 self.inner.select_unchecked(rank)
             }
         }
-        impl Select for $name<CountBitVec> {
+        impl Select for $name<AddNumBits<BitVec>> {
             fn select(&self, rank: usize) -> Option<usize> {
                 self.inner.select(rank)
             }

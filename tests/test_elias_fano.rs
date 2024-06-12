@@ -201,7 +201,7 @@ fn test_epserde() -> Result<()> {
         drop(file);
         println!("{}", schema.to_csv());
 
-        let c = <EliasFano<SimpleSelectConst<NumBitVec, Vec<usize>>, BitFieldVec>>::mmap(
+        let c = <EliasFano<SimpleSelectConst<AddNumBits<BitVec>, Vec<usize>>, BitFieldVec>>::mmap(
             &tmp_file,
             epserde::deser::Flags::empty(),
         )?;

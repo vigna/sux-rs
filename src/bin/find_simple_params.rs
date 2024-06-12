@@ -1,10 +1,7 @@
 use std::iter::zip;
 
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use sux::{
-    bits::{BitVec, NumBitVec},
-    rank_sel::SimpleSelect,
-};
+use sux::{bits::BitVec, rank_sel::SimpleSelect, traits::AddNumBits};
 
 fn main() {
     let lens = [
@@ -18,7 +15,7 @@ fn main() {
     ];
     let densities = [0.2, 0.5, 0.8];
 
-    let mut bitvecs = Vec::<NumBitVec>::new();
+    let mut bitvecs = Vec::<AddNumBits<_>>::new();
     let mut bitvec_ids = Vec::<(u64, f64)>::new();
     let mut rng = SmallRng::seed_from_u64(0);
     for len in lens {

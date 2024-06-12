@@ -279,13 +279,10 @@ impl<B: AsRef<[usize]>> BitVec<B> {
     /// No control is performed on the number of ones, unless
     /// debug assertions are enabled.
     #[inline(always)]
-    pub fn with_count(self, number_of_ones: usize) -> NumBitVec<BitVec<B>> {
+    pub fn with_count(self, number_of_ones: usize) -> AddNumBits<BitVec<B>> {
         debug_assert!(number_of_ones <= self.len);
         debug_assert_eq!(number_of_ones, self.count_ones());
-        NumBitVec {
-            bits: self,
-            number_of_ones,
-        }
+        unsafe { AddNumBits::from_raw_parts(self, number_of_ones) }
     }
 }
 
@@ -627,58 +624,6 @@ impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
     }
 }
 
-/// An immutable bit vector with an implementation of [`NumBits`].
-#[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct NumBitVec<B = BitVec> {
-    bits: B,
-    number_of_ones: usize,
-}
-
-impl<B: BitLength> NumBits for NumBitVec<B> {
-    #[inline(always)]
-    /// Return the number of bits set to 1 in this bit vector.
-    fn num_ones(&self) -> usize {
-        self.number_of_ones
-    }
-}
-
-impl<B> NumBitVec<B> {
-    pub fn into_inner(self) -> B {
-        self.bits
-    }
-
-    /// # Safety
-    /// `len` must be between 0 (included) the number of
-    /// bits in `data` (included). No test is performed
-    /// on the number of ones.
-    #[inline(always)]
-    pub unsafe fn from_raw_parts(bits: B, number_of_ones: usize) -> Self {
-        Self {
-            bits,
-            number_of_ones,
-        }
-    }
-    #[inline(always)]
-    pub fn into_raw_parts(self) -> (B, usize) {
-        (self.bits, self.number_of_ones)
-    }
-}
-
-crate::forward_mult![NumBitVec<B>; B; bits;
-    crate::forward_as_ref_slice_usize,
-    crate::forward_index_bool,
-    crate::traits::rank_sel::forward_bit_length,
-    crate::traits::rank_sel::forward_bit_count,
-    crate::traits::rank_sel::forward_rank_hinted,
-    crate::traits::rank_sel::forward_rank_zero,
-    crate::traits::rank_sel::forward_select_hinted,
-    crate::traits::rank_sel::forward_select_unchecked,
-    crate::traits::rank_sel::forward_select,
-    crate::traits::rank_sel::forward_select_zero_hinted,
-    crate::traits::rank_sel::forward_select_zero_unchecked,
-    crate::traits::rank_sel::forward_select_zero
-];
-
 impl<W: IntoAtomic> From<BitVec<Vec<W>>> for AtomicBitVec<Vec<W::AtomicType>> {
     fn from(value: BitVec<Vec<W>>) -> Self {
         AtomicBitVec {
@@ -733,36 +678,6 @@ impl<'a, W: IntoAtomic> From<AtomicBitVec<&'a mut [W::AtomicType]>> for BitVec<&
                 core::mem::transmute::<&'a mut [W::AtomicType], &'a mut [W]>(value.data)
             },
             len: value.len,
-        }
-    }
-}
-
-impl From<BitVec<Vec<usize>>> for NumBitVec<BitVec<Vec<usize>>> {
-    fn from(bits: BitVec<Vec<usize>>) -> Self {
-        let number_of_ones = bits.count_ones();
-        NumBitVec {
-            bits,
-            number_of_ones,
-        }
-    }
-}
-
-impl<'a> From<BitVec<&'a [usize]>> for NumBitVec<BitVec<&'a [usize]>> {
-    fn from(bits: BitVec<&'a [usize]>) -> Self {
-        let number_of_ones = bits.count_ones();
-        NumBitVec {
-            bits,
-            number_of_ones,
-        }
-    }
-}
-
-impl<'a> From<BitVec<&'a mut [usize]>> for NumBitVec<BitVec<&'a mut [usize]>> {
-    fn from(bits: BitVec<&'a mut [usize]>) -> Self {
-        let number_of_ones = bits.count_ones();
-        NumBitVec {
-            bits,
-            number_of_ones,
         }
     }
 }
