@@ -115,7 +115,7 @@ impl EliasFanoBuilder {
         self.last_value = value;
     }
 
-    pub fn build(self) -> EliasFano<NumBitVec> {
+    pub fn build(self) -> EliasFano<AddNumBits<BitVec>> {
         EliasFano {
             u: self.u,
             n: self.n,
@@ -190,7 +190,7 @@ impl EliasFanoConcurrentBuilder {
 }
 
 #[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
-pub struct EliasFano<H = NumBitVec, L = BitFieldVec> {
+pub struct EliasFano<H = AddNumBits<BitVec>, L = BitFieldVec> {
     /// An upper bound to the values.
     u: usize,
     /// The number of values.

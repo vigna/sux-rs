@@ -82,12 +82,12 @@ use crate::{
 /// # Examples
 /// ```rust
 /// use sux::bit_vec;
-/// use sux::bits::NumBitVec;
+/// use sux::bits::AddNumBits;
 /// use sux::traits::{Rank, Select};
 /// use sux::rank_sel::{SimpleSelect, Rank9};
 ///
 /// // Standalone select
-/// let bits: NumBitVec = bit_vec![1, 0, 1, 1, 0, 1, 0, 1].into();
+/// let bits: AddNumBits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1].into();
 /// let select = SimpleSelect::new(bits, 3);
 ///
 /// assert_eq!(select.select(0), Some(0));
@@ -108,7 +108,7 @@ use crate::{
 /// assert_eq!(select[7], true);
 ///
 /// // Map the backend to a different structure; we can get rid
-/// // of the NumBitVec wrapper because Rank9 implements NumBits.
+/// // of the AddNumBits wrapper because Rank9 implements NumBits.
 /// let sel_rank9 = select.map(|x| Rank9::new(x.into_inner()));
 ///
 /// // Rank methods are forwarded
@@ -561,7 +561,7 @@ crate::forward_mult![
 mod test_simple_select {
     use super::*;
     use crate::bits::BitVec;
-    use crate::bits::NumBitVec;
+    use crate::traits::AddNumBits;
     use crate::traits::Select;
     use rand::rngs::SmallRng;
     use rand::Rng;
@@ -579,7 +579,7 @@ mod test_simple_select {
             .chain([true])
             .chain((0..len / 2).map(|_| false))
             .collect::<BitVec>();
-        let bits: NumBitVec<_> = bits.into();
+        let bits: AddNumBits<_> = bits.into();
         let simple = SimpleSelect::new(bits, 3);
 
         assert_eq!(simple.ones_per_sub64, 1);
@@ -595,7 +595,7 @@ mod test_simple_select {
         let mut rng = SmallRng::seed_from_u64(0);
         let density = 0.1;
         for len in lens {
-            let bits: NumBitVec<_> = (0..len)
+            let bits: AddNumBits<_> = (0..len)
                 .map(|_| rng.gen_bool(density))
                 .collect::<BitVec>()
                 .into();

@@ -98,17 +98,17 @@ assert_eq!(unsafe { select.select_unchecked(0) }, 1);
 Note that we invoked [`select_unchecked`](SelectUnchecked::select_unchecked).
 The [`select`](Select::select) method, indeed, requires the knowledge of the
 number of ones in the bit vector to perform bound checks, and this number is not
-available in constant time in a [`BitVec`]; we need a [`NumBitVec`], a thin
+available in constant time in a [`BitVec`]; we need a [`AddNumBits`], a thin
 immutable wrapper around a bit vector that stores internally the number of ones
 and thus implements the [`NumBits`] trait:
 
 ```rust
 use sux::bit_vec;
-use sux::bits::NumBitVec;
+use sux::bits::AddNumBits;
 use sux::rank_sel::SimpleSelect;
 use sux::traits::Select;
 
-let bv: NumBitVec = bit_vec![0, 1, 0, 1, 1, 0, 1, 0].into();
+let bv: AddNumBits<_> = bit_vec![0, 1, 0, 1, 1, 0, 1, 0].into();
 let select = SimpleSelect::new(bv, 3);
 
 assert_eq!(select.select(0), Some(1));
@@ -120,7 +120,6 @@ just use it:
 
 ```rust
 use sux::{bit_vec, rank_small};
-use sux::bits::NumBitVec;
 use sux::rank_sel::{Rank9, SimpleSelect};
 use sux::traits::{Rank, Select};
 
@@ -139,7 +138,7 @@ Note how [`SimpleSelect`] forwards not only [`Rank`] but also [`Index`], which
 gives access to the bits of the underlying bit vector. The last line uses the
 [`map`](Map::map) method to replace the underlying [`Rank9`] structure with
 one that is slower but uses much less space; note how we use `into_inner()` to
-get rid of the [`NumBitVec`] wrapper.
+get rid of the [`AddNumBits`] wrapper.
 
 Some structures depend on the internals of others, and thus cannot be composed
 freely: for example, a [`Select9`] must necessarily wrap a [`Rank9`]. In

@@ -8,9 +8,9 @@
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use sux::{
     bit_vec,
-    bits::{BitVec, NumBitVec},
+    bits::BitVec,
     rank_sel::{Rank9, SimpleSelectConst},
-    traits::{BitCount, Rank, Select},
+    traits::{BitCount, AddNumBits, Rank, Select},
 };
 
 #[test]
@@ -45,7 +45,7 @@ fn test_map() {
     let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
     let rank9 = Rank9::new(bits);
     let rank9_sel = rank9.map(|x| {
-        let x: NumBitVec = x.into();
+        let x: AddNumBits<_> = x.into();
         SimpleSelectConst::<_, _>::new(x)
     });
     assert_eq!(rank9_sel.rank(0), 0);
