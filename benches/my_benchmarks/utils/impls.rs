@@ -1,6 +1,6 @@
 use sux::bits::BitVec;
 use sux::rank_sel::{Rank10, Rank11, Rank9, RankSmall};
-use sux::rank_sel::{Select9, SimpleSelect};
+use sux::rank_sel::{Select9, SelectAdapt};
 use sux::traits::{BitCount, BitLength, Select, SelectHinted};
 
 use super::Build;

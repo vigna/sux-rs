@@ -9,7 +9,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use sux::bit_vec;
 use sux::bits::bit_vec::BitVec;
-use sux::rank_sel::SimpleSelect;
+use sux::rank_sel::SelectAdapt;
 use sux::rank_small;
 use sux::traits::Rank;
 use sux::traits::Select;
@@ -79,7 +79,7 @@ fn test_rank_small4() {
 fn test_map() {
     let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
     let rank_small = rank_small![2; bits];
-    let rank_small_sel = rank_small.map(|b| SimpleSelect::new(b, 2));
+    let rank_small_sel = rank_small.map(|b| SelectAdapt::new(b, 2));
     assert_eq!(rank_small_sel.rank(0), 0);
     assert_eq!(rank_small_sel.rank(1), 0);
     assert_eq!(rank_small_sel.rank(2), 1);

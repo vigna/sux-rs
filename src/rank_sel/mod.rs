@@ -48,8 +48,8 @@ pub use simple_select_const::*;
 mod simple_select_zero_const;
 pub use simple_select_zero_const::*;
 
-mod simple_select;
-pub use simple_select::*;
+mod select_adapt;
+pub use select_adapt::*;
 
 mod rank10sel;
 pub use rank10sel::*;

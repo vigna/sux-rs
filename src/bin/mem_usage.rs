@@ -5,16 +5,16 @@ use mem_dbg::*;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use sux::{
     bits::BitVec,
-    rank_sel::{Rank10Sel, Rank9, RankSmall, Select9, SimpleSelect},
+    rank_sel::{Rank10Sel, Rank9, RankSmall, Select9, SelectAdapt},
     traits::*,
 };
 
 trait Struct {
     fn build(bits: BitVec) -> Self;
 }
-impl Struct for SimpleSelect<BitVec> {
+impl Struct for SelectAdapt<BitVec> {
     fn build(bits: BitVec) -> Self {
-        SimpleSelect::new(bits, 3)
+        SelectAdapt::new(bits, 3)
     }
 }
 impl Struct for Select9 {
@@ -140,7 +140,7 @@ fn main() {
 
     match cli.sel_type {
         StructType::Simpleselect => {
-            mem_usage::<SimpleSelect<_>>(cli.len, cli.density, uniform, "SimpleSelect");
+            mem_usage::<SelectAdapt<_>>(cli.len, cli.density, uniform, "SimpleSelect");
         }
         StructType::Select9 => {
             mem_usage::<Select9>(cli.len, cli.density, uniform, "Select9");

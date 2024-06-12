@@ -13,14 +13,16 @@ use std::cmp::{max, min};
 
 use crate::prelude::{BitCount, BitFieldSlice, BitLength, Select, SelectHinted};
 
-/// A simple select implementation based on a two-level inventory.
+/// A selection structure based on an adaptive two-level inventory.
 ///
-/// The structure has been described by Sebastiano Vigna in “[Broadword
-/// Implementation of Rank/Select
+/// The design of this selection structure starts from the `simple` structure
+/// described by Sebastiano Vigna in “[Broadword Implementation of Rank/Select
 /// Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
 /// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
 /// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
-/// Springer, 2008.
+/// Springer, 2008, but adds adaptivity of the second-level inventory, using
+/// thus significantly less space than `simple` for bit vectors with uneven
+/// distribution.
 ///
 /// # Implementation Details
 ///
@@ -29,65 +31,75 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, Select, SelectHinted};
 /// interleaved to reduce the number of cache misses.
 ///
 /// The inventory is sized so that the distance between two indexed ones is on
-/// average a given target value `L`. For each indexed one in the inventory (for
-/// which we use a 64-bit integer), we allocate at most `M` (a power of 2)
+/// average a given target value *L*. For each indexed one in the inventory (for
+/// which we use a 64-bit integer), we allocate at most *M* (a power of 2)
 /// 64-bit integers for the subinventory. The relative target space occupancy of
-/// the selection structure is thus at most `64 * (1 + M) / L`. However, since
-/// the number of ones per inventory has to be a power of two, the _actual_
-/// value of `L` might be smaller by a factor of 2, doubling the actual space
-/// occupancy with respect to the target space occupancy.
+/// the selection structure is thus at most 64(1 + *M*)/*L*. However, since the
+/// number of ones per inventory has to be a power of two, the _actual_ value of
+/// *L* might be smaller by a factor of 2, doubling the actual space occupancy
+/// with respect to the target space occupancy.
 ///
 /// For example, using [the default value of
-/// `L`](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN) and `M = 8`, the space
+/// *L*](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) and *M* = 8, the space
 /// occupancy is between 7% and 14%. The space might be smaller for very sparse
-/// vectors as less than `M` subinventory words per inventory might be used.
+/// vectors as less than *M* subinventory words per inventory might be used.
 ///
 /// Given a specific indexed one in the inventory, if the distance to the next
-/// indexed one is smaller than 2¹⁶ we use the 'M' words associated to the
-/// subinventory to store `4M` 16-bit integers, representing the offsets of
-/// regularly spaced ones inside the inventory. Otherwise, we store the exact
-/// position of all such ones either using the 'M' available words, or, if they
-/// are not sufficient, using a spill vector.
+/// indexed one is smaller than 2¹⁶ we use the *M* words associated to the
+/// subinventory to store 4*M* 16-bit integers, representing the offsets of
+/// regularly spaced ones inside the inventory.
+///
+/// Otherwise, if the distance is smaller than or equal to 2³², we use the *M*
+/// words plus some additional words in a spill buffer to store the offsets of
+/// regularly spaced ones inside the inventory using 32-bit integers (the first
+/// of the *M* words points inside the spill buffer). The number of such
+/// integers is chosen adaptively so that the average distance between two
+/// indexed ones is comparable to the worst case of a 16-bit subinventory.
+///
+/// Finally, if the distance is larger than 2³², we use the *M* words plus some
+/// additional words in a spill buffer to store exactly the position of every
+/// bit in the subinventory using 64-bit integers.
 ///
 /// Note that is is possible to build pathological cases  (e.g., half of the bit
 /// vector extremely dense, half of the vector extremely sparse) in which the
-/// spill vector uses a very large amount of space (more than 50%). In these
-/// cases, [`Select9`](super::Select9) might be a better choice.
+/// structure has a different performance depending on the selected bit. In
+/// these cases, [`Select9`](super::Select9) might be a better choice.
 ///
 /// In the 16-bit case, the average distance between two ones indexed by the
-/// subinventories is `L/4M`, (again, the actual value might be twice as large
+/// subinventories is *L*/4*M*, (again, the actual value might be twice as large
 /// because of rounding). However, the worst-case distance might as high as
-/// 2¹⁶/4M, as we use `4M` 16-bit integers until the width of the inventory span
-/// makes it possible. Within this range, we perform a sequential broadword
-/// search, which has a linear cost.
+/// 2¹⁶/4*M*, as we use 4*M* 16-bit integers until the width of the inventory
+/// span makes it possible. Within this range, we perform a sequential broadword
+/// search, which has a linear cost. In the 32-bit case, the average distance
+/// between two ones is kept within 2¹⁶/4*M*.
 ///
 /// # Choosing Parameters
 ///
-/// The value `L` should be chosen so that the distance between two indexed ones
+/// The value *L* should be chosen so that the distance between two indexed ones
 /// in the inventory is always smaller than 2¹⁶. The [default suggested
-/// value](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN) is a reasonable choice
+/// value](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) is a reasonable choice
 /// for vectors that reasonably uniform, but smaller values can be used for more
 /// irregular vectors, at the cost of a larger space occupancy.
 ///
-/// The value `M` should be as high as possible, compatibly with the desired
+/// The value *M* should be as high as possible, compatibly with the desired
 /// space occupancy, but values resulting in linear searches shorter than a
 /// couple of words will not generally improve performance; moreover,
-/// interleaving inventories is not useful if `M` is so large that the
+/// interleaving inventories is not useful if *M* is so large that the
 /// subinventory takes several cache lines. For example, using [default value
-/// for `L`](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN) a reasonable choice
-/// for `M` is between 4 and 32, corrisponding to worst-case linear searches
+/// for *L*](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) a reasonable choice
+/// for *M* is between 4 and 32, corrisponding to worst-case linear searches
 /// between 1024 and 128 bits (note that the constructors take the base-2
-/// logarithm of `M`)
+/// logarithm of *M*).
 ///
 /// # Examples
 /// ```rust
 /// use sux::bit_vec;
 /// use sux::traits::{Rank, Select};
-/// use sux::rank_sel::{SimpleSelect, Rank9};
+/// use sux::rank_sel::{SelectAdapt, Rank9};
 ///
 /// // Standalone select
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
-/// let select = SimpleSelect::new(bits, 3);
+/// let select = SelectAdapt::new(bits, 3);
 ///
 /// assert_eq!(select.select(0), Some(0));
 /// assert_eq!(select.select(1), Some(2));
@@ -122,7 +134,7 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, Select, SelectHinted};
 ///
 /// // Select over a Rank9 structure
 /// let rank9 = Rank9::new(sel_rank9.into_inner().into_inner());
-/// let rank9_sel = SimpleSelect::new(rank9, 3);
+/// let rank9_sel = SelectAdapt::new(rank9, 3);
 ///
 /// assert_eq!(rank9_sel.select(0), Some(0));
 /// assert_eq!(rank9_sel.select(1), Some(2));
@@ -154,7 +166,7 @@ use crate::prelude::{BitCount, BitFieldSlice, BitLength, Select, SelectHinted};
 /// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct SimpleSelect<B, I = Box<[usize]>> {
+pub struct SelectAdapt<B, I = Box<[usize]>> {
     bits: B,
     inventory: I,
     spill: I,
@@ -230,6 +242,7 @@ fn span_type(x: usize) -> SpanType {
     }
 }
 
+// Compute adaptively the number of 32-bit subinventory entries
 #[inline(always)]
 fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
     debug_assert!(span >= 1 << 16);
@@ -237,20 +250,20 @@ fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
     // at least doubling the frequency of the subinventory with respect to the
     // 16-bit case, unless log2_ones_per_u16 = 0, that is, we are recording the
     // position of every one in the subinventory.
-    log2_ones_per_sub16 - ((span >> 15).ilog2() as usize + 1).min(log2_ones_per_sub16)
+    log2_ones_per_sub16.saturating_sub((span >> 15).ilog2() as usize + 1)
 }
 
-impl<B, I> SimpleSelect<B, I> {
+impl<B, I> SelectAdapt<B, I> {
     pub fn into_inner(self) -> B {
         self.bits
     }
 
     /// Replaces the backend with a new one implementing [`SelectHinted`].
-    pub fn map<C>(self, f: impl FnOnce(B) -> C) -> SimpleSelect<C, I>
+    pub fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectAdapt<C, I>
     where
         C: SelectHinted,
     {
-        SimpleSelect {
+        SelectAdapt {
             bits: f(self.bits),
             inventory: self.inventory,
             spill: self.spill,
@@ -267,24 +280,24 @@ impl<B, I> SimpleSelect<B, I> {
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
 }
 
-impl<B: BitLength, I> BitCount for SimpleSelect<B, I> {
+impl<B: BitLength, I> BitCount for SelectAdapt<B, I> {
     #[inline(always)]
     fn count_ones(&self) -> usize {
         self.num_ones
     }
 }
 
-impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Box<[usize]>> {
+impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SelectAdapt<B, Box<[usize]>> {
     /// Creates a new selection structure over a [`SelectHinted`] using a
     /// [default target inventory
-    /// span](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN).
+    /// span](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN).
     ///
     /// # Arguments
     ///
     /// * `bits`: A bit vector.
     ///
     /// * `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
-    ///   number [`M`](SimpleSelect) of 64-bit words in each subinventory.
+    ///   number [*M*](SelectAdapt) of 64-bit words in each subinventory.
     ///   Increasing by one this value approximately doubles the space occupancy
     ///   and halves the length of sequential broadword searches. Typical values
     ///   are 3 and 4.
@@ -304,12 +317,12 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
     ///
     /// * `bits`: A bit vector.
     ///
-    /// * `target_inventory_span`: The target span [`L`](SimpleSelect) of a
+    /// * `target_inventory_span`: The target span [*L*](SelectAdapt) of a
     ///   first-level inventory entry. The actual span might be smaller by a
     ///   factor of 2.
     ///
     /// * `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
-    ///   number [`M`](SimpleSelect) of 64-bit words in each subinventory.
+    ///   number [*M*](SelectAdapt) of 64-bit words in each subinventory.
     ///   Increasing by one this value approximately doubles the space occupancy
     ///   and halves the length of sequential broadword searches. Typical values
     ///   are 3 and 4.
@@ -346,7 +359,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
     /// only if the density is known in advance.
     ///
     /// Unless you understand all the implications, it is preferrable to use the
-    /// [standard constructor](SimpleSelect::new).
+    /// [standard constructor](SelectAdapt::new).
     ///
     /// # Arguments
     ///
@@ -356,7 +369,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
     ///   between two indexed ones.
     ///
     /// * `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
-    ///   number [`M`](SimpleSelect) of 64-bit words in each subinventory.
+    ///   number [*M*](SelectAdapt) of 64-bit words in each subinventory.
     ///   Increasing by one this value approximately doubles the space occupancy
     ///   and halves the length of sequential broadword searches. Typical values
     ///   are 3 and 4.
@@ -653,7 +666,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Bo
 }
 
 impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>> Select
-    for SimpleSelect<B, I>
+    for SelectAdapt<B, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         let inventory = self.inventory.as_ref();
@@ -736,7 +749,7 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
 }
 
 crate::forward_mult![
-    SimpleSelect<B, I>; B; bits;
+    SelectAdapt<B, I>; B; bits;
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
@@ -770,7 +783,7 @@ mod tests {
             .chain([true])
             .chain((0..len / 2).map(|_| false))
             .collect::<BitVec>();
-        let simple = SimpleSelect::new(bits, 0);
+        let simple = SelectAdapt::new(bits, 0);
 
         assert_eq!(simple.count_ones(), 4);
         assert_eq!(simple.select(0), Some(len / 2));
@@ -785,7 +798,7 @@ mod tests {
         let density = 0.1;
         for len in lens {
             let bits: BitVec = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let simple = SimpleSelect::with_inv(bits.clone(), bits.count_ones(), 13, 3);
+            let simple = SelectAdapt::with_inv(bits.clone(), bits.count_ones(), 13, 3);
 
             let ones = simple.count_ones();
             let mut pos = Vec::with_capacity(ones);
@@ -816,7 +829,7 @@ mod tests {
         }
 
         for m in [0, 3, 16] {
-            let simple = SimpleSelect::with_inv(&bits, pos.len(), 13, m);
+            let simple = SelectAdapt::with_inv(&bits, pos.len(), 13, m);
             assert!(simple.inventory[0].is_u64_span());
 
             for (i, &p) in pos.iter().enumerate() {
