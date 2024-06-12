@@ -104,9 +104,8 @@ and thus implements the [`NumBits`] trait:
 
 ```rust
 use sux::bit_vec;
-use sux::bits::AddNumBits;
 use sux::rank_sel::SimpleSelect;
-use sux::traits::Select;
+use sux::traits::{AddNumBits, Select};
 
 let bv: AddNumBits<_> = bit_vec![0, 1, 0, 1, 1, 0, 1, 0].into();
 let select = SimpleSelect::new(bv, 3);

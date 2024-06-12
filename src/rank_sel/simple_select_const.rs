@@ -33,12 +33,11 @@ use mem_dbg::*;
 /// # Examples
 /// ```rust
 /// use sux::bit_vec;
-/// use sux::bits::AddNumBits;
-/// use sux::traits::{Rank, Select};
+/// use sux::traits::{AddNumBits, Rank, Select};
 /// use sux::rank_sel::{SimpleSelectConst, Rank9, RankSmall};
 ///
 /// // Standalone select
-/// let bits: AddNumBits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1].into();
+/// let bits: AddNumBits<_> = bit_vec![1, 0, 1, 1, 0, 1, 0, 1].into();
 /// let select = SimpleSelectConst::<_, _, 8, 2>::new(bits);
 ///
 /// assert_eq!(select.select(0), Some(0));
