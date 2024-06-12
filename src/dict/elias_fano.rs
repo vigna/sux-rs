@@ -115,13 +115,17 @@ impl EliasFanoBuilder {
         self.last_value = value;
     }
 
-    pub fn build(self) -> EliasFano<AddNumBits<BitVec>> {
+    pub fn build(
+        self,
+    ) -> EliasFano<AddNumBits<BitVec<Box<[usize]>>>, BitFieldVec<usize, Box<[usize]>>> {
+        let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
         EliasFano {
             u: self.u,
             n: self.n,
             l: self.l,
-            low_bits: self.low_bits,
-            high_bits: self.high_bits.with_count(self.n),
+            low_bits: self.low_bits.into(),
+            // SAFETY: n is the number of ones in the high_bits.
+            high_bits: unsafe { AddNumBits::from_raw_parts(high_bits, self.n) },
         }
     }
 }
@@ -178,19 +182,22 @@ impl EliasFanoConcurrentBuilder {
     }
 
     pub fn build(self) -> EliasFano {
-        let bit_vec: BitVec = self.high_bits.into();
+        let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
+        let low_bits: BitFieldVec<usize, Vec<usize>> = self.low_bits.into();
+        let low_bits: BitFieldVec<usize, Box<[usize]>> = low_bits.into();
         EliasFano {
             u: self.u,
             n: self.n,
             l: self.l,
-            low_bits: self.low_bits.into(),
-            high_bits: bit_vec.with_count(self.n),
+            low_bits,
+            // SAFETY: n is the number of ones in the high_bits.
+            high_bits: unsafe { AddNumBits::from_raw_parts(high_bits, self.n) },
         }
     }
 }
 
 #[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
-pub struct EliasFano<H = AddNumBits<BitVec>, L = BitFieldVec> {
+pub struct EliasFano<H = AddNumBits<BitVec<Box<[usize]>>>, L = BitFieldVec<usize, Box<[usize]>>> {
     /// An upper bound to the values.
     u: usize,
     /// The number of values.

@@ -201,10 +201,10 @@ fn test_epserde() -> Result<()> {
         drop(file);
         println!("{}", schema.to_csv());
 
-        let c = <EliasFano<SimpleSelectConst<AddNumBits<BitVec>, Vec<usize>>, BitFieldVec>>::mmap(
-            &tmp_file,
-            epserde::deser::Flags::empty(),
-        )?;
+        let c = <EliasFano<
+            SimpleSelectConst<AddNumBits<BitVec<Box<[usize]>>>, Vec<usize>>,
+            BitFieldVec<usize, Box<[usize]>>,
+        >>::mmap(&tmp_file, epserde::deser::Flags::empty())?;
 
         for i in 0..n {
             assert_eq!(ef.get(i), c.get(i));
