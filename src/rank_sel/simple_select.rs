@@ -666,9 +666,7 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
 
         if inventory_rank.is_u16_span() {
             let subinventory = inventory
-                .get_unchecked(
-                    inventory_start_pos + 1..inventory_start_pos + self.u64_per_inventory,
-                )
+                .get_unchecked(inventory_start_pos + 1..)
                 .align_to::<u16>()
                 .1;
 
@@ -694,13 +692,11 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
             let log2_ones_per_sub32 = log2_ones_per_sub32(span, self.log2_ones_per_sub16);
             let hint_pos = if subrank >> log2_ones_per_sub32 < (u64_per_subinventory - 1) * 2 {
                 let u32s = inventory
-                    .get_unchecked(
-                        inventory_start_pos + 2..(inventory_start_pos + 1 + u64_per_subinventory),
-                    )
+                    .get_unchecked(inventory_start_pos + 2..)
                     .align_to::<u32>()
                     .1;
 
-                inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize;
+                inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize
             } else {
                 let inventory_rank = inventory_rank.get();
                 let start_spill_idx = *inventory.get_unchecked(inventory_start_pos + 1);
@@ -708,14 +704,14 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
                 let spilled_u32s = self
                     .spill
                     .as_ref()
-                    .get_unchecked(start_spill_idx..self.spill.as_ref().len()) // TODO: Maybe exact value?
+                    .get_unchecked(start_spill_idx..)
                     .align_to::<u32>()
                     .1;
 
                 inventory_rank
                     + *spilled_u32s.get_unchecked(
                         (subrank >> log2_ones_per_sub32) - (u64_per_subinventory - 1) * 2,
-                    ) as usize;
+                    ) as usize
             };
             let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
             return self
