@@ -42,6 +42,9 @@ but they can be tuned for other densities.
 
 */
 
+mod simple_select;
+pub use simple_select::*;
+
 mod simple_select_const;
 pub use simple_select_const::*;
 

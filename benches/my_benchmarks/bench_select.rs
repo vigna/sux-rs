@@ -6,7 +6,7 @@ use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::Select9;
-use sux::rank_sel::SelectAdapt;
+use sux::rank_sel::SimpleSelect;
 use sux::rank_sel::SimpleSelectConst;
 use sux::traits::Select;
 
@@ -32,6 +32,34 @@ pub fn bench_simple_select(c: &mut Criterion, uniform: bool, max_log2_u64_per_su
         1 => bench_select::<SimpleSelect1<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
         2 => bench_select::<SimpleSelect2<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
         3 => bench_select::<SimpleSelect3<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        _ => unreachable!(),
+    }
+
+    bench_group.finish();
+}
+
+pub fn bench_select_adapt(c: &mut Criterion, uniform: bool, max_log2_u64_per_subinventory: usize) {
+    let mut name = String::from("select_adapt");
+
+    match max_log2_u64_per_subinventory {
+        0 => name.push_str("0"),
+        1 => name.push_str("1"),
+        2 => name.push_str("2"),
+        3 => name.push_str("3"),
+        _ => panic!("Invalid max_log2_u64_per_subinventory"),
+    }
+
+    if !uniform {
+        name.push_str("_non_uniform");
+    }
+
+    let mut bench_group = c.benchmark_group(name);
+
+    match max_log2_u64_per_subinventory {
+        0 => bench_select::<SelectAdapt0<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        1 => bench_select::<SelectAdapt1<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        2 => bench_select::<SelectAdapt2<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        3 => bench_select::<SelectAdapt3<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
         _ => unreachable!(),
     }
 
@@ -102,7 +130,7 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
     for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
         let bits = bitvec.clone();
         let num_ones = bits.count_ones();
-        let sel = SelectAdapt::with_inv(
+        let sel = SimpleSelect::with_inv(
             bits,
             num_ones,
             LOG2_ONES_PER_INVENTORY,
