@@ -10,10 +10,10 @@
 
 A pure Rust implementation of succinct and compressed data structures.
 
-This crate is a work in progress:
-part of it is a port from [Sux](https://sux.di.unimi.it/) and from [the DSI Utilities](https://dsiutils.di.unimi.it/);
-new data structures will be added over time. Presently,
-we provide:
+This crate is a work in progress: part of it is a port from
+[Sux](https://sux.di.unimi.it/) and from [the DSI
+Utilities](https://dsiutils.di.unimi.it/); new data structures will be added
+over time. Presently, we provide:
 
 - the [`BitFieldSlice`](crate::traits::bit_field_slice::BitFieldSlice) trait---an
   alternative to [`Index`](core::ops::Index) returning values of fixed bit width;
@@ -24,15 +24,16 @@ we provide:
 - an implementation of list of [strings compressed by rear-coded prefix omission](crate::dict::rear_coded_list::RearCodedList);
 - an implementation of [static functions](crate::func::VFunc).
 
-The focus is on efficiency (in particular, there are unchecked versions of all methods) and
-on flexible composability (e.g., you can fine-tune your Elias–Fano instance by choosing different
-types of internal indices, and whether to index zeros or ones).
+The focus is on efficiency (in particular, there are unchecked versions of all
+methods) and on flexible composability (e.g., you can fine-tune your Elias–Fano
+instance by choosing different types of internal indices, and whether to index
+zeros or ones).
 
 ## ε-serde support
 
-All structures in this crate are designed to work well with [ε-serde]:
-in particular, once you have created and serialized them, you can easily map them into memory
-or load them in memory regions with specific `mmap()` attributes.
+All structures in this crate are designed to work well with [ε-serde]: in
+particular, once you have created and serialized them, you can easily map them
+into memory or load them in memory regions with specific `mmap()` attributes.
 
 ## `MemDbg`/`MemSize` support
 
@@ -61,24 +62,98 @@ usage and debugging memory-related issues. For example, this is the output of
    6_103_552 B   5.21%   ╰╴inventory: alloc::vec::Vec<u64>
 ```
 
+## Composability, functoriality, and performance
+
+The design of this crate tries to satisfy the following principles:
+
+- High performance: all implementations try to be as fast as possible (we
+  minimize tests, cache misses, etc.).
+- Composability: all structures are designed to be easily composed with each
+  other: structures are built on top of other structures, which
+  can be extracted with the usual `into_inner` idiom.
+- Zero-cost abstraction: all structures forward conditionally all
+  ranking/selection non-implemented methods on the underlying structures.
+- Functoriality: whenever possible, there are mapping methods that replace an
+  underlying structure with another one, provided it is compatible.
+
+What this crate does not provide:
+
+- High genericity: all bit vectors are based on the rather concrete trait combination
+  `AsRef<[usize]>` + [`BitLength`].
+
+For example, assuming we want to implement selection over a bit vector, we
+could do as follows:
+
+```rust
+use sux::bit_vec;
+use sux::rank_sel::SimpleSelect;
+use sux::traits::SelectUnchecked;
+
+let bv = bit_vec![0, 1, 0, 1, 1, 0, 1, 0];
+let select = SimpleSelect::new(bv, 3);
+
+assert_eq!(unsafe { select.select_unchecked(0) }, 1);
+```
+
+Note that we invoked [`select_unchecked`](SelectUnchecked::select_unchecked).
+The [`select`](Select::select) method, indeed, requires the knowledge of the
+number of ones in the bit vector to perform bound checks, and this number is not
+available in constant time in a [`BitVec`]; we need a [`NumBitVec`], a thin
+immutable wrapper around a bit vector that stores internally the number of ones
+and thus implements the [`NumBits`] trait:
+
+```rust
+use sux::bit_vec;
+use sux::bits::NumBitVec;
+use sux::rank_sel::SimpleSelect;
+use sux::traits::Select;
+
+let bv: NumBitVec = bit_vec![0, 1, 0, 1, 1, 0, 1, 0].into();
+let select = SimpleSelect::new(bv, 3);
+
+assert_eq!(select.select(0), Some(1));
+```
+
+Suppose instead we want to build our selection structure around a [`Rank9`]
+structure: in this case, [`Rank9`] implements directly [`NumBits`], so we can
+just use it:
+
+```rust
+use sux::{bit_vec, rank_small};
+use sux::bits::NumBitVec;
+use sux::rank_sel::{Rank9, SimpleSelect};
+use sux::traits::{Rank, Select};
+
+let bv = bit_vec![0, 1, 0, 1, 1, 0, 1, 0];
+let sel_rank9 = SimpleSelect::new(Rank9::new(bv), 3);
+
+assert_eq!(sel_rank9.select(0), Some(1));
+assert_eq!(sel_rank9.rank(4), 2);
+assert!(!sel_rank9[0]);
+assert!(sel_rank9[1]);
+
+let sel_rank_small = sel_rank9.map(|x| rank_small![4; x.into_inner()]);
+```
+
+Note how [`SimpleSelect`] forwards not only [`Rank`] but also [`Index`], which
+gives access to the bits of the underlying bit vector. The last line uses the
+[`map`](Map::map) method to replace the underlying [`Rank9`] structure with
+one that is slower but uses much less space; note how we use `into_inner()` to
+get rid of the [`NumBitVec`] wrapper.
+
+Some structures depend on the internals of others, and thus cannot be composed
+freely: for example, a [`Select9`] must necessarily wrap a [`Rank9`]. In
+general, in any case, we suggest embedding structure in the order rank, select,
+and zero select, from inner to outer, because ranking structures usually
+implement [`NumBits`].
+
 ## Acknowledgments
 
-This software has been partially supported by project SERICS (PE00000014) under the NRRP MUR program funded by the EU - NGEU,
-and by project ANR COREGRAPHIE, grant ANR-20-CE23-0002 of the French Agence Nationale de la Recherche.
+This software has been partially supported by project SERICS (PE00000014) under
+the NRRP MUR program funded by the EU - NGEU, and by project ANR COREGRAPHIE,
+grant ANR-20-CE23-0002 of the French Agence Nationale de la Recherche.
 
-[Sux]: <https://sux.di.unimi.it/>
-[the DSI Utilities]: <https://dsiutils.di.unimi.it/>
-[`BitFieldSlice`]: <https://docs.rs/sux/latest/sux/traits/bit_field_slice/trait.BitFieldSlice.html>
-[bit vectors]: <https://docs.rs/sux/latest/sux/bits/bit_vec/struct.BitVec.html>
-[vectors of bit fields of fixed width]: <https://docs.rs/sux/latest/sux/bits/bit_field_vec/struct.BitFieldVec.html>
-[`Rank`]: <https://docs.rs/sux/latest/sux/traits/rank_sel/trait.Rank.html>
-[`Select`]: <https://docs.rs/sux/latest/sux/traits/rank_sel/trait.Select.html>
-[`IndexedDict`]: <https://docs.rs/sux/latest/sux/traits/indexed_dict/trait.IndexedDict.html>
-[Elias–Fano representation of monotone sequences]: <https://docs.rs/sux/latest/sux/dict/elias_fano/struct.EliasFano.html>
 [`EliasFano`]: <https://docs.rs/sux/latest/sux/dict/elias_fano/struct.EliasFano.html>
-[strings compressed by rear-coded prefix omission]: <https://docs.rs/sux/latest/sux/dict/rear_coded_list/struct.RearCodedList.html>
-[static functions]: <https://docs.rs/sux/latest/sux/func/struct.VFunc.html>
-[`Index`]: <https://doc.rust-lang.org/stable/core/ops/trait.Index.html>
 [ε-serde]: <https://crates.io/crates/epserde>
 [`MemDbg`]: <https://docs.rs/mem_dbg/latest/mem_dbg/trait.MemDbg.html>
 [`MemSize`]: <https://docs.rs/mem_dbg/latest/mem_dbg/trait.MemSize.html>

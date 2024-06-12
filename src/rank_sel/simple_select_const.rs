@@ -33,11 +33,12 @@ use mem_dbg::*;
 /// # Examples
 /// ```rust
 /// use sux::bit_vec;
+/// use sux::bits::NumBitVec;
 /// use sux::traits::{Rank, Select};
 /// use sux::rank_sel::{SimpleSelectConst, Rank9, RankSmall};
 ///
 /// // Standalone select
-/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let bits: NumBitVec = bit_vec![1, 0, 1, 1, 0, 1, 0, 1].into();
 /// let select = SimpleSelectConst::<_, _, 8, 2>::new(bits);
 ///
 /// assert_eq!(select.select(0), Some(0));
@@ -58,7 +59,7 @@ use mem_dbg::*;
 /// assert_eq!(select[7], true);
 ///
 /// // Map the backend to a different structure
-/// let sel_rank_small = select.map(RankSmall::<1,10>::new);
+/// let sel_rank_small = select.map(RankSmall::<1,10,_>::new);
 ///
 /// // Rank methods are forwarded
 /// assert_eq!(sel_rank_small.rank(0), 0);

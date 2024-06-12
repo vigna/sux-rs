@@ -5,7 +5,7 @@ use criterion::Criterion;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sux::bits::bit_vec::BitVec;
-use sux::bits::CountBitVec;
+use sux::bits::NumBitVec;
 use sux::rank_sel::Select9;
 use sux::rank_sel::SimpleSelect;
 use sux::rank_sel::SimpleSelectConst;
@@ -75,10 +75,10 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(0);
     for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
         let bits = bitvec.clone();
-        let bits: CountBitVec = bits.into();
+        let bits: NumBitVec = bits.into();
         let num_ones = bits.num_ones();
         let sel: SimpleSelectConst<
-            CountBitVec,
+            NumBitVec,
             Vec<usize>,
             LOG2_ONES_PER_INVENTORY,
             LOG2_U64_PER_SUBINVENTORY,
@@ -104,7 +104,7 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
     ));
     for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
         let bits = bitvec.clone();
-        let bits: CountBitVec = bits.into();
+        let bits: NumBitVec = bits.into();
         let num_ones = bits.num_ones();
         let sel = SimpleSelect::with_inv(
             bits,

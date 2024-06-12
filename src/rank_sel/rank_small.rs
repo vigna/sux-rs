@@ -11,7 +11,6 @@ use mem_dbg::*;
 use std::ptr::{addr_of, read_unaligned, write_unaligned};
 
 use crate::{
-    bits::CountBitVec,
     prelude::{BitLength, BitVec, Rank, RankHinted, RankZero},
     traits::{BitCount, NumBits},
 };
@@ -85,18 +84,6 @@ use crate::{
 /// assert_eq!(rank_small[5], true);
 /// assert_eq!(rank_small[6], false);
 /// assert_eq!(rank_small[7], true);
-///
-/// // Map the backend to a different structure
-/// let rank_small_sel = rank_small.map(|b| SimpleSelect::new(b, 2));
-///
-/// // Select methods are forwarded
-/// assert_eq!(rank_small_sel.select(0), Some(0));
-/// assert_eq!(rank_small_sel.select(1), Some(2));
-/// assert_eq!(rank_small_sel.select(2), Some(3));
-/// assert_eq!(rank_small_sel.select(3), Some(5));
-/// assert_eq!(rank_small_sel.select(4), Some(7));
-/// assert_eq!(rank_small_sel.select(5), None);
-/// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
 pub struct RankSmall<
@@ -468,12 +455,12 @@ crate::forward_mult![RankSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: u
 mod tests {
 
     use super::*;
-    use crate::bits::CountBitVec;
+    use crate::bits::NumBitVec;
     use crate::traits::NumBits;
 
     #[test]
     fn test_last() {
-        let bits: CountBitVec<_> =
+        let bits: NumBitVec<_> =
             unsafe { BitVec::from_raw_parts(vec![!1usize; 1 << 10], (1 << 10) * 64) }.into();
 
         let rank_small = rank_small![1; bits.clone()];

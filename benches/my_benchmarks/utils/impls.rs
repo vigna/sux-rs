@@ -1,4 +1,4 @@
-use sux::bits::{BitVec, CountBitVec};
+use sux::bits::{BitVec, NumBitVec};
 use sux::rank_sel::{Rank9, RankSmall};
 use sux::rank_sel::{Select9, SimpleSelect};
 use sux::traits::{BitLength, NumBits, Select, SelectHinted, SelectUnchecked};
