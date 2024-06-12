@@ -12,6 +12,7 @@ use rand::seq::SliceRandom;
 use rand::{RngCore, SeedableRng};
 use sux::bits::bit_vec::BitVec;
 use sux::prelude::AtomicBitVec;
+use sux::traits::BitCount;
 
 #[test]
 fn test_bit_vec() {

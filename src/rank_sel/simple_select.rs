@@ -11,7 +11,7 @@ use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 use std::cmp::{max, min};
 
-use crate::prelude::{BitCount, BitFieldSlice, BitLength, Select, SelectHinted};
+use crate::prelude::{BitFieldSlice, NumBits, Select, SelectHinted, SelectUnchecked};
 
 /// A simple select implementation based on a two-level inventory.
 ///
@@ -155,7 +155,6 @@ pub struct SimpleSelect<B, I = Vec<usize>> {
     bits: B,
     inventory: I,
     exact_spill: I,
-    num_ones: usize,
     log2_ones_per_inventory: usize,
     log2_ones_per_sub16: usize,
     log2_u64_per_subinventory: usize,
@@ -192,7 +191,6 @@ impl<B, I> SimpleSelect<B, I> {
             bits: f(self.bits),
             inventory: self.inventory,
             exact_spill: self.exact_spill,
-            num_ones: self.num_ones,
             log2_ones_per_inventory: self.log2_ones_per_inventory,
             log2_ones_per_sub16: self.log2_ones_per_sub16,
             log2_u64_per_subinventory: self.log2_u64_per_subinventory,
@@ -208,14 +206,7 @@ impl<B, I> SimpleSelect<B, I> {
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
 }
 
-impl<B: BitLength, I> BitCount for SimpleSelect<B, I> {
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.num_ones
-    }
-}
-
-impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Vec<usize>> {
+impl<B: AsRef<[usize]> + NumBits + SelectHinted> SimpleSelect<B, Vec<usize>> {
     /// Creates a new selection structure over a [`SelectHinted`] using a
     /// [default target inventory
     /// span](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN).
@@ -261,7 +252,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
         max_log2_u64_per_subinventory: usize,
     ) -> Self {
         let num_bits = max(1usize, bits.len());
-        let num_ones = bits.count_ones();
+        let num_ones = bits.num_ones();
 
         let log2_ones_per_inventory = (num_ones * target_inventory_span)
             .div_ceil(num_bits)
@@ -484,7 +475,6 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
             bits,
             inventory,
             exact_spill,
-            num_ones,
             log2_ones_per_inventory,
             log2_ones_per_sub16,
             log2_u64_per_subinventory,
@@ -505,7 +495,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Ve
     }
 }
 
-impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>> Select
+impl<B: SelectHinted + AsRef<[usize]> + NumBits, I: AsRef<[usize]>> SelectUnchecked
     for SimpleSelect<B, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -546,14 +536,19 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength + BitCount, I: AsRef<[usize]>>
     }
 }
 
+impl<B: SelectHinted + AsRef<[usize]> + NumBits, I: AsRef<[usize]>> Select for SimpleSelect<B, I> {}
+
 crate::forward_mult![
     SimpleSelect<B, I>; B; bits;
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_bit_count,
+    crate::traits::rank_sel::forward_num_bits,
     crate::traits::rank_sel::forward_rank,
     crate::traits::rank_sel::forward_rank_hinted,
     crate::traits::rank_sel::forward_rank_zero,
+    crate::traits::rank_sel::forward_select_zero_unchecked,
     crate::traits::rank_sel::forward_select_zero,
     crate::traits::rank_sel::forward_select_hinted,
     crate::traits::rank_sel::forward_select_zero_hinted
@@ -564,6 +559,7 @@ mod test_simple_select {
     use super::*;
     use crate::bits::BitVec;
     use crate::bits::CountBitVec;
+    use crate::traits::Select;
     use rand::rngs::SmallRng;
     use rand::Rng;
     use rand::SeedableRng;
@@ -580,10 +576,11 @@ mod test_simple_select {
             .chain([true])
             .chain((0..len / 2).map(|_| false))
             .collect::<BitVec>();
+        let bits: CountBitVec<_> = bits.into();
         let simple = SimpleSelect::new(bits, 3);
 
         assert_eq!(simple.ones_per_sub64, 1);
-        assert_eq!(simple.count_ones(), 4);
+        assert_eq!(simple.num_ones(), 4);
         assert_eq!(simple.select(0), Some(len / 2));
         assert_eq!(simple.select(1), Some(len / 2 + (1 << 17) + 1));
         assert_eq!(simple.select(2), Some(len / 2 + (1 << 17) + 2));
@@ -595,14 +592,14 @@ mod test_simple_select {
         let mut rng = SmallRng::seed_from_u64(0);
         let density = 0.1;
         for len in lens {
-            let bits: CountBitVec = (0..len)
+            let bits: CountBitVec<_> = (0..len)
                 .map(|_| rng.gen_bool(density))
                 .collect::<BitVec>()
                 .into();
-            let num_ones = bits.count_ones();
+            let num_ones = bits.num_ones();
             let simple = SimpleSelect::with_inv(bits.clone(), num_ones, 13, 0);
 
-            let ones = simple.count_ones();
+            let ones = simple.num_ones();
             let mut pos = Vec::with_capacity(ones);
             for i in 0..len {
                 if bits[i] {

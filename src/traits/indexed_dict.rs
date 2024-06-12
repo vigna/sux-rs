@@ -33,11 +33,11 @@ where `T` implements [`ToOwned`].
 */
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 
-pub trait IndexTypes {
+pub trait Types {
     type Input: PartialEq<Self::Output> + PartialEq + ?Sized;
     type Output: PartialEq<Self::Input> + PartialEq;
 }
-pub trait IndexedSeq: IndexTypes {
+pub trait IndexedSeq: Types {
     /// Return the value at the specified index.
     ///
     /// # Panics
@@ -65,15 +65,13 @@ pub trait IndexedSeq: IndexTypes {
     }
 }
 
-pub trait IndexedDict: IndexedSeq {
+pub trait IndexedDict: Types {
     /// Return the index of the given value if the dictionary contains it and
     /// `None` otherwise.
     ///
     /// The default implementations just checks iteratively
     /// if the value is equal to any of the values in the dictionary.
-    fn index_of(&self, value: &Self::Input) -> Option<usize> {
-        (0..self.len()).find(|&i| self.get(i) == *value)
-    }
+    fn index_of(&self, value: &Self::Input) -> Option<usize>;
 
     /// Return true if the dictionary contains the given value.
     ///
@@ -84,7 +82,32 @@ pub trait IndexedDict: IndexedSeq {
 }
 
 /// Successor computation for dictionaries whose values are monotonically increasing.
-pub trait Succ: IndexTypes
+pub trait SuccUnchecked: Types
+where
+    Self::Input: PartialOrd<Self::Output> + PartialOrd,
+    Self::Output: PartialOrd<Self::Input> + PartialOrd,
+{
+    /// Return the index of the successor and the successor
+    /// of the given value, or `None` if there is no successor.
+    ///
+    /// The successor is the least value in the dictionary
+    /// that is greater than or equal to the given value, if `STRICT` is `false`,
+    /// or the least value in the dictionary that is greater
+    /// than the given value, if `STRICT` is `true`.
+    ///
+    /// If there are repeated values, the index of the one returned
+    /// depends on the implementation.
+    ///
+    /// # Safety
+    /// The successors must exist.
+    unsafe fn succ_unchecked<const STRICT: bool>(
+        &self,
+        value: &Self::Input,
+    ) -> (usize, Self::Output);
+}
+
+/// Successor computation for dictionaries whose values are monotonically increasing.
+pub trait Succ: SuccUnchecked + IndexedSeq
 where
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
     Self::Output: PartialOrd<Self::Input> + PartialOrd,
@@ -118,28 +141,33 @@ where
             Some(unsafe { self.succ_unchecked::<true>(value) })
         }
     }
+}
 
-    /// Return the index of the successor and the successor
-    /// of the given value, or `None` if there is no successor.
-    ///
-    /// The successor is the least value in the dictionary
-    /// that is greater than or equal to the given value, if `STRICT` is `false`,
-    /// or the least value in the dictionary that is greater
+pub trait PredUnchecked: Types
+where
+    Self::Input: PartialOrd<Self::Output> + PartialOrd,
+    Self::Output: PartialOrd<Self::Input> + PartialOrd,
+{
+    /// Return the index of the predecessor and the predecessor
+    /// of the given value, or `None` if there is no predecessor.
+    /// The predecessor is the greatest value in the dictionary
+    /// that is less than or equal to the given value, if `STRICT` is `false`,
+    /// or the greatest value in the dictionary that is less
     /// than the given value, if `STRICT` is `true`.
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
     ///
     /// # Safety
-    /// The successors must exist.
-    unsafe fn succ_unchecked<const STRICT: bool>(
+    /// The predecessor must exist.
+    unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
         value: &Self::Input,
     ) -> (usize, Self::Output);
 }
 
 /// Predecessor computation for dictionaries whose values are monotonically increasing.
-pub trait Pred: IndexedDict
+pub trait Pred: PredUnchecked + IndexedSeq
 where
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
     Self::Output: PartialOrd<Self::Input> + PartialOrd,
@@ -173,23 +201,6 @@ where
             Some(unsafe { self.pred_unchecked::<true>(value) })
         }
     }
-
-    /// Return the index of the predecessor and the predecessor
-    /// of the given value, or `None` if there is no predecessor.
-    /// The predecessor is the greatest value in the dictionary
-    /// that is less than or equal to the given value, if `STRICT` is `false`,
-    /// or the greatest value in the dictionary that is less
-    /// than the given value, if `STRICT` is `true`.
-    ///
-    /// If there are repeated values, the index of the one returned
-    /// depends on the implementation.
-    ///
-    /// # Safety
-    /// The predecessor must exist.
-    unsafe fn pred_unchecked<const STRICT: bool>(
-        &self,
-        value: &Self::Input,
-    ) -> (usize, Self::Output);
 }
 
 /*

@@ -10,6 +10,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use sux::bits::BitVec;
 use sux::rank_sel::{RankSmall, SelectSmall};
+use sux::traits::BitCount;
 
 macro_rules! test_rank_small_sel {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ONES_PER_INVENTORY: literal) => {
@@ -22,8 +23,8 @@ macro_rules! test_rank_small_sel {
         for len in lens {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
             let rank_small_sel =
-                SelectSmall::<$NUM_U32S, $COUNTER_WIDTH, $LOG2_ONES_PER_INVENTORY>::new(
-                    RankSmall::<$NUM_U32S, $COUNTER_WIDTH>::new(bits.clone()),
+                SelectSmall::<$NUM_U32S, $COUNTER_WIDTH, $LOG2_ONES_PER_INVENTORY, _>::new(
+                    RankSmall::<$NUM_U32S, $COUNTER_WIDTH, _>::new(bits.clone()),
                 );
 
             let ones = bits.count_ones();

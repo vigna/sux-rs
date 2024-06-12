@@ -23,7 +23,6 @@ pub struct SimpleSelectZeroConst<
 > {
     bits: B,
     inventory: I,
-    num_zeros: usize,
 }
 
 /// constants used throughout the code
@@ -59,37 +58,18 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTOR
         SimpleSelectZeroConst {
             bits: f(self.bits),
             inventory: self.inventory,
-            num_zeros: self.num_zeros,
         }
     }
 }
 
 impl<
-        B: BitLength,
-        I,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitCount for SimpleSelectZeroConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.len() - self.num_zeros
-    }
-
-    #[inline(always)]
-    fn count_zeros(&self) -> usize {
-        self.num_zeros
-    }
-}
-
-impl<
-        B: SelectZeroHinted + BitLength + BitCount + AsRef<[usize]>,
+        B: SelectZeroHinted + NumBits + AsRef<[usize]>,
         const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > SimpleSelectZeroConst<B, Vec<usize>, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     pub fn new(bitvec: B) -> Self {
-        let num_zeros = bitvec.count_zeros();
+        let num_zeros = bitvec.num_zeros();
         // number of inventories we will create
         let inventory_size = num_zeros.div_ceil(Self::ZEROS_PER_INVENTORY);
 
@@ -210,18 +190,17 @@ impl<
         Self {
             bits: bitvec,
             inventory,
-            num_zeros,
         }
     }
 }
 
 /// Provide the hint to the underlying structure.
 impl<
-        B: SelectZeroHinted + BitCount + BitLength,
+        B: SelectZeroHinted + NumBits,
         I: AsRef<[usize]>,
         const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectZero
+    > SelectZeroUnchecked
     for SimpleSelectZeroConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
@@ -261,14 +240,27 @@ impl<
     }
 }
 
+impl<
+        B: SelectZeroHinted + NumBits,
+        I: AsRef<[usize]>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_U64_PER_SUBINVENTORY: usize,
+    > SelectZero
+    for SimpleSelectZeroConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+{
+}
+
 crate::forward_mult![
     SimpleSelectZeroConst<B, I, [const] LOG2_ZEROS_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_bit_count,
+    crate::traits::rank_sel::forward_num_bits,
     crate::traits::rank_sel::forward_rank,
     crate::traits::rank_sel::forward_rank_hinted,
     crate::traits::rank_sel::forward_rank_zero,
+    crate::traits::rank_sel::forward_select_unchecked,
     crate::traits::rank_sel::forward_select,
     crate::traits::rank_sel::forward_select_hinted,
     crate::traits::rank_sel::forward_select_zero_hinted

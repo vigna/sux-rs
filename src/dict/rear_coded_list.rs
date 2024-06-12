@@ -11,7 +11,7 @@ Immutable lists of strings compressed by prefix omission via rear coding.
 
 */
 
-use crate::traits::{IndexedDict, IndexedSeq};
+use crate::traits::{IndexedDict, IndexedSeq, Types};
 use epserde::*;
 use lender::for_;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
@@ -329,7 +329,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         }
     }
 
-    fn contains_unsorted(&self, key: &<Self as IndexedSeq>::Input) -> bool {
+    fn contains_unsorted(&self, key: &<Self as Types>::Input) -> bool {
         let key = key.as_bytes();
         let mut iter = self.into_lender();
         while let Some(string) = iter.next() {
@@ -340,7 +340,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         false
     }
 
-    fn contains_sorted(&self, string: &<Self as IndexedSeq>::Input) -> bool {
+    fn contains_sorted(&self, string: &<Self as Types>::Input) -> bool {
         let string = string.as_bytes();
         // first to a binary search on the blocks to find the block
         let block_idx = self
@@ -399,10 +399,12 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLender for &'a RearCodedList<D, 
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedSeq for RearCodedList<D, P> {
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>> Types for RearCodedList<D, P> {
     type Output = String;
     type Input = str;
+}
 
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedSeq for RearCodedList<D, P> {
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
         let mut result = Vec::with_capacity(128);
         self.get_inplace(index, &mut result);
@@ -426,6 +428,10 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
         } else {
             self.contains_unsorted(string)
         }
+    }
+
+    fn index_of(&self, value: &Self::Input) -> Option<usize> {
+        todo!();
     }
 }
 

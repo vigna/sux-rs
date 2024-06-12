@@ -114,7 +114,6 @@ pub struct SimpleSelectConst<
 > {
     bits: B,
     inventory: I,
-    num_ones: usize,
 }
 
 /// constants used throughout the code
@@ -150,32 +149,18 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
         SimpleSelectConst {
             bits: f(self.bits),
             inventory: self.inventory,
-            num_ones: self.num_ones,
         }
     }
 }
 
 impl<
-        B: BitLength,
-        I,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > BitCount for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.num_ones
-    }
-}
-
-impl<
-        B: SelectHinted + BitLength + BitCount + AsRef<[usize]>,
+        B: SelectHinted + NumBits + AsRef<[usize]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > SimpleSelectConst<B, Vec<usize>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     pub fn new(bitvec: B) -> Self {
-        let num_ones = bitvec.count_ones();
+        let num_ones = bitvec.num_ones();
         // number of inventories we will create
         let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY);
 
@@ -302,18 +287,17 @@ impl<
         Self {
             bits: bitvec,
             inventory,
-            num_ones,
         }
     }
 }
 
-/// Provide the hint to the underlying structure
 impl<
-        B: SelectHinted + BitCount,
+        B: SelectHinted + NumBits,
         I: AsRef<[usize]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > Select for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SelectUnchecked
+    for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     #[inline(always)]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -352,15 +336,27 @@ impl<
     }
 }
 
+impl<
+        B: SelectHinted + NumBits,
+        I: AsRef<[usize]>,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_U64_PER_SUBINVENTORY: usize,
+    > Select for SimpleSelectConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+{
+}
+
 crate::forward_mult![
     SimpleSelectConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
-    crate::traits::rank_sel::forward_rank,
+    crate::traits::rank_sel::forward_bit_count,
+    crate::traits::rank_sel::forward_num_bits,
     crate::traits::rank_sel::forward_rank_hinted,
+    crate::traits::rank_sel::forward_rank,
     crate::traits::rank_sel::forward_rank_zero,
-    crate::traits::rank_sel::forward_select_zero,
     crate::traits::rank_sel::forward_select_hinted,
-    crate::traits::rank_sel::forward_select_zero_hinted
+    crate::traits::rank_sel::forward_select_zero_hinted,
+    crate::traits::rank_sel::forward_select_zero_unchecked,
+    crate::traits::rank_sel::forward_select_zero
 ];

@@ -36,7 +36,7 @@ macro_rules! forward_bit_length {
 pub(crate) use forward_bit_length;
 
 /// A trait for succinct data structures that expose the
-/// numer of ones and zeros of the underlying bit vector.
+/// number of ones and zeros of the underlying bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait BitCount: BitLength {
     /// Returns the number of ones in the underlying bit vector.
@@ -64,6 +64,36 @@ macro_rules! forward_bit_count {
 }
 
 pub(crate) use forward_bit_count;
+
+/// A trait for succinct data structures that expose the
+/// number of ones and zeros of the underlying bit vector.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+pub trait NumBits: BitLength {
+    /// Returns the number of ones in the underlying bit vector.
+    fn num_ones(&self) -> usize;
+    /// Returns the number of zeros in the underlying bit vector.
+    #[inline(always)]
+    fn num_zeros(&self) -> usize {
+        self.len() - self.num_ones()
+    }
+}
+
+macro_rules! forward_num_bits {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::NumBits for $name < $($generic,)* > where $type: $crate::traits::rank_sel::NumBits {
+            #[inline(always)]
+            fn num_ones(&self) -> usize {
+                $crate::traits::rank_sel::NumBits::num_ones(&self.$field)
+            }
+            #[inline(always)]
+            fn num_zeros(&self) -> usize {
+                $crate::traits::rank_sel::NumBits::num_zeros(&self.$field)
+            }
+        }
+    };
+}
+
+pub(crate) use forward_num_bits;
 
 /// Rank over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
@@ -181,17 +211,7 @@ pub(crate) use forward_rank_hinted;
 
 /// Select over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-pub trait Select: BitCount {
-    /// Returns the position of the one of given rank, or `None` if no such
-    /// bit exist.
-    fn select(&self, rank: usize) -> Option<usize> {
-        if rank >= self.count_ones() {
-            None
-        } else {
-            Some(unsafe { self.select_unchecked(rank) })
-        }
-    }
-
+pub trait SelectUnchecked {
     /// Returns the position of the one of given rank.
     ///
     /// # Safety
@@ -200,17 +220,44 @@ pub trait Select: BitCount {
     unsafe fn select_unchecked(&self, rank: usize) -> usize;
 }
 
+macro_rules! forward_select_unchecked {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::SelectUnchecked for $name < $($generic,)* >
+            where $type: $crate::traits::rank_sel::SelectUnchecked {
+            #[inline(always)]
+            unsafe fn select_unchecked(&self, rank: usize) -> usize {
+                $crate::traits::rank_sel::SelectUnchecked::select_unchecked(&self.$field, rank)
+            }
+        }
+    };
+}
+
+pub(crate) use forward_select_unchecked;
+
+/// Select over a bit vector.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+pub trait Select: SelectUnchecked + NumBits {
+    /// Returns the position of the one of given rank, or `None` if no such
+    /// bit exist.
+    fn select(&self, rank: usize) -> Option<usize> {
+        if rank >= self.num_ones() {
+            None
+        } else {
+            Some(unsafe { self.select_unchecked(rank) })
+        }
+    }
+}
+
 macro_rules! forward_select {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
         impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::Select for $name < $($generic,)* >
-            where Self: $crate::traits::rank_sel::BitCount, $type: $crate::traits::rank_sel::Select {
+            where
+                Self: $crate::traits::rank_sel::NumBits,
+                Self: $crate::traits::rank_sel::SelectUnchecked, $type:
+                $crate::traits::rank_sel::Select {
             #[inline(always)]
             fn select(&self, rank: usize) -> Option<usize> {
                 $crate::traits::rank_sel::Select::select(&self.$field, rank)
-            }
-            #[inline(always)]
-            unsafe fn select_unchecked(&self, rank: usize) -> usize {
-                $crate::traits::rank_sel::Select::select_unchecked(&self.$field, rank)
             }
         }
     };
@@ -220,17 +267,7 @@ pub(crate) use forward_select;
 
 /// Select zeros over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-pub trait SelectZero: BitLength + BitCount {
-    /// Returns the position of the zero of given rank, or `None` if no such
-    /// bit exist.
-    fn select_zero(&self, rank: usize) -> Option<usize> {
-        if rank >= self.count_zeros() {
-            None
-        } else {
-            Some(unsafe { self.select_zero_unchecked(rank) })
-        }
-    }
-
+pub trait SelectZeroUnchecked {
     /// Returns the position of the zero of given rank.
     ///
     /// # Safety
@@ -239,17 +276,43 @@ pub trait SelectZero: BitLength + BitCount {
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize;
 }
 
+macro_rules! forward_select_zero_unchecked {
+        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
+        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::SelectZeroUnchecked for $name < $($generic,)* >
+            where $type: $crate::traits::rank_sel::SelectZeroUnchecked {
+            #[inline(always)]
+            unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
+                $crate::traits::rank_sel::SelectZeroUnchecked::select_zero_unchecked(&self.$field, rank)
+            }
+        }
+    };
+}
+
+pub(crate) use forward_select_zero_unchecked;
+/// Select zeros over a bit vector.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+pub trait SelectZero: SelectZeroUnchecked + NumBits {
+    /// Returns the position of the zero of given rank, or `None` if no such
+    /// bit exist.
+    fn select_zero(&self, rank: usize) -> Option<usize> {
+        if rank >= self.num_zeros() {
+            None
+        } else {
+            Some(unsafe { self.select_zero_unchecked(rank) })
+        }
+    }
+}
+
 macro_rules! forward_select_zero {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
         impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::SelectZero for $name < $($generic,)* >
-            where Self: $crate::traits::rank_sel::BitCount, $type: $crate::traits::rank_sel::SelectZero {
+            where
+                Self: $crate::traits::rank_sel::NumBits,
+                Self: $crate::traits::rank_sel::SelectZeroUnchecked,
+                $type: $crate::traits::rank_sel::SelectZero {
             #[inline(always)]
             fn select_zero(&self, rank: usize) -> Option<usize> {
                 $crate::traits::rank_sel::SelectZero::select_zero(&self.$field, rank)
-            }
-            #[inline(always)]
-            unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
-                $crate::traits::rank_sel::SelectZero::select_zero_unchecked(&self.$field, rank)
             }
         }
     };

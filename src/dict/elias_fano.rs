@@ -115,7 +115,7 @@ impl EliasFanoBuilder {
         self.last_value = value;
     }
 
-    pub fn build(self) -> EliasFano {
+    pub fn build(self) -> EliasFano<CountBitVec> {
         EliasFano {
             u: self.u,
             n: self.n,
@@ -283,13 +283,18 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<H: AsRef<[usize]> + Select, L: BitFieldSlice<usize>> IndexedSeq for EliasFano<H, L>
+impl<H: AsRef<[usize]>, L: BitFieldSlice<usize>> Types for EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
     type Output = usize;
     type Input = usize;
+}
 
+impl<H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>> IndexedSeq for EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+{
     #[inline]
     fn len(&self) -> usize {
         self.n
@@ -485,7 +490,8 @@ where
 }
 
 #[allow(clippy::collapsible_else_if)]
-impl<H: SelectZero + Select + AsRef<[usize]>, L: BitFieldSlice<usize>> Succ for EliasFano<H, L>
+impl<H: SelectZeroUnchecked + AsRef<[usize]>, L: BitFieldSlice<usize>> SuccUnchecked
+    for EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -493,16 +499,11 @@ where
         &self,
         value: &Self::Input,
     ) -> (usize, Self::Output) {
-        if STRICT {
-            debug_assert!(*value < self.get(self.len() - 1));
-        } else {
-            debug_assert!(*value <= self.get(self.len() - 1));
-        }
         let zeros_to_skip = value >> self.l;
         let bit_pos = if zeros_to_skip == 0 {
             0
         } else {
-            self.high_bits.select_zero(zeros_to_skip - 1).unwrap() + 1
+            self.high_bits.select_zero_unchecked(zeros_to_skip - 1) + 1
         };
 
         let mut rank = bit_pos - zeros_to_skip;
@@ -547,7 +548,16 @@ where
 }
 
 #[allow(clippy::collapsible_else_if)]
-impl<H: SelectZero + AsRef<[usize]>, L: BitFieldSlice<usize>> Pred for EliasFano<H, L>
+impl<H: SelectZeroUnchecked + SelectUnchecked + AsRef<[usize]>, L: BitFieldSlice<usize>> Succ
+    for EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+{
+}
+
+#[allow(clippy::collapsible_else_if)]
+impl<H: SelectZeroUnchecked + AsRef<[usize]>, L: BitFieldSlice<usize>> PredUnchecked
+    for EliasFano<H, L>
 where
     for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
@@ -556,14 +566,8 @@ where
         &self,
         value: &Self::Input,
     ) -> (usize, Self::Output) {
-        if STRICT {
-            debug_assert!(*value > self.get(0));
-        } else {
-            debug_assert!(*value >= self.get(0));
-        }
-
         let zeros_to_skip = value >> self.l;
-        let mut bit_pos = self.high_bits.select_zero(zeros_to_skip).unwrap() - 1;
+        let mut bit_pos = self.high_bits.select_zero_unchecked(zeros_to_skip) - 1;
 
         let mut rank = bit_pos - zeros_to_skip;
         let mut iter = self.low_bits.into_rev_unchecked_iter_from(rank + 1);
@@ -609,4 +613,13 @@ where
             rank -= 1;
         }
     }
+}
+
+#[allow(clippy::collapsible_else_if)]
+impl<H: SelectUnchecked + SelectZeroUnchecked + AsRef<[usize]>, L: BitFieldSlice<usize>> Pred
+    for EliasFano<H, L>
+where
+    for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+{
 }

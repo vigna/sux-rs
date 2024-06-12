@@ -13,8 +13,10 @@ use sux::bits::BitVec;
 use sux::bits::CountBitVec;
 use sux::rank_sel::Rank9;
 use sux::rank_sel::SimpleSelectConst;
+use sux::rank_sel::SimpleSelectZeroConst;
 use sux::traits::BitCount;
 use sux::traits::BitLength;
+use sux::traits::NumBits;
 use sux::traits::Rank;
 use sux::traits::Select;
 use sux::traits::SelectZero;
@@ -37,7 +39,7 @@ fn test_simple_select_const() {
 
             let simple = SimpleSelectConst::<_, _, INV, SUB>::new(bits.clone());
 
-            let ones = simple.count_ones();
+            let ones = simple.num_ones();
             let mut pos = Vec::with_capacity(ones);
             for i in 0..len {
                 if bits[i] {
@@ -59,10 +61,13 @@ fn debug() {
     let mut rng = SmallRng::seed_from_u64(0);
     let density = 0.1;
     for len in lens {
-        let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+        let bits: CountBitVec = (0..len)
+            .map(|_| rng.gen_bool(density))
+            .collect::<BitVec>()
+            .into();
         let simple = SimpleSelectConst::<_, _, 13, 0>::new(bits.clone());
 
-        let ones = simple.count_ones();
+        let ones = simple.num_ones();
         let mut pos = Vec::with_capacity(ones);
         for i in 0..len {
             if bits[i] {
@@ -108,7 +113,7 @@ fn test_simple_select_const_w_rank9() {
 
 #[test]
 fn test_simple_select_const_empty() {
-    let bits = BitVec::new(0);
+    let bits: CountBitVec = BitVec::new(0).into();
     let simple = SimpleSelectConst::<_, _, INV, SUB>::new(bits.clone());
     assert_eq!(simple.count_ones(), 0);
     assert_eq!(simple.len(), 0);
@@ -206,7 +211,7 @@ fn test_simple_select_const_non_uniform() {
 
 #[test]
 fn test_map() {
-    let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
+    let bits: CountBitVec = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1].into();
     let sel = SimpleSelectConst::<_, _>::new(bits);
     let rank_sel = sel.map(Rank9::new);
     assert_eq!(rank_sel.rank(0), 0);
@@ -214,7 +219,7 @@ fn test_map() {
     assert_eq!(rank_sel.rank(2), 1);
     assert_eq!(rank_sel.rank(10), 5);
 
-    let rank_seol01 = rank_sel.map(SimpleSelectConst::<_, _>::new);
+    let rank_seol01 = rank_sel.map(SimpleSelectZeroConst::<_, _>::new);
     assert_eq!(rank_seol01.select_zero(0), Some(0));
     assert_eq!(rank_seol01.select_zero(1), Some(2));
     assert_eq!(rank_seol01.select_zero(2), Some(5));

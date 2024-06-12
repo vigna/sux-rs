@@ -9,7 +9,10 @@
 use epserde::*;
 use mem_dbg::*;
 
-use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankZero};
+use crate::{
+    prelude::{BitLength, BitVec, NumBits, Rank, RankZero},
+    traits::BitCount,
+};
 
 /// A ranking structure using 25% of additional space and providing the fastest
 /// available rank operations.
@@ -83,12 +86,27 @@ impl BlockCounters {
         self.relative |= counter << (9 * (word ^ 7));
     }
 }
-
-impl Rank9<BitVec, Vec<BlockCounters>> {
+impl<B, C> Rank9<B, C> {
     pub(super) const WORDS_PER_BLOCK: usize = 8;
 
+    pub fn into_inner(self) -> B {
+        self.bits
+    }
+    /// Replaces the backend with a new one.
+    pub fn map<B1>(self, f: impl FnOnce(B) -> B1) -> Rank9<B1, C>
+    where
+        B1: AsRef<[usize]> + BitLength,
+    {
+        Rank9 {
+            bits: f(self.bits),
+            counts: self.counts,
+        }
+    }
+}
+
+impl<B: AsRef<[usize]> + BitLength> Rank9<B, Vec<BlockCounters>> {
     /// Creates a new Rank9 structure from a given bit vector.
-    pub fn new(bits: BitVec) -> Self {
+    pub fn new(bits: B) -> Self {
         let num_bits = bits.len();
         let num_words = num_bits.div_ceil(usize::BITS as usize);
         let num_counts = num_bits.div_ceil(usize::BITS as usize * Self::WORDS_PER_BLOCK);
@@ -127,27 +145,11 @@ impl Rank9<BitVec, Vec<BlockCounters>> {
     }
 }
 
-impl<B, C> Rank9<B, C> {
-    pub fn into_inner(self) -> B {
-        self.bits
-    }
-    /// Replaces the backend with a new one.
-    pub fn map<B1>(self, f: impl FnOnce(B) -> B1) -> Rank9<B1, C>
-    where
-        B1: AsRef<[usize]> + BitLength,
-    {
-        Rank9 {
-            bits: f(self.bits),
-            counts: self.counts,
-        }
-    }
-}
-
 impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> {
     #[inline(always)]
     fn rank(&self, pos: usize) -> usize {
         if pos >= self.bits.len() {
-            self.count_ones()
+            self.num_ones()
         } else {
             unsafe { self.rank_unchecked(pos) }
         }
@@ -156,8 +158,8 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B,
     #[inline(always)]
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
         let word_pos = pos / usize::BITS as usize;
-        let block = word_pos / Rank9::WORDS_PER_BLOCK;
-        let offset = word_pos % Rank9::WORDS_PER_BLOCK;
+        let block = word_pos / Self::WORDS_PER_BLOCK;
+        let offset = word_pos % Self::WORDS_PER_BLOCK;
         let word = self.bits.as_ref().get_unchecked(word_pos);
         let counts = self.counts.as_ref().get_unchecked(block);
 
@@ -167,10 +169,17 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B,
     }
 }
 
+impl<B: BitLength, C: AsRef<[BlockCounters]>> NumBits for Rank9<B, C> {
+    #[inline(always)]
+    fn num_ones(&self) -> usize {
+        self.counts.as_ref().last().unwrap().absolute
+    }
+}
+
 impl<B: BitLength, C: AsRef<[BlockCounters]>> BitCount for Rank9<B, C> {
     #[inline(always)]
     fn count_ones(&self) -> usize {
-        self.counts.as_ref().last().unwrap().absolute
+        self.num_ones()
     }
 }
 
@@ -180,16 +189,18 @@ crate::forward_mult![Rank9<B, C>; B; bits;
     crate::traits::rank_sel::forward_bit_length,
     crate::traits::rank_sel::forward_rank_hinted,
     crate::traits::rank_sel::forward_rank_zero,
+    crate::traits::rank_sel::forward_select_zero_hinted,
+    crate::traits::rank_sel::forward_select_unchecked,
     crate::traits::rank_sel::forward_select,
+    crate::traits::rank_sel::forward_select_zero_unchecked,
     crate::traits::rank_sel::forward_select_zero,
-    crate::traits::rank_sel::forward_select_hinted,
-    crate::traits::rank_sel::forward_select_zero_hinted
+    crate::traits::rank_sel::forward_select_hinted
 ];
 
 #[cfg(test)]
 mod test_rank9 {
     use super::*;
-
+    use crate::traits::BitCount;
     #[test]
     fn test_last() {
         let bits = unsafe { BitVec::from_raw_parts(vec![!1usize; 1 << 10], (1 << 10) * 64) };
