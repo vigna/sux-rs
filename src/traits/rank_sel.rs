@@ -44,7 +44,8 @@ pub(crate) use forward_bit_length;
 /// The methods in this trait compute the number of ones or zeros
 /// in a bit vector (possibly underlying a succinct data structure).
 /// The computation can be expensive: if you need a constant-time
-/// version, use [`NumBits`].
+/// version, use [`NumBits`]. If you need to cache the result
+/// of these methods, you can use [`AddNumBits`].
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait BitCount: BitLength {
     /// Returns the number of ones in the underlying bit vector,
@@ -83,6 +84,9 @@ pub(crate) use forward_bit_count;
 /// in a bit vector (possibly underlying a succinct data structure)
 /// in constant time. If you can be contented with a potentially
 /// expensive computation, use [`BitCount`].
+///
+/// If you need to implement this trait on a structure that already
+/// implements [`BitCount`], you can use [`AddNumBits`].
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait NumBits: BitLength {
     /// Returns the number of ones in the underlying bit vector
