@@ -6,7 +6,7 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 use std::hint::black_box;
 use std::io::Write;
 use std::{env, path::PathBuf};
-use sux::bits::CountBitVec;
+use sux::bits::NumBitVec;
 use sux::{
     bits::BitVec,
     rank_sel::{Rank9, Select9, SimpleSelect},
@@ -31,7 +31,7 @@ const NUMPOS: usize = 70_000_000;
 trait SelStruct<B>: Select {
     fn new(bits: B) -> Self;
 }
-impl SelStruct<BitVec> for SimpleSelect<CountBitVec> {
+impl SelStruct<BitVec> for SimpleSelect<NumBitVec> {
     fn new(bits: BitVec) -> Self {
         SimpleSelect::new(bits.into(), 3)
     }

@@ -5,20 +5,23 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/*!
-
-Basic traits for succinct operations on bit vectors, including [`Rank`] and [`Select`].
-
-*/
+//! Basic traits for succinct operations on bit vectors, including [`Rank`] and
+//! [`Select`].
+//!
+//! All traits in this module are automatically implemented for references,
+//! mutable references, and boxes. Moreover, usually they are all forwarded to
+//! underlying implementations.
 
 use impl_tools::autoimpl;
 
-/// A trait for succinct data structures that expose the
-/// length of the underlying bit vector.
+/// A trait expressing a length in bits.
+///
+/// This trait is typically used in conjunction with `AsRef<[usize]>` to provide
+/// word-based access to a bit vector.
 #[allow(clippy::len_without_is_empty)]
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait BitLength {
-    /// Returns the length in bits of the underlying bit vector.
+    /// Returns a length in bits.
     fn len(&self) -> usize;
 }
 
@@ -35,13 +38,21 @@ macro_rules! forward_bit_length {
 
 pub(crate) use forward_bit_length;
 
-/// A trait for succinct data structures that expose the
-/// number of ones and zeros of the underlying bit vector.
+/// Potentially expensive bit-counting methods.
+///
+/// The methods in this trait compute the number of ones or zeros
+/// in a bit vector (possibly underlying a succinct data structure).
+/// The computation can be expensive: if you need a constant-time
+/// version, use [`NumBits`].
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait BitCount: BitLength {
-    /// Returns the number of ones in the underlying bit vector.
+    /// Returns the number of ones in the underlying bit vector,
+    /// with a possibly expensive computation; see [`NumBits::num_ones`]
+    /// for constant-time version.
     fn count_ones(&self) -> usize;
-    /// Returns the number of zeros in the underlying bit vector.
+    /// Returns the number of zeros in the underlying bit vector,
+    /// with a possibly expensive computation; see [`NumBits::num_zeros`]
+    /// for constant-time version.
     #[inline(always)]
     fn count_zeros(&self) -> usize {
         self.len() - self.count_ones()
@@ -65,13 +76,21 @@ macro_rules! forward_bit_count {
 
 pub(crate) use forward_bit_count;
 
-/// A trait for succinct data structures that expose the
-/// number of ones and zeros of the underlying bit vector.
+/// Constant-time bit-counting methods.
+///
+/// The methods in this trait compute the number of ones or zeros
+/// in a bit vector (possibly underlying a succinct data structure)
+/// in constant time. If you can be contented with a potentially
+/// expensive computation, use [`BitCount`].
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait NumBits: BitLength {
-    /// Returns the number of ones in the underlying bit vector.
+    /// Returns the number of ones in the underlying bit vector
+    /// in constant time. If you can be contented with a potentially
+    /// expensive computation, use [`BitCount::count_ones`].
     fn num_ones(&self) -> usize;
-    /// Returns the number of zeros in the underlying bit vector.
+    /// Returns the number of zeros in the underlying bit vector
+    /// in constant time. If you can be contented with a potentially
+    /// expensive computation, use [`BitCount::count_zeros`].
     #[inline(always)]
     fn num_zeros(&self) -> usize {
         self.len() - self.num_ones()
@@ -95,7 +114,7 @@ macro_rules! forward_num_bits {
 
 pub(crate) use forward_num_bits;
 
-/// Rank over a bit vector.
+/// Ranking over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait Rank: BitLength {
     /// Returns the number of ones preceding the specified position.
@@ -111,7 +130,9 @@ pub trait Rank: BitLength {
     ///
     /// # Safety
     /// `pos` must be between 0 (included) and the [length of the underlying bit
-    /// vector](`BitLength::len`) (included).
+    /// vector](`BitLength::len`) (excluded).
+    ///
+    /// Some implementation might consider the the length as a valid argument.
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
 }
 
@@ -132,20 +153,28 @@ macro_rules! forward_rank {
 
 pub(crate) use forward_rank;
 
-/// Rank zeros over a bit vector.
+/// Ranking zeros over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 ///
 /// Note that this is just an extension trait for [`Rank`].
 pub trait RankZero: Rank {
     /// Returns the number of zeros preceding the specified position.
+    ///   
+    /// The bit vector is virtually zero-extended. If `pos` is greater than or
+    /// equal to the [length of the underlying bit vector](`BitLength::len`),
+    /// the `pos` minus the number of ones in the underlying bit vector is
+    /// returned.
     fn rank_zero(&self, pos: usize) -> usize {
         pos - self.rank(pos)
     }
+
     /// Returns the number of zeros preceding the specified position.
     ///
     /// # Safety
     /// `pos` must be between 0 and the [length of the underlying bit
-    /// vector](`BitLength::len`) (included).
+    /// vector](`BitLength::len`) (excluded).
+    ///
+    /// Some implementation might consider the the length as a valid argument.
     unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
         pos - self.rank_unchecked(pos)
     }
@@ -169,7 +198,7 @@ macro_rules! forward_rank_zero {
 
 pub(crate) use forward_rank_zero;
 
-/// Rank over a bit vector, with a hint.
+/// Ranking over a bit vector, with a hint.
 ///
 /// This trait is used to implement fast ranking by adding to bit vectors
 /// counters of different kind.
@@ -180,11 +209,13 @@ pub trait RankHinted<const HINT_BIT_SIZE: usize> {
     ///
     /// # Safety
     /// `pos` must be between 0 (included) and
-    /// the [length of the underlying bit vector](`BitLength::len`) (included).
+    /// the [length of the underlying bit vector](`BitLength::len`) (excluded).
     /// `hint_pos` * `HINT_BIT_SIZE` must be between 0 (included) and
     /// `pos` (included).
     /// `hint_rank` must be the number of ones in the underlying bit vector
     /// before `hint_pos` * `HINT_BIT_SIZE`.
+    ///
+    /// Some implementation might consider the the length as a valid argument.
     unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize;
     /// Returns the number of ones preceding the specified position,
     /// provided a preceding position `hint_pos` * `HINT_BIT_SIZE` and
@@ -209,7 +240,7 @@ macro_rules! forward_rank_hinted {
 
 pub(crate) use forward_rank_hinted;
 
-/// Select over a bit vector.
+/// Selection over a bit vector without bound checks.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait SelectUnchecked {
     /// Returns the position of the one of given rank.
@@ -234,7 +265,7 @@ macro_rules! forward_select_unchecked {
 
 pub(crate) use forward_select_unchecked;
 
-/// Select over a bit vector.
+/// Selection over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait Select: SelectUnchecked + NumBits {
     /// Returns the position of the one of given rank, or `None` if no such
@@ -265,7 +296,7 @@ macro_rules! forward_select {
 
 pub(crate) use forward_select;
 
-/// Select zeros over a bit vector.
+/// Selection zeros over a bit vector without bound checks.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait SelectZeroUnchecked {
     /// Returns the position of the zero of given rank.
@@ -289,7 +320,7 @@ macro_rules! forward_select_zero_unchecked {
 }
 
 pub(crate) use forward_select_zero_unchecked;
-/// Select zeros over a bit vector.
+/// Selection zeros over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait SelectZero: SelectZeroUnchecked + NumBits {
     /// Returns the position of the zero of given rank, or `None` if no such
@@ -320,14 +351,14 @@ macro_rules! forward_select_zero {
 
 pub(crate) use forward_select_zero;
 
-/// Select over a bit vector, with a hint.
+/// Selection over a bit vector, with a hint.
 ///
 /// This trait is used to implement fast selection by adding to bit vectors
 /// indices of different kind. See, for example,
 /// [`SimpleSelect`](crate::rank_sel::SimpleSelect).
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait SelectHinted {
-    /// Select the one of given rank, provided the position of a preceding one
+    /// Selection the one of given rank, provided the position of a preceding one
     /// and its rank.
     ///
     /// # Safety
@@ -343,7 +374,7 @@ pub trait SelectHinted {
         hint_pos: usize,
         hint_rank: usize,
     ) -> usize;
-    /// Select the one of given rank, provided the position of a preceding one
+    /// Selection the one of given rank, provided the position of a preceding one
     /// and its rank.
     fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
 }
@@ -365,13 +396,13 @@ macro_rules! forward_select_hinted {
 
 pub(crate) use forward_select_hinted;
 
-/// Select zeros over a bit vector, with a hint.
+/// Selection zeros over a bit vector, with a hint.
 ///
 /// This trait is used to implement fast selection over zeros by adding to bit
 /// vectors indices of different kind.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait SelectZeroHinted {
-    /// Select the zero of given rank, provided the position of a preceding zero
+    /// Selection the zero of given rank, provided the position of a preceding zero
     /// and its rank.
     ///
     /// # Safety
@@ -388,7 +419,7 @@ pub trait SelectZeroHinted {
         hint_rank: usize,
     ) -> usize;
 
-    /// Select the zero of given rank, provided the position of a preceding zero
+    /// Selection the zero of given rank, provided the position of a preceding zero
     /// and its rank.
     fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
 }

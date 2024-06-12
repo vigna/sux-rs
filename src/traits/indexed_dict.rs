@@ -37,6 +37,8 @@ pub trait Types {
     type Input: PartialEq<Self::Output> + PartialEq + ?Sized;
     type Output: PartialEq<Self::Input> + PartialEq;
 }
+
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait IndexedSeq: Types {
     /// Return the value at the specified index.
     ///
@@ -65,6 +67,7 @@ pub trait IndexedSeq: Types {
     }
 }
 
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait IndexedDict: Types {
     /// Return the index of the given value if the dictionary contains it and
     /// `None` otherwise.

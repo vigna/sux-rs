@@ -11,7 +11,10 @@ use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 use std::cmp::{max, min};
 
-use crate::prelude::{BitFieldSlice, NumBits, Select, SelectHinted, SelectUnchecked};
+use crate::{
+    prelude::{BitFieldSlice, NumBits, Select, SelectHinted, SelectUnchecked},
+    traits::{BitCount, BitLength},
+};
 
 /// A simple select implementation based on a two-level inventory.
 ///
@@ -79,11 +82,12 @@ use crate::prelude::{BitFieldSlice, NumBits, Select, SelectHinted, SelectUncheck
 /// # Examples
 /// ```rust
 /// use sux::bit_vec;
+/// use sux::bits::NumBitVec;
 /// use sux::traits::{Rank, Select};
 /// use sux::rank_sel::{SimpleSelect, Rank9};
 ///
 /// // Standalone select
-/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let bits: NumBitVec = bit_vec![1, 0, 1, 1, 0, 1, 0, 1].into();
 /// let select = SimpleSelect::new(bits, 3);
 ///
 /// assert_eq!(select.select(0), Some(0));
@@ -103,8 +107,9 @@ use crate::prelude::{BitFieldSlice, NumBits, Select, SelectHinted, SelectUncheck
 /// assert_eq!(select[6], false);
 /// assert_eq!(select[7], true);
 ///
-/// // Map the backend to a different structure
-/// let sel_rank9 = select.map(Rank9::new);
+/// // Map the backend to a different structure; we can get rid
+/// // of the NumBitVec wrapper because Rank9 implements NumBits.
+/// let sel_rank9 = select.map(|x| Rank9::new(x.into_inner()));
 ///
 /// // Rank methods are forwarded
 /// assert_eq!(sel_rank9.rank(0), 0);
@@ -206,7 +211,7 @@ impl<B, I> SimpleSelect<B, I> {
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
 }
 
-impl<B: AsRef<[usize]> + NumBits + SelectHinted> SimpleSelect<B, Vec<usize>> {
+impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SimpleSelect<B, Vec<usize>> {
     /// Creates a new selection structure over a [`SelectHinted`] using a
     /// [default target inventory
     /// span](SimpleSelect::DEFAULT_TARGET_INVENTORY_SPAN).
@@ -252,7 +257,7 @@ impl<B: AsRef<[usize]> + NumBits + SelectHinted> SimpleSelect<B, Vec<usize>> {
         max_log2_u64_per_subinventory: usize,
     ) -> Self {
         let num_bits = max(1usize, bits.len());
-        let num_ones = bits.num_ones();
+        let num_ones = bits.count_ones();
 
         let log2_ones_per_inventory = (num_ones * target_inventory_span)
             .div_ceil(num_bits)
@@ -495,9 +500,7 @@ impl<B: AsRef<[usize]> + NumBits + SelectHinted> SimpleSelect<B, Vec<usize>> {
     }
 }
 
-impl<B: SelectHinted + AsRef<[usize]> + NumBits, I: AsRef<[usize]>> SelectUnchecked
-    for SimpleSelect<B, I>
-{
+impl<B: SelectHinted + AsRef<[usize]>, I: AsRef<[usize]>> SelectUnchecked for SimpleSelect<B, I> {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         let inventory_ref = self.inventory.as_ref();
         let inventory_index = rank >> self.log2_ones_per_inventory;
@@ -558,7 +561,7 @@ crate::forward_mult![
 mod test_simple_select {
     use super::*;
     use crate::bits::BitVec;
-    use crate::bits::CountBitVec;
+    use crate::bits::NumBitVec;
     use crate::traits::Select;
     use rand::rngs::SmallRng;
     use rand::Rng;
@@ -576,7 +579,7 @@ mod test_simple_select {
             .chain([true])
             .chain((0..len / 2).map(|_| false))
             .collect::<BitVec>();
-        let bits: CountBitVec<_> = bits.into();
+        let bits: NumBitVec<_> = bits.into();
         let simple = SimpleSelect::new(bits, 3);
 
         assert_eq!(simple.ones_per_sub64, 1);
@@ -592,7 +595,7 @@ mod test_simple_select {
         let mut rng = SmallRng::seed_from_u64(0);
         let density = 0.1;
         for len in lens {
-            let bits: CountBitVec<_> = (0..len)
+            let bits: NumBitVec<_> = (0..len)
                 .map(|_| rng.gen_bool(density))
                 .collect::<BitVec>()
                 .into();

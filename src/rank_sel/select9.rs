@@ -170,33 +170,33 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
             match span {
                 0..=1 => {}
                 2..=15 => {
-                    assert!(((block_span + 8) & !7) <= span * 4);
+                    debug_assert!(((block_span + 8) & !7) <= span * 4);
                     for (k, v) in s16.iter_mut().enumerate().take(block_span) {
-                        assert!(*v == 0);
+                        debug_assert!(*v == 0);
                         *v = (counts[block_left + k + 1].absolute - counts_at_start) as u16;
                     }
                     for v in s16.iter_mut().take((block_span + 8) & !7).skip(block_span) {
-                        assert!(*v == 0);
+                        debug_assert!(*v == 0);
                         *v = 0xFFFFu16;
                     }
                 }
                 16..=127 => {
-                    assert!(((block_span + 8) & !7) + 8 <= span * 4);
-                    assert!(block_span / 8 <= 8);
+                    debug_assert!(((block_span + 8) & !7) + 8 <= span * 4);
+                    debug_assert!(block_span / 8 <= 8);
                     for k in 0..block_span {
-                        assert!(s16[k + 8] == 0);
+                        debug_assert!(s16[k + 8] == 0);
                         s16[k + 8] = (counts[block_left + k + 1].absolute - counts_at_start) as u16;
                     }
                     for k in block_span..((block_span + 8) & !7) {
-                        assert!(s16[k + 8] == 0);
+                        debug_assert!(s16[k + 8] == 0);
                         s16[k + 8] = 0xFFFFu16;
                     }
                     for (k, v) in s16.iter_mut().enumerate().take(block_span / 8) {
-                        assert!(*v == 0);
+                        debug_assert!(*v == 0);
                         *v = (counts[block_left + (k + 1) * 8].absolute - counts_at_start) as u16;
                     }
                     for v in s16.iter_mut().take(8).skip(block_span / 8) {
-                        assert!(*v == 0);
+                        debug_assert!(*v == 0);
                         *v = 0xFFFFu16;
                     }
                 }
@@ -228,23 +228,23 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
                         let sub_offset = bit_index - start_bit_idx;
                         match state {
                             0 => {
-                                assert!(subinventory[subinv_start + subinventory_idx] == 0);
+                                debug_assert!(subinventory[subinv_start + subinventory_idx] == 0);
                                 subinventory[subinv_start + subinventory_idx] = bit_index;
                             }
                             1 => {
                                 let s32: &mut [u32] = unsafe {
                                     subinventory[subinv_start..subinv_end].align_to_mut().1
                                 };
-                                assert!(s32[subinventory_idx] == 0);
-                                assert!((bit_index - start_bit_idx) < (1 << 32));
+                                debug_assert!(s32[subinventory_idx] == 0);
+                                debug_assert!((bit_index - start_bit_idx) < (1 << 32));
                                 s32[subinventory_idx] = sub_offset as u32;
                             }
                             2 => {
                                 let s16: &mut [u16] = unsafe {
                                     subinventory[subinv_start..subinv_end].align_to_mut().1
                                 };
-                                assert!(s16[subinventory_idx] == 0);
-                                assert!(bit_index - start_bit_idx < (1 << 16));
+                                debug_assert!(s16[subinventory_idx] == 0);
+                                debug_assert!(bit_index - start_bit_idx < (1 << 16));
                                 s16[subinventory_idx] = (bit_index - start_bit_idx) as u16;
                             }
                             _ => unreachable!(),
