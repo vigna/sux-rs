@@ -314,6 +314,7 @@ macro_rules! impl_rank_small {
                     num_ones += bits.as_ref()[i].count_ones() as usize;
 
                     for j in 1..Self::WORDS_PER_BLOCK {
+                        #[allow(clippy::modulo_one)]
                         if j % Self::WORDS_PER_SUBBLOCK == 0 {
                             let rel_count = num_ones - upper_count - counts[pos].absolute as usize;
                             counts[pos].set_rel(j / Self::WORDS_PER_SUBBLOCK, rel_count);
@@ -366,6 +367,7 @@ macro_rules! impl_rank_small {
                         + (word & ((1 << (pos % 64 as usize)) - 1)).count_ones() as usize
                 } else {
                     let hint_rank = upper_count + counts.absolute as usize + counts.rel(offset);
+                    #[allow(clippy::modulo_one)]
                     let hint_pos =
                         word_pos - ((word_pos % Self::WORDS_PER_BLOCK) % Self::WORDS_PER_SUBBLOCK);
 
