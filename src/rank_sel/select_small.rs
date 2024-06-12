@@ -113,7 +113,7 @@ macro_rules! impl_rank_small_sel {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         impl<
                 const LOG2_ONES_PER_INVENTORY: usize,
-                B: RankHinted<64> + BitCount + AsRef<[usize]> + BitLength,
+                B: RankHinted<64> + BitLength + AsRef<[usize]>,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             >
@@ -125,7 +125,7 @@ macro_rules! impl_rank_small_sel {
             >
         {
             pub fn new(rank_small: RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>) -> Self {
-                let num_ones = rank_small.bits.count_ones();
+                let num_ones = rank_small.num_ones();
 
                 let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY);
                 let mut inventory = Vec::<u32>::with_capacity(inventory_size + 1);
@@ -166,28 +166,32 @@ macro_rules! impl_rank_small_sel {
             }
         }
 
-        impl<const LOG2_ONES_PER_INVENTORY: usize> Select
+        impl<
+                const LOG2_ONES_PER_INVENTORY: usize,
+                B: RankHinted<64> + SelectHinted + BitLength + AsRef<[usize]>,
+                C1: AsRef<[usize]>,
+                C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
+            > SelectUnchecked
             for SelectSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
                 LOG2_ONES_PER_INVENTORY,
-                RankSmall<$NUM_U32S, $COUNTER_WIDTH>,
+                RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
             >
         {
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
-                let upper_counts_ref =
-                    <Vec<_> as AsRef<[_]>>::as_ref(&self.rank_small.upper_counts);
-                let counts_ref = <Vec<_> as AsRef<[_]>>::as_ref(&self.rank_small.counts);
+                let upper_counts = self.rank_small.upper_counts.as_ref();
+                let counts = self.rank_small.counts.as_ref();
                 let mut upper_block_idx = 0;
                 let mut next_upper_block_idx;
                 let mut last_upper_block_idx = self.rank_small.upper_counts.len() - 1;
-                let mut upper_rank = *upper_counts_ref.get_unchecked(upper_block_idx) as usize;
+                let mut upper_rank = *upper_counts.get_unchecked(upper_block_idx) as usize;
                 loop {
                     if last_upper_block_idx - upper_block_idx <= 1 {
                         break;
                     }
                     next_upper_block_idx = (upper_block_idx + last_upper_block_idx) / 2;
-                    upper_rank = *upper_counts_ref.get_unchecked(next_upper_block_idx) as usize;
+                    upper_rank = *upper_counts.get_unchecked(next_upper_block_idx) as usize;
                     if rank >= upper_rank {
                         upper_block_idx = next_upper_block_idx;
                     } else {
@@ -213,8 +217,7 @@ macro_rules! impl_rank_small_sel {
                 let jump = (rank % Self::ONES_PER_INVENTORY) / Self::BLOCK_SIZE;
                 let mut block_idx = inv_pos / Self::BLOCK_SIZE + jump;
 
-                let mut hint_rank =
-                    upper_rank + counts_ref.get_unchecked(block_idx).absolute as usize;
+                let mut hint_rank = upper_rank + counts.get_unchecked(block_idx).absolute as usize;
                 let mut next_rank;
                 let mut next_block_idx;
 
@@ -225,8 +228,7 @@ macro_rules! impl_rank_small_sel {
                         break;
                     }
                     next_block_idx = (block_idx + last_block_idx) / 2;
-                    next_rank =
-                        upper_rank + counts_ref.get_unchecked(next_block_idx).absolute as usize;
+                    next_rank = upper_rank + counts.get_unchecked(next_block_idx).absolute as usize;
                     if rank >= next_rank {
                         block_idx = next_block_idx;
                         hint_rank = next_rank;
@@ -237,7 +239,7 @@ macro_rules! impl_rank_small_sel {
 
                 let hint_pos;
                 // second sub block
-                let b1 = counts_ref.get_unchecked(block_idx).rel(1);
+                let b1 = counts.get_unchecked(block_idx).rel(1);
                 if hint_rank + b1 > rank {
                     hint_pos = block_idx * Self::BLOCK_SIZE;
                     return self
@@ -246,7 +248,7 @@ macro_rules! impl_rank_small_sel {
                         .select_hinted_unchecked(rank, hint_pos, hint_rank);
                 }
                 // third sub block
-                let b2 = counts_ref.get_unchecked(block_idx).rel(2);
+                let b2 = counts.get_unchecked(block_idx).rel(2);
                 if hint_rank + b2 > rank {
                     hint_pos = block_idx * Self::BLOCK_SIZE + Self::SUBBLOCK_SIZE;
                     return self.rank_small.bits.select_hinted_unchecked(
@@ -256,7 +258,7 @@ macro_rules! impl_rank_small_sel {
                     );
                 }
                 // fourth sub block
-                let b3 = counts_ref.get_unchecked(block_idx).rel(3);
+                let b3 = counts.get_unchecked(block_idx).rel(3);
                 if hint_rank + b3 > rank {
                     hint_pos = block_idx * Self::BLOCK_SIZE + 2 * Self::SUBBLOCK_SIZE;
                     return self.rank_small.bits.select_hinted_unchecked(
@@ -271,6 +273,21 @@ macro_rules! impl_rank_small_sel {
                     .bits
                     .select_hinted_unchecked(rank, hint_pos, hint_rank + b3)
             }
+        }
+
+        impl<
+                const LOG2_ONES_PER_INVENTORY: usize,
+                B: RankHinted<64> + SelectHinted + BitLength + AsRef<[usize]>,
+                C1: AsRef<[usize]>,
+                C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
+            > Select
+            for SelectSmall<
+                $NUM_U32S,
+                $COUNTER_WIDTH,
+                LOG2_ONES_PER_INVENTORY,
+                RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
+            >
+        {
         }
     };
 }
@@ -287,6 +304,7 @@ crate::forward_mult![
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
     crate::traits::rank_sel::forward_bit_count,
+    crate::traits::rank_sel::forward_num_bits,
     crate::traits::rank_sel::forward_rank,
     crate::traits::rank_sel::forward_rank_hinted,
     crate::traits::rank_sel::forward_rank_zero,

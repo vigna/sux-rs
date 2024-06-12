@@ -3,7 +3,7 @@ use criterion::{measurement::WallTime, BenchmarkGroup};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sux::bits::BitVec;
-use sux::traits::{Rank, Select};
+use sux::traits::{BitCount, Rank, Select};
 
 mod impls;
 pub use impls::*;

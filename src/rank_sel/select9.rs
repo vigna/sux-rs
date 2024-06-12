@@ -8,7 +8,10 @@
 
 use super::rank9::BlockCounters;
 use super::Rank9;
-use crate::prelude::{BitCount, BitLength, Select};
+use crate::{
+    prelude::SelectUnchecked,
+    traits::{BitLength, NumBits, Select},
+};
 use common_traits::{SelectInWord, Sequence};
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
@@ -122,7 +125,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
         let num_bits = rank9.len();
         let num_words = (num_bits + 63) / 64;
         let inventory_size =
-            (rank9.count_ones() + Self::ONES_PER_INVENTORY - 1) / Self::ONES_PER_INVENTORY;
+            (rank9.num_ones() + Self::ONES_PER_INVENTORY - 1) / Self::ONES_PER_INVENTORY;
 
         let u64_per_subinventory = 4;
         let subinventory_size = (num_words + u64_per_subinventory - 1) / u64_per_subinventory;
@@ -277,7 +280,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
     }
 }
 
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> Select
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> SelectUnchecked
     for Select9<Rank9<B, C>, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -305,14 +308,14 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
         match span {
             0..=1 => {
                 block_left &= !7;
-                count_left = block_left / Rank9::WORDS_PER_BLOCK;
+                count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
 
                 debug_assert!(rank < counts.get_unchecked(count_left + 1).absolute);
                 rank_in_block = rank - counts.get_unchecked(count_left).absolute;
             }
             2..=15 => {
                 block_left &= !7;
-                count_left = block_left / Rank9::WORDS_PER_BLOCK;
+                count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
                 let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute;
 
                 let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
@@ -335,7 +338,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
             }
             16..=127 => {
                 block_left &= !7;
-                count_left = block_left / Rank9::WORDS_PER_BLOCK;
+                count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
                 let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute;
                 let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
 
@@ -409,11 +412,17 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
     }
 }
 
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> Select
+    for Select9<Rank9<B, C>, I>
+{
+}
+
 crate::forward_mult![Select9<R, I>; R; rank9;
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
     crate::traits::rank_sel::forward_bit_count,
+    crate::traits::rank_sel::forward_num_bits,
     crate::traits::rank_sel::forward_rank,
     crate::traits::rank_sel::forward_rank_hinted,
     crate::traits::rank_sel::forward_rank_zero,
@@ -425,8 +434,8 @@ crate::forward_mult![Select9<R, I>; R; rank9;
 #[cfg(test)]
 mod test_select9 {
     use super::*;
-    use crate::prelude::BitVec;
-    use crate::traits::Rank;
+    use crate::traits::{Rank, Select};
+    use crate::{prelude::BitVec, traits::BitCount};
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     #[test]

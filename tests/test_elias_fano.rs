@@ -55,13 +55,10 @@ fn test_elias_fano() -> Result<()> {
         // Finish the creation of elias-fano
         let ef = efb.build();
 
-        // do a slow select
-        for (i, v) in values.iter().enumerate() {
-            assert_eq!(ef.get(i), *v);
-            assert_eq!({ ef.get(i) }, *v);
-        }
         // Add the ones indices
         let ef = ef.map_high_bits(SimpleSelectConst::<_, _>::new);
+        // Add the indices
+        let ef = ef.map_high_bits(SimpleSelectZeroConst::<_, _, 10>::new);
 
         for v in 0..u {
             let res = values.binary_search(&v);
@@ -77,8 +74,6 @@ fn test_elias_fano() -> Result<()> {
             }
         }
 
-        // Add the indices
-        let ef = ef.map_high_bits(SimpleSelectZeroConst::<_, _, 10>::new);
         // do a fast select
         for (i, v) in values.iter().enumerate() {
             assert_eq!({ ef.get(i) }, *v);

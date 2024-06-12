@@ -11,7 +11,7 @@ Bit vector implementations.
 
 There are three flavors:
 - [`BitVec`], a mutable bit vector;
-- [`CountBitVec`], an immutable bit vector that sports a constant-time implementation of [`BitCount`];
+- [`CountBitVec`], an immutable bit vector that sports an implementation of [`NumBits`];
 - [`AtomicBitVec`], a mutable, thread-safe bit vector.
 
 These flavors depends on a backend, and presently we provide:
@@ -272,25 +272,6 @@ impl<B> AtomicBitVec<B> {
 }
 
 impl<B: AsRef<[usize]>> BitVec<B> {
-    /// Return the number of bits set to 1 in this bit vector.
-    ///
-    /// If the feature "rayon" is enabled, this function is parallelized.
-    pub fn count_ones(&self) -> usize {
-        #[cfg(feature = "rayon")]
-        {
-            self.data
-                .as_ref()
-                .par_iter()
-                .map(|x| x.count_ones() as usize)
-                .sum()
-        }
-
-        #[cfg(not(feature = "rayon"))]
-        {
-            self.data.iter().map(|x| x.count_ones() as usize).sum()
-        }
-    }
-
     /// Return a [`CountBitVec`] with the same data as this
     /// bit vector and the assuming the given number of ones.
     ///
@@ -298,12 +279,11 @@ impl<B: AsRef<[usize]>> BitVec<B> {
     /// No control is performed on the number of ones, unless
     /// debug assertions are enabled.
     #[inline(always)]
-    pub fn with_count(self, number_of_ones: usize) -> CountBitVec<B> {
+    pub fn with_count(self, number_of_ones: usize) -> CountBitVec<BitVec<B>> {
         debug_assert!(number_of_ones <= self.len);
         debug_assert_eq!(number_of_ones, self.count_ones());
         CountBitVec {
-            data: self.data,
-            len: self.len,
+            bits: self,
             number_of_ones,
         }
     }
@@ -321,11 +301,11 @@ impl<B: AsRef<[AtomicUsize]>> Index<usize> for AtomicBitVec<B> {
     }
 }
 
-impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
+impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
     /// Return the number of bits set to 1 in this bit vector.
     ///
     /// If the feature "rayon" is enabled, this function is parallelized.
-    pub fn count_ones(&self) -> usize {
+    fn count_ones(&self) -> usize {
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
         core::sync::atomic::fence(Ordering::SeqCst);
@@ -496,11 +476,19 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
 
 impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
     fn count_ones(&self) -> usize {
-        self.data
-            .as_ref()
-            .iter()
-            .map(|w| w.count_ones() as usize)
-            .sum()
+        #[cfg(feature = "rayon")]
+        {
+            self.data
+                .as_ref()
+                .par_iter()
+                .map(|x| x.count_ones() as usize)
+                .sum()
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            self.data.iter().map(|x| x.count_ones() as usize).sum()
+        }
     }
 }
 
@@ -617,7 +605,7 @@ impl<B: AsRef<[usize]>> SelectHinted for BitVec<B> {
     }
 }
 
-impl<B: AsRef<[usize]>> SelectZero for BitVec<B> {
+impl<B: AsRef<[usize]>> SelectZeroUnchecked for BitVec<B> {
     #[inline(always)]
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
         self.select_zero_hinted_unchecked(rank, 0, 0)
@@ -639,130 +627,57 @@ impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
     }
 }
 
-/// An immutable bit vector with a constant-time implementation of [`BitCount`].
+/// An immutable bit vector with an implementation of [`NumBits`].
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct CountBitVec<B = Vec<usize>> {
-    data: B,
-    len: usize,
+pub struct CountBitVec<B = BitVec> {
+    bits: B,
     number_of_ones: usize,
 }
 
-impl<B> CountBitVec<B> {
+impl<B: BitLength> NumBits for CountBitVec<B> {
     #[inline(always)]
     /// Return the number of bits set to 1 in this bit vector.
-    pub fn number_of_ones(&self) -> usize {
+    fn num_ones(&self) -> usize {
         self.number_of_ones
-    }
-
-    #[inline(always)]
-    /// Return the number of bits set to 0 in this bit vector.
-    pub fn number_of_zeros(&self) -> usize {
-        self.len - self.number_of_ones
-    }
-
-    #[inline(always)]
-    /// Return the number of bits in this bit vector.
-    fn len(&self) -> usize {
-        self.len
-    }
-}
-
-impl<B> BitLength for CountBitVec<B> {
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.len()
-    }
-}
-
-impl<B> BitCount for CountBitVec<B> {
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.number_of_ones
-    }
-}
-
-impl<B: AsRef<[usize]>> Index<usize> for CountBitVec<B> {
-    type Output = bool;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        match self.get(index) {
-            false => &false,
-            true => &true,
-        }
     }
 }
 
 impl<B> CountBitVec<B> {
+    pub fn into_inner(self) -> B {
+        self.bits
+    }
+
     /// # Safety
     /// `len` must be between 0 (included) the number of
     /// bits in `data` (included). No test is performed
     /// on the number of ones.
     #[inline(always)]
-    pub unsafe fn from_raw_parts(data: B, len: usize, number_of_ones: usize) -> Self {
+    pub unsafe fn from_raw_parts(bits: B, number_of_ones: usize) -> Self {
         Self {
-            data,
-            len,
+            bits,
             number_of_ones,
         }
     }
     #[inline(always)]
-    pub fn into_raw_parts(self) -> (B, usize, usize) {
-        (self.data, self.len, self.number_of_ones)
+    pub fn into_raw_parts(self) -> (B, usize) {
+        (self.bits, self.number_of_ones)
     }
 }
 
-impl<B: AsRef<[usize]>> CountBitVec<B> {
-    pub fn get(&self, index: usize) -> bool {
-        panic_if_out_of_bounds!(index, self.len);
-        unsafe { self.get_unchecked(index) }
-    }
-
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> bool {
-        let word_index = index / BITS;
-        let word = self.data.as_ref().get_unchecked(word_index);
-        (word >> (index % BITS)) & 1 != 0
-    }
-}
-
-impl<B: AsRef<[usize]>> Select for CountBitVec<B> {
-    #[inline(always)]
-    unsafe fn select_unchecked(&self, rank: usize) -> usize {
-        self.select_hinted_unchecked(rank, 0, 0)
-    }
-}
-
-impl<B: AsRef<[usize]>> SelectHinted for CountBitVec<B> {
-    unsafe fn select_hinted_unchecked(&self, rank: usize, pos: usize, rank_at_pos: usize) -> usize {
-        select_hinted_unchecked(self.data.as_ref(), rank, pos, rank_at_pos)
-    }
-
-    fn select_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
-        select_hinted(self.data.as_ref(), rank, pos, rank_at_pos)
-    }
-}
-
-impl<B: AsRef<[usize]>> SelectZero for CountBitVec<B> {
-    #[inline(always)]
-    unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
-        self.select_zero_hinted_unchecked(rank, 0, 0)
-    }
-}
-
-impl<B: AsRef<[usize]>> SelectZeroHinted for CountBitVec<B> {
-    unsafe fn select_zero_hinted_unchecked(
-        &self,
-        rank: usize,
-        pos: usize,
-        rank_at_pos: usize,
-    ) -> usize {
-        select_zero_hinted_unchecked(self.data.as_ref(), rank, pos, rank_at_pos)
-    }
-
-    fn select_zero_hinted(&self, rank: usize, pos: usize, rank_at_pos: usize) -> Option<usize> {
-        select_zero_hinted(self.data.as_ref(), self.len(), rank, pos, rank_at_pos)
-    }
-}
+crate::forward_mult![CountBitVec<B>; B; bits;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool,
+    crate::traits::rank_sel::forward_bit_length,
+    crate::traits::rank_sel::forward_bit_count,
+    crate::traits::rank_sel::forward_rank_hinted,
+    crate::traits::rank_sel::forward_rank_zero,
+    crate::traits::rank_sel::forward_select_hinted,
+    crate::traits::rank_sel::forward_select_unchecked,
+    crate::traits::rank_sel::forward_select,
+    crate::traits::rank_sel::forward_select_zero_hinted,
+    crate::traits::rank_sel::forward_select_zero_unchecked,
+    crate::traits::rank_sel::forward_select_zero
+];
 
 impl<W: IntoAtomic> From<BitVec<Vec<W>>> for AtomicBitVec<Vec<W::AtomicType>> {
     fn from(value: BitVec<Vec<W>>) -> Self {
@@ -822,70 +737,33 @@ impl<'a, W: IntoAtomic> From<AtomicBitVec<&'a mut [W::AtomicType]>> for BitVec<&
     }
 }
 
-impl<W> From<CountBitVec<Vec<W>>> for BitVec<Vec<W>> {
-    fn from(value: CountBitVec<Vec<W>>) -> Self {
-        BitVec {
-            data: value.data,
-            len: value.len,
-        }
-    }
-}
-
-impl<'a, W> From<CountBitVec<&'a [W]>> for BitVec<&'a [W]> {
-    fn from(value: CountBitVec<&'a [W]>) -> Self {
-        BitVec {
-            data: value.data,
-            len: value.len,
-        }
-    }
-}
-
-impl<'a, W> From<CountBitVec<&'a mut [W]>> for BitVec<&'a mut [W]> {
-    fn from(value: CountBitVec<&'a mut [W]>) -> Self {
-        BitVec {
-            data: value.data,
-            len: value.len,
-        }
-    }
-}
-
-impl From<BitVec<Vec<usize>>> for CountBitVec<Vec<usize>> {
-    fn from(value: BitVec<Vec<usize>>) -> Self {
-        let number_of_ones = value.count_ones();
+impl From<BitVec<Vec<usize>>> for CountBitVec<BitVec<Vec<usize>>> {
+    fn from(bits: BitVec<Vec<usize>>) -> Self {
+        let number_of_ones = bits.count_ones();
         CountBitVec {
-            data: value.data,
-            len: value.len,
+            bits,
             number_of_ones,
         }
     }
 }
 
-impl<'a> From<BitVec<&'a [usize]>> for CountBitVec<&'a [usize]> {
-    fn from(value: BitVec<&'a [usize]>) -> Self {
-        let number_of_ones = value.count_ones();
+impl<'a> From<BitVec<&'a [usize]>> for CountBitVec<BitVec<&'a [usize]>> {
+    fn from(bits: BitVec<&'a [usize]>) -> Self {
+        let number_of_ones = bits.count_ones();
         CountBitVec {
-            data: value.data,
-            len: value.len,
+            bits,
             number_of_ones,
         }
     }
 }
 
-impl<'a> From<BitVec<&'a mut [usize]>> for CountBitVec<&'a mut [usize]> {
-    fn from(value: BitVec<&'a mut [usize]>) -> Self {
-        let number_of_ones = value.count_ones();
+impl<'a> From<BitVec<&'a mut [usize]>> for CountBitVec<BitVec<&'a mut [usize]>> {
+    fn from(bits: BitVec<&'a mut [usize]>) -> Self {
+        let number_of_ones = bits.count_ones();
         CountBitVec {
-            data: value.data,
-            len: value.len,
+            bits,
             number_of_ones,
         }
-    }
-}
-
-impl<B: AsRef<[usize]>> AsRef<[usize]> for CountBitVec<B> {
-    #[inline(always)]
-    fn as_ref(&self) -> &[usize] {
-        self.data.as_ref()
     }
 }
 

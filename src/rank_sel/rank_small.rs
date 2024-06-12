@@ -10,7 +10,11 @@ use epserde::*;
 use mem_dbg::*;
 use std::ptr::{addr_of, read_unaligned, write_unaligned};
 
-use crate::prelude::{BitCount, BitLength, BitVec, Rank, RankHinted, RankZero};
+use crate::{
+    bits::CountBitVec,
+    prelude::{BitLength, BitVec, Rank, RankHinted, RankZero},
+    traits::{BitCount, NumBits},
+};
 
 /// A family of ranking structures using very little additional space but with
 /// slower operations than [`Rank9`](super::Rank9).
@@ -140,19 +144,19 @@ where
 #[macro_export]
 macro_rules! rank_small {
     (0 ; $bits: expr) => {
-        $crate::prelude::RankSmall::<2, 9>::new($bits)
+        $crate::prelude::RankSmall::<2, 9, _, _, _>::new($bits)
     };
     (1 ; $bits: expr) => {
-        $crate::prelude::RankSmall::<1, 9>::new($bits)
+        $crate::prelude::RankSmall::<1, 9, _, _, _>::new($bits)
     };
     (2 ; $bits: expr) => {
-        $crate::prelude::RankSmall::<1, 10>::new($bits)
+        $crate::prelude::RankSmall::<1, 10, _, _, _>::new($bits)
     };
     (3 ; $bits: expr) => {
-        $crate::prelude::RankSmall::<1, 11>::new($bits)
+        $crate::prelude::RankSmall::<1, 11, _, _, _>::new($bits)
     };
     (4 ; $bits: expr) => {
-        $crate::prelude::RankSmall::<3, 13>::new($bits)
+        $crate::prelude::RankSmall::<3, 13, _, _, _>::new($bits)
     };
 }
 
@@ -263,13 +267,8 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize> Default
     }
 }
 
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        B: RankHinted<64> + AsRef<[usize]>,
-        C1: AsRef<[usize]>,
-        C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
+    RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     pub(super) const WORDS_PER_BLOCK: usize = 1 << (COUNTER_WIDTH - usize::BITS.ilog2() as usize);
     pub(super) const WORDS_PER_SUBBLOCK: usize = match NUM_U32S {
@@ -282,17 +281,17 @@ impl<
 
 macro_rules! impl_rank_small {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
-        impl
+        impl<B: AsRef<[usize]> + BitLength + RankHinted<64>>
             RankSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
-                BitVec,
+                B,
                 Vec<usize>,
                 Vec<Block32Counters<$NUM_U32S, $COUNTER_WIDTH>>,
             >
         {
             /// Creates a new RankSmall structure from a given bit vector.
-            pub fn new(bits: BitVec) -> Self {
+            pub fn new(bits: B) -> Self {
                 let num_bits = bits.len();
                 let num_words = num_bits.div_ceil(64 as usize);
                 let num_upper_counts = num_bits.div_ceil(1usize << 32);
@@ -342,7 +341,7 @@ macro_rules! impl_rank_small {
             #[inline(always)]
             fn rank(&self, pos: usize) -> usize {
                 if pos >= self.bits.len() {
-                    self.count_ones()
+                    self.num_ones()
                 } else {
                     unsafe { self.rank_unchecked(pos) }
                 }
@@ -429,6 +428,15 @@ impl<
     }
 }
 
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> NumBits
+    for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+{
+    #[inline(always)]
+    fn num_ones(&self) -> usize {
+        self.num_ones
+    }
+}
+
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
@@ -448,48 +456,54 @@ crate::forward_mult![RankSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: u
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
     crate::traits::rank_sel::forward_rank_hinted,
-    crate::traits::rank_sel::forward_select,
-    crate::traits::rank_sel::forward_select_zero,
     crate::traits::rank_sel::forward_select_hinted,
-    crate::traits::rank_sel::forward_select_zero_hinted
+    crate::traits::rank_sel::forward_select_unchecked,
+    crate::traits::rank_sel::forward_select,
+    crate::traits::rank_sel::forward_select_zero_hinted,
+    crate::traits::rank_sel::forward_select_zero_unchecked,
+    crate::traits::rank_sel::forward_select_zero
 ];
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
+    use crate::bits::CountBitVec;
+    use crate::traits::NumBits;
 
     #[test]
     fn test_last() {
-        let bits = unsafe { BitVec::from_raw_parts(vec![!1usize; 1 << 10], (1 << 10) * 64) };
+        let bits: CountBitVec<_> =
+            unsafe { BitVec::from_raw_parts(vec![!1usize; 1 << 10], (1 << 10) * 64) }.into();
 
-        let rank_small = rank_small![0; bits.clone()];
+        let rank_small = rank_small![1; bits.clone()];
         assert_eq!(
             rank_small.rank(rank_small.len()),
-            rank_small.bits.count_ones()
+            rank_small.bits.num_ones()
         );
 
         let rank_small = rank_small![1; bits.clone()];
         assert_eq!(
             rank_small.rank(rank_small.len()),
-            rank_small.bits.count_ones()
+            rank_small.bits.num_ones()
         );
 
         let rank_small = rank_small![2; bits.clone()];
         assert_eq!(
             rank_small.rank(rank_small.len()),
-            rank_small.bits.count_ones()
+            rank_small.bits.num_ones()
         );
 
         let rank_small = rank_small![3; bits.clone()];
         assert_eq!(
             rank_small.rank(rank_small.len()),
-            rank_small.bits.count_ones()
+            rank_small.bits.num_ones()
         );
 
         let rank_small = rank_small![4; bits.clone()];
         assert_eq!(
             rank_small.rank(rank_small.len()),
-            rank_small.bits.count_ones()
+            rank_small.bits.num_ones()
         );
     }
 }
