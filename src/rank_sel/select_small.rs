@@ -203,12 +203,13 @@ macro_rules! impl_rank_small_sel {
                     }
                 }
 
-                let inv_ref = self.inventory.as_ref();
-                let rel_inv_pos = *inv_ref.get_unchecked(rank / Self::ONES_PER_INVENTORY) as usize;
+                let inventory = self.inventory.as_ref();
+                let rel_inv_pos =
+                    *inventory.get_unchecked(rank / Self::ONES_PER_INVENTORY) as usize;
                 let inv_pos = rel_inv_pos + upper_block_idx * (1 << 32);
 
                 let next_rel_inv_pos =
-                    *inv_ref.get_unchecked(rank / Self::ONES_PER_INVENTORY + 1) as usize;
+                    *inventory.get_unchecked(rank / Self::ONES_PER_INVENTORY + 1) as usize;
                 let next_inv_pos = match next_rel_inv_pos.cmp(&rel_inv_pos) {
                     std::cmp::Ordering::Greater => next_rel_inv_pos + upper_block_idx * (1 << 32),
                     std::cmp::Ordering::Less => (upper_block_idx + 1) * (1 << 32),

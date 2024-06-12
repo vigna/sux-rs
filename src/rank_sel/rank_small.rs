@@ -316,8 +316,8 @@ macro_rules! impl_rank_small {
                 assert_eq!(upper_counts.len(), num_upper_counts);
                 assert_eq!(counts.len(), num_counts);
 
-                let upper_counts = upper_counts.into();
-                let counts = counts.into();
+                let upper_counts = upper_counts.into_boxed_slice();
+                let counts = counts.into_boxed_slice();
 
                 Self {
                     bits,
