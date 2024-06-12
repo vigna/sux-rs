@@ -59,7 +59,7 @@ removed.
 
 */
 #[derive(Debug, Clone, Epserde, MemDbg, MemSize)]
-pub struct RearCodedList<D: AsRef<[u8]> = Vec<u8>, P: AsRef<[usize]> = Vec<usize>> {
+pub struct RearCodedList<D: AsRef<[u8]> = Box<[u8]>, P: AsRef<[usize]> = Box<[usize]>> {
     /// The number of strings in a block; this value trades off compression for speed.
     k: usize,
     /// Number of encoded strings.
@@ -146,10 +146,10 @@ impl RearCodedListBuilder {
     }
 
     #[inline]
-    pub fn build(self) -> RearCodedList<Vec<u8>, Vec<usize>> {
+    pub fn build(self) -> RearCodedList<Box<[u8]>, Box<[usize]>> {
         RearCodedList {
-            data: self.data,
-            pointers: self.pointers,
+            data: self.data.into(),
+            pointers: self.pointers.into(),
             len: self.len,
             is_sorted: self.is_sorted,
             k: self.k,

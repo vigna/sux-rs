@@ -75,7 +75,7 @@ pub struct SelectSmall<
     const COUNTER_WIDTH: usize,
     const LOG2_ONES_PER_INVENTORY: usize = 12,
     R = RankSmall<NUM_U32S, COUNTER_WIDTH>,
-    I = Vec<u32>,
+    I = Box<[u32]>,
 > {
     rank_small: R,
     inventory: I,
@@ -159,6 +159,10 @@ macro_rules! impl_rank_small_sel {
                     inventory.push(0);
                 }
 
+                assert_eq!(inventory.len(), inventory_size + 1);
+
+                let inventory = inventory.into_boxed_slice();
+
                 Self {
                     rank_small,
                     inventory,
@@ -199,7 +203,7 @@ macro_rules! impl_rank_small_sel {
                     }
                 }
 
-                let inv_ref = <Vec<u32> as AsRef<[u32]>>::as_ref(&self.inventory);
+                let inv_ref = self.inventory.as_ref();
                 let rel_inv_pos = *inv_ref.get_unchecked(rank / Self::ONES_PER_INVENTORY) as usize;
                 let inv_pos = rel_inv_pos + upper_block_idx * (1 << 32);
 

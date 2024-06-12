@@ -103,7 +103,7 @@ macro_rules! ULEQ_STEP_16 {
 /// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct Select9<R = Rank9, I = Vec<usize>> {
+pub struct Select9<R = Rank9, I = Box<[usize]>> {
     rank9: R,
     inventory: I,
     subinventory: I,
@@ -120,7 +120,7 @@ impl<R, I> Select9<R, I> {
     const ONES_PER_INVENTORY: usize = 1 << Self::LOG2_ONES_PER_INVENTORY;
 }
 
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>, Vec<usize>> {
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>, Box<[usize]>> {
     pub fn new(rank9: Rank9<B, C>) -> Self {
         let num_bits = rank9.len();
         let num_words = (num_bits + 63) / 64;
@@ -130,8 +130,8 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
         let u64_per_subinventory = 4;
         let subinventory_size = (num_words + u64_per_subinventory - 1) / u64_per_subinventory;
 
-        let mut inventory: Vec<usize> = Vec::with_capacity(inventory_size + 1);
-        let mut subinventory: Vec<usize> = vec![0; subinventory_size];
+        let mut inventory = Vec::with_capacity(inventory_size + 1);
+        let mut subinventory = vec![0; subinventory_size].into_boxed_slice();
 
         // construct the inventory
         let mut curr_num_ones = 0;
@@ -151,6 +151,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
         }
         inventory.push(((num_words + 3) & !3) * 64);
         assert!(inventory.len() == inventory_size + 1);
+        let inventory = inventory.into_boxed_slice();
 
         let iter = 0..inventory_size;
         let counts = rank9.counts.as_ref();
