@@ -108,7 +108,7 @@ impl<B, C> Rank9<B, C> {
         self.bits
     }
     /// Replaces the backend with a new one.
-    pub fn map<B1>(self, f: impl FnOnce(B) -> B1) -> Rank9<B1, C>
+    pub unsafe fn map<B1>(self, f: impl FnOnce(B) -> B1) -> Rank9<B1, C>
     where
         B1: AsRef<[usize]> + BitLength,
     {

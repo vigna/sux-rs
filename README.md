@@ -15,13 +15,18 @@ This crate is a work in progress: part of it is a port from
 Utilities](https://dsiutils.di.unimi.it/); new data structures will be added
 over time. Presently, we provide:
 
-- the [`BitFieldSlice`](crate::traits::bit_field_slice::BitFieldSlice) trait---an
-  alternative to [`Index`](core::ops::Index) returning values of fixed bit width;
-- an implementation of [bit vectors](crate::bits::BitVec) and of [vectors of bit fields of fixed with](crate::bits::BitFieldVec);
-- traits for building blocks and structures like [`Rank`](crate::traits::rank_sel::Rank) ,
-  [`Select`](crate::traits::rank_sel::Select), and [`IndexedDict`](crate::traits::indexed_dict::IndexedDict);
+- the [`BitFieldSlice`](crate::traits::bit_field_slice::BitFieldSlice)
+  trait---an alternative to [`Index`](core::ops::Index) returning values of
+  fixed bit width;
+- an implementation of [bit vectors](crate::bits::BitVec) and of [vectors of bit
+  fields of fixed with](crate::bits::BitFieldVec);
+- traits for building blocks and structures like
+  [`Rank`](crate::traits::rank_sel::Rank) ,
+  [`Select`](crate::traits::rank_sel::Select), and
+  [`IndexedDict`](crate::traits::indexed_dict::IndexedDict);
 - an implementation of the [Elias--Fano representation of monotone sequences](crate::dict::elias_fano::EliasFano);
-- an implementation of list of [strings compressed by rear-coded prefix omission](crate::dict::rear_coded_list::RearCodedList);
+- an implementation of lists of [strings compressed by rear-coded prefix
+  omission](crate::dict::rear_coded_list::RearCodedList);
 - an implementation of [static functions](crate::func::VFunc).
 
 The focus is on efficiency (in particular, there are unchecked versions of all
@@ -130,13 +135,15 @@ assert_eq!(sel_rank9.rank(4), 2);
 assert!(!sel_rank9[0]);
 assert!(sel_rank9[1]);
 
-let sel_rank_small = sel_rank9.map(|x| rank_small![4; x.into_inner()]);
+let sel_rank_small = unsafe {sel_rank9.map(|x| rank_small![4; x.into_inner()]) };
 ```
 
 Note how [`SimpleSelect`] forwards not only [`Rank`] but also [`Index`], which
 gives access to the bits of the underlying bit vector. The last line uses the
-[`map`](Map::map) method to replace the underlying [`Rank9`] structure with
-one that is slower but uses much less space; note how we use `into_inner()` to
+[`map`](Map::map) method to replace the underlying [`Rank9`] structure with one
+that is slower but uses much less space: the method is unsafe because in
+principle you might replace the structure with something built on a different
+bit vector, leading to an inconsistent state; note how we use `into_inner()` to
 get rid of the [`AddNumBits`] wrapper.
 
 Some structures depend on the internals of others, and thus cannot be composed
