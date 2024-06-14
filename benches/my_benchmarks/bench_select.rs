@@ -211,7 +211,7 @@ pub fn bench_simple_const(c: &mut Criterion, uniform: bool) {
 
     bench_simple_const!(
         [8, 9, 10, 11, 12, 13],
-        [0, 1, 2, 3, 4, 5],
+        [1, 2, 3, 4, 5],
         bitvecs,
         bitvec_ids,
         c
