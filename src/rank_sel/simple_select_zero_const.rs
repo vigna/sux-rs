@@ -48,7 +48,7 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTOR
     }
 
     /// Replaces the backend with a new one implementing [`SelectZeroHinted`].
-    pub fn map<C>(
+    pub unsafe fn map<C>(
         self,
         f: impl FnOnce(B) -> C,
     ) -> SimpleSelectZeroConst<C, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>

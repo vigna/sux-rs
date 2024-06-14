@@ -56,9 +56,9 @@ fn test_elias_fano() -> Result<()> {
         let ef = efb.build();
 
         // Add the ones indices
-        let ef = ef.map_high_bits(SimpleSelectConst::<_, _>::new);
+        let ef = unsafe { ef.map_high_bits(SimpleSelectConst::<_, _>::new) };
         // Add the indices
-        let ef = ef.map_high_bits(SimpleSelectZeroConst::<_, _, 10>::new);
+        let ef = unsafe { ef.map_high_bits(SimpleSelectZeroConst::<_, _, 10>::new) };
 
         for v in 0..u {
             let res = values.binary_search(&v);
@@ -191,9 +191,10 @@ fn test_epserde() -> Result<()> {
             efb.push(*value)?;
         }
         // Finish the creation of elias-fano
-        let ef = efb
-            .build()
-            .map_high_bits(SimpleSelectConst::<_, _, 10>::new);
+        let ef = unsafe {
+            efb.build()
+                .map_high_bits(SimpleSelectConst::<_, _, 10>::new)
+        };
 
         let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
         let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);

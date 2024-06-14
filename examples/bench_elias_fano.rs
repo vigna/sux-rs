@@ -69,9 +69,11 @@ fn main() -> Result<()> {
             FIXED2_LOG2_ONES_PER_INVENTORY,
             FIXED2_LOG2_U64_PER_INVENTORY,
         >,
-    > = elias_fano_builder
-        .build()
-        .map_high_bits(|high_bits| SimpleSelectZeroConst::new(SimpleSelectConst::new(high_bits)));
+    > = unsafe {
+        elias_fano_builder.build().map_high_bits(|high_bits| {
+            SimpleSelectZeroConst::new(SimpleSelectConst::new(high_bits))
+        })
+    };
 
     println!();
     elias_fano_s

@@ -108,7 +108,7 @@ use crate::{
 ///
 /// // Map the backend to a different structure; we can get rid
 /// // of the AddNumBits wrapper because Rank9 implements NumBits.
-/// let sel_rank9 = select.map(|x| Rank9::new(x.into_inner()));
+/// let sel_rank9 = unsafe{ select.map(|x| Rank9::new(x.into_inner())) };
 ///
 /// // Rank methods are forwarded
 /// assert_eq!(sel_rank9.rank(0), 0);
@@ -187,7 +187,7 @@ impl<B, I> SimpleSelect<B, I> {
     }
 
     /// Replaces the backend with a new one implementing [`SelectHinted`].
-    pub fn map<C>(self, f: impl FnOnce(B) -> C) -> SimpleSelect<C, I>
+    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SimpleSelect<C, I>
     where
         C: SelectHinted,
     {

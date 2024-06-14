@@ -23,12 +23,15 @@ use sux::prelude::*;
 let mut efb = EliasFanoBuilder::new(2, 5);
 efb.push(0);
 efb.push(2);
-let ef = efb.build()
-    .map_high_bits(|high_bits| {
-        // Add a selection structure for ones (accelerates get operations).
-        // Also add a selection structure for zeros (accelerates predecessors and successor).
-        SimpleSelectZeroConst::<_, _, 10, 2>::new(SimpleSelectConst::<_, _, 10, 2>::new(high_bits))
-    });
+let ef = efb.build();
+let ef = unsafe { ef.map_high_bits(|high_bits| {
+    // Add a selection structure for zeros (implements indexed access)
+    SimpleSelectConst::<_, _, 10, 2>::new(SimpleSelectConst::<_, _, 10, 2>::new(high_bits))
+}) };
+let ef = unsafe { ef.map_high_bits(|high_bits| {
+    // Add a selection structure for zeros (implements predecessor and successor)
+    SimpleSelectZeroConst::<_, _, 10, 2>::new(SimpleSelectZeroConst::<_, _, 10, 2>::new(high_bits))
+}) };
 ```
 
 */
@@ -228,7 +231,7 @@ impl<H, L> EliasFano<H, L> {
 
     /// Change the high bits types, this can be used to add indices to speed
     /// up the get operation.
-    pub fn map_high_bits<F, H2>(self, func: F) -> EliasFano<H2, L>
+    pub unsafe fn map_high_bits<F, H2>(self, func: F) -> EliasFano<H2, L>
     where
         F: FnOnce(H) -> H2,
     {
@@ -242,7 +245,7 @@ impl<H, L> EliasFano<H, L> {
     }
 
     /// Change the low bits types
-    pub fn map_low_bits<F, L2>(self, func: F) -> EliasFano<H, L2>
+    pub unsafe fn map_low_bits<F, L2>(self, func: F) -> EliasFano<H, L2>
     where
         F: FnOnce(L) -> L2,
     {
@@ -256,7 +259,7 @@ impl<H, L> EliasFano<H, L> {
     }
 
     /// Change both the high and low bits types
-    pub fn map<F, H2, L2>(self, func: F) -> EliasFano<H2, L2>
+    pub unsafe fn map<F, H2, L2>(self, func: F) -> EliasFano<H2, L2>
     where
         F: FnOnce(H, L) -> (H2, L2),
     {

@@ -58,7 +58,7 @@ use mem_dbg::*;
 /// assert_eq!(select[7], true);
 ///
 /// // Map the backend to a different structure
-/// let sel_rank_small = select.map(RankSmall::<1,10,_>::new);
+/// let sel_rank_small = unsafe { select.map(RankSmall::<1,10,_>::new) };
 ///
 /// // Rank methods are forwarded
 /// assert_eq!(sel_rank_small.rank(0), 0);
@@ -139,7 +139,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
     }
 
     /// Replaces the backend with a new one implementing [`SelectHinted`].
-    pub fn map<C>(
+    pub unsafe fn map<C>(
         self,
         f: impl FnOnce(B) -> C,
     ) -> SimpleSelectConst<C, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>

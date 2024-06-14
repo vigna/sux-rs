@@ -410,7 +410,10 @@ impl<
     }
 
     /// Replaces the backend with a new one.
-    pub fn map<B1>(self, f: impl FnOnce(B) -> B1) -> RankSmall<NUM_U32S, COUNTER_WIDTH, B1, C1, C2>
+    pub unsafe fn map<B1>(
+        self,
+        f: impl FnOnce(B) -> B1,
+    ) -> RankSmall<NUM_U32S, COUNTER_WIDTH, B1, C1, C2>
     where
         B1: AsRef<[usize]> + BitLength,
     {
