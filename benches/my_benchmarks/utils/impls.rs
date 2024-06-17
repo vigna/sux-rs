@@ -1,5 +1,5 @@
 use sux::bits::BitVec;
-use sux::rank_sel::{Rank10, Rank11, Rank9, RankSmall};
+use sux::rank_sel::{Rank10, Rank11, Rank9, RankSmall, SelectSmall};
 use sux::rank_sel::{Select9, SelectAdapt, SimpleSelect};
 use sux::traits::{BitCount, BitLength, Select, SelectHinted};
 
@@ -134,5 +134,35 @@ impl Build<BitVec> for RankSmall<1, 11> {
 impl Build<BitVec> for RankSmall<3, 13> {
     fn new(bits: BitVec) -> Self {
         RankSmall::<3, 13>::new(bits)
+    }
+}
+
+impl Build<BitVec> for SelectSmall<2, 9> {
+    fn new(bits: BitVec) -> Self {
+        SelectSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits))
+    }
+}
+
+impl Build<BitVec> for SelectSmall<1, 9> {
+    fn new(bits: BitVec) -> Self {
+        SelectSmall::<1, 9>::new(RankSmall::<1, 9>::new(bits))
+    }
+}
+
+impl Build<BitVec> for SelectSmall<1, 10> {
+    fn new(bits: BitVec) -> Self {
+        SelectSmall::<1, 10>::new(RankSmall::<1, 10>::new(bits))
+    }
+}
+
+impl Build<BitVec> for SelectSmall<1, 11> {
+    fn new(bits: BitVec) -> Self {
+        SelectSmall::<1, 11>::new(RankSmall::<1, 11>::new(bits))
+    }
+}
+
+impl Build<BitVec> for SelectSmall<3, 13> {
+    fn new(bits: BitVec) -> Self {
+        SelectSmall::<3, 13>::new(RankSmall::<3, 13>::new(bits))
     }
 }

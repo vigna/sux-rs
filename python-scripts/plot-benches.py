@@ -7,9 +7,9 @@ import numpy as np
 import argparse
 import os
 
-colors = ['b', 'g', 'r', 'c', 'm', 'purple',
-          'gold', 'teal', 'orange', 'brown', 'pink']
-markers = np.array(["v", "o", "+", "*", "^", "s", "D", "x"])
+colors = plt.cm.tab20(np.linspace(0, 1, 30))
+markers = ['o', 's', 'D', '^', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x', 'X',
+           'd', '|', '_', '.', ',', '1', '2', '3', '4', '8', 'P', 'd', '8', 'v', '^', '<']
 
 
 def load_csv_benches(path):

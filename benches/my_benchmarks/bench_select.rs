@@ -6,6 +6,7 @@ use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::Select9;
+use sux::rank_sel::SelectSmall;
 use sux::rank_sel::SimpleSelect;
 use sux::rank_sel::SimpleSelectConst;
 use sux::traits::Select;
@@ -74,6 +75,36 @@ pub fn bench_select9(c: &mut Criterion, uniform: bool) {
     let mut bench_group = c.benchmark_group(name);
 
     bench_select::<Select9>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform);
+
+    bench_group.finish();
+}
+
+pub fn bench_select_small(c: &mut Criterion, uniform: bool, sel_type: usize) {
+    let mut name = String::from("select_small");
+
+    match sel_type {
+        0 => name.push_str("0"),
+        1 => name.push_str("1"),
+        2 => name.push_str("2"),
+        3 => name.push_str("3"),
+        4 => name.push_str("4"),
+        _ => panic!("Invalid type"),
+    }
+
+    if !uniform {
+        name.push_str("_non_uniform");
+    }
+
+    let mut bench_group = c.benchmark_group(name);
+
+    match sel_type {
+        0 => bench_select::<SelectSmall<2, 9>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        1 => bench_select::<SelectSmall<1, 9>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        2 => bench_select::<SelectSmall<1, 10>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        3 => bench_select::<SelectSmall<1, 11>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        4 => bench_select::<SelectSmall<3, 13>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        _ => unreachable!(),
+    }
 
     bench_group.finish();
 }
