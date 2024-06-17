@@ -333,7 +333,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SelectAdapt<B, Box
             .max(1)
             .ilog2() as usize;
 
-        Self::with_inv(
+        Self::_new(
             bits,
             num_ones,
             log2_ones_per_inventory,
@@ -367,6 +367,20 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SelectAdapt<B, Box
     ///   are 3 and 4.
 
     pub fn with_inv(
+        bits: B,
+        log2_ones_per_inventory: usize,
+        max_log2_u64_per_subinventory: usize,
+    ) -> Self {
+        let num_ones = bits.count_ones();
+        Self::_new(
+            bits,
+            num_ones,
+            log2_ones_per_inventory,
+            max_log2_u64_per_subinventory,
+        )
+    }
+
+    fn _new(
         bits: B,
         num_ones: usize,
         log2_ones_per_inventory: usize,
@@ -512,7 +526,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SelectAdapt<B, Box
             next_quantum += quantum;
 
             // This is used only when span_type == SpanType::U32
-            let mut u32_odd_spill = false;
+            let mut u32_odd_spill = log2_u64_per_subinventory == 0;
 
             let mut word_idx = start_bit_idx / usize::BITS as usize;
             let end_word_idx = end_bit_idx.div_ceil(usize::BITS as usize);
@@ -623,12 +637,14 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SelectAdapt<B, Box
             // spans:
             // - the case in which the last inventory entry has a 32-bit span
             // and contains an odd number of ones greater than one, as spilled
-            // is not incremented by the loop code (note that u32_odd_spill =>
-            // span_type == SpanType::U32);
+            // is not incremented by the loop code (note that u32_odd_spill
+            // might be true even when span_type != SpanType::U32 if
+            // log2_u64_per_subinventory == 0);
             // - the case in which an inventory entry contains a single one, as
             // its zero subinventory entry is written implicitly, but we still
             // need to increment spilled to allocate space for it.
-            if u32_odd_spill || span_type == SpanType::U32 && subinventory_idx == 1 {
+
+            if span_type == SpanType::U32 && (u32_odd_spill || subinventory_idx == 1) {
                 spilled += 1;
             }
         }
@@ -701,7 +717,6 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> SelectUnch
 
                 inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize
             } else {
-                let inventory_rank = inventory_rank.get();
                 let start_spill_idx = *inventory.get_unchecked(inventory_start_pos + 1);
 
                 let spilled_u32s = self
@@ -797,7 +812,7 @@ mod tests {
                 .map(|_| rng.gen_bool(density))
                 .collect::<BitVec>()
                 .into();
-            let simple = SelectAdapt::with_inv(bits.clone(), bits.count_ones(), 13, 3);
+            let simple = SelectAdapt::with_inv(bits.clone(), 13, 3);
 
             let ones = simple.count_ones();
             let mut pos = Vec::with_capacity(ones);
@@ -829,7 +844,7 @@ mod tests {
         let bits: AddNumBits<BitVec> = bits.into();
 
         for m in [0, 3, 16] {
-            let simple = SelectAdapt::with_inv(&bits, pos.len(), 13, m);
+            let simple = SelectAdapt::with_inv(&bits, 13, m);
             assert!(simple.inventory[0].is_u64_span());
 
             for (i, &p) in pos.iter().enumerate() {

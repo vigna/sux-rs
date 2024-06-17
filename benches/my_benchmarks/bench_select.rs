@@ -106,12 +106,7 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
         let bits = bitvec.clone();
         let bits: AddNumBits<_> = bits.into();
         let num_ones = bits.num_ones();
-        let sel = SelectAdapt::with_inv(
-            bits,
-            num_ones,
-            LOG2_ONES_PER_INVENTORY,
-            LOG2_U64_PER_SUBINVENTORY,
-        );
+        let sel = SelectAdapt::with_inv(bits, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY);
         group.bench_function(
             BenchmarkId::from_parameter(format!("{}_{}_0", bitvec_id.0, bitvec_id.1)),
             |b| {

@@ -50,6 +50,33 @@ fn test_select_adapt() {
 }
 
 #[test]
+fn debug() {
+    let lens = [1_000_000];
+    let mut rng = SmallRng::seed_from_u64(0);
+    let density = 0.1;
+    for len in lens {
+        let bits: AddNumBits<_> = (0..len)
+            .map(|_| rng.gen_bool(density))
+            .collect::<BitVec>()
+            .into();
+        let simple = SelectAdapt::<_, _>::with_inv(bits.clone(), 13, 0);
+
+        let ones = simple.num_ones();
+        let mut pos = Vec::with_capacity(ones);
+        for i in 0..len {
+            if bits[i] {
+                pos.push(i);
+            }
+        }
+
+        for i in 0..ones {
+            assert_eq!(simple.select(i), Some(pos[i]));
+        }
+        assert_eq!(simple.select(ones + 1), None);
+    }
+}
+
+#[test]
 fn test_select_adapt_mult_usize() {
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     let density = 0.5;

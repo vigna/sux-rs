@@ -23,7 +23,7 @@ const INV: usize = 13;
 const SUB: usize = 0;
 
 #[test]
-fn test_simple_select_const() {
+fn test_select_adapt_const() {
     let lens = (1..100)
         .step_by(10)
         .chain((100_000..1_100_000).step_by(100_000));
@@ -35,9 +35,9 @@ fn test_simple_select_const() {
                 .collect::<BitVec>()
                 .into();
 
-            let simple = SelectAdaptConst::<_, _, INV, SUB>::new(bits.clone());
+            let select = SelectAdaptConst::<_, _, INV, SUB>::new(bits.clone());
 
-            let ones = simple.num_ones();
+            let ones = select.num_ones();
             let mut pos = Vec::with_capacity(ones);
             for i in 0..len {
                 if bits[i] {
@@ -46,9 +46,9 @@ fn test_simple_select_const() {
             }
 
             for i in 0..ones {
-                assert_eq!(simple.select(i), Some(pos[i]));
+                assert_eq!(select.select(i), Some(pos[i]));
             }
-            assert_eq!(simple.select(ones + 1), None);
+            assert_eq!(select.select(ones + 1), None);
         }
     }
 }
@@ -63,9 +63,9 @@ fn debug() {
             .map(|_| rng.gen_bool(density))
             .collect::<BitVec>()
             .into();
-        let simple = SelectAdaptConst::<_, _, 13, 0>::new(bits.clone());
+        let select = SelectAdaptConst::<_, _, 13, 0>::new(bits.clone());
 
-        let ones = simple.num_ones();
+        let ones = select.num_ones();
         let mut pos = Vec::with_capacity(ones);
         for i in 0..len {
             if bits[i] {
@@ -74,14 +74,14 @@ fn debug() {
         }
 
         for i in 0..ones {
-            assert_eq!(simple.select(i), Some(pos[i]));
+            assert_eq!(select.select(i), Some(pos[i]), "i = {}", i);
         }
-        assert_eq!(simple.select(ones + 1), None);
+        assert_eq!(select.select(ones + 1), None);
     }
 }
 
 #[test]
-fn test_simple_select_const_w_rank9() {
+fn test_select_adapt_const_w_rank9() {
     let lens = (1..100)
         .step_by(10)
         .chain((100_000..1_000_000).step_by(100_000));
@@ -92,9 +92,9 @@ fn test_simple_select_const_w_rank9() {
 
         let rank9 = Rank9::new(bits.clone());
 
-        let simple = SelectAdaptConst::<_, _, INV, SUB>::new(rank9);
+        let select = SelectAdaptConst::<_, _, INV, SUB>::new(rank9);
 
-        let ones = simple.num_ones();
+        let ones = select.num_ones();
         let mut pos = Vec::with_capacity(ones);
         for i in 0..len {
             if bits[i] {
@@ -103,45 +103,45 @@ fn test_simple_select_const_w_rank9() {
         }
 
         for i in 0..ones {
-            assert_eq!(simple.select(i), Some(pos[i]));
+            assert_eq!(select.select(i), Some(pos[i]));
         }
-        assert_eq!(simple.select(ones + 1), None);
+        assert_eq!(select.select(ones + 1), None);
     }
 }
 
 #[test]
-fn test_simple_select_const_empty() {
+fn test_select_adapt_const_empty() {
     let bits: AddNumBits<_> = BitVec::new(0).into();
-    let simple = SelectAdaptConst::<_, _, INV, SUB>::new(bits.clone());
-    assert_eq!(simple.num_ones(), 0);
-    assert_eq!(simple.len(), 0);
-    assert_eq!(simple.select(0), None);
+    let select = SelectAdaptConst::<_, _, INV, SUB>::new(bits.clone());
+    assert_eq!(select.num_ones(), 0);
+    assert_eq!(select.len(), 0);
+    assert_eq!(select.select(0), None);
 }
 
 #[test]
-fn test_simple_select_const_ones() {
+fn test_select_adapt_const_ones() {
     let len = 300_000;
     let bits: AddNumBits<_> = (0..len).map(|_| true).collect::<BitVec>().into();
-    let simple = SelectAdaptConst::<_, _, INV, SUB>::new(bits);
-    assert_eq!(simple.num_ones(), len);
-    assert_eq!(simple.len(), len);
+    let select = SelectAdaptConst::<_, _, INV, SUB>::new(bits);
+    assert_eq!(select.num_ones(), len);
+    assert_eq!(select.len(), len);
     for i in 0..len {
-        assert_eq!(simple.select(i), Some(i));
+        assert_eq!(select.select(i), Some(i));
     }
 }
 
 #[test]
-fn test_simple_select_const_zeros() {
+fn test_select_adapt_const_zeros() {
     let len = 300_000;
     let bits: AddNumBits<_> = (0..len).map(|_| false).collect::<BitVec>().into();
-    let simple = SelectAdaptConst::<_, _, INV, SUB>::new(bits);
-    assert_eq!(simple.num_ones(), 0);
-    assert_eq!(simple.len(), len);
-    assert_eq!(simple.select(0), None);
+    let select = SelectAdaptConst::<_, _, INV, SUB>::new(bits);
+    assert_eq!(select.num_ones(), 0);
+    assert_eq!(select.len(), len);
+    assert_eq!(select.select(0), None);
 }
 
 #[test]
-fn test_simple_select_const_non_uniform() {
+fn test_select_adapt_const_non_uniform() {
     let lens = [1 << 18, 1 << 19, 1 << 20];
 
     let mut rng = SmallRng::seed_from_u64(0);
@@ -195,11 +195,11 @@ fn test_simple_select_const_non_uniform() {
                 }
             }
 
-            let simple = SelectAdaptConst::<_, _, INV, SUB>::new(bits);
+            let select = SelectAdaptConst::<_, _, INV, SUB>::new(bits);
             for i in 0..(ones) {
-                assert_eq!(simple.select(i), Some(pos[i]));
+                assert_eq!(select.select(i), Some(pos[i]));
             }
-            assert_eq!(simple.select(ones + 1), None);
+            assert_eq!(select.select(ones + 1), None);
         }
     }
 }
