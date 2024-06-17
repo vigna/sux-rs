@@ -9,18 +9,15 @@
 
 Bit vector implementations.
 
-There are three flavors:
-- [`BitVec`], a mutable bit vector;
-- [`CountBitVec`], an immutable bit vector that sports an implementation of [`NumBits`];
-- [`AtomicBitVec`], a mutable, thread-safe bit vector.
+There are two flavors: [`BitVec`], a mutable bit vector, and
+[`AtomicBitVec`], a mutable, thread-safe bit vector.
 
 These flavors depends on a backend, and presently we provide:
 
 - `BitVec<Vec<usize>>`: a mutable, growable and resizable bit vector;
-- `BitVec<AsRef<[usize]>>`: an immutable bit vector mainly useful for [`epserde`];
+- `BitVec<AsRef<[usize]>>`: an immutable bit vector, useful for [ε-serde](epserde) support;
 - `BitVec<AsRef<[usize]> + AsMut<[usize]>>`: a mutable (but not resizable) bit
    vector;
-- `CountBitVec<AsRef<[usize]>>`: an immutable bit vector;
 - `AtomicBitVec<AsRef<[AtomicUsize]>>`: a thread-safe, mutable (but not resizable) bit vector.
 
 It is possible to juggle between the three flavors using [`From`].

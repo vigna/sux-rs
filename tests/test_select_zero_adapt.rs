@@ -10,8 +10,8 @@ use rand::Rng;
 use rand::SeedableRng;
 use sux::bit_vec;
 use sux::bits::BitVec;
-use sux::rank_sel::Rank9;
-use sux::rank_sel::SelectZeroAdaptConst;
+use sux::rank_sel::RankSmall;
+use sux::rank_sel::SelectZeroAdapt;
 use sux::traits::AddNumBits;
 use sux::traits::BitCount;
 use sux::traits::BitLength;
@@ -19,85 +19,21 @@ use sux::traits::NumBits;
 use sux::traits::Rank;
 use sux::traits::SelectZero;
 
-const INV: usize = 13;
-const SUB: usize = 0;
-
 #[test]
-fn test_select_zero_adapt_const() {
-    let lens = (1..100)
-        .step_by(10)
-        .chain((100_000..1_100_000).step_by(100_000));
-    let mut rng = SmallRng::seed_from_u64(0);
-    for len in lens {
-        for density in [0.1, 0.5, 0.9] {
-            let bits: AddNumBits<_> = (0..len)
-                .map(|_| rng.gen_bool(density))
-                .map(|b| !b)
-                .collect::<BitVec>()
-                .into();
-
-            let select = SelectZeroAdaptConst::<_, _, INV, SUB>::new(bits.clone());
-
-            let zeros = select.num_zeros();
-            let mut pos = Vec::with_capacity(zeros);
-            for i in 0..len {
-                if !bits[i] {
-                    pos.push(i);
-                }
-            }
-
-            for i in 0..zeros {
-                assert_eq!(select.select_zero(i), Some(pos[i]));
-            }
-            assert_eq!(select.select_zero(zeros + 1), None);
-        }
-    }
-}
-
-#[test]
-fn test_select_zero_adapt_const_one_u64() {
-    let lens = [1_000_000];
-    let mut rng = SmallRng::seed_from_u64(0);
-    let density = 0.1;
-    for len in lens {
-        let bits: AddNumBits<_> = (0..len)
-            .map(|_| rng.gen_bool(density))
-            .map(|b| !b)
-            .collect::<BitVec>()
-            .into();
-        let select = SelectZeroAdaptConst::<_, _, 13, 0>::new(bits.clone());
-
-        let zeros = select.num_zeros();
-        let mut pos = Vec::with_capacity(zeros);
-        for i in 0..len {
-            if !bits[i] {
-                pos.push(i);
-            }
-        }
-
-        for i in 0..zeros {
-            assert_eq!(select.select_zero(i), Some(pos[i]), "i = {}", i);
-        }
-        assert_eq!(select.select_zero(zeros + 1), None);
-    }
-}
-
-#[test]
-fn test_select_zero_adapt_const_w_rank9() {
+fn test_select_adapt_zero() {
     let lens = (1..100)
         .step_by(10)
         .chain((100_000..1_000_000).step_by(100_000));
     let mut rng = SmallRng::seed_from_u64(0);
     let density = 0.5;
     for len in lens {
-        let bits: BitVec = (0..len)
+        let bits: AddNumBits<_> = (0..len)
             .map(|_| rng.gen_bool(density))
             .map(|b| !b)
-            .collect::<BitVec>();
+            .collect::<BitVec>()
+            .into();
 
-        let rank9 = Rank9::new(bits.clone());
-
-        let select = SelectZeroAdaptConst::<_, _, INV, SUB>::new(rank9);
+        let select = SelectZeroAdapt::new(bits.clone(), 3);
 
         let zeros = select.num_zeros();
         let mut pos = Vec::with_capacity(zeros);
@@ -115,20 +51,75 @@ fn test_select_zero_adapt_const_w_rank9() {
 }
 
 #[test]
-fn test_select_zero_adapt_const_empty() {
+fn test_select_adapt_zero_one_u64() {
+    let lens = [1_000_000];
+    let mut rng = SmallRng::seed_from_u64(0);
+    let density = 0.1;
+    for len in lens {
+        let bits: AddNumBits<_> = (0..len)
+            .map(|_| rng.gen_bool(density))
+            .map(|b| !b)
+            .collect::<BitVec>()
+            .into();
+        let simple = SelectZeroAdapt::<_, _>::with_inv(bits.clone(), 13, 0);
+
+        let zeros = simple.num_zeros();
+        let mut pos = Vec::with_capacity(zeros);
+        for i in 0..len {
+            if !bits[i] {
+                pos.push(i);
+            }
+        }
+
+        for i in 0..zeros {
+            assert_eq!(simple.select_zero(i), Some(pos[i]));
+        }
+        assert_eq!(simple.select_zero(zeros + 1), None);
+    }
+}
+
+#[test]
+fn test_select_adapt_zero_mult_usize() {
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+    let density = 0.5;
+    for len in (1 << 10..1 << 15).step_by(usize::BITS as _) {
+        let bits: AddNumBits<_> = (0..len)
+            .map(|_| rng.gen_bool(density))
+            .map(|b| !b)
+            .collect::<BitVec>()
+            .into();
+        let select = SelectZeroAdapt::new(bits.clone(), 3);
+
+        let zeros = bits.count_zeros();
+        let mut pos = Vec::with_capacity(zeros);
+        for i in 0..len {
+            if !bits[i] {
+                pos.push(i);
+            }
+        }
+
+        for i in 0..zeros {
+            assert_eq!(select.select_zero(i), Some(pos[i]));
+        }
+        assert_eq!(select.select_zero(zeros + 1), None);
+    }
+}
+
+#[test]
+fn test_select_adapt_zero_empty() {
     let bits: AddNumBits<_> = BitVec::new(0).into();
-    let select = SelectZeroAdaptConst::<_, _, INV, SUB>::new(bits.clone());
-    assert_eq!(select.num_zeros(), 0);
+    let select = SelectZeroAdapt::new(bits.clone(), 3);
+    assert_eq!(select.count_ones(), 0);
     assert_eq!(select.len(), 0);
     assert_eq!(select.select_zero(0), None);
 }
 
 #[test]
-fn test_select_zero_adapt_const_zeros() {
+fn test_select_adapt_zero_zeros() {
     let len = 300_000;
     let bits: AddNumBits<_> = (0..len).map(|_| false).collect::<BitVec>().into();
-    let select = SelectZeroAdaptConst::<_, _, INV, SUB>::new(bits);
-    assert_eq!(select.num_zeros(), len);
+    let select = SelectZeroAdapt::new(bits, 3);
+    assert_eq!(select.count_zeros(), len);
     assert_eq!(select.len(), len);
     for i in 0..len {
         assert_eq!(select.select_zero(i), Some(i));
@@ -136,17 +127,37 @@ fn test_select_zero_adapt_const_zeros() {
 }
 
 #[test]
-fn test_select_zero_adapt_const_ones() {
+fn test_select_adapt_zero_ones() {
     let len = 300_000;
     let bits: AddNumBits<_> = (0..len).map(|_| true).collect::<BitVec>().into();
-    let select = SelectZeroAdaptConst::<_, _, INV, SUB>::new(bits);
-    assert_eq!(select.num_zeros(), 0);
+    let select = SelectZeroAdapt::new(bits, 3);
+    assert_eq!(select.count_zeros(), 0);
     assert_eq!(select.len(), len);
     assert_eq!(select.select_zero(0), None);
 }
 
 #[test]
-fn test_select_zero_adapt_const_non_uniform() {
+fn test_select_adapt_zero_few_zeros() {
+    let lens = [1 << 18, 1 << 19, 1 << 20];
+    for len in lens {
+        for num_zeros in [1, 2, 4, 8, 16, 32, 64, 128] {
+            let bits: AddNumBits<_> = (0..len)
+                .map(|i| i % (len / num_zeros) == 0)
+                .map(|b| !b)
+                .collect::<BitVec>()
+                .into();
+            let select = SelectZeroAdapt::new(bits, 3);
+            assert_eq!(select.count_zeros(), num_zeros);
+            assert_eq!(select.len(), len);
+            for i in 0..num_zeros {
+                assert_eq!(select.select_zero(i), Some(i * (len / num_zeros)));
+            }
+        }
+    }
+}
+
+#[test]
+fn test_select_adapt_zero_non_uniform() {
     let lens = [1 << 18, 1 << 19, 1 << 20];
 
     let mut rng = SmallRng::seed_from_u64(0);
@@ -184,20 +195,19 @@ fn test_select_zero_adapt_const_non_uniform() {
             assert!(num_zeros_first_half > 0);
             assert!(num_zeros_second_half > 0);
 
-            let bits: AddNumBits<_> = first_half
+            let bits = first_half
                 .into_iter()
                 .chain(second_half.into_iter())
-                .collect::<BitVec>()
-                .into();
+                .collect::<BitVec>();
 
             assert_eq!(
                 num_zeros_first_half + num_zeros_second_half,
-                bits.num_zeros()
+                bits.count_zeros()
             );
 
             assert_eq!(bits.len(), len as usize);
 
-            let zeros = bits.num_zeros();
+            let zeros = bits.count_zeros();
             let mut pos = Vec::with_capacity(zeros);
             for i in 0..(len as usize) {
                 if !bits[i] {
@@ -205,7 +215,9 @@ fn test_select_zero_adapt_const_non_uniform() {
                 }
             }
 
-            let select = SelectZeroAdaptConst::<_, _, INV, SUB>::new(bits);
+            let bits: AddNumBits<_> = bits.into();
+
+            let select = SelectZeroAdapt::new(bits, 3);
             for i in 0..(zeros) {
                 assert_eq!(select.select_zero(i), Some(pos[i]));
             }
@@ -217,14 +229,14 @@ fn test_select_zero_adapt_const_non_uniform() {
 #[test]
 fn test_map() {
     let bits: AddNumBits<_> = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1].into();
-    let sel = SelectZeroAdaptConst::<_, _>::new(bits);
-    let rank_sel = unsafe { sel.map(Rank9::new) };
+    let sel = SelectZeroAdapt::<_, _>::new(bits, 3);
+    let rank_sel = unsafe { sel.map(RankSmall::<1, 10, _>::new) };
     assert_eq!(rank_sel.rank(0), 0);
     assert_eq!(rank_sel.rank(1), 0);
     assert_eq!(rank_sel.rank(2), 1);
     assert_eq!(rank_sel.rank(10), 5);
 
-    let rank_seol01 = unsafe { rank_sel.map(SelectZeroAdaptConst::<_, _>::new) };
+    let rank_seol01 = unsafe { rank_sel.map(|b| SelectZeroAdapt::<_, _>::new(b, 3)) };
     assert_eq!(rank_seol01.select_zero(0), Some(0));
     assert_eq!(rank_seol01.select_zero(1), Some(2));
     assert_eq!(rank_seol01.select_zero(2), Some(5));

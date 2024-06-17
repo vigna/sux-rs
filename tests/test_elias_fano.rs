@@ -50,7 +50,7 @@ fn test_elias_fano() -> Result<()> {
         let mut efb = EliasFanoBuilder::new(n, u);
         // push the values
         for value in values.iter() {
-            efb.push(*value)?;
+            efb.push(*value);
         }
         // Finish the creation of elias-fano
         let ef = efb.build();
@@ -177,6 +177,30 @@ fn test_elias_fano() -> Result<()> {
 }
 
 #[test]
+#[should_panic]
+fn test_too_many_values() {
+    let mut efb = EliasFanoBuilder::new(2, 10);
+    efb.push(0);
+    efb.push(1);
+    efb.push(2);
+}
+
+#[test]
+#[should_panic]
+fn test_non_monotone() {
+    let mut efb = EliasFanoBuilder::new(2, 10);
+    efb.push(1);
+    efb.push(0);
+}
+
+#[test]
+#[should_panic]
+fn test_too_large() {
+    let mut efb = EliasFanoBuilder::new(2, 10);
+    efb.push(11);
+}
+
+#[test]
 fn test_epserde() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
     for (n, u) in [(100, 1000), (100, 100), (1000, 100)] {
@@ -188,7 +212,7 @@ fn test_epserde() -> Result<()> {
         let mut efb = EliasFanoBuilder::new(n, u);
         // push the values
         for value in values.iter() {
-            efb.push(*value)?;
+            efb.push(*value);
         }
         // Finish the creation of elias-fano
         let ef = unsafe { efb.build().map_high_bits(SelectAdaptConst::<_, _, 10>::new) };
@@ -200,7 +224,7 @@ fn test_epserde() -> Result<()> {
         println!("{}", schema.to_csv());
 
         let c = <EliasFano<
-            SelectAdaptConst<AddNumBits<BitVec<Box<[usize]>>>, Vec<usize>>,
+            SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>>,
             BitFieldVec<usize, Box<[usize]>>,
         >>::mmap(&tmp_file, epserde::deser::Flags::empty())?;
 

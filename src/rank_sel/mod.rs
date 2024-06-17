@@ -45,6 +45,9 @@ but they can be tuned for other densities.
 mod select_adapt;
 pub use select_adapt::*;
 
+mod select_zero_adapt;
+pub use select_zero_adapt::*;
+
 mod select_adapt_const;
 pub use select_adapt_const::*;
 

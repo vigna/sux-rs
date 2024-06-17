@@ -15,30 +15,35 @@ There are two ways to build a base [`EliasFano`] structure: using
 an [`EliasFanoBuilder`] or an [`EliasFanoConcurrentBuilder`].
 
 Once the base structure has been built, it is possible to enrich it with
-indices that will make operations faster, using the same mechanism with which
+indices that will make operations available, using the same mechanism with which
 [you can add ranking and selection structures to bit vectors](`crate::rank_sel`),
 that is, by calling [`EliasFano::map_high_bits`] towards the desired type. For example,
 ```rust
-use sux::prelude::*;
-let mut efb = EliasFanoBuilder::new(2, 5);
+# use sux::rank_sel::{SelectAdaptConst, SelectZeroAdaptConst};
+# use sux::dict::{EliasFanoBuilder};
+# use sux::traits::{Types,IndexedSeq,IndexedDict,Succ};
+let mut efb = EliasFanoBuilder::new(4, 10);
 efb.push(0);
 efb.push(2);
+efb.push(8);
+efb.push(10);
+
 let ef = efb.build();
-let ef = unsafe { ef.map_high_bits(|high_bits| {
-    // Add a selection structure for zeros (implements indexed access)
-    SelectAdaptConst::<_, _, 10, 2>::new(SelectAdaptConst::<_, _, 10, 2>::new(high_bits))
-}) };
-let ef = unsafe { ef.map_high_bits(|high_bits| {
+// Add a selection structure for zeros (implements indexed access)
+let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
     // Add a selection structure for zeros (implements predecessor and successor)
-    SelectAdaptZeroConst::<_, _, 10, 2>::new(SelectAdaptZeroConst::<_, _, 10, 2>::new(high_bits))
-}) };
+let ef = unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _>::new) };
+
+assert_eq!(ef.get(0), 0);
+assert_eq!(ef.get(1), 2);
+assert_eq!(ef.succ(&6), Some((2, 8)));
+assert_eq!(ef.succ(&11), None);
 ```
 
 */
 
 use crate::prelude::*;
 use crate::traits::bit_field_slice::*;
-use anyhow::{bail, Result};
 use core::sync::atomic::Ordering;
 use epserde::*;
 use mem_dbg::*;
@@ -48,8 +53,8 @@ use mem_dbg::*;
 /// After creating an instance, you can use [`EliasFanoBuilder::push`] to add new values.
 #[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct EliasFanoBuilder {
-    u: usize,
     n: usize,
+    u: usize,
     l: usize,
     low_bits: BitFieldVec,
     high_bits: BitVec,
@@ -68,8 +73,8 @@ impl EliasFanoBuilder {
         };
 
         Self {
-            u,
             n,
+            u,
             l,
             low_bits: BitFieldVec::new(l, n),
             high_bits: BitVec::new(n + (u >> l) + 1),
@@ -83,24 +88,22 @@ impl EliasFanoBuilder {
     /// # Panic
     /// May panic if the value is smaller than the last provided
     /// value, or if too many values are provided.
-    pub fn push(&mut self, value: usize) -> Result<()> {
+    pub fn push(&mut self, value: usize) {
         if self.count == self.n {
-            bail!("Too many values");
+            panic!("Too many values");
         }
         if value > self.u {
-            bail!("Value too large: {} > {}", value, self.u);
+            panic!("Value too large: {} > {}", value, self.u);
         }
         if value < self.last_value {
-            bail!(
+            panic!(
                 "The values provided are not monotone: {} < {}",
-                value,
-                self.last_value
+                value, self.last_value
             );
         }
         unsafe {
             self.push_unchecked(value);
         }
-        Ok(())
     }
 
     /// # Safety
@@ -121,8 +124,8 @@ impl EliasFanoBuilder {
     pub fn build(self) -> EliasFano {
         let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
         EliasFano {
-            u: self.u,
             n: self.n,
+            u: self.u,
             l: self.l,
             low_bits: self.low_bits.into(),
             // SAFETY: n is the number of ones in the high_bits.
@@ -139,8 +142,8 @@ impl EliasFanoBuilder {
 /// indices and lack of monotonicity are not detected).
 #[derive(MemDbg, MemSize)]
 pub struct EliasFanoConcurrentBuilder {
-    u: usize,
     n: usize,
+    u: usize,
     l: usize,
     low_bits: AtomicBitFieldVec,
     high_bits: AtomicBitVec,
@@ -187,8 +190,8 @@ impl EliasFanoConcurrentBuilder {
         let low_bits: BitFieldVec<usize, Vec<usize>> = self.low_bits.into();
         let low_bits: BitFieldVec<usize, Box<[usize]>> = low_bits.into();
         EliasFano {
-            u: self.u,
             n: self.n,
+            u: self.u,
             l: self.l,
             low_bits,
             // SAFETY: n is the number of ones in the high_bits.
@@ -199,10 +202,10 @@ impl EliasFanoConcurrentBuilder {
 
 #[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 pub struct EliasFano<H = BitVec<Box<[usize]>>, L = BitFieldVec<usize, Box<[usize]>>> {
-    /// An upper bound to the values.
-    u: usize,
     /// The number of values.
     n: usize,
+    /// An upper bound to the values.
+    u: usize,
     /// The number of lower bits.
     l: usize,
     /// The lower-bits array.
@@ -234,8 +237,8 @@ impl<H, L> EliasFano<H, L> {
         F: FnOnce(H) -> H2,
     {
         EliasFano {
-            u: self.u,
             n: self.n,
+            u: self.u,
             l: self.l,
             low_bits: self.low_bits,
             high_bits: func(self.high_bits),
@@ -248,8 +251,8 @@ impl<H, L> EliasFano<H, L> {
         F: FnOnce(L) -> L2,
     {
         EliasFano {
-            u: self.u,
             n: self.n,
+            u: self.u,
             l: self.l,
             low_bits: func(self.low_bits),
             high_bits: self.high_bits,
@@ -263,8 +266,8 @@ impl<H, L> EliasFano<H, L> {
     {
         let (high_bits, low_bits) = func(self.high_bits, self.low_bits);
         EliasFano {
-            u: self.u,
             n: self.n,
+            u: self.u,
             l: self.l,
             low_bits,
             high_bits,
@@ -278,8 +281,8 @@ impl<H, L> EliasFano<H, L> {
     #[inline(always)]
     pub unsafe fn from_raw_parts(u: usize, n: usize, l: usize, low_bits: L, high_bits: H) -> Self {
         Self {
-            u,
             n,
+            u,
             l,
             low_bits,
             high_bits,

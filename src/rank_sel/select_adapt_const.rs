@@ -22,13 +22,26 @@ use crate::{
 ///
 /// # Examples
 /// ```rust
-/// use sux::bit_vec;
-/// use sux::traits::{Rank, Select};
-/// use sux::rank_sel::{SelectAdapt, Rank9};
-///
+/// # use sux::bit_vec;
+/// # use sux::traits::{Rank, Select, SelectUnchecked, AddNumBits};
+/// # use sux::rank_sel::{SelectAdaptConst, Rank9};
 /// // Standalone select
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
-/// let select = SelectAdapt::new(bits, 3);
+/// let select = SelectAdaptConst::<_,_>::new(bits);
+///
+/// // If the backend does not implement NumBits
+/// // we just get SelectUnchecked
+/// unsafe {
+///     assert_eq!(select.select_unchecked(0), 0);
+///     assert_eq!(select.select_unchecked(1), 2);
+///     assert_eq!(select.select_unchecked(2), 3);
+///     assert_eq!(select.select_unchecked(3), 5);
+///     assert_eq!(select.select_unchecked(4), 7);
+/// }
+///
+/// // Let's add NumBits to the backend
+/// let bits: AddNumBits<_> = bit_vec![1, 0, 1, 1, 0, 1, 0, 1].into();
+/// let select = SelectAdaptConst::<_,_>::new(bits);
 ///
 /// assert_eq!(select.select(0), Some(0));
 /// assert_eq!(select.select(1), Some(2));
@@ -48,7 +61,7 @@ use crate::{
 /// assert_eq!(select[7], true);
 ///
 /// // Map the backend to a different structure
-/// let sel_rank9 = select.map(Rank9::new);
+/// let sel_rank9 = unsafe { select.map(Rank9::new) };
 ///
 /// // Rank methods are forwarded
 /// assert_eq!(sel_rank9.rank(0), 0);
@@ -63,7 +76,7 @@ use crate::{
 ///
 /// // Select over a Rank9 structure
 /// let rank9 = Rank9::new(sel_rank9.into_inner().into_inner());
-/// let rank9_sel = SelectAdapt::new(rank9, 3);
+/// let rank9_sel = SelectAdaptConst::<_,_>::new(rank9);
 ///
 /// assert_eq!(rank9_sel.select(0), Some(0));
 /// assert_eq!(rank9_sel.select(1), Some(2));
@@ -98,7 +111,7 @@ use crate::{
 pub struct SelectAdaptConst<
     B,
     I = Box<[usize]>,
-    const LOG2_ONES_PER_INVENTORY: usize = 10,
+    const LOG2_ZEROS_PER_INVENTORY: usize = 10,
     const LOG2_U64_PER_SUBINVENTORY: usize = 2,
 > {
     bits: B,
@@ -183,8 +196,8 @@ fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
     log2_ones_per_sub16.saturating_sub((span >> 15).ilog2() as usize + 1)
 }
 
-impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY: usize>
-    SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY: usize>
+    SelectAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     pub fn into_inner(self) -> B {
         self.bits
@@ -210,9 +223,9 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
 
 impl<
         B: AsRef<[usize]> + BitLength + BitCount,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectAdaptConst<B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SelectAdaptConst<B, Box<[usize]>, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     /// Creates a new selection structure over a [`SelectHinted`] with a specified
     /// distance between indexed ones.
@@ -220,7 +233,7 @@ impl<
     pub fn new(bits: B) -> Self {
         let num_ones = bits.count_ones();
         let num_bits = max(1, bits.len());
-        let ones_per_inventory = 1 << LOG2_ONES_PER_INVENTORY;
+        let ones_per_inventory = 1 << LOG2_ZEROS_PER_INVENTORY;
         let ones_per_inventory_mask = ones_per_inventory - 1;
         let inventory_size = num_ones.div_ceil(ones_per_inventory);
 
@@ -229,7 +242,7 @@ impl<
         let u64_per_inventory = u64_per_subinventory + 1;
 
         let log2_ones_per_sub16 =
-            LOG2_ONES_PER_INVENTORY.saturating_sub(LOG2_U64_PER_SUBINVENTORY + 2);
+            LOG2_ZEROS_PER_INVENTORY.saturating_sub(LOG2_U64_PER_SUBINVENTORY + 2);
         let ones_per_sub16 = 1 << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
@@ -398,7 +411,7 @@ impl<
                             // it avoids the additional loop iterations that
                             // would be necessary to find the position of the
                             // next one (i.e., end_bit_idx).
-                            if subinventory_idx << log2_quantum == (1 << LOG2_ONES_PER_INVENTORY) {
+                            if subinventory_idx << log2_quantum == (1 << LOG2_ZEROS_PER_INVENTORY) {
                                 break 'outer;
                             }
                         }
@@ -428,7 +441,7 @@ impl<
                             // it avoids the additional loop iterations that
                             // would be necessary to find the position of the
                             // next one (i.e., end_bit_idx).
-                            if subinventory_idx << log2_quantum == (1 << LOG2_ONES_PER_INVENTORY) {
+                            if subinventory_idx << log2_quantum == (1 << LOG2_ZEROS_PER_INVENTORY) {
                                 break 'outer;
                             }
                         }
@@ -491,14 +504,14 @@ impl<
 impl<
         B: SelectHinted + AsRef<[usize]> + BitLength,
         I: AsRef<[usize]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > SelectUnchecked
-    for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    for SelectAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         let inventory = self.inventory.as_ref();
-        let inventory_index = rank >> LOG2_ONES_PER_INVENTORY;
+        let inventory_index = rank >> LOG2_ZEROS_PER_INVENTORY;
         let inventory_start_pos = (inventory_index << LOG2_U64_PER_SUBINVENTORY) + inventory_index;
 
         let inventory_rank = { *inventory.get_unchecked(inventory_start_pos) };
@@ -525,7 +538,6 @@ impl<
 
         if inventory_rank.is_u32_span() {
             let inventory_rank = inventory_rank.get();
-
             let span = (*inventory.get_unchecked(inventory_start_pos + u64_per_subinventory + 1))
                 .get()
                 - inventory_rank;
@@ -578,14 +590,14 @@ impl<
 impl<
         B: SelectHinted + AsRef<[usize]> + NumBits,
         I: AsRef<[usize]>,
-        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_ZEROS_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > Select for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > Select for SelectAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
 }
 
 crate::forward_mult![
-    SelectAdaptConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
+    SelectAdaptConst<B, I, [const] LOG2_ZEROS_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,

@@ -13,7 +13,7 @@ use sux::rank_sel::{RankSmall, SelectSmall};
 use sux::traits::BitCount;
 
 macro_rules! test_rank_small_sel {
-    ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ONES_PER_INVENTORY: literal) => {
+    ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ZEROS_PER_INVENTORY: literal) => {
         use sux::traits::Select;
         let mut rng = SmallRng::seed_from_u64(0);
         let density = 0.5;
@@ -23,7 +23,7 @@ macro_rules! test_rank_small_sel {
         for len in lens {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
             let rank_small_sel =
-                SelectSmall::<$NUM_U32S, $COUNTER_WIDTH, $LOG2_ONES_PER_INVENTORY, _>::new(
+                SelectSmall::<$NUM_U32S, $COUNTER_WIDTH, $LOG2_ZEROS_PER_INVENTORY, _>::new(
                     RankSmall::<$NUM_U32S, $COUNTER_WIDTH, _>::new(bits.clone()),
                 );
 
