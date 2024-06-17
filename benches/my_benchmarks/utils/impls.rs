@@ -1,7 +1,7 @@
 use sux::bits::BitVec;
 use sux::rank_sel::{Rank9, RankSmall};
 use sux::rank_sel::{Select9, SelectAdapt};
-use sux::traits::{BitLength, AddNumBits, NumBits, Select, SelectHinted, SelectUnchecked};
+use sux::traits::{AddNumBits, BitLength, NumBits, Select, SelectHinted, SelectUnchecked};
 
 use super::Build;
 
