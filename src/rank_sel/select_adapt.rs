@@ -689,9 +689,8 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> SelectUnch
         if inventory_rank.is_u32_span() {
             let inventory_rank = inventory_rank.get();
 
-            let span = (*inventory
-                .get_unchecked(inventory_start_pos + self.log2_u64_per_subinventory + 1))
-            .get()
+            let span = (*inventory.get_unchecked(inventory_start_pos + u64_per_subinventory + 1))
+                .get()
                 - inventory_rank;
             let log2_ones_per_sub32 = log2_ones_per_sub32(span, self.log2_ones_per_sub16);
             let hint_pos = if subrank >> log2_ones_per_sub32 < (u64_per_subinventory - 1) * 2 {

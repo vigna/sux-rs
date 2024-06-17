@@ -20,7 +20,7 @@ use sux::traits::Rank;
 use sux::traits::Select;
 
 #[test]
-fn test_simple_select() {
+fn test_select_adapt() {
     let lens = (1..100)
         .step_by(10)
         .chain((100_000..1_000_000).step_by(100_000));
@@ -32,9 +32,9 @@ fn test_simple_select() {
             .collect::<BitVec>()
             .into();
 
-        let simple = SelectAdapt::new(bits.clone(), 3);
+        let select = SelectAdapt::new(bits.clone(), 3);
 
-        let ones = simple.num_ones();
+        let ones = select.num_ones();
         let mut pos = Vec::with_capacity(ones);
         for i in 0..len {
             if bits[i] {
@@ -43,14 +43,14 @@ fn test_simple_select() {
         }
 
         for i in 0..ones {
-            assert_eq!(simple.select(i), Some(pos[i]));
+            assert_eq!(select.select(i), Some(pos[i]));
         }
-        assert_eq!(simple.select(ones + 1), None);
+        assert_eq!(select.select(ones + 1), None);
     }
 }
 
 #[test]
-fn test_simple_select_mult_usize() {
+fn test_select_adapt_mult_usize() {
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     let density = 0.5;
     for len in (1 << 10..1 << 15).step_by(usize::BITS as _) {
@@ -58,7 +58,7 @@ fn test_simple_select_mult_usize() {
             .map(|_| rng.gen_bool(density))
             .collect::<BitVec>()
             .into();
-        let simple = SelectAdapt::new(bits.clone(), 3);
+        let select = SelectAdapt::new(bits.clone(), 3);
 
         let ones = bits.count_ones();
         let mut pos = Vec::with_capacity(ones);
@@ -69,45 +69,45 @@ fn test_simple_select_mult_usize() {
         }
 
         for i in 0..ones {
-            assert_eq!(simple.select(i), Some(pos[i]));
+            assert_eq!(select.select(i), Some(pos[i]));
         }
-        assert_eq!(simple.select(ones + 1), None);
+        assert_eq!(select.select(ones + 1), None);
     }
 }
 
 #[test]
-fn test_simple_select_empty() {
+fn test_select_adapt_empty() {
     let bits: AddNumBits<_> = BitVec::new(0).into();
-    let simple = SelectAdapt::new(bits.clone(), 3);
-    assert_eq!(simple.count_ones(), 0);
-    assert_eq!(simple.len(), 0);
-    assert_eq!(simple.select(0), None);
+    let select = SelectAdapt::new(bits.clone(), 3);
+    assert_eq!(select.count_ones(), 0);
+    assert_eq!(select.len(), 0);
+    assert_eq!(select.select(0), None);
 }
 
 #[test]
-fn test_simple_select_ones() {
+fn test_select_adapt_ones() {
     let len = 300_000;
     let bits: AddNumBits<_> = (0..len).map(|_| true).collect::<BitVec>().into();
-    let simple = SelectAdapt::new(bits, 3);
-    assert_eq!(simple.count_ones(), len);
-    assert_eq!(simple.len(), len);
+    let select = SelectAdapt::new(bits, 3);
+    assert_eq!(select.count_ones(), len);
+    assert_eq!(select.len(), len);
     for i in 0..len {
-        assert_eq!(simple.select(i), Some(i));
+        assert_eq!(select.select(i), Some(i));
     }
 }
 
 #[test]
-fn test_simple_select_zeros() {
+fn test_select_adapt_zeros() {
     let len = 300_000;
     let bits: AddNumBits<_> = (0..len).map(|_| false).collect::<BitVec>().into();
-    let simple = SelectAdapt::new(bits, 3);
-    assert_eq!(simple.count_ones(), 0);
-    assert_eq!(simple.len(), len);
-    assert_eq!(simple.select(0), None);
+    let select = SelectAdapt::new(bits, 3);
+    assert_eq!(select.count_ones(), 0);
+    assert_eq!(select.len(), len);
+    assert_eq!(select.select(0), None);
 }
 
 #[test]
-fn test_simple_select_few_ones() {
+fn test_select_adapt_few_ones() {
     let lens = [1 << 18, 1 << 19, 1 << 20];
     for len in lens {
         for num_ones in [1, 2, 4, 8, 16, 32, 64, 128] {
@@ -115,18 +115,18 @@ fn test_simple_select_few_ones() {
                 .map(|i| i % (len / num_ones) == 0)
                 .collect::<BitVec>()
                 .into();
-            let simple = SelectAdapt::new(bits, 3);
-            assert_eq!(simple.count_ones(), num_ones);
-            assert_eq!(simple.len(), len);
+            let select = SelectAdapt::new(bits, 3);
+            assert_eq!(select.count_ones(), num_ones);
+            assert_eq!(select.len(), len);
             for i in 0..num_ones {
-                assert_eq!(simple.select(i), Some(i * (len / num_ones)));
+                assert_eq!(select.select(i), Some(i * (len / num_ones)));
             }
         }
     }
 }
 
 #[test]
-fn test_simple_non_uniform() {
+fn test_select_adapt_non_uniform() {
     let lens = [1 << 18, 1 << 19, 1 << 20];
 
     let mut rng = SmallRng::seed_from_u64(0);
@@ -184,11 +184,11 @@ fn test_simple_non_uniform() {
 
             let bits: AddNumBits<_> = bits.into();
 
-            let simple = SelectAdapt::new(bits, 3);
+            let select = SelectAdapt::new(bits, 3);
             for i in 0..(ones) {
-                assert_eq!(simple.select(i), Some(pos[i]));
+                assert_eq!(select.select(i), Some(pos[i]));
             }
-            assert_eq!(simple.select(ones + 1), None);
+            assert_eq!(select.select(ones + 1), None);
         }
     }
 }

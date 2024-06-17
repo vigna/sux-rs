@@ -18,6 +18,7 @@ use crate::{
 
 /// A selection structure based on an adaptive two-level inventory.
 ///
+/// TODO: explain it's not a MAX_LOG2_...
 ///
 /// # Examples
 /// ```rust
@@ -98,13 +99,12 @@ pub struct SelectAdaptConst<
     B,
     I = Box<[usize]>,
     const LOG2_ONES_PER_INVENTORY: usize = 10,
-    const MAX_LOG2_U64_PER_SUBINVENTORY: usize = 2,
+    const LOG2_U64_PER_SUBINVENTORY: usize = 2,
 > {
     bits: B,
     inventory: I,
     spill: I,
     log2_ones_per_sub16: usize,
-    u64_per_inventory: usize,
     ones_per_inventory_mask: usize,
     ones_per_sub16_mask: usize,
 }
@@ -200,7 +200,6 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
             inventory: self.inventory,
             spill: self.spill,
             log2_ones_per_sub16: self.log2_ones_per_sub16,
-            u64_per_inventory: self.u64_per_inventory,
             ones_per_inventory_mask: self.ones_per_inventory_mask,
             ones_per_sub16_mask: self.ones_per_sub16_mask,
         }
@@ -247,20 +246,12 @@ impl<
         let ones_per_inventory_mask = ones_per_inventory - 1;
         let inventory_size = num_ones.div_ceil(ones_per_inventory);
 
-        // We use a smaller value than max_log2_u64_per_subinventory when with a
-        // smaller value we can still index, in the 16-bit case, all bits the
-        // subinventory. This can happen only in extremely sparse vectors, or
-        // if a very small value of log2_ones_per_inventory is set directly.
-
-        let log2_u64_per_subinventory =
-            LOG2_U64_PER_SUBINVENTORY.min(LOG2_ONES_PER_INVENTORY.saturating_sub(2));
-
-        let u64_per_subinventory = 1 << log2_u64_per_subinventory;
+        let u64_per_subinventory = 1 << LOG2_U64_PER_SUBINVENTORY;
         // A u64 for the inventory, and u64_per_inventory for the subinventory
         let u64_per_inventory = u64_per_subinventory + 1;
 
         let log2_ones_per_sub16 =
-            LOG2_ONES_PER_INVENTORY.saturating_sub(log2_u64_per_subinventory + 2);
+            LOG2_ONES_PER_INVENTORY.saturating_sub(LOG2_U64_PER_SUBINVENTORY + 2);
         let ones_per_sub16 = 1 << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
@@ -510,7 +501,6 @@ impl<
             inventory,
             spill,
             log2_ones_per_sub16,
-            u64_per_inventory,
             ones_per_inventory_mask,
             ones_per_sub16_mask,
         }
@@ -555,7 +545,7 @@ impl<
         if inventory_rank.is_u32_span() {
             let inventory_rank = inventory_rank.get();
 
-            let span = (*inventory.get_unchecked(inventory_start_pos + self.u64_per_inventory))
+            let span = (*inventory.get_unchecked(inventory_start_pos + u64_per_subinventory + 1))
                 .get()
                 - inventory_rank;
             let log2_ones_per_sub32 = log2_ones_per_sub32(span, self.log2_ones_per_sub16);
