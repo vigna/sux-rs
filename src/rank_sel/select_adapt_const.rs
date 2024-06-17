@@ -352,6 +352,7 @@ impl<
                 }
                 SpanType::U32 => {
                     log2_quantum = log2_ones_per_sub32(span, log2_ones_per_sub16);
+
                     inventory[start_inv_idx].set_u32_span();
                     // The first word of the subinventory is used to store the spill index.
                     inventory[start_inv_idx + 1] = spilled;
@@ -373,7 +374,7 @@ impl<
             next_quantum += quantum;
 
             // This is used only when span_type == SpanType::U32
-            let mut u32_odd_spill = false;
+            let mut u32_odd_spill = LOG2_U64_PER_SUBINVENTORY == 0;
 
             let mut word_idx = start_bit_idx / usize::BITS as usize;
             let end_word_idx = end_bit_idx.div_ceil(usize::BITS as usize);
@@ -484,12 +485,14 @@ impl<
             // spans:
             // - the case in which the last inventory entry has a 32-bit span
             // and contains an odd number of ones greater than one, as spilled
-            // is not incremented by the loop code (note that u32_odd_spill =>
-            // span_type == SpanType::U32);
+            // is not incremented by the loop code (note that u32_odd_spill
+            // might be true even when span_type != SpanType::U32 if
+            // LOG2_U64_PER_SUBINVENTORY == 0);
             // - the case in which an inventory entry contains a single one, as
             // its zero subinventory entry is written implicitly, but we still
             // need to increment spilled to allocate space for it.
-            if u32_odd_spill || span_type == SpanType::U32 && subinventory_idx == 1 {
+
+            if span_type == SpanType::U32 && (u32_odd_spill || subinventory_idx == 1) {
                 spilled += 1;
             }
         }
@@ -549,6 +552,7 @@ impl<
                 .get()
                 - inventory_rank;
             let log2_ones_per_sub32 = log2_ones_per_sub32(span, self.log2_ones_per_sub16);
+
             let hint_pos = if subrank >> log2_ones_per_sub32 < (u64_per_subinventory - 1) * 2 {
                 let u32s = inventory
                     .get_unchecked(inventory_start_pos + 2..)
@@ -557,7 +561,6 @@ impl<
 
                 inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize
             } else {
-                let inventory_rank = inventory_rank.get();
                 let start_spill_idx = *inventory.get_unchecked(inventory_start_pos + 1);
 
                 let spilled_u32s = self
