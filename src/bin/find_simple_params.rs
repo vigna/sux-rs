@@ -1,7 +1,7 @@
 use std::iter::zip;
 
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use sux::{bits::BitVec, rank_sel::SimpleSelect, traits::AddNumBits};
+use sux::{bits::BitVec, rank_sel::SelectAdapt, traits::AddNumBits};
 
 fn main() {
     let lens = [
@@ -31,7 +31,7 @@ fn main() {
     let target_path = format!("{}/target/criterion/fixed_filtered/", wd);
 
     for (b, (len, d)) in zip(&bitvecs, &bitvec_ids) {
-        let simple = SimpleSelect::new(b.clone(), 3);
+        let simple = SelectAdapt::new(b.clone(), 3);
         let log2_ones_per_inventory = simple.log2_ones_per_inventory();
         let log2_u64_per_subinventory = simple.log2_u64_per_subinventory();
         let source_folder_name = format!(

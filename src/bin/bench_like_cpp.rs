@@ -9,7 +9,7 @@ use std::{env, path::PathBuf};
 use sux::traits::AddNumBits;
 use sux::{
     bits::BitVec,
-    rank_sel::{Rank9, Select9, SimpleSelect},
+    rank_sel::{Rank9, Select9, SelectAdapt},
     traits::{BitCount, Rank, Select},
 };
 
@@ -31,9 +31,9 @@ const NUMPOS: usize = 70_000_000;
 trait SelStruct<B>: Select {
     fn new(bits: B) -> Self;
 }
-impl SelStruct<BitVec> for SimpleSelect<AddNumBits<BitVec>> {
+impl SelStruct<BitVec> for SelectAdapt<AddNumBits<BitVec>> {
     fn new(bits: BitVec) -> Self {
-        SimpleSelect::new(bits.into(), 3)
+        SelectAdapt::new(bits.into(), 3)
     }
 }
 impl SelStruct<BitVec> for Select9 {
@@ -182,11 +182,11 @@ fn main() {
 
     match args[1].as_str() {
         "select" => {
-            bench_select_batch::<SimpleSelect<_>>(&mut rng, "simple_select", true, &target_dir);
+            bench_select_batch::<SelectAdapt<_>>(&mut rng, "simple_select", true, &target_dir);
             bench_select_batch::<Select9>(&mut rng, "select9", true, &target_dir);
         }
         "select_non_uniform" => {
-            bench_select_batch::<SimpleSelect<_>>(
+            bench_select_batch::<SelectAdapt<_>>(
                 &mut rng,
                 "simple_select_non_uniform",
                 false,

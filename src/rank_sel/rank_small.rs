@@ -60,7 +60,7 @@ use crate::{
 ///
 /// use sux::{bit_vec,rank_small};
 /// use sux::traits::{Rank, Select};
-/// use sux::rank_sel::SimpleSelect;
+/// use sux::rank_sel::SelectAdapt;
 ///
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![0; bits];

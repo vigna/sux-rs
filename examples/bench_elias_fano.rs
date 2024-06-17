@@ -63,16 +63,16 @@ fn main() -> Result<()> {
     const FIXED2_LOG2_U64_PER_INVENTORY: usize = 2;
     // Add an index on zeros
     let elias_fano_s: EliasFano<
-        SimpleSelectZeroConst<
-            SimpleSelectConst<_, _, FIXED2_LOG2_ONES_PER_INVENTORY, FIXED2_LOG2_U64_PER_INVENTORY>,
+        SelectZeroAdaptConst<
+            SelectAdaptConst<_, _, FIXED2_LOG2_ONES_PER_INVENTORY, FIXED2_LOG2_U64_PER_INVENTORY>,
             _,
             FIXED2_LOG2_ONES_PER_INVENTORY,
             FIXED2_LOG2_U64_PER_INVENTORY,
         >,
     > = unsafe {
-        elias_fano_builder.build().map_high_bits(|high_bits| {
-            SimpleSelectZeroConst::new(SimpleSelectConst::new(high_bits))
-        })
+        elias_fano_builder
+            .build()
+            .map_high_bits(|high_bits| SelectZeroAdaptConst::new(SelectAdaptConst::new(high_bits)))
     };
 
     println!();

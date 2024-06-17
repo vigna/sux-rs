@@ -91,11 +91,11 @@ could do as follows:
 
 ```rust
 use sux::bit_vec;
-use sux::rank_sel::SimpleSelect;
+use sux::rank_sel::SelectAdapt;
 use sux::traits::SelectUnchecked;
 
 let bv = bit_vec![0, 1, 0, 1, 1, 0, 1, 0];
-let select = SimpleSelect::new(bv, 3);
+let select = SelectAdapt::new(bv, 3);
 
 assert_eq!(unsafe { select.select_unchecked(0) }, 1);
 ```
@@ -109,11 +109,11 @@ and thus implements the [`NumBits`] trait:
 
 ```rust
 use sux::bit_vec;
-use sux::rank_sel::SimpleSelect;
+use sux::rank_sel::SelectAdapt;
 use sux::traits::{AddNumBits, Select};
 
 let bv: AddNumBits<_> = bit_vec![0, 1, 0, 1, 1, 0, 1, 0].into();
-let select = SimpleSelect::new(bv, 3);
+let select = SelectAdapt::new(bv, 3);
 
 assert_eq!(select.select(0), Some(1));
 ```
@@ -124,11 +124,11 @@ just use it:
 
 ```rust
 use sux::{bit_vec, rank_small};
-use sux::rank_sel::{Rank9, SimpleSelect};
+use sux::rank_sel::{Rank9, SelectAdapt};
 use sux::traits::{Rank, Select};
 
 let bv = bit_vec![0, 1, 0, 1, 1, 0, 1, 0];
-let sel_rank9 = SimpleSelect::new(Rank9::new(bv), 3);
+let sel_rank9 = SelectAdapt::new(Rank9::new(bv), 3);
 
 assert_eq!(sel_rank9.select(0), Some(1));
 assert_eq!(sel_rank9.rank(4), 2);
@@ -138,7 +138,7 @@ assert!(sel_rank9[1]);
 let sel_rank_small = unsafe {sel_rank9.map(|x| rank_small![4; x.into_inner()]) };
 ```
 
-Note how [`SimpleSelect`] forwards not only [`Rank`] but also [`Index`], which
+Note how [`SelectAdapt`] forwards not only [`Rank`] but also [`Index`], which
 gives access to the bits of the underlying bit vector. The last line uses the
 [`map`](Map::map) method to replace the underlying [`Rank9`] structure with one
 that is slower but uses much less space: the method is unsafe because in

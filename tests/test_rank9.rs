@@ -9,7 +9,7 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 use sux::{
     bit_vec,
     bits::BitVec,
-    rank_sel::{Rank9, SimpleSelectConst},
+    rank_sel::{Rank9, SelectAdapt},
     traits::{AddNumBits, BitCount, Rank, Select},
 };
 
@@ -47,7 +47,7 @@ fn test_map() {
     let rank9_sel = unsafe {
         rank9.map(|x| {
             let x: AddNumBits<_> = x.into();
-            SimpleSelectConst::<_, _>::new(x)
+            SelectAdapt::<_, _>::new(x, 3)
         })
     };
     assert_eq!(rank9_sel.rank(0), 0);

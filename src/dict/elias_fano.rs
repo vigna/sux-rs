@@ -26,11 +26,11 @@ efb.push(2);
 let ef = efb.build();
 let ef = unsafe { ef.map_high_bits(|high_bits| {
     // Add a selection structure for zeros (implements indexed access)
-    SimpleSelectConst::<_, _, 10, 2>::new(SimpleSelectConst::<_, _, 10, 2>::new(high_bits))
+    SelectAdaptConst::<_, _, 10, 2>::new(SelectAdaptConst::<_, _, 10, 2>::new(high_bits))
 }) };
 let ef = unsafe { ef.map_high_bits(|high_bits| {
     // Add a selection structure for zeros (implements predecessor and successor)
-    SimpleSelectZeroConst::<_, _, 10, 2>::new(SimpleSelectZeroConst::<_, _, 10, 2>::new(high_bits))
+    SelectAdaptZeroConst::<_, _, 10, 2>::new(SelectAdaptZeroConst::<_, _, 10, 2>::new(high_bits))
 }) };
 ```
 
@@ -118,9 +118,7 @@ impl EliasFanoBuilder {
         self.last_value = value;
     }
 
-    pub fn build(
-        self,
-    ) -> EliasFano<AddNumBits<BitVec<Box<[usize]>>>, BitFieldVec<usize, Box<[usize]>>> {
+    pub fn build(self) -> EliasFano {
         let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
         EliasFano {
             u: self.u,
@@ -128,7 +126,7 @@ impl EliasFanoBuilder {
             l: self.l,
             low_bits: self.low_bits.into(),
             // SAFETY: n is the number of ones in the high_bits.
-            high_bits: unsafe { AddNumBits::from_raw_parts(high_bits, self.n) },
+            high_bits,
         }
     }
 }
@@ -194,13 +192,13 @@ impl EliasFanoConcurrentBuilder {
             l: self.l,
             low_bits,
             // SAFETY: n is the number of ones in the high_bits.
-            high_bits: unsafe { AddNumBits::from_raw_parts(high_bits, self.n) },
+            high_bits,
         }
     }
 }
 
 #[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
-pub struct EliasFano<H = AddNumBits<BitVec<Box<[usize]>>>, L = BitFieldVec<usize, Box<[usize]>>> {
+pub struct EliasFano<H = BitVec<Box<[usize]>>, L = BitFieldVec<usize, Box<[usize]>>> {
     /// An upper bound to the values.
     u: usize,
     /// The number of values.
@@ -318,7 +316,7 @@ where
     }
 }
 
-impl<H: AsRef<[usize]> + Select + SelectZero, L: BitFieldSlice<usize>> IndexedDict
+impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: BitFieldSlice<usize>> IndexedDict
     for EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
@@ -331,7 +329,7 @@ where
         let bit_pos = if zeros_to_skip == 0 {
             0
         } else {
-            self.high_bits.select_zero(zeros_to_skip - 1).unwrap() + 1
+            unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip - 1) + 1 }
         };
 
         let mut rank = bit_pos - zeros_to_skip;
@@ -373,7 +371,8 @@ where
     }
 }
 
-impl<'a, H: AsRef<[usize]> + Select, L: BitFieldSlice<usize>> IntoIterator for &'a EliasFano<H, L>
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>> IntoIterator
+    for &'a EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -386,7 +385,7 @@ where
     }
 }
 
-impl<H: AsRef<[usize]> + Select, L: BitFieldSlice<usize>> EliasFano<H, L>
+impl<H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>> EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -412,7 +411,7 @@ where
     low_bits: <&'a L as IntoUncheckedIterator>::IntoUncheckedIter,
 }
 
-impl<'a, H: Select + AsRef<[usize]>, L: BitFieldSlice<usize>> EliasFanoIterator<'a, H, L>
+impl<'a, H: SelectUnchecked + AsRef<[usize]>, L: BitFieldSlice<usize>> EliasFanoIterator<'a, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
