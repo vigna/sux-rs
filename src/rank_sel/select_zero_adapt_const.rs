@@ -7,12 +7,13 @@
  */
 
 use common_traits::SelectInWord;
+use core::num;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 use std::cmp::{max, min};
 
 use crate::{
-    prelude::{BitCount, BitFieldSlice, BitLength, SelectHinted},
+    prelude::{BitCount, BitFieldSlice, BitLength},
     traits::{NumBits, SelectZero, SelectZeroHinted, SelectZeroUnchecked},
 };
 
@@ -193,7 +194,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
     /// Replaces the backend with a new one implementing [`SelectHinted`].
     pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectZeroAdaptConst<C, I>
     where
-        C: SelectHinted,
+        C: SelectZeroHinted,
     {
         SelectZeroAdaptConst {
             bits: f(self.bits),
@@ -210,38 +211,16 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
 }
 
 impl<
-        B: AsRef<[usize]> + BitLength + BitCount + SelectHinted,
+        B: AsRef<[usize]> + BitLength + BitCount,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > SelectZeroAdaptConst<B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
-    /// Creates a new selection structure over a [`SelectHinted`] with a specified
-    /// distance between indexed ones.
-    ///
-    /// This low-level constructor should be used with care, as the parameter
-    /// `log2_ones_per_inventory` is usually computed as the floor of the base-2
-    /// logarithm of ceiling of the target inventory span multiplied by the
-    /// density of ones in the bit vector. Thus, this constructor makes sense
-    /// only if the density is known in advance.
-    ///
-    /// Unless you understand all the implications, it is preferrable to use the
-    /// [standard constructor](SelectAdapt::new).
-    ///
-    /// # Arguments
-    ///
-    /// * `bits`: A [`SelectHinted`].
-    ///
-    /// * `log2_ones_per_inventory`: The base-2 logarithm of the distance
-    ///   between two indexed ones.
-    ///
-    /// * `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectAdapt) of 64-bit words in each subinventory.
-    ///   Increasing by one this value approximately doubles the space occupancy
-    ///   and halves the length of sequential broadword searches. Typical values
-    ///   are 3 and 4.
+    /// Creates a new selection structure over a [`SelectZeroHinted`] with a specified
+    /// distance between indexed zeros.
 
     pub fn new(bits: B) -> Self {
-        let num_ones = bits.count_ones();
+        let num_ones = bits.count_zeros();
         let num_bits = max(1, bits.len());
         let ones_per_inventory = 1 << LOG2_ONES_PER_INVENTORY;
         let ones_per_inventory_mask = ones_per_inventory - 1;
@@ -273,7 +252,7 @@ impl<
 
         // First phase: we build an inventory for each one out of ones_per_inventory.
         for (i, word) in bits.as_ref().iter().copied().map(|x| !x).enumerate() {
-            let ones_in_word = word.count_ones() as usize;
+            let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
 
             while past_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word(next_quantum - past_ones);
@@ -289,7 +268,7 @@ impl<
             past_ones += ones_in_word;
         }
 
-        assert_eq!(num_ones, past_ones);
+        assert_eq!(past_ones, num_ones);
         // in the last inventory write the number of bits
         inventory.push(num_bits);
         assert_eq!(inventory.len(), inventory_words);
@@ -382,7 +361,7 @@ impl<
             next_quantum += quantum;
 
             // This is used only when span_type == SpanType::U32
-            let mut u32_odd_spill = false;
+            let mut u32_odd_spill = LOG2_U64_PER_SUBINVENTORY == 0;
 
             let mut word_idx = start_bit_idx / usize::BITS as usize;
             let end_word_idx = end_bit_idx.div_ceil(usize::BITS as usize);
@@ -392,7 +371,7 @@ impl<
             let mut word = !((bits.as_ref()[word_idx] >> bit_idx) << bit_idx);
 
             'outer: loop {
-                let ones_in_word = word.count_ones() as usize;
+                let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
 
                 // If the quantum is in this word, write it in the subinventory.
                 // Note that this can happen multiple times in the same word if
@@ -498,7 +477,7 @@ impl<
             // - the case in which an inventory entry contains a single one, as
             // its zero subinventory entry is written implicitly, but we still
             // need to increment spilled to allocate space for it.
-            if u32_odd_spill || span_type == SpanType::U32 && subinventory_idx == 1 {
+            if span_type == SpanType::U32 && (u32_odd_spill || subinventory_idx == 1) {
                 spilled += 1;
             }
         }
@@ -644,7 +623,7 @@ mod tests {
     #[test]
     fn test_extremely_sparse() {
         let len = 1 << 18;
-        let bits: AddNumBits<BitVec> = (0..len / 2)
+        let bits: AddNumBits<_> = (0..len / 2)
             .map(|_| false)
             .chain([true])
             .chain((0..1 << 17).map(|_| false))
@@ -657,7 +636,7 @@ mod tests {
             .into();
         let simple = SelectZeroAdaptConst::<_, _, 13, 0>::new(bits);
 
-        assert_eq!(simple.count_ones(), 4);
+        assert_eq!(simple.count_zeros(), 4);
         assert_eq!(simple.select_zero(0), Some(len / 2));
         assert_eq!(simple.select_zero(1), Some(len / 2 + (1 << 17) + 1));
         assert_eq!(simple.select_zero(2), Some(len / 2 + (1 << 17) + 2));
@@ -676,18 +655,18 @@ mod tests {
                 .into();
             let simple = SelectZeroAdaptConst::<_, _, 13, 3>::new(bits.clone());
 
-            let ones = simple.count_ones();
-            let mut pos = Vec::with_capacity(ones);
+            let zeros = simple.count_zeros();
+            let mut pos = Vec::with_capacity(zeros);
             for i in 0..len {
-                if bits[i] {
+                if !bits[i] {
                     pos.push(i);
                 }
             }
 
-            for i in 0..ones {
+            for i in 0..zeros {
                 assert_eq!(simple.select_zero(i), Some(pos[i]));
             }
-            assert_eq!(simple.select_zero(ones + 1), None);
+            assert_eq!(simple.select_zero(zeros + 1), None);
         }
     }
 
