@@ -279,8 +279,8 @@ impl<B, I> SelectAdapt<B, I> {
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
 }
 
-impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SelectAdapt<B, Box<[usize]>> {
-    /// Creates a new selection structure over a [`SelectHinted`] using a
+impl<B: AsRef<[usize]> + BitLength + BitCount> SelectAdapt<B, Box<[usize]>> {
+    /// Creates a new selection structure over a bit vecotr using a
     /// [default target inventory
     /// span](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN).
     ///
@@ -302,7 +302,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SelectAdapt<B, Box
         )
     }
 
-    /// Creates a new selection structure over a [`SelectHinted`] with a specified
+    /// Creates a new selection structure over a bit vector with a specified
     /// target inventory span.
     ///
     /// # Arguments
@@ -341,7 +341,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SelectAdapt<B, Box
         )
     }
 
-    /// Creates a new selection structure over a [`SelectHinted`] with a specified
+    /// Creates a new selection structure over a bit vector with a specified
     /// distance between indexed ones.
     ///
     /// This low-level constructor should be used with care, as the parameter
@@ -355,7 +355,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SelectAdapt<B, Box
     ///
     /// # Arguments
     ///
-    /// * `bits`: A [`SelectHinted`].
+    /// * `bits`: A bit vector.
     ///
     /// * `log2_ones_per_inventory`: The base-2 logarithm of the distance
     ///   between two indexed ones.
@@ -433,7 +433,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount + SelectHinted> SelectAdapt<B, Box
             past_ones += ones_in_word;
         }
 
-        assert_eq!(num_ones, past_ones);
+        assert_eq!(past_ones, num_ones);
         // in the last inventory write the number of bits
         inventory.push(num_bits);
         assert_eq!(inventory.len(), inventory_words);

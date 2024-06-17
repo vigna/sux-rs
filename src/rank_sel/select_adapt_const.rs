@@ -209,35 +209,13 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
 }
 
 impl<
-        B: AsRef<[usize]> + BitLength + BitCount + SelectHinted,
+        B: AsRef<[usize]> + BitLength + BitCount,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > SelectAdaptConst<B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     /// Creates a new selection structure over a [`SelectHinted`] with a specified
     /// distance between indexed ones.
-    ///
-    /// This low-level constructor should be used with care, as the parameter
-    /// `log2_ones_per_inventory` is usually computed as the floor of the base-2
-    /// logarithm of ceiling of the target inventory span multiplied by the
-    /// density of ones in the bit vector. Thus, this constructor makes sense
-    /// only if the density is known in advance.
-    ///
-    /// Unless you understand all the implications, it is preferrable to use the
-    /// [standard constructor](SelectAdapt::new).
-    ///
-    /// # Arguments
-    ///
-    /// * `bits`: A [`SelectHinted`].
-    ///
-    /// * `log2_ones_per_inventory`: The base-2 logarithm of the distance
-    ///   between two indexed ones.
-    ///
-    /// * `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectAdapt) of 64-bit words in each subinventory.
-    ///   Increasing by one this value approximately doubles the space occupancy
-    ///   and halves the length of sequential broadword searches. Typical values
-    ///   are 3 and 4.
 
     pub fn new(bits: B) -> Self {
         let num_ones = bits.count_ones();
@@ -280,7 +258,7 @@ impl<
             past_ones += ones_in_word;
         }
 
-        assert_eq!(num_ones, past_ones);
+        assert_eq!(past_ones, num_ones);
         // in the last inventory write the number of bits
         inventory.push(num_bits);
         assert_eq!(inventory.len(), inventory_words);
