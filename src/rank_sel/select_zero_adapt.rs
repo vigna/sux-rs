@@ -12,23 +12,23 @@ use mem_dbg::{MemDbg, MemSize};
 use std::cmp::{max, min};
 
 use crate::{
-    prelude::{BitCount, BitFieldSlice, BitLength},
-    traits::{NumBits, SelectZero, SelectZeroHinted, SelectZeroUnchecked},
+    prelude::{BitCount, BitFieldSlice, BitLength, SelectZeroHinted},
+    traits::{NumBits, SelectZero, SelectZeroUnchecked},
 };
 
-// NOTE: to make parallel modifications with SelectAdaptConst as easy as
-// possible, "ones" are considered to be zeros in the following code.
+// NOTE: to make parallel modifications with SelectAdapt as easy as possible,
+// "ones" are considered to be zeros in the following code.
 
-/// A version of [`SelectAdaptConst`](super::SelectAdaptConst) implementing [selection on zeros](crate::traits::SelectZero).
+/// A version of [`SelectAdapt`](super::SelectAdapt) implementing [selection on zeros](crate::traits::SelectZero).
 ///
 /// # Examples
 /// ```rust
 /// # use sux::bit_vec;
 /// # use sux::traits::{Rank, SelectZero, SelectZeroUnchecked, AddNumBits};
-/// # use sux::rank_sel::{SelectZeroAdaptConst, Rank9};
-/// // Standalone select (default values)
+/// # use sux::rank_sel::{SelectZeroAdapt, Rank9};
+/// // Standalone select
 /// let bits = bit_vec![0, 1, 0, 0, 1, 0, 1, 0];
-/// let select = SelectZeroAdaptConst::<_,_>::new(bits);
+/// let select = SelectZeroAdapt::new(bits, 3);
 ///
 /// // If the backend does not implement NumBits
 /// // we just get SelectZeroUnchecked
@@ -42,7 +42,7 @@ use crate::{
 ///
 /// // Let's add NumBits to the backend
 /// let bits: AddNumBits<_> = bit_vec![0, 1, 0, 0, 1, 0, 1, 0].into();
-/// let select = SelectZeroAdaptConst::<_,_>::new(bits);
+/// let select = SelectZeroAdapt::new(bits, 3);
 ///
 /// assert_eq!(select.select_zero(0), Some(0));
 /// assert_eq!(select.select_zero(1), Some(2));
@@ -77,7 +77,7 @@ use crate::{
 ///
 /// // Select over a Rank9 structure
 /// let rank9 = Rank9::new(sel_rank9.into_inner().into_inner());
-/// let rank9_sel = SelectZeroAdaptConst::<_,_>::new(rank9);
+/// let rank9_sel = SelectZeroAdapt::new(rank9, 3);
 ///
 /// assert_eq!(rank9_sel.select_zero(0), Some(0));
 /// assert_eq!(rank9_sel.select_zero(1), Some(2));
@@ -109,16 +109,13 @@ use crate::{
 /// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
-pub struct SelectZeroAdaptConst<
-    B,
-    I = Box<[usize]>,
-    const LOG2_ZEROS_PER_INVENTORY: usize = 10,
-    const LOG2_U64_PER_SUBINVENTORY: usize = 2,
-> {
+pub struct SelectZeroAdapt<B, I = Box<[usize]>> {
     bits: B,
     inventory: I,
     spill: I,
+    log2_ones_per_inventory: usize,
     log2_ones_per_sub16: usize,
+    log2_u64_per_subinventory: usize,
     ones_per_inventory_mask: usize,
     ones_per_sub16_mask: usize,
 }
@@ -197,23 +194,23 @@ fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
     log2_ones_per_sub16.saturating_sub((span >> 15).ilog2() as usize + 1)
 }
 
-impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY: usize>
-    SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
+impl<B, I> SelectZeroAdapt<B, I> {
     pub fn into_inner(self) -> B {
         self.bits
     }
 
     /// Replaces the backend with a new one implementing [`SelectZeroHinted`].
-    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectZeroAdaptConst<C, I>
+    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectZeroAdapt<C, I>
     where
         C: SelectZeroHinted,
     {
-        SelectZeroAdaptConst {
+        SelectZeroAdapt {
             bits: f(self.bits),
             inventory: self.inventory,
             spill: self.spill,
+            log2_ones_per_inventory: self.log2_ones_per_inventory,
             log2_ones_per_sub16: self.log2_ones_per_sub16,
+            log2_u64_per_subinventory: self.log2_u64_per_subinventory,
             ones_per_inventory_mask: self.ones_per_inventory_mask,
             ones_per_sub16_mask: self.ones_per_sub16_mask,
         }
@@ -222,33 +219,132 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTOR
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
 }
 
-impl<
-        B: AsRef<[usize]> + BitLength + BitCount,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectZeroAdaptConst<B, Box<[usize]>, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
-{
-    /// Creates a new selection structure over a [`SelectZeroHinted`] with a specified
-    /// distance between indexed zeros.
+impl<B: AsRef<[usize]> + BitLength + BitCount> SelectZeroAdapt<B, Box<[usize]>> {
+    /// Creates a new selection structure over a bit vecotr using a
+    /// [default target inventory
+    /// span](SelectZeroAdapt::DEFAULT_TARGET_INVENTORY_SPAN).
+    ///
+    /// # Arguments
+    ///
+    /// * `bits`: A bit vector.
+    ///
+    /// * `max_log2_u64_per_subinv`: The base-2 logarithm of the maximum
+    ///   number [*M*](SelectZeroAdapt) of 64-bit words in each subinventory.
+    ///   Increasing by one this value approximately doubles the space occupancy
+    ///   and halves the length of sequential broadword searches. Typical values
+    ///   are 3 and 4.
+    ///
+    pub fn new(bits: B, max_log2_u64_per_subinv: usize) -> Self {
+        Self::with_span(
+            bits,
+            Self::DEFAULT_TARGET_INVENTORY_SPAN,
+            max_log2_u64_per_subinv,
+        )
+    }
 
-    pub fn new(bits: B) -> Self {
+    /// Creates a new selection structure over a bit vector with a specified
+    /// target inventory span.
+    ///
+    /// # Arguments
+    ///
+    /// * `bits`: A bit vector.
+    ///
+    /// * `target_inventory_span`: The target span [*L*](SelectZeroAdapt) of a
+    ///   first-level inventory entry. The actual span might be smaller by a
+    ///   factor of 2.
+    ///
+    /// * `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
+    ///   number [*M*](SelectZeroAdapt) of 64-bit words in each subinventory.
+    ///   Increasing by one this value approximately doubles the space occupancy
+    ///   and halves the length of sequential broadword searches. Typical values
+    ///   are 3 and 4.
+    ///
+    pub fn with_span(
+        bits: B,
+        target_inventory_span: usize,
+        max_log2_u64_per_subinventory: usize,
+    ) -> Self {
+        // TODO: is this necessary? (everywhere)
+        let num_bits = max(1usize, bits.len());
         let num_ones = bits.count_zeros();
+
+        let log2_ones_per_inventory = (num_ones * target_inventory_span)
+            .div_ceil(num_bits)
+            .max(1)
+            .ilog2() as usize;
+
+        Self::_new(
+            bits,
+            num_ones,
+            log2_ones_per_inventory,
+            max_log2_u64_per_subinventory,
+        )
+    }
+
+    /// Creates a new selection structure over a bit vector with a specified
+    /// distance between indexed ones.
+    ///
+    /// This low-level constructor should be used with care, as the parameter
+    /// `log2_ones_per_inventory` is usually computed as the floor of the base-2
+    /// logarithm of ceiling of the target inventory span multiplied by the
+    /// density of ones in the bit vector. Thus, this constructor makes sense
+    /// only if the density is known in advance.
+    ///
+    /// Unless you understand all the implications, it is preferrable to use the
+    /// [standard constructor](SelectZeroAdapt::new).
+    ///
+    /// # Arguments
+    ///
+    /// * `bits`: A bit vector.
+    ///
+    /// * `log2_ones_per_inventory`: The base-2 logarithm of the distance
+    ///   between two indexed ones.
+    ///
+    /// * `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
+    ///   number [*M*](SelectZeroAdapt) of 64-bit words in each subinventory.
+    ///   Increasing by one this value approximately doubles the space occupancy
+    ///   and halves the length of sequential broadword searches. Typical values
+    ///   are 3 and 4.
+
+    pub fn with_inv(
+        bits: B,
+        log2_ones_per_inventory: usize,
+        max_log2_u64_per_subinventory: usize,
+    ) -> Self {
+        let num_ones = bits.count_zeros();
+        Self::_new(
+            bits,
+            num_ones,
+            log2_ones_per_inventory,
+            max_log2_u64_per_subinventory,
+        )
+    }
+
+    fn _new(
+        bits: B,
+        num_ones: usize,
+        log2_ones_per_inventory: usize,
+        max_log2_u64_per_subinventory: usize,
+    ) -> Self {
         let num_bits = max(1, bits.len());
-        let ones_per_inventory = 1 << LOG2_ZEROS_PER_INVENTORY;
+        let ones_per_inventory = 1 << log2_ones_per_inventory;
         let ones_per_inventory_mask = ones_per_inventory - 1;
         let inventory_size = num_ones.div_ceil(ones_per_inventory);
 
         // We use a smaller value than max_log2_u64_per_subinventory when with a
         // smaller value we can still index, in the 16-bit case, all bits the
         // subinventory. This can happen only in extremely sparse vectors, or
-        // if a very small value of LOG2_ZEROS_PER_INVENTORY is set directly.
+        // if a very small value of log2_ones_per_inventory is set directly.
 
-        let u64_per_subinventory = 1 << LOG2_U64_PER_SUBINVENTORY;
+        let log2_u64_per_subinventory =
+            max_log2_u64_per_subinventory.min(log2_ones_per_inventory.saturating_sub(2));
+
+        let u64_per_subinventory = 1 << log2_u64_per_subinventory;
         // A u64 for the inventory, and u64_per_inventory for the subinventory
         let u64_per_inventory = u64_per_subinventory + 1;
 
         let log2_ones_per_sub16 =
-            LOG2_ZEROS_PER_INVENTORY.saturating_sub(LOG2_U64_PER_SUBINVENTORY + 2);
+            log2_ones_per_inventory.saturating_sub(log2_u64_per_subinventory + 2);
         let ones_per_sub16 = 1 << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
@@ -370,7 +466,7 @@ impl<
             next_quantum += quantum;
 
             // This is used only when span_type == SpanType::U32
-            let mut u32_odd_spill = LOG2_U64_PER_SUBINVENTORY == 0;
+            let mut u32_odd_spill = log2_u64_per_subinventory == 0;
 
             let mut word_idx = start_bit_idx / usize::BITS as usize;
             let end_word_idx = end_bit_idx.div_ceil(usize::BITS as usize);
@@ -380,7 +476,7 @@ impl<
             let mut word = (!bits.as_ref()[word_idx] >> bit_idx) << bit_idx;
 
             'outer: loop {
-                let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
+                let ones_in_word = word.count_ones() as usize;
 
                 // If the quantum is in this word, write it in the subinventory.
                 // Note that this can happen multiple times in the same word if
@@ -416,7 +512,7 @@ impl<
                             // it avoids the additional loop iterations that
                             // would be necessary to find the position of the
                             // next one (i.e., end_bit_idx).
-                            if subinventory_idx << log2_quantum == (1 << LOG2_ZEROS_PER_INVENTORY) {
+                            if subinventory_idx << log2_quantum == (1 << log2_ones_per_inventory) {
                                 break 'outer;
                             }
                         }
@@ -446,7 +542,7 @@ impl<
                             // it avoids the additional loop iterations that
                             // would be necessary to find the position of the
                             // next one (i.e., end_bit_idx).
-                            if subinventory_idx << log2_quantum == (1 << LOG2_ZEROS_PER_INVENTORY) {
+                            if subinventory_idx << log2_quantum == (1 << log2_ones_per_inventory) {
                                 break 'outer;
                             }
                         }
@@ -483,7 +579,7 @@ impl<
             // and contains an odd number of zeros greater than one, as spilled
             // is not incremented by the loop code (note that u32_odd_spill
             // might be true even when span_type != SpanType::U32 if
-            // LOG2_U64_PER_SUBINVENTORY == 0);
+            // log2_u64_per_subinventory == 0);
             // - the case in which an inventory entry contains a single zero, as
             // its zero subinventory entry is written implicitly, but we still
             // need to increment spilled to allocate space for it.
@@ -499,25 +595,30 @@ impl<
             bits,
             inventory,
             spill,
+            log2_ones_per_inventory,
             log2_ones_per_sub16,
+            log2_u64_per_subinventory,
             ones_per_inventory_mask,
             ones_per_sub16_mask,
         }
     }
+
+    pub fn log2_ones_per_inventory(&self) -> usize {
+        self.log2_ones_per_inventory
+    }
+    pub fn log2_u64_per_subinventory(&self) -> usize {
+        self.log2_u64_per_subinventory
+    }
 }
 
-impl<
-        B: SelectZeroHinted + AsRef<[usize]> + BitLength,
-        I: AsRef<[usize]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectZeroUnchecked
-    for SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+impl<B: SelectZeroHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> SelectZeroUnchecked
+    for SelectZeroAdapt<B, I>
 {
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
         let inventory = self.inventory.as_ref();
-        let inventory_index = rank >> LOG2_ZEROS_PER_INVENTORY;
-        let inventory_start_pos = (inventory_index << LOG2_U64_PER_SUBINVENTORY) + inventory_index;
+        let inventory_index = rank >> self.log2_ones_per_inventory;
+        let inventory_start_pos =
+            (inventory_index << self.log2_u64_per_subinventory) + inventory_index;
 
         let inventory_rank = { *inventory.get_unchecked(inventory_start_pos) };
         let subrank = rank & self.ones_per_inventory_mask;
@@ -539,7 +640,7 @@ impl<
                 .select_zero_hinted_unchecked(rank, hint_pos, rank - residual);
         }
 
-        let u64_per_subinventory = 1 << LOG2_U64_PER_SUBINVENTORY;
+        let u64_per_subinventory = 1 << self.log2_u64_per_subinventory;
 
         if inventory_rank.is_u32_span() {
             let inventory_rank = inventory_rank.get();
@@ -592,18 +693,13 @@ impl<
     }
 }
 
-impl<
-        B: SelectZeroHinted + AsRef<[usize]> + NumBits,
-        I: AsRef<[usize]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-        const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectZero
-    for SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+impl<B: SelectZeroHinted + AsRef<[usize]> + NumBits, I: AsRef<[usize]>> SelectZero
+    for SelectZeroAdapt<B, I>
 {
 }
 
 crate::forward_mult![
-    SelectZeroAdaptConst<B, I, [const] LOG2_ZEROS_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
+    SelectZeroAdapt<B, I>; B; bits;
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::rank_sel::forward_bit_length,
@@ -632,7 +728,7 @@ mod tests {
     #[test]
     fn test_extremely_sparse() {
         let len = 1 << 18;
-        let bits: AddNumBits<_> = (0..len / 2)
+        let bits: AddNumBits<BitVec> = (0..len / 2)
             .map(|_| false)
             .chain([true])
             .chain((0..1 << 17).map(|_| false))
@@ -643,7 +739,7 @@ mod tests {
             .map(|b| !b)
             .collect::<BitVec>()
             .into();
-        let simple = SelectZeroAdaptConst::<_, _, 13, 0>::new(bits);
+        let simple = SelectZeroAdapt::new(bits, 0);
 
         assert_eq!(simple.count_zeros(), 4);
         assert_eq!(simple.select_zero(0), Some(len / 2));
@@ -662,20 +758,20 @@ mod tests {
                 .map(|b| !b)
                 .collect::<BitVec>()
                 .into();
-            let simple = SelectZeroAdaptConst::<_, _, 13, 3>::new(bits.clone());
+            let simple = SelectZeroAdapt::with_inv(bits.clone(), 13, 3);
 
-            let zeros = simple.count_zeros();
-            let mut pos = Vec::with_capacity(zeros);
+            let ones = simple.count_zeros();
+            let mut pos = Vec::with_capacity(ones);
             for i in 0..len {
                 if !bits[i] {
                     pos.push(i);
                 }
             }
 
-            for i in 0..zeros {
+            for i in 0..ones {
                 assert_eq!(simple.select_zero(i), Some(pos[i]));
             }
-            assert_eq!(simple.select_zero(zeros + 1), None);
+            assert_eq!(simple.select_zero(ones + 1), None);
         }
     }
 
@@ -694,26 +790,14 @@ mod tests {
         bits.flip();
         let bits: AddNumBits<BitVec> = bits.into();
 
-        let simple = SelectZeroAdaptConst::<_, _, 13, 0>::new(&bits);
-        assert!(simple.inventory[0].is_u64_span());
+        for m in [0, 3, 16] {
+            let simple = SelectZeroAdapt::with_inv(&bits, 13, m);
+            assert!(simple.inventory[0].is_u64_span());
 
-        for (i, &p) in pos.iter().enumerate() {
-            assert_eq!(simple.select_zero(i), Some(p));
+            for (i, &p) in pos.iter().enumerate() {
+                assert_eq!(simple.select_zero(i), Some(p));
+            }
+            assert_eq!(simple.select_zero(pos.len()), None);
         }
-        assert_eq!(simple.select_zero(pos.len()), None);
-        let simple = SelectZeroAdaptConst::<_, _, 13, 3>::new(&bits);
-        assert!(simple.inventory[0].is_u64_span());
-
-        for (i, &p) in pos.iter().enumerate() {
-            assert_eq!(simple.select_zero(i), Some(p));
-        }
-        assert_eq!(simple.select_zero(pos.len()), None);
-        let simple = SelectZeroAdaptConst::<_, _, 13, 16>::new(&bits);
-        assert!(simple.inventory[0].is_u64_span());
-
-        for (i, &p) in pos.iter().enumerate() {
-            assert_eq!(simple.select_zero(i), Some(p));
-        }
-        assert_eq!(simple.select_zero(pos.len()), None);
     }
 }

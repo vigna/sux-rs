@@ -52,13 +52,13 @@ pub fn bench_select9(c: &mut Criterion, uniform: bool) {
     bench_group.finish();
 }
 
-const LOG2_ONES_PER_INVENTORY: usize = 10;
+const LOG2_ZEROS_PER_INVENTORY: usize = 10;
 const LOG2_U64_PER_SUBINVENTORY: usize = 3;
 
 pub fn compare_simple_fixed(c: &mut Criterion) {
     let mut group = c.benchmark_group(format!(
         "simple_select_const_{}_{}",
-        LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY,
+        LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY,
     ));
 
     let mut bitvecs = Vec::<BitVec>::new();
@@ -80,7 +80,7 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
         let sel: SelectAdaptConst<
             AddNumBits<_>,
             Box<[usize]>,
-            LOG2_ONES_PER_INVENTORY,
+            LOG2_ZEROS_PER_INVENTORY,
             LOG2_U64_PER_SUBINVENTORY,
         > = SelectAdaptConst::new(bits);
         group.bench_function(
@@ -100,13 +100,13 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(0);
     let mut group = c.benchmark_group(format!(
         "simple_select_{}_{}",
-        LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY
+        LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY
     ));
     for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
         let bits = bitvec.clone();
         let bits: AddNumBits<_> = bits.into();
         let num_ones = bits.num_ones();
-        let sel = SelectAdapt::with_inv(bits, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY);
+        let sel = SelectAdapt::with_inv(bits, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY);
         group.bench_function(
             BenchmarkId::from_parameter(format!("{}_{}_0", bitvec_id.0, bitvec_id.1)),
             |b| {

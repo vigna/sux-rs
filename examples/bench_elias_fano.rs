@@ -52,12 +52,12 @@ fn main() -> Result<()> {
     // Build Elias-Fano
     let mut elias_fano_builder = EliasFanoBuilder::new(args.n, args.u);
     for value in &values {
-        elias_fano_builder.push(*value).unwrap();
+        elias_fano_builder.push(*value);
     }
 
     let mut elias_fano_builder = EliasFanoBuilder::new(args.n, args.u);
     for value in &values {
-        elias_fano_builder.push(*value).unwrap();
+        elias_fano_builder.push(*value);
     }
     const FIXED2_LOG2_ONES_PER_INVENTORY: usize = 10;
     const FIXED2_LOG2_U64_PER_INVENTORY: usize = 2;

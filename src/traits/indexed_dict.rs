@@ -43,7 +43,7 @@ pub trait IndexedSeq: Types {
     /// Return the value at the specified index.
     ///
     /// # Panics
-    /// May panic if the index is not in in [0..[len](`IndexedDict::len`)).
+    /// May panic if the index is not in in [0..[len](`IndexedSeq::len`)).
     fn get(&self, index: usize) -> Self::Output {
         if index >= self.len() {
             panic!("Index out of bounds: {} >= {}", index, self.len())
@@ -55,13 +55,13 @@ pub trait IndexedSeq: Types {
     /// Return the value at the specified index.
     ///
     /// # Safety
-    /// `index` must be in [0..[len](`IndexedDict::len`)). No bounds checking is performed.
+    /// `index` must be in [0..[len](`IndexedSeq::len`)). No bounds checking is performed.
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output;
 
     /// Return the length (number of items) of the dictionary.
     fn len(&self) -> usize;
 
-    /// Return true if [`len`](`IndexedDict::len`) is zero.
+    /// Return true if [`len`](`IndexedSeq::len`) is zero.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }

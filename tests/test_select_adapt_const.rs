@@ -54,7 +54,7 @@ fn test_select_adapt_const() {
 }
 
 #[test]
-fn debug() {
+fn test_select_adapt_const_one_u64() {
     let lens = [1_000_000];
     let mut rng = SmallRng::seed_from_u64(0);
     let density = 0.1;

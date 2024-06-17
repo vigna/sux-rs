@@ -82,26 +82,42 @@ use crate::{
 /// in the inventory is always smaller than 2¹⁶. The [default suggested
 /// value](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) is a reasonable choice
 /// for vectors that reasonably uniform, but smaller values can be used for more
-/// irregular vectors, at the cost of a larger space occupancy.
+/// irregular vectors, at the cost of a larger space occupancy. Moreover, a
+/// smaller value of *L* might be provide faster selection in exchange for more
+/// space occupancy for small vectors (a few million bits), as the inventory
+/// would still fit the cache.
 ///
 /// The value *M* should be as high as possible, compatibly with the desired
 /// space occupancy, but values resulting in linear searches shorter than a
 /// couple of words will not generally improve performance; moreover,
 /// interleaving inventories is not useful if *M* is so large that the
 /// subinventory takes several cache lines. For example, using [default value
-/// for *L*](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) a reasonable choice
-/// for *M* is between 4 and 32, corrisponding to worst-case linear searches
-/// between 1024 and 128 bits (note that the constructors take the base-2
-/// logarithm of *M*).
+/// for *L*](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) a reasonable choice for
+/// *M* is between 4 and 32, corrisponding to worst-case linear searches between
+/// 1024 and 128 bits (note that the constructors take the base-2 logarithm of
+/// *M*).
 ///
 /// # Examples
 /// ```rust
-/// use sux::bit_vec;
-/// use sux::traits::{Rank, Select};
-/// use sux::rank_sel::{SelectAdapt, Rank9};
-///
+/// # use sux::bit_vec;
+/// # use sux::traits::{Rank, Select, SelectUnchecked, AddNumBits};
+/// # use sux::rank_sel::{SelectAdapt, Rank9};
 /// // Standalone select
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let select = SelectAdapt::new(bits, 3);
+///
+/// // If the backend does not implement NumBits
+/// // we just get SelectUnchecked
+/// unsafe {
+///     assert_eq!(select.select_unchecked(0), 0);
+///     assert_eq!(select.select_unchecked(1), 2);
+///     assert_eq!(select.select_unchecked(2), 3);
+///     assert_eq!(select.select_unchecked(3), 5);
+///     assert_eq!(select.select_unchecked(4), 7);
+/// }
+///
+/// // Let's add NumBits to the backend
+/// let bits: AddNumBits<_> = bit_vec![1, 0, 1, 1, 0, 1, 0, 1].into();
 /// let select = SelectAdapt::new(bits, 3);
 ///
 /// assert_eq!(select.select(0), Some(0));
@@ -122,7 +138,7 @@ use crate::{
 /// assert_eq!(select[7], true);
 ///
 /// // Map the backend to a different structure
-/// let sel_rank9 = select.map(Rank9::new);
+/// let sel_rank9 = unsafe { select.map(Rank9::new) };
 ///
 /// // Rank methods are forwarded
 /// assert_eq!(sel_rank9.rank(0), 0);
