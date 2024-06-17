@@ -55,10 +55,10 @@ fn test_elias_fano() -> Result<()> {
         // Finish the creation of elias-fano
         let ef = efb.build();
 
-        // Add the ones indices
-        let ef = unsafe { ef.map_high_bits(SimpleSelectConst::<_, _>::new) };
-        // Add the indices
-        let ef = unsafe { ef.map_high_bits(SimpleSelectZeroConst::<_, _, 10>::new) };
+        // Add an index on ones (will make it into an IndexedSeq)
+        let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
+        // Add an index on zeros (will make it into an IndexedDict + Succ + Pred)
+        let ef = unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _>::new) };
 
         for v in 0..u {
             let res = values.binary_search(&v);
@@ -191,10 +191,7 @@ fn test_epserde() -> Result<()> {
             efb.push(*value)?;
         }
         // Finish the creation of elias-fano
-        let ef = unsafe {
-            efb.build()
-                .map_high_bits(SimpleSelectConst::<_, _, 10>::new)
-        };
+        let ef = unsafe { efb.build().map_high_bits(SelectAdaptConst::<_, _, 10>::new) };
 
         let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
         let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);
@@ -203,7 +200,7 @@ fn test_epserde() -> Result<()> {
         println!("{}", schema.to_csv());
 
         let c = <EliasFano<
-            SimpleSelectConst<AddNumBits<BitVec<Box<[usize]>>>, Vec<usize>>,
+            SelectAdaptConst<AddNumBits<BitVec<Box<[usize]>>>, Vec<usize>>,
             BitFieldVec<usize, Box<[usize]>>,
         >>::mmap(&tmp_file, epserde::deser::Flags::empty())?;
 

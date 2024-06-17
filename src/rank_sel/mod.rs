@@ -42,14 +42,14 @@ but they can be tuned for other densities.
 
 */
 
-mod simple_select_const;
-pub use simple_select_const::*;
+mod select_adapt;
+pub use select_adapt::*;
 
-mod simple_select_zero_const;
-pub use simple_select_zero_const::*;
+mod select_adapt_const;
+pub use select_adapt_const::*;
 
-mod simple_select;
-pub use simple_select::*;
+mod select_zero_adapt_const;
+pub use select_zero_adapt_const::*;
 
 mod rank_small;
 pub use rank_small::*;

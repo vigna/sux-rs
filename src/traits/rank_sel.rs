@@ -360,7 +360,7 @@ pub(crate) use forward_select_zero;
 ///
 /// This trait is used to implement fast selection by adding to bit vectors
 /// indices of different kind. See, for example,
-/// [`SimpleSelect`](crate::rank_sel::SimpleSelect).
+/// [`SelectAdapt`](crate::rank_sel::SelectAdapt).
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait SelectHinted {
     /// Selection the one of given rank, provided the position of a preceding one

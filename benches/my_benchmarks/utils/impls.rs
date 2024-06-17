@@ -1,6 +1,6 @@
 use sux::bits::BitVec;
 use sux::rank_sel::{Rank9, RankSmall};
-use sux::rank_sel::{Select9, SimpleSelect};
+use sux::rank_sel::{Select9, SelectAdapt};
 use sux::traits::{BitLength, AddNumBits, NumBits, Select, SelectHinted, SelectUnchecked};
 
 use super::Build;
@@ -8,14 +8,14 @@ use super::Build;
 macro_rules! impl_simple {
     ($name:ident, $subinv: literal) => {
         pub struct $name<B> {
-            inner: SimpleSelect<B>,
+            inner: SelectAdapt<B>,
         }
 
         impl Build<BitVec> for $name<AddNumBits<BitVec>> {
             fn new(bits: BitVec) -> Self {
                 let bits: AddNumBits<_> = bits.into();
                 Self {
-                    inner: SimpleSelect::new(bits, $subinv),
+                    inner: SelectAdapt::new(bits, $subinv),
                 }
             }
         }
@@ -42,10 +42,10 @@ macro_rules! impl_simple {
     };
 }
 
-impl_simple!(SimpleSelect0, 0);
-impl_simple!(SimpleSelect1, 1);
-impl_simple!(SimpleSelect2, 2);
-impl_simple!(SimpleSelect3, 3);
+impl_simple!(SelectAdapt0, 0);
+impl_simple!(SelectAdapt1, 1);
+impl_simple!(SelectAdapt2, 2);
+impl_simple!(SelectAdapt3, 3);
 
 impl Build<BitVec> for Select9 {
     fn new(bits: BitVec) -> Self {

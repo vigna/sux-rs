@@ -6,8 +6,8 @@ use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::Select9;
-use sux::rank_sel::SimpleSelect;
-use sux::rank_sel::SimpleSelectConst;
+use sux::rank_sel::SelectAdapt;
+use sux::rank_sel::SelectAdaptConst;
 use sux::traits::AddNumBits;
 use sux::traits::NumBits;
 use sux::traits::SelectUnchecked;
@@ -30,10 +30,10 @@ pub fn bench_simple_select(c: &mut Criterion, uniform: bool, max_log2_u64_per_su
     let mut bench_group = c.benchmark_group(name);
 
     match max_log2_u64_per_subinventory {
-        0 => bench_select::<SimpleSelect0<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        1 => bench_select::<SimpleSelect1<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        2 => bench_select::<SimpleSelect2<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        3 => bench_select::<SimpleSelect3<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        0 => bench_select::<SelectAdapt0<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        1 => bench_select::<SelectAdapt1<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        2 => bench_select::<SelectAdapt2<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        3 => bench_select::<SelectAdapt3<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
         _ => unreachable!(),
     }
 
@@ -77,12 +77,12 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
         let bits = bitvec.clone();
         let bits: AddNumBits<_> = bits.into();
         let num_ones = bits.num_ones();
-        let sel: SimpleSelectConst<
+        let sel: SelectAdaptConst<
             AddNumBits<_>,
-            Vec<usize>,
+            Box<[usize]>,
             LOG2_ONES_PER_INVENTORY,
             LOG2_U64_PER_SUBINVENTORY,
-        > = SimpleSelectConst::new(bits);
+        > = SelectAdaptConst::new(bits);
         group.bench_function(
             BenchmarkId::from_parameter(format!("{}_{}_0", bitvec_id.0, bitvec_id.1)),
             |b| {
@@ -106,7 +106,7 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
         let bits = bitvec.clone();
         let bits: AddNumBits<_> = bits.into();
         let num_ones = bits.num_ones();
-        let sel = SimpleSelect::with_inv(
+        let sel = SelectAdapt::with_inv(
             bits,
             num_ones,
             LOG2_ONES_PER_INVENTORY,
@@ -144,8 +144,8 @@ macro_rules! bench_simple_const {
         for (bitvec, bitvec_id) in std::iter::zip(&$bitvecs, &$bitvec_ids) {
             let bits = bitvec.clone();
             let bits: AddNumBits<_> = bits.into();
-            let sel: SimpleSelectConst<AddNumBits<_>, Vec<usize>, $log_inv_size, $log_subinv_size> =
-                SimpleSelectConst::new(bits);
+            let sel: SelectAdaptConst<AddNumBits<_>, Box<[usize]>, $log_inv_size, $log_subinv_size> =
+                SelectAdaptConst::new(bits);
             group.bench_with_input(
                 BenchmarkId::from_parameter(format!(
                     "{}_{}_{}", bitvec_id.0, bitvec_id.1, bitvec_id.2

@@ -26,7 +26,7 @@ use mem_dbg::{MemDbg, MemSize};
 ///
 ///
 /// The resulting selection methods are very slow, and in general it is
-/// convenient and faster to use [`SimpleSelect`], even with `M` set to 1 (in
+/// convenient and faster to use [`SelectAdapt`], even with `M` set to 1 (in
 /// which case the additional space is 1.5-3% of the original bit vector).
 ///
 /// # Examples
