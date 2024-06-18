@@ -37,7 +37,8 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 // NOTE: to make parallel modifications with SelectAdaptConst as easy as
 // possible, "ones" are considered to be zeros in the following code.
 
-/// A version of [`SelectAdaptConst`](super::SelectAdaptConst) implementing [selection on zeros](crate::traits::SelectZero).
+/// A version of [`SelectAdaptConst`](super::SelectAdaptConst) implementing
+/// [selection on zeros](crate::traits::SelectZero).
 ///
 /// # Examples
 /// ```rust
@@ -567,7 +568,7 @@ impl<
 
             return self
                 .bits
-                .select_zero_hinted_unchecked(rank, hint_pos, rank - residual);
+                .select_zero_hinted(rank, hint_pos, rank - residual);
         }
 
         let u64_per_subinventory = 1 << LOG2_U64_PER_SUBINVENTORY;
@@ -604,7 +605,7 @@ impl<
             let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
             return self
                 .bits
-                .select_zero_hinted_unchecked(rank, hint_pos, rank - residual);
+                .select_zero_hinted(rank, hint_pos, rank - residual);
         }
 
         debug_assert!(inventory_rank.is_u64_span());

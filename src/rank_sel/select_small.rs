@@ -281,13 +281,13 @@ macro_rules! impl_rank_small_sel {
                     return self
                         .rank_small
                         .bits
-                        .select_hinted_unchecked(rank, hint_pos, hint_rank);
+                        .select_hinted(rank, hint_pos, hint_rank);
                 }
                 // third sub block
                 let b2 = counts.get_unchecked(block_idx).rel(2);
                 if hint_rank + b2 > rank {
                     hint_pos = block_idx * Self::BLOCK_SIZE + Self::SUBBLOCK_SIZE;
-                    return self.rank_small.bits.select_hinted_unchecked(
+                    return self.rank_small.bits.select_hinted(
                         rank,
                         hint_pos,
                         hint_rank + b1,
@@ -297,7 +297,7 @@ macro_rules! impl_rank_small_sel {
                 let b3 = counts.get_unchecked(block_idx).rel(3);
                 if hint_rank + b3 > rank {
                     hint_pos = block_idx * Self::BLOCK_SIZE + 2 * Self::SUBBLOCK_SIZE;
-                    return self.rank_small.bits.select_hinted_unchecked(
+                    return self.rank_small.bits.select_hinted(
                         rank,
                         hint_pos,
                         hint_rank + b2,
@@ -307,7 +307,7 @@ macro_rules! impl_rank_small_sel {
                 hint_pos = block_idx * Self::BLOCK_SIZE + 3 * Self::SUBBLOCK_SIZE;
                 self.rank_small
                     .bits
-                    .select_hinted_unchecked(rank, hint_pos, hint_rank + b3)
+                    .select_hinted(rank, hint_pos, hint_rank + b3)
             }
         }
 

@@ -37,7 +37,8 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 // NOTE: to make parallel modifications with SelectAdapt as easy as possible,
 // "ones" are considered to be zeros in the following code.
 
-/// A version of [`SelectAdapt`](super::SelectAdapt) implementing [selection on zeros](crate::traits::SelectZero).
+/// A version of [`SelectAdapt`](super::SelectAdapt) implementing [selection on
+/// zeros](crate::traits::SelectZero).
 ///
 /// # Examples
 /// ```rust
@@ -668,7 +669,7 @@ impl<B: SelectZeroHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> Select
 
             return self
                 .bits
-                .select_zero_hinted_unchecked(rank, hint_pos, rank - residual);
+                .select_zero_hinted(rank, hint_pos, rank - residual);
         }
 
         let u64_per_subinventory = 1 << self.log2_u64_per_subinventory;
@@ -705,7 +706,7 @@ impl<B: SelectZeroHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> Select
             let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
             return self
                 .bits
-                .select_zero_hinted_unchecked(rank, hint_pos, rank - residual);
+                .select_zero_hinted(rank, hint_pos, rank - residual);
         }
 
         debug_assert!(inventory_rank.is_u64_span());

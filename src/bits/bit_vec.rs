@@ -5,23 +5,56 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/*!
+//! Bit vector implementations.
+//!
+//! There are two flavors: [`BitVec`], a mutable bit vector, and
+//! [`AtomicBitVec`], a mutable, thread-safe bit vector.
+//!
+//! These flavors depends on a backend, and presently we provide:
+//!
+//! - `BitVec<Vec<usize>>`: a mutable, growable and resizable bit vector;
+//! - `BitVec<AsRef<[usize]>>`: an immutable bit vector, useful for [ε-serde](epserde) support;
+//! - `BitVec<AsRef<[usize]> + AsMut<[usize]>>`: a mutable (but not resizable) bit
+//!    vector;
+//! - `AtomicBitVec<AsRef<[AtomicUsize]>>`: a thread-safe, mutable (but not resizable) bit vector.
+//!
+//! It is possible to juggle between the three flavors using [`From`]/[`Into`].
+//!
+//! # Examples
+//! ```rust
+//! use sux::bit_vec;
+//! use sux::traits::{BitCount, BitLength, NumBits, AddNumBits};
+//! use sux::bits::{BitVec, AtomicBitVec};
+//! use core::sync::atomic::Ordering;
+//!
+//! let b = bit_vec![0, 1, 0, 1, 1, 0, 1, 0];
+//! assert_eq!(b.len(), 8);
+//! // Not constant time
+//! assert_eq!(b.count_ones(), 4);
+//! assert_eq!(b[0], false);
+//! assert_eq!(b[1], true);
+//! assert_eq!(b[2], false);
+//!
+//! let b: AddNumBits<_> = b.into();
+//! // Constant time, but now b is immutable
+//! assert_eq!(b.num_ones(), 4);
+//!
+//! let mut b = BitVec::new(0);
+//! b.push(true);
+//! b.push(false);
+//! b.push(true);
+//! assert_eq!(b.len(), 3);
+//!
+//! // Let's make it atomic
+//! let mut a: AtomicBitVec = b.into();
+//! a.set(1, true, Ordering::Relaxed);
+//! assert!(a.get(0, Ordering::Relaxed));
+//!
+//! // Back to normal, but immutable size
+//! let mut b: BitVec<Box<[usize]>> = a.into();
+//! b.set(2, false);
+//! ```
 
-Bit vector implementations.
-
-There are two flavors: [`BitVec`], a mutable bit vector, and
-[`AtomicBitVec`], a mutable, thread-safe bit vector.
-
-These flavors depends on a backend, and presently we provide:
-
-- `BitVec<Vec<usize>>`: a mutable, growable and resizable bit vector;
-- `BitVec<AsRef<[usize]>>`: an immutable bit vector, useful for [ε-serde](epserde) support;
-- `BitVec<AsRef<[usize]> + AsMut<[usize]>>`: a mutable (but not resizable) bit
-   vector;
-- `AtomicBitVec<AsRef<[AtomicUsize]>>`: a thread-safe, mutable (but not resizable) bit vector.
-
-It is possible to juggle between the three flavors using [`From`].
-*/
 use common_traits::{IntoAtomic, SelectInWord};
 use core::fmt;
 use epserde::*;
@@ -50,6 +83,7 @@ pub struct BitVec<B = Vec<usize>> {
 ///
 /// ```rust
 /// use sux::bit_vec;
+/// use sux::traits::BitLength;
 ///
 /// // Empty bit vector
 /// let b = bit_vec![];
@@ -116,7 +150,7 @@ macro_rules! panic_if_out_of_bounds {
 impl<B> BitLength for BitVec<B> {
     #[inline(always)]
     fn len(&self) -> usize {
-        self.len()
+        self.len
     }
 }
 
@@ -173,12 +207,6 @@ impl BitVec<Vec<usize>> {
         self.len += 1;
     }
 
-    pub fn extend(&mut self, i: impl IntoIterator<Item = bool>) {
-        for b in i {
-            self.push(b);
-        }
-    }
-
     pub fn resize(&mut self, new_len: usize, value: bool) {
         if new_len > self.len {
             if new_len > self.bits.len() * usize::BITS as usize {
@@ -194,6 +222,17 @@ impl BitVec<Vec<usize>> {
             }
         }
         self.len = new_len;
+    }
+}
+
+impl Extend<bool> for BitVec<Vec<usize>> {
+    fn extend<T>(&mut self, i: T)
+    where
+        T: IntoIterator<Item = bool>,
+    {
+        for b in i {
+            self.push(b);
+        }
     }
 }
 
@@ -220,14 +259,6 @@ impl AtomicBitVec<Vec<AtomicUsize>> {
 }
 
 impl<B> BitVec<B> {
-    #[inline(always)]
-    #[allow(clippy::len_without_is_empty)]
-    /// Return the number of bits in this bit vector.
-    ///
-    /// This method is necessary to avoid ambiguity.
-    pub fn len(&self) -> usize {
-        self.len
-    }
     /// # Safety
     /// `len` must be between 0 (included) the number of
     /// bits in `bits` (included).
@@ -469,138 +500,43 @@ impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
     }
 }
 
-unsafe fn select_hinted_unchecked(
-    bits: impl AsRef<[usize]>,
-    rank: usize,
-    pos: usize,
-    rank_at_pos: usize,
-) -> usize {
-    let mut word_index = pos / BITS;
-    let bit_index = pos % BITS;
-    let mut residual = rank - rank_at_pos;
-    let mut word = (bits.as_ref().get_unchecked(word_index) >> bit_index) << bit_index;
-    loop {
-        let bit_count = word.count_ones() as usize;
-        if residual < bit_count {
-            break;
-        }
-        word_index += 1;
-        word = *bits.as_ref().get_unchecked(word_index);
-        residual -= bit_count;
-    }
-
-    word_index * BITS + word.select_in_word(residual)
-}
-
-fn select_hinted(
-    bits: impl AsRef<[usize]>,
-    rank: usize,
-    pos: usize,
-    rank_at_pos: usize,
-) -> Option<usize> {
-    let mut word_index = pos / BITS;
-    let bit_index = pos % BITS;
-    let mut residual = rank - rank_at_pos;
-    let mut word = (bits.as_ref().get(word_index)? >> bit_index) << bit_index;
-    loop {
-        let bit_count = word.count_ones() as usize;
-        if residual < bit_count {
-            break;
-        }
-        word_index += 1;
-        word = *bits.as_ref().get(word_index)?;
-        residual -= bit_count;
-    }
-
-    Some(word_index * BITS + word.select_in_word(residual))
-}
-
-unsafe fn select_zero_hinted_unchecked(
-    bits: impl AsRef<[usize]>,
-    rank: usize,
-    hint_pos: usize,
-    hint_rank: usize,
-) -> usize {
-    let mut word_index = hint_pos / BITS;
-    let bit_index = hint_pos % BITS;
-    let mut residual = rank - hint_rank;
-    let mut word = (!*bits.as_ref().get_unchecked(word_index) >> bit_index) << bit_index;
-    loop {
-        let bit_count = word.count_ones() as usize;
-        if residual < bit_count {
-            break;
-        }
-        word_index += 1;
-        word = !bits.as_ref().get_unchecked(word_index);
-        residual -= bit_count;
-    }
-
-    word_index * BITS + word.select_in_word(residual)
-}
-
-fn select_zero_hinted(
-    bits: impl AsRef<[usize]>,
-    len: usize,
-    rank: usize,
-    hint_pos: usize,
-    hint_rank: usize,
-) -> Option<usize> {
-    let mut word_index = hint_pos / BITS;
-    let bit_index = hint_pos % BITS;
-    let mut residual = rank - hint_rank;
-    let mut word = (!bits.as_ref().get(word_index)? >> bit_index) << bit_index;
-    loop {
-        let bit_count = word.count_ones() as usize;
-        if residual < bit_count {
-            break;
-        }
-        word_index += 1;
-        word = !*bits.as_ref().get(word_index)?;
-        residual -= bit_count;
-    }
-
-    let result = word_index * BITS + word.select_in_word(residual);
-    if result >= len {
-        None
-    } else {
-        Some(result)
-    }
-}
-
 impl<B: AsRef<[usize]>> SelectHinted for BitVec<B> {
-    unsafe fn select_hinted_unchecked(
-        &self,
-        rank: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
-        select_hinted_unchecked(self.bits.as_ref(), rank, hint_pos, hint_rank)
-    }
+    unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
+        let mut word_index = hint_pos / BITS;
+        let bit_index = hint_pos % BITS;
+        let mut residual = rank - hint_rank;
+        let mut word = (self.as_ref().get_unchecked(word_index) >> bit_index) << bit_index;
+        loop {
+            let bit_count = word.count_ones() as usize;
+            if residual < bit_count {
+                break;
+            }
+            word_index += 1;
+            word = *self.as_ref().get_unchecked(word_index);
+            residual -= bit_count;
+        }
 
-    fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
-        select_hinted(self.bits.as_ref(), rank, hint_pos, hint_rank)
-    }
-}
-
-impl<B: AsRef<[usize]>> SelectZeroUnchecked for BitVec<B> {
-    #[inline(always)]
-    unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
-        self.select_zero_hinted_unchecked(rank, 0, 0)
+        word_index * BITS + word.select_in_word(residual)
     }
 }
 
 impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
-    unsafe fn select_zero_hinted_unchecked(
-        &self,
-        rank: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
-        select_zero_hinted_unchecked(self.bits.as_ref(), rank, hint_pos, hint_rank)
-    }
+    unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
+        let mut word_index = hint_pos / BITS;
+        let bit_index = hint_pos % BITS;
+        let mut residual = rank - hint_rank;
+        let mut word = (!*self.as_ref().get_unchecked(word_index) >> bit_index) << bit_index;
+        loop {
+            let bit_count = word.count_ones() as usize;
+            if residual < bit_count {
+                break;
+            }
+            word_index += 1;
+            word = !self.as_ref().get_unchecked(word_index);
+            residual -= bit_count;
+        }
 
-    fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
-        select_zero_hinted(self.bits.as_ref(), self.len(), rank, hint_pos, hint_rank)
+        word_index * BITS + word.select_in_word(residual)
     }
 }
 
@@ -807,42 +743,25 @@ impl fmt::Display for BitVec<Vec<usize>> {
     }
 }
 
-#[inline(always)]
-unsafe fn rank_hinted_unchecked<const HINT_BIT_SIZE: usize>(
-    bits: impl AsRef<[usize]>,
-    pos: usize,
-    hint_pos: usize,
-    hint_rank: usize,
-) -> usize {
-    let bits = bits.as_ref();
-    let mut rank = hint_rank;
-    let mut hint_pos = hint_pos;
-
-    debug_assert!(
-        hint_pos < bits.len(),
-        "hint_pos: {}, len: {}",
-        hint_pos,
-        bits.len()
-    );
-
-    while (hint_pos + 1) * HINT_BIT_SIZE <= pos {
-        rank += bits.get_unchecked(hint_pos).count_ones() as usize;
-        hint_pos += 1;
-    }
-
-    rank + (bits.get_unchecked(hint_pos) & ((1 << (pos % HINT_BIT_SIZE)) - 1)).count_ones() as usize
-}
-
 impl<B: AsRef<[usize]>> RankHinted<64> for BitVec<B> {
     #[inline(always)]
     unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        rank_hinted_unchecked::<64>(self.bits.as_ref(), pos, hint_pos, hint_rank)
-    }
+        let bits = self.as_ref();
+        let mut rank = hint_rank;
+        let mut hint_pos = hint_pos;
 
-    fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
-        if pos > self.len() || hint_pos * 64 > pos {
-            return None;
+        debug_assert!(
+            hint_pos < bits.len(),
+            "hint_pos: {}, len: {}",
+            hint_pos,
+            bits.len()
+        );
+
+        while (hint_pos + 1) * 64 <= pos {
+            rank += bits.get_unchecked(hint_pos).count_ones() as usize;
+            hint_pos += 1;
         }
-        Some(unsafe { rank_hinted_unchecked::<64>(self.bits.as_ref(), pos, hint_pos, hint_rank) })
+
+        rank + (bits.get_unchecked(hint_pos) & ((1 << (pos % 64)) - 1)).count_ones() as usize
     }
 }

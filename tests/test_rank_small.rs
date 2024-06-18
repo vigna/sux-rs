@@ -12,7 +12,7 @@ use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::SelectAdapt;
 use sux::rank_small;
 use sux::traits::Rank;
-use sux::traits::{AddNumBits, BitCount, Select};
+use sux::traits::{AddNumBits, BitCount, BitLength, Select};
 
 macro_rules! test_rank_small {
     ($n: tt) => {
