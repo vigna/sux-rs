@@ -45,6 +45,11 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 /// thus significantly less space than `simple` for bit vectors with uneven
 /// distribution.
 ///
+/// [`SelectZeroAdapt`](super::SelectZeroAdapt) is a variant of this structure
+/// that provides the same functionality for zero bits.
+/// [`SelectAdaptConst`](super::SelectAdaptConst) provides similar functionality
+/// but with const parameters.
+///
 /// # Implementation Details
 ///
 /// The structure is based on a first-level inventory and a second-level
@@ -709,13 +714,6 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectAdapt<B, Box<[usize]>> {
             ones_per_sub16_mask,
         }
     }
-
-    pub fn log2_ones_per_inventory(&self) -> usize {
-        self.log2_ones_per_inventory
-    }
-    pub fn log2_u64_per_subinventory(&self) -> usize {
-        self.log2_u64_per_subinventory
-    }
 }
 
 impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> SelectUnchecked
@@ -742,9 +740,7 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> SelectUnch
                 + *subinventory.get_unchecked(subrank >> self.log2_ones_per_sub16) as usize;
             let residual = subrank & self.ones_per_sub16_mask;
 
-            return self
-                .bits
-                .select_hinted_unchecked(rank, hint_pos, rank - residual);
+            return self.bits.select_hinted(rank, hint_pos, rank - residual);
         }
 
         let u64_per_subinventory = 1 << self.log2_u64_per_subinventory;
@@ -779,9 +775,7 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> SelectUnch
                     ) as usize
             };
             let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
-            return self
-                .bits
-                .select_hinted_unchecked(rank, hint_pos, rank - residual);
+            return self.bits.select_hinted(rank, hint_pos, rank - residual);
         }
 
         debug_assert!(inventory_rank.is_u64_span());

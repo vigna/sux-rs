@@ -151,10 +151,6 @@ pub trait RankHinted<const HINT_BIT_SIZE: usize> {
     ///
     /// Some implementation might consider the the length as a valid argument.
     unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize;
-    /// Returns the number of ones preceding the specified position,
-    /// provided a preceding position `hint_pos` * `HINT_BIT_SIZE` and
-    /// the associated rank.
-    fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
 }
 
 macro_rules! forward_rank_hinted {
@@ -163,10 +159,6 @@ macro_rules! forward_rank_hinted {
             #[inline(always)]
             unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
                 $crate::traits::rank_sel::RankHinted::<64>::rank_hinted_unchecked(&self.$field, pos, hint_pos, hint_rank)
-            }
-            #[inline(always)]
-            fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
-                $crate::traits::rank_sel::RankHinted::<64>::rank_hinted(&self.$field, pos, hint_pos, hint_rank)
             }
         }
     };
@@ -251,15 +243,7 @@ pub trait SelectHinted {
     /// and must be the position of a one in the underlying bit vector.
     /// `hint_rank` must be the number of ones in the underlying bit vector
     /// before `hint_pos`, and must be less than or equal to `rank`.
-    unsafe fn select_hinted_unchecked(
-        &self,
-        rank: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize;
-    /// Selection the one of given rank, provided the position of a preceding one
-    /// and its rank.
-    fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
+    unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize;
 }
 pub use ambassador_impl_SelectHinted;
 
@@ -280,16 +264,7 @@ pub trait SelectZeroHinted {
     /// and must be the position of a zero in the underlying bit vector.
     /// `hint_rank` must be the number of zeros in the underlying bit vector
     /// before `hint_pos`, and must be less than or equal to `rank`.
-    unsafe fn select_zero_hinted_unchecked(
-        &self,
-        rank: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize;
-
-    /// Selection the zero of given rank, provided the position of a preceding zero
-    /// and its rank.
-    fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
+    unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize;
 }
 pub use ambassador_impl_SelectZeroHinted;
 
@@ -299,7 +274,13 @@ crate::forward_mult![AddNumBits<B>; B; bits;
     forward_rank_hinted
 ];
 
-/// A thin wrapper implementing [`NumBits`] by caching the result of [`BitCount::count_ones`].
+/// A thin wrapper implementing [`NumBits`] by caching the result of
+/// [`BitCount::count_ones`].
+///
+/// This structure forwards to the wrapped structure all traits defined in [this
+/// module](crate::rank_sel) except for [`NumBits`] and [`BitCount`]. It is typically
+/// used to provide [`NumBits`] to [`Select`]/[`SelectZero`] implementations; see,
+/// for example, [`SelectAdapt`](crate::rank_sel::SelectAdapt).
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]

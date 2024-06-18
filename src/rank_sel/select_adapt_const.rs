@@ -50,6 +50,10 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 /// parameters are a good choice for a low-space structure on a bit vector
 /// of density 0.5.
 ///
+/// [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst) is a variant of this structure
+/// that provides the same functionality for zero bits.
+
+///
 /// # Examples
 /// ```rust
 /// # use sux::bit_vec;
@@ -572,9 +576,7 @@ impl<
                 + *subinventory.get_unchecked(subrank >> self.log2_ones_per_sub16) as usize;
             let residual = subrank & self.ones_per_sub16_mask;
 
-            return self
-                .bits
-                .select_hinted_unchecked(rank, hint_pos, rank - residual);
+            return self.bits.select_hinted(rank, hint_pos, rank - residual);
         }
 
         let u64_per_subinventory = 1 << LOG2_U64_PER_SUBINVENTORY;
@@ -609,9 +611,7 @@ impl<
                     ) as usize
             };
             let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
-            return self
-                .bits
-                .select_hinted_unchecked(rank, hint_pos, rank - residual);
+            return self.bits.select_hinted(rank, hint_pos, rank - residual);
         }
 
         debug_assert!(inventory_rank.is_u64_span());
