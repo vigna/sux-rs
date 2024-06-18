@@ -12,32 +12,22 @@
 //! mutable references, and boxes. Moreover, usually they are all forwarded to
 //! underlying implementations.
 
+use ambassador::{delegatable_trait, Delegate};
 use epserde::Epserde;
 use impl_tools::autoimpl;
-
+use mem_dbg::{MemDbg, MemSize};
 /// A trait expressing a length in bits.
 ///
 /// This trait is typically used in conjunction with `AsRef<[usize]>` to provide
 /// word-based access to a bit vector.
 #[allow(clippy::len_without_is_empty)]
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait BitLength {
     /// Returns a length in bits.
     fn len(&self) -> usize;
 }
-
-macro_rules! forward_bit_length {
-        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::BitLength for $name < $($generic),* > where $type: $crate::traits::rank_sel::BitLength {
-            #[inline(always)]
-            fn len(&self) -> usize {
-                    $crate::traits::rank_sel::BitLength::len(&self.$field)
-                }
-            }
-    };
-}
-
-pub(crate) use forward_bit_length;
+pub use ambassador_impl_BitLength;
 
 /// Potentially expensive bit-counting methods.
 ///
@@ -47,6 +37,7 @@ pub(crate) use forward_bit_length;
 /// version, use [`NumBits`]. If you need to cache the result
 /// of these methods, you can use [`AddNumBits`].
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait BitCount: BitLength {
     /// Returns the number of ones in the underlying bit vector,
     /// with a possibly expensive computation; see [`NumBits::num_ones`]
@@ -60,23 +51,7 @@ pub trait BitCount: BitLength {
         self.len() - self.count_ones()
     }
 }
-
-macro_rules! forward_bit_count {
-        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::BitCount for $name < $($generic,)* > where $type: $crate::traits::rank_sel::BitCount {
-            #[inline(always)]
-            fn count_ones(&self) -> usize {
-                $crate::traits::rank_sel::BitCount::count_ones(&self.$field)
-            }
-            #[inline(always)]
-            fn count_zeros(&self) -> usize {
-                $crate::traits::rank_sel::BitCount::count_zeros(&self.$field)
-            }
-        }
-    };
-}
-
-pub(crate) use forward_bit_count;
+pub use ambassador_impl_BitCount;
 
 /// Constant-time bit-counting methods.
 ///
@@ -88,6 +63,7 @@ pub(crate) use forward_bit_count;
 /// If you need to implement this trait on a structure that already
 /// implements [`BitCount`], you can use [`AddNumBits`].
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait NumBits: BitLength {
     /// Returns the number of ones in the underlying bit vector
     /// in constant time. If you can be contented with a potentially
@@ -101,26 +77,11 @@ pub trait NumBits: BitLength {
         self.len() - self.num_ones()
     }
 }
-
-macro_rules! forward_num_bits {
-        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::NumBits for $name < $($generic,)* > where $type: $crate::traits::rank_sel::NumBits {
-            #[inline(always)]
-            fn num_ones(&self) -> usize {
-                $crate::traits::rank_sel::NumBits::num_ones(&self.$field)
-            }
-            #[inline(always)]
-            fn num_zeros(&self) -> usize {
-                $crate::traits::rank_sel::NumBits::num_zeros(&self.$field)
-            }
-        }
-    };
-}
-
-pub(crate) use forward_num_bits;
+pub use ambassador_impl_NumBits;
 
 /// Ranking over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait Rank: BitLength {
     /// Returns the number of ones preceding the specified position.
     ///
@@ -140,28 +101,13 @@ pub trait Rank: BitLength {
     /// Some implementation might consider the the length as a valid argument.
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
 }
-
-macro_rules! forward_rank {
-        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::Rank for $name < $($generic,)* > where $type: $crate::traits::rank_sel::Rank {
-            #[inline(always)]
-            fn rank(&self, pos: usize) -> usize {
-                $crate::traits::rank_sel::Rank::rank(&self.$field, pos)
-            }
-            #[inline(always)]
-            unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-                $crate::traits::rank_sel::Rank::rank_unchecked(&self.$field, pos)
-            }
-        }
-    };
-}
-
-pub(crate) use forward_rank;
+pub use ambassador_impl_Rank;
 
 /// Ranking zeros over a bit vector.
-#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 ///
 /// Note that this is just an extension trait for [`Rank`].
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait RankZero: Rank {
     /// Returns the number of zeros preceding the specified position.
     ///   
@@ -184,24 +130,7 @@ pub trait RankZero: Rank {
         pos - self.rank_unchecked(pos)
     }
 }
-
-macro_rules! forward_rank_zero {
-        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::RankZero for $name < $($generic,)* >
-            where Self: $crate::traits::rank_sel::Rank, $type: $crate::traits::rank_sel::RankZero {
-            #[inline(always)]
-            fn rank_zero(&self, pos: usize) -> usize {
-                $crate::traits::rank_sel::RankZero::rank_zero(&self.$field, pos)
-            }
-            #[inline(always)]
-            unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
-                $crate::traits::rank_sel::RankZero::rank_zero_unchecked(&self.$field, pos)
-            }
-        }
-    };
-}
-
-pub(crate) use forward_rank_zero;
+pub use ambassador_impl_RankZero;
 
 /// Ranking over a bit vector, with a hint.
 ///
@@ -247,6 +176,7 @@ pub(crate) use forward_rank_hinted;
 
 /// Selection over a bit vector without bound checks.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait SelectUnchecked {
     /// Returns the position of the one of given rank.
     ///
@@ -256,22 +186,11 @@ pub trait SelectUnchecked {
     unsafe fn select_unchecked(&self, rank: usize) -> usize;
 }
 
-macro_rules! forward_select_unchecked {
-        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::SelectUnchecked for $name < $($generic,)* >
-            where $type: $crate::traits::rank_sel::SelectUnchecked {
-            #[inline(always)]
-            unsafe fn select_unchecked(&self, rank: usize) -> usize {
-                $crate::traits::rank_sel::SelectUnchecked::select_unchecked(&self.$field, rank)
-            }
-        }
-    };
-}
-
-pub(crate) use forward_select_unchecked;
+pub use ambassador_impl_SelectUnchecked;
 
 /// Selection over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait Select: SelectUnchecked + NumBits {
     /// Returns the position of the one of given rank, or `None` if no such
     /// bit exist.
@@ -283,26 +202,11 @@ pub trait Select: SelectUnchecked + NumBits {
         }
     }
 }
-
-macro_rules! forward_select {
-        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::Select for $name < $($generic,)* >
-            where
-                Self: $crate::traits::rank_sel::NumBits,
-                Self: $crate::traits::rank_sel::SelectUnchecked, $type:
-                $crate::traits::rank_sel::Select {
-            #[inline(always)]
-            fn select(&self, rank: usize) -> Option<usize> {
-                $crate::traits::rank_sel::Select::select(&self.$field, rank)
-            }
-        }
-    };
-}
-
-pub(crate) use forward_select;
+pub use ambassador_impl_Select;
 
 /// Selection zeros over a bit vector without bound checks.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait SelectZeroUnchecked {
     /// Returns the position of the zero of given rank.
     ///
@@ -311,22 +215,11 @@ pub trait SelectZeroUnchecked {
     /// underlying bit vector (excluded).
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize;
 }
+pub use ambassador_impl_SelectZeroUnchecked;
 
-macro_rules! forward_select_zero_unchecked {
-        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::SelectZeroUnchecked for $name < $($generic,)* >
-            where $type: $crate::traits::rank_sel::SelectZeroUnchecked {
-            #[inline(always)]
-            unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
-                $crate::traits::rank_sel::SelectZeroUnchecked::select_zero_unchecked(&self.$field, rank)
-            }
-        }
-    };
-}
-
-pub(crate) use forward_select_zero_unchecked;
 /// Selection zeros over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait SelectZero: SelectZeroUnchecked + NumBits {
     /// Returns the position of the zero of given rank, or `None` if no such
     /// bit exist.
@@ -338,23 +231,7 @@ pub trait SelectZero: SelectZeroUnchecked + NumBits {
         }
     }
 }
-
-macro_rules! forward_select_zero {
-        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::SelectZero for $name < $($generic,)* >
-            where
-                Self: $crate::traits::rank_sel::NumBits,
-                Self: $crate::traits::rank_sel::SelectZeroUnchecked,
-                $type: $crate::traits::rank_sel::SelectZero {
-            #[inline(always)]
-            fn select_zero(&self, rank: usize) -> Option<usize> {
-                $crate::traits::rank_sel::SelectZero::select_zero(&self.$field, rank)
-            }
-        }
-    };
-}
-
-pub(crate) use forward_select_zero;
+pub use ambassador_impl_SelectZero;
 
 /// Selection over a bit vector, with a hint.
 ///
@@ -362,6 +239,7 @@ pub(crate) use forward_select_zero;
 /// indices of different kind. See, for example,
 /// [`SelectAdapt`](crate::rank_sel::SelectAdapt).
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait SelectHinted {
     /// Selection the one of given rank, provided the position of a preceding one
     /// and its rank.
@@ -383,29 +261,14 @@ pub trait SelectHinted {
     /// and its rank.
     fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
 }
-
-macro_rules! forward_select_hinted {
-        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::SelectHinted for $name < $($generic,)* > where $type: $crate::traits::rank_sel::SelectHinted {
-            #[inline(always)]
-            unsafe fn select_hinted_unchecked(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
-                $crate::traits::rank_sel::SelectHinted::select_hinted_unchecked(&self.$field, rank, hint_pos, hint_rank)
-            }
-            #[inline(always)]
-            fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
-                $crate::traits::rank_sel::SelectHinted::select_hinted(&self.$field, rank, hint_pos, hint_rank)
-            }
-        }
-    };
-}
-
-pub(crate) use forward_select_hinted;
+pub use ambassador_impl_SelectHinted;
 
 /// Selection zeros over a bit vector, with a hint.
 ///
 /// This trait is used to implement fast selection over zeros by adding to bit
 /// vectors indices of different kind.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait SelectZeroHinted {
     /// Selection the zero of given rank, provided the position of a preceding zero
     /// and its rank.
@@ -428,27 +291,33 @@ pub trait SelectZeroHinted {
     /// and its rank.
     fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize>;
 }
+pub use ambassador_impl_SelectZeroHinted;
 
-macro_rules! forward_select_zero_hinted {
-        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::SelectZeroHinted for $name < $($generic,)* > where $type: $crate::traits::rank_sel::SelectZeroHinted {
-            #[inline(always)]
-            unsafe fn select_zero_hinted_unchecked(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
-                $crate::traits::rank_sel::SelectZeroHinted::select_zero_hinted_unchecked(&self.$field, rank, hint_pos, hint_rank)
-            }
-            #[inline(always)]
-            fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
-                $crate::traits::rank_sel::SelectZeroHinted::select_zero_hinted(&self.$field, rank, hint_pos, hint_rank)
-            }
-        }
-    };
-}
-
-pub(crate) use forward_select_zero_hinted;
-use mem_dbg::{MemDbg, MemSize};
+crate::forward_mult![AddNumBits<B>; B; bits;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool,
+    forward_rank_hinted
+];
 
 /// A thin wrapper implementing [`NumBits`] by caching the result of [`BitCount::count_ones`].
-#[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
+#[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
+#[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
+#[delegate(crate::traits::rank_sel::Rank, target = "bits")]
+#[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
+#[delegate(
+    crate::traits::rank_sel::Select,
+    target = "bits",
+    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectUnchecked"
+)]
+#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
+#[delegate(
+    crate::traits::rank_sel::SelectZero,
+    target = "bits",
+    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectZeroUnchecked"
+)]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
 pub struct AddNumBits<B> {
     bits: B,
     number_of_ones: usize,
@@ -499,18 +368,3 @@ impl<B: BitCount> From<B> for AddNumBits<B> {
         }
     }
 }
-
-crate::forward_mult![AddNumBits<B>; B; bits;
-    crate::forward_as_ref_slice_usize,
-    crate::forward_index_bool,
-    crate::traits::rank_sel::forward_bit_length,
-    crate::traits::rank_sel::forward_rank_hinted,
-    crate::traits::rank_sel::forward_rank,
-    crate::traits::rank_sel::forward_rank_zero,
-    crate::traits::rank_sel::forward_select_hinted,
-    crate::traits::rank_sel::forward_select_unchecked,
-    crate::traits::rank_sel::forward_select,
-    crate::traits::rank_sel::forward_select_zero_hinted,
-    crate::traits::rank_sel::forward_select_zero_unchecked,
-    crate::traits::rank_sel::forward_select_zero
-];

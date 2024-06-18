@@ -833,18 +833,16 @@ unsafe fn rank_hinted_unchecked<const HINT_BIT_SIZE: usize>(
     rank + (bits.get_unchecked(hint_pos) & ((1 << (pos % HINT_BIT_SIZE)) - 1)).count_ones() as usize
 }
 
-impl<B: AsRef<[usize]>, const HINT_BIT_SIZE: usize> RankHinted<HINT_BIT_SIZE> for BitVec<B> {
+impl<B: AsRef<[usize]>> RankHinted<64> for BitVec<B> {
     #[inline(always)]
     unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        rank_hinted_unchecked::<HINT_BIT_SIZE>(self.bits.as_ref(), pos, hint_pos, hint_rank)
+        rank_hinted_unchecked::<64>(self.bits.as_ref(), pos, hint_pos, hint_rank)
     }
 
     fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> Option<usize> {
-        if pos > self.len() || hint_pos * HINT_BIT_SIZE > pos {
+        if pos > self.len() || hint_pos * 64 > pos {
             return None;
         }
-        Some(unsafe {
-            rank_hinted_unchecked::<HINT_BIT_SIZE>(self.bits.as_ref(), pos, hint_pos, hint_rank)
-        })
+        Some(unsafe { rank_hinted_unchecked::<64>(self.bits.as_ref(), pos, hint_pos, hint_rank) })
     }
 }
