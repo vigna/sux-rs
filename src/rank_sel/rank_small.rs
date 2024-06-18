@@ -388,7 +388,7 @@ macro_rules! impl_rank_small {
                     let hint_pos =
                         word_pos - ((word_pos % Self::WORDS_PER_BLOCK) % Self::WORDS_PER_SUBBLOCK);
 
-                    RankHinted::<64>::rank_hinted_unchecked(&self.bits, pos, hint_pos, hint_rank)
+                    RankHinted::<64>::rank_hinted(&self.bits, pos, hint_pos, hint_rank)
                 }
             }
         }

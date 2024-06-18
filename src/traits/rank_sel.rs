@@ -150,15 +150,15 @@ pub trait RankHinted<const HINT_BIT_SIZE: usize> {
     /// before `hint_pos` * `HINT_BIT_SIZE`.
     ///
     /// Some implementation might consider the the length as a valid argument.
-    unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize;
+    unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize;
 }
 
 macro_rules! forward_rank_hinted {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
         impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::RankHinted<64> for $name < $($generic,)* > where $type: $crate::traits::rank_sel::RankHinted<64> {
             #[inline(always)]
-            unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
-                $crate::traits::rank_sel::RankHinted::<64>::rank_hinted_unchecked(&self.$field, pos, hint_pos, hint_rank)
+            unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
+                $crate::traits::rank_sel::RankHinted::<64>::rank_hinted(&self.$field, pos, hint_pos, hint_rank)
             }
         }
     };
