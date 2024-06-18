@@ -7,40 +7,38 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/*!
-
-Implementation of an [`IndexedDict`] using the Elias–Fano representation of monotone sequences.
-
-There are two ways to build a base [`EliasFano`] structure: using
-an [`EliasFanoBuilder`] or an [`EliasFanoConcurrentBuilder`].
-
-Once the base structure has been built, it is possible to enrich it with
-indices that will make operations available, using the same mechanism with which
-[you can add ranking and selection structures to bit vectors](`crate::rank_sel`),
-that is, by calling [`EliasFano::map_high_bits`] towards the desired type. For example,
-```rust
-# use sux::rank_sel::{SelectAdaptConst, SelectZeroAdaptConst};
-# use sux::dict::{EliasFanoBuilder};
-# use sux::traits::{Types,IndexedSeq,IndexedDict,Succ};
-let mut efb = EliasFanoBuilder::new(4, 10);
-efb.push(0);
-efb.push(2);
-efb.push(8);
-efb.push(10);
-
-let ef = efb.build();
-// Add a selection structure for zeros (implements indexed access)
-let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
-    // Add a selection structure for zeros (implements predecessor and successor)
-let ef = unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _>::new) };
-
-assert_eq!(ef.get(0), 0);
-assert_eq!(ef.get(1), 2);
-assert_eq!(ef.succ(&6), Some((2, 8)));
-assert_eq!(ef.succ(&11), None);
-```
-
-*/
+//! Implementation of an [`IndexedDict`] using the Elias–Fano representation of
+//! monotone sequences.
+//!
+//! There are two ways to build a base [`EliasFano`] structure: using an
+//! [`EliasFanoBuilder`] or an [`EliasFanoConcurrentBuilder`].
+//!
+//! Once the base structure has been built, it is possible to enrich it with
+//! indices that will make operations available, using the same mechanism with
+//! which [you can add ranking and selection structures to bit
+//! vectors](`crate::rank_sel`), that is, by calling
+//! [`EliasFano::map_high_bits`] towards the desired type. For example,
+//! ```rust
+//! # use sux::rank_sel::{SelectAdaptConst, SelectZeroAdaptConst};
+//! # use sux::dict::{EliasFanoBuilder};
+//! # use sux::traits::{Types,IndexedSeq,IndexedDict,Succ};
+//! let mut efb = EliasFanoBuilder::new(4, 10);
+//! efb.push(0);
+//! efb.push(2);
+//! efb.push(8);
+//! efb.push(10);
+//!
+//! let ef = efb.build();
+//! // Add a selection structure for zeros (implements indexed access)
+//! let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
+//!     // Add a selection structure for zeros (implements predecessor and successor)
+//! let ef = unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _>::new) };
+//!
+//! assert_eq!(ef.get(0), 0);
+//! assert_eq!(ef.get(1), 2);
+//! assert_eq!(ef.succ(&6), Some((2, 8)));
+//! assert_eq!(ef.succ(&11), None);
+//! ```
 
 use crate::prelude::*;
 use crate::traits::bit_field_slice::*;

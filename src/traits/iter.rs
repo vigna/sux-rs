@@ -5,11 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/*!
-
-Unchecked iterators.
-
-*/
+//! Unchecked iterators.
 
 /// A trait for iterating on values very quickly and very unsafely.
 ///

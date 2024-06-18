@@ -5,50 +5,46 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/*!
-
-Vectors of values of fixed bit width.
-
-Elements are stored contiguously, with no padding bits (in particular,
-unless the bit width is a power of two some elements will be stored
-across word boundaries).
-
-We provide implementations
-based on `AsRef<[T]>`, `AsMut<[T]>`, and
-`AsRef<[A]>`, where `T` is an unsigned type (default: [`usize`]) and `A` is an atomic
-unsigned type (default: [`AtomicUsize`]); more generally, the underlying type
-must satisfy the trait [`Word`], and additional [`IntoAtomic`] in the second case.
-[`BitFieldSlice`], [`BitFieldSliceMut`], and [`AtomicBitFieldSlice`], respectively.
-Constructors are provided
-for storing data in a [`Vec<T>`](BitFieldVec::new) or
-[`Vec<A>`](AtomicBitFieldVec::new).
-
-In the latter case we can provide some concurrency guarantees,
-albeit not full-fledged thread safety: more precisely, we can
-guarantee thread-safety if the bit width is a power of two; otherwise,
-concurrent writes to values that cross word boundaries might end
-up in different threads succeding in writing only part of a value.
-If the user can guarantee that no two threads ever write to the same
-boundary-crossing value, then no race condition can happen.
-
-Note that some care must be exercised when using the methods of
-[`BitFieldSlice`], [`BitFieldSliceMut`] and [`AtomicBitFieldSlice`]:
-see the discussions in documentation of [`bit_field_slice`].
-
-For high-speed unchecked scanning, we implement
-[`IntoUncheckedIterator`] and [`IntoReverseUncheckedIterator`] on a reference
-to this type. The are used, for example, to provide
-[predecessor](crate::traits::indexed_dict::Pred) and
-[successor](crate::traits::indexed_dict::Succ) primitives
-for [Elias-Fano](crate::dict::elias_fano::EliasFano).
-
-## Low-level support
-
-The methods [`address_of`](BitFieldVec::address_of)
-and [`get_unaligned`](BitFieldVec::get_unaligned) can be used to manually
-prefetch parts of the data structure, or read values using unaligned
-read, when the bit width makes it possible.
-*/
+//! Vectors of values of fixed bit width.
+//!
+//! Elements are stored contiguously, with no padding bits (in particular,
+//! unless the bit width is a power of two some elements will be stored across
+//! word boundaries).
+//!
+//! We provide implementations based on `AsRef<[T]>`, `AsMut<[T]>`, and
+//! `AsRef<[A]>`, where `T` is an unsigned type (default: [`usize`]) and `A` is
+//! an atomic unsigned type (default: [`AtomicUsize`]); more generally, the
+//! underlying type must satisfy the trait [`Word`], and additional
+//! [`IntoAtomic`] in the second case. [`BitFieldSlice`], [`BitFieldSliceMut`],
+//! and [`AtomicBitFieldSlice`], respectively. Constructors are provided for
+//! storing data in a [`Vec<T>`](BitFieldVec::new) or
+//! [`Vec<A>`](AtomicBitFieldVec::new).
+//!
+//! In the latter case we can provide some concurrency guarantees, albeit not
+//! full-fledged thread safety: more precisely, we can guarantee thread-safety
+//! if the bit width is a power of two; otherwise, concurrent writes to values
+//! that cross word boundaries might end up in different threads succeding in
+//! writing only part of a value. If the user can guarantee that no two threads
+//! ever write to the same boundary-crossing value, then no race condition can
+//! happen.
+//!
+//! Note that some care must be exercised when using the methods of
+//! [`BitFieldSlice`], [`BitFieldSliceMut`] and [`AtomicBitFieldSlice`]: see the
+//! discussions in documentation of [`bit_field_slice`].
+//!
+//! For high-speed unchecked scanning, we implement [`IntoUncheckedIterator`]
+//! and [`IntoReverseUncheckedIterator`] on a reference to this type. The are
+//! used, for example, to provide
+//! [predecessor](crate::traits::indexed_dict::Pred) and
+//! [successor](crate::traits::indexed_dict::Succ) primitives for
+//! [Elias-Fano](crate::dict::elias_fano::EliasFano).
+//!
+//! ## Low-level support
+//!
+//! The methods [`address_of`](BitFieldVec::address_of) and
+//! [`get_unaligned`](BitFieldVec::get_unaligned) can be used to manually
+//! prefetch parts of the data structure, or read values using unaligned read,
+//! when the bit width makes it possible.
 
 use crate::prelude::*;
 use crate::traits::bit_field_slice::*;

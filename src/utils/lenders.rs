@@ -5,31 +5,29 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/*!
-
-Support for [rewindable I/O lenders](RewindableIOLender).
-
-Some data structures in this crate have two features in common:
-- they must be able to read their input more than once;
-- they do not store the input they read, but rather some derived data, such as hashes.
-
-For this kind of structures, we provide a [`RewindableIOLender`] trait, which is a
-[`Lender`] that can be rewound to the beginning. Rewindability solves the first
-problem while lending solves the second problem.
-
-The basic implementation for strings is [`LineLender`], which lends lines from a [`BufRead`] as a
-`&str`, but lends an internal buffer, rather than allocating a new string for each line.
-Convenience constructors are provided for [`File`] and [`Path`]. Analogously, we provide
-`ZstdLineLender` (enabled by the `zstd` feature) that lends
-lines from a zstd-compressed [`Read`], and [`GzipLineLender`],
-which lends lines from a gzip-compressed [`Read`].
-
-If you have a clonable [`IntoIterator`], you can use [`FromIntoIterator`] to lend its items;
-rewinding is implemented by cloning the iterator. Note that [`FromIntoIterator`] implements
-the [`From`] trait, but at this time due to the complex trait bounds of [`Lender`] type
-inference rarely works; you'll need to call [`FromIntoIterator::from`] explicitly.
-
-*/
+//! Support for [rewindable I/O lenders](RewindableIOLender).
+//!
+//! Some data structures in this crate have two features in common:
+//! - they must be able to read their input more than once;
+//! - they do not store the input they read, but rather some derived data, such
+//!   as hashes.
+//!
+//! For this kind of structures, we provide a [`RewindableIOLender`] trait,
+//! which is a [`Lender`] that can be rewound to the beginning. Rewindability
+//! solves the first problem while lending solves the second problem.
+//!
+//! The basic implementation for strings is [`LineLender`], which lends lines
+//! from a [`BufRead`] as a `&str`, but lends an internal buffer, rather than
+//! allocating a new string for each line. Convenience constructors are provided
+//! for [`File`] and [`Path`]. Analogously, we provide `ZstdLineLender` (enabled
+//! by the `zstd` feature) that lends lines from a zstd-compressed [`Read`], and
+//! [`GzipLineLender`], which lends lines from a gzip-compressed [`Read`].
+//!
+//! If you have a clonable [`IntoIterator`], you can use [`FromIntoIterator`] to
+//! lend its items; rewinding is implemented by cloning the iterator. Note that
+//! [`FromIntoIterator`] implements the [`From`] trait, but at this time due to
+//! the complex trait bounds of [`Lender`] type inference rarely works; you'll
+//! need to call [`FromIntoIterator::from`] explicitly.
 
 use flate2::read::GzDecoder;
 use io::{BufRead, BufReader};
@@ -43,15 +41,11 @@ use std::{
 use zstd::stream::read::Decoder;
 use zstd::Decoder;
 
-/**
-
-The main trait: a [`Lender`] that can be rewound to the beginning.
-
-Note that [`rewind`](RewindableIOLender::rewind) consumes `self` and returns it.
-This slightly inconvenient behavior is necessary to handle cleanly all implementations,
-and in particular those involving compression.
-
- */
+/// The main trait: a [`Lender`] that can be rewound to the beginning.
+///
+/// Note that [`rewind`](RewindableIOLender::rewind) consumes `self` and returns
+/// it. This slightly inconvenient behavior is necessary to handle cleanly all
+/// implementations, and in particular those involving compression.
 
 pub trait RewindableIOLender<T: ?Sized>:
     Sized + Lender + for<'lend> Lending<'lend, Lend = Result<&'lend T, Self::Error>>
@@ -79,14 +73,10 @@ fn next<'a>(buf: &mut impl BufRead, line: &'a mut String) -> Option<io::Result<&
     }
 }
 
-/**
-
-A structure lending the lines coming from a [`BufRead`] as `&str`.
-
-The lines are read into a reusable internal string buffer that
-grows as needed.
-
-*/
+/// A structure lending the lines coming from a [`BufRead`] as `&str`.
+///
+/// The lines are read into a reusable internal string buffer that grows as
+/// needed.
 pub struct LineLender<B> {
     buf: B,
     line: String,
@@ -129,14 +119,11 @@ impl<B: BufRead + Seek> RewindableIOLender<str> for LineLender<B> {
     }
 }
 
-/**
-
-A structure lending the lines coming from a zstd-compressed [`Read`] as `&str`.
-
-The lines are read into a reusable internal string buffer that
-grows as needed.
-
-*/
+/// A structure lending the lines coming from a zstd-compressed [`Read`] as
+/// `&str`.
+///
+/// The lines are read into a reusable internal string buffer that grows as
+/// needed.
 
 pub struct ZstdLineLender<R: Read> {
     buf: BufReader<Decoder<'static, BufReader<R>>>,
@@ -182,14 +169,10 @@ impl<R: Read + Seek> RewindableIOLender<str> for ZstdLineLender<R> {
     }
 }
 
-/**
-
-A structure lending the lines coming from a gzip-compressed [`Read`] as `&str`.
-
-The lines are read into a reusable internal string buffer that
-grows as needed.
-
-*/
+/// A structure lending the lines coming from a gzip-compressed [`Read`] as `&str`.
+///
+/// The lines are read into a reusable internal string buffer that
+/// grows as needed.
 
 pub struct GzipLineLender<R: Read> {
     buf: BufReader<GzDecoder<R>>,
@@ -235,11 +218,7 @@ impl<R: Read + Seek> RewindableIOLender<str> for GzipLineLender<R> {
     }
 }
 
-/**
-
-An adapter lending the items of a clonable [`IntoIterator`].
-
-*/
+/// An adapter lending the items of a clonable [`IntoIterator`].
 pub struct FromIntoIterator<I: IntoIterator + Clone> {
     into_iter: I,
     iter: I::IntoIter,
