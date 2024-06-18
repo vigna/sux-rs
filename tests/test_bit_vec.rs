@@ -247,6 +247,74 @@ fn test_flip() {
 }
 
 #[test]
+fn test_iter() {
+    let mut c = BitVec::new(100);
+    for i in 0..100 {
+        c.set(i, i % 2 == 0);
+    }
+
+    for (i, b) in c.into_iter().enumerate() {
+        assert_eq!(b, i % 2 == 0);
+    }
+}
+
+#[test]
+fn test_iter_ones_alternate() {
+    let mut c = BitVec::new(200);
+    for i in 0..200 {
+        c.set(i, i % 2 == 0);
+    }
+
+    for (i, p) in c.iter_ones().enumerate() {
+        assert_eq!(p, i * 2);
+    }
+}
+
+#[test]
+fn test_iter_ones_empty() {
+    let c = BitVec::new(200);
+    assert_eq!(c.iter_ones().next(), None);
+}
+
+#[test]
+fn test_iter_ones_one() {
+    let mut c = BitVec::new(200);
+    c.set(1, true);
+    let mut i = c.iter_ones();
+    assert_eq!(i.next(), Some(1));
+    assert_eq!(i.next(), None);
+}
+
+#[test]
+fn test_iter_zeros_alternate() {
+    let mut c = BitVec::new(200);
+    for i in 0..200 {
+        c.set(i, i % 2 != 0);
+    }
+
+    for (i, p) in c.iter_zeros().enumerate() {
+        assert_eq!(p, i * 2);
+    }
+}
+
+#[test]
+fn test_iter_zeros_full() {
+    let mut c = BitVec::new(200);
+    c.flip();
+    assert_eq!(c.iter_zeros().next(), None);
+}
+
+#[test]
+fn test_iter_zeros_one() {
+    let mut c = BitVec::new(200);
+    c.set(1, true);
+    c.flip();
+    let mut i = c.iter_zeros();
+    assert_eq!(i.next(), Some(1));
+    assert_eq!(i.next(), None);
+}
+
+#[test]
 fn test_epserde() {
     let mut rng = SmallRng::seed_from_u64(0);
     let mut b = BitVec::new(200);

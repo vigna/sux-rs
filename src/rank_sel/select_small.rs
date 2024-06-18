@@ -287,21 +287,19 @@ macro_rules! impl_rank_small_sel {
                 let b2 = counts.get_unchecked(block_idx).rel(2);
                 if hint_rank + b2 > rank {
                     hint_pos = block_idx * Self::BLOCK_SIZE + Self::SUBBLOCK_SIZE;
-                    return self.rank_small.bits.select_hinted(
-                        rank,
-                        hint_pos,
-                        hint_rank + b1,
-                    );
+                    return self
+                        .rank_small
+                        .bits
+                        .select_hinted(rank, hint_pos, hint_rank + b1);
                 }
                 // fourth sub block
                 let b3 = counts.get_unchecked(block_idx).rel(3);
                 if hint_rank + b3 > rank {
                     hint_pos = block_idx * Self::BLOCK_SIZE + 2 * Self::SUBBLOCK_SIZE;
-                    return self.rank_small.bits.select_hinted(
-                        rank,
-                        hint_pos,
-                        hint_rank + b2,
-                    );
+                    return self
+                        .rank_small
+                        .bits
+                        .select_hinted(rank, hint_pos, hint_rank + b2);
                 }
 
                 hint_pos = block_idx * Self::BLOCK_SIZE + 3 * Self::SUBBLOCK_SIZE;
