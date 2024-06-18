@@ -13,10 +13,12 @@
 //! These flavors depends on a backend, and presently we provide:
 //!
 //! - `BitVec<Vec<usize>>`: a mutable, growable and resizable bit vector;
-//! - `BitVec<AsRef<[usize]>>`: an immutable bit vector, useful for [ε-serde](epserde) support;
-//! - `BitVec<AsRef<[usize]> + AsMut<[usize]>>`: a mutable (but not resizable) bit
-//!    vector;
-//! - `AtomicBitVec<AsRef<[AtomicUsize]>>`: a thread-safe, mutable (but not resizable) bit vector.
+//! - `BitVec<AsRef<[usize]>>`: an immutable bit vector, useful for
+//!   [ε-serde](epserde) support;
+//! - `BitVec<AsRef<[usize]> + AsMut<[usize]>>`: a mutable (but not resizable)
+//!    bit vector;
+//! - `AtomicBitVec<AsRef<[AtomicUsize]>>`: a thread-safe, mutable (but not
+//!   resizable) bit vector.
 //!
 //! It is possible to juggle between the three flavors using [`From`]/[`Into`].
 //!

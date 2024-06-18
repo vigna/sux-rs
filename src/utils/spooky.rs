@@ -7,21 +7,19 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/*!
-
-A pure Rust implementation of [SpookyHash::Short V2](https://burtleburtle.net/bob/hash/spooky.html).
-
-We implement only the short version because we want to be able to precompute the internal
-state of the hash function at regular intervals to be able to hash every prefix in constant time.
-This feature much more complicated to implement if the type of hash varies with the string length.
-
-We also need, in general, to access the entire 256-bit state of the hasher,
-so we cannot use [std::hash::Hasher].
-
-Note that this implementation is identical to the original one,
-and different from the one used in [Sux4J](https://sux.di.unimi.it/).
-
-*/
+//! A pure Rust implementation of [SpookyHash::Short
+//! V2](https://burtleburtle.net/bob/hash/spooky.html).
+//!
+//! We implement only the short version because we want to be able to precompute
+//! the internal state of the hash function at regular intervals to be able to
+//! hash every prefix in constant time. This feature much more complicated to
+//! implement if the type of hash varies with the string length.
+//!
+//! We also need, in general, to access the entire 256-bit state of the hasher,
+//! so we cannot use [std::hash::Hasher].
+//!
+//! Note that this implementation is identical to the original one, and
+//! different from the one used in [Sux4J](https://sux.di.unimi.it/).
 
 pub const SC_CONST: u64 = 0xdeadbeefdeadbeef;
 
