@@ -37,8 +37,6 @@ use std::{
     io::{self, Read, Seek},
     path::Path,
 };
-#[cfg(feature = "zstd")]
-use zstd::stream::read::Decoder;
 use zstd::Decoder;
 
 /// The main trait: a [`Lender`] that can be rewound to the beginning.
