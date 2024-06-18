@@ -6,6 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use ambassador::Delegate;
 use epserde::*;
 use mem_dbg::*;
 
@@ -13,6 +14,20 @@ use crate::{
     prelude::{BitLength, BitVec, NumBits, Rank, RankZero},
     traits::BitCount,
 };
+
+use crate::traits::rank_sel::ambassador_impl_BitLength;
+use crate::traits::rank_sel::ambassador_impl_Select;
+use crate::traits::rank_sel::ambassador_impl_SelectHinted;
+use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
+use crate::traits::rank_sel::ambassador_impl_SelectZero;
+use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
+use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+
+crate::forward_mult![Rank9<B, C>; B; bits;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool,
+    crate::traits::forward_rank_hinted
+];
 
 /// A ranking structure using 25% of additional space and providing the fastest
 /// available rank operations.
@@ -57,15 +72,28 @@ use crate::{
 /// assert_eq!(rank9[5], true);
 /// assert_eq!(rank9[6], false);
 /// assert_eq!(rank9[7], true);
-
 /// ```
-#[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
+
+#[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
+#[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
+#[delegate(
+    crate::traits::rank_sel::Select,
+    target = "bits",
+    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectUnchecked"
+)]
+#[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
+#[delegate(
+    crate::traits::rank_sel::SelectZero,
+    target = "bits",
+    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectZeroUnchecked"
+)]
+#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
 pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
     pub(super) bits: B,
     pub(super) counts: C,
 }
-
-impl RankZero for Rank9 {}
 
 impl<B: BitLength, C: AsRef<[BlockCounters]>> NumBits for Rank9<B, C> {
     #[inline(always)]
@@ -193,19 +221,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B,
     }
 }
 
-crate::forward_mult![Rank9<B, C>; B; bits;
-    crate::forward_as_ref_slice_usize,
-    crate::forward_index_bool,
-    crate::traits::rank_sel::forward_bit_length,
-    crate::traits::rank_sel::forward_rank_hinted,
-    crate::traits::rank_sel::forward_rank_zero,
-    crate::traits::rank_sel::forward_select_zero_hinted,
-    crate::traits::rank_sel::forward_select_unchecked,
-    crate::traits::rank_sel::forward_select,
-    crate::traits::rank_sel::forward_select_zero_unchecked,
-    crate::traits::rank_sel::forward_select_zero,
-    crate::traits::rank_sel::forward_select_hinted
-];
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankZero for Rank9<B, C> {}
 
 #[cfg(test)]
 mod test_rank9 {

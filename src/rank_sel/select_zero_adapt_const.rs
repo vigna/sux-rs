@@ -6,6 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use ambassador::Delegate;
 use common_traits::SelectInWord;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
@@ -15,6 +16,23 @@ use crate::{
     prelude::{BitCount, BitFieldSlice, BitLength},
     traits::{NumBits, SelectZero, SelectZeroHinted, SelectZeroUnchecked},
 };
+
+crate::forward_mult![
+    SelectZeroAdaptConst<B, I, [const] LOG2_ZEROS_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool,
+    crate::traits::forward_rank_hinted
+];
+
+use crate::traits::rank_sel::ambassador_impl_BitCount;
+use crate::traits::rank_sel::ambassador_impl_BitLength;
+use crate::traits::rank_sel::ambassador_impl_NumBits;
+use crate::traits::rank_sel::ambassador_impl_Rank;
+use crate::traits::rank_sel::ambassador_impl_RankZero;
+use crate::traits::rank_sel::ambassador_impl_Select;
+use crate::traits::rank_sel::ambassador_impl_SelectHinted;
+use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
+use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 
 // NOTE: to make parallel modifications with SelectAdaptConst as easy as
 // possible, "ones" are considered to be zeros in the following code.
@@ -108,7 +126,20 @@ use crate::{
 /// assert_eq!(rank9_sel[7], false);
 /// ```
 
-#[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
+#[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
+#[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
+#[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
+#[delegate(crate::traits::rank_sel::NumBits, target = "bits")]
+#[delegate(crate::traits::rank_sel::Rank, target = "bits")]
+#[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
+#[delegate(
+    crate::traits::rank_sel::Select,
+    target = "bits",
+    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectUnchecked"
+)]
+#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
 pub struct SelectZeroAdaptConst<
     B,
     I = Box<[usize]>,
@@ -601,22 +632,6 @@ impl<
     for SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
 }
-
-crate::forward_mult![
-    SelectZeroAdaptConst<B, I, [const] LOG2_ZEROS_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
-    crate::forward_as_ref_slice_usize,
-    crate::forward_index_bool,
-    crate::traits::rank_sel::forward_bit_length,
-    crate::traits::rank_sel::forward_bit_count,
-    crate::traits::rank_sel::forward_num_bits,
-    crate::traits::rank_sel::forward_rank,
-    crate::traits::rank_sel::forward_rank_hinted,
-    crate::traits::rank_sel::forward_rank_zero,
-    crate::traits::rank_sel::forward_select,
-    crate::traits::rank_sel::forward_select_unchecked,
-    crate::traits::rank_sel::forward_select_hinted,
-    crate::traits::rank_sel::forward_select_zero_hinted
-];
 
 #[cfg(test)]
 mod tests {

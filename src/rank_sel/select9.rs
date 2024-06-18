@@ -12,6 +12,7 @@ use crate::{
     prelude::SelectUnchecked,
     traits::{BitLength, NumBits, Select},
 };
+use ambassador::Delegate;
 use common_traits::{SelectInWord, Sequence};
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
@@ -44,6 +45,21 @@ macro_rules! ULEQ_STEP_16 {
             >> 15)
     };
 }
+
+use crate::traits::rank_sel::ambassador_impl_BitCount;
+use crate::traits::rank_sel::ambassador_impl_BitLength;
+use crate::traits::rank_sel::ambassador_impl_NumBits;
+use crate::traits::rank_sel::ambassador_impl_Rank;
+use crate::traits::rank_sel::ambassador_impl_RankZero;
+use crate::traits::rank_sel::ambassador_impl_SelectHinted;
+use crate::traits::rank_sel::ambassador_impl_SelectZero;
+use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
+use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+
+crate::forward_mult![Select9<R, I>; R; rank9;
+    crate::forward_as_ref_slice_usize,
+    crate::forward_index_bool
+];
 
 /// A selection structure over [`Rank9`] using 25%–37.5% additional space and
 /// providing constant-time selection.
@@ -102,7 +118,20 @@ macro_rules! ULEQ_STEP_16 {
 /// assert_eq!(select9[7], true);
 /// ```
 
-#[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
+#[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
+#[delegate(crate::traits::rank_sel::BitCount, target = "rank9")]
+#[delegate(crate::traits::rank_sel::BitLength, target = "rank9")]
+#[delegate(crate::traits::rank_sel::NumBits, target = "rank9")]
+#[delegate(crate::traits::rank_sel::Rank, target = "rank9")]
+#[delegate(crate::traits::rank_sel::RankZero, target = "rank9")]
+#[delegate(crate::traits::rank_sel::SelectHinted, target = "rank9")]
+#[delegate(
+    crate::traits::rank_sel::SelectZero,
+    target = "rank9",
+    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectZeroUnchecked"
+)]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "rank9")]
+#[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "rank9")]
 pub struct Select9<R = Rank9, I = Box<[usize]>> {
     rank9: R,
     inventory: I,
@@ -417,20 +446,6 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
     for Select9<Rank9<B, C>, I>
 {
 }
-
-crate::forward_mult![Select9<R, I>; R; rank9;
-    crate::forward_as_ref_slice_usize,
-    crate::forward_index_bool,
-    crate::traits::rank_sel::forward_bit_length,
-    crate::traits::rank_sel::forward_bit_count,
-    crate::traits::rank_sel::forward_num_bits,
-    crate::traits::rank_sel::forward_rank,
-    crate::traits::rank_sel::forward_rank_hinted,
-    crate::traits::rank_sel::forward_rank_zero,
-    crate::traits::rank_sel::forward_select_zero,
-    crate::traits::rank_sel::forward_select_hinted,
-    crate::traits::rank_sel::forward_select_zero_hinted
-];
 
 #[cfg(test)]
 mod test_select9 {

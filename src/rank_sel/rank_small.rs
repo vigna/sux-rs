@@ -6,6 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use ambassador::Delegate;
 use epserde::*;
 use mem_dbg::*;
 use std::ptr::{addr_of, read_unaligned, write_unaligned};
@@ -14,6 +15,20 @@ use crate::{
     prelude::{BitLength, BitVec, Rank, RankHinted, RankZero},
     traits::{BitCount, NumBits},
 };
+
+use crate::traits::rank_sel::ambassador_impl_BitLength;
+use crate::traits::rank_sel::ambassador_impl_Select;
+use crate::traits::rank_sel::ambassador_impl_SelectHinted;
+use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
+use crate::traits::rank_sel::ambassador_impl_SelectZero;
+use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
+use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+
+crate::forward_mult![RankSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, B, C1, C2>; B; bits;
+  crate::forward_as_ref_slice_usize,
+  crate::forward_index_bool,
+  crate::traits::forward_rank_hinted
+];
 
 /// A family of ranking structures using very little additional space but with
 /// slower operations than [`Rank9`](super::Rank9).
@@ -85,7 +100,22 @@ use crate::{
 /// assert_eq!(rank_small[6], false);
 /// assert_eq!(rank_small[7], true);
 
-#[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
+#[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
+#[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
+#[delegate(
+    crate::traits::rank_sel::Select,
+    target = "bits",
+    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectUnchecked"
+)]
+#[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
+#[delegate(
+    crate::traits::rank_sel::SelectZero,
+    target = "bits",
+    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectZeroUnchecked"
+)]
+#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
 pub struct RankSmall<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
@@ -97,13 +127,6 @@ pub struct RankSmall<
     pub(super) upper_counts: C1,
     pub(super) counts: C2,
     pub(super) num_ones: usize,
-}
-
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> RankZero
-    for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
-where
-    RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>: Rank,
-{
 }
 
 /// A convenient macro to build a [`RankSmall`] structure with the correct
@@ -378,6 +401,13 @@ impl_rank_small!(1; 10);
 impl_rank_small!(1; 11);
 impl_rank_small!(3; 13);
 
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> RankZero
+    for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+where
+    RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>: Rank,
+{
+}
+
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
@@ -448,19 +478,6 @@ impl<
         self.num_ones
     }
 }
-
-crate::forward_mult![RankSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, B, C1, C2>; B; bits;
-    crate::forward_as_ref_slice_usize,
-    crate::forward_index_bool,
-    crate::traits::rank_sel::forward_bit_length,
-    crate::traits::rank_sel::forward_rank_hinted,
-    crate::traits::rank_sel::forward_select_hinted,
-    crate::traits::rank_sel::forward_select_unchecked,
-    crate::traits::rank_sel::forward_select,
-    crate::traits::rank_sel::forward_select_zero_hinted,
-    crate::traits::rank_sel::forward_select_zero_unchecked,
-    crate::traits::rank_sel::forward_select_zero
-];
 
 #[cfg(test)]
 mod tests {
