@@ -45,6 +45,7 @@ use crate::traits::bit_field_slice::*;
 use core::sync::atomic::Ordering;
 use epserde::*;
 use mem_dbg::*;
+use std::borrow::Borrow;
 
 /// A sequential builder for [`EliasFano`].
 ///
@@ -322,11 +323,12 @@ impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: BitFieldSlice
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
-    fn index_of(&self, value: &Self::Input) -> Option<usize> {
-        if *value > self.u {
+    fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
+        let value = *value.borrow();
+        if value > self.u {
             return None;
         }
-        let zeros_to_skip = *value >> self.l;
+        let zeros_to_skip = value >> self.l;
         let bit_pos = if zeros_to_skip == 0 {
             0
         } else {
@@ -358,10 +360,10 @@ where
             let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
             // compose the value
             let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
-            if res == *value {
+            if res == value {
                 return Some(rank);
             }
-            if res > *value {
+            if res > value {
                 return None;
             }
 
@@ -507,8 +509,9 @@ where
 {
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
-        value: &Self::Input,
+        value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output) {
+        let value = *value.borrow();
         let zeros_to_skip = value >> self.l;
         let bit_pos = if zeros_to_skip == 0 {
             0
@@ -541,11 +544,11 @@ where
             let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
 
             if STRICT {
-                if res > *value {
+                if res > value {
                     return (rank, res);
                 }
             } else {
-                if res >= *value {
+                if res >= value {
                     return (rank, res);
                 }
             }
@@ -574,8 +577,9 @@ where
 {
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
-        value: &Self::Input,
+        value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output) {
+        let value = *value.borrow();
         let zeros_to_skip = value >> self.l;
         let mut bit_pos = self.high_bits.select_zero_unchecked(zeros_to_skip) - 1;
 

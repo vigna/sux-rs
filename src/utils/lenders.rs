@@ -5,14 +5,14 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Support for [rewindable I/O lenders](RewindableIOLender).
+//! Support for [rewindable I/O lenders](RewindableIoLender).
 //!
 //! Some data structures in this crate have two features in common:
 //! - they must be able to read their input more than once;
 //! - they do not store the input they read, but rather some derived data, such
 //!   as hashes.
 //!
-//! For this kind of structures, we provide a [`RewindableIOLender`] trait,
+//! For this kind of structures, we provide a [`RewindableIoLender`] trait,
 //! which is a [`Lender`] that can be rewound to the beginning. Rewindability
 //! solves the first problem while lending solves the second problem.
 //!
@@ -41,11 +41,11 @@ use zstd::Decoder;
 
 /// The main trait: a [`Lender`] that can be rewound to the beginning.
 ///
-/// Note that [`rewind`](RewindableIOLender::rewind) consumes `self` and returns
+/// Note that [`rewind`](RewindableIoLender::rewind) consumes `self` and returns
 /// it. This slightly inconvenient behavior is necessary to handle cleanly all
 /// implementations, and in particular those involving compression.
 
-pub trait RewindableIOLender<T: ?Sized>:
+pub trait RewindableIoLender<T: ?Sized>:
     Sized + Lender + for<'lend> Lending<'lend, Lend = Result<&'lend T, Self::Error>>
 {
     type Error: std::error::Error + Send + Sync + 'static;
@@ -109,7 +109,7 @@ impl<B: BufRead> Lender for LineLender<B> {
     }
 }
 
-impl<B: BufRead + Seek> RewindableIOLender<str> for LineLender<B> {
+impl<B: BufRead + Seek> RewindableIoLender<str> for LineLender<B> {
     type Error = io::Error;
     fn rewind(mut self) -> io::Result<Self> {
         self.buf.seek(io::SeekFrom::Start(0)).map(|_| ())?;
@@ -157,7 +157,7 @@ impl<R: Read> Lender for ZstdLineLender<R> {
     }
 }
 
-impl<R: Read + Seek> RewindableIOLender<str> for ZstdLineLender<R> {
+impl<R: Read + Seek> RewindableIoLender<str> for ZstdLineLender<R> {
     type Error = io::Error;
     fn rewind(mut self) -> io::Result<Self> {
         let mut read = self.buf.into_inner().finish();
@@ -206,7 +206,7 @@ impl<R: Read> Lender for GzipLineLender<R> {
     }
 }
 
-impl<R: Read + Seek> RewindableIOLender<str> for GzipLineLender<R> {
+impl<R: Read + Seek> RewindableIoLender<str> for GzipLineLender<R> {
     type Error = io::Error;
     fn rewind(mut self) -> io::Result<Self> {
         let mut read = self.buf.into_inner().into_inner();
@@ -234,7 +234,7 @@ impl<T: 'static, I: IntoIterator<Item = T> + Clone> Lender for FromIntoIterator<
     }
 }
 
-impl<T: 'static, I: IntoIterator<Item = T> + Clone> RewindableIOLender<T> for FromIntoIterator<I> {
+impl<T: 'static, I: IntoIterator<Item = T> + Clone> RewindableIoLender<T> for FromIntoIterator<I> {
     type Error = core::convert::Infallible;
     fn rewind(mut self) -> Result<Self, Self::Error> {
         self.iter = self.into_iter.clone().into_iter();
