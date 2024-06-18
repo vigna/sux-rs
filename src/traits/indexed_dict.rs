@@ -5,32 +5,26 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/*!
-
-Traits for indexed dictionaries, possibly with support for additional
-operations such as predecessor and successor.
-
-*/
+//! Traits for indexed dictionaries, possibly with support for additional
+//! operations such as predecessor and successor.
 
 use impl_tools::autoimpl;
 
-/**
-
-A dictionary of values indexed by a `usize`.
-
-The input and output values may be different, to make it easier to implement
-compressed structures (see, e.g., [rear-coded lists](crate::dict::rear_coded_list::RearCodedList)).
-
-It is suggested that any implementation of this trait also implements
-[`IntoIterator`] with `Item = Self::Output` on a reference. This property can be tested
-on a type `D` with the clause `where for<'a> &'a D: IntoIterator<Item = Self::Output>`.
-Many implementations offer also a method `into_iter_from` that returns an iterator
-starting at a given position in the dictionary.
-
-We provide a blanket implementation for types that dereference to a slice of `T`'s,
-where `T` implements [`ToOwned`].
-
-*/
+/// A dictionary of values indexed by a `usize`.
+///
+/// The input and output values may be different, to make it easier to implement
+/// compressed structures (see, e.g., [rear-coded
+/// lists](crate::dict::rear_coded_list::RearCodedList)).
+///
+/// It is suggested that any implementation of this trait also implements
+/// [`IntoIterator`] with `Item = Self::Output` on a reference. This property
+/// can be tested on a type `D` with the clause `where for<'a> &'a D:
+/// IntoIterator<Item = Self::Output>`. Many implementations offer also a method
+/// `into_iter_from` that returns an iterator starting at a given position in
+/// the dictionary.
+///
+/// We provide a blanket implementation for types that dereference to a slice of
+/// `T`'s, where `T` implements [`ToOwned`].
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 
 pub trait Types {

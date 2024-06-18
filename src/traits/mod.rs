@@ -5,13 +5,10 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/*!
-
-Main traits used in the implementation of succinct and compressed data structures.
-
-See the discussion in [`bit_field_slice`] about the re-export of its traits.
-
-*/
+//! Main traits used in the implementation of succinct and compressed data
+//! structures.
+//!
+//! See the discussion in [`bit_field_slice`] about the re-export of its traits.
 
 pub mod bit_field_slice;
 pub use bit_field_slice::AtomicBitFieldSlice;

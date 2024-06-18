@@ -244,3 +244,53 @@ fn test_map() {
     assert_eq!(rank_seol01.select_zero(4), Some(8));
     assert_eq!(rank_seol01.select_zero(5), None);
 }
+
+#[test]
+fn test_extremely_sparse() {
+    let len = 1 << 18;
+    let bits: AddNumBits<BitVec> = (0..len / 2)
+        .map(|_| false)
+        .chain([true])
+        .chain((0..1 << 17).map(|_| false))
+        .chain([true, true])
+        .chain((0..1 << 18).map(|_| false))
+        .chain([true])
+        .chain((0..len / 2).map(|_| false))
+        .map(|b| !b)
+        .collect::<BitVec>()
+        .into();
+    let simple = SelectZeroAdapt::new(bits, 0);
+
+    assert_eq!(simple.count_zeros(), 4);
+    assert_eq!(simple.select_zero(0), Some(len / 2));
+    assert_eq!(simple.select_zero(1), Some(len / 2 + (1 << 17) + 1));
+    assert_eq!(simple.select_zero(2), Some(len / 2 + (1 << 17) + 2));
+}
+
+#[test]
+fn test_sub32s() {
+    let lens = [1_000_000];
+    let mut rng = SmallRng::seed_from_u64(0);
+    let density = 0.1;
+    for len in lens {
+        let bits: AddNumBits<BitVec> = (0..len)
+            .map(|_| rng.gen_bool(density))
+            .map(|b| !b)
+            .collect::<BitVec>()
+            .into();
+        let simple = SelectZeroAdapt::with_inv(bits.clone(), 13, 3);
+
+        let ones = simple.count_zeros();
+        let mut pos = Vec::with_capacity(ones);
+        for i in 0..len {
+            if !bits[i] {
+                pos.push(i);
+            }
+        }
+
+        for i in 0..ones {
+            assert_eq!(simple.select_zero(i), Some(pos[i]));
+        }
+        assert_eq!(simple.select_zero(ones + 1), None);
+    }
+}

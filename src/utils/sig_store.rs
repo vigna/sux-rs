@@ -5,22 +5,19 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/*!
-
-Fast sorting and grouping of signatures and values.
-
-A *signature* is a pair of 64-bit integers, and a *value* is a generic type
-implementing [`epserde::traits::ZeroCopy`].
-
-A [`SigStore`] acts as a builder for a [`ChunkStore`]: it
-accepts signature/value pairs in any order, and when you call
-[`SigStore::into_chunk_store`] it returns an immutable  [`ChunkStore`]
-that can [iterate on chunks of pairs, where chunks are defined
-by the highest bits of signatures](ChunkStore::iter).
-
-The trait [`ToSig`] provides a standard way to generate signatures for a [`SigStore`].
-
-*/
+//! Fast sorting and grouping of signatures and values.
+//!
+//! A *signature* is a pair of 64-bit integers, and a *value* is a generic type
+//! implementing [`epserde::traits::ZeroCopy`].
+//!
+//! A [`SigStore`] acts as a builder for a [`ChunkStore`]: it accepts
+//! signature/value pairs in any order, and when you call
+//! [`SigStore::into_chunk_store`] it returns an immutable  [`ChunkStore`] that
+//! can [iterate on chunks of pairs, where chunks are defined by the highest
+//! bits of signatures](ChunkStore::iter).
+//!
+//! The trait [`ToSig`] provides a standard way to generate signatures for a
+//! [`SigStore`].
 
 use anyhow::Result;
 use epserde::prelude::*;
@@ -31,11 +28,7 @@ use std::{collections::VecDeque, fs::File, io::*, marker::PhantomData};
 
 use crate::prelude::spooky_short;
 
-/**
-
-A signature and a value.
-
-*/
+/// A signature and a value.
 
 #[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize)]
 #[repr(C)]
@@ -53,15 +46,11 @@ impl<T: ZeroCopy + 'static> RadixKey for SigVal<T> {
     }
 }
 
-/**
-
-Trait for types that must be turned into a signature.
-
-We provide implementations for all primitive types and strings
-by turning them into slice of bytes and then hashing them with
-[crate::utils::spooky::spooky_short], using the given seed.
-
-*/
+/// Trait for types that must be turned into a signature.
+///
+/// We provide implementations for all primitive types and strings by turning
+/// them into slice of bytes and then hashing them with
+/// [crate::utils::spooky::spooky_short], using the given seed.
 
 pub trait ToSig {
     fn to_sig(key: &Self, seed: u64) -> [u64; 2];
@@ -122,28 +111,24 @@ macro_rules! to_sig_slice {
 
 to_sig_slice!(isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
 
-/**
-
-Accumulates key signatures (i.e., random-looking
-hashes associated to keys) and associated values,
-grouping them in different disk buffers by the high bits of the hash.
-Along the way, it keeps track of the number of signatures with the same
-`max_chunk_high_bits` high bits.
-
-The implementation exploits the fact that signatures are randomly distributed,
-and thus bucket sorting is very effective: at construction time you specify
-the number of high bits to use for bucket sorting (say, 8), and when you
-[push](`SigStore::push`) keys they will be stored in different disk buffers
-(in this case, 256) depending on their high bits. The buffers will be stored
-in a directory created by [`tempfile::TempDir`].
-
-After all key signatures and values have been accumulated, you must
-call [`SigStore::into_chunk_store`] to flush the buffers and obtain a
-[`ChunkStore`]. [`SigStore::into_chunk_store`] takes the the number of high bits
-to use for grouping signatures into chunks, and the necessary buffer splitting or merging
-will be handled automatically by the resulting [`ChunkStore`].
-
-*/
+/// Accumulates key signatures (i.e., random-looking hashes associated to keys)
+/// and associated values, grouping them in different disk buffers by the high
+/// bits of the hash. Along the way, it keeps track of the number of signatures
+/// with the same `max_chunk_high_bits` high bits.
+///
+/// The implementation exploits the fact that signatures are randomly
+/// distributed, and thus bucket sorting is very effective: at construction time
+/// you specify the number of high bits to use for bucket sorting (say, 8), and
+/// when you [push](`SigStore::push`) keys they will be stored in different disk
+/// buffers (in this case, 256) depending on their high bits. The buffers will
+/// be stored in a directory created by [`tempfile::TempDir`].
+///
+/// After all key signatures and values have been accumulated, you must call
+/// [`SigStore::into_chunk_store`] to flush the buffers and obtain a
+/// [`ChunkStore`]. [`SigStore::into_chunk_store`] takes the the number of high
+/// bits to use for grouping signatures into chunks, and the necessary buffer
+/// splitting or merging will be handled automatically by the resulting
+/// [`ChunkStore`].
 #[derive(Debug)]
 pub struct SigStore<T> {
     /// Number of keys added so far.
@@ -167,12 +152,8 @@ pub struct SigStore<T> {
     _marker: PhantomData<T>,
 }
 
-/**
-
-An container for the signatures and values accumulated by a [`SigStore`], with
-the ability to [enumerate them grouped in chunks](ChunkStore::iter).
-
-*/
+/// An container for the signatures and values accumulated by a [`SigStore`],
+/// with the ability to [enumerate them grouped in chunks](ChunkStore::iter).
 #[derive(Debug)]
 pub struct ChunkStore<T> {
     /// The number of high bits used for bucket sorting.
@@ -208,21 +189,18 @@ impl<T: ZeroCopy + 'static> ChunkStore<T> {
     }
 }
 
-/**
-
-Enumerate chunks in a [`ChunkStore`].
-
-A [`ChunkIterator`] handles the mapping between buckets and chunks. If a chunk is made
-by one or more buckets, it will aggregate them as necessary; if a bucket contains
-several chunks, it will split the bucket into chunks. In all cases, each chunk
-is sorted and tested for duplicates: if duplicates are detected, a fake pair
-containing `usize::MAX` and an empty chunk will be returned.
-
-Note that a [`ChunkIterator`] returns an owned variant of [`Cow`]. The reason for
-using [`Cow`] is easier interoperability with in-memory construction methods, which
-usually return borrowed variants.
-
-*/
+/// Enumerate chunks in a [`ChunkStore`].
+///
+/// A [`ChunkIterator`] handles the mapping between buckets and chunks. If a
+/// chunk is made by one or more buckets, it will aggregate them as necessary;
+/// if a bucket contains several chunks, it will split the bucket into chunks.
+/// In all cases, each chunk is sorted and tested for duplicates: if duplicates
+/// are detected, a fake pair containing `usize::MAX` and an empty chunk will be
+/// returned.
+///
+/// Note that a [`ChunkIterator`] returns an owned variant of [`Cow`]. The
+/// reason for using [`Cow`] is easier interoperability with in-memory
+/// construction methods, which usually return borrowed variants.
 #[derive(Debug)]
 pub struct ChunkIterator<'a, T: ZeroCopy + 'static> {
     store: &'a mut ChunkStore<T>,

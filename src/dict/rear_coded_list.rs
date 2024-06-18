@@ -5,11 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/*!
-
-Immutable lists of strings compressed by prefix omission via rear coding.
-
-*/
+//! Immutable lists of strings compressed by prefix omission via rear coding.
 
 use crate::traits::{IndexedDict, IndexedSeq, Types};
 use epserde::*;
@@ -44,20 +40,16 @@ struct Stats {
     pub redundancy: isize,
 }
 
-/**
-
-Immutable lists of strings compressed by prefix omission via rear coding.
-
-Prefix omission compresses a list of strings omitting the common prefixes
-of consecutive strings. To do so, it stores the length of what remains
-after the common prefix (hence, rear coding). It is usually applied
-to lists strings sorted in ascending order.
-
-The encoding is done in blocks of `k` strings: in each block the first string is encoded
-without compression, wheres the other strings are encoded with the common prefix
-removed.
-
-*/
+/// Immutable lists of strings compressed by prefix omission via rear coding.
+///
+/// Prefix omission compresses a list of strings omitting the common prefixes of
+/// consecutive strings. To do so, it stores the length of what remains after
+/// the common prefix (hence, rear coding). It is usually applied to lists
+/// strings sorted in ascending order.
+///
+/// The encoding is done in blocks of `k` strings: in each block the first
+/// string is encoded without compression, wheres the other strings are encoded
+/// with the common prefix removed.
 #[derive(Debug, Clone, Epserde, MemDbg, MemSize)]
 pub struct RearCodedList<D: AsRef<[u8]> = Box<[u8]>, P: AsRef<[usize]> = Box<[usize]>> {
     /// The number of strings in a block; this value trades off compression for speed.
