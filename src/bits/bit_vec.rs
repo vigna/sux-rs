@@ -646,78 +646,28 @@ impl FromIterator<bool> for BitVec<Vec<usize>> {
     }
 }
 
-/// An iterator over the ones in an underlying storage.
-#[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct OnesIterator<B> {
-    mem_words: B,
-    word_idx: usize,
-    /// This is a usize because BitVec is currently implemented only for `Vec<usize>` and `&[usize]`.
-    word: usize,
-    len: usize,
-}
-
-impl<B: AsRef<[usize]>> OnesIterator<B> {
-    pub fn new(mem_words: B, len: usize) -> Self {
-        let word = if mem_words.as_ref().is_empty() {
-            0
-        } else {
-            unsafe { *mem_words.as_ref().get_unchecked(0) }
-        };
-        Self {
-            mem_words,
-            word_idx: 0,
-            word,
-            len,
-        }
-    }
-}
-
-impl<B: AsRef<[usize]>> Iterator for OnesIterator<B> {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.len == 0 {
-            return None;
-        }
-        // find the next word with zeros
-        while self.word == 0 {
-            self.word_idx += 1;
-            debug_assert!(self.word_idx < self.mem_words.as_ref().len());
-            self.word = unsafe { *self.mem_words.as_ref().get_unchecked(self.word_idx) };
-        }
-        // find the lowest bit set index in the word
-        let bit_idx = self.word.trailing_zeros() as usize;
-        // compute the global bit index
-        let res = (self.word_idx * BITS) + bit_idx;
-        // clear the lowest bit set
-        self.word &= self.word - 1;
-        self.len -= 1;
-        Some(res)
-    }
-}
-
-// Iterates over the bits as booleans.
+// An iterator over the bits of this bit vector as booleans.
 #[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct BitIterator<'a, B> {
-    mem_words: &'a B,
-    next_bit_pos: usize,
+    bits: &'a B,
     len: usize,
+    next_bit_pos: usize,
 }
 
-impl<'a> IntoIterator for &'a BitVec<Vec<usize>> {
-    type IntoIter = BitIterator<'a, Vec<usize>>;
+impl<'a, B: AsRef<[usize]>> IntoIterator for &'a BitVec<B> {
+    type IntoIter = BitIterator<'a, B>;
     type Item = bool;
 
     fn into_iter(self) -> Self::IntoIter {
         BitIterator {
-            mem_words: &self.bits,
-            next_bit_pos: 0,
+            bits: &self.bits,
             len: self.len,
+            next_bit_pos: 0,
         }
     }
 }
 
-impl<'a> Iterator for BitIterator<'a, Vec<usize>> {
+impl<'a, B: AsRef<[usize]>> Iterator for BitIterator<'a, B> {
     type Item = bool;
     fn next(&mut self) -> Option<bool> {
         if self.next_bit_pos == self.len {
@@ -725,14 +675,136 @@ impl<'a> Iterator for BitIterator<'a, Vec<usize>> {
         }
         let word_idx = self.next_bit_pos / BITS;
         let bit_idx = self.next_bit_pos % BITS;
-        let word = unsafe { *self.mem_words.get_unchecked(word_idx) };
+        let word = unsafe { *self.bits.as_ref().get_unchecked(word_idx) };
         let bit = (word >> bit_idx) & 1;
         self.next_bit_pos += 1;
         Some(bit != 0)
     }
 }
 
-impl fmt::Display for BitVec<Vec<usize>> {
+/// An iterator over the positions of the ones in a bit vector.
+#[derive(Debug, Clone, MemDbg, MemSize)]
+pub struct OnesIterator<'a, B> {
+    bits: &'a B,
+    len: usize,
+    word_idx: usize,
+    /// This is a usize because BitVec is currently implemented only for `Vec<usize>` and `&[usize]`.
+    word: usize,
+}
+
+impl<'a, B: AsRef<[usize]>> OnesIterator<'a, B> {
+    pub fn new(bits: &'a B, len: usize) -> Self {
+        let word = if bits.as_ref().is_empty() {
+            0
+        } else {
+            unsafe { *bits.as_ref().get_unchecked(0) }
+        };
+        Self {
+            bits,
+            len,
+            word_idx: 0,
+            word,
+        }
+    }
+}
+
+impl<'a, B: AsRef<[usize]>> Iterator for OnesIterator<'a, B> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // find the next word with ones
+        while self.word == 0 {
+            self.word_idx += 1;
+            if self.word_idx == self.bits.as_ref().len() {
+                return None;
+            }
+            self.word = unsafe { *self.bits.as_ref().get_unchecked(self.word_idx) };
+        }
+        // find the lowest bit set index in the word
+        let bit_idx = self.word.trailing_zeros() as usize;
+        // compute the global bit index
+        let res = (self.word_idx * BITS) + bit_idx;
+        if res >= self.len {
+            None
+        } else {
+            // clear the lowest bit set
+            self.word &= self.word - 1;
+            Some(res)
+        }
+    }
+}
+
+/// An iterator over the positions of the zeros in a bit vector.
+#[derive(Debug, Clone, MemDbg, MemSize)]
+pub struct ZerosIterator<'a, B> {
+    bits: &'a B,
+    len: usize,
+    word_idx: usize,
+    /// This is a usize because BitVec is currently implemented only for `Vec<usize>` and `&[usize]`.
+    word: usize,
+}
+
+impl<'a, B: AsRef<[usize]>> ZerosIterator<'a, B> {
+    pub fn new(bits: &'a B, len: usize) -> Self {
+        let word = if bits.as_ref().is_empty() {
+            0
+        } else {
+            unsafe { !*bits.as_ref().get_unchecked(0) }
+        };
+        Self {
+            bits,
+            len,
+            word_idx: 0,
+            word,
+        }
+    }
+}
+
+impl<'a, B: AsRef<[usize]>> Iterator for ZerosIterator<'a, B> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // find the next flipped word with zeros
+        while self.word == 0 {
+            self.word_idx += 1;
+            if self.word_idx == self.bits.as_ref().len() {
+                return None;
+            }
+            self.word = unsafe { !*self.bits.as_ref().get_unchecked(self.word_idx) };
+        }
+        // find the lowest zero bit index in the word
+        let bit_idx = self.word.trailing_zeros() as usize;
+        // compute the global bit index
+        let res = (self.word_idx * BITS) + bit_idx;
+        if res >= self.len {
+            None
+        } else {
+            // clear the lowest bit set
+            self.word &= self.word - 1;
+            Some(res)
+        }
+    }
+}
+
+impl<B: AsRef<[usize]>> BitVec<B> {
+    // Returns an iterator over the bits of this bit vector.
+    #[inline(always)]
+    pub fn iter(&self) -> BitIterator<B> {
+        self.into_iter()
+    }
+
+    // Returns an iterator over the positions of the ones in this bit vector.
+    pub fn iter_ones(&self) -> OnesIterator<B> {
+        OnesIterator::new(&self.bits, self.len)
+    }
+
+    // Returns an iterator over the positions of the zeros in this bit vector.
+    pub fn iter_zeros(&self) -> ZerosIterator<B> {
+        ZerosIterator::new(&self.bits, self.len)
+    }
+}
+
+impl<B: AsRef<[usize]>> fmt::Display for BitVec<B> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[")?;
         for b in self {
