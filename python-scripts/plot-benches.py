@@ -84,6 +84,11 @@ def compare_benches(benches, compare_name, op_type):
                 format="svg", bbox_inches="tight")
     plt.close(fig)
 
+    # save pandas dataframes to csv
+    for i, (bench, bench_name) in enumerate(benches):
+        bench.sort_values(["dense", "size"]).to_csv(os.path.join(
+            plots_dir, "raw_{}.csv".format(bench_name)), index=False)
+
 
 def plot_cpp_vs_rust():
     cpp_dir = "../bash-scripts/runs/c++_vs_rust/cpp"
