@@ -230,3 +230,51 @@ fn test_map() {
     assert_eq!(rank_sel.rank(2), 1);
     assert_eq!(rank_sel.rank(10), 5);
 }
+
+#[test]
+fn test_extremely_sparse() {
+    let len = 1 << 18;
+    let bits: AddNumBits<BitVec> = (0..len / 2)
+        .map(|_| false)
+        .chain([true])
+        .chain((0..1 << 17).map(|_| false))
+        .chain([true, true])
+        .chain((0..1 << 18).map(|_| false))
+        .chain([true])
+        .chain((0..len / 2).map(|_| false))
+        .collect::<BitVec>()
+        .into();
+    let simple = SelectAdapt::new(bits, 0);
+
+    assert_eq!(simple.count_ones(), 4);
+    assert_eq!(simple.select(0), Some(len / 2));
+    assert_eq!(simple.select(1), Some(len / 2 + (1 << 17) + 1));
+    assert_eq!(simple.select(2), Some(len / 2 + (1 << 17) + 2));
+}
+
+#[test]
+fn test_sub32s() {
+    let lens = [1_000_000];
+    let mut rng = SmallRng::seed_from_u64(0);
+    let density = 0.1;
+    for len in lens {
+        let bits: AddNumBits<BitVec> = (0..len)
+            .map(|_| rng.gen_bool(density))
+            .collect::<BitVec>()
+            .into();
+        let simple = SelectAdapt::with_inv(bits.clone(), 13, 3);
+
+        let ones = simple.count_ones();
+        let mut pos = Vec::with_capacity(ones);
+        for i in 0..len {
+            if bits[i] {
+                pos.push(i);
+            }
+        }
+
+        for i in 0..ones {
+            assert_eq!(simple.select(i), Some(pos[i]));
+        }
+        assert_eq!(simple.select(ones + 1), None);
+    }
+}

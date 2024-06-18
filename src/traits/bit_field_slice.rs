@@ -5,62 +5,65 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-/*!
-
-Traits for slices of bit fields of constant width.
-
-Slices of bit fields are accessed with a logic similar to slices, but
-when indexed with [`get`](BitFieldSlice::get) return an owned value
-of a [fixed bit width](BitFieldSliceCore::bit_width). The associated
-implementation is [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec).
-
-Implementing the [`Index`](core::ops::Index)/[`IndexMut`](core::ops::IndexMut) traits
-would be more natural and practical, but in certain cases it is impossible:
-in our main use case, [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec),
-we cannot implement [`Index`](core::ops::Index) because there is no way to
-return a reference to a bit segment.
-
-There are three end-user traits: [`BitFieldSlice`], [`BitFieldSliceMut`] and [`AtomicBitFieldSlice`].
-The trait [`BitFieldSliceCore`] contains the common methods, and in particular
-[`BitFieldSliceCore::bit_width`], which returns the bit width the values stored in the slice.
- All stored values must fit within this bit width.
-
-All the traits depends on a type parameter `W` that must implement [`Word`], and which
-default to `usize`, but any type satisfying the [`Word`] trait
-can be used, with the restriction that the bit width of the slice can be at most
-the bit width of `W` as defined by [`AsBytes::BITS`]. Additionally,
-to implement [`AtomicBitFieldSlice`], `W` must implement [`IntoAtomic`].
-The methods of all traits accept and return values of type `W`.
-
-If you need to iterate over a [`BitFieldSlice`], you can use [`BitFieldSliceIterator`].
-
-Implementations must return always zero on a [`BitFieldSlice::get`] when the bit
-width is zero. The behavior of a [`BitFieldSliceMut::set`] in the same context is not defined.
-
-It is suggested that types implementing [`BitFieldSlice`] implement on a reference
-[`IntoIterator`] with item `W` using [`BitFieldSliceIterator`] as helper.
-
-We provide implementations for vectors and slices of all primitive atomic and non-atomic
-unsigned integer types that view their elements as values with a bit width
-equal to that of the type.
-
-## Simpler methods for atomic slices
-
-[`AtomicBitFieldSlice`] has rather cumbersome method names. There is however a trait [`AtomicHelper`]
-that can be imported that will add to [`AtomicBitFieldSlice`] equivalent methods without the `_atomic`
-infix. You should be however careful to not mix [`AtomicHelper`] and [`BitFieldSlice`] or a number
-of ambiguities in trait resolution will arise. In particular, if you plan to use [`AtomicHelper`], we
-suggest that you do not import the prelude.
-```rust
-use sux::traits::bit_field_slice::{AtomicBitFieldSlice,AtomicHelper};
-use std::sync::atomic::Ordering;
-
-let slice = sux::bits::AtomicBitFieldVec::<usize>::new(3, 3);
-slice.set(0, 1, Ordering::Relaxed);
-assert_eq!(slice.get(0, Ordering::Relaxed), 1);
-```
-
-*/
+//! Traits for slices of bit fields of constant width.
+//!
+//! Slices of bit fields are accessed with a logic similar to slices, but when
+//! indexed with [`get`](BitFieldSlice::get) return an owned value of a [fixed
+//! bit width](BitFieldSliceCore::bit_width). The associated implementation is
+//! [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec).
+//!
+//! Implementing the
+//! [`Index`](core::ops::Index)/[`IndexMut`](core::ops::IndexMut) traits would
+//! be more natural and practical, but in certain cases it is impossible: in our
+//! main use case, [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec), we
+//! cannot implement [`Index`](core::ops::Index) because there is no way to
+//! return a reference to a bit segment.
+//!
+//! There are three end-user traits: [`BitFieldSlice`], [`BitFieldSliceMut`] and
+//! [`AtomicBitFieldSlice`]. The trait [`BitFieldSliceCore`] contains the common
+//! methods, and in particular [`BitFieldSliceCore::bit_width`], which returns
+//!  the bit width the values stored in the slice. All stored values must fit
+//!  within this bit width.
+//!
+//! All the traits depends on a type parameter `W` that must implement [`Word`],
+//! and which default to `usize`, but any type satisfying the [`Word`] trait can
+//! be used, with the restriction that the bit width of the slice can be at most
+//! the bit width of `W` as defined by [`AsBytes::BITS`]. Additionally, to
+//! implement [`AtomicBitFieldSlice`], `W` must implement [`IntoAtomic`]. The
+//! methods of all traits accept and return values of type `W`.
+//!
+//! If you need to iterate over a [`BitFieldSlice`], you can use
+//! [`BitFieldSliceIterator`].
+//!
+//! Implementations must return always zero on a [`BitFieldSlice::get`] when the
+//! bit width is zero. The behavior of a [`BitFieldSliceMut::set`] in the same
+//! context is not defined.
+//!
+//! It is suggested that types implementing [`BitFieldSlice`] implement on a
+//! reference [`IntoIterator`] with item `W` using [`BitFieldSliceIterator`] as
+//! helper.
+//!
+//! We provide implementations for vectors and slices of all primitive atomic
+//! and non-atomic unsigned integer types that view their elements as values
+//! with a bit width equal to that of the type.
+//!
+//! ## Simpler methods for atomic slices
+//!
+//! [`AtomicBitFieldSlice`] has rather cumbersome method names. There is however
+//! a trait [`AtomicHelper`] that can be imported that will add to
+//! [`AtomicBitFieldSlice`] equivalent methods without the `_atomic` infix. You
+//! should be however careful to not mix [`AtomicHelper`] and [`BitFieldSlice`]
+//! or a number of ambiguities in trait resolution will arise. In particular, if
+//! you plan to use [`AtomicHelper`], we suggest that you do not import the
+//! prelude.
+//! ```rust
+//! use sux::traits::bit_field_slice::{AtomicBitFieldSlice,AtomicHelper};
+//! use std::sync::atomic::Ordering;
+//!
+//! let slice = sux::bits::AtomicBitFieldVec::<usize>::new(3, 3);
+//! slice.set(0, 1, Ordering::Relaxed);
+//! assert_eq!(slice.get(0, Ordering::Relaxed), 1);
+//! ```
 use common_traits::*;
 use core::sync::atomic::*;
 use mem_dbg::{MemDbg, MemSize};

@@ -71,8 +71,7 @@ crate::forward_mult![Select9<R, I>; R; rank9;
 /// Note that the additional space is in addition to [`Rank9`], so the overall
 /// cost of the selection structure is 50%–62.5% of the original bit vector. Due
 /// to the large space, unless the bit vector has a pathologically irregular bit
-/// distribution [`SelectAdapt`](super::SelectAdapt) is usually a better
-/// choice.
+/// distribution [`SelectAdapt`](super::SelectAdapt) is usually a better choice.
 ///
 /// This structure has been described by Sebastiano Vigna in “[Broadword
 /// Implementation of Rank/Select
