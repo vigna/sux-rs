@@ -745,7 +745,7 @@ impl fmt::Display for BitVec<Vec<usize>> {
 
 impl<B: AsRef<[usize]>> RankHinted<64> for BitVec<B> {
     #[inline(always)]
-    unsafe fn rank_hinted_unchecked(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
+    unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
         let bits = self.as_ref();
         let mut rank = hint_rank;
         let mut hint_pos = hint_pos;
