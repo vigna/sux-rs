@@ -94,11 +94,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 #[delegate(crate::traits::rank_sel::Rank, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "rank_small")]
-#[delegate(
-    crate::traits::rank_sel::SelectZero,
-    target = "rank_small",
-    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectZeroUnchecked"
-)]
+#[delegate(crate::traits::rank_sel::SelectZero, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "rank_small")]
 pub struct SelectSmall<

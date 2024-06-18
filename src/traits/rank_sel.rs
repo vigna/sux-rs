@@ -285,18 +285,10 @@ crate::forward_mult![AddNumBits<B>; B; bits;
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
-#[delegate(
-    crate::traits::rank_sel::Select,
-    target = "bits",
-    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectUnchecked"
-)]
+#[delegate(crate::traits::rank_sel::Select, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
-#[delegate(
-    crate::traits::rank_sel::SelectZero,
-    target = "bits",
-    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectZeroUnchecked"
-)]
+#[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
 pub struct AddNumBits<B> {

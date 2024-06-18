@@ -125,11 +125,7 @@ crate::forward_mult![Select9<R, I>; R; rank9;
 #[delegate(crate::traits::rank_sel::Rank, target = "rank9")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "rank9")]
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "rank9")]
-#[delegate(
-    crate::traits::rank_sel::SelectZero,
-    target = "rank9",
-    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectZeroUnchecked"
-)]
+#[delegate(crate::traits::rank_sel::SelectZero, target = "rank9")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "rank9")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "rank9")]
 pub struct Select9<R = Rank9, I = Box<[usize]>> {

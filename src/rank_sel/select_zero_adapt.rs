@@ -133,11 +133,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
-#[delegate(
-    crate::traits::rank_sel::Select,
-    target = "bits",
-    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectUnchecked"
-)]
+#[delegate(crate::traits::rank_sel::Select, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
