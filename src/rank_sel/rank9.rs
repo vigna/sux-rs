@@ -81,13 +81,13 @@ crate::forward_mult![Rank9<B, C>; B; bits;
 #[delegate(
     crate::traits::rank_sel::Select,
     target = "bits",
-    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectUnchecked"
+    where = "C: AsRef<[BlockCounters]>"
 )]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
 #[delegate(
     crate::traits::rank_sel::SelectZero,
     target = "bits",
-    where = "Self: crate::traits::rank_sel::NumBits, Self: crate::traits::rank_sel::SelectZeroUnchecked"
+    where = "C: AsRef<[BlockCounters]>"
 )]
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
 pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
