@@ -101,13 +101,37 @@ fn strcpy<'a>(mut data: &'a [u8], result: &mut Vec<u8>) -> &'a [u8] {
 /// strcmp but string is a Rust string and data is a `\0`-terminated string.
 fn strcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
     for (i, c) in string.iter().enumerate() {
-        match data[i].cmp(c) {
-            core::cmp::Ordering::Equal => {}
-            ord => return ord,
+        let ord = c.cmp(&data[i]);
+        if ord != core::cmp::Ordering::Equal {
+            return ord;
         }
     }
-    // string has an implicit final \0
-    data[string.len()].cmp(&0)
+
+    if data[string.len()] == 0 {
+        core::cmp::Ordering::Equal
+    } else {
+        core::cmp::Ordering::Less
+    }
+}
+
+#[test]
+#[cfg(test)]
+fn test_strcmp() {
+    assert_eq!(strcmp(b"abcd", b"abcd\0"), core::cmp::Ordering::Equal);
+    assert_eq!(strcmp(b"abcd", b"abbd\0"), core::cmp::Ordering::Greater);
+    assert_eq!(strcmp(b"abcd", b"abdd\0"), core::cmp::Ordering::Less);
+
+    assert_eq!(strcmp(b"a", b"b\0"), core::cmp::Ordering::Less);
+    assert_eq!(strcmp(b"b", b"a\0"), core::cmp::Ordering::Greater);
+    assert_eq!(strcmp(b"abc", b"abc\0"), core::cmp::Ordering::Equal);
+    assert_eq!(strcmp(b"abc", b"abc\0abc"), core::cmp::Ordering::Equal);
+    assert_eq!(strcmp(b"abc", b"abc\0ab"), core::cmp::Ordering::Equal);
+    assert_eq!(strcmp(b"abc", b"ab\0"), core::cmp::Ordering::Greater);
+    assert_eq!(strcmp(b"abc", b"ab\0abc"), core::cmp::Ordering::Greater);
+    assert_eq!(strcmp(b"abc", b"ab\0ab"), core::cmp::Ordering::Greater);
+    assert_eq!(strcmp(b"abc", b"ab\0"), core::cmp::Ordering::Greater);
+    assert_eq!(strcmp(b"a", b"ab\0"), core::cmp::Ordering::Less);
+    assert_eq!(strcmp(b"ab", b"ab\0"), core::cmp::Ordering::Equal);
 }
 
 #[inline(always)]
@@ -321,33 +345,35 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         }
     }
 
-    fn contains_unsorted(&self, key: &<Self as Types>::Input) -> bool {
+    fn index_of_unsorted(&self, key: &<Self as Types>::Input) -> Option<usize> {
         let key = key.as_bytes();
-        let mut iter = self.into_lender();
-        while let Some(string) = iter.next() {
-            if matches!(strcmp(key, string.as_bytes()), core::cmp::Ordering::Equal) {
-                return true;
+        let mut iter = self.into_lender().enumerate();
+        while let Some((idx, string)) = iter.next() {
+            if matches!(
+                strcmp_rust(key, string.as_bytes()),
+                core::cmp::Ordering::Equal
+            ) {
+                return Some(idx);
             }
         }
-        false
+        None
     }
 
-    fn contains_sorted(&self, string: &<Self as Types>::Input) -> bool {
+    fn index_of_sorted(&self, string: &<Self as Types>::Input) -> Option<usize> {
         let string = string.as_bytes();
         // first to a binary search on the blocks to find the block
-        let block_idx = self
-            .pointers
-            .as_ref()
-            .binary_search_by(|block_ptr| strcmp(string, &self.data.as_ref()[*block_ptr..]));
+        let block_idx = self.pointers.as_ref().binary_search_by(|block_ptr| {
+            strcmp(string, &self.data.as_ref()[*block_ptr..]).reverse()
+        });
 
         if block_idx.is_ok() {
-            return true;
+            return Some(block_idx.unwrap() * self.k);
         }
 
         let mut block_idx = block_idx.unwrap_err();
         if block_idx == 0 || block_idx > self.pointers.as_ref().len() {
             // the string is before the first block
-            return false;
+            return None;
         }
         block_idx -= 1;
         // finish by a linear search on the block
@@ -358,7 +384,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         // decode the first string in the block
         let mut data = strcpy(data, &mut result);
         let in_block = (self.k - 1).min(self.len - block_idx * self.k - 1);
-        for _ in 0..in_block {
+        for idx in 0..in_block {
             // get how much data to throw away
             let (len, tmp) = decode_int(data);
             let lcp = result.len() - len;
@@ -371,11 +397,11 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
             // TODO!: this can be optimized to avoid the copy
             match strcmp_rust(string, &result) {
                 core::cmp::Ordering::Less => {}
-                core::cmp::Ordering::Equal => return true,
-                core::cmp::Ordering::Greater => return false,
+                core::cmp::Ordering::Equal => return Some(block_idx * self.k + idx + 1),
+                core::cmp::Ordering::Greater => return None,
             }
         }
-        false
+        None
     }
 }
 
@@ -415,15 +441,15 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
     /// otherwise it is done with a linear search.
     #[inline]
     fn contains(&self, string: &Self::Input) -> bool {
-        if self.is_sorted {
-            self.contains_sorted(string)
-        } else {
-            self.contains_unsorted(string)
-        }
+        self.index_of(string).is_some()
     }
 
     fn index_of(&self, value: &Self::Input) -> Option<usize> {
-        todo!();
+        if self.is_sorted {
+            self.index_of_sorted(value)
+        } else {
+            self.index_of_unsorted(value)
+        }
     }
 }
 
