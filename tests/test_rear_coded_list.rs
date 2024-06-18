@@ -32,7 +32,8 @@ fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
 
     // create a new rca with u16 as pointers (this limit data to u16::MAX bytes max size)
     let mut rcab = <RearCodedListBuilder>::new(4);
-    rcab.extend(words.iter().into_lender());
+    let iter = words.iter().map(|s| s.as_str()).into_lender();
+    rcab.extend(iter);
 
     rcab.print_stats();
     let rca = rcab.build();

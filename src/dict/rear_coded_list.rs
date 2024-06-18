@@ -7,6 +7,8 @@
 
 //! Immutable lists of strings compressed by prefix omission via rear coding.
 
+use std::borrow::{Borrow, Cow};
+
 use crate::traits::{IndexedDict, IndexedSeq, Types};
 use epserde::*;
 use lender::for_;
@@ -172,17 +174,10 @@ impl RearCodedListBuilder {
         }
     }
 
-    /// Re-allocate the data to remove wasted capacity in the structure
-    pub fn shrink_to_fit(&mut self) {
-        self.data.shrink_to_fit();
-        self.pointers.shrink_to_fit();
-        self.last_str.shrink_to_fit();
-    }
-
     #[inline]
     /// Encode and append a string to the end of the list.
-    pub fn push(&mut self, string: impl AsRef<str>) {
-        let string = string.as_ref();
+    pub fn push(&mut self, string: impl Borrow<str>) {
+        let string = string.borrow();
         // update stats
         self.stats.max_str_len = self.stats.max_str_len.max(string.len());
         self.stats.sum_str_len += string.len();
@@ -238,8 +233,34 @@ impl RearCodedListBuilder {
     }
 
     #[inline]
-    /// Append all the strings from an iterator to the end of the list
-    pub fn extend<S: AsRef<str>, L: IntoLender>(&mut self, into_lender: L)
+    /// Append all the strings from a [`Lender`] to the end of the list.
+    ///
+    /// We prefer to implement extension via a [`Lender`] instead of an
+    /// [`Iterator`] to avoid the need to allocate a new string for every string
+    /// in the list. This is particularly useful when building large lists
+    /// from files using, for example, a
+    /// [`RewindableIoLender`](crate::utils::lenders::RewindableIoLender).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use lender::*;
+    /// use sux::dict::RearCodedListBuilder;
+    /// let mut rclb = RearCodedListBuilder::new(4);
+    /// let words = vec!["aa", "aab", "abc", "abdd", "abde", "abdf"];
+    /// rclb.extend(words.iter().map(|s| *s).into_lender());
+    /// let rcl = rclb.build();
+    ///
+    /// // Note: when using actual strings, you need to make them into
+    /// // a `&str` to use them as a key.
+    ///
+    /// let mut rclb = RearCodedListBuilder::new(4);
+    /// let words = vec!["aa".to_string(), "aab".to_string(), "abc".to_string(),
+    ///     "abdd".to_string(), "abde".to_string(), "abdf".to_string()];
+    /// rclb.extend(words.iter().map(|s| s.as_str()).into_lender());
+    /// let rcl = rclb.build();
+    /// ```
+    pub fn extend<S: Borrow<str>, L: IntoLender>(&mut self, into_lender: L)
     where
         L::Lender: for<'lend> Lending<'lend, Lend = S>,
     {
@@ -345,8 +366,8 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         }
     }
 
-    fn index_of_unsorted(&self, key: &<Self as Types>::Input) -> Option<usize> {
-        let key = key.as_bytes();
+    fn index_of_unsorted(&self, key: impl Borrow<<Self as Types>::Input>) -> Option<usize> {
+        let key = key.borrow().as_bytes();
         let mut iter = self.into_lender().enumerate();
         while let Some((idx, string)) = iter.next() {
             if matches!(
@@ -359,8 +380,8 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         None
     }
 
-    fn index_of_sorted(&self, string: &<Self as Types>::Input) -> Option<usize> {
-        let string = string.as_bytes();
+    fn index_of_sorted(&self, string: impl Borrow<<Self as Types>::Input>) -> Option<usize> {
+        let string = string.borrow().as_bytes();
         // first to a binary search on the blocks to find the block
         let block_idx = self.pointers.as_ref().binary_search_by(|block_ptr| {
             strcmp(string, &self.data.as_ref()[*block_ptr..]).reverse()
@@ -418,8 +439,8 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLender for &'a RearCodedList<D, 
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> Types for RearCodedList<D, P> {
-    type Output = String;
     type Input = str;
+    type Output = String;
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedSeq for RearCodedList<D, P> {
@@ -440,16 +461,16 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
     /// If the strings in the list are sorted this is done with a binary search,
     /// otherwise it is done with a linear search.
     #[inline]
-    fn contains(&self, string: &Self::Input) -> bool {
-        self.index_of(string).is_some()
-    }
-
-    fn index_of(&self, value: &Self::Input) -> Option<usize> {
+    fn contains(&self, value: impl Borrow<Self::Input>) -> bool {
         if self.is_sorted {
             self.index_of_sorted(value)
         } else {
             self.index_of_unsorted(value)
         }
+    }
+
+    fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
+        todo!();
     }
 }
 

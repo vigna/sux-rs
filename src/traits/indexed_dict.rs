@@ -8,6 +8,8 @@
 //! Traits for indexed dictionaries, possibly with support for additional
 //! operations such as predecessor and successor.
 
+use std::borrow::Borrow;
+
 use impl_tools::autoimpl;
 
 /// A dictionary of values indexed by a `usize`.
@@ -68,12 +70,12 @@ pub trait IndexedDict: Types {
     ///
     /// The default implementations just checks iteratively
     /// if the value is equal to any of the values in the dictionary.
-    fn index_of(&self, value: &Self::Input) -> Option<usize>;
+    fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize>;
 
     /// Return true if the dictionary contains the given value.
     ///
     /// The default implementations just uses [`index_of`](`IndexedDict::index_of`).
-    fn contains(&self, value: &Self::Input) -> bool {
+    fn contains(&self, value: impl Borrow<Self::Input>) -> bool {
         self.index_of(value).is_some()
     }
 }
@@ -99,7 +101,7 @@ where
     /// The successors must exist.
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
-        value: &Self::Input,
+        value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output);
 }
 
@@ -116,8 +118,8 @@ where
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
-    fn succ(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
-        if self.is_empty() || *value > self.get(self.len() - 1) {
+    fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+        if self.is_empty() || *value.borrow() > self.get(self.len() - 1) {
             None
         } else {
             Some(unsafe { self.succ_unchecked::<false>(value) })
@@ -131,8 +133,8 @@ where
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
-    fn succ_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
-        if self.is_empty() || *value >= self.get(self.len() - 1) {
+    fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+        if self.is_empty() || *value.borrow() >= self.get(self.len() - 1) {
             None
         } else {
             Some(unsafe { self.succ_unchecked::<true>(value) })
@@ -159,7 +161,7 @@ where
     /// The predecessor must exist.
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
-        value: &Self::Input,
+        value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output);
 }
 
@@ -176,8 +178,8 @@ where
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
-    fn pred(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
-        if self.is_empty() || *value < self.get(0) {
+    fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+        if self.is_empty() || *value.borrow() < self.get(0) {
             None
         } else {
             Some(unsafe { self.pred_unchecked::<false>(value) })
@@ -191,8 +193,8 @@ where
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
-    fn pred_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
-        if self.is_empty() || *value <= self.get(0) {
+    fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+        if self.is_empty() || *value.borrow() <= self.get(0) {
             None
         } else {
             Some(unsafe { self.pred_unchecked::<true>(value) })
@@ -228,19 +230,19 @@ where
     T::Output: PartialOrd<T::Input> + PartialOrd,
 {
     #[inline(always)]
-    fn succ(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
         T::succ(*self, value)
     }
 
     #[inline(always)]
-    fn succ_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
         T::succ_strict(*self, value)
     }
 
     #[inline(always)]
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
-        value: &Self::Input,
+        value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output) {
         T::succ_unchecked::<STRICT>(*self, value)
     }
@@ -252,19 +254,19 @@ where
     T::Output: PartialOrd<T::Input> + PartialOrd,
 {
     #[inline(always)]
-    fn succ(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
         T::succ(*self, value)
     }
 
     #[inline(always)]
-    fn succ_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
         T::succ_strict(*self, value)
     }
 
     #[inline(always)]
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
-        value: &Self::Input,
+        value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output) {
         T::succ_unchecked::<STRICT>(*self, value)
     }
@@ -276,19 +278,19 @@ where
     T::Output: PartialOrd<T::Input> + PartialOrd,
 {
     #[inline(always)]
-    fn succ(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
         T::succ(self, value)
     }
 
     #[inline(always)]
-    fn succ_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
         T::succ_strict(self, value)
     }
 
     #[inline(always)]
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
-        value: &Self::Input,
+        value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output) {
         T::succ_unchecked::<STRICT>(self, value)
     }
@@ -300,19 +302,19 @@ where
     T::Output: PartialOrd<T::Input> + PartialOrd,
 {
     #[inline(always)]
-    fn pred(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
         T::pred(*self, value)
     }
 
     #[inline(always)]
-    fn pred_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
         T::pred_strict(*self, value)
     }
 
     #[inline(always)]
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
-        value: &Self::Input,
+        value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output) {
         T::pred_unchecked::<STRICT>(*self, value)
     }
@@ -324,19 +326,19 @@ where
     T::Output: PartialOrd<T::Input> + PartialOrd,
 {
     #[inline(always)]
-    fn pred(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
         T::pred(*self, value)
     }
 
     #[inline(always)]
-    fn pred_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
         T::pred_strict(*self, value)
     }
 
     #[inline(always)]
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
-        value: &Self::Input,
+        value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output) {
         T::pred_unchecked::<STRICT>(*self, value)
     }
@@ -348,19 +350,19 @@ where
     T::Output: PartialOrd<T::Input> + PartialOrd,
 {
     #[inline(always)]
-    fn pred(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
         T::pred(self, value)
     }
 
     #[inline(always)]
-    fn pred_strict(&self, value: &Self::Input) -> Option<(usize, Self::Output)> {
+    fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
         T::pred_strict(self, value)
     }
 
     #[inline(always)]
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
-        value: &Self::Input,
+        value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output) {
         T::pred_unchecked::<STRICT>(self, value)
     }
