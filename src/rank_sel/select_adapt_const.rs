@@ -18,7 +18,7 @@ use crate::{
 };
 
 crate::forward_mult![
-    SelectAdaptConst<B, I, [const] LOG2_ZEROS_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
+    SelectAdaptConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::forward_rank_hinted
@@ -154,13 +154,12 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 pub struct SelectAdaptConst<
     B,
     I = Box<[usize]>,
-    const LOG2_ZEROS_PER_INVENTORY: usize = 10,
+    const LOG2_ONES_PER_INVENTORY: usize = 10,
     const LOG2_U64_PER_SUBINVENTORY: usize = 2,
 > {
     bits: B,
     inventory: I,
     spill: I,
-    log2_ones_per_sub16: usize,
     ones_per_inventory_mask: usize,
     ones_per_sub16_mask: usize,
 }
@@ -239,9 +238,12 @@ fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
     log2_ones_per_sub16.saturating_sub((span >> 15).ilog2() as usize + 1)
 }
 
-impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY: usize>
-    SelectAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY: usize>
+    SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
+    const LOG2_ONES_PER_SUB16: usize =
+        LOG2_ONES_PER_INVENTORY.saturating_sub(LOG2_U64_PER_SUBINVENTORY + 2);
+
     pub fn into_inner(self) -> B {
         self.bits
     }
@@ -255,7 +257,6 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTOR
             bits: f(self.bits),
             inventory: self.inventory,
             spill: self.spill,
-            log2_ones_per_sub16: self.log2_ones_per_sub16,
             ones_per_inventory_mask: self.ones_per_inventory_mask,
             ones_per_sub16_mask: self.ones_per_sub16_mask,
         }
@@ -266,9 +267,9 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTOR
 
 impl<
         B: AsRef<[usize]> + BitLength + BitCount,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
+        const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > SelectAdaptConst<B, Box<[usize]>, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > SelectAdaptConst<B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     /// Creates a new selection structure over a [`SelectHinted`] with a specified
     /// distance between indexed ones.
@@ -276,7 +277,7 @@ impl<
     pub fn new(bits: B) -> Self {
         let num_ones = bits.count_ones();
         let num_bits = max(1, bits.len());
-        let ones_per_inventory = 1 << LOG2_ZEROS_PER_INVENTORY;
+        let ones_per_inventory = 1 << LOG2_ONES_PER_INVENTORY;
         let ones_per_inventory_mask = ones_per_inventory - 1;
         let inventory_size = num_ones.div_ceil(ones_per_inventory);
 
@@ -284,9 +285,7 @@ impl<
         // A u64 for the inventory, and u64_per_inventory for the subinventory
         let u64_per_inventory = u64_per_subinventory + 1;
 
-        let log2_ones_per_sub16 =
-            LOG2_ZEROS_PER_INVENTORY.saturating_sub(LOG2_U64_PER_SUBINVENTORY + 2);
-        let ones_per_sub16 = 1 << log2_ones_per_sub16;
+        let ones_per_sub16 = 1 << Self::LOG2_ONES_PER_SUB16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
         let inventory_words = inventory_size * u64_per_inventory + 1;
@@ -341,7 +340,7 @@ impl<
                 // another cache miss to be read from the spill buffer.
                 SpanType::U32 => {
                     // We store an inventory entry each 1 << log2_ones_per_sub32 ones.
-                    let log2_ones_per_sub32 = log2_ones_per_sub32(span, log2_ones_per_sub16);
+                    let log2_ones_per_sub32 = log2_ones_per_sub32(span, Self::LOG2_ONES_PER_SUB16);
                     let num_u32s = ones.div_ceil(1 << log2_ones_per_sub32);
                     let num_u64s = num_u32s.div_ceil(2);
                     let spilled_u64s = num_u64s - u64_per_subinventory + 1;
@@ -381,11 +380,11 @@ impl<
 
             match span_type {
                 SpanType::U16 => {
-                    log2_quantum = log2_ones_per_sub16;
+                    log2_quantum = Self::LOG2_ONES_PER_SUB16;
                     inventory[start_inv_idx].set_u16_span();
                 }
                 SpanType::U32 => {
-                    log2_quantum = log2_ones_per_sub32(span, log2_ones_per_sub16);
+                    log2_quantum = log2_ones_per_sub32(span, Self::LOG2_ONES_PER_SUB16);
 
                     inventory[start_inv_idx].set_u32_span();
                     // The first word of the subinventory is used to store the spill index.
@@ -454,7 +453,7 @@ impl<
                             // it avoids the additional loop iterations that
                             // would be necessary to find the position of the
                             // next one (i.e., end_bit_idx).
-                            if subinventory_idx << log2_quantum == (1 << LOG2_ZEROS_PER_INVENTORY) {
+                            if subinventory_idx << log2_quantum == (1 << LOG2_ONES_PER_INVENTORY) {
                                 break 'outer;
                             }
                         }
@@ -484,7 +483,7 @@ impl<
                             // it avoids the additional loop iterations that
                             // would be necessary to find the position of the
                             // next one (i.e., end_bit_idx).
-                            if subinventory_idx << log2_quantum == (1 << LOG2_ZEROS_PER_INVENTORY) {
+                            if subinventory_idx << log2_quantum == (1 << LOG2_ONES_PER_INVENTORY) {
                                 break 'outer;
                             }
                         }
@@ -537,7 +536,6 @@ impl<
             bits,
             inventory,
             spill,
-            log2_ones_per_sub16,
             ones_per_inventory_mask,
             ones_per_sub16_mask,
         }
@@ -547,14 +545,14 @@ impl<
 impl<
         B: SelectHinted + AsRef<[usize]> + BitLength,
         I: AsRef<[usize]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
+        const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > SelectUnchecked
-    for SelectAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         let inventory = self.inventory.as_ref();
-        let inventory_index = rank >> LOG2_ZEROS_PER_INVENTORY;
+        let inventory_index = rank >> LOG2_ONES_PER_INVENTORY;
         let inventory_start_pos = (inventory_index << LOG2_U64_PER_SUBINVENTORY) + inventory_index;
 
         let inventory_rank = { *inventory.get_unchecked(inventory_start_pos) };
@@ -566,10 +564,10 @@ impl<
                 .align_to::<u16>()
                 .1;
 
-            debug_assert!(subrank >> self.log2_ones_per_sub16 < subinventory.len());
+            debug_assert!(subrank >> Self::LOG2_ONES_PER_SUB16 < subinventory.len());
 
             let hint_pos = inventory_rank
-                + *subinventory.get_unchecked(subrank >> self.log2_ones_per_sub16) as usize;
+                + *subinventory.get_unchecked(subrank >> Self::LOG2_ONES_PER_SUB16) as usize;
             let residual = subrank & self.ones_per_sub16_mask;
 
             return self.bits.select_hinted(rank, hint_pos, rank - residual);
@@ -582,7 +580,7 @@ impl<
             let span = (*inventory.get_unchecked(inventory_start_pos + u64_per_subinventory + 1))
                 .get()
                 - inventory_rank;
-            let log2_ones_per_sub32 = log2_ones_per_sub32(span, self.log2_ones_per_sub16);
+            let log2_ones_per_sub32 = log2_ones_per_sub32(span, Self::LOG2_ONES_PER_SUB16);
 
             let hint_pos = if subrank >> log2_ones_per_sub32 < (u64_per_subinventory - 1) * 2 {
                 let u32s = inventory
@@ -629,9 +627,9 @@ impl<
 impl<
         B: SelectHinted + AsRef<[usize]> + NumBits,
         I: AsRef<[usize]>,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
+        const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
-    > Select for SelectAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+    > Select for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
 {
 }
 

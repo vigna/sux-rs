@@ -257,21 +257,6 @@ impl<H, L> EliasFano<H, L> {
             high_bits: self.high_bits,
         }
     }
-
-    /// Change both the high and low bits types
-    pub unsafe fn map<F, H2, L2>(self, func: F) -> EliasFano<H2, L2>
-    where
-        F: FnOnce(H, L) -> (H2, L2),
-    {
-        let (high_bits, low_bits) = func(self.high_bits, self.low_bits);
-        EliasFano {
-            n: self.n,
-            u: self.u,
-            l: self.l,
-            low_bits,
-            high_bits,
-        }
-    }
 }
 
 impl<H, L> EliasFano<H, L> {
