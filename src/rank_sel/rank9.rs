@@ -135,7 +135,13 @@ impl<B, C> Rank9<B, C> {
     pub fn into_inner(self) -> B {
         self.bits
     }
+
     /// Replaces the backend with a new one.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it is not possible to guarantee that the
+    /// new backend is identical to the old one as a bit vector.
     pub unsafe fn map<B1>(self, f: impl FnOnce(B) -> B1) -> Rank9<B1, C>
     where
         B1: AsRef<[usize]> + BitLength,

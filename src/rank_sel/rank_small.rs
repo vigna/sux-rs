@@ -432,6 +432,11 @@ impl<
     }
 
     /// Replaces the backend with a new one.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it is not possible to guarantee that the
+    /// new backend is identical to the old one as a bit vector.
     pub unsafe fn map<B1>(
         self,
         f: impl FnOnce(B) -> B1,

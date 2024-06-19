@@ -188,6 +188,11 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
     }
 
     /// Replaces the backend with a new one implementing [`SelectHinted`].
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it is not possible to guarantee that the
+    /// new backend is identical to the old one as a bit vector.
     pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectAdaptConst<C, I>
     where
         C: SelectHinted,
@@ -264,7 +269,7 @@ impl<
 
             debug_assert!(start + span == num_bits || ones == Self::ONES_PER_INVENTORY);
 
-            match SpanType::span_type(span) {
+            match SpanType::from_span(span) {
                 // We store the entries first in the subinventory and then in
                 // the spill buffer. The first u64 word will be used to store
                 // the position of the entry in the spill buffer. Using the
@@ -303,7 +308,7 @@ impl<
             let end_bit_idx = inventory[end_inv_idx];
             // compute the span of the inventory
             let span = end_bit_idx - start_bit_idx;
-            let span_type = SpanType::span_type(span);
+            let span_type = SpanType::from_span(span);
 
             // Compute the number of ones before the current inventory
             let mut past_ones = inventory_idx * Self::ONES_PER_INVENTORY;
@@ -317,7 +322,6 @@ impl<
                 }
                 SpanType::U32 => {
                     log2_quantum = Self::log2_ones_per_sub32(span);
-
                     inventory[start_inv_idx].set_u32_span();
                     // The first word of the subinventory is used to store the spill index.
                     inventory[start_inv_idx + 1] = spilled;

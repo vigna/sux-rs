@@ -229,8 +229,12 @@ impl<H, L> EliasFano<H, L> {
         2 * n + (n * (u as f64 / n as f64).log2().ceil() as usize)
     }
 
-    /// Change the high bits types, this can be used to add indices to speed
-    /// up the get operation.
+    /// Replaces the high bits.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it is not possible to guarantee that the
+    /// new high bits are identical to the old ones as a bit vector.
     pub unsafe fn map_high_bits<F, H2>(self, func: F) -> EliasFano<H2, L>
     where
         F: FnOnce(H) -> H2,
@@ -244,7 +248,12 @@ impl<H, L> EliasFano<H, L> {
         }
     }
 
-    /// Change the low bits types
+    /// Replaces the low bits.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it is not possible to guarantee that the
+    /// new low bits are identical to the old ones as vector.
     pub unsafe fn map_low_bits<F, L2>(self, func: F) -> EliasFano<H, L2>
     where
         F: FnOnce(L) -> L2,

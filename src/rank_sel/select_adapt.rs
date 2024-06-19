@@ -287,7 +287,7 @@ pub(super) enum SpanType {
 }
 
 impl SpanType {
-    pub fn span_type(x: usize) -> SpanType {
+    pub fn from_span(x: usize) -> SpanType {
         match x {
             0..=0x10000 => SpanType::U16,
             0x10001..=0x100000000 => SpanType::U32,
@@ -312,6 +312,11 @@ impl<B, I> SelectAdapt<B, I> {
         log2_ones_per_sub16.saturating_sub((span >> 15).ilog2() as usize + 1)
     }
     /// Replaces the backend with a new one implementing [`SelectHinted`].
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it is not possible to guarantee that the
+    /// new backend is identical to the old one as a bit vector.
     pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectAdapt<C, I>
     where
         C: SelectHinted,
@@ -504,7 +509,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectAdapt<B, Box<[usize]>> {
 
             debug_assert!(start + span == num_bits || ones == ones_per_inventory);
 
-            match SpanType::span_type(span) {
+            match SpanType::from_span(span) {
                 // We store the entries first in the subinventory and then in
                 // the spill buffer. The first u64 word will be used to store
                 // the position of the entry in the spill buffer. Using the
@@ -543,7 +548,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectAdapt<B, Box<[usize]>> {
             let end_bit_idx = inventory[end_inv_idx];
             // compute the span of the inventory
             let span = end_bit_idx - start_bit_idx;
-            let span_type = SpanType::span_type(span);
+            let span_type = SpanType::from_span(span);
 
             // Compute the number of ones before the current inventory
             let mut past_ones = inventory_idx * ones_per_inventory;
