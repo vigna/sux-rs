@@ -85,6 +85,7 @@ pub trait BitFieldSliceCore<W> {
     /// Return the length of the slice.
     fn len(&self) -> usize;
     /// Return if the slice has length zero
+    #[inline(always)]
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -139,6 +140,17 @@ pub trait BitFieldSlice<W: Word>: BitFieldSliceCore<W> {
 
 /// A mutable slice of bit fields of constant bit width.
 pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
+    /// Return the mask to apply to values to ensure they fit in [`Self::bit_width`] bits.
+    #[inline(always)]
+    fn mask(&self) -> W {
+        // TODO: Maybe testless?
+        if self.bit_width() == 0 {
+            W::ZERO
+        } else {
+            W::MAX >> (W::BITS as u32 - self.bit_width() as u32)
+        }
+    }
+
     /// Set the element of the slice at the specified index.
     /// No bounds checking is performed.
     ///
@@ -156,21 +168,85 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
     fn set(&mut self, index: usize, value: W) {
         panic_if_out_of_bounds!(index, self.len());
         let bw = self.bit_width();
-        // TODO: Maybe testless?
-        let mask = if bw == 0 {
-            W::ZERO
-        } else {
-            W::MAX >> (W::BITS as u32 - bw as u32)
-        };
-
+        let mask = self.mask();
         panic_if_value!(value, mask, bw);
         unsafe {
             self.set_unchecked(index, value);
         }
     }
 
-    /// Set all values to zero
+    /// Set all values to zero.
+    ///
+    /// The default implementation uses [`BitFieldSliceMut::apply_inplace_unchecked`]
+    /// to set all values to zero, but if you have access to the underlying
+    /// storage, you can provide a more efficient implementation.
     fn reset(&mut self);
+}
+
+/// A mutable slice of bit fields of constant bit width that can be both read and written.
+pub trait BitFieldSliceRW<W: Word>: BitFieldSlice<W> + BitFieldSliceMut<W> {
+    /// Apply a function to all elements of the slice in place.
+    ///
+    /// This is semantically equivalent to:
+    /// ```ignore
+    /// for i in 0..self.len() {
+    ///     self.set(i, f(self.get(i)));
+    /// }
+    /// ```
+    /// but it's much more efficient, on our tests it's about 5 times faster.
+    ///
+    /// The function is applied from the first element to the last, this allows
+    /// to compute cumulative sums as:
+    ///
+    /// ```rust
+    /// use sux::bits::BitFieldVec;
+    /// use sux::traits::{BitFieldSliceRW, BitFieldSliceMut};
+    ///
+    /// let mut vec = BitFieldVec::<u16>::new(9, 10);
+    ///
+    /// for i in 0..10 {
+    ///     vec.set(i, i as u16);
+    /// }
+    ///
+    /// let mut total = 0;
+    /// vec.apply_inplace(|x| {
+    ///     total += x;
+    ///     total
+    /// });
+    /// ```
+    ///
+    /// # Safety
+    /// The function must return a value that fits in the bit width of the slice.
+    unsafe fn apply_inplace_unchecked<F>(&mut self, mut f: F)
+    where
+        F: FnMut(W) -> W,
+    {
+        for idx in 0..self.len() {
+            let value = unsafe { self.get_unchecked(idx) };
+            let new_value = f(value);
+            unsafe { self.set_unchecked(idx, new_value) };
+        }
+    }
+
+    /// Apply a function to all elements of the slice in place checking that
+    /// the result fits in the bit width.
+    ///
+    /// Like [`BitFieldSliceRW::apply_inplace_unchecked`] but it checks that the
+    /// result of the function fits in the bit width of the slice.
+    fn apply_inplace<F>(&mut self, mut f: F)
+    where
+        F: FnMut(W) -> W,
+    {
+        let bit_width = self.bit_width();
+        let mask = self.mask();
+        unsafe {
+            self.apply_inplace_unchecked(|x| {
+                let new_value = f(x);
+                panic_if_value!(new_value, mask, bit_width);
+                new_value
+            });
+        }
+    }
 }
 
 /// A (tentatively) thread-safe slice of bit fields of constant bit width supporting atomic operations.
