@@ -10,6 +10,7 @@ use common_traits::AtomicUnsignedInt;
 use common_traits::CastableFrom;
 use common_traits::CastableInto;
 use common_traits::IntoAtomic;
+use common_traits::DoubleType;
 use core::sync::atomic::Ordering;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
@@ -27,8 +28,6 @@ fn test() {
     test_param::<u128>();
     test_param::<usize>();
 }
-
-#[test]
 fn test_atomic() {
     test_atomic_param::<u8>();
     test_atomic_param::<u16>();
@@ -37,7 +36,56 @@ fn test_atomic() {
     test_atomic_param::<usize>();
 }
 
-fn test_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
+fn test_bit_field_vec_apply() {
+    test_bit_field_vec_apply_param::<u8>();
+    test_bit_field_vec_apply_param::<u16>();
+    test_bit_field_vec_apply_param::<u32>();
+    test_bit_field_vec_apply_param::<u64>();
+}
+
+fn test_bit_field_vec_apply_param<W: Word + DoubleType + CastableInto<u64> + CastableFrom<u64>>()
+where
+    W::DoubleType: Word,
+{
+    for bit_width in 0..W::BITS {
+        let n = 100;
+        let u = W::ONE << bit_width.saturating_sub(1).min(60);
+        let mut rng = SmallRng::seed_from_u64(0);
+
+        let mut cp = BitFieldVec::<W>::new(bit_width, n);
+        for _ in 0..10 {
+            let values = (0..n)
+                .map(|_| rng.gen_range(0..u.cast()).cast())
+                .collect::<Vec<W>>();
+
+            let mut indices = (0..n).collect::<Vec<_>>();
+            indices.shuffle(&mut rng);
+
+            for i in indices {
+                cp.set(i, values[i]);
+            }
+
+            let new_values = (0..n)
+                .map(|_| rng.gen_range(0..u.cast()).cast())
+                .collect::<Vec<W>>();
+
+            // Test that apply_inplace happens in the right order
+            let mut i = 0;
+            cp.apply_inplace(|v| {
+                assert_eq!(v, values[i]);
+                let res = new_values[i];
+                i += 1;
+                res
+            });
+
+            for i in 0..cp.len() {
+                assert_eq!(cp.get(i), new_values[i], "idx: {}", i);
+            }
+        }
+    }
+}
+
+fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
     for bit_width in 0..W::BITS {
         let n = 100;
         let u = W::ONE << bit_width.saturating_sub(1).min(60);

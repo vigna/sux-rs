@@ -14,7 +14,7 @@ keywords = ["succinct", "rank", "select"]
 anyhow = "1.0.79"
 bitflags = "2.4.2"
 bytemuck = "1.14.0"
-common_traits = "0.10.0"
+common_traits = "0.11.0"
 libc = "0.2.147"
 log = "0.4.20"
 num_cpus = "1.16.0"
@@ -54,6 +54,17 @@ rdst = "0.20.11"
 static_assertions = "1.1.0"
 forward-traits = "3.1.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[lib]
+bench = false
+
+[[bench]]
+name = "my_benchmarks"
+harness = false
+
+[[bench]]
+name = "apply"
+harness = false
 
 [features]
 default = ["rayon"]

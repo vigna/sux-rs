@@ -1,6 +1,7 @@
 /*
  * SPDX-FileCopyrightText: 2023 Inria
  * SPDX-FileCopyrightText: 2023 Sebastiano Vigna
+ * SPDX-FileCopyrightText: 2024 Tommaso Fontana
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
@@ -149,7 +150,7 @@ macro_rules! bit_field_vec {
 #[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 pub struct BitFieldVec<W: Word = usize, B = Vec<W>> {
     /// The underlying storage.
-    bits: B,
+    pub bits: B,
     /// The bit width of the values stored in the vector.
     bit_width: usize,
     /// A mask with its lowest `bit_width` bits set to one.
@@ -281,18 +282,6 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     /// Set len to 0
     pub fn clear(&mut self) {
         self.len = 0;
-    }
-
-    /// Return the bit-width of the values inside this vector.
-    pub fn bit_width(&self) -> usize {
-        debug_assert!(self.bit_width <= W::BITS);
-        self.bit_width
-    }
-
-    /// Return the mask used to extract values from this vector.
-    /// This will keep the lowest `bit_width` bits.
-    pub fn mask(&self) -> W {
-        self.mask
     }
 
     /// Create a new vector by copying a slice; the bit width will be the minimum
@@ -702,6 +691,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     }
 }
 
+<<<<<<< HEAD
 /// A tentatively thread-safe vector of bit fields of fixed width.
 ///
 /// This implementation provides some concurrency guarantees, albeit not
@@ -740,6 +730,12 @@ impl<W: Word + IntoAtomic, B> AtomicBitFieldVec<W, B> {
             mask: mask(bit_width),
             len,
         }
+=======
+impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, B> {
+    #[inline(always)]
+    fn mask(&self) -> W {
+        self.mask
+>>>>>>> 76e24ed (ported and optimized apply from PR #36)
     }
 
     #[inline(always)]
@@ -765,6 +761,7 @@ where
         }
     }
 
+<<<<<<< HEAD
     /// Writes zeros in all values.
     pub fn reset(&mut self, ordering: Ordering) {
         let bit_len = self.len * self.bit_width;
@@ -814,6 +811,167 @@ impl<W: Word + IntoAtomic, B> BitFieldSliceCore<W::AtomicType> for AtomicBitFiel
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
+=======
+    /// We reimplement reset as we can directly write whole words.
+    fn reset(&mut self) {
+        self.bits.as_mut().iter_mut().for_each(|x| *x = W::ZERO);
+    }
+}
+
+impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceRW<W> for BitFieldVec<W, B> {
+    #[inline]
+    /// This version keeps a buffer of [`W::BITS`] bits for reading and writing.
+    ///
+    /// We also experimented with buffers twice as big as [`W`] but the performance
+    /// was slightly worse all across the [`W`] and bit_widths we tested.
+    unsafe fn apply_inplace_unchecked<F>(&mut self, mut f: F)
+    where
+        F: FnMut(W) -> W,
+    {
+        if self.is_empty() {
+            return;
+        }
+        let bit_width = self.bit_width();
+        if bit_width == 0 {
+            return;
+        }
+        let mask = self.mask();
+        let number_of_words: usize = self.bits.as_ref().len();
+        let last_word_idx = number_of_words.saturating_sub(1);
+
+        let mut write_buffer: W = W::ZERO;
+        let mut read_buffer: W = *self.bits.as_ref().get_unchecked(0);
+
+        // specialized case because it's much faster
+        if bit_width.is_power_of_two() {
+            let mut bits_in_buffer = 0;
+
+            // TODO!: figure out how to simplify
+            let mut buffer_limit = (self.len() * bit_width) % W::BITS;
+            if buffer_limit == 0 {
+                buffer_limit = W::BITS;
+            }
+
+            for read_idx in 1..number_of_words {
+                // pre-load the next word so it loads while we parse the buffer
+                let next_word: W = *self.bits.as_ref().get_unchecked(read_idx);
+
+                // parse as much as we can from the buffer
+                loop {
+                    let next_bits_in_buffer = bits_in_buffer + bit_width;
+
+                    if next_bits_in_buffer > W::BITS {
+                        break;
+                    }
+
+                    let value = read_buffer & mask;
+                    // throw away the bits we just read
+                    read_buffer >>= bit_width;
+                    // apply user func
+                    let new_value = f(value);
+                    // put the new value in the write buffer
+                    write_buffer |= new_value << bits_in_buffer;
+
+                    bits_in_buffer = next_bits_in_buffer;
+                }
+
+                invariant_eq!(read_buffer, W::ZERO);
+                *self.bits.as_mut().get_unchecked_mut(read_idx - 1) = write_buffer;
+                read_buffer = next_word;
+                write_buffer = W::ZERO;
+                bits_in_buffer = 0;
+            }
+
+            // write the last word if we have some bits left
+            while bits_in_buffer < buffer_limit {
+                let value = read_buffer & mask;
+                // throw away the bits we just read
+                read_buffer >>= bit_width;
+                // apply user func
+                let new_value = f(value);
+                // put the new value in the write buffer
+                write_buffer |= new_value << bits_in_buffer;
+                // -= bit_width but with no casts
+                bits_in_buffer += bit_width;
+            }
+
+            *self.bits.as_mut().get_unchecked_mut(last_word_idx) = write_buffer;
+            return;
+        }
+
+        // The position inside the word. In most parametrization of the
+        // BitFieldVec, since the bit_width is not necessarily a integer
+        // divisor of the word size, we need to keep track of the position
+        // inside the word. As we scroll through the bits, due to the bits
+        // remainder, we may need to operate on two words at the same time.
+        let mut global_bit_index: usize = 0;
+
+        // The number of words in the bitvec.
+        let mut lower_word_limit = 0;
+        let mut upper_word_limit = W::BITS;
+
+        // We iterate across the words
+        for word_number in 0..last_word_idx {
+            // We iterate across the elements in the word.
+            while global_bit_index + bit_width <= upper_word_limit {
+                // We retrieve the value from the current word.
+                let offset = global_bit_index - lower_word_limit;
+                global_bit_index += bit_width;
+                let element = self.mask() & (read_buffer >> offset);
+
+                // We apply the function to the element.
+                let new_element = f(element);
+
+                // We set the element in the new word.
+                write_buffer |= new_element << offset;
+            }
+
+            // We retrieve the next word from the bitvec.
+            let next_word = *self.bits.as_ref().get_unchecked(word_number + 1);
+
+            let mut new_write_buffer = W::ZERO;
+            if upper_word_limit != global_bit_index {
+                let remainder = upper_word_limit - global_bit_index;
+                let offset = global_bit_index - lower_word_limit;
+                // We compose the element from the remaining elements in the
+                // current word and the elements in the next word.
+                let element = ((read_buffer >> offset) | (next_word << remainder)) & self.mask();
+                global_bit_index += bit_width;
+
+                // We apply the function to the element.
+                let new_element = f(element);
+
+                write_buffer |= new_element << offset;
+
+                new_write_buffer = new_element >> remainder;
+            };
+
+            read_buffer = next_word;
+
+            *self.bits.as_mut().get_unchecked_mut(word_number) = write_buffer;
+
+            write_buffer = new_write_buffer;
+            lower_word_limit = upper_word_limit;
+            upper_word_limit += W::BITS;
+        }
+
+        let mut offset = global_bit_index - lower_word_limit;
+
+        // We iterate across the elements in the word.
+        while offset < self.len() * bit_width - global_bit_index {
+            // We retrieve the value from the current word.
+            let element = self.mask() & (read_buffer >> offset);
+
+            // We apply the function to the element.
+            let new_element = f(element);
+
+            // We set the element in the new word.
+            write_buffer |= new_element << offset;
+            offset += bit_width;
+        }
+
+        *self.bits.as_mut().get_unchecked_mut(last_word_idx) = write_buffer;
+>>>>>>> 76e24ed (ported and optimized apply from PR #36)
     }
 }
 
