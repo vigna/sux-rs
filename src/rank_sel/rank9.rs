@@ -160,8 +160,10 @@ impl<B: AsRef<[usize]> + BitLength> Rank9<B, Box<[BlockCounters]>> {
         let mut num_ones = 0;
 
         for i in (0..num_words).step_by(Self::WORDS_PER_BLOCK) {
-            let mut count = BlockCounters::default();
-            count.absolute = num_ones;
+            let mut count = BlockCounters {
+                absolute: num_ones,
+                relative: 0,
+            };
             num_ones += bits.as_ref()[i].count_ones() as usize;
 
             for j in 1..8 {
