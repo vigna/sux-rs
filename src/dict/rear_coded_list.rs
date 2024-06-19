@@ -247,15 +247,14 @@ impl RearCodedListBuilder {
     /// use sux::dict::RearCodedListBuilder;
     /// let mut rclb = RearCodedListBuilder::new(4);
     /// let words = vec!["aa", "aab", "abc", "abdd", "abde", "abdf"];
+    /// // We need the map because s has type &&str
     /// rclb.extend(words.iter().map(|s| *s).into_lender());
     /// let rcl = rclb.build();
-    ///
-    /// // Note: when using actual strings, you need to make them into
-    /// // a `&str` to use them as a key.
     ///
     /// let mut rclb = RearCodedListBuilder::new(4);
     /// let words = vec!["aa".to_string(), "aab".to_string(), "abc".to_string(),
     ///     "abdd".to_string(), "abde".to_string(), "abdf".to_string()];
+    /// // We need the map to turn String into &str
     /// rclb.extend(words.iter().map(|s| s.as_str()).into_lender());
     /// let rcl = rclb.build();
     /// ```
