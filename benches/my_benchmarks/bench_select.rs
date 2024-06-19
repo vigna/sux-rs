@@ -26,17 +26,13 @@ pub fn bench_simple_select(c: &mut Criterion, uniform: bool, max_log2_u64_per_su
         name.push_str("_non_uniform");
     }
 
-    let mut bench_group = c.benchmark_group(name);
-
     match max_log2_u64_per_subinventory {
-        0 => bench_select::<SimpleSelect0<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        1 => bench_select::<SimpleSelect1<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        2 => bench_select::<SimpleSelect2<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        3 => bench_select::<SimpleSelect3<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        0 => bench_select::<SimpleSelect0<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        1 => bench_select::<SimpleSelect1<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        2 => bench_select::<SimpleSelect2<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        3 => bench_select::<SimpleSelect3<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
         _ => unreachable!(),
     }
-
-    bench_group.finish();
 }
 
 pub fn bench_select_adapt(c: &mut Criterion, uniform: bool, max_log2_u64_per_subinventory: usize) {
@@ -54,17 +50,13 @@ pub fn bench_select_adapt(c: &mut Criterion, uniform: bool, max_log2_u64_per_sub
         name.push_str("_non_uniform");
     }
 
-    let mut bench_group = c.benchmark_group(name);
-
     match max_log2_u64_per_subinventory {
-        0 => bench_select::<SelectAdapt0<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        1 => bench_select::<SelectAdapt1<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        2 => bench_select::<SelectAdapt2<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        3 => bench_select::<SelectAdapt3<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        0 => bench_select::<SelectAdapt0<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        1 => bench_select::<SelectAdapt1<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        2 => bench_select::<SelectAdapt2<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        3 => bench_select::<SelectAdapt3<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
         _ => unreachable!(),
     }
-
-    bench_group.finish();
 }
 
 pub fn bench_select9(c: &mut Criterion, uniform: bool) {
@@ -72,11 +64,8 @@ pub fn bench_select9(c: &mut Criterion, uniform: bool) {
     if !uniform {
         name.push_str("_non_uniform");
     }
-    let mut bench_group = c.benchmark_group(name);
 
-    bench_select::<Select9>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform);
-
-    bench_group.finish();
+    bench_select::<Select9>(c, &name, &LENS, &DENSITIES, REPS, uniform);
 }
 
 pub fn bench_select_small(c: &mut Criterion, uniform: bool, sel_type: usize) {
@@ -95,18 +84,14 @@ pub fn bench_select_small(c: &mut Criterion, uniform: bool, sel_type: usize) {
         name.push_str("_non_uniform");
     }
 
-    let mut bench_group = c.benchmark_group(name);
-
     match sel_type {
-        0 => bench_select::<SelectSmall<2, 9>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        1 => bench_select::<SelectSmall<1, 9>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        2 => bench_select::<SelectSmall<1, 10>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        3 => bench_select::<SelectSmall<1, 11>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        4 => bench_select::<SelectSmall<3, 13>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        0 => bench_select::<SelectSmall<2, 9>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        1 => bench_select::<SelectSmall<1, 9>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        2 => bench_select::<SelectSmall<1, 10>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        3 => bench_select::<SelectSmall<1, 11>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        4 => bench_select::<SelectSmall<3, 13>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
         _ => unreachable!(),
     }
-
-    bench_group.finish();
 }
 
 const LOG2_ONES_PER_INVENTORY: usize = 10;
@@ -247,4 +232,31 @@ pub fn bench_simple_const(c: &mut Criterion, uniform: bool) {
         bitvec_ids,
         c
     );
+}
+
+macro_rules! simple_const_mem_cost {
+    ([$($inv_size:literal),+], $subinv_size:tt) => {
+        $(
+            simple_const_mem_cost!($inv_size, $subinv_size);
+        )+
+    };
+    ($inv_size:literal, [$($subinv_size:literal),+]) => {
+        $(
+            simple_const_mem_cost!($inv_size, $subinv_size);
+        )+
+    };
+    ($log_inv_size:literal, $log_subinv_size:literal) => {{
+        let name = format!("simple_select_const_{}_{}", $log_inv_size, $log_subinv_size);
+        println!("Memory cost for {}", name);
+        save_mem_cost::<SimpleSelectConst<BitVec, Vec<usize>, $log_inv_size, $log_subinv_size>>(
+            &name,
+            &LENS,
+            &DENSITIES,
+            true,
+        );
+    }};
+}
+
+pub fn simple_const_mem_cost() {
+    simple_const_mem_cost!([8, 9, 10, 11, 12, 13], [1, 2, 3, 4, 5]);
 }

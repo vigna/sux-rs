@@ -1,12 +1,15 @@
+use epserde::Epserde;
+use mem_dbg::{MemDbg, MemSize};
 use sux::bits::BitVec;
 use sux::rank_sel::{Rank10, Rank11, Rank9, RankSmall, SelectSmall};
-use sux::rank_sel::{Select9, SelectAdapt, SimpleSelect};
+use sux::rank_sel::{Select9, SelectAdapt, SimpleSelect, SimpleSelectConst};
 use sux::traits::{BitCount, BitLength, Select, SelectHinted};
 
 use super::Build;
 
 macro_rules! impl_simple {
     ($name:ident, $subinv: literal) => {
+        #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
         pub struct $name<B> {
             inner: SimpleSelect<B>,
         }
@@ -47,6 +50,7 @@ impl_simple!(SimpleSelect3, 3);
 
 macro_rules! impl_adapt {
     ($name:ident, $subinv: literal) => {
+        #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
         pub struct $name<B> {
             inner: SelectAdapt<B>,
         }
@@ -166,3 +170,25 @@ impl Build<BitVec> for SelectSmall<3, 13> {
         SelectSmall::<3, 13>::new(RankSmall::<3, 13>::new(bits))
     }
 }
+
+macro_rules! impl_simple_const {
+    ([$($inv_size:literal),+], $subinv_size:tt) => {
+        $(
+            impl_simple_const!($inv_size, $subinv_size);
+        )+
+    };
+    ($inv_size:literal, [$($subinv_size:literal),+]) => {
+        $(
+            impl_simple_const!($inv_size, $subinv_size);
+        )+
+    };
+    ($log_inv_size:literal, $log_subinv_size:literal) => {
+        impl Build<BitVec> for SimpleSelectConst<BitVec, Vec<usize>, $log_inv_size, $log_subinv_size> {
+            fn new(bits: BitVec) -> Self {
+                SimpleSelectConst::<BitVec, Vec<usize>,$log_inv_size, $log_subinv_size>::new(bits)
+            }
+        }
+    };
+}
+
+impl_simple_const!([8, 9, 10, 11, 12, 13], [1, 2, 3, 4, 5]);

@@ -52,11 +52,11 @@ fn main() {
         "rank" => {
             bench_rank9(&mut criterion);
             bench_rank11(&mut criterion);
-            bench_rank_small0(&mut criterion);
-            bench_rank_small1(&mut criterion);
-            bench_rank_small2(&mut criterion);
-            bench_rank_small3(&mut criterion);
-            bench_rank_small4(&mut criterion);
+            bench_rank_small(&mut criterion, 0);
+            bench_rank_small(&mut criterion, 1);
+            bench_rank_small(&mut criterion, 2);
+            bench_rank_small(&mut criterion, 3);
+            bench_rank_small(&mut criterion, 4);
         }
         "simple" => {
             bench_simple_select(&mut criterion, true, 3);
@@ -74,6 +74,7 @@ fn main() {
             bench_rank9(&mut criterion);
         }
         "simple_select_const" => bench_simple_const(&mut criterion, true),
+        "simple_select_const_mem_cost" => simple_const_mem_cost(),
         "compare_simple_fixed" => compare_simple_fixed(&mut criterion),
         filter if filter.contains("-") || filter.is_empty() => {
             println!("No filter provided.");
