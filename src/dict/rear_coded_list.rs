@@ -7,7 +7,7 @@
 
 //! Immutable lists of strings compressed by prefix omission via rear coding.
 
-use std::borrow::{Borrow, Cow};
+use std::borrow::Borrow;
 
 use crate::traits::{IndexedDict, IndexedSeq, Types};
 use epserde::*;
@@ -176,8 +176,8 @@ impl RearCodedListBuilder {
 
     #[inline]
     /// Encode and append a string to the end of the list.
-    pub fn push(&mut self, string: impl Borrow<str>) {
-        let string = string.borrow();
+    pub fn push(&mut self, string: impl AsRef<str>) {
+        let string = string.as_ref();
         // update stats
         self.stats.max_str_len = self.stats.max_str_len.max(string.len());
         self.stats.sum_str_len += string.len();
@@ -232,7 +232,6 @@ impl RearCodedListBuilder {
         self.len += 1;
     }
 
-    #[inline]
     /// Append all the strings from a [`Lender`] to the end of the list.
     ///
     /// We prefer to implement extension via a [`Lender`] instead of an
@@ -265,7 +264,7 @@ impl RearCodedListBuilder {
         L::Lender: for<'lend> Lending<'lend, Lend = S>,
     {
         for_!(string in into_lender {
-            self.push(string);
+            self.push(string.borrow());
         });
     }
 
@@ -366,8 +365,8 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         }
     }
 
-    fn index_of_unsorted(&self, key: impl Borrow<<Self as Types>::Input>) -> Option<usize> {
-        let key = key.borrow().as_bytes();
+    fn index_of_unsorted(&self, value: impl Borrow<<Self as Types>::Input>) -> Option<usize> {
+        let key = value.borrow().as_bytes();
         let mut iter = self.into_lender().enumerate();
         while let Some((idx, string)) = iter.next() {
             if matches!(
@@ -380,8 +379,8 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         None
     }
 
-    fn index_of_sorted(&self, string: impl Borrow<<Self as Types>::Input>) -> Option<usize> {
-        let string = string.borrow().as_bytes();
+    fn index_of_sorted(&self, value: impl Borrow<<Self as Types>::Input>) -> Option<usize> {
+        let string = value.borrow().as_bytes();
         // first to a binary search on the blocks to find the block
         let block_idx = self.pointers.as_ref().binary_search_by(|block_ptr| {
             strcmp(string, &self.data.as_ref()[*block_ptr..]).reverse()
@@ -439,8 +438,8 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLender for &'a RearCodedList<D, 
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> Types for RearCodedList<D, P> {
-    type Input = str;
     type Output = String;
+    type Input = str;
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedSeq for RearCodedList<D, P> {
@@ -462,15 +461,15 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
     /// otherwise it is done with a linear search.
     #[inline]
     fn contains(&self, value: impl Borrow<Self::Input>) -> bool {
+        self.index_of(value).is_some()
+    }
+
+    fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
         if self.is_sorted {
             self.index_of_sorted(value)
         } else {
             self.index_of_unsorted(value)
         }
-    }
-
-    fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
-        todo!();
     }
 }
 

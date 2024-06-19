@@ -32,8 +32,7 @@ fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
 
     // create a new rca with u16 as pointers (this limit data to u16::MAX bytes max size)
     let mut rcab = <RearCodedListBuilder>::new(4);
-    let iter = words.iter().map(|s| s.as_str()).into_lender();
-    rcab.extend(iter);
+    rcab.extend(words.iter().map(|s| s.as_str()).into_lender());
 
     rcab.print_stats();
     let rca = rcab.build();
@@ -59,12 +58,12 @@ fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
     assert!(!rca.contains(""));
 
     for (i, word) in words.iter().enumerate() {
-        assert!(rca.contains(dbg!(word)));
-        assert_eq!(rca.index_of(word), Some(i));
+        assert!(rca.contains(word.as_str()));
+        assert_eq!(rca.index_of(word.as_str()), Some(i));
         let mut word = word.clone();
         word.push_str("IT'S HIGHLY IMPROBABLE THAT THIS STRING IS IN THE WORDLIST");
-        assert!(!rca.contains(&word));
-        assert!(rca.index_of(&word).is_none());
+        assert!(!rca.contains(word.as_str()));
+        assert!(rca.index_of(word.as_str()).is_none());
     }
 
     let tmp_file = std::env::temp_dir().join("test_serdes_rcl.bin");
@@ -107,12 +106,12 @@ fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
     assert!(!rca.contains(""));
 
     for (i, word) in shuffled_words.iter().enumerate() {
-        assert!(rca.contains(word));
-        assert_eq!(rca.index_of(word), Some(i));
+        assert!(rca.contains(*word));
+        assert_eq!(rca.index_of(*word), Some(i));
         let mut word = word.to_string();
         word.push_str("IT'S HIGHLY IMPROBABLE THAT THIS STRING IS IN THE WORDLIST");
-        assert!(!rca.contains(&word));
-        assert!(rca.index_of(&word).is_none());
+        assert!(!rca.contains(word.as_str()));
+        assert!(rca.index_of(word.as_str()).is_none());
     }
 
     let tmp_file = std::env::temp_dir().join("test_serdes_rcl.bin");
