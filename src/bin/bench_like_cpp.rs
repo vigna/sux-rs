@@ -3,6 +3,7 @@
 //! Benchmarks the rank and select operations similarly to the C++ benchmarks.
 
 use rand::{rngs::SmallRng, Rng, SeedableRng};
+use std::borrow::Borrow;
 use std::hint::black_box;
 use std::io::Write;
 use std::{env, path::PathBuf};
@@ -98,10 +99,11 @@ fn bench_select_batch<S: SelStruct<BitVec>>(
     rng: &mut SmallRng,
     sel_name: &str,
     uniform: bool,
-    target_dir: &PathBuf,
+    target_dir: impl Borrow<PathBuf>,
 ) {
     print!("{}... ", sel_name);
     std::io::stdout().flush().unwrap();
+    let target_dir = target_dir.borrow();
     let mut file = std::fs::File::create(target_dir.join(format!("{}.csv", sel_name))).unwrap();
     for (i, len) in LENS.iter().enumerate() {
         for (j, density) in DENSITIES.iter().enumerate() {
@@ -129,9 +131,9 @@ fn bench_select_batch<S: SelStruct<BitVec>>(
     println!("\r{}... done        ", sel_name);
 }
 
-fn bench_rank9(target_dir: &PathBuf) {
+fn bench_rank9(target_dir: impl Borrow<PathBuf>) {
     let mut rng = SmallRng::seed_from_u64(0);
-
+    let target_dir = target_dir.borrow();
     let mut file = std::fs::File::create(target_dir.join("rank9.csv")).unwrap();
 
     for len in LENS.iter().copied() {

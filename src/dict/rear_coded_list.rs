@@ -385,8 +385,8 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
             strcmp(string, &self.data.as_ref()[*block_ptr..]).reverse()
         });
 
-        if block_idx.is_ok() {
-            return Some(block_idx.unwrap() * self.k);
+        if let Ok(block_idx) = block_idx {
+            return Some(block_idx * self.k);
         }
 
         let mut block_idx = block_idx.unwrap_err();
