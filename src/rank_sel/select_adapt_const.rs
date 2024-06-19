@@ -6,6 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use super::{Inventory, SpanType};
 use ambassador::Delegate;
 use common_traits::SelectInWord;
 use epserde::Epserde;
@@ -160,82 +161,6 @@ pub struct SelectAdaptConst<
     bits: B,
     inventory: I,
     spill: I,
-    ones_per_inventory_mask: usize,
-    ones_per_sub16_mask: usize,
-}
-
-// Convenience trait to handle the information packed in the two upper bits of
-// an inventory entry.
-trait Inventory {
-    fn is_u16_span(&self) -> bool;
-    fn is_u32_span(&self) -> bool;
-    fn is_u64_span(&self) -> bool;
-    fn set_u16_span(&mut self);
-    fn set_u32_span(&mut self);
-    fn set_u64_span(&mut self);
-    fn get(&self) -> usize;
-}
-
-impl Inventory for usize {
-    #[inline(always)]
-    fn is_u16_span(&self) -> bool {
-        // This test is optimized for speed as it is the common case
-        *self as isize >= 0
-    }
-
-    #[inline(always)]
-    fn is_u32_span(&self) -> bool {
-        *self >> 62 == 2
-    }
-
-    #[inline(always)]
-    fn is_u64_span(&self) -> bool {
-        *self >> 62 == 3
-    }
-
-    #[inline(always)]
-    fn set_u16_span(&mut self) {}
-
-    #[inline(always)]
-    fn set_u32_span(&mut self) {
-        *self |= 1 << 63;
-    }
-
-    #[inline(always)]
-    fn set_u64_span(&mut self) {
-        *self |= 3 << 62;
-    }
-
-    #[inline(always)]
-    fn get(&self) -> usize {
-        *self & 0x3FFF_FFFF_FFFF_FFFF
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SpanType {
-    U16,
-    U32,
-    U64,
-}
-
-fn span_type(x: usize) -> SpanType {
-    match x {
-        0..=0x10000 => SpanType::U16,
-        0x10001..=0x100000000 => SpanType::U32,
-        _ => SpanType::U64,
-    }
-}
-
-// Compute adaptively the number of 32-bit subinventory entries
-#[inline(always)]
-fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
-    debug_assert!(span >= 1 << 16);
-    // Since span >= 2^16, (span >> 15).ilog2() >= 0, which implies in any case
-    // at least doubling the frequency of the subinventory with respect to the
-    // 16-bit case, unless log2_ones_per_u16 = 0, that is, we are recording the
-    // position of every one in the subinventory.
-    log2_ones_per_sub16.saturating_sub((span >> 15).ilog2() as usize + 1)
 }
 
 impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY: usize>
@@ -243,6 +168,20 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
 {
     const LOG2_ONES_PER_SUB16: usize =
         LOG2_ONES_PER_INVENTORY.saturating_sub(LOG2_U64_PER_SUBINVENTORY + 2);
+    const ONES_PER_SUB16_MASK: usize = (1 << Self::LOG2_ONES_PER_SUB16) - 1;
+    const ONES_PER_INVENTORY: usize = (1 << LOG2_ONES_PER_INVENTORY);
+    const ONES_PER_INVENTORY_MASK: usize = (1 << LOG2_ONES_PER_INVENTORY) - 1;
+
+    // Compute adaptively the number of 32-bit subinventory entries
+    #[inline(always)]
+    fn log2_ones_per_sub32(span: usize) -> usize {
+        debug_assert!(span >= 1 << 16);
+        // Since span >= 2^16, (span >> 15).ilog2() >= 0, which implies in any case
+        // at least doubling the frequency of the subinventory with respect to the
+        // 16-bit case, unless log2_ones_per_u16 = 0, that is, we are recording the
+        // position of every one in the subinventory.
+        Self::LOG2_ONES_PER_SUB16.saturating_sub((span >> 15).ilog2() as usize + 1)
+    }
 
     pub fn into_inner(self) -> B {
         self.bits
@@ -257,8 +196,6 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
             bits: f(self.bits),
             inventory: self.inventory,
             spill: self.spill,
-            ones_per_inventory_mask: self.ones_per_inventory_mask,
-            ones_per_sub16_mask: self.ones_per_sub16_mask,
         }
     }
 
@@ -277,16 +214,11 @@ impl<
     pub fn new(bits: B) -> Self {
         let num_ones = bits.count_ones();
         let num_bits = max(1, bits.len());
-        let ones_per_inventory = 1 << LOG2_ONES_PER_INVENTORY;
-        let ones_per_inventory_mask = ones_per_inventory - 1;
-        let inventory_size = num_ones.div_ceil(ones_per_inventory);
+        let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY_MASK);
 
         let u64_per_subinventory = 1 << LOG2_U64_PER_SUBINVENTORY;
         // A u64 for the inventory, and u64_per_inventory for the subinventory
         let u64_per_inventory = u64_per_subinventory + 1;
-
-        let ones_per_sub16 = 1 << Self::LOG2_ONES_PER_SUB16;
-        let ones_per_sub16_mask = ones_per_sub16 - 1;
 
         let inventory_words = inventory_size * u64_per_inventory + 1;
         let mut inventory = Vec::with_capacity(inventory_words);
@@ -308,7 +240,7 @@ impl<
                 // make space for the subinventory
                 inventory.resize(inventory.len() + u64_per_subinventory, 0);
 
-                next_quantum += ones_per_inventory;
+                next_quantum += Self::ONES_PER_INVENTORY;
             }
             past_ones += ones_in_word;
         }
@@ -327,12 +259,12 @@ impl<
         {
             let start = inv;
             let span = inventory[i * u64_per_inventory + u64_per_inventory] - start;
-            past_ones = i * ones_per_inventory;
-            let ones = min(num_ones - past_ones, ones_per_inventory);
+            past_ones = i * Self::ONES_PER_INVENTORY;
+            let ones = min(num_ones - past_ones, Self::ONES_PER_INVENTORY);
 
-            debug_assert!(start + span == num_bits || ones == ones_per_inventory);
+            debug_assert!(start + span == num_bits || ones == Self::ONES_PER_INVENTORY);
 
-            match span_type(span) {
+            match SpanType::span_type(span) {
                 // We store the entries first in the subinventory and then in
                 // the spill buffer. The first u64 word will be used to store
                 // the position of the entry in the spill buffer. Using the
@@ -340,7 +272,7 @@ impl<
                 // another cache miss to be read from the spill buffer.
                 SpanType::U32 => {
                     // We store an inventory entry each 1 << log2_ones_per_sub32 ones.
-                    let log2_ones_per_sub32 = log2_ones_per_sub32(span, Self::LOG2_ONES_PER_SUB16);
+                    let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span);
                     let num_u32s = ones.div_ceil(1 << log2_ones_per_sub32);
                     let num_u64s = num_u32s.div_ceil(2);
                     let spilled_u64s = num_u64s - u64_per_subinventory + 1;
@@ -371,10 +303,10 @@ impl<
             let end_bit_idx = inventory[end_inv_idx];
             // compute the span of the inventory
             let span = end_bit_idx - start_bit_idx;
-            let span_type = span_type(span);
+            let span_type = SpanType::span_type(span);
 
             // Compute the number of ones before the current inventory
-            let mut past_ones = inventory_idx * ones_per_inventory;
+            let mut past_ones = inventory_idx * Self::ONES_PER_INVENTORY;
             let mut next_quantum = past_ones;
             let log2_quantum;
 
@@ -384,7 +316,7 @@ impl<
                     inventory[start_inv_idx].set_u16_span();
                 }
                 SpanType::U32 => {
-                    log2_quantum = log2_ones_per_sub32(span, Self::LOG2_ONES_PER_SUB16);
+                    log2_quantum = Self::log2_ones_per_sub32(span);
 
                     inventory[start_inv_idx].set_u32_span();
                     // The first word of the subinventory is used to store the spill index.
@@ -536,8 +468,6 @@ impl<
             bits,
             inventory,
             spill,
-            ones_per_inventory_mask,
-            ones_per_sub16_mask,
         }
     }
 }
@@ -556,7 +486,7 @@ impl<
         let inventory_start_pos = (inventory_index << LOG2_U64_PER_SUBINVENTORY) + inventory_index;
 
         let inventory_rank = { *inventory.get_unchecked(inventory_start_pos) };
-        let subrank = rank & self.ones_per_inventory_mask;
+        let subrank = rank & Self::ONES_PER_INVENTORY_MASK;
 
         if inventory_rank.is_u16_span() {
             let subinventory = inventory
@@ -568,7 +498,7 @@ impl<
 
             let hint_pos = inventory_rank
                 + *subinventory.get_unchecked(subrank >> Self::LOG2_ONES_PER_SUB16) as usize;
-            let residual = subrank & self.ones_per_sub16_mask;
+            let residual = subrank & Self::ONES_PER_SUB16_MASK;
 
             return self.bits.select_hinted(rank, hint_pos, rank - residual);
         }
@@ -580,7 +510,7 @@ impl<
             let span = (*inventory.get_unchecked(inventory_start_pos + u64_per_subinventory + 1))
                 .get()
                 - inventory_rank;
-            let log2_ones_per_sub32 = log2_ones_per_sub32(span, Self::LOG2_ONES_PER_SUB16);
+            let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span);
 
             let hint_pos = if subrank >> log2_ones_per_sub32 < (u64_per_subinventory - 1) * 2 {
                 let u32s = inventory

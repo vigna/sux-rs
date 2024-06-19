@@ -229,8 +229,9 @@ pub struct SelectAdapt<B, I = Box<[usize]>> {
 }
 
 // Convenience trait to handle the information packed in the two upper bits of
-// an inventory entry.
-trait Inventory {
+// an inventory entry. It is used by all variants.
+
+pub(super) trait Inventory {
     fn is_u16_span(&self) -> bool;
     fn is_u32_span(&self) -> bool;
     fn is_u64_span(&self) -> bool;
@@ -276,30 +277,23 @@ impl Inventory for usize {
     }
 }
 
+// The type subinventory entries for a span. It is used by all variants.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SpanType {
+pub(super) enum SpanType {
     U16,
     U32,
     U64,
 }
 
-fn span_type(x: usize) -> SpanType {
-    match x {
-        0..=0x10000 => SpanType::U16,
-        0x10001..=0x100000000 => SpanType::U32,
-        _ => SpanType::U64,
+impl SpanType {
+    pub fn span_type(x: usize) -> SpanType {
+        match x {
+            0..=0x10000 => SpanType::U16,
+            0x10001..=0x100000000 => SpanType::U32,
+            _ => SpanType::U64,
+        }
     }
-}
-
-// Compute adaptively the number of 32-bit subinventory entries
-#[inline(always)]
-fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
-    debug_assert!(span >= 1 << 16);
-    // Since span >= 2^16, (span >> 15).ilog2() >= 0, which implies in any case
-    // at least doubling the frequency of the subinventory with respect to the
-    // 16-bit case, unless log2_ones_per_u16 = 0, that is, we are recording the
-    // position of every one in the subinventory.
-    log2_ones_per_sub16.saturating_sub((span >> 15).ilog2() as usize + 1)
 }
 
 impl<B, I> SelectAdapt<B, I> {
@@ -307,6 +301,16 @@ impl<B, I> SelectAdapt<B, I> {
         self.bits
     }
 
+    // Compute adaptively the number of 32-bit subinventory entries
+    #[inline(always)]
+    fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
+        debug_assert!(span >= 1 << 16);
+        // Since span >= 2^16, (span >> 15).ilog2() >= 0, which implies in any case
+        // at least doubling the frequency of the subinventory with respect to the
+        // 16-bit case, unless log2_ones_per_u16 = 0, that is, we are recording the
+        // position of every one in the subinventory.
+        log2_ones_per_sub16.saturating_sub((span >> 15).ilog2() as usize + 1)
+    }
     /// Replaces the backend with a new one implementing [`SelectHinted`].
     pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectAdapt<C, I>
     where
@@ -500,7 +504,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectAdapt<B, Box<[usize]>> {
 
             debug_assert!(start + span == num_bits || ones == ones_per_inventory);
 
-            match span_type(span) {
+            match SpanType::span_type(span) {
                 // We store the entries first in the subinventory and then in
                 // the spill buffer. The first u64 word will be used to store
                 // the position of the entry in the spill buffer. Using the
@@ -508,7 +512,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectAdapt<B, Box<[usize]>> {
                 // another cache miss to be read from the spill buffer.
                 SpanType::U32 => {
                     // We store an inventory entry each 1 << log2_ones_per_sub32 ones.
-                    let log2_ones_per_sub32 = log2_ones_per_sub32(span, log2_ones_per_sub16);
+                    let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span, log2_ones_per_sub16);
                     let num_u32s = ones.div_ceil(1 << log2_ones_per_sub32);
                     let num_u64s = num_u32s.div_ceil(2);
                     let spilled_u64s = num_u64s - u64_per_subinventory + 1;
@@ -539,7 +543,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectAdapt<B, Box<[usize]>> {
             let end_bit_idx = inventory[end_inv_idx];
             // compute the span of the inventory
             let span = end_bit_idx - start_bit_idx;
-            let span_type = span_type(span);
+            let span_type = SpanType::span_type(span);
 
             // Compute the number of ones before the current inventory
             let mut past_ones = inventory_idx * ones_per_inventory;
@@ -552,7 +556,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectAdapt<B, Box<[usize]>> {
                     inventory[start_inv_idx].set_u16_span();
                 }
                 SpanType::U32 => {
-                    log2_quantum = log2_ones_per_sub32(span, log2_ones_per_sub16);
+                    log2_quantum = Self::log2_ones_per_sub32(span, log2_ones_per_sub16);
                     inventory[start_inv_idx].set_u32_span();
                     // The first word of the subinventory is used to store the spill index.
                     inventory[start_inv_idx + 1] = spilled;
@@ -747,7 +751,7 @@ impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> SelectUnch
             let span = (*inventory.get_unchecked(inventory_start_pos + u64_per_subinventory + 1))
                 .get()
                 - inventory_rank;
-            let log2_ones_per_sub32 = log2_ones_per_sub32(span, self.log2_ones_per_sub16);
+            let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span, self.log2_ones_per_sub16);
             let hint_pos = if subrank >> log2_ones_per_sub32 < (u64_per_subinventory - 1) * 2 {
                 let u32s = inventory
                     .get_unchecked(inventory_start_pos + 2..)
