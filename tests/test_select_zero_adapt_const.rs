@@ -121,6 +121,11 @@ fn test_select_zero_adapt_const_empty() {
     assert_eq!(select.num_zeros(), 0);
     assert_eq!(select.len(), 0);
     assert_eq!(select.select_zero(0), None);
+
+    let inner = select.into_inner();
+    assert_eq!(inner.len(), 0);
+    let inner = inner.into_inner();
+    assert_eq!(inner.len(), 0);
 }
 
 #[test]
