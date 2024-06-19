@@ -9,6 +9,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use sux::bit_vec;
 use sux::bits::bit_vec::BitVec;
+use sux::rank_sel::RankSmall;
 use sux::rank_sel::SelectAdapt;
 use sux::rank_small;
 use sux::traits::Rank;
@@ -92,4 +93,14 @@ fn test_map() {
     assert_eq!(rank_small_sel.select(0), Some(1));
     assert_eq!(rank_small_sel.select(1), Some(3));
     assert_eq!(rank_small_sel.select(6), None);
+}
+
+#[test]
+fn test_empty() {
+    let bits = BitVec::new(0);
+    let rank_small = RankSmall::<2, 9>::new(bits);
+
+    assert_eq!(rank_small.len(), 0);
+    let inner = rank_small.into_inner();
+    assert_eq!(inner.len(), 0);
 }

@@ -58,3 +58,13 @@ fn test_map() {
     assert_eq!(rank9_sel.select(1), Some(3));
     assert_eq!(rank9_sel.select(6), None);
 }
+
+#[test]
+fn test_empty() {
+    let bits = BitVec::new(0);
+    let rank9 = Rank9::new(bits);
+
+    assert_eq!(rank9.len(), 0);
+    let inner = rank9.into_inner();
+    assert_eq!(inner.len(), 0);
+}
