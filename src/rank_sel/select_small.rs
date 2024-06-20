@@ -116,6 +116,7 @@ impl<
         I,
     > SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, R, I>
 {
+    const SUPERBLOCK_SIZE: usize = 1 << 32;
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
     const WORDS_PER_SUBBLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_SUBBLOCK;
     const BLOCK_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
@@ -168,33 +169,30 @@ macro_rules! impl_rank_small_sel {
                 let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY);
                 let mut inventory = Vec::<u32>::with_capacity(inventory_size + 1);
 
-                let mut curr_num_ones: usize = 0;
+                let mut past_ones: usize = 0;
                 let mut next_quantum: usize = 0;
-                let mut upper_counts_idx;
 
                 for (i, word) in rank_small.bits.as_ref().iter().copied().enumerate() {
                     let ones_in_word = word.count_ones() as usize;
 
-                    upper_counts_idx = i / (1 << 26);
+                    let superblock_idx = i * (usize::BITS as usize) / Self::SUPERBLOCK_SIZE;
 
-                    while curr_num_ones + ones_in_word > next_quantum {
-                        let in_word_index = word.select_in_word(next_quantum - curr_num_ones);
+                    while past_ones + ones_in_word > next_quantum {
+                        let in_word_index = word.select_in_word(next_quantum - past_ones);
                         let index = ((i * usize::BITS as usize) + in_word_index);
 
-                        inventory.push(
-                            (index - rank_small.upper_counts.as_ref()[upper_counts_idx]) as u32,
-                        );
+                        inventory.push((index - (superblock_idx * Self::SUPERBLOCK_SIZE)) as u32);
 
                         next_quantum += Self::ONES_PER_INVENTORY;
                     }
-                    curr_num_ones += ones_in_word;
+                    past_ones += ones_in_word;
                 }
-                assert_eq!(num_ones, curr_num_ones);
+                assert_eq!(num_ones, past_ones);
 
-                if !inventory.is_empty() {
-                    inventory.push(inventory[inventory.len() - 1]);
-                } else {
+                if inventory.is_empty() {
                     inventory.push(0);
+                } else {
+                    inventory.push(inventory[inventory.len() - 1]);
                 }
 
                 assert_eq!(inventory.len(), inventory_size + 1);
