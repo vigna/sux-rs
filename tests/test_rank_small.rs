@@ -77,7 +77,7 @@ fn test_rank_small4() {
 }
 
 #[test]
-fn test_map() {
+fn test_rank_small_map() {
     let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
     let rank_small = rank_small![2; bits];
     let rank_small_sel = unsafe {
@@ -96,7 +96,7 @@ fn test_map() {
 }
 
 #[test]
-fn test_empty() {
+fn test_rank_small_empty() {
     let bits = BitVec::new(0);
     let rank_small = RankSmall::<2, 9>::new(bits);
 
@@ -107,7 +107,7 @@ fn test_empty() {
 
 #[cfg(feature = "slow")]
 #[test]
-fn test_large() {
+fn test_rank_small_large() {
     let mut bits = BitVec::new(3 * (1 << 32) + 100000);
     for i in 0..bits.len() {
         if i % 5 == 0 {
