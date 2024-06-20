@@ -452,7 +452,8 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> Nu
     }
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2>    > BitCount for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> BitCount
+    for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn count_ones(&self) -> usize {
