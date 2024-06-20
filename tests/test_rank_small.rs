@@ -105,7 +105,7 @@ fn test_rank_small_empty() {
     assert_eq!(inner.len(), 0);
 }
 
-#[cfg(feature = "slow")]
+#[cfg(feature = "slow_tests")]
 #[test]
 fn test_rank_small_large() {
     let mut bits = BitVec::new(3 * (1 << 32) + 100000);

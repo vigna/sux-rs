@@ -220,7 +220,7 @@ fn test_select_zero_adapt_const_non_uniform() {
 }
 
 #[test]
-fn test_map() {
+fn test_select_zero_adapt_const_map() {
     let bits: AddNumBits<_> = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1].into();
     let sel = SelectZeroAdaptConst::<_, _>::new(bits);
     let rank_sel = unsafe { sel.map(Rank9::new) };
@@ -239,7 +239,7 @@ fn test_map() {
 }
 
 #[test]
-fn test_extremely_sparse() {
+fn test_select_zero_adapt_const_extremely_sparse() {
     let len = 1 << 18;
     let bits: AddNumBits<_> = (0..len / 2)
         .map(|_| false)
@@ -261,7 +261,7 @@ fn test_extremely_sparse() {
 }
 
 #[test]
-fn test_sub32s() {
+fn test_select_zero_adapt_const_sub32s() {
     let lens = [1_000_000];
     let mut rng = SmallRng::seed_from_u64(0);
     let density = 0.1;
