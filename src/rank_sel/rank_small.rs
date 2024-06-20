@@ -400,32 +400,22 @@ where
 {
 }
 
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        B: RankHinted<64> + AsRef<[usize]> + BitLength,
-        C1: AsRef<[usize]>,
-        C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2>
+    RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
+    /// Returns the number of bits in the bit vector.
+    ///
+    /// This method is equivalent to
+    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// reduce ambiguity in method resolution.
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.bits.len()
-    }
-
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        BitLength::len(self)
     }
 }
 
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        B: RankHinted<64> + AsRef<[usize]>,
-        C1: AsRef<[usize]>,
-        C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
+    RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     pub fn into_inner(self) -> B {
         self.bits
@@ -462,13 +452,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> Nu
     }
 }
 
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        B: RankHinted<64> + AsRef<[usize]> + BitLength,
-        C1: AsRef<[usize]>,
-        C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > BitCount for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2>    > BitCount for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn count_ones(&self) -> usize {

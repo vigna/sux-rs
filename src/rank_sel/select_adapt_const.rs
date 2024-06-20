@@ -208,6 +208,24 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
 }
 
 impl<
+        B: BitLength,
+        C,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        const LOG2_U64_PER_SUBINVENTORY: usize,
+    > SelectAdaptConst<B, C, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+{
+    /// Returns the number of bits in the bit vector.
+    ///
+    /// This method is equivalent to
+    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// reduce ambiguity in method resolution.
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        BitLength::len(self)
+    }
+}
+
+impl<
         B: AsRef<[usize]> + BitLength + BitCount,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,

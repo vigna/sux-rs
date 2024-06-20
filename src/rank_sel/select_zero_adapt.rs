@@ -189,6 +189,18 @@ impl<B, I> SelectZeroAdapt<B, I> {
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
 }
 
+impl<B: BitLength, C> SelectZeroAdapt<B, C> {
+    /// Returns the number of bits in the bit vector.
+    ///
+    /// This method is equivalent to
+    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// reduce ambiguity in method resolution.
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        BitLength::len(self)
+    }
+}
+
 impl<B: AsRef<[usize]> + BitLength + BitCount> SelectZeroAdapt<B, Box<[usize]>> {
     /// Creates a new selection structure over a bit vecotr using a
     /// [default target inventory
@@ -571,13 +583,6 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectZeroAdapt<B, Box<[usize]>> 
             ones_per_inventory_mask,
             ones_per_sub16_mask,
         }
-    }
-
-    pub fn log2_ones_per_inventory(&self) -> usize {
-        self.log2_ones_per_inventory
-    }
-    pub fn log2_u64_per_subinventory(&self) -> usize {
-        self.log2_u64_per_subinventory
     }
 }
 

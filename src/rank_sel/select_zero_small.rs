@@ -91,18 +91,28 @@ impl<
     const SUBBLOCK_SIZE: usize = (Self::WORDS_PER_SUBBLOCK * usize::BITS as usize);
     const LOG2_SUBBLOCK_SIZE: usize = Self::SUBBLOCK_SIZE.ilog2() as usize;
     const ONES_PER_INVENTORY: usize = 1 << LOG2_ZEROS_PER_INVENTORY;
+
+    pub fn into_inner(self) -> R {
+        self.rank_small
+    }
 }
 
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
         const LOG2_ZEROS_PER_INVENTORY: usize,
-        B,
+        R: BitLength,
         I,
-    > SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ZEROS_PER_INVENTORY, B, I>
+    > SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ZEROS_PER_INVENTORY, R, I>
 {
-    pub fn into_inner(self) -> B {
-        self.rank_small
+    /// Returns the number of bits in the bit vector.
+    ///
+    /// This method is equivalent to
+    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// reduce ambiguity in method resolution.
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.rank_small.len()
     }
 }
 
@@ -110,7 +120,7 @@ macro_rules! impl_rank_small_sel {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         impl<
                 const LOG2_ZEROS_PER_INVENTORY: usize,
-                B: RankHinted<64> + BitLength + AsRef<[usize]>,
+                B: AsRef<[usize]> + BitLength,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             >
@@ -179,7 +189,7 @@ macro_rules! impl_rank_small_sel {
 
         impl<
                 const LOG2_ZEROS_PER_INVENTORY: usize,
-                B: RankHinted<64> + SelectZeroHinted + BitLength + AsRef<[usize]>,
+                B: AsRef<[usize]> + BitLength + SelectZeroHinted,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             > SelectZeroUnchecked
@@ -287,7 +297,7 @@ macro_rules! impl_rank_small_sel {
 
         impl<
                 const LOG2_ZEROS_PER_INVENTORY: usize,
-                B: RankHinted<64> + SelectZeroHinted + BitLength + AsRef<[usize]>,
+                B: AsRef<[usize]> + BitLength + SelectZeroHinted,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             > SelectZero
