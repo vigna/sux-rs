@@ -79,12 +79,13 @@ impl<W: UnsignedInt + FiniteRangeNumber + AsBytes> Word for W {}
 /// The dependence on `W` is necessary to implement this trait on vectors and slices, as
 /// we need the bit width of the values stored in the slice.
 pub trait BitFieldSliceCore<W> {
-    /// Return the width of the slice. All elements stored in the slice must
-    /// fit within this bit width.
+    /// Returns the width of the slice.
+    ///
+    /// All elements stored in the slice must fit within this bit width.
     fn bit_width(&self) -> usize;
-    /// Return the length of the slice.
+    /// Returns the length of the slice.
     fn len(&self) -> usize;
-    /// Return if the slice has length zero
+    /// Returns true if the slice has length zero.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -121,13 +122,14 @@ macro_rules! debug_assert_bounds {
 
 /// A slice of bit fields of constant bit width.
 pub trait BitFieldSlice<W: Word>: BitFieldSliceCore<W> {
-    /// Return the value at the specified index.
+    /// Returns the value at the specified index.
     ///
     /// # Safety
+    ///
     /// `index` must be in [0..[len](`BitFieldSliceCore::len`)). No bounds checking is performed.
     unsafe fn get_unchecked(&self, index: usize) -> W;
 
-    /// Return the value at the specified index.
+    /// Returns the value at the specified index.
     ///
     /// # Panics
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
@@ -139,7 +141,7 @@ pub trait BitFieldSlice<W: Word>: BitFieldSliceCore<W> {
 
 /// A mutable slice of bit fields of constant bit width.
 pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
-    /// Set the element of the slice at the specified index.
+    /// Sets the element of the slice at the specified index.
     /// No bounds checking is performed.
     ///
     /// # Safety
@@ -149,27 +151,27 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
     /// No bound or bit-width check is performed.
     unsafe fn set_unchecked(&mut self, index: usize, value: W);
 
-    /// Set the element of the slice at the specified index.
+    /// Sets the element of the slice at the specified index.
     ///
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
     fn set(&mut self, index: usize, value: W) {
         panic_if_out_of_bounds!(index, self.len());
-        let bw = self.bit_width();
+        let bit_width = self.bit_width();
         // TODO: Maybe testless?
-        let mask = if bw == 0 {
+        let mask = if bit_width == 0 {
             W::ZERO
         } else {
-            W::MAX >> (W::BITS as u32 - bw as u32)
+            W::MAX >> (W::BITS as u32 - bit_width as u32)
         };
 
-        panic_if_value!(value, mask, bw);
+        panic_if_value!(value, mask, bit_width);
         unsafe {
             self.set_unchecked(index, value);
         }
     }
 
-    /// Set all values to zero
+    /// Sets all values to zero.
     fn reset(&mut self);
 }
 

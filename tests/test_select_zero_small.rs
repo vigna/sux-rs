@@ -39,27 +39,27 @@ macro_rules! test_rank_small_sel_zero {
 }
 
 #[test]
-fn rank_small_sel_zero0() {
+fn test_rank_small_sel_zero0() {
     test_rank_small_sel_zero!(2; 9; 13);
 }
 
 #[test]
-fn rank_small_sel_zero1() {
+fn test_rank_small_sel_zero1() {
     test_rank_small_sel_zero!(1; 9; 13);
 }
 
 #[test]
-fn rank_small_sel_zero2() {
+fn test_rank_small_sel_zero2() {
     test_rank_small_sel_zero!(1; 10; 13);
 }
 
 #[test]
-fn rank_small_sel_zero3() {
+fn test_rank_small_sel_zero3() {
     test_rank_small_sel_zero!(1; 11; 13);
 }
 
 #[test]
-fn rank_small_sel_zero4() {
+fn test_rank_small_sel_zero4() {
     test_rank_small_sel_zero!(3; 13; 13);
 }
 

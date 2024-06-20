@@ -15,16 +15,16 @@ use rand::SeedableRng;
 use sux::prelude::*;
 
 #[test]
-fn test_bit_field_vec() {
-    test_bit_field_vec_param::<u8>();
-    test_bit_field_vec_param::<u16>();
-    test_bit_field_vec_param::<u32>();
-    test_bit_field_vec_param::<u64>();
-    test_bit_field_vec_param::<u128>();
-    test_bit_field_vec_param::<usize>();
+fn test() {
+    test_param::<u8>();
+    test_param::<u16>();
+    test_param::<u32>();
+    test_param::<u64>();
+    test_param::<u128>();
+    test_param::<usize>();
 }
 
-fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
+fn test_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
     for bit_width in 0..W::BITS {
         let n = 100;
         let u = W::ONE << bit_width.saturating_sub(1).min(60);
@@ -32,6 +32,14 @@ fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
 
         let mut v = BitFieldVec::<W>::new(bit_width, n);
         assert_eq!(v.bit_width(), bit_width);
+        assert_eq!(
+            v.mask(),
+            if bit_width == 0 {
+                W::ZERO
+            } else {
+                (W::ONE << bit_width) - W::ONE
+            }
+        );
         for _ in 0..10 {
             let values = (0..n)
                 .map(|_| rng.gen_range(0..u.cast()).cast())
@@ -128,7 +136,7 @@ fn test_atomic_bit_field_vec() {
 }
 
 #[test]
-fn test_bit_field_vec_usize() {
+fn test_usize() {
     use sux::traits::bit_field_slice::BitFieldSlice;
     use sux::traits::bit_field_slice::BitFieldSliceMut;
 
@@ -223,4 +231,45 @@ fn test_pop() {
     }
     assert_eq!(c.pop(), None);
     assert_eq!(c.pop(), None);
+}
+
+#[test]
+fn test_unaligned() {
+    for bit_width in [50, 56, 57, 58, 60, 64] {
+        let mut c = BitFieldVec::new(bit_width, 0);
+        for i in 0_usize..10 {
+            c.push(i);
+        }
+        for i in 0_usize..10 {
+            assert_eq!(c.get_unaligned(i), i);
+        }
+    }
+}
+
+#[should_panic]
+#[test]
+fn test_unaligned_59() {
+    let c = BitFieldVec::<usize, _>::new(59, 1);
+    assert_eq!(c.get_unaligned(0), 0);
+}
+
+#[should_panic]
+#[test]
+fn test_unaligned_61() {
+    let c = BitFieldVec::<usize, _>::new(59, 1);
+    assert_eq!(c.get_unaligned(0), 0);
+}
+
+#[should_panic]
+#[test]
+fn test_unaligned_62() {
+    let c = BitFieldVec::<usize, _>::new(59, 1);
+    assert_eq!(c.get_unaligned(0), 0);
+}
+
+#[should_panic]
+#[test]
+fn test_unaligned_63() {
+    let c = BitFieldVec::<usize, _>::new(59, 1);
+    assert_eq!(c.get_unaligned(0), 0);
 }

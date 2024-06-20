@@ -46,27 +46,27 @@ macro_rules! test_rank_small_sel {
 }
 
 #[test]
-fn rank_small_sel0() {
+fn test_rank_small_sel0() {
     test_rank_small_sel!(2; 9; 13);
 }
 
 #[test]
-fn rank_small_sel1() {
+fn test_rank_small_sel1() {
     test_rank_small_sel!(1; 9; 13);
 }
 
 #[test]
-fn rank_small_sel2() {
+fn test_rank_small_sel2() {
     test_rank_small_sel!(1; 10; 13);
 }
 
 #[test]
-fn rank_small_sel3() {
+fn test_rank_small_sel3() {
     test_rank_small_sel!(1; 11; 13);
 }
 
 #[test]
-fn rank_small_sel4() {
+fn test_rank_small_sel4() {
     test_rank_small_sel!(3; 13; 13);
 }
 
@@ -208,4 +208,20 @@ fn test_extremely_sparse() {
     assert_eq!(select.select(0), Some(len / 2));
     assert_eq!(select.select(1), Some(len / 2 + (1 << 17) + 1));
     assert_eq!(select.select(2), Some(len / 2 + (1 << 17) + 2));
+}
+
+#[cfg(feature = "slow")]
+#[test]
+fn test_large() {
+    let mut bits = BitVec::new(3 * (1 << 32) + 100000);
+    for i in 0..bits.len() {
+        if i % 5 == 0 {
+            bits.set(i, true);
+        };
+    }
+    let rank_small = RankSmall::<2, 9>::new(bits.clone());
+    let select = SelectSmall::<2, 9>::new(rank_small);
+    for i in (0..bits.len()).step_by(5) {
+        assert_eq!(select.select(i / 5), Some(i));
+    }
 }
