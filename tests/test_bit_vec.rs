@@ -315,6 +315,24 @@ fn test_iter_zeros_one() {
 }
 
 #[test]
+fn test_eq() {
+    let mut b = BitVec::new(0);
+    let mut c = BitVec::new(0);
+    assert_eq!(b, c);
+
+    b.push(true);
+    assert_ne!(b, c);
+    c.push(true);
+    assert_eq!(b, c);
+
+    for i in 0..64 {
+        b.push(i % 2 == 0);
+        c.push(i % 2 == 0);
+        assert_eq!(b, c);
+    }
+}
+
+#[test]
 fn test_epserde() {
     let mut rng = SmallRng::seed_from_u64(0);
     let mut b = BitVec::new(200);
