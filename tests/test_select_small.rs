@@ -210,7 +210,7 @@ fn test_select_small_extremely_sparse() {
     assert_eq!(select.select(2), Some(len / 2 + (1 << 17) + 2));
 }
 
-#[cfg(feature = "slow")]
+#[cfg(feature = "slow_tests")]
 #[test]
 fn test_select_small_large() {
     let mut bits = BitVec::new(3 * (1 << 32) + 100000);

@@ -17,7 +17,7 @@ use sux::prelude::*;
 #[test]
 fn test_rear_coded_list_100() -> Result<()> {
     test_rear_coded_list("tests/data/wordlist.100")?;
-    #[cfg(feature = "slow")]
+    #[cfg(feature = "slow_tests")]
     test_rear_coded_list("tests/data/wordlist.10000")?;
     Ok(())
 }

@@ -8,7 +8,7 @@
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use sux::prelude::{BitCount, BitLength, BitVec, RankSmall, SelectZero, SelectZeroSmall};
 
-macro_rules! test_rank_small_sel_zero {
+macro_rules! test_select_zero_small {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ZEROS_PER_INVENTORY: literal) => {
         let mut rng = SmallRng::seed_from_u64(0);
         let density = 0.5;
@@ -39,32 +39,32 @@ macro_rules! test_rank_small_sel_zero {
 }
 
 #[test]
-fn test_rank_small_sel_zero0() {
-    test_rank_small_sel_zero!(2; 9; 13);
+fn test_select_zero_small_rank_small0() {
+    test_select_zero_small!(2; 9; 13);
 }
 
 #[test]
-fn test_rank_small_sel_zero1() {
-    test_rank_small_sel_zero!(1; 9; 13);
+fn test_select_zero_small_rank_small1() {
+    test_select_zero_small!(1; 9; 13);
 }
 
 #[test]
-fn test_rank_small_sel_zero2() {
-    test_rank_small_sel_zero!(1; 10; 13);
+fn test_select_zero_small_rank_small2() {
+    test_select_zero_small!(1; 10; 13);
 }
 
 #[test]
-fn test_rank_small_sel_zero3() {
-    test_rank_small_sel_zero!(1; 11; 13);
+fn test_select_zero_small_rank_small3() {
+    test_select_zero_small!(1; 11; 13);
 }
 
 #[test]
-fn test_rank_small_sel_zero4() {
-    test_rank_small_sel_zero!(3; 13; 13);
+fn test_select_zero_small_rank_small4() {
+    test_select_zero_small!(3; 13; 13);
 }
 
 #[test]
-fn test_empty() {
+fn test_select_zero_small_empty() {
     let bits = BitVec::new(0);
     let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits.clone()));
     assert_eq!(select.count_ones(), 0);
@@ -78,7 +78,7 @@ fn test_empty() {
 }
 
 #[test]
-fn test_ones() {
+fn test_select_zero_small_ones() {
     let len = 300_000;
     let bits = (0..len).map(|_| true).collect::<BitVec>();
     let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
@@ -88,7 +88,7 @@ fn test_ones() {
 }
 
 #[test]
-fn test_zeros() {
+fn test_select_zero_small_zeros() {
     let len = 300_000;
     let bits = (0..len).map(|_| false).collect::<BitVec>().into();
     let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
@@ -99,7 +99,7 @@ fn test_zeros() {
 }
 
 #[test]
-fn test_few_zeros() {
+fn test_select_zero_small_few_zeros() {
     let lens = [1 << 18, 1 << 19, 1 << 20];
     for len in lens {
         for num_ones in [1, 2, 4, 8, 16, 32, 64, 128] {
