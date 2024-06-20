@@ -926,19 +926,15 @@ impl<W: Word> PartialEq<BitFieldVec<W>> for BitFieldVec<W> {
         let bit_len = self.len() * self.bit_width();
         // TODO: we don't need this if we assume the backend to be clear
         // beyond the length
-        let residual = bit_len % usize::BITS as usize;
+        let residual = bit_len % W::BITS;
         if residual == 0 {
-            self.bits[..bit_len / usize::BITS as usize]
-                == other.bits[..bit_len / usize::BITS as usize]
+            self.bits[..bit_len / W::BITS] == other.bits[..bit_len / W::BITS]
         } else {
-            self.bits[..bit_len / usize::BITS as usize]
-                == other.bits[..bit_len / usize::BITS as usize]
-                && {
-                    (self.bits[bit_len / usize::BITS as usize]
-                        ^ other.bits[bit_len / usize::BITS as usize])
-                        << (usize::BITS as usize - residual)
-                        == W::ZERO
-                }
+            self.bits[..bit_len / W::BITS] == other.bits[..bit_len / W::BITS] && {
+                (self.bits[bit_len / W::BITS] ^ other.bits[bit_len / W::BITS])
+                    << (W::BITS - residual)
+                    == W::ZERO
+            }
         }
     }
 }

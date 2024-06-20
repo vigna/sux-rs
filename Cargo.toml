@@ -68,7 +68,7 @@ harness = false
 default = ["rayon", "cli"]
 cli = ["dep:clap", "dep:env_logger"] # Build the binary utils
 fuzz = ["dep:arbitrary"]
-slow = [] # Run slow tests (use --release)
+slow_tests = [] # Run slow tests (use --release)
 
 [profile.release]
 opt-level = 3             # like --release
