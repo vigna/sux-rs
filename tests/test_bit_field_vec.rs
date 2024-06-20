@@ -30,7 +30,8 @@ fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
         let u = W::ONE << bit_width.saturating_sub(1).min(60);
         let mut rng = SmallRng::seed_from_u64(0);
 
-        let mut cp = BitFieldVec::<W>::new(bit_width, n);
+        let mut v = BitFieldVec::<W>::new(bit_width, n);
+        assert_eq!(v.bit_width(), bit_width);
         for _ in 0..10 {
             let values = (0..n)
                 .map(|_| rng.gen_range(0..u.cast()).cast())
@@ -40,22 +41,22 @@ fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
             indices.shuffle(&mut rng);
 
             for i in indices {
-                cp.set(i, values[i]);
+                v.set(i, values[i]);
             }
 
             for (i, value) in values.iter().enumerate() {
-                assert_eq!(cp.get(i), *value);
+                assert_eq!(v.get(i), *value);
             }
 
             let mut indices = (0..n).collect::<Vec<_>>();
             indices.shuffle(&mut rng);
 
             for i in indices {
-                assert_eq!(cp.get(i), values[i]);
+                assert_eq!(v.get(i), values[i]);
             }
 
-            for from in 0..cp.len() {
-                let mut iter = cp.into_unchecked_iter_from(from);
+            for from in 0..v.len() {
+                let mut iter = v.into_unchecked_iter_from(from);
                 for v in &values[from..] {
                     unsafe {
                         assert_eq!(iter.next_unchecked(), *v);
@@ -63,8 +64,8 @@ fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
                 }
             }
 
-            for from in 0..cp.len() {
-                let mut iter = cp.into_rev_unchecked_iter_from(from);
+            for from in 0..v.len() {
+                let mut iter = v.into_rev_unchecked_iter_from(from);
                 for v in values[..from].iter().rev() {
                     unsafe {
                         assert_eq!(iter.next_unchecked(), *v);
@@ -72,11 +73,14 @@ fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
                 }
             }
 
-            for from in 0..cp.len() {
-                for (i, v) in cp.iter_from(from).enumerate() {
+            for from in 0..v.len() {
+                for (i, v) in v.iter_from(from).enumerate() {
                     assert_eq!(v, values[i + from]);
                 }
             }
+
+            let (b, w, l) = v.clone().into_raw_parts();
+            // TODO assert_eq!(unsafe { BitFieldVec::<W>::from_raw_parts(b, w, l) }, cp);
         }
     }
 }
@@ -90,7 +94,8 @@ fn test_atomic_bit_field_vec() {
         let u: usize = 1 << bit_width;
         let mut rng = SmallRng::seed_from_u64(0);
 
-        let cp = AtomicBitFieldVec::new(bit_width, n);
+        let v = AtomicBitFieldVec::new(bit_width, n);
+        assert_eq!(v.bit_width(), bit_width);
         for _ in 0..10 {
             let values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
 
@@ -98,20 +103,27 @@ fn test_atomic_bit_field_vec() {
             indices.shuffle(&mut rng);
 
             for i in indices {
-                cp.set_atomic(i, values[i], Ordering::Relaxed);
+                v.set_atomic(i, values[i], Ordering::Relaxed);
             }
 
             for (i, value) in values.iter().enumerate() {
-                assert_eq!(cp.get_atomic(i, Ordering::Relaxed), *value);
+                assert_eq!(v.get_atomic(i, Ordering::Relaxed), *value);
             }
 
             let mut indices = (0..n).collect::<Vec<_>>();
             indices.shuffle(&mut rng);
 
             for i in indices {
-                assert_eq!(cp.get_atomic(i, Ordering::Relaxed), values[i]);
+                assert_eq!(v.get_atomic(i, Ordering::Relaxed), values[i]);
             }
         }
+
+        let w: BitFieldVec = v.into();
+        let x = w.clone();
+        let y: AtomicBitFieldVec = x.into();
+
+        let (b, w, l) = y.into_raw_parts();
+        // TODO assert_eq!(unsafe { BitFieldVec::<W>::from_raw_parts(b, w, l) }, cp);
     }
 }
 

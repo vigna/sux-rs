@@ -20,7 +20,6 @@ use mem_dbg::{MemDbg, MemSize};
 ///
 /// This trait is typically used in conjunction with `AsRef<[usize]>` to provide
 /// word-based access to a bit vector.
-#[allow(clippy::len_without_is_empty)]
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait BitLength {
