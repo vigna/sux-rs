@@ -114,24 +114,22 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         }
     }
 
-    /// Set the inner len.
+    /// Sets the length.
     ///
     /// # Safety
-    /// this is intherently unsafe as you might read
-    /// uninitialized data or write out of bounds.
+    ///
+    /// `len * bit_width` must be at most `self.bits.len() * W::BITS`. Note that
+    /// setting the length might result in reading uninitialized data.
     pub unsafe fn set_len(&mut self, len: usize) {
         debug_assert!(len * self.bit_width <= self.bits.len() * W::BITS);
         self.len = len;
     }
 
-    /// Write 0 to all bits in the vector
+    /// Writes zeros in all values.
     pub fn reset(&mut self) {
-        self.bits.iter_mut().for_each(|x| *x = W::ZERO);
-    }
-
-    /// Write 1 to all bits in the vector
-    pub fn reset_ones(&mut self) {
-        self.bits.iter_mut().for_each(|x| *x = !W::ZERO);
+        self.bits[..(self.len * self.bit_width).div_ceil(W::BITS)]
+            .iter_mut()
+            .for_each(|x| *x = W::ZERO);
     }
 
     /// Set len to 0
@@ -238,8 +236,8 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     /// This method is mainly useful for manually prefetching
     /// parts of the data structure.
     pub fn address_of(&self, index: usize) -> *const W {
-        let pos = index * W::BITS;
-        let word_index = pos / W::BITS;
+        let start_bit = index * self.bit_width;
+        let word_index = start_bit / W::BITS;
         (&self.bits.as_ref()[word_index]) as *const _
     }
 
@@ -252,10 +250,9 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     pub fn get_unaligned(&self, index: usize) -> W {
         panic_if_out_of_bounds!(index, self.len);
         assert!(
-            self.bit_width % 8 != 3
-                && self.bit_width % 8 != 5
-                && self.bit_width != 6
-                && self.bit_width != 7
+            self.bit_width <= W::BITS - 8 + 2
+                || self.bit_width == W::BITS - 8 + 4
+                || self.bit_width == W::BITS
         );
         unsafe { self.get_unaligned_unchecked(index) }
     }
@@ -263,19 +260,19 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     /// Like [`BitFieldSlice::get`], but using unaligned reads.
     ///
     /// # Safety
-    /// This methods can be used only if the `bit width % 8` is not
-    /// 3, 5, 6, or 7.
+    /// This method can be used for bit width smaller than or equal
+    /// to `W::BITS - 8 + 2` or equal to `W::BITS - 8 + 4`.
     pub unsafe fn get_unaligned_unchecked(&self, index: usize) -> W {
         debug_assert!(
-            self.bit_width % 8 != 3
-                && self.bit_width % 8 != 5
-                && self.bit_width != 6
-                && self.bit_width != 7
+            self.bit_width <= W::BITS - 8 + 2
+                || self.bit_width == W::BITS - 8 + 4
+                || self.bit_width == W::BITS
         );
         let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
-        let ptr = base_ptr.add(index / W::BYTES) as *const W;
+        let start_bit = index * self.bit_width;
+        let ptr = base_ptr.add(start_bit / W::BYTES) as *const W;
         let word = core::ptr::read_unaligned(ptr);
-        (word >> (index % W::BITS)) & self.mask
+        (word >> (start_bit % 8)) & self.mask
     }
 }
 
@@ -306,10 +303,12 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
         }
     }
 
-    /// Set the inner len.
+    /// Sets the length.
+    ///
     /// # Safety
-    /// this is intherently unsafe as you might read
-    /// uninitialized data or write out of bounds.
+    ///
+    /// `len * bit_width` must be at most `self.bits.len() * W::BITS`. Note that
+    /// setting the length might result in reading uninitialized data.
     pub unsafe fn set_len(&mut self, len: usize) {
         debug_assert!(len * self.bit_width <= self.bits.len() * W::BITS);
         self.len = len;
@@ -317,16 +316,9 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
 
     /// Write 0 to all bits in the vector
     pub fn reset(&mut self) {
-        self.bits
+        self.bits[..(self.len * self.bit_width).div_ceil(W::BITS)]
             .iter_mut()
             .for_each(|x| x.store(W::ZERO, Ordering::Relaxed));
-    }
-
-    /// Write 1 to all bits in the vector
-    pub fn reset_ones(&mut self) {
-        self.bits
-            .iter_mut()
-            .for_each(|x| x.store(!W::ZERO, Ordering::Relaxed));
     }
 
     /// Set len to 0
@@ -394,7 +386,6 @@ impl<W: Word, T> BitFieldSliceCore<W> for BitFieldVec<W, T> {
         debug_assert!(self.bit_width <= W::BITS);
         self.bit_width
     }
-
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
@@ -936,5 +927,18 @@ mod tests {
             b.push(0);
         }
         assert_eq!(b.bits.capacity(), capacity);
+    }
+
+    #[test]
+    fn testclear() {
+        let mut b = BitFieldVec::<usize, _>::new(50, 10);
+        for _ in 0..10 {
+            b.set(1, 1);
+        }
+        b.clear();
+        assert_eq!(b.len(), 0);
+        for w in b.bits {
+            assert_eq!(w, 0);
+        }
     }
 }
