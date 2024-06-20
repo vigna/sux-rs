@@ -88,7 +88,7 @@ fn test_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
             }
 
             let (b, w, l) = v.clone().into_raw_parts();
-            // TODO assert_eq!(unsafe { BitFieldVec::<W>::from_raw_parts(b, w, l) }, cp);
+            assert_eq!(unsafe { BitFieldVec::<W>::from_raw_parts(b, w, l) }, v);
         }
     }
 }
@@ -129,9 +129,16 @@ fn test_atomic_bit_field_vec() {
         let w: BitFieldVec = v.into();
         let x = w.clone();
         let y: AtomicBitFieldVec = x.into();
+        let z: AtomicBitFieldVec = w.into();
 
-        let (b, w, l) = y.into_raw_parts();
-        // TODO assert_eq!(unsafe { BitFieldVec::<W>::from_raw_parts(b, w, l) }, cp);
+        let (b, w, l) = z.into_raw_parts();
+        let z = unsafe { AtomicBitFieldVec::<usize>::from_raw_parts(b, w, l) };
+        for i in 0..n {
+            assert_eq!(
+                z.get_atomic(i, Ordering::Relaxed),
+                y.get_atomic(i, Ordering::Relaxed)
+            );
+        }
     }
 }
 
@@ -272,4 +279,33 @@ fn test_unaligned_62() {
 fn test_unaligned_63() {
     let c = BitFieldVec::<usize, _>::new(59, 1);
     assert_eq!(c.get_unaligned(0), 0);
+}
+
+#[test]
+fn test_get_addr() {
+    let c = BitFieldVec::<usize, _>::new(3, 100);
+    let begin_addr = c.addr_of(0) as usize;
+    assert_eq!(c.addr_of(50) as usize - begin_addr, 16);
+
+    let c = BitFieldVec::<u16, _>::new(3, 100);
+    let begin_addr = c.addr_of(0) as usize;
+    assert_eq!(c.addr_of(50) as usize - begin_addr, 18);
+}
+
+#[test]
+fn test_eq() {
+    let mut b = BitFieldVec::<usize>::new(3, 10);
+    let mut c = BitFieldVec::<usize>::new(3, 10);
+    assert_eq!(b, c);
+
+    b.push(3);
+    assert_ne!(b, c);
+    c.push(3);
+    assert_eq!(b, c);
+
+    for i in 0..64 {
+        b.push(i % 4);
+        c.push(i % 4);
+        assert_eq!(b, c);
+    }
 }

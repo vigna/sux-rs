@@ -839,3 +839,29 @@ impl<B: AsRef<[usize]>> RankHinted<64> for BitVec<B> {
         rank + (bits.get_unchecked(hint_pos) & ((1 << (pos % 64)) - 1)).count_ones() as usize
     }
 }
+
+impl PartialEq<BitVec<Vec<usize>>> for BitVec<Vec<usize>> {
+    fn eq(&self, other: &BitVec<Vec<usize>>) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+        // TODO: we don't need this if we assume the backend to be clear
+        // beyond the length
+        let residual = self.len() % usize::BITS as usize;
+        if residual == 0 {
+            self.as_ref()[..self.len() / usize::BITS as usize]
+                == other.as_ref()[..other.len() / usize::BITS as usize]
+        } else {
+            self.as_ref()[..self.len() / usize::BITS as usize]
+                == other.as_ref()[..other.len() / usize::BITS as usize]
+                && {
+                    (self.as_ref()[self.len() / usize::BITS as usize]
+                        ^ other.as_ref()[self.len() / usize::BITS as usize])
+                        << (usize::BITS as usize - residual)
+                        == 0
+                }
+        }
+    }
+}
+
+impl Eq for BitVec<Vec<usize>> {}

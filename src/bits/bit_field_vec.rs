@@ -235,7 +235,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     ///
     /// This method is mainly useful for manually prefetching
     /// parts of the data structure.
-    pub fn address_of(&self, index: usize) -> *const W {
+    pub fn addr_of(&self, index: usize) -> *const W {
         let start_bit = index * self.bit_width;
         let word_index = start_bit / W::BITS;
         (&self.bits.as_ref()[word_index]) as *const _
@@ -914,6 +914,36 @@ impl<W: Word> From<BitFieldVec<W, Vec<W>>> for BitFieldVec<W, Box<[W]>> {
         }
     }
 }
+
+impl<W: Word> PartialEq<BitFieldVec<W>> for BitFieldVec<W> {
+    fn eq(&self, other: &BitFieldVec<W>) -> bool {
+        if self.bit_width() != other.bit_width() {
+            return false;
+        }
+        if self.len() != other.len() {
+            return false;
+        }
+        let bit_len = self.len() * self.bit_width();
+        // TODO: we don't need this if we assume the backend to be clear
+        // beyond the length
+        let residual = bit_len % usize::BITS as usize;
+        if residual == 0 {
+            self.bits[..bit_len / usize::BITS as usize]
+                == other.bits[..bit_len / usize::BITS as usize]
+        } else {
+            self.bits[..bit_len / usize::BITS as usize]
+                == other.bits[..bit_len / usize::BITS as usize]
+                && {
+                    (self.bits[bit_len / usize::BITS as usize]
+                        ^ other.bits[bit_len / usize::BITS as usize])
+                        << (usize::BITS as usize - residual)
+                        == W::ZERO
+                }
+        }
+    }
+}
+
+impl Eq for BitFieldVec {}
 
 #[cfg(test)]
 mod tests {
