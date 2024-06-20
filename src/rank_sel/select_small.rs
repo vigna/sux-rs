@@ -172,20 +172,23 @@ macro_rules! impl_rank_small_sel {
                 let mut past_ones: usize = 0;
                 let mut next_quantum: usize = 0;
 
-                for (i, word) in rank_small.bits.as_ref().iter().copied().enumerate() {
-                    let ones_in_word = word.count_ones() as usize;
+                for superblock in rank_small
+                    .bits
+                    .as_ref()
+                    .chunks(Self::SUPERBLOCK_SIZE / usize::BITS as usize)
+                {
+                    for (i, word) in superblock.iter().copied().enumerate() {
+                        let ones_in_word = word.count_ones() as usize;
 
-                    let superblock_idx = i * (usize::BITS as usize) / Self::SUPERBLOCK_SIZE;
+                        while past_ones + ones_in_word > next_quantum {
+                            let in_word_index = word.select_in_word(next_quantum - past_ones);
+                            let in_superblock_index = i * usize::BITS as usize + in_word_index;
+                            inventory.push(in_superblock_index as u32);
+                            next_quantum += Self::ONES_PER_INVENTORY;
+                        }
 
-                    while past_ones + ones_in_word > next_quantum {
-                        let in_word_index = word.select_in_word(next_quantum - past_ones);
-                        let index = ((i * usize::BITS as usize) + in_word_index);
-
-                        inventory.push((index - (superblock_idx * Self::SUPERBLOCK_SIZE)) as u32);
-
-                        next_quantum += Self::ONES_PER_INVENTORY;
+                        past_ones += ones_in_word;
                     }
-                    past_ones += ones_in_word;
                 }
                 assert_eq!(num_ones, past_ones);
 
