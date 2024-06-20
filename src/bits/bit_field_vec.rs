@@ -92,7 +92,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     /// Create a new zero-initialized vector of given bit width and length.
     pub fn new(bit_width: usize, len: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
-        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
+        let n_of_words = Ord::max(1, (len * bit_width).div_ceil(W::BITS));
         Self {
             bits: vec![W::ZERO; n_of_words],
             bit_width,
@@ -105,44 +105,12 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     /// `capacity` elements.
     pub fn with_capacity(bit_width: usize, capacity: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
-        let n_of_words = Ord::max(1, (capacity * bit_width + W::BITS - 1) / W::BITS);
+        let n_of_words = Ord::max(1, (capacity * bit_width).div_ceil(W::BITS));
         Self {
             bits: Vec::with_capacity(n_of_words),
             bit_width,
             mask: mask(bit_width),
             len: 0,
-        }
-    }
-
-    /// Create a new all-ones-initialized vector of given bit width and length.
-    pub fn new_ones(bit_width: usize, len: usize) -> Self {
-        // We need at least one word to handle the case of bit width zero.
-        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
-        Self {
-            bits: vec![!W::ZERO; n_of_words],
-            bit_width,
-            mask: mask(bit_width),
-            len,
-        }
-    }
-
-    /// Create a new uninitialized vector of given bit width and length.
-    ///
-    /// # Safety
-    /// this is intherently unsafe as you might read
-    /// uninitialized data or write out of bounds.
-    pub unsafe fn new_uninit(bit_width: usize, len: usize) -> Self {
-        // We need at least one word to handle the case of bit width zero.
-        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
-        let mut bits = Vec::with_capacity(n_of_words);
-        #[allow(clippy::uninit_vec)]
-        // this is what we want to do, and it's much cleaner than maybeuninit
-        bits.set_len(n_of_words);
-        Self {
-            bits,
-            bit_width,
-            mask: mask(bit_width),
-            len,
         }
     }
 
@@ -335,43 +303,6 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
             bit_width,
             mask: mask(bit_width),
             len: 0,
-        }
-    }
-
-    /// Create a new uninitialized vector of given bit width and length.
-    ///
-    /// # Safety
-    /// this is intherently unsafe as you might read
-    /// uninitialized data or write out of bounds.
-    pub unsafe fn new_uninit(bit_width: usize, len: usize) -> Self {
-        // We need at least one word to handle the case of bit width zero.
-        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
-        let mut bits = Vec::with_capacity(n_of_words);
-        #[allow(clippy::uninit_vec)]
-        // this is what we want to do, and it's much cleaner than maybeuninit
-        bits.set_len(n_of_words);
-        Self {
-            bits,
-            bit_width,
-            mask: mask(bit_width),
-            len,
-        }
-    }
-
-    /// Create a new all-ones-initialized vector of given bit width and length.
-    /// This is useful for testing / it's slightly faster than creatin an
-    /// uninit vector and then setting all values to ones because we can iterate
-    /// over the words and set them all at once.
-    pub fn new_ones(bit_width: usize, len: usize) -> Self {
-        // We need at least one word to handle the case of bit width zero.
-        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
-        Self {
-            bits: (0..n_of_words)
-                .map(|_| W::AtomicType::new(!W::ZERO))
-                .collect(),
-            bit_width,
-            mask: mask(bit_width),
-            len,
         }
     }
 
@@ -720,6 +651,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
     // We reimplement set as we have the mask in the structure.
 
     fn reset(&mut self) {
+        // TODO: directly on words?
         for idx in 0..self.len() {
             unsafe { self.set_unchecked(idx, W::ZERO) };
         }
@@ -871,6 +803,7 @@ where
     }
 
     fn reset_atomic(&mut self, order: Ordering) {
+        // TODO: directly on words?
         for idx in 0..self.len() {
             unsafe { self.set_atomic_unchecked(idx, W::ZERO, order) };
         }
@@ -988,5 +921,20 @@ impl<W: Word> From<BitFieldVec<W, Vec<W>>> for BitFieldVec<W, Box<[W]>> {
             bit_width: value.bit_width,
             mask: value.mask,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_with_capacity() {
+        let mut b = BitFieldVec::<usize, _>::with_capacity(10, 100);
+        let capacity = b.bits.capacity();
+        for _ in 0..100 {
+            b.push(0);
+        }
+        assert_eq!(b.bits.capacity(), capacity);
     }
 }
