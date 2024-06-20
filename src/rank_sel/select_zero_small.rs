@@ -84,6 +84,7 @@ impl<
         I,
     > SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ZEROS_PER_INVENTORY, R, I>
 {
+    const SUPERBLOCK_SIZE: usize = 1 << 32;
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
     const WORDS_PER_SUBBLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_SUBBLOCK;
     const BLOCK_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
@@ -139,7 +140,6 @@ macro_rules! impl_rank_small_sel {
 
                 let mut past_ones: usize = 0;
                 let mut next_quantum: usize = 0;
-                let mut upper_counts_idx;
 
                 for (i, word) in rank_small
                     .bits
@@ -151,18 +151,13 @@ macro_rules! impl_rank_small_sel {
                 {
                     let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
 
-                    upper_counts_idx = i / (1 << 26);
+                    let superblock_idx = i * (usize::BITS as usize) / Self::SUPERBLOCK_SIZE;
 
                     while past_ones + ones_in_word > next_quantum {
                         let in_word_index = word.select_in_word(next_quantum - past_ones);
                         let index = ((i * usize::BITS as usize) + in_word_index);
 
-                        inventory.push(
-                            (index
-                                - ((upper_counts_idx << 32)
-                                    - rank_small.upper_counts.as_ref()[upper_counts_idx]))
-                                as u32,
-                        );
+                        inventory.push((index - (superblock_idx * Self::SUPERBLOCK_SIZE)) as u32);
 
                         next_quantum += Self::ONES_PER_INVENTORY;
                     }
@@ -170,10 +165,10 @@ macro_rules! impl_rank_small_sel {
                 }
                 assert_eq!(num_ones, past_ones);
 
-                if !inventory.is_empty() {
-                    inventory.push(inventory[inventory.len() - 1]);
-                } else {
+                if inventory.is_empty() {
                     inventory.push(0);
+                } else {
+                    inventory.push(inventory[inventory.len() - 1]);
                 }
 
                 assert_eq!(inventory.len(), inventory_size + 1);
