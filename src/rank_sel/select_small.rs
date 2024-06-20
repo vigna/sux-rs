@@ -13,7 +13,7 @@ use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
 crate::forward_mult![
-    SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ZEROS_PER_INVENTORY: usize, R, I>; R; rank_small;
+    SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ONES_PER_INVENTORY: usize, R, I>; R; rank_small;
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::forward_rank_hinted
@@ -100,7 +100,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 pub struct SelectSmall<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
-    const LOG2_ZEROS_PER_INVENTORY: usize = 12,
+    const LOG2_ONES_PER_INVENTORY: usize = 12,
     R = RankSmall<NUM_U32S, COUNTER_WIDTH>,
     I = Box<[u32]>,
 > {
@@ -111,43 +111,53 @@ pub struct SelectSmall<
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
+        const LOG2_ONES_PER_INVENTORY: usize,
         R,
         I,
-    > SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ZEROS_PER_INVENTORY, R, I>
+    > SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, R, I>
 {
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
     const WORDS_PER_SUBBLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_SUBBLOCK;
     const BLOCK_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
     const SUBBLOCK_SIZE: usize = (Self::WORDS_PER_SUBBLOCK * usize::BITS as usize);
-    const ONES_PER_INVENTORY: usize = 1 << LOG2_ZEROS_PER_INVENTORY;
+    const ONES_PER_INVENTORY: usize = 1 << LOG2_ONES_PER_INVENTORY;
+
+    pub fn into_inner(self) -> R {
+        self.rank_small
+    }
 }
 
 impl<
         const NUM_U32S: usize,
         const COUNTER_WIDTH: usize,
-        const LOG2_ZEROS_PER_INVENTORY: usize,
-        B,
+        const LOG2_ONES_PER_INVENTORY: usize,
+        R: BitLength,
         I,
-    > SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ZEROS_PER_INVENTORY, B, I>
+    > SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, R, I>
 {
-    pub fn into_inner(self) -> B {
-        self.rank_small
+    /// Returns the number of bits in the bit vector.
+    ///
+    /// This method is equivalent to
+    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// reduce ambiguity in method resolution.
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        BitLength::len(self)
     }
 }
 
 macro_rules! impl_rank_small_sel {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         impl<
-                const LOG2_ZEROS_PER_INVENTORY: usize,
-                B: RankHinted<64> + BitLength + AsRef<[usize]>,
+                const LOG2_ONES_PER_INVENTORY: usize,
+                B: AsRef<[usize]> + BitLength,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             >
             SelectSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
-                LOG2_ZEROS_PER_INVENTORY,
+                LOG2_ONES_PER_INVENTORY,
                 RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
             >
         {
@@ -198,15 +208,15 @@ macro_rules! impl_rank_small_sel {
         }
 
         impl<
-                const LOG2_ZEROS_PER_INVENTORY: usize,
-                B: RankHinted<64> + SelectHinted + BitLength + AsRef<[usize]>,
+                const LOG2_ONES_PER_INVENTORY: usize,
+                B: AsRef<[usize]> + BitLength + SelectHinted,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             > SelectUnchecked
             for SelectSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
-                LOG2_ZEROS_PER_INVENTORY,
+                LOG2_ONES_PER_INVENTORY,
                 RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
             >
         {
@@ -306,15 +316,15 @@ macro_rules! impl_rank_small_sel {
         }
 
         impl<
-                const LOG2_ZEROS_PER_INVENTORY: usize,
-                B: RankHinted<64> + SelectHinted + BitLength + AsRef<[usize]>,
+                const LOG2_ONES_PER_INVENTORY: usize,
+                B: AsRef<[usize]> + BitLength + SelectHinted,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             > Select
             for SelectSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
-                LOG2_ZEROS_PER_INVENTORY,
+                LOG2_ONES_PER_INVENTORY,
                 RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
             >
         {

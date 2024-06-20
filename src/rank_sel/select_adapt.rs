@@ -336,6 +336,18 @@ impl<B, I> SelectAdapt<B, I> {
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
 }
 
+impl<B: BitLength, C> SelectAdapt<B, C> {
+    /// Returns the number of bits in the bit vector.
+    ///
+    /// This method is equivalent to
+    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// reduce ambiguity in method resolution.
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        BitLength::len(self)
+    }
+}
+
 impl<B: AsRef<[usize]> + BitLength + BitCount> SelectAdapt<B, Box<[usize]>> {
     /// Creates a new selection structure over a bit vecotr using a
     /// [default target inventory

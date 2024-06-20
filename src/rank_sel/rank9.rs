@@ -193,15 +193,17 @@ impl<B: AsRef<[usize]> + BitLength> Rank9<B, Box<[BlockCounters]>> {
             counts: counts.into(),
         }
     }
+}
 
+impl<B: BitLength, C> Rank9<B, C> {
+    /// Returns the number of bits in the underlying bit vector.
+    ///
+    /// This method is equivalent to
+    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// reduce ambiguity in method resolution.
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.bits.len()
-    }
-
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        BitLength::len(self)
     }
 }
 
