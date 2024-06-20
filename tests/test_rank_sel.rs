@@ -12,7 +12,7 @@ use sux::{
 };
 
 #[test]
-fn test_rank_zero() {
+fn test_rank_sel_rank_zero() {
     let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
     let rank9 = Rank9::new(bits);
     assert_eq!(rank9.rank_zero(0), 0);
@@ -29,7 +29,7 @@ fn test_rank_zero() {
 }
 
 #[test]
-fn test_add_num_bits() {
+fn test_rank_sel_add_num_bits() {
     let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
     let a: AddNumBits<_> = bits.into();
     let (b, c) = a.into_raw_parts();
