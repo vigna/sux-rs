@@ -31,8 +31,8 @@ fn test_rank_sel_rank_zero() {
 #[test]
 fn test_rank_sel_add_num_bits() {
     let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
-    let a: AddNumBits<_> = bits.into();
+    let a: AddNumBits<_> = bits.clone().into();
     let (b, c) = a.into_raw_parts();
-    // TODO assert_eq!(b, bits);
+    assert_eq!(b, bits);
     assert_eq!(c, 5);
 }

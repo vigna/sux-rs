@@ -41,7 +41,7 @@ fn test_rank9() {
 }
 
 #[test]
-fn test_rank_zero() {
+fn test_rank9_rank_zero() {
     let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
     let rank9 = Rank9::new(bits);
     assert_eq!(rank9.rank_zero(0), 0);
@@ -58,7 +58,7 @@ fn test_rank_zero() {
 }
 
 #[test]
-fn test_map() {
+fn test_rank9_map() {
     let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
     let rank9 = Rank9::new(bits);
     let rank9_sel = unsafe {
@@ -77,7 +77,7 @@ fn test_map() {
 }
 
 #[test]
-fn test_empty() {
+fn test_rank9_empty() {
     let bits = BitVec::new(0);
     let rank9 = Rank9::new(bits);
 

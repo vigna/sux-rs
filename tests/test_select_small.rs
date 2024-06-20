@@ -14,7 +14,7 @@ use sux::traits::BitCount;
 use sux::traits::BitLength;
 use sux::traits::Select;
 
-macro_rules! test_rank_small_sel {
+macro_rules! test_select_small {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ZEROS_PER_INVENTORY: literal) => {
         use sux::traits::Select;
         let mut rng = SmallRng::seed_from_u64(0);
@@ -46,32 +46,32 @@ macro_rules! test_rank_small_sel {
 }
 
 #[test]
-fn test_rank_small_sel0() {
-    test_rank_small_sel!(2; 9; 13);
+fn test_select_small_rank_small0() {
+    test_select_small!(2; 9; 13);
 }
 
 #[test]
-fn test_rank_small_sel1() {
-    test_rank_small_sel!(1; 9; 13);
+fn test_select_small_rank_small1() {
+    test_select_small!(1; 9; 13);
 }
 
 #[test]
-fn test_rank_small_sel2() {
-    test_rank_small_sel!(1; 10; 13);
+fn test_select_small_rank_small2() {
+    test_select_small!(1; 10; 13);
 }
 
 #[test]
-fn test_rank_small_sel3() {
-    test_rank_small_sel!(1; 11; 13);
+fn test_select_small_rank_small3() {
+    test_select_small!(1; 11; 13);
 }
 
 #[test]
-fn test_rank_small_sel4() {
-    test_rank_small_sel!(3; 13; 13);
+fn test_select_small_rank_small4() {
+    test_select_small!(3; 13; 13);
 }
 
 #[test]
-fn test_empty() {
+fn test_select_small_empty() {
     let bits = BitVec::new(0);
     let select = SelectSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits.clone()));
     assert_eq!(select.count_ones(), 0);
@@ -85,7 +85,7 @@ fn test_empty() {
 }
 
 #[test]
-fn test_ones() {
+fn test_select_small_ones() {
     let len = 300_000;
     let bits = (0..len).map(|_| true).collect::<BitVec>();
     let select = SelectSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
@@ -97,7 +97,7 @@ fn test_ones() {
 }
 
 #[test]
-fn test_zeros() {
+fn test_select_small_zeros() {
     let len = 300_000;
     let bits = (0..len).map(|_| false).collect::<BitVec>().into();
     let select = SelectSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
@@ -107,7 +107,7 @@ fn test_zeros() {
 }
 
 #[test]
-fn test_few_ones() {
+fn test_select_small_few_ones() {
     let lens = [1 << 18, 1 << 19, 1 << 20];
     for len in lens {
         for num_ones in [1, 2, 4, 8, 16, 32, 64, 128] {
@@ -125,7 +125,7 @@ fn test_few_ones() {
 }
 
 #[test]
-fn test_select_adapt_non_uniform() {
+fn test_select_small_non_uniform() {
     let lens = [1 << 18, 1 << 19, 1 << 20];
 
     let mut rng = SmallRng::seed_from_u64(0);
@@ -191,7 +191,7 @@ fn test_select_adapt_non_uniform() {
 }
 
 #[test]
-fn test_extremely_sparse() {
+fn test_select_small_extremely_sparse() {
     let len = 1 << 18;
     let bits = (0..len / 2)
         .map(|_| false)
@@ -212,7 +212,7 @@ fn test_extremely_sparse() {
 
 #[cfg(feature = "slow")]
 #[test]
-fn test_large() {
+fn test_select_small_large() {
     let mut bits = BitVec::new(3 * (1 << 32) + 100000);
     for i in 0..bits.len() {
         if i % 5 == 0 {
