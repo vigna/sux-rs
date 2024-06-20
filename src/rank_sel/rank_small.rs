@@ -296,37 +296,39 @@ macro_rules! impl_rank_small {
             pub fn new(bits: B) -> Self {
                 let num_bits = bits.len();
                 let num_words = num_bits.div_ceil(64 as usize);
-                let num_upper_counts = num_bits.div_ceil(1usize << 32);
+                let num_upper_counts = num_bits.div_ceil(1usize << 32) + 1;
                 let num_counts = num_bits.div_ceil(64 as usize * Self::WORDS_PER_BLOCK);
 
                 let mut upper_counts = Vec::with_capacity(num_upper_counts);
                 let mut counts = Vec::with_capacity(num_counts);
 
-                let mut num_ones: usize = 0;
+                let mut past_ones = 0;
                 let mut upper_count = 0;
 
                 for i in (0..num_words).step_by(Self::WORDS_PER_BLOCK) {
                     if i % (1usize << 26) == 0 {
-                        upper_count = num_ones;
+                        upper_count = past_ones;
                         upper_counts.push(upper_count);
                     }
                     let mut count = Block32Counters::<$NUM_U32S, $COUNTER_WIDTH>::default();
-                    count.absolute = (num_ones - upper_count) as u32;
-                    num_ones += bits.as_ref()[i].count_ones() as usize;
+                    count.absolute = (past_ones - upper_count) as u32;
+                    past_ones += bits.as_ref()[i].count_ones() as usize;
 
                     for j in 1..Self::WORDS_PER_BLOCK {
                         #[allow(clippy::modulo_one)]
                         if j % Self::WORDS_PER_SUBBLOCK == 0 {
-                            let rel_count = num_ones - upper_count - count.absolute as usize;
+                            let rel_count = past_ones - upper_count - count.absolute as usize;
                             count.set_rel(j / Self::WORDS_PER_SUBBLOCK, rel_count);
                         }
                         if i + j < num_words {
-                            num_ones += bits.as_ref()[i + j].count_ones() as usize;
+                            past_ones += bits.as_ref()[i + j].count_ones() as usize;
                         }
                     }
 
                     counts.push(count);
                 }
+
+                upper_counts.push(past_ones);
 
                 assert_eq!(upper_counts.len(), num_upper_counts);
                 assert_eq!(counts.len(), num_counts);
@@ -338,7 +340,7 @@ macro_rules! impl_rank_small {
                     bits,
                     upper_counts,
                     counts,
-                    num_ones,
+                    num_ones: past_ones,
                 }
             }
         }

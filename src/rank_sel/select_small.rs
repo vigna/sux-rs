@@ -225,22 +225,9 @@ macro_rules! impl_rank_small_sel {
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
                 let upper_counts = self.rank_small.upper_counts.as_ref();
                 let counts = self.rank_small.counts.as_ref();
-                let mut upper_block_idx = 0;
-                let mut next_upper_block_idx;
-                let mut last_upper_block_idx = self.rank_small.upper_counts.len() - 1;
-                let mut upper_rank = *upper_counts.get_unchecked(upper_block_idx) as usize;
-                loop {
-                    if last_upper_block_idx - upper_block_idx <= 1 {
-                        break;
-                    }
-                    next_upper_block_idx = (upper_block_idx + last_upper_block_idx) / 2;
-                    upper_rank = *upper_counts.get_unchecked(next_upper_block_idx) as usize;
-                    if rank >= upper_rank {
-                        upper_block_idx = next_upper_block_idx;
-                    } else {
-                        last_upper_block_idx = next_upper_block_idx;
-                    }
-                }
+
+                let upper_block_idx = upper_counts.partition_point(|&x| x <= rank) - 1;
+                let upper_rank = *upper_counts.get_unchecked(upper_block_idx) as usize;
 
                 let inventory = self.inventory.as_ref();
                 let rel_inv_pos =
