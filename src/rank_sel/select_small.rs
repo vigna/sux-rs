@@ -161,6 +161,7 @@ macro_rules! impl_rank_small_sel {
                 RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
             >
         {
+            // Creates a new selection structure over a [`RankSmall`] structure.
             pub fn new(rank_small: RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>) -> Self {
                 let num_ones = rank_small.num_ones();
 
