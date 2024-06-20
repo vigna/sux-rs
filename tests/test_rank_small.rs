@@ -104,3 +104,18 @@ fn test_empty() {
     let inner = rank_small.into_inner();
     assert_eq!(inner.len(), 0);
 }
+
+#[cfg(feature = "slow")]
+#[test]
+fn test_large() {
+    let mut bits = BitVec::new(3 * (1 << 32) + 100000);
+    for i in 0..bits.len() {
+        if i % 5 == 0 {
+            bits.set(i, true);
+        };
+    }
+    let rank_small = RankSmall::<2, 9>::new(bits.clone());
+    for i in (0..bits.len()).step_by(5) {
+        assert_eq!(rank_small.rank(i), i.div_ceil(5));
+    }
+}
