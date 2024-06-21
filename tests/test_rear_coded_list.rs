@@ -93,8 +93,19 @@ fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
         assert_eq!(&rca.get(i), word);
     }
 
-    for (i, word) in rca.into_iter().enumerate() {
+    let l = rca.len();
+    let mut iter = rca.into_iter().enumerate();
+    assert_eq!(iter.len(), l);
+    while let Some((i, word)) = iter.next() {
         assert_eq!(word, shuffled_words[i]);
+        assert_eq!(iter.len(), l - i - 1);
+    }
+
+    let mut iter = rca.into_lender().enumerate();
+    assert_eq!(iter.len(), l);
+    while let Some((i, word)) = iter.next() {
+        assert_eq!(word, shuffled_words[i]);
+        assert_eq!(iter.len(), l - i - 1);
     }
 
     for from in 0..rca.len() {
