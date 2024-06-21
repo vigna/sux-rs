@@ -5,13 +5,17 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use common_traits::AsBytes;
+use common_traits::AtomicUnsignedInt;
 use common_traits::CastableFrom;
 use common_traits::CastableInto;
+use common_traits::IntoAtomic;
 use core::sync::atomic::Ordering;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand::SeedableRng;
+use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
 
 #[test]
@@ -22,6 +26,15 @@ fn test_bit_field_vec() {
     test_bit_field_vec_param::<u64>();
     test_bit_field_vec_param::<u128>();
     test_bit_field_vec_param::<usize>();
+}
+
+#[test]
+fn test_atomic_bit_field_vec() {
+    test_atomic_bit_field_vec_param::<u8>();
+    test_atomic_bit_field_vec_param::<u16>();
+    test_atomic_bit_field_vec_param::<u32>();
+    test_atomic_bit_field_vec_param::<u64>();
+    test_atomic_bit_field_vec_param::<usize>();
 }
 
 fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
@@ -93,19 +106,31 @@ fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
     }
 }
 
-#[test]
-fn test_atomic_bit_field_vec() {
+fn test_atomic_bit_field_vec_param<W: Word + IntoAtomic + CastableInto<u64> + CastableFrom<u64>>()
+where
+    W::AtomicType: AtomicUnsignedInt + AsBytes,
+{
     use sux::traits::bit_field_slice::AtomicBitFieldSlice;
 
-    for bit_width in 0..usize::BITS as usize {
+    for bit_width in 0..W::BITS as usize {
         let n: usize = 100;
-        let u: usize = 1 << bit_width;
+        let u: u64 = 1 << bit_width;
         let mut rng = SmallRng::seed_from_u64(0);
 
-        let v = AtomicBitFieldVec::new(bit_width, n);
+        let v = AtomicBitFieldVec::<W>::new(bit_width, n);
         assert_eq!(v.bit_width(), bit_width);
+        assert_eq!(
+            v.mask(),
+            if bit_width == 0 {
+                W::ZERO
+            } else {
+                (W::ONE << bit_width) - W::ONE
+            }
+        );
         for _ in 0..10 {
-            let values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
+            let values: Vec<W> = (0..n)
+                .map(|_| rng.gen_range(0..u).cast())
+                .collect::<Vec<_>>();
 
             let mut indices = (0..n).collect::<Vec<_>>();
             indices.shuffle(&mut rng);
@@ -126,17 +151,17 @@ fn test_atomic_bit_field_vec() {
             }
         }
 
-        let w: BitFieldVec = v.into();
+        let w: BitFieldVec<W> = v.into();
         let x = w.clone();
-        let y: AtomicBitFieldVec = x.into();
-        let z: AtomicBitFieldVec = w.into();
+        let y: AtomicBitFieldVec<W> = x.into();
+        let z: AtomicBitFieldVec<W> = w.into();
 
         let (b, w, l) = z.into_raw_parts();
-        let z = unsafe { AtomicBitFieldVec::<usize>::from_raw_parts(b, w, l) };
+        let z = unsafe { AtomicBitFieldVec::<W>::from_raw_parts(b, w, l) };
         for i in 0..n {
             assert_eq!(
                 z.get_atomic(i, Ordering::Relaxed),
-                y.get_atomic(i, Ordering::Relaxed)
+                y.get_atomic(i, Ordering::Relaxed),
             );
         }
     }
@@ -295,6 +320,8 @@ fn test_bit_field_vec_get_addr() {
 #[test]
 fn test_bit_field_vec_eq() {
     let mut b = BitFieldVec::<usize>::new(3, 10);
+    let c = BitFieldVec::<usize>::new(3, 9);
+    assert_ne!(b, c);
     let mut c = BitFieldVec::<usize>::new(3, 10);
     assert_eq!(b, c);
 
@@ -308,4 +335,68 @@ fn test_bit_field_vec_eq() {
         c.push(i % 4);
         assert_eq!(b, c);
     }
+}
+
+#[test]
+fn test_bit_field_vec_reset() {
+    let mut b = BitFieldVec::<usize, _>::new(50, 10);
+    for i in 0..10 {
+        b.set(i, i);
+    }
+    b.reset();
+    for w in &b {
+        assert_eq!(w, 0);
+    }
+}
+
+#[test]
+fn test_atomic_bit_field_vec_reset() {
+    let mut b = AtomicBitFieldVec::<usize, _>::new(50, 10);
+    for i in 0..10 {
+        b.set_atomic(i, 1, Ordering::Relaxed);
+    }
+    b.reset();
+    for i in 0..10 {
+        assert_eq!(b.get_atomic(i, Ordering::Relaxed), 0);
+    }
+}
+
+#[test]
+fn test_bit_field_vec_set_len() {
+    let mut b = BitFieldVec::<usize, _>::new(50, 10);
+    unsafe {
+        b.set_len(5);
+    }
+    assert_eq!(b.len(), 5);
+}
+
+#[test]
+fn test_bit_field_from() {
+    // Vec to atomic vec
+    let b = BitFieldVec::<usize, Vec<usize>>::new(50, 10);
+    let b: AtomicBitFieldVec<usize, Vec<AtomicUsize>> = b.into();
+    let _: BitFieldVec<usize, Vec<usize>> = b.into();
+
+    // Boxed slice to atomic boxed slice
+    let bits = vec![0; 10].into_boxed_slice();
+    let b = unsafe { BitFieldVec::<usize, Box<[usize]>>::from_raw_parts(bits, 50, 10) };
+    let b: AtomicBitFieldVec<usize, Box<[AtomicUsize]>> = b.into();
+    let _: BitFieldVec<usize, Box<[usize]>> = b.into();
+
+    // Reference to atomic reference
+    let bits = vec![0; 10].into_boxed_slice();
+    let b = unsafe { BitFieldVec::<usize, &[usize]>::from_raw_parts(bits.as_ref(), 50, 10) };
+    let b: AtomicBitFieldVec<usize, &[AtomicUsize]> = b.into();
+    let _: BitFieldVec<usize, &[usize]> = b.into();
+
+    // Mutable reference to mutable reference
+    let mut bits = vec![0; 10].into_boxed_slice();
+    let b = unsafe { BitFieldVec::<usize, &mut [usize]>::from_raw_parts(bits.as_mut(), 50, 10) };
+    let b: AtomicBitFieldVec<usize, &mut [AtomicUsize]> = b.into();
+    let _: BitFieldVec<usize, &mut [usize]> = b.into();
+
+    // Vec to boxed slice
+    let b = BitFieldVec::<usize, Vec<usize>>::new(50, 10);
+    let b: BitFieldVec<usize, Box<[usize]>> = b.into();
+    let _: BitFieldVec<usize, Vec<usize>> = b.into();
 }
