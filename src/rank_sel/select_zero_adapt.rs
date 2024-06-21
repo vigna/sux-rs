@@ -402,6 +402,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectZeroAdapt<B, Box<[usize]>> 
         let mut spill: Box<[usize]> = vec![0; spill_size].into();
 
         spilled = 0;
+        let locally_stored_u32s = 2 * (u64_per_subinventory - 1);
 
         // Second phase: we fill the subinventories and the spill.
         for inventory_idx in 0..inventory_size {
@@ -447,9 +448,6 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectZeroAdapt<B, Box<[usize]>> 
             let mut subinventory_idx = 1;
             next_quantum += quantum;
 
-            // This is used only when span_type == SpanType::U32
-            let mut u32_odd_spill = log2_u64_per_subinventory == 0;
-
             let mut word_idx = start_bit_idx / usize::BITS as usize;
             let end_word_idx = end_bit_idx.div_ceil(usize::BITS as usize);
             let bit_idx = start_bit_idx % usize::BITS as usize;
@@ -494,37 +492,35 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectZeroAdapt<B, Box<[usize]>> 
                             // it avoids the additional loop iterations that
                             // would be necessary to find the position of the
                             // next one (i.e., end_bit_idx).
-                            if subinventory_idx << log2_quantum == (1 << log2_ones_per_inventory) {
+                            if subinventory_idx << log2_quantum == ones_per_inventory {
                                 break 'outer;
                             }
                         }
                         SpanType::U32 => {
-                            if subinventory_idx < 2 * (u64_per_subinventory - 1) {
+                            if subinventory_idx < locally_stored_u32s {
                                 let subinventory: &mut [u32] = unsafe {
                                     inventory[start_inv_idx + 2..end_inv_idx].align_to_mut().1
                                 };
 
                                 debug_assert_eq!(subinventory[subinventory_idx], 0);
                                 subinventory[subinventory_idx] = sub_offset as u32;
-                                subinventory_idx += 1;
                             } else {
-                                debug_assert!(spilled < spill_size);
-                                // Maybe pointer dereferencing?
-                                let u32_spill: &mut [u32] = unsafe { spill.align_to_mut().1 };
+                                let u32_spill: &mut [u32] =
+                                    unsafe { spill[spilled..].align_to_mut().1 };
                                 debug_assert_eq!(
-                                    u32_spill[spilled * 2 + u32_odd_spill as usize],
+                                    u32_spill[subinventory_idx - locally_stored_u32s],
                                     0
                                 );
-                                u32_spill[spilled * 2 + u32_odd_spill as usize] = sub_offset as u32;
-                                spilled += u32_odd_spill as usize;
-                                u32_odd_spill = !u32_odd_spill;
-                                subinventory_idx += 1;
+                                u32_spill[subinventory_idx - locally_stored_u32s] =
+                                    sub_offset as u32;
                             }
+
+                            subinventory_idx += 1;
                             // This exit is not necessary for correctness, but
                             // it avoids the additional loop iterations that
                             // would be necessary to find the position of the
                             // next one (i.e., end_bit_idx).
-                            if subinventory_idx << log2_quantum == (1 << log2_ones_per_inventory) {
+                            if subinventory_idx << log2_quantum == ones_per_inventory {
                                 break 'outer;
                             }
                         }
@@ -536,6 +532,14 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectZeroAdapt<B, Box<[usize]>> 
                                 assert!(spilled < spill_size);
                                 spill[spilled] = bit_index;
                                 spilled += 1;
+                            }
+                            // This exit is not necessary for correctness, but
+                            // it avoids the additional loop iterations that
+                            // would be necessary to find the position of the
+                            // next one (i.e., end_bit_idx). Note that here
+                            // log2_quantum == 0.
+                            if subinventory_idx == ones_per_inventory {
+                                break 'outer;
                             }
                         }
                     }
@@ -555,19 +559,12 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectZeroAdapt<B, Box<[usize]>> 
                 word = !bits.as_ref()[word_idx];
             }
 
-            // This test is necessary to handle two corner cases for 32-bit
-            // spans:
-            // - the case in which the last inventory entry has a 32-bit span
-            // and contains an odd number of zeros greater than one, as spilled
-            // is not incremented by the loop code (note that u32_odd_spill
-            // might be true even when span_type != SpanType::U32 if
-            // log2_u64_per_subinventory == 0);
-            // - the case in which an inventory entry contains a single zero, as
-            // its zero subinventory entry is written implicitly, but we still
-            // need to increment spilled to allocate space for it.
-
-            if span_type == SpanType::U32 && (u32_odd_spill || subinventory_idx == 1) {
-                spilled += 1;
+            // If we are in the U32 case, we need to update the number of used
+            // element in the spill buffer. The update must be done after the
+            // loop, as for the last inventory entry only at this point we know
+            // the actual number of elements in the subinventory.
+            if span_type == SpanType::U32 {
+                spilled += (subinventory_idx - locally_stored_u32s).div_ceil(2);
             }
         }
 
