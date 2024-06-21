@@ -360,13 +360,14 @@ impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
         let residual = self.len() % BITS;
         let bits = self.bits.as_ref();
 
-        if residual == 0 {
-            Self::count_ones_full_words(bits, full_words)
-        } else {
-            Self::count_ones_full_words(bits, full_words)
-                + (bits[full_words].load(Ordering::Relaxed) << (BITS - residual)).count_ones()
-                    as usize
+        let mut num_ones = Self::count_ones_full_words(bits, full_words);
+
+        if residual != 0 {
+            num_ones += (bits[full_words].load(Ordering::Relaxed) << (BITS - residual)).count_ones()
+                as usize
         }
+
+        num_ones
     }
 }
 
@@ -410,9 +411,6 @@ impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
     }
 
     fn fill_full_words(mut bits: impl AsMut<[usize]>, full_words: usize, word_value: usize) {
-        // Just to be sure, add a fence to ensure that we will see all the final
-        // values
-        core::sync::atomic::fence(Ordering::SeqCst);
         #[cfg(feature = "rayon")]
         {
             bits.as_mut()[..full_words]
@@ -434,50 +432,68 @@ impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
         let bits = self.bits.as_mut();
         let value = if value { !0 } else { 0 };
 
-        if residual == 0 {
-            Self::fill_full_words(bits, full_words, value);
-        } else {
-            Self::fill_full_words(&mut *bits, full_words, value);
+        Self::fill_full_words(&mut *bits, full_words, value);
+
+        if residual != 0 {
             let mask = (1 << residual) - 1;
             bits[full_words] = (bits[full_words] & !mask) | (value & mask);
         }
     }
 
+    fn flip_full_words(mut bits: impl AsMut<[usize]>, full_words: usize) {
+        #[cfg(feature = "rayon")]
+        {
+            bits.as_mut()[..full_words]
+                .par_iter_mut()
+                .for_each(|x| *x = !*x);
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            bits.as_mut()[..full_words]
+                .iter_mut()
+                .for_each(|x| *x = !*x);
+        }
+    }
+
     pub fn flip(&mut self) {
-        let bits = self.bits.as_mut();
-        let end = self.len / BITS;
+        let full_words = self.len() / BITS;
         let residual = self.len % BITS;
-        bits[0..end].iter_mut().for_each(|x| *x ^= !0);
+        let bits = self.bits.as_mut();
+
+        Self::flip_full_words(&mut *bits, full_words);
+
         if residual != 0 {
-            bits[end] ^= (1 << residual) - 1;
+            let mask = (1 << residual) - 1;
+            bits[full_words] = (bits[full_words] & !mask) | (!bits[full_words] & mask);
         }
     }
 }
 
 impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
-    pub fn get(&self, index: usize, order: Ordering) -> bool {
+    pub fn get(&self, index: usize, ordering: Ordering) -> bool {
         panic_if_out_of_bounds!(index, self.len);
-        unsafe { self.get_unchecked(index, order) }
+        unsafe { self.get_unchecked(index, ordering) }
     }
 
-    pub fn set(&self, index: usize, value: bool, order: Ordering) {
+    pub fn set(&self, index: usize, value: bool, ordering: Ordering) {
         panic_if_out_of_bounds!(index, self.len);
-        unsafe { self.set_unchecked(index, value, order) }
+        unsafe { self.set_unchecked(index, value, ordering) }
     }
 
-    pub fn swap(&self, index: usize, value: bool, order: Ordering) -> bool {
+    pub fn swap(&self, index: usize, value: bool, ordering: Ordering) -> bool {
         panic_if_out_of_bounds!(index, self.len);
-        unsafe { self.swap_unchecked(index, value, order) }
+        unsafe { self.swap_unchecked(index, value, ordering) }
     }
 
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> bool {
+    unsafe fn get_unchecked(&self, index: usize, ordering: Ordering) -> bool {
         let word_index = index / BITS;
         let bits = self.bits.as_ref();
-        let word = bits.get_unchecked(word_index).load(order);
+        let word = bits.get_unchecked(word_index).load(ordering);
         (word >> (index % BITS)) & 1 != 0
     }
     #[inline(always)]
-    unsafe fn set_unchecked(&self, index: usize, value: bool, order: Ordering) {
+    unsafe fn set_unchecked(&self, index: usize, value: bool, ordering: Ordering) {
         let word_index = index / BITS;
         let bit_index = index % BITS;
         let bits = self.bits.as_ref();
@@ -485,53 +501,103 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
         // For constant values, this should be inlined with no test.
         if value {
             bits.get_unchecked(word_index)
-                .fetch_or(1 << bit_index, order);
+                .fetch_or(1 << bit_index, ordering);
         } else {
             bits.get_unchecked(word_index)
-                .fetch_and(!(1 << bit_index), order);
+                .fetch_and(!(1 << bit_index), ordering);
         }
     }
 
     #[inline(always)]
-    unsafe fn swap_unchecked(&self, index: usize, value: bool, order: Ordering) -> bool {
+    unsafe fn swap_unchecked(&self, index: usize, value: bool, ordering: Ordering) -> bool {
         let word_index = index / BITS;
         let bit_index = index % BITS;
         let bits = self.bits.as_ref();
 
         let old_word = if value {
             bits.get_unchecked(word_index)
-                .fetch_or(1 << bit_index, order)
+                .fetch_or(1 << bit_index, ordering)
         } else {
             bits.get_unchecked(word_index)
-                .fetch_and(!(1 << bit_index), order)
+                .fetch_and(!(1 << bit_index), ordering)
         };
 
         (old_word >> (bit_index)) & 1 != 0
     }
+}
 
-    pub fn fill(&mut self, value: bool, order: Ordering) {
-        let bits = self.bits.as_ref();
-        if value {
-            let end = self.len / BITS;
-            let residual = self.len % BITS;
-            bits[0..end].iter().for_each(|x| x.store(!0, order));
-            if residual != 0 {
-                bits[end].store(!0 >> (BITS - residual), order);
-            }
-        } else {
-            bits[0..self.len.div_ceil(BITS)]
-                .iter()
-                .for_each(|x| x.store(0, order));
+impl<B: AsMut<[AtomicUsize]>> AtomicBitVec<B> {
+    fn fill_full_words(
+        mut bits: impl AsMut<[AtomicUsize]>,
+        full_words: usize,
+        word_value: usize,
+        ordering: Ordering,
+    ) {
+        // Just to be sure, add a fence to ensure that we will see all the final
+        // values
+        core::sync::atomic::fence(Ordering::SeqCst);
+        #[cfg(feature = "rayon")]
+        {
+            bits.as_mut()[..full_words]
+                .par_iter_mut()
+                .for_each(|x| x.store(word_value, ordering));
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            bits.as_mut()[..full_words]
+                .iter_mut()
+                .for_each(|x| x.store(word_value, ordering));
         }
     }
 
-    pub fn flip(&mut self, order: Ordering) {
-        let bits = self.bits.as_ref();
-        let end = self.len / BITS;
+    pub fn fill(&mut self, value: bool, ordering: Ordering) {
+        let full_words = self.len() / BITS;
         let residual = self.len % BITS;
-        bits[0..end].iter().for_each(|x| _ = x.fetch_xor(!0, order));
+        let bits = self.bits.as_mut();
+        let value = if value { !0 } else { 0 };
+
+        Self::fill_full_words(&mut *bits, full_words, value, ordering);
+
         if residual != 0 {
-            bits[end].fetch_xor((1 << residual) - 1, order);
+            let mask = (1 << residual) - 1;
+            bits[full_words].store(
+                (bits[full_words].load(ordering) & !mask) | (value & mask),
+                ordering,
+            );
+        }
+    }
+
+    fn flip_full_words(mut bits: impl AsMut<[AtomicUsize]>, full_words: usize, ordering: Ordering) {
+        // Just to be sure, add a fence to ensure that we will see all the final
+        // values
+        core::sync::atomic::fence(Ordering::SeqCst);
+        #[cfg(feature = "rayon")]
+        {
+            bits.as_mut()[..full_words]
+                .par_iter_mut()
+                .for_each(|x| _ = x.fetch_xor(!0, ordering));
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            bits.as_mut()[..full_words]
+                .iter_mut()
+                .for_each(|x| _ = x.fetch_xor(!0, ordering));
+        }
+    }
+
+    pub fn flip(&mut self, ordering: Ordering) {
+        let full_words = self.len() / BITS;
+        let residual = self.len % BITS;
+        let bits = self.bits.as_mut();
+
+        Self::flip_full_words(&mut *bits, full_words, ordering);
+
+        if residual != 0 {
+            let mask = (1 << residual) - 1;
+            let last_word = bits[full_words].load(ordering);
+            bits[full_words].store((last_word & !mask) | (!last_word & mask), ordering);
         }
     }
 }
