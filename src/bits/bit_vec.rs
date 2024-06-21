@@ -371,39 +371,36 @@ impl BitVec<Vec<usize>> {
         self.len = new_len;
     }
 }
-
-impl<B: AsRef<[usize]>> BitVec<B> {
-    fn count_ones_full_words(bits: impl AsRef<[usize]>, full_words: usize) -> usize {
-        #[cfg(feature = "rayon")]
-        {
-            bits.as_ref()[..full_words]
-                .par_iter()
-                .map(|x| x.count_ones() as usize)
-                .sum()
-        }
-
-        #[cfg(not(feature = "rayon"))]
-        {
-            bits.as_ref()[..full_words]
-                .iter()
-                .map(|x| x.count_ones() as usize)
-                .sum()
-        }
-    }
-}
-
+/// If the feature "rayon" is enabled, [`count_ones`](BitCount::count_ones) is
+/// computed in parallel.
 impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
     fn count_ones(&self) -> usize {
         let full_words = self.len() / BITS;
         let residual = self.len() % BITS;
         let bits = self.bits.as_ref();
+        let mut num_ones;
 
-        if residual == 0 {
-            Self::count_ones_full_words(bits, full_words)
-        } else {
-            Self::count_ones_full_words(bits, full_words)
-                + (self.as_ref()[full_words] << (BITS - residual)).count_ones() as usize
+        #[cfg(feature = "rayon")]
+        {
+            num_ones = bits[..full_words]
+                .par_iter()
+                .map(|x| x.count_ones() as usize)
+                .sum();
         }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            num_ones = bits[..full_words]
+                .iter()
+                .map(|x| x.count_ones() as usize)
+                .sum()
+        }
+
+        if residual != 0 {
+            num_ones += (self.as_ref()[full_words] << (BITS - residual)).count_ones() as usize
+        }
+
+        num_ones
     }
 }
 
@@ -446,58 +443,50 @@ impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
         }
     }
 
-    fn fill_full_words(mut bits: impl AsMut<[usize]>, full_words: usize, word_value: usize) {
-        #[cfg(feature = "rayon")]
-        {
-            bits.as_mut()[..full_words]
-                .par_iter_mut()
-                .for_each(|x| *x = word_value);
-        }
-
-        #[cfg(not(feature = "rayon"))]
-        {
-            bits.as_mut()[..full_words]
-                .iter_mut()
-                .for_each(|x| *x = word_value);
-        }
-    }
-
+    /// Set all bits to the given value.
+    ///
+    /// If the feature "rayon" is enabled, this method is computed in parallel.
     pub fn fill(&mut self, value: bool) {
         let full_words = self.len() / BITS;
         let residual = self.len % BITS;
         let bits = self.bits.as_mut();
-        let value = if value { !0 } else { 0 };
+        let word_value = if value { !0 } else { 0 };
 
-        Self::fill_full_words(&mut *bits, full_words, value);
-
-        if residual != 0 {
-            let mask = (1 << residual) - 1;
-            bits[full_words] = (bits[full_words] & !mask) | (value & mask);
-        }
-    }
-
-    fn flip_full_words(mut bits: impl AsMut<[usize]>, full_words: usize) {
         #[cfg(feature = "rayon")]
         {
-            bits.as_mut()[..full_words]
+            bits[..full_words]
                 .par_iter_mut()
-                .for_each(|x| *x = !*x);
+                .for_each(|x| *x = word_value);
         }
 
         #[cfg(not(feature = "rayon"))]
         {
-            bits.as_mut()[..full_words]
-                .iter_mut()
-                .for_each(|x| *x = !*x);
+            bits[..full_words].iter_mut().for_each(|x| *x = word_value);
+        }
+
+        if residual != 0 {
+            let mask = (1 << residual) - 1;
+            bits[full_words] = (bits[full_words] & !mask) | (word_value & mask);
         }
     }
 
+    /// Flip all bits.
+    ///
+    /// If the feature "rayon" is enabled, this method is computed in parallel.
     pub fn flip(&mut self) {
         let full_words = self.len() / BITS;
         let residual = self.len % BITS;
         let bits = self.bits.as_mut();
 
-        Self::flip_full_words(&mut *bits, full_words);
+        #[cfg(feature = "rayon")]
+        {
+            bits[..full_words].par_iter_mut().for_each(|x| *x = !*x);
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            bits[..full_words].iter_mut().for_each(|x| *x = !*x);
+        }
 
         if residual != 0 {
             let mask = (1 << residual) - 1;
@@ -744,39 +733,33 @@ impl AtomicBitVec<Vec<AtomicUsize>> {
     }
 }
 
-impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
-    fn count_ones_full_words(bits: impl AsRef<[AtomicUsize]>, full_words: usize) -> usize {
+/// If the feature "rayon" is enabled, [`count_ones`](BitCount::count_ones) is
+/// computed in parallel.
+impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
+    fn count_ones(&self) -> usize {
+        let full_words = self.len() / BITS;
+        let residual = self.len() % BITS;
+        let bits = self.bits.as_ref();
+        let mut num_ones;
+
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
         core::sync::atomic::fence(Ordering::SeqCst);
         #[cfg(feature = "rayon")]
         {
-            bits.as_ref()[..full_words]
+            num_ones = bits[..full_words]
                 .par_iter()
                 .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
-                .sum()
+                .sum();
         }
 
         #[cfg(not(feature = "rayon"))]
         {
-            bits.as_ref()[..full_words]
+            num_ones = bits[..full_words]
                 .iter()
                 .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
-                .sum()
+                .sum();
         }
-    }
-}
-
-impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
-    /// Return the number of bits set to 1 in this bit vector.
-    ///
-    /// If the feature "rayon" is enabled, this function is parallelized.
-    fn count_ones(&self) -> usize {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.bits.as_ref();
-
-        let mut num_ones = Self::count_ones_full_words(bits, full_words);
 
         if residual != 0 {
             num_ones += (bits[full_words].load(Ordering::Relaxed) << (BITS - residual)).count_ones()
@@ -844,18 +827,21 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
 }
 
 impl<B: AsMut<[AtomicUsize]>> AtomicBitVec<B> {
-    fn fill_full_words(
-        mut bits: impl AsMut<[AtomicUsize]>,
-        full_words: usize,
-        word_value: usize,
-        ordering: Ordering,
-    ) {
+    /// Set all bits to the given value.
+    ///
+    /// If the feature "rayon" is enabled, this method is computed in parallel.
+    pub fn fill(&mut self, value: bool, ordering: Ordering) {
+        let full_words = self.len() / BITS;
+        let residual = self.len % BITS;
+        let bits = self.bits.as_mut();
+        let word_value = if value { !0 } else { 0 };
+
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
         core::sync::atomic::fence(Ordering::SeqCst);
         #[cfg(feature = "rayon")]
         {
-            bits.as_mut()[..full_words]
+            bits[..full_words]
                 .par_iter_mut()
                 .for_each(|x| x.store(word_value, ordering));
         }
@@ -866,50 +852,40 @@ impl<B: AsMut<[AtomicUsize]>> AtomicBitVec<B> {
                 .iter_mut()
                 .for_each(|x| x.store(word_value, ordering));
         }
-    }
-
-    pub fn fill(&mut self, value: bool, ordering: Ordering) {
-        let full_words = self.len() / BITS;
-        let residual = self.len % BITS;
-        let bits = self.bits.as_mut();
-        let value = if value { !0 } else { 0 };
-
-        Self::fill_full_words(&mut *bits, full_words, value, ordering);
 
         if residual != 0 {
             let mask = (1 << residual) - 1;
             bits[full_words].store(
-                (bits[full_words].load(ordering) & !mask) | (value & mask),
+                (bits[full_words].load(ordering) & !mask) | (word_value & mask),
                 ordering,
             );
         }
     }
 
-    fn flip_full_words(mut bits: impl AsMut<[AtomicUsize]>, full_words: usize, ordering: Ordering) {
+    /// Flip all bits.
+    ///
+    /// If the feature "rayon" is enabled, this method is computed in parallel.
+    pub fn flip(&mut self, ordering: Ordering) {
+        let full_words = self.len() / BITS;
+        let residual = self.len % BITS;
+        let bits = self.bits.as_mut();
+
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
         core::sync::atomic::fence(Ordering::SeqCst);
         #[cfg(feature = "rayon")]
         {
-            bits.as_mut()[..full_words]
+            bits[..full_words]
                 .par_iter_mut()
                 .for_each(|x| _ = x.fetch_xor(!0, ordering));
         }
 
         #[cfg(not(feature = "rayon"))]
         {
-            bits.as_mut()[..full_words]
+            bits.borrow_mut()[..full_words]
                 .iter_mut()
                 .for_each(|x| _ = x.fetch_xor(!0, ordering));
         }
-    }
-
-    pub fn flip(&mut self, ordering: Ordering) {
-        let full_words = self.len() / BITS;
-        let residual = self.len % BITS;
-        let bits = self.bits.as_mut();
-
-        Self::flip_full_words(&mut *bits, full_words, ordering);
 
         if residual != 0 {
             let mask = (1 << residual) - 1;
