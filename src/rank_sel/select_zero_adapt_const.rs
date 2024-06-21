@@ -591,7 +591,7 @@ mod tests {
     use rand::SeedableRng;
 
     #[test]
-    fn test_select_zero_adapt_const_sub64s() {
+    fn test_sub64s() {
         let len = 5_000_000_000;
         let mut rng = SmallRng::seed_from_u64(0);
         let mut bits = BitVec::new(len);

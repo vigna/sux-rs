@@ -20,7 +20,7 @@ use sux::traits::Rank;
 use sux::traits::Select;
 
 #[test]
-fn test_select_adapt() {
+fn test() {
     let lens = (1..100)
         .step_by(10)
         .chain((100_000..1_000_000).step_by(100_000));
@@ -50,7 +50,7 @@ fn test_select_adapt() {
 }
 
 #[test]
-fn test_select_adapt_one_u64() {
+fn test_one_u64() {
     let lens = [1_000_000];
     let mut rng = SmallRng::seed_from_u64(0);
     let density = 0.1;
@@ -77,7 +77,7 @@ fn test_select_adapt_one_u64() {
 }
 
 #[test]
-fn test_select_adapt_mult_usize() {
+fn test_mult_usize() {
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     let density = 0.5;
     for len in (1 << 10..1 << 15).step_by(usize::BITS as _) {
@@ -103,7 +103,7 @@ fn test_select_adapt_mult_usize() {
 }
 
 #[test]
-fn test_select_adapt_empty() {
+fn test_empty() {
     let bits: AddNumBits<_> = BitVec::new(0).into();
     let select = SelectAdapt::new(bits.clone(), 3);
     assert_eq!(select.count_ones(), 0);
@@ -117,7 +117,7 @@ fn test_select_adapt_empty() {
 }
 
 #[test]
-fn test_select_adapt_ones() {
+fn test_ones() {
     let len = 300_000;
     let bits: AddNumBits<_> = (0..len).map(|_| true).collect::<BitVec>().into();
     let select = SelectAdapt::new(bits, 3);
@@ -129,7 +129,7 @@ fn test_select_adapt_ones() {
 }
 
 #[test]
-fn test_select_adapt_zeros() {
+fn test_zeros() {
     let len = 300_000;
     let bits: AddNumBits<_> = (0..len).map(|_| false).collect::<BitVec>().into();
     let select = SelectAdapt::new(bits, 3);
@@ -139,7 +139,7 @@ fn test_select_adapt_zeros() {
 }
 
 #[test]
-fn test_select_adapt_few_ones() {
+fn test_few_ones() {
     let lens = [1 << 18, 1 << 19, 1 << 20];
     for len in lens {
         for num_ones in [1, 2, 4, 8, 16, 32, 64, 128] {
@@ -158,7 +158,7 @@ fn test_select_adapt_few_ones() {
 }
 
 #[test]
-fn test_select_adapt_non_uniform() {
+fn test_non_uniform() {
     let lens = [1 << 18, 1 << 19, 1 << 20];
 
     let mut rng = SmallRng::seed_from_u64(0);
@@ -226,7 +226,7 @@ fn test_select_adapt_non_uniform() {
 }
 
 #[test]
-fn test_select_adapt_map() {
+fn test_map() {
     let bits: AddNumBits<_> = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1].into();
     let sel = SelectAdapt::<_, _>::new(bits, 3);
     let rank_sel = unsafe { sel.map(RankSmall::<1, 10, _>::new) };
@@ -237,7 +237,7 @@ fn test_select_adapt_map() {
 }
 
 #[test]
-fn test_select_adapt_extremely_sparse() {
+fn test_extremely_sparse() {
     let len = 1 << 18;
     let bits: AddNumBits<BitVec> = (0..len / 2)
         .map(|_| false)
@@ -258,7 +258,7 @@ fn test_select_adapt_extremely_sparse() {
 }
 
 #[test]
-fn test_select_adapt_sub32s() {
+fn test_sub32s() {
     let lens = [1_000_000];
     let mut rng = SmallRng::seed_from_u64(0);
     let density = 0.1;
@@ -285,7 +285,7 @@ fn test_select_adapt_sub32s() {
 }
 
 #[test]
-fn test_select_adapt_sub32s_last_small() {
+fn test_sub32s_last_small() {
     let lens = [1_000_000];
     let mut rng = SmallRng::seed_from_u64(0);
     let density = 0.0001;
