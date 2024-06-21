@@ -259,7 +259,7 @@ fn test_iter() {
         c.set(i, i % 2 == 0);
     }
 
-    for (i, b) in c.into_iter().enumerate() {
+    for (i, b) in c.iter().enumerate() {
         assert_eq!(b, i % 2 == 0);
     }
 }
@@ -318,6 +318,18 @@ fn test_iter_zeros_one() {
     let mut i = c.iter_zeros();
     assert_eq!(i.next(), Some(1));
     assert_eq!(i.next(), None);
+}
+
+#[test]
+fn test_atomic_iter() {
+    let mut c = AtomicBitVec::new(100);
+    for i in 0..100 {
+        c.set(i, i % 2 == 0, Ordering::Relaxed);
+    }
+
+    for (i, b) in c.iter().enumerate() {
+        assert_eq!(b, i % 2 == 0);
+    }
 }
 
 #[test]
