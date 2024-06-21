@@ -20,6 +20,9 @@
 //! - `AtomicBitVec<AsRef<[AtomicUsize]>>`: a thread-safe, mutable (but not
 //!   resizable) bit vector.
 //!
+//! Note that nothing is assumed about the content of the backend outside the
+//! bits of the bit vector.
+//!
 //! It is possible to juggle between the three flavors using [`From`]/[`Into`].
 //!
 //! # Examples
@@ -55,6 +58,10 @@
 //! // Back to normal, but immutable size
 //! let mut b: BitVec<Box<[usize]>> = a.into();
 //! b.set(2, false);
+//!
+//! // If we create an artifically dirty bit vector, everything still works.
+//! let ones = [usize::MAX; 2];
+//! assert_eq!(unsafe { BitVec::from_raw_parts(ones, 1) }.count_ones(), 1);
 //! ```
 
 use common_traits::{IntoAtomic, SelectInWord};
@@ -187,10 +194,13 @@ impl BitVec<Vec<usize>> {
     }
 
     /// Creates a new zero-length bit vector of given capacity.
+    ///
+    /// Note that the capacity will be rounded up to a multiple of the word
+    /// size.
     pub fn with_capacity(capacity: usize) -> Self {
         let n_of_words = capacity.div_ceil(BITS);
         Self {
-            bits: vec![0; n_of_words],
+            bits: Vec::with_capacity(n_of_words),
             len: 0,
         }
     }
@@ -200,22 +210,23 @@ impl BitVec<Vec<usize>> {
     }
 
     pub fn push(&mut self, b: bool) {
-        if self.bits.len() * usize::BITS as usize == self.len {
+        if self.bits.len() * BITS == self.len {
             self.bits.push(0);
         }
         let word_index = self.len / BITS;
         let bit_index = self.len % BITS;
+        // Clear bit
+        self.bits[word_index] &= !(1 << bit_index);
+        // Set bit
         self.bits[word_index] |= (b as usize) << bit_index;
         self.len += 1;
     }
 
     pub fn resize(&mut self, new_len: usize, value: bool) {
+        // TODO: rewrite by word
         if new_len > self.len {
-            if new_len > self.bits.len() * usize::BITS as usize {
-                self.bits.resize(
-                    (new_len + usize::BITS as usize - 1) / usize::BITS as usize,
-                    0,
-                );
+            if new_len > self.bits.len() * BITS {
+                self.bits.resize((new_len + BITS - 1) / BITS, 0);
             }
             for i in self.len..new_len {
                 unsafe {
@@ -282,12 +293,16 @@ impl<B> BitLength for AtomicBitVec<B> {
 }
 
 impl<B> AtomicBitVec<B> {
+    /// Returns the number of bits in the bit vector.
+    ///
+    /// This method is equivalent to
+    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// reduce ambiguity in method resolution.
     #[inline(always)]
-    #[allow(clippy::len_without_is_empty)]
-    /// Return the number of bits in this bit vector.
     pub fn len(&self) -> usize {
-        self.len
+        BitLength::len(self)
     }
+
     /// # Safety
     /// `len` must be between 0 (included) the number of
     /// bits in `bits` (included).
@@ -314,13 +329,13 @@ impl<B: AsRef<[AtomicUsize]>> Index<usize> for AtomicBitVec<B> {
 }
 
 impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
-    fn _count_ones(&self) -> usize {
+    fn count_ones_full_words(bits: impl AsRef<[AtomicUsize]>, full_words: usize) -> usize {
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
         core::sync::atomic::fence(Ordering::SeqCst);
         #[cfg(feature = "rayon")]
         {
-            self.bits.as_ref()[..self.len() / usize::BITS as usize]
+            bits.as_ref()[..full_words]
                 .par_iter()
                 .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
                 .sum()
@@ -328,7 +343,7 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
 
         #[cfg(not(feature = "rayon"))]
         {
-            self.bits.as_ref()[..self.len() / usize::BITS as usize]
+            bits.as_ref()[..full_words]
                 .iter()
                 .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
                 .sum()
@@ -341,14 +356,16 @@ impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
     ///
     /// If the feature "rayon" is enabled, this function is parallelized.
     fn count_ones(&self) -> usize {
-        let residual = self.len() % usize::BITS as usize;
+        let full_words = self.len() / BITS;
+        let residual = self.len() % BITS;
+        let bits = self.bits.as_ref();
+
         if residual == 0 {
-            self._count_ones()
+            Self::count_ones_full_words(bits, full_words)
         } else {
-            self._count_ones()
-                + (self.as_ref()[self.len() / usize::BITS as usize].load(Ordering::Relaxed)
-                    << (usize::BITS as usize - residual))
-                    .count_ones() as usize
+            Self::count_ones_full_words(bits, full_words)
+                + (bits[full_words].load(Ordering::Relaxed) << (BITS - residual)).count_ones()
+                    as usize
         }
     }
 }
@@ -383,6 +400,7 @@ impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
         let word_index = index / BITS;
         let bit_index = index % BITS;
         let bits = self.bits.as_mut();
+        // TODO: no test?
         // For constant values, this should be inlined with no test.
         if value {
             *bits.get_unchecked_mut(word_index) |= 1 << bit_index;
@@ -391,17 +409,37 @@ impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
         }
     }
 
+    fn fill_full_words(mut bits: impl AsMut<[usize]>, full_words: usize, word_value: usize) {
+        // Just to be sure, add a fence to ensure that we will see all the final
+        // values
+        core::sync::atomic::fence(Ordering::SeqCst);
+        #[cfg(feature = "rayon")]
+        {
+            bits.as_mut()[..full_words]
+                .par_iter_mut()
+                .for_each(|x| *x = word_value);
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            bits.as_mut()[..full_words]
+                .iter_mut()
+                .for_each(|x| *x = word_value);
+        }
+    }
+
     pub fn fill(&mut self, value: bool) {
+        let full_words = self.len() / BITS;
+        let residual = self.len % BITS;
         let bits = self.bits.as_mut();
-        if value {
-            let end = self.len / BITS;
-            let residual = self.len % BITS;
-            bits[0..end].fill(!0);
-            if residual != 0 {
-                bits[end] = !0 >> (BITS - residual);
-            }
+        let value = if value { !0 } else { 0 };
+
+        if residual == 0 {
+            Self::fill_full_words(bits, full_words, value);
         } else {
-            bits[0..self.len.div_ceil(BITS)].fill(0);
+            Self::fill_full_words(&mut *bits, full_words, value);
+            let mask = (1 << residual) - 1;
+            bits[full_words] = (bits[full_words] & !mask) | (value & mask);
         }
     }
 
@@ -499,11 +537,10 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
 }
 
 impl<B: AsRef<[usize]>> BitVec<B> {
-    fn _count_ones(&self) -> usize {
-        let bits = self.bits.as_ref();
+    fn count_ones_full_words(bits: impl AsRef<[usize]>, full_words: usize) -> usize {
         #[cfg(feature = "rayon")]
         {
-            bits[..self.len() / usize::BITS as usize]
+            bits.as_ref()[..full_words]
                 .par_iter()
                 .map(|x| x.count_ones() as usize)
                 .sum()
@@ -511,7 +548,7 @@ impl<B: AsRef<[usize]>> BitVec<B> {
 
         #[cfg(not(feature = "rayon"))]
         {
-            bits[..self.len() / usize::BITS as usize]
+            bits.as_ref()[..full_words]
                 .iter()
                 .map(|x| x.count_ones() as usize)
                 .sum()
@@ -521,14 +558,15 @@ impl<B: AsRef<[usize]>> BitVec<B> {
 
 impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
     fn count_ones(&self) -> usize {
-        let residual = self.len() % usize::BITS as usize;
+        let full_words = self.len() / BITS;
+        let residual = self.len() % BITS;
+        let bits = self.bits.as_ref();
+
         if residual == 0 {
-            self._count_ones()
+            Self::count_ones_full_words(bits, full_words)
         } else {
-            self._count_ones()
-                + (self.as_ref()[self.len() / usize::BITS as usize]
-                    << (usize::BITS as usize - residual))
-                    .count_ones() as usize
+            Self::count_ones_full_words(bits, full_words)
+                + (self.as_ref()[full_words] << (BITS - residual)).count_ones() as usize
         }
     }
 }
@@ -929,19 +967,15 @@ impl PartialEq<BitVec<Vec<usize>>> for BitVec<Vec<usize>> {
         if self.len() != other.len() {
             return false;
         }
-        let residual = self.len() % usize::BITS as usize;
+        let residual = self.len() % BITS;
         if residual == 0 {
-            self.as_ref()[..self.len() / usize::BITS as usize]
-                == other.as_ref()[..other.len() / usize::BITS as usize]
+            self.as_ref()[..self.len() / BITS] == other.as_ref()[..other.len() / BITS]
         } else {
-            self.as_ref()[..self.len() / usize::BITS as usize]
-                == other.as_ref()[..other.len() / usize::BITS as usize]
-                && {
-                    (self.as_ref()[self.len() / usize::BITS as usize]
-                        ^ other.as_ref()[self.len() / usize::BITS as usize])
-                        << (usize::BITS as usize - residual)
-                        == 0
-                }
+            self.as_ref()[..self.len() / BITS] == other.as_ref()[..other.len() / BITS] && {
+                (self.as_ref()[self.len() / BITS] ^ other.as_ref()[self.len() / BITS])
+                    << (BITS - residual)
+                    == 0
+            }
         }
     }
 }
