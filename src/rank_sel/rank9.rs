@@ -12,7 +12,7 @@ use mem_dbg::*;
 
 use crate::{
     prelude::{BitLength, BitVec, NumBits, Rank, RankZero},
-    traits::BitCount,
+    traits::{BitCount, RankUnchecked},
 };
 
 use crate::traits::rank_sel::ambassador_impl_BitLength;
@@ -207,16 +207,7 @@ impl<B: BitLength, C> Rank9<B, C> {
     }
 }
 
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> {
-    #[inline(always)]
-    fn rank(&self, pos: usize) -> usize {
-        if pos >= self.bits.len() {
-            self.num_ones()
-        } else {
-            unsafe { self.rank_unchecked(pos) }
-        }
-    }
-
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for Rank9<B, C> {
     #[inline(always)]
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
         let word_pos = pos / usize::BITS as usize;
@@ -231,6 +222,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B,
     }
 }
 
+impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> {}
 impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankZero for Rank9<B, C> {}
 
 #[cfg(test)]

@@ -63,14 +63,14 @@ fn test_elias_fano() -> Result<()> {
         for v in 0..u {
             let res = values.binary_search(&v);
             let contains = res.is_ok();
-            assert_eq!(ef.contains(&v), contains);
+            assert_eq!(ef.contains(v), contains);
 
             if contains {
                 let i = res.unwrap();
                 assert_eq!(ef.get(i), v);
-                assert_eq!(ef.get(ef.index_of(&v).unwrap()), v);
+                assert_eq!(ef.get(ef.index_of(v).unwrap()), v);
             } else {
-                assert_eq!(ef.index_of(&v), None);
+                assert_eq!(ef.index_of(v), None);
             }
         }
 
@@ -100,7 +100,7 @@ fn test_elias_fano() -> Result<()> {
                 continue;
             }
             loop {
-                assert!(ef.succ(&lower_bound).unwrap() == (i, *v));
+                assert!(ef.succ(lower_bound).unwrap() == (i, *v));
                 lower_bound += 1;
                 if lower_bound > values[i] {
                     break;
@@ -108,7 +108,7 @@ fn test_elias_fano() -> Result<()> {
             }
         }
 
-        assert_eq!(None, ef.succ(&(last + 1)));
+        assert_eq!(None, ef.succ(last + 1));
 
         let mut lower_bound = 0;
         for (i, v) in values.iter().enumerate() {
@@ -116,7 +116,7 @@ fn test_elias_fano() -> Result<()> {
                 continue;
             }
             loop {
-                assert!(ef.succ_strict(&lower_bound).unwrap() == (i, *v));
+                assert!(ef.succ_strict(lower_bound).unwrap() == (i, *v));
                 lower_bound += 1;
                 if lower_bound >= values[i] {
                     break;
@@ -137,7 +137,7 @@ fn test_elias_fano() -> Result<()> {
                 continue;
             }
             loop {
-                assert!(ef.pred_strict(&upper_bound).unwrap() == (i, *v));
+                assert!(ef.pred_strict(upper_bound).unwrap() == (i, *v));
                 upper_bound += 1;
                 if i + 1 == values.len() || upper_bound > values[i + 1] {
                     break;
@@ -146,7 +146,7 @@ fn test_elias_fano() -> Result<()> {
         }
 
         for upper_bound in 0..first + 1 {
-            assert_eq!(None, ef.pred_strict(&upper_bound));
+            assert_eq!(None, ef.pred_strict(upper_bound));
         }
 
         let first = *values.first().unwrap();
@@ -160,7 +160,7 @@ fn test_elias_fano() -> Result<()> {
                 continue;
             }
             loop {
-                assert!(ef.pred(&upper_bound).unwrap() == (i, *v));
+                assert!(ef.pred(upper_bound).unwrap() == (i, *v));
                 upper_bound += 1;
                 if i + 1 == values.len() || upper_bound >= values[i + 1] {
                     break;
@@ -169,7 +169,7 @@ fn test_elias_fano() -> Result<()> {
         }
 
         for upper_bound in 0..first {
-            assert_eq!(None, ef.pred(&upper_bound));
+            assert_eq!(None, ef.pred(upper_bound));
         }
     }
 

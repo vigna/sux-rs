@@ -81,16 +81,26 @@ pub use ambassador_impl_NumBits;
 /// Ranking over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
-pub trait Rank: BitLength {
+pub trait Rank: BitLength + NumBits + RankUnchecked {
     /// Returns the number of ones preceding the specified position.
     ///
     /// The bit vector is virtually zero-extended. If `pos` is greater than or equal to the
     /// [length of the underlying bit vector](`BitLength::len`), the number of
     /// ones in the underlying bit vector is returned.
+    #[inline(always)]
     fn rank(&self, pos: usize) -> usize {
-        unsafe { self.rank_unchecked(pos.min(self.len())) }
+        if pos >= self.len() {
+            self.num_ones()
+        } else {
+            unsafe { self.rank_unchecked(pos) }
+        }
     }
+}
+pub use ambassador_impl_Rank;
 
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
+pub trait RankUnchecked {
     /// Returns the number of ones preceding the specified position.
     ///
     /// # Safety
@@ -100,7 +110,7 @@ pub trait Rank: BitLength {
     /// Some implementation might consider the the length as a valid argument.
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
 }
-pub use ambassador_impl_Rank;
+pub use ambassador_impl_RankUnchecked;
 
 /// Ranking zeros over a bit vector.
 ///
@@ -283,6 +293,7 @@ crate::forward_mult![AddNumBits<B>; B; bits;
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
+#[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::Select, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]

@@ -6,7 +6,7 @@
  */
 
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use sux::prelude::{BitCount, BitLength, BitVec, RankSmall, SelectZero, SelectZeroSmall};
+use sux::prelude::{BitCount, BitVec, RankSmall, SelectZero, SelectZeroSmall};
 
 macro_rules! test {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ZEROS_PER_INVENTORY: literal) => {
@@ -90,7 +90,7 @@ fn test_ones() {
 #[test]
 fn test_zeros() {
     let len = 300_000;
-    let bits = (0..len).map(|_| false).collect::<BitVec>().into();
+    let bits = (0..len).map(|_| false).collect::<BitVec>();
     let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
     assert_eq!(select.len(), len);
     for i in 0..len {

@@ -10,7 +10,7 @@ use sux::{
     bit_vec,
     bits::BitVec,
     rank_sel::{Rank9, SelectAdapt},
-    traits::{AddNumBits, BitCount, BitLength, Rank, RankZero, Select},
+    traits::{AddNumBits, BitCount, Rank, RankZero, Select},
 };
 
 #[test]
