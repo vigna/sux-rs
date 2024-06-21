@@ -486,6 +486,12 @@ pub struct ValueIterator<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
     iter: Iterator<'a, D, P>,
 }
 
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::ExactSizeIterator for ValueIterator<'a, D, P> {
+    fn len(&self) -> usize {
+        self.iter.len()
+    }
+}
+
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for ValueIterator<'a, D, P> {
     type Item = String;
 
@@ -784,20 +790,29 @@ fn decode_int(data: &[u8]) -> (usize, &[u8]) {
 #[cfg(test)]
 #[cfg_attr(test, test)]
 fn test_encode_decode_int() {
-    const MAX: usize = 1 << 20;
-    const MIN: usize = 0;
+    let values = [
+        0, 1, 2, 3, 4, 5, 6, 7, 8,
+        UPPER_BOUND_1 - 1, UPPER_BOUND_1, UPPER_BOUND_1 + 1,
+        UPPER_BOUND_2 - 1, UPPER_BOUND_2, UPPER_BOUND_2 + 1,
+        UPPER_BOUND_3 - 1, UPPER_BOUND_3, UPPER_BOUND_3 + 1,
+        UPPER_BOUND_4 - 1, UPPER_BOUND_4, UPPER_BOUND_4 + 1,
+        UPPER_BOUND_5 - 1, UPPER_BOUND_5, UPPER_BOUND_5 + 1,
+        UPPER_BOUND_6 - 1, UPPER_BOUND_6, UPPER_BOUND_6 + 1,
+        UPPER_BOUND_7 - 1, UPPER_BOUND_7, UPPER_BOUND_7 + 1,
+        UPPER_BOUND_8 - 1, UPPER_BOUND_8, UPPER_BOUND_8 + 1,
+    ];
     let mut buffer = Vec::with_capacity(128);
 
-    for i in MIN..MAX {
-        encode_int(i, &mut buffer);
+    for i in &values {
+        encode_int(*i, &mut buffer);
     }
 
     let mut data = &buffer[..];
-    for i in MIN..MAX {
+    for i in &values {
         let (j, tmp) = decode_int(data);
-        assert_eq!(data.len() - tmp.len(), encode_int_len(i));
+        assert_eq!(data.len() - tmp.len(), encode_int_len(*i));
         data = tmp;
-        assert_eq!(i, j);
+        assert_eq!(*i, j);
     }
 }
 
