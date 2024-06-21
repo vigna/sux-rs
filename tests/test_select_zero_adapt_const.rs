@@ -287,3 +287,29 @@ fn test_select_zero_adapt_const_sub32s() {
         assert_eq!(simple.select_zero(zeros + 1), None);
     }
 }
+
+#[test]
+fn test_select_zero_adapt_const_sub32s_last_small() {
+    let lens = [1_000_000];
+    let mut rng = SmallRng::seed_from_u64(0);
+    let density = 0.0001;
+    for len in lens {
+        let mut bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+        bits.flip();
+        let bits: AddNumBits<_> = bits.into();
+        let simple = SelectZeroAdaptConst::<_, _, 13, 16>::new(bits.clone());
+
+        let zeros = simple.count_zeros();
+        let mut pos = Vec::with_capacity(zeros);
+        for i in 0..len {
+            if !bits[i] {
+                pos.push(i);
+            }
+        }
+
+        for i in 0..zeros {
+            assert_eq!(simple.select_zero(i), Some(pos[i]));
+        }
+        assert_eq!(simple.select_zero(zeros + 1), None);
+    }
+}
