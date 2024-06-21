@@ -298,7 +298,7 @@ impl<
                     let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span);
                     let num_u32s = ones.div_ceil(1 << log2_ones_per_sub32);
                     let num_u64s = num_u32s.div_ceil(2);
-                    let spilled_u64s = num_u64s - u64_per_subinventory + 1;
+                    let spilled_u64s = num_u64s.saturating_sub(u64_per_subinventory - 1);
                     spilled += spilled_u64s;
                 }
                 SpanType::U64 => {
@@ -477,11 +477,13 @@ impl<
             // loop, as for the last inventory entry only at this point we know
             // the actual number of elements in the subinventory.
             if span_type == SpanType::U32 {
-                spilled += (subinventory_idx - locally_stored_u32s).div_ceil(2);
+                spilled += subinventory_idx
+                    .saturating_sub(locally_stored_u32s)
+                    .div_ceil(2);
             }
         }
 
-        debug_assert_eq!(spilled, spill_size);
+        assert_eq!(spilled, spill_size);
 
         Self {
             bits,

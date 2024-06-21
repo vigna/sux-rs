@@ -283,3 +283,30 @@ fn test_select_adapt_sub32s() {
         assert_eq!(simple.select(ones + 1), None);
     }
 }
+
+#[test]
+fn test_select_adapt_sub32s_last_small() {
+    let lens = [1_000_000];
+    let mut rng = SmallRng::seed_from_u64(0);
+    let density = 0.0001;
+    for len in lens {
+        let bits: AddNumBits<BitVec> = (0..len)
+            .map(|_| rng.gen_bool(density))
+            .collect::<BitVec>()
+            .into();
+        let simple = SelectAdapt::with_inv(bits.clone(), 13, 16);
+
+        let ones = simple.count_ones();
+        let mut pos = Vec::with_capacity(ones);
+        for i in 0..len {
+            if bits[i] {
+                pos.push(i);
+            }
+        }
+
+        for i in 0..ones {
+            assert_eq!(simple.select(i), Some(pos[i]));
+        }
+        assert_eq!(simple.select(ones + 1), None);
+    }
+}
