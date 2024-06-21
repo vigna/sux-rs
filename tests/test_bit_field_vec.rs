@@ -19,25 +19,25 @@ use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
 
 #[test]
-fn test_bit_field_vec() {
-    test_bit_field_vec_param::<u8>();
-    test_bit_field_vec_param::<u16>();
-    test_bit_field_vec_param::<u32>();
-    test_bit_field_vec_param::<u64>();
-    test_bit_field_vec_param::<u128>();
-    test_bit_field_vec_param::<usize>();
+fn test() {
+    test_param::<u8>();
+    test_param::<u16>();
+    test_param::<u32>();
+    test_param::<u64>();
+    test_param::<u128>();
+    test_param::<usize>();
 }
 
 #[test]
-fn test_atomic_bit_field_vec() {
-    test_atomic_bit_field_vec_param::<u8>();
-    test_atomic_bit_field_vec_param::<u16>();
-    test_atomic_bit_field_vec_param::<u32>();
-    test_atomic_bit_field_vec_param::<u64>();
-    test_atomic_bit_field_vec_param::<usize>();
+fn test_atomic() {
+    test_atomic_param::<u8>();
+    test_atomic_param::<u16>();
+    test_atomic_param::<u32>();
+    test_atomic_param::<u64>();
+    test_atomic_param::<usize>();
 }
 
-fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
+fn test_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
     for bit_width in 0..W::BITS {
         let n = 100;
         let u = W::ONE << bit_width.saturating_sub(1).min(60);
@@ -106,7 +106,7 @@ fn test_bit_field_vec_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
     }
 }
 
-fn test_atomic_bit_field_vec_param<W: Word + IntoAtomic + CastableInto<u64> + CastableFrom<u64>>()
+fn test_atomic_param<W: Word + IntoAtomic + CastableInto<u64> + CastableFrom<u64>>()
 where
     W::AtomicType: AtomicUnsignedInt + AsBytes,
 {
@@ -168,7 +168,7 @@ where
 }
 
 #[test]
-fn test_bit_field_vec_usize() {
+fn test_usize() {
     use sux::traits::bit_field_slice::BitFieldSlice;
     use sux::traits::bit_field_slice::BitFieldSliceMut;
 
@@ -185,7 +185,7 @@ fn test_bit_field_vec_usize() {
 }
 
 #[test]
-fn test_bit_field_vec_bit_width_zero() {
+fn test_bit_width_zero() {
     use sux::traits::bit_field_slice::BitFieldSlice;
 
     let c = BitFieldVec::<usize>::new(0, 1000);
@@ -195,7 +195,7 @@ fn test_bit_field_vec_bit_width_zero() {
 }
 
 #[test]
-fn test_bit_field_vec_from_slice() {
+fn test_from_slice() {
     use sux::traits::bit_field_slice::BitFieldSlice;
     use sux::traits::bit_field_slice::BitFieldSliceMut;
 
@@ -216,7 +216,7 @@ fn test_bit_field_vec_from_slice() {
 }
 
 #[test]
-fn test_bit_field_vec_push() {
+fn test_push() {
     use sux::traits::bit_field_slice::BitFieldSlice;
 
     let mut c = BitFieldVec::new(12, 0);
@@ -229,7 +229,7 @@ fn test_bit_field_vec_push() {
 }
 
 #[test]
-fn test_bit_field_vec_resize() {
+fn test_resize() {
     use sux::traits::bit_field_slice::BitFieldSlice;
 
     let mut c = BitFieldVec::new(12, 0);
@@ -245,7 +245,7 @@ fn test_bit_field_vec_resize() {
 }
 
 #[test]
-fn test_bit_field_vec_pop() {
+fn test_pop() {
     use sux::traits::bit_field_slice::BitFieldSlice;
 
     let mut c = BitFieldVec::new(12, 0);
@@ -266,7 +266,7 @@ fn test_bit_field_vec_pop() {
 }
 
 #[test]
-fn test_bit_field_vec_unaligned() {
+fn test_unaligned() {
     for bit_width in [50, 56, 57, 58, 60, 64] {
         let mut c = BitFieldVec::new(bit_width, 0);
         for i in 0_usize..10 {
@@ -280,34 +280,34 @@ fn test_bit_field_vec_unaligned() {
 
 #[should_panic]
 #[test]
-fn test_bit_field_vec_unaligned_59() {
+fn test_unaligned_59() {
     let c = BitFieldVec::<usize, _>::new(59, 1);
     assert_eq!(c.get_unaligned(0), 0);
 }
 
 #[should_panic]
 #[test]
-fn test_bit_field_vec_unaligned_61() {
+fn test_unaligned_61() {
     let c = BitFieldVec::<usize, _>::new(59, 1);
     assert_eq!(c.get_unaligned(0), 0);
 }
 
 #[should_panic]
 #[test]
-fn test_bit_field_vec_unaligned_62() {
+fn test_unaligned_62() {
     let c = BitFieldVec::<usize, _>::new(59, 1);
     assert_eq!(c.get_unaligned(0), 0);
 }
 
 #[should_panic]
 #[test]
-fn test_bit_field_vec_unaligned_63() {
+fn test_unaligned_63() {
     let c = BitFieldVec::<usize, _>::new(59, 1);
     assert_eq!(c.get_unaligned(0), 0);
 }
 
 #[test]
-fn test_bit_field_vec_get_addr() {
+fn test_get_addr() {
     let c = BitFieldVec::<usize, _>::new(3, 100);
     let begin_addr = c.addr_of(0) as usize;
     assert_eq!(c.addr_of(50) as usize - begin_addr, 16);
@@ -318,7 +318,7 @@ fn test_bit_field_vec_get_addr() {
 }
 
 #[test]
-fn test_bit_field_vec_eq() {
+fn test_eq() {
     let mut b = BitFieldVec::<usize>::new(3, 10);
     let c = BitFieldVec::<usize>::new(3, 9);
     assert_ne!(b, c);
@@ -338,7 +338,7 @@ fn test_bit_field_vec_eq() {
 }
 
 #[test]
-fn test_bit_field_vec_reset() {
+fn test_reset() {
     let mut b = BitFieldVec::<usize, _>::new(50, 10);
     for i in 0..10 {
         b.set(i, i);
@@ -350,7 +350,7 @@ fn test_bit_field_vec_reset() {
 }
 
 #[test]
-fn test_atomic_bit_field_vec_reset() {
+fn test_atomic_reset() {
     let mut b = AtomicBitFieldVec::<usize, _>::new(50, 10);
     for i in 0..10 {
         b.set_atomic(i, 1, Ordering::Relaxed);
@@ -362,7 +362,7 @@ fn test_atomic_bit_field_vec_reset() {
 }
 
 #[test]
-fn test_bit_field_vec_set_len() {
+fn test_set_len() {
     let mut b = BitFieldVec::<usize, _>::new(50, 10);
     unsafe {
         b.set_len(5);

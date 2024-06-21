@@ -941,7 +941,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_bit_field_vec_with_capacity() {
+    fn test_with_capacity() {
         let mut b = BitFieldVec::<usize, _>::with_capacity(10, 100);
         let capacity = b.bits.capacity();
         for _ in 0..100 {
@@ -951,7 +951,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bit_field_vec_clear() {
+    fn test_clear() {
         let mut b = BitFieldVec::<usize, _>::new(50, 10);
         for i in 0..10 {
             b.set(i, i);

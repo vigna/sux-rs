@@ -11,7 +11,7 @@ use sux::traits::{BitLength, Rank, Select};
 use sux::{prelude::BitVec, traits::BitCount};
 
 #[test]
-fn test_select9() {
+fn test() {
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     let density = 0.5;
     for len in (1..1000).chain((1000..10000).step_by(100)) {
@@ -34,7 +34,7 @@ fn test_select9() {
 }
 
 #[test]
-fn test_select9_into_inner() {
+fn test_into_inner() {
     let bits = BitVec::new(0);
     let select = Select9::new(Rank9::new(bits));
 
@@ -45,7 +45,7 @@ fn test_select9_into_inner() {
 }
 
 #[test]
-fn test_select9_mult_usize() {
+fn test_mult_usize() {
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     let density = 0.5;
     for len in (1 << 10..1 << 15).step_by(usize::BITS as _) {
@@ -68,7 +68,7 @@ fn test_select9_mult_usize() {
 }
 
 #[test]
-fn test_select9_empty() {
+fn test_empty() {
     let bits = BitVec::new(0);
     let select9 = Select9::new(Rank9::new(bits.clone()));
     assert_eq!(select9.count_ones(), 0);
@@ -77,7 +77,7 @@ fn test_select9_empty() {
 }
 
 #[test]
-fn test_select9_ones() {
+fn test_ones() {
     let len = 300_000;
     let bits = (0..len).map(|_| true).collect::<BitVec>();
     let select9 = Select9::new(Rank9::new(bits));
@@ -89,7 +89,7 @@ fn test_select9_ones() {
 }
 
 #[test]
-fn test_select9_zeros() {
+fn test_zeros() {
     let len = 300_000;
     let bits = (0..len).map(|_| false).collect::<BitVec>();
     let select9 = Select9::new(Rank9::new(bits));
@@ -99,7 +99,7 @@ fn test_select9_zeros() {
 }
 
 #[test]
-fn test_select9_few_ones() {
+fn test_few_ones() {
     let lens = [1 << 18, 1 << 19, 1 << 20];
     for len in lens {
         for num_ones in [1, 2, 4, 8, 16, 32, 64, 128, 256] {
@@ -117,7 +117,7 @@ fn test_select9_few_ones() {
 }
 
 #[test]
-fn test_select9_non_uniform() {
+fn test_non_uniform() {
     let lens = [1 << 18, 1 << 19, 1 << 20, 1 << 25];
 
     let mut rng = SmallRng::seed_from_u64(0);
@@ -184,7 +184,7 @@ fn test_select9_non_uniform() {
 }
 
 #[test]
-fn test_select9_rank() {
+fn test_rank() {
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     let density = 0.5;
     for len in (10_000..100_000).step_by(1000) {

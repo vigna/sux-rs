@@ -8,7 +8,7 @@
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use sux::prelude::{BitCount, BitLength, BitVec, RankSmall, SelectZero, SelectZeroSmall};
 
-macro_rules! test_select_zero_small {
+macro_rules! test {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ZEROS_PER_INVENTORY: literal) => {
         let mut rng = SmallRng::seed_from_u64(0);
         let density = 0.5;
@@ -39,32 +39,32 @@ macro_rules! test_select_zero_small {
 }
 
 #[test]
-fn test_select_zero_small_rank_small0() {
-    test_select_zero_small!(2; 9; 13);
+fn test_rank_small0() {
+    test!(2; 9; 13);
 }
 
 #[test]
-fn test_select_zero_small_rank_small1() {
-    test_select_zero_small!(1; 9; 13);
+fn test_rank_small1() {
+    test!(1; 9; 13);
 }
 
 #[test]
-fn test_select_zero_small_rank_small2() {
-    test_select_zero_small!(1; 10; 13);
+fn test_rank_small2() {
+    test!(1; 10; 13);
 }
 
 #[test]
-fn test_select_zero_small_rank_small3() {
-    test_select_zero_small!(1; 11; 13);
+fn test_rank_small3() {
+    test!(1; 11; 13);
 }
 
 #[test]
-fn test_select_zero_small_rank_small4() {
-    test_select_zero_small!(3; 13; 13);
+fn test_rank_small4() {
+    test!(3; 13; 13);
 }
 
 #[test]
-fn test_select_zero_small_empty() {
+fn test_empty() {
     let bits = BitVec::new(0);
     let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits.clone()));
     assert_eq!(select.count_ones(), 0);
@@ -78,7 +78,7 @@ fn test_select_zero_small_empty() {
 }
 
 #[test]
-fn test_select_zero_small_ones() {
+fn test_ones() {
     let len = 300_000;
     let bits = (0..len).map(|_| true).collect::<BitVec>();
     let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
@@ -88,7 +88,7 @@ fn test_select_zero_small_ones() {
 }
 
 #[test]
-fn test_select_zero_small_zeros() {
+fn test_zeros() {
     let len = 300_000;
     let bits = (0..len).map(|_| false).collect::<BitVec>().into();
     let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
@@ -99,7 +99,7 @@ fn test_select_zero_small_zeros() {
 }
 
 #[test]
-fn test_select_zero_small_few_zeros() {
+fn test_few_zeros() {
     let lens = [1 << 18, 1 << 19, 1 << 20];
     for len in lens {
         for num_ones in [1, 2, 4, 8, 16, 32, 64, 128] {
@@ -116,7 +116,7 @@ fn test_select_zero_small_few_zeros() {
 }
 
 #[test]
-fn test_select_adapt_non_uniform() {
+fn test_non_uniform() {
     let lens = [1 << 18, 1 << 19, 1 << 20];
 
     let mut rng = SmallRng::seed_from_u64(0);

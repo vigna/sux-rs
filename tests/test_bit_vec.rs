@@ -15,7 +15,7 @@ use sux::prelude::AtomicBitVec;
 use sux::traits::{BitCount, BitLength};
 
 #[test]
-fn test_bit_vec() {
+fn test() {
     let n = 50;
     let n2 = 100;
     let u = 1000;
@@ -130,7 +130,7 @@ fn test_atomic_swap() {
 }
 
 #[test]
-fn test_bit_vec_push() {
+fn test_push() {
     let mut b = BitVec::new(0);
     b.push(true);
     b.push(false);
@@ -145,7 +145,7 @@ fn test_bit_vec_push() {
 }
 
 #[test]
-fn test_bit_vec_resize() {
+fn test_resize() {
     let mut c = BitVec::new(0);
     c.resize(100, true);
     for i in 0..100 {
@@ -159,7 +159,7 @@ fn test_bit_vec_resize() {
 }
 
 #[test]
-fn test_bit_vec_fill() {
+fn test_fill() {
     for len in [0, 1, 64, 65, 100, 127, 128, 1000] {
         let mut c = BitVec::new(len);
         c.fill(true);
@@ -182,7 +182,7 @@ fn test_bit_vec_fill() {
 }
 
 #[test]
-fn test_atomic_bit_vec_fill() {
+fn test_atomic_fill() {
     for len in [0, 1, 64, 65, 100, 127, 128, 1000] {
         let mut c = AtomicBitVec::new(len);
         c.fill(true, Ordering::Relaxed);
@@ -206,7 +206,7 @@ fn test_atomic_bit_vec_fill() {
 }
 
 #[test]
-fn test_bit_vec_flip() {
+fn test_flip() {
     for len in [0, 1, 64, 65, 100, 127, 128, 1000] {
         let mut c = BitVec::new(len);
         c.flip();
@@ -229,7 +229,7 @@ fn test_bit_vec_flip() {
 }
 
 #[test]
-fn test_atomic_bit_vec_flip() {
+fn test_atomic_flip() {
     for len in [0, 1, 64, 65, 100, 127, 128, 1000] {
         let mut c = AtomicBitVec::new(len);
         c.flip(Ordering::Relaxed);
@@ -253,7 +253,7 @@ fn test_atomic_bit_vec_flip() {
 }
 
 #[test]
-fn test_bit_vec_iter() {
+fn test_iter() {
     let mut c = BitVec::new(100);
     for i in 0..100 {
         c.set(i, i % 2 == 0);
@@ -265,7 +265,7 @@ fn test_bit_vec_iter() {
 }
 
 #[test]
-fn test_bit_vec_iter_ones_alternate() {
+fn test_iter_ones_alternate() {
     let mut c = BitVec::new(200);
     for i in 0..200 {
         c.set(i, i % 2 == 0);
@@ -277,13 +277,13 @@ fn test_bit_vec_iter_ones_alternate() {
 }
 
 #[test]
-fn test_bit_vec_iter_ones_empty() {
+fn test_iter_ones_empty() {
     let c = BitVec::new(200);
     assert_eq!(c.iter_ones().next(), None);
 }
 
 #[test]
-fn test_bit_vec_iter_ones_one() {
+fn test_iter_ones_one() {
     let mut c = BitVec::new(200);
     c.set(1, true);
     let mut i = c.iter_ones();
@@ -292,7 +292,7 @@ fn test_bit_vec_iter_ones_one() {
 }
 
 #[test]
-fn test_bit_vec_iter_zeros_alternate() {
+fn test_iter_zeros_alternate() {
     let mut c = BitVec::new(200);
     for i in 0..200 {
         c.set(i, i % 2 != 0);
@@ -304,14 +304,14 @@ fn test_bit_vec_iter_zeros_alternate() {
 }
 
 #[test]
-fn test_bit_vec_iter_zeros_full() {
+fn test_iter_zeros_full() {
     let mut c = BitVec::new(200);
     c.flip();
     assert_eq!(c.iter_zeros().next(), None);
 }
 
 #[test]
-fn test_bit_vec_iter_zeros_one() {
+fn test_iter_zeros_one() {
     let mut c = BitVec::new(200);
     c.set(1, true);
     c.flip();
@@ -321,7 +321,7 @@ fn test_bit_vec_iter_zeros_one() {
 }
 
 #[test]
-fn test_bit_vec_eq() {
+fn test_eq() {
     let mut b = BitVec::new(0);
     let mut c = BitVec::new(0);
     assert_eq!(b, c);
@@ -339,7 +339,7 @@ fn test_bit_vec_eq() {
 }
 
 #[test]
-fn test_bit_vec_epserde() {
+fn test_epserde() {
     let mut rng = SmallRng::seed_from_u64(0);
     let mut b = BitVec::new(200);
     for i in 0..200 {
