@@ -373,30 +373,63 @@ fn test_bit_field_vec_set_len() {
 #[test]
 fn test_bit_field_from() {
     // Vec to atomic vec
-    let b = BitFieldVec::<usize, Vec<usize>>::new(50, 10);
+    let mut b = BitFieldVec::<usize, Vec<usize>>::new(50, 10);
+    for i in 0..10 {
+        b.set(i, i);
+    }
     let b: AtomicBitFieldVec<usize, Vec<AtomicUsize>> = b.into();
-    let _: BitFieldVec<usize, Vec<usize>> = b.into();
+    let b: BitFieldVec<usize, Vec<usize>> = b.into();
+    for i in 0..10 {
+        assert_eq!(b.get(i), i);
+    }
 
     // Boxed slice to atomic boxed slice
     let bits = vec![0; 10].into_boxed_slice();
-    let b = unsafe { BitFieldVec::<usize, Box<[usize]>>::from_raw_parts(bits, 50, 10) };
+    let mut b = unsafe { BitFieldVec::<usize, Box<[usize]>>::from_raw_parts(bits, 50, 10) };
+    for i in 0..10 {
+        b.set(i, i);
+    }
     let b: AtomicBitFieldVec<usize, Box<[AtomicUsize]>> = b.into();
-    let _: BitFieldVec<usize, Box<[usize]>> = b.into();
+    let b: BitFieldVec<usize, Box<[usize]>> = b.into();
+    for i in 0..10 {
+        assert_eq!(b.get(i), i);
+    }
 
     // Reference to atomic reference
     let bits = vec![0; 10].into_boxed_slice();
-    let b = unsafe { BitFieldVec::<usize, &[usize]>::from_raw_parts(bits.as_ref(), 50, 10) };
+    let mut b = unsafe { BitFieldVec::<usize, Box<[usize]>>::from_raw_parts(bits, 50, 10) };
+    for i in 0..10 {
+        b.set(i, i);
+    }
+    let (bits, w, l) = b.into_raw_parts();
+    let b = unsafe { BitFieldVec::<usize, &[usize]>::from_raw_parts(bits.as_ref(), w, l) };
     let b: AtomicBitFieldVec<usize, &[AtomicUsize]> = b.into();
-    let _: BitFieldVec<usize, &[usize]> = b.into();
+    let b: BitFieldVec<usize, &[usize]> = b.into();
+    for i in 0..10 {
+        assert_eq!(b.get(i), i);
+    }
 
     // Mutable reference to mutable reference
     let mut bits = vec![0; 10].into_boxed_slice();
-    let b = unsafe { BitFieldVec::<usize, &mut [usize]>::from_raw_parts(bits.as_mut(), 50, 10) };
+    let mut b =
+        unsafe { BitFieldVec::<usize, &mut [usize]>::from_raw_parts(bits.as_mut(), 50, 10) };
+    for i in 0..10 {
+        b.set(i, i);
+    }
     let b: AtomicBitFieldVec<usize, &mut [AtomicUsize]> = b.into();
-    let _: BitFieldVec<usize, &mut [usize]> = b.into();
+    let b: BitFieldVec<usize, &mut [usize]> = b.into();
+    for i in 0..10 {
+        assert_eq!(b.get(i), i);
+    }
 
     // Vec to boxed slice
-    let b = BitFieldVec::<usize, Vec<usize>>::new(50, 10);
+    let mut b = BitFieldVec::<usize, Vec<usize>>::new(50, 10);
+    for i in 0..10 {
+        b.set(i, i);
+    }
     let b: BitFieldVec<usize, Box<[usize]>> = b.into();
-    let _: BitFieldVec<usize, Vec<usize>> = b.into();
+    let b: BitFieldVec<usize, Vec<usize>> = b.into();
+    for i in 0..10 {
+        assert_eq!(b.get(i), i);
+    }
 }
