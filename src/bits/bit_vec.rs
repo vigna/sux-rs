@@ -66,6 +66,8 @@
 //! ```
 
 use common_traits::{IntoAtomic, SelectInWord};
+#[allow(unused_imports)] // this is in the std prelude but not in no_std!
+use core::borrow::BorrowMut;
 use core::fmt;
 use epserde::*;
 use mem_dbg::*;
@@ -849,7 +851,7 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
         #[cfg(not(feature = "rayon"))]
         {
             bits[..full_words]
-                .iter()
+                .iter_mut()
                 .for_each(|x| x.store(word_value, ordering));
         }
 
