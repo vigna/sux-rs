@@ -290,41 +290,11 @@ impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
         }
     }
 
-    /// Create an empty BitFieldVec that doesn't need to reallocate for up to
-    /// `capacity` elements.
-    pub fn with_capacity(bit_width: usize, capacity: usize) -> Self {
-        // We need at least one word to handle the case of bit width zero.
-        let n_of_words = Ord::max(1, (capacity * bit_width + W::BITS - 1) / W::BITS);
-        Self {
-            bits: Vec::with_capacity(n_of_words),
-            bit_width,
-            mask: mask(bit_width),
-            len: 0,
-        }
-    }
-
-    /// Sets the length.
-    ///
-    /// # Safety
-    ///
-    /// `len * bit_width` must be at most `self.bits.len() * W::BITS`. Note that
-    /// setting the length might result in reading uninitialized data.
-    pub unsafe fn set_len(&mut self, len: usize) {
-        debug_assert!(len * self.bit_width <= self.bits.len() * W::BITS);
-        self.len = len;
-    }
-
-    /// Write 0 to all bits in the vector
+    /// Writes zeros in all values.
     pub fn reset(&mut self) {
         self.bits[..(self.len * self.bit_width).div_ceil(W::BITS)]
             .iter_mut()
             .for_each(|x| x.store(W::ZERO, Ordering::Relaxed));
-    }
-
-    /// Set len to 0
-    pub fn clear(&mut self) {
-        self.bits.clear();
-        self.len = 0;
     }
 
     /// Return the bit-width of the values inside this vector.
@@ -815,14 +785,14 @@ impl<W: Word + IntoAtomic> From<AtomicBitFieldVec<W, Vec<W::AtomicType>>>
     }
 }
 
-impl<W: Word + IntoAtomic> From<AtomicBitFieldVec<W, Vec<W::AtomicType>>>
+impl<W: Word + IntoAtomic> From<AtomicBitFieldVec<W, Box<[W::AtomicType]>>>
     for BitFieldVec<W, Box<[W]>>
 {
     #[inline]
-    fn from(value: AtomicBitFieldVec<W, Vec<W::AtomicType>>) -> Self {
+    fn from(value: AtomicBitFieldVec<W, Box<[W::AtomicType]>>) -> Self {
         BitFieldVec {
-            bits: unsafe { core::mem::transmute::<Vec<W::AtomicType>, Vec<W>>(value.bits) }
-                .into_boxed_slice(),
+            bits: unsafe { core::mem::transmute::<Box<[W::AtomicType]>, Box<[W]>>(value.bits) },
+
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
@@ -874,6 +844,20 @@ impl<W: Word + IntoAtomic> From<BitFieldVec<W, Vec<W>>>
     }
 }
 
+impl<W: Word + IntoAtomic> From<BitFieldVec<W, Box<[W]>>>
+    for AtomicBitFieldVec<W, Box<[W::AtomicType]>>
+{
+    #[inline]
+    fn from(value: BitFieldVec<W, Box<[W]>>) -> Self {
+        AtomicBitFieldVec {
+            bits: unsafe { core::mem::transmute::<Box<[W]>, Box<[W::AtomicType]>>(value.bits) },
+            len: value.len,
+            bit_width: value.bit_width,
+            mask: value.mask,
+        }
+    }
+}
+
 impl<'a, W: Word + IntoAtomic> From<BitFieldVec<W, &'a [W]>>
     for AtomicBitFieldVec<W, &'a [W::AtomicType]>
 {
@@ -915,6 +899,17 @@ impl<W: Word> From<BitFieldVec<W, Vec<W>>> for BitFieldVec<W, Box<[W]>> {
     }
 }
 
+impl<W: Word> From<BitFieldVec<W, Box<[W]>>> for BitFieldVec<W, Vec<W>> {
+    fn from(value: BitFieldVec<W, Box<[W]>>) -> Self {
+        BitFieldVec {
+            bits: value.bits.into_vec(),
+            len: value.len,
+            bit_width: value.bit_width,
+            mask: value.mask,
+        }
+    }
+}
+
 impl<W: Word> PartialEq<BitFieldVec<W>> for BitFieldVec<W> {
     fn eq(&self, other: &BitFieldVec<W>) -> bool {
         if self.bit_width() != other.bit_width() {
@@ -946,7 +941,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_with_capacity() {
+    fn test_bit_field_vec_with_capacity() {
         let mut b = BitFieldVec::<usize, _>::with_capacity(10, 100);
         let capacity = b.bits.capacity();
         for _ in 0..100 {
@@ -956,10 +951,10 @@ mod tests {
     }
 
     #[test]
-    fn testclear() {
+    fn test_bit_field_vec_clear() {
         let mut b = BitFieldVec::<usize, _>::new(50, 10);
-        for _ in 0..10 {
-            b.set(1, 1);
+        for i in 0..10 {
+            b.set(i, i);
         }
         b.clear();
         assert_eq!(b.len(), 0);
