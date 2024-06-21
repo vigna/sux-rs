@@ -697,7 +697,7 @@ impl<B> AtomicBitVec<B> {
 impl<B> BitLength for AtomicBitVec<B> {
     #[inline(always)]
     fn len(&self) -> usize {
-        self.len()
+        self.len
     }
 }
 
@@ -851,7 +851,7 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
         #[cfg(not(feature = "rayon"))]
         {
             bits[..full_words]
-                .iter_mut()
+                .iter()
                 .for_each(|x| x.store(word_value, ordering));
         }
 
