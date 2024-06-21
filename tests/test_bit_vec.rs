@@ -148,7 +148,7 @@ fn test_atomic_swap() {
 }
 
 #[test]
-fn test_push() {
+fn test_push_pop() {
     let mut b = BitVec::new(0);
     b.push(true);
     b.push(false);
@@ -160,6 +160,10 @@ fn test_push() {
     for i in 2..200 {
         assert_eq!(b.get(i), i % 2 == 0);
     }
+    for i in 0..200 {
+        assert_eq!(b.pop(), Some(i % 2 != 0));
+    }
+    assert_eq!(b.pop(), None);
 }
 
 #[test]

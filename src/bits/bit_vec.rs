@@ -21,7 +21,8 @@
 //!   resizable) bit vector.
 //!
 //! Note that nothing is assumed about the content of the backend outside the
-//! bits of the bit vector.
+//! bits of the bit vector. Moreover, the content of the backend outside of
+//! the bit vector is never modified by the methods of this class.
 //!
 //! It is possible to juggle between the three flavors using [`From`]/[`Into`].
 //!
@@ -220,6 +221,16 @@ impl BitVec<Vec<usize>> {
         // Set bit
         self.bits[word_index] |= (b as usize) << bit_index;
         self.len += 1;
+    }
+
+    pub fn pop(&mut self) -> Option<bool> {
+        if self.len == 0 {
+            return None;
+        }
+        self.len -= 1;
+        let word_index = self.len / BITS;
+        let bit_index = self.len % BITS;
+        Some((self.bits[word_index] >> bit_index) & 1 != 0)
     }
 
     pub fn resize(&mut self, new_len: usize, value: bool) {
@@ -1030,19 +1041,20 @@ impl<B: AsRef<[usize]>> RankHinted<64> for BitVec<B> {
 
 impl PartialEq<BitVec<Vec<usize>>> for BitVec<Vec<usize>> {
     fn eq(&self, other: &BitVec<Vec<usize>>) -> bool {
-        if self.len() != other.len() {
+        let len = self.len();
+        if len != other.len() {
             return false;
         }
-        let residual = self.len() % BITS;
-        if residual == 0 {
-            self.as_ref()[..self.len() / BITS] == other.as_ref()[..other.len() / BITS]
-        } else {
-            self.as_ref()[..self.len() / BITS] == other.as_ref()[..other.len() / BITS] && {
-                (self.as_ref()[self.len() / BITS] ^ other.as_ref()[self.len() / BITS])
-                    << (BITS - residual)
-                    == 0
-            }
+
+        let full_words = len / BITS;
+        if self.as_ref()[..full_words] != other.as_ref()[..full_words] {
+            return false;
         }
+
+        let residual = len % BITS;
+
+        residual == 0
+            || (self.as_ref()[full_words] ^ other.as_ref()[full_words]) << (BITS - residual) == 0
     }
 }
 
