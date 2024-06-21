@@ -11,7 +11,6 @@ use rand::SeedableRng;
 use sux::bits::BitVec;
 use sux::rank_sel::{RankSmall, SelectSmall};
 use sux::traits::BitCount;
-use sux::traits::BitLength;
 use sux::traits::Select;
 
 macro_rules! test {
@@ -99,7 +98,7 @@ fn test_ones() {
 #[test]
 fn test_zeros() {
     let len = 300_000;
-    let bits = (0..len).map(|_| false).collect::<BitVec>().into();
+    let bits = (0..len).map(|_| false).collect::<BitVec>();
     let select = SelectSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
     assert_eq!(select.count_ones(), 0);
     assert_eq!(select.len(), len);

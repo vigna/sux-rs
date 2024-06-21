@@ -106,7 +106,7 @@ fn main() -> Result<()> {
         for _ in 0..args.t {
             black_box(
                 elias_fano_s
-                    .succ(&rng.gen_range(0..args.u))
+                    .succ(rng.gen_range(0..args.u))
                     .unwrap_or((0, 0))
                     .0,
             );
@@ -130,7 +130,7 @@ fn main() -> Result<()> {
         for _ in 0..args.t {
             black_box(
                 elias_fano_s
-                    .pred(&(rng.gen_range(first..args.u)))
+                    .pred(rng.gen_range(first..args.u))
                     .unwrap_or((0, 0))
                     .0,
             );

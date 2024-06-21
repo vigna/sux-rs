@@ -14,7 +14,7 @@ use sux::{
 
 #[test]
 fn test_is_empty() {
-    assert_eq!(BitFieldVec::<usize, _>::new(0, 0).is_empty(), true);
+    assert!(BitFieldVec::<usize, _>::new(0, 0).is_empty());
 }
 
 #[test]

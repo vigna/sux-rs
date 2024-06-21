@@ -34,7 +34,7 @@ fn test() {
     assert_eq!(unsafe { BitVec::from_raw_parts(&ones, 1) }.count_ones(), 1);
 
     for i in 0..u {
-        assert_eq!(bm[i], true);
+        assert!(bm[i]);
     }
 
     let mut bm = BitVec::new(u);
@@ -132,19 +132,19 @@ fn test() {
     assert_eq!(bm.count_ones(), u);
 
     for i in 0..u {
-        assert_eq!(bm.get(i, Ordering::Relaxed), true);
+        assert!(bm.get(i, Ordering::Relaxed));
     }
 }
 
 #[test]
 fn test_atomic_swap() {
     let b = AtomicBitVec::new(10);
-    assert_eq!(b.get(1, Ordering::Relaxed), false);
-    assert_eq!(b.swap(1, true, Ordering::Relaxed), false);
-    assert_eq!(b.get(1, Ordering::Relaxed), true);
-    assert_eq!(b.swap(1, true, Ordering::Relaxed), true);
-    assert_eq!(b.swap(1, false, Ordering::Relaxed), true);
-    assert_eq!(b.get(1, Ordering::Relaxed), false);
+    assert!(!b.get(1, Ordering::Relaxed));
+    assert!(!b.swap(1, true, Ordering::Relaxed));
+    assert!(b.get(1, Ordering::Relaxed));
+    assert!(b.swap(1, true, Ordering::Relaxed));
+    assert!(b.swap(1, false, Ordering::Relaxed));
+    assert!(!b.get(1, Ordering::Relaxed));
 }
 
 #[test]

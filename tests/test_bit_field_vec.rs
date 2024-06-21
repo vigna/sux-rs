@@ -112,7 +112,7 @@ where
 {
     use sux::traits::bit_field_slice::AtomicBitFieldSlice;
 
-    for bit_width in 0..W::BITS as usize {
+    for bit_width in 0..W::BITS {
         let n: usize = 100;
         let u: u64 = 1 << bit_width;
         let mut rng = SmallRng::seed_from_u64(0);

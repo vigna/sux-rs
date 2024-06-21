@@ -12,7 +12,7 @@ use mem_dbg::*;
 use std::ptr::{addr_of, read_unaligned, write_unaligned};
 
 use crate::{
-    prelude::{BitLength, BitVec, Rank, RankHinted, RankZero},
+    prelude::{BitLength, BitVec, Rank, RankHinted, RankUnchecked, RankZero},
     traits::{BitCount, NumBits},
 };
 
@@ -348,17 +348,8 @@ macro_rules! impl_rank_small {
                 B: RankHinted<64> + AsRef<[usize]> + BitLength,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
-            > Rank for RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
+            > RankUnchecked for RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
         {
-            #[inline(always)]
-            fn rank(&self, pos: usize) -> usize {
-                if pos >= self.bits.len() {
-                    self.num_ones()
-                } else {
-                    unsafe { self.rank_unchecked(pos) }
-                }
-            }
-
             #[inline(always)]
             unsafe fn rank_unchecked(&self, pos: usize) -> usize {
                 let word_pos = pos / 64 as usize;
@@ -394,6 +385,13 @@ impl_rank_small!(1; 9);
 impl_rank_small!(1; 10);
 impl_rank_small!(1; 11);
 impl_rank_small!(3; 13);
+
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> Rank
+    for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+where
+    RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>: BitLength + NumBits + RankUnchecked,
+{
+}
 
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> RankZero
     for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>

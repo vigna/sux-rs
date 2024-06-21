@@ -23,6 +23,7 @@ use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
 use crate::traits::rank_sel::ambassador_impl_Rank;
+use crate::traits::rank_sel::ambassador_impl_RankUnchecked;
 use crate::traits::rank_sel::ambassador_impl_RankZero;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
@@ -60,6 +61,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 #[delegate(crate::traits::rank_sel::BitLength, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::Rank, target = "rank_small")]
+#[delegate(crate::traits::rank_sel::RankUnchecked, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::Select, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "rank_small")]

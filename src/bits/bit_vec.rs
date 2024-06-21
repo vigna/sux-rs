@@ -848,7 +848,7 @@ impl<B: AsMut<[AtomicUsize]>> AtomicBitVec<B> {
 
         #[cfg(not(feature = "rayon"))]
         {
-            bits.as_mut()[..full_words]
+            bits[..full_words]
                 .iter_mut()
                 .for_each(|x| x.store(word_value, ordering));
         }
@@ -882,7 +882,7 @@ impl<B: AsMut<[AtomicUsize]>> AtomicBitVec<B> {
 
         #[cfg(not(feature = "rayon"))]
         {
-            bits.borrow_mut()[..full_words]
+            bits[..full_words]
                 .iter_mut()
                 .for_each(|x| _ = x.fetch_xor(!0, ordering));
         }
