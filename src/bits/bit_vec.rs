@@ -313,19 +313,14 @@ impl<B: AsRef<[AtomicUsize]>> Index<usize> for AtomicBitVec<B> {
     }
 }
 
-impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
-    /// Return the number of bits set to 1 in this bit vector.
-    ///
-    /// If the feature "rayon" is enabled, this function is parallelized.
-    fn count_ones(&self) -> usize {
+impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
+    fn _count_ones(&self) -> usize {
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
         core::sync::atomic::fence(Ordering::SeqCst);
-
         #[cfg(feature = "rayon")]
         {
-            self.bits
-                .as_ref()
+            self.bits.as_ref()[..self.len() / usize::BITS as usize]
                 .par_iter()
                 .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
                 .sum()
@@ -333,11 +328,27 @@ impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
 
         #[cfg(not(feature = "rayon"))]
         {
-            self.bits
-                .as_ref()
+            self.bits.as_ref()[..self.len() / usize::BITS as usize]
                 .iter()
                 .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
                 .sum()
+        }
+    }
+}
+
+impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
+    /// Return the number of bits set to 1 in this bit vector.
+    ///
+    /// If the feature "rayon" is enabled, this function is parallelized.
+    fn count_ones(&self) -> usize {
+        let residual = self.len() % usize::BITS as usize;
+        if residual == 0 {
+            self._count_ones()
+        } else {
+            self._count_ones()
+                + (self.as_ref()[self.len() / usize::BITS as usize].load(Ordering::Relaxed)
+                    << (usize::BITS as usize - residual))
+                    .count_ones() as usize
         }
     }
 }
@@ -487,21 +498,40 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
     }
 }
 
-impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
-    fn count_ones(&self) -> usize {
+impl<B: AsRef<[usize]>> BitVec<B> {
+    fn _count_ones(&self) -> usize {
         let bits = self.bits.as_ref();
         #[cfg(feature = "rayon")]
         {
-            bits.par_iter().map(|x| x.count_ones() as usize).sum()
+            bits[..self.len() / usize::BITS as usize]
+                .par_iter()
+                .map(|x| x.count_ones() as usize)
+                .sum()
         }
 
         #[cfg(not(feature = "rayon"))]
         {
-            bits.iter().map(|x| x.count_ones() as usize).sum()
+            bits[..self.len() / usize::BITS as usize]
+                .iter()
+                .map(|x| x.count_ones() as usize)
+                .sum()
         }
     }
 }
 
+impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
+    fn count_ones(&self) -> usize {
+        let residual = self.len() % usize::BITS as usize;
+        if residual == 0 {
+            self._count_ones()
+        } else {
+            self._count_ones()
+                + (self.as_ref()[self.len() / usize::BITS as usize]
+                    << (usize::BITS as usize - residual))
+                    .count_ones() as usize
+        }
+    }
+}
 impl<B: AsRef<[usize]>> SelectHinted for BitVec<B> {
     unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
         let mut word_index = hint_pos / BITS;
@@ -899,8 +929,6 @@ impl PartialEq<BitVec<Vec<usize>>> for BitVec<Vec<usize>> {
         if self.len() != other.len() {
             return false;
         }
-        // TODO: we don't need this if we assume the backend to be clear
-        // beyond the length
         let residual = self.len() % usize::BITS as usize;
         if residual == 0 {
             self.as_ref()[..self.len() / usize::BITS as usize]
