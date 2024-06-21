@@ -13,7 +13,7 @@ use rand::{RngCore, SeedableRng};
 use std::sync::atomic::AtomicUsize;
 use sux::bits::bit_vec::BitVec;
 use sux::prelude::AtomicBitVec;
-use sux::traits::{BitCount, BitLength};
+use sux::traits::BitCount;
 
 #[test]
 fn test() {
