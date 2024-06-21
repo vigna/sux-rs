@@ -39,14 +39,14 @@ mem_dbg = "0.2.2"
 rayon = {version = "1.8.1", optional=true}
 core_affinity = "0.8.1"
 env_logger = {version = "0.11.0"}
+ambassador = "0.3.6"
+impl-tools = "0.10.0"
 
 # Fuzz
 arbitrary = { version = "1.3.2", features = ["derive"], optional=true }
 
 # Cli
-clap = { version = "4.4.18", features = ["derive"] }
-impl-tools = "0.10.0"
-ambassador = "0.3.6"
+clap = { version = "4.4.18", features = ["derive"], optional=true }
 
 [dev-dependencies]
 maligned = "0.2.1"
@@ -55,16 +55,9 @@ static_assertions = "1.1.0"
 forward-traits = "3.1.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
 
-[lib]
-bench = false
-
-[[bench]]
-name = "my_benchmarks"
-harness = false
-
 [features]
-default = ["rayon", "cli"]
-cli = [] # Build the binary utils
+default = ["rayon"]
+cli = ["dep:clap"] # Build the binary utils
 fuzz = ["dep:arbitrary"]
 slow_tests = [] # Run slow tests (use --release)
 
@@ -75,3 +68,38 @@ overflow-checks = false   # Disable integer overflow checks.
 debug = true              # Include debug info.
 debug-assertions = false  # Enables debug assertions.
 codegen-units=1           # slower compile times, but maybe better perf
+
+[lib]
+bench = false
+
+[[bin]]
+name = "rcl"
+required-features = ["cli"]
+
+[[bin]]
+name = "mem_usage"
+required-features = ["cli"]
+
+[[bin]]
+name = "bench_like_cpp"
+required-features = ["cli"]
+
+[[bench]]
+name = "my_benchmarks"
+harness = false
+
+[[example]]
+name = "bench_bit_field_vec"
+required-features = ["cli"]
+
+[[example]]
+name = "bench_rank9"
+required-features = ["cli"]
+
+[[example]]
+name = "bench_elias_fano"
+required-features = ["cli"]
+
+[[example]]
+name = "bench_rear_coded_list"
+required-features = ["cli"]

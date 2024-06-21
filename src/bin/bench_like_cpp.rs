@@ -1,7 +1,6 @@
 #![cfg(target_pointer_width = "64")]
-
+#![cfg(feature = "cli")]
 //! Benchmarks the rank and select operations similarly to the C++ benchmarks.
-
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use std::borrow::Borrow;
 use std::hint::black_box;

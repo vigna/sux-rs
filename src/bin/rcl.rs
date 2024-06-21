@@ -4,7 +4,6 @@
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
-
 use std::io::BufRead;
 
 use anyhow::Result;
@@ -15,7 +14,6 @@ use sux::prelude::*;
 
 #[derive(Parser, Debug)]
 #[command(about = "Compress a file containing one string per line using a Rear Coded List", long_about = None)]
-
 struct Args {
     /// A file containing UTF-8 strings, one per line.
     filename: String,
