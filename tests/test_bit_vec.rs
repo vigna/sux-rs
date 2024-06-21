@@ -10,6 +10,7 @@ use epserde::prelude::*;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngCore, SeedableRng};
+use std::sync::atomic::AtomicUsize;
 use sux::bits::bit_vec::BitVec;
 use sux::prelude::AtomicBitVec;
 use sux::traits::{BitCount, BitLength};
@@ -26,6 +27,11 @@ fn test() {
 
     assert_eq!(bm.len(), u);
     assert_eq!(bm.count_ones(), u);
+
+    // Dirty vector
+    let ones = [usize::MAX; 2];
+    assert_eq!(unsafe { BitVec::from_raw_parts(&ones, 0) }.count_ones(), 0);
+    assert_eq!(unsafe { BitVec::from_raw_parts(&ones, 1) }.count_ones(), 1);
 
     for i in 0..u {
         assert_eq!(bm[i], true);
@@ -71,6 +77,18 @@ fn test() {
     }
 
     let bm: AtomicBitVec = bm.into();
+
+    // Dirty vector
+    let ones = [AtomicUsize::new(usize::MAX), AtomicUsize::new(usize::MAX)];
+    assert_eq!(
+        unsafe { AtomicBitVec::from_raw_parts(&ones, 0) }.count_ones(),
+        0
+    );
+    assert_eq!(
+        unsafe { AtomicBitVec::from_raw_parts(&ones, 1) }.count_ones(),
+        1
+    );
+
     for _ in 0..10 {
         let mut values = (0..u).collect::<Vec<_>>();
         let (indices, _) = values.partial_shuffle(&mut rng, n2);
