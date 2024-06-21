@@ -788,6 +788,49 @@ impl<'a, B: AsRef<[usize]>> Iterator for ZerosIterator<'a, B> {
     }
 }
 
+// An iterator over the bits of this atomic bit vector as booleans.
+#[derive(Debug, MemDbg, MemSize)]
+pub struct AtomicBitIterator<'a, B> {
+    bits: &'a mut B,
+    len: usize,
+    next_bit_pos: usize,
+}
+
+// We implement [`IntoIterator`] for a mutable reference so no
+// outstanding references are allowed while iterating.
+impl<'a, B: AsRef<[AtomicUsize]>> IntoIterator for &'a mut AtomicBitVec<B> {
+    type IntoIter = AtomicBitIterator<'a, B>;
+    type Item = bool;
+
+    fn into_iter(self) -> Self::IntoIter {
+        AtomicBitIterator {
+            bits: &mut self.bits,
+            len: self.len,
+            next_bit_pos: 0,
+        }
+    }
+}
+
+impl<'a, B: AsRef<[AtomicUsize]>> Iterator for AtomicBitIterator<'a, B> {
+    type Item = bool;
+    fn next(&mut self) -> Option<bool> {
+        if self.next_bit_pos == self.len {
+            return None;
+        }
+        let word_idx = self.next_bit_pos / BITS;
+        let bit_idx = self.next_bit_pos % BITS;
+        let word = unsafe {
+            self.bits
+                .as_ref()
+                .get_unchecked(word_idx)
+                .load(Ordering::Relaxed)
+        };
+        let bit = (word >> bit_idx) & 1;
+        self.next_bit_pos += 1;
+        Some(bit != 0)
+    }
+}
+
 impl<B: AsRef<[usize]>> BitVec<B> {
     // Returns an iterator over the bits of this bit vector.
     #[inline(always)]
@@ -803,6 +846,17 @@ impl<B: AsRef<[usize]>> BitVec<B> {
     // Returns an iterator over the positions of the zeros in this bit vector.
     pub fn iter_zeros(&self) -> ZerosIterator<B> {
         ZerosIterator::new(&self.bits, self.len)
+    }
+}
+
+impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
+    // Returns an iterator over the bits of this bit vector.
+    //
+    // Note that this method takes a mutable reference to the bit vector,
+    // so no outstanding references are allowed while iterating.
+    #[inline(always)]
+    pub fn iter(&mut self) -> AtomicBitIterator<B> {
+        self.into_iter()
     }
 }
 
