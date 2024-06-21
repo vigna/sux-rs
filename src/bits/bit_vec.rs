@@ -826,14 +826,14 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
     }
 }
 
-impl<B: AsMut<[AtomicUsize]>> AtomicBitVec<B> {
+impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
     /// Set all bits to the given value.
     ///
     /// If the feature "rayon" is enabled, this method is computed in parallel.
     pub fn fill(&mut self, value: bool, ordering: Ordering) {
         let full_words = self.len() / BITS;
         let residual = self.len % BITS;
-        let bits = self.bits.as_mut();
+        let bits = self.bits.as_ref();
         let word_value = if value { !0 } else { 0 };
 
         // Just to be sure, add a fence to ensure that we will see all the final
@@ -842,14 +842,14 @@ impl<B: AsMut<[AtomicUsize]>> AtomicBitVec<B> {
         #[cfg(feature = "rayon")]
         {
             bits[..full_words]
-                .par_iter_mut()
+                .par_iter()
                 .for_each(|x| x.store(word_value, ordering));
         }
 
         #[cfg(not(feature = "rayon"))]
         {
             bits[..full_words]
-                .iter_mut()
+                .iter()
                 .for_each(|x| x.store(word_value, ordering));
         }
 
@@ -868,7 +868,7 @@ impl<B: AsMut<[AtomicUsize]>> AtomicBitVec<B> {
     pub fn flip(&mut self, ordering: Ordering) {
         let full_words = self.len() / BITS;
         let residual = self.len % BITS;
-        let bits = self.bits.as_mut();
+        let bits = self.bits.as_ref();
 
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
@@ -876,14 +876,14 @@ impl<B: AsMut<[AtomicUsize]>> AtomicBitVec<B> {
         #[cfg(feature = "rayon")]
         {
             bits[..full_words]
-                .par_iter_mut()
+                .par_iter()
                 .for_each(|x| _ = x.fetch_xor(!0, ordering));
         }
 
         #[cfg(not(feature = "rayon"))]
         {
             bits[..full_words]
-                .iter_mut()
+                .iter()
                 .for_each(|x| _ = x.fetch_xor(!0, ordering));
         }
 
