@@ -14,6 +14,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use std::hint::black_box;
 use sux::prelude::*;
+use sux::utils::LineLender;
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks construction and access fo read-coded lists", long_about = None)]

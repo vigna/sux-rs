@@ -95,8 +95,8 @@ use std::borrow::Borrow;
 /// // Add a selection structure for zeros (implements IndexedDict, Succ, Pred)
 /// let ef = unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _>::new) };
 ///
-/// assert_eq!(ef.succ(&6), Some((2, 8)));
-/// assert_eq!(ef.succ(&11), None);
+/// assert_eq!(ef.succ(6), Some((2, 8)));
+/// assert_eq!(ef.succ(11), None);
 /// ```
 
 #[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]

@@ -118,7 +118,7 @@ fn main() -> Result<()> {
         for _ in 0..args.t {
             black_box(unsafe {
                 elias_fano_s
-                    .succ_unchecked::<false>(&rng.gen_range(0..upper_bound))
+                    .succ_unchecked::<false>(rng.gen_range(0..upper_bound))
                     .0
             });
         }
@@ -141,7 +141,7 @@ fn main() -> Result<()> {
         for _ in 0..args.t {
             black_box(unsafe {
                 elias_fano_s
-                    .pred_unchecked::<false>(&rng.gen_range(first..args.u))
+                    .pred_unchecked::<false>(rng.gen_range(first..args.u))
                     .0
             });
         }
