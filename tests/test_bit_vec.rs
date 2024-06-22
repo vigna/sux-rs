@@ -49,6 +49,7 @@ fn test() {
 
         for i in 0..u {
             assert_eq!(bm.get(i), indices[..n].contains(&i));
+            assert_eq!(bm[i], indices[..n].contains(&i));
         }
 
         for i in indices[n..].iter().copied() {
@@ -99,6 +100,7 @@ fn test() {
 
         for i in 0..u {
             assert_eq!(bm.get(i, Ordering::Relaxed), indices[..n].contains(&i));
+            assert_eq!(bm[i], indices[..n].contains(&i));
         }
 
         for i in indices[n..].iter().copied() {
@@ -403,6 +405,7 @@ fn test_from() {
     let b: BitVec<Vec<usize>> = b.into();
     for i in 0..10 {
         assert_eq!(b.get(i), i % 2 == 0);
+        assert_eq!(b[i], i % 2 == 0);
     }
 
     // Boxed slice to atomic boxed slice
@@ -426,6 +429,8 @@ fn test_from() {
     let (bits, l) = b.into_raw_parts();
     let b = unsafe { BitVec::<&[usize]>::from_raw_parts(bits.as_ref(), l) };
     let b: AtomicBitVec<&[AtomicUsize]> = b.into();
+    let (bits, l) = b.into_raw_parts();
+    let b = unsafe { AtomicBitVec::<&[AtomicUsize]>::from_raw_parts(bits.as_ref(), l) };
     let b: BitVec<&[usize]> = b.into();
     for i in 0..10 {
         assert_eq!(b.get(i), i % 2 == 0);
@@ -453,4 +458,21 @@ fn test_from() {
     for i in 0..10 {
         assert_eq!(b.get(i), i % 2 == 0);
     }
+}
+
+#[test]
+fn test_iter_ones_zeros() {
+    // Exit on bit found beyond bit length (diry vector)
+    let v = unsafe { BitVec::from_raw_parts(vec![1 << 63], 10) };
+    assert_eq!(v.iter_ones().next(), None);
+
+    let v = unsafe { BitVec::from_raw_parts(vec![!(1 << 63)], 10) };
+    assert_eq!(v.iter_zeros().next(), None);
+
+    // Exit on last word
+    let v = unsafe { BitVec::from_raw_parts(vec![0], 10) };
+    assert_eq!(v.iter_ones().next(), None);
+
+    let v = unsafe { BitVec::from_raw_parts(vec![!0], 10) };
+    assert_eq!(v.iter_zeros().next(), None);
 }

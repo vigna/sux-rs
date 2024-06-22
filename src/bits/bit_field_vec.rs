@@ -179,28 +179,6 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         self.len = len;
     }
 
-    /// Writes zeros in all values.
-    pub fn reset(&mut self) {
-        let bit_len = self.len * self.bit_width;
-        let full_words = bit_len / W::BITS;
-        let residual = bit_len % W::BITS;
-        let bits: &mut [W] = self.bits.as_mut();
-
-        #[cfg(feature = "rayon")]
-        {
-            bits[..full_words].par_iter_mut().for_each(|x| *x = W::ZERO);
-        }
-
-        #[cfg(not(feature = "rayon"))]
-        {
-            bits[..full_words].iter_mut().for_each(|x| *x = W::ZERO);
-        }
-
-        if residual != 0 {
-            bits[full_words] &= W::MAX << residual;
-        }
-    }
-
     /// Set len to 0
     pub fn clear(&mut self) {
         self.len = 0;
@@ -319,20 +297,6 @@ impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
 }
 
 impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, B> {
-    // We reimplement set as we have the mask in the structure.
-
-    fn reset(&mut self) {
-        // TODO: directly on words?
-        for idx in 0..self.len() {
-            unsafe { self.set_unchecked(idx, W::ZERO) };
-        }
-    }
-
-    /// Set the element of the slice at the specified index.
-    ///
-    ///
-    /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
-    /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
     #[inline(always)]
     fn set(&mut self, index: usize, value: W) {
         panic_if_out_of_bounds!(index, self.len);
@@ -364,6 +328,27 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
             word &= !(self.mask >> (W::BITS - bit_index));
             word |= value >> (W::BITS - bit_index);
             *bits.get_unchecked_mut(word_index + 1) = word;
+        }
+    }
+
+    fn reset(&mut self) {
+        let bit_len = self.len * self.bit_width;
+        let full_words = bit_len / W::BITS;
+        let residual = bit_len % W::BITS;
+        let bits: &mut [W] = self.bits.as_mut();
+
+        #[cfg(feature = "rayon")]
+        {
+            bits[..full_words].par_iter_mut().for_each(|x| *x = W::ZERO);
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            bits[..full_words].iter_mut().for_each(|x| *x = W::ZERO);
+        }
+
+        if residual != 0 {
+            bits[full_words] &= W::MAX << residual;
         }
     }
 }
