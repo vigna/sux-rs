@@ -5,8 +5,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Immutable lists of strings compressed by prefix omission via rear coding.
-
 use std::borrow::Borrow;
 
 use crate::traits::{IndexedDict, IndexedSeq, Types};
@@ -30,7 +28,7 @@ struct Stats {
 
     /// Maximum string length in bytes.
     pub max_str_len: usize,
-    /// The total sum of the strings length in bytes.
+    /// The total sum of the string lengths in bytes.
     pub sum_str_len: usize,
 
     /// The number of bytes used to store the rear lengths in data.
@@ -52,6 +50,33 @@ struct Stats {
 /// The encoding is done in blocks of `k` strings: in each block the first
 /// string is encoded without compression, wheres the other strings are encoded
 /// with the common prefix removed.
+///
+/// Rear-coded lists can be iterated upon using either an
+/// [`Iterator`](RearCodedList::iter) or a [`Lender`](RearCodedList::lend).
+/// In the first case there will be an allocation at each iteration, whereas in
+/// second case a single buffer will be reused.
+///
+/// To build a [`RearCodedList`] you use a [`RearCodedListBuilder`].
+///
+/// # Examples
+///
+/// ```rust
+/// use sux::dict::RearCodedListBuilder;
+/// let mut rclb = RearCodedListBuilder::new(4);
+/// rclb.push("aa");
+/// rclb.push("aab");
+/// rclb.push("abc");
+/// rclb.push("abdd");
+/// rclb.push("abde");
+/// rclb.push("abdf");
+/// let rcl = rclb.build();
+///
+/// assert_eq!(rcl.len(), 6);
+/// assert_eq!(rcl.get(0), "aa");
+/// assert_eq!(rcl.get(1), "aab");
+/// assert_eq!(rcl.get(2), "abc");
+/// ```
+
 #[derive(Debug, Clone, Epserde, MemDbg, MemSize)]
 pub struct RearCodedList<D: AsRef<[u8]> = Box<[u8]>, P: AsRef<[usize]> = Box<[usize]>> {
     /// The number of strings in a block; this value trades off compression for speed.
@@ -66,282 +91,37 @@ pub struct RearCodedList<D: AsRef<[u8]> = Box<[u8]>, P: AsRef<[usize]> = Box<[us
     pointers: P,
 }
 
-#[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct RearCodedListBuilder {
-    /// The number of strings in a block; this value trades off compression for speed.
-    k: usize,
-    /// Number of encoded strings.
-    len: usize,
-    /// Whether the strings are sorted.
-    is_sorted: bool,
-    /// The encoded strings, `\0`-terminated.
-    data: Vec<u8>,
-    /// The pointer to the starting string of each block.
-    pointers: Vec<usize>,
-    /// Statistics of the encoded data.
-    stats: Stats,
-    /// Cache of the last encoded string for incremental encoding.
-    last_str: Vec<u8>,
-}
-
-/// Copy a string until the first `\0` from `data` to `result` and return the
-/// remaining data.
-#[inline(always)]
-fn strcpy<'a>(mut data: &'a [u8], result: &mut Vec<u8>) -> &'a [u8] {
-    loop {
-        let c = data[0];
-        data = &data[1..];
-        if c == 0 {
-            break;
-        }
-        result.push(c);
-    }
-    data
-}
-
-#[inline(always)]
-/// strcmp but string is a Rust string and data is a `\0`-terminated string.
-fn strcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
-    for (i, c) in string.iter().enumerate() {
-        let ord = c.cmp(&data[i]);
-        if ord != core::cmp::Ordering::Equal {
-            return ord;
-        }
-    }
-
-    if data[string.len()] == 0 {
-        core::cmp::Ordering::Equal
-    } else {
-        core::cmp::Ordering::Less
-    }
-}
-
-#[test]
-#[cfg(test)]
-fn test_strcmp() {
-    assert_eq!(strcmp(b"abcd", b"abcd\0"), core::cmp::Ordering::Equal);
-    assert_eq!(strcmp(b"abcd", b"abbd\0"), core::cmp::Ordering::Greater);
-    assert_eq!(strcmp(b"abcd", b"abdd\0"), core::cmp::Ordering::Less);
-
-    assert_eq!(strcmp(b"a", b"b\0"), core::cmp::Ordering::Less);
-    assert_eq!(strcmp(b"b", b"a\0"), core::cmp::Ordering::Greater);
-    assert_eq!(strcmp(b"abc", b"abc\0"), core::cmp::Ordering::Equal);
-    assert_eq!(strcmp(b"abc", b"abc\0abc"), core::cmp::Ordering::Equal);
-    assert_eq!(strcmp(b"abc", b"abc\0ab"), core::cmp::Ordering::Equal);
-    assert_eq!(strcmp(b"abc", b"ab\0"), core::cmp::Ordering::Greater);
-    assert_eq!(strcmp(b"abc", b"ab\0abc"), core::cmp::Ordering::Greater);
-    assert_eq!(strcmp(b"abc", b"ab\0ab"), core::cmp::Ordering::Greater);
-    assert_eq!(strcmp(b"abc", b"ab\0"), core::cmp::Ordering::Greater);
-    assert_eq!(strcmp(b"a", b"ab\0"), core::cmp::Ordering::Less);
-    assert_eq!(strcmp(b"ab", b"ab\0"), core::cmp::Ordering::Equal);
-}
-
-#[inline(always)]
-/// strcmp but both string are Rust strings.
-fn strcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
-    for (i, c) in string.iter().enumerate() {
-        match other.get(i).unwrap_or(&0).cmp(c) {
-            core::cmp::Ordering::Equal => {}
-            ord => return ord,
-        }
-    }
-    // string has an implicit final \0
-    other.len().cmp(&string.len())
-}
-
-impl RearCodedListBuilder {
-    #[inline]
-    pub fn new(k: usize) -> Self {
-        Self {
-            data: Vec::with_capacity(1024),
-            last_str: Vec::with_capacity(1024),
-            pointers: Vec::new(),
-            len: 0,
-            is_sorted: true,
-            k,
-            stats: Default::default(),
-        }
-    }
-
-    #[inline]
-    pub fn build(self) -> RearCodedList<Box<[u8]>, Box<[usize]>> {
-        RearCodedList {
-            data: self.data.into(),
-            pointers: self.pointers.into(),
-            len: self.len,
-            is_sorted: self.is_sorted,
-            k: self.k,
-        }
-    }
-
-    #[inline]
-    /// Encode and append a string to the end of the list.
-    pub fn push(&mut self, string: impl AsRef<str>) {
-        let string = string.as_ref();
-        // update stats
-        self.stats.max_str_len = self.stats.max_str_len.max(string.len());
-        self.stats.sum_str_len += string.len();
-
-        let (lcp, order) = longest_common_prefix(&self.last_str, string.as_bytes());
-
-        if order == core::cmp::Ordering::Greater {
-            self.is_sorted = false;
-        }
-
-        // at every multiple of k we just encode the string as is
-        let to_encode = if self.len % self.k == 0 {
-            // compute the size in bytes of the previous block
-            let last_ptr = self.pointers.last().copied().unwrap_or(0);
-            let block_bytes = self.data.len() - last_ptr;
-            // update stats
-            self.stats.max_block_bytes = self.stats.max_block_bytes.max(block_bytes);
-            self.stats.sum_block_bytes += block_bytes;
-            // save a pointer to the start of the string
-            self.pointers.push(self.data.len());
-
-            // compute the redundancy
-            let rear_length = self.last_str.len() - lcp;
-            if self.len != 0 {
-                self.stats.redundancy += lcp as isize;
-                self.stats.redundancy -= encode_int_len(rear_length) as isize;
-            }
-            // just encode the whole string
-            string.as_bytes()
-        } else {
-            // update the stats
-            self.stats.max_lcp = self.stats.max_lcp.max(lcp);
-            self.stats.sum_lcp += lcp;
-            // encode the len of the bytes in data
-            let rear_length = self.last_str.len() - lcp;
-            let prev_len = self.data.len();
-            encode_int(rear_length, &mut self.data);
-            // update stats
-            self.stats.code_bytes += self.data.len() - prev_len;
-            // return the delta suffix
-            &string.as_bytes()[lcp..]
-        };
-        // Write the data to the buffer
-        self.data.extend_from_slice(to_encode);
-        // push the \0 terminator
-        self.data.push(0);
-        self.stats.suffixes_bytes += to_encode.len() + 1;
-
-        // put the string as last_str for the next iteration
-        self.last_str.clear();
-        self.last_str.extend_from_slice(string.as_bytes());
-        self.len += 1;
-    }
-
-    /// Append all the strings from a [`Lender`] to the end of the list.
-    ///
-    /// We prefer to implement extension via a [`Lender`] instead of an
-    /// [`Iterator`] to avoid the need to allocate a new string for every string
-    /// in the list. This is particularly useful when building large lists
-    /// from files using, for example, a
-    /// [`RewindableIoLender`](crate::utils::lenders::RewindableIoLender).
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use lender::*;
-    /// use sux::dict::RearCodedListBuilder;
-    /// let mut rclb = RearCodedListBuilder::new(4);
-    /// let words = vec!["aa", "aab", "abc", "abdd", "abde", "abdf"];
-    /// // We need the map because s has type &&str
-    /// rclb.extend(words.iter().map(|s| *s).into_lender());
-    /// let rcl = rclb.build();
-    ///
-    /// let mut rclb = RearCodedListBuilder::new(4);
-    /// let words = vec!["aa".to_string(), "aab".to_string(), "abc".to_string(),
-    ///     "abdd".to_string(), "abde".to_string(), "abdf".to_string()];
-    /// // We need the map to turn String into &str
-    /// rclb.extend(words.iter().map(|s| s.as_str()).into_lender());
-    /// let rcl = rclb.build();
-    /// ```
-    pub fn extend<S: Borrow<str>, L: IntoLender>(&mut self, into_lender: L)
-    where
-        L::Lender: for<'lend> Lending<'lend, Lend = S>,
-    {
-        for_!(string in into_lender {
-            self.push(string.borrow());
-        });
-    }
-
-    /// Print in an human readable format the statistics of the RCL
-    pub fn print_stats(&self) {
-        println!(
-            "{:>20}: {:>10}",
-            "max_block_bytes", self.stats.max_block_bytes
-        );
-        println!(
-            "{:>20}: {:>10.3}",
-            "avg_block_bytes",
-            self.stats.sum_block_bytes as f64 / self.len as f64
-        );
-
-        println!("{:>20}: {:>10}", "max_lcp", self.stats.max_lcp);
-        println!(
-            "{:>20}: {:>10.3}",
-            "avg_lcp",
-            self.stats.sum_lcp as f64 / self.len as f64
-        );
-
-        println!("{:>20}: {:>10}", "max_str_len", self.stats.max_str_len);
-        println!(
-            "{:>20}: {:>10.3}",
-            "avg_str_len",
-            self.stats.sum_str_len as f64 / self.len as f64
-        );
-
-        let ptr_size: usize = self.pointers.len() * core::mem::size_of::<usize>();
-
-        fn human(key: &str, x: usize) {
-            const UOM: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-            let mut y = x as f64;
-            let mut uom_idx = 0;
-            while y > 1000.0 {
-                uom_idx += 1;
-                y /= 1000.0;
-            }
-            println!("{:>20}:{:>10.3}{}{:>20} ", key, y, UOM[uom_idx], x);
-        }
-
-        let total_size = ptr_size + self.data.len() + core::mem::size_of::<Self>();
-        human("data_bytes", self.data.len());
-        human("codes_bytes", self.stats.code_bytes);
-        human("suffixes_bytes", self.stats.suffixes_bytes);
-        human("ptrs_bytes", ptr_size);
-        human("uncompressed_size", self.stats.sum_str_len);
-        human("total_size", total_size);
-
-        human(
-            "optimal_size",
-            (self.data.len() as isize - self.stats.redundancy) as usize,
-        );
-        human("redundancy", self.stats.redundancy as usize);
-        let overhead = self.stats.redundancy + ptr_size as isize;
-        println!(
-            "overhead_ratio: {:>10}",
-            overhead as f64 / (overhead + self.data.len() as isize) as f64
-        );
-        println!(
-            "no_overhead_compression_ratio: {:.3}",
-            (self.data.len() as isize - self.stats.redundancy) as f64
-                / self.stats.sum_str_len as f64
-        );
-
-        println!(
-            "compression_ratio: {:.3}",
-            (ptr_size + self.data.len()) as f64 / self.stats.sum_str_len as f64
-        );
-    }
-}
-
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
-    /// Write the index-th string to `result` as bytes. This is useful to avoid
+    /// Returns an [`Iterator`] over the strings starting from the given position.
+    #[inline(always)]
+    pub fn iter_from(&self, from: usize) -> Iter<'_, D, P> {
+        Iter {
+            iter: Lend::new_from(self, from),
+        }
+    }
+
+    /// Returns an [`Iterator`] over the strings.
+    #[inline(always)]
+    pub fn iter(&self) -> Iter<'_, D, P> {
+        self.iter_from(0)
+    }
+
+    /// Returns a [`Lender`] over the strings starting from the given position.
+    #[inline(always)]
+    pub fn lend_from(&self, from: usize) -> Lend<'_, D, P> {
+        Lend::new_from(self, from)
+    }
+
+    /// Returns a [`Lender`] over the strings.
+    #[inline(always)]
+    pub fn lend(&self) -> Lend<'_, D, P> {
+        self.lend_from(0)
+    }
+
+    /// Writes the index-th string to `result` as bytes. This is useful to avoid
     /// allocating a new string for every query and skipping the UTF-8 validity
     /// check.
-    #[inline(always)]
+    #[inline]
     pub fn get_inplace(&self, index: usize, result: &mut Vec<u8>) {
         result.clear();
         let block = index / self.k;
@@ -424,24 +204,13 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
     }
 }
 
-impl<'a, 'all, D: AsRef<[u8]>, P: AsRef<[usize]>> Lending<'all> for &'a RearCodedList<D, P> {
-    type Lend = &'all str;
-}
-
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLender for &'a RearCodedList<D, P> {
-    type Lender = Iterator<'a, D, P>;
-    #[inline(always)]
-    fn into_lender(self) -> Iterator<'a, D, P> {
-        Iterator::new(self)
-    }
-}
-
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> Types for RearCodedList<D, P> {
     type Output = String;
     type Input = str;
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedSeq for RearCodedList<D, P> {
+    #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
         let mut result = Vec::with_capacity(128);
         self.get_inplace(index, &mut result);
@@ -455,10 +224,9 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedSeq for RearCodedList<D, P> {
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
-    /// Return whether the string is contained in the array.
     /// If the strings in the list are sorted this is done with a binary search,
     /// otherwise it is done with a linear search.
-    #[inline]
+    #[inline(always)]
     fn contains(&self, value: impl Borrow<Self::Input>) -> bool {
         self.index_of(value).is_some()
     }
@@ -472,29 +240,27 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
     }
 }
 
-/// Sequential iterator over the strings.
-#[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct Iterator<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
-    rca: &'a RearCodedList<D, P>,
-    buffer: Vec<u8>,
-    data: &'a [u8],
-    index: usize,
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLender for &'a RearCodedList<D, P> {
+    type Lender = Lend<'a, D, P>;
+    #[inline(always)]
+    fn into_lender(self) -> Lend<'a, D, P> {
+        Lend::new(self)
+    }
 }
 
+/// Sequential [`Iterator`] over the strings.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct ValueIterator<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
-    iter: Iterator<'a, D, P>,
+pub struct Iter<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
+    iter: Lend<'a, D, P>,
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::ExactSizeIterator
-    for ValueIterator<'a, D, P>
-{
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::ExactSizeIterator for Iter<'a, D, P> {
     fn len(&self) -> usize {
         self.iter.len()
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for ValueIterator<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iter<'a, D, P> {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -504,7 +270,27 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for ValueIterato
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D, P> {
+    type Item = String;
+    type IntoIter = Iter<'a, D, P>;
+    #[inline(always)]
+    fn into_iter(self) -> Self::IntoIter {
+        Iter {
+            iter: Lend::new(self),
+        }
+    }
+}
+
+/// Sequential [`Lender`] over the strings.
+#[derive(Debug, Clone, MemDbg, MemSize)]
+pub struct Lend<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
+    rca: &'a RearCodedList<D, P>,
+    buffer: Vec<u8>,
+    data: &'a [u8],
+    index: usize,
+}
+
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lend<'a, D, P> {
     pub fn new(rca: &'a RearCodedList<D, P>) -> Self {
         Self {
             rca,
@@ -514,12 +300,12 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
         }
     }
 
-    pub fn new_from(rca: &'a RearCodedList<D, P>, start_index: usize) -> Self {
-        let block = start_index / rca.k;
-        let offset = start_index % rca.k;
+    pub fn new_from(rca: &'a RearCodedList<D, P>, from: usize) -> Self {
+        let block = from / rca.k;
+        let offset = from % rca.k;
 
         let start = rca.pointers.as_ref()[block];
-        let mut res = Iterator {
+        let mut res = Lend {
             rca,
             index: block * rca.k,
             data: &rca.data.as_ref()[start..],
@@ -532,11 +318,11 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Iterator<'a, D, P> {
     }
 }
 
-impl<'a, 'b, D: AsRef<[u8]>, P: AsRef<[usize]>> Lending<'a> for Iterator<'b, D, P> {
+impl<'a, 'b, D: AsRef<[u8]>, P: AsRef<[usize]>> Lending<'a> for Lend<'b, D, P> {
     type Lend = &'a str;
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Iterator<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Lend<'a, D, P> {
     #[inline]
     /// A next that returns a reference to the inner buffer containg the string.
     /// This is useful to avoid allocating a new string for every query if you
@@ -561,33 +347,266 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Iterator<'a, D, P> {
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeLender for Iterator<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeLender for Lend<'a, D, P> {
     fn len(&self) -> usize {
         self.rca.len() - self.index
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D, P> {
-    type Item = String;
-    type IntoIter = ValueIterator<'a, D, P>;
-    #[inline(always)]
-    fn into_iter(self) -> Self::IntoIter {
-        ValueIterator {
-            iter: Iterator::new(self),
-        }
-    }
+/// Builder for a rear-coded list.
+#[derive(Debug, Clone, MemDbg, MemSize)]
+pub struct RearCodedListBuilder {
+    /// The number of strings in a block; this value trades compression for speed.
+    k: usize,
+    /// Number of encoded strings.
+    len: usize,
+    /// Whether the strings are sorted.
+    is_sorted: bool,
+    /// The encoded strings, `\0`-terminated.
+    data: Vec<u8>,
+    /// The pointer to the starting string of each block.
+    pointers: Vec<usize>,
+    /// Statistics of the encoded data.
+    stats: Stats,
+    /// Cache of the last encoded string for incremental encoding.
+    last_str: Vec<u8>,
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
-    pub fn iter_from(&self, from: usize) -> ValueIterator<'_, D, P> {
-        ValueIterator {
-            iter: Iterator::new_from(self, from),
+/// Copies a string until the first `\0` from `data` to `result` and return the
+/// remaining data.
+#[inline(always)]
+fn strcpy<'a>(mut data: &'a [u8], result: &mut Vec<u8>) -> &'a [u8] {
+    loop {
+        let c = data[0];
+        data = &data[1..];
+        if c == 0 {
+            break;
         }
+        result.push(c);
+    }
+    data
+}
+
+#[inline(always)]
+/// Like strcmp, but `string` is a Rust string and data is a `\0`-terminated string.
+fn strcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
+    for (i, c) in string.iter().enumerate() {
+        let ord = c.cmp(&data[i]);
+        if ord != core::cmp::Ordering::Equal {
+            return ord;
+        }
+    }
+
+    if data[string.len()] == 0 {
+        core::cmp::Ordering::Equal
+    } else {
+        core::cmp::Ordering::Less
     }
 }
 
 #[inline(always)]
-/// Compute the longest common prefix between two strings as bytes.
+/// Like strcmp, but both string are Rust strings.
+fn strcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
+    for (i, c) in string.iter().enumerate() {
+        match other.get(i).unwrap_or(&0).cmp(c) {
+            core::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+    }
+    // string has an implicit final \0
+    other.len().cmp(&string.len())
+}
+
+impl RearCodedListBuilder {
+    /// Creates a builder for a rear-coded list with a block size of `k`.
+    pub fn new(k: usize) -> Self {
+        Self {
+            data: Vec::with_capacity(1024),
+            last_str: Vec::with_capacity(1024),
+            pointers: Vec::new(),
+            len: 0,
+            is_sorted: true,
+            k,
+            stats: Default::default(),
+        }
+    }
+
+    /// Builds the rear-coded list.
+    pub fn build(self) -> RearCodedList<Box<[u8]>, Box<[usize]>> {
+        RearCodedList {
+            data: self.data.into(),
+            pointers: self.pointers.into(),
+            len: self.len,
+            is_sorted: self.is_sorted,
+            k: self.k,
+        }
+    }
+
+    /// Appends a string to the end of the list.
+    pub fn push(&mut self, string: impl AsRef<str>) {
+        let string = string.as_ref();
+        // update stats
+        self.stats.max_str_len = self.stats.max_str_len.max(string.len());
+        self.stats.sum_str_len += string.len();
+
+        let (lcp, order) = longest_common_prefix(&self.last_str, string.as_bytes());
+
+        if order == core::cmp::Ordering::Greater {
+            self.is_sorted = false;
+        }
+
+        // at every multiple of k we just encode the string as is
+        let to_encode = if self.len % self.k == 0 {
+            // compute the size in bytes of the previous block
+            let last_ptr = self.pointers.last().copied().unwrap_or(0);
+            let block_bytes = self.data.len() - last_ptr;
+            // update stats
+            self.stats.max_block_bytes = self.stats.max_block_bytes.max(block_bytes);
+            self.stats.sum_block_bytes += block_bytes;
+            // save a pointer to the start of the string
+            self.pointers.push(self.data.len());
+
+            // compute the redundancy
+            let rear_length = self.last_str.len() - lcp;
+            if self.len != 0 {
+                self.stats.redundancy += lcp as isize;
+                self.stats.redundancy -= encode_int_len(rear_length) as isize;
+            }
+            // just encode the whole string
+            string.as_bytes()
+        } else {
+            // update the stats
+            self.stats.max_lcp = self.stats.max_lcp.max(lcp);
+            self.stats.sum_lcp += lcp;
+            // encode the len of the bytes in data
+            let rear_length = self.last_str.len() - lcp;
+            let prev_len = self.data.len();
+            encode_int(rear_length, &mut self.data);
+            // update stats
+            self.stats.code_bytes += self.data.len() - prev_len;
+            // return the delta suffix
+            &string.as_bytes()[lcp..]
+        };
+        // Write the data to the buffer
+        self.data.extend_from_slice(to_encode);
+        // push the \0 terminator
+        self.data.push(0);
+        self.stats.suffixes_bytes += to_encode.len() + 1;
+
+        // put the string as last_str for the next iteration
+        self.last_str.clear();
+        self.last_str.extend_from_slice(string.as_bytes());
+        self.len += 1;
+    }
+
+    /// Appends all the strings from a [`Lender`] to the end of the list.
+    ///
+    /// We prefer to implement extension via a [`Lender`] instead of an
+    /// [`Iterator`] to avoid the need to allocate a new string for every string
+    /// in the list. This is particularly useful when building large lists
+    /// from files using, for example, a
+    /// [`RewindableIoLender`](crate::utils::lenders::RewindableIoLender).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use lender::*;
+    /// use sux::dict::RearCodedListBuilder;
+    /// let mut rclb = RearCodedListBuilder::new(4);
+    /// let words = vec!["aa", "aab", "abc", "abdd", "abde", "abdf"];
+    /// // We need the map because s has type &&str
+    /// rclb.extend(words.iter().map(|s| *s).into_lender());
+    /// let rcl = rclb.build();
+    ///
+    /// let mut rclb = RearCodedListBuilder::new(4);
+    /// let words = vec!["aa".to_string(), "aab".to_string(), "abc".to_string(),
+    ///     "abdd".to_string(), "abde".to_string(), "abdf".to_string()];
+    /// // We need the map to turn String into &str
+    /// rclb.extend(words.iter().map(|s| s.as_str()).into_lender());
+    /// let rcl = rclb.build();
+    /// ```
+    pub fn extend<S: Borrow<str>, L: IntoLender>(&mut self, into_lender: L)
+    where
+        L::Lender: for<'lend> Lending<'lend, Lend = S>,
+    {
+        for_!(string in into_lender {
+            self.push(string.borrow());
+        });
+    }
+
+    /// Prints in a human-readable format the statistics of the
+    /// strings currently in the builder.
+    pub fn print_stats(&self) {
+        println!(
+            "{:>20}: {:>10}",
+            "max_block_bytes", self.stats.max_block_bytes
+        );
+        println!(
+            "{:>20}: {:>10.3}",
+            "avg_block_bytes",
+            self.stats.sum_block_bytes as f64 / self.len as f64
+        );
+
+        println!("{:>20}: {:>10}", "max_lcp", self.stats.max_lcp);
+        println!(
+            "{:>20}: {:>10.3}",
+            "avg_lcp",
+            self.stats.sum_lcp as f64 / self.len as f64
+        );
+
+        println!("{:>20}: {:>10}", "max_str_len", self.stats.max_str_len);
+        println!(
+            "{:>20}: {:>10.3}",
+            "avg_str_len",
+            self.stats.sum_str_len as f64 / self.len as f64
+        );
+
+        let ptr_size: usize = self.pointers.len() * core::mem::size_of::<usize>();
+
+        fn human(key: &str, x: usize) {
+            const UOM: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+            let mut y = x as f64;
+            let mut uom_idx = 0;
+            while y > 1000.0 {
+                uom_idx += 1;
+                y /= 1000.0;
+            }
+            println!("{:>20}:{:>10.3}{}{:>20} ", key, y, UOM[uom_idx], x);
+        }
+
+        let total_size = ptr_size + self.data.len() + core::mem::size_of::<Self>();
+        human("data_bytes", self.data.len());
+        human("codes_bytes", self.stats.code_bytes);
+        human("suffixes_bytes", self.stats.suffixes_bytes);
+        human("ptrs_bytes", ptr_size);
+        human("uncompressed_size", self.stats.sum_str_len);
+        human("total_size", total_size);
+
+        human(
+            "optimal_size",
+            (self.data.len() as isize - self.stats.redundancy) as usize,
+        );
+        human("redundancy", self.stats.redundancy as usize);
+        let overhead = self.stats.redundancy + ptr_size as isize;
+        println!(
+            "overhead_ratio: {:>10}",
+            overhead as f64 / (overhead + self.data.len() as isize) as f64
+        );
+        println!(
+            "no_overhead_compression_ratio: {:.3}",
+            (self.data.len() as isize - self.stats.redundancy) as f64
+                / self.stats.sum_str_len as f64
+        );
+
+        println!(
+            "compression_ratio: {:.3}",
+            (ptr_size + self.data.len()) as f64 / self.stats.sum_str_len as f64
+        );
+    }
+}
+
+#[inline(always)]
+/// Computes the longest common prefix between two strings as bytes.
 fn longest_common_prefix(a: &[u8], b: &[u8]) -> (usize, core::cmp::Ordering) {
     let min_len = a.len().min(b.len());
     // normal lcp computation
@@ -603,7 +622,7 @@ fn longest_common_prefix(a: &[u8], b: &[u8]) -> (usize, core::cmp::Ordering) {
     }
 }
 
-/// Compute the length in bytes of value encoded as VByte
+/// Computes the length in bytes of value encoded as VByte
 #[inline(always)]
 fn encode_int_len(mut value: usize) -> usize {
     let mut len = 1;
@@ -792,6 +811,25 @@ fn decode_int(data: &[u8]) -> (usize, &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_strcmp() {
+        assert_eq!(strcmp(b"abcd", b"abcd\0"), core::cmp::Ordering::Equal);
+        assert_eq!(strcmp(b"abcd", b"abbd\0"), core::cmp::Ordering::Greater);
+        assert_eq!(strcmp(b"abcd", b"abdd\0"), core::cmp::Ordering::Less);
+
+        assert_eq!(strcmp(b"a", b"b\0"), core::cmp::Ordering::Less);
+        assert_eq!(strcmp(b"b", b"a\0"), core::cmp::Ordering::Greater);
+        assert_eq!(strcmp(b"abc", b"abc\0"), core::cmp::Ordering::Equal);
+        assert_eq!(strcmp(b"abc", b"abc\0abc"), core::cmp::Ordering::Equal);
+        assert_eq!(strcmp(b"abc", b"abc\0ab"), core::cmp::Ordering::Equal);
+        assert_eq!(strcmp(b"abc", b"ab\0"), core::cmp::Ordering::Greater);
+        assert_eq!(strcmp(b"abc", b"ab\0abc"), core::cmp::Ordering::Greater);
+        assert_eq!(strcmp(b"abc", b"ab\0ab"), core::cmp::Ordering::Greater);
+        assert_eq!(strcmp(b"abc", b"ab\0"), core::cmp::Ordering::Greater);
+        assert_eq!(strcmp(b"a", b"ab\0"), core::cmp::Ordering::Less);
+        assert_eq!(strcmp(b"ab", b"ab\0"), core::cmp::Ordering::Equal);
+    }
 
     #[test]
     fn test_encode_decode_int() {

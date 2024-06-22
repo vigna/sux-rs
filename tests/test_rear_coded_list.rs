@@ -45,7 +45,7 @@ fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
     }
 
     // test that the iter is correct
-    for (i, word) in rca.into_iter().enumerate() {
+    for (i, word) in rca.iter().enumerate() {
         assert_eq!(word, words[i]);
     }
 
@@ -53,6 +53,17 @@ fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
         for (i, word) in rca.iter_from(from).enumerate() {
             assert_eq!(word, words[i + from]);
         }
+    }
+
+    // test that the lend is correct
+    for_![(i, word) in rca.lend().enumerate() {
+        assert_eq!(word, words[i]);
+    }];
+
+    for from in 0..rca.len() {
+        for_![(i, word) in rca.lend_from(from).enumerate() {
+            assert_eq!(word, words[i + from]);
+        }]
     }
 
     assert!(!rca.contains(""));

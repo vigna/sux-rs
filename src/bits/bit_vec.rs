@@ -156,8 +156,7 @@ pub struct BitVec<B = Vec<usize>> {
 impl<B> BitVec<B> {
     /// Returns the number of bits in the bit vector.
     ///
-    /// This method is equivalent to
-    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// This method is equivalent to [`BitLength::len`], but it is provided to
     /// reduce ambiguity in method resolution.
     #[inline(always)]
     pub fn len(&self) -> usize {
@@ -671,8 +670,7 @@ pub struct AtomicBitVec<B = Vec<AtomicUsize>> {
 impl<B> AtomicBitVec<B> {
     /// Returns the number of bits in the bit vector.
     ///
-    /// This method is equivalent to
-    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// This method is equivalent to [`BitLength::len`], but it is provided to
     /// reduce ambiguity in method resolution.
     #[inline(always)]
     pub fn len(&self) -> usize {
