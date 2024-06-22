@@ -1,53 +1,61 @@
 /*
  *
- * SPDX-FileCopyrightText: 2023 Sebastiano Vigna
+ * SPDX-FileCopyrightText: 2024 Sebastiano Vigna
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
-use std::io::BufRead;
+use std::{borrow::Borrow, io::BufRead};
 
 use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
-use sux::prelude::*;
+use lender::for_;
+use sux::{prelude::*, utils::LineLender};
 
 #[derive(Parser, Debug)]
-#[command(about = "Compress a file containing one string per line using a Rear Coded List", long_about = None)]
+#[command(about = "Builds a rear-coded list starting from a list of UTF-8 encoded strings.", long_about = None)]
 struct Args {
-    /// A file containing UTF-8 strings, one per line.
-    filename: String,
-    #[arg(short, long)]
-    /// A name for the ε-serde serialized RCL. Defaults to the "{filename}.rcl" if not specified.
-    dst: Option<String>,
-    /// The number of high bits defining the number of buckets. Very large key sets may benefit from a larger number of buckets.
+    /// A file containing UTF-8 strings, one per line, or - for standard input.
+    source: String,
+    /// A name for the ε-serde serialized rear-coded list.
+    dest: String,
+    /// The number of strings in a block. Higher values provide more compression
+    /// at the expense of slower access.
     #[arg(short = 'k', long, default_value_t = 8)]
     k: usize,
 }
 
-fn compress<R: BufRead>(file: R, args: Args) {
-    let dst_file_path = args.dst.unwrap_or(format!("{}.rcl", args.filename));
-    let dst_file = std::fs::File::create(dst_file_path).unwrap();
-    let mut dst_file = std::io::BufWriter::new(dst_file);
+fn compress<BR: BufRead>(buf_read: BR, dest: impl Borrow<str>, k: usize) -> Result<()> {
+    let mut rclb = RearCodedListBuilder::new(k);
 
     let mut pl = ProgressLogger::default();
     pl.display_memory(true);
     pl.start("Reading the input file...");
 
-    let mut rclb = RearCodedListBuilder::new(args.k);
-
-    for line in file.lines() {
-        let line = line.unwrap();
-        rclb.push(line.as_str());
+    for_![result in LineLender::new(buf_read) {
+        match result {
+            Ok(line) => {
+                rclb.push(line);
+            }
+            Err(e) => {
+                pl.info(format_args!("Error reading line: {}", e));
+                return Result::Err(e.into());
+            }
+        }
         pl.light_update();
-    }
+    }];
+
     pl.done();
 
     rclb.print_stats();
 
     let rcl = rclb.build();
-
-    rcl.serialize(&mut dst_file).unwrap();
+    let dst_file = std::fs::File::create(dest.borrow()).expect("Cannot create destination file");
+    let mut dst_file = std::io::BufWriter::new(dst_file);
+    rcl.serialize(&mut dst_file)
+        .expect("Cannot serialize rear-coded list");
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -57,9 +65,15 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let file = std::fs::File::open(&args.filename).unwrap();
-    let file = std::io::BufReader::new(file);
-    compress(file, args);
+    if args.source == "-" {
+        let stdin = std::io::stdin();
+        let stdin = stdin.lock();
+        compress(stdin, args.dest, args.k)?;
+    } else {
+        let file = std::fs::File::open(&args.source).expect("Cannot open source file");
+        let buf_ref = std::io::BufReader::new(file);
+        compress(buf_ref, args.dest, args.k)?;
+    }
 
     Ok(())
 }
