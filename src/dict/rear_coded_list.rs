@@ -486,7 +486,9 @@ pub struct ValueIterator<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
     iter: Iterator<'a, D, P>,
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::ExactSizeIterator for ValueIterator<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::ExactSizeIterator
+    for ValueIterator<'a, D, P>
+{
     fn len(&self) -> usize {
         self.iter.len()
     }
@@ -788,75 +790,101 @@ fn decode_int(data: &[u8]) -> (usize, &[u8]) {
 }
 
 #[cfg(test)]
-#[cfg_attr(test, test)]
-fn test_encode_decode_int() {
-    let values = [
-        0, 1, 2, 3, 4, 5, 6, 7, 8,
-        UPPER_BOUND_1 - 1, UPPER_BOUND_1, UPPER_BOUND_1 + 1,
-        UPPER_BOUND_2 - 1, UPPER_BOUND_2, UPPER_BOUND_2 + 1,
-        UPPER_BOUND_3 - 1, UPPER_BOUND_3, UPPER_BOUND_3 + 1,
-        UPPER_BOUND_4 - 1, UPPER_BOUND_4, UPPER_BOUND_4 + 1,
-        UPPER_BOUND_5 - 1, UPPER_BOUND_5, UPPER_BOUND_5 + 1,
-        UPPER_BOUND_6 - 1, UPPER_BOUND_6, UPPER_BOUND_6 + 1,
-        UPPER_BOUND_7 - 1, UPPER_BOUND_7, UPPER_BOUND_7 + 1,
-        UPPER_BOUND_8 - 1, UPPER_BOUND_8, UPPER_BOUND_8 + 1,
-    ];
-    let mut buffer = Vec::with_capacity(128);
+mod tests {
+    use super::*;
 
-    for i in &values {
-        encode_int(*i, &mut buffer);
+    #[test]
+    fn test_encode_decode_int() {
+        let values = [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            UPPER_BOUND_1 - 1,
+            UPPER_BOUND_1,
+            UPPER_BOUND_1 + 1,
+            UPPER_BOUND_2 - 1,
+            UPPER_BOUND_2,
+            UPPER_BOUND_2 + 1,
+            UPPER_BOUND_3 - 1,
+            UPPER_BOUND_3,
+            UPPER_BOUND_3 + 1,
+            UPPER_BOUND_4 - 1,
+            UPPER_BOUND_4,
+            UPPER_BOUND_4 + 1,
+            UPPER_BOUND_5 - 1,
+            UPPER_BOUND_5,
+            UPPER_BOUND_5 + 1,
+            UPPER_BOUND_6 - 1,
+            UPPER_BOUND_6,
+            UPPER_BOUND_6 + 1,
+            UPPER_BOUND_7 - 1,
+            UPPER_BOUND_7,
+            UPPER_BOUND_7 + 1,
+            UPPER_BOUND_8 - 1,
+            UPPER_BOUND_8,
+            UPPER_BOUND_8 + 1,
+        ];
+        let mut buffer = Vec::with_capacity(128);
+
+        for i in &values {
+            encode_int(*i, &mut buffer);
+        }
+
+        let mut data = &buffer[..];
+        for i in &values {
+            let (j, tmp) = decode_int(data);
+            assert_eq!(data.len() - tmp.len(), encode_int_len(*i));
+            data = tmp;
+            assert_eq!(*i, j);
+        }
     }
 
-    let mut data = &buffer[..];
-    for i in &values {
-        let (j, tmp) = decode_int(data);
-        assert_eq!(data.len() - tmp.len(), encode_int_len(*i));
-        data = tmp;
-        assert_eq!(*i, j);
-    }
-}
-
-#[cfg(test)]
-#[cfg_attr(test, test)]
-fn test_longest_common_prefix() {
-    let str1 = b"absolutely";
-    let str2 = b"absorption";
-    assert_eq!(
-        longest_common_prefix(str1, str2),
-        (4, core::cmp::Ordering::Less),
-    );
-    assert_eq!(
-        longest_common_prefix(str1, str1),
-        (str1.len(), core::cmp::Ordering::Equal)
-    );
-    assert_eq!(
-        longest_common_prefix(str2, str2),
-        (str2.len(), core::cmp::Ordering::Equal)
-    );
-}
-
-#[cfg(test)]
-fn read_into_lender<L: IntoLender>(into_lender: L) -> usize
-where
-    for<'a> <L::Lender as Lending<'a>>::Lend: AsRef<str>,
-{
-    let mut iter = into_lender.into_lender();
-    let mut c = 0;
-    while let Some(s) = iter.next() {
-        c += s.as_ref().len();
+    #[test]
+    fn test_longest_common_prefix() {
+        let str1 = b"absolutely";
+        let str2 = b"absorption";
+        assert_eq!(
+            longest_common_prefix(str1, str2),
+            (4, core::cmp::Ordering::Less),
+        );
+        assert_eq!(
+            longest_common_prefix(str1, str1),
+            (str1.len(), core::cmp::Ordering::Equal)
+        );
+        assert_eq!(
+            longest_common_prefix(str2, str2),
+            (str2.len(), core::cmp::Ordering::Equal)
+        );
     }
 
-    c
-}
+    #[cfg(test)]
+    fn read_into_lender<L: IntoLender>(into_lender: L) -> usize
+    where
+        for<'a> <L::Lender as Lending<'a>>::Lend: AsRef<str>,
+    {
+        let mut iter = into_lender.into_lender();
+        let mut c = 0;
+        while let Some(s) = iter.next() {
+            c += s.as_ref().len();
+        }
 
-#[cfg(test)]
-#[cfg_attr(test, test)]
-fn test_into_lend() {
-    let mut builder = RearCodedListBuilder::new(4);
-    builder.push("a");
-    builder.push("b");
-    builder.push("c");
-    builder.push("d");
-    let rcl = builder.build();
-    read_into_lender::<&RearCodedList>(&rcl);
+        c
+    }
+
+    #[test]
+    fn test_into_lend() {
+        let mut builder = RearCodedListBuilder::new(4);
+        builder.push("a");
+        builder.push("b");
+        builder.push("c");
+        builder.push("d");
+        let rcl = builder.build();
+        read_into_lender::<&RearCodedList>(&rcl);
+    }
 }
