@@ -153,13 +153,6 @@ pub struct BitVec<B = Vec<usize>> {
     len: usize,
 }
 
-impl<B> BitLength for BitVec<B> {
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.len
-    }
-}
-
 impl<B> BitVec<B> {
     /// Returns the number of bits in the bit vector.
     ///
@@ -349,6 +342,13 @@ impl BitVec<Vec<usize>> {
     }
 }
 
+impl<B> BitLength for BitVec<B> {
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
 /// If the feature "rayon" is enabled, [`count_ones`](BitCount::count_ones) is
 /// computed in parallel.
 impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
@@ -444,14 +444,12 @@ impl<B: AsRef<[usize]>> SelectHinted for BitVec<B> {
         loop {
             let bit_count = word.count_ones() as usize;
             if residual < bit_count {
-                break;
+                return word_index * BITS + word.select_in_word(residual);
             }
             word_index += 1;
             word = *self.as_ref().get_unchecked(word_index);
             residual -= bit_count;
         }
-
-        word_index * BITS + word.select_in_word(residual)
     }
 }
 
@@ -464,14 +462,12 @@ impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
         loop {
             let bit_count = word.count_ones() as usize;
             if residual < bit_count {
-                break;
+                return word_index * BITS + word.select_in_word(residual);
             }
             word_index += 1;
             word = !self.as_ref().get_unchecked(word_index);
             residual -= bit_count;
         }
-
-        word_index * BITS + word.select_in_word(residual)
     }
 }
 
