@@ -11,7 +11,6 @@ use epserde::prelude::*;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
-use std::sync::atomic::Ordering;
 use sux::prelude::*;
 
 #[test]
@@ -31,7 +30,7 @@ fn test_elias_fano_concurrent() -> Result<()> {
         values
             .par_iter()
             .enumerate()
-            .for_each(|(index, value)| unsafe { efb.set(index, *value, Ordering::SeqCst) });
+            .for_each(|(index, value)| unsafe { efb.set(index, *value) });
         // Finish the creation of elias-fano
         let _ef = efb.build();
     }
@@ -79,14 +78,14 @@ fn test_elias_fano() -> Result<()> {
             assert_eq!({ ef.get(i) }, *v);
         }
 
-        let mut iterator = ef.into_iter().enumerate();
+        let mut iterator = ef.iter().enumerate();
         while let Some((i, v)) = iterator.next() {
             assert_eq!(v, values[i]);
             assert_eq!(iterator.len(), ef.len() - i - 1);
         }
 
         for from in 0..ef.len() {
-            let mut iterator = ef.into_iter_from(from).enumerate();
+            let mut iterator = ef.iter_from(from).enumerate();
             while let Some((i, v)) = iterator.next() {
                 assert_eq!(v, values[i + from]);
                 assert_eq!(iterator.len(), ef.len() - i - from - 1);

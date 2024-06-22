@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+//! Compressed string storage by rear-coded prefix omission.
+
 use std::borrow::Borrow;
 
 use crate::traits::{IndexedDict, IndexedSeq, Types};
@@ -40,7 +42,7 @@ struct Stats {
     pub redundancy: isize,
 }
 
-/// Immutable lists of strings compressed by prefix omission via rear coding.
+/// Immutable lists of strings compressed by rear-coded prefix omission.
 ///
 /// Prefix omission compresses a list of strings omitting the common prefixes of
 /// consecutive strings. To do so, it stores the length of what remains after
@@ -61,16 +63,18 @@ struct Stats {
 /// # Examples
 ///
 /// ```rust
+/// use sux::traits::IndexedSeq;
 /// use sux::dict::RearCodedListBuilder;
 /// let mut rclb = RearCodedListBuilder::new(4);
+///
 /// rclb.push("aa");
 /// rclb.push("aab");
 /// rclb.push("abc");
 /// rclb.push("abdd");
 /// rclb.push("abde");
 /// rclb.push("abdf");
-/// let rcl = rclb.build();
 ///
+/// let rcl = rclb.build();
 /// assert_eq!(rcl.len(), 6);
 /// assert_eq!(rcl.get(0), "aa");
 /// assert_eq!(rcl.get(1), "aab");
@@ -92,6 +96,15 @@ pub struct RearCodedList<D: AsRef<[u8]> = Box<[u8]>, P: AsRef<[usize]> = Box<[us
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
+    /// Returns the number of strings.
+    ///
+    /// This method is equivalent to [`IndexedSeq::len`], but it is provided to
+    /// reduce ambiguity in method resolution.
+    #[inline]
+    pub fn len(&self) -> usize {
+        IndexedSeq::len(self)
+    }
+
     /// Returns an [`Iterator`] over the strings starting from the given position.
     #[inline(always)]
     pub fn iter_from(&self, from: usize) -> Iter<'_, D, P> {
