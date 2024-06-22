@@ -28,7 +28,6 @@ pub mod prelude {
     pub use crate::rank_sel::*;
     pub use crate::traits::bit_field_slice;
     pub use crate::traits::*;
-    pub use crate::utils::*;
 }
 
 macro_rules! forward_mult {

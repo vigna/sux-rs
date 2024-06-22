@@ -391,3 +391,66 @@ fn test_epserde() {
         assert_eq!(b.get(i), c.get(i));
     }
 }
+
+#[test]
+fn test_from() {
+    // Vec to atomic vec
+    let mut b = BitVec::<Vec<usize>>::new(10);
+    for i in 0..10 {
+        b.set(i, i % 2 == 0);
+    }
+    let b: AtomicBitVec<Vec<AtomicUsize>> = b.into();
+    let b: BitVec<Vec<usize>> = b.into();
+    for i in 0..10 {
+        assert_eq!(b.get(i), i % 2 == 0);
+    }
+
+    // Boxed slice to atomic boxed slice
+    let bits = vec![0; 10].into_boxed_slice();
+    let mut b = unsafe { BitVec::<Box<[usize]>>::from_raw_parts(bits, 10) };
+    for i in 0..10 {
+        b.set(i, i % 2 == 0);
+    }
+    let b: AtomicBitVec<Box<[AtomicUsize]>> = b.into();
+    let b: BitVec<Box<[usize]>> = b.into();
+    for i in 0..10 {
+        assert_eq!(b.get(i), i % 2 == 0);
+    }
+
+    // Reference to atomic reference
+    let bits = vec![0; 10].into_boxed_slice();
+    let mut b = unsafe { BitVec::<Box<[usize]>>::from_raw_parts(bits, 10) };
+    for i in 0..10 {
+        b.set(i, i % 2 == 0);
+    }
+    let (bits, l) = b.into_raw_parts();
+    let b = unsafe { BitVec::<&[usize]>::from_raw_parts(bits.as_ref(), l) };
+    let b: AtomicBitVec<&[AtomicUsize]> = b.into();
+    let b: BitVec<&[usize]> = b.into();
+    for i in 0..10 {
+        assert_eq!(b.get(i), i % 2 == 0);
+    }
+
+    // Mutable reference to mutable reference
+    let mut bits = vec![0; 10].into_boxed_slice();
+    let mut b = unsafe { BitVec::<&mut [usize]>::from_raw_parts(bits.as_mut(), 10) };
+    for i in 0..10 {
+        b.set(i, i % 2 == 0);
+    }
+    let b: AtomicBitVec<&mut [AtomicUsize]> = b.into();
+    let b: BitVec<&mut [usize]> = b.into();
+    for i in 0..10 {
+        assert_eq!(b.get(i), i % 2 == 0);
+    }
+
+    // Vec to boxed slice
+    let mut b = BitVec::<Vec<usize>>::new(10);
+    for i in 0..10 {
+        b.set(i, i % 2 == 0);
+    }
+    let b: BitVec<Box<[usize]>> = b.into();
+    let b: BitVec<Vec<usize>> = b.into();
+    for i in 0..10 {
+        assert_eq!(b.get(i), i % 2 == 0);
+    }
+}

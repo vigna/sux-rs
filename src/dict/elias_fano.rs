@@ -185,7 +185,8 @@ impl EliasFanoConcurrentBuilder {
     }
 
     pub fn build(self) -> EliasFano {
-        let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
+        let high_bits: BitVec<Vec<usize>> = self.high_bits.into();
+        let high_bits: BitVec<Box<[usize]>> = high_bits.into();
         let low_bits: BitFieldVec<usize, Vec<usize>> = self.low_bits.into();
         let low_bits: BitFieldVec<usize, Box<[usize]>> = low_bits.into();
         EliasFano {

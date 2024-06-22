@@ -19,14 +19,13 @@
 //! The trait [`ToSig`] provides a standard way to generate signatures for a
 //! [`SigStore`].
 
+use super::spooky_short;
 use anyhow::Result;
 use epserde::prelude::*;
 use mem_dbg::{MemDbg, MemSize};
 use rdst::RadixKey;
 use std::borrow::Cow;
 use std::{collections::VecDeque, fs::File, io::*, marker::PhantomData};
-
-use crate::prelude::spooky_short;
 
 /// A signature and a value.
 
