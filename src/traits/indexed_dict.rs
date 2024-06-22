@@ -47,16 +47,12 @@
 //! convenience method `iter` that is equivalent to [`IntoIterator::into_iter`],
 //! and a method `iter_from` that returns an iterator starting at a given
 //! position in the dictionary.
-//!
-//! We provide a blanket implementation for types that dereference to a slice of
-//! `T`'s, where `T` implements [`ToOwned`].
-use std::borrow::Borrow;
 
 use impl_tools::autoimpl;
+use std::borrow::Borrow;
 
 /// The types of the dictionary.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-
 pub trait Types {
     type Input: PartialEq<Self::Output> + PartialEq + ?Sized;
     type Output: PartialEq<Self::Input> + PartialEq;
@@ -97,9 +93,6 @@ pub trait IndexedSeq: Types {
 pub trait IndexedDict: Types {
     /// Return the index of the given value if the dictionary contains it and
     /// `None` otherwise.
-    ///
-    /// The default implementations just checks iteratively
-    /// if the value is equal to any of the values in the dictionary.
     fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize>;
 
     /// Return true if the dictionary contains the given value.
@@ -239,167 +232,3 @@ where
         }
     }
 }
-
-/*
-impl<T: ToOwned, S: ?Sized + Deref<Target = [T]>> IndexedDict for S
-where
-    T::Owned: PartialEq<T> + PartialEq,
-{
-    type Input = T::Owned;
-    type Output = T::Owned;
-
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
-        self.get_unchecked(index).to_owned()
-    }
-
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.len()
-    }
-}
-
-impl<T: Succ> Succ for &T
-where
-    T::Input: PartialOrd<T::Output> + PartialOrd,
-    T::Output: PartialOrd<T::Input> + PartialOrd,
-{
-    #[inline(always)]
-    fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
-        T::succ(*self, value)
-    }
-
-    #[inline(always)]
-    fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
-        T::succ_strict(*self, value)
-    }
-
-    #[inline(always)]
-    unsafe fn succ_unchecked<const STRICT: bool>(
-        &self,
-        value: impl Borrow<Self::Input>,
-    ) -> (usize, Self::Output) {
-        T::succ_unchecked::<STRICT>(*self, value)
-    }
-}
-
-impl<T: Succ> Succ for &mut T
-where
-    T::Input: PartialOrd<T::Output> + PartialOrd,
-    T::Output: PartialOrd<T::Input> + PartialOrd,
-{
-    #[inline(always)]
-    fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
-        T::succ(*self, value)
-    }
-
-    #[inline(always)]
-    fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
-        T::succ_strict(*self, value)
-    }
-
-    #[inline(always)]
-    unsafe fn succ_unchecked<const STRICT: bool>(
-        &self,
-        value: impl Borrow<Self::Input>,
-    ) -> (usize, Self::Output) {
-        T::succ_unchecked::<STRICT>(*self, value)
-    }
-}
-
-impl<T: Succ> Succ for Box<T>
-where
-    T::Input: PartialOrd<T::Output> + PartialOrd,
-    T::Output: PartialOrd<T::Input> + PartialOrd,
-{
-    #[inline(always)]
-    fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
-        T::succ(self, value)
-    }
-
-    #[inline(always)]
-    fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
-        T::succ_strict(self, value)
-    }
-
-    #[inline(always)]
-    unsafe fn succ_unchecked<const STRICT: bool>(
-        &self,
-        value: impl Borrow<Self::Input>,
-    ) -> (usize, Self::Output) {
-        T::succ_unchecked::<STRICT>(self, value)
-    }
-}
-
-impl<T: Pred> Pred for &T
-where
-    T::Input: PartialOrd<T::Output> + PartialOrd,
-    T::Output: PartialOrd<T::Input> + PartialOrd,
-{
-    #[inline(always)]
-    fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
-        T::pred(*self, value)
-    }
-
-    #[inline(always)]
-    fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
-        T::pred_strict(*self, value)
-    }
-
-    #[inline(always)]
-    unsafe fn pred_unchecked<const STRICT: bool>(
-        &self,
-        value: impl Borrow<Self::Input>,
-    ) -> (usize, Self::Output) {
-        T::pred_unchecked::<STRICT>(*self, value)
-    }
-}
-
-impl<T: Pred> Pred for &mut T
-where
-    T::Input: PartialOrd<T::Output> + PartialOrd,
-    T::Output: PartialOrd<T::Input> + PartialOrd,
-{
-    #[inline(always)]
-    fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
-        T::pred(*self, value)
-    }
-
-    #[inline(always)]
-    fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
-        T::pred_strict(*self, value)
-    }
-
-    #[inline(always)]
-    unsafe fn pred_unchecked<const STRICT: bool>(
-        &self,
-        value: impl Borrow<Self::Input>,
-    ) -> (usize, Self::Output) {
-        T::pred_unchecked::<STRICT>(*self, value)
-    }
-}
-
-impl<T: Pred> Pred for Box<T>
-where
-    T::Input: PartialOrd<T::Output> + PartialOrd,
-    T::Output: PartialOrd<T::Input> + PartialOrd,
-{
-    #[inline(always)]
-    fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
-        T::pred(self, value)
-    }
-
-    #[inline(always)]
-    fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
-        T::pred_strict(self, value)
-    }
-
-    #[inline(always)]
-    unsafe fn pred_unchecked<const STRICT: bool>(
-        &self,
-        value: impl Borrow<Self::Input>,
-    ) -> (usize, Self::Output) {
-        T::pred_unchecked::<STRICT>(self, value)
-    }
-}
-*/
