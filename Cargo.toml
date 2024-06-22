@@ -80,9 +80,9 @@ required-features = ["cli"]
 name = "mem_usage"
 required-features = ["cli"]
 
-[[bin]]
-name = "bench_like_cpp"
-required-features = ["cli"]
+#[[bin]]
+#name = "bench_like_cpp"
+#required-features = ["cli"]
 
 [[bench]]
 name = "my_benchmarks"
