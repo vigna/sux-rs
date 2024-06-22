@@ -168,6 +168,16 @@ where
 }
 
 #[test]
+fn test_clear() {
+    let mut b = BitFieldVec::<usize, _>::new(50, 10);
+    for i in 0..10 {
+        b.set(i, i);
+    }
+    b.clear();
+    assert_eq!(b.len(), 0);
+}
+
+#[test]
 fn test_usize() {
     use sux::traits::bit_field_slice::BitFieldSlice;
     use sux::traits::bit_field_slice::BitFieldSliceMut;
@@ -355,7 +365,7 @@ fn test_atomic_reset() {
     for i in 0..10 {
         b.set_atomic(i, 1, Ordering::Relaxed);
     }
-    b.reset();
+    b.reset(Ordering::Relaxed);
     for i in 0..10 {
         assert_eq!(b.get_atomic(i, Ordering::Relaxed), 0);
     }
@@ -371,7 +381,7 @@ fn test_set_len() {
 }
 
 #[test]
-fn test_bit_field_from() {
+fn test_from() {
     // Vec to atomic vec
     let mut b = BitFieldVec::<usize, Vec<usize>>::new(50, 10);
     for i in 0..10 {

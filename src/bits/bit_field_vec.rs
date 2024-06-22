@@ -11,6 +11,10 @@
 //! unless the bit width is a power of two some elements will be stored across
 //! word boundaries).
 //!
+//! Note that nothing is assumed about the content of the backend outside the
+//! bits of the vector. Moreover, the content of the backend outside of the
+//! vector is never modified by the methods of this class.
+//!
 //! We provide implementations based on `AsRef<[T]>`, `AsMut<[T]>`, and
 //! `AsRef<[A]>`, where `T` is an unsigned type (default: [`usize`]) and `A` is
 //! an atomic unsigned type (default: [`AtomicUsize`]); more generally, the
@@ -41,7 +45,7 @@
 //!
 //! ## Low-level support
 //!
-//! The methods [`address_of`](BitFieldVec::address_of) and
+//! The methods [`address_of`](BitFieldVec::addr_of) and
 //! [`get_unaligned`](BitFieldVec::get_unaligned) can be used to manually
 //! prefetch parts of the data structure, or read values using unaligned read,
 //! when the bit width makes it possible.
@@ -52,6 +56,8 @@ use anyhow::{bail, Result};
 use common_traits::*;
 use epserde::*;
 use mem_dbg::*;
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
 use std::sync::atomic::*;
 
 /// A vector of bit fields of fixed width.
@@ -67,24 +73,72 @@ pub struct BitFieldVec<W: Word = usize, B = Vec<W>> {
     len: usize,
 }
 
-/// A tentatively thread-safe vector of bit fields of fixed width.
-#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
-pub struct AtomicBitFieldVec<W: Word + IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
-    /// The underlying storage.
-    bits: B,
-    /// The bit width of the values stored in the vector.
-    bit_width: usize,
-    /// A mask with its lowest `bit_width` bits set to one.
-    mask: W,
-    /// The length of the vector.
-    len: usize,
-}
-
 fn mask<W: Word>(bit_width: usize) -> W {
     if bit_width == 0 {
         W::ZERO
     } else {
         W::MAX >> (W::BITS - bit_width)
+    }
+}
+
+impl<W: Word, B> BitFieldVec<W, B> {
+    /// # Safety
+    /// `len` * `bit_width` must be between 0 (included) the number of
+    /// bits in `bits` (included).
+    #[inline(always)]
+    pub unsafe fn from_raw_parts(bits: B, bit_width: usize, len: usize) -> Self {
+        Self {
+            bits,
+            bit_width,
+            mask: mask(bit_width),
+            len,
+        }
+    }
+
+    #[inline(always)]
+    pub fn into_raw_parts(self) -> (B, usize, usize) {
+        (self.bits, self.bit_width, self.len)
+    }
+}
+
+impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
+    /// Get the address of the item storing (the first part of)
+    /// the element of given index.
+    ///
+    /// This method is mainly useful for manually prefetching
+    /// parts of the data structure.
+    pub fn addr_of(&self, index: usize) -> *const W {
+        let start_bit = index * self.bit_width;
+        let word_index = start_bit / W::BITS;
+        (&self.bits.as_ref()[word_index]) as *const _
+    }
+
+    /// Like [`BitFieldSlice::get`], but using unaligned reads.
+    ///
+    /// This method can be used for bit width smaller than or equal to `W::BITS
+    /// - 8 + 2` or equal to `W::BITS - 8 + 4` or `W::BITS`.
+    pub fn get_unaligned(&self, index: usize) -> W {
+        panic_if_out_of_bounds!(index, self.len);
+        unsafe { self.get_unaligned_unchecked(index) }
+    }
+
+    /// Like [`BitFieldSlice::get`], but using unaligned reads.
+    ///
+    /// # Safety
+    ///
+    /// This method can be used for bit width smaller than or equal
+    /// to `W::BITS - 8 + 2` or equal to `W::BITS - 8 + 4` or `W::BITS`.
+    pub unsafe fn get_unaligned_unchecked(&self, index: usize) -> W {
+        debug_assert!(
+            self.bit_width <= W::BITS - 8 + 2
+                || self.bit_width == W::BITS - 8 + 4
+                || self.bit_width == W::BITS
+        );
+        let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
+        let start_bit = index * self.bit_width;
+        let ptr = base_ptr.add(start_bit / W::BYTES) as *const W;
+        let word = core::ptr::read_unaligned(ptr);
+        (word >> (start_bit % 8)) & self.mask
     }
 }
 
@@ -127,14 +181,28 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
 
     /// Writes zeros in all values.
     pub fn reset(&mut self) {
-        self.bits[..(self.len * self.bit_width).div_ceil(W::BITS)]
-            .iter_mut()
-            .for_each(|x| *x = W::ZERO);
+        let bit_len = self.len * self.bit_width;
+        let full_words = bit_len / W::BITS;
+        let residual = bit_len % W::BITS;
+        let bits: &mut [W] = self.bits.as_mut();
+
+        #[cfg(feature = "rayon")]
+        {
+            bits[..full_words].par_iter_mut().for_each(|x| *x = W::ZERO);
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            bits[..full_words].iter_mut().for_each(|x| *x = W::ZERO);
+        }
+
+        if residual != 0 {
+            bits[full_words] &= W::MAX << residual;
+        }
     }
 
     /// Set len to 0
     pub fn clear(&mut self) {
-        self.bits.clear();
         self.len = 0;
     }
 
@@ -220,136 +288,6 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     }
 }
 
-impl<W: Word> core::iter::Extend<W> for BitFieldVec<W, Vec<W>> {
-    /// Add values from
-    fn extend<T: IntoIterator<Item = W>>(&mut self, iter: T) {
-        for value in iter {
-            self.push(value);
-        }
-    }
-}
-
-impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
-    /// Get the address of the item storing (the first part of)
-    /// the element of given index.
-    ///
-    /// This method is mainly useful for manually prefetching
-    /// parts of the data structure.
-    pub fn addr_of(&self, index: usize) -> *const W {
-        let start_bit = index * self.bit_width;
-        let word_index = start_bit / W::BITS;
-        (&self.bits.as_ref()[word_index]) as *const _
-    }
-
-    /// Like [`BitFieldSlice::get`], but using unaligned reads.
-    ///
-    /// # Panic
-    /// This methods will panic if the index is out of bounds
-    /// or if the bit width is [incompatible with unaligned
-    /// reads](BitFieldVec::get_unaligned_unchecked).
-    pub fn get_unaligned(&self, index: usize) -> W {
-        panic_if_out_of_bounds!(index, self.len);
-        assert!(
-            self.bit_width <= W::BITS - 8 + 2
-                || self.bit_width == W::BITS - 8 + 4
-                || self.bit_width == W::BITS
-        );
-        unsafe { self.get_unaligned_unchecked(index) }
-    }
-
-    /// Like [`BitFieldSlice::get`], but using unaligned reads.
-    ///
-    /// # Safety
-    /// This method can be used for bit width smaller than or equal
-    /// to `W::BITS - 8 + 2` or equal to `W::BITS - 8 + 4`.
-    pub unsafe fn get_unaligned_unchecked(&self, index: usize) -> W {
-        debug_assert!(
-            self.bit_width <= W::BITS - 8 + 2
-                || self.bit_width == W::BITS - 8 + 4
-                || self.bit_width == W::BITS
-        );
-        let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
-        let start_bit = index * self.bit_width;
-        let ptr = base_ptr.add(start_bit / W::BYTES) as *const W;
-        let word = core::ptr::read_unaligned(ptr);
-        (word >> (start_bit % 8)) & self.mask
-    }
-}
-
-impl<W: Word + IntoAtomic> AtomicBitFieldVec<W> {
-    pub fn new(bit_width: usize, len: usize) -> AtomicBitFieldVec<W> {
-        // we need at least two words to avoid branches in the gets
-        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
-        AtomicBitFieldVec::<W> {
-            bits: (0..n_of_words)
-                .map(|_| W::AtomicType::new(W::ZERO))
-                .collect(),
-            bit_width,
-            mask: mask(bit_width),
-            len,
-        }
-    }
-
-    /// Writes zeros in all values.
-    pub fn reset(&mut self) {
-        self.bits[..(self.len * self.bit_width).div_ceil(W::BITS)]
-            .iter_mut()
-            .for_each(|x| x.store(W::ZERO, Ordering::Relaxed));
-    }
-
-    /// Return the bit-width of the values inside this vector.
-    pub fn bit_width(&self) -> usize {
-        debug_assert!(self.bit_width <= W::BITS);
-        self.bit_width
-    }
-
-    /// Return the mask used to extract values from this vector.
-    /// This will keep the lowest `bit_width` bits.
-    pub fn mask(&self) -> W {
-        self.mask
-    }
-}
-
-impl<W: Word, B> BitFieldVec<W, B> {
-    /// # Safety
-    /// `len` * `bit_width` must be between 0 (included) the number of
-    /// bits in `bits` (included).
-    #[inline(always)]
-    pub unsafe fn from_raw_parts(bits: B, bit_width: usize, len: usize) -> Self {
-        Self {
-            bits,
-            bit_width,
-            mask: mask(bit_width),
-            len,
-        }
-    }
-
-    #[inline(always)]
-    pub fn into_raw_parts(self) -> (B, usize, usize) {
-        (self.bits, self.bit_width, self.len)
-    }
-}
-
-impl<W: Word + IntoAtomic, B> AtomicBitFieldVec<W, B> {
-    /// # Safety
-    /// `len` * `bit_width` must be between 0 (included) the number of
-    /// bits in `bits` (included).
-    #[inline(always)]
-    pub unsafe fn from_raw_parts(bits: B, bit_width: usize, len: usize) -> Self {
-        Self {
-            bits,
-            bit_width,
-            mask: mask(bit_width),
-            len,
-        }
-    }
-
-    #[inline(always)]
-    pub fn into_raw_parts(self) -> (B, usize, usize) {
-        (self.bits, self.bit_width, self.len)
-    }
-}
-
 impl<W: Word, T> BitFieldSliceCore<W> for BitFieldVec<W, T> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
@@ -362,35 +300,105 @@ impl<W: Word, T> BitFieldSliceCore<W> for BitFieldVec<W, T> {
     }
 }
 
-impl<W: Word + IntoAtomic, T> BitFieldSliceCore<W::AtomicType> for AtomicBitFieldVec<W, T> {
-    #[inline(always)]
-    fn bit_width(&self) -> usize {
-        debug_assert!(self.bit_width <= W::BITS);
-        self.bit_width
-    }
-
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.len
-    }
-}
-
 impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> W {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
         let bit_index = pos % W::BITS;
+        let bits = self.bits.as_ref();
 
         if bit_index + self.bit_width <= W::BITS {
-            (*self.bits.as_ref().get_unchecked(word_index) >> bit_index) & self.mask
+            (*bits.get_unchecked(word_index) >> bit_index) & self.mask
         } else {
-            (*self.bits.as_ref().get_unchecked(word_index) >> bit_index
-                | *self.bits.as_ref().get_unchecked(word_index + 1) << (W::BITS - bit_index))
+            (*bits.get_unchecked(word_index) >> bit_index
+                | *bits.get_unchecked(word_index + 1) << (W::BITS - bit_index))
                 & self.mask
         }
     }
 }
+
+impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, B> {
+    // We reimplement set as we have the mask in the structure.
+
+    fn reset(&mut self) {
+        // TODO: directly on words?
+        for idx in 0..self.len() {
+            unsafe { self.set_unchecked(idx, W::ZERO) };
+        }
+    }
+
+    /// Set the element of the slice at the specified index.
+    ///
+    ///
+    /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
+    /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
+    #[inline(always)]
+    fn set(&mut self, index: usize, value: W) {
+        panic_if_out_of_bounds!(index, self.len);
+        panic_if_value!(value, self.mask, self.bit_width);
+        unsafe {
+            self.set_unchecked(index, value);
+        }
+    }
+
+    #[inline]
+    unsafe fn set_unchecked(&mut self, index: usize, value: W) {
+        let pos = index * self.bit_width;
+        let word_index = pos / W::BITS;
+        let bit_index = pos % W::BITS;
+        let bits = self.bits.as_mut();
+
+        if bit_index + self.bit_width <= W::BITS {
+            let mut word = *bits.get_unchecked_mut(word_index);
+            word &= !(self.mask << bit_index);
+            word |= value << bit_index;
+            *bits.get_unchecked_mut(word_index) = word;
+        } else {
+            let mut word = *bits.get_unchecked_mut(word_index);
+            word &= (W::ONE << bit_index) - W::ONE;
+            word |= value << bit_index;
+            *bits.get_unchecked_mut(word_index) = word;
+
+            let mut word = *bits.get_unchecked_mut(word_index + 1);
+            word &= !(self.mask >> (W::BITS - bit_index));
+            word |= value >> (W::BITS - bit_index);
+            *bits.get_unchecked_mut(word_index + 1) = word;
+        }
+    }
+}
+
+impl<W: Word> core::iter::Extend<W> for BitFieldVec<W, Vec<W>> {
+    /// Add values from
+    fn extend<T: IntoIterator<Item = W>>(&mut self, iter: T) {
+        for value in iter {
+            self.push(value);
+        }
+    }
+}
+
+impl<W: Word> PartialEq<BitFieldVec<W>> for BitFieldVec<W> {
+    fn eq(&self, other: &BitFieldVec<W>) -> bool {
+        if self.bit_width() != other.bit_width() {
+            return false;
+        }
+        if self.len() != other.len() {
+            return false;
+        }
+        let bit_len = self.len() * self.bit_width();
+        if self.bits[..bit_len / W::BITS] != other.bits[..bit_len / W::BITS] {
+            return false;
+        }
+
+        let residual = bit_len % W::BITS;
+        residual == 0
+            || (self.bits[bit_len / W::BITS] ^ other.bits[bit_len / W::BITS])
+                << (W::BITS - residual)
+                == W::ZERO
+    }
+}
+
+impl Eq for BitFieldVec {}
 
 // Support for unchecked iterators
 
@@ -608,52 +616,105 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, B> {
-    // We reimplement set as we have the mask in the structure.
+/// A tentatively thread-safe vector of bit fields of fixed width.
+#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
+pub struct AtomicBitFieldVec<W: Word + IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
+    /// The underlying storage.
+    bits: B,
+    /// The bit width of the values stored in the vector.
+    bit_width: usize,
+    /// A mask with its lowest `bit_width` bits set to one.
+    mask: W,
+    /// The length of the vector.
+    len: usize,
+}
 
-    fn reset(&mut self) {
-        // TODO: directly on words?
-        for idx in 0..self.len() {
-            unsafe { self.set_unchecked(idx, W::ZERO) };
-        }
-    }
-
-    /// Set the element of the slice at the specified index.
-    ///
-    ///
-    /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
-    /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
+impl<W: Word + IntoAtomic, B> AtomicBitFieldVec<W, B> {
+    /// # Safety
+    /// `len` * `bit_width` must be between 0 (included) the number of
+    /// bits in `bits` (included).
     #[inline(always)]
-    fn set(&mut self, index: usize, value: W) {
-        panic_if_out_of_bounds!(index, self.len);
-        panic_if_value!(value, self.mask, self.bit_width);
-        unsafe {
-            self.set_unchecked(index, value);
+    pub unsafe fn from_raw_parts(bits: B, bit_width: usize, len: usize) -> Self {
+        Self {
+            bits,
+            bit_width,
+            mask: mask(bit_width),
+            len,
         }
     }
 
-    #[inline]
-    unsafe fn set_unchecked(&mut self, index: usize, value: W) {
-        let pos = index * self.bit_width;
-        let word_index = pos / W::BITS;
-        let bit_index = pos % W::BITS;
+    #[inline(always)]
+    pub fn into_raw_parts(self) -> (B, usize, usize) {
+        (self.bits, self.bit_width, self.len)
+    }
+}
 
-        if bit_index + self.bit_width <= W::BITS {
-            let mut word = *self.bits.as_ref().get_unchecked(word_index);
-            word &= !(self.mask << bit_index);
-            word |= value << bit_index;
-            *self.bits.as_mut().get_unchecked_mut(word_index) = word;
-        } else {
-            let mut word = *self.bits.as_ref().get_unchecked(word_index);
-            word &= (W::ONE << bit_index) - W::ONE;
-            word |= value << bit_index;
-            *self.bits.as_mut().get_unchecked_mut(word_index) = word;
-
-            let mut word = *self.bits.as_ref().get_unchecked(word_index + 1);
-            word &= !(self.mask >> (W::BITS - bit_index));
-            word |= value >> (W::BITS - bit_index);
-            *self.bits.as_mut().get_unchecked_mut(word_index + 1) = word;
+impl<W: Word + IntoAtomic> AtomicBitFieldVec<W>
+where
+    W::AtomicType: AtomicUnsignedInt,
+{
+    pub fn new(bit_width: usize, len: usize) -> AtomicBitFieldVec<W> {
+        // we need at least two words to avoid branches in the gets
+        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
+        AtomicBitFieldVec::<W> {
+            bits: (0..n_of_words)
+                .map(|_| W::AtomicType::new(W::ZERO))
+                .collect(),
+            bit_width,
+            mask: mask(bit_width),
+            len,
         }
+    }
+
+    /// Writes zeros in all values.
+    pub fn reset(&mut self, ordering: Ordering) {
+        let bit_len = self.len * self.bit_width;
+        let full_words = bit_len / W::BITS;
+        let residual = bit_len % W::BITS;
+        let bits: &[W::AtomicType] = self.bits.as_ref();
+
+        #[cfg(feature = "rayon")]
+        {
+            bits[..full_words]
+                .par_iter()
+                .for_each(|x| x.store(W::ZERO, ordering));
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            bits[..full_words]
+                .iter()
+                .for_each(|x| x.store(W::ZERO, ordering));
+        }
+
+        if residual != 0 {
+            bits[full_words].fetch_and(W::MAX << residual, ordering);
+        }
+    }
+
+    /// Return the bit-width of the values inside this vector.
+    pub fn bit_width(&self) -> usize {
+        debug_assert!(self.bit_width <= W::BITS);
+        self.bit_width
+    }
+
+    /// Return the mask used to extract values from this vector.
+    /// This will keep the lowest `bit_width` bits.
+    pub fn mask(&self) -> W {
+        self.mask
+    }
+}
+
+impl<W: Word + IntoAtomic, B> BitFieldSliceCore<W::AtomicType> for AtomicBitFieldVec<W, B> {
+    #[inline(always)]
+    fn bit_width(&self) -> usize {
+        debug_assert!(self.bit_width <= W::BITS);
+        self.bit_width
+    }
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len
     }
 }
 
@@ -770,6 +831,8 @@ where
         }
     }
 }
+
+// Conversions
 
 impl<W: Word + IntoAtomic> From<AtomicBitFieldVec<W, Vec<W::AtomicType>>>
     for BitFieldVec<W, Vec<W>>
@@ -910,32 +973,6 @@ impl<W: Word> From<BitFieldVec<W, Box<[W]>>> for BitFieldVec<W, Vec<W>> {
     }
 }
 
-impl<W: Word> PartialEq<BitFieldVec<W>> for BitFieldVec<W> {
-    fn eq(&self, other: &BitFieldVec<W>) -> bool {
-        if self.bit_width() != other.bit_width() {
-            return false;
-        }
-        if self.len() != other.len() {
-            return false;
-        }
-        let bit_len = self.len() * self.bit_width();
-        // TODO: we don't need this if we assume the backend to be clear
-        // beyond the length
-        let residual = bit_len % W::BITS;
-        if residual == 0 {
-            self.bits[..bit_len / W::BITS] == other.bits[..bit_len / W::BITS]
-        } else {
-            self.bits[..bit_len / W::BITS] == other.bits[..bit_len / W::BITS] && {
-                (self.bits[bit_len / W::BITS] ^ other.bits[bit_len / W::BITS])
-                    << (W::BITS - residual)
-                    == W::ZERO
-            }
-        }
-    }
-}
-
-impl Eq for BitFieldVec {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -948,18 +985,5 @@ mod tests {
             b.push(0);
         }
         assert_eq!(b.bits.capacity(), capacity);
-    }
-
-    #[test]
-    fn test_clear() {
-        let mut b = BitFieldVec::<usize, _>::new(50, 10);
-        for i in 0..10 {
-            b.set(i, i);
-        }
-        b.clear();
-        assert_eq!(b.len(), 0);
-        for w in b.bits {
-            assert_eq!(w, 0);
-        }
     }
 }
