@@ -26,9 +26,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 
-crate::forward_mult![RankSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, B, C1, C2>; B; bits;
-    crate::forward_index_bool
-];
+crate::forward_index_bool![RankSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, B, C1, C2>; B; bits];
 
 /// A family of ranking structures using very little additional space but with
 /// slower operations than [`Rank9`](super::Rank9).

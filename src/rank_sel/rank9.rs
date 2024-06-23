@@ -21,9 +21,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 
-crate::forward_mult![Rank9<B, C>; B; bits;
-    crate::forward_index_bool
-];
+crate::forward_index_bool![Rank9<B, C>; B; bits];
 
 /// A ranking structure using 25% of additional space and providing the fastest
 /// available rank operations.

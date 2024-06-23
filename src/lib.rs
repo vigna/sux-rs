@@ -33,18 +33,6 @@ pub mod prelude {
     pub use crate::traits::*;
 }
 
-macro_rules! forward_mult {
-    ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident; $macro:path $(, $macros:path)*) => {
-		$macro![$name < $( $([$const])? $generic $(:$t)? ),* >; $type; $field];
-		crate::forward_mult![$name < $( $([$const])? $generic $(:$t)? ),* >; $type; $field; $($macros),* ];
-	};
-
-	($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident; ) => {}
-}
-
-use ambassador::delegatable_trait_remote;
-pub(crate) use forward_mult;
-
 macro_rules! forward_index_bool {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
         impl < $( $($const)? $generic $(:$t)? ),* > std::ops::Index<usize> for $name < $($generic,)* > where $type: std::ops::Index<usize, Output = bool> {
@@ -60,7 +48,7 @@ macro_rules! forward_index_bool {
 
 pub(crate) use forward_index_bool;
 
-#[delegatable_trait_remote]
+#[ambassador::delegatable_trait_remote]
 pub(crate) trait AsRef<T> {
     fn as_ref(&self) -> &T;
 }

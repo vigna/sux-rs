@@ -17,11 +17,8 @@ use crate::{
     traits::{NumBits, SelectUnchecked},
 };
 
-crate::forward_mult![
-    SelectAdapt<B, I>; B; bits;
-        crate::forward_index_bool
-
-];
+crate::forward_index_bool![
+    SelectAdapt<B, I>; B; bits];
 
 use crate::ambassador_impl_AsRef;
 use crate::traits::rank_sel::ambassador_impl_BitCount;

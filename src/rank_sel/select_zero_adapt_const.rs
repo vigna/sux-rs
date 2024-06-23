@@ -17,11 +17,8 @@ use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 use std::cmp::{max, min};
 
-crate::forward_mult![
-    SelectZeroAdaptConst<B, I, [const] LOG2_ZEROS_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
-        crate::forward_index_bool
-
-];
+crate::forward_index_bool![
+    SelectZeroAdaptConst<B, I, [const] LOG2_ZEROS_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits];
 
 use crate::ambassador_impl_AsRef;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
