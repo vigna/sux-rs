@@ -27,18 +27,6 @@ use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 
-pub trait LinearPartitionPointExt<T>: AsRef<[T]> {
-    fn linear_partition_point<P>(&self, mut pred: P) -> usize
-    where
-        P: FnMut(&T) -> bool,
-    {
-        let as_ref = self.as_ref();
-        as_ref.iter().position(|x| !pred(x)).unwrap_or(as_ref.len())
-    }
-}
-
-impl<T> LinearPartitionPointExt<T> for [T] {}
-
 /// A selection structure over [`RankSmall`] using negligible additional space
 /// and providing constant-time selection.
 ///
@@ -281,7 +269,7 @@ macro_rules! impl_rank_small_sel {
                 };
                 let mut block_idx = inv_pos / Self::BLOCK_SIZE;
                 // cs-poppy micro-optimization: each block can contains at most
-                // Self::BLOCK_SIZE ones, so we can skip blocks in which the bit
+                // Self::BLOCK_SIZE ones, so we can skip blocks to which the bit
                 // we are looking for cannot possibly belong.
                 //
                 // It is disabled because the additional memory access
@@ -430,3 +418,17 @@ impl_rank_small_sel!(1; 9);
 impl_rank_small_sel!(1; 10);
 impl_rank_small_sel!(1; 11);
 impl_rank_small_sel!(3; 13);
+
+/// A trait providing the semantics of
+/// [`partition_point`](std::slice::partition_point), but using a linear search.
+trait LinearPartitionPointExt<T>: AsRef<[T]> {
+    fn linear_partition_point<P>(&self, mut pred: P) -> usize
+    where
+        P: FnMut(&T) -> bool,
+    {
+        let as_ref = self.as_ref();
+        as_ref.iter().position(|x| !pred(x)).unwrap_or(as_ref.len())
+    }
+}
+
+impl<T> LinearPartitionPointExt<T> for [T] {}
