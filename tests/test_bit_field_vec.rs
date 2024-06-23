@@ -443,3 +443,26 @@ fn test_from() {
         assert_eq!(b.get(i), i);
     }
 }
+
+#[test]
+fn test_macro() {
+    let b = bit_field_vec![5];
+    assert_eq!(b.len(), 0);
+    assert_eq!(b.bit_width(), 5);
+
+    // 10 values of bit width 6, all set to 3
+    let b = bit_field_vec![6; 10; 3];
+    assert_eq!(b.len(), 10);
+    assert_eq!(b.bit_width(), 6);
+    assert_eq!(b.iter().all(|x| x == 3), true);
+
+    // List of values
+    let b = bit_field_vec![10; 4, 500, 2, 0, 1];
+    assert_eq!(b.len(), 5);
+    assert_eq!(b.bit_width(), 10);
+    assert_eq!(b.get(0), 4);
+    assert_eq!(b.get(1), 500);
+    assert_eq!(b.get(2), 2);
+    assert_eq!(b.get(3), 0);
+    assert_eq!(b.get(4), 1);
+}

@@ -27,12 +27,14 @@
 //! It is possible to juggle between the three flavors using [`From`]/[`Into`].
 //!
 //! # Examples
+//!
 //! ```rust
 //! use sux::bit_vec;
 //! use sux::traits::{BitCount, BitLength, NumBits, AddNumBits};
 //! use sux::bits::{BitVec, AtomicBitVec};
 //! use core::sync::atomic::Ordering;
 //!
+//! // Convenience macro
 //! let b = bit_vec![0, 1, 0, 1, 1, 0, 1, 0];
 //! assert_eq!(b.len(), 8);
 //! // Not constant time
@@ -93,45 +95,59 @@ const BITS: usize = usize::BITS as usize;
 ///
 /// // Empty bit vector
 /// let b = bit_vec![];
+/// assert_eq!(b.len(), 0);
 ///
 /// // 10 bits set to true
 /// let b = bit_vec![true; 10];
 /// assert_eq!(b.len(), 10);
+/// assert_eq!(b.iter().all(|x| x), true);
 /// let b = bit_vec![1; 10];
+/// assert_eq!(b.len(), 10);
+/// assert_eq!(b.iter().all(|x| x), true);
 ///
 /// // 10 bits set to false
 /// let b = bit_vec![false; 10];
 /// assert_eq!(b.len(), 10);
+/// assert_eq!(b.iter().any(|x| x), false);
 /// let b = bit_vec![0; 10];
+/// assert_eq!(b.len(), 10);
+/// assert_eq!(b.iter().any(|x| x), false);
 ///
 /// // Bit list
 /// let b = bit_vec![0, 1, 0, 1, 0, 0];
+/// assert_eq!(b.len(), 6);
+/// assert_eq!(b[0], false);
+/// assert_eq!(b[1], true);
+/// assert_eq!(b[2], false);
+/// assert_eq!(b[3], true);
+/// assert_eq!(b[4], false);
+/// assert_eq!(b[5], false);
 /// ```
 
 #[macro_export]
 macro_rules! bit_vec {
     () => {
-        $crate::prelude::BitVec::new(0)
+        $crate::bits::BitVec::new(0)
     };
     (false; $n:expr) => {
-        $crate::prelude::BitVec::new($n)
+        $crate::bits::BitVec::new($n)
     };
     (0; $n:expr) => {
-        $crate::prelude::BitVec::new($n)
+        $crate::bits::BitVec::new($n)
     };
     (true; $n:expr) => {
         {
-            $crate::prelude::BitVec::with_value($n, true)
+            $crate::bits::BitVec::with_value($n, true)
         }
     };
     (1; $n:expr) => {
         {
-            $crate::prelude::BitVec::with_value($n, true)
+            $crate::bits::BitVec::with_value($n, true)
         }
     };
     ($($x:expr),+ $(,)?) => {
         {
-            let mut b = $crate::prelude::BitVec::with_capacity([$($x),+].len());
+            let mut b = $crate::bits::BitVec::with_capacity([$($x),+].len());
             $( b.push($x != 0); )*
             b
         }

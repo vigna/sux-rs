@@ -5,11 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use sux::{
-    bit_vec,
-    rank_sel::Rank9,
-    traits::{AddNumBits, RankZero},
-};
+use sux::prelude::*;
 
 #[test]
 fn test_rank_sel_rank_zero() {

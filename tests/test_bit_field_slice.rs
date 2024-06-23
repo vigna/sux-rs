@@ -7,10 +7,7 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use sux::{
-    bits::{AtomicBitFieldVec, BitFieldVec},
-    traits::{AtomicBitFieldSlice, BitFieldSlice, BitFieldSliceCore, BitFieldSliceMut},
-};
+use sux::prelude::*;
 
 #[test]
 fn test_is_empty() {

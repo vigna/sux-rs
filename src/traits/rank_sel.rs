@@ -26,7 +26,6 @@ pub trait BitLength {
     /// Returns a length in bits.
     fn len(&self) -> usize;
 }
-pub use ambassador_impl_BitLength;
 
 /// Potentially expensive bit-counting methods.
 ///
@@ -50,7 +49,6 @@ pub trait BitCount: BitLength {
         self.len() - self.count_ones()
     }
 }
-pub use ambassador_impl_BitCount;
 
 /// Constant-time bit-counting methods.
 ///
@@ -76,7 +74,6 @@ pub trait NumBits: BitLength {
         self.len() - self.num_ones()
     }
 }
-pub use ambassador_impl_NumBits;
 
 /// Ranking over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
@@ -96,7 +93,6 @@ pub trait Rank: BitLength + NumBits + RankUnchecked {
         }
     }
 }
-pub use ambassador_impl_Rank;
 
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
@@ -107,10 +103,9 @@ pub trait RankUnchecked {
     /// `pos` must be between 0 (included) and the [length of the underlying bit
     /// vector](`BitLength::len`) (excluded).
     ///
-    /// Some implementation might consider the the length as a valid argument.
+    /// Some implementation might accept the the length as a valid argument.
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
 }
-pub use ambassador_impl_RankUnchecked;
 
 /// Ranking zeros over a bit vector.
 ///
@@ -139,13 +134,13 @@ pub trait RankZero: Rank {
         pos - self.rank_unchecked(pos)
     }
 }
-pub use ambassador_impl_RankZero;
 
 /// Ranking over a bit vector, with a hint.
 ///
 /// This trait is used to implement fast ranking by adding to bit vectors
 /// counters of different kind.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait RankHinted<const HINT_BIT_SIZE: usize> {
     /// Returns the number of ones preceding the specified position,
     /// provided a preceding position and its associated rank.
@@ -162,19 +157,6 @@ pub trait RankHinted<const HINT_BIT_SIZE: usize> {
     unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize;
 }
 
-macro_rules! forward_rank_hinted {
-        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > $crate::traits::rank_sel::RankHinted<64> for $name < $($generic,)* > where $type: $crate::traits::rank_sel::RankHinted<64> {
-            #[inline(always)]
-            unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
-                $crate::traits::rank_sel::RankHinted::<64>::rank_hinted(&self.$field, pos, hint_pos, hint_rank)
-            }
-        }
-    };
-}
-
-pub(crate) use forward_rank_hinted;
-
 /// Selection over a bit vector without bound checks.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
@@ -186,8 +168,6 @@ pub trait SelectUnchecked {
     /// underlying bit vector (excluded).
     unsafe fn select_unchecked(&self, rank: usize) -> usize;
 }
-
-pub use ambassador_impl_SelectUnchecked;
 
 /// Selection over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
@@ -203,7 +183,6 @@ pub trait Select: SelectUnchecked + NumBits {
         }
     }
 }
-pub use ambassador_impl_Select;
 
 /// Selection zeros over a bit vector without bound checks.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
@@ -216,7 +195,6 @@ pub trait SelectZeroUnchecked {
     /// underlying bit vector (excluded).
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize;
 }
-pub use ambassador_impl_SelectZeroUnchecked;
 
 /// Selection zeros over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
@@ -232,7 +210,6 @@ pub trait SelectZero: SelectZeroUnchecked + NumBits {
         }
     }
 }
-pub use ambassador_impl_SelectZero;
 
 /// Selection over a bit vector, with a hint.
 ///
@@ -254,7 +231,6 @@ pub trait SelectHinted {
     /// before `hint_pos`, and must be less than or equal to `rank`.
     unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize;
 }
-pub use ambassador_impl_SelectHinted;
 
 /// Selection zeros over a bit vector, with a hint.
 ///
@@ -275,12 +251,10 @@ pub trait SelectZeroHinted {
     /// before `hint_pos`, and must be less than or equal to `rank`.
     unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize;
 }
-pub use ambassador_impl_SelectZeroHinted;
 
 crate::forward_mult![AddNumBits<B>; B; bits;
     crate::forward_as_ref_slice_usize,
-    crate::forward_index_bool,
-    forward_rank_hinted
+    crate::forward_index_bool
 ];
 
 /// A thin wrapper implementing [`NumBits`] by caching the result of
@@ -293,6 +267,7 @@ crate::forward_mult![AddNumBits<B>; B; bits;
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
+#[delegate(crate::traits::rank_sel::RankHinted<64>, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::Select, target = "bits")]
@@ -304,20 +279,6 @@ crate::forward_mult![AddNumBits<B>; B; bits;
 pub struct AddNumBits<B> {
     bits: B,
     number_of_ones: usize,
-}
-
-impl<B: BitLength> NumBits for AddNumBits<B> {
-    #[inline(always)]
-    fn num_ones(&self) -> usize {
-        self.number_of_ones
-    }
-}
-
-impl<B: BitLength> BitCount for AddNumBits<B> {
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.number_of_ones
-    }
 }
 
 impl<B> AddNumBits<B> {
@@ -339,6 +300,31 @@ impl<B> AddNumBits<B> {
     #[inline(always)]
     pub fn into_raw_parts(self) -> (B, usize) {
         (self.bits, self.number_of_ones)
+    }
+}
+
+impl<B: BitLength> AddNumBits<B> {
+    /// Returns the number of bits in the underlying bit vector.
+    ///
+    /// This method is equivalent to [`BitLength::len`], but it is provided to
+    /// reduce ambiguity in method resolution.
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        BitLength::len(self)
+    }
+}
+
+impl<B: BitLength> NumBits for AddNumBits<B> {
+    #[inline(always)]
+    fn num_ones(&self) -> usize {
+        self.number_of_ones
+    }
+}
+
+impl<B: BitLength> BitCount for AddNumBits<B> {
+    #[inline(always)]
+    fn count_ones(&self) -> usize {
+        self.number_of_ones
     }
 }
 

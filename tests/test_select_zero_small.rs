@@ -6,7 +6,7 @@
  */
 
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use sux::prelude::{BitCount, BitVec, RankSmall, SelectZero, SelectZeroSmall};
+use sux::prelude::*;
 
 macro_rules! test {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ZEROS_PER_INVENTORY: literal) => {
