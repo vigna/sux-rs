@@ -281,7 +281,6 @@ macro_rules! impl_rank_small_sel {
                     last_block_idx
                 );
 
-                eprintln!("{}", last_block_idx - block_idx);
                 let search_rank = rank - upper_rank;
                 if block_idx == last_block_idx {
                     last_block_idx += 1;
