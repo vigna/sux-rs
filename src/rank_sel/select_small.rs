@@ -281,9 +281,6 @@ macro_rules! impl_rank_small_sel {
                 }
 
                 debug_assert!(block_idx < counts.len());
-                let mut hint_rank = upper_rank + counts.get_unchecked(block_idx).absolute as usize;
-                let mut next_rank;
-                let mut next_block_idx;
 
                 debug_assert!(
                     block_idx <= last_block_idx,
@@ -292,22 +289,13 @@ macro_rules! impl_rank_small_sel {
                     last_block_idx
                 );
 
-                // The rank inside the superblock
                 let search_rank = rank - upper_rank;
-
-                loop {
-                    if last_block_idx - block_idx <= 1 {
-                        break;
-                    }
-                    next_block_idx = (block_idx + last_block_idx) / 2;
-                    next_rank = counts.get_unchecked(next_block_idx).absolute as usize;
-                    if search_rank >= next_rank {
-                        block_idx = next_block_idx;
-                        hint_rank = next_rank;
-                    } else {
-                        last_block_idx = next_block_idx;
-                    }
+                if block_idx == last_block_idx {
+                    last_block_idx += 1;
                 }
+                block_idx += counts[block_idx..last_block_idx].
+                    partition_point(|x| x.absolute as usize <= search_rank) - 1;
+                let hint_rank = counts.get_unchecked(block_idx).absolute as usize;
 
                 let hint_pos;
                 // first sub block
