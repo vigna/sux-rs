@@ -44,7 +44,7 @@ fn main() {
         "rank9" => {
             bench_rank9(&mut criterion);
         }
-        "simple_select_const" => bench_simple_const(&mut criterion, true),
+        "select_adapt_const" => bench_select_adapt_const(&mut criterion, true),
         "compare_simple_fixed" => compare_simple_fixed(&mut criterion),
         filter if filter.contains("-") || filter.is_empty() => {
             println!("No filter provided.");
