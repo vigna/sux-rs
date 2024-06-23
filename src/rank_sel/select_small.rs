@@ -279,7 +279,7 @@ macro_rules! impl_rank_small_sel {
                 } else {
                     upper_block_idx * Self::SUPERBLOCK_SIZE
                 };
-                let mut block_idx = inv_pos / Self::BLOCK_SIZE + local_rank / Self::BLOCK_SIZE;
+                let mut block_idx = inv_pos / Self::BLOCK_SIZE;// + local_rank / Self::BLOCK_SIZE;
 
                 let mut last_block_idx;
                 if (rank >> self.log2_ones_per_inventory) + 1 < inventory.len() {
@@ -309,7 +309,7 @@ macro_rules! impl_rank_small_sel {
                 }
                 block_idx += counts[block_idx..last_block_idx].
                     linear_partition_point(|x| x.absolute as usize <= local_rank) - 1;
-                let hint_rank = counts.get_unchecked(block_idx).absolute as usize;
+                let hint_rank = upper_rank + counts.get_unchecked(block_idx).absolute as usize;
 
                 let hint_pos;
                 // first sub block
