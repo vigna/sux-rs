@@ -305,7 +305,7 @@ macro_rules! impl_rank_small_sel {
                     last_block_idx
                 );
 
-                if block_idx == last_block_idx {
+                if block_idx == last_block_idx { // TODO: avoid this test
                     last_block_idx += 1;
                 }
                 block_idx += counts[block_idx..last_block_idx].
