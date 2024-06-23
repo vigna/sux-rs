@@ -12,7 +12,7 @@ use common_traits::SelectInWord;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
-crate::forward_index_bool![SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ONES_PER_INVENTORY: usize, R, I, O>; R; rank_small];
+crate::forward_index_bool![SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, R, I, O>; R; rank_small];
 
 use crate::ambassador_impl_AsRef;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
@@ -40,8 +40,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 /// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
 /// Springer, 2008.
 ///
-///
-/// The resulting selection methods are very slow, and in general it is
+/// The resulting selection methods are quite slow, and in general it is
 /// convenient and faster to use [`SelectAdapt`], even with `M` set to 1 (in
 /// which case the additional space is 1.5-3% of the original bit vector).
 ///
@@ -54,6 +53,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 ///
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![1; bits];
+/// // Note that at present the compiler cannot infer const parameters
 /// let rank_sel_small = SelectSmall::<1, 9>::new(rank_small);
 ///
 /// assert_eq!(rank_sel_small.select(0), Some(0));
@@ -101,7 +101,6 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 pub struct SelectSmall<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
-    const LOG2_ONES_PER_INVENTORY: usize = 12,
     R = RankSmall<NUM_U32S, COUNTER_WIDTH>,
     I = Box<[u32]>,
     O = Box<[usize]>,
@@ -109,37 +108,25 @@ pub struct SelectSmall<
     rank_small: R,
     inventory: I,
     inventory_begin: O,
+    log2_ones_per_inventory: usize,
 }
 
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        R,
-        I,
-        O,
-    > SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, R, I, O>
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, R, I, O>
+    SelectSmall<NUM_U32S, COUNTER_WIDTH, R, I, O>
 {
     const SUPERBLOCK_SIZE: usize = 1 << 32;
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
     const WORDS_PER_SUBBLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_SUBBLOCK;
     const BLOCK_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
     const SUBBLOCK_SIZE: usize = (Self::WORDS_PER_SUBBLOCK * usize::BITS as usize);
-    const ONES_PER_INVENTORY: usize = 1 << LOG2_ONES_PER_INVENTORY;
 
     pub fn into_inner(self) -> R {
         self.rank_small
     }
 }
 
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        const LOG2_ONES_PER_INVENTORY: usize,
-        R: BitLength,
-        I,
-        O,
-    > SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, R, I, O>
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, R: BitLength, I, O>
+    SelectSmall<NUM_U32S, COUNTER_WIDTH, R, I, O>
 {
     /// Returns the number of bits in the bit vector.
     ///
@@ -155,7 +142,6 @@ impl<
 macro_rules! impl_rank_small_sel {
     ($NUM_U32S: tt; $COUNTER_WIDTH: literal) => {
         impl<
-                const LOG2_ONES_PER_INVENTORY: usize,
                 B: AsRef<[usize]> + BitLength,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
@@ -163,15 +149,22 @@ macro_rules! impl_rank_small_sel {
             SelectSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
-                LOG2_ONES_PER_INVENTORY,
                 RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
             >
         {
             // Creates a new selection structure over a [`RankSmall`] structure.
             pub fn new(rank_small: RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>) -> Self {
+                let num_bits = rank_small.len();
                 let num_ones = rank_small.num_ones();
 
-                let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY);
+                let target_inventory_span = 8 * Self::BLOCK_SIZE;
+                let log2_ones_per_inventory = (num_ones * target_inventory_span)
+                    .div_ceil(num_bits.max(1))
+                    .max(1)
+                    .ilog2() as usize;
+                let ones_per_inventory = 1 << log2_ones_per_inventory;
+
+                let inventory_size = num_ones.div_ceil(ones_per_inventory);
                 let mut inventory = Vec::<u32>::with_capacity(inventory_size + 1);
 
                 // The inventory_begin vector stores the index of the first element of
@@ -199,7 +192,7 @@ macro_rules! impl_rank_small_sel {
                                 first = false;
                             }
                             inventory.push(in_superblock_index as u32);
-                            next_quantum += Self::ONES_PER_INVENTORY;
+                            next_quantum += ones_per_inventory;
                         }
 
                         past_ones += ones_in_word;
@@ -221,12 +214,12 @@ macro_rules! impl_rank_small_sel {
                     rank_small,
                     inventory,
                     inventory_begin,
+                    log2_ones_per_inventory
                 }
             }
         }
 
         impl<
-                const LOG2_ONES_PER_INVENTORY: usize,
                 B: AsRef<[usize]> + BitLength + SelectHinted,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
@@ -234,7 +227,6 @@ macro_rules! impl_rank_small_sel {
             for SelectSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
-                LOG2_ONES_PER_INVENTORY,
                 RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
             >
         {
@@ -255,7 +247,7 @@ macro_rules! impl_rank_small_sel {
                 // we clip the span to the upper block boundaries since we know that
                 // the rank is in the upper block
 
-                let inv_idx = rank / Self::ONES_PER_INVENTORY;
+                let inv_idx = rank >> self.log2_ones_per_inventory;
                 let inv_upper_block_idx = inventory_begin.partition_point(|&x| x <= inv_idx) - 1;
                 let inv_pos = if inv_upper_block_idx == upper_block_idx {
                     *inventory.get_unchecked(inv_idx) as usize + upper_block_idx * Self::SUPERBLOCK_SIZE
@@ -265,7 +257,7 @@ macro_rules! impl_rank_small_sel {
                 let mut block_idx = inv_pos / Self::BLOCK_SIZE;
 
                 let mut last_block_idx;
-                if rank / Self::ONES_PER_INVENTORY + 1 < inventory.len() {
+                if (rank >> self.log2_ones_per_inventory) + 1 < inventory.len() {
                     let next_inv_upper_block_idx =
                         inventory_begin.partition_point(|&x| x <= inv_idx + 1) - 1;
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
@@ -289,6 +281,7 @@ macro_rules! impl_rank_small_sel {
                     last_block_idx
                 );
 
+                eprintln!("{}", last_block_idx - block_idx);
                 let search_rank = rank - upper_rank;
                 if block_idx == last_block_idx {
                     last_block_idx += 1;
@@ -331,7 +324,6 @@ macro_rules! impl_rank_small_sel {
         }
 
         impl<
-                const LOG2_ONES_PER_INVENTORY: usize,
                 B: AsRef<[usize]> + BitLength + SelectHinted,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
@@ -339,7 +331,7 @@ macro_rules! impl_rank_small_sel {
             for SelectSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
-                LOG2_ONES_PER_INVENTORY,
+
                 RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
             >
         {

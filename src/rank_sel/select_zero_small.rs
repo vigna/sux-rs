@@ -40,7 +40,6 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 /// use sux::rank_sel::SelectZeroSmall;
 /// use sux::traits::SelectZero;
 ///
-///// TODO: fix examples
 /// let bits = bit_vec![0, 1, 0, 0, 1, 0, 1, 0];
 /// let rank_small = rank_small![1; bits];
 /// let sel = SelectZeroSmall::<1, 9>::new(rank_small);
