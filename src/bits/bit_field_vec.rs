@@ -37,7 +37,7 @@
 //! used, for example, to provide
 //! [predecessor](crate::traits::indexed_dict::Pred) and
 //! [successor](crate::traits::indexed_dict::Succ) primitives for
-//! [`EliasFano`](crate::dict::elias_fano::EliasFano).
+//! [`EliasFano`].
 //!
 //! # Low-level support
 //!
