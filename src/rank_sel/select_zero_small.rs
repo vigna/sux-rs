@@ -15,14 +15,15 @@ use mem_dbg::{MemDbg, MemSize};
 crate::forward_mult![
     SelectZeroSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ZEROS_PER_INVENTORY: usize, R, I>; R; rank_small;
     crate::forward_as_ref_slice_usize,
-    crate::forward_index_bool,
-    crate::traits::forward_rank_hinted
+    crate::forward_index_bool
+
 ];
 
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
 use crate::traits::rank_sel::ambassador_impl_Rank;
+use crate::traits::rank_sel::ambassador_impl_RankHinted;
 use crate::traits::rank_sel::ambassador_impl_RankUnchecked;
 use crate::traits::rank_sel::ambassador_impl_RankZero;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
@@ -61,6 +62,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 #[delegate(crate::traits::rank_sel::BitLength, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::Rank, target = "rank_small")]
+#[delegate(crate::traits::rank_sel::RankHinted<64>, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::Select, target = "rank_small")]

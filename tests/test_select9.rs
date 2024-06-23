@@ -6,9 +6,7 @@
  */
 
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use sux::rank_sel::{Rank9, Select9};
-use sux::traits::{BitLength, Rank, Select};
-use sux::{prelude::BitVec, traits::BitCount};
+use sux::prelude::*;
 
 #[test]
 fn test() {

@@ -8,10 +8,7 @@
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
-use sux::bits::BitVec;
-use sux::rank_sel::{RankSmall, SelectSmall};
-use sux::traits::BitCount;
-use sux::traits::Select;
+use sux::prelude::*;
 
 macro_rules! test {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ZEROS_PER_INVENTORY: literal) => {

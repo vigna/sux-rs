@@ -128,21 +128,6 @@ impl<H, L> EliasFano<H, L> {
         self.n
     }
 
-    #[inline(always)]
-    pub unsafe fn from_raw_parts(u: usize, n: usize, l: usize, low_bits: L, high_bits: H) -> Self {
-        Self {
-            n,
-            u,
-            l,
-            low_bits,
-            high_bits,
-        }
-    }
-    #[inline(always)]
-    pub fn into_raw_parts(self) -> (usize, usize, usize, L, H) {
-        (self.u, self.n, self.l, self.low_bits, self.high_bits)
-    }
-
     /// Replaces the high bits.
     ///
     /// # Safety

@@ -16,6 +16,7 @@ use crate::{
 };
 
 use crate::traits::rank_sel::ambassador_impl_BitLength;
+use crate::traits::rank_sel::ambassador_impl_RankHinted;
 use crate::traits::rank_sel::ambassador_impl_Select;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
@@ -25,8 +26,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 
 crate::forward_mult![Rank9<B, C>; B; bits;
     crate::forward_as_ref_slice_usize,
-    crate::forward_index_bool,
-    crate::traits::forward_rank_hinted
+    crate::forward_index_bool
 ];
 
 /// A ranking structure using 25% of additional space and providing the fastest
@@ -76,6 +76,7 @@ crate::forward_mult![Rank9<B, C>; B; bits;
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
+#[delegate(crate::traits::rank_sel::RankHinted<64>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
 #[delegate(
@@ -93,21 +94,6 @@ crate::forward_mult![Rank9<B, C>; B; bits;
 pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
     pub(super) bits: B,
     pub(super) counts: C,
-}
-
-impl<B: BitLength, C: AsRef<[BlockCounters]>> NumBits for Rank9<B, C> {
-    #[inline(always)]
-    fn num_ones(&self) -> usize {
-        // SAFETY: The last counter is always present
-        unsafe { self.counts.as_ref().last().unwrap_unchecked().absolute }
-    }
-}
-
-impl<B: BitLength, C: AsRef<[BlockCounters]>> BitCount for Rank9<B, C> {
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.num_ones()
-    }
 }
 
 #[derive(Epserde, Copy, Debug, Clone, MemDbg, MemSize, Default)]
@@ -153,6 +139,18 @@ impl<B, C> Rank9<B, C> {
     }
 }
 
+impl<B: BitLength, C> Rank9<B, C> {
+    /// Returns the number of bits in the underlying bit vector.
+    ///
+    /// This method is equivalent to
+    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// reduce ambiguity in method resolution.
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        BitLength::len(self)
+    }
+}
+
 impl<B: AsRef<[usize]> + BitLength> Rank9<B, Box<[BlockCounters]>> {
     /// Creates a new Rank9 structure from a given bit vector.
     pub fn new(bits: B) -> Self {
@@ -195,30 +193,63 @@ impl<B: AsRef<[usize]> + BitLength> Rank9<B, Box<[BlockCounters]>> {
     }
 }
 
-impl<B: BitLength, C> Rank9<B, C> {
-    /// Returns the number of bits in the underlying bit vector.
-    ///
-    /// This method is equivalent to
-    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
-    /// reduce ambiguity in method resolution.
+impl<B: BitLength, C: AsRef<[BlockCounters]>> NumBits for Rank9<B, C> {
     #[inline(always)]
-    pub fn len(&self) -> usize {
-        BitLength::len(self)
+    fn num_ones(&self) -> usize {
+        // SAFETY: The last counter is always present
+        unsafe { self.counts.as_ref().last().unwrap_unchecked().absolute }
+    }
+}
+
+impl<B: BitLength, C: AsRef<[BlockCounters]>> BitCount for Rank9<B, C> {
+    #[inline(always)]
+    fn count_ones(&self) -> usize {
+        self.num_ones()
     }
 }
 
 impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for Rank9<B, C> {
+    /// # Safety
+    ///
+    /// The implementation of [`RankUnchecked`] for [`Rank9`] has an weakened
+    /// safety requirement: it is possible to call this method with `pos` equal
+    /// to [the length of te underlying bit
+    /// vector](crate::traits::BitLength::len) provided there is at least one
+    /// unused bit. This is always true if the length is not a multiple of the
+    /// number of bits in a word, but requires allocating an extra word
+    /// otherwise. The content of the extra word is irrelevant.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sux::prelude::*;
+    ///
+    /// let rank9 = Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]);
+    /// // This is safe as there are several unused bits
+    /// assert_eq!(unsafe { rank9.rank_unchecked(8) }, rank9.num_ones());
+    ///
+    /// // The same call would not be legal where
+    /// let rank9 = Rank9::new(BitVec::new(usize::BITS as usize));
+    /// // But we can ensure that an unused bit is present
+    /// let mut bv = BitVec::new(usize::BITS as usize);
+    /// bv.push(false);
+    /// bv.pop();
+    /// let rank9 = Rank9::new(bv);
+    /// // This is safe as there is at least one unused bit
+    /// assert_eq!(unsafe { rank9.rank_unchecked(8) }, rank9.num_ones());
     #[inline(always)]
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
         let word_pos = pos / usize::BITS as usize;
+        let bit_pos = pos % usize::BITS as usize;
         let block = word_pos / Self::WORDS_PER_BLOCK;
         let offset = word_pos % Self::WORDS_PER_BLOCK;
+        // When pos is equal to the length of the underlying bit vector and
+        // there is at least one unused bit, this access is safe as there
+        // is a word of index word_pos.
         let word = self.bits.as_ref().get_unchecked(word_pos);
         let counts = self.counts.as_ref().get_unchecked(block);
 
-        counts.absolute
-            + counts.rel(offset)
-            + (word & ((1 << (pos % usize::BITS as usize)) - 1)).count_ones() as usize
+        counts.absolute + counts.rel(offset) + (word & ((1 << bit_pos) - 1)).count_ones() as usize
     }
 }
 

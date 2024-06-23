@@ -11,9 +11,7 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngCore, SeedableRng};
 use std::sync::atomic::AtomicUsize;
-use sux::bits::bit_vec::BitVec;
-use sux::prelude::AtomicBitVec;
-use sux::traits::BitCount;
+use sux::prelude::*;
 
 #[test]
 fn test() {
@@ -475,4 +473,37 @@ fn test_iter_ones_zeros() {
 
     let v = unsafe { BitVec::from_raw_parts(vec![!0], 10) };
     assert_eq!(v.iter_zeros().next(), None);
+}
+
+#[test]
+fn test_macro() {
+    // Empty bit vector
+    let b = bit_vec![];
+    assert_eq!(b.len(), 0);
+
+    // 10 bits set to true
+    let b = bit_vec![true; 10];
+    assert_eq!(b.len(), 10);
+    assert_eq!(b.iter().all(|x| x), true);
+    let b = bit_vec![1; 10];
+    assert_eq!(b.len(), 10);
+    assert_eq!(b.iter().all(|x| x), true);
+
+    // 10 bits set to false
+    let b = bit_vec![false; 10];
+    assert_eq!(b.len(), 10);
+    assert_eq!(b.iter().any(|x| x), false);
+    let b = bit_vec![0; 10];
+    assert_eq!(b.len(), 10);
+    assert_eq!(b.iter().any(|x| x), false);
+
+    // Bit list
+    let b = bit_vec![0, 1, 0, 1, 0, 0];
+    assert_eq!(b.len(), 6);
+    assert_eq!(b[0], false);
+    assert_eq!(b[1], true);
+    assert_eq!(b[2], false);
+    assert_eq!(b[3], true);
+    assert_eq!(b[4], false);
+    assert_eq!(b[5], false);
 }

@@ -50,6 +50,7 @@ use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
 use crate::traits::rank_sel::ambassador_impl_Rank;
+use crate::traits::rank_sel::ambassador_impl_RankHinted;
 use crate::traits::rank_sel::ambassador_impl_RankUnchecked;
 use crate::traits::rank_sel::ambassador_impl_RankZero;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
@@ -123,6 +124,7 @@ crate::forward_mult![Select9<R, I>; R; rank9;
 #[delegate(crate::traits::rank_sel::BitLength, target = "rank9")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "rank9")]
 #[delegate(crate::traits::rank_sel::Rank, target = "rank9")]
+#[delegate(crate::traits::rank_sel::RankHinted<64>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "rank9")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "rank9")]
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "rank9")]
@@ -144,6 +146,18 @@ impl<R, I> Select9<R, I> {
 
     const LOG2_ZEROS_PER_INVENTORY: usize = 9;
     const ONES_PER_INVENTORY: usize = 1 << Self::LOG2_ZEROS_PER_INVENTORY;
+}
+
+impl<R: BitLength, I> Select9<R, I> {
+    /// Returns the number of bits in the underlying bit vector.
+    ///
+    /// This method is equivalent to
+    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// reduce ambiguity in method resolution.
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        BitLength::len(self)
+    }
 }
 
 impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>, Box<[usize]>> {

@@ -47,7 +47,7 @@
 //! and non-atomic unsigned integer types that view their elements as values
 //! with a bit width equal to that of the type.
 //!
-//! ## Simpler methods for atomic slices
+//! # Simpler methods for atomic slices
 //!
 //! [`AtomicBitFieldSlice`] has rather cumbersome method names. There is however
 //! a trait [`AtomicHelper`] that can be imported that will add to
@@ -292,6 +292,11 @@ macro_rules! impl_core {
 }
 
 impl_core!(u8, u16, u32, u64, u128, usize);
+// This implementation is not necessary, but it avoids ambiguity
+// with expressions like [1, 2, 3].len() when using the prelude.
+// Without this implementation, the compiler complains that
+// BitFieldSliceCore is not implemented for [i32; 3].
+impl_core!(i8, i16, i32, i64, i128, isize);
 
 macro_rules! impl_ref {
     ($($ty:ty),*) => {$(

@@ -8,16 +8,7 @@
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
-use sux::bit_vec;
-use sux::bits::BitVec;
-use sux::rank_sel::RankSmall;
-use sux::rank_sel::SelectAdapt;
-use sux::traits::AddNumBits;
-use sux::traits::BitCount;
-use sux::traits::BitLength;
-use sux::traits::NumBits;
-use sux::traits::Rank;
-use sux::traits::Select;
+use sux::prelude::*;
 
 #[test]
 fn test() {

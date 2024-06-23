@@ -8,16 +8,7 @@
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
-use sux::bit_vec;
-use sux::bits::BitVec;
-use sux::rank_sel::Rank9;
-use sux::rank_sel::SelectAdaptConst;
-use sux::traits::AddNumBits;
-use sux::traits::BitCount;
-use sux::traits::BitLength;
-use sux::traits::NumBits;
-use sux::traits::Rank;
-use sux::traits::Select;
+use sux::prelude::*;
 
 const INV: usize = 13;
 const SUB: usize = 0;

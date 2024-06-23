@@ -23,9 +23,12 @@ pub mod utils;
 pub mod fuzz;
 
 pub mod prelude {
+    pub use crate::bit_field_vec;
+    pub use crate::bit_vec;
     pub use crate::bits::*;
     pub use crate::dict::*;
     pub use crate::rank_sel::*;
+    pub use crate::rank_small;
     pub use crate::traits::bit_field_slice;
     pub use crate::traits::*;
 }
@@ -39,6 +42,7 @@ macro_rules! forward_mult {
 	($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident; ) => {}
 }
 
+use ambassador::delegatable_trait_remote;
 pub(crate) use forward_mult;
 
 macro_rules! forward_as_ref_slice_usize {
@@ -68,3 +72,8 @@ macro_rules! forward_index_bool {
 }
 
 pub(crate) use forward_index_bool;
+
+#[delegatable_trait_remote]
+pub trait AsRef<T> {
+    fn as_ref(&self) -> &T;
+}

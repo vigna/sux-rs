@@ -11,47 +11,74 @@
 //! unless the bit width is a power of two some elements will be stored across
 //! word boundaries).
 //!
+//! There are two flavors: [`BitFieldVec`], a mutable bit-field vector, and
+//! [`AtomicBitFieldVec`], a mutable, thread-safe bit-field vector.
+//!
+//! These flavors depends on a backend, and presently we provide, given an
+//! unsigned integer type `T` or an unsigned atomic integer type `A`:
+//!
+//! - `BitFieldVec<Vec<T>>`: a mutable, growable and resizable bit-field vector;
+//! - `BitFieldVec<AsRef<[T]>>`: an immutable bit-field vector, useful for
+//!   [ε-serde](epserde) support;
+//! - `BitFieldVec<AsRef<[T]> + AsMut<[T]>>`: a mutable (but not resizable) bit
+//!    vector;
+//! - `AtomicBitFieldVec<AsRef<[A]>>`: a partially thread-safe, mutable (but not
+//!   resizable) bit-field vector.
+//!
+//! More generally, the underlying type must satisfy the trait [`Word`] for
+//! [`BitFieldVec`] and additionally [`IntoAtomic`] for [`AtomicBitFieldVec`].
+//!
 //! Note that nothing is assumed about the content of the backend outside the
 //! bits of the vector. Moreover, the content of the backend outside of the
 //! vector is never modified by the methods of this class.
-//!
-//! We provide implementations based on `AsRef<[T]>`, `AsMut<[T]>`, and
-//! `AsRef<[A]>`, where `T` is an unsigned type (default: [`usize`]) and `A` is
-//! an atomic unsigned type (default: [`AtomicUsize`]); more generally, the
-//! underlying type must satisfy the trait [`Word`], and additional
-//! [`IntoAtomic`] in the second case. [`BitFieldSlice`], [`BitFieldSliceMut`],
-//! and [`AtomicBitFieldSlice`], respectively. Constructors are provided for
-//! storing data in a [`Vec<T>`](BitFieldVec::new) or
-//! [`Vec<A>`](AtomicBitFieldVec::new).
-//!
-//! In the latter case we can provide some concurrency guarantees, albeit not
-//! full-fledged thread safety: more precisely, we can guarantee thread-safety
-//! if the bit width is a power of two; otherwise, concurrent writes to values
-//! that cross word boundaries might end up in different threads succeding in
-//! writing only part of a value. If the user can guarantee that no two threads
-//! ever write to the same boundary-crossing value, then no race condition can
-//! happen.
-//!
-//! Note that some care must be exercised when using the methods of
-//! [`BitFieldSlice`], [`BitFieldSliceMut`] and [`AtomicBitFieldSlice`]: see the
-//! discussions in documentation of [`bit_field_slice`].
 //!
 //! For high-speed unchecked scanning, we implement [`IntoUncheckedIterator`]
 //! and [`IntoReverseUncheckedIterator`] on a reference to this type. The are
 //! used, for example, to provide
 //! [predecessor](crate::traits::indexed_dict::Pred) and
 //! [successor](crate::traits::indexed_dict::Succ) primitives for
-//! [Elias-Fano](crate::dict::elias_fano::EliasFano).
+//! [`EliasFano`](crate::dict::elias_fano::EliasFano).
 //!
-//! ## Low-level support
+//! # Low-level support
 //!
 //! The methods [`address_of`](BitFieldVec::addr_of) and
 //! [`get_unaligned`](BitFieldVec::get_unaligned) can be used to manually
 //! prefetch parts of the data structure, or read values using unaligned read,
 //! when the bit width makes it possible.
+//!
+//! # Examples
+//! ```rust
+//! use sux::prelude::*;
+//!
+//! // Bit field vector of bit width 5 and length 10, all entries set to zero
+//! let mut b = <BitFieldVec<usize>>::new(5, 10);
+//! assert_eq!(b.len(), 10);
+//! assert_eq!(b.bit_width(), 5);
+//! b.set(0, 3);
+//! assert_eq!(b.get(0), 3);
+//!
+//! // Empty bit field vector of bit width 20 with capacity 10
+//! let mut b = <BitFieldVec<usize>>::with_capacity(20, 10);
+//! assert_eq!(b.len(), 0);
+//! assert_eq!(b.bit_width(), 20);
+//! b.push(20);
+//! assert_eq!(b.len(), 1);
+//! assert_eq!(b.get(0), 20);
+//! assert_eq!(b.pop(), Some(20));
+//!
+//! // Convenience macro
+//! let b = bit_field_vec![10; 4, 500, 2, 0, 1];
+//! assert_eq!(b.len(), 5);
+//! assert_eq!(b.bit_width(), 10);
+//! assert_eq!(b.get(0), 4);
+//! assert_eq!(b.get(1), 500);
+//! assert_eq!(b.get(2), 2);
+//! assert_eq!(b.get(3), 0);
+//! assert_eq!(b.get(4), 1);
+//! ```
 
 use crate::prelude::*;
-use crate::traits::bit_field_slice::*;
+use crate::traits::bit_field_slice::{panic_if_out_of_bounds, panic_if_value};
 use anyhow::{bail, Result};
 use common_traits::*;
 use epserde::*;
@@ -59,6 +86,62 @@ use mem_dbg::*;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use std::sync::atomic::*;
+
+/// Convenient, [`vec!`](vec!)-like macro to initialize `usize`-based bit-field vectors.
+///
+/// # Examples
+///
+/// ```rust
+/// use sux::prelude::*;
+///
+/// // Empty bit field vector of bit width 5
+/// let b = bit_field_vec![5];
+/// assert_eq!(b.len(), 0);
+/// assert_eq!(b.bit_width(), 5);
+///
+/// // 10 values of bit width 6, all set to 3
+/// let b = bit_field_vec![6; 10; 3];
+/// assert_eq!(b.len(), 10);
+/// assert_eq!(b.bit_width(), 6);
+/// assert_eq!(b.iter().all(|x| x == 3), true);
+///
+/// // List of values of bit width 10
+/// let b = bit_field_vec![10; 4, 500, 2, 0, 1];
+/// assert_eq!(b.len(), 5);
+/// assert_eq!(b.bit_width(), 10);
+/// assert_eq!(b.get(0), 4);
+/// assert_eq!(b.get(1), 500);
+/// assert_eq!(b.get(2), 2);
+/// assert_eq!(b.get(3), 0);
+/// assert_eq!(b.get(4), 1);
+/// ```
+
+#[macro_export]
+macro_rules! bit_field_vec {
+    ($w:expr) => {
+        $crate::bits::BitFieldVec::<usize, _>::new($w, 0)
+    };
+    ($w:expr; $n:expr; $v:expr) => {
+        {
+            let mut bit_field_vec = $crate::bits::BitFieldVec::<usize, _>::with_capacity($w, $n);
+            // Force type
+            let v: usize = $v;
+            bit_field_vec.resize($n, v);
+            bit_field_vec
+        }
+    };
+    ($w:expr; $($x:expr),+ $(,)?) => {
+        {
+            let mut b = $crate::bits::BitFieldVec::<usize, _>::with_capacity($w, [$($x),+].len());
+            $(
+                // Force type
+                let x: usize = $x;
+                b.push(x);
+            )*
+            b
+        }
+    };
+}
 
 /// A vector of bit fields of fixed width.
 #[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
@@ -602,6 +685,19 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 }
 
 /// A tentatively thread-safe vector of bit fields of fixed width.
+///
+/// This implementation provides some concurrency guarantees, albeit not
+/// full-fledged thread safety: more precisely, we can guarantee thread-safety
+/// if the bit width is a power of two; otherwise, concurrent writes to values
+/// that cross word boundaries might end up in different threads succeding in
+/// writing only part of a value. If the user can guarantee that no two threads
+/// ever write to the same boundary-crossing value, then no race condition can
+/// happen.
+///
+/// Note that the trait
+/// [`AtomicHelper`](crate::traits::bit_field_slice::AtomicHelper) can be used
+/// to provide a more convenient naming for some methods.
+
 #[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 pub struct AtomicBitFieldVec<W: Word + IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
     /// The underlying storage.

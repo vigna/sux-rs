@@ -39,7 +39,7 @@ mem_dbg = "0.2.2"
 rayon = {version = "1.8.1", optional=true}
 core_affinity = "0.8.1"
 env_logger = {version = "0.11.0"}
-ambassador = "0.3.6"
+ambassador = "0.4.0"
 impl-tools = "0.10.0"
 
 # Fuzz
