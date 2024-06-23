@@ -20,11 +20,11 @@ use crate::{
 
 crate::forward_mult![
     SelectAdaptConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
-    crate::forward_as_ref_slice_usize,
-    crate::forward_index_bool
+        crate::forward_index_bool
 
 ];
 
+use crate::ambassador_impl_AsRef;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
@@ -145,6 +145,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 /// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
+#[delegate(AsRef<[usize]>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]

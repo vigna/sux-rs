@@ -16,6 +16,7 @@ use crate::{
     traits::{BitCount, NumBits},
 };
 
+use crate::ambassador_impl_AsRef;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
 use crate::traits::rank_sel::ambassador_impl_Select;
@@ -26,8 +27,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 
 crate::forward_mult![RankSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, B, C1, C2>; B; bits;
-  crate::forward_as_ref_slice_usize,
-  crate::forward_index_bool
+    crate::forward_index_bool
 ];
 
 /// A family of ranking structures using very little additional space but with
@@ -101,6 +101,7 @@ crate::forward_mult![RankSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: u
 /// assert_eq!(rank_small[7], true);
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
+#[delegate(AsRef<[usize]>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted<64>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]

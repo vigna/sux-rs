@@ -6,15 +6,12 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use crate::prelude::*;
 use ambassador::Delegate;
 use epserde::*;
 use mem_dbg::*;
 
-use crate::{
-    prelude::{BitLength, BitVec, NumBits, Rank, RankZero},
-    traits::{BitCount, RankUnchecked},
-};
-
+use crate::ambassador_impl_AsRef;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
 use crate::traits::rank_sel::ambassador_impl_Select;
@@ -25,7 +22,6 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 
 crate::forward_mult![Rank9<B, C>; B; bits;
-    crate::forward_as_ref_slice_usize,
     crate::forward_index_bool
 ];
 
@@ -75,6 +71,7 @@ crate::forward_mult![Rank9<B, C>; B; bits;
 /// ```
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
+#[delegate(AsRef<[usize]>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted<64>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]

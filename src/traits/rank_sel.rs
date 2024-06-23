@@ -12,10 +12,12 @@
 //! mutable references, and boxes. Moreover, usually they are all forwarded to
 //! underlying implementations.
 
+use crate::ambassador_impl_AsRef;
 use ambassador::{delegatable_trait, Delegate};
 use epserde::Epserde;
 use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
+
 /// A trait expressing a length in bits.
 ///
 /// This trait is typically used in conjunction with `AsRef<[usize]>` to provide
@@ -253,8 +255,7 @@ pub trait SelectZeroHinted {
 }
 
 crate::forward_mult![AddNumBits<B>; B; bits;
-    crate::forward_as_ref_slice_usize,
-    crate::forward_index_bool
+        crate::forward_index_bool
 ];
 
 /// A thin wrapper implementing [`NumBits`] by caching the result of
@@ -265,6 +266,7 @@ crate::forward_mult![AddNumBits<B>; B; bits;
 /// used to provide [`NumBits`] to [`Select`]/[`SelectZero`] implementations; see,
 /// for example, [`SelectAdapt`](crate::rank_sel::SelectAdapt).
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
+#[delegate(AsRef<[usize]>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted<64>, target = "bits")]
