@@ -239,7 +239,7 @@ impl<
     pub fn new(bits: B) -> Self {
         let num_ones = bits.count_ones();
         let num_bits = max(1, bits.len());
-        let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY_MASK);
+        let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY);
 
         let u64_per_subinventory = 1 << LOG2_U64_PER_SUBINVENTORY;
         // A u64 for the inventory, and u64_per_inventory for the subinventory
