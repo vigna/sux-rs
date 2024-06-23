@@ -297,7 +297,7 @@ macro_rules! impl_rank_small {
             pub fn new(bits: B) -> Self {
                 let num_bits = bits.len();
                 let num_words = num_bits.div_ceil(64 as usize);
-                let num_upper_counts = num_bits.div_ceil(1usize << 32) + 1;
+                let num_upper_counts = num_bits.div_ceil(1usize << 32);
                 let num_counts = num_bits.div_ceil(64 as usize * Self::WORDS_PER_BLOCK);
 
                 let mut upper_counts = Vec::with_capacity(num_upper_counts);
@@ -328,8 +328,6 @@ macro_rules! impl_rank_small {
 
                     counts.push(count);
                 }
-
-                upper_counts.push(past_ones);
 
                 assert_eq!(upper_counts.len(), num_upper_counts);
                 assert_eq!(counts.len(), num_counts);
