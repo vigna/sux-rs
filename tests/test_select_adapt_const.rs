@@ -10,8 +10,8 @@ use rand::Rng;
 use rand::SeedableRng;
 use sux::prelude::*;
 
-const INV: usize = 13;
-const SUB: usize = 0;
+const INV: usize = 12;
+const SUB: usize = 2;
 
 #[test]
 fn test() {
