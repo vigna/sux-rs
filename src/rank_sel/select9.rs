@@ -32,17 +32,14 @@ const MSBS_STEP_16: usize = 0x8000usize * ONES_STEP_16;
 
 macro_rules! ULEQ_STEP_9 {
     ($x:ident, $y:ident) => {
-        ((((((($y) | MSBS_STEP_9) - (($x) & !MSBS_STEP_9)) | ($x ^ $y)) ^ ($x & !$y))
-            & MSBS_STEP_9)
-            >> 8)
+        (((((($y) | MSBS_STEP_9) - (($x) & !MSBS_STEP_9)) | ($x ^ $y)) ^ ($x & !$y)) & MSBS_STEP_9)
     };
 }
 
 macro_rules! ULEQ_STEP_16 {
     ($x:ident, $y:ident) => {
-        ((((((($y) | MSBS_STEP_16) - (($x) & !MSBS_STEP_16)) | ($x ^ $y)) ^ ($x & !$y))
+        (((((($y) | MSBS_STEP_16) - (($x) & !MSBS_STEP_16)) | ($x ^ $y)) ^ ($x & !$y))
             & MSBS_STEP_16)
-            >> 15)
     };
 }
 
