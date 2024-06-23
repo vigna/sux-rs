@@ -12,11 +12,7 @@ use common_traits::SelectInWord;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
-crate::forward_mult![
-    SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ONES_PER_INVENTORY: usize, R, I, O>; R; rank_small;
-        crate::forward_index_bool
-
-];
+crate::forward_index_bool![SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ONES_PER_INVENTORY: usize, R, I, O>; R; rank_small];
 
 use crate::ambassador_impl_AsRef;
 use crate::traits::rank_sel::ambassador_impl_BitCount;

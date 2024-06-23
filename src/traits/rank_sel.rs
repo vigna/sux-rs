@@ -254,9 +254,7 @@ pub trait SelectZeroHinted {
     unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize;
 }
 
-crate::forward_mult![AddNumBits<B>; B; bits;
-        crate::forward_index_bool
-];
+crate::forward_index_bool![AddNumBits<B>; B; bits];
 
 /// A thin wrapper implementing [`NumBits`] by caching the result of
 /// [`BitCount::count_ones`].

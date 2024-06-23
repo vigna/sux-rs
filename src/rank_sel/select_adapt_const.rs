@@ -18,11 +18,8 @@ use crate::{
     traits::{NumBits, SelectUnchecked},
 };
 
-crate::forward_mult![
-    SelectAdaptConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits;
-        crate::forward_index_bool
-
-];
+crate::forward_index_bool![
+    SelectAdaptConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits];
 
 use crate::ambassador_impl_AsRef;
 use crate::traits::rank_sel::ambassador_impl_BitCount;

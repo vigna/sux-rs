@@ -18,11 +18,8 @@ use crate::{
     traits::{NumBits, SelectZero, SelectZeroUnchecked},
 };
 
-crate::forward_mult![
-    SelectZeroAdapt<B, I>; B; bits;
-        crate::forward_index_bool
-
-];
+crate::forward_index_bool![
+    SelectZeroAdapt<B, I>; B; bits];
 
 use crate::ambassador_impl_AsRef;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
