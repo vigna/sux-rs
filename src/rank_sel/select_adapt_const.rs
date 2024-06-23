@@ -228,7 +228,7 @@ impl<
 }
 
 impl<
-        B: AsRef<[usize]> + BitLength + BitCount,
+        B: AsRef<[usize]> + BitCount,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
     > SelectAdaptConst<B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
@@ -496,7 +496,7 @@ impl<
 }
 
 impl<
-        B: SelectHinted + AsRef<[usize]> + BitLength,
+        B: AsRef<[usize]> + BitLength + SelectHinted,
         I: AsRef<[usize]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,
@@ -578,7 +578,7 @@ impl<
 }
 
 impl<
-        B: SelectHinted + AsRef<[usize]> + NumBits,
+        B: AsRef<[usize]> + NumBits + SelectHinted,
         I: AsRef<[usize]>,
         const LOG2_ONES_PER_INVENTORY: usize,
         const LOG2_U64_PER_SUBINVENTORY: usize,

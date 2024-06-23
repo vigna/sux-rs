@@ -203,7 +203,7 @@ impl<B: BitLength, C> SelectZeroAdapt<B, C> {
     }
 }
 
-impl<B: AsRef<[usize]> + BitLength + BitCount> SelectZeroAdapt<B, Box<[usize]>> {
+impl<B: AsRef<[usize]> + BitCount> SelectZeroAdapt<B, Box<[usize]>> {
     /// Creates a new selection structure over a bit vecotr using a
     /// [default target inventory
     /// span](SelectZeroAdapt::DEFAULT_TARGET_INVENTORY_SPAN).
@@ -587,7 +587,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectZeroAdapt<B, Box<[usize]>> 
     }
 }
 
-impl<B: SelectZeroHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> SelectZeroUnchecked
+impl<B: AsRef<[usize]> + BitLength + SelectZeroHinted, I: AsRef<[usize]>> SelectZeroUnchecked
     for SelectZeroAdapt<B, I>
 {
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
@@ -669,7 +669,7 @@ impl<B: SelectZeroHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> Select
     }
 }
 
-impl<B: SelectZeroHinted + AsRef<[usize]> + NumBits, I: AsRef<[usize]>> SelectZero
+impl<B: AsRef<[usize]> + NumBits + SelectZeroHinted, I: AsRef<[usize]>> SelectZero
     for SelectZeroAdapt<B, I>
 {
 }
