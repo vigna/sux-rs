@@ -292,13 +292,16 @@ macro_rules! impl_rank_small_sel {
                     last_block_idx
                 );
 
+                // The rank inside the superblock
+                let search_rank = rank - upper_rank;
+
                 loop {
                     if last_block_idx - block_idx <= 1 {
                         break;
                     }
                     next_block_idx = (block_idx + last_block_idx) / 2;
-                    next_rank = upper_rank + counts.get_unchecked(next_block_idx).absolute as usize;
-                    if rank >= next_rank {
+                    next_rank = counts.get_unchecked(next_block_idx).absolute as usize;
+                    if search_rank >= next_rank {
                         block_idx = next_block_idx;
                         hint_rank = next_rank;
                     } else {
