@@ -13,7 +13,7 @@ use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
 crate::forward_mult![
-    SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ONES_PER_INVENTORY: usize, R, I>; R; rank_small;
+    SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ONES_PER_INVENTORY: usize, R, I, O>; R; rank_small;
     crate::forward_as_ref_slice_usize,
     crate::forward_index_bool,
     crate::traits::forward_rank_hinted
@@ -105,9 +105,11 @@ pub struct SelectSmall<
     const LOG2_ONES_PER_INVENTORY: usize = 12,
     R = RankSmall<NUM_U32S, COUNTER_WIDTH>,
     I = Box<[u32]>,
+    O = Box<[usize]>,
 > {
     rank_small: R,
     inventory: I,
+    inventory_begin: O,
 }
 
 impl<
@@ -116,7 +118,8 @@ impl<
         const LOG2_ONES_PER_INVENTORY: usize,
         R,
         I,
-    > SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, R, I>
+        O,
+    > SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, R, I, O>
 {
     const SUPERBLOCK_SIZE: usize = 1 << 32;
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
@@ -136,7 +139,8 @@ impl<
         const LOG2_ONES_PER_INVENTORY: usize,
         R: BitLength,
         I,
-    > SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, R, I>
+        O,
+    > SelectSmall<NUM_U32S, COUNTER_WIDTH, LOG2_ONES_PER_INVENTORY, R, I, O>
 {
     /// Returns the number of bits in the bit vector.
     ///
@@ -150,7 +154,7 @@ impl<
 }
 
 macro_rules! impl_rank_small_sel {
-    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
+    ($NUM_U32S: tt; $COUNTER_WIDTH: literal) => {
         impl<
                 const LOG2_ONES_PER_INVENTORY: usize,
                 B: AsRef<[usize]> + BitLength,
@@ -171,6 +175,11 @@ macro_rules! impl_rank_small_sel {
                 let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY);
                 let mut inventory = Vec::<u32>::with_capacity(inventory_size + 1);
 
+                // The inventory_begin vector stores the index of the first element of
+                // each superblock in the inventory.
+                let mut inventory_begin =
+                    Vec::<usize>::with_capacity(rank_small.upper_counts.len() + 1);
+
                 let mut past_ones: usize = 0;
                 let mut next_quantum: usize = 0;
 
@@ -179,12 +188,17 @@ macro_rules! impl_rank_small_sel {
                     .as_ref()
                     .chunks(Self::SUPERBLOCK_SIZE / usize::BITS as usize)
                 {
+                    let mut first = true;
                     for (i, word) in superblock.iter().copied().enumerate() {
                         let ones_in_word = word.count_ones() as usize;
 
                         while past_ones + ones_in_word > next_quantum {
                             let in_word_index = word.select_in_word(next_quantum - past_ones);
                             let in_superblock_index = i * usize::BITS as usize + in_word_index;
+                            if first {
+                                inventory_begin.push(inventory.len());
+                                first = false;
+                            }
                             inventory.push(in_superblock_index as u32);
                             next_quantum += Self::ONES_PER_INVENTORY;
                         }
@@ -196,17 +210,18 @@ macro_rules! impl_rank_small_sel {
 
                 if inventory.is_empty() {
                     inventory.push(0);
+                    inventory_begin.push(0);
                 } else {
-                    inventory.push(inventory[inventory.len() - 1]);
+                    inventory_begin.push(rank_small.bits.len());
                 }
 
-                assert_eq!(inventory.len(), inventory_size + 1);
-
                 let inventory = inventory.into_boxed_slice();
+                let inventory_begin = inventory_begin.into_boxed_slice();
 
                 Self {
                     rank_small,
                     inventory,
+                    inventory_begin,
                 }
             }
         }
@@ -229,32 +244,53 @@ macro_rules! impl_rank_small_sel {
                 let counts = self.rank_small.counts.as_ref();
 
                 let upper_block_idx = upper_counts.partition_point(|&x| x <= rank) - 1;
+                debug_assert!(upper_block_idx < upper_counts.len());
                 let upper_rank = *upper_counts.get_unchecked(upper_block_idx) as usize;
 
                 let inventory = self.inventory.as_ref();
-                let rel_inv_pos =
-                    *inventory.get_unchecked(rank / Self::ONES_PER_INVENTORY) as usize;
-                let inv_pos = rel_inv_pos + upper_block_idx * (1 << 32);
+                let inventory_begin = self.inventory_begin.as_ref();
 
-                let next_rel_inv_pos =
-                    *inventory.get_unchecked(rank / Self::ONES_PER_INVENTORY + 1) as usize;
-                let next_inv_pos = match next_rel_inv_pos.cmp(&rel_inv_pos) {
-                    std::cmp::Ordering::Greater => next_rel_inv_pos + upper_block_idx * (1 << 32),
-                    std::cmp::Ordering::Less => (upper_block_idx + 1) * (1 << 32),
-                    // the two last elements of the inventory are the same
-                    // because at construction time we add the last element twice
-                    std::cmp::Ordering::Equal => self.rank_small.bits.len(),
+                // we find the two inventory entries containing the rank and from that
+                // the blocks containing the rank.
+                // if the span of the two entries is not contained in the same upper block
+                // we clip the span to the upper block boundaries since we know that
+                // the rank is in the upper block
+
+                let inv_idx = rank / Self::ONES_PER_INVENTORY;
+                let inv_upper_block_idx = inventory_begin.partition_point(|&x| x <= inv_idx) - 1;
+                let inv_pos = if inv_upper_block_idx == upper_block_idx {
+                    *inventory.get_unchecked(inv_idx) as usize + upper_block_idx * (1 << 32)
+                } else {
+                    upper_block_idx * (1 << 32)
                 };
-                let mut last_block_idx = next_inv_pos / Self::BLOCK_SIZE;
+                let mut block_idx = inv_pos / Self::BLOCK_SIZE;
 
-                let jump = (rank % Self::ONES_PER_INVENTORY) / Self::BLOCK_SIZE;
-                let mut block_idx = inv_pos / Self::BLOCK_SIZE + jump;
+                let mut last_block_idx;
+                if rank / Self::ONES_PER_INVENTORY + 1 < inventory.len() {
+                    let next_inv_upper_block_idx =
+                        inventory_begin.partition_point(|&x| x <= inv_idx + 1) - 1;
+                    last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
+                        let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize + upper_block_idx * (1 << 32);
+                        let jump = (rank % Self::ONES_PER_INVENTORY) / Self::BLOCK_SIZE;
+                        next_inv_pos / Self::BLOCK_SIZE + jump
+                    } else {
+                        (upper_block_idx + 1) * (1 << 32) / Self::BLOCK_SIZE
+                    };
+                } else {
+                    last_block_idx = self.rank_small.bits.len() / Self::BLOCK_SIZE;
+                }
 
+                debug_assert!(block_idx < counts.len());
                 let mut hint_rank = upper_rank + counts.get_unchecked(block_idx).absolute as usize;
                 let mut next_rank;
                 let mut next_block_idx;
 
-                debug_assert!(block_idx <= last_block_idx);
+                debug_assert!(
+                    block_idx <= last_block_idx,
+                    "{}, {}",
+                    block_idx,
+                    last_block_idx
+                );
 
                 loop {
                     if last_block_idx - block_idx <= 1 {
@@ -271,7 +307,7 @@ macro_rules! impl_rank_small_sel {
                 }
 
                 let hint_pos;
-                // second sub block
+                // first sub block
                 let b1 = counts.get_unchecked(block_idx).rel(1);
                 if hint_rank + b1 > rank {
                     hint_pos = block_idx * Self::BLOCK_SIZE;
@@ -280,7 +316,7 @@ macro_rules! impl_rank_small_sel {
                         .bits
                         .select_hinted(rank, hint_pos, hint_rank);
                 }
-                // third sub block
+                // second sub block
                 let b2 = counts.get_unchecked(block_idx).rel(2);
                 if hint_rank + b2 > rank {
                     hint_pos = block_idx * Self::BLOCK_SIZE + Self::SUBBLOCK_SIZE;
@@ -289,7 +325,7 @@ macro_rules! impl_rank_small_sel {
                         .bits
                         .select_hinted(rank, hint_pos, hint_rank + b1);
                 }
-                // fourth sub block
+                // third sub block
                 let b3 = counts.get_unchecked(block_idx).rel(3);
                 if hint_rank + b3 > rank {
                     hint_pos = block_idx * Self::BLOCK_SIZE + 2 * Self::SUBBLOCK_SIZE;
@@ -299,10 +335,7 @@ macro_rules! impl_rank_small_sel {
                         .select_hinted(rank, hint_pos, hint_rank + b2);
                 }
 
-                hint_pos = block_idx * Self::BLOCK_SIZE + 3 * Self::SUBBLOCK_SIZE;
-                self.rank_small
-                    .bits
-                    .select_hinted(rank, hint_pos, hint_rank + b3)
+                finish_subblock_select!($NUM_U32S; hint_pos, block_idx, rank, hint_rank, b3, self, counts)
             }
         }
 
@@ -321,6 +354,63 @@ macro_rules! impl_rank_small_sel {
         {
         }
     };
+}
+
+macro_rules! finish_subblock_select {
+    (1; $hint_pos: tt, $block_idx: tt, $rank: tt, $hint_rank: tt, $b3: tt, $self: tt, $counts: tt) => {{
+        $hint_pos = $block_idx * Self::BLOCK_SIZE + 3 * Self::SUBBLOCK_SIZE;
+        $self
+            .rank_small
+            .bits
+            .select_hinted($rank, $hint_pos, $hint_rank + $b3)
+    }};
+    (2; $hint_pos: tt, $block_idx: tt, $rank: tt, $hint_rank: tt, $b3: tt, $self: tt, $counts: tt) => {{
+        // fourth sub block
+        let b4 = $counts.get_unchecked($block_idx).rel(4);
+        if $hint_rank + b4 > $rank {
+            $hint_pos = $block_idx * Self::BLOCK_SIZE + 3 * Self::SUBBLOCK_SIZE;
+            return $self
+                .rank_small
+                .bits
+                .select_hinted($rank, $hint_pos, $hint_rank + $b3);
+        }
+        // fifth sub block
+        let b5 = $counts.get_unchecked($block_idx).rel(5);
+        if $hint_rank + b5 > $rank {
+            $hint_pos = $block_idx * Self::BLOCK_SIZE + 4 * Self::SUBBLOCK_SIZE;
+            return $self
+                .rank_small
+                .bits
+                .select_hinted($rank, $hint_pos, $hint_rank + b4);
+        }
+        // sixth sub block
+        let b6 = $counts.get_unchecked($block_idx).rel(6);
+        if $hint_rank + b6 > $rank {
+            $hint_pos = $block_idx * Self::BLOCK_SIZE + 5 * Self::SUBBLOCK_SIZE;
+            return $self
+                .rank_small
+                .bits
+                .select_hinted($rank, $hint_pos, $hint_rank + b5);
+        }
+
+        // seventh sub block
+        let b7 = $counts.get_unchecked($block_idx).rel(7);
+        if $hint_rank + b7 > $rank {
+            $hint_pos = $block_idx * Self::BLOCK_SIZE + 6 * Self::SUBBLOCK_SIZE;
+            return $self
+                .rank_small
+                .bits
+                .select_hinted($rank, $hint_pos, $hint_rank + b6);
+        }
+
+        $hint_pos = $block_idx * Self::BLOCK_SIZE + 7 * Self::SUBBLOCK_SIZE;
+        $self.rank_small
+            .bits
+            .select_hinted($rank, $hint_pos, $hint_rank + b7)
+    }};
+    (3; $hint_pos: tt, $block_idx: tt, $rank: tt, $hint_rank: tt, $b3: tt, $self: tt, $counts: tt) => {{
+        finish_subblock_select!(2; $hint_pos, $block_idx, $rank, $hint_rank, $b3, $self, $counts)
+    }};
 }
 
 impl_rank_small_sel!(2; 9);
