@@ -320,7 +320,7 @@ macro_rules! impl_rank_small_sel {
                 let hint_rank = upper_rank + counts.get_unchecked(block_idx).absolute as usize;
                 let rank_in_block = local_rank - counts.get_unchecked(block_idx).absolute as usize;
 
-                self.complete_select(block_idx, rank_in_block, hint_rank)
+                self.complete_select(block_idx, rank_in_block)
             }
         }
 
@@ -346,14 +346,7 @@ impl<
     > SelectSmall<2, 9, RankSmall<2, 9, B, C1, C2>>
 {
     #[inline(always)]
-    unsafe fn complete_select(
-        &self,
-        block_idx: usize,
-        rank_in_block: usize,
-        hint_rank: usize,
-    ) -> usize {
-        let counts = self.rank_small.counts.as_ref();
-
+    unsafe fn complete_select(&self, block_idx: usize, rank_in_block: usize) -> usize {
         const ONES_STEP_9: u64 = 1_u64 << 0
             | 1_u64 << 9
             | 1_u64 << 18
@@ -370,19 +363,23 @@ impl<
             };
         }
 
+        dbg!(rank_in_block);
+        let block_count = self.rank_small.counts.as_ref().get_unchecked(block_idx);
         let rank_in_block_step_9 = rank_in_block as u64 * ONES_STEP_9;
-        let relative = counts.get_unchecked(block_idx).all_rel();
+        let relative = block_count.all_rel();
         let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
-        let rank_in_word = rank_in_block - counts.get_unchecked(block_idx).rel(offset_in_block);
-        debug_assert!(rank_in_word < 64);
+        dbg!(offset_in_block);
 
-        hint_rank
-            + self
-                .rank_small
-                .bits
-                .as_ref()
-                .get_unchecked(block_idx * Self::BLOCK_SIZE + offset_in_block * Self::SUBBLOCK_SIZE)
-                .select_in_word(rank_in_word)
+        let rank_in_word = rank_in_block - block_count.rel(offset_in_block);
+        dbg!(rank_in_word);
+
+        let pos = block_idx * Self::BLOCK_SIZE + offset_in_block * Self::SUBBLOCK_SIZE;
+        pos + self
+            .rank_small
+            .bits
+            .as_ref()
+            .get_unchecked(pos / usize::BITS as usize)
+            .select_in_word(rank_in_word)
     }
 }
 
@@ -393,12 +390,7 @@ impl<
     > SelectSmall<1, 9, RankSmall<1, 9, B, C1, C2>>
 {
     #[inline(always)]
-    unsafe fn complete_select(
-        &self,
-        _block_idx: usize,
-        _rank_in_block: usize,
-        _hint_rank: usize,
-    ) -> usize {
+    unsafe fn complete_select(&self, _block_idx: usize, _rank_in_block: usize) -> usize {
         unreachable!()
     }
 }
@@ -410,12 +402,7 @@ impl<
     > SelectSmall<1, 10, RankSmall<1, 10, B, C1, C2>>
 {
     #[inline(always)]
-    unsafe fn complete_select(
-        &self,
-        _block_idx: usize,
-        _rank_in_block: usize,
-        _hint_rank: usize,
-    ) -> usize {
+    unsafe fn complete_select(&self, _block_idx: usize, _rank_in_block: usize) -> usize {
         unreachable!()
     }
 }
@@ -427,12 +414,7 @@ impl<
     > SelectSmall<1, 11, RankSmall<1, 11, B, C1, C2>>
 {
     #[inline(always)]
-    unsafe fn complete_select(
-        &self,
-        _block_idx: usize,
-        _rank_in_block: usize,
-        _hint_rank: usize,
-    ) -> usize {
+    unsafe fn complete_select(&self, _block_idx: usize, _rank_in_block: usize) -> usize {
         unreachable!()
     }
 }
@@ -443,12 +425,7 @@ impl<
         C2: AsRef<[Block32Counters<3, 13>]>,
     > SelectSmall<3, 13, RankSmall<3, 13, B, C1, C2>>
 {
-    unsafe fn complete_select(
-        &self,
-        _block_idx: usize,
-        _rank_in_block: usize,
-        _hint_rank: usize,
-    ) -> usize {
+    unsafe fn complete_select(&self, _block_idx: usize, _rank_in_block: usize) -> usize {
         unreachable!()
     }
 }
