@@ -10,24 +10,15 @@
 
 A pure Rust implementation of succinct and compressed data structures.
 
-This crate is a work in progress: part of it is a port from
-[Sux](https://sux.di.unimi.it/) and from [the DSI
-Utilities](https://dsiutils.di.unimi.it/); new data structures will be added
-over time. Presently, we provide:
+This crate is a work in progress: part of it is a port from [Sux] and from [the
+DSI Utilities]; new data structures will be added over time. Presently, we
+provide:
 
-- the [`BitFieldSlice`](crate::traits::bit_field_slice::BitFieldSlice)
-  trait---an alternative to [`Index`](core::ops::Index) returning values of
-  fixed bit width;
-- an implementation of [bit vectors](crate::bits::BitVec) and of [vectors of bit
-  fields of fixed with](crate::bits::BitFieldVec);
-- traits for building blocks and structures like
-  [`Rank`](crate::traits::rank_sel::Rank) ,
-  [`Select`](crate::traits::rank_sel::Select), and
-  [`IndexedDict`](crate::traits::indexed_dict::IndexedDict);
-- an implementation of the [Elias--Fano representation of monotone sequences](crate::dict::elias_fano::EliasFano);
-- an implementation of lists of [strings compressed by rear-coded prefix
-  omission](crate::dict::rear_coded_list::RearCodedList);
-- an implementation of [static functions](crate::func::VFunc).
+- [bit vectors and bit-field vectors];
+- several structures for [rank and selection] with different tradeoffs;
+- [indexed dictionaries], including an implementation of the [Elias–Fano
+  representation of monotone sequences] and [lists of strings compressed by
+  prefix omission].
 
 The focus is on efficiency (in particular, there are unchecked versions of all
 methods) and on flexible composability (e.g., you can fine-tune your Elias–Fano
@@ -48,7 +39,7 @@ usage and debugging memory-related issues. For example, this is the output of
 `mem_dbg()` on a large [`EliasFano`] instance:
 
 ```text
-  117_041_232 B 100.00% ⏺: sux::dict::elias_fano::EliasFano<sux::rank_sel::select_zero_fixed2::SelectZeroFixed2<sux::rank_sel::select_fixed2::SelectFixed2>>
+  117_041_232 B 100.00% ⏺: sux::dict::elias_fano::EliasFano<sux::rank_sel::select_zero_adapt_const::SelectZeroAdaptConst<sux::rank_sel::select_adapt_const::SelectAdaptConst>>
            8 B   0.00% ├╴u: usize
            8 B   0.00% ├╴n: usize
            8 B   0.00% ├╴l: usize
@@ -57,8 +48,8 @@ usage and debugging memory-related issues. For example, this is the output of
            8 B   0.00% │ ├╴bit_width: usize
            8 B   0.00% │ ├╴mask: usize
            8 B   0.00% │ ╰╴len: usize
-  42_041_160 B  35.92% ╰╴high_bits: sux::rank_sel::select_zero_fixed2::SelectZeroFixed2<sux::rank_sel::select_fixed2::SelectFixed2>
-  35_937_608 B  30.71%   ├╴bits: sux::rank_sel::select_fixed2::SelectFixed2
+  42_041_160 B  35.92% ╰╴high_bits: sux::rank_sel::select_zero_adapt_const::SelectZeroAdaptConst<sux::rank_sel::select_adapt_const::SelectAdaptConst>
+  35_937_608 B  30.71%   ├╴bits: sux::rank_sel::select_adapt_const::SelectAdaptConst
   32_031_296 B  27.37%   │ ├╴bits: sux::bits::bit_vec::CountBitVec
   32_031_280 B  27.37%   │ │ ├╴data: alloc::vec::Vec<usize>
            8 B   0.00%   │ │ ├╴len: usize
@@ -100,12 +91,11 @@ let select = SelectAdapt::new(bv, 3);
 assert_eq!(unsafe { select.select_unchecked(0) }, 1);
 ```
 
-Note that we invoked [`select_unchecked`](SelectUnchecked::select_unchecked).
-The [`select`](Select::select) method, indeed, requires the knowledge of the
-number of ones in the bit vector to perform bound checks, and this number is not
-available in constant time in a [`BitVec`]; we need a [`AddNumBits`], a thin
-immutable wrapper around a bit vector that stores internally the number of ones
-and thus implements the [`NumBits`] trait:
+Note that we invoked [`select_unchecked`]. The [`select`] method, indeed,
+requires the knowledge of the number of ones in the bit vector to perform bound
+checks, and this number is not available in constant time in a [`BitVec`]; we
+need [`AddNumBits`], a thin immutable wrapper around a bit vector that stores
+internally the number of ones and thus implements the [`NumBits`] trait:
 
 ```rust
 use sux::bit_vec;
@@ -135,12 +125,12 @@ assert_eq!(sel_rank9.rank(4), 2);
 assert!(!sel_rank9[0]);
 assert!(sel_rank9[1]);
 
-let sel_rank_small = unsafe {sel_rank9.map(|x| rank_small![4; x.into_inner()]) };
+let sel_rank_small = unsafe { sel_rank9.map(|x| rank_small![4; x.into_inner()]) };
 ```
 
 Note how [`SelectAdapt`] forwards not only [`Rank`] but also [`Index`], which
 gives access to the bits of the underlying bit vector. The last line uses the
-[`map`](Map::map) method to replace the underlying [`Rank9`] structure with one
+[`map`] method to replace the underlying [`Rank9`] structure with one
 that is slower but uses much less space: the method is unsafe because in
 principle you might replace the structure with something built on a different
 bit vector, leading to an inconsistent state; note how we use `into_inner()` to
@@ -158,8 +148,28 @@ This software has been partially supported by project SERICS (PE00000014) under
 the NRRP MUR program funded by the EU - NGEU, and by project ANR COREGRAPHIE,
 grant ANR-20-CE23-0002 of the French Agence Nationale de la Recherche.
 
+[bit vectors and bit-field vectors]: <https://docs.rs/sux/latest/sux/bits/index.html>
+[rank and selection]: <https://docs.rs/sux/latest/sux/rank_sel/index.html>
+[indexed dictionaries]: <https://docs.rs/sux/latest/sux/traits/indexed_dict/index.html>
 [`EliasFano`]: <https://docs.rs/sux/latest/sux/dict/elias_fano/struct.EliasFano.html>
 [ε-serde]: <https://crates.io/crates/epserde>
 [`MemDbg`]: <https://docs.rs/mem_dbg/latest/mem_dbg/trait.MemDbg.html>
 [`MemSize`]: <https://docs.rs/mem_dbg/latest/mem_dbg/trait.MemSize.html>
 [`mem_dbg` crate]: <https://crates.io/crates/mem_dbg>
+[Elias–Fano representation of monotone sequences]: <https://docs.rs/sux/latest/sux/dict/elias_fano/struct.EliasFano.html>
+[lists of strings compressed by prefix omission]: <https://docs.rs/sux/latest/sux/dict/rear_coded_list/struct.RearCodedList.html>
+[Sux]: <https://sux.di.unimi.it/>
+[the DSI Utilities]: <https://dsiutils.di.unimi.it/>
+[`NumBits`]: <https://docs.rs/sux/latest/sux/traits/rank_sel/trait.NumBits.html>
+[`Rank9`]: <https://docs.rs/sux/latest/sux/rank_sel/rank9/struct.Rank9.html>
+[`SelectAdapt`]:
+    <https://docs.rs/sux/latest/sux/rank_sel/select_adapt/struct.SelectAdapt.html>
+[`Rank`]: <https://docs.rs/sux/latest/sux/traits/rank_sel/trait.Rank.html>
+[`Index`]: <https://doc.rust-lang.org/std/ops/trait.Index.html>
+[`Select9`]: <https://docs.rs/sux/latest/sux/rank_sel/select9/struct.Select9.html>
+[`BitVec`]: <https://docs.rs/sux/latest/sux/bits/bit_vec/struct.BitVec.html>
+[`AddNumBits`]: <https://docs.rs/sux/latest/sux/traits/rank_sel/struct.AddNumBits.html>
+[`BitLength`]: <https://docs.rs/sux/latest/sux/traits/rank_sel/trait.BitLength.html>
+[`select`]: <https://docs.rs/sux/latest/sux/traits/rank_sel/trait.Select.html#method.select>
+[`select_unchecked`]: <https://docs.rs/sux/latest/sux/traits/rank_sel/trait.SelectUnchecked.html#method.select_unchecked>
+[`map`]: <https://docs.rs/sux/latest/sux/rank_sel/select_adapt/struct.SelectAdapt.html#method.map>
