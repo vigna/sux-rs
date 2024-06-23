@@ -45,19 +45,6 @@ macro_rules! forward_mult {
 use ambassador::delegatable_trait_remote;
 pub(crate) use forward_mult;
 
-macro_rules! forward_as_ref_slice_usize {
-        ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
-        impl < $( $($const)? $generic $(:$t)? ),* > std::convert::AsRef<[usize]> for $name < $($generic,)* > where $type: std::convert::AsRef<[usize]> {
-            #[inline(always)]
-            fn as_ref(&self) -> &[usize] {
-                std::convert::AsRef::<[usize]>::as_ref(&self.$field)
-            }
-        }
-    };
-}
-
-pub(crate) use forward_as_ref_slice_usize;
-
 macro_rules! forward_index_bool {
         ($name:ident < $( $([$const:ident])? $generic:ident $(:$t:ty)? ),* >; $type:ident; $field:ident) => {
         impl < $( $($const)? $generic $(:$t)? ),* > std::ops::Index<usize> for $name < $($generic,)* > where $type: std::ops::Index<usize, Output = bool> {
@@ -74,6 +61,6 @@ macro_rules! forward_index_bool {
 pub(crate) use forward_index_bool;
 
 #[delegatable_trait_remote]
-pub trait AsRef<T> {
+pub(crate) trait AsRef<T> {
     fn as_ref(&self) -> &T;
 }
