@@ -5,13 +5,17 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use std::time::Instant;
+
+use mem_dbg::DbgFlags;
+use mem_dbg::MemDbg;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
 use sux::prelude::*;
 
 macro_rules! test {
-    ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ZEROS_PER_INVENTORY: literal) => {
+    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         use sux::traits::Select;
         let mut rng = SmallRng::seed_from_u64(0);
         let density = 0.5;
@@ -21,9 +25,11 @@ macro_rules! test {
         for len in lens {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
             let rank_small_sel =
-                SelectSmall::<$NUM_U32S, $COUNTER_WIDTH, $LOG2_ZEROS_PER_INVENTORY, _>::new(
-                    RankSmall::<$NUM_U32S, $COUNTER_WIDTH, _>::new(bits.clone()),
-                );
+                SelectSmall::<$NUM_U32S, $COUNTER_WIDTH, _>::new(RankSmall::<
+                    $NUM_U32S,
+                    $COUNTER_WIDTH,
+                    _,
+                >::new(bits.clone()));
 
             let ones = bits.count_ones();
             let mut pos = Vec::with_capacity(ones);
@@ -43,27 +49,27 @@ macro_rules! test {
 
 #[test]
 fn test_rank_small0() {
-    test!(2; 9; 13);
+    test!(2; 9);
 }
 
 #[test]
 fn test_rank_small1() {
-    test!(1; 9; 13);
+    test!(1; 9);
 }
 
 #[test]
 fn test_rank_small2() {
-    test!(1; 10; 13);
+    test!(1; 10);
 }
 
 #[test]
 fn test_rank_small3() {
-    test!(1; 11; 13);
+    test!(1; 11);
 }
 
 #[test]
 fn test_rank_small4() {
-    test!(3; 13; 13);
+    test!(3; 13);
 }
 
 #[test]
