@@ -420,7 +420,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
         let bit_len = self.len * self.bit_width;
         let full_words = bit_len / W::BITS;
         let residual = bit_len % W::BITS;
-        let bits: &mut [W] = self.bits.as_mut();
+        let bits = self.bits.as_mut();
 
         #[cfg(feature = "rayon")]
         {
@@ -909,10 +909,28 @@ where
         }
     }
 
-    fn reset_atomic(&mut self, order: Ordering) {
-        // TODO: directly on words?
-        for idx in 0..self.len() {
-            unsafe { self.set_atomic_unchecked(idx, W::ZERO, order) };
+    fn reset_atomic(&mut self, ordering: Ordering) {
+        let bit_len = self.len * self.bit_width;
+        let full_words = bit_len / W::BITS;
+        let residual = bit_len % W::BITS;
+        let bits = self.bits.as_ref();
+
+        #[cfg(feature = "rayon")]
+        {
+            bits[..full_words]
+                .par_iter()
+                .for_each(|x| x.store(W::ZERO, ordering));
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            bits[..full_words]
+                .iter()
+                .for_each(|x| x.store(W::ZERO, ordering));
+        }
+
+        if residual != 0 {
+            bits[full_words].fetch_and(W::MAX << residual, ordering);
         }
     }
 }
