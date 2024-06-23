@@ -262,20 +262,25 @@ macro_rules! impl_rank_small_sel {
 
                 let inv_idx = rank >> self.log2_ones_per_inventory;
                 let inv_upper_block_idx = inventory_begin.linear_partition_point(|&x| x <= inv_idx) - 1;
+                let opt;
                 let inv_pos = if inv_upper_block_idx == upper_block_idx {
+                    opt = (inv_idx << self.log2_ones_per_inventory) - upper_rank;
                     *inventory.get_unchecked(inv_idx) as usize + upper_block_idx * Self::SUPERBLOCK_SIZE
                 } else {
+                    opt = 0;
                     upper_block_idx * Self::SUPERBLOCK_SIZE
+
                 };
                 let mut block_idx = inv_pos / Self::BLOCK_SIZE;
                 // cs-poppy micro-optimization: each block can contains at most
                 // Self::BLOCK_SIZE ones, so we can skip blocks to which the bit
                 // we are looking for cannot possibly belong.
                 //
-                // It is disabled because the additional memory access
-                // makes this method slower, with the exception of very
-                // dense small vectors.
-                // block_idx += (local_rank - counts.get_unchecked(block_idx).absolute as usize) / Self::BLOCK_SIZE;
+                // It would be more precise by using the absolute counter
+                // at block_idx, but in benchmarks the additional memory
+                // accesses slow down the search, except in the very dense case.
+                // We thus approximate the value with opt.
+                block_idx += (local_rank - opt) / Self::BLOCK_SIZE;
 
                 let mut last_block_idx;
                 if (rank >> self.log2_ones_per_inventory) + 1 < inventory.len() {
