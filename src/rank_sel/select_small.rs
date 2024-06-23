@@ -270,8 +270,9 @@ macro_rules! impl_rank_small_sel {
                         inventory_begin.partition_point(|&x| x <= inv_idx + 1) - 1;
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
                         let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize + upper_block_idx * (1 << 32);
-                        let jump = (rank % Self::ONES_PER_INVENTORY) / Self::BLOCK_SIZE;
-                        next_inv_pos / Self::BLOCK_SIZE + jump
+                        // micro optimization from Poppy doesn't work on test_ones
+                        // let jump = (rank % Self::ONES_PER_INVENTORY) / Self::BLOCK_SIZE;
+                        next_inv_pos / Self::BLOCK_SIZE //+ jump
                     } else {
                         (upper_block_idx + 1) * (1 << 32) / Self::BLOCK_SIZE
                     };
