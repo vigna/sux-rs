@@ -283,7 +283,11 @@ macro_rules! impl_rank_small_sel {
                 // cs-poppy micro-optimization: each block can contains at most
                 // Self::BLOCK_SIZE ones, so we can skip blocks in which the bit
                 // we are looking for cannot possibly belong.
-                block_idx += (local_rank - counts.get_unchecked(block_idx).absolute as usize) / Self::BLOCK_SIZE;
+                //
+                // It is disabled because the additional memory access
+                // makes this method slower, with the exception of very
+                // dense small vectors.
+                // block_idx += (local_rank - counts.get_unchecked(block_idx).absolute as usize) / Self::BLOCK_SIZE;
 
                 let mut last_block_idx;
                 if (rank >> self.log2_ones_per_inventory) + 1 < inventory.len() {
