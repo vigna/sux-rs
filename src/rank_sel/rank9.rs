@@ -110,6 +110,7 @@ impl BlockCounters {
         self.relative |= counter << (9 * (word ^ 7));
     }
 }
+
 impl<B, C> Rank9<B, C> {
     pub(super) const WORDS_PER_BLOCK: usize = 8;
 

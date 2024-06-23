@@ -345,6 +345,12 @@ fn test_eq() {
         c.push(i % 4);
         assert_eq!(b, c);
     }
+
+    let c: BitFieldVec<usize, Box<[usize]>> = c.into();
+    assert_eq!(b, c);
+    let (bits, w, l) = c.into_raw_parts();
+    let d = unsafe { BitFieldVec::from_raw_parts(bits.as_ref(), w, l) };
+    assert_eq!(b, d);
 }
 
 #[test]
