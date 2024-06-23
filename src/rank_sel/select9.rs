@@ -363,10 +363,10 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
                 let first = *subinv_ref.get_unchecked(subinv_pos);
                 let second = *subinv_ref.get_unchecked(subinv_pos + 1);
 
-                let where_: usize = (ULEQ_STEP_16!(first, rank_in_superblock_step_16)
-                    + ULEQ_STEP_16!(second, rank_in_superblock_step_16))
-                .wrapping_mul(ONES_STEP_16)
-                    >> 47;
+                let where_: usize = (ULEQ_STEP_16!(first, rank_in_superblock_step_16).count_ones()
+                    as usize
+                    + ULEQ_STEP_16!(second, rank_in_superblock_step_16).count_ones() as usize)
+                    * 2;
 
                 debug_assert!(where_ <= 16);
 
@@ -385,10 +385,10 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
                 let first = *subinv_ref.get_unchecked(subinv_pos);
                 let second = *subinv_ref.get_unchecked(subinv_pos + 1);
 
-                let where0 = ((ULEQ_STEP_16!(first, rank_in_superblock_step_16)
-                    + ULEQ_STEP_16!(second, rank_in_superblock_step_16))
-                .wrapping_mul(ONES_STEP_16))
-                    >> 47;
+                let where0 = (ULEQ_STEP_16!(first, rank_in_superblock_step_16).count_ones()
+                    as usize
+                    + ULEQ_STEP_16!(second, rank_in_superblock_step_16).count_ones() as usize)
+                    * 2;
 
                 debug_assert!(where0 <= 16);
 
@@ -402,10 +402,10 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
                     .get_unchecked(subinv_pos + where0 + 2 + 1);
 
                 let where1 = where0 * 8
-                    + ((ULEQ_STEP_16!(first_bis, rank_in_superblock_step_16)
-                        + ULEQ_STEP_16!(second_bis, rank_in_superblock_step_16))
-                    .wrapping_mul(ONES_STEP_16)
-                        >> 47);
+                    + (ULEQ_STEP_16!(first_bis, rank_in_superblock_step_16).count_ones() as usize
+                        + ULEQ_STEP_16!(second_bis, rank_in_superblock_step_16).count_ones()
+                            as usize)
+                        * 2;
 
                 block_left += where1 * 4;
                 count_left += where1 / 2;
@@ -433,8 +433,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
         let rank_in_block_step_9 = rank_in_block * ONES_STEP_9;
         let relative = counts.get_unchecked(count_left).relative;
 
-        let offset_in_block =
-            (ULEQ_STEP_9!(relative, rank_in_block_step_9).wrapping_mul(ONES_STEP_9) >> 54u64) & 0x7;
+        let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
         debug_assert!(offset_in_block <= 7);
 
         let word = block_left + offset_in_block;
