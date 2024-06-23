@@ -162,6 +162,7 @@ macro_rules! rank_small {
     };
 }
 
+#[doc(hidden)]
 #[derive(Epserde, Copy, Debug, Clone, MemDbg, MemSize)]
 #[repr(C)]
 #[zero_copy]

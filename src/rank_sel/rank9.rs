@@ -91,6 +91,7 @@ pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
     pub(super) counts: C,
 }
 
+#[doc(hidden)]
 #[derive(Epserde, Copy, Debug, Clone, MemDbg, MemSize, Default)]
 #[repr(C)]
 #[zero_copy]
