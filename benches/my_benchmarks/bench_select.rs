@@ -122,19 +122,19 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
     group.finish();
 }
 
-macro_rules! bench_simple_const {
+macro_rules! bench_select_adapt_const {
     ([$($inv_size:literal),+], $subinv_size:tt, $bitvecs:ident, $bitvec_ids:ident, $c: expr) => {
         $(
-            bench_simple_const!($inv_size, $subinv_size, $bitvecs, $bitvec_ids, $c);
+            bench_select_adapt_const!($inv_size, $subinv_size, $bitvecs, $bitvec_ids, $c);
         )+
     };
     ($inv_size:literal, [$($subinv_size:literal),+], $bitvecs:ident, $bitvec_ids:ident, $c: expr) => {
         $(
-            bench_simple_const!($inv_size, $subinv_size, $bitvecs, $bitvec_ids, $c);
+            bench_select_adapt_const!($inv_size, $subinv_size, $bitvecs, $bitvec_ids, $c);
         )+
     };
     ($log_inv_size:literal, $log_subinv_size:literal, $bitvecs:ident, $bitvec_ids:ident, $c: expr) => {{
-        let mut group = $c.benchmark_group(format!("simple_select_const_{}_{}", $log_inv_size, $log_subinv_size));
+        let mut group = $c.benchmark_group(format!("select_adapt_const_{}_{}", $log_inv_size, $log_subinv_size));
         let mut rng = SmallRng::seed_from_u64(0);
         for (bitvec, bitvec_id) in std::iter::zip(&$bitvecs, &$bitvec_ids) {
             let bits = bitvec.clone();
@@ -159,7 +159,7 @@ macro_rules! bench_simple_const {
     }};
 }
 
-pub fn bench_simple_const(c: &mut Criterion, uniform: bool) {
+pub fn bench_select_adapt_const(c: &mut Criterion, uniform: bool) {
     let mut bitvecs = Vec::<BitVec>::new();
     let mut bitvec_ids = Vec::<(u64, f64, u64, u64, u64)>::new();
     let mut rng = SmallRng::seed_from_u64(0);
@@ -181,9 +181,9 @@ pub fn bench_simple_const(c: &mut Criterion, uniform: bool) {
         }
     }
 
-    bench_simple_const!(
+    bench_select_adapt_const!(
         [8, 9, 10, 11, 12, 13],
-        [0, 1, 2, 3, 4, 5],
+        [1, 2, 3, 4, 5],
         bitvecs,
         bitvec_ids,
         c
