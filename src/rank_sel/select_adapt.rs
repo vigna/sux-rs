@@ -350,7 +350,7 @@ impl<B: BitLength, C> SelectAdapt<B, C> {
     }
 }
 
-impl<B: AsRef<[usize]> + BitLength + BitCount> SelectAdapt<B, Box<[usize]>> {
+impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
     /// Creates a new selection structure over a bit vecotr using a
     /// [default target inventory
     /// span](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN).
@@ -734,7 +734,7 @@ impl<B: AsRef<[usize]> + BitLength + BitCount> SelectAdapt<B, Box<[usize]>> {
     }
 }
 
-impl<B: SelectHinted + AsRef<[usize]> + BitLength, I: AsRef<[usize]>> SelectUnchecked
+impl<B: AsRef<[usize]> + BitLength + SelectHinted, I: AsRef<[usize]>> SelectUnchecked
     for SelectAdapt<B, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {

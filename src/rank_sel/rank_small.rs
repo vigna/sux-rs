@@ -345,7 +345,7 @@ macro_rules! impl_rank_small {
             }
         }
         impl<
-                B: RankHinted<64> + AsRef<[usize]> + BitLength,
+                B: AsRef<[usize]> + BitLength + RankHinted<64>,
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             > RankUnchecked for RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
