@@ -27,6 +27,18 @@ use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 
+pub trait LinearPartitionPointExt<T>: AsRef<[T]> {
+    fn linear_partition_point<P>(&self, mut pred: P) -> usize
+    where
+        P: FnMut(&T) -> bool,
+    {
+        let as_ref = self.as_ref();
+        as_ref.iter().position(|x| !pred(x)).unwrap_or(as_ref.len())
+    }
+}
+
+impl<T> LinearPartitionPointExt<T> for [T] {}
+
 /// A selection structure over [`RankSmall`] using negligible additional space
 /// and providing constant-time selection.
 ///
@@ -234,7 +246,7 @@ macro_rules! impl_rank_small_sel {
                 let upper_counts = self.rank_small.upper_counts.as_ref();
                 let counts = self.rank_small.counts.as_ref();
 
-                let upper_block_idx = upper_counts.partition_point(|&x| x <= rank) - 1;
+                let upper_block_idx = upper_counts.linear_partition_point(|&x| x <= rank) - 1;
                 debug_assert!(upper_block_idx < upper_counts.len());
                 let upper_rank = *upper_counts.get_unchecked(upper_block_idx) as usize;
 
@@ -248,7 +260,7 @@ macro_rules! impl_rank_small_sel {
                 // the rank is in the upper block
 
                 let inv_idx = rank >> self.log2_ones_per_inventory;
-                let inv_upper_block_idx = inventory_begin.partition_point(|&x| x <= inv_idx) - 1;
+                let inv_upper_block_idx = inventory_begin.linear_partition_point(|&x| x <= inv_idx) - 1;
                 let inv_pos = if inv_upper_block_idx == upper_block_idx {
                     *inventory.get_unchecked(inv_idx) as usize + upper_block_idx * Self::SUPERBLOCK_SIZE
                 } else {
@@ -259,7 +271,7 @@ macro_rules! impl_rank_small_sel {
                 let mut last_block_idx;
                 if (rank >> self.log2_ones_per_inventory) + 1 < inventory.len() {
                     let next_inv_upper_block_idx =
-                        inventory_begin.partition_point(|&x| x <= inv_idx + 1) - 1;
+                        inventory_begin.linear_partition_point(|&x| x <= inv_idx + 1) - 1;
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
                         let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize + upper_block_idx * Self::SUPERBLOCK_SIZE;
                         // micro optimization from Poppy doesn't work on test_ones
@@ -286,7 +298,7 @@ macro_rules! impl_rank_small_sel {
                     last_block_idx += 1;
                 }
                 block_idx += counts[block_idx..last_block_idx].
-                    partition_point(|x| x.absolute as usize <= search_rank) - 1;
+                    linear_partition_point(|x| x.absolute as usize <= search_rank) - 1;
                 let hint_rank = counts.get_unchecked(block_idx).absolute as usize;
 
                 let hint_pos;
