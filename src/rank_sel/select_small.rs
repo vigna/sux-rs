@@ -164,16 +164,28 @@ macro_rules! impl_rank_small_sel {
                 RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
             >
         {
-            // Creates a new selection structure over a [`RankSmall`] structure.
+            /// Creates a new selection structure with eight [`RankSmall`]
+            /// blocks per inventory an average.
             pub fn new(rank_small: RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>) -> Self {
+                Self::with_inv(rank_small, 8)
+            }
+
+            /// Creates a new selection structure with a given number of
+            /// [`RankSmall`] blocks per inventory an average.
+            pub fn with_inv(rank_small: RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>, blocks_per_inv: usize) -> Self {
                 let num_bits = rank_small.len();
                 let num_ones = rank_small.num_ones();
 
-                let target_inventory_span = 8 * Self::BLOCK_SIZE;
+                let target_inventory_span = blocks_per_inv * Self::BLOCK_SIZE;
                 let log2_ones_per_inventory = (num_ones * target_inventory_span)
                     .div_ceil(num_bits.max(1))
                     .max(1)
                     .ilog2() as usize;
+
+                Self::_new(rank_small, num_ones, log2_ones_per_inventory)
+            }
+
+            fn _new(rank_small: RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>, num_ones:usize, log2_ones_per_inventory: usize) -> Self {
                 let ones_per_inventory = 1 << log2_ones_per_inventory;
 
                 let inventory_size = num_ones.div_ceil(ones_per_inventory);
@@ -249,6 +261,7 @@ macro_rules! impl_rank_small_sel {
                 let upper_block_idx = upper_counts.linear_partition_point(|&x| x <= rank) - 1;
                 debug_assert!(upper_block_idx < upper_counts.len());
                 let upper_rank = *upper_counts.get_unchecked(upper_block_idx) as usize;
+                let local_rank = rank - upper_rank;
 
                 let inventory = self.inventory.as_ref();
                 let inventory_begin = self.inventory_begin.as_ref();
@@ -266,7 +279,7 @@ macro_rules! impl_rank_small_sel {
                 } else {
                     upper_block_idx * Self::SUPERBLOCK_SIZE
                 };
-                let mut block_idx = inv_pos / Self::BLOCK_SIZE;
+                let mut block_idx = inv_pos / Self::BLOCK_SIZE + local_rank / Self::BLOCK_SIZE;
 
                 let mut last_block_idx;
                 if (rank >> self.log2_ones_per_inventory) + 1 < inventory.len() {
@@ -274,9 +287,7 @@ macro_rules! impl_rank_small_sel {
                         inventory_begin.linear_partition_point(|&x| x <= inv_idx + 1) - 1;
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
                         let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize + upper_block_idx * Self::SUPERBLOCK_SIZE;
-                        // micro optimization from Poppy doesn't work on test_ones
-                        // let jump = (rank % Self::ONES_PER_INVENTORY) / Self::BLOCK_SIZE;
-                        next_inv_pos / Self::BLOCK_SIZE //+ jump
+                        next_inv_pos / Self::BLOCK_SIZE
                     } else {
                         (upper_block_idx + 1) * (Self::SUPERBLOCK_SIZE / Self::BLOCK_SIZE)
                     };
@@ -293,12 +304,11 @@ macro_rules! impl_rank_small_sel {
                     last_block_idx
                 );
 
-                let search_rank = rank - upper_rank;
                 if block_idx == last_block_idx {
                     last_block_idx += 1;
                 }
                 block_idx += counts[block_idx..last_block_idx].
-                    linear_partition_point(|x| x.absolute as usize <= search_rank) - 1;
+                    linear_partition_point(|x| x.absolute as usize <= local_rank) - 1;
                 let hint_rank = counts.get_unchecked(block_idx).absolute as usize;
 
                 let hint_pos;
