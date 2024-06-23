@@ -183,7 +183,7 @@ pub fn bench_select_adapt_const(c: &mut Criterion, uniform: bool) {
 
     bench_select_adapt_const!(
         [8, 9, 10, 11, 12, 13],
-        [1, 2, 3, 4, 5],
+        [0, 1, 2, 3, 4, 5],
         bitvecs,
         bitvec_ids,
         c
