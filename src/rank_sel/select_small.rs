@@ -146,11 +146,7 @@ macro_rules! impl_rank_small_sel {
                 C1: AsRef<[usize]>,
                 C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             >
-            SelectSmall<
-                $NUM_U32S,
-                $COUNTER_WIDTH,
-                RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
-            >
+            SelectSmall<$NUM_U32S, $COUNTER_WIDTH, RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>>
         {
             /// Creates a new selection structure with eight [`RankSmall`]
             /// blocks per inventory an average.
@@ -160,7 +156,10 @@ macro_rules! impl_rank_small_sel {
 
             /// Creates a new selection structure with a given number of
             /// [`RankSmall`] blocks per inventory an average.
-            pub fn with_inv(rank_small: RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>, blocks_per_inv: usize) -> Self {
+            pub fn with_inv(
+                rank_small: RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
+                blocks_per_inv: usize,
+            ) -> Self {
                 let num_bits = rank_small.len();
                 let num_ones = rank_small.num_ones();
 
@@ -173,7 +172,11 @@ macro_rules! impl_rank_small_sel {
                 Self::_new(rank_small, num_ones, log2_ones_per_inventory)
             }
 
-            fn _new(rank_small: RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>, num_ones:usize, log2_ones_per_inventory: usize) -> Self {
+            fn _new(
+                rank_small: RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
+                num_ones: usize,
+                log2_ones_per_inventory: usize,
+            ) -> Self {
                 let ones_per_inventory = 1 << log2_ones_per_inventory;
 
                 let inventory_size = num_ones.div_ceil(ones_per_inventory);
@@ -226,7 +229,7 @@ macro_rules! impl_rank_small_sel {
                     rank_small,
                     inventory,
                     inventory_begin,
-                    log2_ones_per_inventory
+                    log2_ones_per_inventory,
                 }
             }
         }
@@ -261,15 +264,16 @@ macro_rules! impl_rank_small_sel {
                 // the rank is in the upper block
 
                 let inv_idx = rank >> self.log2_ones_per_inventory;
-                let inv_upper_block_idx = inventory_begin.linear_partition_point(|&x| x <= inv_idx) - 1;
+                let inv_upper_block_idx =
+                    inventory_begin.linear_partition_point(|&x| x <= inv_idx) - 1;
                 let opt;
                 let inv_pos = if inv_upper_block_idx == upper_block_idx {
                     opt = (inv_idx << self.log2_ones_per_inventory) - upper_rank;
-                    *inventory.get_unchecked(inv_idx) as usize + upper_block_idx * Self::SUPERBLOCK_SIZE
+                    *inventory.get_unchecked(inv_idx) as usize
+                        + upper_block_idx * Self::SUPERBLOCK_SIZE
                 } else {
                     opt = 0;
                     upper_block_idx * Self::SUPERBLOCK_SIZE
-
                 };
                 let mut block_idx = inv_pos / Self::BLOCK_SIZE;
                 // cs-poppy micro-optimization: each block can contains at most
@@ -287,7 +291,8 @@ macro_rules! impl_rank_small_sel {
                     let next_inv_upper_block_idx =
                         inventory_begin.linear_partition_point(|&x| x <= inv_idx + 1) - 1;
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
-                        let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize + upper_block_idx * Self::SUPERBLOCK_SIZE;
+                        let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize
+                            + upper_block_idx * Self::SUPERBLOCK_SIZE;
                         next_inv_pos / Self::BLOCK_SIZE
                     } else {
                         (upper_block_idx + 1) * (Self::SUPERBLOCK_SIZE / Self::BLOCK_SIZE)
@@ -305,43 +310,17 @@ macro_rules! impl_rank_small_sel {
                     last_block_idx
                 );
 
-                if block_idx == last_block_idx { // TODO: avoid this test
+                if block_idx == last_block_idx {
+                    // TODO: avoid this test
                     last_block_idx += 1;
                 }
-                block_idx += counts[block_idx..last_block_idx].
-                    linear_partition_point(|x| x.absolute as usize <= local_rank) - 1;
+                block_idx += counts[block_idx..last_block_idx]
+                    .linear_partition_point(|x| x.absolute as usize <= local_rank)
+                    - 1;
                 let hint_rank = upper_rank + counts.get_unchecked(block_idx).absolute as usize;
+                let rank_in_block = local_rank - counts.get_unchecked(block_idx).absolute as usize;
 
-                let hint_pos;
-                // first sub block
-                let b1 = counts.get_unchecked(block_idx).rel(1);
-                if hint_rank + b1 > rank {
-                    hint_pos = block_idx * Self::BLOCK_SIZE;
-                    return self
-                        .rank_small
-                        .bits
-                        .select_hinted(rank, hint_pos, hint_rank);
-                }
-                // second sub block
-                let b2 = counts.get_unchecked(block_idx).rel(2);
-                if hint_rank + b2 > rank {
-                    hint_pos = block_idx * Self::BLOCK_SIZE + Self::SUBBLOCK_SIZE;
-                    return self
-                        .rank_small
-                        .bits
-                        .select_hinted(rank, hint_pos, hint_rank + b1);
-                }
-                // third sub block
-                let b3 = counts.get_unchecked(block_idx).rel(3);
-                if hint_rank + b3 > rank {
-                    hint_pos = block_idx * Self::BLOCK_SIZE + 2 * Self::SUBBLOCK_SIZE;
-                    return self
-                        .rank_small
-                        .bits
-                        .select_hinted(rank, hint_pos, hint_rank + b2);
-                }
-
-                finish_subblock_select!($NUM_U32S; hint_pos, block_idx, rank, hint_rank, b3, self, counts)
+                self.complete_select(block_idx, rank_in_block, hint_rank)
             }
         }
 
@@ -353,7 +332,6 @@ macro_rules! impl_rank_small_sel {
             for SelectSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
-
                 RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
             >
         {
@@ -361,61 +339,118 @@ macro_rules! impl_rank_small_sel {
     };
 }
 
-macro_rules! finish_subblock_select {
-    (1; $hint_pos: tt, $block_idx: tt, $rank: tt, $hint_rank: tt, $b3: tt, $self: tt, $counts: tt) => {{
-        $hint_pos = $block_idx * Self::BLOCK_SIZE + 3 * Self::SUBBLOCK_SIZE;
-        $self
-            .rank_small
-            .bits
-            .select_hinted($rank, $hint_pos, $hint_rank + $b3)
-    }};
-    (2; $hint_pos: tt, $block_idx: tt, $rank: tt, $hint_rank: tt, $b3: tt, $self: tt, $counts: tt) => {{
-        // fourth sub block
-        let b4 = $counts.get_unchecked($block_idx).rel(4);
-        if $hint_rank + b4 > $rank {
-            $hint_pos = $block_idx * Self::BLOCK_SIZE + 3 * Self::SUBBLOCK_SIZE;
-            return $self
-                .rank_small
-                .bits
-                .select_hinted($rank, $hint_pos, $hint_rank + $b3);
-        }
-        // fifth sub block
-        let b5 = $counts.get_unchecked($block_idx).rel(5);
-        if $hint_rank + b5 > $rank {
-            $hint_pos = $block_idx * Self::BLOCK_SIZE + 4 * Self::SUBBLOCK_SIZE;
-            return $self
-                .rank_small
-                .bits
-                .select_hinted($rank, $hint_pos, $hint_rank + b4);
-        }
-        // sixth sub block
-        let b6 = $counts.get_unchecked($block_idx).rel(6);
-        if $hint_rank + b6 > $rank {
-            $hint_pos = $block_idx * Self::BLOCK_SIZE + 5 * Self::SUBBLOCK_SIZE;
-            return $self
-                .rank_small
-                .bits
-                .select_hinted($rank, $hint_pos, $hint_rank + b5);
+impl<
+        B: AsRef<[usize]> + BitLength + SelectHinted,
+        C1: AsRef<[usize]>,
+        C2: AsRef<[Block32Counters<2, 9>]>,
+    > SelectSmall<2, 9, RankSmall<2, 9, B, C1, C2>>
+{
+    #[inline(always)]
+    unsafe fn complete_select(
+        &self,
+        block_idx: usize,
+        rank_in_block: usize,
+        hint_rank: usize,
+    ) -> usize {
+        let counts = self.rank_small.counts.as_ref();
+
+        const ONES_STEP_9: u64 = 1_u64 << 0
+            | 1_u64 << 9
+            | 1_u64 << 18
+            | 1_u64 << 27
+            | 1_u64 << 36
+            | 1_u64 << 45
+            | 1_u64 << 54;
+        const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
+
+        macro_rules! ULEQ_STEP_9 {
+            ($x:ident, $y:ident) => {
+                (((((($y) | MSBS_STEP_9) - (($x) & !MSBS_STEP_9)) | ($x ^ $y)) ^ ($x & !$y))
+                    & MSBS_STEP_9)
+            };
         }
 
-        // seventh sub block
-        let b7 = $counts.get_unchecked($block_idx).rel(7);
-        if $hint_rank + b7 > $rank {
-            $hint_pos = $block_idx * Self::BLOCK_SIZE + 6 * Self::SUBBLOCK_SIZE;
-            return $self
+        let rank_in_block_step_9 = rank_in_block as u64 * ONES_STEP_9;
+        let relative = counts.get_unchecked(block_idx).all_rel();
+        let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
+        let rank_in_word = rank_in_block - counts.get_unchecked(block_idx).rel(offset_in_block);
+        debug_assert!(rank_in_word < 64);
+
+        hint_rank
+            + self
                 .rank_small
                 .bits
-                .select_hinted($rank, $hint_pos, $hint_rank + b6);
-        }
+                .as_ref()
+                .get_unchecked(block_idx * Self::BLOCK_SIZE + offset_in_block * Self::SUBBLOCK_SIZE)
+                .select_in_word(rank_in_word)
+    }
+}
 
-        $hint_pos = $block_idx * Self::BLOCK_SIZE + 7 * Self::SUBBLOCK_SIZE;
-        $self.rank_small
-            .bits
-            .select_hinted($rank, $hint_pos, $hint_rank + b7)
-    }};
-    (3; $hint_pos: tt, $block_idx: tt, $rank: tt, $hint_rank: tt, $b3: tt, $self: tt, $counts: tt) => {{
-        finish_subblock_select!(2; $hint_pos, $block_idx, $rank, $hint_rank, $b3, $self, $counts)
-    }};
+impl<
+        B: AsRef<[usize]> + BitLength + SelectHinted,
+        C1: AsRef<[usize]>,
+        C2: AsRef<[Block32Counters<1, 9>]>,
+    > SelectSmall<1, 9, RankSmall<1, 9, B, C1, C2>>
+{
+    #[inline(always)]
+    unsafe fn complete_select(
+        &self,
+        _block_idx: usize,
+        _rank_in_block: usize,
+        _hint_rank: usize,
+    ) -> usize {
+        unreachable!()
+    }
+}
+
+impl<
+        B: AsRef<[usize]> + BitLength + SelectHinted,
+        C1: AsRef<[usize]>,
+        C2: AsRef<[Block32Counters<1, 10>]>,
+    > SelectSmall<1, 10, RankSmall<1, 10, B, C1, C2>>
+{
+    #[inline(always)]
+    unsafe fn complete_select(
+        &self,
+        _block_idx: usize,
+        _rank_in_block: usize,
+        _hint_rank: usize,
+    ) -> usize {
+        unreachable!()
+    }
+}
+
+impl<
+        B: AsRef<[usize]> + BitLength + SelectHinted,
+        C1: AsRef<[usize]>,
+        C2: AsRef<[Block32Counters<1, 11>]>,
+    > SelectSmall<1, 11, RankSmall<1, 11, B, C1, C2>>
+{
+    #[inline(always)]
+    unsafe fn complete_select(
+        &self,
+        _block_idx: usize,
+        _rank_in_block: usize,
+        _hint_rank: usize,
+    ) -> usize {
+        unreachable!()
+    }
+}
+
+impl<
+        B: AsRef<[usize]> + BitLength + SelectHinted,
+        C1: AsRef<[usize]>,
+        C2: AsRef<[Block32Counters<3, 13>]>,
+    > SelectSmall<3, 13, RankSmall<3, 13, B, C1, C2>>
+{
+    unsafe fn complete_select(
+        &self,
+        _block_idx: usize,
+        _rank_in_block: usize,
+        _hint_rank: usize,
+    ) -> usize {
+        unreachable!()
+    }
 }
 
 impl_rank_small_sel!(2; 9);

@@ -173,9 +173,13 @@ pub struct Block32Counters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 
 impl Block32Counters<2, 9> {
     #[inline(always)]
+    pub fn all_rel(&self) -> u64 {
+        unsafe { read_unaligned(addr_of!(self.relative) as *const u64) }
+    }
+
+    #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
-        let packed = unsafe { read_unaligned(addr_of!(self.relative) as *const u64) };
-        (packed >> (9 * (word ^ 7)) & ((1 << 9) - 1)) as usize
+        (self.all_rel() >> (9 * (word ^ 7)) & ((1 << 9) - 1)) as usize
     }
 
     #[inline(always)]
@@ -187,6 +191,11 @@ impl Block32Counters<2, 9> {
 }
 
 impl Block32Counters<1, 9> {
+    #[inline(always)]
+    pub fn all_rel(&self) -> u64 {
+        self.relative[0] as u64
+    }
+
     #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
         self.relative[0] as usize >> (9 * (word ^ 3)) & ((1 << 9) - 1)
@@ -200,6 +209,11 @@ impl Block32Counters<1, 9> {
 
 impl Block32Counters<1, 10> {
     #[inline(always)]
+    pub fn all_rel(&self) -> u64 {
+        self.relative[0] as u64
+    }
+
+    #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
         self.relative[0] as usize >> (10 * (word ^ 3)) & ((1 << 10) - 1)
     }
@@ -211,6 +225,11 @@ impl Block32Counters<1, 10> {
 }
 
 impl Block32Counters<1, 11> {
+    #[inline(always)]
+    pub fn all_rel(&self) -> u64 {
+        self.relative[0] as u64
+    }
+
     #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
         self.relative[0] as usize >> (11 * (word ^ 3)) & ((1 << 11) - 1)
@@ -224,22 +243,25 @@ impl Block32Counters<1, 11> {
 
 impl Block32Counters<3, 13> {
     #[inline(always)]
-    pub fn rel(&self, word: usize) -> usize {
+    pub fn all_rel(&self) -> u128 {
         #[cfg(target_endian = "little")]
-        let packed = unsafe { read_unaligned(addr_of!(*self) as *const u128) >> 32 };
+        unsafe {
+            read_unaligned(addr_of!(*self) as *const u128) >> 32
+        }
         #[cfg(target_endian = "big")]
-        let packed = unsafe { read_unaligned(addr_of!(*self) as *const u128) & (1 << 96) - 1 };
+        unsafe {
+            read_unaligned(addr_of!(*self) as *const u128) & (1 << 96) - 1
+        }
+    }
 
-        (packed >> (13 * (word ^ 7)) & ((1 << 13) - 1)) as usize
+    #[inline(always)]
+    pub fn rel(&self, word: usize) -> usize {
+        (self.all_rel() >> (13 * (word ^ 7)) & ((1 << 13) - 1)) as usize
     }
 
     #[inline(always)]
     pub fn set_rel(&mut self, word: usize, counter: usize) {
-        #[cfg(target_endian = "little")]
-        let mut packed = unsafe { read_unaligned(addr_of!(*self) as *const u128) >> 32 };
-        #[cfg(target_endian = "big")]
-        let mut packed = unsafe { read_unaligned(addr_of!(*self) as *const u128) & (1 << 96) - 1 };
-
+        let mut packed = self.all_rel();
         packed |= (counter as u128) << (13 * (word ^ 7));
 
         #[cfg(target_endian = "little")]
