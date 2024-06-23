@@ -486,8 +486,8 @@ impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
     }
 }
 
-impl PartialEq<BitVec<Vec<usize>>> for BitVec<Vec<usize>> {
-    fn eq(&self, other: &BitVec<Vec<usize>>) -> bool {
+impl<B: AsRef<[usize]>, C: AsRef<[usize]>> PartialEq<BitVec<C>> for BitVec<B> {
+    fn eq(&self, other: &BitVec<C>) -> bool {
         let len = self.len();
         if len != other.len() {
             return false;

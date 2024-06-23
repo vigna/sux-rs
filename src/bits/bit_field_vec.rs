@@ -15,18 +15,20 @@
 //! [`AtomicBitFieldVec`], a mutable, thread-safe bit-field vector.
 //!
 //! These flavors depends on a backend, and presently we provide, given an
-//! unsigned integer type `T` or an unsigned atomic integer type `A`:
+//! unsigned integer type `W` or an unsigned atomic integer type `A`:
 //!
 //! - `BitFieldVec<Vec<T>>`: a mutable, growable and resizable bit-field vector;
-//! - `BitFieldVec<AsRef<[T]>>`: an immutable bit-field vector, useful for
+//! - `BitFieldVec<AsRef<[W]>>`: an immutable bit-field vector, useful for
 //!   [ε-serde](epserde) support;
-//! - `BitFieldVec<AsRef<[T]> + AsMut<[T]>>`: a mutable (but not resizable) bit
+//! - `BitFieldVec<AsRef<[W]> + AsMut<[W]>>`: a mutable (but not resizable) bit
 //!    vector;
 //! - `AtomicBitFieldVec<AsRef<[A]>>`: a partially thread-safe, mutable (but not
 //!   resizable) bit-field vector.
 //!
 //! More generally, the underlying type must satisfy the trait [`Word`] for
 //! [`BitFieldVec`] and additionally [`IntoAtomic`] for [`AtomicBitFieldVec`].
+//! A blanket implementation exposes slices of elements of type `W` as bit-field
+//! vectors of width `W::BITS`, analogously for atomic types `A`.
 //!
 //! Note that nothing is assumed about the content of the backend outside the
 //! bits of the vector. Moreover, the content of the backend outside of the
@@ -445,8 +447,10 @@ impl<W: Word> core::iter::Extend<W> for BitFieldVec<W, Vec<W>> {
     }
 }
 
-impl<W: Word> PartialEq<BitFieldVec<W>> for BitFieldVec<W> {
-    fn eq(&self, other: &BitFieldVec<W>) -> bool {
+/// Equality between bit-field vectors requires that the word is the same, the
+/// bit width is the same, and the content is the same.
+impl<W: Word, B: AsRef<[W]>, C: AsRef<[W]>> PartialEq<BitFieldVec<W, C>> for BitFieldVec<W, B> {
+    fn eq(&self, other: &BitFieldVec<W, C>) -> bool {
         if self.bit_width() != other.bit_width() {
             return false;
         }
@@ -454,13 +458,13 @@ impl<W: Word> PartialEq<BitFieldVec<W>> for BitFieldVec<W> {
             return false;
         }
         let bit_len = self.len() * self.bit_width();
-        if self.bits[..bit_len / W::BITS] != other.bits[..bit_len / W::BITS] {
+        if self.bits.as_ref()[..bit_len / W::BITS] != other.bits.as_ref()[..bit_len / W::BITS] {
             return false;
         }
 
         let residual = bit_len % W::BITS;
         residual == 0
-            || (self.bits[bit_len / W::BITS] ^ other.bits[bit_len / W::BITS])
+            || (self.bits.as_ref()[bit_len / W::BITS] ^ other.bits.as_ref()[bit_len / W::BITS])
                 << (W::BITS - residual)
                 == W::ZERO
     }
