@@ -647,4 +647,34 @@ mod test_simple_select {
             assert_eq!(simple.select(ones + 1), None);
         }
     }
+
+    #[test]
+    fn test_simple_select() {
+        let lens = (1..100)
+            .step_by(10)
+            .chain((100_000..1_000_000).step_by(100_000));
+        let mut rng = SmallRng::seed_from_u64(0);
+        let density = 0.5;
+        for len in lens {
+            let bits: AddNumBits<_> = (0..len)
+                .map(|_| rng.gen_bool(density))
+                .collect::<BitVec>()
+                .into();
+
+            let simple = SimpleSelect::new(bits.clone(), 3);
+
+            let ones = simple.count_ones();
+            let mut pos = Vec::with_capacity(ones);
+            for i in 0..len {
+                if bits[i] {
+                    pos.push(i);
+                }
+            }
+
+            for i in 0..ones {
+                assert_eq!(simple.select(i), Some(pos[i]));
+            }
+            assert_eq!(simple.select(ones + 1), None);
+        }
+    }
 }
