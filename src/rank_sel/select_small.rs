@@ -275,7 +275,7 @@ macro_rules! impl_rank_small_sel {
                     upper_block_idx * Self::SUPERBLOCK_SIZE
                 };
                 let mut block_idx = inv_pos / Self::BLOCK_SIZE;
-                // cs-poppy micro-optimization: each block can contains at most
+                // cs-poppy micro-optimization: each block can contain at most
                 // Self::BLOCK_SIZE ones, so we can skip blocks to which the bit
                 // we are looking for cannot possibly belong.
                 //
@@ -284,7 +284,7 @@ macro_rules! impl_rank_small_sel {
                 // slow down the search, except in the very dense case. We thus
                 // approximate the value with opt: this works because
                 //
-                // inv_idx - inv_idx  % ones_per_inventory - upper_rank =
+                // inv_idx * ones_per_inventory - upper_rank =
                 // local_rank - local_rank % ones_per_inventory
                 // >= counts.get(block_idx).absolute.
                 block_idx += (local_rank - opt) / Self::BLOCK_SIZE;
