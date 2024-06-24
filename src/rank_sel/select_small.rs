@@ -318,7 +318,7 @@ macro_rules! impl_rank_small_sel {
                     last_block_idx
                 );
 
-                debug_assert(block_idx < last_block_idx);
+                debug_assert!(block_idx < last_block_idx);
 
                 block_idx += counts[block_idx..last_block_idx]
                     .linear_partition_point(|x| x.absolute as usize <= local_rank)
