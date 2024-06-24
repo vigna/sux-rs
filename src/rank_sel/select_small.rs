@@ -314,12 +314,26 @@ macro_rules! impl_rank_small_sel {
                     // TODO: avoid this test
                     last_block_idx += 1;
                 }
+                dbg!(local_rank);
                 block_idx += counts[block_idx..last_block_idx]
                     .linear_partition_point(|x| x.absolute as usize <= local_rank)
                     - 1;
                 let hint_rank = upper_rank + counts.get_unchecked(block_idx).absolute as usize;
                 let rank_in_block = local_rank - counts.get_unchecked(block_idx).absolute as usize;
-
+                dbg!(block_idx, counts.len() - 1);
+                if block_idx < counts.len() - 1 {
+                    dbg!(
+                        counts.get_unchecked(block_idx).absolute,
+                        counts.get_unchecked(block_idx + 1).absolute
+                    );
+                }
+                assert!(
+                    block_idx == counts.len() - 1
+                        || counts.get_unchecked(block_idx).absolute
+                            < counts.get_unchecked(block_idx + 1).absolute
+                        || counts.get_unchecked(block_idx).absolute as usize + rank_in_block
+                            < counts.get_unchecked(block_idx + 1).absolute as usize
+                );
                 self.complete_select(block_idx, rank_in_block)
             }
         }
@@ -374,6 +388,14 @@ impl<
         dbg!(rank_in_word);
 
         let pos = block_idx * Self::BLOCK_SIZE + offset_in_block * Self::SUBBLOCK_SIZE;
+        dbg!(
+            rank_in_word,
+            self.rank_small
+                .bits
+                .as_ref()
+                .get_unchecked(pos / usize::BITS as usize)
+                .count_ones()
+        );
         pos + self
             .rank_small
             .bits
