@@ -318,14 +318,8 @@ macro_rules! impl_rank_small_sel {
                 block_idx += counts[block_idx..last_block_idx]
                     .linear_partition_point(|x| x.absolute as usize <= local_rank)
                     - 1;
-                let rank_in_block = local_rank - counts.get_unchecked(block_idx).absolute as usize;
-
-                assert!(
-                    block_idx == counts.len() - 1
-                        || rank
-                            < upper_rank + counts.get_unchecked(block_idx + 1).absolute as usize
-                );
-                self.complete_select(block_idx, rank_in_block)
+                let hint_rank = upper_rank + counts.get_unchecked(block_idx).absolute as usize;
+                self.complete_select(block_idx, rank, hint_rank)
             }
         }
 
@@ -351,7 +345,7 @@ impl<
     > SelectSmall<2, 9, RankSmall<2, 9, B, C1, C2>>
 {
     #[inline(always)]
-    unsafe fn complete_select(&self, block_idx: usize, rank_in_block: usize) -> usize {
+    unsafe fn complete_select(&self, block_idx: usize, rank: usize, hint_rank: usize) -> usize {
         const ONES_STEP_9: u64 = 1_u64 << 0
             | 1_u64 << 9
             | 1_u64 << 18
@@ -368,6 +362,7 @@ impl<
             };
         }
 
+        let rank_in_block = rank - hint_rank;
         let block_count = self.rank_small.counts.as_ref().get_unchecked(block_idx);
         let rank_in_block_step_9 = rank_in_block as u64 * ONES_STEP_9;
         let relative = block_count.all_rel();
@@ -392,8 +387,25 @@ impl<
     > SelectSmall<1, 9, RankSmall<1, 9, B, C1, C2>>
 {
     #[inline(always)]
-    unsafe fn complete_select(&self, _block_idx: usize, _rank_in_block: usize) -> usize {
-        unreachable!()
+    unsafe fn complete_select(&self, block_idx: usize, rank: usize, hint_rank: usize) -> usize {
+        const ONES_STEP_9: u64 = 1_u64 << 0 | 1_u64 << 9 | 1_u64 << 18 | 1_u64 << 27;
+        const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
+
+        macro_rules! ULEQ_STEP_9 {
+            ($x:ident, $y:ident) => {
+                (((((($y) | MSBS_STEP_9) - (($x) & !MSBS_STEP_9)) | ($x ^ $y)) ^ ($x & !$y))
+                    & MSBS_STEP_9)
+            };
+        }
+
+        let rank_in_block = rank - hint_rank;
+        let block_count = self.rank_small.counts.as_ref().get_unchecked(block_idx);
+        let rank_in_block_step_9 = rank_in_block as u64 * ONES_STEP_9;
+        let relative = block_count.all_rel();
+        let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
+
+        let hint_pos = block_idx * Self::BLOCK_SIZE + offset_in_block * Self::SUBBLOCK_SIZE;
+        self.select_hinted(rank, hint_pos, hint_rank + block_count.rel(offset_in_block))
     }
 }
 
@@ -404,7 +416,7 @@ impl<
     > SelectSmall<1, 10, RankSmall<1, 10, B, C1, C2>>
 {
     #[inline(always)]
-    unsafe fn complete_select(&self, _block_idx: usize, _rank_in_block: usize) -> usize {
+    unsafe fn complete_select(&self, _block_idx: usize, _rank: usize, _hint_rank: usize) -> usize {
         unreachable!()
     }
 }
@@ -416,7 +428,7 @@ impl<
     > SelectSmall<1, 11, RankSmall<1, 11, B, C1, C2>>
 {
     #[inline(always)]
-    unsafe fn complete_select(&self, _block_idx: usize, _rank_in_block: usize) -> usize {
+    unsafe fn complete_select(&self, _block_idx: usize, _rank: usize, _hint_rank: usize) -> usize {
         unreachable!()
     }
 }
@@ -427,7 +439,7 @@ impl<
         C2: AsRef<[Block32Counters<3, 13>]>,
     > SelectSmall<3, 13, RankSmall<3, 13, B, C1, C2>>
 {
-    unsafe fn complete_select(&self, _block_idx: usize, _rank_in_block: usize) -> usize {
+    unsafe fn complete_select(&self, _block_idx: usize, rank: usize, _hint_rank: usize) -> usize {
         unreachable!()
     }
 }
