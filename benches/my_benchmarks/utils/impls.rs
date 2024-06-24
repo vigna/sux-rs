@@ -2,10 +2,53 @@ use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 use sux::bits::BitVec;
 use sux::rank_sel::{Rank9, RankSmall};
-use sux::rank_sel::{Select9, SelectAdapt, SelectAdaptConst, SelectSmall};
+use sux::rank_sel::{Select9, SelectAdapt, SelectAdaptConst, SelectSmall, SimpleSelect};
 use sux::traits::{AddNumBits, BitLength, NumBits, Select, SelectHinted, SelectUnchecked};
 
 use super::Build;
+
+macro_rules! impl_simple {
+    ($name:ident, $subinv: literal) => {
+        #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
+        pub struct $name<B> {
+            inner: SimpleSelect<B>,
+        }
+
+        impl Build<BitVec> for $name<AddNumBits<BitVec>> {
+            fn new(bits: BitVec) -> Self {
+                let bits: AddNumBits<_> = bits.into();
+                Self {
+                    inner: SimpleSelect::new(bits, $subinv),
+                }
+            }
+        }
+        impl<B: BitLength + SelectHinted + AsRef<[usize]>> BitLength for $name<B> {
+            fn len(&self) -> usize {
+                self.inner.len()
+            }
+        }
+        impl NumBits for $name<AddNumBits<BitVec>> {
+            fn num_ones(&self) -> usize {
+                self.inner.num_ones()
+            }
+        }
+        impl SelectUnchecked for $name<AddNumBits<BitVec>> {
+            unsafe fn select_unchecked(&self, rank: usize) -> usize {
+                self.inner.select_unchecked(rank)
+            }
+        }
+        impl Select for $name<AddNumBits<BitVec>> {
+            fn select(&self, rank: usize) -> Option<usize> {
+                self.inner.select(rank)
+            }
+        }
+    };
+}
+
+impl_simple!(SimpleSelect0, 0);
+impl_simple!(SimpleSelect1, 1);
+impl_simple!(SimpleSelect2, 2);
+impl_simple!(SimpleSelect3, 3);
 
 macro_rules! impl_select_adapt {
     ($name:ident, $subinv: literal) => {
