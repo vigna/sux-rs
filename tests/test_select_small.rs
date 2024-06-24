@@ -5,10 +5,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::time::Instant;
-
-use mem_dbg::DbgFlags;
-use mem_dbg::MemDbg;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
