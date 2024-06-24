@@ -289,16 +289,17 @@ macro_rules! impl_rank_small_sel {
                 let mut last_block_idx;
                 if (rank >> self.log2_ones_per_inventory) + 1 < inventory.len() {
                     let next_inv_upper_block_idx =
-                        inventory_begin.linear_partition_point(|&x| x <= inv_idx + 1) - 1;
+                        inventory_begin.linear_partition_point(|&x| x <= inv_idx + 1) - 1; // TODO: +1?
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
                         let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize
                             + upper_block_idx * Self::SUPERBLOCK_SIZE;
-                        next_inv_pos / Self::BLOCK_SIZE
+                        next_inv_pos.div_ceil(Self::BLOCK_SIZE)
                     } else {
                         (upper_block_idx + 1) * (Self::SUPERBLOCK_SIZE / Self::BLOCK_SIZE)
                     };
                 } else {
-                    last_block_idx = self.rank_small.bits.len() / Self::BLOCK_SIZE;
+                    // TODO: sure?
+                    last_block_idx = self.rank_small.bits.len().div_ceil(Self::BLOCK_SIZE);
                 }
 
                 debug_assert!(block_idx < counts.len());
@@ -314,25 +315,15 @@ macro_rules! impl_rank_small_sel {
                     // TODO: avoid this test
                     last_block_idx += 1;
                 }
-                dbg!(local_rank);
                 block_idx += counts[block_idx..last_block_idx]
                     .linear_partition_point(|x| x.absolute as usize <= local_rank)
                     - 1;
-                let hint_rank = upper_rank + counts.get_unchecked(block_idx).absolute as usize;
                 let rank_in_block = local_rank - counts.get_unchecked(block_idx).absolute as usize;
-                dbg!(block_idx, counts.len() - 1);
-                if block_idx < counts.len() - 1 {
-                    dbg!(
-                        counts.get_unchecked(block_idx).absolute,
-                        counts.get_unchecked(block_idx + 1).absolute
-                    );
-                }
+
                 assert!(
                     block_idx == counts.len() - 1
-                        || counts.get_unchecked(block_idx).absolute
-                            < counts.get_unchecked(block_idx + 1).absolute
-                        || counts.get_unchecked(block_idx).absolute as usize + rank_in_block
-                            < counts.get_unchecked(block_idx + 1).absolute as usize
+                        || rank
+                            < upper_rank + counts.get_unchecked(block_idx + 1).absolute as usize
                 );
                 self.complete_select(block_idx, rank_in_block)
             }
@@ -377,25 +368,14 @@ impl<
             };
         }
 
-        dbg!(rank_in_block);
         let block_count = self.rank_small.counts.as_ref().get_unchecked(block_idx);
         let rank_in_block_step_9 = rank_in_block as u64 * ONES_STEP_9;
         let relative = block_count.all_rel();
         let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
-        dbg!(offset_in_block);
 
         let rank_in_word = rank_in_block - block_count.rel(offset_in_block);
-        dbg!(rank_in_word);
 
         let pos = block_idx * Self::BLOCK_SIZE + offset_in_block * Self::SUBBLOCK_SIZE;
-        dbg!(
-            rank_in_word,
-            self.rank_small
-                .bits
-                .as_ref()
-                .get_unchecked(pos / usize::BITS as usize)
-                .count_ones()
-        );
         pos + self
             .rank_small
             .bits
