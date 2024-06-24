@@ -13,8 +13,32 @@ use sux::traits::AddNumBits;
 use sux::traits::NumBits;
 use sux::traits::SelectUnchecked;
 
+pub fn bench_simple_select(c: &mut Criterion, uniform: bool, max_log2_u64_per_subinventory: usize) {
+    let mut name = String::from("SimpleSelect");
+
+    match max_log2_u64_per_subinventory {
+        0 => name.push_str("0"),
+        1 => name.push_str("1"),
+        2 => name.push_str("2"),
+        3 => name.push_str("3"),
+        _ => panic!("Invalid max_log2_u64_per_subinventory"),
+    }
+
+    if !uniform {
+        name.push_str("_non_uniform");
+    }
+
+    match max_log2_u64_per_subinventory {
+        0 => bench_select::<SelectAdapt0<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        1 => bench_select::<SelectAdapt1<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        2 => bench_select::<SelectAdapt2<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        3 => bench_select::<SelectAdapt3<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        _ => unreachable!(),
+    }
+}
+
 pub fn bench_select_adapt(c: &mut Criterion, uniform: bool, max_log2_u64_per_subinventory: usize) {
-    let mut name = String::from("select_adapt");
+    let mut name = String::from("SelectAdapt");
 
     match max_log2_u64_per_subinventory {
         0 => name.push_str("0"),
@@ -38,7 +62,7 @@ pub fn bench_select_adapt(c: &mut Criterion, uniform: bool, max_log2_u64_per_sub
 }
 
 pub fn bench_select9(c: &mut Criterion, uniform: bool) {
-    let mut name = String::from("select9");
+    let mut name = String::from("Select9");
     if !uniform {
         name.push_str("_non_uniform");
     }
@@ -47,7 +71,7 @@ pub fn bench_select9(c: &mut Criterion, uniform: bool) {
 }
 
 pub fn bench_select_small(c: &mut Criterion, uniform: bool, sel_type: usize) {
-    let mut name = String::from("select_small");
+    let mut name = String::from("SelectSmall");
 
     match sel_type {
         0 => name.push_str("0"),

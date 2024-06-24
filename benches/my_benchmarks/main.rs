@@ -18,6 +18,10 @@ fn main() {
 
     match filter.as_str() {
         "select" => {
+            bench_simple_select(&mut criterion, true, 0);
+            bench_simple_select(&mut criterion, true, 1);
+            bench_simple_select(&mut criterion, true, 2);
+            bench_simple_select(&mut criterion, true, 3);
             bench_select_adapt(&mut criterion, true, 0);
             bench_select_adapt(&mut criterion, true, 1);
             bench_select_adapt(&mut criterion, true, 2);
@@ -30,6 +34,10 @@ fn main() {
             bench_select_small(&mut criterion, true, 4);
         }
         "select_non_uniform" => {
+            bench_simple_select(&mut criterion, false, 0);
+            bench_simple_select(&mut criterion, false, 1);
+            bench_simple_select(&mut criterion, false, 2);
+            bench_simple_select(&mut criterion, false, 3);
             bench_select_adapt(&mut criterion, false, 0);
             bench_select_adapt(&mut criterion, false, 1);
             bench_select_adapt(&mut criterion, false, 2);
