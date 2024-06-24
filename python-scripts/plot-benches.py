@@ -10,8 +10,8 @@ import argparse
 import os
 
 colors = plt.cm.tab20(np.linspace(0, 1, 30))
-markers = ['o', 's', 'D', '^', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x', 'X',
-           'd', '|', '_', '.', ',', '1', '2', '3', '4', '8', 'P', 'd', '8', 'v', '^', '<']
+markers = ['o', '*', 'D', 'x', 'h', '+', '>', 'p', 's', 'd', 'H', '<', '3', 'X',
+           'd', '|', '_', '.', ',', '1', '2', '^', '4', '8', 'P', 'v', '8', 'v', '^', '<']
 
 
 def load_csv_benches(path):
@@ -152,7 +152,7 @@ def draw_pareto_front(benches, compare_name, op_type, density=0.5):
             Line2D([0], [0], color='black', marker=markers[i], markersize=5, label=bench[1]))
 
     ax.legend(handles=artists, loc='upper center', bbox_to_anchor=(
-        0.5, -0.06), fancybox=True, shadow=False, ncol=4)
+        0.5, -0.09), fancybox=True, shadow=False, ncol=4)
 
     plt.draw_all()
     plt.savefig("./plots/{}.svg".format(compare_name),
