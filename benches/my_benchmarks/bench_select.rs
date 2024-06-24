@@ -8,12 +8,13 @@ use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::Select9;
 use sux::rank_sel::SelectAdapt;
 use sux::rank_sel::SelectAdaptConst;
+use sux::rank_sel::SelectSmall;
 use sux::traits::AddNumBits;
 use sux::traits::NumBits;
 use sux::traits::SelectUnchecked;
 
-pub fn bench_simple_select(c: &mut Criterion, uniform: bool, max_log2_u64_per_subinventory: usize) {
-    let mut name = String::from("simple_select");
+pub fn bench_select_adapt(c: &mut Criterion, uniform: bool, max_log2_u64_per_subinventory: usize) {
+    let mut name = String::from("select_adapt");
 
     match max_log2_u64_per_subinventory {
         0 => name.push_str("0"),
@@ -27,17 +28,13 @@ pub fn bench_simple_select(c: &mut Criterion, uniform: bool, max_log2_u64_per_su
         name.push_str("_non_uniform");
     }
 
-    let mut bench_group = c.benchmark_group(name);
-
     match max_log2_u64_per_subinventory {
-        0 => bench_select::<SelectAdapt0<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        1 => bench_select::<SelectAdapt1<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        2 => bench_select::<SelectAdapt2<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
-        3 => bench_select::<SelectAdapt3<_>>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform),
+        0 => bench_select::<SelectAdapt0<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        1 => bench_select::<SelectAdapt1<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        2 => bench_select::<SelectAdapt2<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        3 => bench_select::<SelectAdapt3<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
         _ => unreachable!(),
     }
-
-    bench_group.finish();
 }
 
 pub fn bench_select9(c: &mut Criterion, uniform: bool) {
@@ -45,11 +42,34 @@ pub fn bench_select9(c: &mut Criterion, uniform: bool) {
     if !uniform {
         name.push_str("_non_uniform");
     }
-    let mut bench_group = c.benchmark_group(name);
 
-    bench_select::<Select9>(&mut bench_group, &LENS, &DENSITIES, REPS, uniform);
+    bench_select::<Select9>(c, &name, &LENS, &DENSITIES, REPS, uniform);
+}
 
-    bench_group.finish();
+pub fn bench_select_small(c: &mut Criterion, uniform: bool, sel_type: usize) {
+    let mut name = String::from("select_small");
+
+    match sel_type {
+        0 => name.push_str("0"),
+        1 => name.push_str("1"),
+        2 => name.push_str("2"),
+        3 => name.push_str("3"),
+        4 => name.push_str("4"),
+        _ => panic!("Invalid type"),
+    }
+
+    if !uniform {
+        name.push_str("_non_uniform");
+    }
+
+    match sel_type {
+        0 => bench_select::<SelectSmall<2, 9>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        1 => bench_select::<SelectSmall<1, 9>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        2 => bench_select::<SelectSmall<1, 10>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        3 => bench_select::<SelectSmall<1, 11>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        4 => bench_select::<SelectSmall<3, 13>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        _ => unreachable!(),
+    }
 }
 
 const LOG2_ZEROS_PER_INVENTORY: usize = 10;
@@ -57,7 +77,7 @@ const LOG2_U64_PER_SUBINVENTORY: usize = 3;
 
 pub fn compare_simple_fixed(c: &mut Criterion) {
     let mut group = c.benchmark_group(format!(
-        "simple_select_const_{}_{}",
+        "select_adapt_const_{}_{}",
         LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY,
     ));
 
@@ -99,7 +119,7 @@ pub fn compare_simple_fixed(c: &mut Criterion) {
 
     let mut rng = SmallRng::seed_from_u64(0);
     let mut group = c.benchmark_group(format!(
-        "simple_select_{}_{}",
+        "select_adapt_{}_{}",
         LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY
     ));
     for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
@@ -188,4 +208,31 @@ pub fn bench_select_adapt_const(c: &mut Criterion, uniform: bool) {
         bitvec_ids,
         c
     );
+}
+
+macro_rules! select_adapt_const_mem_cost {
+    ([$($inv_size:literal),+], $subinv_size:tt) => {
+        $(
+            select_adapt_const_mem_cost!($inv_size, $subinv_size);
+        )+
+    };
+    ($inv_size:literal, [$($subinv_size:literal),+]) => {
+        $(
+            select_adapt_const_mem_cost!($inv_size, $subinv_size);
+        )+
+    };
+    ($log_inv_size:literal, $log_subinv_size:literal) => {{
+        let name = format!("select_adapt_const_{}_{}", $log_inv_size, $log_subinv_size);
+        println!("Memory cost for {}", name);
+        save_mem_cost::<SelectAdaptConst<AddNumBits<BitVec>, Box<[usize]>, $log_inv_size, $log_subinv_size>>(
+            &name,
+            &LENS,
+            &DENSITIES,
+            true,
+        );
+    }};
+}
+
+pub fn select_adapt_const_mem_cost() {
+    select_adapt_const_mem_cost!([8, 9, 10, 11, 12, 13], [0, 1, 2, 3, 4, 5]);
 }
