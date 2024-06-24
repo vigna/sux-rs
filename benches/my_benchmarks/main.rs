@@ -18,24 +18,40 @@ fn main() {
 
     match filter.as_str() {
         "select" => {
-            bench_simple_select(&mut criterion, true, 3);
+            bench_select_adapt(&mut criterion, true, 0);
+            bench_select_adapt(&mut criterion, true, 1);
+            bench_select_adapt(&mut criterion, true, 2);
+            bench_select_adapt(&mut criterion, true, 3);
             bench_select9(&mut criterion, true);
+            bench_select_small(&mut criterion, true, 0);
+            bench_select_small(&mut criterion, true, 1);
+            bench_select_small(&mut criterion, true, 2);
+            bench_select_small(&mut criterion, true, 3);
+            bench_select_small(&mut criterion, true, 4);
         }
         "select_non_uniform" => {
-            bench_simple_select(&mut criterion, false, 3);
+            bench_select_adapt(&mut criterion, false, 0);
+            bench_select_adapt(&mut criterion, false, 1);
+            bench_select_adapt(&mut criterion, false, 2);
+            bench_select_adapt(&mut criterion, false, 3);
             bench_select9(&mut criterion, false);
+            bench_select_small(&mut criterion, false, 0);
+            bench_select_small(&mut criterion, false, 1);
+            bench_select_small(&mut criterion, false, 2);
+            bench_select_small(&mut criterion, false, 3);
+            bench_select_small(&mut criterion, false, 4);
         }
         "rank" => {
             bench_rank9(&mut criterion);
-            bench_rank_small0(&mut criterion);
-            bench_rank_small1(&mut criterion);
-            bench_rank_small2(&mut criterion);
-            bench_rank_small3(&mut criterion);
-            bench_rank_small4(&mut criterion);
+            bench_rank_small(&mut criterion, 0);
+            bench_rank_small(&mut criterion, 1);
+            bench_rank_small(&mut criterion, 2);
+            bench_rank_small(&mut criterion, 3);
+            bench_rank_small(&mut criterion, 4);
         }
-        "simple" => {
-            bench_simple_select(&mut criterion, true, 3);
-            bench_simple_select(&mut criterion, false, 3);
+        "adapt" => {
+            bench_select_adapt(&mut criterion, true, 3);
+            bench_select_adapt(&mut criterion, false, 3);
         }
         "select9" => {
             bench_select9(&mut criterion, true);
@@ -45,6 +61,7 @@ fn main() {
             bench_rank9(&mut criterion);
         }
         "select_adapt_const" => bench_select_adapt_const(&mut criterion, true),
+        "select_adapt_const_mem_cost" => select_adapt_const_mem_cost(),
         "compare_simple_fixed" => compare_simple_fixed(&mut criterion),
         filter if filter.contains("-") || filter.is_empty() => {
             println!("No filter provided.");
