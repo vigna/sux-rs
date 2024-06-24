@@ -434,9 +434,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
         debug_assert!(offset_in_block <= 7);
 
         let word = block_left + offset_in_block;
-
         let rank_in_word = rank_in_block - counts.get_unchecked(count_left).rel(offset_in_block);
-        debug_assert!(rank_in_word < 64);
 
         word * 64
             + self

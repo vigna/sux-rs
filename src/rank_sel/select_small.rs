@@ -388,7 +388,7 @@ impl<
 {
     #[inline(always)]
     unsafe fn complete_select(&self, block_idx: usize, rank: usize, hint_rank: usize) -> usize {
-        const ONES_STEP_9: u64 = 1_u64 << 0 | 1_u64 << 9 | 1_u64 << 18 | 1_u64 << 27;
+        const ONES_STEP_9: u64 = 1_u64 << 0 | 1_u64 << 9 | 1_u64 << 18;
         const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
 
         macro_rules! ULEQ_STEP_9 {
@@ -402,9 +402,10 @@ impl<
         let block_count = self.rank_small.counts.as_ref().get_unchecked(block_idx);
         let rank_in_block_step_9 = rank_in_block as u64 * ONES_STEP_9;
         let relative = block_count.all_rel();
-        let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
 
+        let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
         let hint_pos = block_idx * Self::BLOCK_SIZE + offset_in_block * Self::SUBBLOCK_SIZE;
+
         self.select_hinted(rank, hint_pos, hint_rank + block_count.rel(offset_in_block))
     }
 }
