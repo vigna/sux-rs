@@ -163,19 +163,10 @@ fn bench_rank9(target_dir: &PathBuf) {
 }
 
 fn bench_builder<B: Build<BitVec>>(sel_name: &str, target_dir: &PathBuf, uniform: bool) {
-    print!("{}... ", sel_name);
-    std::io::stdout().flush().unwrap();
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     let mut file = std::fs::File::create(target_dir.join(format!("{}.csv", sel_name))).unwrap();
-    for (i, len) in LENS.iter().copied().enumerate() {
-        for (j, density) in DENSITIES.iter().copied().enumerate() {
-            print!(
-                "{}/{}\r{}... ",
-                i * DENSITIES.len() + j + 1,
-                LENS.len() * DENSITIES.len(),
-                sel_name
-            );
-            std::io::stdout().flush().unwrap();
+    for len in [1_024_000_000].iter().copied() {
+        for density in [0.5].iter().copied() {
             let (density0, density1) = if uniform {
                 (density, density)
             } else {
@@ -212,7 +203,6 @@ fn bench_builder<B: Build<BitVec>>(sel_name: &str, target_dir: &PathBuf, uniform
         }
     }
     file.flush().unwrap();
-    println!("\r{}... done        ", sel_name);
 }
 
 fn main() {
