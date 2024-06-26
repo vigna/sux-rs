@@ -61,6 +61,10 @@ fn main() {
             bench_select_adapt(&mut criterion, true, 3);
             bench_select_adapt(&mut criterion, false, 3);
         }
+        "simple" => {
+            bench_simple_select(&mut criterion, true, 3);
+            bench_simple_select(&mut criterion, false, 3);
+        }
         "select9" => {
             bench_select9(&mut criterion, true);
             bench_select9(&mut criterion, false);
