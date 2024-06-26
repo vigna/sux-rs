@@ -28,18 +28,24 @@ const REPEATS: usize = 5;
 
 const NUMPOS: usize = 80_000_000;
 
-trait SelStruct<B>: SelectUnchecked {
+trait Build<B> {
     fn new(bits: B) -> Self;
 }
-impl SelStruct<BitVec> for SimpleSelect<AddNumBits<BitVec>> {
+impl Build<BitVec> for SimpleSelect<AddNumBits<BitVec>> {
     fn new(bits: BitVec) -> Self {
         let bits: AddNumBits<_> = bits.into();
         SimpleSelect::new(bits, 3)
     }
 }
-impl SelStruct<BitVec> for Select9 {
+impl Build<BitVec> for Select9 {
     fn new(bits: BitVec) -> Self {
         Select9::new(Rank9::new(bits))
+    }
+}
+
+impl Build<BitVec> for Rank9 {
+    fn new(bits: BitVec) -> Self {
+        Rank9::new(bits)
     }
 }
 
@@ -47,7 +53,7 @@ fn remap128(x: usize, n: usize) -> usize {
     ((x as u128).wrapping_mul(n as u128) >> 64) as usize
 }
 
-fn bench_select<S: SelStruct<BitVec>>(
+fn bench_select<S: Build<BitVec> + SelectUnchecked>(
     numbits: usize,
     numpos: usize,
     density0: f64,
@@ -95,7 +101,7 @@ fn bench_select<S: SelStruct<BitVec>>(
     elapsed as f64 / numpos as f64
 }
 
-fn bench_select_batch<S: SelStruct<BitVec>>(
+fn bench_select_batch<S: Build<BitVec> + SelectUnchecked>(
     rng: &mut SmallRng,
     sel_name: &str,
     uniform: bool,
@@ -156,6 +162,59 @@ fn bench_rank9(target_dir: &PathBuf) {
     }
 }
 
+fn bench_builder<B: Build<BitVec>>(sel_name: &str, target_dir: &PathBuf, uniform: bool) {
+    print!("{}... ", sel_name);
+    std::io::stdout().flush().unwrap();
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+    let mut file = std::fs::File::create(target_dir.join(format!("{}.csv", sel_name))).unwrap();
+    for (i, len) in LENS.iter().copied().enumerate() {
+        for (j, density) in DENSITIES.iter().copied().enumerate() {
+            print!(
+                "{}/{}\r{}... ",
+                i * DENSITIES.len() + j + 1,
+                LENS.len() * DENSITIES.len(),
+                sel_name
+            );
+            std::io::stdout().flush().unwrap();
+            let (density0, density1) = if uniform {
+                (density, density)
+            } else {
+                (density * 0.01, density * 0.99)
+            };
+
+            let first_half = loop {
+                let b = (0..len / 2)
+                    .map(|_| rng.gen_bool(density0))
+                    .collect::<BitVec>();
+                if b.count_ones() > 0 {
+                    break b;
+                }
+            };
+            let second_half = (0..len / 2)
+                .map(|_| rng.gen_bool(density1))
+                .collect::<BitVec>();
+            let bits = first_half
+                .into_iter()
+                .chain(&second_half)
+                .collect::<BitVec>();
+
+            let mut time = 0.0;
+            for _ in 0..REPEATS {
+                let b = bits.clone();
+                let begin = std::time::Instant::now();
+                let b_struct: B = B::new(b);
+                black_box(&b_struct);
+                time += begin.elapsed().as_secs_f64();
+                black_box(b_struct);
+            }
+            time /= REPEATS as f64;
+            writeln!(file, "{}, {}, {}", len, density, time).unwrap();
+        }
+    }
+    file.flush().unwrap();
+    println!("\r{}... done        ", sel_name);
+}
+
 fn main() {
     let abs_project_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let abs_project_dir = std::path::Path::new(&abs_project_dir);
@@ -177,7 +236,7 @@ fn main() {
 
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        println!("Please provide a benchmark option: 'select', 'select_non_uniform' or 'rank'");
+        println!("Please provide a benchmark option: 'select', 'select_non_uniform', 'rank' or 'builder'");
         return;
     }
 
@@ -197,6 +256,11 @@ fn main() {
         }
         "rank" => {
             bench_rank9(&target_dir);
+        }
+        "builder" => {
+            bench_builder::<SimpleSelect<_>>("simple_select_builder", &target_dir, true);
+            bench_builder::<Select9>("select9_builder", &target_dir, true);
+            bench_builder::<Rank9>("rank9_builder", &target_dir, true);
         }
         _ => {
             println!("Invalid benchmark option: '{}'", args[1]);

@@ -9,9 +9,13 @@ import numpy as np
 import argparse
 import os
 
-colors = plt.cm.tab20(np.linspace(0, 1, 30))
-markers = ['o', '*', 'D', 'x', 'h', '+', '>', 'p', 's', 'd', 'H', '<', '3', 'X',
-           'd', '|', '_', '.', ',', '1', '2', '^', '4', '8', 'P', 'v', '8', 'v', '^', '<']
+# colors = plt.cm.tab20(np.linspace(0, 1, 30))
+colors = ["#8FBC8F", "#4682B4", "#DDA0DD", "#CD5C5C", "#F4A460",
+          "#6B8E23", "#B0C4DE", "#DA70D6", "#D2B48C", "#87CEFA",
+          "#AFEEEE", "#E6E6FA", "#FFA07A", "#20B2AA", "#778899",
+          "#BDB76B", "#FFDEAD", "#BC8F8F", "#6495ED", "#F0E68C"]
+markers = ['+', 'o', '^', 'x', 'v', '*', '>', '<', '3', 'X',
+           'd', 'p', 's', 'd', 'H', '1', '2', 'D', '4', '8', 'P', 'h', '8', 'v', '^', '<']
 
 
 def load_csv_benches(path):
@@ -88,8 +92,8 @@ def compare_benches(benches, compare_name, op_type):
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
-    plt.savefig(os.path.join(plots_dir, "{}.svg".format(compare_name)),
-                format="svg", bbox_inches="tight")
+    plt.savefig(os.path.join(plots_dir, "{}.png".format(compare_name)),
+                format="png", bbox_inches="tight", dpi=250)
     plt.close(fig)
 
     # save pandas dataframes to csv
@@ -137,32 +141,31 @@ def draw_pareto_front(benches, compare_name, op_type, density=0.5):
         ax.plot(pareto[:, 0], pareto[:, 1], label=f"size={lens[i]}",
                 color=colors[i], linewidth=1.0)
         for j, p in enumerate(bench):
-            if p in pareto:
-                plt.scatter(p[0], p[1], color=colors[i],
-                            marker=markers[j], s=20)
+            # if p in pareto:
+            plt.scatter(p[0], p[1], color=colors[i],
+                        marker=markers[j], s=20)
     ax.grid(True)
     artists = []
 
     for i, l in enumerate(lens):
         artists.append(mpatches.Patch(
-            color=colors[i], label="size={0:.{1}e}".format(l, 1)))
+            color=colors[i], label="size={}".format(l, 1)))
 
     for i, bench in enumerate(benches):
         artists.append(
             Line2D([0], [0], color='black', marker=markers[i], markersize=5, label=bench[1]))
 
-    ax.legend(handles=artists, loc='upper center', bbox_to_anchor=(
-        0.5, -0.09), fancybox=True, shadow=False, ncol=4)
+    ax.legend(handles=artists, loc='best', fancybox=True, shadow=False, ncol=1)
 
     plt.draw_all()
-    plt.savefig("./plots/{}.svg".format(compare_name),
-                format="svg", bbox_inches="tight")
+    plt.savefig("./plots/{}.png".format(compare_name),
+                format="png", dpi=250, bbox_inches="tight")
     plt.close(fig)
 
 
 def plot_cpp_vs_rust():
-    cpp_dir = "../bash-scripts/runs/c++_vs_rust/cpp"
-    rust_dir = "../bash-scripts/runs/c++_vs_rust/rust"
+    cpp_dir = "./runs/cpp_vs_rust/cpp"
+    rust_dir = "./runs/cpp_vs_rust/rust"
 
     cpp_rank_csvs = [f for f in os.listdir(os.path.join(cpp_dir, "rank")) if f.endswith(
         ".csv")]
