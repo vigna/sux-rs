@@ -184,6 +184,20 @@ impl<W: Word, B> BitFieldVec<W, B> {
     pub fn into_raw_parts(self) -> (B, usize, usize) {
         (self.bits, self.bit_width, self.len)
     }
+
+    #[inline(always)]
+    /// Modify the bit field in place.
+    /// # Safety
+    /// This is unsafe because it's the caller's responsibility to ensure that
+    /// that the length is compatible with the modified bits.
+    pub unsafe fn map<W2: Word, B2>(self, f: impl FnOnce(B) -> B2) -> BitFieldVec<W2, B2> {
+        BitFieldVec {
+            bits: f(self.bits),
+            bit_width: self.bit_width,
+            mask: mask(self.bit_width),
+            len: self.len,
+        }
+    }
 }
 
 impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {

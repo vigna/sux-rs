@@ -190,6 +190,17 @@ impl<B> BitVec<B> {
     pub fn into_raw_parts(self) -> (B, usize) {
         (self.bits, self.len)
     }
+    #[inline(always)]
+    /// Modify the bit vector in place.
+    /// # Safety
+    /// This is unsafe because it's the caller's responsibility to ensure that
+    /// that the length is compatible with the modified bits.
+    pub unsafe fn map<B2>(self, f: impl FnOnce(B) -> B2) -> BitVec<B2> {
+        BitVec {
+            bits: f(self.bits),
+            len: self.len,
+        }
+    }
 }
 
 impl<B: AsRef<[usize]>> BitVec<B> {

@@ -430,7 +430,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
         let rank_in_block_step_9 = rank_in_block * ONES_STEP_9;
         let relative = counts.get_unchecked(count_left).relative;
 
-        let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
+        let offset_in_block = ULEQ_STEP_9!(relative, rank_in_block_step_9).count_ones() as usize;
         debug_assert!(offset_in_block <= 7);
 
         let word = block_left + offset_in_block;

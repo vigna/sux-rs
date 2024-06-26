@@ -380,7 +380,7 @@ impl<
         let rank_in_block = rank - hint_rank;
         let rank_in_block_step_9 = rank_in_block as u64 * ONES_STEP_9;
         let relative = block_count.all_rel();
-        let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
+        let offset_in_block = ULEQ_STEP_9!(relative, rank_in_block_step_9).count_ones() as usize;
 
         let rank_in_word = rank_in_block - block_count.rel(offset_in_block);
         hint_pos += offset_in_block * Self::SUBBLOCK_SIZE;
@@ -423,7 +423,7 @@ impl<
         let rank_in_block_step_9 = rank_in_block as u64 * ONES_STEP_9;
         let relative = block_count.all_rel();
 
-        let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
+        let offset_in_block = ULEQ_STEP_9!(relative, rank_in_block_step_9).count_ones() as usize;
 
         self.select_hinted(
             rank,
@@ -462,7 +462,7 @@ impl<
         let relative = block_count.all_rel();
 
         let offset_in_block =
-            (ULEQ_STEP_10!(relative, rank_in_block_step_10)).count_ones() as usize;
+            ULEQ_STEP_10!(relative, rank_in_block_step_10).count_ones() as usize;
 
         self.select_hinted(
             rank,
@@ -501,7 +501,7 @@ impl<
         let relative = block_count.all_rel();
 
         let offset_in_block =
-            (ULEQ_STEP_11!(relative, rank_in_block_step_11)).count_ones() as usize;
+            ULEQ_STEP_11!(relative, rank_in_block_step_11).count_ones() as usize;
 
         self.select_hinted(
             rank,
@@ -545,7 +545,7 @@ impl<
         let relative = block_count.all_rel();
 
         let offset_in_block =
-            (ULEQ_STEP_13!(relative, rank_in_block_step_13)).count_ones() as usize;
+            ULEQ_STEP_13!(relative, rank_in_block_step_13).count_ones() as usize;
 
         self.select_hinted(
             rank,
