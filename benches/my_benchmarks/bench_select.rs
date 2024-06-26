@@ -29,10 +29,10 @@ pub fn bench_simple_select(c: &mut Criterion, uniform: bool, max_log2_u64_per_su
     }
 
     match max_log2_u64_per_subinventory {
-        0 => bench_select::<SelectAdapt0<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
-        1 => bench_select::<SelectAdapt1<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
-        2 => bench_select::<SelectAdapt2<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
-        3 => bench_select::<SelectAdapt3<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        0 => bench_select::<SimpleSelect0<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        1 => bench_select::<SimpleSelect1<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        2 => bench_select::<SimpleSelect2<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
+        3 => bench_select::<SimpleSelect3<_>>(c, &name, &LENS, &DENSITIES, REPS, uniform),
         _ => unreachable!(),
     }
 }

@@ -22,7 +22,6 @@ rm -rf ./bench-results/
 python3 ./bench-scripts.py select
 ../sux-rs/scripts/move_benches.sh ./bench-results/ ../sux-rs/scripts/runs/c++_vs_rust/cpp/select/
 
-rm -rf ./bench-results/
 python3 ./bench-scripts.py select_non_uniform
 ../sux-rs/scripts/move_benches.sh ./bench-results/ ../sux-rs/scripts/runs/c++_vs_rust/cpp/select_non_uniform/
 
