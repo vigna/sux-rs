@@ -165,43 +165,41 @@ fn bench_rank9(target_dir: &PathBuf) {
 fn bench_builder<B: Build<BitVec>>(sel_name: &str, target_dir: &PathBuf, uniform: bool) {
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     let mut file = std::fs::File::create(target_dir.join(format!("{}.csv", sel_name))).unwrap();
-    for len in [1_024_000_000].iter().copied() {
-        for density in [0.5].iter().copied() {
-            let (density0, density1) = if uniform {
-                (density, density)
-            } else {
-                (density * 0.01, density * 0.99)
-            };
+    let len = 1_024_000_000;
+    let density = 0.5;
+    let (density0, density1) = if uniform {
+        (density, density)
+    } else {
+        (density * 0.01, density * 0.99)
+    };
 
-            let first_half = loop {
-                let b = (0..len / 2)
-                    .map(|_| rng.gen_bool(density0))
-                    .collect::<BitVec>();
-                if b.count_ones() > 0 {
-                    break b;
-                }
-            };
-            let second_half = (0..len / 2)
-                .map(|_| rng.gen_bool(density1))
-                .collect::<BitVec>();
-            let bits = first_half
-                .into_iter()
-                .chain(&second_half)
-                .collect::<BitVec>();
-
-            let mut time = 0.0;
-            for _ in 0..REPEATS {
-                let b = bits.clone();
-                let begin = std::time::Instant::now();
-                let b_struct: B = B::new(b);
-                black_box(&b_struct);
-                time += begin.elapsed().as_secs_f64();
-                black_box(b_struct);
-            }
-            time /= REPEATS as f64;
-            writeln!(file, "{}, {}, {}", len, density, time).unwrap();
+    let first_half = loop {
+        let b = (0..len / 2)
+            .map(|_| rng.gen_bool(density0))
+            .collect::<BitVec>();
+        if b.count_ones() > 0 {
+            break b;
         }
+    };
+    let second_half = (0..len / 2)
+        .map(|_| rng.gen_bool(density1))
+        .collect::<BitVec>();
+    let bits = first_half
+        .into_iter()
+        .chain(&second_half)
+        .collect::<BitVec>();
+
+    let mut time = 0.0;
+    for _ in 0..REPEATS {
+        let b = bits.clone();
+        let begin = std::time::Instant::now();
+        let b_struct: B = B::new(b);
+        black_box(&b_struct);
+        time += begin.elapsed().as_secs_f64();
+        black_box(b_struct);
     }
+    time /= REPEATS as f64;
+    writeln!(file, "{}, {}, {}", len, density, time).unwrap();
     file.flush().unwrap();
 }
 
