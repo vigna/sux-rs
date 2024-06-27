@@ -196,7 +196,7 @@ fn bench_builder<B: Build<BitVec>>(sel_name: &str, target_dir: &PathBuf, uniform
         let b_struct: B = B::new(b);
         black_box(&b_struct);
         time += begin.elapsed().as_secs_f64();
-        black_box(b_struct);
+        black_box(&b_struct);
     }
     time /= REPEATS as f64;
     writeln!(file, "{}, {}, {}", len, density, time).unwrap();
