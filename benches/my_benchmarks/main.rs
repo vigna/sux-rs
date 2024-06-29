@@ -69,6 +69,13 @@ fn main() {
             bench_select9(&mut criterion, true);
             bench_select9(&mut criterion, false);
         }
+        "select_small" => {
+            bench_select_small(&mut criterion, true, 0);
+            bench_select_small(&mut criterion, true, 1);
+            bench_select_small(&mut criterion, true, 2);
+            bench_select_small(&mut criterion, true, 3);
+            bench_select_small(&mut criterion, true, 4);
+        }
         "rank9" => {
             bench_rank9(&mut criterion);
         }

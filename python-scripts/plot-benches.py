@@ -75,7 +75,7 @@ def compare_benches(benches, compare_name, op_type):
 
     times = np.sort(np.concatenate(
         list(map(lambda x: x[0]["time"].unique(), benches)), axis=0))
-    ticks = np.logspace(np.log10(times[0]), np.log10(times[-1]), num=8)
+    ticks = np.linspace(times[0], times[-1], num=8)
     ticks = list(map(lambda x: math.ceil(x), ticks))
     ax[0, 0].set_yticks(ticks)
     ax[0, 0].set_yticklabels(ticks)
@@ -257,7 +257,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Plot benchmark results.')
 
     group1 = parser.add_argument_group()
-    group1.add_argument('--cpp-vs-rust', action='store_true',
+    group1.add_argument('--cpp_vs_rust', action='store_true',
                         help='Compare C++ vs Rust benchmarks')
 
     group2 = parser.add_argument_group()
