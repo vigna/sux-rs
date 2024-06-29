@@ -296,7 +296,7 @@ macro_rules! impl_rank_small_sel {
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
                         let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize
                             + upper_block_idx * Self::SUPERBLOCK_SIZE;
-                        next_inv_pos.div_ceil(Self::BLOCK_SIZE)
+                        next_inv_pos.div_ceil_unchecked(Self::BLOCK_SIZE)
                     } else {
                         (upper_block_idx + 1) * (Self::SUPERBLOCK_SIZE / Self::BLOCK_SIZE)
                     };
@@ -306,7 +306,11 @@ macro_rules! impl_rank_small_sel {
                     // with value given by the number of bits. Thus, we must
                     // handle the case in which inv_idx is the the last
                     // inventory entry as a special case.
-                    last_block_idx = self.rank_small.bits.len().div_ceil(Self::BLOCK_SIZE);
+                    last_block_idx = self
+                        .rank_small
+                        .bits
+                        .len()
+                        .div_ceil_unchecked(Self::BLOCK_SIZE);
                 }
 
                 debug_assert!(block_idx < counts.len());

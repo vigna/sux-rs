@@ -31,6 +31,7 @@ pub mod prelude {
     pub use crate::rank_small;
     pub use crate::traits::bit_field_slice;
     pub use crate::traits::*;
+    pub use crate::DivCeilUnchecked;
 }
 
 macro_rules! forward_index_bool {
@@ -51,4 +52,30 @@ pub(crate) use forward_index_bool;
 #[ambassador::delegatable_trait_remote]
 pub(crate) trait AsRef<T> {
     fn as_ref(&self) -> &T;
+}
+
+/// A trait for performing division with ceiling rounding without checking for division by zero.
+pub trait DivCeilUnchecked {
+    /// Divides `self` by `rhs` and returns the result rounded up to the nearest integer.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// assert_eq!(5.div_ceil_unchecked(2), 3);
+    /// assert_eq!(10.div_ceil_unchecked(3), 4);
+    /// ```
+    fn div_ceil_unchecked(self, rhs: Self) -> Self;
+}
+
+impl DivCeilUnchecked for usize {
+    #[inline(always)]
+    fn div_ceil_unchecked(self, rhs: Self) -> Self {
+        (self + rhs - 1) / rhs
+    }
+}
+impl DivCeilUnchecked for u64 {
+    #[inline(always)]
+    fn div_ceil_unchecked(self, rhs: Self) -> Self {
+        (self + rhs - 1) / rhs
+    }
 }
