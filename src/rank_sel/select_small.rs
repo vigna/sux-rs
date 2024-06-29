@@ -461,8 +461,7 @@ impl<
         let rank_in_block_step_10 = rank_in_block as u64 * ONES_STEP_10;
         let relative = block_count.all_rel();
 
-        let offset_in_block =
-            ULEQ_STEP_10!(relative, rank_in_block_step_10).count_ones() as usize;
+        let offset_in_block = ULEQ_STEP_10!(relative, rank_in_block_step_10).count_ones() as usize;
 
         self.select_hinted(
             rank,
@@ -500,8 +499,7 @@ impl<
         let rank_in_block_step_11 = rank_in_block as u64 * ONES_STEP_11;
         let relative = block_count.all_rel();
 
-        let offset_in_block =
-            ULEQ_STEP_11!(relative, rank_in_block_step_11).count_ones() as usize;
+        let offset_in_block = ULEQ_STEP_11!(relative, rank_in_block_step_11).count_ones() as usize;
 
         self.select_hinted(
             rank,
@@ -544,8 +542,7 @@ impl<
         let rank_in_block_step_13 = rank_in_block as u128 * ONES_STEP_13;
         let relative = block_count.all_rel();
 
-        let offset_in_block =
-            ULEQ_STEP_13!(relative, rank_in_block_step_13).count_ones() as usize;
+        let offset_in_block = ULEQ_STEP_13!(relative, rank_in_block_step_13).count_ones() as usize;
 
         self.select_hinted(
             rank,
