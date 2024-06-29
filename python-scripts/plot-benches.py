@@ -72,7 +72,54 @@ def compare_benches(benches, compare_name, op_type):
             ax[0, d].set_title(f"density={float(name)*100}%")
             ax[0, d].grid(True)
             ax[0, d].set_xscale("log")
-            ax[0, d].set_yscale("log")
+
+    times = np.sort(np.concatenate(
+        list(map(lambda x: x[0]["time"].unique(), benches)), axis=0))
+    ticks = np.logspace(np.log10(times[0]), np.log10(times[-1]), num=8)
+    ticks = list(map(lambda x: math.ceil(x), ticks))
+    ax[0, 0].set_yticks(ticks)
+    ax[0, 0].set_yticklabels(ticks)
+    ax[0, 0].yaxis.set_minor_locator(plt.NullLocator())
+
+    h1, _ = ax[0, 0].get_legend_handles_labels()
+    fig.legend(handles=h1, loc='upper center', bbox_to_anchor=(
+        0.5, -0.04), fancybox=True, shadow=True, ncol=3)
+
+    scripts_dir = os.path.dirname(os.path.abspath(__file__))
+
+    plots_dir = os.path.join(scripts_dir, "plots")
+    if not os.path.exists(plots_dir):
+        os.makedirs(plots_dir)
+
+    plt.savefig(os.path.join(plots_dir, "{}.png".format(compare_name)),
+                format="png", bbox_inches="tight", dpi=250)
+    plt.close(fig)
+
+    # save pandas dataframes to csv
+    csv_dir = os.path.join(plots_dir, "csv_data/")
+    if not os.path.exists(csv_dir):
+        os.makedirs(csv_dir)
+    for i, (bench, bench_name) in enumerate(benches):
+        bench.sort_values(["dense", "size"]).to_csv(os.path.join(
+            plots_dir, os.path.join(csv_dir, "raw_{}.csv".format(bench_name))), index=False)
+
+
+def compare_benches_non_uniform(benches, compare_name, op_type):
+    fig, ax = plt.subplots(1, 1, constrained_layout=True,
+                           sharex=True, sharey=True, squeeze=False)
+    fig.set_size_inches(10, 5)
+    fig.text(0.5, -0.02, 'size [num of bits]', ha='center', va='center')
+    fig.text(-0.01, 0.5, f'time [ns/{op_type}]', ha='center',
+             va='center', rotation='vertical')
+
+    for i, (bench, bench_name) in enumerate(benches):
+        bench_single_dense = bench[bench["dense"] == 0.9]
+        ax[0, 0].plot(bench_single_dense["size"], bench_single_dense["time"], label=bench_name,
+                      color=colors[i], marker=markers[i], markersize=3, linewidth=1.0)
+        ax[0, 0].set_title(
+            f"density={round((0.9 * 0.01)*100, 2)}% | {round((0.9 * 0.99)*100, 2)}%")
+        ax[0, 0].grid(True)
+        ax[0, 0].set_xscale("log")
 
     times = np.sort(np.concatenate(
         list(map(lambda x: x[0]["time"].unique(), benches)), axis=0))
@@ -221,6 +268,8 @@ if __name__ == "__main__":
     group2.add_argument('--plot_name', type=str, help='Name of the plot')
     parser.add_argument("--pareto",
                         action="store_true", help="Draw pareto front")
+    parser.add_argument("--non_uniform",
+                        action="store_true", help="Draw plot for non-uniform densities. It only draws for density=0.9.")
 
     args = parser.parse_args()
     if args.cpp_vs_rust:
@@ -244,7 +293,10 @@ if __name__ == "__main__":
         for bench_dir in bench_dirs:
             benches.append(
                 (load_criterion_benches(os.path.join(benches_path, bench_dir), load_mem_cost=args.pareto), bench_dir))
-        compare_benches(benches, plot_name, op_type)
+        if args.non_uniform:
+            compare_benches_non_uniform(benches, plot_name, op_type)
+        else:
+            compare_benches(benches, plot_name, op_type)
         if args.pareto:
             densities = benches[0][0]["dense"].unique()
             for d in densities:

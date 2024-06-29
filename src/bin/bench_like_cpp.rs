@@ -173,6 +173,8 @@ fn bench_builder<B: Build<BitVec>>(sel_name: &str, target_dir: &PathBuf, uniform
         (density * 0.01, density * 0.99)
     };
 
+    println!("{}", sel_name);
+    let start = std::time::Instant::now();
     let first_half = loop {
         let b = (0..len / 2)
             .map(|_| rng.gen_bool(density0))
@@ -188,15 +190,19 @@ fn bench_builder<B: Build<BitVec>>(sel_name: &str, target_dir: &PathBuf, uniform
         .into_iter()
         .chain(&second_half)
         .collect::<BitVec>();
+    println!(
+        "{} seconds to build the bitvector",
+        start.elapsed().as_secs_f64()
+    );
 
     let mut time = 0.0;
     for _ in 0..REPEATS {
         let b = bits.clone();
         let begin = std::time::Instant::now();
-        let b_struct: B = B::new(b);
-        black_box(&b_struct);
-        time += begin.elapsed().as_secs_f64();
-        black_box(&b_struct);
+        black_box(B::new(b));
+        let elapsed = begin.elapsed().as_secs_f64();
+        println!("{} seconds to build the structure", elapsed);
+        time += elapsed;
     }
     time /= REPEATS as f64;
     writeln!(file, "{}, {}, {}", len, density, time).unwrap();
