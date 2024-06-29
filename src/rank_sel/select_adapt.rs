@@ -115,7 +115,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 /// interleaving inventories is not useful if *M* is so large that the
 /// subinventory takes several cache lines. For example, using [default value
 /// for *L*](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) a reasonable choice for
-/// *M* is between 4 and 32, corrisponding to worst-case linear searches between
+/// *M* is between 4 and 32, corresponding to worst-case linear searches between
 /// 1024 and 128 bits (note that the constructors take the base-2 logarithm of
 /// *M*).
 ///
