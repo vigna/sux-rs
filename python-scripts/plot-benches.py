@@ -60,7 +60,7 @@ def compare_benches(benches, compare_name, op_type):
     num_densities = len(benches[0][0]["dense"].unique())
     fig, ax = plt.subplots(1, num_densities, constrained_layout=True,
                            sharex=True, sharey=True, squeeze=False)
-    fig.set_size_inches(10, 6)
+    fig.set_size_inches(10, 5)
     fig.text(0.5, -0.02, 'size [num of bits]', ha='center', va='center')
     fig.text(-0.01, 0.5, f'time [ns/{op_type}]', ha='center',
              va='center', rotation='vertical')
@@ -117,13 +117,13 @@ def compare_benches_non_uniform(benches, compare_name, op_type):
         ax[0, 0].plot(bench_single_dense["size"], bench_single_dense["time"], label=bench_name,
                       color=colors[i], marker=markers[i], markersize=3, linewidth=1.0)
         ax[0, 0].set_title(
-            f"density={round((0.9 * 0.01)*100, 2)}% | {round((0.9 * 0.99)*100, 2)}%")
+            f"density = {round((0.9 * 0.01)*100, 2)}% | {round((0.9 * 0.99)*100, 2)}%")
         ax[0, 0].grid(True)
         ax[0, 0].set_xscale("log")
 
     times = np.sort(np.concatenate(
         list(map(lambda x: x[0]["time"].unique(), benches)), axis=0))
-    ticks = np.logspace(np.log10(times[0]), np.log10(times[-1]), num=8)
+    ticks = np.linspace(times[0], times[-1], num=8)
     ticks = list(map(lambda x: math.ceil(x), ticks))
     ax[0, 0].set_yticks(ticks)
     ax[0, 0].set_yticklabels(ticks)
