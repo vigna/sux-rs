@@ -560,6 +560,10 @@ impl<B: AsRef<[usize]> + BitLength + SelectHinted, I: AsRef<[usize]>> SelectUnch
         let subrank = rank & self.ones_per_inventory_mask;
 
         if inventory_rank.is_16_bit_span() {
+            if subrank == 0 {
+                return inventory_rank;
+            }
+
             let (_, u16s, _) = inventory_ref
                 .get_unchecked(
                     inventory_start_pos + 1..(self.inventory_size * self.u64_per_inventory),
@@ -569,6 +573,9 @@ impl<B: AsRef<[usize]> + BitLength + SelectHinted, I: AsRef<[usize]>> SelectUnch
             let hint_pos =
                 inventory_rank + *u16s.get_unchecked(subrank >> self.log2_ones_per_sub16) as usize;
             let residual = subrank & self.ones_per_sub16_mask;
+            if residual == 0 {
+                return hint_pos;
+            }
 
             return self.bits.select_hinted(rank, hint_pos, rank - residual);
         }
