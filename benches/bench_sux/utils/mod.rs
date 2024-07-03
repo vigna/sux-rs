@@ -71,10 +71,10 @@ pub fn create_bitvec(
     (num_ones_first_half, num_ones_second_half, bits)
 }
 
-#[inline(always)]
-pub fn fastrange(rng: &mut SmallRng, range: u64) -> u64 {
-    ((rng.gen::<u64>() as u128).wrapping_mul(range as u128) >> 64) as u64
-}
+// #[inline(always)]
+// pub fn fastrange(rng: &mut SmallRng, range: u64) -> u64 {
+//     ((rng.gen::<u64>() as u128).wrapping_mul(range as u128) >> 64) as u64
+// }
 
 /// Return the memory cost of the struct in percentage.
 /// Depends on the length of underlying bit vector and the total memory size of the struct.
@@ -122,7 +122,12 @@ pub fn bench_select<S: Build<BitVec> + Select + MemDbg + BitLength>(
     reps: usize,
     uniform: bool,
 ) {
-    let mut bench_group = c.benchmark_group(name);
+    let name = if !uniform {
+        format!("{}_non_uniform", name)
+    } else {
+        name.to_string()
+    };
+    let mut bench_group = c.benchmark_group(&name);
     let mut rng = SmallRng::seed_from_u64(0);
     for len in lens {
         for density in densities {
@@ -145,7 +150,7 @@ pub fn bench_select<S: Build<BitVec> + Select + MemDbg + BitLength>(
         }
     }
     bench_group.finish();
-    save_mem_cost::<S>(name, lens, densities, uniform);
+    save_mem_cost::<S>(&name, lens, densities, uniform);
 }
 
 pub fn bench_rank<R: Build<BitVec> + Rank + MemDbg + BitLength>(
@@ -154,28 +159,35 @@ pub fn bench_rank<R: Build<BitVec> + Rank + MemDbg + BitLength>(
     lens: &[u64],
     densities: &[f64],
     reps: usize,
+    uniform: bool,
 ) {
-    let mut bench_group = c.benchmark_group(name);
+    let name = if !uniform {
+        format!("{}_non_uniform", name)
+    } else {
+        name.to_string()
+    };
+    let mut bench_group = c.benchmark_group(&name);
     let mut rng = SmallRng::seed_from_u64(0);
-    for len in lens.iter().copied() {
-        for density in densities.iter().copied() {
+    for len in lens {
+        for density in densities {
             // possible repetitions
             for i in 0..reps {
-                let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-                let rank: R = R::new(bits);
+                let (num_ones_first_half, num_ones_second_half, bits) =
+                    create_bitvec(&mut rng, *len, *density, uniform);
+
+                let sel: R = R::new(bits);
+                let mut routine = || {
+                    let r =
+                        fastrange_non_uniform(&mut rng, num_ones_first_half, num_ones_second_half);
+                    black_box(unsafe { sel.rank_unchecked(r as usize) });
+                };
                 bench_group.bench_function(
-                    BenchmarkId::from_parameter(format!("{}_{}_{}", len, density, i)),
-                    |b| {
-                        b.iter(|| {
-                            // use fastrange
-                            let p = fastrange(&mut rng, len) as usize;
-                            black_box(unsafe { rank.rank_unchecked(p) });
-                        })
-                    },
+                    BenchmarkId::from_parameter(format!("{}_{}_{}", *len, *density, i)),
+                    |b| b.iter(&mut routine),
                 );
             }
         }
     }
     bench_group.finish();
-    save_mem_cost::<R>(name, lens, densities, true);
+    save_mem_cost::<R>(&name, lens, densities, uniform);
 }
