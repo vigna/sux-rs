@@ -325,7 +325,7 @@ macro_rules! impl_rank_small_sel {
                 debug_assert!(block_idx < last_block_idx);
 
                 block_idx += counts[block_idx..last_block_idx]
-                    .linear_partition_point(|x| x.absolute as usize <= local_rank)
+                    .partition_point(|x| x.absolute as usize <= local_rank)
                     - 1;
 
                 let block_count = counts.get_unchecked(block_idx);
