@@ -206,10 +206,10 @@ impl RankSel {
 #[derive(Parser, Debug)]
 struct Cli {
     /// The lengths of the bitvectors to benchmark.
-    #[arg(long, short, num_args = 1.., value_delimiter=',', default_value = "1000000,4000000,16000000,64000000,256000000,1024000000")]
+    #[arg(long, short, num_args = 1.., default_value = "1000000 4000000 16000000 64000000 256000000 1024000000")]
     lens: Vec<u64>,
     /// The densities of the bitvectors to benchmark.
-    #[arg(long, short, num_args = 1.., value_delimiter=',', default_value = "0.1,0.5,0.9")]
+    #[arg(long, short, num_args = 1.., default_value = "0.1 0.5 0.9")]
     densities: Vec<f64>,
     /// The number of repetitions for each benchmark.
     #[arg(long, short, default_value = "5")]
@@ -221,7 +221,7 @@ struct Cli {
     #[arg(long, default_value = "false")]
     exact: bool,
     /// The rank/select structures to benchmark.
-    #[arg(num_args = 1..)]
+    #[arg(num_args = 1.., help = "The rank/select structures to benchmark. Without --exact, the arguments are matched as substrings. For example, 'rank' will match all rank structures. You could also give 'rank select' to benchmark all rank and select structures. Possible values: rank9, rank-small0, rank-small1, rank-small2, rank-small3, rank-small4, select9, select-small0, select-small1, select-small2, select-small3, select-small4, select-adapt0, select-adapt1, select-adapt2, select-adapt3, simple-select0, simple-select1, simple-select2, simple-select3, adapt-const, compare-simple-adapt-const")]
     rank_sel_struct: Vec<String>,
 }
 
