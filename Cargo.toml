@@ -85,7 +85,7 @@ required-features = ["cli"]
 #required-features = ["cli"]
 
 [[bench]]
-name = "bench_sux"
+name = "sux"
 harness = false
 required-features = ["cli"]
 
