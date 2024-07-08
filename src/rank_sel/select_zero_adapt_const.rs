@@ -142,8 +142,8 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 pub struct SelectZeroAdaptConst<
     B,
     I = Box<[usize]>,
-    const LOG2_ZEROS_PER_INVENTORY: usize = 10,
-    const LOG2_U64_PER_SUBINVENTORY: usize = 2,
+    const LOG2_ZEROS_PER_INVENTORY: usize = 12,
+    const LOG2_U64_PER_SUBINVENTORY: usize = 3,
 > {
     bits: B,
     inventory: I,
