@@ -40,18 +40,20 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 /// [`SelectAdapt`](super::SelectAdapt), with the important difference that the
 /// parameters of the constructor
 /// [`SelectAdapt::with_inv`](super::SelectAdapt::with_inv) are now compile-time
-/// constants. This allows further optimization, leading to a speedup of about 5%
-/// (but your mileage may vary). However, the structure is no longer adaptive to
-/// the density of the bit vector, so you must be able to know the density in
-/// advance (as it happens, for examples, for the high bits of
-/// the [Elias-Fano representation of monotone sequences](crate::dict::EliasFano)).
-/// Moreover, `LOG2_U64_PER_SUBINVENTORY` is no longer a maximum value, but rather
-/// an exact value. The default
-/// parameters are a good choice for a low-space structure on a bit vector
-/// of density 0.5.
+/// constants. This allows further optimization, leading to a speedup of about
+/// 5% (but your mileage may vary). However, the structure is no longer adaptive
+/// to the density of the bit vector, so you must be able to know the density in
+/// advance (as it happens, for examples, for the high bits of the [Elias-Fano
+/// representation of monotone sequences](crate::dict::EliasFano)). Moreover,
+/// `LOG2_U64_PER_SUBINVENTORY` is no longer a maximum value, but rather an
+/// exact value.
 ///
-/// [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst) is a variant of this structure
-/// that provides the same functionality for zero bits.
+/// The default parameters are a good choice for a low-space structure on a bit
+/// vector of density 0.5. A more detailed discussion of the parameter can be
+/// found in the documentation of [`SelectAdapt`](super::SelectAdapt).
+///
+/// [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst) is a variant of this
+/// structure that provides the same functionality for zero bits.
 
 ///
 /// # Examples
@@ -157,8 +159,8 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 pub struct SelectAdaptConst<
     B,
     I = Box<[usize]>,
-    const LOG2_ONES_PER_INVENTORY: usize = 10,
-    const LOG2_U64_PER_SUBINVENTORY: usize = 2,
+    const LOG2_ONES_PER_INVENTORY: usize = 12,
+    const LOG2_U64_PER_SUBINVENTORY: usize = 3,
 > {
     bits: B,
     inventory: I,
