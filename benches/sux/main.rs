@@ -206,10 +206,10 @@ impl RankSel {
 #[derive(Parser, Debug)]
 struct Cli {
     /// The lengths of the bitvectors to benchmark.
-    #[arg(long, short, num_args = 1.., default_value = "1000000 4000000 16000000 64000000 256000000 1024000000")]
+    #[arg(long, short, num_args = 1.., value_delimiter = ' ', default_value = "1000000 4000000 16000000 64000000 256000000 1024000000")]
     lens: Vec<u64>,
     /// The densities of the bitvectors to benchmark.
-    #[arg(long, short, num_args = 1.., default_value = "0.1 0.5 0.9")]
+    #[arg(long, short, num_args = 1.., value_delimiter = ' ', default_value = "0.1 0.5 0.9")]
     densities: Vec<f64>,
     /// The number of repetitions for each benchmark.
     #[arg(long, short, default_value = "5")]
@@ -223,17 +223,25 @@ struct Cli {
     /// The rank/select structures to benchmark.
     #[arg(num_args = 1.., help = "The rank/select structures to benchmark. Without --exact, the arguments are matched as substrings. For example, 'rank' will match all rank structures. You could also give 'rank select' to benchmark all rank and select structures. Possible values: rank9, rank-small0, rank-small1, rank-small2, rank-small3, rank-small4, select9, select-small0, select-small1, select-small2, select-small3, select-small4, select-adapt0, select-adapt1, select-adapt2, select-adapt3, simple-select0, simple-select1, simple-select2, simple-select3, adapt-const, compare-simple-adapt-const")]
     rank_sel_struct: Vec<String>,
+    // TODO: Add criterion arguments
+    // #[arg(allow_hyphen_values = true, num_args = 1.., last = true)]
+    // criterion_args: Vec<String>,
 }
 
 fn main() {
-    // i don't know why but i get as last argumet "--bench" so i remove it
-    let raw_args = std::env::args().collect::<Vec<_>>();
-    let raw_args = raw_args[0..raw_args.len() - 1].to_vec();
+    // i don't know why but i *always* get as last argumet "--bench" so i remove it
+    let mut raw_args = std::env::args().collect::<Vec<_>>();
+    // check if last argument is "--bench"
+    if raw_args.len() > 1 && raw_args[raw_args.len() - 1] == "--bench" {
+        // remove it
+        raw_args = raw_args[0..raw_args.len() - 1].to_vec();
+    }
 
     let args = Cli::parse_from(raw_args);
 
-    // It is very important that there is with_filter("") otherwise the custom and criterion CLIs
-    // will interfere with each other.
+    // Criterion doesn't let you parse specific arguments and using configure_from_args
+    // will parse all of them, even the ones that are not for Criterion, resulting
+    // in an error.
     let mut criterion = Criterion::default()
         .with_filter("")
         .with_output_color(true)
