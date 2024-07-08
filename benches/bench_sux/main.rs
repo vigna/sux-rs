@@ -226,6 +226,7 @@ struct Cli {
 }
 
 fn main() {
+    // i don't know why but i get as last argumet "--bench" so i remove it
     let raw_args = std::env::args().collect::<Vec<_>>();
     let raw_args = raw_args[0..raw_args.len() - 1].to_vec();
 
@@ -233,7 +234,10 @@ fn main() {
 
     // It is very important that there is with_filter("") otherwise the custom and criterion CLIs
     // will interfere with each other.
-    let mut criterion = Criterion::default().with_filter("").with_output_color(true);
+    let mut criterion = Criterion::default()
+        .with_filter("")
+        .with_output_color(true)
+        .without_plots();
 
     let lens = args.lens;
     let densities = args.densities;
