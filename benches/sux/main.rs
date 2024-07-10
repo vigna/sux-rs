@@ -228,6 +228,38 @@ struct Cli {
     // criterion_args: Vec<String>,
 }
 
+/// Main entry point for the benchmarking suite.
+///
+/// To run this main method, you have to use
+/// ```
+/// cargo bench --bench sux --features cli -- [Criterion params] -- [suite params]
+/// ```
+/// The Criterion parameters can be accessed with
+/// ```
+/// cargo bench --bench sux --features cli -- --help
+/// ```
+/// where as the suite parameters can be accessed with
+/// ```
+/// cargo bench --bench sux --features cli -- -- --help
+/// ```
+///
+/// The main input to the suite is the name of the benchmarks you want to run.
+/// Unless you specify the `--exact` option, the list of names you provide are
+/// substring matches. For example,
+/// ```
+/// cargo bench --bench sux --features cli -- -- SelectAdapt
+/// ```
+/// will run all benchmarks that have `SelectAdapt` in their name, that is,
+/// `SelectAdapt0`, `SelectAdapt1`, `SelectAdapt2`, `SelectAdapt3`, and
+/// `SelectAdapt4`.
+///
+/// The output of the suite is the standard Criterion output in
+/// `target/criterion`, plus an additional `mem_cost.csv` file
+/// that contains the memory cost of the structures for all combination
+/// of parameters used in the benchmark.`
+///
+///
+
 fn main() {
     // i don't know why but i *always* get as last argumet "--bench" so i remove it
     let mut raw_args = std::env::args().collect::<Vec<_>>();
