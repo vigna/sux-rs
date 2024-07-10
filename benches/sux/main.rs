@@ -258,7 +258,11 @@ struct Cli {
 /// that contains the memory cost of the structures for all combination
 /// of parameters used in the benchmark.`
 ///
+/// To draw plots of the resulting Criterion data, you can use
+/// the script `./python/plot-bench.py`.
 ///
+/// To carry custom analysis of the data, we provide an easy conversion
+/// of the Criterion data to CSV using the script
 
 fn main() {
     // i don't know why but i *always* get as last argumet "--bench" so i remove it
