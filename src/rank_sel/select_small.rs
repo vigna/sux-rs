@@ -12,9 +12,8 @@ use common_traits::SelectInWord;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
-crate::forward_index_bool![SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, R, I, O>; R; rank_small];
-
 use crate::ambassador_impl_AsRef;
+use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
@@ -26,6 +25,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use std::ops::Index;
 
 /// A selection structure over [`RankSmall`] using negligible additional space
 /// and providing constant-time selection.
@@ -87,6 +87,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "rank_small")]
+#[delegate(Index<usize>, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "rank_small")]

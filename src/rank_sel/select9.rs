@@ -43,9 +43,8 @@ macro_rules! ULEQ_STEP_16 {
     };
 }
 
-crate::forward_index_bool![Select9<R, I>; R; rank9];
-
 use crate::ambassador_impl_AsRef;
+use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
@@ -57,6 +56,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use std::ops::Index;
 
 /// A selection structure over [`Rank9`] using 25%–37.5% additional space and
 /// providing constant-time selection.
@@ -116,6 +116,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "rank9")]
+#[delegate(Index<usize>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "rank9")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "rank9")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "rank9")]
