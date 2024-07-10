@@ -77,6 +77,12 @@ What this crate does not provide:
 - High genericity: all bit vectors are based on the rather concrete trait combination
   `AsRef<[usize]>` + [`BitLength`].
 
+## Benchmars
+
+It is impossible to predict exactly how each structure will perform on your
+specific architecture/in your specific use case, so we provide a benchmarking
+suite that you can run easily with `cargo bench`.
+
 ## Acknowledgments
 
 This software has been partially supported by project SERICS (PE00000014) under
