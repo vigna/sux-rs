@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
