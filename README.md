@@ -10,9 +10,10 @@
 
 A pure Rust implementation of succinct and compressed data structures.
 
-This crate is a work in progress: part of it is a port from [Sux] and from [the
-DSI Utilities]; new data structures will be added over time. Presently, we
-provide:
+This crate started is part of the [Sux] project; it contains also code ported
+from [the DSI Utilities] and new structures.
+
+Presently, it provides:
 
 - [bit vectors and bit-field vectors];
 - several structures for [rank and selection] with different tradeoffs;
@@ -63,9 +64,9 @@ usage and debugging memory-related issues. For example, this is the output of
 The design of this crate tries to satisfy the following principles:
 
 - High performance: all implementations try to be as fast as possible (we
-  minimize tests, cache misses, etc.).
+  try to minimize cache misses, then tests, and then instructions).
 - Composability: all structures are designed to be easily composed with each
-  other: structures are built on top of other structures, which
+  other; structures are built on top of other structures, which
   can be extracted with the usual `into_inner` idiom.
 - Zero-cost abstraction: all structures forward conditionally all
   ranking/selection non-implemented methods on the underlying structures.
@@ -81,7 +82,42 @@ What this crate does not provide:
 
 It is impossible to predict exactly how each structure will perform on your
 specific architecture/in your specific use case, so we provide a benchmarking
-suite that you can run easily with `cargo bench`.
+suite that you can run easily with `cargo bench`. The suite is contained in the
+benchmark `sux` and can be run with
+
+```
+cargo bench --bench sux --features cli -- [Criterion params] -- [suite params]
+```
+
+The Criterion parameters can be accessed with
+
+```
+cargo bench --bench sux --features cli -- --help
+```
+
+wheresas the suite parameters can be accessed with
+
+```
+cargo bench --bench sux --features cli -- -- --help
+```
+
+The main input to the suite is the name of the benchmarks you want to run.
+Unless you specify the `--exact` option, the list of names you provide are
+substring matches. For example,
+
+```
+cargo bench --bench sux --features cli -- -- SelectAdapt
+```
+
+will run all benchmarks that have `SelectAdapt` in their name, that is,
+`SelectAdapt0`, `SelectAdapt1`, `SelectAdapt2`, `SelectAdapt3`, and
+`SelectAdapt4`.
+
+The output of the suite is the standard Criterion output in `target/criterion`,
+plus an additional `mem_cost.csv` file that contains the memory cost of the
+structures for all combination of parameters used in the benchmark.` To draw
+plots of the resulting Criterion data, you can use the script
+`./python/plot-bench.py`.
 
 ## Acknowledgments
 
