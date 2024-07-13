@@ -22,7 +22,7 @@ markers = ['+', 'o', '^', 'x', 'v', '*', '>', '<', '3', 'X',
 
 def load_csv_benches(path):
     df = pd.read_csv(path, header=None, names=[
-                     "size", "dense", "time"])
+                     "size", "density", "ns/op"])
     return df
 
 
@@ -58,7 +58,7 @@ def load_criterion_benches(base_path, load_mem_cost=False):
     return benches_df
 
 
-def compare_benches(benches, compare_name, op_type):
+def compare_benches(benches, plots_dir, op_type):
     num_densities = len(benches[0][0]["dense"].unique())
     fig, ax = plt.subplots(1, num_densities, constrained_layout=True,
                            sharex=True, sharey=True, squeeze=False)
@@ -89,24 +89,23 @@ def compare_benches(benches, compare_name, op_type):
 
     scripts_dir = os.path.dirname(os.path.abspath(__file__))
 
-    plots_dir = os.path.join(scripts_dir, "plots")
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
-    plt.savefig(os.path.join(plots_dir, "{}.png".format(compare_name)),
-                format="png", bbox_inches="tight", dpi=250)
+    plt.savefig(os.path.join(plots_dir, "plot.svg"),
+                format="svg", bbox_inches="tight")
     plt.close(fig)
 
     # save pandas dataframes to csv
-    csv_dir = os.path.join(plots_dir, "csv_data/")
+    csv_dir = os.path.join(plots_dir, "csv")
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
     for i, (bench, bench_name) in enumerate(benches):
-        bench.sort_values(["dense", "size"]).to_csv(os.path.join(
-            plots_dir, os.path.join(csv_dir, "raw_{}.csv".format(bench_name))), index=False)
+        bench.sort_values(["dense", "size"]).to_csv(
+            os.path.join(csv_dir, "raw_{}.csv".format(bench_name)), index=False)
 
 
-def compare_benches_non_uniform(benches, compare_name, op_type):
+def compare_benches_non_uniform(benches, plots_dir, op_type):
     fig, ax = plt.subplots(1, 1, constrained_layout=True,
                            sharex=True, sharey=True, squeeze=False)
     fig.set_size_inches(10, 5)
@@ -137,21 +136,20 @@ def compare_benches_non_uniform(benches, compare_name, op_type):
 
     scripts_dir = os.path.dirname(os.path.abspath(__file__))
 
-    plots_dir = os.path.join(scripts_dir, "plots")
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
-    plt.savefig(os.path.join(plots_dir, "{}.png".format(compare_name)),
-                format="png", bbox_inches="tight", dpi=250)
+    plt.savefig(os.path.join(plots_dir, "plot.svg".format(compare_name)),
+                format="svg", bbox_inches="tight")
     plt.close(fig)
 
     # save pandas dataframes to csv
-    csv_dir = os.path.join(plots_dir, "csv_data/")
+    csv_dir = os.path.join(plots_dir, "csv")
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
     for i, (bench, bench_name) in enumerate(benches):
         bench.sort_values(["dense", "size"]).to_csv(os.path.join(
-            plots_dir, os.path.join(csv_dir, "raw_{}.csv".format(bench_name))), index=False)
+            csv_dir, "raw_{}.csv".format(bench_name)), index=False)
 
 
 def is_pareto_efficient(costs):
@@ -167,7 +165,7 @@ def is_pareto_efficient(costs):
     return is_efficient
 
 
-def draw_pareto_front(benches, compare_name, op_type, density=0.5):
+def draw_pareto_front(benches, plots_dir, op_type, density=0.5):
     fig, ax = plt.subplots(1, 1, constrained_layout=True)
     fig.set_size_inches(10, 6)
     ax.set_ylabel("memory cost [%]")
@@ -207,8 +205,8 @@ def draw_pareto_front(benches, compare_name, op_type, density=0.5):
     ax.legend(handles=artists, loc='best', fancybox=True, shadow=False, ncol=1)
 
     plt.draw_all()
-    plt.savefig("./plots/{}.png".format(compare_name),
-                format="png", dpi=250, bbox_inches="tight")
+    plt.savefig("plots.svg".format(compare_name),
+                format="svg", dpi=250, bbox_inches="tight")
     plt.close(fig)
 
 
