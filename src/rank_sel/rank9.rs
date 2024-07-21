@@ -11,7 +11,9 @@ use ambassador::Delegate;
 use epserde::*;
 use mem_dbg::*;
 
+use std::ops::Index;
 use crate::ambassador_impl_AsRef;
+use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
 use crate::traits::rank_sel::ambassador_impl_Select;
@@ -20,8 +22,6 @@ use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
-
-crate::forward_index_bool![Rank9<B, C>; B; bits];
 
 /// A ranking structure using 25% of additional space and providing the fastest
 /// available rank operations.
@@ -70,6 +70,7 @@ crate::forward_index_bool![Rank9<B, C>; B; bits];
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "bits")]
+#[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted<64>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]

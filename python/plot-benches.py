@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
@@ -9,14 +11,18 @@ import numpy as np
 import argparse
 import os
 
-colors = plt.cm.tab20(np.linspace(0, 1, 30))
-markers = ['o', '*', 'D', 'x', 'h', '+', '>', 'p', 's', 'd', 'H', '<', '3', 'X',
-           'd', '|', '_', '.', ',', '1', '2', '^', '4', '8', 'P', 'v', '8', 'v', '^', '<']
+# colors = plt.cm.tab20(np.linspace(0, 1, 30))
+colors = ["#8FBC8F", "#4682B4", "#DDA0DD", "#CD5C5C", "#F4A460",
+          "#6B8E23", "#B0C4DE", "#DA70D6", "#D2B48C", "#87CEFA",
+          "#AFEEEE", "#E6E6FA", "#FFA07A", "#20B2AA", "#778899",
+          "#BDB76B", "#FFDEAD", "#BC8F8F", "#6495ED", "#F0E68C"]
+markers = ['+', 'o', '^', 'x', 'v', '*', '>', '<', '3', 'X',
+           'd', 'p', 's', 'd', 'H', '1', '2', 'D', '4', '8', 'P', 'h', '8', 'v', '^', '<']
 
 
 def load_csv_benches(path):
     df = pd.read_csv(path, header=None, names=[
-                     "size", "dense", "time"])
+                     "size", "density", "ns/op"])
     return df
 
 
@@ -52,11 +58,11 @@ def load_criterion_benches(base_path, load_mem_cost=False):
     return benches_df
 
 
-def compare_benches(benches, compare_name, op_type):
+def compare_benches(benches, plots_dir, op_type):
     num_densities = len(benches[0][0]["dense"].unique())
     fig, ax = plt.subplots(1, num_densities, constrained_layout=True,
                            sharex=True, sharey=True, squeeze=False)
-    fig.set_size_inches(10, 6)
+    fig.set_size_inches(10, 5)
     fig.text(0.5, -0.02, 'size [num of bits]', ha='center', va='center')
     fig.text(-0.01, 0.5, f'time [ns/{op_type}]', ha='center',
              va='center', rotation='vertical')
@@ -68,11 +74,10 @@ def compare_benches(benches, compare_name, op_type):
             ax[0, d].set_title(f"density={float(name)*100}%")
             ax[0, d].grid(True)
             ax[0, d].set_xscale("log")
-            ax[0, d].set_yscale("log")
 
     times = np.sort(np.concatenate(
         list(map(lambda x: x[0]["time"].unique(), benches)), axis=0))
-    ticks = np.logspace(np.log10(times[0]), np.log10(times[-1]), num=8)
+    ticks = np.linspace(times[0], times[-1], num=8)
     ticks = list(map(lambda x: math.ceil(x), ticks))
     ax[0, 0].set_yticks(ticks)
     ax[0, 0].set_yticklabels(ticks)
@@ -84,21 +89,67 @@ def compare_benches(benches, compare_name, op_type):
 
     scripts_dir = os.path.dirname(os.path.abspath(__file__))
 
-    plots_dir = os.path.join(scripts_dir, "plots")
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
-    plt.savefig(os.path.join(plots_dir, "{}.svg".format(compare_name)),
+    plt.savefig(os.path.join(plots_dir, "plot.svg"),
                 format="svg", bbox_inches="tight")
     plt.close(fig)
 
     # save pandas dataframes to csv
-    csv_dir = os.path.join(plots_dir, "csv_data/")
+    csv_dir = os.path.join(plots_dir, "csv")
+    if not os.path.exists(csv_dir):
+        os.makedirs(csv_dir)
+    for i, (bench, bench_name) in enumerate(benches):
+        bench.sort_values(["dense", "size"]).to_csv(
+            os.path.join(csv_dir, "raw_{}.csv".format(bench_name)), index=False)
+
+
+def compare_benches_non_uniform(benches, plots_dir, op_type):
+    fig, ax = plt.subplots(1, 1, constrained_layout=True,
+                           sharex=True, sharey=True, squeeze=False)
+    fig.set_size_inches(10, 5)
+    fig.text(0.5, -0.02, 'size [num of bits]', ha='center', va='center')
+    fig.text(-0.01, 0.5, f'time [ns/{op_type}]', ha='center',
+             va='center', rotation='vertical')
+
+    for i, (bench, bench_name) in enumerate(benches):
+        bench_single_dense = bench[bench["dense"] == 0.9]
+        ax[0, 0].plot(bench_single_dense["size"], bench_single_dense["time"], label=bench_name,
+                      color=colors[i], marker=markers[i], markersize=3, linewidth=1.0)
+        ax[0, 0].set_title(
+            f"density = {round((0.9 * 0.01)*100, 2)}% | {round((0.9 * 0.99)*100, 2)}%")
+        ax[0, 0].grid(True)
+        ax[0, 0].set_xscale("log")
+
+    times = np.sort(np.concatenate(
+        list(map(lambda x: x[0]["time"].unique(), benches)), axis=0))
+    ticks = np.linspace(times[0], times[-1], num=8)
+    ticks = list(map(lambda x: math.ceil(x), ticks))
+    ax[0, 0].set_yticks(ticks)
+    ax[0, 0].set_yticklabels(ticks)
+    ax[0, 0].yaxis.set_minor_locator(plt.NullLocator())
+
+    h1, _ = ax[0, 0].get_legend_handles_labels()
+    fig.legend(handles=h1, loc='upper center', bbox_to_anchor=(
+        0.5, -0.04), fancybox=True, shadow=True, ncol=3)
+
+    scripts_dir = os.path.dirname(os.path.abspath(__file__))
+
+    if not os.path.exists(plots_dir):
+        os.makedirs(plots_dir)
+
+    plt.savefig(os.path.join(plots_dir, "plot.svg"),
+                format="svg", bbox_inches="tight")
+    plt.close(fig)
+
+    # save pandas dataframes to csv
+    csv_dir = os.path.join(plots_dir, "csv")
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
     for i, (bench, bench_name) in enumerate(benches):
         bench.sort_values(["dense", "size"]).to_csv(os.path.join(
-            plots_dir, os.path.join(csv_dir, "raw_{}.csv".format(bench_name))), index=False)
+            csv_dir, "raw_{}.csv".format(bench_name)), index=False)
 
 
 def is_pareto_efficient(costs):
@@ -114,7 +165,7 @@ def is_pareto_efficient(costs):
     return is_efficient
 
 
-def draw_pareto_front(benches, compare_name, op_type, density=0.5):
+def draw_pareto_front(benches, plots_dir, op_type, density=0.5):
     fig, ax = plt.subplots(1, 1, constrained_layout=True)
     fig.set_size_inches(10, 6)
     ax.set_ylabel("memory cost [%]")
@@ -137,32 +188,33 @@ def draw_pareto_front(benches, compare_name, op_type, density=0.5):
         ax.plot(pareto[:, 0], pareto[:, 1], label=f"size={lens[i]}",
                 color=colors[i], linewidth=1.0)
         for j, p in enumerate(bench):
-            if p in pareto:
-                plt.scatter(p[0], p[1], color=colors[i],
-                            marker=markers[j], s=20)
+            # if p in pareto:
+            plt.scatter(p[0], p[1], color=colors[i],
+                        marker=markers[j], s=20)
     ax.grid(True)
     artists = []
 
     for i, l in enumerate(lens):
         artists.append(mpatches.Patch(
-            color=colors[i], label="size={0:.{1}e}".format(l, 1)))
+            color=colors[i], label="size={}".format(l, 1)))
 
     for i, bench in enumerate(benches):
         artists.append(
             Line2D([0], [0], color='black', marker=markers[i], markersize=5, label=bench[1]))
 
-    ax.legend(handles=artists, loc='upper center', bbox_to_anchor=(
-        0.5, -0.09), fancybox=True, shadow=False, ncol=4)
+    ax.legend(handles=artists, loc='best', fancybox=True, shadow=False, ncol=1)
+
+    if not os.path.exists(plots_dir):
+        os.makedirs(plots_dir)
 
     plt.draw_all()
-    plt.savefig("./plots/{}.svg".format(compare_name),
-                format="svg", bbox_inches="tight")
+    plt.savefig(os.path.join(plots_dir, "pareto.svg"), format="svg", dpi=250, bbox_inches="tight")
     plt.close(fig)
 
 
 def plot_cpp_vs_rust():
-    cpp_dir = "../bash-scripts/runs/c++_vs_rust/cpp"
-    rust_dir = "../bash-scripts/runs/c++_vs_rust/rust"
+    cpp_dir = "./runs/cpp_vs_rust/cpp"
+    rust_dir = "./runs/cpp_vs_rust/rust"
 
     cpp_rank_csvs = [f for f in os.listdir(os.path.join(cpp_dir, "rank")) if f.endswith(
         ".csv")]
@@ -211,24 +263,26 @@ if __name__ == "__main__":
                         help='Compare C++ vs Rust benchmarks')
 
     group2 = parser.add_argument_group()
-    group2.add_argument('--op_type', choices=[
+    group2.add_argument('--op-type', choices=[
         'rank', 'select'], help='Operation type')
-    group2.add_argument('--benches_path', type=str,
+    group2.add_argument('--benches-path', type=str,
                         help='Path to the benches directory')
-    group2.add_argument('--plot_name', type=str, help='Name of the plot')
+    group2.add_argument('--plot-dir', type=str, help='Directory containing the plot(s)')
     parser.add_argument("--pareto",
                         action="store_true", help="Draw pareto front")
+    parser.add_argument("--non-uniform",
+                        action="store_true", help="Draw plot for non-uniform densities. It only draws for density=0.9.")
 
     args = parser.parse_args()
     if args.cpp_vs_rust:
         plot_cpp_vs_rust()
     else:
-        if not args.op_type or not args.benches_path or not args.plot_name:
+        if not args.op_type or not args.benches_path or not args.plot_dir:
             parser.print_help()
             exit(1)
         op_type = args.op_type
         benches_path = args.benches_path
-        plot_name = args.plot_name
+        plot_dir = args.plot_dir
         if not os.path.exists(benches_path):
             print("The benches directory does not exist.")
             exit(1)
@@ -241,7 +295,10 @@ if __name__ == "__main__":
         for bench_dir in bench_dirs:
             benches.append(
                 (load_criterion_benches(os.path.join(benches_path, bench_dir), load_mem_cost=args.pareto), bench_dir))
-        compare_benches(benches, plot_name, op_type)
+        if args.non_uniform:
+            compare_benches_non_uniform(benches, plot_dir, op_type)
+        else:
+            compare_benches(benches, plot_dir, op_type)
         if args.pareto:
             densities = benches[0][0]["dense"].unique()
             for d in densities:

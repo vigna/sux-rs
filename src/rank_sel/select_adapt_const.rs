@@ -18,10 +18,8 @@ use crate::{
     traits::{NumBits, SelectUnchecked},
 };
 
-crate::forward_index_bool![
-    SelectAdaptConst<B, I, [const] LOG2_ONES_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits];
-
 use crate::ambassador_impl_AsRef;
+use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
@@ -33,6 +31,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use std::ops::Index;
 
 /// A const-based version of [`SelectAdapt`](super::SelectAdapt).
 ///
@@ -145,6 +144,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "bits")]
+#[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]

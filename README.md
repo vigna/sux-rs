@@ -10,9 +10,10 @@
 
 A pure Rust implementation of succinct and compressed data structures.
 
-This crate is a work in progress: part of it is a port from [Sux] and from [the
-DSI Utilities]; new data structures will be added over time. Presently, we
-provide:
+This crate started is part of the [Sux] project; it contains also code ported
+from [the DSI Utilities] and new structures.
+
+Presently, it provides:
 
 - [bit vectors and bit-field vectors];
 - several structures for [rank and selection] with different tradeoffs;
@@ -63,9 +64,9 @@ usage and debugging memory-related issues. For example, this is the output of
 The design of this crate tries to satisfy the following principles:
 
 - High performance: all implementations try to be as fast as possible (we
-  minimize tests, cache misses, etc.).
+  try to minimize cache misses, then tests, and then instructions).
 - Composability: all structures are designed to be easily composed with each
-  other: structures are built on top of other structures, which
+  other; structures are built on top of other structures, which
   can be extracted with the usual `into_inner` idiom.
 - Zero-cost abstraction: all structures forward conditionally all
   ranking/selection non-implemented methods on the underlying structures.

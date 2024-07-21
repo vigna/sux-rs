@@ -17,10 +17,8 @@ use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 use std::cmp::{max, min};
 
-crate::forward_index_bool![
-    SelectZeroAdaptConst<B, I, [const] LOG2_ZEROS_PER_INVENTORY: usize, [const] LOG2_U64_PER_SUBINVENTORY: usize>; B; bits];
-
 use crate::ambassador_impl_AsRef;
+use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
@@ -32,6 +30,7 @@ use crate::traits::rank_sel::ambassador_impl_Select;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
+use std::ops::Index;
 
 // NOTE: to make parallel modifications with SelectAdaptConst as easy as
 // possible, "ones" are considered to be zeros in the following code.
@@ -128,6 +127,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "bits")]
+#[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]
