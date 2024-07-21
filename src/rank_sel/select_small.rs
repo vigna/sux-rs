@@ -12,9 +12,8 @@ use common_traits::SelectInWord;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
-crate::forward_index_bool![SelectSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, R, I, O>; R; rank_small];
-
 use crate::ambassador_impl_AsRef;
+use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
@@ -26,6 +25,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use std::ops::Index;
 
 /// A selection structure over [`RankSmall`] using negligible additional space
 /// and providing constant-time selection.
@@ -87,6 +87,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "rank_small")]
+#[delegate(Index<usize>, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "rank_small")]
@@ -296,7 +297,7 @@ macro_rules! impl_rank_small_sel {
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
                         let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize
                             + upper_block_idx * Self::SUPERBLOCK_SIZE;
-                        next_inv_pos.div_ceil(Self::BLOCK_SIZE)
+                        next_inv_pos.div_ceil_unchecked(Self::BLOCK_SIZE)
                     } else {
                         (upper_block_idx + 1) * (Self::SUPERBLOCK_SIZE / Self::BLOCK_SIZE)
                     };
@@ -306,7 +307,11 @@ macro_rules! impl_rank_small_sel {
                     // with value given by the number of bits. Thus, we must
                     // handle the case in which inv_idx is the the last
                     // inventory entry as a special case.
-                    last_block_idx = self.rank_small.bits.len().div_ceil(Self::BLOCK_SIZE);
+                    last_block_idx = self
+                        .rank_small
+                        .bits
+                        .len()
+                        .div_ceil_unchecked(Self::BLOCK_SIZE);
                 }
 
                 debug_assert!(block_idx < counts.len());
@@ -321,7 +326,7 @@ macro_rules! impl_rank_small_sel {
                 debug_assert!(block_idx < last_block_idx);
 
                 block_idx += counts[block_idx..last_block_idx]
-                    .linear_partition_point(|x| x.absolute as usize <= local_rank)
+                    .partition_point(|x| x.absolute as usize <= local_rank)
                     - 1;
 
                 let block_count = counts.get_unchecked(block_idx);

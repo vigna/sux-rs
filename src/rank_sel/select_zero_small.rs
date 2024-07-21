@@ -12,10 +12,8 @@ use common_traits::SelectInWord;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
-crate::forward_index_bool![
-    SelectZeroSmall<[const] NUM_U32S: usize, [const] COUNTER_WIDTH: usize, [const] LOG2_ZEROS_PER_INVENTORY: usize, R, I>; R; rank_small];
-
 use crate::ambassador_impl_AsRef;
+use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
@@ -25,6 +23,7 @@ use crate::traits::rank_sel::ambassador_impl_RankUnchecked;
 use crate::traits::rank_sel::ambassador_impl_RankZero;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
+use std::ops::Index;
 
 // NOTE: to make parallel modifications with SelectSmall as easy as possible,
 // "ones" are considered to be zeros in the following code.
@@ -55,6 +54,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "rank_small")]
+#[delegate(Index<usize>, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "rank_small")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "rank_small")]

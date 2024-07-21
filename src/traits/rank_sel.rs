@@ -13,10 +13,12 @@
 //! underlying implementations.
 
 use crate::ambassador_impl_AsRef;
+use crate::ambassador_impl_Index;
 use ambassador::{delegatable_trait, Delegate};
 use epserde::Epserde;
 use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
+use std::ops::Index;
 
 /// A trait expressing a length in bits.
 ///
@@ -254,8 +256,6 @@ pub trait SelectZeroHinted {
     unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize;
 }
 
-crate::forward_index_bool![AddNumBits<B>; B; bits];
-
 /// A thin wrapper implementing [`NumBits`] by caching the result of
 /// [`BitCount::count_ones`].
 ///
@@ -265,6 +265,7 @@ crate::forward_index_bool![AddNumBits<B>; B; bits];
 /// for example, [`SelectAdapt`](crate::rank_sel::SelectAdapt).
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "bits")]
+#[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted<64>, target = "bits")]

@@ -17,10 +17,8 @@ use crate::{
     traits::{NumBits, SelectUnchecked},
 };
 
-crate::forward_index_bool![
-    SelectAdapt<B, I>; B; bits];
-
 use crate::ambassador_impl_AsRef;
+use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
@@ -32,6 +30,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use std::ops::Index;
 
 /// A selection structure based on an adaptive two-level inventory.
 ///
@@ -210,6 +209,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "bits")]
+#[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]

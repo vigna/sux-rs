@@ -85,8 +85,9 @@ required-features = ["cli"]
 #required-features = ["cli"]
 
 [[bench]]
-name = "my_benchmarks"
+name = "sux"
 harness = false
+required-features = ["cli"]
 
 [[example]]
 name = "bench_bit_field_vec"
