@@ -214,7 +214,7 @@ fn test_epserde() -> Result<()> {
             efb.push(*value);
         }
         // Finish the creation of elias-fano
-        let ef = unsafe { efb.build().map_high_bits(SelectAdaptConst::<_, _, 10>::new) };
+        let ef = unsafe { efb.build().map_high_bits(SelectAdaptConst::<_, _>::new) };
 
         let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
         let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);

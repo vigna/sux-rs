@@ -11,7 +11,6 @@ use ambassador::Delegate;
 use epserde::*;
 use mem_dbg::*;
 
-use std::ops::Index;
 use crate::ambassador_impl_AsRef;
 use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
@@ -22,6 +21,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use std::ops::Index;
 
 /// A ranking structure using 25% of additional space and providing the fastest
 /// available rank operations.
