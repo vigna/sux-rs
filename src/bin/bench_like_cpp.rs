@@ -5,6 +5,7 @@
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use std::hint::black_box;
 use std::io::Write;
+use std::path::Path;
 use std::{env, path::PathBuf};
 use sux::traits::{AddNumBits, BitCount};
 use sux::{
@@ -105,7 +106,7 @@ fn bench_select_batch<S: Build<BitVec> + SelectUnchecked>(
     rng: &mut SmallRng,
     sel_name: &str,
     uniform: bool,
-    target_dir: &PathBuf,
+    target_dir: &Path,
 ) {
     print!("{}... ", sel_name);
     std::io::stdout().flush().unwrap();
@@ -136,7 +137,7 @@ fn bench_select_batch<S: Build<BitVec> + SelectUnchecked>(
     println!("\r{}... done        ", sel_name);
 }
 
-fn bench_rank9(target_dir: &PathBuf) {
+fn bench_rank9(target_dir: &Path) {
     let mut rng = SmallRng::seed_from_u64(0);
 
     let mut file = std::fs::File::create(target_dir.join("rank9.csv")).unwrap();
@@ -162,7 +163,7 @@ fn bench_rank9(target_dir: &PathBuf) {
     }
 }
 
-fn bench_builder<B: Build<BitVec>>(sel_name: &str, target_dir: &PathBuf, uniform: bool) {
+fn bench_builder<B: Build<BitVec>>(sel_name: &str, target_dir: &Path, uniform: bool) {
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     let mut file = std::fs::File::create(target_dir.join(format!("{}.csv", sel_name))).unwrap();
     let len = 1_024_000_000;

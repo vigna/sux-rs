@@ -32,6 +32,11 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 use std::ops::Index;
 
+/// **PLEASE DON'T USE THIS STRUCTURE**
+///
+/// It is included for benchmarking purposes only. Use
+/// [`SelectAdapt`](super::SelectAdapt) instead.
+///
 /// A simple select implementation based on a two-level inventory.
 ///
 /// The structure has been described by Sebastiano Vigna in “[Broadword
@@ -184,6 +189,7 @@ use std::ops::Index;
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
+#[doc(hidden)]
 pub struct SimpleSelect<B, I = Box<[usize]>> {
     bits: B,
     inventory: I,

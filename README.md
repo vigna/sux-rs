@@ -96,6 +96,4 @@ grant ANR-20-CE23-0002 of the French Agence Nationale de la Recherche.
 [lists of strings compressed by prefix omission]: <https://docs.rs/sux/latest/sux/dict/rear_coded_list/struct.RearCodedList.html>
 [Sux]: <https://sux.di.unimi.it/>
 [the DSI Utilities]: <https://dsiutils.di.unimi.it/>
-[`SelectAdapt`]:
-    <https://docs.rs/sux/latest/sux/rank_sel/select_adapt/struct.SelectAdapt.html>
 [`BitLength`]: <https://docs.rs/sux/latest/sux/traits/rank_sel/trait.BitLength.html>
