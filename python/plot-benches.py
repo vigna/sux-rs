@@ -139,7 +139,7 @@ def compare_benches_non_uniform(benches, plots_dir, op_type):
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
-    plt.savefig(os.path.join(plots_dir, "plot.svg".format(compare_name)),
+    plt.savefig(os.path.join(plots_dir, "plot.svg"),
                 format="svg", bbox_inches="tight")
     plt.close(fig)
 
@@ -204,9 +204,11 @@ def draw_pareto_front(benches, plots_dir, op_type, density=0.5):
 
     ax.legend(handles=artists, loc='best', fancybox=True, shadow=False, ncol=1)
 
+    if not os.path.exists(plots_dir):
+        os.makedirs(plots_dir)
+
     plt.draw_all()
-    plt.savefig("plots.svg".format(compare_name),
-                format="svg", dpi=250, bbox_inches="tight")
+    plt.savefig(os.path.join(plots_dir, "pareto.svg"), format="svg", dpi=250, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -257,30 +259,30 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Plot benchmark results.')
 
     group1 = parser.add_argument_group()
-    group1.add_argument('--cpp_vs_rust', action='store_true',
+    group1.add_argument('--cpp-vs-rust', action='store_true',
                         help='Compare C++ vs Rust benchmarks')
 
     group2 = parser.add_argument_group()
-    group2.add_argument('--op_type', choices=[
+    group2.add_argument('--op-type', choices=[
         'rank', 'select'], help='Operation type')
-    group2.add_argument('--benches_path', type=str,
+    group2.add_argument('--benches-path', type=str,
                         help='Path to the benches directory')
-    group2.add_argument('--plot_name', type=str, help='Name of the plot')
+    group2.add_argument('--plot-dir', type=str, help='Directory containing the plot(s)')
     parser.add_argument("--pareto",
                         action="store_true", help="Draw pareto front")
-    parser.add_argument("--non_uniform",
+    parser.add_argument("--non-uniform",
                         action="store_true", help="Draw plot for non-uniform densities. It only draws for density=0.9.")
 
     args = parser.parse_args()
     if args.cpp_vs_rust:
         plot_cpp_vs_rust()
     else:
-        if not args.op_type or not args.benches_path or not args.plot_name:
+        if not args.op_type or not args.benches_path or not args.plot_dir:
             parser.print_help()
             exit(1)
         op_type = args.op_type
         benches_path = args.benches_path
-        plot_name = args.plot_name
+        plot_dir = args.plot_dir
         if not os.path.exists(benches_path):
             print("The benches directory does not exist.")
             exit(1)
@@ -294,9 +296,9 @@ if __name__ == "__main__":
             benches.append(
                 (load_criterion_benches(os.path.join(benches_path, bench_dir), load_mem_cost=args.pareto), bench_dir))
         if args.non_uniform:
-            compare_benches_non_uniform(benches, plot_name, op_type)
+            compare_benches_non_uniform(benches, plot_dir, op_type)
         else:
-            compare_benches(benches, plot_name, op_type)
+            compare_benches(benches, plot_dir, op_type)
         if args.pareto:
             densities = benches[0][0]["dense"].unique()
             for d in densities:
