@@ -78,47 +78,6 @@ What this crate does not provide:
 - High genericity: all bit vectors are based on the rather concrete trait combination
   `AsRef<[usize]>` + [`BitLength`].
 
-## Benchmars
-
-It is impossible to predict exactly how each structure will perform on your
-specific architecture/in your specific use case, so we provide a benchmarking
-suite that you can run easily with `cargo bench`. The suite is contained in the
-benchmark `sux` and can be run with
-
-```
-cargo bench --bench sux --features cli -- [Criterion params] -- [suite params]
-```
-
-The Criterion parameters can be accessed with
-
-```
-cargo bench --bench sux --features cli -- --help
-```
-
-wheresas the suite parameters can be accessed with
-
-```
-cargo bench --bench sux --features cli -- -- --help
-```
-
-The main input to the suite is the name of the benchmarks you want to run.
-Unless you specify the `--exact` option, the list of names you provide are
-substring matches. For example,
-
-```
-cargo bench --bench sux --features cli -- -- SelectAdapt
-```
-
-will run all benchmarks that have `SelectAdapt` in their name, that is,
-`SelectAdapt0`, `SelectAdapt1`, `SelectAdapt2`, `SelectAdapt3`, and
-`SelectAdapt4`.
-
-The output of the suite is the standard Criterion output in `target/criterion`,
-plus an additional `mem_cost.csv` file that contains the memory cost of the
-structures for all combination of parameters used in the benchmark.` To draw
-plots of the resulting Criterion data, you can use the script
-`./python/plot-bench.py`.
-
 ## Acknowledgments
 
 This software has been partially supported by project SERICS (PE00000014) under
