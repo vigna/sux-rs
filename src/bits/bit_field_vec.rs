@@ -713,7 +713,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceRW<W> for BitFieldVec<W, 
     ///
     /// We also experimented with buffers twice as big as [`W`] but the performance
     /// was slightly worse all across the [`W`] and bit_widths we tested.
-    unsafe fn apply_inplace_unchecked<F>(&mut self, mut f: F)
+    unsafe fn apply_in_place_unchecked<F>(&mut self, mut f: F)
     where
         F: FnMut(W) -> W,
     {

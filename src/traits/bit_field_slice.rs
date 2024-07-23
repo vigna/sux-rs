@@ -212,7 +212,7 @@ pub trait BitFieldSliceRW<W: Word>: BitFieldSlice<W> + BitFieldSliceMut<W> {
     /// }
     ///
     /// let mut total = 0;
-    /// vec.apply_inplace(|x| {
+    /// vec.apply_in_place(|x| {
     ///     total += x;
     ///     total
     /// });
@@ -220,7 +220,7 @@ pub trait BitFieldSliceRW<W: Word>: BitFieldSlice<W> + BitFieldSliceMut<W> {
     ///
     /// # Safety
     /// The function must return a value that fits in the bit width of the slice.
-    unsafe fn apply_inplace_unchecked<F>(&mut self, mut f: F)
+    unsafe fn apply_in_place_unchecked<F>(&mut self, mut f: F)
     where
         F: FnMut(W) -> W,
     {
@@ -234,16 +234,16 @@ pub trait BitFieldSliceRW<W: Word>: BitFieldSlice<W> + BitFieldSliceMut<W> {
     /// Applies a function to all elements of the slice in place checking that
     /// the result fits in the bit width.
     ///
-    /// Like [`BitFieldSliceRW::apply_inplace_unchecked`] but it checks that the
+    /// Like [`BitFieldSliceRW::apply_in_place_unchecked`] but it checks that the
     /// result of the function fits in the bit width of the slice.
-    fn apply_inplace<F>(&mut self, mut f: F)
+    fn apply_in_place<F>(&mut self, mut f: F)
     where
         F: FnMut(W) -> W,
     {
         let bit_width = self.bit_width();
         let mask = self.mask();
         unsafe {
-            self.apply_inplace_unchecked(|x| {
+            self.apply_in_place_unchecked(|x| {
                 let new_value = f(x);
                 panic_if_value!(new_value, mask, bit_width);
                 new_value
