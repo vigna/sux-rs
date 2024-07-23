@@ -13,7 +13,7 @@ use crate::{
     traits::{BitLength, NumBits, Select},
 };
 use ambassador::Delegate;
-use common_traits::{SelectInWord, Sequence};
+use common_traits::SelectInWord;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
@@ -412,15 +412,11 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
                 debug_assert!(rank_in_block < 512);
             }
             128..=255 => {
-                let (_, s, _) = subinv_ref
-                    .get_range_unchecked(subinv_pos..self.subinventory_size)
-                    .align_to::<u16>();
+                let (_, s, _) = subinv_ref[subinv_pos..self.subinventory_size].align_to::<u16>();
                 return *s.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize + inventory_left;
             }
             256..=511 => {
-                let (_, s, _) = subinv_ref
-                    .get_range_unchecked(subinv_pos..self.subinventory_size)
-                    .align_to::<u32>();
+                let (_, s, _) = subinv_ref[subinv_pos..self.subinventory_size].align_to::<u32>();
                 return *s.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize + inventory_left;
             }
             _ => {
