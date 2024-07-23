@@ -7,6 +7,7 @@
 [![](https://tokei.rs/b1/github/vigna/sux-rs?type=Rust,Python)](https://github.com/vigna/sux-rs)
 [![Latest version](https://img.shields.io/crates/v/sux.svg)](https://crates.io/crates/sux)
 [![Documentation](https://docs.rs/sux/badge.svg)](https://docs.rs/sux)
+[![Coverage Status](https://coveralls.io/repos/github/vigna/sux-rs/badge.svg?branch=main)](https://coveralls.io/github/vigna/sux-rs?branch=main)  
 
 A pure Rust implementation of succinct and compressed data structures.
 
