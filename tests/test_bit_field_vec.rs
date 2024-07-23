@@ -68,9 +68,9 @@ fn test_bit_field_vec_apply_param<W: Word + CastableInto<u64> + CastableFrom<u64
                 .map(|_| rng.gen_range(0..u.cast()).cast())
                 .collect::<Vec<W>>();
 
-            // Test that apply_inplace happens in the right order
+            // Test that apply_in_place happens in the right order
             let mut i = 0;
-            cp.apply_inplace(|v| {
+            cp.apply_in_place(|v| {
                 assert_eq!(v, values[i]);
                 let res = new_values[i];
                 i += 1;

@@ -135,7 +135,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
     /// allocating a new string for every query and skipping the UTF-8 validity
     /// check.
     #[inline]
-    pub fn get_inplace(&self, index: usize, result: &mut Vec<u8>) {
+    pub fn get_in_place(&self, index: usize, result: &mut Vec<u8>) {
         result.clear();
         let block = index / self.k;
         let offset = index % self.k;
@@ -226,7 +226,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedSeq for RearCodedList<D, P> {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
         let mut result = Vec::with_capacity(128);
-        self.get_inplace(index, &mut result);
+        self.get_in_place(index, &mut result);
         String::from_utf8(result).unwrap()
     }
 
