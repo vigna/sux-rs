@@ -34,9 +34,10 @@ jobs:
 
       - name: Generate code coverage
         run: |
-          cargo +nightly tarpaulin --verbose --engine llvm --all-features --workspace --out xml
+          cargo +nightly tarpaulin --verbose --engine llvm --all-features --workspace --out Lcov
 
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v2
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
         with:
-          fail_ci_if_error: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path-to-lcov: "./target/debug/coverage/lcov.info"
