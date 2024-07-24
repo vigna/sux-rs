@@ -184,10 +184,7 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
 
     /// Sets all values to zero.
     fn reset(&mut self);
-}
 
-/// A mutable slice of bit fields of constant bit width that can be both read and written.
-pub trait BitFieldSliceRW<W: Word>: BitFieldSlice<W> + BitFieldSliceMut<W> {
     /// Applies a function to all elements of the slice in place.
     ///
     /// This is semantically equivalent to:
@@ -223,6 +220,7 @@ pub trait BitFieldSliceRW<W: Word>: BitFieldSlice<W> + BitFieldSliceMut<W> {
     unsafe fn apply_in_place_unchecked<F>(&mut self, mut f: F)
     where
         F: FnMut(W) -> W,
+        Self: BitFieldSlice<W>,
     {
         for idx in 0..self.len() {
             let value = unsafe { self.get_unchecked(idx) };
@@ -239,6 +237,7 @@ pub trait BitFieldSliceRW<W: Word>: BitFieldSlice<W> + BitFieldSliceMut<W> {
     fn apply_in_place<F>(&mut self, mut f: F)
     where
         F: FnMut(W) -> W,
+        Self: BitFieldSlice<W>,
     {
         let bit_width = self.bit_width();
         let mask = self.mask();
