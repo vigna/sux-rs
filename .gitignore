@@ -4,3 +4,4 @@ Cargo.lock
 lcov.info
 benches/plots/*
 TODO
+.info

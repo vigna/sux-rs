@@ -16,7 +16,6 @@ pub use bit_field_slice::BitFieldSlice;
 pub use bit_field_slice::BitFieldSliceCore;
 pub use bit_field_slice::BitFieldSliceIterator;
 pub use bit_field_slice::BitFieldSliceMut;
-pub use bit_field_slice::BitFieldSliceRW;
 pub use bit_field_slice::Word;
 
 pub mod indexed_dict;
