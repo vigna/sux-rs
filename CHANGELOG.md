@@ -1,5 +1,13 @@
 # Change Log
 
+## [0.4.2] - 2024-07-26
+
+### New
+
+* Added size_hint to all exact size iterators because if you do take of an exact
+  size iterator that doesn't implement it it panics because of an assert in the
+  default implementation of len of ExactSizeIterator.
+
 ## [0.4.1] - 2024-07-24
 
 ### New

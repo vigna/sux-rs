@@ -311,9 +311,14 @@ impl<'a, T: ZeroCopy + Send + Sync + 'static> Iterator for ChunkIterator<'a, T> 
             Some(res)
         }
     }
+    #[inline(always)]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len(), Some(self.len()))
+    }
 }
 
 impl<'a, T: ZeroCopy + Send + Sync> ExactSizeIterator for ChunkIterator<'a, T> {
+    #[inline(always)]
     fn len(&self) -> usize {
         self.store.chunk_sizes.len() - self.next_chunk
     }
