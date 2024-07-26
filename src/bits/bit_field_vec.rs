@@ -456,11 +456,10 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
         }
     }
 
+    /// This implementation keeps a buffer of `W::BITS` bits for reading and
+    /// writing, obtaining a significant speedup with respect to the default
+    /// implementation.
     #[inline]
-    /// This version keeps a buffer of [`W::BITS`] bits for reading and writing.
-    ///
-    /// We also experimented with buffers twice as big as [`W`] but the performance
-    /// was slightly worse all across the [`W`] and bit_widths we tested.
     unsafe fn apply_in_place_unchecked<F>(&mut self, mut f: F)
     where
         F: FnMut(W) -> W,
