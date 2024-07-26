@@ -504,6 +504,11 @@ where
         self.index += 1;
         Some(res)
     }
+
+    #[inline(always)]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len(), Some(self.len()))
+    }
 }
 
 impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize>> ExactSizeIterator
