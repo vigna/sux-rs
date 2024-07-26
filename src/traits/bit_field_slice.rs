@@ -141,7 +141,8 @@ pub trait BitFieldSlice<W: Word>: BitFieldSliceCore<W> {
 
 /// A mutable slice of bit fields of constant bit width.
 pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
-    /// Return the mask to apply to values to ensure they fit in [`Self::bit_width`] bits.
+    /// Return the mask to apply to values to ensure they fit in
+    /// [`bit_width`](BitFieldSliceCore::bit_width) bits.
     #[inline(always)]
     fn mask(&self) -> W {
         // TODO: Maybe testless?
@@ -185,18 +186,47 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
     /// Sets all values to zero.
     fn reset(&mut self);
 
+    /// Applies a function to all elements of the slice in place without
+    /// checking [bit widths](BitFieldSliceCore::bit_width).
+    ///
+    /// This method is semantically equivalent to:
+    /// ```ignore
+    /// for i in 0..self.len() {
+    ///     self.set_unchecked(i, f(self.get_unchecked(i)));
+    /// }
+    /// ```
+    /// and this is indeed the default implementation.
+    ///
+    /// See [`apply_in_place`](BitFieldSliceMut::apply_in_place) for examples.
+    ///
+    /// # Safety
+    /// The function must return a value that fits the the [bit
+    ///  width](BitFieldSliceCore::bit_width) of the slice.
+
+    unsafe fn apply_in_place_unchecked<F>(&mut self, mut f: F)
+    where
+        F: FnMut(W) -> W,
+        Self: BitFieldSlice<W>,
+    {
+        for idx in 0..self.len() {
+            let value = unsafe { self.get_unchecked(idx) };
+            let new_value = f(value);
+            unsafe { self.set_unchecked(idx, new_value) };
+        }
+    }
+
     /// Applies a function to all elements of the slice in place.
     ///
-    /// This is semantically equivalent to:
+    /// This method is semantically equivalent to:
     /// ```ignore
     /// for i in 0..self.len() {
     ///     self.set(i, f(self.get(i)));
     /// }
     /// ```
-    /// but it's much more efficient, on our tests it's about 5 times faster.
+    /// and this is indeed the default implementation.
     ///
-    /// The function is applied from the first element to the last, this allows
-    /// to compute cumulative sums as:
+    /// The function is applied from the first element to the last: thus,
+    /// it possible to compute cumulative sums as follows:
     ///
     /// ```rust
     /// use sux::bits::BitFieldVec;
@@ -214,26 +244,6 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
     ///     total
     /// });
     /// ```
-    ///
-    /// # Safety
-    /// The function must return a value that fits in the bit width of the slice.
-    unsafe fn apply_in_place_unchecked<F>(&mut self, mut f: F)
-    where
-        F: FnMut(W) -> W,
-        Self: BitFieldSlice<W>,
-    {
-        for idx in 0..self.len() {
-            let value = unsafe { self.get_unchecked(idx) };
-            let new_value = f(value);
-            unsafe { self.set_unchecked(idx, new_value) };
-        }
-    }
-
-    /// Applies a function to all elements of the slice in place checking that
-    /// the result fits in the bit width.
-    ///
-    /// Like [`BitFieldSliceRW::apply_in_place_unchecked`] but it checks that the
-    /// result of the function fits in the bit width of the slice.
     fn apply_in_place<F>(&mut self, mut f: F)
     where
         F: FnMut(W) -> W,
