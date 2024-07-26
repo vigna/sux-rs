@@ -268,6 +268,7 @@ pub struct Iter<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
 }
 
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::ExactSizeIterator for Iter<'a, D, P> {
+    #[inline(always)]
     fn len(&self) -> usize {
         self.iter.len()
     }
@@ -276,10 +277,16 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::ExactSizeIterator for Ite
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iter<'a, D, P> {
     type Item = String;
 
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         self.iter
             .next()
             .map(|v| unsafe { String::from_utf8_unchecked(Vec::from(v)) })
+    }
+
+    #[inline(always)]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len(), Some(self.len()))
     }
 }
 
@@ -358,9 +365,14 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Lend<'a, D, P> {
 
         Some(unsafe { std::str::from_utf8_unchecked(&self.buffer) })
     }
+    #[inline(always)]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len(), Some(self.len()))
+    }
 }
 
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeLender for Lend<'a, D, P> {
+    #[inline(always)]
     fn len(&self) -> usize {
         self.rca.len() - self.index
     }

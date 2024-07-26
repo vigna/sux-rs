@@ -834,9 +834,14 @@ impl<'a, W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, B> {
             None
         }
     }
+    #[inline(always)]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len(), Some(self.len()))
+    }
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'a, W, B> {
+    #[inline(always)]
     fn len(&self) -> usize {
         self.unchecked.vec.len() - self.index
     }
