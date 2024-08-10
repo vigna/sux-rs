@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.4.3] - 2024-08-10
+
+### Fixed
+
+* Removed spurious dependencies.
+
 ## [0.4.2] - 2024-07-26
 
 ### New
