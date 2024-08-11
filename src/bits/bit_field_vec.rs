@@ -89,7 +89,12 @@ use mem_dbg::*;
 use rayon::prelude::*;
 use std::sync::atomic::*;
 
-/// Convenient, [`vec!`](vec!)-like macro to initialize `usize`-based bit-field vectors.
+/// Convenient, [`vec!`]-like macro to initialize `usize`-based bit-field
+/// vectors.
+///
+/// Note that the syntax `bit_field_vec![width; length; value]` that has been
+/// deprecated in favor of `bit_field_vec![width => value; length]`, so that
+/// value and length are in the same order as in [`vec!`].
 ///
 /// # Examples
 ///
@@ -102,7 +107,7 @@ use std::sync::atomic::*;
 /// assert_eq!(b.bit_width(), 5);
 ///
 /// // 10 values of bit width 6, all set to 3
-/// let b = bit_field_vec![6; 10; 3];
+/// let b = bit_field_vec![6 => 3; 10];
 /// assert_eq!(b.len(), 10);
 /// assert_eq!(b.bit_width(), 6);
 /// assert_eq!(b.iter().all(|x| x == 3), true);
@@ -124,6 +129,15 @@ macro_rules! bit_field_vec {
         $crate::bits::BitFieldVec::<usize, _>::new($w, 0)
     };
     ($w:expr; $n:expr; $v:expr) => {
+        {
+            let mut bit_field_vec = $crate::bits::BitFieldVec::<usize, _>::with_capacity($w, $n);
+            // Force type
+            let v: usize = $v;
+            bit_field_vec.resize($n, v);
+            bit_field_vec
+        }
+    };
+    ($w:expr => $v:expr; $n:expr) => {
         {
             let mut bit_field_vec = $crate::bits::BitFieldVec::<usize, _>::with_capacity($w, $n);
             // Force type
@@ -834,6 +848,7 @@ impl<'a, W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, B> {
             None
         }
     }
+
     #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len(), Some(self.len()))

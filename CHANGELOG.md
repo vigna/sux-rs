@@ -1,18 +1,17 @@
 # Change Log
 
-## [0.4.3] - 2024-08-10
+## [0.4.2] - 2024-08-11
 
 ### Fixed
 
 * Removed spurious dependencies.
 
-## [0.4.2] - 2024-07-26
-
 ### New
 
-* Added size_hint to all exact size iterators because if you do take of an exact
-  size iterator that doesn't implement it it panics because of an assert in the
-  default implementation of len of ExactSizeIterator.
+* More `vec!`-like `bit_field_vec![w => v; n]` macro syntax.
+
+* Added size_hint to all exact-size iterators (see
+  <https://doc.rust-lang.org/std/iter/trait.ExactSizeIterator.html>).
 
 ## [0.4.1] - 2024-07-24
 
