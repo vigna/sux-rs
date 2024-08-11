@@ -365,6 +365,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Lend<'a, D, P> {
 
         Some(unsafe { std::str::from_utf8_unchecked(&self.buffer) })
     }
+
     #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len(), Some(self.len()))
