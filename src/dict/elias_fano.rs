@@ -52,6 +52,30 @@
 //!
 //!
 
+/// The default type for an Elias–Fano structure implementing an [`IndexedSeq`].
+///
+/// You can start from this type to customize your Elias–Fano structure using
+/// different const parameters or a different selection structure altogether.
+type EfSeq = EliasFano<SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
+/// The default type for an Elias–Fano structure implementing an [`Succ`] and [`Pred`].
+///
+/// You can start from this type to customize your Elias–Fano structure using
+/// different const parameters or a different selection structure altogether.
+type EfDict = EliasFano<SelectZeroAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
+/// The default type for an Elias–Fano structure implementing an
+/// [`IndexedDict`], [`Succ`], and [`Pred`].
+///
+/// You can start from this type to customize your Elias–Fano structure using
+/// different const parameters or different selection structures altogether.
+type EfSeqDict = EliasFano<
+    SelectZeroAdaptConst<
+        SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>,
+        Box<[usize]>,
+        12,
+        3,
+    >,
+>;
+
 use crate::prelude::*;
 use crate::traits::bit_field_slice::*;
 use core::sync::atomic::Ordering;
@@ -617,6 +641,14 @@ impl EliasFanoBuilder {
         self.last_value = value;
     }
 
+    /// Builds an Elias-Fano structure.
+    ///
+    /// The resulting structure has no selection structure attached. To use it
+    /// propertly, you need to call [`EliasFano::map_high_bits`] to add to the
+    /// high bits a selection structure.
+    ///
+    /// Usually, however, the default implementations returned by the [`build_with_seq`],
+    /// [`build_with_dict`], and [`build_with_seq_and_dict`] methods are more convenient.
     pub fn build(self) -> EliasFano {
         let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
         EliasFano {
@@ -626,6 +658,39 @@ impl EliasFanoBuilder {
             low_bits: self.low_bits.into(),
             // SAFETY: n is the number of ones in the high_bits.
             high_bits,
+        }
+    }
+
+    /// Builds an Elias-Fano structure with constant-time access, using
+    /// default values.
+    ///
+    /// The resulting structure implements [`IndexedSeq`], but not [`IndexedDict`],
+    /// [`Succ`], or [`Pred`].
+    pub fn build_with_seq(self) -> EfSeq {
+        let ef = self.build();
+        unsafe { ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new) }
+    }
+
+    /// Builds an Elias-Fano structure with constant-time indexing, using
+    /// default values.
+    ///
+    /// The resulting structure implements [`IndexedDict`], [`Succ`], and [`Pred`],
+    /// but not [`IndexedSeq`].
+    pub fn build_with_dict(self) -> EfDict {
+        let ef = self.build();
+        unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new) }
+    }
+
+    /// Builds an Elias-Fano structure with constant-time access and indexing,
+    /// using default values.
+    ///
+    /// The resulting structure implements [`IndexedDict`], [`Succ`],
+    /// [`Pred`], and [`IndexedSeq`].
+    pub fn build_with_seq_and_dict(self) -> EfSeqDict {
+        let ef = self.build();
+        unsafe {
+            ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new)
+                .map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new)
         }
     }
 }
