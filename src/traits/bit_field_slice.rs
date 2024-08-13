@@ -230,7 +230,7 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
     ///
     /// ```rust
     /// use sux::bits::BitFieldVec;
-    /// use sux::traits::{BitFieldSliceRW, BitFieldSliceMut};
+    /// use sux::traits::BitFieldSliceMut;
     ///
     /// let mut vec = BitFieldVec::<u16>::new(9, 10);
     ///
