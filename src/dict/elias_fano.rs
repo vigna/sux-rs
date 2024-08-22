@@ -56,18 +56,18 @@
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
-type EfSeq = EliasFano<SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
+pub type EfSeq = EliasFano<SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
 /// The default type for an Elias–Fano structure implementing an [`Succ`] and [`Pred`].
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
-type EfDict = EliasFano<SelectZeroAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
+pub type EfDict = EliasFano<SelectZeroAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
 /// The default type for an Elias–Fano structure implementing an
 /// [`IndexedDict`], [`Succ`], and [`Pred`].
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or different selection structures altogether.
-type EfSeqDict = EliasFano<
+pub type EfSeqDict = EliasFano<
     SelectZeroAdaptConst<
         SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>,
         Box<[usize]>,
