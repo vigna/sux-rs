@@ -10,19 +10,6 @@ use sux::traits::{BitCount, BitLength, Rank, Select};
 mod impls;
 pub use impls::*;
 
-pub const LENS: [u64; 6] = [
-    1_000_000,
-    4_000_000,
-    16_000_000,
-    64_000_000,
-    256_000_000,
-    1_024_000_000,
-];
-
-pub const DENSITIES: [f64; 3] = [0.1, 0.5, 0.9];
-
-pub const REPS: usize = 5;
-
 pub trait Build<B> {
     fn new(bits: B) -> Self;
 }

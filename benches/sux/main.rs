@@ -1,5 +1,7 @@
 mod bench_select;
 mod utils;
+use std::fmt;
+
 use bench_select::*;
 use clap::{arg, Parser, ValueEnum};
 use criterion::Criterion;
@@ -32,47 +34,56 @@ enum RankSel {
     CompareSimpleAdaptConst,
 }
 
-const MAPPING: [(&str, RankSel); 22] = [
-    ("rank9", RankSel::Rank9),
-    ("rank-small0", RankSel::RankSmall0),
-    ("rank-small1", RankSel::RankSmall1),
-    ("rank-small2", RankSel::RankSmall2),
-    ("rank-small3", RankSel::RankSmall3),
-    ("rank-small4", RankSel::RankSmall4),
-    ("select9", RankSel::Select9),
-    ("select-small0", RankSel::SelectSmall0),
-    ("select-small1", RankSel::SelectSmall1),
-    ("select-small2", RankSel::SelectSmall2),
-    ("select-small3", RankSel::SelectSmall3),
-    ("select-small4", RankSel::SelectSmall4),
-    ("select-adapt0", RankSel::SelectAdapt0),
-    ("select-adapt1", RankSel::SelectAdapt1),
-    ("select-adapt2", RankSel::SelectAdapt2),
-    ("select-adapt3", RankSel::SelectAdapt3),
-    ("simple-select0", RankSel::SimpleSelect0),
-    ("simple-select1", RankSel::SimpleSelect1),
-    ("simple-select2", RankSel::SimpleSelect2),
-    ("simple-select3", RankSel::SimpleSelect3),
-    ("adapt-const", RankSel::AdaptConst),
-    (
-        "compare-simple-adapt-const",
-        RankSel::CompareSimpleAdaptConst,
-    ),
+const MAPPING: [(
+    RankSel,
+    fn(&mut Criterion, &str, &[u64], &[f64], usize, bool),
+); 22] = [
+    (RankSel::Rank9, bench_rank::<Rank9>),
+    (RankSel::RankSmall0, bench_rank::<RankSmall<2, 9>>),
+    (RankSel::RankSmall1, bench_rank::<RankSmall<1, 9>>),
+    (RankSel::RankSmall2, bench_rank::<RankSmall<1, 10>>),
+    (RankSel::RankSmall3, bench_rank::<RankSmall<1, 11>>),
+    (RankSel::RankSmall4, bench_rank::<RankSmall<3, 13>>),
+    (RankSel::Select9, bench_select::<Select9>),
+    (RankSel::SelectSmall0, bench_select::<SelectSmall<2, 9>>),
+    (RankSel::SelectSmall1, bench_select::<SelectSmall<1, 9>>),
+    (RankSel::SelectSmall2, bench_select::<SelectSmall<1, 10>>),
+    (RankSel::SelectSmall3, bench_select::<SelectSmall<1, 11>>),
+    (RankSel::SelectSmall4, bench_select::<SelectSmall<3, 13>>),
+    (RankSel::SelectAdapt0, bench_select::<SelectAdapt0<_>>),
+    (RankSel::SelectAdapt1, bench_select::<SelectAdapt1<_>>),
+    (RankSel::SelectAdapt2, bench_select::<SelectAdapt2<_>>),
+    (RankSel::SelectAdapt3, bench_select::<SelectAdapt3<_>>),
+    (RankSel::SimpleSelect0, bench_select::<SimpleSelect0<_>>),
+    (RankSel::SimpleSelect1, bench_select::<SimpleSelect1<_>>),
+    (RankSel::SimpleSelect2, bench_select::<SimpleSelect2<_>>),
+    (RankSel::SimpleSelect3, bench_select::<SimpleSelect3<_>>),
+    (RankSel::AdaptConst, bench_select_adapt_const),
+    (RankSel::CompareSimpleAdaptConst, compare_simple_adapt_const),
 ];
+
+impl fmt::Display for RankSel {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
 
 impl RankSel {
     fn from_str_exact(s: &str) -> Option<Self> {
         MAPPING
             .iter()
-            .find_map(|(k, v)| if *k == s { Some(*v) } else { None })
+            .find_map(|(k, _v)| if k.to_string() == s { Some(*k) } else { None })
     }
 
     fn from_str(s: &str) -> Vec<Self> {
         MAPPING
             .iter()
-            .filter_map(|(k, v)| {
-                if k.contains(s.to_lowercase().trim()) {
-                    Some(*v)
+            .filter_map(|(k, _v)| {
+                if k.to_string()
+                    .to_lowercase()
+                    .contains(s.to_lowercase().trim())
+                {
+                    Some(*k)
                 } else {
                     None
                 }
@@ -88,115 +99,9 @@ impl RankSel {
         reps: usize,
         uniform: bool,
     ) {
-        match self {
-            RankSel::Rank9 => bench_rank::<Rank9>(c, "rank9", lens, densities, reps, uniform),
-            RankSel::RankSmall0 => {
-                bench_rank::<RankSmall<2, 9>>(c, "rank-small0", lens, densities, reps, uniform)
-            }
-            RankSel::RankSmall1 => {
-                bench_rank::<RankSmall<1, 9>>(c, "rank-small1", lens, densities, reps, uniform)
-            }
-            RankSel::RankSmall2 => {
-                bench_rank::<RankSmall<1, 10>>(c, "rank-small2", lens, densities, reps, uniform)
-            }
-            RankSel::RankSmall3 => {
-                bench_rank::<RankSmall<1, 11>>(c, "rank-small3", lens, densities, reps, uniform)
-            }
-            RankSel::RankSmall4 => {
-                bench_rank::<RankSmall<3, 13>>(c, "rank-small4", lens, densities, reps, uniform)
-            }
-            RankSel::Select9 => {
-                bench_select::<Select9>(c, "select9", lens, densities, reps, uniform)
-            }
-            RankSel::SelectSmall0 => bench_select::<SelectSmall<2, 9>>(
-                c,
-                "select-small0",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SelectSmall1 => bench_select::<SelectSmall<1, 9>>(
-                c,
-                "select-small1",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SelectSmall2 => bench_select::<SelectSmall<1, 10>>(
-                c,
-                "select-small2",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SelectSmall3 => bench_select::<SelectSmall<1, 11>>(
-                c,
-                "select-small3",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SelectSmall4 => bench_select::<SelectSmall<3, 13>>(
-                c,
-                "select-small4",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SelectAdapt0 => {
-                bench_select::<SelectAdapt0<_>>(c, "select-adapt0", lens, densities, reps, uniform)
-            }
-            RankSel::SelectAdapt1 => {
-                bench_select::<SelectAdapt1<_>>(c, "select-adapt1", lens, densities, reps, uniform)
-            }
-            RankSel::SelectAdapt2 => {
-                bench_select::<SelectAdapt2<_>>(c, "select-adapt2", lens, densities, reps, uniform)
-            }
-            RankSel::SelectAdapt3 => {
-                bench_select::<SelectAdapt3<_>>(c, "select-adapt3", lens, densities, reps, uniform)
-            }
-            RankSel::SimpleSelect0 => bench_select::<SimpleSelect0<_>>(
-                c,
-                "simple-select0",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SimpleSelect1 => bench_select::<SimpleSelect1<_>>(
-                c,
-                "simple-select1",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SimpleSelect2 => bench_select::<SimpleSelect2<_>>(
-                c,
-                "simple-select2",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SimpleSelect3 => bench_select::<SimpleSelect3<_>>(
-                c,
-                "simple-select3",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::AdaptConst => {
-                bench_select_adapt_const(c, uniform);
-            }
-            RankSel::CompareSimpleAdaptConst => {
-                compare_simple_adapt_const(c);
+        for (k, v) in MAPPING.iter() {
+            if k == self {
+                v(c, &k.to_string(), lens, densities, reps, uniform);
             }
         }
     }
@@ -206,10 +111,10 @@ impl RankSel {
 #[derive(Parser, Debug)]
 struct Cli {
     /// The lengths of the bitvectors to benchmark.
-    #[arg(long, short, num_args = 1.., value_delimiter = ' ', default_value = "1000000 4000000 16000000 64000000 256000000 1024000000")]
+    #[arg(long, short, num_args = 1.., value_delimiter = ',', default_value = "1000000,4000000,16000000,64000000,256000000,1024000000")]
     lens: Vec<u64>,
     /// The densities of the bitvectors to benchmark.
-    #[arg(long, short, num_args = 1.., value_delimiter = ' ', default_value = "0.1 0.5 0.9")]
+    #[arg(long, short, num_args = 1.., value_delimiter = ',', default_value = "0.1,0.5,0.9")]
     densities: Vec<f64>,
     /// The number of repetitions for each benchmark.
     #[arg(long, short, default_value = "5")]

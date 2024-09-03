@@ -14,7 +14,14 @@ use sux::traits::SelectUnchecked;
 const LOG2_ZEROS_PER_INVENTORY: usize = 10;
 const LOG2_U64_PER_SUBINVENTORY: usize = 3;
 
-pub fn compare_simple_adapt_const(c: &mut Criterion) {
+pub fn compare_simple_adapt_const(
+    c: &mut Criterion,
+    _name: &str,
+    lens: &[u64],
+    densities: &[f64],
+    _reps: usize,
+    _uniform: bool,
+) {
     let mut group = c.benchmark_group(format!(
         "select_adapt_const_{}_{}",
         LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY,
@@ -23,8 +30,8 @@ pub fn compare_simple_adapt_const(c: &mut Criterion) {
     let mut bitvecs = Vec::<BitVec>::new();
     let mut bitvec_ids = Vec::<(u64, f64)>::new();
     let mut rng = SmallRng::seed_from_u64(0);
-    for len in LENS {
-        for density in DENSITIES {
+    for len in lens.iter().copied() {
+        for density in densities.iter().copied() {
             let bitvec = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
             bitvecs.push(bitvec);
             bitvec_ids.push((len, density));
@@ -118,14 +125,21 @@ macro_rules! bench_select_adapt_const {
     }};
 }
 
-pub fn bench_select_adapt_const(c: &mut Criterion, uniform: bool) {
+pub fn bench_select_adapt_const(
+    c: &mut Criterion,
+    _name: &str,
+    lens: &[u64],
+    densities: &[f64],
+    reps: usize,
+    uniform: bool,
+) {
     let mut bitvecs = Vec::<BitVec>::new();
     let mut bitvec_ids = Vec::<(u64, f64, u64, u64, u64)>::new();
     let mut rng = SmallRng::seed_from_u64(0);
-    for len in LENS {
-        for density in DENSITIES {
+    for len in lens.iter().copied() {
+        for density in densities.iter().copied() {
             // possible repetitions
-            for i in 0..REPS {
+            for i in 0..reps {
                 let (num_ones_first_half, num_ones_second_half, bitvec) =
                     create_bitvec(&mut rng, len, density, uniform);
                 bitvecs.push(bitvec);
