@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.4.3] - 2024-09-05
+
+### Improved
+
+* Better constructors for Elias–Fano.
+
 ## [0.4.2] - 2024-08-11
 
 ### Fixed

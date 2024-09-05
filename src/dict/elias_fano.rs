@@ -57,7 +57,8 @@
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
 pub type EfSeq = EliasFano<SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
-/// The default type for an Elias–Fano structure implementing an [`Succ`] and [`Pred`].
+/// The default type for an Elias–Fano structure implementing an
+/// [`SuccUnchecked`] and [`PredUnchecked`].
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
@@ -89,16 +90,69 @@ use std::borrow::Borrow;
 /// There are two ways to build a base [`EliasFano`] structure: using an
 /// [`EliasFanoBuilder`] or an [`EliasFanoConcurrentBuilder`].
 ///
-/// Once the base structure has been built, one can only iterate over the
-/// sequence, but it is possible to enrich the structure with indices that will
-/// make more operations available by calling [`EliasFano::map_high_bits`]. To
-/// use the structure as an [`IndexedSeq`] you need to add a selection structure
-/// for ones, whereas to use it as an [`IndexedDict`] with [`Succ`] and [`Pred`]
-/// you need to add a selection structure for zeros. [`SelectAdaptConst`] and
+/// In both cases, if you use the [`build`](EliasFanoBuilder::build) method you
+/// will only be able to iterate over the sequence. Using the methods
+/// [`build_with_seq`](EliasFanoBuilder::build_with_seq),
+/// [`build_with_dict`](EliasFanoBuilder::build_with_dict), or
+/// [`build_with_seq_and_dict`](EliasFanoBuilder::build_with_seq_and_dict) you
+/// will have access to the additional functionalities of an [`IndexedSeq`] or
+/// an [`IndexedDict`] with [`SuccUnchecked`] and [`PredUnchecked`], or both
+/// (and in that case, [`Succ`] and [`Pred`]).
+///
+/// It is also possible to enrich manually the base structure by calling
+/// [`EliasFano::map_high_bits`]. To use the structure as an [`IndexedSeq`] you
+/// need to add a selection structure for ones, whereas to use it as an
+/// [`IndexedDict`] with [`SuccUnchecked`] and [`PredUnchecked`] you need to add
+/// a selection structure for zeros. [`SelectAdaptConst`] and
 /// [`SelectZeroAdaptConst`] are the structures of choice for this purpose.
+/// If you add both structures, you will have an [`IndexedDict`] with [`Succ`]
+/// and [`Pred`].
 ///
 /// # Examples
 ///
+/// Using convenience builders:
+/// ```rust
+/// # use sux::rank_sel::{SelectAdaptConst, SelectZeroAdaptConst};
+/// # use sux::dict::{EliasFanoBuilder};
+/// # use sux::traits::{Types,IndexedSeq,IndexedDict,SuccUnchecked,Succ};
+/// let mut efb = EliasFanoBuilder::new(4, 10);
+/// efb.push(0);
+/// efb.push(2);
+/// efb.push(8);
+/// efb.push(10);
+///
+/// let ef = efb.build_with_seq();
+/// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
+///
+/// assert_eq!(ef.get(0), 0);
+/// assert_eq!(ef.get(1), 2);
+///
+/// let mut efb = EliasFanoBuilder::new(4, 10);
+/// efb.push(0);
+/// efb.push(2);
+/// efb.push(8);
+/// efb.push(10);
+///
+/// let ef = efb.build_with_dict();
+///
+/// assert_eq!(unsafe { ef.succ_unchecked::<false>(6) }, (2, 8));
+/// // This would panic: ef.succ_unchecked(11)
+///
+/// let mut efb = EliasFanoBuilder::new(4, 10);
+/// efb.push(0);
+/// efb.push(2);
+/// efb.push(8);
+/// efb.push(10);
+///
+/// let ef = efb.build_with_seq_and_dict();
+/// assert_eq!(ef.get(0), 0);
+/// assert_eq!(ef.get(1), 2);
+/// assert_eq!(ef.succ(6), Some((2, 8)));
+/// assert_eq!(ef.succ(11), None);
+/// ```
+///
+/// Enriching manually a base structure with
+/// [`map_high_bits`](EliasFano::map_high_bits):
 /// ```rust
 /// # use sux::rank_sel::{SelectAdaptConst, SelectZeroAdaptConst};
 /// # use sux::dict::{EliasFanoBuilder};
@@ -110,13 +164,13 @@ use std::borrow::Borrow;
 /// efb.push(10);
 ///
 /// let ef = efb.build();
-/// // Add a selection structure for zeros (implements IndexedSeq)
+/// // Add a selection structure for ones (implements IndexedSeq)
 /// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
 ///
 /// assert_eq!(ef.get(0), 0);
 /// assert_eq!(ef.get(1), 2);
 ///
-/// // Add a selection structure for zeros (implements IndexedDict, Succ, Pred)
+/// // Add a further selection structure for zeros (implements IndexedDict, Succ, Pred)
 /// let ef = unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _>::new) };
 ///
 /// assert_eq!(ef.succ(6), Some((2, 8)));
@@ -647,8 +701,11 @@ impl EliasFanoBuilder {
     /// propertly, you need to call [`EliasFano::map_high_bits`] to add to the
     /// high bits a selection structure.
     ///
-    /// Usually, however, the default implementations returned by the [`build_with_seq`],
-    /// [`build_with_dict`], and [`build_with_seq_and_dict`] methods are more convenient.
+    /// Usually, however, the default implementations returned by the
+    /// [`build_with_seq`](EliasFanoConcurrentBuilder::build_with_seq),
+    /// [`build_with_dict`](EliasFanoConcurrentBuilder::build_with_dict), and
+    /// [`build_with_seq_and_dict`](EliasFanoConcurrentBuilder::build_with_seq_and_dict)
+    /// methods are more convenient.
     pub fn build(self) -> EliasFano {
         let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
         EliasFano {
@@ -769,6 +826,17 @@ impl EliasFanoConcurrentBuilder {
         self.high_bits.set(high, true, Ordering::Relaxed);
     }
 
+    /// Builds an Elias-Fano structure.
+    ///
+    /// The resulting structure has no selection structure attached. To use it
+    /// propertly, you need to call [`EliasFano::map_high_bits`] to add to the
+    /// high bits a selection structure.
+    ///
+    /// Usually, however, the default implementations returned by the
+    /// [`build_with_seq`](EliasFanoBuilder::build_with_seq),
+    /// [`build_with_dict`](EliasFanoBuilder::build_with_dict), and
+    /// [`build_with_seq_and_dict`](EliasFanoBuilder::build_with_seq_and_dict)
+    /// methods are more convenient.
     pub fn build(self) -> EliasFano {
         let high_bits: BitVec<Vec<usize>> = self.high_bits.into();
         let high_bits: BitVec<Box<[usize]>> = high_bits.into();
@@ -780,6 +848,39 @@ impl EliasFanoConcurrentBuilder {
             l: self.l,
             low_bits,
             high_bits,
+        }
+    }
+
+    /// Builds an Elias-Fano structure with constant-time access, using
+    /// default values.
+    ///
+    /// The resulting structure implements [`IndexedSeq`], but not [`IndexedDict`],
+    /// [`Succ`], or [`Pred`].
+    pub fn build_with_seq(self) -> EfSeq {
+        let ef = self.build();
+        unsafe { ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new) }
+    }
+
+    /// Builds an Elias-Fano structure with constant-time indexing, using
+    /// default values.
+    ///
+    /// The resulting structure implements [`IndexedDict`], [`Succ`], and [`Pred`],
+    /// but not [`IndexedSeq`].
+    pub fn build_with_dict(self) -> EfDict {
+        let ef = self.build();
+        unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new) }
+    }
+
+    /// Builds an Elias-Fano structure with constant-time access and indexing,
+    /// using default values.
+    ///
+    /// The resulting structure implements [`IndexedDict`], [`Succ`],
+    /// [`Pred`], and [`IndexedSeq`].
+    pub fn build_with_seq_and_dict(self) -> EfSeqDict {
+        let ef = self.build();
+        unsafe {
+            ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new)
+                .map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new)
         }
     }
 }

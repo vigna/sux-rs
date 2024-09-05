@@ -233,3 +233,34 @@ fn test_epserde() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn test_convenience_methods() {
+    let mut efb = EliasFanoBuilder::new(10, 100);
+    for i in 0..10 {
+        efb.push(i * 10);
+    }
+    let ef = efb.build_with_seq();
+    for i in 0..10 {
+        assert_eq!(ef.get(i), i * 10);
+    }
+
+    let mut efb = EliasFanoBuilder::new(10, 100);
+    for i in 0..10 {
+        efb.push(i * 10);
+    }
+    let ef = efb.build_with_dict();
+    for i in 0..10 {
+        assert_eq!(unsafe { ef.succ_unchecked::<false>(i * 10) }, (i, i * 10));
+    }
+
+    let mut efb = EliasFanoBuilder::new(10, 100);
+    for i in 0..10 {
+        efb.push(i * 10);
+    }
+    let ef = efb.build_with_seq_and_dict();
+    for i in 0..10 {
+        assert_eq!(ef.get(i), i * 10);
+        assert_eq!(ef.succ(i * 10).unwrap(), (i, i * 10));
+    }
+}
