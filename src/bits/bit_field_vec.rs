@@ -924,6 +924,12 @@ impl<W: Word + IntoAtomic, B> AtomicBitFieldVec<W, B> {
     pub fn into_raw_parts(self) -> (B, usize, usize) {
         (self.bits, self.bit_width, self.len)
     }
+
+    /// Return the mask used to extract values from this vector.
+    /// This will keep the lowest `bit_width` bits.
+    pub fn mask(&self) -> W {
+        self.mask
+    }
 }
 
 impl<W: Word + IntoAtomic> AtomicBitFieldVec<W>
@@ -942,43 +948,16 @@ where
             len,
         }
     }
+}
 
+impl<W: Word + IntoAtomic, B: AsRef<[W::AtomicType]>> AtomicBitFieldVec<W, B>
+where
+    W::AtomicType: AtomicUnsignedInt + AsBytes,
+{
     /// Writes zeros in all values.
+    #[deprecated(since = "0.4.4", note = "reset is deprecated in favor of reset_atomic")]
     pub fn reset(&mut self, ordering: Ordering) {
-        let bit_len = self.len * self.bit_width;
-        let full_words = bit_len / W::BITS;
-        let residual = bit_len % W::BITS;
-        let bits: &[W::AtomicType] = self.bits.as_ref();
-
-        #[cfg(feature = "rayon")]
-        {
-            bits[..full_words]
-                .par_iter()
-                .for_each(|x| x.store(W::ZERO, ordering));
-        }
-
-        #[cfg(not(feature = "rayon"))]
-        {
-            bits[..full_words]
-                .iter()
-                .for_each(|x| x.store(W::ZERO, ordering));
-        }
-
-        if residual != 0 {
-            bits[full_words].fetch_and(W::MAX << residual, ordering);
-        }
-    }
-
-    /// Return the bit-width of the values inside this vector.
-    pub fn bit_width(&self) -> usize {
-        debug_assert!(self.bit_width <= W::BITS);
-        self.bit_width
-    }
-
-    /// Return the mask used to extract values from this vector.
-    /// This will keep the lowest `bit_width` bits.
-    pub fn mask(&self) -> W {
-        self.mask
+        self.reset_atomic(ordering)
     }
 }
 
@@ -1101,6 +1080,7 @@ where
         }
     }
 
+    /// Writes zeros in all values.
     fn reset_atomic(&mut self, ordering: Ordering) {
         let bit_len = self.len * self.bit_width;
         let full_words = bit_len / W::BITS;
