@@ -418,7 +418,7 @@ fn test_atomic_reset() {
     for i in 0..10 {
         b.set_atomic(i, 1, Ordering::Relaxed);
     }
-    b.reset(Ordering::Relaxed);
+    b.reset_atomic(Ordering::Relaxed);
     for i in 0..10 {
         assert_eq!(b.get_atomic(i, Ordering::Relaxed), 0);
     }
