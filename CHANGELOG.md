@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.4.4] - 2024-09-16
+
+### New
+
+* We now provide access to the slice underlying a bit-field (atomic)
+  vector.
+
 ## [0.4.3] - 2024-09-05
 
 ### Improved

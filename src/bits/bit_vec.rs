@@ -22,7 +22,7 @@
 //!
 //! Note that nothing is assumed about the content of the backend outside the
 //! bits of the bit vector. Moreover, the content of the backend outside of
-//! the bit vector is never modified by the methods of this class.
+//! the bit vector is never modified by the methods of this structure.
 //!
 //! It is possible to juggle between the three flavors using [`From`]/[`Into`].
 //!
@@ -529,7 +529,7 @@ impl<B: AsRef<[usize]>> fmt::Display for BitVec<B> {
     }
 }
 
-// An iterator over the bits of this bit vector as booleans.
+// An iterator over the bits of the bit vector as booleans.
 #[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct BitIterator<'a, B> {
     bits: &'a B,
@@ -670,7 +670,7 @@ impl<'a, B: AsRef<[usize]>> Iterator for ZerosIterator<'a, B> {
 }
 
 impl<B: AsRef<[usize]>> BitVec<B> {
-    // Returns an iterator over the bits of this bit vector.
+    // Returns an iterator over the bits of the bit vector.
     #[inline(always)]
     pub fn iter(&self) -> BitIterator<B> {
         self.into_iter()
@@ -1078,7 +1078,7 @@ impl<'a, B: AsRef<[AtomicUsize]>> Iterator for AtomicBitIterator<'a, B> {
 }
 
 impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
-    // Returns an iterator over the bits of this bit vector.
+    // Returns an iterator over the bits of the bit vector.
     //
     // Note that this method takes a mutable reference to the bit vector,
     // so no outstanding references are allowed while iterating.

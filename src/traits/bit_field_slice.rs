@@ -141,7 +141,7 @@ pub trait BitFieldSlice<W: Word>: BitFieldSliceCore<W> {
 
 /// A mutable slice of bit fields of constant bit width.
 pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
-    /// Return the mask to apply to values to ensure they fit in
+    /// Returns the mask to apply to values to ensure they fit in
     /// [`bit_width`](BitFieldSliceCore::bit_width) bits.
     #[inline(always)]
     fn mask(&self) -> W {
@@ -269,14 +269,14 @@ pub trait AtomicBitFieldSlice<W: Word + IntoAtomic>: BitFieldSliceCore<W::Atomic
 where
     W::AtomicType: AtomicUnsignedInt + AsBytes,
 {
-    /// Return the value at the specified index.
+    /// Returns the value at the specified index.
     ///
     /// # Safety
     /// `index` must be in [0..[len](`BitFieldSliceCore::len`)).
     /// No bound or bit-width check is performed.
     unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> W;
 
-    /// Return the value at the specified index.
+    /// Returns the value at the specified index.
     ///
     /// # Panics
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
@@ -285,7 +285,7 @@ where
         unsafe { self.get_atomic_unchecked(index, order) }
     }
 
-    /// Set the element of the slice at the specified index.
+    /// Sets the element of the slice at the specified index.
     ///
     /// # Safety
     /// - `index` must be in [0..[len](`BitFieldSliceCore::len`));
@@ -294,7 +294,7 @@ where
     /// No bound or bit-width check is performed.
     unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering);
 
-    /// Set the element of the slice at the specified index.
+    /// Setss the element of the slice at the specified index.
     ///
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
@@ -315,11 +315,11 @@ where
         }
     }
 
-    /// Set all values to zero.
+    /// Sets all values to zero.
     ///
-    /// This takes a mutable reference because usually
-    /// we need to reset a data structure to re-use it, so this makes it
-    /// impossible to have left any other reference to it.
+    /// This method takes an exclusive reference because usually one needs to
+    /// reset a vector to reuse it, and the mutable reference makes it
+    /// impossible to have any other reference hanging around.
     fn reset_atomic(&mut self, order: Ordering);
 }
 
@@ -501,6 +501,12 @@ where
     #[inline(always)]
     fn set(&self, index: usize, value: W, order: Ordering) {
         self.set_atomic(index, value, order)
+    }
+
+    /// Delegates to [`AtomicBitFieldSlice::reset_atomic`]
+    #[inline(always)]
+    fn reset(&mut self, order: Ordering) {
+        self.reset_atomic(order);
     }
 }
 
