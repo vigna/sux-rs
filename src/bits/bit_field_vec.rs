@@ -32,7 +32,7 @@
 //!
 //! Note that nothing is assumed about the content of the backend outside the
 //! bits of the vector. Moreover, the content of the backend outside of the
-//! vector is never modified by the methods of this class.
+//! vector is never modified by the methods of this structure.
 //!
 //! For high-speed unchecked scanning, we implement [`IntoUncheckedIterator`]
 //! and [`IntoReverseUncheckedIterator`] on a reference to this type. The are
@@ -200,7 +200,8 @@ impl<W: Word, B> BitFieldVec<W, B> {
     }
 
     #[inline(always)]
-    /// Modify the bit field in place.
+    /// Modifies the bit field in place.
+    ///
     /// # Safety
     /// This is unsafe because it's the caller's responsibility to ensure that
     /// that the length is compatible with the modified bits.
@@ -215,7 +216,7 @@ impl<W: Word, B> BitFieldVec<W, B> {
 }
 
 impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
-    /// Get the address of the item storing (the first part of)
+    /// Gets the address of the item storing (the first part of)
     /// the element of given index.
     ///
     /// This method is mainly useful for manually prefetching
@@ -254,21 +255,21 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
         (word >> (start_bit % 8)) & self.mask
     }
 
-    /// Returns the backend of the `BitFieldVec` as a slice of `W`.
+    /// Returns the backend of the vector as a slice of `W`.
     pub fn as_slice(&self) -> &[W] {
         self.bits.as_ref()
     }
 }
 
 impl<W: Word, B: AsMut<[W]>> BitFieldVec<W, B> {
-    /// Returns the backend of the `BitFieldVec` as a mutable slice of `W`.
+    /// Returns the backend of the vector as a mutable slice of `W`.
     pub fn as_mut_slice(&mut self) -> &mut [W] {
         self.bits.as_mut()
     }
 }
 
 impl<W: Word> BitFieldVec<W, Vec<W>> {
-    /// Create a new zero-initialized vector of given bit width and length.
+    /// Creates a new zero-initialized vector of given bit width and length.
     pub fn new(bit_width: usize, len: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
         let n_of_words = Ord::max(1, (len * bit_width).div_ceil(W::BITS));
@@ -280,7 +281,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         }
     }
 
-    /// Create an empty BitFieldVec that doesn't need to reallocate for up to
+    /// Creates an empty vector that doesn't need to reallocate for up to
     /// `capacity` elements.
     pub fn with_capacity(bit_width: usize, capacity: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
@@ -304,24 +305,24 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         self.len = len;
     }
 
-    /// Set len to 0
+    /// Sets len to 0
     pub fn clear(&mut self) {
         self.len = 0;
     }
 
-    /// Return the bit-width of the values inside this vector.
+    /// Returns the bit width of the values inside the vector.
     pub fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= W::BITS);
         self.bit_width
     }
 
-    /// Return the mask used to extract values from this vector.
+    /// Returns the mask used to extract values from the vector.
     /// This will keep the lowest `bit_width` bits.
     pub fn mask(&self) -> W {
         self.mask
     }
 
-    /// Create a new vector by copying a slice; the bit width will be the minimum
+    /// Creates a new vector by copying a slice; the bit width will be the minimum
     /// width sufficient to hold all values in the slice.
     ///
     /// Returns an error if the bit width of the values in `slice` is larger than
@@ -350,7 +351,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         Ok(result)
     }
 
-    /// Add a value at the end of the BitFieldVec
+    /// Adds a value at the end of the vector.
     pub fn push(&mut self, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
         if (self.len + 1) * self.bit_width > self.bits.len() * W::BITS {
@@ -362,7 +363,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         self.len += 1;
     }
 
-    /// Truncate or exted with `value` the BitFieldVec
+    /// Truncates or exted with `value` the vector.
     pub fn resize(&mut self, new_len: usize, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
         if new_len > self.len {
@@ -379,8 +380,9 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         self.len = new_len;
     }
 
-    /// Remove and return a value from the end of the [`BitFieldVec`].
-    /// Return None if the [`BitFieldVec`] is empty.
+    /// Removes and returns a value from the end of the vector.
+    ///
+    /// Returns None if the [`BitFieldVec`] is empty.
     pub fn pop(&mut self) -> Option<W> {
         if self.len == 0 {
             return None;
@@ -563,7 +565,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
         }
 
         // The position inside the word. In most parametrization of the
-        // BitFieldVec, since the bit_width is not necessarily a integer
+        // vector, since the bit_width is not necessarily a integer
         // divisor of the word size, we need to keep track of the position
         // inside the word. As we scroll through the bits, due to the bits
         // remainder, we may need to operate on two words at the same time.
@@ -937,7 +939,7 @@ impl<W: Word + IntoAtomic, B> AtomicBitFieldVec<W, B> {
         (self.bits, self.bit_width, self.len)
     }
 
-    /// Return the mask used to extract values from this vector.
+    /// Returns the mask used to extract values from the vector.
     /// This will keep the lowest `bit_width` bits.
     pub fn mask(&self) -> W {
         self.mask
@@ -1017,8 +1019,7 @@ where
 
     // We reimplement set as we have the mask in the structure.
 
-    /// Set the element of the slice at the specified index.
-    ///
+    /// Sets the element of the slice at the specified index.
     ///
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
@@ -1074,7 +1075,7 @@ where
             }
             fence(Ordering::Release);
 
-            // ensure that the compiler does not reorder the two atomic operations
+            // ensures that the compiler does not reorder the two atomic operations
             // this should increase the probability of having consistency
             // between two concurrent writes as they will both execute the set
             // of the bits in the same order, and the release / acquire fence
