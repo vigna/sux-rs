@@ -5,11 +5,13 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use std::usize;
+
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use sux::prelude::*;
 
 macro_rules! test {
-    ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $LOG2_ZEROS_PER_INVENTORY: literal) => {
+    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         let mut rng = SmallRng::seed_from_u64(0);
         let density = 0.5;
         let lens = (1..1000)
@@ -17,10 +19,13 @@ macro_rules! test {
             .chain([1 << 20, 1 << 24]);
         for len in lens {
             let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
-            let rank_small_sel =
-                SelectZeroSmall::<$NUM_U32S, $COUNTER_WIDTH, $LOG2_ZEROS_PER_INVENTORY, _>::new(
-                    RankSmall::<$NUM_U32S, $COUNTER_WIDTH, _>::new(bits.clone()),
-                );
+            let rank_small_sel = SelectZeroSmall::<$NUM_U32S, $COUNTER_WIDTH, _>::new(RankSmall::<
+                $NUM_U32S,
+                $COUNTER_WIDTH,
+                _,
+            >::new(
+                bits.clone(),
+            ));
 
             let zeros = bits.len() - bits.count_ones();
             let mut pos = Vec::with_capacity(zeros);
@@ -39,28 +44,47 @@ macro_rules! test {
 }
 
 #[test]
+fn debug() {
+    let bits = unsafe { BitVec::from_raw_parts(vec![0usize; 1], 64 * 1) };
+    let rank_small_sel = SelectZeroSmall::<2, 9, _>::new(RankSmall::<2, 9, _>::new(bits.clone()));
+
+    let zeros = bits.len() - bits.count_ones();
+    let mut pos = Vec::with_capacity(zeros);
+    for i in 0..64 {
+        if !bits[i] {
+            pos.push(i);
+        }
+    }
+
+    for i in 0..zeros {
+        assert_eq!(rank_small_sel.select_zero(i), Some(pos[i]));
+    }
+    assert_eq!(rank_small_sel.select_zero(zeros + 1), None);
+}
+
+#[test]
 fn test_rank_small0() {
-    test!(2; 9; 13);
+    test!(2; 9);
 }
 
 #[test]
 fn test_rank_small1() {
-    test!(1; 9; 13);
+    test!(1; 9);
 }
 
 #[test]
 fn test_rank_small2() {
-    test!(1; 10; 13);
+    test!(1; 10);
 }
 
 #[test]
 fn test_rank_small3() {
-    test!(1; 11; 13);
+    test!(1; 11);
 }
 
 #[test]
 fn test_rank_small4() {
-    test!(3; 13; 13);
+    test!(3; 13);
 }
 
 #[test]

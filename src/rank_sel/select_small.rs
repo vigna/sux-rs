@@ -156,7 +156,7 @@ macro_rules! impl_rank_small_sel {
             }
 
             /// Creates a new selection structure with a given number of
-            /// [`RankSmall`] blocks per inventory an average.
+            /// [`RankSmall`] blocks per inventory on average.
             pub fn with_inv(
                 rank_small: RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>,
                 blocks_per_inv: usize,
@@ -389,6 +389,8 @@ impl<
 
         let rank_in_word = rank_in_block - block_count.rel(offset_in_block);
         hint_pos += offset_in_block * Self::SUBBLOCK_SIZE;
+
+        dbg!(offset_in_block);
 
         hint_pos
             + self

@@ -44,6 +44,25 @@ macro_rules! test {
 }
 
 #[test]
+fn debug() {
+    let bits = unsafe { BitVec::from_raw_parts(vec![usize::MAX; 1], 64 * 1) };
+    let rank_small_sel = SelectSmall::<2, 9, _>::new(RankSmall::<2, 9, _>::new(bits.clone()));
+
+    let ones = bits.count_ones();
+    let mut pos = Vec::with_capacity(ones);
+    for i in 0..64 {
+        if bits[i] {
+            pos.push(i);
+        }
+    }
+
+    for i in 0..ones {
+        assert_eq!(rank_small_sel.select(i), Some(pos[i]));
+    }
+    assert_eq!(rank_small_sel.select(ones + 1), None);
+}
+
+#[test]
 fn test_rank_small0() {
     test!(2; 9);
 }
