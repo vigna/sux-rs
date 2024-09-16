@@ -253,6 +253,18 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
         let word = core::ptr::read_unaligned(ptr);
         (word >> (start_bit % 8)) & self.mask
     }
+
+    /// Returns the backend of the `BitFieldVec` as a slice of `W`.
+    pub fn as_slice(&self) -> &[W] {
+        self.bits.as_ref()
+    }
+}
+
+impl<W: Word, B: AsMut<[W]>> BitFieldVec<W, B> {
+    /// Returns the backend of the `BitFieldVec` as a mutable slice of `W`.
+    pub fn as_mut_slice(&mut self) -> &mut [W] {
+        self.bits.as_mut()
+    }
 }
 
 impl<W: Word> BitFieldVec<W, Vec<W>> {
@@ -929,6 +941,14 @@ impl<W: Word + IntoAtomic, B> AtomicBitFieldVec<W, B> {
     /// This will keep the lowest `bit_width` bits.
     pub fn mask(&self) -> W {
         self.mask
+    }
+}
+
+impl<W: Word + IntoAtomic, B: AsRef<[W::AtomicType]>> AtomicBitFieldVec<W, B> {
+    /// Returns the backend of the `AtomicBitFieldVec` as a slice of `A`, where `A` is the
+    /// atomic variant of `W`.
+    pub fn as_slice(&self) -> &[W::AtomicType] {
+        self.bits.as_ref()
     }
 }
 

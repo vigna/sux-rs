@@ -6,6 +6,7 @@
  */
 
 use common_traits::AsBytes;
+use common_traits::Atomic;
 use common_traits::AtomicUnsignedInt;
 use common_traits::CastableFrom;
 use common_traits::CastableInto;
@@ -518,4 +519,57 @@ fn test_macro() {
     assert_eq!(b.get(2), 2);
     assert_eq!(b.get(3), 0);
     assert_eq!(b.get(4), 1);
+}
+
+#[test]
+fn test_slice() {
+    let mut b = BitFieldVec::<u64>::new(6, 50);
+
+    assert_eq!(b.as_slice(), vec![0; 5]);
+
+    b.set(2, 1);
+
+    assert_eq!(b.as_slice(), vec![4096, 0, 0, 0, 0]);
+
+    let mut_slice = b.as_mut_slice();
+    mut_slice[2] = 1;
+
+    assert_eq!(b.as_slice(), vec![4096, 0, 1, 0, 0]);
+    assert_eq!(b.get(21), 4);
+}
+
+fn atomic_slice_eq<T: Atomic>(actual: &[T], expected: &[T])
+where
+    <T as Atomic>::NonAtomicType: PartialEq,
+    <T as Atomic>::NonAtomicType: std::fmt::Debug,
+{
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(
+            actual.load(Ordering::Relaxed),
+            expected.load(Ordering::Relaxed)
+        );
+    }
+}
+
+#[test]
+fn test_slice_atomic() {
+    let b = AtomicBitFieldVec::<u64>::new(6, 50);
+    let mut v = Vec::new();
+    for _ in 0..5 {
+        v.push(std::sync::atomic::AtomicU64::new(0));
+    }
+
+    atomic_slice_eq(b.as_slice(), v.as_slice());
+
+    b.set_atomic(2, 1, Ordering::Relaxed);
+    v[0].store(4096, Ordering::Relaxed);
+
+    atomic_slice_eq(b.as_slice(), v.as_slice());
+
+    b.as_slice()[2].store(1, Ordering::Relaxed);
+    v[2].store(1, Ordering::Relaxed);
+
+    atomic_slice_eq(b.as_slice(), v.as_slice());
+    assert_eq!(b.get_atomic(21, Ordering::Relaxed), 4);
 }
