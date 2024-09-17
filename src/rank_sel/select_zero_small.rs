@@ -227,8 +227,8 @@ macro_rules! impl_rank_small_sel {
 
                 let upper_block_idx =
                     upper_counts.linear_partition_point(|i, &x| (i << 32) - x <= rank) - 1;
-                let upper_rank =
-                    (upper_block_idx << 32) - *upper_counts.get_unchecked(upper_block_idx) as usize;
+                let upper_rank_ones = *upper_counts.get_unchecked(upper_block_idx) as usize;
+                let upper_rank = (upper_block_idx << 32) - upper_rank_ones;
                 let local_rank = rank - upper_rank;
 
                 let inventory = self.inventory.as_ref();
@@ -303,20 +303,13 @@ macro_rules! impl_rank_small_sel {
                 debug_assert!(block_idx < last_block_idx);
 
                 block_idx += counts[block_idx..last_block_idx].linear_partition_point(|i, x| {
-                    assert!(
-                        (block_idx + i) << Self::LOG2_BLOCK_SIZE
-                            >= upper_rank + x.absolute as usize,
-                        "WOW: {}, {}",
-                        (block_idx + i) << Self::LOG2_BLOCK_SIZE,
-                        upper_rank + x.absolute as usize
-                    );
-                    ((block_idx + i) << Self::LOG2_BLOCK_SIZE) - (upper_rank + x.absolute as usize)
+                    ((block_idx + i) << Self::LOG2_BLOCK_SIZE) - (upper_rank_ones + x.absolute as usize)
                         <= rank
                 }) - 1;
 
                 let block_count = counts.get_unchecked(block_idx);
                 let hint_pos = block_idx * Self::BLOCK_SIZE;
-                let hint_rank = hint_pos - (upper_rank + block_count.absolute as usize);
+                let hint_rank = hint_pos - (upper_rank_ones + block_count.absolute as usize);
 
                 self.complete_select(block_count, hint_pos, rank, hint_rank)
             }

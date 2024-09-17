@@ -390,8 +390,6 @@ impl<
         let rank_in_word = rank_in_block - block_count.rel(offset_in_block);
         hint_pos += offset_in_block * Self::SUBBLOCK_SIZE;
 
-        dbg!(offset_in_block);
-
         hint_pos
             + self
                 .rank_small

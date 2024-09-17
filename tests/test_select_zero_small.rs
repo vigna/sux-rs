@@ -45,12 +45,21 @@ macro_rules! test {
 
 #[test]
 fn debug() {
-    let bits = unsafe { BitVec::from_raw_parts(vec![0usize; 1], 64 * 1) };
+    const ONES_STEP_8: usize = 1usize << 0
+            | 1 << 8
+            | 1 << 16
+            | 1 << 24
+            | 1 << 32
+            | 1 << 40
+            | 1 << 48
+            | 1 << 56;
+
+    let bits = unsafe { BitVec::from_raw_parts(vec![ONES_STEP_8; 32], 64 * 32) };
     let rank_small_sel = SelectZeroSmall::<2, 9, _>::new(RankSmall::<2, 9, _>::new(bits.clone()));
 
     let zeros = bits.len() - bits.count_ones();
     let mut pos = Vec::with_capacity(zeros);
-    for i in 0..64 {
+    for i in 0..bits.len() {
         if !bits[i] {
             pos.push(i);
         }
@@ -208,17 +217,35 @@ fn test_non_uniform() {
 // #[cfg(feature = "slow_tests")]
 #[test]
 fn test_large() {
-    let mut bits = BitVec::new(3 * (1 << 32) + 100000);
-    for i in 0..bits.len() {
-        if i % 5 != 0 {
-            bits.set(i, true);
-        } else {
-            bits.set(i, false);
-        };
+    const ONES_STEP_4: usize = 1usize << 0
+            | 1 << 4
+            | 1 << 8
+            | 1 << 12
+            | 1 << 16
+            | 1 << 20
+            | 1 << 24
+            | 1 << 28
+            | 1 << 32
+            | 1 << 36
+            | 1 << 40
+            | 1 << 44
+            | 1 << 48
+            | 1 << 52
+            | 1 << 56
+            | 1 << 60;
+    const ZEROS_STEP_4: usize = !ONES_STEP_4;
+    
+    let len = 3 * (1 << 32) + 64 * 1000;
+    let num_words = len / 64;
+    let mut data: Vec<usize> = Vec::with_capacity(num_words);
+    for _ in 0..num_words {
+        data.push(ZEROS_STEP_4);
     }
-    let rank_small = RankSmall::<2, 9>::new(bits.clone());
+    let bits = unsafe {BitVec::from_raw_parts(data, len)};
+    
+    let rank_small = RankSmall::<2, 9>::new(bits);
     let select = SelectZeroSmall::<2, 9>::new(rank_small);
-    for i in (0..bits.len()).step_by(5) {
-        assert_eq!(select.select_zero(i / 5), Some(i));
+    for i in (0..len).step_by(4) {
+        assert_eq!(select.select_zero(i / 4), Some(i));
     }
 }
