@@ -204,3 +204,21 @@ fn test_non_uniform() {
         }
     }
 }
+
+// #[cfg(feature = "slow_tests")]
+#[test]
+fn test_large() {
+    let mut bits = BitVec::new(3 * (1 << 32) + 100000);
+    for i in 0..bits.len() {
+        if i % 5 != 0 {
+            bits.set(i, true);
+        } else {
+            bits.set(i, false);
+        };
+    }
+    let rank_small = RankSmall::<2, 9>::new(bits.clone());
+    let select = SelectZeroSmall::<2, 9>::new(rank_small);
+    for i in (0..bits.len()).step_by(5) {
+        assert_eq!(select.select_zero(i / 5), Some(i));
+    }
+}

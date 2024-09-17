@@ -303,12 +303,20 @@ macro_rules! impl_rank_small_sel {
                 debug_assert!(block_idx < last_block_idx);
 
                 block_idx += counts[block_idx..last_block_idx].linear_partition_point(|i, x| {
-                    (i << Self::LOG2_BLOCK_SIZE) - x.absolute as usize <= local_rank
+                    assert!(
+                        (block_idx + i) << Self::LOG2_BLOCK_SIZE
+                            >= upper_rank + x.absolute as usize,
+                        "WOW: {}, {}",
+                        (block_idx + i) << Self::LOG2_BLOCK_SIZE,
+                        upper_rank + x.absolute as usize
+                    );
+                    ((block_idx + i) << Self::LOG2_BLOCK_SIZE) - (upper_rank + x.absolute as usize)
+                        <= rank
                 }) - 1;
 
                 let block_count = counts.get_unchecked(block_idx);
-                let hint_rank = upper_rank + block_count.absolute as usize;
                 let hint_pos = block_idx * Self::BLOCK_SIZE;
+                let hint_rank = hint_pos - (upper_rank + block_count.absolute as usize);
 
                 self.complete_select(block_count, hint_pos, rank, hint_rank)
             }
@@ -328,6 +336,12 @@ macro_rules! impl_rank_small_sel {
         }
     };
 }
+
+const WORDS_PER_SUBBLOCK_0: u64 = RankSmall::<2, 9>::WORDS_PER_SUBBLOCK as u64;
+// const WORDS_PER_SUBBLOCK_1: u64 = RankSmall::<1, 9>::WORDS_PER_SUBBLOCK as u64;
+// const WORDS_PER_SUBBLOCK_2: u64 = RankSmall::<1, 10>::WORDS_PER_SUBBLOCK as u64;
+// const WORDS_PER_SUBBLOCK_3: u64 = RankSmall::<1, 11>::WORDS_PER_SUBBLOCK as u64;
+// const WORDS_PER_SUBBLOCK_4: u64 = RankSmall::<3, 13>::WORDS_PER_SUBBLOCK as u64;
 
 impl<
         B: AsRef<[usize]> + BitLength + SelectZeroHinted,
@@ -352,6 +366,15 @@ impl<
             | 1_u64 << 54;
         const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
 
+        const POS_STEP_9: u64 = 0u64 << 7 * 9
+            | (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0 << 6 * 9
+            | 2 * (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0 << 5 * 9
+            | 3 * (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0 << 4 * 9
+            | 4 * (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0 << 3 * 9
+            | 5 * (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0 << 2 * 9
+            | 6 * (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0 << 9
+            | 7 * (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0;
+
         macro_rules! ULEQ_STEP_9 {
             ($x:ident, $y:ident) => {
                 (((((($y) | MSBS_STEP_9) - (($x) & !MSBS_STEP_9)) | ($x ^ $y)) ^ ($x & !$y))
@@ -361,10 +384,12 @@ impl<
 
         let rank_in_block = rank - hint_rank;
         let rank_in_block_step_9 = rank_in_block as u64 * ONES_STEP_9;
-        let relative = block_count.all_rel();
+        let relative = POS_STEP_9 - block_count.all_rel();
         let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
 
-        let rank_in_word = rank_in_block - block_count.rel(offset_in_block);
+        let rank_in_word = rank_in_block
+            - (offset_in_block * (usize::BITS as usize) * (WORDS_PER_SUBBLOCK_0 as usize)
+                - block_count.rel(offset_in_block));
         hint_pos += offset_in_block * Self::SUBBLOCK_SIZE;
 
         hint_pos
