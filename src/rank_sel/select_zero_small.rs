@@ -106,7 +106,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, R: BitLength, I, O>
     }
 }
 
-macro_rules! impl_rank_small_sel {
+macro_rules! impl_select_zero_small {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         impl<
                 B: AsRef<[usize]> + BitLength,
@@ -566,11 +566,11 @@ impl<
     }
 }
 
-impl_rank_small_sel!(2; 9);
-impl_rank_small_sel!(1; 9);
-impl_rank_small_sel!(1; 10);
-impl_rank_small_sel!(1; 11);
-impl_rank_small_sel!(3; 13);
+impl_select_zero_small!(2; 9);
+impl_select_zero_small!(1; 9);
+impl_select_zero_small!(1; 10);
+impl_select_zero_small!(1; 11);
+impl_select_zero_small!(3; 13);
 
 /// A trait providing the semantics of
 /// [`partition_point`](std::slice::partition_point), but using a linear search.

@@ -44,25 +44,6 @@ macro_rules! test {
 }
 
 #[test]
-fn debug() {
-    let bits = unsafe { BitVec::from_raw_parts(vec![usize::MAX; 1], 64 * 1) };
-    let rank_small_sel = SelectSmall::<2, 9, _>::new(RankSmall::<2, 9, _>::new(bits.clone()));
-
-    let ones = bits.count_ones();
-    let mut pos = Vec::with_capacity(ones);
-    for i in 0..64 {
-        if bits[i] {
-            pos.push(i);
-        }
-    }
-
-    for i in 0..ones {
-        assert_eq!(rank_small_sel.select(i), Some(pos[i]));
-    }
-    assert_eq!(rank_small_sel.select(ones + 1), None);
-}
-
-#[test]
 fn test_rank_small0() {
     test!(2; 9);
 }
@@ -227,10 +208,10 @@ fn test_extremely_sparse() {
     assert_eq!(select.select(2), Some(len / 2 + (1 << 17) + 2));
 }
 
-#[cfg(feature = "slow_tests")]
-#[test]
-fn test_large() {
-    const ONES_STEP_4: usize = 1usize << 0
+#[allow(unused_macros)]
+macro_rules! test_large {
+    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
+        const ONES_STEP_4: usize = 1usize << 0
             | 1 << 4
             | 1 << 8
             | 1 << 12
@@ -246,18 +227,49 @@ fn test_large() {
             | 1 << 52
             | 1 << 56
             | 1 << 60;
-    let len = 3 * (1 << 32) + 64 * 1000;
-    let num_words = len / 64;
-    let mut data: Vec<usize> = Vec::with_capacity(num_words);
-    for _ in 0..num_words {
-        data.push(ONES_STEP_4);
-    }
-    let bits = unsafe {BitVec::from_raw_parts(data, len)};
+        let len = 3 * (1 << 32) + 64 * 1000;
+        let num_words = len / 64;
+        let mut data: Vec<usize> = Vec::with_capacity(num_words);
+        for _ in 0..num_words {
+            data.push(ONES_STEP_4);
+        }
+        let bits = unsafe { BitVec::from_raw_parts(data, len) };
 
-    let rank_small = RankSmall::<2, 9>::new(bits);
-    let select = SelectSmall::<2, 9>::new(rank_small);
+        let rank_small = RankSmall::<$NUM_U32S, $COUNTER_WIDTH>::new(bits);
+        let select = SelectSmall::<$NUM_U32S, $COUNTER_WIDTH>::new(rank_small);
 
-    for i in (0..len).step_by(4) {
-        assert_eq!(select.select(i / 4), Some(i));
-    }
+        for i in (0..len).step_by(4) {
+            assert_eq!(select.select(i / 4), Some(i));
+        }
+    };
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large0() {
+    test_large!(2; 9);
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large1() {
+    test_large!(1; 9);
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large2() {
+    test_large!(1; 10);
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large3() {
+    test_large!(1; 11);
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large4() {
+    test_large!(3; 13);
 }
