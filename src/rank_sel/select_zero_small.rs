@@ -84,11 +84,8 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, R, I, O>
 {
     const SUPERBLOCK_SIZE: usize = 1 << 32;
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
-    const WORDS_PER_SUBBLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_SUBBLOCK;
     const BLOCK_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
     const LOG2_BLOCK_SIZE: usize = Self::BLOCK_SIZE.ilog2() as usize;
-    const SUBBLOCK_SIZE: usize = (Self::WORDS_PER_SUBBLOCK * usize::BITS as usize);
-    // const LOG2_SUBBLOCK_SIZE: usize = Self::SUBBLOCK_SIZE.ilog2() as usize;
 
     pub fn into_inner(self) -> R {
         self.rank_small
@@ -303,7 +300,8 @@ macro_rules! impl_rank_small_sel {
                 debug_assert!(block_idx < last_block_idx);
 
                 block_idx += counts[block_idx..last_block_idx].linear_partition_point(|i, x| {
-                    ((block_idx + i) << Self::LOG2_BLOCK_SIZE) - (upper_rank_ones + x.absolute as usize)
+                    ((block_idx + i) << Self::LOG2_BLOCK_SIZE)
+                        - (upper_rank_ones + x.absolute as usize)
                         <= rank
                 }) - 1;
 
@@ -330,11 +328,11 @@ macro_rules! impl_rank_small_sel {
     };
 }
 
-const WORDS_PER_SUBBLOCK_0: u64 = RankSmall::<2, 9>::WORDS_PER_SUBBLOCK as u64;
-// const WORDS_PER_SUBBLOCK_1: u64 = RankSmall::<1, 9>::WORDS_PER_SUBBLOCK as u64;
-// const WORDS_PER_SUBBLOCK_2: u64 = RankSmall::<1, 10>::WORDS_PER_SUBBLOCK as u64;
-// const WORDS_PER_SUBBLOCK_3: u64 = RankSmall::<1, 11>::WORDS_PER_SUBBLOCK as u64;
-// const WORDS_PER_SUBBLOCK_4: u64 = RankSmall::<3, 13>::WORDS_PER_SUBBLOCK as u64;
+const SUBBLOCK_SIZE_0: u64 = (u64::BITS as u64) * RankSmall::<2, 9>::WORDS_PER_SUBBLOCK as u64;
+const SUBBLOCK_SIZE_1: u64 = (u64::BITS as u64) * RankSmall::<1, 9>::WORDS_PER_SUBBLOCK as u64;
+const SUBBLOCK_SIZE_2: u64 = (u64::BITS as u64) * RankSmall::<1, 10>::WORDS_PER_SUBBLOCK as u64;
+const SUBBLOCK_SIZE_3: u64 = (u64::BITS as u64) * RankSmall::<1, 11>::WORDS_PER_SUBBLOCK as u64;
+const SUBBLOCK_SIZE_4: u64 = (u64::BITS as u64) * RankSmall::<3, 13>::WORDS_PER_SUBBLOCK as u64;
 
 impl<
         B: AsRef<[usize]> + BitLength + SelectZeroHinted,
@@ -359,14 +357,13 @@ impl<
             | 1_u64 << 54;
         const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
 
-        const POS_STEP_9: u64 = 0u64 << 7 * 9
-            | (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0 << 6 * 9
-            | 2 * (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0 << 5 * 9
-            | 3 * (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0 << 4 * 9
-            | 4 * (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0 << 3 * 9
-            | 5 * (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0 << 2 * 9
-            | 6 * (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0 << 9
-            | 7 * (u64::BITS as u64) * WORDS_PER_SUBBLOCK_0;
+        const POS_STEP_9: u64 = SUBBLOCK_SIZE_0 << 6 * 9
+            | 2 * SUBBLOCK_SIZE_0 << 5 * 9
+            | 3 * SUBBLOCK_SIZE_0 << 4 * 9
+            | 4 * SUBBLOCK_SIZE_0 << 3 * 9
+            | 5 * SUBBLOCK_SIZE_0 << 2 * 9
+            | 6 * SUBBLOCK_SIZE_0 << 9
+            | 7 * SUBBLOCK_SIZE_0;
 
         macro_rules! ULEQ_STEP_9 {
             ($x:ident, $y:ident) => {
@@ -381,9 +378,8 @@ impl<
         let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
 
         let rank_in_word = rank_in_block
-            - (offset_in_block * (usize::BITS as usize) * (WORDS_PER_SUBBLOCK_0 as usize)
-                - block_count.rel(offset_in_block));
-        hint_pos += offset_in_block * Self::SUBBLOCK_SIZE;
+            - (offset_in_block * (SUBBLOCK_SIZE_0 as usize) - block_count.rel(offset_in_block));
+        hint_pos += offset_in_block * (SUBBLOCK_SIZE_0 as usize);
 
         hint_pos
             + (!self
@@ -405,11 +401,14 @@ impl<
     unsafe fn complete_select(
         &self,
         block_count: &Block32Counters<1, 9>,
-        hint_pos: usize,
+        mut hint_pos: usize,
         rank: usize,
-        hint_rank: usize,
+        mut hint_rank: usize,
     ) -> usize {
         const ONES_STEP_9: u64 = 1_u64 << 0 | 1_u64 << 9 | 1_u64 << 18;
+        const POS_STEP_9: u64 =
+            SUBBLOCK_SIZE_1 << 18 | 2 * SUBBLOCK_SIZE_1 << 9 | 3 * SUBBLOCK_SIZE_1;
+
         const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
 
         macro_rules! ULEQ_STEP_9 {
@@ -421,15 +420,15 @@ impl<
 
         let rank_in_block = rank - hint_rank;
         let rank_in_block_step_9 = rank_in_block as u64 * ONES_STEP_9;
-        let relative = block_count.all_rel();
+        let relative = POS_STEP_9 - block_count.all_rel();
 
         let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
 
-        self.select_zero_hinted(
-            rank,
-            hint_pos + offset_in_block * Self::SUBBLOCK_SIZE,
-            hint_rank + block_count.rel(offset_in_block),
-        )
+        hint_pos += offset_in_block * (SUBBLOCK_SIZE_1 as usize);
+        hint_rank +=
+            offset_in_block * (SUBBLOCK_SIZE_1 as usize) - block_count.rel(offset_in_block);
+
+        self.select_zero_hinted(rank, hint_pos, hint_rank)
     }
 }
 
@@ -443,11 +442,13 @@ impl<
     unsafe fn complete_select(
         &self,
         block_count: &Block32Counters<1, 10>,
-        hint_pos: usize,
+        mut hint_pos: usize,
         rank: usize,
-        hint_rank: usize,
+        mut hint_rank: usize,
     ) -> usize {
         const ONES_STEP_10: u64 = 1_u64 << 0 | 1_u64 << 10 | 1_u64 << 20;
+        const POS_STEP_10: u64 =
+            SUBBLOCK_SIZE_2 << 20 | 2 * SUBBLOCK_SIZE_2 << 10 | 3 * SUBBLOCK_SIZE_2;
         const MSBS_STEP_10: u64 = 0x200_u64 * ONES_STEP_10;
 
         macro_rules! ULEQ_STEP_10 {
@@ -459,16 +460,16 @@ impl<
 
         let rank_in_block = rank - hint_rank;
         let rank_in_block_step_10 = rank_in_block as u64 * ONES_STEP_10;
-        let relative = block_count.all_rel();
+        let relative = POS_STEP_10 - block_count.all_rel();
 
         let offset_in_block =
             (ULEQ_STEP_10!(relative, rank_in_block_step_10)).count_ones() as usize;
 
-        self.select_zero_hinted(
-            rank,
-            hint_pos + offset_in_block * Self::SUBBLOCK_SIZE,
-            hint_rank + block_count.rel(offset_in_block),
-        )
+        hint_pos += offset_in_block * (SUBBLOCK_SIZE_2 as usize);
+        hint_rank +=
+            offset_in_block * (SUBBLOCK_SIZE_2 as usize) - block_count.rel(offset_in_block);
+
+        self.select_zero_hinted(rank, hint_pos, hint_rank)
     }
 }
 
@@ -482,11 +483,13 @@ impl<
     unsafe fn complete_select(
         &self,
         block_count: &Block32Counters<1, 11>,
-        hint_pos: usize,
+        mut hint_pos: usize,
         rank: usize,
-        hint_rank: usize,
+        mut hint_rank: usize,
     ) -> usize {
         const ONES_STEP_11: u64 = 1_u64 << 0 | 1_u64 << 11 | 1_u64 << 22;
+        const POS_STEP_11: u64 =
+            SUBBLOCK_SIZE_3 << 22 | 2 * SUBBLOCK_SIZE_3 << 11 | 3 * SUBBLOCK_SIZE_3;
         const MSBS_STEP_11: u64 = 0x400_u64 * ONES_STEP_11;
 
         macro_rules! ULEQ_STEP_11 {
@@ -498,16 +501,16 @@ impl<
 
         let rank_in_block = rank - hint_rank;
         let rank_in_block_step_11 = rank_in_block as u64 * ONES_STEP_11;
-        let relative = block_count.all_rel();
+        let relative = POS_STEP_11 - block_count.all_rel();
 
         let offset_in_block =
             (ULEQ_STEP_11!(relative, rank_in_block_step_11)).count_ones() as usize;
 
-        self.select_zero_hinted(
-            rank,
-            hint_pos + offset_in_block * Self::SUBBLOCK_SIZE,
-            hint_rank + block_count.rel(offset_in_block),
-        )
+        hint_pos += offset_in_block * (SUBBLOCK_SIZE_3 as usize);
+        hint_rank +=
+            offset_in_block * (SUBBLOCK_SIZE_3 as usize) - block_count.rel(offset_in_block);
+
+        self.select_zero_hinted(rank, hint_pos, hint_rank)
     }
 }
 
@@ -520,9 +523,9 @@ impl<
     unsafe fn complete_select(
         &self,
         block_count: &Block32Counters<3, 13>,
-        hint_pos: usize,
+        mut hint_pos: usize,
         rank: usize,
-        hint_rank: usize,
+        mut hint_rank: usize,
     ) -> usize {
         const ONES_STEP_13: u128 = 1_u128 << 0
             | 1_u128 << 13
@@ -531,6 +534,14 @@ impl<
             | 1_u128 << 52
             | 1_u128 << 65
             | 1_u128 << 78;
+        const POS_STEP_13: u128 = (SUBBLOCK_SIZE_4 as u128) << 78
+            | 2 * (SUBBLOCK_SIZE_4 as u128) << 65
+            | 3 * (SUBBLOCK_SIZE_4 as u128) << 52
+            | 4 * (SUBBLOCK_SIZE_4 as u128) << 39
+            | 5 * (SUBBLOCK_SIZE_4 as u128) << 26
+            | 6 * (SUBBLOCK_SIZE_4 as u128) << 13
+            | 7 * (SUBBLOCK_SIZE_4 as u128) << 0;
+
         const MSBS_STEP_13: u128 = 0x1000_u128 * ONES_STEP_13;
 
         macro_rules! ULEQ_STEP_13 {
@@ -542,16 +553,16 @@ impl<
 
         let rank_in_block = rank - hint_rank;
         let rank_in_block_step_13 = rank_in_block as u128 * ONES_STEP_13;
-        let relative = block_count.all_rel();
+        let relative = POS_STEP_13 - block_count.all_rel();
 
         let offset_in_block =
             (ULEQ_STEP_13!(relative, rank_in_block_step_13)).count_ones() as usize;
 
-        self.select_zero_hinted(
-            rank,
-            hint_pos + offset_in_block * Self::SUBBLOCK_SIZE,
-            hint_rank + block_count.rel(offset_in_block),
-        )
+        hint_pos += offset_in_block * (SUBBLOCK_SIZE_4 as usize);
+        hint_rank +=
+            offset_in_block * (SUBBLOCK_SIZE_4 as usize) - block_count.rel(offset_in_block);
+
+        self.select_zero_hinted(rank, hint_pos, hint_rank)
     }
 }
 

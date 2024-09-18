@@ -45,14 +45,8 @@ macro_rules! test {
 
 #[test]
 fn debug() {
-    const ONES_STEP_8: usize = 1usize << 0
-            | 1 << 8
-            | 1 << 16
-            | 1 << 24
-            | 1 << 32
-            | 1 << 40
-            | 1 << 48
-            | 1 << 56;
+    const ONES_STEP_8: usize =
+        1usize << 0 | 1 << 8 | 1 << 16 | 1 << 24 | 1 << 32 | 1 << 40 | 1 << 48 | 1 << 56;
 
     let bits = unsafe { BitVec::from_raw_parts(vec![ONES_STEP_8; 32], 64 * 32) };
     let rank_small_sel = SelectZeroSmall::<2, 9, _>::new(RankSmall::<2, 9, _>::new(bits.clone()));
@@ -72,27 +66,27 @@ fn debug() {
 }
 
 #[test]
-fn test_rank_small0() {
+fn test_select_zero_small0() {
     test!(2; 9);
 }
 
 #[test]
-fn test_rank_small1() {
+fn test_select_zero_small1() {
     test!(1; 9);
 }
 
 #[test]
-fn test_rank_small2() {
+fn test_select_zero_small2() {
     test!(1; 10);
 }
 
 #[test]
-fn test_rank_small3() {
+fn test_select_zero_small3() {
     test!(1; 11);
 }
 
 #[test]
-fn test_rank_small4() {
+fn test_select_zero_small4() {
     test!(3; 13);
 }
 
@@ -214,10 +208,10 @@ fn test_non_uniform() {
     }
 }
 
-// #[cfg(feature = "slow_tests")]
-#[test]
-fn test_large() {
-    const ONES_STEP_4: usize = 1usize << 0
+#[allow(unused_macros)]
+macro_rules! test_large {
+    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
+        const ONES_STEP_4: usize = 1usize << 0
             | 1 << 4
             | 1 << 8
             | 1 << 12
@@ -233,19 +227,50 @@ fn test_large() {
             | 1 << 52
             | 1 << 56
             | 1 << 60;
-    const ZEROS_STEP_4: usize = !ONES_STEP_4;
-    
-    let len = 3 * (1 << 32) + 64 * 1000;
-    let num_words = len / 64;
-    let mut data: Vec<usize> = Vec::with_capacity(num_words);
-    for _ in 0..num_words {
-        data.push(ZEROS_STEP_4);
-    }
-    let bits = unsafe {BitVec::from_raw_parts(data, len)};
-    
-    let rank_small = RankSmall::<2, 9>::new(bits);
-    let select = SelectZeroSmall::<2, 9>::new(rank_small);
-    for i in (0..len).step_by(4) {
-        assert_eq!(select.select_zero(i / 4), Some(i));
-    }
+        const ZEROS_STEP_4: usize = !ONES_STEP_4;
+
+        let len = 2 * (1 << 32) + 64 * 1000;
+        let num_words = len / 64;
+        let mut data: Vec<usize> = Vec::with_capacity(num_words);
+        for _ in 0..num_words {
+            data.push(ZEROS_STEP_4);
+        }
+        let bits = unsafe { BitVec::from_raw_parts(data, len) };
+
+        let rank_small = RankSmall::<$NUM_U32S, $COUNTER_WIDTH>::new(bits);
+        let select = SelectZeroSmall::<$NUM_U32S, $COUNTER_WIDTH>::new(rank_small);
+        for i in (0..len).step_by(4) {
+            assert_eq!(select.select_zero(i / 4), Some(i));
+        }
+    };
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large0() {
+    test_large!(2; 9);
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large1() {
+    test_large!(1; 9);
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large2() {
+    test_large!(1; 10);
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large3() {
+    test_large!(1; 11);
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large4() {
+    test_large!(3; 13);
 }
