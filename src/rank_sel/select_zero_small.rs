@@ -299,7 +299,7 @@ macro_rules! impl_select_zero_small {
 
                 debug_assert!(block_idx < last_block_idx);
 
-                block_idx += counts[block_idx..last_block_idx].linear_partition_point(|i, x| {
+                block_idx += counts[block_idx..last_block_idx].partition_point_ext(|i, x| {
                     ((block_idx + i) << Self::LOG2_BLOCK_SIZE)
                         - (upper_rank_ones + x.absolute as usize)
                         <= rank
@@ -589,3 +589,70 @@ trait LinearPartitionPointExt<T>: AsRef<[T]> {
 }
 
 impl<T> LinearPartitionPointExt<T> for [T] {}
+
+use std::cmp::Ordering;
+use std::cmp::Ordering::{Equal, Greater, Less};
+
+/// A trait that extends the standard library's binary search by providing also the index of the element
+/// to the comparator function.
+trait BinarySearchByExt<T>: AsRef<[T]> {
+    fn binary_search_by_ext<'a, F>(&'a self, mut f: F) -> Result<usize, usize>
+    where
+        F: FnMut(usize, &'a T) -> Ordering,
+        T: 'a + Copy,
+    {
+        // INVARIANTS:
+        // - 0 <= left <= left + size = right <= self.len()
+        // - f returns Less for everything in self[..left]
+        // - f returns Greater for everything in self[right..]
+        let as_ref = self.as_ref();
+        let mut size = as_ref.len();
+        let mut left = 0;
+        let mut right = size;
+        while left < right {
+            let mid = left + size / 2;
+
+            // SAFETY: the while condition means `size` is strictly positive, so
+            // `size/2 < size`. Thus `left + size/2 < left + size`, which
+            // coupled with the `left + size <= self.len()` invariant means
+            // we have `left + size/2 < self.len()`, and this is in-bounds.
+            let value = unsafe { as_ref.get_unchecked(mid) };
+            let cmp = f(mid, value);
+
+            // This control flow produces conditional moves, which results in
+            // fewer branches and instructions than if/else or matching on
+            // cmp::Ordering.
+            // This is x86 asm for u8: https://rust.godbolt.org/z/698eYffTx.
+            left = if cmp == Less { mid + 1 } else { left };
+            right = if cmp == Greater { mid } else { right };
+            if cmp == Equal {
+                // SAFETY: same as the `get_unchecked` above
+                unsafe { std::hint::assert_unchecked(mid < as_ref.len()) };
+                return Ok(mid);
+            }
+
+            size = right - left;
+        }
+
+        // SAFETY: directly true from the overall invariant.
+        // Note that this is `<=`, unlike the assume in the `Ok` path.
+        unsafe { std::hint::assert_unchecked(left <= as_ref.len()) };
+        Err(left)
+    }
+}
+
+impl<T> BinarySearchByExt<T> for [T] {}
+
+trait PartitionPointExt<T: Copy + std::fmt::Debug>: AsRef<[T]> {
+    fn partition_point_ext<P>(&self, mut pred: P) -> usize
+    where
+        P: FnMut(usize, &T) -> bool,
+    {
+        let as_ref = self.as_ref();
+        as_ref
+            .binary_search_by_ext(|i, x| if pred(i, x) { Less } else { Greater })
+            .unwrap_or_else(|i| i)
+    }
+}
+
+impl<T: Copy + std::fmt::Debug> PartitionPointExt<T> for [T] {}
