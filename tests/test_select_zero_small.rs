@@ -186,6 +186,26 @@ fn test_non_uniform() {
     }
 }
 
+#[test]
+fn test_extremely_sparse() {
+    let len = 1 << 18;
+    let bits = (0..len / 2)
+        .map(|_| true)
+        .chain([false])
+        .chain((0..1 << 17).map(|_| true))
+        .chain([false, false])
+        .chain((0..1 << 18).map(|_| true))
+        .chain([false])
+        .chain((0..len / 2).map(|_| true))
+        .collect::<BitVec>();
+    let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
+
+    assert_eq!(select.count_zeros(), 4);
+    assert_eq!(select.select_zero(0), Some(len / 2));
+    assert_eq!(select.select_zero(1), Some(len / 2 + (1 << 17) + 1));
+    assert_eq!(select.select_zero(2), Some(len / 2 + (1 << 17) + 2));
+}
+
 #[allow(unused_macros)]
 macro_rules! test_large {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
