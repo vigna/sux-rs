@@ -208,18 +208,68 @@ fn test_extremely_sparse() {
     assert_eq!(select.select(2), Some(len / 2 + (1 << 17) + 2));
 }
 
+#[allow(unused_macros)]
+macro_rules! test_large {
+    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
+        const ONES_STEP_4: usize = 1usize << 0
+            | 1 << 4
+            | 1 << 8
+            | 1 << 12
+            | 1 << 16
+            | 1 << 20
+            | 1 << 24
+            | 1 << 28
+            | 1 << 32
+            | 1 << 36
+            | 1 << 40
+            | 1 << 44
+            | 1 << 48
+            | 1 << 52
+            | 1 << 56
+            | 1 << 60;
+        let len = 3 * (1 << 32) + 64 * 1000;
+        let num_words = len / 64;
+        let mut data: Vec<usize> = Vec::with_capacity(num_words);
+        for _ in 0..num_words {
+            data.push(ONES_STEP_4);
+        }
+        let bits = unsafe { BitVec::from_raw_parts(data, len) };
+
+        let rank_small = RankSmall::<$NUM_U32S, $COUNTER_WIDTH>::new(bits);
+        let select = SelectSmall::<$NUM_U32S, $COUNTER_WIDTH>::new(rank_small);
+
+        for i in (0..len).step_by(4) {
+            assert_eq!(select.select(i / 4), Some(i));
+        }
+    };
+}
+
 #[cfg(feature = "slow_tests")]
 #[test]
-fn test_large() {
-    let mut bits = BitVec::new(3 * (1 << 32) + 100000);
-    for i in 0..bits.len() {
-        if i % 5 == 0 {
-            bits.set(i, true);
-        };
-    }
-    let rank_small = RankSmall::<2, 9>::new(bits.clone());
-    let select = SelectSmall::<2, 9>::new(rank_small);
-    for i in (0..bits.len()).step_by(5) {
-        assert_eq!(select.select(i / 5), Some(i));
-    }
+fn test_large0() {
+    test_large!(2; 9);
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large1() {
+    test_large!(1; 9);
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large2() {
+    test_large!(1; 10);
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large3() {
+    test_large!(1; 11);
+}
+
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_large4() {
+    test_large!(3; 13);
 }
