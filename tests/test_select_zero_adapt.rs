@@ -34,8 +34,8 @@ fn test() {
             }
         }
 
-        for i in 0..zeros {
-            assert_eq!(select.select_zero(i), Some(pos[i]));
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(select.select_zero(i), Some(p));
         }
         assert_eq!(select.select_zero(zeros + 1), None);
     }
@@ -62,8 +62,8 @@ fn test_one_u64() {
             }
         }
 
-        for i in 0..zeros {
-            assert_eq!(simple.select_zero(i), Some(pos[i]));
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select_zero(i), Some(p));
         }
         assert_eq!(simple.select_zero(zeros + 1), None);
     }
@@ -89,8 +89,8 @@ fn test_mult_usize() {
             }
         }
 
-        for i in 0..zeros {
-            assert_eq!(select.select_zero(i), Some(pos[i]));
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(select.select_zero(i), Some(p));
         }
         assert_eq!(select.select_zero(zeros + 1), None);
     }
@@ -214,8 +214,8 @@ fn test_non_uniform() {
             let bits: AddNumBits<_> = bits.into();
 
             let select = SelectZeroAdapt::new(bits, 3);
-            for i in 0..(zeros) {
-                assert_eq!(select.select_zero(i), Some(pos[i]));
+            for (i, &p) in pos.iter().enumerate() {
+                assert_eq!(select.select_zero(i), Some(p));
             }
             assert_eq!(select.select_zero(zeros + 1), None);
         }
@@ -284,8 +284,8 @@ fn test_sub32s() {
             }
         }
 
-        for i in 0..ones {
-            assert_eq!(simple.select_zero(i), Some(pos[i]));
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select_zero(i), Some(p));
         }
         assert_eq!(simple.select_zero(ones + 1), None);
     }
@@ -310,8 +310,8 @@ fn test_sub32s_last_small() {
             }
         }
 
-        for i in 0..zeros {
-            assert_eq!(simple.select_zero(i), Some(pos[i]));
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select_zero(i), Some(p));
         }
         assert_eq!(simple.select_zero(zeros + 1), None);
     }

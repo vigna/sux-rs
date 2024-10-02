@@ -654,8 +654,8 @@ mod test_simple_select {
                 }
             }
 
-            for i in 0..ones {
-                assert_eq!(simple.select(i), Some(pos[i]));
+            for (i, &p) in pos.iter().enumerate() {
+                assert_eq!(simple.select(i), Some(p));
             }
             assert_eq!(simple.select(ones + 1), None);
         }
@@ -684,8 +684,8 @@ mod test_simple_select {
                 }
             }
 
-            for i in 0..ones {
-                assert_eq!(simple.select(i), Some(pos[i]));
+            for (i, &p) in pos.iter().enumerate() {
+                assert_eq!(simple.select(i), Some(p));
             }
             assert_eq!(simple.select(ones + 1), None);
         }

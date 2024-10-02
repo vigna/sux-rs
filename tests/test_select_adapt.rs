@@ -33,8 +33,8 @@ fn test() {
             }
         }
 
-        for i in 0..ones {
-            assert_eq!(select.select(i), Some(pos[i]));
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(select.select(i), Some(p));
         }
         assert_eq!(select.select(ones + 1), None);
     }
@@ -60,8 +60,8 @@ fn test_one_u64() {
             }
         }
 
-        for i in 0..ones {
-            assert_eq!(simple.select(i), Some(pos[i]));
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select(i), Some(p));
         }
         assert_eq!(simple.select(ones + 1), None);
     }
@@ -86,8 +86,8 @@ fn test_mult_usize() {
             }
         }
 
-        for i in 0..ones {
-            assert_eq!(select.select(i), Some(pos[i]));
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(select.select(i), Some(p));
         }
         assert_eq!(select.select(ones + 1), None);
     }
@@ -208,8 +208,8 @@ fn test_non_uniform() {
             let bits: AddNumBits<_> = bits.into();
 
             let select = SelectAdapt::new(bits, 3);
-            for i in 0..(ones) {
-                assert_eq!(select.select(i), Some(pos[i]));
+            for (i, &p) in pos.iter().enumerate() {
+                assert_eq!(select.select(i), Some(p));
             }
             assert_eq!(select.select(ones + 1), None);
         }
@@ -268,8 +268,8 @@ fn test_sub32s() {
             }
         }
 
-        for i in 0..ones {
-            assert_eq!(simple.select(i), Some(pos[i]));
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select(i), Some(p));
         }
         assert_eq!(simple.select(ones + 1), None);
     }
@@ -295,8 +295,8 @@ fn test_sub32s_last_small() {
             }
         }
 
-        for i in 0..ones {
-            assert_eq!(simple.select(i), Some(pos[i]));
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(simple.select(i), Some(p));
         }
         assert_eq!(simple.select(ones + 1), None);
     }

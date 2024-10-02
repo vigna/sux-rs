@@ -35,8 +35,8 @@ macro_rules! test {
                 }
             }
 
-            for i in 0..ones {
-                assert_eq!(rank_small_sel.select(i), Some(pos[i]));
+            for (i, &p) in pos.iter().enumerate() {
+                assert_eq!(rank_small_sel.select(i), Some(p));
             }
             assert_eq!(rank_small_sel.select(ones + 1), None);
         }
@@ -181,8 +181,8 @@ fn test_non_uniform() {
             }
 
             let select = SelectSmall::<2, 9, _>::new(RankSmall::<2, 9>::new(bits));
-            for i in 0..ones {
-                assert_eq!(select.select(i), Some(pos[i]));
+            for (i, &p) in pos.iter().enumerate() {
+                assert_eq!(select.select(i), Some(p));
             }
             assert_eq!(select.select(ones + 1), None);
         }
