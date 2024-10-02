@@ -75,6 +75,11 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// while the other ones provide increasing less space usage at the expense of
 /// slower operations.
 ///
+/// For each combination there are corresponding selection structures
+/// [`SelectSmall`](crate::rank_sel::SelectSmall) and
+/// [`SelectZeroSmall`](crate::rank_sel::SelectZeroSmall) that can be used to
+/// perform selection operations.
+///
 /// `RankSmall<1, 11>` is similar to
 /// [`poppy`](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15),
 /// but instead of storing counters and rebuilding cumulative counters on the
