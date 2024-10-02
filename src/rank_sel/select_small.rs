@@ -375,7 +375,6 @@ impl<C: SmallCounters<2, 9> + AsRef<[usize]> + BitLength + NumBits> SelectSmall<
             | 1_u64 << 45
             | 1_u64 << 54;
         const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
-
         macro_rules! ULEQ_STEP_9 {
             ($x:ident, $y:ident) => {
                 (((((($y) | MSBS_STEP_9) - (($x) & !MSBS_STEP_9)) | ($x ^ $y)) ^ ($x & !$y))

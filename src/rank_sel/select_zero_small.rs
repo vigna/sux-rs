@@ -103,10 +103,9 @@ pub struct SelectZeroSmall<
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, C, I, O>
 {
+    const BLOCK_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
     const SUPERBLOCK_SIZE: usize = 1 << 32;
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
-    const BLOCK_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
-    const LOG2_BLOCK_SIZE: usize = Self::BLOCK_SIZE.ilog2() as usize;
 
     pub fn into_inner(self) -> C {
         self.small_counters
@@ -303,8 +302,7 @@ macro_rules! impl_select_zero_small {
                 debug_assert!(block_idx < last_block_idx);
 
                 block_idx += counts[block_idx..last_block_idx].linear_partition_point(|i, x| {
-                    ((block_idx + i) << Self::LOG2_BLOCK_SIZE)
-                        - (upper_rank_ones + x.absolute as usize)
+                    ((block_idx + i) * Self::BLOCK_SIZE) - (upper_rank_ones + x.absolute as usize)
                         <= rank
                 }) - 1;
 
@@ -345,6 +343,8 @@ impl<C: SmallCounters<2, 9> + AsRef<[usize]> + BitLength + NumBits> SelectZeroSm
             | 1_u64 << 45
             | 1_u64 << 54;
         const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
+        // We cannot put this const together with the rest because we need
+        // to use it for definining POS_STEP_9.
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<2, 9>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_9: u64 = SUBBLOCK_BIT_SIZE << 6 * 9
@@ -395,6 +395,8 @@ impl<C: SmallCounters<1, 9> + AsRef<[usize]> + BitLength + NumBits + SelectZeroH
         const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<1, 9>::WORDS_PER_SUBBLOCK as u64;
+        // We cannot put this const together with the rest because we need
+        // to use it for definining POS_STEP_9.
         const POS_STEP_9: u64 =
             SUBBLOCK_BIT_SIZE << 18 | 2 * SUBBLOCK_BIT_SIZE << 9 | 3 * SUBBLOCK_BIT_SIZE;
 
@@ -432,6 +434,8 @@ impl<C: SmallCounters<1, 10> + AsRef<[usize]> + BitLength + NumBits + SelectZero
     ) -> usize {
         const ONES_STEP_10: u64 = 1_u64 << 0 | 1_u64 << 10 | 1_u64 << 20;
         const MSBS_STEP_10: u64 = 0x200_u64 * ONES_STEP_10;
+        // We cannot put this const together with the rest because we need
+        // to use it for definining POS_STEP_10.
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<1, 10>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_10: u64 =
@@ -472,6 +476,8 @@ impl<C: SmallCounters<1, 11> + AsRef<[usize]> + BitLength + NumBits + SelectZero
     ) -> usize {
         const ONES_STEP_11: u64 = 1_u64 << 0 | 1_u64 << 11 | 1_u64 << 22;
         const MSBS_STEP_11: u64 = 0x400_u64 * ONES_STEP_11;
+        // We cannot put this const together with the rest because we need
+        // to use it for definining POS_STEP_11.
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<1, 11>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_11: u64 =
@@ -517,6 +523,8 @@ impl<C: SmallCounters<3, 13> + AsRef<[usize]> + BitLength + NumBits + SelectZero
             | 1_u128 << 65
             | 1_u128 << 78;
         const MSBS_STEP_13: u128 = 0x1000_u128 * ONES_STEP_13;
+        // We cannot put this const together with the rest because we need
+        // to use it for definining POS_STEP_13.
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<3, 13>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_13: u128 = (SUBBLOCK_BIT_SIZE as u128) << 78
