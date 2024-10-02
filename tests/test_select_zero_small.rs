@@ -5,8 +5,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::usize;
-
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use sux::prelude::*;
 
@@ -35,8 +33,8 @@ macro_rules! test {
                 }
             }
 
-            for i in 0..zeros {
-                assert_eq!(rank_small_sel.select_zero(i), Some(pos[i]));
+            for (i, &p) in pos.iter().enumerate() {
+                assert_eq!(rank_small_sel.select_zero(i), Some(p));
             }
             assert_eq!(rank_small_sel.select_zero(zeros + 1), None);
         }
@@ -178,8 +176,8 @@ fn test_non_uniform() {
             }
 
             let select = SelectZeroSmall::<2, 9, _>::new(RankSmall::<2, 9>::new(bits));
-            for i in 0..zeros {
-                assert_eq!(select.select_zero(i), Some(pos[i]));
+            for (i, &p) in pos.iter().enumerate() {
+                assert_eq!(select.select_zero(i), Some(p));
             }
             assert_eq!(select.select_zero(zeros + 1), None);
         }

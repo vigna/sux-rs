@@ -434,7 +434,7 @@ fn test_from() {
     let b = unsafe { BitVec::<&[usize]>::from_raw_parts(bits.as_ref(), l) };
     let b: AtomicBitVec<&[AtomicUsize]> = b.into();
     let (bits, l) = b.into_raw_parts();
-    let b = unsafe { AtomicBitVec::<&[AtomicUsize]>::from_raw_parts(bits.as_ref(), l) };
+    let b = unsafe { AtomicBitVec::<&[AtomicUsize]>::from_raw_parts(bits, l) };
     let b: BitVec<&[usize]> = b.into();
     for i in 0..10 {
         assert_eq!(b.get(i), i % 2 == 0);
@@ -490,26 +490,26 @@ fn test_macro() {
     // 10 bits set to true
     let b = bit_vec![true; 10];
     assert_eq!(b.len(), 10);
-    assert_eq!(b.iter().all(|x| x), true);
+    assert!(b.iter().all(|x| x));
     let b = bit_vec![1; 10];
     assert_eq!(b.len(), 10);
-    assert_eq!(b.iter().all(|x| x), true);
+    assert!(b.iter().all(|x| x));
 
     // 10 bits set to false
     let b = bit_vec![false; 10];
     assert_eq!(b.len(), 10);
-    assert_eq!(b.iter().any(|x| x), false);
+    assert!(!b.iter().any(|x| x));
     let b = bit_vec![0; 10];
     assert_eq!(b.len(), 10);
-    assert_eq!(b.iter().any(|x| x), false);
+    assert!(!b.iter().any(|x| x));
 
     // Bit list
     let b = bit_vec![0, 1, 0, 1, 0, 0];
     assert_eq!(b.len(), 6);
-    assert_eq!(b[0], false);
-    assert_eq!(b[1], true);
-    assert_eq!(b[2], false);
-    assert_eq!(b[3], true);
-    assert_eq!(b[4], false);
-    assert_eq!(b[5], false);
+    assert!(!b[0]);
+    assert!(b[1]);
+    assert!(!b[2]);
+    assert!(b[3]);
+    assert!(!b[4]);
+    assert!(!b[5]);
 }

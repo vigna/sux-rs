@@ -24,8 +24,8 @@ fn test() {
             }
         }
 
-        for i in 0..ones {
-            assert_eq!(select9.select(i), Some(pos[i]));
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(select9.select(i), Some(p));
         }
         assert_eq!(select9.select(ones + 1), None);
     }
@@ -58,8 +58,8 @@ fn test_mult_usize() {
             }
         }
 
-        for i in 0..ones {
-            assert_eq!(select9.select(i), Some(pos[i]));
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(select9.select(i), Some(p));
         }
         assert_eq!(select9.select(ones + 1), None);
     }
@@ -173,8 +173,8 @@ fn test_non_uniform() {
 
             let select9 = Select9::new(Rank9::new(bits));
 
-            for i in 0..(ones) {
-                assert!(select9.select(i) == Some(pos[i]));
+            for (i, &p) in pos.iter().enumerate() {
+                assert_eq!(select9.select(i), Some(p));
             }
             assert_eq!(select9.select(ones + 1), None);
         }
@@ -198,8 +198,8 @@ fn test_rank() {
             }
         }
 
-        for i in 0..len {
-            assert_eq!(select9.rank(i), ranks[i]);
+        for (i, &r) in ranks.iter().enumerate() {
+            assert_eq!(select9.rank(i), r);
         }
         assert_eq!(select9.rank(len + 1), select9.count_ones());
     }

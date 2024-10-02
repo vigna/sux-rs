@@ -78,8 +78,8 @@ fn test_bit_field_vec_apply_param<W: Word + CastableInto<u64> + CastableFrom<u64
                 res
             });
 
-            for i in 0..cp.len() {
-                assert_eq!(cp.get(i), new_values[i], "idx: {}", i);
+            for (i, c) in cp.iter().enumerate() {
+                assert_eq!(c, new_values[i], "idx: {}", i);
             }
         }
     }
@@ -508,7 +508,7 @@ fn test_macro() {
     let b = bit_field_vec![6; 10; 3];
     assert_eq!(b.len(), 10);
     assert_eq!(b.bit_width(), 6);
-    assert_eq!(b.iter().all(|x| x == 3), true);
+    assert!(b.iter().all(|x| x == 3));
 
     // List of values
     let b = bit_field_vec![10; 4, 500, 2, 0, 1];

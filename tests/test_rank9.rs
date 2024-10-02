@@ -28,8 +28,8 @@ fn test() {
             }
         }
 
-        for i in 0..bits.len() {
-            assert_eq!(rank9.rank(i), ranks[i]);
+        for (i, &r) in ranks.iter().enumerate() {
+            assert_eq!(rank9.rank(i), r);
         }
         assert_eq!(rank9.rank(bits.len() + 1), bits.count_ones());
     }

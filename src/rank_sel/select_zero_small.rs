@@ -347,13 +347,13 @@ impl<C: SmallCounters<2, 9> + AsRef<[usize]> + BitLength + NumBits> SelectZeroSm
         // to use it for definining POS_STEP_9.
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<2, 9>::WORDS_PER_SUBBLOCK as u64;
-        const POS_STEP_9: u64 = SUBBLOCK_BIT_SIZE << 6 * 9
-            | 2 * SUBBLOCK_BIT_SIZE << 5 * 9
-            | 3 * SUBBLOCK_BIT_SIZE << 4 * 9
-            | 4 * SUBBLOCK_BIT_SIZE << 3 * 9
-            | 5 * SUBBLOCK_BIT_SIZE << 2 * 9
-            | 6 * SUBBLOCK_BIT_SIZE << 9
-            | 7 * SUBBLOCK_BIT_SIZE;
+        const POS_STEP_9: u64 = SUBBLOCK_BIT_SIZE << (6 * 9)
+            | (2 * SUBBLOCK_BIT_SIZE) << (5 * 9)
+            | (3 * SUBBLOCK_BIT_SIZE) << (4 * 9)
+            | (4 * SUBBLOCK_BIT_SIZE) << (3 * 9)
+            | (5 * SUBBLOCK_BIT_SIZE) << (2 * 9)
+            | (6 * SUBBLOCK_BIT_SIZE) << 9
+            | (7 * SUBBLOCK_BIT_SIZE);
 
         macro_rules! ULEQ_STEP_9 {
             ($x:ident, $y:ident) => {
@@ -365,7 +365,7 @@ impl<C: SmallCounters<2, 9> + AsRef<[usize]> + BitLength + NumBits> SelectZeroSm
         let rank_in_block = rank - hint_rank;
         let rank_in_block_step_9 = rank_in_block as u64 * ONES_STEP_9;
         let relative = POS_STEP_9 - block_count.all_rel();
-        let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
+        let offset_in_block = ULEQ_STEP_9!(relative, rank_in_block_step_9).count_ones() as usize;
 
         let rank_in_word = rank_in_block
             - (offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block));
@@ -398,7 +398,7 @@ impl<C: SmallCounters<1, 9> + AsRef<[usize]> + BitLength + NumBits + SelectZeroH
         // We cannot put this const together with the rest because we need
         // to use it for definining POS_STEP_9.
         const POS_STEP_9: u64 =
-            SUBBLOCK_BIT_SIZE << 18 | 2 * SUBBLOCK_BIT_SIZE << 9 | 3 * SUBBLOCK_BIT_SIZE;
+            SUBBLOCK_BIT_SIZE << 18 | (2 * SUBBLOCK_BIT_SIZE) << 9 | (3 * SUBBLOCK_BIT_SIZE);
 
         macro_rules! ULEQ_STEP_9 {
             ($x:ident, $y:ident) => {
@@ -411,7 +411,7 @@ impl<C: SmallCounters<1, 9> + AsRef<[usize]> + BitLength + NumBits + SelectZeroH
         let rank_in_block_step_9 = rank_in_block as u64 * ONES_STEP_9;
         let relative = POS_STEP_9 - block_count.all_rel();
 
-        let offset_in_block = (ULEQ_STEP_9!(relative, rank_in_block_step_9)).count_ones() as usize;
+        let offset_in_block = ULEQ_STEP_9!(relative, rank_in_block_step_9).count_ones() as usize;
 
         hint_pos += offset_in_block * (SUBBLOCK_BIT_SIZE as usize);
         hint_rank +=
@@ -439,7 +439,7 @@ impl<C: SmallCounters<1, 10> + AsRef<[usize]> + BitLength + NumBits + SelectZero
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<1, 10>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_10: u64 =
-            SUBBLOCK_BIT_SIZE << 20 | 2 * SUBBLOCK_BIT_SIZE << 10 | 3 * SUBBLOCK_BIT_SIZE;
+            SUBBLOCK_BIT_SIZE << 20 | (2 * SUBBLOCK_BIT_SIZE) << 10 | (3 * SUBBLOCK_BIT_SIZE);
 
         macro_rules! ULEQ_STEP_10 {
             ($x:ident, $y:ident) => {
@@ -452,8 +452,7 @@ impl<C: SmallCounters<1, 10> + AsRef<[usize]> + BitLength + NumBits + SelectZero
         let rank_in_block_step_10 = rank_in_block as u64 * ONES_STEP_10;
         let relative = POS_STEP_10 - block_count.all_rel();
 
-        let offset_in_block =
-            (ULEQ_STEP_10!(relative, rank_in_block_step_10)).count_ones() as usize;
+        let offset_in_block = ULEQ_STEP_10!(relative, rank_in_block_step_10).count_ones() as usize;
 
         hint_pos += offset_in_block * (SUBBLOCK_BIT_SIZE as usize);
         hint_rank +=
@@ -481,7 +480,7 @@ impl<C: SmallCounters<1, 11> + AsRef<[usize]> + BitLength + NumBits + SelectZero
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<1, 11>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_11: u64 =
-            SUBBLOCK_BIT_SIZE << 22 | 2 * SUBBLOCK_BIT_SIZE << 11 | 3 * SUBBLOCK_BIT_SIZE;
+            SUBBLOCK_BIT_SIZE << 22 | (2 * SUBBLOCK_BIT_SIZE) << 11 | (3 * SUBBLOCK_BIT_SIZE);
 
         macro_rules! ULEQ_STEP_11 {
             ($x:ident, $y:ident) => {
@@ -494,8 +493,7 @@ impl<C: SmallCounters<1, 11> + AsRef<[usize]> + BitLength + NumBits + SelectZero
         let rank_in_block_step_11 = rank_in_block as u64 * ONES_STEP_11;
         let relative = POS_STEP_11 - block_count.all_rel();
 
-        let offset_in_block =
-            (ULEQ_STEP_11!(relative, rank_in_block_step_11)).count_ones() as usize;
+        let offset_in_block = ULEQ_STEP_11!(relative, rank_in_block_step_11).count_ones() as usize;
 
         hint_pos += offset_in_block * (SUBBLOCK_BIT_SIZE as usize);
         hint_rank +=
@@ -528,12 +526,12 @@ impl<C: SmallCounters<3, 13> + AsRef<[usize]> + BitLength + NumBits + SelectZero
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<3, 13>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_13: u128 = (SUBBLOCK_BIT_SIZE as u128) << 78
-            | 2 * (SUBBLOCK_BIT_SIZE as u128) << 65
-            | 3 * (SUBBLOCK_BIT_SIZE as u128) << 52
-            | 4 * (SUBBLOCK_BIT_SIZE as u128) << 39
-            | 5 * (SUBBLOCK_BIT_SIZE as u128) << 26
-            | 6 * (SUBBLOCK_BIT_SIZE as u128) << 13
-            | 7 * (SUBBLOCK_BIT_SIZE as u128) << 0;
+            | (2 * (SUBBLOCK_BIT_SIZE as u128)) << 65
+            | (3 * (SUBBLOCK_BIT_SIZE as u128)) << 52
+            | (4 * (SUBBLOCK_BIT_SIZE as u128)) << 39
+            | (5 * (SUBBLOCK_BIT_SIZE as u128)) << 26
+            | (6 * (SUBBLOCK_BIT_SIZE as u128)) << 13
+            | (7 * (SUBBLOCK_BIT_SIZE as u128));
 
         macro_rules! ULEQ_STEP_13 {
             ($x:ident, $y:ident) => {
@@ -546,8 +544,7 @@ impl<C: SmallCounters<3, 13> + AsRef<[usize]> + BitLength + NumBits + SelectZero
         let rank_in_block_step_13 = rank_in_block as u128 * ONES_STEP_13;
         let relative = POS_STEP_13 - block_count.all_rel();
 
-        let offset_in_block =
-            (ULEQ_STEP_13!(relative, rank_in_block_step_13)).count_ones() as usize;
+        let offset_in_block = ULEQ_STEP_13!(relative, rank_in_block_step_13).count_ones() as usize;
 
         hint_pos += offset_in_block * (SUBBLOCK_BIT_SIZE as usize);
         hint_rank +=
