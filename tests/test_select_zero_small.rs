@@ -234,7 +234,7 @@ macro_rules! test_large {
         let bits = unsafe { BitVec::from_raw_parts(data, len) };
 
         let rank_small = RankSmall::<$NUM_U32S, $COUNTER_WIDTH>::new(bits);
-        let select = SelectZeroSmall::<$NUM_U32S, $COUNTER_WIDTH>::new(rank_small);
+        let select = SelectZeroSmall::<$NUM_U32S, $COUNTER_WIDTH, _>::new(rank_small);
         for i in (0..len).step_by(4) {
             assert_eq!(select.select_zero(i / 4), Some(i));
         }
