@@ -9,7 +9,7 @@
 use ambassador::{delegatable_trait, Delegate};
 use epserde::*;
 use mem_dbg::*;
-use std::ptr::{addr_of, read_unaligned, write_unaligned};
+use std::ptr::{addr_of, addr_of_mut, read_unaligned, write_unaligned};
 
 use crate::{
     prelude::{BitLength, BitVec, Rank, RankHinted, RankUnchecked, RankZero},
@@ -206,7 +206,7 @@ impl Block32Counters<2, 9> {
     pub fn set_rel(&mut self, word: usize, counter: usize) {
         let mut packed = unsafe { read_unaligned(addr_of!(self.relative) as *const u64) };
         packed |= (counter as u64) << (9 * (word ^ 7));
-        unsafe { write_unaligned(addr_of!(self.relative) as *mut u64, packed) };
+        unsafe { write_unaligned(addr_of_mut!(self.relative) as *mut u64, packed) };
     }
 }
 
@@ -287,14 +287,14 @@ impl Block32Counters<3, 13> {
         #[cfg(target_endian = "little")]
         unsafe {
             write_unaligned(
-                addr_of!(*self) as *mut u128,
+                addr_of_mut!(*self) as *mut u128,
                 packed << 32 | self.absolute as u128,
             )
         };
         #[cfg(target_endian = "big")]
         unsafe {
             write_unaligned(
-                addr_of!(*self) as *mut u128,
+                addr_of_mut!(*self) as *mut u128,
                 packed | (self.absolute as u128) << 96,
             );
         };
