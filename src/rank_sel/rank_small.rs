@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use ambassador::Delegate;
+use ambassador::{delegatable_trait, Delegate};
 use epserde::*;
 use mem_dbg::*;
 use std::ptr::{addr_of, read_unaligned, write_unaligned};
@@ -27,6 +27,20 @@ use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 use std::ops::Index;
+
+/// A trait abstracting the access to the internal counters of a [`RankSmall`]
+/// structure.
+///
+/// This trait is implemented by [`RankSmall`], but it is propagated by
+/// [`SelectSmall`](crate::rank_sel::SelectSmall) and
+/// [`SelectZeroSmall`](crate::rank_sel::SelectZeroSmall), making it
+/// possible to combine selection structures arbitarily.
+
+#[delegatable_trait]
+pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
+    fn upper_counts(&self) -> &[usize];
+    fn counts(&self) -> &[Block32Counters<NUM_U32S, COUNTER_WIDTH>];
+}
 
 /// A family of ranking structures using very little additional space but with
 /// slower operations than [`Rank9`](super::Rank9).
@@ -479,6 +493,25 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> Bi
     #[inline(always)]
     fn count_ones(&self) -> usize {
         self.num_ones
+    }
+}
+
+impl<
+        const NUM_U32S: usize,
+        const COUNTER_WIDTH: usize,
+        B,
+        C1: AsRef<[usize]>,
+        C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
+    > SmallCounters<NUM_U32S, COUNTER_WIDTH> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+{
+    #[inline(always)]
+    fn upper_counts(&self) -> &[usize] {
+        self.upper_counts.as_ref()
+    }
+
+    #[inline(always)]
+    fn counts(&self) -> &[Block32Counters<NUM_U32S, COUNTER_WIDTH>] {
+        self.counts.as_ref()
     }
 }
 
