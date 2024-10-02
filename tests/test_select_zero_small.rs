@@ -71,7 +71,7 @@ fn test_rank_small4() {
 #[test]
 fn test_empty() {
     let bits = BitVec::new(0);
-    let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits.clone()));
+    let select = SelectZeroSmall::<2, 9, _>::new(RankSmall::<2, 9>::new(bits.clone()));
     assert_eq!(select.count_ones(), 0);
     assert_eq!(select.len(), 0);
     assert_eq!(select.select_zero(0), None);
@@ -86,7 +86,7 @@ fn test_empty() {
 fn test_ones() {
     let len = 300_000;
     let bits = (0..len).map(|_| true).collect::<BitVec>();
-    let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
+    let select = SelectZeroSmall::<2, 9, _>::new(RankSmall::<2, 9>::new(bits));
 
     assert_eq!(select.len(), len);
     assert_eq!(select.select_zero(0), None);
@@ -96,7 +96,7 @@ fn test_ones() {
 fn test_zeros() {
     let len = 300_000;
     let bits = (0..len).map(|_| false).collect::<BitVec>();
-    let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
+    let select = SelectZeroSmall::<2, 9, _>::new(RankSmall::<2, 9>::new(bits));
     assert_eq!(select.len(), len);
     for i in 0..len {
         assert_eq!(select.select_zero(i), Some(i));
@@ -111,7 +111,7 @@ fn test_few_zeros() {
             let bits = (0..len)
                 .map(|i| i % (len / num_ones) != 0)
                 .collect::<BitVec>();
-            let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
+            let select = SelectZeroSmall::<2, 9, _>::new(RankSmall::<2, 9>::new(bits));
             assert_eq!(select.len(), len);
             for i in 0..num_ones {
                 assert_eq!(select.select_zero(i), Some(i * (len / num_ones)));
@@ -177,7 +177,7 @@ fn test_non_uniform() {
                 }
             }
 
-            let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
+            let select = SelectZeroSmall::<2, 9, _>::new(RankSmall::<2, 9>::new(bits));
             for i in 0..zeros {
                 assert_eq!(select.select_zero(i), Some(pos[i]));
             }
@@ -198,7 +198,7 @@ fn test_extremely_sparse() {
         .chain([false])
         .chain((0..len / 2).map(|_| true))
         .collect::<BitVec>();
-    let select = SelectZeroSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits));
+    let select = SelectZeroSmall::<2, 9, _>::new(RankSmall::<2, 9>::new(bits));
 
     assert_eq!(select.count_zeros(), 4);
     assert_eq!(select.select_zero(0), Some(len / 2));
