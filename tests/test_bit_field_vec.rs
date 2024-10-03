@@ -336,6 +336,7 @@ fn test_unaligned() {
     }
 }
 
+#[cfg(debug_assertions)]
 #[should_panic]
 #[test]
 fn test_unaligned_59() {
@@ -343,6 +344,7 @@ fn test_unaligned_59() {
     assert_eq!(c.get_unaligned(0), 0);
 }
 
+#[cfg(debug_assertions)]
 #[should_panic]
 #[test]
 fn test_unaligned_61() {
@@ -350,6 +352,7 @@ fn test_unaligned_61() {
     assert_eq!(c.get_unaligned(0), 0);
 }
 
+#[cfg(debug_assertions)]
 #[should_panic]
 #[test]
 fn test_unaligned_62() {
@@ -357,6 +360,7 @@ fn test_unaligned_62() {
     assert_eq!(c.get_unaligned(0), 0);
 }
 
+#[cfg(debug_assertions)]
 #[should_panic]
 #[test]
 fn test_unaligned_63() {
