@@ -241,7 +241,7 @@ macro_rules! impl_select_zero_small {
                 // the blocks containing the rank.
                 // if the span of the two entries is not contained in the same upper block
                 // we clip the span to the upper block boundaries since we know that
-                // the rank is in the upper block
+                // the rank is in the upper block with index upper_block_idx.
 
                 let inv_idx = rank >> self.log2_ones_per_inventory;
                 let inv_upper_block_idx =
@@ -252,6 +252,11 @@ macro_rules! impl_select_zero_small {
                     *inventory.get_unchecked(inv_idx) as usize
                         + upper_block_idx * Self::SUPERBLOCK_SIZE
                 } else {
+                    // For extremely sparse and large bit vectors, the inventory entry containing
+                    // the rank could fall in previous upper blocks.
+                    // For this reason, inv_upper_block_idx is not necessarily equal to upper_block_idx.
+                    // Since we know for sure that the rank is in the upper block with index upper_block_idx,
+                    // we can safely use that value to compute inv_pos.
                     opt = 0;
                     upper_block_idx * Self::SUPERBLOCK_SIZE
                 };
