@@ -204,6 +204,39 @@ fn test_extremely_sparse() {
     assert_eq!(select.select_zero(2), Some(len / 2 + (1 << 17) + 2));
 }
 
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_extremely_sparse_and_large() {
+    let num_words = 3 * (1 << 26) + 1;
+    let len = num_words * 64;
+    let mut data: Vec<usize> = Vec::with_capacity(num_words);
+    data.push(!(1_usize));
+    for _ in 0..((1 << 26) - 2) {
+        data.push(!0);
+    }
+    data.push(!(1 << 63));
+    for _ in 0..(1 << 26) {
+        data.push(usize::MAX as usize);
+    }
+    for _ in 0..(1 << 26) {
+        data.push(usize::MAX as usize);
+    }
+    data.push(!(1_usize));
+
+    assert_eq!(data.len(), num_words);
+
+    let bits = unsafe { BitVec::from_raw_parts(data, len) };
+    let rank_small = RankSmall::<2, 9>::new(bits);
+    let select = SelectZeroSmall::<2, 9, _>::new(rank_small);
+
+    assert_eq!(select.count_zeros(), 3);
+
+    assert_eq!(select.select_zero(0), Some(0));
+    assert_eq!(select.select_zero(1), Some((1 << 32) - 1));
+    assert_eq!(select.select_zero(2), Some(3 * (1 << 32)));
+    assert_eq!(select.select_zero(3), None);
+}
+
 #[allow(unused_macros)]
 macro_rules! test_large {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
