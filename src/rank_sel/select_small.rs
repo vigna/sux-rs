@@ -138,10 +138,10 @@ pub struct SelectSmall<
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     SelectSmall<NUM_U32S, COUNTER_WIDTH, C, I, O>
 {
-    const SUPERBLOCK_SIZE: usize = 1 << 32;
+    const SUPERBLOCK_BIT_SIZE: usize = 1 << 32;
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
     const WORDS_PER_SUBBLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_SUBBLOCK;
-    const BLOCK_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
+    const BLOCK_BIT_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
     const SUBBLOCK_BIT_SIZE: usize = (Self::WORDS_PER_SUBBLOCK * usize::BITS as usize);
 
     pub fn into_inner(self) -> C {
@@ -185,7 +185,7 @@ macro_rules! impl_rank_small_sel {
                 let num_bits = small_counters.len();
                 let num_ones = small_counters.num_ones();
 
-                let target_inventory_span = blocks_per_inv * Self::BLOCK_SIZE;
+                let target_inventory_span = blocks_per_inv * Self::BLOCK_BIT_SIZE;
                 let log2_ones_per_inventory = (num_ones * target_inventory_span)
                     .div_ceil(num_bits.max(1))
                     .max(1)
@@ -210,7 +210,7 @@ macro_rules! impl_rank_small_sel {
 
                 for superblock in small_counters
                     .as_ref()
-                    .chunks(Self::SUPERBLOCK_SIZE / usize::BITS as usize)
+                    .chunks(Self::SUPERBLOCK_BIT_SIZE / usize::BITS as usize)
                 {
                     let mut first = true;
                     for (i, word) in superblock.iter().copied().enumerate() {
@@ -283,7 +283,7 @@ macro_rules! impl_rank_small_sel {
                 let inv_pos = if inv_upper_block_idx == upper_block_idx {
                     opt = (inv_idx << self.log2_ones_per_inventory) - upper_rank;
                     *inventory.get_unchecked(inv_idx) as usize
-                        + upper_block_idx * Self::SUPERBLOCK_SIZE
+                        + upper_block_idx * Self::SUPERBLOCK_BIT_SIZE
                 } else {
                     // For extremely sparse and large bit vectors, the inventory entry containing
                     // the rank could fall in previous upper blocks.
@@ -291,11 +291,11 @@ macro_rules! impl_rank_small_sel {
                     // Since we know for sure that the rank is in the upper block with index upper_block_idx,
                     // we can safely use that value to compute inv_pos.
                     opt = 0;
-                    upper_block_idx * Self::SUPERBLOCK_SIZE
+                    upper_block_idx * Self::SUPERBLOCK_BIT_SIZE
                 };
-                let mut block_idx = inv_pos / Self::BLOCK_SIZE;
+                let mut block_idx = inv_pos / Self::BLOCK_BIT_SIZE;
                 // cs-poppy micro-optimization: each block can contain at most
-                // Self::BLOCK_SIZE ones, so we can skip blocks to which the bit
+                // Self::BLOCK_BIT_SIZE ones, so we can skip blocks to which the bit
                 // we are looking for cannot possibly belong.
                 //
                 // It would be more precise by using the absolute counter at
@@ -306,7 +306,7 @@ macro_rules! impl_rank_small_sel {
                 // inv_idx * ones_per_inventory - upper_rank =
                 // local_rank - local_rank % ones_per_inventory
                 // >= counts.get(block_idx).absolute.
-                block_idx += (local_rank - opt) / Self::BLOCK_SIZE;
+                block_idx += (local_rank - opt) / Self::BLOCK_BIT_SIZE;
 
                 let last_block_idx;
                 if inv_idx + 1 < inventory.len() {
@@ -314,10 +314,10 @@ macro_rules! impl_rank_small_sel {
                         inventory_begin.linear_partition_point(|&x| x <= inv_idx + 1) - 1; // TODO: +1?
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
                         let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize
-                            + upper_block_idx * Self::SUPERBLOCK_SIZE;
-                        next_inv_pos.div_ceil_unchecked(Self::BLOCK_SIZE)
+                            + upper_block_idx * Self::SUPERBLOCK_BIT_SIZE;
+                        next_inv_pos.div_ceil_unchecked(Self::BLOCK_BIT_SIZE)
                     } else {
-                        (upper_block_idx + 1) * (Self::SUPERBLOCK_SIZE / Self::BLOCK_SIZE)
+                        (upper_block_idx + 1) * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
                     };
                 } else {
                     // TODO
@@ -325,7 +325,7 @@ macro_rules! impl_rank_small_sel {
                     // with value given by the number of bits. Thus, we must
                     // handle the case in which inv_idx is the the last
                     // inventory entry as a special case.
-                    last_block_idx = self.len().div_ceil_unchecked(Self::BLOCK_SIZE);
+                    last_block_idx = self.len().div_ceil_unchecked(Self::BLOCK_BIT_SIZE);
                 }
 
                 debug_assert!(block_idx < counts.len());
@@ -345,7 +345,7 @@ macro_rules! impl_rank_small_sel {
 
                 let block_count = counts.get_unchecked(block_idx);
                 let hint_rank = upper_rank + block_count.absolute as usize;
-                let hint_pos = block_idx * Self::BLOCK_SIZE;
+                let hint_pos = block_idx * Self::BLOCK_BIT_SIZE;
 
                 self.complete_select(block_count, hint_pos, rank, hint_rank)
             }
