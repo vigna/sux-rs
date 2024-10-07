@@ -98,7 +98,7 @@ repetition, on a few bit sizes. Afterwards, you can generate an SVG plot and CSV
 data in the `plots` directory with
 
 ```bash
-./python/plot_benches.py --op-type rank --benches-path ./target/criterion/ --plot-dir plots
+./python/plot_benches.py --benches-path ./target/criterion/ --plot-dir plots
 ```
 
 You can then open the `plots/plot.svg` with a browser to see the results, or
@@ -117,7 +117,7 @@ will test all variants of [`SelectSmall`] against a [`SelectAdapt`] with one (2â
 `u64` per subinventory. The plot will highlight the differences in performance:
 
 ```bash
-./python/plot_benches.py --op-type select --benches-path ./target/criterion/ --plot-dir plots
+./python/plot_benches.py --benches-path ./target/criterion/ --plot-dir plots
 ```
 
 ## Acknowledgments

@@ -134,8 +134,10 @@ struct Cli {
     /// The number of repetitions for each benchmark.
     #[arg(long, short, default_value = "5")]
     repeats: usize,
-    /// Whether to use uniform or non-uniform distributions of 1s in the bitvectors.
-    #[arg(short, long, default_value = "false")]
+    /// Whether to use a non-uniform distributions of 1s in the bitvectors.
+    /// When using a non-uniform distribution, 1% of the bits for the provided density
+    /// are located in the first half of the bitvector, and the rest in the second half.
+    #[arg(short, long, default_value = "false", verbatim_doc_comment)]
     non_uniform: bool,
     /// Flag for exact matching of the structure names to benchmark.
     #[arg(long, default_value = "false")]
