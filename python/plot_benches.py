@@ -102,7 +102,7 @@ def compare_benches(benches, plots_dir, op_type):
         os.makedirs(csv_dir)
     for i, (bench, bench_name) in enumerate(benches):
         bench.sort_values(["dense", "size"]).to_csv(
-            os.path.join(csv_dir, "raw_{}.csv".format(bench_name)), index=False)
+            os.path.join(csv_dir, "{}.csv".format(bench_name)), index=False)
 
 
 def compare_benches_non_uniform(benches, plots_dir, op_type):
@@ -149,7 +149,7 @@ def compare_benches_non_uniform(benches, plots_dir, op_type):
         os.makedirs(csv_dir)
     for i, (bench, bench_name) in enumerate(benches):
         bench.sort_values(["dense", "size"]).to_csv(os.path.join(
-            csv_dir, "raw_{}.csv".format(bench_name)), index=False)
+            csv_dir, "{}.csv".format(bench_name)), index=False)
 
 
 def is_pareto_efficient(costs):

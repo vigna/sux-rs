@@ -35,7 +35,7 @@ enum RankSel {
     SimpleSelect2,
     SimpleSelect3,
     AdaptConst,
-    CompareSimpleAdaptConst,
+    CompareAdaptConst,
 }
 
 const MAPPING: [(
@@ -58,11 +58,23 @@ const MAPPING: [(
     (RankSel::SelectAdapt1, bench_select::<SelectAdapt1<_>>),
     (RankSel::SelectAdapt2, bench_select::<SelectAdapt2<_>>),
     (RankSel::SelectAdapt3, bench_select::<SelectAdapt3<_>>),
-    (RankSel::SelectAdapt0, bench_select::<SelectAdaptConst0<_>>),
-    (RankSel::SelectAdapt1, bench_select::<SelectAdaptConst1<_>>),
-    (RankSel::SelectAdapt2, bench_select::<SelectAdaptConst2<_>>),
-    (RankSel::SelectAdapt3, bench_select::<SelectAdaptConst3<_>>),
-    (RankSel::CompareSimpleAdaptConst, compare_adapt_const),
+    (
+        RankSel::SelectAdaptConst0,
+        bench_select::<SelectAdaptConst0<_>>,
+    ),
+    (
+        RankSel::SelectAdaptConst1,
+        bench_select::<SelectAdaptConst1<_>>,
+    ),
+    (
+        RankSel::SelectAdaptConst2,
+        bench_select::<SelectAdaptConst2<_>>,
+    ),
+    (
+        RankSel::SelectAdaptConst3,
+        bench_select::<SelectAdaptConst3<_>>,
+    ),
+    (RankSel::CompareAdaptConst, compare_adapt_const),
 ];
 
 impl fmt::Display for RankSel {
@@ -97,14 +109,14 @@ impl RankSel {
     fn benchmark(
         &self,
         c: &mut Criterion,
-        lens: &[u64],
+        lengths: &[u64],
         densities: &[f64],
-        reps: usize,
+        repeats: usize,
         uniform: bool,
     ) {
         for (k, v) in MAPPING.iter() {
             if k == self {
-                v(c, &k.to_string(), lens, densities, reps, uniform);
+                v(c, &k.to_string(), lengths, densities, repeats, uniform);
             }
         }
     }
@@ -138,7 +150,7 @@ struct Cli {
     select9, SelectSmall0, SelectSmall1, SelectSmall2, SelectSmall3, SelectSmall4, \
     SelectAdapt0, SelectAdapt1, SelectAdapt2, SelectAdapt3, \
     SelectAdaptConst0, SelectAdaptConst1, SelectAdaptConst2, SelectAdaptConst3, \
-    CompareSimpleAdaptConst")]
+    CompareAdaptConst")]
     rank_sel_struct: Vec<String>,
 }
 
@@ -161,9 +173,9 @@ fn main() {
         .with_output_color(true)
         .without_plots();
 
-    let lens = args.lengths;
+    let lengths = args.lengths;
     let densities = args.densities;
-    let reps = args.repeats;
+    let repeats = args.repeats;
     let uniform = !args.non_uniform;
 
     let rank_sel_struct: Vec<RankSel>;
@@ -182,7 +194,7 @@ fn main() {
     }
 
     for rank_sel in rank_sel_struct {
-        rank_sel.benchmark(&mut criterion, &lens, &densities, reps, uniform);
+        rank_sel.benchmark(&mut criterion, &lengths, &densities, repeats, uniform);
     }
 
     criterion.final_summary();
