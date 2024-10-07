@@ -212,55 +212,10 @@ def draw_pareto_front(benches, plots_dir, op_type, density=0.5):
     plt.close(fig)
 
 
-def plot_cpp_vs_rust():
-    cpp_dir = "./runs/cpp_vs_rust/cpp"
-    rust_dir = "./runs/cpp_vs_rust/rust"
-
-    cpp_rank_csvs = [f for f in os.listdir(os.path.join(cpp_dir, "rank")) if f.endswith(
-        ".csv")]
-    cpp_select_csvs = [f for f in os.listdir(os.path.join(cpp_dir, "select")) if f.endswith(
-        ".csv")]
-    cpp_select_non_uniform_csvs = [f for f in os.listdir(os.path.join(cpp_dir, "select_non_uniform")) if f.endswith(
-        ".csv")]
-
-    rust_rank_csvs = [f for f in os.listdir(os.path.join(rust_dir, "rank")) if f.endswith(
-        ".csv")]
-    rust_select_csvs = [f for f in os.listdir(os.path.join(rust_dir, "select")) if f.endswith(
-        ".csv")]
-    rust_select_non_uniform_csvs = [f for f in os.listdir(os.path.join(rust_dir, "select_non_uniform")) if f.endswith(
-        ".csv")]
-
-    for cpp, rust in zip(cpp_rank_csvs, rust_rank_csvs):
-        assert cpp == rust
-        compare_benches(
-            [(load_csv_benches(os.path.join(cpp_dir, "rank", cpp)), f"{cpp[:-4]}_cpp"),
-             (load_csv_benches(os.path.join(rust_dir, "rank", rust)),
-              f"{rust[:-4]}_rust")
-             ], f"{cpp[:-4]}_cpp_vs_rust", "rank")
-
-    for cpp, rust in zip(cpp_select_csvs, rust_select_csvs):
-        assert cpp == rust
-        compare_benches(
-            [(load_csv_benches(os.path.join(cpp_dir, "select", cpp)), f"{cpp[:-4]}_cpp"),
-             (load_csv_benches(os.path.join(rust_dir, "select", rust)),
-              f"{rust[:-4]}_rust")
-             ], f"{cpp[:-4]}_cpp_vs_rust", "select")
-
-    for cpp, rust in zip(cpp_select_non_uniform_csvs, rust_select_non_uniform_csvs):
-        assert cpp == rust
-        compare_benches(
-            [(load_csv_benches(os.path.join(cpp_dir, "select_non_uniform", cpp)), f"{cpp[:-4]}_cpp"),
-             (load_csv_benches(os.path.join(rust_dir, "select_non_uniform", rust)),
-              f"{rust[:-4]}_rust")
-             ], f"{cpp[:-4]}_cpp_vs_rust", "select")
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Plot benchmark results.')
 
     group1 = parser.add_argument_group()
-    group1.add_argument('--cpp-vs-rust', action='store_true',
-                        help='Compare C++ vs Rust benchmarks')
 
     group2 = parser.add_argument_group()
     group2.add_argument('--op-type', choices=[
@@ -274,32 +229,29 @@ if __name__ == "__main__":
                         action="store_true", help="Draw plot for non-uniform densities. It only draws for density=0.9.")
 
     args = parser.parse_args()
-    if args.cpp_vs_rust:
-        plot_cpp_vs_rust()
+    if not args.op_type or not args.benches_path or not args.plot_dir:
+        parser.print_help()
+        exit(1)
+    op_type = args.op_type
+    benches_path = args.benches_path
+    plot_dir = args.plot_dir
+    if not os.path.exists(benches_path):
+        print("The benches directory does not exist.")
+        exit(1)
+    bench_dirs = sorted([d for d in os.listdir(
+        benches_path) if os.path.isdir(os.path.join(benches_path, d))])
+    if len(bench_dirs) == 0:
+        print("The benches directory is empty.")
+        exit(1)
+    benches = []
+    for bench_dir in bench_dirs:
+        benches.append(
+            (load_criterion_benches(os.path.join(benches_path, bench_dir), load_mem_cost=args.pareto), bench_dir))
+    if args.non_uniform:
+        compare_benches_non_uniform(benches, plot_dir, op_type)
     else:
-        if not args.op_type or not args.benches_path or not args.plot_dir:
-            parser.print_help()
-            exit(1)
-        op_type = args.op_type
-        benches_path = args.benches_path
-        plot_dir = args.plot_dir
-        if not os.path.exists(benches_path):
-            print("The benches directory does not exist.")
-            exit(1)
-        bench_dirs = sorted([d for d in os.listdir(
-            benches_path) if os.path.isdir(os.path.join(benches_path, d))])
-        if len(bench_dirs) == 0:
-            print("The benches directory is empty.")
-            exit(1)
-        benches = []
-        for bench_dir in bench_dirs:
-            benches.append(
-                (load_criterion_benches(os.path.join(benches_path, bench_dir), load_mem_cost=args.pareto), bench_dir))
-        if args.non_uniform:
-            compare_benches_non_uniform(benches, plot_dir, op_type)
-        else:
-            compare_benches(benches, plot_dir, op_type)
-        if args.pareto:
-            densities = benches[0][0]["dense"].unique()
-            for d in densities:
-                draw_pareto_front(benches, f"pareto_{d}", args.op_type, d)
+        compare_benches(benches, plot_dir, op_type)
+    if args.pareto:
+        densities = benches[0][0]["dense"].unique()
+        for d in densities:
+            draw_pareto_front(benches, f"pareto_{d}", args.op_type, d)

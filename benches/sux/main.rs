@@ -24,7 +24,6 @@ enum RankSel {
     SelectAdapt1,
     SelectAdapt2,
     SelectAdapt3,
-    SelectSmallConst4,
     SelectAdaptConst0,
     SelectAdaptConst1,
     SelectAdaptConst2,
@@ -53,10 +52,7 @@ const MAPPING: [(&str, RankSel); 21] = [
     ("SelectAdaptConst1", RankSel::SelectAdaptConst1),
     ("SelectAdaptConst2", RankSel::SelectAdaptConst2),
     ("SelectAdaptConst3", RankSel::SelectAdaptConst3),
-    (
-        "compare-simple-adapt-const",
-        RankSel::CompareSimpleAdaptConst,
-    ),
+    ("CompareSimpleAdaptConst", RankSel::CompareSimpleAdaptConst),
 ];
 
 impl RankSel {
@@ -224,9 +220,9 @@ struct Cli {
     Possible values: \
     rank9, RankSmall0, RankSmall1, RankSmall2, RankSmall3, RankSmall4, \
     select9, SelectSmall0, SelectSmall1, SelectSmall2, SelectSmall3, SelectSmall4, \
-    SelectAdapt0, SelectAdapt1, SelectAdapt2, SelectAdapt3,\
-    SelectAdaptConst0, SelectAdaptConst1, SelectAdaptConst2, SelectAdaptConst3,\
-    adapt-const, compare-simple-adapt-const")]
+    SelectAdapt0, SelectAdapt1, SelectAdapt2, SelectAdapt3, \
+    SelectAdaptConst0, SelectAdaptConst1, SelectAdaptConst2, SelectAdaptConst3, \
+    CompareSimpleAdaptConst")]
     rank_sel_struct: Vec<String>,
 }
 

@@ -119,6 +119,8 @@ macro_rules! bench_select_adapt_const {
     }};
 }
 
+// Extensive test on SelectAdaptConst (not accessible via CLI)
+#[allow(unused)]
 pub fn bench_select_adapt_const(c: &mut Criterion, uniform: bool) {
     let mut bitvecs = Vec::<BitVec>::new();
     let mut bitvec_ids = Vec::<(u64, f64, u64, u64, u64)>::new();
