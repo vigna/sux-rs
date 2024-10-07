@@ -8,7 +8,7 @@
   RankSmall).
 
 * From implementation for EliasFano and Extend implementation for
-  EliasFano Builder.
+  EliasFanoBuilder.
 
 ## [0.4.4] - 2024-09-16
 
