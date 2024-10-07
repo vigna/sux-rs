@@ -77,7 +77,7 @@ def compare_benches(benches, plots_dir, op_type):
 
     times = np.sort(np.concatenate(
         list(map(lambda x: x[0]["time"].unique(), benches)), axis=0))
-    ticks = np.linspace(times[0], times[-1], num=8)
+    ticks = np.linspace(0, times[-1]*1.05, num=8)
     ticks = list(map(lambda x: math.ceil(x), ticks))
     ax[0, 0].set_yticks(ticks)
     ax[0, 0].set_yticklabels(ticks)
