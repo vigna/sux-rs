@@ -57,12 +57,14 @@
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
 pub type EfSeq = EliasFano<SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
+
 /// The default type for an Elias–Fano structure implementing an
 /// [`SuccUnchecked`] and [`PredUnchecked`].
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
 pub type EfDict = EliasFano<SelectZeroAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
+
 /// The default type for an Elias–Fano structure implementing an
 /// [`IndexedDict`], [`Succ`], and [`Pred`].
 ///
@@ -87,8 +89,10 @@ use std::borrow::Borrow;
 /// An [`IndexedDict`] that stores a monotone sequence of integers using the
 /// Elias–Fano representation.
 ///
-/// There are two ways to build a base [`EliasFano`] structure: using an
-/// [`EliasFanoBuilder`] or an [`EliasFanoConcurrentBuilder`].
+/// There are two main ways to build a base [`EliasFano`] structure: creating an
+/// [`EliasFanoBuilder`], or an [`EliasFanoConcurrentBuilder`], and then adding
+/// values using `push` or `extend`. Additionally, a [`From`] convenience
+/// implementation makes it possible to build an [`EliasFano`] from a slice.
 ///
 /// In both cases, if you use the [`build`](EliasFanoBuilder::build) method you
 /// will only be able to iterate over the sequence. Using the methods
@@ -104,9 +108,9 @@ use std::borrow::Borrow;
 /// need to add a selection structure for ones, whereas to use it as an
 /// [`IndexedDict`] with [`SuccUnchecked`] and [`PredUnchecked`] you need to add
 /// a selection structure for zeros. [`SelectAdaptConst`] and
-/// [`SelectZeroAdaptConst`] are the structures of choice for this purpose.
-/// If you add both structures, you will have an [`IndexedDict`] with [`Succ`]
-/// and [`Pred`].
+/// [`SelectZeroAdaptConst`] are the structures of choice for this purpose. If
+/// you add both structures, you will have an [`IndexedDict`] with [`Succ`] and
+/// [`Pred`].
 ///
 /// # Examples
 ///
@@ -175,6 +179,31 @@ use std::borrow::Borrow;
 ///
 /// assert_eq!(ef.succ(6), Some((2, 8)));
 /// assert_eq!(ef.succ(11), None);
+/// ```
+///
+/// Building a base structure with convenience methods:
+/// ```rust
+/// # use sux::rank_sel::{SelectAdaptConst};
+/// # use sux::dict::{EliasFano, EliasFanoBuilder};
+/// # use sux::traits::{Types,IndexedSeq};
+///
+/// // Convenience constructor that iterates over a slice
+/// let mut ef: EliasFano = vec![0, 2, 8, 10].into();
+/// // Add a selection structure for ones (implements IndexedSeq)
+/// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
+///
+/// assert_eq!(ef.get(0), 0);
+/// assert_eq!(ef.get(1), 2);
+///
+/// let mut efb = EliasFanoBuilder::new(4, 10);
+/// // Add values using an iterator
+/// efb.extend(vec![0, 2, 8, 10]);
+/// let ef = efb.build();
+/// // Add a selection structure for ones (implements IndexedSeq)
+/// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
+///
+/// assert_eq!(ef.get(0), 0);
+/// assert_eq!(ef.get(1), 2);
 /// ```
 
 #[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
@@ -600,6 +629,35 @@ where
     }
 }
 
+/// Convenience constructor that iterates over a slice.
+///
+/// Note that this implementation requires a first scan to check monotonicity
+/// and find the maximum value, but then it uses
+/// [`EliasFanoBuilder::push_unchecked`], thus partially compensating for the
+/// cost of the first scan.
+impl<A: AsRef<[usize]>> From<A> for EliasFano {
+    fn from(values: A) -> Self {
+        let values = values.as_ref();
+        let mut max = 0;
+        let mut prev = 0;
+        for &value in values {
+            if value < prev {
+                panic!("The values provided are not monotone: {} < {}", value, prev);
+            }
+            max = max.max(value);
+            prev = value;
+        }
+        let mut builder = EliasFanoBuilder::new(values.len(), max);
+        for &value in values {
+            // SAFETY: pre-scan checked monotonicity and max.
+            unsafe {
+                builder.push_unchecked(value);
+            }
+        }
+        builder.build()
+    }
+}
+
 /// A sequential builder for [`EliasFano`].
 ///
 /// After creating an instance, you can use [`EliasFanoBuilder::push`] to add
@@ -748,6 +806,14 @@ impl EliasFanoBuilder {
         unsafe {
             ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new)
                 .map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new)
+        }
+    }
+}
+
+impl Extend<usize> for EliasFanoBuilder {
+    fn extend<T: IntoIterator<Item = usize>>(&mut self, iter: T) {
+        for value in iter {
+            self.push(value);
         }
     }
 }

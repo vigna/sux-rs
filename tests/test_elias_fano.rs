@@ -6,6 +6,8 @@
  */
 
 #![allow(clippy::type_complexity)]
+use std::iter::zip;
+
 use anyhow::Result;
 use epserde::prelude::*;
 use rand::rngs::SmallRng;
@@ -197,6 +199,21 @@ fn test_non_monotone() {
 fn test_too_large() {
     let mut efb = EliasFanoBuilder::new(2, 10);
     efb.push(11);
+}
+
+#[test]
+#[should_panic]
+fn test_from_non_monotone() {
+    let _ef: EliasFano = vec![1, 0].into();
+}
+
+#[test]
+fn test_extend() {
+    let mut efb = EliasFanoBuilder::new(3, 10);
+    let v = vec![0, 1, 2];
+    efb.extend(v.clone());
+    let ef = efb.build();
+    zip(ef.iter(), v.iter()).for_each(|(a, b)| assert_eq!(a, *b));
 }
 
 #[test]
