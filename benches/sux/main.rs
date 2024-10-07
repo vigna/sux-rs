@@ -140,17 +140,24 @@ struct Cli {
     /// Flag for exact matching of the structure names to benchmark.
     #[arg(long, default_value = "false")]
     exact: bool,
-    /// The rank/select structures to benchmark.
-    #[arg(num_args = 1.., help = "The rank/select structures to benchmark. \
-    Without --exact, the arguments are matched as substrings. \
-    For example, 'rank' will match all rank structures. \
-    You could also give 'rank select' to benchmark all rank and select structures. \
-    Possible values: \
-    Rank9, RankSmall0, RankSmall1, RankSmall2, RankSmall3, RankSmall4, \
-    select9, SelectSmall0, SelectSmall1, SelectSmall2, SelectSmall3, SelectSmall4, \
-    SelectAdapt0, SelectAdapt1, SelectAdapt2, SelectAdapt3, \
-    SelectAdaptConst0, SelectAdaptConst1, SelectAdaptConst2, SelectAdaptConst3, \
-    CompareAdaptConst")]
+    /// The rank/select structures to benchmark. Possible values are:
+    ///
+    /// Rank9, Select9,
+    /// RankSmall0, RankSmall1, RankSmall2, RankSmall3, RankSmall4,
+    /// SelectSmall0, SelectSmall1, SelectSmall2, SelectSmall3, SelectSmall4,
+    /// SelectAdapt0, SelectAdapt1, SelectAdapt2, SelectAdapt3,
+    /// SelectAdaptConst0, SelectAdaptConst1, SelectAdaptConst2, SelectAdaptConst3,
+    /// CompareAdaptConst
+    ///
+    /// - Without --exact, the arguments are matched as case-insensitive
+    ///   substrings. For example, 'rank' will match all rank structures.
+    /// - The integer after RankSmall/Select small is the index to the
+    ///   rank_small! macro.
+    /// - The integer after SelectAdapt/SelectAdaptConst is the number of u64's
+    ///   per subinventory.
+    /// - CompareAdaptConst compares a SelectAdaptConst with default constants
+    ///   to a SelectAdapt with the same parameters.
+    #[arg(num_args = 1.., verbatim_doc_comment)]
     rank_sel_struct: Vec<String>,
 }
 
