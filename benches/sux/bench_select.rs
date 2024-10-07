@@ -11,13 +11,14 @@ use sux::traits::AddNumBits;
 use sux::traits::NumBits;
 use sux::traits::SelectUnchecked;
 
-const LOG2_ZEROS_PER_INVENTORY: usize = 10;
+// Defaults
+const LOG2_ONES_PER_INVENTORY: usize = 12;
 const LOG2_U64_PER_SUBINVENTORY: usize = 3;
 
-pub fn compare_simple_adapt_const(c: &mut Criterion) {
+pub fn compare_adapt_const(c: &mut Criterion) {
     let mut group = c.benchmark_group(format!(
         "select_adapt_const_{}_{}",
-        LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY,
+        LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY,
     ));
 
     let mut bitvecs = Vec::<BitVec>::new();
@@ -39,7 +40,7 @@ pub fn compare_simple_adapt_const(c: &mut Criterion) {
         let sel: SelectAdaptConst<
             AddNumBits<_>,
             Box<[usize]>,
-            LOG2_ZEROS_PER_INVENTORY,
+            LOG2_ONES_PER_INVENTORY,
             LOG2_U64_PER_SUBINVENTORY,
         > = SelectAdaptConst::new(bits);
         group.bench_function(
@@ -59,13 +60,13 @@ pub fn compare_simple_adapt_const(c: &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(0);
     let mut group = c.benchmark_group(format!(
         "select_adapt_{}_{}",
-        LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY
+        LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY
     ));
     for (bitvec, bitvec_id) in std::iter::zip(&bitvecs, &bitvec_ids) {
         let bits = bitvec.clone();
         let bits: AddNumBits<_> = bits.into();
         let num_ones = bits.num_ones();
-        let sel = SelectAdapt::with_inv(bits, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY);
+        let sel = SelectAdapt::with_inv(bits, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY);
         group.bench_function(
             BenchmarkId::from_parameter(format!("{}_{}_0", bitvec_id.0, bitvec_id.1)),
             |b| {

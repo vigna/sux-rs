@@ -82,10 +82,28 @@ What this crate does not provide:
 ## Benchmarks
 
 You can run a number of benchmarks on the structures. Try
+
 ```bash
 cargo bench --bench sux --features cli -- --help
 ```
-to see the available tests.
+
+to see the available tests. For example, with
+
+```bash
+cargo bench --bench sux --features cli -- rank9 -d 0.5 -r 1 -l 100000,1000000,10000000
+```
+
+you can test the [`Rank9`] structure with a density of 0.5, using one test repetition,
+on a few bit sizes. Afterwards, you can generate an SVG plot in the `plots`
+directory with
+
+```bash
+./python/plot_benches.py --op-type rank --benches-path ./target/criterion/ --plot-dir plots
+```
+
+You can then open the `plots/rank9.svg` with a browser to see the results. Note
+that as you run benchmarks, the results will cumulate in the `target/criterion`
+directory, so you can generate plots for multiple runs.
 
 ## Acknowledgments
 
@@ -109,3 +127,4 @@ Union nor the Italian MUR can be held responsible for them
 [Sux]: <https://sux.di.unimi.it/>
 [the DSI Utilities]: <https://dsiutils.di.unimi.it/>
 [`BitLength`]: <https://docs.rs/sux/latest/sux/traits/rank_sel/trait.BitLength.html>
+[`Rank9`]: <https://docs.rs/sux/latest/sux/rank_sel/struct.Rank9.html>
