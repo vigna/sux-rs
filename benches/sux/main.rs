@@ -206,10 +206,10 @@ impl RankSel {
 #[derive(Parser, Debug)]
 struct Cli {
     /// The lengths of the bitvectors to benchmark.
-    #[arg(long, short, num_args = 1.., value_delimiter = ' ', default_value = "1000000 4000000 16000000 64000000 256000000 1024000000")]
+    #[arg(long, short, num_args = 1.., value_delimiter = ',', default_value = "1000000,4000000,16000000,64000000,256000000,1024000000")]
     lens: Vec<u64>,
     /// The densities of the bitvectors to benchmark.
-    #[arg(long, short, num_args = 1.., value_delimiter = ' ', default_value = "0.1 0.5 0.9")]
+    #[arg(long, short, num_args = 1.., value_delimiter = ',', default_value = "0.1,0.5,0.9")]
     densities: Vec<f64>,
     /// The number of repetitions for each benchmark.
     #[arg(long, short, default_value = "5")]
