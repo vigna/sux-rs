@@ -123,7 +123,7 @@ pub fn bench_select<S: Build<BitVec> + Select + MemDbg + BitLength>(
     uniform: bool,
 ) {
     let name = if !uniform {
-        format!("{}_non_uniform", name)
+        format!("{}_nonuniform", name)
     } else {
         name.to_string()
     };
@@ -162,7 +162,7 @@ pub fn bench_rank<R: Build<BitVec> + Rank + MemDbg + BitLength>(
     uniform: bool,
 ) {
     let name = if !uniform {
-        format!("{}_non_uniform", name)
+        format!("{}_nonuniform", name)
     } else {
         name.to_string()
     };

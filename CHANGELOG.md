@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.4.6] - 2024-10-07
+
+### New
+
+* Benchmarks are now available for rank/select structures.
+
 ## [0.4.5] - 2024-10-07
 
 ### New
