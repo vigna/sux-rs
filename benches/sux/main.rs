@@ -1,5 +1,7 @@
 mod bench_select;
 mod utils;
+use std::fmt;
+
 use bench_select::*;
 use clap::{arg, Parser, ValueEnum};
 use criterion::Criterion;
@@ -28,46 +30,63 @@ enum RankSel {
     SelectAdaptConst1,
     SelectAdaptConst2,
     SelectAdaptConst3,
+    SimpleSelect0,
+    SimpleSelect1,
+    SimpleSelect2,
+    SimpleSelect3,
+    AdaptConst,
     CompareSimpleAdaptConst,
 }
 
-const MAPPING: [(&str, RankSel); 21] = [
-    ("rank9", RankSel::Rank9),
-    ("RankSmall0", RankSel::RankSmall0),
-    ("RankSmall1", RankSel::RankSmall1),
-    ("RankSmall2", RankSel::RankSmall2),
-    ("RankSmall3", RankSel::RankSmall3),
-    ("RankSmall4", RankSel::RankSmall4),
-    ("select9", RankSel::Select9),
-    ("SelectSmall0", RankSel::SelectSmall0),
-    ("SelectSmall1", RankSel::SelectSmall1),
-    ("SelectSmall2", RankSel::SelectSmall2),
-    ("SelectSmall3", RankSel::SelectSmall3),
-    ("SelectSmall4", RankSel::SelectSmall4),
-    ("SelectAdapt0", RankSel::SelectAdapt0),
-    ("SelectAdapt1", RankSel::SelectAdapt1),
-    ("SelectAdapt2", RankSel::SelectAdapt2),
-    ("SelectAdapt3", RankSel::SelectAdapt3),
-    ("SelectAdaptConst0", RankSel::SelectAdaptConst0),
-    ("SelectAdaptConst1", RankSel::SelectAdaptConst1),
-    ("SelectAdaptConst2", RankSel::SelectAdaptConst2),
-    ("SelectAdaptConst3", RankSel::SelectAdaptConst3),
-    ("CompareSimpleAdaptConst", RankSel::CompareSimpleAdaptConst),
+const MAPPING: [(
+    RankSel,
+    fn(&mut Criterion, &str, &[u64], &[f64], usize, bool),
+); 21] = [
+    (RankSel::Rank9, bench_rank::<Rank9>),
+    (RankSel::RankSmall0, bench_rank::<RankSmall<2, 9>>),
+    (RankSel::RankSmall1, bench_rank::<RankSmall<1, 9>>),
+    (RankSel::RankSmall2, bench_rank::<RankSmall<1, 10>>),
+    (RankSel::RankSmall3, bench_rank::<RankSmall<1, 11>>),
+    (RankSel::RankSmall4, bench_rank::<RankSmall<3, 13>>),
+    (RankSel::Select9, bench_select::<Select9>),
+    (RankSel::SelectSmall0, bench_select::<SelectSmall<2, 9, _>>),
+    (RankSel::SelectSmall1, bench_select::<SelectSmall<1, 9, _>>),
+    (RankSel::SelectSmall2, bench_select::<SelectSmall<1, 10, _>>),
+    (RankSel::SelectSmall3, bench_select::<SelectSmall<1, 11, _>>),
+    (RankSel::SelectSmall4, bench_select::<SelectSmall<3, 13, _>>),
+    (RankSel::SelectAdapt0, bench_select::<SelectAdapt0<_>>),
+    (RankSel::SelectAdapt1, bench_select::<SelectAdapt1<_>>),
+    (RankSel::SelectAdapt2, bench_select::<SelectAdapt2<_>>),
+    (RankSel::SelectAdapt3, bench_select::<SelectAdapt3<_>>),
+    (RankSel::SelectAdapt0, bench_select::<SelectAdaptConst0<_>>),
+    (RankSel::SelectAdapt1, bench_select::<SelectAdaptConst1<_>>),
+    (RankSel::SelectAdapt2, bench_select::<SelectAdaptConst2<_>>),
+    (RankSel::SelectAdapt3, bench_select::<SelectAdaptConst3<_>>),
+    (RankSel::CompareSimpleAdaptConst, compare_adapt_const),
 ];
+
+impl fmt::Display for RankSel {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
 
 impl RankSel {
     fn from_str_exact(s: &str) -> Option<Self> {
         MAPPING
             .iter()
-            .find_map(|(k, v)| if *k == s { Some(*v) } else { None })
+            .find_map(|(k, _v)| if k.to_string() == s { Some(*k) } else { None })
     }
 
     fn from_str(s: &str) -> Vec<Self> {
         MAPPING
             .iter()
-            .filter_map(|(k, v)| {
-                if k.contains(s.to_lowercase().trim()) {
-                    Some(*v)
+            .filter_map(|(k, _v)| {
+                if k.to_string()
+                    .to_lowercase()
+                    .contains(s.to_lowercase().trim())
+                {
+                    Some(*k)
                 } else {
                     None
                 }
@@ -83,112 +102,9 @@ impl RankSel {
         reps: usize,
         uniform: bool,
     ) {
-        match self {
-            RankSel::Rank9 => bench_rank::<Rank9>(c, "rank9", lens, densities, reps, uniform),
-            RankSel::RankSmall0 => {
-                bench_rank::<RankSmall<2, 9>>(c, "RankSmall0", lens, densities, reps, uniform)
-            }
-            RankSel::RankSmall1 => {
-                bench_rank::<RankSmall<1, 9>>(c, "RankSmall1", lens, densities, reps, uniform)
-            }
-            RankSel::RankSmall2 => {
-                bench_rank::<RankSmall<1, 10>>(c, "RankSmall2", lens, densities, reps, uniform)
-            }
-            RankSel::RankSmall3 => {
-                bench_rank::<RankSmall<1, 11>>(c, "RankSmall3", lens, densities, reps, uniform)
-            }
-            RankSel::RankSmall4 => {
-                bench_rank::<RankSmall<3, 13>>(c, "RankSmall4", lens, densities, reps, uniform)
-            }
-            RankSel::Select9 => {
-                bench_select::<Select9>(c, "select9", lens, densities, reps, uniform)
-            }
-            RankSel::SelectSmall0 => bench_select::<SelectSmall<2, 9, _>>(
-                c,
-                "SelectSmall0",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SelectSmall1 => bench_select::<SelectSmall<1, 9, _>>(
-                c,
-                "SelectSmall1",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SelectSmall2 => bench_select::<SelectSmall<1, 10, _>>(
-                c,
-                "SelectSmall2",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SelectSmall3 => bench_select::<SelectSmall<1, 11, _>>(
-                c,
-                "SelectSmall3",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SelectSmall4 => bench_select::<SelectSmall<3, 13, _>>(
-                c,
-                "SelectSmall4",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SelectAdapt0 => {
-                bench_select::<SelectAdapt0<_>>(c, "SelectAdapt0", lens, densities, reps, uniform)
-            }
-            RankSel::SelectAdapt1 => {
-                bench_select::<SelectAdapt1<_>>(c, "SelectAdapt1", lens, densities, reps, uniform)
-            }
-            RankSel::SelectAdapt2 => {
-                bench_select::<SelectAdapt2<_>>(c, "SelectAdapt2", lens, densities, reps, uniform)
-            }
-            RankSel::SelectAdapt3 => {
-                bench_select::<SelectAdapt3<_>>(c, "SelectAdapt3", lens, densities, reps, uniform)
-            }
-            RankSel::SelectAdaptConst0 => bench_select::<SelectAdaptConst0<_>>(
-                c,
-                "SelectAdaptConst0",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SelectAdaptConst1 => bench_select::<SelectAdaptConst1<_>>(
-                c,
-                "SelectAdaptConst1",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SelectAdaptConst2 => bench_select::<SelectAdaptConst2<_>>(
-                c,
-                "SelectAdaptConst2",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::SelectAdaptConst3 => bench_select::<SelectAdaptConst3<_>>(
-                c,
-                "SelectAdaptConst3",
-                lens,
-                densities,
-                reps,
-                uniform,
-            ),
-            RankSel::CompareSimpleAdaptConst => {
-                compare_adapt_const(c);
+        for (k, v) in MAPPING.iter() {
+            if k == self {
+                v(c, &k.to_string(), lens, densities, reps, uniform);
             }
         }
     }
@@ -218,7 +134,7 @@ struct Cli {
     For example, 'rank' will match all rank structures. \
     You could also give 'rank select' to benchmark all rank and select structures. \
     Possible values: \
-    rank9, RankSmall0, RankSmall1, RankSmall2, RankSmall3, RankSmall4, \
+    Rank9, RankSmall0, RankSmall1, RankSmall2, RankSmall3, RankSmall4, \
     select9, SelectSmall0, SelectSmall1, SelectSmall2, SelectSmall3, SelectSmall4, \
     SelectAdapt0, SelectAdapt1, SelectAdapt2, SelectAdapt3, \
     SelectAdaptConst0, SelectAdaptConst1, SelectAdaptConst2, SelectAdaptConst3, \
