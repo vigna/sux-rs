@@ -121,6 +121,3 @@ pub use rank9::*;
 
 mod select9;
 pub use select9::*;
-
-mod simple_select;
-pub use simple_select::*;
