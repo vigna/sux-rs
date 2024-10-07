@@ -1,11 +1,14 @@
 # Change Log
 
-## [0.4.5] - 2024-10-02
+## [0.4.5] - 2024-10-07
 
 ### New
 
-New SelectZeroSmall structure, freely composable with SelectSmall (over
-RankSmall).
+* New SelectZeroSmall structure, freely composable with SelectSmall (over
+  RankSmall).
+
+* From implementation for EliasFano and Extend implementation for
+  EliasFano Builder.
 
 ## [0.4.4] - 2024-09-16
 
