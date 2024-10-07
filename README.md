@@ -93,23 +93,24 @@ to see the available tests. For example, with
 cargo bench --bench sux --features cli -- Rank9 -d 0.5 -r 1 -l 100000,1000000,10000000
 ```
 
-you can test the [`Rank9`] structure with a density of 0.5, using one test repetition,
-on a few bit sizes. Afterwards, you can generate an SVG plot in the `plots`
-directory with
+you can test the [`Rank9`] structure with a density of 0.5, using one test
+repetition, on a few bit sizes. Afterwards, you can generate an SVG plot and CSV
+data in the `plots` directory with
 
 ```bash
 ./python/plot_benches.py --op-type rank --benches-path ./target/criterion/ --plot-dir plots
 ```
 
-You can then open the `plots/rank9.svg` with a browser to see the results. Note
-that as you run benchmarks, the results will cumulate in the `target/criterion`
-directory, so you can generate plots for multiple runs.
+You can then open the `plots/plot.svg` with a browser to see the results, or
+inspect the directory `csv` for CSV data. Note that as you run benchmarks, the
+results will cumulate in the `target/criterion` directory, so you can generate
+plots for multiple runs.
 
 By specifying multiple structures (using also substring matching), you can
 compare the behavior of different structures. For example,
   
 ```bash
-cargo bench --bench sux --features cli -- SelectAdapt0 SelectSmall -d 0.5 -r 1 -l 100000,1000000,10000000
+cargo bench --bench sux --features cli -- SelectSmall SelectAdapt0 -d 0.5 -r 1 -l 100000,1000000,10000000
 ```
 
 will test all variants of [`SelectSmall`] against a [`SelectAdapt`] with one (2⁰)
@@ -142,3 +143,5 @@ Union nor the Italian MUR can be held responsible for them
 [the DSI Utilities]: <https://dsiutils.di.unimi.it/>
 [`BitLength`]: <https://docs.rs/sux/latest/sux/traits/rank_sel/trait.BitLength.html>
 [`Rank9`]: <https://docs.rs/sux/latest/sux/rank_sel/struct.Rank9.html>
+[`SelectSmall`]: <https://docs.rs/sux/latest/sux/rank_sel/struct.SelectSmall.html>
+[`SelectAdapt`]: <https://docs.rs/sux/latest/sux/rank_sel/struct.SelectAdapt.html>
