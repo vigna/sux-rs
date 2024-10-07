@@ -48,7 +48,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// [`RankSmall`] structures combine two ideas from [`Rank9`](super::Rank9),
 /// that is, the interleaving of absolute and relative counters and the storage
 /// of implicit counters using zero extension, and a design trick from from
-/// [poppy](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15),
+/// [`poppy`](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15),
 /// that is, that the structures are actually designed around bit vectors of at
 /// most 2³² bits. This allows the use of 32-bit counters, which use less space,
 /// at the expense of a high-level additional list of 64-bit counters that

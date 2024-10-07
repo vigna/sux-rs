@@ -33,8 +33,8 @@ use std::ops::Index;
 /// and providing constant-time selection.
 ///
 /// [`SelectSmall`] adds a very sparse first-level inventory to a [`RankSmall`]
-/// structure to locate approximately the position of the desired one; the bit is
-/// then located using binary searches over [`RankSmall`]'s counters; this
+/// structure to locate approximately the position of the desired one; the bit
+/// is then located using binary searches over [`RankSmall`]'s counters; this
 /// technique is called _hinted bsearch_ and is described in Sebastiano Vigna in
 /// “[Broadword Implementation of Rank/Select
 /// Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
@@ -45,6 +45,9 @@ use std::ops::Index;
 /// The resulting selection methods are quite slow, and in general it is
 /// convenient and faster to use [`SelectAdapt`], even with `M` set to 1 (in
 /// which case the additional space is 1.5-3% of the original bit vector).
+/// However, when used in combination with [`RankSmall`], [`SelectSmall`] and
+/// [`SelectZeroSmall`] provide effective and almost zero-cost selection
+/// structures.
 ///
 /// # Examples
 ///
