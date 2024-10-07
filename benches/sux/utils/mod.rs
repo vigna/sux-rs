@@ -117,9 +117,9 @@ pub fn fastrange_non_uniform(rng: &mut SmallRng, first_half: u64, second_half: u
 pub fn bench_select<S: Build<BitVec> + Select + MemDbg + BitLength>(
     c: &mut Criterion,
     name: &str,
-    lens: &[u64],
+    lengths: &[u64],
     densities: &[f64],
-    reps: usize,
+    repeats: usize,
     uniform: bool,
 ) {
     let name = if !uniform {
@@ -129,10 +129,10 @@ pub fn bench_select<S: Build<BitVec> + Select + MemDbg + BitLength>(
     };
     let mut bench_group = c.benchmark_group(&name);
     let mut rng = SmallRng::seed_from_u64(0);
-    for len in lens {
+    for len in lengths {
         for density in densities {
             // possible repetitions
-            for i in 0..reps {
+            for i in 0..repeats {
                 let (num_ones_first_half, num_ones_second_half, bits) =
                     create_bitvec(&mut rng, *len, *density, uniform);
 
@@ -150,7 +150,7 @@ pub fn bench_select<S: Build<BitVec> + Select + MemDbg + BitLength>(
         }
     }
     bench_group.finish();
-    save_mem_cost::<S>(&name, lens, densities, uniform);
+    save_mem_cost::<S>(&name, lengths, densities, uniform);
 }
 
 pub fn bench_rank<R: Build<BitVec> + Rank + MemDbg + BitLength>(
