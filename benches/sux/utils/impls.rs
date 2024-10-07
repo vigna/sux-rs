@@ -135,33 +135,33 @@ impl Build<BitVec> for RankSmall<3, 13> {
     }
 }
 
-impl Build<BitVec> for SelectSmall<2, 9> {
+impl Build<BitVec> for SelectSmall<2, 9, RankSmall<2, 9>> {
     fn new(bits: BitVec) -> Self {
-        SelectSmall::<2, 9>::new(RankSmall::<2, 9>::new(bits))
+        SelectSmall::<2, 9, _>::new(RankSmall::<2, 9>::new(bits))
     }
 }
 
-impl Build<BitVec> for SelectSmall<1, 9> {
+impl Build<BitVec> for SelectSmall<1, 9, RankSmall<1, 9>> {
     fn new(bits: BitVec) -> Self {
-        SelectSmall::<1, 9>::new(RankSmall::<1, 9>::new(bits))
+        SelectSmall::<1, 9, _>::new(RankSmall::<1, 9>::new(bits))
     }
 }
 
-impl Build<BitVec> for SelectSmall<1, 10> {
+impl Build<BitVec> for SelectSmall<1, 10, RankSmall<1, 10>> {
     fn new(bits: BitVec) -> Self {
-        SelectSmall::<1, 10>::new(RankSmall::<1, 10>::new(bits))
+        SelectSmall::<1, 10, _>::new(RankSmall::<1, 10>::new(bits))
     }
 }
 
-impl Build<BitVec> for SelectSmall<1, 11> {
+impl Build<BitVec> for SelectSmall<1, 11, RankSmall<1, 11>> {
     fn new(bits: BitVec) -> Self {
-        SelectSmall::<1, 11>::new(RankSmall::<1, 11>::new(bits))
+        SelectSmall::<1, 11, _>::new(RankSmall::<1, 11>::new(bits))
     }
 }
 
-impl Build<BitVec> for SelectSmall<3, 13> {
+impl Build<BitVec> for SelectSmall<3, 13, RankSmall<3, 13>> {
     fn new(bits: BitVec) -> Self {
-        SelectSmall::<3, 13>::new(RankSmall::<3, 13>::new(bits))
+        SelectSmall::<3, 13, _>::new(RankSmall::<3, 13>::new(bits))
     }
 }
 

@@ -108,7 +108,7 @@ impl RankSel {
             RankSel::Select9 => {
                 bench_select::<Select9>(c, "select9", lens, densities, reps, uniform)
             }
-            RankSel::SelectSmall0 => bench_select::<SelectSmall<2, 9>>(
+            RankSel::SelectSmall0 => bench_select::<SelectSmall<2, 9, _>>(
                 c,
                 "select-small0",
                 lens,
@@ -116,7 +116,7 @@ impl RankSel {
                 reps,
                 uniform,
             ),
-            RankSel::SelectSmall1 => bench_select::<SelectSmall<1, 9>>(
+            RankSel::SelectSmall1 => bench_select::<SelectSmall<1, 9, _>>(
                 c,
                 "select-small1",
                 lens,
@@ -124,7 +124,7 @@ impl RankSel {
                 reps,
                 uniform,
             ),
-            RankSel::SelectSmall2 => bench_select::<SelectSmall<1, 10>>(
+            RankSel::SelectSmall2 => bench_select::<SelectSmall<1, 10, _>>(
                 c,
                 "select-small2",
                 lens,
@@ -132,7 +132,7 @@ impl RankSel {
                 reps,
                 uniform,
             ),
-            RankSel::SelectSmall3 => bench_select::<SelectSmall<1, 11>>(
+            RankSel::SelectSmall3 => bench_select::<SelectSmall<1, 11, _>>(
                 c,
                 "select-small3",
                 lens,
@@ -140,7 +140,7 @@ impl RankSel {
                 reps,
                 uniform,
             ),
-            RankSel::SelectSmall4 => bench_select::<SelectSmall<3, 13>>(
+            RankSel::SelectSmall4 => bench_select::<SelectSmall<3, 13, _>>(
                 c,
                 "select-small4",
                 lens,
