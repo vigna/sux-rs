@@ -6,6 +6,9 @@
 
 * There is a new `IndexedSeq::iter` method with a default implementation.
 
+* There is a new `SliceSeq` adapter exhibiting a reference to a slice as
+  an `IndexedSeq`.
+
 ## [0.4.6] - 2024-10-07
 
 ### New
