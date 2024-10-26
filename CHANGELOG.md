@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.4.7] - 2024-10-07
+
+### New
+
+* There is a new `IndexedSeq::iter` method with a default implementation.
+
 ## [0.4.6] - 2024-10-07
 
 ### New
