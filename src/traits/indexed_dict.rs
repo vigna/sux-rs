@@ -61,7 +61,7 @@ pub trait Types {
 /// Positional access to the dictionary.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait IndexedSeq: Types {
-    /// Return the value at the specified index.
+    /// Returns the value at the specified index.
     ///
     /// # Panics
     /// May panic if the index is not in in [0..[len](`IndexedSeq::len`)).
@@ -73,29 +73,34 @@ pub trait IndexedSeq: Types {
         }
     }
 
-    /// Return the value at the specified index.
+    /// Returns the value at the specified index.
     ///
     /// # Safety
     /// `index` must be in [0..[len](`IndexedSeq::len`)). No bounds checking is performed.
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output;
 
-    /// Return the length (number of items) of the dictionary.
+    /// Returns the length (number of items) of the dictionary.
     fn len(&self) -> usize;
 
-    /// Return true if [`len`](`IndexedSeq::len`) is zero.
+    /// Returns true if [`len`](`IndexedSeq::len`) is zero.
     fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Returns an iterator over the values of the dictionary.
+    fn iter(&self) -> impl Iterator<Item = Self::Output> {
+        (0..self.len()).map(|i| unsafe { self.get_unchecked(i) })
     }
 }
 
 /// Access by value to the dictionary.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait IndexedDict: Types {
-    /// Return the index of the given value if the dictionary contains it and
+    /// Returns the index of the given value if the dictionary contains it and
     /// `None` otherwise.
     fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize>;
 
-    /// Return true if the dictionary contains the given value.
+    /// Returns true if the dictionary contains the given value.
     ///
     /// The default implementations just calls
     /// [`index_of`](`IndexedDict::index_of`).
@@ -110,7 +115,7 @@ where
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
     Self::Output: PartialOrd<Self::Input> + PartialOrd,
 {
-    /// Return the index of the successor and the successor of the given value.
+    /// Returns the index of the successor and the successor of the given value.
     ///
     /// The successor is the least value in the dictionary that is greater than
     /// or equal to the given value, if `STRICT` is `false`, or the least value
@@ -135,7 +140,7 @@ where
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
     Self::Output: PartialOrd<Self::Input> + PartialOrd,
 {
-    /// Return the index of the successor and the successor
+    /// Returns the index of the successor and the successor
     /// of the given value, or `None` if there is no successor.
     ///
     /// The successor is the least value in the dictionary
@@ -151,7 +156,7 @@ where
         }
     }
 
-    /// Return the index of the strict successor and the strict successor
+    /// Returns the index of the strict successor and the strict successor
     /// of the given value, or `None` if there is no strict successor.
     ///
     /// The strict successor is the least value in the dictionary
@@ -174,7 +179,7 @@ where
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
     Self::Output: PartialOrd<Self::Input> + PartialOrd,
 {
-    /// Return the index of the predecessor and the predecessor of the given
+    /// Returns the index of the predecessor and the predecessor of the given
     /// value, or `None` if there is no predecessor.
     ///
     /// The predecessor is the greatest value in the dictionary that is less
@@ -200,7 +205,7 @@ where
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
     Self::Output: PartialOrd<Self::Input> + PartialOrd,
 {
-    /// Return the index of the predecessor and the predecessor
+    /// Returns the index of the predecessor and the predecessor
     /// of the given value, or `None` if there is no predecessor.
     ///
     /// The predecessor is the greatest value in the dictionary
@@ -216,7 +221,7 @@ where
         }
     }
 
-    /// Return the index of the strict predecessor and the strict predecessor
+    /// Returns the index of the strict predecessor and the strict predecessor
     /// of the given value, or `None` if there is no strict predecessor.
     ///
     /// The strict predecessor is the greatest value in the dictionary
