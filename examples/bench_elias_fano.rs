@@ -19,20 +19,16 @@ use sux::prelude::*;
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks Elias-Fano", long_about = None)]
 struct Args {
-    /// The number of elements
+    /// The number of elements in the list.
     n: usize,
 
-    /// The size of the universe
+    /// The size of the universe.
     u: usize,
 
-    /// The number of values to test
+    /// The number of values to test.
     t: usize,
 
-    /// The number of test repetitions
-    #[arg(short, long, default_value = "0.5")]
-    density: f64,
-
-    /// The number of test repetitions
+    /// The number of test repetitions.
     #[arg(short, long, default_value = "10")]
     repeats: usize,
 }
@@ -59,15 +55,16 @@ fn main() -> Result<()> {
     for value in &values {
         elias_fano_builder.push(*value);
     }
-    const FIXED2_LOG2_ONES_PER_INVENTORY: usize = 10;
-    const FIXED2_LOG2_U64_PER_INVENTORY: usize = 2;
+    // Same as defaults
+    const LOG2_ONES_PER_INVENTORY: usize = 12;
+    const LOG2_U64_PER_INVENTORY: usize = 3;
     // Add an index on zeros
     let elias_fano_s: EliasFano<
         SelectZeroAdaptConst<
-            SelectAdaptConst<_, _, FIXED2_LOG2_ONES_PER_INVENTORY, FIXED2_LOG2_U64_PER_INVENTORY>,
+            SelectAdaptConst<_, _, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_INVENTORY>,
             _,
-            FIXED2_LOG2_ONES_PER_INVENTORY,
-            FIXED2_LOG2_U64_PER_INVENTORY,
+            LOG2_ONES_PER_INVENTORY,
+            LOG2_U64_PER_INVENTORY,
         >,
     > = unsafe {
         elias_fano_builder
