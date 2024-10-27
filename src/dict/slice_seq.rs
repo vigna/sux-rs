@@ -62,8 +62,25 @@ where
     fn len(&self) -> usize {
         self.0.as_ref().len()
     }
+}
 
-    fn iter(&self) -> impl Iterator<Item = Self::Output> {
+impl<O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>> SliceSeq<O, A>
+where
+    usize: PartialEq<O>,
+{
+    pub fn iter(&self) -> std::iter::Copied<std::slice::Iter<'_, O>> {
         self.0.as_ref().iter().copied()
+    }
+}
+
+impl<'a, O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>> IntoIterator for &'a SliceSeq<O, A>
+where
+    usize: PartialEq<O>,
+{
+    type Item = O;
+    type IntoIter = std::iter::Copied<std::slice::Iter<'a, O>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }

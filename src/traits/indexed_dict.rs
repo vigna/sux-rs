@@ -39,14 +39,11 @@
 //! implementation of `AsRef<T>` for `T`, as it happens in the case of
 //! [`Borrow`].
 //!
-//!
-//! It is suggested that any implementation of this trait also implements
+//! Is suggested that every implementation of [`IndexedSeq`] also implements
 //! [`IntoIterator`] with `Item = Self::Output` on a reference. This property
-//! can be tested on a type `D` with the clause `where for<'a> &'a D:
-//! IntoIterator<Item = Self::Output>`. Many implementations offer also a
-//! convenience method `iter` that is equivalent to [`IntoIterator::into_iter`],
-//! and a method `iter_from` that returns an iterator starting at a given
-//! position in the dictionary.
+//! can be tested on a type `T` with the clause `where for<'a> &'a T:
+//! IntoIterator<Item = Self::Output>`. Many implementations offer also
+//! `iter`/`iter_from` convenience methods.
 
 use impl_tools::autoimpl;
 use std::borrow::Borrow;
@@ -58,7 +55,26 @@ pub trait Types {
     type Output: PartialEq<Self::Input> + PartialEq;
 }
 
-/// Positional access to the dictionary.
+/// Access by position to the dictionary.
+///
+/// # Notes
+///
+/// This trait does not include an `iter` iteration method with a default
+/// implementation, even it would be convenient, because it would cause
+/// significant problems with structures that have their own implementation of
+/// the method, and in which the implementation is dependent on additional trait
+/// bounds (see, e.g., [`EliasFano`](crate::dict::elias_fano::EliasFano)).
+///
+/// More precisely, the inherent implementation could not be used to override
+/// the default implementation, due to the additional trait bounds, and thus the
+/// selection of the inherent vs. default trait implementation would depend on
+/// the type of the variable, which might lead to efficiency bugs difficult to
+/// diagnose. Having a different name for the trait and inherent iteration
+/// method would make the call predictable, but it would be less ergonomic.
+///
+/// The (pretty standard) strategy outlined in the [module
+/// documentation](crate::traits::indexed_dict) is more flexible, as it allows
+/// to write methods that use the inherent implementation only if available.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait IndexedSeq: Types {
     /// Returns the value at the specified index.
@@ -85,11 +101,6 @@ pub trait IndexedSeq: Types {
     /// Returns true if [`len`](`IndexedSeq::len`) is zero.
     fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-
-    /// Returns an iterator over the values of the dictionary.
-    fn iter(&self) -> impl Iterator<Item = Self::Output> {
-        (0..self.len()).map(|i| unsafe { self.get_unchecked(i) })
     }
 }
 
