@@ -7,7 +7,7 @@
 
 //! Adapters from reference to slices to [indexed sequences](crate::traits::IndexedSeq).
 
-use crate::traits::{IndexedSeq, Types};
+use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
 
 /// A newtype exhibiting a reference to a slice as an [indexed
 /// sequence](crate::traits::IndexedSeq).
@@ -82,5 +82,17 @@ where
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
+    }
+}
+
+impl<'a, O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>> IntoIteratorFrom
+    for &'a SliceSeq<O, A>
+where
+    usize: PartialEq<O>,
+{
+    type IntoIterFrom = std::iter::Skip<std::iter::Copied<std::slice::Iter<'a, O>>>;
+
+    fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
+        self.iter().skip(from)
     }
 }
