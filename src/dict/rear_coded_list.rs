@@ -9,7 +9,7 @@
 
 use std::borrow::Borrow;
 
-use crate::traits::{IndexedDict, IndexedSeq, Types};
+use crate::traits::{IndexedDict, IndexedSeq, IntoIteratorFrom, Types};
 use epserde::*;
 use lender::for_;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
@@ -295,9 +295,15 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D
     type IntoIter = Iter<'a, D, P>;
     #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
-        Iter {
-            iter: Lend::new(self),
-        }
+        self.iter()
+    }
+}
+
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIteratorFrom for &'a RearCodedList<D, P> {
+    type IntoIterFrom = Iter<'a, D, P>;
+    #[inline(always)]
+    fn into_iter_from(self, from: usize) -> Self::IntoIter {
+        self.iter_from(from)
     }
 }
 

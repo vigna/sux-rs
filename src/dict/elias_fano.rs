@@ -482,6 +482,16 @@ where
 {
 }
 
+impl<H: AsRef<[usize]>, L: BitFieldSlice<usize>> EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+{
+    #[inline(always)]
+    pub fn iter(&self) -> EliasFanoIterator<'_, H, L> {
+        EliasFanoIterator::new(self)
+    }
+}
+
 impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize>> IntoIterator for &'a EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
@@ -495,22 +505,25 @@ where
     }
 }
 
-impl<H: AsRef<[usize]>, L: BitFieldSlice<usize>> EliasFano<H, L>
-where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
-{
-    #[inline(always)]
-    pub fn iter(&self) -> EliasFanoIterator<'_, H, L> {
-        EliasFanoIterator::new(self)
-    }
-}
-
 impl<H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>> EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
     #[inline(always)]
     pub fn iter_from(&self, from: usize) -> EliasFanoIterator<'_, H, L> {
+        EliasFanoIterator::new_from(self, from)
+    }
+}
+
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>> IntoIteratorFrom
+    for &'a EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+{
+    type IntoIterFrom = EliasFanoIterator<'a, H, L>;
+
+    #[inline(always)]
+    fn into_iter_from(self, from: usize) -> EliasFanoIterator<'a, H, L> {
         EliasFanoIterator::new_from(self, from)
     }
 }

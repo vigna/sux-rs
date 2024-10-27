@@ -4,10 +4,12 @@
 
 ### New
 
-* There is a new `IndexedSeq::iter` method with a default implementation.
-
 * There is a new `SliceSeq` adapter exhibiting a reference to a slice as
   an `IndexedSeq`.
+
+* There is a new `IntoIteratorFrom` trait that is used to write trait
+  bounds for iteration from a position, similarly to what happens with
+  `IntoIterator`.
 
 ## [0.4.6] - 2024-10-07
 

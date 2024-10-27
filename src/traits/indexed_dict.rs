@@ -39,11 +39,13 @@
 //! implementation of `AsRef<T>` for `T`, as it happens in the case of
 //! [`Borrow`].
 //!
-//! Is suggested that every implementation of [`IndexedSeq`] also implements
-//! [`IntoIterator`] with `Item = Self::Output` on a reference. This property
-//! can be tested on a type `T` with the clause `where for<'a> &'a T:
-//! IntoIterator<Item = Self::Output>`. Many implementations offer also
-//! `iter`/`iter_from` convenience methods.
+//! We suggest that every implementation of [`IndexedSeq`] also implements
+//! [`IntoIterator`]/[`IntoIteratoFrom`](crate::traits::iter::IntoIteratorFrom)
+//! with `Item = Self::Output` on a reference. This property can be tested on a
+//! type `T` with the clause `where for<'a> &'a T: IntoIteratorFrom<Item =
+//! Self::Output>` (or `where for<'a> &'a T: IntoIterator<Item = Self::Output>`,
+//! if you don't need to select the starting position). Many implementations
+//! offer also equivalent `iter`/`iter_from` convenience methods.
 
 use impl_tools::autoimpl;
 use std::borrow::Borrow;
