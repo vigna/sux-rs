@@ -81,7 +81,10 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use crate::traits::rank_sel::*;
+use crate::{
+    traits::rank_sel::*,
+    utils::{transmute_boxed_slice, transmute_vec},
+};
 
 const BITS: usize = usize::BITS as usize;
 
@@ -267,6 +270,11 @@ impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
             let mask = (1 << residual) - 1;
             bits[full_words] = (bits[full_words] & !mask) | (word_value & mask);
         }
+    }
+
+    /// Set all bits to zero.
+    pub fn reset(&mut self) {
+        self.fill(false);
     }
 
     /// Flip all bits.
@@ -807,6 +815,11 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
         }
     }
 
+    /// Set all bits to zero.
+    pub fn reset(&mut self, ordering: Ordering) {
+        self.fill(false, ordering);
+    }
+
     /// Flip all bits.
     ///
     /// If the feature "rayon" is enabled, this method is computed in parallel.
@@ -923,7 +936,7 @@ impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
 impl<W: IntoAtomic> From<BitVec<Vec<W>>> for AtomicBitVec<Vec<W::AtomicType>> {
     fn from(value: BitVec<Vec<W>>) -> Self {
         AtomicBitVec {
-            bits: unsafe { core::mem::transmute::<Vec<W>, Vec<W::AtomicType>>(value.bits) },
+            bits: unsafe { transmute_vec::<W, W::AtomicType>(value.bits) },
             len: value.len,
         }
     }
@@ -952,7 +965,7 @@ impl<'a, W: IntoAtomic> From<BitVec<&'a mut [W]>> for AtomicBitVec<&'a mut [W::A
 impl<W: IntoAtomic> From<AtomicBitVec<Vec<W::AtomicType>>> for BitVec<Vec<W>> {
     fn from(value: AtomicBitVec<Vec<W::AtomicType>>) -> Self {
         BitVec {
-            bits: unsafe { core::mem::transmute::<Vec<W::AtomicType>, Vec<W>>(value.bits) },
+            bits: unsafe { transmute_vec::<W::AtomicType, W>(value.bits) },
             len: value.len,
         }
     }
@@ -961,7 +974,7 @@ impl<W: IntoAtomic> From<AtomicBitVec<Vec<W::AtomicType>>> for BitVec<Vec<W>> {
 impl<W: IntoAtomic> From<AtomicBitVec<Box<[W::AtomicType]>>> for BitVec<Box<[W]>> {
     fn from(value: AtomicBitVec<Box<[W::AtomicType]>>) -> Self {
         BitVec {
-            bits: unsafe { core::mem::transmute::<Box<[W::AtomicType]>, Box<[W]>>(value.bits) },
+            bits: unsafe { transmute_boxed_slice::<W::AtomicType, W>(value.bits) },
             len: value.len,
         }
     }
@@ -970,7 +983,7 @@ impl<W: IntoAtomic> From<AtomicBitVec<Box<[W::AtomicType]>>> for BitVec<Box<[W]>
 impl<W: IntoAtomic> From<BitVec<Box<[W]>>> for AtomicBitVec<Box<[W::AtomicType]>> {
     fn from(value: BitVec<Box<[W]>>) -> Self {
         AtomicBitVec {
-            bits: unsafe { core::mem::transmute::<Box<[W]>, Box<[W::AtomicType]>>(value.bits) },
+            bits: unsafe { transmute_boxed_slice::<W, W::AtomicType>(value.bits) },
             len: value.len,
         }
     }

@@ -81,6 +81,7 @@
 
 use crate::prelude::*;
 use crate::traits::bit_field_slice::{panic_if_out_of_bounds, panic_if_value};
+use crate::utils::{transmute_boxed_slice, transmute_vec};
 use anyhow::{bail, Result};
 use common_traits::*;
 use epserde::*;
@@ -1136,7 +1137,7 @@ impl<W: Word + IntoAtomic> From<AtomicBitFieldVec<W, Vec<W::AtomicType>>>
     #[inline]
     fn from(value: AtomicBitFieldVec<W, Vec<W::AtomicType>>) -> Self {
         BitFieldVec {
-            bits: unsafe { core::mem::transmute::<Vec<W::AtomicType>, Vec<W>>(value.bits) },
+            bits: unsafe { transmute_vec::<W::AtomicType, W>(value.bits) },
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
@@ -1150,7 +1151,7 @@ impl<W: Word + IntoAtomic> From<AtomicBitFieldVec<W, Box<[W::AtomicType]>>>
     #[inline]
     fn from(value: AtomicBitFieldVec<W, Box<[W::AtomicType]>>) -> Self {
         BitFieldVec {
-            bits: unsafe { core::mem::transmute::<Box<[W::AtomicType]>, Box<[W]>>(value.bits) },
+            bits: unsafe { transmute_boxed_slice::<W::AtomicType, W>(value.bits) },
 
             len: value.len,
             bit_width: value.bit_width,
@@ -1195,7 +1196,7 @@ impl<W: Word + IntoAtomic> From<BitFieldVec<W, Vec<W>>>
     #[inline]
     fn from(value: BitFieldVec<W, Vec<W>>) -> Self {
         AtomicBitFieldVec {
-            bits: unsafe { core::mem::transmute::<Vec<W>, Vec<W::AtomicType>>(value.bits) },
+            bits: unsafe { transmute_vec::<W, W::AtomicType>(value.bits) },
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
@@ -1209,7 +1210,7 @@ impl<W: Word + IntoAtomic> From<BitFieldVec<W, Box<[W]>>>
     #[inline]
     fn from(value: BitFieldVec<W, Box<[W]>>) -> Self {
         AtomicBitFieldVec {
-            bits: unsafe { core::mem::transmute::<Box<[W]>, Box<[W::AtomicType]>>(value.bits) },
+            bits: unsafe { transmute_boxed_slice::<W, W::AtomicType>(value.bits) },
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
