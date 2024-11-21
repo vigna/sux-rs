@@ -23,8 +23,8 @@
 //! The representation was introduced in Peter Elias in “[Efficient storage and
 //! retrieval by content and address of static
 //! files](https://dl.acm.org/doi/abs/10.1145/321812.321820)”, *J. Assoc.
-//! Comput. Mach.*, 21(2):246–260, 1974, and also independently by Robert Fano
-//! in “[On the number of bits required to implement an associative
+//! Comput. Mach.*, 21(2):246–260, ACM, 1974, and also independently by Robert
+//! Fano in “[On the number of bits required to implement an associative
 //! memory](http://csg.csail.mit.edu/pubs/memos/Memo-61/Memo-61.pdf)”,
 //! Memorandum 61, Computer Structures Group, Project MAC, MIT, Cambridge,
 //! Mass., n.d., 1971.
