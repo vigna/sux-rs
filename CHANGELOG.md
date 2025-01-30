@@ -5,21 +5,25 @@
 ### New
 
 * Implemented `Succ`, `Pred`, `UncheckedSucc`, `UncheckedPred` for `&T`.
-* Added `#[delegatable_trait]` to the indexed_dict traits.
+* Added `#[delegatable_trait]` to the `indexed_dict` traits.
 * Added `FairChunks` to get an iterator of chunks of elements with roughly the
-  same weight based on a generic CWF (cumulative weight function) that 
-  implements `Succ`
+  same weight based on a generic cumulative weight function that implements
+  `Succ`.
 
-### Removed
+### Changed
 
-* Trait `DivCeilUnchecked` is no longer needed. The difference in codegen 
-  between `a.div_ceil(b)` and `(a + b - 1) / b`, on x86 compiling in release 
-  mode, is these two added instructions for handling overflow:
+* Trait `DivCeilUnchecked` is no longer needed. The difference in codegen
+  between `a.div_ceil(b)` and `(a + b - 1) / b` on x86 compiling in release
+  mode is given these two additional instructions for handling overflow:
+
+  ```[asm]
+
+ cmpq $1, %rdx
+ sbbq $-1, %rax
+
   ```
-	cmpq	$1, %rdx
-	sbbq	$-1, %rax
-  ```
-  Luckily, in our code all div_ceil are with power-of-two so this won't matter.
+
+  In our code all `div_ceil` are with power-of-two values, so there is no impact.
 
 ## [0.4.7] - 2024-10-07
 

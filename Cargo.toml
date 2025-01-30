@@ -1,6 +1,9 @@
 [package]
 name = "sux"
-authors = ["Tommaso Fontana <tommaso.fontana.96@gmail.com>", "Sebastiano Vigna <sebastiano.vigna@unimi.it>"]
+authors = [
+	"Tommaso Fontana <tommaso.fontana.96@gmail.com>",
+	"Sebastiano Vigna <sebastiano.vigna@unimi.it>",
+]
 description = "A pure Rust implementation of succinct and compressed data structures"
 version = "0.5.0"
 edition = "2021"
@@ -19,27 +22,27 @@ libc = "0.2.147"
 log = "0.4.20"
 num_cpus = "1.16.0"
 num-traits = "0.2.15"
-dsi-progress-logger = "0.2.2"
+dsi-progress-logger = "0.5.0"
 tempfile = "3.9.0"
 lender = "0.2.9"
 mmap-rs = "0.6.1"
 epserde = "0.6.1"
 zstd = { version = "0.13.1" }
 flate2 = "1.0.28"
-rand = {version="0.8.5", features=["small_rng"]}
+rand = { version = "0.9.0", features = ["small_rng"] }
 rdst = "0.20.12"
 mem_dbg = "0.2.4"
-rayon = {version = "1.8.1", optional=true}
+rayon = { version = "1.8.1", optional = true }
 core_affinity = "0.8.1"
-env_logger = {version = "0.11.0"}
+env_logger = { version = "0.11.0" }
 ambassador = "0.4.0"
 impl-tools = "0.10.0"
 
 # Fuzz
-arbitrary = { version = "1.3.2", features = ["derive"], optional=true }
+arbitrary = { version = "1.3.2", features = ["derive"], optional = true }
 
 # Cli
-clap = { version = "4.4.18", features = ["derive"], optional=true }
+clap = { version = "4.4.18", features = ["derive"], optional = true }
 
 [dev-dependencies]
 maligned = "0.2.1"
@@ -47,17 +50,17 @@ criterion = { version = "0.5.1", features = ["html_reports"] }
 
 [features]
 default = ["rayon"]
-cli = ["dep:clap"] # Build the binary utils
+cli = ["dep:clap"]       # Build the binary utils
 fuzz = ["dep:arbitrary"]
-slow_tests = [] # Run slow tests (use --release)
+slow_tests = []          # Run slow tests (use --release)
 
 [profile.release]
-opt-level = 3             # like --release
-lto = "fat"               # Full LTO
-overflow-checks = false   # Disable integer overflow checks.
-debug = true              # Include debug info.
-debug-assertions = false  # Enables debug assertions.
-codegen-units = 1         # slower compile times, but maybe better perf
+opt-level = 3            # like --release
+lto = "fat"              # Full LTO
+overflow-checks = false  # Disable integer overflow checks.
+debug = true             # Include debug info.
+debug-assertions = false # Enables debug assertions.
+codegen-units = 1        # slower compile times, but maybe better perf
 
 [lib]
 bench = false

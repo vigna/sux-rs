@@ -19,7 +19,7 @@ fn test() {
     let density = 0.5;
     for len in lens {
         let bits: AddNumBits<_> = (0..len)
-            .map(|_| rng.gen_bool(density))
+            .map(|_| rng.random_bool(density))
             .collect::<BitVec>()
             .into();
 
@@ -47,7 +47,7 @@ fn test_one_u64() {
     let density = 0.1;
     for len in lens {
         let bits: AddNumBits<_> = (0..len)
-            .map(|_| rng.gen_bool(density))
+            .map(|_| rng.random_bool(density))
             .collect::<BitVec>()
             .into();
         let simple = SelectAdapt::<_, _>::with_inv(bits.clone(), 13, 0);
@@ -73,7 +73,7 @@ fn test_mult_usize() {
     let density = 0.5;
     for len in (1 << 10..1 << 15).step_by(usize::BITS as _) {
         let bits: AddNumBits<_> = (0..len)
-            .map(|_| rng.gen_bool(density))
+            .map(|_| rng.random_bool(density))
             .collect::<BitVec>()
             .into();
         let select = SelectAdapt::new(bits.clone(), 3);
@@ -170,7 +170,7 @@ fn test_non_uniform() {
 
             let first_half = loop {
                 let b = (0..len1)
-                    .map(|_| rng.gen_bool(density0))
+                    .map(|_| rng.random_bool(density0))
                     .collect::<BitVec>();
                 if b.count_ones() > 0 {
                     break b;
@@ -178,7 +178,7 @@ fn test_non_uniform() {
             };
             let num_ones_first_half = first_half.count_ones();
             let second_half = (0..len2)
-                .map(|_| rng.gen_bool(density1))
+                .map(|_| rng.random_bool(density1))
                 .collect::<BitVec>();
             let num_ones_second_half = second_half.count_ones();
 
@@ -255,7 +255,7 @@ fn test_sub32s() {
     let density = 0.1;
     for len in lens {
         let bits: AddNumBits<BitVec> = (0..len)
-            .map(|_| rng.gen_bool(density))
+            .map(|_| rng.random_bool(density))
             .collect::<BitVec>()
             .into();
         let simple = SelectAdapt::with_inv(bits.clone(), 13, 3);
@@ -282,7 +282,7 @@ fn test_sub32s_last_small() {
     let density = 0.0001;
     for len in lens {
         let bits: AddNumBits<BitVec> = (0..len)
-            .map(|_| rng.gen_bool(density))
+            .map(|_| rng.random_bool(density))
             .collect::<BitVec>()
             .into();
         let simple = SelectAdapt::with_inv(bits.clone(), 13, 16);

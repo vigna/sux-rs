@@ -19,7 +19,7 @@ fn test() {
     let density = 0.5;
     for len in lens {
         let bits: AddNumBits<_> = (0..len)
-            .map(|_| rng.gen_bool(density))
+            .map(|_| rng.random_bool(density))
             .map(|b| !b)
             .collect::<BitVec>()
             .into();
@@ -48,7 +48,7 @@ fn test_one_u64() {
     let density = 0.1;
     for len in lens {
         let bits: AddNumBits<_> = (0..len)
-            .map(|_| rng.gen_bool(density))
+            .map(|_| rng.random_bool(density))
             .map(|b| !b)
             .collect::<BitVec>()
             .into();
@@ -75,7 +75,7 @@ fn test_mult_usize() {
     let density = 0.5;
     for len in (1 << 10..1 << 15).step_by(usize::BITS as _) {
         let bits: AddNumBits<_> = (0..len)
-            .map(|_| rng.gen_bool(density))
+            .map(|_| rng.random_bool(density))
             .map(|b| !b)
             .collect::<BitVec>()
             .into();
@@ -174,7 +174,7 @@ fn test_non_uniform() {
 
             let first_half = loop {
                 let b = (0..len1)
-                    .map(|_| rng.gen_bool(density0))
+                    .map(|_| rng.random_bool(density0))
                     .map(|b| !b)
                     .collect::<BitVec>();
                 if b.count_zeros() > 0 {
@@ -183,7 +183,7 @@ fn test_non_uniform() {
             };
             let num_zeros_first_half = first_half.count_zeros();
             let second_half = (0..len2)
-                .map(|_| rng.gen_bool(density1))
+                .map(|_| rng.random_bool(density1))
                 .map(|b| !b)
                 .collect::<BitVec>();
             let num_zeros_second_half = second_half.count_zeros();
@@ -270,7 +270,7 @@ fn test_sub32s() {
     let density = 0.1;
     for len in lens {
         let bits: AddNumBits<BitVec> = (0..len)
-            .map(|_| rng.gen_bool(density))
+            .map(|_| rng.random_bool(density))
             .map(|b| !b)
             .collect::<BitVec>()
             .into();
@@ -297,7 +297,7 @@ fn test_sub32s_last_small() {
     let mut rng = SmallRng::seed_from_u64(0);
     let density = 0.0001;
     for len in lens {
-        let mut bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+        let mut bits = (0..len).map(|_| rng.random_bool(density)).collect::<BitVec>();
         bits.flip();
         let bits: AddNumBits<_> = bits.into();
         let simple = SelectZeroAdapt::with_inv(bits.clone(), 13, 16);

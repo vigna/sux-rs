@@ -51,14 +51,14 @@ pub fn create_bitvec(
 
     let first_half = loop {
         let b = (0..len1)
-            .map(|_| rng.gen_bool(density0))
+            .map(|_| rng.random_bool(density0))
             .collect::<BitVec>();
         if b.count_ones() > 0 {
             break b;
         }
     };
     let second_half = (0..len2)
-        .map(|_| rng.gen_bool(density1))
+        .map(|_| rng.random_bool(density1))
         .collect::<BitVec>();
     let num_ones_second_half = second_half.count_ones() as u64;
     let num_ones_first_half = first_half.count_ones() as u64;
@@ -107,7 +107,7 @@ pub fn save_mem_cost<B: Build<BitVec> + MemDbg + BitLength>(
 
 #[inline(always)]
 pub fn fastrange_non_uniform(rng: &mut SmallRng, first_half: u64, second_half: u64) -> u64 {
-    if rng.gen_bool(0.5) {
+    if rng.random_bool(0.5) {
         ((rng.gen::<u64>() as u128).wrapping_mul(first_half as u128) >> 64) as u64
     } else {
         first_half + ((rng.gen::<u64>() as u128).wrapping_mul(second_half as u128) >> 64) as u64

@@ -93,7 +93,7 @@ fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
 
     let mut rcab = <RearCodedListBuilder>::new(4);
     let mut shuffled_words = words.iter().map(|s| s.as_str()).collect::<Vec<_>>();
-    shuffled_words.shuffle(&mut rand::thread_rng());
+    shuffled_words.shuffle(&mut rand::rng());
 
     for string in shuffled_words.iter() {
         rcab.push(string);
