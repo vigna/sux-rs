@@ -5,11 +5,11 @@
 ### New
 
 * Implemented `Succ`, `Pred`, `UncheckedSucc`, `UncheckedPred` for `&T`.
-* Added `#[delegatable_trait]` to the `indexed_dict` traits.
-* Added `FairChunks` to get an iterator of chunks of elements with roughly the
-  same weight based on a generic cumulative weight function that implements
-  `Succ`.
 
+* Added `#[delegatable_trait]` to the `indexed_dict` traits.
+
+* New `FairChunks` structure providing chunks of balanced weight.
+ 
 ### Changed
 
 * Trait `DivCeilUnchecked` is no longer needed. The difference in codegen
