@@ -8,13 +8,16 @@
 //! Utility traits and implementations.
 
 pub mod lenders;
-pub use crate::utils::lenders::*;
+pub use lenders::*;
 
 pub mod sig_store;
-pub use crate::utils::sig_store::*;
+pub use sig_store::*;
 
 pub mod spooky;
-pub use crate::utils::spooky::*;
+pub use spooky::*;
+
+pub mod fair_chunks;
+pub use fair_chunks::FairChunks;
 
 /// Transmutes a vector of one type into a vector of another type.
 ///

@@ -44,7 +44,6 @@ use zstd::Decoder;
 /// Note that [`rewind`](RewindableIoLender::rewind) consumes `self` and returns
 /// it. This slightly inconvenient behavior is necessary to handle cleanly all
 /// implementations, and in particular those involving compression.
-
 pub trait RewindableIoLender<T: ?Sized>:
     Sized + Lender + for<'lend> Lending<'lend, Lend = Result<&'lend T, Self::Error>>
 {
@@ -122,7 +121,6 @@ impl<B: BufRead + Seek> RewindableIoLender<str> for LineLender<B> {
 ///
 /// The lines are read into a reusable internal string buffer that grows as
 /// needed.
-
 pub struct ZstdLineLender<R: Read> {
     buf: BufReader<Decoder<'static, BufReader<R>>>,
     line: String,
@@ -171,7 +169,7 @@ impl<R: Read + Seek> RewindableIoLender<str> for ZstdLineLender<R> {
 ///
 /// The lines are read into a reusable internal string buffer that
 /// grows as needed.
-
+#[derive(Debug)]
 pub struct GzipLineLender<R: Read> {
     buf: BufReader<GzDecoder<R>>,
     line: String,

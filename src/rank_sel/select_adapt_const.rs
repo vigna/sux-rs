@@ -53,7 +53,6 @@ use std::ops::Index;
 ///
 /// [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst) is a variant of this
 /// structure that provides the same functionality for zero bits.
-
 ///
 /// # Examples
 /// ```rust
@@ -237,7 +236,6 @@ impl<
 {
     /// Creates a new selection structure over a [`SelectHinted`] with a specified
     /// distance between indexed ones.
-
     pub fn new(bits: B) -> Self {
         let num_ones = bits.count_ones();
         let num_bits = max(1, bits.len());

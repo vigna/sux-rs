@@ -289,7 +289,6 @@ impl<B: AsRef<[usize]> + BitCount> SelectZeroAdapt<B, Box<[usize]>> {
     ///   Increasing by one this value approximately doubles the space occupancy
     ///   and halves the length of sequential broadword searches. Typical values
     ///   are 3 and 4.
-
     pub fn with_inv(
         bits: B,
         log2_ones_per_inventory: usize,

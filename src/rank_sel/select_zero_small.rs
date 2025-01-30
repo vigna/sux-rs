@@ -70,7 +70,6 @@ use std::ops::Index;
 /// assert_eq!(sel.select(2), Some(6));
 /// assert_eq!(sel.select(3), None);
 /// ```
-
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "small_counters")]
 #[delegate(Index<usize>, target = "small_counters")]
@@ -86,7 +85,6 @@ use std::ops::Index;
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "small_counters")]
 #[delegate(crate::rank_sel::SmallCounters<NUM_U32S, COUNTER_WIDTH>, target = "small_counters")]
-
 pub struct SelectZeroSmall<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
@@ -282,7 +280,7 @@ macro_rules! impl_select_zero_small {
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
                         let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize
                             + upper_block_idx * Self::SUPERBLOCK_BIT_SIZE;
-                        next_inv_pos.div_ceil_unchecked(Self::BLOCK_BIT_SIZE)
+                        next_inv_pos.div_ceil(Self::BLOCK_BIT_SIZE)
                     } else {
                         (upper_block_idx + 1) * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
                     };
@@ -292,7 +290,7 @@ macro_rules! impl_select_zero_small {
                     // with value given by the number of bits. Thus, we must
                     // handle the case in which inv_idx is the the last
                     // inventory entry as a special case.
-                    last_block_idx = self.len().div_ceil_unchecked(Self::BLOCK_BIT_SIZE);
+                    last_block_idx = self.len().div_ceil(Self::BLOCK_BIT_SIZE);
                 }
 
                 debug_assert!(block_idx < counts.len());

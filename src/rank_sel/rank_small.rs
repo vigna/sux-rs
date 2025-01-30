@@ -35,7 +35,6 @@ use std::ops::Index;
 /// [`SelectSmall`](crate::rank_sel::SelectSmall) and
 /// [`SelectZeroSmall`](crate::rank_sel::SelectZeroSmall), making it
 /// possible to combine selection structures arbitarily.
-
 #[delegatable_trait]
 pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     fn upper_counts(&self) -> &[usize];
@@ -116,7 +115,6 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// assert_eq!(rank_small[5], true);
 /// assert_eq!(rank_small[6], false);
 /// assert_eq!(rank_small[7], true);
-
 #[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
@@ -162,7 +160,6 @@ pub struct RankSmall<
 /// assert_eq!(rank_small.rank(0), 0);
 /// assert_eq!(rank_small.rank(1), 1);
 /// ```
-
 #[macro_export]
 macro_rules! rank_small {
     (0 ; $bits: expr) => {

@@ -50,7 +50,6 @@ impl<T: ZeroCopy + 'static> RadixKey for SigVal<T> {
 /// We provide implementations for all primitive types and strings by turning
 /// them into slice of bytes and then hashing them with
 /// [crate::utils::spooky::spooky_short], using the given seed.
-
 pub trait ToSig {
     fn to_sig(key: &Self, seed: u64) -> [u64; 2];
 }
@@ -318,7 +317,7 @@ impl<'a, T: ZeroCopy + Send + Sync + 'static> Iterator for ChunkIterator<'a, T> 
     }
 }
 
-impl<'a, T: ZeroCopy + Send + Sync> ExactSizeIterator for ChunkIterator<'a, T> {
+impl<T: ZeroCopy + Send + Sync> ExactSizeIterator for ChunkIterator<'_, T> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.store.chunk_sizes.len() - self.next_chunk

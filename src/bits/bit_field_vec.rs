@@ -123,7 +123,6 @@ use std::sync::atomic::*;
 /// assert_eq!(b.get(3), 0);
 /// assert_eq!(b.get(4), 1);
 /// ```
-
 #[macro_export]
 macro_rules! bit_field_vec {
     ($w:expr) => {
@@ -370,7 +369,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         if new_len > self.len {
             if new_len * self.bit_width > self.bits.len() * W::BITS {
                 self.bits
-                    .resize((new_len * self.bit_width + W::BITS - 1) / W::BITS, W::ZERO);
+                    .resize((new_len * self.bit_width).div_ceil(W::BITS), W::ZERO);
             }
             for i in self.len..new_len {
                 unsafe {
@@ -718,8 +717,8 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVectorUncheckedIterator<'a, W, B> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
-    for BitFieldVectorUncheckedIterator<'a, W, B>
+impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
+    for BitFieldVectorUncheckedIterator<'_, W, B>
 {
     type Item = W;
     unsafe fn next_unchecked(&mut self) -> W {
@@ -792,8 +791,8 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVectorReverseUncheckedIterator<'a, W, B
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
-    for BitFieldVectorReverseUncheckedIterator<'a, W, B>
+impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
+    for BitFieldVectorReverseUncheckedIterator<'_, W, B>
 {
     type Item = W;
     unsafe fn next_unchecked(&mut self) -> W {
@@ -851,7 +850,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, B> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, B> {
+impl<W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'_, W, B> {
     type Item = W;
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.unchecked.vec.len() {
@@ -870,7 +869,7 @@ impl<'a, W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'a, W, B> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'a, W, B> {
+impl<W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'_, W, B> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.unchecked.vec.len() - self.index
@@ -961,7 +960,7 @@ where
 {
     pub fn new(bit_width: usize, len: usize) -> AtomicBitFieldVec<W> {
         // we need at least two words to avoid branches in the gets
-        let n_of_words = Ord::max(1, (len * bit_width + W::BITS - 1) / W::BITS);
+        let n_of_words = Ord::max(1, (len * bit_width).div_ceil(W::BITS));
         AtomicBitFieldVec::<W> {
             bits: (0..n_of_words)
                 .map(|_| W::AtomicType::new(W::ZERO))
