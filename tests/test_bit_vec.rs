@@ -191,7 +191,7 @@ fn test_fill() {
 
         if len != c.capacity() {
             assert_eq!(
-                c.as_ref()[len / usize::BITS as usize] & 1 << (len % usize::BITS as usize),
+                c.as_ref()[len / usize::BITS as usize] & (1 << (len % usize::BITS as usize)),
                 0
             );
         }
@@ -215,7 +215,7 @@ fn test_atomic_fill() {
         if len % usize::BITS as usize != 0 {
             assert_eq!(
                 c.as_ref()[len / usize::BITS as usize].load(Ordering::Relaxed)
-                    & 1 << (len % usize::BITS as usize),
+                    & (1 << (len % usize::BITS as usize)),
                 0
             );
         }
@@ -238,7 +238,7 @@ fn test_flip() {
 
         if len != c.capacity() {
             assert_eq!(
-                c.as_ref()[len / usize::BITS as usize] & 1 << (len % usize::BITS as usize),
+                c.as_ref()[len / usize::BITS as usize] & (1 << (len % usize::BITS as usize)),
                 0
             );
         }
@@ -262,7 +262,7 @@ fn test_atomic_flip() {
         if len % usize::BITS as usize != 0 {
             assert_eq!(
                 c.as_ref()[len / usize::BITS as usize].load(Ordering::Relaxed)
-                    & 1 << (len % usize::BITS as usize),
+                    & (1 << (len % usize::BITS as usize)),
                 0
             );
         }

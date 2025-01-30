@@ -17,17 +17,17 @@ use common_traits::SelectInWord;
 use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
-const ONES_STEP_9: usize = 1usize << 0
-    | 1usize << 9
-    | 1usize << 18
-    | 1usize << 27
-    | 1usize << 36
-    | 1usize << 45
-    | 1usize << 54;
+const ONES_STEP_9: usize = (1usize << 0)
+    | (1usize << 9)
+    | (1usize << 18)
+    | (1usize << 27)
+    | (1usize << 36)
+    | (1usize << 45)
+    | (1usize << 54);
 
 const MSBS_STEP_9: usize = 0x100usize * ONES_STEP_9;
 
-const ONES_STEP_16: usize = 1usize << 0 | 1usize << 16 | 1usize << 32 | 1usize << 48;
+const ONES_STEP_16: usize = (1usize << 0) | (1usize << 16) | (1usize << 32) | (1usize << 48);
 const MSBS_STEP_16: usize = 0x8000usize * ONES_STEP_16;
 
 macro_rules! ULEQ_STEP_9 {

@@ -79,7 +79,9 @@ fn test_w_rank9() {
     let mut rng = SmallRng::seed_from_u64(0);
     let density = 0.5;
     for len in lens {
-        let bits: BitVec = (0..len).map(|_| rng.random_bool(density)).collect::<BitVec>();
+        let bits: BitVec = (0..len)
+            .map(|_| rng.random_bool(density))
+            .collect::<BitVec>();
 
         let rank9 = Rank9::new(bits.clone());
 

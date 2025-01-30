@@ -373,13 +373,13 @@ impl<C: SmallCounters<2, 9> + AsRef<[usize]> + BitLength + NumBits> SelectSmall<
         rank: usize,
         hint_rank: usize,
     ) -> usize {
-        const ONES_STEP_9: u64 = 1_u64 << 0
-            | 1_u64 << 9
-            | 1_u64 << 18
-            | 1_u64 << 27
-            | 1_u64 << 36
-            | 1_u64 << 45
-            | 1_u64 << 54;
+        const ONES_STEP_9: u64 = (1_u64 << 0)
+            | (1_u64 << 9)
+            | (1_u64 << 18)
+            | (1_u64 << 27)
+            | (1_u64 << 36)
+            | (1_u64 << 45)
+            | (1_u64 << 54);
         const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
         macro_rules! ULEQ_STEP_9 {
             ($x:ident, $y:ident) => {
@@ -415,7 +415,7 @@ impl<C: SmallCounters<1, 9> + AsRef<[usize]> + BitLength + NumBits + SelectHinte
         rank: usize,
         hint_rank: usize,
     ) -> usize {
-        const ONES_STEP_9: u64 = 1_u64 << 0 | 1_u64 << 9 | 1_u64 << 18;
+        const ONES_STEP_9: u64 = (1_u64 << 0) | (1_u64 << 9) | (1_u64 << 18);
         const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
 
         macro_rules! ULEQ_STEP_9 {
@@ -450,7 +450,7 @@ impl<C: SmallCounters<1, 10> + AsRef<[usize]> + BitLength + NumBits + SelectHint
         rank: usize,
         hint_rank: usize,
     ) -> usize {
-        const ONES_STEP_10: u64 = 1_u64 << 0 | 1_u64 << 10 | 1_u64 << 20;
+        const ONES_STEP_10: u64 = (1_u64 << 0) | (1_u64 << 10) | (1_u64 << 20);
         const MSBS_STEP_10: u64 = 0x200_u64 * ONES_STEP_10;
 
         macro_rules! ULEQ_STEP_10 {
@@ -485,7 +485,7 @@ impl<C: SmallCounters<1, 11> + AsRef<[usize]> + BitLength + NumBits + SelectHint
         rank: usize,
         hint_rank: usize,
     ) -> usize {
-        const ONES_STEP_11: u64 = 1_u64 << 0 | 1_u64 << 11 | 1_u64 << 22;
+        const ONES_STEP_11: u64 = (1_u64 << 0) | (1_u64 << 11) | (1_u64 << 22);
         const MSBS_STEP_11: u64 = 0x400_u64 * ONES_STEP_11;
 
         macro_rules! ULEQ_STEP_11 {
@@ -519,13 +519,13 @@ impl<C: SmallCounters<3, 13> + AsRef<[usize]> + BitLength + NumBits + SelectHint
         rank: usize,
         hint_rank: usize,
     ) -> usize {
-        const ONES_STEP_13: u128 = 1_u128 << 0
-            | 1_u128 << 13
-            | 1_u128 << 26
-            | 1_u128 << 39
-            | 1_u128 << 52
-            | 1_u128 << 65
-            | 1_u128 << 78;
+        const ONES_STEP_13: u128 = (1_u128 << 0)
+            | (1_u128 << 13)
+            | (1_u128 << 26)
+            | (1_u128 << 39)
+            | (1_u128 << 52)
+            | (1_u128 << 65)
+            | (1_u128 << 78);
         const MSBS_STEP_13: u128 = 0x1000_u128 * ONES_STEP_13;
 
         macro_rules! ULEQ_STEP_13 {
