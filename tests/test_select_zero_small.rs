@@ -16,7 +16,7 @@ macro_rules! test {
             .chain((1000..10000).step_by(100))
             .chain([1 << 20, 1 << 24]);
         for len in lens {
-            let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+            let bits = (0..len).map(|_| rng.random_bool(density)).collect::<BitVec>();
             let rank_small_sel = SelectZeroSmall::<$NUM_U32S, $COUNTER_WIDTH, _>::new(RankSmall::<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
@@ -140,7 +140,7 @@ fn test_non_uniform() {
 
             let first_half = loop {
                 let b = (0..len1)
-                    .map(|_| rng.gen_bool(density0))
+                    .map(|_| rng.random_bool(density0))
                     .collect::<BitVec>();
                 if b.count_ones() > 0 {
                     break b;
@@ -148,7 +148,7 @@ fn test_non_uniform() {
             };
             let num_ones_first_half = first_half.count_ones();
             let second_half = (0..len2)
-                .map(|_| rng.gen_bool(density1))
+                .map(|_| rng.random_bool(density1))
                 .collect::<BitVec>();
             let num_ones_second_half = second_half.count_ones();
 

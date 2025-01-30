@@ -604,7 +604,7 @@ mod tests {
         let mut bits = BitVec::new(len);
         let mut pos = BTreeSet::new();
         for _ in 0..(1 << 13) / 4 * 3 {
-            let p = rng.gen_range(0..len);
+            let p = rng.random_range(0..len);
             if pos.insert(p) {
                 bits.set(p, true);
             }

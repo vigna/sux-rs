@@ -55,7 +55,7 @@ fn test_bit_field_vec_apply_param<W: Word + CastableInto<u64> + CastableFrom<u64
         let mut cp = BitFieldVec::<W>::new(bit_width, n);
         for _ in 0..10 {
             let values = (0..n)
-                .map(|_| rng.gen_range(0..u.cast()).cast())
+                .map(|_| rng.random_range(0..u.cast()).cast())
                 .collect::<Vec<W>>();
 
             let mut indices = (0..n).collect::<Vec<_>>();
@@ -66,7 +66,7 @@ fn test_bit_field_vec_apply_param<W: Word + CastableInto<u64> + CastableFrom<u64
             }
 
             let new_values = (0..n)
-                .map(|_| rng.gen_range(0..u.cast()).cast())
+                .map(|_| rng.random_range(0..u.cast()).cast())
                 .collect::<Vec<W>>();
 
             // Test that apply_in_place happens in the right order
@@ -103,7 +103,7 @@ fn test_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
         );
         for _ in 0..10 {
             let values = (0..n)
-                .map(|_| rng.gen_range(0..u.cast()).cast())
+                .map(|_| rng.random_range(0..u.cast()).cast())
                 .collect::<Vec<W>>();
 
             let mut indices = (0..n).collect::<Vec<_>>();
@@ -177,7 +177,7 @@ where
         );
         for _ in 0..10 {
             let values: Vec<W> = (0..n)
-                .map(|_| rng.gen_range(0..u).cast())
+                .map(|_| rng.random_range(0..u).cast())
                 .collect::<Vec<_>>();
 
             let mut indices = (0..n).collect::<Vec<_>>();

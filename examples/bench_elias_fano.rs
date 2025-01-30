@@ -42,7 +42,7 @@ fn main() -> Result<()> {
     let mut values = Vec::with_capacity(args.n);
     let mut rng = SmallRng::seed_from_u64(0);
     for _ in 0..args.n {
-        values.push(rng.gen_range(0..args.u));
+        values.push(rng.random_range(0..args.u));
     }
     values.sort();
     // Build Elias-Fano
@@ -79,7 +79,7 @@ fn main() -> Result<()> {
 
     let mut ranks = Vec::with_capacity(args.t);
     for _ in 0..args.t {
-        ranks.push(rng.gen_range(0..args.n));
+        ranks.push(rng.random_range(0..args.n));
     }
 
     for _ in 0..args.repeats {
@@ -103,7 +103,7 @@ fn main() -> Result<()> {
         for _ in 0..args.t {
             black_box(
                 elias_fano_s
-                    .succ(rng.gen_range(0..args.u))
+                    .succ(rng.random_range(0..args.u))
                     .unwrap_or((0, 0))
                     .0,
             );
@@ -115,7 +115,7 @@ fn main() -> Result<()> {
         for _ in 0..args.t {
             black_box(unsafe {
                 elias_fano_s
-                    .succ_unchecked::<false>(rng.gen_range(0..upper_bound))
+                    .succ_unchecked::<false>(rng.random_range(0..upper_bound))
                     .0
             });
         }
@@ -127,7 +127,7 @@ fn main() -> Result<()> {
         for _ in 0..args.t {
             black_box(
                 elias_fano_s
-                    .pred(rng.gen_range(first..args.u))
+                    .pred(rng.random_range(first..args.u))
                     .unwrap_or((0, 0))
                     .0,
             );
@@ -138,7 +138,7 @@ fn main() -> Result<()> {
         for _ in 0..args.t {
             black_box(unsafe {
                 elias_fano_s
-                    .pred_unchecked::<false>(rng.gen_range(first..args.u))
+                    .pred_unchecked::<false>(rng.random_range(first..args.u))
                     .0
             });
         }

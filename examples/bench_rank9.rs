@@ -42,7 +42,7 @@ fn main() -> Result<()> {
     let mut bit_vec = BitVec::new(n);
     let mut rng = SmallRng::seed_from_u64(0);
     for i in 0..n {
-        if rng.gen_bool(args.density) {
+        if rng.random_bool(args.density) {
             bit_vec.set(i, true);
         }
     }
@@ -53,7 +53,7 @@ fn main() -> Result<()> {
 
     let mut pos = Vec::with_capacity(args.t);
     for _ in 0..args.t {
-        pos.push(rng.gen_range(0..n));
+        pos.push(rng.random_range(0..n));
     }
 
     for _ in 0..args.repeats {

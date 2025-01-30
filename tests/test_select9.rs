@@ -13,7 +13,7 @@ fn test() {
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     let density = 0.5;
     for len in (1..1000).chain((1000..10000).step_by(100)) {
-        let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+        let bits = (0..len).map(|_| rng.random_bool(density)).collect::<BitVec>();
         let select9 = Select9::new(Rank9::new(bits.clone()));
 
         let ones = bits.count_ones();
@@ -47,7 +47,7 @@ fn test_mult_usize() {
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     let density = 0.5;
     for len in (1 << 10..1 << 15).step_by(usize::BITS as _) {
-        let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+        let bits = (0..len).map(|_| rng.random_bool(density)).collect::<BitVec>();
         let select9 = Select9::new(Rank9::new(bits.clone()));
 
         let ones = bits.count_ones();
@@ -136,7 +136,7 @@ fn test_non_uniform() {
 
             let first_half = loop {
                 let b = (0..len1)
-                    .map(|_| rng.gen_bool(density0))
+                    .map(|_| rng.random_bool(density0))
                     .collect::<BitVec>();
                 if b.count_ones() > 0 {
                     break b;
@@ -144,7 +144,7 @@ fn test_non_uniform() {
             };
             let num_ones_first_half = first_half.count_ones();
             let second_half = (0..len2)
-                .map(|_| rng.gen_bool(density1))
+                .map(|_| rng.random_bool(density1))
                 .collect::<BitVec>();
             let num_ones_second_half = second_half.count_ones();
 
@@ -186,7 +186,7 @@ fn test_rank() {
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     let density = 0.5;
     for len in (10_000..100_000).step_by(1000) {
-        let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+        let bits = (0..len).map(|_| rng.random_bool(density)).collect::<BitVec>();
         let select9 = Select9::new(Rank9::new(bits.clone()));
 
         let mut ranks = Vec::with_capacity(len);

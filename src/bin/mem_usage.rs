@@ -96,14 +96,14 @@ fn mem_usage<S: Struct + MemSize + MemDbg + BitLength>(
 
     let first_half = loop {
         let b = (0..len / 2)
-            .map(|_| rng.gen_bool(density0))
+            .map(|_| rng.random_bool(density0))
             .collect::<BitVec>();
         if b.count_ones() > 0 {
             break b;
         }
     };
     let second_half = (0..len / 2)
-        .map(|_| rng.gen_bool(density1))
+        .map(|_| rng.random_bool(density1))
         .collect::<BitVec>();
 
     let bits = first_half

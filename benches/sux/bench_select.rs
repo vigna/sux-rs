@@ -33,7 +33,9 @@ pub fn compare_adapt_const(
     let mut rng = SmallRng::seed_from_u64(0);
     for len in lens.iter().copied() {
         for density in densities.iter().copied() {
-            let bitvec = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+            let bitvec = (0..len)
+                .map(|_| rng.random_bool(density))
+                .collect::<BitVec>();
             bitvecs.push(bitvec);
             bitvec_ids.push((len, density));
         }

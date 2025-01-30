@@ -22,7 +22,7 @@ fn test_elias_fano_concurrent() -> Result<()> {
     use sux::dict::elias_fano::EliasFanoConcurrentBuilder;
     let mut rng = SmallRng::seed_from_u64(0);
     for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
-        let mut values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
 
         values.sort();
 
@@ -43,7 +43,7 @@ fn test_elias_fano_concurrent() -> Result<()> {
 fn test_elias_fano() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
     for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
-        let mut values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
 
         values.sort();
 
@@ -220,7 +220,7 @@ fn test_extend() {
 fn test_epserde() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
     for (n, u) in [(100, 1000), (100, 100), (1000, 100)] {
-        let mut values = (0..n).map(|_| rng.gen_range(0..u)).collect::<Vec<_>>();
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
 
         values.sort();
 

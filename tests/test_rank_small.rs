@@ -17,7 +17,7 @@ macro_rules! test_rank_small {
             .chain((100_000..1_000_000).step_by(100_000));
         let density = 0.5;
         for len in lens {
-            let bits = (0..len).map(|_| rng.gen_bool(density)).collect::<BitVec>();
+            let bits = (0..len).map(|_| rng.random_bool(density)).collect::<BitVec>();
             let rank_small = rank_small![$n; bits.clone()];
 
             let mut ranks = Vec::with_capacity(len);
