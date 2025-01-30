@@ -16,7 +16,7 @@ use crate::traits::{Succ, SuccUnchecked};
 ///
 /// To build an iterator, you need to provide the cumulative function of weights
 /// (i.e., the sequence 0, `w₀`, `w₀ + w₁`, `w₀ + w₁ + w₂`, …), stored in a
-/// structure that supports (unchecked) successor queries.
+/// structure that supports [(unchecked) successor queries](crate::traits::Succ).
 ///
 /// # Example
 ///
@@ -28,17 +28,13 @@ use crate::traits::{Succ, SuccUnchecked};
 ///     15, 27, 20, 26,  4, 22, 10, 25, 7, 13,  0, 11, 5, 28, 23,
 ///     1, 12, 24,  3, 30,  8, 29, 17, 2, 14,  9, 16, 18, 21, 19,
 /// ];
-/// // prefix sum
-/// let mut cwf = weights
-/// .iter()
-/// .scan(0, |acc, x| {
-///     let res = *acc;
-///     *acc += x;
-///     Some(res)
-/// })
-/// .collect::<Vec<_>>();
-/// cwf.push(cwf[29] + weights[29]); // last element! the CWF starts at zero
-/// // put the sequence in an elias-fano
+/// // Compute the cumulative weight function
+/// let mut cwf = vec![0];
+/// cwf.extend(weights.iter().scan(0, |acc, x| {
+///    *acc += x;
+///   Some(*acc)
+/// }));
+/// // Put the sequence in an Elias–Fano structure
 /// let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
 /// efb.extend(cwf);
 /// let ef = efb.build_with_seq_and_dict();
@@ -61,12 +57,13 @@ use crate::traits::{Succ, SuccUnchecked};
 ///
 /// // To save memory, we can build a smaller Elias–Fano structure
 /// // only supporting unchecked successor queries
-/// let cwf = weights.iter().scan(0, |acc, x| {
-///     *acc += x;
-///     Some(*acc)
-/// }).collect::<Vec<_>>();
+/// let mut cwf = vec![0];
+/// cwf.extend(weights.iter().scan(0, |acc, x| {
+///    *acc += x;
+///   Some(*acc)
+/// }));
 /// let last_cwf = *cwf.last().unwrap();
-/// let mut efb = EliasFanoBuilder::new(weights.len(), last_cwf);
+/// let mut efb = EliasFanoBuilder::new(cwf.len(), last_cwf);
 /// efb.extend(cwf);
 /// let ef = efb.build_with_dict();
 /// let chunks = FairChunks::new_with(50, &ef, weights.len(), last_cwf);
@@ -100,7 +97,7 @@ pub struct FairChunks<I: SuccUnchecked<Input = usize, Output = usize>> {
     /// The number of weights.
     num_weights: usize,
     /// The last element of [cwf](Self::cwf).
-    max_weight: usize,
+    sum_weights: usize,
 }
 
 impl<I: SuccUnchecked<Input = usize, Output = usize>> FairChunks<I> {
@@ -120,15 +117,15 @@ impl<I: SuccUnchecked<Input = usize, Output = usize>> FairChunks<I> {
     ///
     /// * `num_weights` - The number of weights.
     ///
-    /// * `max_weight` - The last element of the cumulative weight function.
-    pub fn new_with(target_weight: usize, cwf: I, num_weights: usize, max_weight: usize) -> Self {
+    /// * `sum_weights` - The last element of the cumulative weight function.
+    pub fn new_with(target_weight: usize, cwf: I, num_weights: usize, sum_weights: usize) -> Self {
         Self {
             target_weight,
             cwf,
             curr_pos: 0,
             current_weight: 0,
             num_weights,
-            max_weight,
+            sum_weights,
         }
     }
 }
@@ -151,14 +148,14 @@ impl<I: Succ<Input = usize, Output = usize>> FairChunks<I> {
     /// * `cwf` - The cumulative weight function.
     pub fn new(target_weight: usize, cwf: I) -> Self {
         let len = cwf.len();
-        let max_weight = if len == 0 { 0 } else { cwf.get(len - 1) };
+        let sum_weights = if len == 0 { 0 } else { cwf.get(len - 1) };
         Self {
             target_weight,
             cwf,
             curr_pos: 0,
             current_weight: 0,
             num_weights: len - 1,
-            max_weight,
+            sum_weights,
         }
     }
 }
@@ -172,8 +169,7 @@ impl<I: SuccUnchecked<Input = usize, Output = usize>> Iterator for FairChunks<I>
         }
 
         let target = self.current_weight + self.target_weight;
-        Some(if target > self.max_weight {
-            self.target_weight = 0;
+        Some(if target > self.sum_weights {
             self.curr_pos..self.num_weights
         } else {
             let (next_pos, next_weight) = unsafe { self.cwf.succ_unchecked::<false>(&target) };
@@ -192,31 +188,26 @@ mod test {
     #[test]
     fn test_fair_chunks() {
         let threshold = 50;
-        // the weights of our elements
+        // The weights of our elements
         let weights = [
             15, 27, 20, 26, 4, 22, 10, 25, 7, 13, 0, 11, 5, 28, 23, 1, 12, 24, 3, 30, 8, 29, 17, 2,
             14, 9, 16, 18, 21, 19,
         ];
-        // prefix sum
-        let mut cwf = weights
-            .iter()
-            .scan(0, |acc, x| {
-                let res = *acc;
-                *acc += x;
-                Some(res)
-            })
-            .collect::<Vec<_>>();
-        cwf.push(cwf[29] + weights[29]);
-        // put the sequence in an elias-fano
+        // Compute the cumulative weight function
+        let mut cwf = vec![0];
+        cwf.extend(weights.iter().scan(0, |acc, x| {
+            *acc += x;
+            Some(*acc)
+        }));
+        // Put the sequence in an Elias–Fano structure
         let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
         efb.extend(cwf);
         let ef = efb.build_with_seq_and_dict();
-        // create the iterator
+        // Create the iterator
         let chunks = FairChunks::new(threshold, &ef);
         let chunks_weights = chunks
             .map(|x| x.map(|i| weights[i]).sum::<usize>())
             .collect::<Vec<_>>();
-        println!("{:?}", chunks_weights);
         assert!(
             chunks_weights
                 .iter()
@@ -224,7 +215,8 @@ mod test {
                 .all(|x| *x >= threshold),
             "All chunks, except the last one, must have weight over the threshold."
         );
-        // check that without the last element in the range, the weight is less than threshold.
+        // check that without the last element in the range the weight is less
+        // than the threshold
         assert!(
             chunks
                 .map(|x| (x.start..x.end - 1).map(|i| weights[i]).sum::<usize>())
