@@ -16,12 +16,12 @@
   between `a.div_ceil(b)` and `(a + b - 1) / b` on x86 compiling in release
   mode is given these two additional instructions for handling overflow:
 
-  ```[asm]
+```[asm]
 
- cmpq $1, %rdx
- sbbq $-1, %rax
+cmpq $1, %rdx
+sbbq $-1, %rax
 
-  ```
+```
 
   In our code all `div_ceil` are with power-of-two values, so there is no impact.
 
