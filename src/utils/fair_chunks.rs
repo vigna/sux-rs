@@ -97,7 +97,7 @@ pub struct FairChunks<I: SuccUnchecked<Input = usize, Output = usize>> {
     /// The number of weights.
     num_weights: usize,
     /// The last element of [cwf](Self::cwf).
-    sum_weights: usize,
+    max_weight: usize,
 }
 
 impl<I: SuccUnchecked<Input = usize, Output = usize>> FairChunks<I> {
@@ -117,15 +117,15 @@ impl<I: SuccUnchecked<Input = usize, Output = usize>> FairChunks<I> {
     ///
     /// * `num_weights` - The number of weights.
     ///
-    /// * `sum_weights` - The last element of the cumulative weight function.
-    pub fn new_with(target_weight: usize, cwf: I, num_weights: usize, sum_weights: usize) -> Self {
+    /// * `max_weight` - The last element of the cumulative weight function.
+    pub fn new_with(target_weight: usize, cwf: I, num_weights: usize, max_weight: usize) -> Self {
         Self {
             target_weight,
             cwf,
             curr_pos: 0,
             current_weight: 0,
             num_weights,
-            sum_weights,
+            max_weight,
         }
     }
 }
@@ -148,14 +148,14 @@ impl<I: Succ<Input = usize, Output = usize>> FairChunks<I> {
     /// * `cwf` - The cumulative weight function.
     pub fn new(target_weight: usize, cwf: I) -> Self {
         let len = cwf.len();
-        let sum_weights = if len == 0 { 0 } else { cwf.get(len - 1) };
+        let max_weight = if len == 0 { 0 } else { cwf.get(len - 1) };
         Self {
             target_weight,
             cwf,
             curr_pos: 0,
             current_weight: 0,
             num_weights: len - 1,
-            sum_weights,
+            max_weight,
         }
     }
 }
@@ -169,7 +169,8 @@ impl<I: SuccUnchecked<Input = usize, Output = usize>> Iterator for FairChunks<I>
         }
 
         let target = self.current_weight + self.target_weight;
-        Some(if target > self.sum_weights {
+        Some(if target > self.max_weight {
+            self.target_weight = 0;
             self.curr_pos..self.num_weights
         } else {
             let (next_pos, next_weight) = unsafe { self.cwf.succ_unchecked::<false>(&target) };

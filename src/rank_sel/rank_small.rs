@@ -196,7 +196,7 @@ impl Block32Counters<2, 9> {
 
     #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
-        (self.all_rel() >> (9 * (word ^ 7)) & ((1 << 9) - 1)) as usize
+        ((self.all_rel() >> (9 * (word ^ 7))) & ((1 << 9) - 1)) as usize
     }
 
     #[inline(always)]
@@ -215,7 +215,7 @@ impl Block32Counters<1, 9> {
 
     #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
-        self.relative[0] as usize >> (9 * (word ^ 3)) & ((1 << 9) - 1)
+        (self.relative[0] as usize >> (9 * (word ^ 3))) & ((1 << 9) - 1)
     }
 
     #[inline(always)]
@@ -232,7 +232,7 @@ impl Block32Counters<1, 10> {
 
     #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
-        self.relative[0] as usize >> (10 * (word ^ 3)) & ((1 << 10) - 1)
+        (self.relative[0] as usize >> (10 * (word ^ 3))) & ((1 << 10) - 1)
     }
 
     #[inline(always)]
@@ -249,7 +249,7 @@ impl Block32Counters<1, 11> {
 
     #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
-        self.relative[0] as usize >> (11 * (word ^ 3)) & ((1 << 11) - 1)
+        (self.relative[0] as usize >> (11 * (word ^ 3))) & ((1 << 11) - 1)
     }
 
     #[inline(always)]
@@ -273,7 +273,7 @@ impl Block32Counters<3, 13> {
 
     #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
-        (self.all_rel() >> (13 * (word ^ 7)) & ((1 << 13) - 1)) as usize
+        ((self.all_rel() >> (13 * (word ^ 7))) & ((1 << 13) - 1)) as usize
     }
 
     #[inline(always)]
@@ -285,7 +285,7 @@ impl Block32Counters<3, 13> {
         unsafe {
             write_unaligned(
                 addr_of_mut!(*self) as *mut u128,
-                packed << 32 | self.absolute as u128,
+                (packed << 32) | self.absolute as u128,
             )
         };
         #[cfg(target_endian = "big")]

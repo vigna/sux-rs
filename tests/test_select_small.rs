@@ -19,7 +19,9 @@ macro_rules! test {
             .chain((1000..10000).step_by(100))
             .chain([1 << 20, 1 << 24]);
         for len in lens {
-            let bits = (0..len).map(|_| rng.random_bool(density)).collect::<BitVec>();
+            let bits = (0..len)
+                .map(|_| rng.random_bool(density))
+                .collect::<BitVec>();
             let rank_small_sel =
                 SelectSmall::<$NUM_U32S, $COUNTER_WIDTH, _>::new(RankSmall::<
                     $NUM_U32S,

@@ -16,7 +16,9 @@ fn test() {
         .chain((100_000..1_000_000).step_by(100_000));
     let density = 0.5;
     for len in lens {
-        let bits = (0..len).map(|_| rng.random_bool(density)).collect::<BitVec>();
+        let bits = (0..len)
+            .map(|_| rng.random_bool(density))
+            .collect::<BitVec>();
         let rank9: Rank9 = Rank9::new(bits.clone());
 
         let mut ranks = Vec::with_capacity(len);

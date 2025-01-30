@@ -104,7 +104,7 @@ pub struct BlockCounters {
 impl BlockCounters {
     #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
-        self.relative >> (9 * (word ^ 7)) & 0x1FF
+        (self.relative >> (9 * (word ^ 7))) & 0x1FF
     }
 
     #[inline(always)]

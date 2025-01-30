@@ -450,22 +450,22 @@ where
                 }
                 return (
                     rank,
-                    ((usize::BITS as usize) - 1 + bit_pos
+                    (((usize::BITS as usize) - 1 + bit_pos
                         - zeros
                         - window.leading_zeros() as usize
                         - rank)
-                        << self.l
+                        << self.l)
                         | lower_bits,
                 );
             }
 
             if STRICT {
                 if lower_bits < value & ((1 << self.l) - 1) {
-                    return (rank, (bit_pos - rank) << self.l | lower_bits);
+                    return (rank, ((bit_pos - rank) << self.l) | lower_bits);
                 }
             } else {
                 if lower_bits <= value & ((1 << self.l) - 1) {
-                    return (rank, (bit_pos - rank) << self.l | lower_bits);
+                    return (rank, ((bit_pos - rank) << self.l) | lower_bits);
                 }
             }
 

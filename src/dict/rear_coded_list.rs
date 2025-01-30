@@ -771,71 +771,71 @@ fn decode_int(data: &[u8]) -> (usize, &[u8]) {
         return (x as usize, &data[1..]);
     }
     if x < 0xC0 {
-        let x = (((x & !0xC0) as usize) << 8 | data[1] as usize) + UPPER_BOUND_1;
+        let x = ((((x & !0xC0) as usize) << 8) | data[1] as usize) + UPPER_BOUND_1;
         return (x, &data[2..]);
     }
     if x < 0xE0 {
-        let x = (((x & !0xE0) as usize) << 16 | (data[1] as usize) << 8 | data[2] as usize)
+        let x = ((((x & !0xE0) as usize) << 16) | ((data[1] as usize) << 8) | data[2] as usize)
             + UPPER_BOUND_2;
         return (x, &data[3..]);
     }
     if x < 0xF0 {
-        let x = (((x & !0xF0) as usize) << 24
-            | (data[1] as usize) << 16
-            | (data[2] as usize) << 8
+        let x = ((((x & !0xF0) as usize) << 24)
+            | ((data[1] as usize) << 16)
+            | ((data[2] as usize) << 8)
             | data[3] as usize)
             + UPPER_BOUND_3;
         return (x, &data[4..]);
     }
     if x < 0xF8 {
-        let x = (((x & !0xF8) as usize) << 32
-            | (data[1] as usize) << 24
-            | (data[2] as usize) << 16
-            | (data[3] as usize) << 8
+        let x = ((((x & !0xF8) as usize) << 32)
+            | ((data[1] as usize) << 24)
+            | ((data[2] as usize) << 16)
+            | ((data[3] as usize) << 8)
             | data[4] as usize)
             + UPPER_BOUND_4;
         return (x, &data[5..]);
     }
     if x < 0xFC {
-        let x = (((x & !0xFC) as usize) << 40
-            | (data[1] as usize) << 32
-            | (data[2] as usize) << 24
-            | (data[3] as usize) << 16
-            | (data[4] as usize) << 8
+        let x = ((((x & !0xFC) as usize) << 40)
+            | ((data[1] as usize) << 32)
+            | ((data[2] as usize) << 24)
+            | ((data[3] as usize) << 16)
+            | ((data[4] as usize) << 8)
             | data[5] as usize)
             + UPPER_BOUND_5;
         return (x, &data[6..]);
     }
     if x < 0xFE {
-        let x = (((x & !0xFE) as usize) << 48
-            | (data[1] as usize) << 40
-            | (data[2] as usize) << 32
-            | (data[3] as usize) << 24
-            | (data[4] as usize) << 16
-            | (data[5] as usize) << 8
+        let x = ((((x & !0xFE) as usize) << 48)
+            | ((data[1] as usize) << 40)
+            | ((data[2] as usize) << 32)
+            | ((data[3] as usize) << 24)
+            | ((data[4] as usize) << 16)
+            | ((data[5] as usize) << 8)
             | data[6] as usize)
             + UPPER_BOUND_6;
         return (x, &data[7..]);
     }
     if x < 0xFF {
-        let x = ((data[1] as usize) << 48
-            | (data[2] as usize) << 40
-            | (data[3] as usize) << 32
-            | (data[4] as usize) << 24
-            | (data[5] as usize) << 16
-            | (data[6] as usize) << 8
+        let x = (((data[1] as usize) << 48)
+            | ((data[2] as usize) << 40)
+            | ((data[3] as usize) << 32)
+            | ((data[4] as usize) << 24)
+            | ((data[5] as usize) << 16)
+            | ((data[6] as usize) << 8)
             | data[7] as usize)
             + UPPER_BOUND_7;
         return (x, &data[8..]);
     }
 
-    let x = (data[1] as usize) << 56
-        | (data[2] as usize) << 48
-        | (data[3] as usize) << 40
-        | (data[4] as usize) << 32
-        | (data[5] as usize) << 24
-        | (data[6] as usize) << 16
-        | (data[7] as usize) << 8
+    let x = ((data[1] as usize) << 56)
+        | ((data[2] as usize) << 48)
+        | ((data[3] as usize) << 40)
+        | ((data[4] as usize) << 32)
+        | ((data[5] as usize) << 24)
+        | ((data[6] as usize) << 16)
+        | ((data[7] as usize) << 8)
         | data[8] as usize;
     (x, &data[9..])
 }

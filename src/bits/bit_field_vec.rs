@@ -416,8 +416,8 @@ impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
         if bit_index + self.bit_width <= W::BITS {
             (*bits.get_unchecked(word_index) >> bit_index) & self.mask
         } else {
-            (*bits.get_unchecked(word_index) >> bit_index
-                | *bits.get_unchecked(word_index + 1) << (W::BITS - bit_index))
+            ((*bits.get_unchecked(word_index) >> bit_index)
+                | (*bits.get_unchecked(word_index + 1) << (W::BITS - bit_index)))
                 & self.mask
         }
     }
@@ -808,7 +808,7 @@ impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
         self.word_index -= 1;
         self.window = *self.vec.bits.as_ref().get_unchecked(self.word_index);
         let used = bit_width - self.fill;
-        res = ((res << used) | self.window >> (W::BITS - used)) & self.vec.mask;
+        res = ((res << used) | (self.window >> (W::BITS - used))) & self.vec.mask;
         self.window <<= used;
         self.fill = W::BITS - used;
         res
@@ -1011,8 +1011,8 @@ where
         if bit_index + self.bit_width <= W::BITS {
             (bits.get_unchecked(word_index).load(order) >> bit_index) & self.mask
         } else {
-            (bits.get_unchecked(word_index).load(order) >> bit_index
-                | bits.get_unchecked(word_index + 1).load(order) << (W::BITS - bit_index))
+            ((bits.get_unchecked(word_index).load(order) >> bit_index)
+                | (bits.get_unchecked(word_index + 1).load(order) << (W::BITS - bit_index)))
                 & self.mask
         }
     }
