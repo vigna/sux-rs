@@ -86,14 +86,14 @@ impl<I: Succ<Input = usize, Output = usize>> Iterator for FairChunks<I> {
         }
 
         let target = self.current_weight + self.step;
-        Some(if target >= self.max_weight {
+        Some(if target > self.max_weight {
             self.step = 0;
-            self.start_pos..self.cwf.len()
+            self.start_pos..self.cwf.len() - 1
         } else {
             let (next_pos, next_weight) = self.cwf.succ(&target).unwrap();
             self.current_weight = next_weight;
-            let res = self.start_pos..next_pos + 1;
-            self.start_pos = next_pos + 1;
+            let res = self.start_pos..next_pos;
+            self.start_pos = next_pos;
             res
         })
     }
@@ -112,15 +112,17 @@ mod test {
             14, 9, 16, 18, 21, 19,
         ];
         // prefix sum
-        let cwf = weights
+        let mut cwf = weights
             .iter()
             .scan(0, |acc, x| {
+                let res = *acc;
                 *acc += x;
-                Some(*acc)
+                Some(res)
             })
             .collect::<Vec<_>>();
+        cwf.push(cwf[29] + weights[29]);
         // put the sequence in an elias-fano
-        let mut efb = EliasFanoBuilder::new(weights.len(), *cwf.last().unwrap());
+        let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
         efb.extend(cwf);
         let ef = efb.build_with_seq_and_dict();
         // create the iterator
@@ -128,7 +130,6 @@ mod test {
         let chunks_weights = chunks
             .map(|x| x.map(|i| weights[i]).sum::<usize>())
             .collect::<Vec<_>>();
-
         assert!(
             chunks_weights
                 .iter()
