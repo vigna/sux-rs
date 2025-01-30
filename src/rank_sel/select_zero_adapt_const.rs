@@ -220,7 +220,6 @@ impl<
 {
     /// Creates a new selection structure over a [`SelectZeroHinted`] with a specified
     /// distance between indexed zeros.
-
     pub fn new(bits: B) -> Self {
         let num_ones = bits.count_zeros();
         let num_bits = max(1, bits.len());

@@ -7,6 +7,8 @@
 
 //! Additional iteration-related traits.
 
+use impl_tools::autoimpl;
+
 /// Conversion into an [`Iterator`] starting from a given position.
 ///
 /// This trait is similar to [`IntoIterator`], but it allows to specify a
@@ -30,6 +32,7 @@ pub trait IntoIteratorFrom: IntoIterator {
 /// that the iteration is safe, and can use this unsafe
 /// trait to iterate very cheaply over each structure. See the implementation
 /// of [`EliasFanoIterator`](crate::dict::elias_fano::EliasFanoIterator) for an example.
+#[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
 pub trait UncheckedIterator {
     type Item;
     /// Return the next item in the iterator. If there is no next item,

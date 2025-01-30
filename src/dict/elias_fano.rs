@@ -596,7 +596,7 @@ where
     }
 }
 
-impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize>> Iterator for EliasFanoIterator<'a, H, L>
+impl<H: AsRef<[usize]>, L: BitFieldSlice<usize>> Iterator for EliasFanoIterator<'_, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -631,8 +631,7 @@ where
     }
 }
 
-impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize>> ExactSizeIterator
-    for EliasFanoIterator<'a, H, L>
+impl<H: AsRef<[usize]>, L: BitFieldSlice<usize>> ExactSizeIterator for EliasFanoIterator<'_, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -802,7 +801,7 @@ impl EliasFanoBuilder {
     /// Builds an Elias-Fano structure with constant-time indexing, using
     /// default values.
     ///
-    /// The resulting structure implements [`IndexedDict`], [`Succ`], and [`Pred`],
+    /// The resulting structure implements [`SuccUnchecked`], and [`PredUnchecked`],
     /// but not [`IndexedSeq`].
     pub fn build_with_dict(self) -> EfDict {
         let ef = self.build();

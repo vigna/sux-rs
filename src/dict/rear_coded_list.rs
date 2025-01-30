@@ -267,14 +267,14 @@ pub struct Iter<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
     iter: Lend<'a, D, P>,
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::ExactSizeIterator for Iter<'a, D, P> {
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::ExactSizeIterator for Iter<'_, D, P> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.iter.len()
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iter<'a, D, P> {
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iter<'_, D, P> {
     type Item = String;
 
     #[inline(always)]
@@ -344,11 +344,11 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lend<'a, D, P> {
     }
 }
 
-impl<'a, 'b, D: AsRef<[u8]>, P: AsRef<[usize]>> Lending<'a> for Lend<'b, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lending<'a> for Lend<'_, D, P> {
     type Lend = &'a str;
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Lend<'a, D, P> {
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Lend<'_, D, P> {
     #[inline]
     /// A next that returns a reference to the inner buffer containg the string.
     /// This is useful to avoid allocating a new string for every query if you
@@ -378,7 +378,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Lend<'a, D, P> {
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeLender for Lend<'a, D, P> {
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeLender for Lend<'_, D, P> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.rca.len() - self.index

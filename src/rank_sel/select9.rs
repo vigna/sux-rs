@@ -161,11 +161,10 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
     pub fn new(rank9: Rank9<B, C>) -> Self {
         let num_bits = rank9.len();
         let num_words = (num_bits + 63) / 64;
-        let inventory_size =
-            (rank9.num_ones() + Self::ONES_PER_INVENTORY - 1) / Self::ONES_PER_INVENTORY;
+        let inventory_size = rank9.num_ones().div_ceil(Self::ONES_PER_INVENTORY);
 
         let u64_per_subinventory = 4;
-        let subinventory_size = (num_words + u64_per_subinventory - 1) / u64_per_subinventory;
+        let subinventory_size = num_words.div_ceil(u64_per_subinventory);
 
         let mut inventory = Vec::with_capacity(inventory_size + 1);
         let mut subinventory = vec![0; subinventory_size].into_boxed_slice();

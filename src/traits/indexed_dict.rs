@@ -47,11 +47,13 @@
 //! if you don't need to select the starting position). Many implementations
 //! offer also equivalent `iter`/`iter_from` convenience methods.
 
+use ambassador::delegatable_trait;
 use impl_tools::autoimpl;
 use std::borrow::Borrow;
 
 /// The types of the dictionary.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait Types {
     type Input: PartialEq<Self::Output> + PartialEq + ?Sized;
     type Output: PartialEq<Self::Input> + PartialEq;
@@ -78,6 +80,7 @@ pub trait Types {
 /// documentation](crate::traits::indexed_dict) is more flexible, as it allows
 /// to write methods that use the inherent implementation only if available.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait IndexedSeq: Types {
     /// Returns the value at the specified index.
     ///
@@ -108,6 +111,7 @@ pub trait IndexedSeq: Types {
 
 /// Access by value to the dictionary.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
 pub trait IndexedDict: Types {
     /// Returns the index of the given value if the dictionary contains it and
     /// `None` otherwise.
@@ -123,6 +127,7 @@ pub trait IndexedDict: Types {
 }
 
 /// Unchecked successor computation for dictionaries whose values are monotonically increasing.
+#[delegatable_trait]
 pub trait SuccUnchecked: Types
 where
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
@@ -147,7 +152,22 @@ where
     ) -> (usize, Self::Output);
 }
 
+impl<I, O, T: SuccUnchecked<Input = I, Output = O> + ?Sized> SuccUnchecked for &T
+where
+    I: PartialOrd<O> + PartialOrd,
+    O: PartialOrd<I> + PartialOrd,
+{
+    #[inline(always)]
+    unsafe fn succ_unchecked<const STRICT: bool>(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, Self::Output) {
+        (*self).succ_unchecked::<STRICT>(value)
+    }
+}
+
 /// Successor computation for dictionaries whose values are monotonically increasing.
+#[delegatable_trait]
 pub trait Succ: SuccUnchecked + IndexedSeq
 where
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
@@ -186,7 +206,24 @@ where
     }
 }
 
+impl<I, O, T: Succ<Input = I, Output = O> + ?Sized> Succ for &T
+where
+    I: PartialOrd<O> + PartialOrd,
+    O: PartialOrd<I> + PartialOrd,
+{
+    #[inline(always)]
+    fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+        (*self).succ(value)
+    }
+
+    #[inline(always)]
+    fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+        (*self).succ_strict(value)
+    }
+}
+
 /// Unchecked predecessor computation for dictionaries whose values are monotonically increasing.
+#[delegatable_trait]
 pub trait PredUnchecked: Types
 where
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
@@ -212,7 +249,22 @@ where
     ) -> (usize, Self::Output);
 }
 
+impl<I, O, T: PredUnchecked<Input = I, Output = O> + ?Sized> PredUnchecked for &T
+where
+    I: PartialOrd<O> + PartialOrd,
+    O: PartialOrd<I> + PartialOrd,
+{
+    #[inline(always)]
+    unsafe fn pred_unchecked<const STRICT: bool>(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, Self::Output) {
+        (*self).pred_unchecked::<STRICT>(value)
+    }
+}
+
 /// Predecessor computation for dictionaries whose values are monotonically increasing.
+#[delegatable_trait]
 pub trait Pred: PredUnchecked + IndexedSeq
 where
     Self::Input: PartialOrd<Self::Output> + PartialOrd,
@@ -248,5 +300,21 @@ where
         } else {
             Some(unsafe { self.pred_unchecked::<true>(value) })
         }
+    }
+}
+
+impl<I, O, T: Pred<Input = I, Output = O> + ?Sized> Pred for &T
+where
+    I: PartialOrd<O> + PartialOrd,
+    O: PartialOrd<I> + PartialOrd,
+{
+    #[inline(always)]
+    fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+        (*self).pred(value)
+    }
+
+    #[inline(always)]
+    fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+        (*self).pred_strict(value)
     }
 }

@@ -202,7 +202,6 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
     /// # Safety
     /// The function must return a value that fits the the [bit
     ///  width](BitFieldSliceCore::bit_width) of the slice.
-
     unsafe fn apply_in_place_unchecked<F>(&mut self, mut f: F)
     where
         F: FnMut(W) -> W,
@@ -346,7 +345,7 @@ impl<'a, V: Word, B: BitFieldSlice<V>> BitFieldSliceIterator<'a, V, B> {
     }
 }
 
-impl<'a, W: Word, B: BitFieldSlice<W>> Iterator for BitFieldSliceIterator<'a, W, B> {
+impl<W: Word, B: BitFieldSlice<W>> Iterator for BitFieldSliceIterator<'_, W, B> {
     type Item = W;
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.slice.len() {

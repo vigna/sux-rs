@@ -126,7 +126,6 @@ const BITS: usize = usize::BITS as usize;
 /// assert_eq!(b[4], false);
 /// assert_eq!(b[5], false);
 /// ```
-
 #[macro_export]
 macro_rules! bit_vec {
     () => {
@@ -310,7 +309,7 @@ impl BitVec<Vec<usize>> {
 
     /// Creates a new bit vector of length `len` initialized to `value`.
     pub fn with_value(len: usize, value: bool) -> Self {
-        let n_of_words = (len + BITS - 1) / BITS;
+        let n_of_words = len.div_ceil(BITS);
         let extra_bits = (n_of_words * BITS) - len;
         let word_value = if value { !0 } else { 0 };
         let mut bits = vec![word_value; n_of_words];
@@ -364,7 +363,7 @@ impl BitVec<Vec<usize>> {
         // TODO: rewrite by word
         if new_len > self.len {
             if new_len > self.bits.len() * BITS {
-                self.bits.resize((new_len + BITS - 1) / BITS, 0);
+                self.bits.resize(new_len.div_ceil(BITS), 0);
             }
             for i in self.len..new_len {
                 unsafe {
@@ -558,7 +557,7 @@ impl<'a, B: AsRef<[usize]>> IntoIterator for &'a BitVec<B> {
     }
 }
 
-impl<'a, B: AsRef<[usize]>> Iterator for BitIterator<'a, B> {
+impl<B: AsRef<[usize]>> Iterator for BitIterator<'_, B> {
     type Item = bool;
     fn next(&mut self) -> Option<bool> {
         if self.next_bit_pos == self.len {
@@ -599,7 +598,7 @@ impl<'a, B: AsRef<[usize]>> OnesIterator<'a, B> {
     }
 }
 
-impl<'a, B: AsRef<[usize]>> Iterator for OnesIterator<'a, B> {
+impl<B: AsRef<[usize]>> Iterator for OnesIterator<'_, B> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -651,7 +650,7 @@ impl<'a, B: AsRef<[usize]>> ZerosIterator<'a, B> {
     }
 }
 
-impl<'a, B: AsRef<[usize]>> Iterator for ZerosIterator<'a, B> {
+impl<B: AsRef<[usize]>> Iterator for ZerosIterator<'_, B> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -861,7 +860,7 @@ impl AtomicBitVec<Vec<AtomicUsize>> {
 
     /// Creates a new atomic bit vector of length `len` initialized to `value`.
     pub fn with_value(len: usize, value: bool) -> Self {
-        let n_of_words = (len + BITS - 1) / BITS;
+        let n_of_words = len.div_ceil(BITS);
         let extra_bits = (n_of_words * BITS) - len;
         let word_value = if value { !0 } else { 0 };
         let mut bits = (0..n_of_words)
@@ -1070,7 +1069,7 @@ impl<'a, B: AsRef<[AtomicUsize]>> IntoIterator for &'a mut AtomicBitVec<B> {
     }
 }
 
-impl<'a, B: AsRef<[AtomicUsize]>> Iterator for AtomicBitIterator<'a, B> {
+impl<B: AsRef<[AtomicUsize]>> Iterator for AtomicBitIterator<'_, B> {
     type Item = bool;
     fn next(&mut self) -> Option<bool> {
         if self.next_bit_pos == self.len {
