@@ -21,12 +21,17 @@ use crate::traits::Succ;
 ///     1, 12, 24,  3, 30,  8, 29, 17, 2, 14,  9, 16, 18, 21, 19,
 /// ];
 /// // prefix sum
-/// let cwf = weights.iter().scan(0, |acc, x| {
+/// let mut cwf = weights
+/// .iter()
+/// .scan(0, |acc, x| {
+///     let res = *acc;
 ///     *acc += x;
-///     Some(*acc)
-/// }).collect::<Vec<_>>();
+///     Some(res)
+/// })
+/// .collect::<Vec<_>>();
+/// cwf.push(cwf[29] + weights[29]); // last element! the CWF starts at zero
 /// // put the sequence in an elias-fano
-/// let mut efb = EliasFanoBuilder::new(weights.len(), *cwf.last().unwrap());
+/// let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
 /// efb.extend(cwf);
 /// let ef = efb.build_with_seq_and_dict();
 /// // create the iterator
@@ -130,6 +135,7 @@ mod test {
         let chunks_weights = chunks
             .map(|x| x.map(|i| weights[i]).sum::<usize>())
             .collect::<Vec<_>>();
+        println!("{:?}", chunks_weights);
         assert!(
             chunks_weights
                 .iter()
