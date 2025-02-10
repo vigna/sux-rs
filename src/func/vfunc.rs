@@ -78,11 +78,6 @@ impl EdgeList {
     const DEG: u64 = 1_u64 << Self::DEG_SHIFT;
     const MAX_DEG: usize = (u64::MAX >> Self::DEG_SHIFT) as usize;
 
-    fn store(&mut self, edge: usize, side: usize) {
-        debug_assert!(side as u64 <= Self::EDGE_INDEX_MASK);
-        *self = EdgeList((side as u64) << Self::SIDE_SHIFT | edge as u64);
-    }
-
     #[inline(always)]
     fn add(&mut self, edge: usize, side: usize) {
         debug_assert!(self.degree() < Self::MAX_DEG);
@@ -103,17 +98,16 @@ impl EdgeList {
     }
 
     #[inline(always)]
-    fn edge_index(&self) -> usize {
-        debug_assert!(self.degree() == 0);
-        (self.0 & Self::EDGE_INDEX_MASK) as usize
-    }
-
-    #[inline(always)]
     fn edge_index_side(&self) -> (usize, usize) {
         (
             (self.0 & EdgeList::EDGE_INDEX_MASK) as usize,
             (self.0 >> Self::SIDE_SHIFT) as usize & Self::SIDE_MASK,
         )
+    }
+
+    #[inline(always)]
+    fn zero(&mut self) {
+        self.0 &= (1 << Self::DEG_SHIFT) - 1;
     }
 }
 
@@ -129,27 +123,6 @@ More precisely, each signature is made of two 64-bit integers `h` and `l`, and t
 - the lower 32 bits of `l` are used to select the third vertex.
 
 */
-
-#[inline(always)]
-#[must_use]
-fn chunk(sig: &[u64; 2], chunk_high_bits: u32, chunk_mask: u32) -> usize {
-    (sig[0].rotate_left(chunk_high_bits) & chunk_mask as u64) as usize
-}
-
-#[inline(always)]
-#[must_use]
-fn edge(sig: &[u64; 2], chunk_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3] {
-    let first_segment = ((sig[0] << chunk_high_bits >> 32) * l as u64 >> 32) as usize;
-    let start = first_segment << log2_seg_size;
-    let segment_size = 1 << log2_seg_size;
-    let segment_mask = segment_size - 1;
-
-    [
-        (sig[0] as usize & segment_mask) + start,
-        ((sig[1] >> 32) as usize & segment_mask) + start + segment_size,
-        (sig[1] as usize & segment_mask) + start + 2 * segment_size,
-    ]
-}
 
 /**
 
@@ -179,8 +152,9 @@ using too many threads might actually be harmful due to memory contention: eight
 #[derivative(Default)]
 #[setters(generate = false)]
 pub struct VFuncBuilder<
-    T: ?Sized + ToSig,
+    T: ?Sized + ToSig<S>,
     O: ZeroCopy + Word + IntoAtomic,
+    S = [u64; 2],
     D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
 > {
     #[setters(generate = true)]
@@ -193,7 +167,7 @@ pub struct VFuncBuilder<
     #[setters(generate = true, strip_option)]
     log2_buckets: Option<u32>,
     _marker_t: PhantomData<T>,
-    _marker_od: PhantomData<(O, D)>,
+    _marker_od: PhantomData<(O, D, S)>,
 }
 
 /**
@@ -208,8 +182,9 @@ and can be serialized using [ε-serde](`epserde`).
 
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFunc<
-    T: ?Sized + ToSig,
+    T: ?Sized + ToSig<S>,
     O: ZeroCopy + Word + IntoAtomic = usize,
+    S = [u64; 2],
     D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
 > {
     high_bits: u32,
@@ -220,7 +195,7 @@ pub struct VFunc<
     num_keys: usize,
     data: D,
     _marker_t: std::marker::PhantomData<T>,
-    _marker_o: std::marker::PhantomData<O>,
+    _marker_os: std::marker::PhantomData<(O, S)>,
 }
 
 fn compute_params(num_keys: usize, pl: &mut impl ProgressLog) -> (u32, usize) {
@@ -253,7 +228,8 @@ where
 fn par_solve<
     'a,
     O: Word + ZeroCopy + Send + Sync + IntoAtomic + 'static,
-    I: Iterator<Item = (usize, Cow<'a, [SigVal<O>]>)> + Send,
+    I: Iterator<Item = (usize, Cow<'a, [SigVal<S, O>]>)> + Send,
+    S: Signature + ChunkEdge,
     D: AtomicBitFieldSlice<O> + Send + Sync,
 >(
     chunk_iter: I,
@@ -267,6 +243,7 @@ fn par_solve<
 ) -> ParSolveResult<O, D>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
+    SigVal<S, O>: RadixKey + Send + Sync,
 {
     const SIDE_PERM: [usize; 4] = [1, 2, 0, 1];
     let chunk_high_bits = num_chunks.ilog2();
@@ -310,7 +287,9 @@ where
                     let mut edge_lists = Vec::new();
                     edge_lists.resize_with(num_vertices, EdgeList::default);
                     chunk.iter().enumerate().for_each(|(edge_index, sig_val)| {
-                        for (side, &v) in edge(&sig_val.sig, chunk_high_bits, l, log2_segment_size)
+                        for (side, &v) in sig_val
+                            .sig
+                            .edge(chunk_high_bits, l, log2_segment_size)
                             .iter()
                             .enumerate()
                         {
@@ -340,29 +319,47 @@ where
                                 continue; // Skip no longer useful entries
                             }
                             let (edge_index, side) = edge_lists[v].edge_index_side();
+                            edge_lists[v].zero();
                             stack[curr] = v;
                             curr += 1;
-                            let [u0, u1, u2] = edge(
-                                &chunk[edge_index].sig,
-                                chunk_high_bits,
-                                l,
-                                log2_segment_size,
-                            );
-                            perm = [u1, u2, u0, u1];
 
-                            let u = perm[side];
-                            edge_lists[u].remove(edge_index, SIDE_PERM[side]);
-                            if edge_lists[u].degree() == 1 {
-                                stack.push(u);
+                            let e =
+                                chunk[edge_index]
+                                    .sig
+                                    .edge(chunk_high_bits, l, log2_segment_size);
+                            match side {
+                                0 => {
+                                    edge_lists[e[1]].remove(edge_index, 1);
+                                    if edge_lists[e[1]].degree() == 1 {
+                                        stack.push(e[1]);
+                                    }
+                                    edge_lists[e[2]].remove(edge_index, 2);
+                                    if edge_lists[e[2]].degree() == 1 {
+                                        stack.push(e[2]);
+                                    }
+                                }
+                                1 => {
+                                    edge_lists[e[0]].remove(edge_index, 0);
+                                    if edge_lists[e[0]].degree() == 1 {
+                                        stack.push(e[0]);
+                                    }
+                                    edge_lists[e[2]].remove(edge_index, 2);
+                                    if edge_lists[e[2]].degree() == 1 {
+                                        stack.push(e[2]);
+                                    }
+                                }
+                                2 => {
+                                    edge_lists[e[0]].remove(edge_index, 0);
+                                    if edge_lists[e[0]].degree() == 1 {
+                                        stack.push(e[0]);
+                                    }
+                                    edge_lists[e[1]].remove(edge_index, 1);
+                                    if edge_lists[e[1]].degree() == 1 {
+                                        stack.push(e[1]);
+                                    }
+                                }
+                                _ => unreachable!("{}", side),
                             }
-
-                            let u = perm[side + 1];
-                            edge_lists[u].remove(edge_index, SIDE_PERM[side + 1]);
-                            if edge_lists[u].degree() == 1 {
-                                stack.push(u);
-                            }
-
-                            edge_lists[v].store(edge_index, side);
                         }
                         stack.truncate(curr);
                     }
@@ -383,24 +380,30 @@ where
                         num_chunks
                     ));
                     while let Some(mut v) = stack.pop() {
-                        let edge_index = edge_lists[v].edge_index();
-                        let mut edge = edge(
-                            &chunk[edge_index].sig,
-                            chunk_high_bits,
-                            l,
-                            log2_segment_size,
-                        );
+                        let (edge_index, side) = edge_lists[v].edge_index_side();
+                        let mut edge =
+                            chunk[edge_index]
+                                .sig
+                                .edge(chunk_high_bits, l, log2_segment_size);
                         let chunk_offset = chunk_index * num_vertices;
                         v += chunk_offset;
                         edge.iter_mut().for_each(|v| {
                             *v += chunk_offset;
                         });
-                        let value = if v == edge[0] {
-                            data.get_atomic(edge[1], Relaxed) ^ data.get_atomic(edge[2], Relaxed)
-                        } else if v == edge[1] {
-                            data.get_atomic(edge[0], Relaxed) ^ data.get_atomic(edge[2], Relaxed)
-                        } else {
-                            data.get_atomic(edge[0], Relaxed) ^ data.get_atomic(edge[1], Relaxed)
+                        let value = match side {
+                            0 => {
+                                data.get_atomic(edge[1], Relaxed)
+                                    ^ data.get_atomic(edge[2], Relaxed)
+                            }
+                            1 => {
+                                data.get_atomic(edge[0], Relaxed)
+                                    ^ data.get_atomic(edge[2], Relaxed)
+                            }
+                            2 => {
+                                data.get_atomic(edge[0], Relaxed)
+                                    ^ data.get_atomic(edge[1], Relaxed)
+                            }
+                            _ => unreachable!(),
                         };
 
                         data.set_atomic(v, chunk[edge_index].val ^ value, Relaxed);
@@ -434,8 +437,63 @@ where
     }
 }
 
-impl<T: ?Sized + ToSig, O: ZeroCopy + Word + IntoAtomic, D: bit_field_slice::BitFieldSlice<O>>
-    VFunc<T, O, D>
+trait ChunkEdge {
+    fn chunk(&self, chunk_high_bits: u32, chunk_mask: u32) -> usize;
+    fn edge(&self, chunk_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3];
+}
+
+impl ChunkEdge for [u64; 2] {
+    #[inline(always)]
+    #[must_use]
+    fn chunk(&self, chunk_high_bits: u32, chunk_mask: u32) -> usize {
+        (self[0].rotate_left(chunk_high_bits) & chunk_mask as u64) as usize
+    }
+
+    #[inline(always)]
+    #[must_use]
+    fn edge(&self, chunk_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3] {
+        let first_segment = ((self[0] << chunk_high_bits >> 32) * l as u64 >> 32) as usize;
+        let start = first_segment << log2_seg_size;
+        let segment_size = 1 << log2_seg_size;
+        let segment_mask = segment_size - 1;
+
+        [
+            (self[0] as usize & segment_mask) + start,
+            ((self[1] >> 32) as usize & segment_mask) + start + segment_size,
+            (self[1] as usize & segment_mask) + start + 2 * segment_size,
+        ]
+    }
+}
+
+impl ChunkEdge for u64 {
+    fn chunk(&self, chunk_high_bits: u32, chunk_mask: u32) -> usize {
+        let xor = *self as u32 ^ (*self >> 32) as u32;
+        (xor.rotate_left(chunk_high_bits) & chunk_mask) as usize
+    }
+
+    #[inline(always)]
+    #[must_use]
+    fn edge(&self, chunk_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3] {
+        let xor = *self as u32 ^ (*self >> 32) as u32;
+        let first_segment = ((xor.rotate_left(chunk_high_bits) as u64 * l as u64) >> 32) as usize;
+        let start = first_segment << log2_seg_size;
+        let segment_size = 1 << log2_seg_size;
+        let segment_mask = segment_size - 1;
+
+        [
+            (*self as usize & segment_mask) as usize + start,
+            ((*self >> 21) as usize & segment_mask) + start + segment_size,
+            ((*self >> 42) as usize & segment_mask) + start + 2 * segment_size,
+        ]
+    }
+}
+
+impl<
+        T: ?Sized + ToSig<S>,
+        O: ZeroCopy + Word + IntoAtomic,
+        S: Signature + ChunkEdge,
+        D: bit_field_slice::BitFieldSlice<O>,
+    > VFunc<T, O, S, D>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
 {
@@ -443,9 +501,9 @@ where
     ///
     /// This method is mainly useful in the construction of compound functions.
     #[inline(always)]
-    pub fn get_by_sig(&self, sig: &[u64; 2]) -> O {
-        let edge = edge(sig, self.high_bits, self.l, self.log2_segment_size);
-        let chunk = chunk(sig, self.high_bits, self.chunk_mask);
+    pub fn get_by_sig(&self, sig: &S) -> O {
+        let edge = sig.edge(self.high_bits, self.l, self.log2_segment_size);
+        let chunk = sig.chunk(self.high_bits, self.chunk_mask);
         // chunk * self.segment_size * (2^log2_l + 2)
         let chunk_offset = chunk * ((self.l + 2) << self.log2_segment_size);
 
@@ -473,18 +531,20 @@ where
     }
 }
 
-impl<T: ?Sized + ToSig, O: ZeroCopy + Word + IntoAtomic + 'static> VFuncBuilder<T, O, Vec<O>>
+impl<T: ?Sized + ToSig<S>, O: ZeroCopy + Word + IntoAtomic + 'static, S: Signature + ChunkEdge>
+    VFuncBuilder<T, O, S, Vec<O>>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
     Vec<O>: BitFieldSlice<O>,
     Vec<O::AtomicType>: AtomicBitFieldSlice<O> + ConvertTo<Vec<O>>,
+    SigVal<S, O>: RadixKey + Send + Sync,
 {
     pub fn build(
         self,
         into_keys: impl RewindableIOLender<T>,
         into_values: impl RewindableIOLender<O>,
         pl: &mut (impl ProgressLog + Send),
-    ) -> anyhow::Result<VFunc<T, O, Vec<O>>> {
+    ) -> anyhow::Result<VFunc<T, O, S, Vec<O>>> {
         self._build::<Vec<O::AtomicType>>(
             into_keys,
             into_values,
@@ -494,18 +554,19 @@ where
     }
 }
 
-impl<T: ?Sized + ToSig, O: ZeroCopy + Word + IntoAtomic + 'static>
-    VFuncBuilder<T, O, BitFieldVec<O>>
+impl<T: ?Sized + ToSig<S>, O: ZeroCopy + Word + IntoAtomic + 'static, S: Signature + ChunkEdge>
+    VFuncBuilder<T, O, S, BitFieldVec<O>>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
     Vec<O::AtomicType>: AtomicBitFieldSlice<O> + ConvertTo<Vec<O>>,
+    SigVal<S, O>: RadixKey + Send + Sync,
 {
     pub fn build(
         self,
         into_keys: impl RewindableIOLender<T>,
         into_values: impl RewindableIOLender<O>,
         pl: &mut (impl ProgressLog + Send),
-    ) -> anyhow::Result<VFunc<T, O, BitFieldVec<O>>> {
+    ) -> anyhow::Result<VFunc<T, O, S, BitFieldVec<O>>> {
         self._build::<AtomicBitFieldVec<O>>(
             into_keys,
             into_values,
@@ -516,12 +577,14 @@ where
 }
 
 impl<
-        T: ?Sized + ToSig,
+        T: ?Sized + ToSig<S>,
         O: ZeroCopy + Word + IntoAtomic + 'static,
+        S: Signature + ChunkEdge,
         D: bit_field_slice::BitFieldSlice<O>,
-    > VFuncBuilder<T, O, D>
+    > VFuncBuilder<T, O, S, D>
 where
     O::AtomicType: AtomicUnsignedInt + AsBytes,
+    SigVal<S, O>: RadixKey + Send + Sync,
 {
     /// Build and return a new function with given keys and values.
     fn _build<A: AtomicBitFieldSlice<O> + Send + Sync>(
@@ -530,7 +593,7 @@ where
         mut into_values: impl RewindableIOLender<O>,
         new: fn(usize, usize) -> A,
         pl: &mut (impl ProgressLog + Send),
-    ) -> anyhow::Result<VFunc<T, O, D>>
+    ) -> anyhow::Result<VFunc<T, O, S, D>>
     where
         A: ConvertTo<D>,
     {
@@ -558,7 +621,8 @@ where
                 let max_chunk_high_bits = 12;
                 let log2_buckets = self.log2_buckets.unwrap_or(8);
                 pl.info(format_args!("Using {} buckets", 1 << log2_buckets));
-                let mut sig_sorter = SigStore::<O>::new(log2_buckets, max_chunk_high_bits).unwrap();
+                let mut sig_sorter =
+                    SigStore::<S, O>::new(log2_buckets, max_chunk_high_bits).unwrap();
                 into_values = into_values.rewind()?;
                 into_keys = into_keys.rewind()?;
                 while let Some(result) = into_keys.next() {
@@ -584,7 +648,8 @@ where
                 chunk_high_bits = 0;
                 max_num_threads = 1;
                 log2_seg_size = comp_log2_seg_size(3, num_keys);
-                c = size_factor(3, num_keys);
+                c = 1.10; // TODO size_factor(3, num_keys);
+
                 dbg!(c, log2_seg_size);
 
                 let num_chunks = 1 << chunk_high_bits;
@@ -657,7 +722,7 @@ where
                 chunk_high_bits = 0;
                 max_num_threads = 1;
                 log2_seg_size = comp_log2_seg_size(3, num_keys);
-                c = size_factor(3, num_keys);
+                c = 1.10; // size_factor(3, num_keys);
                 dbg!(c, log2_seg_size);
 
                 let num_chunks = 1 << chunk_high_bits;
@@ -672,11 +737,10 @@ where
                 let mut chunk_sizes = vec![0_usize; num_chunks];
                 let mut dup = false;
 
-                chunk_sizes[chunk(&sig_vals[0].sig, chunk_high_bits, chunk_mask)] += 1;
+                chunk_sizes[sig_vals[0].sig.chunk(chunk_high_bits, chunk_mask)] += 1;
 
                 for w in sig_vals.windows(2) {
-                    assert!(w[0].sig[0] <= w[1].sig[0]);
-                    chunk_sizes[chunk(&w[1].sig, chunk_high_bits, chunk_mask)] += 1;
+                    chunk_sizes[w[1].sig.chunk(chunk_high_bits, chunk_mask)] += 1;
                     if w[0].sig == w[1].sig {
                         dup = true;
                         break;
@@ -748,7 +812,7 @@ where
             log2_segment_size: log2_seg_size,
             data: data.convert_to().unwrap(),
             _marker_t: std::marker::PhantomData,
-            _marker_o: std::marker::PhantomData,
+            _marker_os: std::marker::PhantomData,
         })
     }
 }
