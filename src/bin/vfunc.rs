@@ -57,7 +57,7 @@ fn main() -> Result<()> {
     pl.display_memory(true);
 
     if let Some(filename) = args.filename {
-        let mut builder = VFuncBuilder::<_, _, BitFieldVec<usize>>::default()
+        let mut builder = VFuncBuilder::<_, _, [u64; 2], BitFieldVec<usize>>::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
 
@@ -82,7 +82,7 @@ fn main() -> Result<()> {
     }
 
     if let Some(n) = args.n {
-        let mut builder = VFuncBuilder::<_, _, BitFieldVec<usize>>::default()
+        let mut builder = VFuncBuilder::<_, _, [u64; 2], BitFieldVec<usize>>::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
         if let Some(threads) = args.threads {
