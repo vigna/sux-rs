@@ -212,24 +212,40 @@ fn par_solve<
     O: Word + ZeroCopy + Send + Sync,
     I: Iterator<Item = (usize, Cow<'a, [SigVal<O>]>)> + Send,
     D: BitFieldSlice<O> + BitFieldSliceMut<O> + Send + Sync,
+    C: ConcurrentProgressLog + Send + Sync,
+    P: ProgressLog + Clone + Send + Sync,
 >(
     data: &mut D,
     chunk_iter: I,
     new: impl Fn(usize, usize) -> D + Sync,
+    do_chunk: impl Fn(
+            &mut C,
+            &mut P,
+            Cow<'a, [SigVal<O>]>,
+            D,
+            usize,
+            u32,
+            usize,
+            usize,
+            u32,
+            usize,
+        ) -> anyhow::Result<(usize, D)>
+        + Send
+        + Sync,
     bit_width: usize,
     num_chunks: usize,
     num_vertices: usize,
     num_threads: usize,
     log2_segment_size: u32,
     l: usize,
-    main_pl: &mut impl ProgressLog,
+    main_pl: &mut C,
+    pl: &mut P,
 ) -> anyhow::Result<()>
 where
     SigVal<O>: RadixKey + Send + Sync,
 {
     let chunk_high_bits = num_chunks.ilog2();
     let (send, receive) = crossbeam_channel::bounded::<(usize, D)>(2 * num_threads);
-    let main_pl = main_pl.concurrent();
 
     ThreadPoolBuilder::new()
         .num_threads(num_threads)
@@ -246,9 +262,9 @@ where
             chunk_iter
                 .par_bridge()
                 .try_for_each_with(
-                    (main_pl.concurrent(), progress_logger![item_name = "edge"]),
+                    (main_pl.clone(), pl.clone()),
                     |(main_pl, pl), (chunk_index, chunk)| {
-                        peel_chunk(
+                        do_chunk(
                             main_pl,
                             pl,
                             chunk,
@@ -380,9 +396,11 @@ fn peel_chunk<
     }
     if chunk.len() != stack.len() {
         warn!(
-            "Peeling failed for chunk {}/{}",
+            "Peeling failed for chunk {}/{} (peeled {} out of {} edge)",
             chunk_index + 1,
-            num_chunks
+            num_chunks,
+            stack.len(),
+            chunk.len()
         );
         bail!("Peeling failed");
     }
@@ -535,7 +553,7 @@ where
         self,
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<O>,
-        pl: &mut (impl ProgressLog + Send),
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, O, Vec<O>, S>> {
         self._build(
             into_keys,
@@ -555,7 +573,7 @@ where
         self,
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<O>,
-        pl: &mut (impl ProgressLog + Send),
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, O, BitFieldVec<O>, S>> {
         self._build(
             into_keys,
@@ -582,7 +600,7 @@ where
         mut into_keys: impl RewindableIoLender<T>,
         mut into_values: impl RewindableIoLender<O>,
         new: fn(usize, usize) -> D,
-        pl: &mut (impl ProgressLog + Send),
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, O, D, S>> {
         // Loop until success or duplicate detection
         let mut dup_count = 0;
@@ -634,7 +652,7 @@ where
                 //chunk_high_bits = 0;
                 //max_num_threads = 1;
                 log2_seg_size = comp_log2_seg_size(3, num_keys);
-                c = 1.23; // TODO size_factor(3, num_keys);
+                c = 1.10; // TODO size_factor(3, num_keys);
 
                 dbg!(c, log2_seg_size);
 
@@ -662,15 +680,14 @@ where
                     &mut data,
                     chunk_store.iter().unwrap(),
                     new,
+                    peel_chunk,
                     bit_width,
                     num_chunks,
                     num_vertices,
-                    match self.num_threads {
-                        0 => max_num_threads,
-                        _ => self.num_threads,
-                    },
+                    max_num_threads,
                     log2_seg_size,
                     l,
+                    &mut pl.concurrent(),
                     pl,
                 ) {
                     Ok(()) => break data,
@@ -706,10 +723,10 @@ where
                 pl.done();
                 num_keys = sig_vals.len();
 
-                (chunk_high_bits, max_num_threads) = compute_params(num_keys, SHARDED);
-                //chunk_high_bits = 0;
-                //max_num_threads = 1;
-                log2_seg_size = comp_log2_seg_size(3, num_keys);
+                //(chunk_high_bits, max_num_threads) = compute_params(num_keys, SHARDED);
+                (chunk_high_bits, max_num_threads) = (8, 8);
+                log2_seg_size = comp_log2_seg_size(3, num_keys >> chunk_high_bits);
+                dbg!(log2_seg_size);
                 c = 1.10; // size_factor(3, num_keys);
                 dbg!(c, log2_seg_size);
 
@@ -752,8 +769,11 @@ where
                     max_value, bit_width
                 ));
 
-                l = ((num_keys as f64 * c).ceil() as usize).div_ceil(1 << log2_seg_size);
+                l = (((num_keys >> chunk_high_bits) as f64 * c).ceil() as usize)
+                    .div_ceil(1 << log2_seg_size);
                 let num_vertices = (1 << log2_seg_size) * (l + 2);
+                dbg!(num_vertices);
+
                 pl.info(format_args!(
                     "Size {:.2}%",
                     (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
@@ -761,20 +781,30 @@ where
 
                 let mut data = new(bit_width, num_vertices * num_chunks);
 
-                if num_vertices < 200000 {
-                    match solve_lin(
-                        no_logging![],
-                        pl,
-                        sig_vals.into(),
-                        data,
-                        0,
-                        0,
-                        1,
+                if num_vertices < 64000000 {
+                    eprintln!("Linear case");
+
+                    match par_solve(
+                        &mut data,
+                        sig_vals
+                            .arbitrary_chunks(&chunk_sizes)
+                            .map(Cow::Borrowed)
+                            .enumerate(),
+                        new,
+                        peel_chunk,
+                        bit_width,
+                        num_chunks,
                         num_vertices,
+                        match self.num_threads {
+                            0 => max_num_threads,
+                            _ => self.num_threads,
+                        },
                         log2_seg_size,
                         l,
+                        &mut pl.concurrent(),
+                        pl,
                     ) {
-                        Ok((_, data)) => break data,
+                        Ok(()) => break data,
                         Err(_) => continue,
                     }
                 }
@@ -788,6 +818,7 @@ where
                             .map(Cow::Borrowed)
                             .enumerate(),
                         new,
+                        peel_chunk,
                         bit_width,
                         num_chunks,
                         num_vertices,
@@ -797,6 +828,7 @@ where
                         },
                         log2_seg_size,
                         l,
+                        &mut pl.concurrent(),
                         pl,
                     ) {
                         Ok(()) => break data,
