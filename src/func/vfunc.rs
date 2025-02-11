@@ -248,7 +248,7 @@ where
                 .try_for_each_with(
                     (main_pl.concurrent(), progress_logger![item_name = "edge"]),
                     |(main_pl, pl), (chunk_index, chunk)| {
-                        solve_chunk(
+                        peel_chunk(
                             main_pl,
                             pl,
                             chunk,
@@ -272,7 +272,7 @@ where
     Ok(())
 }
 
-fn solve_chunk<
+fn peel_chunk<
     'a,
     O: Word + ZeroCopy + Send + Sync,
     D: BitFieldSlice<O> + BitFieldSliceMut<O> + Send + Sync,
@@ -760,6 +760,25 @@ where
                 ));
 
                 let mut data = new(bit_width, num_vertices * num_chunks);
+
+                if num_vertices < 200000 {
+                    match solve_lin(
+                        no_logging![],
+                        pl,
+                        sig_vals.into(),
+                        data,
+                        0,
+                        0,
+                        1,
+                        num_vertices,
+                        log2_seg_size,
+                        l,
+                    ) {
+                        Ok((_, data)) => break data,
+                        Err(_) => continue,
+                    }
+                }
+
                 if SHARDED {
                     eprintln!("*****************");
                     match par_solve(
@@ -784,7 +803,7 @@ where
                         Err(_) => {}
                     }
                 } else {
-                    match solve_chunk(
+                    match peel_chunk(
                         pl,
                         no_logging![],
                         sig_vals.into(),
@@ -822,4 +841,58 @@ where
             _marker_os: std::marker::PhantomData,
         })
     }
+}
+
+fn solve_lin<
+    'a,
+    O: Word + ZeroCopy + Send + Sync,
+    D: BitFieldSlice<O> + BitFieldSliceMut<O> + Send + Sync,
+>(
+    main_pl: &mut impl ProgressLog,
+    pl: &mut impl ProgressLog,
+    mut chunk: Cow<'a, [SigVal<O>]>,
+    mut data: D,
+    chunk_index: usize,
+    chunk_high_bits: u32,
+    num_chunks: usize,
+    num_vertices: usize,
+    log2_segment_size: u32,
+    l: usize,
+) -> anyhow::Result<(usize, D)> {
+    if let Cow::Owned(chunk) = &mut chunk {
+        chunk.radix_sort_unstable();
+    }
+
+    if chunk.par_windows(2).any(|w| w[0].sig == w[1].sig) {
+        bail!("Duplicate signature in chunk");
+    }
+
+    pl.start(format!(
+        "Generating system for chunk {}/{}...",
+        chunk_index + 1,
+        num_chunks
+    ));
+    let mut system = Modulo2System::<O>::new(num_vertices);
+    chunk.iter().for_each(|sig_val| {
+        let mut eq = Modulo2Equation::<O>::new(sig_val.val, num_vertices);
+        for &v in sig_val
+            .sig
+            .edge(chunk_high_bits, l, log2_segment_size)
+            .iter()
+        {
+            eq.add(v);
+        }
+        system.add(eq);
+    });
+    pl.done_with_count(chunk.len());
+
+    pl.start("Solving system...");
+    let result = system.lazy_gaussian_elimination_constructor()?;
+    pl.done();
+
+    for (v, &value) in result.iter().enumerate() {
+        data.set(v, value);
+    }
+
+    Ok((chunk_index, data))
 }
