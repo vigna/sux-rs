@@ -99,6 +99,26 @@ fn test_slices() {
         s.reset();
         assert_eq!(s.get_unchecked(0), 0);
     }
+
+    s.fill(10);
+    for i in 0..s.len() {
+        assert_eq!(s.get(i), 10);
+    }
+    s.reset();
+    for i in 0..s.len() {
+        assert_eq!(s.get(i), 0);
+    }
+    #[cfg(feature = "rayon")]
+    {
+        s.fill(10);
+        for i in 0..s.len() {
+            assert_eq!(s.get(i), 10);
+        }
+        s.par_reset();
+        for i in 0..s.len() {
+            assert_eq!(s.get(i), 0);
+        }
+    }
 }
 
 #[test]
