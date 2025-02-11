@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.6.0] - 2025-02-11
+
+### New
+
+* New explicit `par_*` methods for parallel operations. All such
+  operations use `with_min_len(RAYON_MIN_LEN)` to reduce overhead.
+
 ## [0.5.0] - 2025-01-30
 
 ### New
@@ -9,7 +16,7 @@
 * Added `#[delegatable_trait]` to the `indexed_dict` traits.
 
 * New `FairChunks` structure providing chunks of balanced weight.
- 
+
 ### Changed
 
 * Trait `DivCeilUnchecked` is no longer needed. The difference in codegen

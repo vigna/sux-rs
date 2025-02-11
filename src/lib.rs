@@ -43,3 +43,8 @@ pub(crate) trait Index<Idx> {
     type Output;
     fn index(&self, index: Idx) -> &Self::Output;
 }
+
+/// Parallel iterators performing very fast operations, such as [zeroing a
+/// bit](crate::bits::BitVec::reset) vector, should pass this argument to
+/// [IndexedParallelIterator::with_min_len](`rayon::iter::IndexedParallelIterator::with_min_len`).
+pub const RAYON_MIN_LEN: usize = 100_000;

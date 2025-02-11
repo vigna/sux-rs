@@ -82,6 +82,8 @@
 use crate::prelude::*;
 use crate::traits::bit_field_slice::{panic_if_out_of_bounds, panic_if_value};
 use crate::utils::{transmute_boxed_slice, transmute_vec};
+#[cfg(feature = "rayon")]
+use crate::RAYON_MIN_LEN;
 use anyhow::{bail, Result};
 use common_traits::*;
 use epserde::*;
@@ -468,17 +470,22 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
         let full_words = bit_len / W::BITS;
         let residual = bit_len % W::BITS;
         let bits = self.bits.as_mut();
-
-        #[cfg(feature = "rayon")]
-        {
-            bits[..full_words].par_iter_mut().for_each(|x| *x = W::ZERO);
+        bits[..full_words].iter_mut().for_each(|x| *x = W::ZERO);
+        if residual != 0 {
+            bits[full_words] &= W::MAX << residual;
         }
+    }
 
-        #[cfg(not(feature = "rayon"))]
-        {
-            bits[..full_words].iter_mut().for_each(|x| *x = W::ZERO);
-        }
-
+    #[cfg(feature = "rayon")]
+    fn par_reset(&mut self) {
+        let bit_len = self.len * self.bit_width;
+        let full_words = bit_len / W::BITS;
+        let residual = bit_len % W::BITS;
+        let bits = self.bits.as_mut();
+        bits[..full_words]
+            .par_iter_mut()
+            .with_min_len(RAYON_MIN_LEN)
+            .for_each(|x| *x = W::ZERO);
         if residual != 0 {
             bits[full_words] &= W::MAX << residual;
         }
@@ -1101,27 +1108,29 @@ where
         }
     }
 
-    /// Writes zeros in all values.
     fn reset_atomic(&mut self, ordering: Ordering) {
         let bit_len = self.len * self.bit_width;
         let full_words = bit_len / W::BITS;
         let residual = bit_len % W::BITS;
         let bits = self.bits.as_ref();
-
-        #[cfg(feature = "rayon")]
-        {
-            bits[..full_words]
-                .par_iter()
-                .for_each(|x| x.store(W::ZERO, ordering));
+        bits[..full_words]
+            .iter()
+            .for_each(|x| x.store(W::ZERO, ordering));
+        if residual != 0 {
+            bits[full_words].fetch_and(W::MAX << residual, ordering);
         }
+    }
 
-        #[cfg(not(feature = "rayon"))]
-        {
-            bits[..full_words]
-                .iter()
-                .for_each(|x| x.store(W::ZERO, ordering));
-        }
-
+    #[cfg(feature = "rayon")]
+    fn par_reset_atomic(&mut self, ordering: Ordering) {
+        let bit_len = self.len * self.bit_width;
+        let full_words = bit_len / W::BITS;
+        let residual = bit_len % W::BITS;
+        let bits = self.bits.as_ref();
+        bits[..full_words]
+            .par_iter()
+            .with_min_len(RAYON_MIN_LEN)
+            .for_each(|x| x.store(W::ZERO, ordering));
         if residual != 0 {
             bits[full_words].fetch_and(W::MAX << residual, ordering);
         }
