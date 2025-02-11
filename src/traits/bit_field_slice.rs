@@ -67,6 +67,10 @@
 use common_traits::*;
 use core::sync::atomic::*;
 use mem_dbg::{MemDbg, MemSize};
+#[cfg(feature = "rayon")]
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
+};
 use std::marker::PhantomData;
 
 /// A derived trait that the types used as a parameter for [`BitFieldSlice`] must satisfy.
@@ -185,6 +189,10 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
 
     /// Sets all values to zero.
     fn reset(&mut self);
+
+    /// Sets all values to zero using a parallel implementation.
+    #[cfg(feature = "rayon")]
+    fn par_reset(&mut self);
 
     /// Applies a function to all elements of the slice in place without
     /// checking [bit widths](BitFieldSliceCore::bit_width).
@@ -320,6 +328,13 @@ where
     /// reset a vector to reuse it, and the mutable reference makes it
     /// impossible to have any other reference hanging around.
     fn reset_atomic(&mut self, order: Ordering);
+
+    /// Sets all values to zero using a parallel implementation.
+    ///
+    /// See [`reset_atomic`](AtomicBitFieldSlice::reset_atomic) for more
+    /// details.
+    #[cfg(feature = "rayon")]
+    fn par_reset_atomic(&mut self, order: Ordering);
 }
 
 /// An [`Iterator`] implementation returning the elements of a [`BitFieldSlice`].
@@ -411,6 +426,14 @@ macro_rules! impl_mut {
                     unsafe{self.set_unchecked(idx, 0)};
                 }
             }
+
+            #[cfg(feature = "rayon")]
+            fn par_reset(&mut self) {
+                self.as_mut()
+                    .par_iter_mut()
+                    .with_min_len(crate::RAYON_MIN_LEN)
+                    .for_each(|w| { *w = 0 });
+            }
         }
     )*};
 }
@@ -454,6 +477,14 @@ macro_rules! impl_atomic {
                 for idx in 0..self.len() {
                     unsafe { self.set_atomic_unchecked(idx, 0, order) };
                 }
+            }
+
+            #[cfg(feature = "rayon")]
+            fn par_reset_atomic(&mut self, order: Ordering) {
+                self.as_ref()
+                    .par_iter()
+                    .with_min_len(crate::RAYON_MIN_LEN)
+                    .for_each(|w| w.store(0, order));
             }
         }
     };
