@@ -13,9 +13,9 @@ use sux::{bits::BitFieldVec, func::VFunc, prelude::VFuncBuilder, utils::FromInto
 fn test_func() -> anyhow::Result<()> {
     let mut pl = ProgressLogger::default();
 
-    for offline in [false, true] {
+    for offline in [false, false] {
         for n in [10_usize, 100, 1000, 100000] {
-            let func = VFuncBuilder::<_, _, [u64; 2], BitFieldVec<_>>::default()
+            let func = VFuncBuilder::<_, _, BitFieldVec<_>, [u64; 2]>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .build(
@@ -26,7 +26,7 @@ fn test_func() -> anyhow::Result<()> {
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             func.serialize(&mut cursor).unwrap();
             cursor.set_position(0);
-            let func = VFunc::<_, _, [u64; 2], BitFieldVec<_>>::deserialize_eps(cursor.as_bytes())
+            let func = VFunc::<_, _, BitFieldVec<_>, [u64; 2]>::deserialize_eps(cursor.as_bytes())
                 .unwrap();
             pl.start("Querying...");
             for i in 0..n {

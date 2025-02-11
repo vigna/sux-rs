@@ -10,7 +10,7 @@ use std::hint::black_box;
 use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
-use xorf::{BinaryFuse16, Filter, Fuse16};
+use xorf::{BinaryFuse16, Filter};
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark Fuse with strings or 64-bit integers", long_about = None)]
