@@ -47,6 +47,7 @@ arbitrary-chunks = "0.4.1"
 derivative = "2.2.0"
 derive_setters = "0.1.6"
 xorf = "0.11.0"
+crossbeam-channel = "0.5.14"
 
 [dev-dependencies]
 maligned = "0.2.1"
@@ -54,7 +55,7 @@ criterion = { version = "0.5.1", features = ["html_reports"] }
 
 [features]
 default = ["rayon"]
-cli = []       # Build the binary utils
+cli = []                 # Build the binary utils
 fuzz = ["dep:arbitrary"]
 slow_tests = []          # Run slow tests (use --release)
 

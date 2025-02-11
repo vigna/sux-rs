@@ -11,7 +11,6 @@ use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use sux::bits::BitFieldVec;
 use sux::prelude::VFuncBuilder;
-use sux::traits::BitFieldSlice;
 use sux::utils::{FromIntoIterator, LineLender, ZstdLineLender};
 
 #[derive(Parser, Debug)]
@@ -39,7 +38,8 @@ struct Args {
     /// Use disk-based buckets to reduce memory usage at construction time.
     #[arg(short, long)]
     offline: bool,
-    /// The number of high bits defining the number of buckets. Very large key sets may benefit from a larger number of buckets.
+    /// The number of high bits defining the number of buckets. Very large key
+    /// sets may benefit from a larger number of buckets.
     #[arg(short = 'H', long, default_value_t = 8)]
     high_bits: u32,
 }
@@ -55,7 +55,7 @@ fn main() -> Result<()> {
     pl.display_memory(true);
 
     if let Some(filename) = args.filename {
-        let mut builder = VFuncBuilder::<_, _, [u64; 2], BitFieldVec<usize>>::default()
+        let mut builder = VFuncBuilder::<_, _, BitFieldVec<usize>, [u64; 2]>::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
 
@@ -80,7 +80,7 @@ fn main() -> Result<()> {
     }
 
     if let Some(n) = args.n {
-        let mut builder = VFuncBuilder::<_, _, [u64; 2], BitFieldVec<usize>>::default()
+        let mut builder = VFuncBuilder::<_, _, BitFieldVec<usize>, [u64; 2], true>::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
         if let Some(threads) = args.threads {
