@@ -188,6 +188,22 @@ fn test_fill() {
         for (i, b) in c.into_iter().enumerate() {
             assert!(b, "{}", i);
         }
+        c.fill(false);
+        for (i, b) in c.into_iter().enumerate() {
+            assert!(!b, "{}", i);
+        }
+
+        #[cfg(feature = "rayon")]
+        {
+            c.par_fill(true);
+            for (i, b) in c.into_iter().enumerate() {
+                assert!(b, "{}", i);
+            }
+            c.par_fill(false);
+            for (i, b) in c.into_iter().enumerate() {
+                assert!(!b, "{}", i);
+            }
+        }
 
         if len != c.capacity() {
             assert_eq!(
@@ -210,6 +226,22 @@ fn test_atomic_fill() {
         c.fill(true, Ordering::Relaxed);
         for i in 0..c.len() {
             assert!(c.get(i, Ordering::Relaxed), "{}", i);
+        }
+        c.fill(false, Ordering::Relaxed);
+        for i in 0..c.len() {
+            assert!(!c.get(i, Ordering::Relaxed), "{}", i);
+        }
+
+        #[cfg(feature = "rayon")]
+        {
+            c.par_fill(true, Ordering::Relaxed);
+            for i in 0..c.len() {
+                assert!(c.get(i, Ordering::Relaxed), "{}", i);
+            }
+            c.par_fill(false, Ordering::Relaxed);
+            for i in 0..c.len() {
+                assert!(!c.get(i, Ordering::Relaxed), "{}", i);
+            }
         }
 
         if len % usize::BITS as usize != 0 {
@@ -247,6 +279,19 @@ fn test_flip() {
         for (i, b) in c.into_iter().enumerate() {
             assert!(!b, "{}", i);
         }
+
+        #[cfg(feature = "rayon")]
+        {
+            c.par_flip();
+            for (i, b) in c.into_iter().enumerate() {
+                assert!(b, "{}", i);
+            }
+
+            c.par_flip();
+            for (i, b) in c.into_iter().enumerate() {
+                assert!(!b, "{}", i);
+            }
+        }
     }
 }
 
@@ -270,6 +315,19 @@ fn test_atomic_flip() {
         c.flip(Ordering::Relaxed);
         for i in 0..c.len() {
             assert!(!c.get(i, Ordering::Relaxed), "{}", i);
+        }
+
+        #[cfg(feature = "rayon")]
+        {
+            c.par_flip(Ordering::Relaxed);
+            for i in 0..c.len() {
+                assert!(c.get(i, Ordering::Relaxed), "{}", i);
+            }
+
+            c.par_flip(Ordering::Relaxed);
+            for i in 0..c.len() {
+                assert!(!c.get(i, Ordering::Relaxed), "{}", i);
+            }
         }
     }
 }
