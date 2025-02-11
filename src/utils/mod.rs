@@ -19,6 +19,9 @@ pub use spooky::*;
 pub mod fair_chunks;
 pub use fair_chunks::FairChunks;
 
+pub mod mod2_sys;
+pub use mod2_sys::*;
+
 /// Transmutes a vector of one type into a vector of another type.
 ///
 /// [It is not safe to transmute a
