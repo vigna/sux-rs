@@ -113,6 +113,30 @@ More precisely, each signature is made of two 64-bit integers `h` and `l`, and t
 
 */
 
+/// Static functions with 10%-11% space overhead for large key sets,
+/// fast parallel construction, and fast queries.
+///
+/// Instances of this structure are immutable; they are built using a [`VFuncBuilder`],
+/// and can be serialized using [ε-serde](`epserde`).
+#[derive(Epserde, Debug, MemDbg, MemSize)]
+pub struct VFunc<
+    T: ?Sized + ToSig,
+    O: ZeroCopy + Word = usize,
+    D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
+    S = [u64; 2],
+    const SHARDED: bool = false,
+> {
+    high_bits: u32,
+    log2_seg_size: u32,
+    chunk_mask: u32,
+    seed: u64,
+    l: usize,
+    num_keys: usize,
+    data: D,
+    _marker_t: std::marker::PhantomData<T>,
+    _marker_os: std::marker::PhantomData<(O, S)>,
+}
+
 /// A builder for [`VFunc`].
 ///
 /// Keys must implement the [`ToSig`] trait, which provides a method to compute
@@ -141,9 +165,9 @@ More precisely, each signature is made of two 64-bit integers `h` and `l`, and t
 #[derivative(Default)]
 #[setters(generate = false)]
 pub struct VFuncBuilder<
-    T: ?Sized + ToSig,
+    T: ?Sized + Send + Sync + ToSig,
     O: ZeroCopy + Word,
-    D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
+    D: bit_field_slice::BitFieldSlice<O> + Send + Sync = BitFieldVec<O>,
     S = [u64; 2],
     const SHARDED: bool = false,
 > {
@@ -157,32 +181,17 @@ pub struct VFuncBuilder<
     /// `true`. The default is 8.
     #[setters(generate = true, strip_option)]
     log2_buckets: Option<u32>,
+    bit_width: usize,
+    chunk_high_bits: u32,
+    chunk_mask: u32,
+    num_keys: usize,
+    num_chunks: usize,
+    num_vertices: usize,
+    log2_seg_size: u32,
+    l: usize,
+
     _marker_t: PhantomData<T>,
     _marker_od: PhantomData<(O, D, S)>,
-}
-
-/// Static functions with 10%-11% space overhead for large key sets,
-/// fast parallel construction, and fast queries.
-///
-/// Instances of this structure are immutable; they are built using a [`VFuncBuilder`],
-/// and can be serialized using [ε-serde](`epserde`).
-#[derive(Epserde, Debug, MemDbg, MemSize)]
-pub struct VFunc<
-    T: ?Sized + ToSig,
-    O: ZeroCopy + Word = usize,
-    D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
-    S = [u64; 2],
-    const SHARDED: bool = false,
-> {
-    high_bits: u32,
-    log2_segment_size: u32,
-    chunk_mask: u32,
-    seed: u64,
-    l: usize,
-    num_keys: usize,
-    data: D,
-    _marker_t: std::marker::PhantomData<T>,
-    _marker_os: std::marker::PhantomData<(O, S)>,
 }
 
 fn compute_params(num_keys: usize, sharded: bool) -> (u32, usize) {
@@ -206,241 +215,242 @@ fn compute_params(num_keys: usize, sharded: bool) -> (u32, usize) {
     dbg!((chunk_high_bits, max_num_threads))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn par_solve<
-    'a,
-    O: Word + ZeroCopy + Send + Sync,
-    I: Iterator<Item = (usize, Cow<'a, [SigVal<O>]>)> + Send,
-    D: BitFieldSlice<O> + BitFieldSliceMut<O> + Send + Sync,
-    C: ConcurrentProgressLog + Send + Sync,
-    P: ProgressLog + Clone + Send + Sync,
->(
-    data: &mut D,
-    chunk_iter: I,
-    new: impl Fn(usize, usize) -> D + Sync,
-    do_chunk: impl Fn(
-            &mut C,
-            &mut P,
-            Cow<'a, [SigVal<O>]>,
-            D,
-            usize,
-            u32,
-            usize,
-            usize,
-            u32,
-            usize,
-        ) -> anyhow::Result<(usize, D)>
-        + Send
-        + Sync,
-    bit_width: usize,
-    num_chunks: usize,
-    num_vertices: usize,
-    num_threads: usize,
-    log2_segment_size: u32,
-    l: usize,
-    main_pl: &mut C,
-    pl: &mut P,
-) -> anyhow::Result<()>
-where
-    SigVal<O>: RadixKey + Send + Sync,
+impl<
+        T: ?Sized + Send + Sync + ToSig,
+        O: ZeroCopy + Word + Send + Sync,
+        D: BitFieldSlice<O> + BitFieldSliceMut<O> + Send + Sync,
+        S: Send + Sync,
+        const SHARDED: bool,
+    > VFuncBuilder<T, O, D, S, SHARDED>
 {
-    let chunk_high_bits = num_chunks.ilog2();
-    let (send, receive) = crossbeam_channel::bounded::<(usize, D)>(2 * num_threads);
+    #[allow(clippy::too_many_arguments)]
+    fn par_solve<
+        'a,
+        I: Iterator<Item = (usize, Cow<'a, [SigVal<O>]>)> + Send,
+        C: ConcurrentProgressLog + Send + Sync,
+        P: ProgressLog + Clone + Send + Sync,
+    >(
+        &mut self,
+        main_pl: &mut C,
+        pl: &mut P,
+        chunk_iter: I,
+        data: &mut D,
+        new: impl Fn(usize, usize) -> D + Sync,
+        do_chunk: impl Fn(
+                &Self,
+                &mut C,
+                &mut P,
+                usize,
+                Cow<'a, [SigVal<O>]>,
+                D,
+            ) -> Result<(usize, D), (usize, D, Vec<usize>)>
+            + Send
+            + Sync,
+    ) -> anyhow::Result<()>
+    where
+        SigVal<O>: RadixKey + Send + Sync,
+    {
+        self.chunk_high_bits = self.num_chunks.ilog2();
+        let (send, receive) = crossbeam_channel::bounded::<(usize, D)>(2 * self.num_threads);
 
-    ThreadPoolBuilder::new()
-        .num_threads(num_threads)
-        .build()?
-        .scope(|scope| {
-            scope.spawn(|_| {
-                for (chunk_index, chunk_data) in receive {
-                    for i in 0..num_vertices {
-                        data.set(chunk_index * num_vertices + i, chunk_data.get(i));
+        ThreadPoolBuilder::new()
+            .num_threads(self.num_threads)
+            .build()?
+            .scope(|scope| {
+                scope.spawn(|_| {
+                    for (chunk_index, chunk_data) in receive {
+                        for i in 0..self.num_vertices {
+                            data.set(chunk_index * self.num_vertices + i, chunk_data.get(i));
+                        }
                     }
-                }
-            });
+                });
 
-            chunk_iter
-                .par_bridge()
-                .try_for_each_with(
-                    (main_pl.clone(), pl.clone()),
-                    |(main_pl, pl), (chunk_index, chunk)| {
-                        do_chunk(
-                            main_pl,
-                            pl,
-                            chunk,
-                            new(bit_width, num_vertices),
-                            chunk_index,
-                            chunk_high_bits,
-                            num_chunks,
-                            num_vertices,
-                            log2_segment_size,
-                            l,
-                        )
-                        .map(|(chunk_index, data)| {
-                            send.send((chunk_index, data)).unwrap();
-                        })
-                    },
-                )
-                .map(|_| {
-                    drop(send);
-                })
-        })?;
-    Ok(())
-}
-
-fn peel_chunk<
-    'a,
-    O: Word + ZeroCopy + Send + Sync,
-    D: BitFieldSlice<O> + BitFieldSliceMut<O> + Send + Sync,
->(
-    main_pl: &mut impl ProgressLog,
-    pl: &mut impl ProgressLog,
-    mut chunk: Cow<'a, [SigVal<O>]>,
-    mut data: D,
-    chunk_index: usize,
-    chunk_high_bits: u32,
-    num_chunks: usize,
-    num_vertices: usize,
-    log2_segment_size: u32,
-    l: usize,
-) -> anyhow::Result<(usize, D)> {
-    if let Cow::Owned(chunk) = &mut chunk {
-        chunk.radix_sort_unstable();
+                chunk_iter
+                    .par_bridge()
+                    .try_for_each_with(
+                        (main_pl.clone(), pl.clone()),
+                        |(main_pl, pl), (chunk_index, chunk)| {
+                            do_chunk(
+                                self,
+                                main_pl,
+                                pl,
+                                chunk_index,
+                                chunk,
+                                new(self.bit_width, self.num_vertices),
+                            )
+                            .map(|(chunk_index, data)| {
+                                send.send((chunk_index, data)).unwrap();
+                            })
+                        },
+                    )
+                    .map(|_| {
+                        drop(send);
+                    })
+            })
+            .map_err(|_e| anyhow::anyhow!("Couldn't solve"))?; // TODO
+        Ok(())
     }
 
-    if chunk.par_windows(2).any(|w| w[0].sig == w[1].sig) {
-        bail!("Duplicate signature in chunk");
-    }
-
-    pl.start(format!(
-        "Generating graph for chunk {}/{}...",
-        chunk_index + 1,
-        num_chunks
-    ));
-    let mut edge_lists = Vec::new();
-    edge_lists.resize_with(num_vertices, EdgeList::default);
-    chunk.iter().enumerate().for_each(|(edge_index, sig_val)| {
-        for (side, &v) in sig_val
-            .sig
-            .edge(chunk_high_bits, l, log2_segment_size)
-            .iter()
-            .enumerate()
-        {
-            edge_lists[v].add(edge_index, side);
+    fn peel_chunk<'a>(
+        &self,
+        main_pl: &mut impl ProgressLog,
+        pl: &mut impl ProgressLog,
+        chunk_index: usize,
+        mut chunk: Cow<'a, [SigVal<O>]>,
+        data: D,
+    ) -> Result<(usize, D), (usize, D, Vec<usize>)> {
+        if let Cow::Owned(chunk) = &mut chunk {
+            chunk.radix_sort_unstable();
         }
-    });
-    pl.done_with_count(chunk.len());
 
-    pl.start(format!(
-        "Peeling graph for chunk {}/{}...",
-        chunk_index + 1,
-        num_chunks
-    ));
-    let mut stack = Vec::new();
-    for v in (0..num_vertices).rev() {
-        if edge_lists[v].degree() != 1 {
-            continue;
-        }
-        let mut pos = stack.len();
-        let mut curr = stack.len();
-        stack.push(v);
-        while pos < stack.len() {
-            let v = stack[pos];
-            pos += 1;
-            if edge_lists[v].degree() == 0 {
-                continue; // Skip no longer useful entries
-            }
-            let (edge_index, side) = edge_lists[v].edge_index_side();
-            edge_lists[v].zero();
-            stack[curr] = v;
-            curr += 1;
+        /*if chunk.par_windows(2).any(|w| w[0].sig == w[1].sig) { TODO
+            bail!("Duplicate signature in chunk");
+        }*/
 
-            let e = chunk[edge_index]
-                .sig
-                .edge(chunk_high_bits, l, log2_segment_size);
-            match side {
-                0 => {
-                    edge_lists[e[1]].remove(edge_index, 1);
-                    if edge_lists[e[1]].degree() == 1 {
-                        stack.push(e[1]);
-                    }
-                    edge_lists[e[2]].remove(edge_index, 2);
-                    if edge_lists[e[2]].degree() == 1 {
-                        stack.push(e[2]);
-                    }
-                }
-                1 => {
-                    edge_lists[e[0]].remove(edge_index, 0);
-                    if edge_lists[e[0]].degree() == 1 {
-                        stack.push(e[0]);
-                    }
-                    edge_lists[e[2]].remove(edge_index, 2);
-                    if edge_lists[e[2]].degree() == 1 {
-                        stack.push(e[2]);
-                    }
-                }
-                2 => {
-                    edge_lists[e[0]].remove(edge_index, 0);
-                    if edge_lists[e[0]].degree() == 1 {
-                        stack.push(e[0]);
-                    }
-                    edge_lists[e[1]].remove(edge_index, 1);
-                    if edge_lists[e[1]].degree() == 1 {
-                        stack.push(e[1]);
-                    }
-                }
-                _ => unreachable!("{}", side),
-            }
-        }
-        stack.truncate(curr);
-    }
-    if chunk.len() != stack.len() {
-        warn!(
-            "Peeling failed for chunk {}/{} (peeled {} out of {} edge)",
+        pl.start(format!(
+            "Generating graph for chunk {}/{}...",
             chunk_index + 1,
-            num_chunks,
-            stack.len(),
-            chunk.len()
-        );
-        bail!("Peeling failed");
+            self.num_chunks
+        ));
+        let mut edge_lists = Vec::new();
+        edge_lists.resize_with(self.num_vertices, EdgeList::default);
+        chunk.iter().enumerate().for_each(|(edge_index, sig_val)| {
+            for (side, &v) in sig_val
+                .sig
+                .edge(self.chunk_high_bits, self.l, self.log2_seg_size)
+                .iter()
+                .enumerate()
+            {
+                edge_lists[v].add(edge_index, side);
+            }
+        });
+        pl.done_with_count(chunk.len());
+
+        pl.start(format!(
+            "Peeling graph for chunk {}/{}...",
+            chunk_index + 1,
+            self.num_chunks
+        ));
+        let mut stack = Vec::new();
+        for v in (0..self.num_vertices).rev() {
+            if edge_lists[v].degree() != 1 {
+                continue;
+            }
+            let mut pos = stack.len();
+            let mut curr = stack.len();
+            stack.push(v);
+            while pos < stack.len() {
+                let v = stack[pos];
+                pos += 1;
+                if edge_lists[v].degree() == 0 {
+                    continue; // Skip no longer useful entries
+                }
+                let (edge_index, side) = edge_lists[v].edge_index_side();
+                edge_lists[v].zero();
+                stack[curr] = v;
+                curr += 1;
+
+                let e =
+                    chunk[edge_index]
+                        .sig
+                        .edge(self.chunk_high_bits, self.l, self.log2_seg_size);
+                match side {
+                    0 => {
+                        edge_lists[e[1]].remove(edge_index, 1);
+                        if edge_lists[e[1]].degree() == 1 {
+                            stack.push(e[1]);
+                        }
+                        edge_lists[e[2]].remove(edge_index, 2);
+                        if edge_lists[e[2]].degree() == 1 {
+                            stack.push(e[2]);
+                        }
+                    }
+                    1 => {
+                        edge_lists[e[0]].remove(edge_index, 0);
+                        if edge_lists[e[0]].degree() == 1 {
+                            stack.push(e[0]);
+                        }
+                        edge_lists[e[2]].remove(edge_index, 2);
+                        if edge_lists[e[2]].degree() == 1 {
+                            stack.push(e[2]);
+                        }
+                    }
+                    2 => {
+                        edge_lists[e[0]].remove(edge_index, 0);
+                        if edge_lists[e[0]].degree() == 1 {
+                            stack.push(e[0]);
+                        }
+                        edge_lists[e[1]].remove(edge_index, 1);
+                        if edge_lists[e[1]].degree() == 1 {
+                            stack.push(e[1]);
+                        }
+                    }
+                    _ => unreachable!("{}", side),
+                }
+            }
+            stack.truncate(curr);
+        }
+        if chunk.len() != stack.len() {
+            /*warn!(
+                "Peeling failed for chunk {}/{} (peeled {} out of {} edge)",
+                chunk_index + 1,
+                num_chunks,
+                stack.len(),
+                chunk.len()
+            );*/
+            return Err((chunk_index, data, stack));
+        }
+        pl.done_with_count(chunk.len());
+
+        let assignment = self.assign(chunk_index, chunk, data, edge_lists, stack, pl);
+        main_pl.info(format_args!(
+            "Completed chunk {}/{}.",
+            chunk_index + 1,
+            self.num_chunks
+        ));
+        main_pl.update_and_display();
+        Ok(assignment)
     }
-    pl.done_with_count(chunk.len());
 
-    pl.start(format!(
-        "Assigning values for chunk {}/{}...",
-        chunk_index + 1,
-        num_chunks
-    ));
-    while let Some(v) = stack.pop() {
-        let (edge_index, side) = edge_lists[v].edge_index_side();
-        let edge = chunk[edge_index]
-            .sig
-            .edge(chunk_high_bits, l, log2_segment_size);
-        let value = match side {
-            0 => data.get(edge[1]) ^ data.get(edge[2]),
-            1 => data.get(edge[0]) ^ data.get(edge[2]),
-            2 => data.get(edge[0]) ^ data.get(edge[1]),
-            _ => unreachable!(),
-        };
+    fn assign(
+        &self,
+        chunk_index: usize,
+        chunk: Cow<[SigVal<O>]>,
+        mut data: D,
+        edge_lists: Vec<EdgeList>,
+        mut stack: Vec<usize>,
+        pl: &mut impl ProgressLog,
+    ) -> (usize, D) {
+        pl.start(format!(
+            "Assigning values for chunk {}/{}...",
+            chunk_index + 1,
+            self.num_chunks
+        ));
+        while let Some(v) = stack.pop() {
+            let (edge_index, side) = edge_lists[v].edge_index_side();
+            let edge = chunk[edge_index]
+                .sig
+                .edge(self.chunk_high_bits, self.l, self.log2_seg_size);
+            let value = match side {
+                0 => data.get(edge[1]) ^ data.get(edge[2]),
+                1 => data.get(edge[0]) ^ data.get(edge[2]),
+                2 => data.get(edge[0]) ^ data.get(edge[1]),
+                _ => unreachable!(),
+            };
 
-        data.set(v, chunk[edge_index].val ^ value);
-        debug_assert_eq!(
-            data.get(edge[0]) ^ data.get(edge[1]) ^ data.get(edge[2]),
-            chunk[edge_index].val
-        );
+            data.set(v, chunk[edge_index].val ^ value);
+            debug_assert_eq!(
+                data.get(edge[0]) ^ data.get(edge[1]) ^ data.get(edge[2]),
+                chunk[edge_index].val
+            );
+        }
+        pl.done_with_count(chunk.len());
+
+        (chunk_index, data)
     }
-    pl.done_with_count(chunk.len());
-
-    main_pl.info(format_args!(
-        "Completed chunk {}/{}.",
-        chunk_index + 1,
-        num_chunks
-    ));
-    main_pl.update_and_display();
-    Ok((chunk_index, data))
 }
 
-pub trait ChunkEdge {
+pub trait ChunkEdge: Send + Sync {
     fn chunk(&self, chunk_high_bits: u32, chunk_mask: u32) -> usize;
     fn edge(&self, chunk_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3];
 }
@@ -505,10 +515,10 @@ impl<
     #[inline(always)]
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> O {
         if SHARDED {
-            let edge = sig.edge(self.high_bits, self.l, self.log2_segment_size);
+            let edge = sig.edge(self.high_bits, self.l, self.log2_seg_size);
             let chunk = sig.chunk(self.high_bits, self.chunk_mask);
             // chunk * self.segment_size * (2^log2_l + 2)
-            let chunk_offset = chunk * ((self.l + 2) << self.log2_segment_size);
+            let chunk_offset = chunk * ((self.l + 2) << self.log2_seg_size);
 
             unsafe {
                 self.data.get_unchecked(edge[0] + chunk_offset)
@@ -516,7 +526,7 @@ impl<
                     ^ self.data.get_unchecked(edge[2] + chunk_offset)
             }
         } else {
-            let edge = sig.edge(0, self.l, self.log2_segment_size);
+            let edge = sig.edge(0, self.l, self.log2_seg_size);
 
             unsafe {
                 self.data.get_unchecked(edge[0])
@@ -543,7 +553,7 @@ impl<
     }
 }
 
-impl<T: ?Sized + ToSig, O: ZeroCopy + Word, S: ChunkEdge, const SHARDED: bool>
+impl<T: ?Sized + Send + Sync + ToSig, O: ZeroCopy + Word, S: ChunkEdge, const SHARDED: bool>
     VFuncBuilder<T, O, Vec<O>, S, SHARDED>
 where
     SigVal<O>: RadixKey + Send + Sync,
@@ -564,7 +574,7 @@ where
     }
 }
 
-impl<T: ?Sized + ToSig, O: ZeroCopy + Word, S: ChunkEdge, const SHARDED: bool>
+impl<T: ?Sized + Send + Sync + ToSig, O: ZeroCopy + Word, S: ChunkEdge, const SHARDED: bool>
     VFuncBuilder<T, O, BitFieldVec<O>, S, SHARDED>
 where
     SigVal<O>: RadixKey + Send + Sync,
@@ -585,7 +595,7 @@ where
 }
 
 impl<
-        T: ?Sized + ToSig,
+        T: ?Sized + Send + Sync + ToSig,
         O: ZeroCopy + Word,
         D: bit_field_slice::BitFieldSlice<O> + bit_field_slice::BitFieldSliceMut<O> + Send + Sync,
         S: ChunkEdge,
@@ -596,7 +606,7 @@ where
 {
     /// Build and return a new function with given keys and values.
     fn _build(
-        self,
+        mut self,
         mut into_keys: impl RewindableIoLender<T>,
         mut into_values: impl RewindableIoLender<O>,
         new: fn(usize, usize) -> D,
@@ -605,14 +615,6 @@ where
         // Loop until success or duplicate detection
         let mut dup_count = 0;
         let mut seed = 0;
-        let (
-            mut num_keys,
-            mut bit_width,
-            mut log2_seg_size,
-            mut chunk_high_bits,
-            mut chunk_mask,
-            mut l,
-        );
         let data = loop {
             pl.item_name("key");
             pl.start("Reading input...");
@@ -645,50 +647,46 @@ where
                         }
                     }
                 }
-                num_keys = sig_sorter.len();
+                self.num_keys = sig_sorter.len();
                 pl.done();
 
-                (chunk_high_bits, max_num_threads) = compute_params(num_keys, SHARDED);
+                (self.chunk_high_bits, max_num_threads) = compute_params(self.num_keys, SHARDED);
                 //chunk_high_bits = 0;
                 //max_num_threads = 1;
-                log2_seg_size = comp_log2_seg_size(3, num_keys);
+                self.log2_seg_size = comp_log2_seg_size(3, self.num_keys);
                 c = 1.10; // TODO size_factor(3, num_keys);
 
-                dbg!(c, log2_seg_size);
+                dbg!(c, self.log2_seg_size);
 
-                let num_chunks = 1 << chunk_high_bits;
-                chunk_mask = (1u32 << chunk_high_bits) - 1;
+                self.num_chunks = 1 << self.chunk_high_bits;
+                self.chunk_mask = (1u32 << self.chunk_high_bits) - 1;
 
-                let mut chunk_store = sig_sorter.into_chunk_store(chunk_high_bits)?;
+                let mut chunk_store = sig_sorter.into_chunk_store(self.chunk_high_bits)?;
                 // let chunk_sizes = chunk_store.chunk_sizes();
 
-                bit_width = max_value.len() as usize;
+                self.bit_width = max_value.len() as usize;
                 pl.info(format_args!(
                     "max value = {}, bit width = {}",
-                    max_value, bit_width
+                    max_value, self.bit_width
                 ));
 
-                l = ((num_keys as f64 * c).ceil() as usize).div_ceil(1 << log2_seg_size);
-                let num_vertices = (1 << log2_seg_size) * (l + 2);
+                self.l =
+                    ((self.num_keys as f64 * c).ceil() as usize).div_ceil(1 << self.log2_seg_size);
+                self.num_vertices = (1 << self.log2_seg_size) * (self.l + 2);
                 pl.info(format_args!(
                     "Size {:.2}%",
-                    (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
+                    (100.0 * (self.num_vertices * self.num_chunks) as f64)
+                        / (self.num_keys as f64 * c)
                 ));
 
-                let mut data = new(bit_width, num_vertices * num_chunks);
-                match par_solve(
-                    &mut data,
-                    chunk_store.iter().unwrap(),
-                    new,
-                    peel_chunk,
-                    bit_width,
-                    num_chunks,
-                    num_vertices,
-                    max_num_threads,
-                    log2_seg_size,
-                    l,
+                let mut data = new(self.bit_width, self.num_vertices * self.num_chunks);
+                match self.par_solve(
                     &mut pl.concurrent(),
                     pl,
+                    chunk_store.iter().unwrap(),
+                    &mut data,
+                    new,
+                    Self::peel_chunk,
                 ) {
                     Ok(()) => break data,
                     Err(_) => {
@@ -721,38 +719,38 @@ where
                     }
                 }
                 pl.done();
-                num_keys = sig_vals.len();
+                self.num_keys = sig_vals.len();
 
                 //(chunk_high_bits, max_num_threads) = compute_params(num_keys, SHARDED);
-                (chunk_high_bits, max_num_threads) = (8, 8);
-                log2_seg_size = comp_log2_seg_size(3, num_keys >> chunk_high_bits);
-                dbg!(log2_seg_size);
+                (self.chunk_high_bits, max_num_threads) = (8, 8);
+                self.log2_seg_size = comp_log2_seg_size(3, self.num_keys >> self.chunk_high_bits);
+                dbg!(self.log2_seg_size);
                 c = 1.10; // size_factor(3, num_keys);
-                dbg!(c, log2_seg_size);
+                dbg!(c, self.log2_seg_size);
 
-                let num_chunks = 1 << chunk_high_bits;
-                chunk_mask = (1u32 << chunk_high_bits) - 1;
+                self.num_chunks = 1 << self.chunk_high_bits;
+                self.chunk_mask = (1u32 << self.chunk_high_bits) - 1;
 
                 pl.start("Sorting...");
                 sig_vals.radix_sort_unstable();
-                pl.done_with_count(num_keys);
+                pl.done_with_count(self.num_keys);
 
                 pl.start("Checking for duplicates...");
 
-                let mut chunk_sizes = vec![0_usize; num_chunks];
+                let mut chunk_sizes = vec![0_usize; self.num_chunks];
                 let mut dup = false;
 
-                chunk_sizes[sig_vals[0].sig.chunk(chunk_high_bits, chunk_mask)] += 1;
+                chunk_sizes[sig_vals[0].sig.chunk(self.chunk_high_bits, self.chunk_mask)] += 1;
 
                 for w in sig_vals.windows(2) {
-                    chunk_sizes[w[1].sig.chunk(chunk_high_bits, chunk_mask)] += 1;
+                    chunk_sizes[w[1].sig.chunk(self.chunk_high_bits, self.chunk_mask)] += 1;
                     if w[0].sig == w[1].sig {
                         dup = true;
                         break;
                     }
                 }
 
-                pl.done_with_count(num_keys);
+                pl.done_with_count(self.num_keys);
 
                 if dup {
                     if dup_count >= 3 {
@@ -763,46 +761,37 @@ where
                     continue;
                 }
 
-                bit_width = max_value.len() as usize;
+                self.bit_width = max_value.len() as usize;
                 pl.info(format_args!(
                     "max value = {}, bit width = {}",
-                    max_value, bit_width
+                    max_value, self.bit_width
                 ));
 
-                l = (((num_keys >> chunk_high_bits) as f64 * c).ceil() as usize)
-                    .div_ceil(1 << log2_seg_size);
-                let num_vertices = (1 << log2_seg_size) * (l + 2);
+                self.l = (((self.num_keys >> self.chunk_high_bits) as f64 * c).ceil() as usize)
+                    .div_ceil(1 << self.log2_seg_size);
+                let num_vertices = (1 << self.log2_seg_size) * (self.l + 2);
                 dbg!(num_vertices);
 
                 pl.info(format_args!(
                     "Size {:.2}%",
-                    (100.0 * (num_vertices * num_chunks) as f64) / (num_keys as f64 * c)
+                    (100.0 * (num_vertices * self.num_chunks) as f64) / (self.num_keys as f64 * c)
                 ));
 
-                let mut data = new(bit_width, num_vertices * num_chunks);
+                let mut data = new(self.bit_width, num_vertices * self.num_chunks);
 
                 if num_vertices < 64000000 {
                     eprintln!("Linear case");
 
-                    match par_solve(
-                        &mut data,
+                    match self.par_solve(
+                        &mut pl.concurrent(),
+                        pl,
                         sig_vals
                             .arbitrary_chunks(&chunk_sizes)
                             .map(Cow::Borrowed)
                             .enumerate(),
+                        &mut data,
                         new,
-                        peel_chunk,
-                        bit_width,
-                        num_chunks,
-                        num_vertices,
-                        match self.num_threads {
-                            0 => max_num_threads,
-                            _ => self.num_threads,
-                        },
-                        log2_seg_size,
-                        l,
-                        &mut pl.concurrent(),
-                        pl,
+                        Self::peel_chunk,
                     ) {
                         Ok(()) => break data,
                         Err(_) => continue,
@@ -811,42 +800,22 @@ where
 
                 if SHARDED {
                     eprintln!("*****************");
-                    match par_solve(
-                        &mut data,
+                    match self.par_solve(
+                        &mut pl.concurrent(),
+                        pl,
                         sig_vals
                             .arbitrary_chunks(&chunk_sizes)
                             .map(Cow::Borrowed)
                             .enumerate(),
+                        &mut data,
                         new,
-                        peel_chunk,
-                        bit_width,
-                        num_chunks,
-                        num_vertices,
-                        match self.num_threads {
-                            0 => max_num_threads,
-                            _ => self.num_threads,
-                        },
-                        log2_seg_size,
-                        l,
-                        &mut pl.concurrent(),
-                        pl,
+                        Self::peel_chunk,
                     ) {
                         Ok(()) => break data,
                         Err(_) => {}
                     }
                 } else {
-                    match peel_chunk(
-                        pl,
-                        no_logging![],
-                        sig_vals.into(),
-                        data,
-                        0,
-                        0,
-                        1,
-                        num_vertices,
-                        log2_seg_size,
-                        l,
-                    ) {
+                    match self.peel_chunk(pl, no_logging![], 0, sig_vals.into(), data) {
                         Ok((_, data)) => break data,
                         Err(_) => {}
                     }
@@ -858,73 +827,65 @@ where
 
         pl.info(format_args!(
             "bits/keys: {}",
-            data.len() as f64 * bit_width as f64 / num_keys as f64
+            data.len() as f64 * self.bit_width as f64 / self.num_keys as f64
         ));
 
         Ok(VFunc {
             seed,
-            l,
-            high_bits: chunk_high_bits,
-            chunk_mask,
-            num_keys,
-            log2_segment_size: log2_seg_size,
+            l: self.l,
+            high_bits: self.chunk_high_bits,
+            chunk_mask: self.chunk_mask,
+            num_keys: self.num_keys,
+            log2_seg_size: self.log2_seg_size,
             data,
             _marker_t: std::marker::PhantomData,
             _marker_os: std::marker::PhantomData,
         })
     }
-}
 
-fn solve_lin<
-    'a,
-    O: Word + ZeroCopy + Send + Sync,
-    D: BitFieldSlice<O> + BitFieldSliceMut<O> + Send + Sync,
->(
-    main_pl: &mut impl ProgressLog,
-    pl: &mut impl ProgressLog,
-    mut chunk: Cow<'a, [SigVal<O>]>,
-    mut data: D,
-    chunk_index: usize,
-    chunk_high_bits: u32,
-    num_chunks: usize,
-    num_vertices: usize,
-    log2_segment_size: u32,
-    l: usize,
-) -> anyhow::Result<(usize, D)> {
-    if let Cow::Owned(chunk) = &mut chunk {
-        chunk.radix_sort_unstable();
-    }
-
-    if chunk.par_windows(2).any(|w| w[0].sig == w[1].sig) {
-        bail!("Duplicate signature in chunk");
-    }
-
-    pl.start(format!(
-        "Generating system for chunk {}/{}...",
-        chunk_index + 1,
-        num_chunks
-    ));
-    let mut system = Modulo2System::<O>::new(num_vertices);
-    chunk.iter().for_each(|sig_val| {
-        let mut eq = Modulo2Equation::<O>::new(sig_val.val, num_vertices);
-        for &v in sig_val
-            .sig
-            .edge(chunk_high_bits, l, log2_segment_size)
-            .iter()
-        {
-            eq.add(v);
+    fn solve_lin<'a>(
+        &self,
+        _main_pl: &mut impl ProgressLog,
+        pl: &mut impl ProgressLog,
+        chunk_index: usize,
+        mut chunk: Cow<'a, [SigVal<O>]>,
+        mut data: D,
+    ) -> anyhow::Result<(usize, D)> {
+        if let Cow::Owned(chunk) = &mut chunk {
+            chunk.radix_sort_unstable();
         }
-        system.add(eq);
-    });
-    pl.done_with_count(chunk.len());
 
-    pl.start("Solving system...");
-    let result = system.lazy_gaussian_elimination_constructor()?;
-    pl.done();
+        if chunk.par_windows(2).any(|w| w[0].sig == w[1].sig) {
+            bail!("Duplicate signature in chunk");
+        }
 
-    for (v, &value) in result.iter().enumerate() {
-        data.set(v, value);
+        pl.start(format!(
+            "Generating system for chunk {}/{}...",
+            chunk_index + 1,
+            self.num_chunks
+        ));
+        let mut system = Modulo2System::<O>::new(self.num_vertices);
+        chunk.iter().for_each(|sig_val| {
+            let mut eq = Modulo2Equation::<O>::new(sig_val.val, self.num_vertices);
+            for &v in sig_val
+                .sig
+                .edge(self.chunk_high_bits, self.l, self.log2_seg_size)
+                .iter()
+            {
+                eq.add(v);
+            }
+            system.add(eq);
+        });
+        pl.done_with_count(chunk.len());
+
+        pl.start("Solving system...");
+        let result = system.lazy_gaussian_elimination_constructor()?;
+        pl.done();
+
+        for (v, &value) in result.iter().enumerate() {
+            data.set(v, value);
+        }
+
+        Ok((chunk_index, data))
     }
-
-    Ok((chunk_index, data))
 }
