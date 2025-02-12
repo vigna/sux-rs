@@ -176,14 +176,14 @@ impl<T: ZeroCopy + 'static> ChunkStore<T> {
     /// Return an iterator on chunks.
     ///
     /// This method can be called multiple times.
-    pub fn iter(&mut self) -> Result<ChunkIterator<'_, T>> {
-        Ok(ChunkIterator {
+    pub fn iter(&mut self) -> ChunkIterator<'_, T> {
+        ChunkIterator {
             store: self,
             next_file: 0,
             next_chunk: 0,
             chunks: VecDeque::from(vec![]),
             _marker: PhantomData,
-        })
+        }
     }
 }
 
@@ -450,7 +450,7 @@ fn test_sig_sorter() {
                 }
                 let mut chunk_store = sig_sorter.into_chunk_store(chunk_high_bits).unwrap();
                 let mut count = 0;
-                let iter = chunk_store.iter().unwrap();
+                let iter = chunk_store.iter();
                 for chunk in iter {
                     count += 1;
                     for &w in chunk.1.iter() {
@@ -482,7 +482,7 @@ fn test_u8() {
     }
     let mut chunk_store = sig_sorter.into_chunk_store(2).unwrap();
     let mut count = 0;
-    let iter = chunk_store.iter().unwrap();
+    let iter = chunk_store.iter();
     for chunk in iter {
         count += 1;
         for &w in chunk.1.iter() {

@@ -121,8 +121,8 @@ More precisely, each signature is made of two 64-bit integers `h` and `l`, and t
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFunc<
     T: ?Sized + ToSig,
-    O: ZeroCopy + Word = usize,
-    D: bit_field_slice::BitFieldSlice<O> = BitFieldVec<O>,
+    W: ZeroCopy + Word = usize,
+    D: bit_field_slice::BitFieldSlice<W> = BitFieldVec<W>,
     S = [u64; 2],
     const SHARDED: bool = false,
 > {
@@ -134,7 +134,7 @@ pub struct VFunc<
     num_keys: usize,
     data: D,
     _marker_t: std::marker::PhantomData<T>,
-    _marker_os: std::marker::PhantomData<(O, S)>,
+    _marker_os: std::marker::PhantomData<(W, S)>,
 }
 
 /// A builder for [`VFunc`].
@@ -166,8 +166,8 @@ pub struct VFunc<
 #[setters(generate = false)]
 pub struct VFuncBuilder<
     T: ?Sized + Send + Sync + ToSig,
-    O: ZeroCopy + Word,
-    D: bit_field_slice::BitFieldSlice<O> + Send + Sync = BitFieldVec<O>,
+    W: ZeroCopy + Word,
+    D: bit_field_slice::BitFieldSlice<W> + Send + Sync = BitFieldVec<W>,
     S = [u64; 2],
     const SHARDED: bool = false,
 > {
@@ -191,12 +191,17 @@ pub struct VFuncBuilder<
     l: usize,
 
     _marker_t: PhantomData<T>,
-    _marker_od: PhantomData<(O, D, S)>,
+    _marker_od: PhantomData<(W, D, S)>,
 }
 
-fn compute_params(num_keys: usize, sharded: bool) -> (u32, usize) {
+/// Given the number of keys, and whether sharding should be used, returns the
+/// number of high bits to use for sharding.
+///
+/// The shard size is computed so that the largest shard is with high probabiliy
+/// at most 1.001% the size of the average shard.
+fn compute_high_bits(num_keys: usize, sharded: bool) -> u32 {
     let eps = 0.001;
-    let chunk_high_bits = if sharded {
+    if sharded {
         {
             let t = (num_keys as f64 * eps * eps / 2.0).ln();
 
@@ -209,24 +214,20 @@ fn compute_params(num_keys: usize, sharded: bool) -> (u32, usize) {
         .min(10.0) as u32 // More than 1000 chunks make no sense}
     } else {
         0
-    };
-    let max_num_threads = 1.max((1 << chunk_high_bits) / 8).min(8); // TODO
-
-    dbg!((chunk_high_bits, max_num_threads))
+    }
 }
 
 impl<
         T: ?Sized + Send + Sync + ToSig,
-        O: ZeroCopy + Word + Send + Sync,
-        D: BitFieldSlice<O> + BitFieldSliceMut<O> + Send + Sync,
+        W: ZeroCopy + Word + Send + Sync,
+        D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
         S: Send + Sync,
         const SHARDED: bool,
-    > VFuncBuilder<T, O, D, S, SHARDED>
+    > VFuncBuilder<T, W, D, S, SHARDED>
 {
-    #[allow(clippy::too_many_arguments)]
     fn par_solve<
         'a,
-        I: Iterator<Item = (usize, Cow<'a, [SigVal<O>]>)> + Send,
+        I: Iterator<Item = (usize, Cow<'a, [SigVal<W>]>)> + Send,
         C: ConcurrentProgressLog + Send + Sync,
         P: ProgressLog + Clone + Send + Sync,
     >(
@@ -236,19 +237,12 @@ impl<
         chunk_iter: I,
         data: &mut D,
         new: impl Fn(usize, usize) -> D + Sync,
-        do_chunk: impl Fn(
-                &Self,
-                &mut C,
-                &mut P,
-                usize,
-                Cow<'a, [SigVal<O>]>,
-                D,
-            ) -> Result<(usize, D), (usize, D, Vec<usize>)>
+        do_chunk: impl Fn(&Self, usize, Cow<'a, [SigVal<W>]>, D, &mut P) -> Result<(usize, D), ()>
             + Send
             + Sync,
     ) -> anyhow::Result<()>
     where
-        SigVal<O>: RadixKey + Send + Sync,
+        SigVal<W>: RadixKey + Send + Sync,
     {
         self.chunk_high_bits = self.num_chunks.ilog2();
         let (send, receive) = crossbeam_channel::bounded::<(usize, D)>(2 * self.num_threads);
@@ -270,16 +264,27 @@ impl<
                     .try_for_each_with(
                         (main_pl.clone(), pl.clone()),
                         |(main_pl, pl), (chunk_index, chunk)| {
+                            main_pl.info(format_args!(
+                                "Analyzing chunk {}/{}",
+                                chunk_index + 1,
+                                self.num_chunks
+                            ));
+
                             do_chunk(
                                 self,
-                                main_pl,
-                                pl,
                                 chunk_index,
                                 chunk,
                                 new(self.bit_width, self.num_vertices),
+                                pl,
                             )
                             .map(|(chunk_index, data)| {
                                 send.send((chunk_index, data)).unwrap();
+                                main_pl.info(format_args!(
+                                    "Completed chunk {}/{}",
+                                    chunk_index + 1,
+                                    self.num_chunks
+                                ));
+                                main_pl.update_and_display();
                             })
                         },
                     )
@@ -293,12 +298,11 @@ impl<
 
     fn peel_chunk<'a>(
         &self,
-        main_pl: &mut impl ProgressLog,
-        pl: &mut impl ProgressLog,
         chunk_index: usize,
-        mut chunk: Cow<'a, [SigVal<O>]>,
+        mut chunk: Cow<'a, [SigVal<W>]>,
         data: D,
-    ) -> Result<(usize, D), (usize, D, Vec<usize>)> {
+        pl: &mut impl ProgressLog,
+    ) -> Result<(usize, D), (usize, Cow<'a, [SigVal<W>]>, Vec<EdgeList>, D, Vec<usize>)> {
         if let Cow::Owned(chunk) = &mut chunk {
             chunk.radix_sort_unstable();
         }
@@ -391,31 +395,25 @@ impl<
             stack.truncate(curr);
         }
         if chunk.len() != stack.len() {
-            /*warn!(
+            warn!(
                 "Peeling failed for chunk {}/{} (peeled {} out of {} edge)",
                 chunk_index + 1,
-                num_chunks,
+                self.num_chunks,
                 stack.len(),
                 chunk.len()
-            );*/
-            return Err((chunk_index, data, stack));
+            );
+            return Err((chunk_index, chunk, edge_lists, data, stack));
         }
         pl.done_with_count(chunk.len());
 
         let assignment = self.assign(chunk_index, chunk, data, edge_lists, stack, pl);
-        main_pl.info(format_args!(
-            "Completed chunk {}/{}.",
-            chunk_index + 1,
-            self.num_chunks
-        ));
-        main_pl.update_and_display();
         Ok(assignment)
     }
 
     fn assign(
         &self,
         chunk_index: usize,
-        chunk: Cow<[SigVal<O>]>,
+        chunk: Cow<[SigVal<W>]>,
         mut data: D,
         edge_lists: Vec<EdgeList>,
         mut stack: Vec<usize>,
@@ -427,6 +425,10 @@ impl<
             self.num_chunks
         ));
         while let Some(v) = stack.pop() {
+            // Assignments after linear solving must skip unpeeled edges
+            if edge_lists[v].degree() != 0 {
+                continue;
+            }
             let (edge_index, side) = edge_lists[v].edge_index_side();
             let edge = chunk[edge_index]
                 .sig
@@ -447,6 +449,81 @@ impl<
         pl.done_with_count(chunk.len());
 
         (chunk_index, data)
+    }
+
+    /// Solve a chunk of given index using lazy Gaussian elimination,
+    /// and store the solution in the given data.
+    ///
+    /// Return the chunk index and the data, in case of success,
+    /// or `Err(())` in case of failure.
+    fn solve_lin<'a>(
+        &self,
+        chunk_index: usize,
+        mut chunk: Cow<'a, [SigVal<W>]>,
+        data: D,
+        pl: &mut impl ProgressLog,
+    ) -> Result<(usize, D), ()> {
+        // TODO check if we can move up
+        if let Cow::Owned(chunk) = &mut chunk {
+            chunk.radix_sort_unstable();
+        }
+        if chunk.par_windows(2).any(|w| w[0].sig == w[1].sig) {
+            return Err(());
+        }
+
+        // Let's try to peel first
+        match self.peel_chunk(chunk_index, chunk, data, pl) {
+            Ok((_, data)) => {
+                // Unlikely result, but we're happy if it happens
+                return Ok((chunk_index, data));
+            }
+            Err((chunk_index, chunk, edge_lists, mut data, stack)) => {
+                let mut peeled = vec![false; chunk.len()];
+                stack
+                    .iter()
+                    .filter(|&v| edge_lists[*v].degree() == 0)
+                    .for_each(|&v| {
+                        peeled[edge_lists[v].edge_index_side().0] = true;
+                    });
+
+                // Likely--we have solve the rest
+                pl.start(format!(
+                    "Generating system for chunk {}/{}...",
+                    chunk_index + 1,
+                    self.num_chunks
+                ));
+                // Create F₂ system using non-peeled edges
+                let mut system = Modulo2System::<W>::new(self.num_vertices);
+                chunk
+                    .iter()
+                    .enumerate()
+                    .filter(|(edge_index, _)| !peeled[*edge_index])
+                    .for_each(|(_, sig_val)| {
+                        let mut eq = Modulo2Equation::<W>::new(sig_val.val, self.num_vertices);
+                        for &v in sig_val
+                            .sig
+                            .edge(self.chunk_high_bits, self.l, self.log2_seg_size)
+                            .iter()
+                        {
+                            eq.add(v);
+                        }
+                        system.add(eq);
+                    });
+                pl.done_with_count(chunk.len());
+
+                pl.start("Solving system...");
+                let result = system
+                    .lazy_gaussian_elimination_constructor()
+                    .map_err(|_| ())?;
+                pl.done();
+
+                for (v, &value) in result.iter().enumerate() {
+                    data.set(v, value);
+                }
+
+                Ok(self.assign(chunk_index, chunk, data, edge_lists, stack, pl))
+            }
+        }
     }
 }
 
@@ -503,17 +580,17 @@ impl ChunkEdge for u64 {
 
 impl<
         T: ?Sized + ToSig,
-        O: ZeroCopy + Word,
-        D: bit_field_slice::BitFieldSlice<O>,
+        W: ZeroCopy + Word,
+        D: bit_field_slice::BitFieldSlice<W>,
         S: ChunkEdge,
         const SHARDED: bool,
-    > VFunc<T, O, D, S, SHARDED>
+    > VFunc<T, W, D, S, SHARDED>
 {
     /// Return the value associated with the given signature.
     ///
     /// This method is mainly useful in the construction of compound functions.
     #[inline(always)]
-    pub fn get_by_sig(&self, sig: &[u64; 2]) -> O {
+    pub fn get_by_sig(&self, sig: &[u64; 2]) -> W {
         if SHARDED {
             let edge = sig.edge(self.high_bits, self.l, self.log2_seg_size);
             let chunk = sig.chunk(self.high_bits, self.chunk_mask);
@@ -527,7 +604,6 @@ impl<
             }
         } else {
             let edge = sig.edge(0, self.l, self.log2_seg_size);
-
             unsafe {
                 self.data.get_unchecked(edge[0])
                     ^ self.data.get_unchecked(edge[1])
@@ -538,7 +614,7 @@ impl<
 
     /// Return the value associated with the given key, or a random value if the key is not present.
     #[inline(always)]
-    pub fn get(&self, key: &T) -> O {
+    pub fn get(&self, key: &T) -> W {
         self.get_by_sig(&T::to_sig(key, self.seed))
     }
 
@@ -553,42 +629,56 @@ impl<
     }
 }
 
-impl<T: ?Sized + Send + Sync + ToSig, O: ZeroCopy + Word, S: ChunkEdge, const SHARDED: bool>
-    VFuncBuilder<T, O, Vec<O>, S, SHARDED>
+/// Build a new function using a vector of `W` to store values.
+///
+/// Since values are stored in a vector, access is particularly fast, but
+/// the bit width of the output of the function is exactly the bit width
+/// of `W`.
+impl<T: ?Sized + Send + Sync + ToSig, W: ZeroCopy + Word, S: ChunkEdge, const SHARDED: bool>
+    VFuncBuilder<T, W, Vec<W>, S, SHARDED>
 where
-    SigVal<O>: RadixKey + Send + Sync,
-    Vec<O>: BitFieldSliceMut<O> + BitFieldSlice<O>,
+    SigVal<W>: RadixKey + Send + Sync,
+    Vec<W>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
     pub fn build(
         self,
         into_keys: impl RewindableIoLender<T>,
-        into_values: impl RewindableIoLender<O>,
+        into_values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, O, Vec<O>, S>> {
+    ) -> anyhow::Result<VFunc<T, W, Vec<W>, S, SHARDED>> {
         self._build(
             into_keys,
             into_values,
-            |_bit_width: usize, len: usize| vec![O::ZERO; len],
+            |_bit_width: usize, len: usize| vec![W::ZERO; len],
             pl,
         )
     }
 }
 
-impl<T: ?Sized + Send + Sync + ToSig, O: ZeroCopy + Word, S: ChunkEdge, const SHARDED: bool>
-    VFuncBuilder<T, O, BitFieldVec<O>, S, SHARDED>
+/// Build a new function using a bit-field vector on words of type `W` to store
+/// values.
+///
+/// Since values are stored in a bitfield vector, access will be slower than
+/// when using a vector, but the bit width of stored values will be the minimum
+/// necessary. It must be in any case less than the bit width of `W`.
+///
+/// Typically `W` will be `usize` or `u64`. It might be necessary to use
+/// `u128` if the bit width of the values is larger than 64.
+impl<T: ?Sized + Send + Sync + ToSig, W: ZeroCopy + Word, S: ChunkEdge, const SHARDED: bool>
+    VFuncBuilder<T, W, BitFieldVec<W>, S, SHARDED>
 where
-    SigVal<O>: RadixKey + Send + Sync,
+    SigVal<W>: RadixKey + Send + Sync,
 {
     pub fn build(
         self,
         into_keys: impl RewindableIoLender<T>,
-        into_values: impl RewindableIoLender<O>,
+        into_values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, O, BitFieldVec<O>, S>> {
+    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, SHARDED>> {
         self._build(
             into_keys,
             into_values,
-            |bit_width: usize, len: usize| BitFieldVec::<O>::new(bit_width, len),
+            |bit_width: usize, len: usize| BitFieldVec::<W>::new(bit_width, len),
             pl,
         )
     }
@@ -596,39 +686,41 @@ where
 
 impl<
         T: ?Sized + Send + Sync + ToSig,
-        O: ZeroCopy + Word,
-        D: bit_field_slice::BitFieldSlice<O> + bit_field_slice::BitFieldSliceMut<O> + Send + Sync,
+        W: ZeroCopy + Word,
+        D: bit_field_slice::BitFieldSlice<W> + bit_field_slice::BitFieldSliceMut<W> + Send + Sync,
         S: ChunkEdge,
         const SHARDED: bool,
-    > VFuncBuilder<T, O, D, S, SHARDED>
+    > VFuncBuilder<T, W, D, S, SHARDED>
 where
-    SigVal<O>: RadixKey + Send + Sync,
+    SigVal<W>: RadixKey + Send + Sync,
 {
     /// Build and return a new function with given keys and values.
+    ///
+    /// This function can build functions based both on vectors and on bit-field
+    /// vectors. The necessary abstraction is provided by the `new(bit_width,
+    /// len)` function, which is called to create the data structure to store
+    /// the values.
     fn _build(
         mut self,
         mut into_keys: impl RewindableIoLender<T>,
-        mut into_values: impl RewindableIoLender<O>,
+        mut into_values: impl RewindableIoLender<W>,
         new: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, O, D, S>> {
-        // Loop until success or duplicate detection
+    ) -> anyhow::Result<VFunc<T, W, D, S, SHARDED>> {
         let mut dup_count = 0;
         let mut seed = 0;
+        // Loop until success or duplicate detection
         let data = loop {
             pl.item_name("key");
             pl.start("Reading input...");
-            let mut max_value = O::ZERO;
-            //let mut chunk_sizes;
-            let (max_num_threads, c);
-
-            //let (input_time, build_time);
+            let mut max_value = W::ZERO;
 
             if self.offline {
                 let max_chunk_high_bits = 12;
                 let log2_buckets = self.log2_buckets.unwrap_or(8);
                 pl.info(format_args!("Using {} buckets", 1 << log2_buckets));
-                let mut sig_sorter = SigStore::<O>::new(log2_buckets, max_chunk_high_bits).unwrap();
+                // Put values into a signature sorter
+                let mut sig_sorter = SigStore::<W>::new(log2_buckets, max_chunk_high_bits).unwrap();
                 into_values = into_values.rewind()?;
                 into_keys = into_keys.rewind()?;
                 while let Some(result) = into_keys.next() {
@@ -647,14 +739,13 @@ where
                         }
                     }
                 }
-                self.num_keys = sig_sorter.len();
                 pl.done();
 
-                (self.chunk_high_bits, max_num_threads) = compute_params(self.num_keys, SHARDED);
-                //chunk_high_bits = 0;
-                //max_num_threads = 1;
+                self.num_keys = sig_sorter.len();
+                self.chunk_high_bits = compute_high_bits(self.num_keys, SHARDED);
+                self.num_threads = 1.max((1 << self.chunk_high_bits) / 8).min(8); // TODO
                 self.log2_seg_size = comp_log2_seg_size(3, self.num_keys);
-                c = 1.10; // TODO size_factor(3, num_keys);
+                let c = 1.10; // TODO size_factor(3, num_keys);
 
                 dbg!(c, self.log2_seg_size);
 
@@ -680,13 +771,17 @@ where
                 ));
 
                 let mut data = new(self.bit_width, self.num_vertices * self.num_chunks);
+
                 match self.par_solve(
                     &mut pl.concurrent(),
                     pl,
-                    chunk_store.iter().unwrap(),
+                    chunk_store.iter(),
                     &mut data,
                     new,
-                    Self::peel_chunk,
+                    |this, chunk_index, chunk, data, pl| {
+                        this.peel_chunk(chunk_index, chunk, data, pl)
+                            .map_err(|_| ())
+                    },
                 ) {
                     Ok(()) => break data,
                     Err(_) => {
@@ -720,12 +815,20 @@ where
                 }
                 pl.done();
                 self.num_keys = sig_vals.len();
+                let lazy_gaussian = self.num_keys < 60000000;
 
-                //(chunk_high_bits, max_num_threads) = compute_params(num_keys, SHARDED);
-                (self.chunk_high_bits, max_num_threads) = (8, 8);
+                self.chunk_high_bits = if lazy_gaussian {
+                    // log(num_keys / 65536) + 1
+                    self.num_keys.ilog2().saturating_sub(15)
+                } else {
+                    compute_high_bits(self.num_keys, SHARDED)
+                };
+                dbg!(self.chunk_high_bits);
+                self.num_threads = 1.max((1 << self.chunk_high_bits) / 8).min(8); // TODO
+                                                                                  //(self.chunk_high_bits, self.num_threads) = (0, 4);
                 self.log2_seg_size = comp_log2_seg_size(3, self.num_keys >> self.chunk_high_bits);
                 dbg!(self.log2_seg_size);
-                c = 1.10; // size_factor(3, num_keys);
+                let c = 1.10; // size_factor(3, num_keys);
                 dbg!(c, self.log2_seg_size);
 
                 self.num_chunks = 1 << self.chunk_high_bits;
@@ -769,18 +872,20 @@ where
 
                 self.l = (((self.num_keys >> self.chunk_high_bits) as f64 * c).ceil() as usize)
                     .div_ceil(1 << self.log2_seg_size);
-                let num_vertices = (1 << self.log2_seg_size) * (self.l + 2);
-                dbg!(num_vertices);
+                self.num_vertices = (1 << self.log2_seg_size) * (self.l + 2);
+                dbg!(self.num_vertices);
 
                 pl.info(format_args!(
-                    "Size {:.2}%",
-                    (100.0 * (num_vertices * self.num_chunks) as f64) / (self.num_keys as f64 * c)
+                    "Number of variables with respect to c*n: {:.2}%",
+                    (100.0 * (self.num_vertices * self.num_chunks) as f64)
+                        / (self.num_keys as f64 * c)
                 ));
 
-                let mut data = new(self.bit_width, num_vertices * self.num_chunks);
+                let mut data = new(self.bit_width, self.num_vertices * self.num_chunks);
 
-                if num_vertices < 64000000 {
-                    eprintln!("Linear case");
+                if lazy_gaussian {
+                    self.l = self.l.saturating_sub(1);
+                    pl.info(format_args!("Switching to lazy Gaussian elmination"));
 
                     match self.par_solve(
                         &mut pl.concurrent(),
@@ -791,7 +896,9 @@ where
                             .enumerate(),
                         &mut data,
                         new,
-                        Self::peel_chunk,
+                        |this, chunk_index, chunk, data, pl| {
+                            this.solve_lin(chunk_index, chunk, data, pl)
+                        },
                     ) {
                         Ok(()) => break data,
                         Err(_) => continue,
@@ -809,13 +916,18 @@ where
                             .enumerate(),
                         &mut data,
                         new,
-                        Self::peel_chunk,
+                        |this, chunk_index, chunk, data, pl| {
+                            this.peel_chunk(chunk_index, chunk, data, pl)
+                                .map_err(|_| ())
+                        },
                     ) {
-                        Ok(()) => break data,
+                        Ok(()) => {
+                            break data;
+                        }
                         Err(_) => {}
                     }
                 } else {
-                    match self.peel_chunk(pl, no_logging![], 0, sig_vals.into(), data) {
+                    match self.peel_chunk(0, sig_vals.into(), data, pl) {
                         Ok((_, data)) => break data,
                         Err(_) => {}
                     }
@@ -826,11 +938,12 @@ where
         };
 
         pl.info(format_args!(
-            "bits/keys: {}",
-            data.len() as f64 * self.bit_width as f64 / self.num_keys as f64
+            "bits/keys: {} ({:.2}%)",
+            data.len() as f64 * self.bit_width as f64 / self.num_keys as f64,
+            data.len() as f64 / (self.num_keys as f64 * 1.10)
         ));
 
-        Ok(VFunc {
+        Ok(VFunc::<T, W, D, S, SHARDED> {
             seed,
             l: self.l,
             high_bits: self.chunk_high_bits,
@@ -841,51 +954,5 @@ where
             _marker_t: std::marker::PhantomData,
             _marker_os: std::marker::PhantomData,
         })
-    }
-
-    fn solve_lin<'a>(
-        &self,
-        _main_pl: &mut impl ProgressLog,
-        pl: &mut impl ProgressLog,
-        chunk_index: usize,
-        mut chunk: Cow<'a, [SigVal<O>]>,
-        mut data: D,
-    ) -> anyhow::Result<(usize, D)> {
-        if let Cow::Owned(chunk) = &mut chunk {
-            chunk.radix_sort_unstable();
-        }
-
-        if chunk.par_windows(2).any(|w| w[0].sig == w[1].sig) {
-            bail!("Duplicate signature in chunk");
-        }
-
-        pl.start(format!(
-            "Generating system for chunk {}/{}...",
-            chunk_index + 1,
-            self.num_chunks
-        ));
-        let mut system = Modulo2System::<O>::new(self.num_vertices);
-        chunk.iter().for_each(|sig_val| {
-            let mut eq = Modulo2Equation::<O>::new(sig_val.val, self.num_vertices);
-            for &v in sig_val
-                .sig
-                .edge(self.chunk_high_bits, self.l, self.log2_seg_size)
-                .iter()
-            {
-                eq.add(v);
-            }
-            system.add(eq);
-        });
-        pl.done_with_count(chunk.len());
-
-        pl.start("Solving system...");
-        let result = system.lazy_gaussian_elimination_constructor()?;
-        pl.done();
-
-        for (v, &value) in result.iter().enumerate() {
-            data.set(v, value);
-        }
-
-        Ok((chunk_index, data))
     }
 }

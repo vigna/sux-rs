@@ -46,7 +46,7 @@ fn main() -> Result<()> {
         }
         pl.done_with_count(keys.len());
     } else {
-        let func = VFunc::<_, _, BitFieldVec<usize>>::load_mem(&args.func)?;
+        let func = VFunc::<_, _, BitFieldVec<usize>, [u64; 2], true>::load_mem(&args.func)?;
         pl.start("Querying...");
         for i in 0..args.n {
             assert_eq!(i, func.get(&i));
