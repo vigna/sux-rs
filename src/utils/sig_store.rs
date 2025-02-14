@@ -192,9 +192,6 @@ impl<T: ZeroCopy + 'static> ChunkStore<T> {
 /// A [`ChunkIterator`] handles the mapping between buckets and chunks. If a
 /// chunk is made by one or more buckets, it will aggregate them as necessary;
 /// if a bucket contains several chunks, it will split the bucket into chunks.
-/// In all cases, each chunk is sorted and tested for duplicates: if duplicates
-/// are detected, a fake pair containing `usize::MAX` and an empty chunk will be
-/// returned.
 ///
 /// Note that a [`ChunkIterator`] returns an owned variant of [`Cow`]. The
 /// reason for using [`Cow`] is easier interoperability with in-memory
