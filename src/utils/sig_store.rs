@@ -23,8 +23,8 @@ use super::spooky_short;
 use anyhow::Result;
 use epserde::prelude::*;
 use mem_dbg::{MemDbg, MemSize};
+use mucow::MuCow;
 use rdst::RadixKey;
-use std::borrow::Cow;
 use std::{collections::VecDeque, fs::File, io::*, marker::PhantomData};
 
 /// A signature and a value.
@@ -172,11 +172,15 @@ impl<T: ZeroCopy + 'static> ChunkStore<T> {
     pub fn chunk_sizes(&self) -> &Vec<usize> {
         &self.chunk_sizes
     }
+}
 
+impl<'a, T: ZeroCopy + Send + Sync + 'static> IntoIterator for &'a mut ChunkStore<T> {
+    type IntoIter = ChunkIterator<'a, T>;
+    type Item = MuCow<'a, [SigVal<T>]>;
     /// Return an iterator on chunks.
     ///
     /// This method can be called multiple times.
-    pub fn iter(&mut self) -> ChunkIterator<'_, T> {
+    fn into_iter(self) -> ChunkIterator<'a, T> {
         ChunkIterator {
             store: self,
             next_file: 0,
@@ -193,8 +197,8 @@ impl<T: ZeroCopy + 'static> ChunkStore<T> {
 /// chunk is made by one or more buckets, it will aggregate them as necessary;
 /// if a bucket contains several chunks, it will split the bucket into chunks.
 ///
-/// Note that a [`ChunkIterator`] returns an owned variant of [`Cow`]. The
-/// reason for using [`Cow`] is easier interoperability with in-memory
+/// Note that a [`ChunkIterator`] returns an owned variant of [`MuCow`]. The
+/// reason for using [`MuCow`] is easier interoperability with in-memory
 /// construction methods, which usually return borrowed variants.
 #[derive(Debug)]
 pub struct ChunkIterator<'a, T: ZeroCopy + 'static> {
@@ -209,7 +213,7 @@ pub struct ChunkIterator<'a, T: ZeroCopy + 'static> {
 }
 
 impl<'a, T: ZeroCopy + Send + Sync + 'static> Iterator for ChunkIterator<'a, T> {
-    type Item = (usize, Cow<'a, [SigVal<T>]>);
+    type Item = MuCow<'a, [SigVal<T>]>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let store = &mut self.store;
@@ -243,7 +247,7 @@ impl<'a, T: ZeroCopy + Send + Sync + 'static> Iterator for ChunkIterator<'a, T> 
                 }
             }
 
-            let res = (self.next_chunk, Cow::Owned(chunk));
+            let res = MuCow::Owned(chunk);
             self.next_file += to_aggr;
             self.next_chunk += 1;
             Some(res)
@@ -299,12 +303,8 @@ impl<'a, T: ZeroCopy + Send + Sync + 'static> Iterator for ChunkIterator<'a, T> 
                 self.next_file += 1;
             }
 
-            let res = (
-                self.next_chunk,
-                Cow::Owned(self.chunks.pop_front().unwrap()),
-            );
             self.next_chunk += 1;
-            Some(res)
+            Some(MuCow::Owned(self.chunks.pop_front().unwrap()))
         }
     }
 
@@ -447,16 +447,16 @@ fn test_sig_sorter() {
                 }
                 let mut chunk_store = sig_sorter.into_chunk_store(chunk_high_bits).unwrap();
                 let mut count = 0;
-                let iter = chunk_store.iter();
+                let iter = chunk_store.into_iter();
                 for chunk in iter {
-                    count += 1;
-                    for &w in chunk.1.iter() {
+                    for &w in chunk.iter() {
                         assert_eq!(
-                            chunk.0,
+                            count,
                             w.sig[0].rotate_left(chunk_high_bits) as usize
                                 & ((1 << chunk_high_bits) - 1)
                         );
                     }
+                    count += 1;
                 }
                 assert_eq!(count, 1 << chunk_high_bits);
             }
@@ -479,12 +479,12 @@ fn test_u8() {
     }
     let mut chunk_store = sig_sorter.into_chunk_store(2).unwrap();
     let mut count = 0;
-    let iter = chunk_store.iter();
+    let iter = chunk_store.into_iter();
     for chunk in iter {
-        count += 1;
-        for &w in chunk.1.iter() {
-            assert_eq!(chunk.0, w.sig[0].rotate_left(2) as usize & ((1 << 2) - 1));
+        for &w in chunk.iter() {
+            assert_eq!(count, w.sig[0].rotate_left(2) as usize & ((1 << 2) - 1));
         }
+        count += 1;
     }
     assert_eq!(count, 4);
 }
