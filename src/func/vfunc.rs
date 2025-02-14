@@ -248,7 +248,7 @@ impl<
         let (send, receive) = crossbeam_channel::bounded::<(usize, D)>(2 * self.num_threads);
 
         ThreadPoolBuilder::new()
-            .num_threads(self.num_threads)
+            .num_threads(self.num_threads.max(2)) // Or it might hang
             .build()?
             .scope(|scope| {
                 scope.spawn(|_| {
@@ -870,8 +870,9 @@ where
                     max_value, self.bit_width
                 ));
 
-                self.l = (((self.num_keys >> self.chunk_high_bits) as f64 * c).ceil() as usize)
-                    .div_ceil(1 << self.log2_seg_size);
+                let max_chunk = *chunk_sizes.iter().max().unwrap();
+                self.l = ((c * max_chunk as f64).ceil() as usize).div_ceil(1 << self.log2_seg_size);
+                dbg!(self.l);
                 self.num_vertices = (1 << self.log2_seg_size) * (self.l + 2);
                 dbg!(self.num_vertices);
 
