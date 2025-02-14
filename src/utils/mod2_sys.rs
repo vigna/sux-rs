@@ -1,6 +1,6 @@
+#![allow(unexpected_cfgs)]
 use crate::{bits::bit_vec::BitVec, traits::Word};
 use anyhow::{bail, ensure, Result};
-use common_traits::UnsignedInt;
 use std::cmp::min;
 #[cfg(feature = "time_log")]
 use std::time::SystemTime;
