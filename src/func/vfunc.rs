@@ -21,10 +21,10 @@ use dsi_progress_logger::*;
 use epserde::prelude::*;
 use log::warn;
 use mem_dbg::*;
-use mucow::MuCow;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
+use std::borrow::BorrowMut;
 use std::marker::PhantomData;
 
 #[inline]
@@ -98,7 +98,7 @@ impl EdgeList {
     /// zero](EdgeList::degree).
     #[inline(always)]
     fn edge_index_and_hinge(&self) -> (usize, usize) {
-        debug_assert!(self.degree() == 0);
+        // debug_assert!(self.degree() == 0); TODO
         (
             (self.0 & EdgeList::EDGE_INDEX_MASK) as usize,
             (self.0 >> Self::SIDE_SHIFT) as usize & Self::SIDE_MASK,
@@ -137,7 +137,7 @@ pub struct VFunc<
     S = [u64; 2],
     const SHARDED: bool = false,
 > {
-    high_bits: u32,
+    shard_high_bits: u32,
     log2_seg_size: u32,
     shard_mask: u32,
     seed: u64,
@@ -205,29 +205,6 @@ pub struct VFuncBuilder<
     _marker_od: PhantomData<(W, D, S)>,
 }
 
-/// Given the number of keys, and whether sharding should be used, returns the
-/// number of high bits to use for sharding.
-///
-/// The shard size is computed so that the largest shard is with high probabiliy
-/// at most 1.001% the size of the average shard.
-fn compute_high_bits(num_keys: usize, sharded: bool) -> u32 {
-    let eps = 0.001;
-    if sharded {
-        {
-            let t = (num_keys as f64 * eps * eps / 2.0).ln();
-
-            if t > 0.0 {
-                ((t - t.ln()) / 2_f64.ln()).ceil()
-            } else {
-                0.0
-            }
-        }
-        .min(10.0) as u32 // More than 1000 shards make no sense}
-    } else {
-        0
-    }
-}
-
 #[derive(thiserror::Error, Debug)]
 /// Errors that can happen during deserialization.
 pub enum SolveError {
@@ -270,28 +247,32 @@ impl<
     /// or if duplicates are detected.
     fn par_solve<
         'a,
-        I: Iterator<Item = (usize, MuCow<'a, [SigVal<W>]>)> + Send,
+        I: IntoIterator<Item = (usize, B)> + Send,
+        B: BorrowMut<[SigVal<W>]> + Send,
         C: ConcurrentProgressLog + Send + Sync,
         P: ProgressLog + Clone + Send + Sync,
     >(
         &mut self,
-        main_pl: &mut C,
-        pl: &mut P,
         shard_iter: I,
         data: &mut D,
         new_data: impl Fn(usize, usize) -> D + Sync,
-        solve_shard: impl Fn(&Self, usize, MuCow<'a, [SigVal<W>]>, D, &mut P) -> Result<(usize, D), ()>
-            + Send
-            + Sync,
+        solve_shard: impl Fn(&Self, usize, B, D, &mut P) -> Result<(usize, D), ()> + Send + Sync,
         thread_pool: &rayon::ThreadPool,
+        main_pl: &mut C,
+        pl: &mut P,
     ) -> Result<(), SolveError>
     where
+        I::IntoIter: Send,
         SigVal<W>: RadixKey + Send + Sync,
     {
         // TODO: optimize for the non-parallel case
         let (send, receive) = crossbeam_channel::bounded::<(usize, D)>(2 * self.num_threads);
-
-        thread_pool.scope(|scope| {
+        main_pl
+            .item_name("shard")
+            .expected_updates(Some(self.num_shards))
+            .display_memory(true)
+            .start("Solving shards...");
+        let result = thread_pool.scope(|scope| {
             scope.spawn(|_| {
                 for (shard_index, shard_data) in receive {
                     // TODO: fast copy
@@ -302,6 +283,7 @@ impl<
             });
 
             shard_iter
+                .into_iter()
                 .par_bridge()
                 .try_for_each_with(
                     (main_pl.clone(), pl.clone()),
@@ -312,9 +294,13 @@ impl<
                             self.num_shards
                         ));
 
-                        shard.radix_sort_unstable();
+                        shard.borrow_mut().radix_sort_unstable();
 
-                        if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
+                        if shard
+                            .borrow_mut()
+                            .par_windows(2)
+                            .any(|w| w[0].sig == w[1].sig)
+                        {
                             return Err(SolveError::DuplicateSignature);
                         }
 
@@ -346,7 +332,10 @@ impl<
                 .map(|_| {
                     drop(send);
                 })
-        })
+        });
+
+        main_pl.done();
+        result
     }
 
     /// Solve a shard by peeling.
@@ -355,13 +344,13 @@ impl<
     /// or the shard index, the shard, the edge lists, the data, and the stack
     /// at the end of the peeling procedure in case of failure. These data can
     /// be then passed to a linear solver to complete the solution.
-    fn peel_shard<'a>(
+    fn peel_shard<'a, B: BorrowMut<[SigVal<W>]>>(
         &self,
         shard_index: usize,
-        shard: MuCow<'a, [SigVal<W>]>,
+        shard: B,
         data: D,
         pl: &mut impl ProgressLog,
-    ) -> Result<(usize, D), (usize, MuCow<'a, [SigVal<W>]>, Vec<EdgeList>, D, Vec<usize>)> {
+    ) -> Result<(usize, D), (usize, B, Vec<EdgeList>, D, Vec<usize>)> {
         pl.start(format!(
             "Generating graph for shard {}/{}...",
             shard_index + 1,
@@ -369,17 +358,21 @@ impl<
         ));
         let mut edge_lists = Vec::new();
         edge_lists.resize_with(self.num_vertices, EdgeList::default);
-        shard.iter().enumerate().for_each(|(edge_index, sig_val)| {
-            for (side, &v) in sig_val
-                .sig
-                .edge(self.shard_high_bits, self.l, self.log2_seg_size)
-                .iter()
-                .enumerate()
-            {
-                edge_lists[v].add(edge_index, side);
-            }
-        });
-        pl.done_with_count(shard.len());
+        shard
+            .borrow()
+            .iter()
+            .enumerate()
+            .for_each(|(edge_index, sig_val)| {
+                for (side, &v) in sig_val
+                    .sig
+                    .edge(self.shard_high_bits, self.l, self.log2_seg_size)
+                    .iter()
+                    .enumerate()
+                {
+                    edge_lists[v].add(edge_index, side);
+                }
+            });
+        pl.done_with_count(shard.borrow().len());
 
         pl.start(format!(
             "Peeling graph for shard {}/{}...",
@@ -405,10 +398,11 @@ impl<
                 stack[curr] = v;
                 curr += 1;
 
-                let e =
-                    shard[edge_index]
-                        .sig
-                        .edge(self.shard_high_bits, self.l, self.log2_seg_size);
+                let e = shard.borrow()[edge_index].sig.edge(
+                    self.shard_high_bits,
+                    self.l,
+                    self.log2_seg_size,
+                );
                 match side {
                     0 => {
                         edge_lists[e[1]].remove(edge_index, 1);
@@ -445,17 +439,17 @@ impl<
             }
             stack.truncate(curr);
         }
-        if shard.len() != stack.len() {
-            warn!(
-                "Peeling failed for shared {}/{} (peeled {} out of {} edges)",
+        if shard.borrow().len() != stack.len() {
+            pl.info(format_args!(
+                "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
                 shard_index + 1,
                 self.num_shards,
                 stack.len(),
-                shard.len()
-            );
+                shard.borrow().len(),
+            ));
             return Err((shard_index, shard, edge_lists, data, stack));
         }
-        pl.done_with_count(shard.len());
+        pl.done_with_count(shard.borrow().len());
 
         Ok(self.assign(shard_index, shard, data, edge_lists, stack, pl))
     }
@@ -467,12 +461,13 @@ impl<
     fn assign(
         &self,
         shard_index: usize,
-        shard: MuCow<[SigVal<W>]>,
+        shard: impl BorrowMut<[SigVal<W>]>,
         mut data: D,
         edge_lists: Vec<EdgeList>,
         mut stack: Vec<usize>,
         pl: &mut impl ProgressLog,
     ) -> (usize, D) {
+        let shard = shard.borrow();
         pl.start(format!(
             "Assigning values for shard {}/{}...",
             shard_index + 1,
@@ -513,7 +508,7 @@ impl<
     fn solve_lin<'a>(
         &self,
         shard_index: usize,
-        shard: MuCow<'a, [SigVal<W>]>,
+        shard: impl BorrowMut<[SigVal<W>]>,
         data: D,
         pl: &mut impl ProgressLog,
     ) -> Result<(usize, D), ()> {
@@ -524,7 +519,7 @@ impl<
                 return Ok((shard_index, data));
             }
             Err((shard_index, shard, edge_lists, mut data, stack)) => {
-                let mut peeled = vec![false; shard.len()];
+                let mut peeled = vec![false; shard.borrow().len()];
                 stack
                     .iter()
                     .filter(|&v| edge_lists[*v].degree() == 0)
@@ -541,6 +536,7 @@ impl<
                 // Create F₂ system using non-peeled edges
                 let mut system = Modulo2System::<W>::new(self.num_vertices);
                 shard
+                    .borrow()
                     .iter()
                     .enumerate()
                     .filter(|(edge_index, _)| !peeled[*edge_index])
@@ -555,7 +551,7 @@ impl<
                         }
                         system.add(eq);
                     });
-                pl.done_with_count(shard.len());
+                pl.done_with_count(shard.borrow().len());
 
                 pl.start("Solving system...");
                 let result = system
@@ -638,8 +634,8 @@ impl<
     #[inline(always)]
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> W {
         if SHARDED {
-            let edge = sig.edge(self.high_bits, self.l, self.log2_seg_size);
-            let chunk = sig.shard(self.high_bits, self.shard_mask);
+            let edge = sig.edge(self.shard_high_bits, self.l, self.log2_seg_size);
+            let chunk = sig.shard(self.shard_high_bits, self.shard_mask);
             // chunk * self.segment_size * (2^log2_l + 2)
             let shard_offset = chunk * ((self.l + 2) << self.log2_seg_size);
 
@@ -707,13 +703,11 @@ struct IntoChunkIter<T> {
 }
 
 impl<'a, T: Copy + 'static> IntoIterator for &'a mut IntoChunkIter<T> {
-    type IntoIter = std::iter::Map<ArbitraryChunkMut<'a, 'a, T>, fn(&mut [T]) -> MuCow<'_, [T]>>;
-    type Item = MuCow<'a, [T]>;
+    type IntoIter = ArbitraryChunkMut<'a, 'a, T>;
+    type Item = &'a mut [T];
 
     fn into_iter(self) -> Self::IntoIter {
-        self.data
-            .arbitrary_chunks_mut(&self.shard_sizes)
-            .map(|s| MuCow::Borrowed(s))
+        self.data.arbitrary_chunks_mut(&self.shard_sizes)
     }
 }
 
@@ -756,6 +750,47 @@ impl<
 where
     SigVal<W>: RadixKey + Send + Sync,
 {
+    const MIN_FUSE_GRAPH_SIZE: usize = 60_000_000;
+    const MAX_LINEAR_SIZE: usize = 50_000;
+    const LOG2_MAX_SHARDS: u32 = 10;
+
+    /// Return the number of high bits defining shards.
+    ///
+    /// The number of shards is two to the power of the high bits. The value
+    /// returned satisfies the following properties:
+    /// * if `SHARDED` is false, it is zero;
+    /// * if the number of keys is less than
+    ///   [`LINEAR_THRESHOLD`](VFuncBuilder::LINEAR_THRESHOLD), it is the
+    ///   logarithm of the number of keys divided
+    ///   [`MAX_LINEAR_SIZE`](VFuncBuilder::MAX_LINEAR_SIZE) plus one;
+    /// * otherwise, it is at most
+    ///   [`LOG2_MAX_SHARDS`](VFuncBuilder::LOG2_MAX_SHARDS);
+    /// * the largest shard is with high probability at most 1.001% the size of
+    ///   the average shard.
+    /// * the size of a shard is no smaller than the minimum between the number
+    ///   of keys and [`LINEAR_THRESHOLD`](VFuncBuilder::LINEAR_THRESHOLD).
+    fn compute_high_bits(&self) -> u32 {
+        let eps = 0.001;
+        let num_keys = self.num_keys;
+        if SHARDED {
+            if num_keys < Self::MIN_FUSE_GRAPH_SIZE {
+                num_keys.div_ceil(Self::MAX_LINEAR_SIZE).max(1).ilog2()
+            } else {
+                let t = (num_keys as f64 * eps * eps / 2.0).ln();
+
+                if t > 0.0 {
+                    ((t - t.ln()) / 2_f64.ln()).ceil() as u32
+                } else {
+                    0
+                }
+                .min(Self::LOG2_MAX_SHARDS)
+                .min((num_keys / Self::MIN_FUSE_GRAPH_SIZE).max(1).ilog2())
+            }
+        } else {
+            0
+        }
+    }
+
     /// Build and return a new function with given keys and values.
     ///
     /// This function can build functions based both on vectors and on bit-field
@@ -769,21 +804,21 @@ where
         new: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, SHARDED>> {
-        let mut _dup_count = 0; // TODO
-        let mut seed = 0;
+        let (mut seed, mut dup_count) = (0, 0);
+
         // Loop until success or duplicate detection
         loop {
             pl.item_name("key");
             pl.start("Reading input...");
             let mut max_value = W::ZERO;
 
-            if self.offline {
+            match if self.offline {
                 // Offline construction using a SigStore
-                let max_shard_high_bits = 12;
                 let log2_buckets = self.log2_buckets.unwrap_or(8);
                 pl.info(format_args!("Using {} buckets", 1 << log2_buckets));
                 // Put values into a signature sorter
-                let mut sig_sorter = SigStore::<W>::new(log2_buckets, max_shard_high_bits).unwrap();
+                let mut sig_sorter =
+                    SigStore::<W>::new(log2_buckets, Self::LOG2_MAX_SHARDS).unwrap();
                 into_values = into_values.rewind()?;
                 into_keys = into_keys.rewind()?;
                 while let Some(result) = into_keys.next() {
@@ -805,21 +840,20 @@ where
                 pl.done();
 
                 self.num_keys = sig_sorter.len();
-                self.shard_high_bits = compute_high_bits(self.num_keys, SHARDED);
-                let shard_store = sig_sorter.into_chunk_store(self.shard_high_bits)?;
-                let max_chunk = *shard_store.chunk_sizes().iter().max().unwrap();
-                self.build_iter(seed, shard_store, max_chunk, new, pl);
+                self.bit_width = max_value.len() as usize;
 
-                /*Ok(()) => break data,
-                    Err(_) => {
-                        if dup_count >= 3 {
-                            bail!("Duplicate keys (duplicate 128-bit signatures with four different seeds");
-                        }
-                        warn!("Duplicate 128-bit signature, trying again...");
-                        dup_count += 1;
-                        continue;
-                    }
-                }*/
+                self.shard_high_bits = self.compute_high_bits();
+                self.num_shards = 1 << self.shard_high_bits;
+                self.shard_mask = (1u32 << self.shard_high_bits) - 1;
+
+                pl.info(format_args!(
+                    "Keys: {} Max value: {} Bit width: {} Shards: 2^{}",
+                    self.num_keys, max_value, self.bit_width, self.shard_high_bits
+                ));
+
+                let shard_store = sig_sorter.into_chunk_store(self.shard_high_bits)?;
+                let max_shard = *shard_store.chunk_sizes().iter().max().unwrap();
+                self.build_iter(seed, shard_store, max_shard, new, pl)
             } else {
                 // Online construction
                 into_keys = into_keys.rewind()?;
@@ -843,63 +877,30 @@ where
                 }
                 pl.done();
                 self.num_keys = sig_vals.len();
-                let lazy_gaussian = self.num_keys < 60000000;
+                self.bit_width = max_value.len() as usize;
 
-                self.shard_high_bits = if lazy_gaussian {
-                    // log(num_keys / 65536) + 1
-                    self.num_keys.ilog2().saturating_sub(15)
-                } else {
-                    compute_high_bits(self.num_keys, SHARDED)
-                };
-
-                dbg!(self.shard_high_bits);
-                self.num_threads = 1.max((1 << self.shard_high_bits) / 8).min(8); // TODO
-                                                                                  //(self.shard_high_bits, self.num_threads) = (0, 4);
-                self.log2_seg_size = comp_log2_seg_size(3, self.num_keys >> self.shard_high_bits);
-                dbg!(self.log2_seg_size);
-                let c = 1.10; // size_factor(3, num_keys);
-                dbg!(c, self.log2_seg_size);
-
+                self.shard_high_bits = self.compute_high_bits();
                 self.num_shards = 1 << self.shard_high_bits;
                 self.shard_mask = (1u32 << self.shard_high_bits) - 1;
+
+                pl.info(format_args!(
+                    "Keys: {} Max value: {} Bit width: {} Shards: 2^{}",
+                    self.num_keys, max_value, self.bit_width, self.shard_high_bits
+                ));
 
                 // TODO: this might be a countsort on the shard_high_bits
                 pl.start("Sorting...");
                 sig_vals.radix_sort_unstable();
                 pl.done_with_count(self.num_keys);
 
-                pl.start("Counting chunk sizes...");
-
                 let mut shard_sizes = vec![0_usize; self.num_shards];
-
+                pl.start("Counting shard sizes...");
                 for &w in &sig_vals {
                     shard_sizes[w.sig.shard(self.shard_high_bits, self.shard_mask)] += 1;
                 }
-
                 pl.done_with_count(self.num_keys);
 
-                /*if dup {
-                    if dup_count >= 3 {
-                        bail!("Duplicate keys (duplicate 128-bit signatures with four different seeds)");
-                    }
-                    warn!("Duplicate 128-bit signature, trying again...");
-                    dup_count += 1;
-                    continue;
-                }*/
-
-                self.bit_width = max_value.len() as usize;
-                pl.info(format_args!(
-                    "max value = {}, bit width = {}",
-                    max_value, self.bit_width
-                ));
-
-                /*pl.info(format_args!(
-                    "Number of variables with respect to c*n: {:.2}%",
-                    (100.0 * (self.num_vertices * self.num_chunks) as f64)
-                        / (self.num_keys as f64 * c)
-                ));*/
-
-                let max_chunk = *shard_sizes.iter().max().unwrap();
+                let max_shard = *shard_sizes.iter().max().unwrap();
 
                 self.build_iter(
                     seed,
@@ -907,11 +908,26 @@ where
                         data: sig_vals,
                         shard_sizes,
                     },
-                    max_chunk,
+                    max_shard,
                     new,
                     pl,
-                );
-            }
+                )
+            } {
+                Ok(result) => return Ok(result),
+                // Let's try another seed, but just a few times--most likely,
+                // duplicate keys
+                Err(SolveError::DuplicateSignature) => {
+                    if dup_count >= 3 {
+                        bail!("Duplicate keys (duplicate 128-bit signatures with four different seeds");
+                    }
+                    warn!("Duplicate 128-bit signature, trying again...");
+                    dup_count += 1;
+                    continue;
+                }
+                // Let's just try another seed
+                Err(SolveError::UnsolvableShard) => {}
+            };
+
             seed += 1;
         }
     }
@@ -922,106 +938,82 @@ where
     /// actual storage of the values (offline or in core memory.)
     ///
     /// See [`VFuncBuilder::_build`] for more details on the parameters.
-    fn build_iter<'a, 'b, I>(
+    fn build_iter<'a, I, B, P>(
         &mut self,
         seed: u64,
         mut into_shard_iter: I,
         max_shard: usize,
         new: fn(usize, usize) -> D,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, D, S, SHARDED>>
+        pl: &mut P,
+    ) -> Result<VFunc<T, W, D, S, SHARDED>, SolveError>
     where
-        I: 'static,
-        &'a mut I: IntoIterator<Item = MuCow<'a, [SigVal<W>]>>,
+        P: ProgressLog + Clone + Send + Sync,
+        B: BorrowMut<[SigVal<W>]> + Send,
+        I: 'a,
+        &'a mut I: IntoIterator<Item = B>,
         <&'a mut I as IntoIterator>::IntoIter: Send,
     {
-        let mut _dup_count = 0;
-
+        self.num_threads = 1.max((1 << self.shard_high_bits) / 8).min(8);
         let c = 1.10; // size_factor(3, num_keys);
+        self.log2_seg_size = comp_log2_seg_size(3, self.num_keys >> self.shard_high_bits);
         self.l = ((c * max_shard as f64).ceil() as usize).div_ceil(1 << self.log2_seg_size);
+        self.num_vertices = (1 << self.log2_seg_size) * (self.l + 2);
+        self.num_threads = 1.max((1 << self.shard_high_bits) / 8).min(8); // TODO
+
+        pl.info(format_args!(
+            "Number of variables with respect to c*n: {:.2}%",
+            (100.0 * (self.num_vertices * self.num_shards) as f64) / (self.num_keys as f64 * c)
+        ));
 
         let mut data = new(self.bit_width, self.num_vertices * self.num_shards);
 
         let thread_pool = ThreadPoolBuilder::new()
             .num_threads(self.num_threads.max(2)) // Or it might hang
-            .build()?;
+            .build()
+            .unwrap(); // Seroiusly, it's not going to fail
 
         // Loop until success or duplicate detection
-        let data = loop {
-            let lazy_gaussian = self.num_keys < 60000000;
+        // This is safe because the reference disappears at the end of the
+        // body of the loop
+        let iter = unsafe { (*(&mut into_shard_iter as *mut I)).into_iter().enumerate() };
 
-            self.shard_high_bits = if lazy_gaussian {
-                // log(num_keys / 65536) + 1
-                self.num_keys.ilog2().saturating_sub(15)
-            } else {
-                compute_high_bits(self.num_keys, SHARDED)
-            };
-            dbg!(self.shard_high_bits);
-            self.num_threads = 1.max((1 << self.shard_high_bits) / 8).min(8); // TODO
-                                                                              //(self.shard_high_bits, self.num_threads) = (0, 4);
-            self.log2_seg_size = comp_log2_seg_size(3, self.num_keys >> self.shard_high_bits);
-            dbg!(self.log2_seg_size);
-            dbg!(c, self.log2_seg_size);
+        if self.num_keys < Self::MIN_FUSE_GRAPH_SIZE {
+            pl.info(format_args!("Switching to lazy Gaussian elimination"));
 
-            self.num_shards = 1 << self.shard_high_bits;
-            self.shard_mask = (1u32 << self.shard_high_bits) - 1;
+            self.par_solve(
+                iter,
+                &mut data,
+                new,
+                |this, shard_index, shard, data, pl| this.solve_lin(shard_index, shard, data, pl),
+                &thread_pool,
+                &mut pl.concurrent(),
+                pl,
+            )?;
+        } else {
+            self.par_solve(
+                iter,
+                &mut data,
+                new,
+                |this, shard_index, shard, data, pl| {
+                    this.peel_shard(shard_index, shard, data, pl)
+                        .map_err(|_| ())
+                },
+                &thread_pool,
+                &mut pl.concurrent(),
+                pl,
+            )?;
+        }
 
-            dbg!(self.l);
-            self.num_vertices = (1 << self.log2_seg_size) * (self.l + 2);
-            dbg!(self.num_vertices);
-
-            pl.info(format_args!(
-                "Number of variables with respect to c*n: {:.2}%",
-                (100.0 * (self.num_vertices * self.num_shards) as f64) / (self.num_keys as f64 * c)
-            ));
-
-            let iter = into_shard_iter.into_iter().enumerate();
-            if lazy_gaussian {
-                self.l = self.l.saturating_sub(1);
-                pl.info(format_args!("Switching to lazy Gaussian elmination"));
-
-                match self.par_solve(
-                    &mut pl.concurrent(),
-                    pl,
-                    iter,
-                    &mut data,
-                    new,
-                    |this, shard_index, shard, data, pl| {
-                        this.solve_lin(shard_index, shard, data, pl)
-                    },
-                    &thread_pool,
-                ) {
-                    Ok(()) => break data,
-                    Err(_) => continue,
-                }
-            } else {
-                match self.par_solve(
-                    &mut pl.concurrent(),
-                    pl,
-                    iter,
-                    &mut data,
-                    new,
-                    |this, shard_index, shard, data, pl| {
-                        this.peel_shard(shard_index, shard, data, pl)
-                            .map_err(|_| ())
-                    },
-                    &thread_pool,
-                ) {
-                    Ok(()) => break data,
-                    Err(_) => {}
-                }
-            }
-        };
         pl.info(format_args!(
-            "bits/keys: {} ({:.2}%)",
+            "Bits/keys: {} ({:.2}%)",
             data.len() as f64 * self.bit_width as f64 / self.num_keys as f64,
-            data.len() as f64 / (self.num_keys as f64 * 1.10)
+            100.0 * data.len() as f64 / self.num_keys as f64,
         ));
 
         Ok(VFunc::<T, W, D, S, SHARDED> {
             seed,
             l: self.l,
-            high_bits: self.shard_high_bits,
+            shard_high_bits: self.shard_high_bits,
             shard_mask: self.shard_mask,
             num_keys: self.num_keys,
             log2_seg_size: self.log2_seg_size,
