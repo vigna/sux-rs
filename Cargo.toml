@@ -48,7 +48,6 @@ derivative = "2.2.0"
 derive_setters = "0.1.6"
 xorf = "0.11.0"
 crossbeam-channel = "0.5.14"
-mucow = "0.1.0"
 thiserror = "2.0.11"
 
 [dev-dependencies]

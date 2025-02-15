@@ -23,7 +23,6 @@ use super::spooky_short;
 use anyhow::Result;
 use epserde::prelude::*;
 use mem_dbg::{MemDbg, MemSize};
-use mucow::MuCow;
 use rdst::RadixKey;
 use std::{collections::VecDeque, fs::File, io::*, marker::PhantomData};
 
@@ -176,7 +175,7 @@ impl<T: ZeroCopy + 'static> ChunkStore<T> {
 
 impl<'a, T: ZeroCopy + Send + Sync + 'static> IntoIterator for &'a mut ChunkStore<T> {
     type IntoIter = ChunkIterator<'a, T>;
-    type Item = MuCow<'a, [SigVal<T>]>;
+    type Item = Vec<SigVal<T>>;
     /// Return an iterator on chunks.
     ///
     /// This method can be called multiple times.
@@ -213,7 +212,7 @@ pub struct ChunkIterator<'a, T: ZeroCopy + 'static> {
 }
 
 impl<'a, T: ZeroCopy + Send + Sync + 'static> Iterator for ChunkIterator<'a, T> {
-    type Item = MuCow<'a, [SigVal<T>]>;
+    type Item = Vec<SigVal<T>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let store = &mut self.store;
@@ -247,7 +246,7 @@ impl<'a, T: ZeroCopy + Send + Sync + 'static> Iterator for ChunkIterator<'a, T> 
                 }
             }
 
-            let res = MuCow::Owned(chunk);
+            let res = chunk;
             self.next_file += to_aggr;
             self.next_chunk += 1;
             Some(res)
@@ -304,7 +303,7 @@ impl<'a, T: ZeroCopy + Send + Sync + 'static> Iterator for ChunkIterator<'a, T> 
             }
 
             self.next_chunk += 1;
-            Some(MuCow::Owned(self.chunks.pop_front().unwrap()))
+            Some(self.chunks.pop_front().unwrap())
         }
     }
 
