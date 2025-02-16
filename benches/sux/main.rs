@@ -177,7 +177,7 @@ fn main() {
     // Criterion doesn't let you parse specific arguments and using configure_from_args
     // will parse all of them, even the ones that are not for Criterion, resulting
     // in an error.
-    let mut criterion = Criterion::default()
+    let mut criterion = Criterion()
         .with_filter("")
         .with_output_color(true)
         .without_plots();

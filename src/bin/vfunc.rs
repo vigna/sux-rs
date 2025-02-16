@@ -60,7 +60,7 @@ fn main() -> Result<()> {
             .log2_buckets(args.high_bits);
 
         if let Some(threads) = args.threads {
-            builder = builder.num_threads(threads);
+            builder = builder.max_num_threads(threads);
         }
 
         let func = if args.zstd {
@@ -84,7 +84,7 @@ fn main() -> Result<()> {
             .offline(args.offline)
             .log2_buckets(args.high_bits);
         if let Some(threads) = args.threads {
-            builder = builder.num_threads(threads);
+            builder = builder.max_num_threads(threads);
         }
         let func = builder.build(
             FromIntoIterator::from(0_usize..n),

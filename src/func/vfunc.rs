@@ -7,7 +7,10 @@
 
 // We import selectively to be able to use AtomicHelper
 use crate::bits::*;
+use crate::prelude::Rank9;
 use crate::traits::bit_field_slice;
+use crate::traits::NumBits;
+use crate::traits::Rank;
 use crate::utils::*;
 use anyhow::bail;
 use arbitrary_chunks::ArbitraryChunkMut;
@@ -19,32 +22,35 @@ use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
-use log::warn;
 use mem_dbg::*;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
 use std::borrow::BorrowMut;
 use std::marker::PhantomData;
+use std::time::Instant;
 
 #[inline]
-pub fn comp_log2_seg_size(arity: usize, num_keys: usize) -> u32 {
-    if num_keys == 0 {
-        return 2;
-    }
-
+pub fn lin_log2_seg_size(arity: usize, num_keys: usize) -> u32 {
     match arity {
-        3 => ((num_keys as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
-        4 => ((num_keys as f64).ln() / (2.91_f64).ln() - 0.5).floor() as u32,
+        3 => {
+            if num_keys >= 100_000 {
+                9
+            } else {
+                (0.76 * (num_keys.max(1) as f64).ln()).floor() as u32
+            }
+        }
         _ => unimplemented!(),
     }
 }
 
 #[inline]
-pub fn size_factor(arity: usize, size: usize) -> f64 {
+pub fn fuse_log2_seg_size(arity: usize, num_keys: usize) -> u32 {
+    // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
+    // https://doi.org/10.1145/3510449
     match arity {
-        3 => 1.125_f64.max(0.875 + 0.25 * (1000000_f64).ln() / (size as f64).ln()),
-        4 => 1.075_f64.max(0.77 + 0.305 * (600000_f64).ln() / (size as f64).ln()),
+        3 => ((num_keys.max(1) as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
+        4 => ((num_keys.max(1) as f64).ln() / (2.91_f64).ln() - 0.5).floor() as u32,
         _ => unimplemented!(),
     }
 }
@@ -183,15 +189,17 @@ pub struct VFuncBuilder<
     const SHARDED: bool = false,
 > {
     #[setters(generate = true)]
-    /// The number of parallel threads to use.
-    num_threads: usize,
+    /// The maximum number of parallel threads to use.
+    #[derivative(Default(value = "8"))]
+    max_num_threads: usize,
     #[setters(generate = true)]
     /// Use disk-based buckets to reduce core memory usage at construction time.
     offline: bool,
     /// The base-2 logarithm of the number of buckets. Used only if `offline` is
     /// `true`. The default is 8.
     #[setters(generate = true, strip_option)]
-    log2_buckets: Option<u32>,
+    #[derivative(Default(value = "8"))]
+    log2_buckets: u32,
     bit_width: usize,
     shard_high_bits: u32,
     shard_mask: u32,
@@ -211,6 +219,9 @@ pub enum SolveError {
     #[error("Duplicate signature")]
     /// A duplicate signature was detected.
     DuplicateSignature,
+    #[error("Max shard too big")]
+    /// The maximum shard is too big.
+    MaxShardTooBig,
     #[error("Unsolvable shard")]
     /// A shard cannot be solved.
     UnsolvableShard,
@@ -266,7 +277,8 @@ impl<
         SigVal<W>: RadixKey + Send + Sync,
     {
         // TODO: optimize for the non-parallel case
-        let (send, receive) = crossbeam_channel::bounded::<(usize, D)>(2 * self.num_threads);
+        let (send, receive) =
+            crossbeam_channel::bounded::<(usize, D)>(2 * thread_pool.current_num_threads());
         main_pl
             .item_name("shard")
             .expected_updates(Some(self.num_shards))
@@ -519,44 +531,54 @@ impl<
                 return Ok((shard_index, data));
             }
             Err((shard_index, shard, edge_lists, mut data, stack)) => {
-                let mut peeled = vec![false; shard.borrow().len()];
-                stack
-                    .iter()
-                    .filter(|&v| edge_lists[*v].degree() == 0)
-                    .for_each(|&v| {
-                        peeled[edge_lists[v].edge_index_and_hinge().0] = true;
-                    });
-
-                // Likely--we have solve the rest
+                // Likely result--we have solve the rest
                 pl.start(format!(
                     "Generating system for shard {}/{}...",
                     shard_index + 1,
                     self.num_shards
                 ));
-                // Create F₂ system using non-peeled edges
-                let mut system = Modulo2System::<W>::new(self.num_vertices);
+
+                // Build a ranked vector of unpeeled equation
+                let mut unpeeled = bit_vec![true; shard.borrow().len()];
+                stack
+                    .iter()
+                    .filter(|&v| edge_lists[*v].degree() == 0)
+                    .for_each(|&v| {
+                        unpeeled.set(edge_lists[v].edge_index_and_hinge().0, false);
+                    });
+                let unpeeled = Rank9::new(unpeeled);
+
+                // Create data for an F₂ system using non-peeled edges
+                let mut var_to_eqs = Vec::with_capacity(self.num_vertices);
+                let mut c = vec![W::ZERO; unpeeled.num_ones()];
+                var_to_eqs.resize_with(self.num_vertices, || Vec::with_capacity(16));
                 shard
                     .borrow()
                     .iter()
                     .enumerate()
-                    .filter(|(edge_index, _)| !peeled[*edge_index])
-                    .for_each(|(_, sig_val)| {
-                        let mut eq = Modulo2Equation::<W>::new(sig_val.val, self.num_vertices);
+                    .filter(|(edge_index, _)| unpeeled[*edge_index])
+                    .for_each(|(edge_index, sig_val)| {
+                        let eq = unpeeled.rank(edge_index);
+                        c[eq] = sig_val.val;
+
                         for &v in sig_val
                             .sig
                             .edge(self.shard_high_bits, self.l, self.log2_seg_size)
                             .iter()
                         {
-                            eq.add(v);
+                            var_to_eqs[v].push(eq);
                         }
-                        system.add(eq);
                     });
                 pl.done_with_count(shard.borrow().len());
 
                 pl.start("Solving system...");
-                let result = system
-                    .lazy_gaussian_elimination_constructor()
-                    .map_err(|_| ())?;
+                let result = Modulo2System::lazy_gaussian_elimination(
+                    None,
+                    var_to_eqs,
+                    c,
+                    (0..self.num_vertices).collect(),
+                )
+                .map_err(|_| ())?;
                 pl.done();
 
                 for (v, &value) in result.iter().enumerate() {
@@ -740,6 +762,10 @@ where
     }
 }
 
+const MAX_LIN_SIZE: usize = 2_000_000;
+const MAX_LIN_SHARD_SIZE: usize = 100_000;
+const LOG2_MAX_SHARDS: u32 = 10;
+
 impl<
         T: ?Sized + Send + Sync + ToSig,
         W: ZeroCopy + Word,
@@ -750,10 +776,6 @@ impl<
 where
     SigVal<W>: RadixKey + Send + Sync,
 {
-    const MIN_FUSE_GRAPH_SIZE: usize = 60_000_000;
-    const MAX_LINEAR_SIZE: usize = 50_000;
-    const LOG2_MAX_SHARDS: u32 = 10;
-
     /// Return the number of high bits defining shards.
     ///
     /// The number of shards is two to the power of the high bits. The value
@@ -769,12 +791,12 @@ where
     ///   the average shard.
     /// * the size of a shard is no smaller than the minimum between the number
     ///   of keys and [`LINEAR_THRESHOLD`](VFuncBuilder::LINEAR_THRESHOLD).
-    fn compute_high_bits(&self) -> u32 {
+    fn set_up_shards(&mut self) {
         let eps = 0.001;
         let num_keys = self.num_keys;
-        if SHARDED {
-            if num_keys < Self::MIN_FUSE_GRAPH_SIZE {
-                num_keys.div_ceil(Self::MAX_LINEAR_SIZE).max(1).ilog2()
+        self.shard_high_bits = if SHARDED {
+            if num_keys <= MAX_LIN_SIZE {
+                (num_keys / MAX_LIN_SHARD_SIZE).max(1).ilog2()
             } else {
                 let t = (num_keys as f64 * eps * eps / 2.0).ln();
 
@@ -783,12 +805,15 @@ where
                 } else {
                     0
                 }
-                .min(Self::LOG2_MAX_SHARDS)
-                .min((num_keys / Self::MIN_FUSE_GRAPH_SIZE).max(1).ilog2())
+                .min(LOG2_MAX_SHARDS)
+                .min((num_keys / MAX_LIN_SIZE).max(1).ilog2())
             }
         } else {
             0
-        }
+        };
+
+        self.num_shards = 1 << self.shard_high_bits;
+        self.shard_mask = (1u32 << self.shard_high_bits) - 1;
     }
 
     /// Build and return a new function with given keys and values.
@@ -805,6 +830,7 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, SHARDED>> {
         let (mut seed, mut dup_count) = (0, 0);
+        let start = Instant::now();
 
         // Loop until success or duplicate detection
         loop {
@@ -814,11 +840,10 @@ where
 
             match if self.offline {
                 // Offline construction using a SigStore
-                let log2_buckets = self.log2_buckets.unwrap_or(8);
-                pl.info(format_args!("Using {} buckets", 1 << log2_buckets));
+                pl.info(format_args!("Using {} buckets", 1 << self.log2_buckets));
                 // Put values into a signature sorter
                 let mut sig_sorter =
-                    SigStore::<W>::new(log2_buckets, Self::LOG2_MAX_SHARDS).unwrap();
+                    SigStore::<W>::new(self.log2_buckets, LOG2_MAX_SHARDS).unwrap();
                 into_values = into_values.rewind()?;
                 into_keys = into_keys.rewind()?;
                 while let Some(result) = into_keys.next() {
@@ -842,17 +867,20 @@ where
                 self.num_keys = sig_sorter.len();
                 self.bit_width = max_value.len() as usize;
 
-                self.shard_high_bits = self.compute_high_bits();
-                self.num_shards = 1 << self.shard_high_bits;
-                self.shard_mask = (1u32 << self.shard_high_bits) - 1;
-
-                pl.info(format_args!(
-                    "Keys: {} Max value: {} Bit width: {} Shards: 2^{}",
-                    self.num_keys, max_value, self.bit_width, self.shard_high_bits
-                ));
+                self.set_up_shards();
 
                 let shard_store = sig_sorter.into_chunk_store(self.shard_high_bits)?;
-                let max_shard = *shard_store.chunk_sizes().iter().max().unwrap();
+                let max_shard = shard_store.chunk_sizes().iter().copied().max().unwrap_or(0);
+                if max_shard as f64 > 1.001 * self.num_keys as f64 / self.num_shards as f64 {
+                    bail!("Shards are too small");
+                }
+
+                pl.info(format_args!(
+                    "Keys: {} Max value: {} Bit width: {} Shards: 2^{} Max shard / average shard: {:.2}%",
+                    self.num_keys, max_value, self.bit_width, self.shard_high_bits,
+                    (100.0 * max_shard as f64) / (self.num_keys as f64 / self.num_shards as f64)
+                ));
+
                 self.build_iter(seed, shard_store, max_shard, new, pl)
             } else {
                 // Online construction
@@ -879,14 +907,7 @@ where
                 self.num_keys = sig_vals.len();
                 self.bit_width = max_value.len() as usize;
 
-                self.shard_high_bits = self.compute_high_bits();
-                self.num_shards = 1 << self.shard_high_bits;
-                self.shard_mask = (1u32 << self.shard_high_bits) - 1;
-
-                pl.info(format_args!(
-                    "Keys: {} Max value: {} Bit width: {} Shards: 2^{}",
-                    self.num_keys, max_value, self.bit_width, self.shard_high_bits
-                ));
+                self.set_up_shards();
 
                 // TODO: this might be a countsort on the shard_high_bits
                 pl.start("Sorting...");
@@ -900,7 +921,13 @@ where
                 }
                 pl.done_with_count(self.num_keys);
 
-                let max_shard = *shard_sizes.iter().max().unwrap();
+                let max_shard = shard_sizes.iter().copied().max().unwrap_or(0);
+
+                pl.info(format_args!(
+                    "Keys: {} Max value: {} Bit width: {} Shards: 2^{} Max shard / average shard: {:.2}%",
+                    self.num_keys, max_value, self.bit_width, self.shard_high_bits,
+                    (100.0 * max_shard as f64) / (self.num_keys as f64 / self.num_shards as f64)
+                ));
 
                 self.build_iter(
                     seed,
@@ -913,19 +940,36 @@ where
                     pl,
                 )
             } {
-                Ok(result) => return Ok(result),
+                Ok(result) => {
+                    pl.info(format_args!(
+                        "Completed in {:.3} seconds",
+                        start.elapsed().as_secs_f64()
+                    ));
+                    return Ok(result);
+                }
                 // Let's try another seed, but just a few times--most likely,
                 // duplicate keys
                 Err(SolveError::DuplicateSignature) => {
                     if dup_count >= 3 {
-                        bail!("Duplicate keys (duplicate 128-bit signatures with four different seeds");
+                        bail!("Duplicate keys (duplicate 128-bit signatures with four different seeds)");
                     }
-                    warn!("Duplicate 128-bit signature, trying again...");
+                    pl.warn(format_args!(
+                        "Duplicate 128-bit signature, trying again with a different seed..."
+                    ));
                     dup_count += 1;
                     continue;
                 }
+                Err(SolveError::MaxShardTooBig) => {
+                    pl.warn(format_args!(
+                        "The maximum shard is too big, trying again with a different seed..."
+                    ));
+                }
                 // Let's just try another seed
-                Err(SolveError::UnsolvableShard) => {}
+                Err(SolveError::UnsolvableShard) => {
+                    pl.warn(format_args!(
+                        "Unsolvable shard, trying again with different seed..."
+                    ));
+                }
             };
 
             seed += 1;
@@ -953,31 +997,40 @@ where
         &'a mut I: IntoIterator<Item = B>,
         <&'a mut I as IntoIterator>::IntoIter: Send,
     {
-        self.num_threads = 1.max((1 << self.shard_high_bits) / 8).min(8);
-        let c = 1.10; // size_factor(3, num_keys);
-        self.log2_seg_size = comp_log2_seg_size(3, self.num_keys >> self.shard_high_bits);
+        let lazy_gaussian = self.num_keys <= MAX_LIN_SIZE;
+        let c;
+        if lazy_gaussian {
+            c = 1.10;
+            self.log2_seg_size = lin_log2_seg_size(3, max_shard);
+            dbg!(self.log2_seg_size);
+        } else {
+            c = 1.10;
+            self.log2_seg_size = fuse_log2_seg_size(3, max_shard);
+        };
+
         self.l = ((c * max_shard as f64).ceil() as usize).div_ceil(1 << self.log2_seg_size);
         self.num_vertices = (1 << self.log2_seg_size) * (self.l + 2);
-        self.num_threads = 1.max((1 << self.shard_high_bits) / 8).min(8); // TODO
-
-        pl.info(format_args!(
-            "Number of variables with respect to c*n: {:.2}%",
-            (100.0 * (self.num_vertices * self.num_shards) as f64) / (self.num_keys as f64 * c)
-        ));
 
         let mut data = new(self.bit_width, self.num_vertices * self.num_shards);
 
         let thread_pool = ThreadPoolBuilder::new()
-            .num_threads(self.num_threads.max(2)) // Or it might hang
+            .num_threads(self.num_shards.min(self.max_num_threads) + 1) // Or it might hang
             .build()
             .unwrap(); // Seroiusly, it's not going to fail
+
+        pl.info(format_args!(
+            "Size factor: {}, Number of variables: {:.2}% Number of threads: {}",
+            c,
+            (100.0 * (self.num_vertices * self.num_shards) as f64) / (self.num_keys as f64),
+            thread_pool.current_num_threads()
+        ));
 
         // Loop until success or duplicate detection
         // This is safe because the reference disappears at the end of the
         // body of the loop
         let iter = unsafe { (*(&mut into_shard_iter as *mut I)).into_iter().enumerate() };
 
-        if self.num_keys < Self::MIN_FUSE_GRAPH_SIZE {
+        if lazy_gaussian {
             pl.info(format_args!("Switching to lazy Gaussian elimination"));
 
             self.par_solve(
@@ -1021,5 +1074,58 @@ where
             _marker_t: std::marker::PhantomData,
             _marker_os: std::marker::PhantomData,
         })
+    }
+}
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    #[cfg(feature = "slow_tests")]
+    fn test_lin_log2_seg_size() -> anyhow::Result<()> {
+        use super::*;
+        // Manually tested values:
+        // 200000 -> 9
+        // 150000 -> 9
+        // 112500 -> 9
+        // 100000 -> 8
+        // 75000 -> 8
+        // 50000 -> 8
+        // 40000 -> 8
+        // 35000 -> 7
+        // 30000 -> 7
+        // 25000 -> 7
+        // 12500 -> 7
+        // 10000 -> 6
+        // 1000 -> 5
+        // 100 -> 3
+        // 10 -> 2
+
+        for n in 0..MAX_LIN_SHARD_SIZE * 2 {
+            if lin_log2_seg_size(3, n) != lin_log2_seg_size(3, n + 1) {
+                eprintln!(
+                    "Bulding function with {} keys (log₂ segment size = {})...",
+                    n,
+                    lin_log2_seg_size(3, n)
+                );
+                let _func = VFuncBuilder::<_, _, BitFieldVec<_>, [u64; 2], true>::default().build(
+                    FromIntoIterator::from(0..n),
+                    FromIntoIterator::from(0_usize..),
+                    no_logging![],
+                )?;
+
+                eprintln!(
+                    "Bulding function with {} keys (log₂ segment size = {})...",
+                    n + 1,
+                    lin_log2_seg_size(3, n + 1)
+                );
+                let _func = VFuncBuilder::<_, _, BitFieldVec<_>, [u64; 2], true>::default().build(
+                    FromIntoIterator::from(0..n + 1),
+                    FromIntoIterator::from(0_usize..),
+                    no_logging![],
+                )?;
+            }
+        }
+
+        Ok(())
     }
 }

@@ -232,19 +232,19 @@ impl<W: Word> Modulo2System<W> {
     /// * `system_op` - The system to be solved, if already exists.
     ///
     /// * `var2_eq` - A vector of vectors describing, for each variable, the equations
-    /// in which it appears.
+    ///   in which it appears.
     ///
     /// * `c` - The vector of known terms, one for each equation.
     ///
     /// * `variable` - the variables with respect to which the system should be solved
     pub fn lazy_gaussian_elimination(
         system_op: Option<&mut Modulo2System<W>>,
-        var2_eq: &mut Vec<Vec<usize>>,
-        c: &Vec<W>,
-        variable: &Vec<usize>,
+        mut var_to_eqs: Vec<Vec<usize>>,
+        c: Vec<W>,
+        variables: Vec<usize>,
     ) -> Result<Vec<W>> {
         let num_equations = c.len();
-        let num_vars = var2_eq.len();
+        let num_vars = var_to_eqs.len();
         if num_equations == 0 {
             return Ok(vec![W::ZERO; num_vars]);
         }
@@ -273,8 +273,8 @@ impl<W: Word> Modulo2System<W> {
         let mut weight: Vec<usize> = vec![0; num_vars];
         let mut priority: Vec<usize> = vec![0; num_equations];
 
-        for &v in variable.iter() {
-            let eq = &mut var2_eq[v];
+        for &v in variables.iter() {
+            let eq = &mut var_to_eqs[v];
             if eq.len() == 0 {
                 continue;
             }
@@ -354,7 +354,7 @@ impl<W: Word> Modulo2System<W> {
                     var = variables.pop().unwrap()
                 }
                 idle_normalized[var / usize::BITS as usize] ^= 1 << (var % usize::BITS as usize);
-                var2_eq[var].iter().for_each(|&eq| {
+                var_to_eqs[var].iter().for_each(|&eq| {
                     priority[eq] -= 1;
                     if priority[eq] == 1 {
                         equation_list.push(eq)
@@ -389,7 +389,7 @@ impl<W: Word> Modulo2System<W> {
                     pivots.push(pivot);
                     solved.push(first);
                     weight[pivot] = 0;
-                    var2_eq[pivot]
+                    var_to_eqs[pivot]
                         .iter()
                         .filter(|&&eq_idx| eq_idx != first)
                         .for_each(|&eq| {
@@ -469,9 +469,9 @@ impl<W: Word> Modulo2System<W> {
         });
         Modulo2System::<W>::lazy_gaussian_elimination(
             Some(self),
-            &mut var2_eq,
-            &c,
-            &(0..num_vars).collect(),
+            var2_eq,
+            c,
+            (0..num_vars).collect(),
         )
     }
 }

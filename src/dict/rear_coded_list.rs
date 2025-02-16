@@ -459,7 +459,7 @@ impl RearCodedListBuilder {
             len: 0,
             is_sorted: true,
             k,
-            stats: Default::default(),
+            stats: Stats::default(),
         }
     }
 

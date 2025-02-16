@@ -13,3 +13,6 @@ pub use bit_field_vec::*;
 
 pub mod bit_vec;
 pub use bit_vec::*;
+
+pub use crate::bit_field_vec;
+pub use crate::bit_vec;
