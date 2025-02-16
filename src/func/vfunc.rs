@@ -1036,8 +1036,9 @@ where
             .unwrap(); // Seroiusly, it's not going to fail
 
         pl.info(format_args!(
-            "c: {}, Number of variables: {:.2}% Number of threads: {}",
+            "c: {}, log₂ segment size: {} Number of variables: {:.2}% Number of threads: {}",
             c,
+            self.log2_seg_size,
             (100.0 * (self.num_vertices * self.num_shards) as f64) / (self.num_keys as f64),
             thread_pool.current_num_threads()
         ));
