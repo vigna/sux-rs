@@ -30,27 +30,35 @@ use std::borrow::BorrowMut;
 use std::marker::PhantomData;
 use std::time::Instant;
 
-#[inline]
-pub fn lin_log2_seg_size(arity: usize, num_keys: usize) -> u32 {
+fn lin_log2_seg_size(arity: usize, n: usize) -> u32 {
     match arity {
         3 => {
-            if num_keys >= 100_000 {
+            if n >= 100_000 {
                 9
             } else {
-                (0.76 * (num_keys.max(1) as f64).ln()).floor() as u32
+                (0.76 * (n.max(1) as f64).ln()).floor() as u32
             }
         }
         _ => unimplemented!(),
     }
 }
 
-#[inline]
-pub fn fuse_log2_seg_size(arity: usize, num_keys: usize) -> u32 {
+fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
     // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
     // https://doi.org/10.1145/3510449
     match arity {
-        3 => ((num_keys.max(1) as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
-        4 => ((num_keys.max(1) as f64).ln() / (2.91_f64).ln() - 0.5).floor() as u32,
+        3 => ((n.max(1) as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
+        4 => ((n.max(1) as f64).ln() / (2.91_f64).ln() - 0.5).floor() as u32,
+        _ => unimplemented!(),
+    }
+}
+
+fn fuse_c(arity: usize, n: usize) -> f64 {
+    // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
+    // https://doi.org/10.1145/3510449
+    match arity {
+        3 => 1.125_f64.max(0.875 + 0.25 * (1000000_f64).ln() / (n as f64).ln()),
+        4 => 1.075_f64.max(0.77 + 0.305 * (600000_f64).ln() / (n as f64).ln()),
         _ => unimplemented!(),
     }
 }
@@ -997,16 +1005,24 @@ where
         &'a mut I: IntoIterator<Item = B>,
         <&'a mut I as IntoIterator>::IntoIter: Send,
     {
-        let lazy_gaussian = self.num_keys <= MAX_LIN_SIZE;
-        let c;
-        if lazy_gaussian {
-            c = 1.10;
-            self.log2_seg_size = lin_log2_seg_size(3, max_shard);
-            dbg!(self.log2_seg_size);
+        let (lazy_gaussian, c);
+        if SHARDED {
+            lazy_gaussian = self.num_keys <= MAX_LIN_SIZE;
+            c = 1.11;
+            self.log2_seg_size = if lazy_gaussian {
+                lin_log2_seg_size(3, max_shard)
+            } else {
+                fuse_log2_seg_size(3, max_shard)
+            };
         } else {
-            c = 1.10;
-            self.log2_seg_size = fuse_log2_seg_size(3, max_shard);
-        };
+            lazy_gaussian = self.num_keys <= MAX_LIN_SHARD_SIZE;
+            c = fuse_c(3, self.num_keys);
+            self.log2_seg_size = if lazy_gaussian {
+                lin_log2_seg_size(3, self.num_keys)
+            } else {
+                fuse_log2_seg_size(3, self.num_keys)
+            };
+        }
 
         self.l = ((c * max_shard as f64).ceil() as usize).div_ceil(1 << self.log2_seg_size);
         self.num_vertices = (1 << self.log2_seg_size) * (self.l + 2);
@@ -1019,7 +1035,7 @@ where
             .unwrap(); // Seroiusly, it's not going to fail
 
         pl.info(format_args!(
-            "Size factor: {}, Number of variables: {:.2}% Number of threads: {}",
+            "c: {}, Number of variables: {:.2}% Number of threads: {}",
             c,
             (100.0 * (self.num_vertices * self.num_shards) as f64) / (self.num_keys as f64),
             thread_pool.current_num_threads()
