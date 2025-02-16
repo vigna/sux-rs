@@ -1008,11 +1008,12 @@ where
         let (lazy_gaussian, c);
         if SHARDED {
             lazy_gaussian = self.num_keys <= MAX_LIN_SIZE;
-            c = 1.11;
-            self.log2_seg_size = if lazy_gaussian {
-                lin_log2_seg_size(3, max_shard)
+
+            (c, self.log2_seg_size) = if lazy_gaussian {
+                // Slightly loose bound to help with solvability
+                (1.11, lin_log2_seg_size(3, max_shard))
             } else {
-                fuse_log2_seg_size(3, max_shard)
+                (1.10, fuse_log2_seg_size(3, max_shard))
             };
         } else {
             lazy_gaussian = self.num_keys <= MAX_LIN_SHARD_SIZE;
