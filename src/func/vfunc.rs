@@ -983,9 +983,18 @@ where
                 self.set_up_shards();
 
                 pl.start("Sorting...");
-                let shard_sizes = count_sort(&mut sig_vals, self.num_shards, |sv| {
-                    sv.sig.shard(self.shard_high_bits, self.shard_mask)
+                sig_vals.par_sort_unstable_by(|a, b| {
+                    a.sig
+                        .shard(self.shard_high_bits, self.shard_mask)
+                        .cmp(&b.sig.shard(self.shard_high_bits, self.shard_mask))
                 });
+                pl.done_with_count(self.num_keys);
+
+                pl.start("Counting shard sizes...");
+                let mut shard_sizes = vec![0; self.num_shards];
+                for &sig_val in &sig_vals {
+                    shard_sizes[sig_val.sig.shard(self.shard_high_bits, self.shard_mask)] += 1;
+                }
                 pl.done_with_count(self.num_keys);
 
                 let max_shard = shard_sizes.iter().copied().max().unwrap_or(0);
