@@ -44,7 +44,7 @@ struct Args {
     high_bits: u32,
     /// Create an approximate dictionary with this number of bits
     #[arg(short, long)]
-    dict: usize,
+    dict: Option<usize>,
 }
 
 fn main() -> Result<()> {
@@ -91,10 +91,10 @@ fn main() -> Result<()> {
             builder = builder.max_num_threads(threads);
         }
 
-        let func = if args.dict != 0 {
+        let func = if let Some(dict_bits) = args.dict {
             builder.build(
                 FromIntoIterator::from(0_usize..n),
-                FromIntoIterator::from(itertools::repeat_n((1 << args.dict) - 1, n)),
+                FromIntoIterator::from(itertools::repeat_n((1 << dict_bits) - 1, n)),
                 &mut pl,
             )?
         } else {

@@ -63,62 +63,6 @@ fn fuse_c(arity: usize, n: usize) -> f64 {
     }
 }
 
-fn count_sort<T: Copy, A: AsMut<[T]>, K: Fn(T) -> usize>(
-    mut data: A,
-    num_keys: usize,
-    key: K,
-) -> Vec<usize> {
-    let data = data.as_mut();
-
-    let mut counts = vec![0; num_keys];
-    for &x in &*data {
-        counts[key(x)] += 1;
-    }
-
-    let mut last_used = 0;
-    let mut pos = vec![0; num_keys];
-    let mut p = 0;
-    // Compute cumulative distribution
-    for (i, &c) in counts.iter().enumerate() {
-        if c != 0 {
-            last_used = i;
-        }
-        p += c;
-        pos[i] = p;
-    }
-
-    // Skip empty buckets
-    let end = data.len() - counts[last_used];
-
-    let counts_clone = counts.clone();
-    let mut i = 0;
-
-    // Dutch national flag algorithm
-    while i <= end {
-        let mut t = data[i];
-        let mut c = key(t);
-        if i < end {
-            loop {
-                pos[c] -= 1;
-
-                if pos[c] <= i {
-                    break;
-                }
-
-                std::mem::swap(&mut t, &mut data[pos[c]]);
-                c = key(t);
-            }
-
-            data[i] = t;
-        }
-
-        i += counts[c];
-        counts[c] = 0;
-    }
-
-    counts_clone
-}
-
 /// An edge list represented by a 64-bit integer. The lower SIDE_SHIFT bits
 /// contain a XOR of the edges; the next two bits contain a XOR of the side of
 /// the edges; the remaining DEG_SHIFT the upper bits contain the degree.
@@ -1019,8 +963,9 @@ where
             } {
                 Ok(result) => {
                     pl.info(format_args!(
-                        "Completed in {:.3} seconds",
-                        start.elapsed().as_secs_f64()
+                        "Completed in {:.3} seconds ({:.3} ns/key)",
+                        start.elapsed().as_secs_f64(),
+                        start.elapsed().as_nanos() as f64 / self.num_keys as f64
                     ));
                     return Ok(result);
                 }
@@ -1215,31 +1160,5 @@ mod tests {
         }
 
         Ok(())
-    }
-
-    #[test]
-    fn test_count_sort() {
-        use super::*;
-        let mut rng = SmallRng::seed_from_u64(0);
-
-        for high_bits in [1, 8, 16] {
-            eprintln!("Testing with {} high bits...", high_bits);
-            let mut data = (0..100000).map(|_| rng.random()).collect::<Vec<u64>>();
-            let counts = count_sort(&mut data, 1 << high_bits, |x| {
-                (x >> (u64::BITS - high_bits)) as usize
-            });
-
-            let mut my_counts = vec![0; 1 << high_bits];
-            for &x in &data {
-                my_counts[(x >> (u64::BITS - high_bits)) as usize] += 1;
-            }
-
-            assert_eq!(counts, my_counts);
-            for i in 1..data.len() {
-                assert!(
-                    data[i - 1] >> (u64::BITS - high_bits) <= data[i] >> (u64::BITS - high_bits)
-                );
-            }
-        }
     }
 }
