@@ -8,14 +8,11 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use dsi_progress_logger::*;
-use epserde::prelude::*;
-use lender::*;
 use pthash::{
-    BuildConfiguration, DictionaryDictionary, Hashable, Hasher, Minimal, MurmurHash2_64,
-    PartitionedPhf, Phf,
+    BuildConfiguration, DictionaryDictionary, Hashable, Minimal, MurmurHash2_64, PartitionedPhf,
+    Phf,
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use sux::{bits::BitFieldVec, func::VFunc, utils::LineLender};
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]

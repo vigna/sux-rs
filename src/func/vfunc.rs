@@ -861,7 +861,7 @@ where
                 pl.info(format_args!("Using {} buckets", 1 << self.log2_buckets));
                 // Put values into a signature sorter
                 let mut sig_sorter =
-                    SigStore::<W>::new(self.log2_buckets, LOG2_MAX_SHARDS).unwrap();
+                    SigStore::<W, _>::new_offline(self.log2_buckets, LOG2_MAX_SHARDS).unwrap();
                 into_values = into_values.rewind()?;
                 into_keys = into_keys.rewind()?;
                 while let Some(result) = into_keys.next() {
@@ -887,8 +887,8 @@ where
 
                 self.set_up_shards();
 
-                let shard_store = sig_sorter.into_chunk_store(self.shard_high_bits)?;
-                let max_shard = shard_store.chunk_sizes().iter().copied().max().unwrap_or(0);
+                let shard_store = sig_sorter.into_shard_store(self.shard_high_bits)?;
+                let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
                 if max_shard as f64 > 1.001 * self.num_keys as f64 / self.num_shards as f64 {
                     bail!("Shards are too small");
                 }
@@ -1110,7 +1110,6 @@ where
 }
 #[cfg(test)]
 mod tests {
-    use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     #[test]
     #[cfg(feature = "slow_tests")]
