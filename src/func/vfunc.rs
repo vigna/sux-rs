@@ -674,16 +674,16 @@ impl<
     }
 }
 
-pub trait ChunkEdge: Send + Sync {
+pub trait ShardEdge: Send + Sync {
     fn shard(&self, shard_high_bits: u32, shard_mask: u32) -> usize;
     fn edge(&self, shard_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3];
 }
 
-impl ChunkEdge for [u64; 2] {
+impl ShardEdge for [u64; 2] {
     #[inline(always)]
     #[must_use]
     fn shard(&self, shard_high_bits: u32, shard_mask: u32) -> usize {
-        // TODO: shift?
+        // This must work even when shard_high_bits is zero
         (self[0].rotate_left(shard_high_bits) & shard_mask as u64) as usize
     }
 
@@ -703,8 +703,9 @@ impl ChunkEdge for [u64; 2] {
     }
 }
 
-impl ChunkEdge for u64 {
+impl ShardEdge for u64 {
     fn shard(&self, shard_high_bits: u32, shard_mask: u32) -> usize {
+        // This must work even when shard_high_bits is zero
         let xor = *self as u32 ^ (*self >> 32) as u32;
         (xor.rotate_left(shard_high_bits) & shard_mask) as usize
     }
@@ -730,7 +731,7 @@ impl<
         T: ?Sized + ToSig,
         W: ZeroCopy + Word,
         D: bit_field_slice::BitFieldSlice<W>,
-        S: ChunkEdge,
+        S: ShardEdge,
         const SHARDED: bool,
     > VFunc<T, W, D, S, SHARDED>
 {
@@ -741,9 +742,9 @@ impl<
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> W {
         if SHARDED {
             let edge = sig.edge(self.shard_high_bits, self.l, self.log2_seg_size);
-            let chunk = sig.shard(self.shard_high_bits, self.shard_mask);
-            // chunk * self.segment_size * (2^log2_l + 2)
-            let shard_offset = chunk * ((self.l + 2) << self.log2_seg_size);
+            let shard = sig.shard(self.shard_high_bits, self.shard_mask);
+            // shard * self.segment_size * (2^log2_l + 2)
+            let shard_offset = shard * ((self.l + 2) << self.log2_seg_size);
 
             unsafe {
                 self.data.get_unchecked(edge[0] + shard_offset)
@@ -782,7 +783,7 @@ impl<
 /// Since values are stored in a vector, access is particularly fast, but
 /// the bit width of the output of the function is exactly the bit width
 /// of `W`.
-impl<T: ?Sized + Send + Sync + ToSig, W: ZeroCopy + Word, S: ChunkEdge, const SHARDED: bool>
+impl<T: ?Sized + Send + Sync + ToSig, W: ZeroCopy + Word, S: ShardEdge, const SHARDED: bool>
     VFuncBuilder<T, W, Vec<W>, S, SHARDED>
 where
     SigVal<W>: RadixKey + Send + Sync,
@@ -803,12 +804,12 @@ where
     }
 }
 
-struct IntoChunkIter<T> {
+struct IntoShardIter<T> {
     data: Vec<T>,
     shard_sizes: Vec<usize>,
 }
 
-impl<'a, T: Copy + 'static> IntoIterator for &'a mut IntoChunkIter<T> {
+impl<'a, T: Copy + 'static> IntoIterator for &'a mut IntoShardIter<T> {
     type IntoIter = ArbitraryChunkMut<'a, 'a, T>;
     type Item = &'a mut [T];
 
@@ -826,7 +827,7 @@ impl<'a, T: Copy + 'static> IntoIterator for &'a mut IntoChunkIter<T> {
 ///
 /// Typically `W` will be `usize` or `u64`. It might be necessary to use
 /// `u128` if the bit width of the values is larger than 64.
-impl<T: ?Sized + Send + Sync + ToSig, W: ZeroCopy + Word, S: ChunkEdge, const SHARDED: bool>
+impl<T: ?Sized + Send + Sync + ToSig, W: ZeroCopy + Word, S: ShardEdge, const SHARDED: bool>
     VFuncBuilder<T, W, BitFieldVec<W>, S, SHARDED>
 where
     SigVal<W>: RadixKey + Send + Sync,
@@ -854,7 +855,7 @@ impl<
         T: ?Sized + Send + Sync + ToSig,
         W: ZeroCopy + Word,
         D: bit_field_slice::BitFieldSlice<W> + bit_field_slice::BitFieldSliceMut<W> + Send + Sync,
-        S: ChunkEdge,
+        S: ShardEdge,
         const SHARDED: bool,
     > VFuncBuilder<T, W, D, S, SHARDED>
 where
@@ -1007,7 +1008,7 @@ where
 
                 self.build_iter(
                     seed,
-                    IntoChunkIter {
+                    IntoShardIter {
                         data: sig_vals,
                         shard_sizes,
                     },
