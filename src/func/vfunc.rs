@@ -63,6 +63,62 @@ fn fuse_c(arity: usize, n: usize) -> f64 {
     }
 }
 
+fn count_sort<T: Copy, A: AsMut<[T]>, K: Fn(T) -> usize>(
+    mut data: A,
+    num_keys: usize,
+    key: K,
+) -> Vec<usize> {
+    let data = data.as_mut();
+
+    let mut counts = vec![0; num_keys];
+    for &x in &*data {
+        counts[key(x)] += 1;
+    }
+
+    let mut last_used = 0;
+    let mut pos = vec![0; num_keys];
+    let mut p = 0;
+    // Compute cumulative distribution
+    for (i, &c) in counts.iter().enumerate() {
+        if c != 0 {
+            last_used = i;
+        }
+        p += c;
+        pos[i] = p;
+    }
+
+    // Skip empty buckets
+    let end = data.len() - counts[last_used];
+
+    let counts_clone = counts.clone();
+    let mut i = 0;
+
+    // Dutch national flag algorithm
+    while i <= end {
+        let mut t = data[i];
+        let mut c = key(t);
+        if i < end {
+            loop {
+                pos[c] -= 1;
+
+                if pos[c] <= i {
+                    break;
+                }
+
+                std::mem::swap(&mut t, &mut data[pos[c]]);
+                c = key(t);
+            }
+
+            data[i] = t;
+        }
+
+        i += counts[c];
+        counts[c] = 0;
+    }
+
+    counts_clone
+}
+
 /// An edge list represented by a 64-bit integer. The lower SIDE_SHIFT bits
 /// contain a XOR of the edges; the next two bits contain a XOR of the side of
 /// the edges; the remaining DEG_SHIFT the upper bits contain the degree.
@@ -206,26 +262,37 @@ pub struct VFuncBuilder<
     #[derivative(Default(value = "8"))]
     max_num_threads: usize,
 
-    #[setters(generate = true)]
     /// Use disk-based buckets to reduce core memory usage at construction time.
+    #[setters(generate = true)]
     offline: bool,
 
-    /// The base-2 logarithm of the number of buckets. Used only if `offline` is
-    /// `true`. The default is 8.
+    /// The base-2 logarithm of the number of on-disk buckets. Used only if
+    /// `offline` is `true`. The default is 8.
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "8"))]
     log2_buckets: u32,
 
+    /// The bit width of the maximum value.
     bit_width: usize,
+    /// The number of high bits defining a shard. It is zero if `SHARDED` is
+    /// false.
     shard_high_bits: u32,
+    /// The mask to select a shard.
     shard_mask: u32,
+    /// The number of keys.
     num_keys: usize,
+    /// The number of shards, i.e., `(1 << shard_high_bits)`.
     num_shards: usize,
-    num_vertices: usize,
+    /// The base-2 logarithm of the segment size.
     log2_seg_size: u32,
+    /// The number of segments minus 2.
     l: usize,
+    /// The number of vertices in a hypergraph, i.e., `(1 << log2_seg_size) * (l + 2)`.
+    num_vertices: usize,
 
+    #[doc(hidden)]
     _marker_t: PhantomData<T>,
+    #[doc(hidden)]
     _marker_od: PhantomData<(W, D, S)>,
 }
 
@@ -616,6 +683,7 @@ impl ChunkEdge for [u64; 2] {
     #[inline(always)]
     #[must_use]
     fn shard(&self, shard_high_bits: u32, shard_mask: u32) -> usize {
+        // TODO: shift?
         (self[0].rotate_left(shard_high_bits) & shard_mask as u64) as usize
     }
 
@@ -793,27 +861,16 @@ where
     SigVal<W>: RadixKey + Send + Sync,
 {
     /// Return the number of high bits defining shards.
-    ///
-    /// The number of shards is two to the power of the high bits. The value
-    /// returned satisfies the following properties:
-    /// * if `SHARDED` is false, it is zero;
-    /// * if the number of keys is less than
-    ///   [`LINEAR_THRESHOLD`](VFuncBuilder::LINEAR_THRESHOLD), it is the
-    ///   logarithm of the number of keys divided
-    ///   [`MAX_LINEAR_SIZE`](VFuncBuilder::MAX_LINEAR_SIZE) plus one;
-    /// * otherwise, it is at most
-    ///   [`LOG2_MAX_SHARDS`](VFuncBuilder::LOG2_MAX_SHARDS);
-    /// * the largest shard is with high probability at most 1.001% the size of
-    ///   the average shard.
-    /// * the size of a shard is no smaller than the minimum between the number
-    ///   of keys and [`LINEAR_THRESHOLD`](VFuncBuilder::LINEAR_THRESHOLD).
     fn set_up_shards(&mut self) {
-        let eps = 0.001;
+        let eps = 0.001; // Tolerance for deviation from the average shard size
         let num_keys = self.num_keys;
         self.shard_high_bits = if SHARDED {
             if num_keys <= MAX_LIN_SIZE {
+                // We just try to make shards as big as possible,
+                // within a maximum size of 2 * MAX_LIN_SHARD_SIZE
                 (num_keys / MAX_LIN_SHARD_SIZE).max(1).ilog2()
             } else {
+                // Bound from urns and balls problem
                 let t = (num_keys as f64 * eps * eps / 2.0).ln();
 
                 if t > 0.0 {
@@ -821,8 +878,8 @@ where
                 } else {
                     0
                 }
-                .min(LOG2_MAX_SHARDS)
-                .min((num_keys / MAX_LIN_SIZE).max(1).ilog2())
+                .min(LOG2_MAX_SHARDS) // We don't really need too many shards
+                .min((num_keys / MAX_LIN_SIZE).max(1).ilog2()) // Shards can't smaller than MAX_LIN_SIZE
             }
         } else {
             0
@@ -925,16 +982,10 @@ where
 
                 self.set_up_shards();
 
-                // TODO: this might be a countsort on the shard_high_bits
                 pl.start("Sorting...");
-                sig_vals.radix_sort_unstable();
-                pl.done_with_count(self.num_keys);
-
-                let mut shard_sizes = vec![0_usize; self.num_shards];
-                pl.start("Counting shard sizes...");
-                for &w in &sig_vals {
-                    shard_sizes[w.sig.shard(self.shard_high_bits, self.shard_mask)] += 1;
-                }
+                let shard_sizes = count_sort(&mut sig_vals, self.num_shards, |sv| {
+                    sv.sig.shard(self.shard_high_bits, self.shard_mask)
+                });
                 pl.done_with_count(self.num_keys);
 
                 let max_shard = shard_sizes.iter().copied().max().unwrap_or(0);
@@ -1104,6 +1155,7 @@ where
 }
 #[cfg(test)]
 mod tests {
+    use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     #[test]
     #[cfg(feature = "slow_tests")]
@@ -1153,5 +1205,31 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_count_sort() {
+        use super::*;
+        let mut rng = SmallRng::seed_from_u64(0);
+
+        for high_bits in [1, 8, 16] {
+            eprintln!("Testing with {} high bits...", high_bits);
+            let mut data = (0..100000).map(|_| rng.random()).collect::<Vec<u64>>();
+            let counts = count_sort(&mut data, 1 << high_bits, |x| {
+                (x >> (u64::BITS - high_bits)) as usize
+            });
+
+            let mut my_counts = vec![0; 1 << high_bits];
+            for &x in &data {
+                my_counts[(x >> (u64::BITS - high_bits)) as usize] += 1;
+            }
+
+            assert_eq!(counts, my_counts);
+            for i in 1..data.len() {
+                assert!(
+                    data[i - 1] >> (u64::BITS - high_bits) <= data[i] >> (u64::BITS - high_bits)
+                );
+            }
+        }
     }
 }
