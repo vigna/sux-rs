@@ -196,18 +196,26 @@ pub struct VFuncBuilder<
     S = [u64; 2],
     const SHARDED: bool = false,
 > {
-    #[setters(generate = true)]
+    /// The (optional) expected number of keys.s
+    #[setters(generate = true, strip_option)]
+    #[derivative(Default(value = "None"))]
+    expected_num_keys: Option<usize>,
+
     /// The maximum number of parallel threads to use.
+    #[setters(generate = true)]
     #[derivative(Default(value = "8"))]
     max_num_threads: usize,
+
     #[setters(generate = true)]
     /// Use disk-based buckets to reduce core memory usage at construction time.
     offline: bool,
+
     /// The base-2 logarithm of the number of buckets. Used only if `offline` is
     /// `true`. The default is 8.
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "8"))]
     log2_buckets: u32,
+
     bit_width: usize,
     shard_high_bits: u32,
     shard_mask: u32,
@@ -772,7 +780,7 @@ where
 
 const MAX_LIN_SIZE: usize = 2_000_000;
 const MAX_LIN_SHARD_SIZE: usize = 100_000;
-const LOG2_MAX_SHARDS: u32 = 10;
+const LOG2_MAX_SHARDS: u32 = 8;
 
 impl<
         T: ?Sized + Send + Sync + ToSig,
@@ -894,7 +902,7 @@ where
                 // Online construction
                 into_keys = into_keys.rewind()?;
                 into_values = into_values.rewind()?;
-                let mut sig_vals = vec![];
+                let mut sig_vals = Vec::with_capacity(self.expected_num_keys.unwrap_or(0));
                 while let Some(result) = into_keys.next() {
                     match result {
                         Ok(key) => {
