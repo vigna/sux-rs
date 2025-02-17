@@ -42,6 +42,9 @@ struct Args {
     /// sets may benefit from a larger number of buckets.
     #[arg(short = 'H', long, default_value_t = 8)]
     high_bits: u32,
+    /// Create an approximate dictionary with this number of bits
+    #[arg(short, long)]
+    dict: usize,
 }
 
 fn main() -> Result<()> {
@@ -87,11 +90,20 @@ fn main() -> Result<()> {
         if let Some(threads) = args.threads {
             builder = builder.max_num_threads(threads);
         }
-        let func = builder.build(
-            FromIntoIterator::from(0_usize..n),
-            FromIntoIterator::from(0_usize..),
-            &mut pl,
-        )?;
+
+        let func = if args.dict != 0 {
+            builder.build(
+                FromIntoIterator::from(0_usize..n),
+                FromIntoIterator::from(itertools::repeat_n((1 << args.dict) - 1, n)),
+                &mut pl,
+            )?
+        } else {
+            builder.build(
+                FromIntoIterator::from(0_usize..n),
+                FromIntoIterator::from(0_usize..),
+                &mut pl,
+            )?
+        };
 
         func.store(&args.func)?;
     }
