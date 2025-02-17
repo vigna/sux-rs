@@ -196,7 +196,7 @@ pub struct VFuncBuilder<
     S = [u64; 2],
     const SHARDED: bool = false,
 > {
-    /// The (optional) expected number of keys.s
+    /// The optional expected number of keys.
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "None"))]
     expected_num_keys: Option<usize>,
@@ -889,9 +889,6 @@ where
 
                 let shard_store = sig_sorter.into_shard_store(self.shard_high_bits)?;
                 let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
-                if max_shard as f64 > 1.001 * self.num_keys as f64 / self.num_shards as f64 {
-                    bail!("Shards are too small");
-                }
 
                 pl.info(format_args!(
                     "Keys: {} Max value: {} Bit width: {} Shards: 2^{} Max shard / average shard: {:.2}%",
@@ -899,22 +896,29 @@ where
                     (100.0 * max_shard as f64) / (self.num_keys as f64 / self.num_shards as f64)
                 ));
 
-                self.build_iter(seed, shard_store, max_shard, new, pl)
+                if max_shard as f64 > 1.01 * self.num_keys as f64 / self.num_shards as f64 {
+                    Err(SolveError::MaxShardTooBig)
+                } else {
+                    self.build_iter(seed, shard_store, max_shard, new, pl)
+                }
             } else {
-                // Online construction
-                into_keys = into_keys.rewind()?;
+                // Offline construction using a SigStore
+                pl.info(format_args!("Using {} buckets", 1 << self.log2_buckets));
+                // Put values into a signature sorter
+                let mut sig_sorter =
+                    SigStore::<W, _>::new_online(self.log2_buckets, LOG2_MAX_SHARDS).unwrap();
                 into_values = into_values.rewind()?;
-                let mut sig_vals = Vec::with_capacity(self.expected_num_keys.unwrap_or(0));
+                into_keys = into_keys.rewind()?;
                 while let Some(result) = into_keys.next() {
                     match result {
                         Ok(key) => {
                             pl.light_update();
-                            let v = into_values.next().expect("Not enough values")?;
-                            max_value = Ord::max(max_value, *v);
-                            sig_vals.push(SigVal {
+                            let &v = into_values.next().expect("Not enough values")?;
+                            max_value = Ord::max(max_value, v);
+                            sig_sorter.push(&SigVal {
                                 sig: T::to_sig(key, seed),
-                                val: *v,
-                            });
+                                val: v,
+                            })?;
                         }
                         Err(e) => {
                             bail!("Error reading input: {}", e);
@@ -922,27 +926,14 @@ where
                     }
                 }
                 pl.done();
-                self.num_keys = sig_vals.len();
+
+                self.num_keys = sig_sorter.len();
                 self.bit_width = max_value.len() as usize;
 
                 self.set_up_shards();
 
-                pl.start("Sorting...");
-                sig_vals.par_sort_unstable_by(|a, b| {
-                    a.sig
-                        .shard(self.shard_high_bits, self.shard_mask)
-                        .cmp(&b.sig.shard(self.shard_high_bits, self.shard_mask))
-                });
-                pl.done_with_count(self.num_keys);
-
-                pl.start("Counting shard sizes...");
-                let mut shard_sizes = vec![0; self.num_shards];
-                for &sig_val in &sig_vals {
-                    shard_sizes[sig_val.sig.shard(self.shard_high_bits, self.shard_mask)] += 1;
-                }
-                pl.done_with_count(self.num_keys);
-
-                let max_shard = shard_sizes.iter().copied().max().unwrap_or(0);
+                let shard_store = sig_sorter.into_shard_store(self.shard_high_bits)?;
+                let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
 
                 pl.info(format_args!(
                     "Keys: {} Max value: {} Bit width: {} Shards: 2^{} Max shard / average shard: {:.2}%",
@@ -950,16 +941,11 @@ where
                     (100.0 * max_shard as f64) / (self.num_keys as f64 / self.num_shards as f64)
                 ));
 
-                self.build_iter(
-                    seed,
-                    IntoShardIter {
-                        data: sig_vals,
-                        shard_sizes,
-                    },
-                    max_shard,
-                    new,
-                    pl,
-                )
+                if max_shard as f64 > 1.01 * self.num_keys as f64 / self.num_shards as f64 {
+                    Err(SolveError::MaxShardTooBig)
+                } else {
+                    self.build_iter(seed, shard_store, max_shard, new, pl)
+                }
             } {
                 Ok(result) => {
                     pl.info(format_args!(
@@ -1057,9 +1043,7 @@ where
             thread_pool.current_num_threads()
         ));
 
-        // Loop until success or duplicate detection
-        // This is safe because the reference disappears at the end of the
-        // body of the loop
+        // This is safe because the reference disappears at the end of the function
         let iter = unsafe { (*(&mut into_shard_iter as *mut I)).into_iter().enumerate() };
 
         if lazy_gaussian {
