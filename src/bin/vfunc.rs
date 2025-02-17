@@ -82,6 +82,7 @@ fn main() -> Result<()> {
     if let Some(n) = args.n {
         let mut builder = VFuncBuilder::<_, _, BitFieldVec<usize>, [u64; 2], true>::default()
             .offline(args.offline)
+            .expected_num_keys(n)
             .log2_buckets(args.high_bits);
         if let Some(threads) = args.threads {
             builder = builder.max_num_threads(threads);
