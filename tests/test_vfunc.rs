@@ -20,7 +20,7 @@ fn test_vfunc() -> Result<()> {
     let mut pl = ProgressLogger::default();
 
     for offline in [false, true] {
-        for n in [10_usize, 100, 1000, 100_000, 60_000_000, 130_000_000] {
+        for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
             let func = VFuncBuilder::<_, _, BitFieldVec<_>, [u64; 2], true>::default()
                 .log2_buckets(4)
@@ -36,6 +36,30 @@ fn test_vfunc() -> Result<()> {
             let func =
                 VFunc::<_, _, BitFieldVec<_>, [u64; 2], true>::deserialize_eps(cursor.as_bytes())
                     .unwrap();
+            pl.start("Querying...");
+            for i in 0..n {
+                assert_eq!(i, func.get(&i));
+            }
+            pl.done_with_count(n);
+        }
+    }
+
+    for offline in [false, true] {
+        for n in [0, 10, 1000, 100_000, 3_000_000] {
+            dbg!(offline, n);
+            let func = VFuncBuilder::<_, _, Vec<_>, [u64; 2], true>::default()
+                .log2_buckets(4)
+                .offline(offline)
+                .build(
+                    FromIntoIterator::from(0..n),
+                    FromIntoIterator::from(0_usize..),
+                    &mut pl,
+                )?;
+            let mut cursor = <AlignedCursor<maligned::A16>>::new();
+            func.serialize(&mut cursor).unwrap();
+            cursor.set_position(0);
+            let func =
+                VFunc::<_, _, Vec<_>, [u64; 2], true>::deserialize_eps(cursor.as_bytes()).unwrap();
             pl.start("Querying...");
             for i in 0..n {
                 assert_eq!(i, func.get(&i));

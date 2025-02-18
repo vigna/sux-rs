@@ -75,8 +75,8 @@ fn fuse_c(arity: usize, n: usize) -> f64 {
 #[derive(Debug, Default)]
 struct EdgeList(u64);
 impl EdgeList {
-    const DEG_SHIFT: u32 = u64::BITS as u32 - 16;
-    const SIDE_SHIFT: u32 = u64::BITS as u32 - 18;
+    const DEG_SHIFT: u32 = u64::BITS - 16;
+    const SIDE_SHIFT: u32 = u64::BITS - 18;
     const SIDE_MASK: usize = 3;
     const EDGE_INDEX_MASK: u64 = (1_u64 << Self::SIDE_SHIFT) - 1;
     const DEG: u64 = 1_u64 << Self::DEG_SHIFT;
@@ -288,7 +288,6 @@ impl<
     /// This method returns an error if one of the shards cannot be solved,
     /// or if duplicates are detected.
     fn par_solve<
-        'a,
         I: IntoIterator<Item = (usize, B)> + Send,
         B: BorrowMut<[SigVal<W>]> + Send,
         C: ConcurrentProgressLog + Send + Sync,
@@ -318,10 +317,7 @@ impl<
         let result = thread_pool.scope(|scope| {
             scope.spawn(|_| {
                 for (shard_index, shard_data) in receive {
-                    // TODO: fast copy
-                    for i in 0..self.num_vertices {
-                        data.set(shard_index * self.num_vertices + i, shard_data.get(i));
-                    }
+                    shard_data.copy(0, data, shard_index * self.num_vertices, self.num_vertices);
                 }
             });
 
@@ -387,7 +383,7 @@ impl<
     /// or the shard index, the shard, the edge lists, the data, and the stack
     /// at the end of the peeling procedure in case of failure. These data can
     /// be then passed to a linear solver to complete the solution.
-    fn peel_shard<'a, B: BorrowMut<[SigVal<W>]>>(
+    fn peel_shard<B: BorrowMut<[SigVal<W>]>>(
         &self,
         shard_index: usize,
         shard: B,
@@ -548,7 +544,7 @@ impl<
     ///
     /// Return the shard index and the data, in case of success,
     /// or `Err(())` in case of failure.
-    fn solve_lin<'a>(
+    fn solve_lin(
         &self,
         shard_index: usize,
         shard: impl BorrowMut<[SigVal<W>]>,
@@ -559,7 +555,7 @@ impl<
         match self.peel_shard(shard_index, shard, data, pl) {
             Ok((_, data)) => {
                 // Unlikely result, but we're happy if it happens
-                return Ok((shard_index, data));
+                Ok((shard_index, data))
             }
             Err((shard_index, shard, edge_lists, mut data, stack)) => {
                 // Likely result--we have solve the rest
@@ -638,7 +634,7 @@ impl ShardEdge for [u64; 2] {
     #[inline(always)]
     #[must_use]
     fn edge(&self, shard_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3] {
-        let first_segment = ((self[0] << shard_high_bits >> 32) * l as u64 >> 32) as usize;
+        let first_segment = (((self[0] << shard_high_bits >> 32) * l as u64) >> 32) as usize;
         let start = first_segment << log2_seg_size;
         let segment_size = 1 << log2_seg_size;
         let segment_mask = segment_size - 1;
@@ -668,7 +664,7 @@ impl ShardEdge for u64 {
         let segment_mask = segment_size - 1;
 
         [
-            (*self as usize & segment_mask) as usize + start,
+            (*self as usize & segment_mask) + start,
             ((*self >> 21) as usize & segment_mask) + start + segment_size,
             ((*self >> 42) as usize & segment_mask) + start + 2 * segment_size,
         ]

@@ -75,9 +75,9 @@ impl<W: Word> Modulo2Equation<W> {
         for i in 0..x.len() {
             x[i] ^= y[i];
         }
-        for i in 0..x.len() {
-            if x[i] != 0 {
-                self.first_var = Some(i as u32 * usize::BITS + x[i].trailing_zeros());
+        for (i, &w) in x.iter().enumerate() {
+            if w != 0 {
+                self.first_var = Some(i as u32 * usize::BITS + w.trailing_zeros());
                 break;
             }
         }
@@ -100,12 +100,13 @@ impl<W: Word> Modulo2Equation<W> {
     /// * `bits` - A bit vector represented as a slice of `usize`.
     ///
     /// * `values` - A slice of `usize` representing the values associated
-    /// with each variable.
+    ///   with each variable.
     fn scalar_product(bits: &[usize], values: &[W]) -> W {
         let mut sum = W::ZERO;
-        for i in 0..bits.len() {
+
+        for (i, &word) in bits.iter().enumerate() {
             let offset = i * usize::BITS as usize;
-            let mut word = bits[i];
+            let mut word = word;
             while word != 0 {
                 let lsb = word.trailing_zeros();
                 sum ^= values[offset + lsb as usize];
@@ -131,7 +132,7 @@ impl<W: Word> Modulo2System<W> {
     /// * `num_vars` - The total number of variables in the system.
     pub fn new(num_vars: usize) -> Self {
         Modulo2System {
-            num_vars: num_vars,
+            num_vars,
             equations: Vec::new(),
         }
     }
@@ -150,8 +151,8 @@ impl<W: Word> Modulo2System<W> {
     /// the number of variables in the system.
     pub unsafe fn from_parts(num_vars: usize, equations: Vec<Modulo2Equation<W>>) -> Self {
         Modulo2System {
-            num_vars: num_vars,
-            equations: equations,
+            num_vars,
+            equations,
         }
     }
 
@@ -169,13 +170,13 @@ impl<W: Word> Modulo2System<W> {
     pub fn check(&self, solution: &[W]) -> bool {
         assert_eq!(solution.len(), self.num_vars, "The number of variables in the solution ({}) does not match the number of variables in the system ({})", solution.len(), self.num_vars);
         self.equations.iter().all(|eq| {
-            eq.c == Modulo2Equation::<W>::scalar_product(&eq.bit_vector.as_ref(), &solution)
+            eq.c == Modulo2Equation::<W>::scalar_product(eq.bit_vector.as_ref(), solution)
         })
     }
 
     /// Transforms the system into echelon form.
     fn echelon_form(&mut self) -> Result<()> {
-        if self.equations.len() == 0 {
+        if self.equations.is_empty() {
             return Ok(());
         }
         'main: for i in 0..self.equations.len() - 1 {
@@ -220,7 +221,7 @@ impl<W: Word> Modulo2System<W> {
             .filter(|eq| !eq.is_identity())
             .for_each(|eq| {
                 solution[eq.first_var.expect("First variable is None") as usize] =
-                    eq.c ^ Modulo2Equation::scalar_product(&eq.bit_vector.as_ref(), &solution);
+                    eq.c ^ Modulo2Equation::scalar_product(eq.bit_vector.as_ref(), &solution);
             });
         Ok(solution)
     }
@@ -275,7 +276,7 @@ impl<W: Word> Modulo2System<W> {
 
         for &v in variables.iter() {
             let eq = &mut var_to_eqs[v];
-            if eq.len() == 0 {
+            if eq.is_empty() {
                 continue;
             }
 
@@ -343,8 +344,7 @@ impl<W: Word> Modulo2System<W> {
         let mut pivots: Vec<usize> = Vec::new();
 
         let equations = &mut system.equations;
-        let mut idle_normalized =
-            vec![usize::MAX; (num_vars + usize::BITS as usize - 1) / usize::BITS as usize];
+        let mut idle_normalized = vec![usize::MAX; num_vars.div_ceil(usize::BITS as usize)];
 
         let mut remaining = equations.len();
         while remaining != 0 {

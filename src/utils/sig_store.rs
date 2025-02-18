@@ -212,7 +212,7 @@ pub struct ShardIterator<'a, T: ZeroCopy + 'static, B> {
     _marker: PhantomData<T>,
 }
 
-impl<'a, T: ZeroCopy + Send + Sync + 'static, B: Read + Seek> Iterator for ShardIterator<'a, T, B> {
+impl<T: ZeroCopy + Send + Sync + 'static, B: Read + Seek> Iterator for ShardIterator<'_, T, B> {
     type Item = Vec<SigVal<T>>;
 
     fn next(&mut self) -> Option<Self::Item> {
