@@ -227,12 +227,16 @@ pub struct VFuncBuilder<
     num_keys: usize,
     /// The number of shards, i.e., `(1 << shard_high_bits)`.
     num_shards: usize,
+    /// The ratio between the number of variables and the number of equations.
+    c: f64,
     /// The base-2 logarithm of the segment size.
     log2_seg_size: u32,
     /// The number of segments minus 2.
     l: usize,
     /// The number of vertices in a hypergraph, i.e., `(1 << log2_seg_size) * (l + 2)`.
     num_vertices: usize,
+    /// Whether we are using lazy Gaussian elimination.
+    lazy_gaussian: bool,
 
     #[doc(hidden)]
     _marker_t: PhantomData<T>,
@@ -834,6 +838,31 @@ where
         self.shard_mask = (1u32 << self.shard_high_bits) - 1;
     }
 
+    fn set_up_segments(&mut self) {
+        let shard_size = self.num_keys.div_ceil(self.num_shards);
+        if SHARDED {
+            self.lazy_gaussian = self.num_keys <= MAX_LIN_SIZE;
+
+            (self.c, self.log2_seg_size) = if self.lazy_gaussian {
+                // Slightly loose bound to help with solvability
+                (1.11, lin_log2_seg_size(3, shard_size))
+            } else {
+                (1.10, fuse_log2_seg_size(3, shard_size))
+            };
+        } else {
+            self.lazy_gaussian = self.num_keys <= MAX_LIN_SHARD_SIZE;
+            self.c = fuse_c(3, self.num_keys);
+            self.log2_seg_size = if self.lazy_gaussian {
+                lin_log2_seg_size(3, self.num_keys)
+            } else {
+                fuse_log2_seg_size(3, self.num_keys)
+            };
+        }
+
+        self.l = ((self.c * shard_size as f64).ceil() as usize).div_ceil(1 << self.log2_seg_size);
+        self.num_vertices = (1 << self.log2_seg_size) * (self.l + 2);
+    }
+
     /// Build and return a new function with given keys and values.
     ///
     /// This function can build functions based both on vectors and on bit-field
@@ -899,7 +928,9 @@ where
                 if max_shard as f64 > 1.01 * self.num_keys as f64 / self.num_shards as f64 {
                     Err(SolveError::MaxShardTooBig)
                 } else {
-                    self.build_iter(seed, shard_store, max_shard, new, pl)
+                    self.set_up_segments();
+                    let data = new(self.bit_width, self.num_vertices * self.num_shards);
+                    self.build_iter(seed, data, shard_store, new, pl)
                 }
             } else {
                 // Offline construction using a SigStore
@@ -941,10 +972,12 @@ where
                     (100.0 * max_shard as f64) / (self.num_keys as f64 / self.num_shards as f64)
                 ));
 
-                if max_shard as f64 > 1.01 * self.num_keys as f64 / self.num_shards as f64 {
+                if max_shard as f64 > 1.005 * self.num_keys as f64 / self.num_shards as f64 {
                     Err(SolveError::MaxShardTooBig)
                 } else {
-                    self.build_iter(seed, shard_store, max_shard, new, pl)
+                    self.set_up_segments();
+                    let data = new(self.bit_width, self.num_vertices * self.num_shards);
+                    self.build_iter(seed, data, shard_store, new, pl)
                 }
             } {
                 Ok(result) => {
@@ -975,7 +1008,7 @@ where
                 // Let's just try another seed
                 Err(SolveError::UnsolvableShard) => {
                     pl.warn(format_args!(
-                        "Unsolvable shard, trying again with different seed..."
+                        "Unsolvable shard, trying again with a different seed..."
                     ));
                 }
             };
@@ -993,8 +1026,8 @@ where
     fn build_iter<'a, I, B, P>(
         &mut self,
         seed: u64,
+        mut data: D,
         mut into_shard_iter: I,
-        max_shard: usize,
         new: fn(usize, usize) -> D,
         pl: &mut P,
     ) -> Result<VFunc<T, W, D, S, SHARDED>, SolveError>
@@ -1005,31 +1038,6 @@ where
         &'a mut I: IntoIterator<Item = B>,
         <&'a mut I as IntoIterator>::IntoIter: Send,
     {
-        let (lazy_gaussian, c);
-        if SHARDED {
-            lazy_gaussian = self.num_keys <= MAX_LIN_SIZE;
-
-            (c, self.log2_seg_size) = if lazy_gaussian {
-                // Slightly loose bound to help with solvability
-                (1.11, lin_log2_seg_size(3, max_shard))
-            } else {
-                (1.10, fuse_log2_seg_size(3, max_shard))
-            };
-        } else {
-            lazy_gaussian = self.num_keys <= MAX_LIN_SHARD_SIZE;
-            c = fuse_c(3, self.num_keys);
-            self.log2_seg_size = if lazy_gaussian {
-                lin_log2_seg_size(3, self.num_keys)
-            } else {
-                fuse_log2_seg_size(3, self.num_keys)
-            };
-        }
-
-        self.l = ((c * max_shard as f64).ceil() as usize).div_ceil(1 << self.log2_seg_size);
-        self.num_vertices = (1 << self.log2_seg_size) * (self.l + 2);
-
-        let mut data = new(self.bit_width, self.num_vertices * self.num_shards);
-
         let thread_pool = ThreadPoolBuilder::new()
             .num_threads(self.num_shards.min(self.max_num_threads) + 1) // Or it might hang
             .build()
@@ -1037,7 +1045,7 @@ where
 
         pl.info(format_args!(
             "c: {}, log₂ segment size: {} Number of variables: {:.2}% Number of threads: {}",
-            c,
+            self.c,
             self.log2_seg_size,
             (100.0 * (self.num_vertices * self.num_shards) as f64) / (self.num_keys as f64),
             thread_pool.current_num_threads()
@@ -1046,7 +1054,7 @@ where
         // This is safe because the reference disappears at the end of the function
         let iter = unsafe { (*(&mut into_shard_iter as *mut I)).into_iter().enumerate() };
 
-        if lazy_gaussian {
+        if self.lazy_gaussian {
             pl.info(format_args!("Switching to lazy Gaussian elimination"));
 
             self.par_solve(
