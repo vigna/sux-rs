@@ -140,7 +140,7 @@ pub trait BitFieldSlice<W: Word>: BitFieldSliceCore<W> {
 }
 
 /// A mutable slice of bit fields of constant bit width.
-pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
+pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> {
     /// Returns the mask to apply to values to ensure they fit in
     /// [`bit_width`](BitFieldSliceCore::bit_width) bits.
     #[inline(always)]
@@ -185,6 +185,33 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
 
     /// Sets all values to zero.
     fn reset(&mut self);
+
+    /// Copy part of the content of the vector to another vector.
+    ///
+    /// At most `len` elements are copied, compatibly with the elements
+    /// available in both vectors.
+    ///
+    /// # Arguments
+    ///
+    /// * `from`: the index of the first element to copy.
+    ///
+    /// * `dst`: the destination vector.
+    ///
+    /// * `to`: the index of the first element in the destination vector.
+    ///
+    /// * `len`: the maximum number of elements to copy.
+    ///
+    /// # Implementation Notes
+    ///
+    /// The default implementation is a simple loop that copies the elements one
+    /// by one. It is expected to be implemented in a more efficient way.
+    fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
+        // Reduce len to the elements available in both vectors
+        let len = Ord::min(Ord::min(len, dst.len() - to), self.len() - from);
+        for i in 0..len {
+            dst.set(to + i, self.get(from + i));
+        }
+    }
 
     /// Applies a function to all elements of the slice in place without
     /// checking [bit widths](BitFieldSliceCore::bit_width).
@@ -410,6 +437,11 @@ macro_rules! impl_mut {
                 for idx in 0..self.len() {
                     unsafe{self.set_unchecked(idx, 0)};
                 }
+            }
+
+            fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
+                let len = Ord::min(Ord::min(len, dst.len() - to), self.len() - from);
+                dst.as_mut()[from..][..len].copy_from_slice(&self.as_ref()[to..][..len]);
             }
         }
     )*};

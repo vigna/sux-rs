@@ -64,7 +64,7 @@ fn main() -> Result<()> {
         || {
             (0_u64..args.n as u64)
                 .into_par_iter()
-                .map(|x| HashableU64(x))
+                .map(HashableU64)
         },
         &config,
     )
