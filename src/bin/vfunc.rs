@@ -10,7 +10,7 @@ use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use sux::bits::BitFieldVec;
-use sux::prelude::VFuncBuilder;
+use sux::prelude::VBuilder;
 use sux::utils::{FromIntoIterator, LineLender, ZstdLineLender};
 
 #[derive(Parser, Debug)]
@@ -58,7 +58,7 @@ fn main() -> Result<()> {
     pl.display_memory(true);
 
     if let Some(filename) = args.filename {
-        let mut builder = VFuncBuilder::<_, _, BitFieldVec<usize>, [u64; 2]>::default()
+        let mut builder = VBuilder::<_, _, BitFieldVec<usize>, [u64; 2]>::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
 
@@ -67,45 +67,51 @@ fn main() -> Result<()> {
         }
 
         let func = if args.zstd {
-            builder.try_build(
+            builder.try_build_func(
                 ZstdLineLender::from_path(&filename)?,
                 FromIntoIterator::from(0_usize..),
                 &mut pl,
             )?
         } else {
-            builder.try_build(
+            builder.try_build_func(
                 LineLender::from_path(&filename)?,
                 FromIntoIterator::from(0_usize..),
                 &mut pl,
             )?
         };
         func.store(&args.func)?;
+        return Ok(());
     }
 
-    if let Some(n) = args.n {
-        let mut builder = VFuncBuilder::<_, _, BitFieldVec<usize>, [u64; 2], true>::default()
-            .offline(args.offline)
-            .expected_num_keys(n)
-            .log2_buckets(args.high_bits);
-        if let Some(threads) = args.threads {
-            builder = builder.max_num_threads(threads);
+    if let Some(_dict_bits) = args.dict {
+        if let Some(n) = args.n {
+            let mut builder = VBuilder::<_, _, Vec<u8>, [u64; 2], true, _>::default()
+                .offline(args.offline)
+                .expected_num_keys(n)
+                .log2_buckets(args.high_bits);
+            if let Some(threads) = args.threads {
+                builder = builder.max_num_threads(threads);
+            }
+            let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
+            filter.store(&args.func)?;
         }
+    } else {
+        if let Some(n) = args.n {
+            let mut builder = VBuilder::<_, _, BitFieldVec<usize>, [u64; 2], true>::default()
+                .offline(args.offline)
+                .expected_num_keys(n)
+                .log2_buckets(args.high_bits);
+            if let Some(threads) = args.threads {
+                builder = builder.max_num_threads(threads);
+            }
 
-        let func = if let Some(dict_bits) = args.dict {
-            builder.try_build(
-                FromIntoIterator::from(0_usize..n),
-                FromIntoIterator::from(itertools::repeat_n((1 << dict_bits) - 1, n)),
-                &mut pl,
-            )?
-        } else {
-            builder.try_build(
+            let func = builder.try_build_func(
                 FromIntoIterator::from(0_usize..n),
                 FromIntoIterator::from(0_usize..),
                 &mut pl,
-            )?
-        };
-
-        func.store(&args.func)?;
+            )?;
+            func.store(&args.func)?;
+        }
     }
     Ok(())
 }

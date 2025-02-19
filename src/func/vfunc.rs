@@ -13,11 +13,10 @@ use crate::traits::NumBits;
 use crate::traits::Rank;
 use crate::utils::*;
 use anyhow::bail;
-use arbitrary_chunks::ArbitraryChunkMut;
-use arbitrary_chunks::ArbitraryChunks;
 use bit_field_slice::BitFieldSlice;
 use bit_field_slice::BitFieldSliceMut;
 use bit_field_slice::Word;
+use common_traits::CastableInto;
 use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
@@ -27,8 +26,6 @@ use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
 use std::borrow::BorrowMut;
-use std::fs::File;
-use std::io::BufWriter;
 use std::marker::PhantomData;
 use std::time::Instant;
 
@@ -143,7 +140,7 @@ More precisely, each signature is made of two 64-bit integers `h` and `l`, and t
 /// Static functions with 10%-11% space overhead for large key sets,
 /// fast parallel construction, and fast queries.
 ///
-/// Instances of this structure are immutable; they are built using a [`VFuncBuilder`],
+/// Instances of this structure are immutable; they are built using a [`VBuilder`],
 /// and can be serialized using [ε-serde](`epserde`).
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFunc<
@@ -164,6 +161,17 @@ pub struct VFunc<
     _marker_os: std::marker::PhantomData<(W, S)>,
 }
 
+/// Filters with 10%-11% space overhead for large key sets,
+/// fast parallel construction, and fast queries.
+///
+/// Instances of this structure are immutable; they are built using a [`VBuilder`],
+/// and can be serialized using [ε-serde](`epserde`).
+#[derive(Epserde, Debug, MemDbg, MemSize)]
+pub struct VFilter<W: ZeroCopy + Word, F> {
+    func: F,
+    filter_mask: W,
+}
+
 /// A builder for [`VFunc`].
 ///
 /// Keys must implement the [`ToSig`] trait, which provides a method to compute
@@ -173,7 +181,7 @@ pub struct VFunc<
 /// the default is `usize`.
 ///
 /// There are two construction modes: in core memory (default) and
-/// [offline](VFuncBuilder::offline). In the first case, space will be allocated
+/// [offline](VBuilder::offline). In the first case, space will be allocated
 /// in core memory for 128-bit signatures and associated values for all keys; in
 /// the second case, such information will be stored in a number of on-disk
 /// buckets.
@@ -191,12 +199,13 @@ pub struct VFunc<
 #[derive(Setters, Debug, Derivative)]
 #[derivative(Default)]
 #[setters(generate = false)]
-pub struct VFuncBuilder<
+pub struct VBuilder<
     T: ?Sized + Send + Sync + ToSig,
     W: ZeroCopy + Word,
     D: bit_field_slice::BitFieldSlice<W> + Send + Sync = BitFieldVec<W>,
     S = [u64; 2],
     const SHARDED: bool = false,
+    V = W,
 > {
     /// The optional expected number of keys.
     #[setters(generate = true, strip_option)]
@@ -243,7 +252,7 @@ pub struct VFuncBuilder<
     #[doc(hidden)]
     _marker_t: PhantomData<T>,
     #[doc(hidden)]
-    _marker_od: PhantomData<(W, D, S)>,
+    _marker_od: PhantomData<(V, W, D, S)>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -266,7 +275,8 @@ impl<
         D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
         S: Send + Sync,
         const SHARDED: bool,
-    > VFuncBuilder<T, W, D, S, SHARDED>
+        V: ZeroCopy + Send + Sync,
+    > VBuilder<T, W, D, S, SHARDED, V>
 {
     /// Solve in parallel the shards returned by the given iterator.
     ///
@@ -291,7 +301,7 @@ impl<
     /// or if duplicates are detected.
     fn par_solve<
         I: IntoIterator<Item = B> + Send,
-        B: BorrowMut<[SigVal<W>]> + Send,
+        B: BorrowMut<[SigVal<V>]> + Send,
         C: ConcurrentProgressLog + Send + Sync,
         P: ProgressLog + Clone + Send + Sync,
     >(
@@ -306,7 +316,7 @@ impl<
     ) -> Result<(), SolveError>
     where
         I::IntoIter: Send,
-        SigVal<W>: RadixKey + Send + Sync,
+        SigVal<V>: RadixKey + Send + Sync,
     {
         // TODO: optimize for the non-parallel case
         let (send, receive) =
@@ -386,11 +396,12 @@ impl<
     /// or the shard index, the shard, the edge lists, the data, and the stack
     /// at the end of the peeling procedure in case of failure. These data can
     /// be then passed to a linear solver to complete the solution.
-    fn peel_shard<B: BorrowMut<[SigVal<W>]>>(
+    fn peel_shard<B: BorrowMut<[SigVal<V>]>, G: Fn(&SigVal<V>) -> W + Send + Sync>(
         &self,
         shard_index: usize,
         shard: B,
         data: D,
+        get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<(usize, D), (usize, B, Vec<EdgeList>, D, Vec<usize>)> {
         pl.start(format!(
@@ -493,7 +504,7 @@ impl<
         }
         pl.done_with_count(shard.borrow().len());
 
-        Ok(self.assign(shard_index, shard, data, edge_lists, stack, pl))
+        Ok(self.assign(shard_index, shard, data, get_val, edge_lists, stack, pl))
     }
 
     /// Perform assignment of values based on peeling data.
@@ -503,8 +514,9 @@ impl<
     fn assign(
         &self,
         shard_index: usize,
-        shard: impl BorrowMut<[SigVal<W>]>,
+        shard: impl BorrowMut<[SigVal<V>]>,
         mut data: D,
+        get_val: &(impl Fn(&SigVal<V>) -> W + Send + Sync),
         edge_lists: Vec<EdgeList>,
         mut stack: Vec<usize>,
         pl: &mut impl ProgressLog,
@@ -532,10 +544,10 @@ impl<
                 _ => unreachable!(),
             };
 
-            data.set(v, shard[edge_index].val ^ value);
+            data.set(v, get_val(&shard[edge_index]) ^ value);
             debug_assert_eq!(
                 data.get(edge[0]) ^ data.get(edge[1]) ^ data.get(edge[2]),
-                shard[edge_index].val
+                get_val(&shard[edge_index])
             );
         }
         pl.done_with_count(shard.len());
@@ -551,12 +563,13 @@ impl<
     fn solve_lin(
         &self,
         shard_index: usize,
-        shard: impl BorrowMut<[SigVal<W>]>,
+        shard: impl BorrowMut<[SigVal<V>]>,
         data: D,
+        get_val: &(impl Fn(&SigVal<V>) -> W + Send + Sync),
         pl: &mut impl ProgressLog,
     ) -> Result<(usize, D), ()> {
         // Let's try to peel first
-        match self.peel_shard(shard_index, shard, data, pl) {
+        match self.peel_shard(shard_index, shard, data, get_val, pl) {
             Ok((_, data)) => {
                 // Unlikely result, but we're happy if it happens
                 Ok((shard_index, data))
@@ -590,7 +603,7 @@ impl<
                     .filter(|(edge_index, _)| unpeeled[*edge_index])
                     .for_each(|(edge_index, sig_val)| {
                         let eq = unpeeled.rank(edge_index);
-                        c[eq] = sig_val.val;
+                        c[eq] = get_val(&sig_val);
 
                         for &v in sig_val
                             .sig
@@ -616,7 +629,7 @@ impl<
                     data.set(v, value);
                 }
 
-                Ok(self.assign(shard_index, shard, data, edge_lists, stack, pl))
+                Ok(self.assign(shard_index, shard, data, get_val, edge_lists, stack, pl))
             }
         }
     }
@@ -732,43 +745,105 @@ impl<
     }
 }
 
+impl<
+        T: ?Sized + ToSig,
+        W: ZeroCopy + Word,
+        D: bit_field_slice::BitFieldSlice<W>,
+        S: ShardEdge,
+        const SHARDED: bool,
+    > VFilter<W, VFunc<T, W, D, S, SHARDED>>
+where
+    u64: CastableInto<W>,
+{
+    /// Return the value associated with the given signature.
+    ///
+    /// This method is mainly useful in the construction of compound functions.
+    #[inline(always)]
+    pub fn get_by_sig(&self, sig: &[u64; 2]) -> W {
+        self.func.get_by_sig(sig)
+    }
+
+    /// Return the value associated with the given key, or a random value if the key is not present.
+    #[inline]
+    pub fn get(&self, key: &T) -> W {
+        self.func.get(key)
+    }
+
+    #[inline(always)]
+    pub fn contains_by_sig(&self, sig: &[u64; 2]) -> bool {
+        self.func.get_by_sig(sig) == sig[0].cast() & self.filter_mask
+    }
+
+    #[inline]
+    pub fn contains(&self, key: &T) -> bool {
+        self.contains_by_sig(&T::to_sig(key, self.func.seed))
+    }
+
+    /// Return the number of keys in the function.
+    pub fn len(&self) -> usize {
+        self.func.len()
+    }
+
+    /// Return whether the function has no keys.
+    pub fn is_empty(&self) -> bool {
+        self.func.is_empty()
+    }
+}
+
 /// Build a new function using a vector of `W` to store values.
 ///
 /// Since values are stored in a vector, access is particularly fast, but
 /// the bit width of the output of the function is exactly the bit width
 /// of `W`.
 impl<T: ?Sized + Send + Sync + ToSig, W: ZeroCopy + Word, S: ShardEdge, const SHARDED: bool>
-    VFuncBuilder<T, W, Vec<W>, S, SHARDED>
+    VBuilder<T, W, Vec<W>, S, SHARDED, W>
 where
     SigVal<W>: RadixKey + Send + Sync,
     Vec<W>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
-    pub fn try_build(
+    pub fn try_build_func(
         mut self,
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, Vec<W>, S, SHARDED>> {
-        self.build_loop(
-            into_keys,
-            into_values,
-            |_bit_width: usize, len: usize| vec![W::ZERO; len],
-            pl,
-        )
+        let get_val = |sig_val: &SigVal<W>| sig_val.val;
+        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len];
+        self.build_loop(into_keys, into_values, &get_val, new_data, pl)
     }
 }
 
-struct IntoShardIter<T> {
-    data: Vec<T>,
-    shard_sizes: Vec<usize>,
-}
+/// Build a new function using a vector of `W` to store values.
+///
+/// Since values are stored in a vector, access is particularly fast, but
+/// the bit width of the output of the function is exactly the bit width
+/// of `W`.
+impl<T: ?Sized + Send + Sync + ToSig, W: ZeroCopy + Word, S: ShardEdge, const SHARDED: bool>
+    VBuilder<T, W, Vec<W>, S, SHARDED, ()>
+where
+    SigVal<()>: RadixKey + Send + Sync,
+    Vec<W>: BitFieldSliceMut<W> + BitFieldSlice<W>,
+    u64: CastableInto<W>,
+{
+    pub fn try_build_filter(
+        mut self,
+        into_keys: impl RewindableIoLender<T>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFilter<W, VFunc<T, W, Vec<W>, S, SHARDED>>> {
+        let filter_mask = W::MAX;
+        let get_val = |sig_val: &SigVal<()>| sig_val.sig[0].cast();
+        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len];
 
-impl<'a, T: Copy + 'static> IntoIterator for &'a mut IntoShardIter<T> {
-    type IntoIter = ArbitraryChunkMut<'a, 'a, T>;
-    type Item = &'a mut [T];
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.data.arbitrary_chunks_mut(&self.shard_sizes)
+        Ok(VFilter {
+            func: self.build_loop(
+                into_keys,
+                FromIntoIterator::from(itertools::repeat_n((), usize::MAX)),
+                &get_val,
+                new_data,
+                pl,
+            )?,
+            filter_mask,
+        })
     }
 }
 
@@ -782,22 +857,60 @@ impl<'a, T: Copy + 'static> IntoIterator for &'a mut IntoShardIter<T> {
 /// Typically `W` will be `usize` or `u64`. It might be necessary to use
 /// `u128` if the bit width of the values is larger than 64.
 impl<T: ?Sized + Send + Sync + ToSig, W: ZeroCopy + Word, S: ShardEdge, const SHARDED: bool>
-    VFuncBuilder<T, W, BitFieldVec<W>, S, SHARDED>
+    VBuilder<T, W, BitFieldVec<W>, S, SHARDED, W>
 where
     SigVal<W>: RadixKey + Send + Sync,
 {
-    pub fn try_build(
+    pub fn try_build_func(
         mut self,
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, SHARDED>> {
-        self.build_loop(
-            into_keys,
-            into_values,
-            |bit_width: usize, len: usize| BitFieldVec::<W>::new(bit_width, len),
-            pl,
-        )
+        let get_val = |sig_val: &SigVal<W>| sig_val.val;
+        let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
+        self.build_loop(into_keys, into_values, &get_val, new_data, pl)
+    }
+}
+
+/// Build a new function using a bit-field vector on words of type `W` to store
+/// values.
+///
+/// Since values are stored in a bitfield vector, access will be slower than
+/// when using a vector, but the bit width of stored values will be the minimum
+/// necessary. It must be in any case less than the bit width of `W`.
+///
+/// Typically `W` will be `usize` or `u64`. It might be necessary to use
+/// `u128` if the bit width of the values is larger than 64.
+impl<T: ?Sized + Send + Sync + ToSig, W: ZeroCopy + Word, S: ShardEdge, const SHARDED: bool>
+    VBuilder<T, W, BitFieldVec<W>, S, SHARDED, ()>
+where
+    SigVal<()>: RadixKey + Send + Sync,
+    Vec<W>: BitFieldSliceMut<W> + BitFieldSlice<W>,
+    u64: CastableInto<W>,
+{
+    pub fn try_build_filter(
+        mut self,
+        into_keys: impl RewindableIoLender<T>,
+        filter_bits: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, SHARDED>>> {
+        assert!(filter_bits > 0);
+        assert!(filter_bits <= W::BITS);
+        let filter_mask = W::MAX >> (W::BITS - filter_bits);
+        let get_val = |sig_val: &SigVal<()>| sig_val.sig[0].cast() & filter_mask;
+        let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
+
+        Ok(VFilter {
+            func: self.build_loop(
+                into_keys,
+                FromIntoIterator::from(itertools::repeat_n((), usize::MAX)),
+                &get_val,
+                new_data,
+                pl,
+            )?,
+            filter_mask,
+        })
     }
 }
 
@@ -811,9 +924,10 @@ impl<
         D: bit_field_slice::BitFieldSlice<W> + bit_field_slice::BitFieldSliceMut<W> + Send + Sync,
         S: ShardEdge,
         const SHARDED: bool,
-    > VFuncBuilder<T, W, D, S, SHARDED>
+        V: ZeroCopy + Send + Sync,
+    > VBuilder<T, W, D, S, SHARDED, V>
 where
-    SigVal<W>: RadixKey + Send + Sync,
+    SigVal<V>: RadixKey + Send + Sync,
 {
     /// Return the number of high bits defining shards.
     fn set_up_shards(&mut self) {
@@ -868,7 +982,19 @@ where
         self.l = ((self.c * shard_size as f64).ceil() as usize).div_ceil(1 << self.log2_seg_size);
         self.num_vertices = (1 << self.log2_seg_size) * (self.l + 2);
     }
+}
 
+impl<
+        T: ?Sized + Send + Sync + ToSig,
+        W: ZeroCopy + Word,
+        D: bit_field_slice::BitFieldSlice<W> + bit_field_slice::BitFieldSliceMut<W> + Send + Sync,
+        S: ShardEdge,
+        const SHARDED: bool,
+        V: ZeroCopy + Send + Sync,
+    > VBuilder<T, W, D, S, SHARDED, V>
+where
+    SigVal<V>: RadixKey + Send + Sync,
+{
     /// Build and return a new function with given keys and values.
     ///
     /// This function can build functions based both on vectors and on bit-field
@@ -878,7 +1004,8 @@ where
     fn build_loop(
         &mut self,
         mut into_keys: impl RewindableIoLender<T>,
-        mut into_values: impl RewindableIoLender<W>,
+        mut into_values: impl RewindableIoLender<V>,
+        get_val: &(impl Fn(&SigVal<V>) -> W + Send + Sync),
         new: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, SHARDED>> {
@@ -897,18 +1024,20 @@ where
             match if self.offline {
                 self.try_seed(
                     seed,
-                    SigStore::<W, _>::new_offline(self.log2_buckets, LOG2_MAX_SHARDS)?,
+                    SigStore::<V, _>::new_offline(self.log2_buckets, LOG2_MAX_SHARDS)?,
                     &mut into_keys,
                     &mut into_values,
+                    get_val,
                     new,
                     pl,
                 )
             } else {
                 self.try_seed(
                     seed,
-                    SigStore::<W, _>::new_online(self.log2_buckets, LOG2_MAX_SHARDS)?,
+                    SigStore::<V, _>::new_online(self.log2_buckets, LOG2_MAX_SHARDS)?,
                     &mut into_keys,
                     &mut into_values,
+                    get_val,
                     new,
                     pl,
                 )
@@ -934,13 +1063,11 @@ where
                                 "Duplicate 128-bit signature, trying again with a different seed..."
                             ));
                                 dup_count += 1;
-                                continue;
                             }
                             SolveError::MaxShardTooBig => {
                                 pl.warn(format_args!(
                                 "The maximum shard is too big, trying again with a different seed..."
                                ));
-                                continue;
                             }
                             // Let's just try another seed
                             SolveError::UnsolvableShard => {
@@ -957,21 +1084,34 @@ where
             seed += 1;
         }
     }
+}
 
-    fn try_seed<B>(
+impl<
+        T: ?Sized + Send + Sync + ToSig,
+        W: ZeroCopy + Word,
+        D: bit_field_slice::BitFieldSlice<W> + bit_field_slice::BitFieldSliceMut<W> + Send + Sync,
+        S: ShardEdge,
+        const SHARDED: bool,
+        V: ZeroCopy + Send + Sync,
+    > VBuilder<T, W, D, S, SHARDED, V>
+where
+    SigVal<V>: RadixKey + Send + Sync,
+{
+    fn  try_seed<B,G: Fn(&SigVal<V>) -> W + Send + Sync>(
         &mut self,
         seed: u64,
-        mut sig_store: SigStore<W, B>,
+        mut sig_store: SigStore<V, B>,
         into_keys: &mut impl RewindableIoLender<T>,
-        into_values: &mut impl RewindableIoLender<W>,
+        into_values: &mut impl RewindableIoLender<V>,
+        get_val: &G,
         new: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, SHARDED>>
     where
-        SigStore<W, B>: TryPush<SigVal<W>> + IntoShardStore<W>,
-        for<'a> &'a mut ShardStore<W, <SigStore<W, B> as IntoShardStore<W>>::Reader>:
-            IntoIterator<Item = Vec<SigVal<W>>>,
-        for<'a> <&'a mut ShardStore<W, <SigStore<W, B> as IntoShardStore<W>>::Reader> as IntoIterator>::IntoIter: Send,
+        SigStore<V, B>: TryPush<SigVal<V>> + IntoShardStore<V>,
+        for<'a> &'a mut ShardStore<V, <SigStore<V, B> as IntoShardStore<V>>::Reader>:
+            IntoIterator<Item = Vec<SigVal<V>>>,
+        for<'a> <&'a mut ShardStore<V, <SigStore<V, B> as IntoShardStore<V>>::Reader> as IntoIterator>::IntoIter: Send,
 
     {
         let mut max_value = W::ZERO;
@@ -980,12 +1120,16 @@ where
             match result {
                 Ok(key) => {
                     pl.light_update();
-                    let &v = into_values.next().expect("Not enough values")?;
-                    max_value = Ord::max(max_value, v);
-                    sig_store.try_push(SigVal {
+                    // This might be an actual value, if we are building a
+                    // function, or (), if we are building a filter.
+                    let &maybe_val = into_values.next().expect("Not enough values")?;
+                    let sig_val = SigVal {
                         sig: T::to_sig(key, seed),
-                        val: v,
-                    })?;
+                        val: maybe_val,
+                    };
+                    let val = get_val(&sig_val);
+                    max_value = Ord::max(max_value, val);
+                    sig_store.try_push(sig_val)?;
                 }
                 Err(e) => return Err(e.into()),
             }
@@ -1014,7 +1158,7 @@ where
         } else {
             self.set_up_segments();
             let data = new(self.bit_width, self.num_vertices * self.num_shards);
-            self.try_build_from_shard_iter(seed, data, shard_store.into_iter(), new, pl)
+            self.try_build_from_shard_iter(seed, data, shard_store.into_iter(), new, get_val, pl)
                 .map_err(Into::into)
         }
     }
@@ -1024,18 +1168,19 @@ where
     /// This method provide construction logic that is independent from the
     /// actual storage of the values (offline or in core memory.)
     ///
-    /// See [`VFuncBuilder::_build`] for more details on the parameters.
-    fn try_build_from_shard_iter<I, B, P>(
+    /// See [`VBuilder::_build`] for more details on the parameters.
+    fn try_build_from_shard_iter<I, B, P, G: Fn(&SigVal<V>) -> W + Send + Sync>(
         &mut self,
         seed: u64,
         mut data: D,
         shard_iter: I,
         new: fn(usize, usize) -> D,
+        get_val: &G,
         pl: &mut P,
     ) -> Result<VFunc<T, W, D, S, SHARDED>, SolveError>
     where
         P: ProgressLog + Clone + Send + Sync,
-        B: BorrowMut<[SigVal<W>]> + Send,
+        B: BorrowMut<[SigVal<V>]> + Send,
         I: Iterator<Item = B> + Send,
     {
         let thread_pool = ThreadPoolBuilder::new()
@@ -1058,7 +1203,9 @@ where
                 shard_iter,
                 &mut data,
                 new,
-                |this, shard_index, shard, data, pl| this.solve_lin(shard_index, shard, data, pl),
+                |this, shard_index, shard, data, pl| {
+                    this.solve_lin(shard_index, shard, data, get_val, pl)
+                },
                 &thread_pool,
                 &mut pl.concurrent(),
                 pl,
@@ -1069,7 +1216,7 @@ where
                 &mut data,
                 new,
                 |this, shard_index, shard, data, pl| {
-                    this.peel_shard(shard_index, shard, data, pl)
+                    this.peel_shard(shard_index, shard, data, get_val, pl)
                         .map_err(|_| ())
                 },
                 &thread_pool,
@@ -1099,6 +1246,7 @@ where
 }
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
     #[cfg(feature = "slow_tests")]
@@ -1128,7 +1276,7 @@ mod tests {
                     n,
                     lin_log2_seg_size(3, n)
                 );
-                let _func = VFuncBuilder::<_, _, BitFieldVec<_>, [u64; 2], true>::default().build(
+                let _func = VBuilder::<_, _, BitFieldVec<_>, [u64; 2], true>::default().build(
                     FromIntoIterator::from(0..n),
                     FromIntoIterator::from(0_usize..),
                     no_logging![],
@@ -1139,11 +1287,33 @@ mod tests {
                     n + 1,
                     lin_log2_seg_size(3, n + 1)
                 );
-                let _func = VFuncBuilder::<_, _, BitFieldVec<_>, [u64; 2], true>::default().build(
+                let _func = VBuilder::<_, _, BitFieldVec<_>, [u64; 2], true>::default().build(
                     FromIntoIterator::from(0..n + 1),
                     FromIntoIterator::from(0_usize..),
                     no_logging![],
                 )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_filter_func() -> anyhow::Result<()> {
+        for n in [0, 10, 1000, 100_000, 3_000_000] {
+            let filter = VBuilder::<_, _, Vec<u8>, [u64; 2], true, ()>::default()
+                .log2_buckets(4)
+                .offline(false)
+                .try_build_filter(FromIntoIterator::from(0..n), no_logging![])?;
+            let mut cursor = <AlignedCursor<maligned::A16>>::new();
+            filter.serialize(&mut cursor).unwrap();
+            cursor.set_position(0);
+            let filter = VFilter::<u8, VFunc<_, _, Vec<u8>, [u64; 2], true>>::deserialize_eps(
+                cursor.as_bytes(),
+            )?;
+            for i in 0..n {
+                let sig = ToSig::to_sig(&i, filter.func.seed);
+                assert_eq!(sig[0] & 0xFF, filter.get(&i) as u64);
             }
         }
 

@@ -441,7 +441,7 @@ macro_rules! impl_mut {
 
             fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
                 let len = Ord::min(Ord::min(len, dst.len() - to), self.len() - from);
-                dst.as_mut()[from..][..len].copy_from_slice(&self.as_ref()[to..][..len]);
+                dst.as_mut()[to..][..len].copy_from_slice(&self.as_ref()[from..][..len]);
             }
         }
     )*};
