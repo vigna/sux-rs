@@ -27,6 +27,8 @@ use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
 use std::borrow::BorrowMut;
+use std::fs::File;
+use std::io::BufWriter;
 use std::marker::PhantomData;
 use std::time::Instant;
 
@@ -288,7 +290,7 @@ impl<
     /// This method returns an error if one of the shards cannot be solved,
     /// or if duplicates are detected.
     fn par_solve<
-        I: IntoIterator<Item = (usize, B)> + Send,
+        I: IntoIterator<Item = B> + Send,
         B: BorrowMut<[SigVal<W>]> + Send,
         C: ConcurrentProgressLog + Send + Sync,
         P: ProgressLog + Clone + Send + Sync,
@@ -323,6 +325,7 @@ impl<
 
             shard_iter
                 .into_iter()
+                .enumerate()
                 .par_bridge()
                 .try_for_each_with(
                     (main_pl.clone(), pl.clone()),
@@ -733,13 +736,13 @@ where
     SigVal<W>: RadixKey + Send + Sync,
     Vec<W>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
-    pub fn build(
+    pub fn try_build(
         mut self,
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, Vec<W>, S, SHARDED>> {
-        self._build(
+        self.build_loop(
             into_keys,
             into_values,
             |_bit_width: usize, len: usize| vec![W::ZERO; len],
@@ -776,13 +779,13 @@ impl<T: ?Sized + Send + Sync + ToSig, W: ZeroCopy + Word, S: ShardEdge, const SH
 where
     SigVal<W>: RadixKey + Send + Sync,
 {
-    pub fn build(
+    pub fn try_build(
         mut self,
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, SHARDED>> {
-        self._build(
+        self.build_loop(
             into_keys,
             into_values,
             |bit_width: usize, len: usize| BitFieldVec::<W>::new(bit_width, len),
@@ -843,7 +846,7 @@ where
                 // Slightly loose bound to help with solvability
                 (1.11, lin_log2_seg_size(3, shard_size))
             } else {
-                (1.10, fuse_log2_seg_size(3, shard_size))
+                (1.105, fuse_log2_seg_size(3, shard_size))
             };
         } else {
             self.lazy_gaussian = self.num_keys <= MAX_LIN_SHARD_SIZE;
@@ -865,7 +868,7 @@ where
     /// vectors. The necessary abstraction is provided by the `new(bit_width,
     /// len)` function, which is called to create the data structure to store
     /// the values.
-    fn _build(
+    fn build_loop(
         &mut self,
         mut into_keys: impl RewindableIoLender<T>,
         mut into_values: impl RewindableIoLender<W>,
@@ -879,137 +882,133 @@ where
         loop {
             pl.item_name("key");
             pl.start("Reading input...");
-            let mut max_value = W::ZERO;
+            pl.info(format_args!("Using {} buckets", 1 << self.log2_buckets));
+
+            into_values = into_values.rewind()?;
+            into_keys = into_keys.rewind()?;
 
             match if self.offline {
-                // Offline construction using a SigStore
-                pl.info(format_args!("Using {} buckets", 1 << self.log2_buckets));
-                // Put values into a signature sorter
-                let mut sig_sorter =
-                    SigStore::<W, _>::new_offline(self.log2_buckets, LOG2_MAX_SHARDS).unwrap();
-                into_values = into_values.rewind()?;
-                into_keys = into_keys.rewind()?;
-                while let Some(result) = into_keys.next() {
-                    match result {
-                        Ok(key) => {
-                            pl.light_update();
-                            let &v = into_values.next().expect("Not enough values")?;
-                            max_value = Ord::max(max_value, v);
-                            sig_sorter.push(&SigVal {
-                                sig: T::to_sig(key, seed),
-                                val: v,
-                            })?;
-                        }
-                        Err(e) => {
-                            bail!("Error reading input: {}", e);
-                        }
-                    }
-                }
-                pl.done();
-
-                self.num_keys = sig_sorter.len();
-                self.bit_width = max_value.len() as usize;
-
-                self.set_up_shards();
-
-                let shard_store = sig_sorter.into_shard_store(self.shard_high_bits)?;
-                let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
-
-                pl.info(format_args!(
-                    "Keys: {} Max value: {} Bit width: {} Shards: 2^{} Max shard / average shard: {:.2}%",
-                    self.num_keys, max_value, self.bit_width, self.shard_high_bits,
-                    (100.0 * max_shard as f64) / (self.num_keys as f64 / self.num_shards as f64)
-                ));
-
-                if max_shard as f64 > 1.01 * self.num_keys as f64 / self.num_shards as f64 {
-                    Err(SolveError::MaxShardTooBig)
-                } else {
-                    self.set_up_segments();
-                    let data = new(self.bit_width, self.num_vertices * self.num_shards);
-                    self.build_iter(seed, data, shard_store, new, pl)
-                }
+                self.try_seed(
+                    seed,
+                    SigStore::<W, _>::new_offline(self.log2_buckets, LOG2_MAX_SHARDS)?,
+                    &mut into_keys,
+                    &mut into_values,
+                    new,
+                    pl,
+                )
             } else {
-                // Offline construction using a SigStore
-                pl.info(format_args!("Using {} buckets", 1 << self.log2_buckets));
-                // Put values into a signature sorter
-                let mut sig_sorter =
-                    SigStore::<W, _>::new_online(self.log2_buckets, LOG2_MAX_SHARDS).unwrap();
-                into_values = into_values.rewind()?;
-                into_keys = into_keys.rewind()?;
-                while let Some(result) = into_keys.next() {
-                    match result {
-                        Ok(key) => {
-                            pl.light_update();
-                            let &v = into_values.next().expect("Not enough values")?;
-                            max_value = Ord::max(max_value, v);
-                            sig_sorter.push(&SigVal {
-                                sig: T::to_sig(key, seed),
-                                val: v,
-                            })?;
-                        }
-                        Err(e) => {
-                            bail!("Error reading input: {}", e);
-                        }
-                    }
-                }
-                pl.done();
-
-                self.num_keys = sig_sorter.len();
-                self.bit_width = max_value.len() as usize;
-
-                self.set_up_shards();
-
-                let shard_store = sig_sorter.into_shard_store(self.shard_high_bits)?;
-                let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
-
-                pl.info(format_args!(
-                    "Keys: {} Max value: {} Bit width: {} Shards: 2^{} Max shard / average shard: {:.2}%",
-                    self.num_keys, max_value, self.bit_width, self.shard_high_bits,
-                    (100.0 * max_shard as f64) / (self.num_keys as f64 / self.num_shards as f64)
-                ));
-
-                if max_shard as f64 > 1.005 * self.num_keys as f64 / self.num_shards as f64 {
-                    Err(SolveError::MaxShardTooBig)
-                } else {
-                    self.set_up_segments();
-                    let data = new(self.bit_width, self.num_vertices * self.num_shards);
-                    self.build_iter(seed, data, shard_store, new, pl)
-                }
+                self.try_seed(
+                    seed,
+                    SigStore::<W, _>::new_online(self.log2_buckets, LOG2_MAX_SHARDS)?,
+                    &mut into_keys,
+                    &mut into_values,
+                    new,
+                    pl,
+                )
             } {
-                Ok(result) => {
+                Ok(func) => {
                     pl.info(format_args!(
                         "Completed in {:.3} seconds ({:.3} ns/key)",
                         start.elapsed().as_secs_f64(),
                         start.elapsed().as_nanos() as f64 / self.num_keys as f64
                     ));
-                    return Ok(result);
+                    return Ok(func);
                 }
-                // Let's try another seed, but just a few times--most likely,
-                // duplicate keys
-                Err(SolveError::DuplicateSignature) => {
-                    if dup_count >= 3 {
-                        bail!("Duplicate keys (duplicate 128-bit signatures with four different seeds)");
+                Err(error) => {
+                    match error.downcast::<SolveError>() {
+                        Ok(vfunc_error) => match vfunc_error {
+                            // Let's try another seed, but just a few times--most likely,
+                            // duplicate keys
+                            SolveError::DuplicateSignature => {
+                                if dup_count >= 3 {
+                                    bail!("Duplicate keys (duplicate 128-bit signatures with four different seeds)");
+                                }
+                                pl.warn(format_args!(
+                                "Duplicate 128-bit signature, trying again with a different seed..."
+                            ));
+                                dup_count += 1;
+                                continue;
+                            }
+                            SolveError::MaxShardTooBig => {
+                                pl.warn(format_args!(
+                                "The maximum shard is too big, trying again with a different seed..."
+                               ));
+                                continue;
+                            }
+                            // Let's just try another seed
+                            SolveError::UnsolvableShard => {
+                                pl.warn(format_args!(
+                                    "Unsolvable shard, trying again with a different seed..."
+                                ));
+                            }
+                        },
+                        Err(error) => return Err(error),
                     }
-                    pl.warn(format_args!(
-                        "Duplicate 128-bit signature, trying again with a different seed..."
-                    ));
-                    dup_count += 1;
-                    continue;
                 }
-                Err(SolveError::MaxShardTooBig) => {
-                    pl.warn(format_args!(
-                        "The maximum shard is too big, trying again with a different seed..."
-                    ));
-                }
-                // Let's just try another seed
-                Err(SolveError::UnsolvableShard) => {
-                    pl.warn(format_args!(
-                        "Unsolvable shard, trying again with a different seed..."
-                    ));
-                }
-            };
+            }
 
             seed += 1;
+        }
+    }
+
+    fn try_seed<B>(
+        &mut self,
+        seed: u64,
+        mut sig_store: SigStore<W, B>,
+        into_keys: &mut impl RewindableIoLender<T>,
+        into_values: &mut impl RewindableIoLender<W>,
+        new: fn(usize, usize) -> D,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFunc<T, W, D, S, SHARDED>>
+    where
+        SigStore<W, B>: TryPush<SigVal<W>> + IntoShardStore<W>,
+        for<'a> &'a mut ShardStore<W, <SigStore<W, B> as IntoShardStore<W>>::Reader>:
+            IntoIterator<Item = Vec<SigVal<W>>>,
+        for<'a> <&'a mut ShardStore<W, <SigStore<W, B> as IntoShardStore<W>>::Reader> as IntoIterator>::IntoIter: Send,
+
+    {
+        let mut max_value = W::ZERO;
+
+        while let Some(result) = into_keys.next() {
+            match result {
+                Ok(key) => {
+                    pl.light_update();
+                    let &v = into_values.next().expect("Not enough values")?;
+                    max_value = Ord::max(max_value, v);
+                    sig_store.try_push(SigVal {
+                        sig: T::to_sig(key, seed),
+                        val: v,
+                    })?;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+        pl.done();
+
+        self.num_keys = sig_store.len();
+        self.bit_width = max_value.len() as usize;
+
+        self.set_up_shards();
+
+        let mut shard_store = sig_store.into_shard_store(self.shard_high_bits)?;
+        let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
+
+        pl.info(format_args!(
+            "Keys: {} Max value: {} Bit width: {} Shards: 2^{} Max shard / average shard: {:.2}%",
+            self.num_keys,
+            max_value,
+            self.bit_width,
+            self.shard_high_bits,
+            (100.0 * max_shard as f64) / (self.num_keys as f64 / self.num_shards as f64)
+        ));
+
+        if max_shard as f64 > 1.01 * self.num_keys as f64 / self.num_shards as f64 {
+            Err(SolveError::MaxShardTooBig).map_err(Into::into)
+        } else {
+            self.set_up_segments();
+            let data = new(self.bit_width, self.num_vertices * self.num_shards);
+            self.try_build_from_shard_iter(seed, data, shard_store.into_iter(), new, pl)
+                .map_err(Into::into)
         }
     }
 
@@ -1019,20 +1018,18 @@ where
     /// actual storage of the values (offline or in core memory.)
     ///
     /// See [`VFuncBuilder::_build`] for more details on the parameters.
-    fn build_iter<'a, I, B, P>(
+    fn try_build_from_shard_iter<I, B, P>(
         &mut self,
         seed: u64,
         mut data: D,
-        mut into_shard_iter: I,
+        shard_iter: I,
         new: fn(usize, usize) -> D,
         pl: &mut P,
     ) -> Result<VFunc<T, W, D, S, SHARDED>, SolveError>
     where
         P: ProgressLog + Clone + Send + Sync,
         B: BorrowMut<[SigVal<W>]> + Send,
-        I: 'a,
-        &'a mut I: IntoIterator<Item = B>,
-        <&'a mut I as IntoIterator>::IntoIter: Send,
+        I: Iterator<Item = B> + Send,
     {
         let thread_pool = ThreadPoolBuilder::new()
             .num_threads(self.num_shards.min(self.max_num_threads) + 1) // Or it might hang
@@ -1047,14 +1044,11 @@ where
             thread_pool.current_num_threads()
         ));
 
-        // This is safe because the reference disappears at the end of the function
-        let iter = unsafe { (*(&mut into_shard_iter as *mut I)).into_iter().enumerate() };
-
         if self.lazy_gaussian {
             pl.info(format_args!("Switching to lazy Gaussian elimination"));
 
             self.par_solve(
-                iter,
+                shard_iter,
                 &mut data,
                 new,
                 |this, shard_index, shard, data, pl| this.solve_lin(shard_index, shard, data, pl),
@@ -1064,7 +1058,7 @@ where
             )?;
         } else {
             self.par_solve(
-                iter,
+                shard_iter,
                 &mut data,
                 new,
                 |this, shard_index, shard, data, pl| {

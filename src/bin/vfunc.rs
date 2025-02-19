@@ -67,13 +67,13 @@ fn main() -> Result<()> {
         }
 
         let func = if args.zstd {
-            builder.build(
+            builder.try_build(
                 ZstdLineLender::from_path(&filename)?,
                 FromIntoIterator::from(0_usize..),
                 &mut pl,
             )?
         } else {
-            builder.build(
+            builder.try_build(
                 LineLender::from_path(&filename)?,
                 FromIntoIterator::from(0_usize..),
                 &mut pl,
@@ -92,13 +92,13 @@ fn main() -> Result<()> {
         }
 
         let func = if let Some(dict_bits) = args.dict {
-            builder.build(
+            builder.try_build(
                 FromIntoIterator::from(0_usize..n),
                 FromIntoIterator::from(itertools::repeat_n((1 << dict_bits) - 1, n)),
                 &mut pl,
             )?
         } else {
-            builder.build(
+            builder.try_build(
                 FromIntoIterator::from(0_usize..n),
                 FromIntoIterator::from(0_usize..),
                 &mut pl,

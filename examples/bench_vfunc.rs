@@ -47,9 +47,17 @@ fn main() -> Result<()> {
         pl.done_with_count(keys.len());
     } else {
         let func = VFunc::<_, _, BitFieldVec<usize>, [u64; 2], true>::load_mem(&args.func)?;
-        pl.start("Querying...");
+
+        pl.start("Querying (independent)...");
         for i in 0..args.n {
             std::hint::black_box(func.get(&i));
+        }
+        pl.done_with_count(args.n);
+
+        pl.start("Querying (dependent)...");
+        let mut x = 0;
+        for i in 0..args.n {
+            x = std::hint::black_box(func.get(&(i ^ (x & 1))));
         }
         pl.done_with_count(args.n);
     }
