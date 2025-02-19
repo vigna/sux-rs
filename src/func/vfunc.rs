@@ -916,7 +916,7 @@ where
 
 const MAX_LIN_SIZE: usize = 2_000_000;
 const MAX_LIN_SHARD_SIZE: usize = 100_000;
-const LOG2_MAX_SHARDS: u32 = 8;
+const LOG2_MAX_SHARDS: u32 = 10;
 
 impl<
         T: ?Sized + Send + Sync + ToSig,
