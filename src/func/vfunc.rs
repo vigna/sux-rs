@@ -407,7 +407,7 @@ impl<
             .for_each(|(edge_index, sig_val)| {
                 for (side, &v) in sig_val
                     .sig
-                    .edge(self.shard_high_bits, self.l, self.log2_seg_size)
+                    .shard_edge(self.shard_high_bits, self.l, self.log2_seg_size)
                     .iter()
                     .enumerate()
                 {
@@ -440,7 +440,7 @@ impl<
                 stack[curr] = v;
                 curr += 1;
 
-                let e = shard.borrow()[edge_index].sig.edge(
+                let e = shard.borrow()[edge_index].sig.shard_edge(
                     self.shard_high_bits,
                     self.l,
                     self.log2_seg_size,
@@ -521,9 +521,10 @@ impl<
                 continue;
             }
             let (edge_index, side) = edge_lists[v].edge_index_and_hinge();
-            let edge = shard[edge_index]
-                .sig
-                .edge(self.shard_high_bits, self.l, self.log2_seg_size);
+            let edge =
+                shard[edge_index]
+                    .sig
+                    .shard_edge(self.shard_high_bits, self.l, self.log2_seg_size);
             let value = match side {
                 0 => data.get(edge[1]) ^ data.get(edge[2]),
                 1 => data.get(edge[0]) ^ data.get(edge[2]),
@@ -593,7 +594,7 @@ impl<
 
                         for &v in sig_val
                             .sig
-                            .edge(self.shard_high_bits, self.l, self.log2_seg_size)
+                            .shard_edge(self.shard_high_bits, self.l, self.log2_seg_size)
                             .iter()
                         {
                             var_to_eqs[v].push(eq);
@@ -623,7 +624,14 @@ impl<
 
 pub trait ShardEdge: Send + Sync {
     fn shard(&self, shard_high_bits: u32, shard_mask: u32) -> usize;
-    fn edge(&self, shard_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3];
+
+    #[inline(always)]
+    #[must_use]
+    fn shard_edge(&self, shard_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3] {
+        self.edge(0, shard_high_bits, l, log2_seg_size)
+    }
+
+    fn edge(&self, shard: usize, shard_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3];
 }
 
 impl ShardEdge for [u64; 2] {
@@ -636,9 +644,10 @@ impl ShardEdge for [u64; 2] {
 
     #[inline(always)]
     #[must_use]
-    fn edge(&self, shard_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3] {
+    fn edge(&self, shard: usize, shard_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3] {
         let first_segment = (((self[0] << shard_high_bits >> 32) * l as u64) >> 32) as usize;
-        let start = first_segment << log2_seg_size;
+        let shard_offset = shard * ((l + 2) << log2_seg_size);
+        let start = shard_offset + (first_segment << log2_seg_size);
         let segment_size = 1 << log2_seg_size;
         let segment_mask = segment_size - 1;
 
@@ -657,12 +666,11 @@ impl ShardEdge for u64 {
         (xor.rotate_left(shard_high_bits) & shard_mask) as usize
     }
 
-    #[inline(always)]
-    #[must_use]
-    fn edge(&self, shard_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3] {
+    fn edge(&self, shard: usize, shard_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3] {
         let xor = *self as u32 ^ (*self >> 32) as u32;
         let first_segment = ((xor.rotate_left(shard_high_bits) as u64 * l as u64) >> 32) as usize;
-        let start = first_segment << log2_seg_size;
+        let shard_offset = shard * ((l + 2) << log2_seg_size);
+        let start = shard_offset + (first_segment << log2_seg_size);
         let segment_size = 1 << log2_seg_size;
         let segment_mask = segment_size - 1;
 
@@ -688,18 +696,17 @@ impl<
     #[inline(always)]
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> W {
         if SHARDED {
-            let edge = sig.edge(self.shard_high_bits, self.l, self.log2_seg_size);
             let shard = sig.shard(self.shard_high_bits, self.shard_mask);
             // shard * self.segment_size * (2^log2_l + 2)
-            let shard_offset = shard * ((self.l + 2) << self.log2_seg_size);
+            let edge = sig.edge(shard, self.shard_high_bits, self.l, self.log2_seg_size);
 
             unsafe {
-                self.data.get_unchecked(edge[0] + shard_offset)
-                    ^ self.data.get_unchecked(edge[1] + shard_offset)
-                    ^ self.data.get_unchecked(edge[2] + shard_offset)
+                self.data.get_unchecked(edge[0])
+                    ^ self.data.get_unchecked(edge[1])
+                    ^ self.data.get_unchecked(edge[2])
             }
         } else {
-            let edge = sig.edge(0, self.l, self.log2_seg_size);
+            let edge = sig.shard_edge(0, self.l, self.log2_seg_size);
             unsafe {
                 self.data.get_unchecked(edge[0])
                     ^ self.data.get_unchecked(edge[1])
