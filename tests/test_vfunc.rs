@@ -25,7 +25,7 @@ fn test_vfunc() -> Result<()> {
             let func = VFuncBuilder::<_, _, BitFieldVec<_>, [u64; 2], true>::default()
                 .log2_buckets(4)
                 .offline(offline)
-                .build(
+                .try_build(
                     FromIntoIterator::from(0..n),
                     FromIntoIterator::from(0_usize..),
                     &mut pl,
@@ -50,7 +50,7 @@ fn test_vfunc() -> Result<()> {
             let func = VFuncBuilder::<_, _, Vec<_>, [u64; 2], true>::default()
                 .log2_buckets(4)
                 .offline(offline)
-                .build(
+                .try_build(
                     FromIntoIterator::from(0..n),
                     FromIntoIterator::from(0_usize..),
                     &mut pl,
@@ -79,7 +79,7 @@ fn test_dup_key() -> Result<()> {
         .try_init();
 
     assert!(VFuncBuilder::<usize, usize>::default()
-        .build(
+        .try_build(
             FromIntoIterator::from(std::iter::repeat(0).take(10)),
             FromIntoIterator::from(0..),
             &mut ProgressLogger::default(),

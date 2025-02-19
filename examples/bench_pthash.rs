@@ -13,6 +13,7 @@ use pthash::{
     Phf,
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use sux::{bit_field_vec, traits::BitFieldSlice};
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
@@ -55,17 +56,12 @@ fn main() -> Result<()> {
     config.num_partitions = args.n.div_ceil(10000000) as u64;
     config.num_threads = num_cpus::get() as u64;
 
-    log::info!("Building MPH with parameters: {:?}", config);
+    pl.start(format!("Building MPH with parameters: {:?}", config));
 
     let mut func = PartitionedPhf::<Minimal, MurmurHash2_64, DictionaryDictionary>::new();
 
-    pl.start("bulding...");
     func.par_build_in_internal_memory_from_bytes(
-        || {
-            (0_u64..args.n as u64)
-                .into_par_iter()
-                .map(HashableU64)
-        },
+        || (0_u64..args.n as u64).into_par_iter().map(HashableU64),
         &config,
     )
     .context("Failed to build MPH")?;
@@ -74,9 +70,21 @@ fn main() -> Result<()> {
     let mut output = Vec::with_capacity(args.n);
     output.extend(0..args.n);
 
-    pl.start("Querying...");
+    let output = bit_field_vec![args.n.ilog2() as usize => 0; args.n];
+
+    pl.start("Querying (independent)...");
     for i in 0..args.n {
-        std::hint::black_box(output[func.hash(i.to_ne_bytes().as_slice()) as usize]);
+        std::hint::black_box(output.get(func.hash(i.to_ne_bytes().as_slice()) as usize));
+    }
+    pl.done_with_count(args.n);
+
+    let mut x = 0;
+
+    pl.start("Querying (dependent)...");
+    for i in 0..args.n {
+        std::hint::black_box(
+            x = output.get(func.hash((i ^ (x & 1)).to_ne_bytes().as_slice()) as usize),
+        );
     }
     pl.done_with_count(args.n);
 

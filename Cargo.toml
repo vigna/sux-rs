@@ -26,7 +26,7 @@ dsi-progress-logger = "0.7.0"
 tempfile = "3.9.0"
 lender = "0.2.9"
 mmap-rs = "0.6.1"
-epserde = "0.6.1"
+epserde = { path = "../epserde-rs/epserde" }           #"0.6.1"
 zstd = { version = "0.13.1" }
 flate2 = "1.0.28"
 rand = { version = "0.9.0", features = ["small_rng"] }
