@@ -1063,13 +1063,13 @@ where
                 let t = (num_keys as f64 * eps * eps / 2.0).ln();
 
                 if t > 0.0 {
-                    // The final division increases slightly the shard size
-                    ((t - t.ln()) / 2_f64.ln() / 1.4).ceil() as u32
+                    // The multiplication by 2.05 increases slightly the shard size
+                    ((t - 2.05 * t.ln()) / 2_f64.ln()).ceil().max(2.) as u32
                 } else {
                     0
                 }
                 .min(LOG2_MAX_SHARDS) // We don't really need too many shards
-                .min((num_keys / MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't smaller than MAX_LIN_SIZE
+                .min((num_keys / MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't smaller than MIN_FUSE_SHARD
             }
         } else {
             0
@@ -1456,10 +1456,22 @@ mod tests {
             }
         };
 
+        let bound2 = |n: usize, corr: f64| {
+            // Bound from urns and balls problem
+            let t = (n as f64 * eps * eps / 2.0).ln();
+
+            if t > 0.0 {
+                ((t - corr * t.ln()) / 2_f64.ln() ).ceil().max(2.) as u32
+            } else {
+                0
+            }
+        };
+
         let mut t = 1024;
-        for _ in 0..40 {
-            let corr = 1.4;
-            eprintln!("n: {t}, 1.1: {} {eps}: {}", bound(t, 1.1), bound(t, corr));
+        for _ in 0..50 {
+            if t >= MIN_FUSE_SHARD {
+                eprintln!("n: {t}, 1.1: {} 1.5: {} bound2(1.1): {}", bound(t, 1.1), bound(t, 1.5), bound2(t, 2.05));
+            }
             t = t * 3 / 2;
         }
     }
