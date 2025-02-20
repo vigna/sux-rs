@@ -26,8 +26,10 @@ use rand::SeedableRng;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
+use std::borrow::Borrow;
 use std::borrow::BorrowMut;
 use std::marker::PhantomData;
+use std::ops::Index;
 use std::time::Instant;
 
 /// The log₂ of the segment size in the linear regime.
@@ -569,14 +571,16 @@ impl<
                 shard[edge_index]
                     .sig
                     .shard_edge(self.shard_high_bits, self.l, self.log2_seg_size);
-            let value = match side {
-                0 => data.get(edge[1]) ^ data.get(edge[2]),
-                1 => data.get(edge[0]) ^ data.get(edge[2]),
-                2 => data.get(edge[0]) ^ data.get(edge[1]),
-                _ => unreachable!(),
-            };
+            unsafe {
+                let value = match side {
+                    0 => data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2]),
+                    1 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[2]),
+                    2 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[1]),
+                    _ => unreachable!(),
+                };
 
-            data.set(v, get_val(&shard[edge_index]) ^ value);
+                data.set_unchecked(v, get_val(&shard[edge_index]) ^ value);
+            }
             debug_assert_eq!(
                 data.get(edge[0]) ^ data.get(edge[1]) ^ data.get(edge[2]),
                 get_val(&shard[edge_index])
@@ -882,6 +886,29 @@ where
     }
 }
 
+impl<
+        T: ?Sized + ToSig,
+        W: ZeroCopy + Word,
+        D: bit_field_slice::BitFieldSlice<W>,
+        S: ShardEdge,
+        const SHARDED: bool,
+        B: Borrow<T>,
+    > Index<B> for VFilter<W, VFunc<T, W, D, S, SHARDED>>
+where
+    u64: CastableInto<W>,
+{
+    type Output = bool;
+
+    #[inline(always)]
+    fn index(&self, key: B) -> &Self::Output {
+        if self.contains(key.borrow()) {
+            &true
+        } else {
+            &false
+        }
+    }
+}
+
 /// Build a new function using a vector of `W` to store values.
 ///
 /// Since values are stored in a vector, access is particularly fast, but
@@ -1037,7 +1064,7 @@ where
 
                 if t > 0.0 {
                     // The final division increases slightly the shard size
-                    ((t - t.ln()) / 2_f64.ln() / 1.05).ceil() as u32
+                    ((t - t.ln()) / 2_f64.ln() / 1.4).ceil() as u32
                 } else {
                     0
                 }
@@ -1413,5 +1440,27 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn compare_funcs() {
+        let eps = 0.001;
+        let bound = |n: usize, corr: f64| {
+            // Bound from urns and balls problem
+            let t = (n as f64 * eps * eps / 2.0).ln();
+
+            if t > 0.0 {
+                ((t - t.ln()) / 2_f64.ln() / corr).ceil() as u32
+            } else {
+                0
+            }
+        };
+
+        let mut t = 1024;
+        for _ in 0..40 {
+            let corr = 1.4;
+            eprintln!("n: {t}, 1.1: {} {eps}: {}", bound(t, 1.1), bound(t, corr));
+            t = t * 3 / 2;
+        }
     }
 }

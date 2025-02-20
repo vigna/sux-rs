@@ -77,6 +77,7 @@ use mem_dbg::*;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use std::{
+    collections::HashSet,
     ops::Index,
     sync::atomic::{AtomicUsize, Ordering},
 };
