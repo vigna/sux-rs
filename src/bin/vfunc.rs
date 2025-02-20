@@ -45,6 +45,9 @@ struct Args {
     /// Create an approximate dictionary with this number of bits
     #[arg(short, long)]
     dict: Option<usize>,
+    /// A 64-bit seed for the pseudorandom number generator.
+    #[arg(long)]
+    seed: Option<u64>,
 }
 
 fn main() -> Result<()> {
@@ -62,6 +65,9 @@ fn main() -> Result<()> {
             .offline(args.offline)
             .log2_buckets(args.high_bits);
 
+        if let Some(seed) = args.seed {
+            builder = builder.seed(seed);
+        }
         if let Some(threads) = args.threads {
             builder = builder.max_num_threads(threads);
         }
@@ -89,6 +95,9 @@ fn main() -> Result<()> {
                 .offline(args.offline)
                 .expected_num_keys(n)
                 .log2_buckets(args.high_bits);
+            if let Some(seed) = args.seed {
+                builder = builder.seed(seed);
+            }
             if let Some(threads) = args.threads {
                 builder = builder.max_num_threads(threads);
             }
@@ -100,6 +109,9 @@ fn main() -> Result<()> {
             .offline(args.offline)
             .expected_num_keys(n)
             .log2_buckets(args.high_bits);
+        if let Some(seed) = args.seed {
+            builder = builder.seed(seed);
+        }
         if let Some(threads) = args.threads {
             builder = builder.max_num_threads(threads);
         }
