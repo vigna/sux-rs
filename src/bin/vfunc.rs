@@ -95,23 +95,21 @@ fn main() -> Result<()> {
             let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
             filter.store(&args.func)?;
         }
-    } else {
-        if let Some(n) = args.n {
-            let mut builder = VBuilder::<_, _, BitFieldVec<usize>, [u64; 2], true>::default()
-                .offline(args.offline)
-                .expected_num_keys(n)
-                .log2_buckets(args.high_bits);
-            if let Some(threads) = args.threads {
-                builder = builder.max_num_threads(threads);
-            }
-
-            let func = builder.try_build_func(
-                FromIntoIterator::from(0_usize..n),
-                FromIntoIterator::from(0_usize..),
-                &mut pl,
-            )?;
-            func.store(&args.func)?;
+    } else if let Some(n) = args.n {
+        let mut builder = VBuilder::<_, _, BitFieldVec<usize>, [u64; 2], true>::default()
+            .offline(args.offline)
+            .expected_num_keys(n)
+            .log2_buckets(args.high_bits);
+        if let Some(threads) = args.threads {
+            builder = builder.max_num_threads(threads);
         }
+
+        let func = builder.try_build_func(
+            FromIntoIterator::from(0_usize..n),
+            FromIntoIterator::from(0_usize..),
+            &mut pl,
+        )?;
+        func.store(&args.func)?;
     }
     Ok(())
 }

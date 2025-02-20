@@ -314,7 +314,7 @@ impl<V: ZeroCopy + Send + Sync + 'static> Iterator for ShardIterator<'_, V, BufR
     }
 }
 
-impl<'a, V: ZeroCopy + Send + Sync + 'static> Iterator for ShardIterator<'a, V, Vec<SigVal<V>>> {
+impl<V: ZeroCopy + Send + Sync + 'static> Iterator for ShardIterator<'_, V, Vec<SigVal<V>>> {
     type Item = Vec<SigVal<V>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -440,7 +440,7 @@ impl<V: ZeroCopy + 'static> SigStore<V, Vec<SigVal<V>>> {
     /// counts for shards defined by at most `max_shard_high_bits` high bits.
     pub fn new_online(buckets_high_bits: u32, max_shard_high_bits: u32) -> Result<Self> {
         let mut writers = VecDeque::new();
-        writers.resize_with(1 << buckets_high_bits, || vec![]);
+        writers.resize_with(1 << buckets_high_bits, std::vec::Vec::new);
 
         Ok(Self {
             len: 0,

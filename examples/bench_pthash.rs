@@ -82,8 +82,9 @@ fn main() -> Result<()> {
 
     pl.start("Querying (dependent)...");
     for i in 0..args.n {
+        x = output.get(func.hash((i ^ (x & 1)).to_ne_bytes().as_slice()) as usize);
         std::hint::black_box(
-            x = output.get(func.hash((i ^ (x & 1)).to_ne_bytes().as_slice()) as usize),
+            (),
         );
     }
     pl.done_with_count(args.n);
