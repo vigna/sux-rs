@@ -5,14 +5,12 @@
 * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
 */
 
-// We import selectively to be able to use AtomicHelper
 use crate::bits::*;
 use crate::prelude::Rank9;
 use crate::traits::bit_field_slice;
 use crate::traits::NumBits;
 use crate::traits::Rank;
 use crate::utils::*;
-use anyhow::bail;
 use bit_field_slice::BitFieldSlice;
 use bit_field_slice::BitFieldSliceMut;
 use bit_field_slice::Word;
@@ -29,6 +27,7 @@ use std::borrow::BorrowMut;
 use std::marker::PhantomData;
 use std::time::Instant;
 
+/// The log₂ of the segment size in the linear regime.
 fn lin_log2_seg_size(arity: usize, n: usize) -> u32 {
     match arity {
         3 => {
@@ -42,6 +41,7 @@ fn lin_log2_seg_size(arity: usize, n: usize) -> u32 {
     }
 }
 
+/// The log₂ of the segment size in the fuse-graphs regime.
 fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
     // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
     // https://doi.org/10.1145/3510449
@@ -52,6 +52,7 @@ fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
     }
 }
 
+/// The expansion factor in the unsharded fuse-graphs regime.
 fn fuse_c(arity: usize, n: usize) -> f64 {
     // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
     // https://doi.org/10.1145/3510449
@@ -62,18 +63,42 @@ fn fuse_c(arity: usize, n: usize) -> f64 {
     }
 }
 
-/// An edge list represented by a 64-bit integer. The lower SIDE_SHIFT bits
-/// contain a XOR of the edges; the next two bits contain a XOR of the side of
-/// the edges; the remaining DEG_SHIFT the upper bits contain the degree.
+/// A set of edge indices and sides represented by a 64-bit integer.
 ///
-/// The degree can be stored with a small number of bits because the graph is
-/// random, so the maximum degree is O(log log n).
+/// Each (*k*-hyper)edge is a set of *k* vertices (by construction fuse graphs
+/// to not have degenerate edges), but we represent it internally as a vector.
+/// We call *side* the position of a vertex in the edge.
+///
+/// For each vertex, we store both the indices of the edges incident to the
+/// vertex and the sides of the vertex in such edges. While technically not
+/// necessary to perform peeling, the knowledge of the sides speeds up the
+/// peeling breadth-first visit by reducing the number of tests that are
+/// necessary to update the degrees once the edge is peeled (see the
+/// `peel_shard` method).
+///
+/// Edge indices and sides are packed together using Djamal's XOR trick (see
+/// “Cache-Oblivious Peeling of Random Hypergraphs”,
+/// https://doi.org/10.1109/DCC.2014.48): since during the peeling breadth-first
+/// visit we need to know the content of the list only when a single edge index
+/// is present, we can XOR together all the edge indices and sides.
+///
+/// The lower SIDE_SHIFT bits contain a XOR of the edge indices; the next two
+/// bits contain a XOR of the sides; the remaining upper bits contain the
+/// degree. The degree can be stored with a small number of bits because the
+/// graph is random, so the maximum degree is *O*(log log *n*).
+///
+/// When we peel an edge, we do not remove its index from the list of the vertex
+/// it was peeled from, but rather we zero the degree. This allows us to store
+/// the peeled edge and its side in the list.
 ///
 /// This approach reduces the core memory usage for the hypergraph to a `u64`
-/// per vertex. Edges are derived on the fly from the 128-bit signatures.
+/// per vertex. Edges are derived on the fly from signatures using the edge
+/// indices. The breadth-first queue and the stack of peeled edges can be
+/// represented just using vertices, as the edge indices can be
+/// retrieved from this list.
 #[derive(Debug, Default)]
-struct EdgeList(u64);
-impl EdgeList {
+struct EdgeIndexSideSet(u64);
+impl EdgeIndexSideSet {
     const DEG_SHIFT: u32 = u64::BITS - 16;
     const SIDE_SHIFT: u32 = u64::BITS - 18;
     const SIDE_MASK: usize = 3;
@@ -81,61 +106,55 @@ impl EdgeList {
     const DEG: u64 = 1_u64 << Self::DEG_SHIFT;
     const MAX_DEG: usize = (u64::MAX >> Self::DEG_SHIFT) as usize;
 
+    /// Add an edge index and a side to the set.
     #[inline(always)]
-    fn add(&mut self, edge: usize, side: usize) {
+    fn add(&mut self, edge_index: usize, side: usize) {
         debug_assert!(self.degree() < Self::MAX_DEG);
         self.0 += Self::DEG;
-        self.0 ^= (side as u64) << Self::SIDE_SHIFT | edge as u64;
+        self.0 ^= (side as u64) << Self::SIDE_SHIFT | edge_index as u64;
     }
 
+    /// Remove an edge index and a side from the set.
     #[inline(always)]
-    fn remove(&mut self, edge: usize, side: usize) {
+    fn remove(&mut self, edge_index: usize, side: usize) {
         debug_assert!(self.degree() > 0);
         self.0 -= Self::DEG;
-        self.0 ^= (side as u64) << Self::SIDE_SHIFT | edge as u64;
+        self.0 ^= (side as u64) << Self::SIDE_SHIFT | edge_index as u64;
     }
 
-    /// The degree of the vertex.
+    /// Return the degree of the vertex.
     ///
-    /// When the degree is zero, the entry is used to store a [peeled edge and
-    /// its hinge](EdgeList::edge_index_and_hinge).
+    /// When the degree is zero, the list stores a peeled edge and the
+    /// associated side.
     #[inline(always)]
     fn degree(&self) -> usize {
         (self.0 >> Self::DEG_SHIFT) as usize
     }
 
-    /// Retrieve a peeled edge index and its hinge (as an index in the edge's
-    /// vertices).
+    /// Retrieve an edge index and its side.
     ///
-    /// This method return meaningful values only when the [degree is
-    /// zero](EdgeList::degree).
+    /// This method return meaningful values only when the degree is zero (i.e.,
+    /// the edge has been peeled and we use the list to store it) or one (i.e.,
+    /// the edge is peelable and we can retrieved as it is the only vertex).
     #[inline(always)]
-    fn edge_index_and_hinge(&self) -> (usize, usize) {
-        // debug_assert!(self.degree() == 0); TODO
+    fn edge_index_and_side(&self) -> (usize, usize) {
+        debug_assert!(self.degree() < 2);
         (
-            (self.0 & EdgeList::EDGE_INDEX_MASK) as usize,
+            (self.0 & EdgeIndexSideSet::EDGE_INDEX_MASK) as usize,
             (self.0 >> Self::SIDE_SHIFT) as usize & Self::SIDE_MASK,
         )
     }
 
+    /// Zero the degree of the vertex.
+    ///
+    /// This method should be called when the degree is one, and the list is
+    /// used to store a peeled edge and the associated side.
     #[inline(always)]
     fn zero(&mut self) {
+        debug_assert!(self.degree() == 1);
         self.0 &= (1 << Self::DEG_SHIFT) - 1;
     }
 }
-
-/*
-
-Chunk and edge information is derived from the 128-bit signatures of the keys.
-More precisely, each signature is made of two 64-bit integers `h` and `l`, and then:
-
-- the `high_bits` most significant bits of `h` are used to select a shard;
-- the `log2_l` least significant bits of the upper 32 bits of `h` are used to select a segment;
-- the lower 32 bits of `h` are used to select the virst vertex;
-- the upper 32 bits of `l` are used to select the second vertex;
-- the lower 32 bits of `l` are used to select the third vertex.
-
-*/
 
 /// Static functions with 10%-11% space overhead for large key sets,
 /// fast parallel construction, and fast queries.
@@ -175,14 +194,14 @@ pub struct VFilter<W: ZeroCopy + Word, F> {
 /// A builder for [`VFunc`].
 ///
 /// Keys must implement the [`ToSig`] trait, which provides a method to compute
-/// a 128-bit signature of the key.
+/// a signature of the key.
 ///
 /// The output type `O` can be selected to be any of the unsigned integer types;
 /// the default is `usize`.
 ///
 /// There are two construction modes: in core memory (default) and
 /// [offline](VBuilder::offline). In the first case, space will be allocated
-/// in core memory for 128-bit signatures and associated values for all keys; in
+/// in core memory for signatures and associated values for all keys; in
 /// the second case, such information will be stored in a number of on-disk
 /// buckets.
 ///
@@ -253,6 +272,13 @@ pub struct VBuilder<
     _marker_t: PhantomData<T>,
     #[doc(hidden)]
     _marker_od: PhantomData<(V, W, D, S)>,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum BuildError {
+    #[error("Duplicate key")]
+    /// A duplicate key was detected.
+    DuplicateKey,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -403,14 +429,14 @@ impl<
         data: D,
         get_val: &G,
         pl: &mut impl ProgressLog,
-    ) -> Result<(usize, D), (usize, B, Vec<EdgeList>, D, Vec<usize>)> {
+    ) -> Result<(usize, D), (usize, B, Vec<EdgeIndexSideSet>, D, Vec<usize>)> {
         pl.start(format!(
             "Generating graph for shard {}/{}...",
             shard_index + 1,
             self.num_shards
         ));
         let mut edge_lists = Vec::new();
-        edge_lists.resize_with(self.num_vertices, EdgeList::default);
+        edge_lists.resize_with(self.num_vertices, EdgeIndexSideSet::default);
         shard
             .borrow()
             .iter()
@@ -446,7 +472,7 @@ impl<
                 if edge_lists[v].degree() == 0 {
                     continue; // Skip no longer useful entries
                 }
-                let (edge_index, side) = edge_lists[v].edge_index_and_hinge();
+                let (edge_index, side) = edge_lists[v].edge_index_and_side();
                 edge_lists[v].zero();
                 stack[curr] = v;
                 curr += 1;
@@ -517,7 +543,7 @@ impl<
         shard: impl BorrowMut<[SigVal<V>]>,
         mut data: D,
         get_val: &(impl Fn(&SigVal<V>) -> W + Send + Sync),
-        edge_lists: Vec<EdgeList>,
+        edge_lists: Vec<EdgeIndexSideSet>,
         mut stack: Vec<usize>,
         pl: &mut impl ProgressLog,
     ) -> (usize, D) {
@@ -532,7 +558,7 @@ impl<
             if edge_lists[v].degree() != 0 {
                 continue;
             }
-            let (edge_index, side) = edge_lists[v].edge_index_and_hinge();
+            let (edge_index, side) = edge_lists[v].edge_index_and_side();
             let edge =
                 shard[edge_index]
                     .sig
@@ -588,7 +614,7 @@ impl<
                     .iter()
                     .filter(|&v| edge_lists[*v].degree() == 0)
                     .for_each(|&v| {
-                        unpeeled.set(edge_lists[v].edge_index_and_hinge().0, false);
+                        unpeeled.set(edge_lists[v].edge_index_and_side().0, false);
                     });
                 let unpeeled = Rank9::new(unpeeled);
 
@@ -603,7 +629,7 @@ impl<
                     .filter(|(edge_index, _)| unpeeled[*edge_index])
                     .for_each(|(edge_index, sig_val)| {
                         let eq = unpeeled.rank(edge_index);
-                        c[eq] = get_val(&sig_val);
+                        c[eq] = get_val(sig_val);
 
                         for &v in sig_val
                             .sig
@@ -635,6 +661,21 @@ impl<
     }
 }
 
+/// Shard and edge information.
+///
+/// This trait is used to derive shards and edges from key signatures. The
+/// `shard` method returns the shard; the `edge` method is used to derive the
+/// three vertices of the edge associated with the key; the `shard_edge` method
+/// is used to derive the three vertices of the edge associated with a key
+/// inside the shard the key belongs to (its default implementation just calls
+/// `edge` with shard zero).
+///
+/// Edges must follow the generation method of fuse graphs (see ”[Dense Peelable
+/// Random Uniform Hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38)”.
+/// Using the signature bits as a seed, one extracts a pseudorandom first
+/// segment between 0 and `l`, and then chooses a pseudorandom position in the
+/// first segment and in the following two (or more, in the case of higher
+/// degree).
 pub trait ShardEdge: Send + Sync {
     fn shard(&self, shard_high_bits: u32, shard_mask: u32) -> usize;
 
@@ -647,6 +688,21 @@ pub trait ShardEdge: Send + Sync {
     fn edge(&self, shard: usize, shard_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3];
 }
 
+/// In this implementation:
+/// - the `shard_high_bits` most significant bits of the first component are
+///   used to select a shard;
+/// - the following 32 bits of the first component are used to select the first
+///   segment using fixed-point arithmetic;
+/// - the lower 32 bits of first component are used to select the first vertex;
+/// - the upper 32 bits of the second component are used to select the second
+///   vertex;
+/// - the lower 32 bits of the second component are used to select the third
+///   vertex.
+///
+/// Note that the lower `shard_high_bits` of the bits used to select the first
+/// segment are the same as the upper `shard_high_bits` of the bits used to
+/// select the first segment, but being the result mostly sensitive to the high
+/// bits, this is not a problem.
 impl ShardEdge for [u64; 2] {
     #[inline(always)]
     #[must_use]
@@ -672,6 +728,19 @@ impl ShardEdge for [u64; 2] {
     }
 }
 
+/// In this implementation:
+/// - the `shard_high_bits` most significant bits of the two 32-bit halves XOR'd
+///   together are used to select a shard;
+/// - the two 32-bit halves XOR'd together and rotated to the left by
+///   `shard_high_bits` are used to select the first segment using fixed-point
+///   arithmetic;
+/// - the lower 21 bits are used to select the first vertex;
+/// - the next 21 bits are used to select the second vertex;
+/// - the next 21 bits are used to select the third vertex.
+///
+/// Note that the lower `shard_high_bits` of the bits used to select the first
+/// segment are the same as the bits used to select the shard, but being the
+/// result mostly sensitive to the high bits, this is not a problem.
 impl ShardEdge for u64 {
     fn shard(&self, shard_high_bits: u32, shard_mask: u32) -> usize {
         // This must work even when shard_high_bits is zero
@@ -703,7 +772,8 @@ impl<
         const SHARDED: bool,
     > VFunc<T, W, D, S, SHARDED>
 {
-    /// Return the value associated with the given signature.
+    /// Return the value associated with the given signature, or a random value
+    /// if the signature is not the signature of a key .
     ///
     /// This method is mainly useful in the construction of compound functions.
     #[inline(always)]
@@ -728,7 +798,8 @@ impl<
         }
     }
 
-    /// Return the value associated with the given key, or a random value if the key is not present.
+    /// Return the value associated with the given key, or a random value if the
+    /// key is not present.
     #[inline(always)]
     pub fn get(&self, key: &T) -> W {
         self.get_by_sig(&T::to_sig(key, self.seed))
@@ -755,31 +826,46 @@ impl<
 where
     u64: CastableInto<W>,
 {
-    /// Return the value associated with the given signature.
+    /// Return the value associated with the given signature by the underlying
+    /// function, or a random value if the signature is not the signature of a
+    /// key .
     ///
-    /// This method is mainly useful in the construction of compound functions.
+    /// The user should not normally call this method, but rather
+    /// [`contains_by_sig`](VFilter::contains_by_sig).
     #[inline(always)]
     pub fn get_by_sig(&self, sig: &[u64; 2]) -> W {
         self.func.get_by_sig(sig)
     }
 
-    /// Return the value associated with the given key, or a random value if the key is not present.
+    /// Return the value associated with the given key by the underlying
+    /// function, or a random value if the key is not present.
+    ///
+    /// The user should not normally call this method, but rather
+    /// [`contains`](VFilter::contains).
     #[inline]
     pub fn get(&self, key: &T) -> W {
         self.func.get(key)
     }
 
+    /// Return whether a signature is contained in the filter.
+    ///
+    /// The user should not normally call this method, but rather
+    /// [`contains`](VFilter::contains).
     #[inline(always)]
     pub fn contains_by_sig(&self, sig: &[u64; 2]) -> bool {
         self.func.get_by_sig(sig) == sig[0].cast() & self.filter_mask
     }
 
+    /// Return whether a key is contained in the filter.
+    ///
+    /// The user should not normally call this method, but rather
+    /// [`contains`](VFilter::contains).
     #[inline]
     pub fn contains(&self, key: &T) -> bool {
         self.contains_by_sig(&T::to_sig(key, self.func.seed))
     }
 
-    /// Return the number of keys in the function.
+    /// Return the number of keys in the filter.
     pub fn len(&self) -> usize {
         self.func.len()
     }
@@ -1057,7 +1143,8 @@ where
                             // duplicate keys
                             SolveError::DuplicateSignature => {
                                 if dup_count >= 3 {
-                                    bail!("Duplicate keys (duplicate 128-bit signatures with four different seeds)");
+                                    pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with four different seeds)"));
+                                    return Err(BuildError::DuplicateKey.into());
                                 }
                                 pl.warn(format_args!(
                                 "Duplicate 128-bit signature, trying again with a different seed..."
@@ -1154,7 +1241,7 @@ where
         ));
 
         if max_shard as f64 > 1.01 * self.num_keys as f64 / self.num_shards as f64 {
-            Err(SolveError::MaxShardTooBig).map_err(Into::into)
+            Err(Into::into(SolveError::MaxShardTooBig))
         } else {
             self.set_up_segments();
             let data = new(self.bit_width, self.num_vertices * self.num_shards);
