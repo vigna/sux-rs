@@ -61,7 +61,7 @@ fn main() -> Result<()> {
     pl.display_memory(true);
 
     if let Some(filename) = args.filename {
-        let mut builder = VBuilder::<_, _, BitFieldVec<usize>, [u64; 2]>::default()
+        let mut builder = VBuilder::<_, _, BitFieldVec<usize>, [u64; 2], true>::default()
             .offline(args.offline)
             .log2_buckets(args.high_bits);
 
