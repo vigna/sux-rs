@@ -161,11 +161,11 @@ impl EdgeIndexSideSet {
     }
 }
 
-/// Static functions with 10%-11% space overhead for large key sets,
-/// fast parallel construction, and fast queries.
+/// Static functions with 10%-11% space overhead for large key sets, fast
+/// parallel construction, and fast queries.
 ///
-/// Instances of this structure are immutable; they are built using a [`VBuilder`],
-/// and can be serialized using [ε-serde](`epserde`).
+/// Instances of this structure are immutable; they are built using a
+/// [`VBuilder`], and can be serialized using [ε-serde](`epserde`).
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFunc<
     T: ?Sized + ToSig,
@@ -185,30 +185,30 @@ pub struct VFunc<
     _marker_os: std::marker::PhantomData<(W, S)>,
 }
 
-/// Filters with 10%-11% space overhead for large key sets,
-/// fast parallel construction, and fast queries.
+/// Filters with 10%-11% space overhead for large key sets, fast parallel
+/// construction, and fast queries.
 ///
-/// Instances of this structure are immutable; they are built using a [`VBuilder`],
-/// and can be serialized using [ε-serde](`epserde`).
+/// Instances of this structure are immutable; they are built using a
+/// [`VBuilder`], and can be serialized using [ε-serde](`epserde`).
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFilter<W: ZeroCopy + Word, F> {
     func: F,
     filter_mask: W,
 }
 
-/// A builder for [`VFunc`].
+/// A builder for [`VFunc`] and [`VFilter`].
 ///
 /// Keys must implement the [`ToSig`] trait, which provides a method to compute
 /// a signature of the key.
 ///
-/// The output type `O` can be selected to be any of the unsigned integer types;
+/// The output type `W` can be selected to be any of the unsigned integer types;
 /// the default is `usize`.
 ///
 /// There are two construction modes: in core memory (default) and
 /// [offline](VBuilder::offline). In the first case, space will be allocated
 /// in core memory for signatures and associated values for all keys; in
 /// the second case, such information will be stored in a number of on-disk
-/// buckets.
+/// buckets using a [`SigStore`].
 ///
 /// Once signatures have been computed, each parallel thread will process a
 /// shard of the signatures; for each signature in a shard, a thread will
@@ -282,6 +282,7 @@ pub struct VBuilder<
     _marker_od: PhantomData<(V, W, D, S)>,
 }
 
+/// Fatal build errors.
 #[derive(thiserror::Error, Debug)]
 pub enum BuildError {
     #[error("Duplicate key")]
@@ -290,7 +291,8 @@ pub enum BuildError {
 }
 
 #[derive(thiserror::Error, Debug)]
-/// Errors that can happen during deserialization.
+/// Transient error during the build, leading to
+/// trying with a different seed.
 pub enum SolveError {
     #[error("Duplicate signature")]
     /// A duplicate signature was detected.
@@ -316,23 +318,26 @@ impl<
     ///
     /// # Arguments
     ///
-    /// * `main_pl`: the progress logger for the overall computation.
-    ///
-    /// * `pl`: a progress logger that will be cloned to display the progress of
-    ///   a current shard.
-    ///
     /// * `shard_iter`: an iterator returning the shards to solve.
     ///
     /// * `data`: the storage for the solution values.
     ///
-    /// * `new`: a function to create shard-local storage for the values.
+    /// * `new_data`: a function to create shard-local storage for the values.
     ///
-    /// * `do_shard`: a method to solve a shard.
+    /// * `solve_shard`: a method to solve a shard; it takes the shard index,
+    ///   the shard, shard-local storage, and a progress logger, and returns the
+    ///   shard index and the shard-local storage filled with a solution, or an
+    ///   error.
     ///
+    /// * `main_pl`: the progress logger for the overall computation.
+    ///
+    /// * `pl`: a progress logger that will be cloned to display the progress of
+    ///   a current shard.
+    /// 
     /// # Errors
     ///
-    /// This method returns an error if one of the shards cannot be solved,
-    /// or if duplicates are detected.
+    /// This method returns an error if one of the shards cannot be solved, or
+    /// if duplicates are detected.
     fn par_solve<
         I: IntoIterator<Item = B> + Send,
         B: BorrowMut<[SigVal<V>]> + Send,
@@ -361,6 +366,7 @@ impl<
             .display_memory(true)
             .start("Solving shards...");
         let result = thread_pool.scope(|scope| {
+            // This thread copies shard-local solutions to the global solution
             scope.spawn(|_| {
                 for (shard_index, shard_data) in receive {
                     shard_data.copy(0, data, shard_index * self.num_vertices, self.num_vertices);
@@ -380,6 +386,7 @@ impl<
                             self.num_shards
                         ));
 
+                        // Check for duplicates
                         shard.borrow_mut().radix_sort_unstable();
 
                         if shard
@@ -426,10 +433,10 @@ impl<
 
     /// Solve a shard by peeling.
     ///
-    /// Return the shard index and the data, in case of success,
-    /// or the shard index, the shard, the edge lists, the data, and the stack
-    /// at the end of the peeling procedure in case of failure. These data can
-    /// be then passed to a linear solver to complete the solution.
+    /// Return the shard index and the shard-local data, in case of success, or
+    /// the shard index, the shard, the edge lists, the shard-local data, and
+    /// the stack at the end of the peeling procedure in case of failure. These
+    /// data can be then passed to a linear solver to complete the solution.
     fn peel_shard<B: BorrowMut<[SigVal<V>]>, G: Fn(&SigVal<V>) -> W + Send + Sync>(
         &self,
         shard_index: usize,
@@ -467,6 +474,7 @@ impl<
             self.num_shards
         ));
         let mut stack = Vec::new();
+        // Breadth-first visit in reverse order
         for v in (0..self.num_vertices).rev() {
             if edge_lists[v].degree() != 1 {
                 continue;
@@ -490,6 +498,7 @@ impl<
                     self.l,
                     self.log2_seg_size,
                 );
+                // Remove edge from the lists of the other two vertices
                 match side {
                     0 => {
                         edge_lists[e[1]].remove(edge_index, 1);
@@ -543,8 +552,8 @@ impl<
 
     /// Perform assignment of values based on peeling data.
     ///
-    /// This method might be called after a successful peeling procedure,
-    /// or after a linear solver has been used to solve the remaining edges.
+    /// This method might be called after a successful peeling procedure, or
+    /// after a linear solver has been used to solve the remaining edges.
     fn assign(
         &self,
         shard_index: usize,
@@ -591,12 +600,12 @@ impl<
         (shard_index, data)
     }
 
-    /// Solve a shard of given index using lazy Gaussian elimination,
-    /// and store the solution in the given data.
+    /// Solve a shard of given index using lazy Gaussian elimination, and store
+    /// the solution in the given data.
     ///
-    /// Return the shard index and the data, in case of success,
-    /// or `Err(())` in case of failure.
-    fn solve_lin(
+    /// Return the shard index and the data, in case of success, or `Err(())` in
+    /// case of failure.
+    fn lge_shard(
         &self,
         shard_index: usize,
         shard: impl BorrowMut<[SigVal<V>]>,
@@ -631,7 +640,7 @@ impl<
                 // Create data for an F₂ system using non-peeled edges
                 let mut var_to_eqs = Vec::with_capacity(self.num_vertices);
                 let mut c = vec![W::ZERO; unpeeled.num_ones()];
-                var_to_eqs.resize_with(self.num_vertices, || Vec::with_capacity(16));
+                var_to_eqs.resize_with(self.num_vertices, || vec![]);
                 shard
                     .borrow()
                     .iter()
@@ -1328,7 +1337,7 @@ where
                 &mut data,
                 new,
                 |this, shard_index, shard, data, pl| {
-                    this.solve_lin(shard_index, shard, data, get_val, pl)
+                    this.lge_shard(shard_index, shard, data, get_val, pl)
                 },
                 &thread_pool,
                 &mut pl.concurrent(),
