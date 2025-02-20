@@ -1029,7 +1029,8 @@ where
                 let t = (num_keys as f64 * eps * eps / 2.0).ln();
 
                 if t > 0.0 {
-                    ((t - t.ln()) / 2_f64.ln()).ceil() as u32
+                    // The final division increases slightly the shard size
+                    ((t - t.ln()) / 2_f64.ln() / 1.05).ceil() as u32
                 } else {
                     0
                 }
