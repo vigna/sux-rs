@@ -5,16 +5,18 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use std::{fs::File, io::BufReader};
+
 use anyhow::{Context, Result};
+use bytelines::ByteLines;
 use clap::Parser;
 use dsi_progress_logger::*;
 use pthash::{
     BuildConfiguration, DictionaryDictionary, Hashable, Minimal, MurmurHash2_64, PartitionedPhf,
     Phf,
 };
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
 use sux::{bit_field_vec, traits::BitFieldSlice};
-
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
 struct Args {
@@ -23,9 +25,7 @@ struct Args {
     filename: Option<String>,
     #[arg(short)]
     /// The maximum number strings to use from the file, or the number of 64-bit keys.
-    n: usize,
-    /// A name for the ε-serde serialized function with u64 keys.
-    func: String,
+    n: Option<usize>,
 }
 
 struct HashableU64(u64);
@@ -40,6 +40,18 @@ impl Hashable for HashableU64 {
     }
 }
 
+struct HashableVecu8<T: AsRef<[u8]>>(T);
+impl<T: AsRef<[u8]>> Hashable for HashableVecu8<T> {
+    type Bytes<'a>
+        = &'a [u8]
+    where
+        Self: 'a;
+
+    fn as_bytes(&self) -> Self::Bytes<'_> {
+        self.0.as_ref()
+    }
+}
+
 fn main() -> Result<()> {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
@@ -49,45 +61,104 @@ fn main() -> Result<()> {
 
     let mut pl = ProgressLogger::default();
     let temp_dir = tempfile::TempDir::new()?;
-    // Tuned by zack on the 2023-09-06 graph on a machine with two Intel Xeon Gold 6342 CPUs
-    let mut config = BuildConfiguration::new(temp_dir.path().into());
-    config.c = 5.;
-    config.alpha = 0.94;
-    config.num_partitions = args.n.div_ceil(10000000) as u64;
-    config.num_threads = num_cpus::get() as u64;
 
-    pl.start(format!("Building MPH with parameters: {:?}", config));
+    if let Some(filename) = args.filename {
+        // Tuned by zack on the 2023-09-06 graph on a machine with two Intel Xeon Gold 6342 CPUs
+        let mut config = BuildConfiguration::new(temp_dir.path().into());
+        config.c = 5.;
+        config.alpha = 0.94;
+        config.num_partitions = 5_000_000_000_usize.div_ceil(10000000) as u64;
+        config.num_threads = num_cpus::get() as u64;
 
-    let mut func = PartitionedPhf::<Minimal, MurmurHash2_64, DictionaryDictionary>::new();
+        pl.start(format!("Building MPH with parameters: {:?}", config));
+        let cpl = pl.concurrent();
 
-    func.par_build_in_internal_memory_from_bytes(
-        || (0_u64..args.n as u64).into_par_iter().map(HashableU64),
-        &config,
-    )
-    .context("Failed to build MPH")?;
-    pl.done_with_count(args.n);
+        let mut func = PartitionedPhf::<Minimal, MurmurHash2_64, DictionaryDictionary>::new();
 
-    let mut output = Vec::with_capacity(args.n);
-    output.extend(0..args.n);
+        func.par_build_in_internal_memory_from_bytes(
+            || {
+                ByteLines::new(BufReader::new(File::open(&filename).unwrap()))
+                    .into_iter()
+                    .par_bridge()
+                    .map_with(cpl.clone(), |cpl, r| {
+                        cpl.light_update();
+                        HashableVecu8(r.unwrap())
+                    })
+            },
+            &config,
+        )
+        .context("Failed to build MPH")?;
 
-    let output = bit_field_vec![args.n.ilog2() as usize => 0; args.n];
+        let n = func.num_keys() as usize;
+        pl.done();
 
-    pl.start("Querying (independent)...");
-    for i in 0..args.n {
-        std::hint::black_box(output.get(func.hash(i.to_ne_bytes().as_slice()) as usize));
+        let mut output = Vec::with_capacity(n);
+        output.extend(0..n);
+
+        for (i, k) in ByteLines::new(BufReader::new(File::open(&filename).unwrap()))
+            .into_iter()
+            .enumerate()
+        {
+            output[func.hash(HashableVecu8(k.unwrap())) as usize] = i;
+        }
+
+        let mut keys = ByteLines::new(BufReader::new(File::open(&filename).unwrap()))
+            .into_iter()
+            .map(|r| r.unwrap())
+            .take(100000000)
+            .collect::<Vec<_>>();
+
+        pl.start("Querying (independent)...");
+        for k in &keys {
+            std::hint::black_box(func.hash(HashableVecu8(k)));
+        }
+        pl.done_with_count(n);
+
+        let mut result = 0;
+        pl.start("Querying (dependent)...");
+        for k in &mut keys {
+            k[0] ^= result as u8;
+            std::hint::black_box(result = func.hash(HashableVecu8(k)));
+        }
+        pl.done_with_count(n);
+    } else if let Some(n) = args.n {
+        // Tuned by zack on the 2023-09-06 graph on a machine with two Intel Xeon Gold 6342 CPUs
+        let mut config = BuildConfiguration::new(temp_dir.path().into());
+        config.c = 5.;
+        config.alpha = 0.94;
+        config.num_partitions = n.div_ceil(10000000) as u64;
+        config.num_threads = num_cpus::get() as u64;
+
+        pl.start(format!("Building MPH with parameters: {:?}", config));
+
+        let mut func = PartitionedPhf::<Minimal, MurmurHash2_64, DictionaryDictionary>::new();
+
+        func.par_build_in_internal_memory_from_bytes(
+            || (0_u64..n as u64).into_par_iter().map(HashableU64),
+            &config,
+        )
+        .context("Failed to build MPH")?;
+        pl.done_with_count(n);
+
+        let mut output = Vec::with_capacity(n);
+        output.extend(0..n);
+
+        let output = bit_field_vec![n.ilog2() as usize => 0; n];
+
+        pl.start("Querying (independent)...");
+        for i in 0..n {
+            std::hint::black_box(output.get(func.hash(i.to_ne_bytes().as_slice()) as usize));
+        }
+        pl.done_with_count(n);
+
+        let mut x = 0;
+
+        pl.start("Querying (dependent)...");
+        for i in 0..n {
+            x = output.get(func.hash((i ^ (x & 1)).to_ne_bytes().as_slice()) as usize);
+            std::hint::black_box(());
+        }
+        pl.done_with_count(n);
     }
-    pl.done_with_count(args.n);
-
-    let mut x = 0;
-
-    pl.start("Querying (dependent)...");
-    for i in 0..args.n {
-        x = output.get(func.hash((i ^ (x & 1)).to_ne_bytes().as_slice()) as usize);
-        std::hint::black_box(
-            (),
-        );
-    }
-    pl.done_with_count(args.n);
-
     Ok(())
 }
