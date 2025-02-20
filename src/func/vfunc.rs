@@ -35,9 +35,9 @@ fn lin_log2_seg_size(arity: usize, n: usize) -> u32 {
     match arity {
         3 => {
             if n >= 100_000 {
-                9
+                10
             } else {
-                (0.76 * (n.max(1) as f64).ln()).floor() as u32
+                (0.85 * (n.max(1) as f64).ln()).floor() as u32
             }
         }
         _ => unimplemented!(),
@@ -1006,8 +1006,9 @@ where
     }
 }
 
-const MAX_LIN_SIZE: usize = 2_000_000;
+const MAX_LIN_SIZE: usize = 1_000_000;
 const MAX_LIN_SHARD_SIZE: usize = 100_000;
+const MIN_FUSE_SHARD: usize = 10_000_000;
 const LOG2_MAX_SHARDS: u32 = 10;
 
 impl<
@@ -1041,7 +1042,7 @@ where
                     0
                 }
                 .min(LOG2_MAX_SHARDS) // We don't really need too many shards
-                .min((num_keys / MAX_LIN_SIZE).max(1).ilog2()) // Shards can't smaller than MAX_LIN_SIZE
+                .min((num_keys / MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't smaller than MAX_LIN_SIZE
             }
         } else {
             0
@@ -1058,7 +1059,7 @@ where
 
             (self.c, self.log2_seg_size) = if self.lazy_gaussian {
                 // Slightly loose bound to help with solvability
-                (1.11, lin_log2_seg_size(3, shard_size))
+                (1.10, lin_log2_seg_size(3, shard_size))
             } else {
                 (1.105, fuse_log2_seg_size(3, shard_size))
             };
