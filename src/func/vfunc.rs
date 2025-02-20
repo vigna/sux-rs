@@ -1064,7 +1064,7 @@ where
 
                 if t > 0.0 {
                     // The multiplication by 2.05 increases slightly the shard size
-                    ((t - 2.05 * t.ln()) / 2_f64.ln()).ceil().max(2.) as u32
+                    ((t - 1.92 * t.ln() - 1.22 * t.ln().ln() ) / 2_f64.ln()).ceil().max(3.) as u32
                 } else {
                     0
                 }
@@ -1368,6 +1368,8 @@ where
 }
 #[cfg(test)]
 mod tests {
+    use libc::_dyld_get_image_vmaddr_slide;
+
     use super::*;
 
     #[test]
@@ -1456,12 +1458,14 @@ mod tests {
             }
         };
 
-        let bound2 = |n: usize, corr: f64| {
+        let bound2 = |n: usize, corr0: f64, corr1: f64| {
             // Bound from urns and balls problem
             let t = (n as f64 * eps * eps / 2.0).ln();
 
             if t > 0.0 {
-                ((t - corr * t.ln()) / 2_f64.ln() ).ceil().max(2.) as u32
+                ((t - corr0 * t.ln() - corr1 * t.ln().ln()) / 2_f64.ln())
+                    .ceil()
+                    .max(2.) as u32
             } else {
                 0
             }
@@ -1470,9 +1474,101 @@ mod tests {
         let mut t = 1024;
         for _ in 0..50 {
             if t >= MIN_FUSE_SHARD {
-                eprintln!("n: {t}, 1.1: {} 1.5: {} bound2(1.1): {}", bound(t, 1.1), bound(t, 1.5), bound2(t, 2.05));
+                eprintln!(
+                    "n: {t}, 1.1: {} 1.5: {} bound2(2.05, 0): {} bound2(2, 1): {}",
+                    bound(t, 1.1),
+                    bound(t, 1.5),
+                    bound2(t, 2.05, 0.),
+                    bound2(t, 1.7, 1.)
+                );
             }
             t = t * 3 / 2;
+        }
+    }
+
+    #[test]
+    fn search_funcs() {
+        let data_points = vec![
+            (11491938_usize, 2),
+            (17237907, 2),
+            (25856860, 3),
+            (38785290, 3),
+            (58177935, 3),
+            (87266902, 4),
+            (130900353, 4),
+            (196350529, 4),
+            (294525793, 4),
+            (441788689, 4),
+            (662683033, 4),
+            (994024549, 4),
+            (1491036823, 4),
+            (2236555234, 4),
+            (3354832851, 5),
+            (5032249276, 5),
+            (7548373914, 5),
+            (11322560871, 6),
+            (16983841306, 6),
+            (25475761959, 6),
+            (38213642938, 7),
+            (57320464407, 7),
+            (85980696610, 8),
+            (128971044915, 8),
+            (193456567372, 9),
+            (290184851058, 9),
+            (435277276587, 10),
+        ];
+
+        let eps = 0.001;
+
+        let bound = |n: usize, corr0: f64, corr1: f64| {
+            // Bound from urns and balls problem
+            let t = (n as f64 * eps * eps / 2.0).ln();
+
+            if t > 0.0 {
+                ((t - corr0 * t.ln() - corr1 * t.ln().ln()) / 2_f64.ln())
+                    .ceil()
+                    .max(2.) as u32
+            } else {
+                0
+            }
+        };
+
+        let mut max_err = usize::MAX;
+        let mut best_corr0 = 0.0;
+        let mut best_corr1 = 0.0;
+
+        for corr0 in 0..300 {
+            for corr1 in 0..300 {
+                let corr0 = corr0 as f64 / 100.0;
+                let corr1 = corr1 as f64 / 100.0;
+                let mut err = 0;
+                for &(n, log2) in data_points.iter() {
+                    let log2 = log2;
+
+                    let bound = bound(n, corr0, corr1) as usize;
+                    if log2 != bound as usize {
+                        if bound > log2 {
+                            err += (bound - log2) * 2;
+                        } else {
+                            err += log2 - bound;
+                        }
+                    }
+                }
+
+                if err < max_err {
+                    eprintln!("corr0: {} corr1: {} err: {}", corr0, corr1, err);
+                    max_err = err;
+                    best_corr0 = corr0;
+                    best_corr1 = corr1;
+
+                    for &(n, log2) in data_points.iter() {
+                        let log2 = log2;
+
+                        let bound = bound(n, best_corr0, best_corr1) as usize;
+                        eprintln!("n: {} log2: {} bound: {}", n, log2, bound);
+                    }
+                }
+            }
         }
     }
 }
