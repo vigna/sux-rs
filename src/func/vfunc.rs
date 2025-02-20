@@ -1064,7 +1064,9 @@ where
 
                 if t > 0.0 {
                     // The multiplication by 2.05 increases slightly the shard size
-                    ((t - 1.92 * t.ln() - 1.22 * t.ln().ln() ) / 2_f64.ln()).ceil().max(3.) as u32
+                    ((t - 1.92 * t.ln() - 1.22 * t.ln().ln()) / 2_f64.ln())
+                        .ceil()
+                        .max(3.) as u32
                 } else {
                     0
                 }
