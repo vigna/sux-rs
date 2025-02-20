@@ -10,7 +10,11 @@ use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
 use lender::*;
-use sux::{bits::BitFieldVec, func::VFunc, utils::LineLender};
+use sux::{
+    bits::BitFieldVec,
+    func::VFunc,
+    utils::{LineLender, ZstdLineLender},
+};
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
@@ -18,6 +22,9 @@ struct Args {
     #[arg(short = 'f', long)]
     /// A file containing UTF-8 keys, one per line. If not specified, the 64-bit keys [0..n) are used.
     filename: Option<String>,
+    /// Whether the file is compressed with zstd.
+    #[arg(short, long)]
+    zstd: bool,
     #[arg(short)]
     /// The maximum number strings to use from the file, or the number of 64-bit keys.
     n: usize,
@@ -36,10 +43,18 @@ fn main() -> Result<()> {
 
     if let Some(filename) = args.filename {
         let func = VFunc::<_, _, BitFieldVec<usize>>::load_mem(&args.func)?;
-        let keys: Vec<_> = LineLender::from_path(filename)?
-            .map_into_iter(|x| x.unwrap().to_owned())
-            .take(args.n)
-            .collect();
+        let keys: Vec<_> = if args.zstd {
+            ZstdLineLender::from_path(filename)?
+                .map_into_iter(|x| x.unwrap().to_owned())
+                .take(args.n)
+                .collect()
+        } else {
+            LineLender::from_path(filename)?
+                .map_into_iter(|x| x.unwrap().to_owned())
+                .take(args.n)
+                .collect()
+        };
+
         pl.start("Querying...");
         for (i, key) in keys.iter().enumerate() {
             assert_eq!(i, func.get(key));
