@@ -32,7 +32,7 @@ struct Args {
     threads: Option<usize>,
     /// A name for the ε-serde serialized function.
     func: String,
-    /// The filename containing the keys is compressed with zstd.
+    /// Whether the file is compressed with zstd.
     #[arg(short, long)]
     zstd: bool,
     /// Use disk-based buckets to reduce memory usage at construction time.
