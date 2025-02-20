@@ -63,7 +63,7 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let mut pl = ProgressLogger::default();
+    let mut pl = concurrent_progress_logger![];
     let temp_dir = tempfile::TempDir::new()?;
 
     if let Some(filename) = args.filename {
@@ -75,7 +75,6 @@ fn main() -> Result<()> {
         config.num_threads = num_cpus::get() as u64;
 
         pl.start(format!("Building MPH with parameters: {:?}", config));
-        let cpl = pl.concurrent();
 
         let mut func = PartitionedPhf::<Minimal, MurmurHash2_64, DictionaryDictionary>::new();
 
@@ -85,8 +84,8 @@ fn main() -> Result<()> {
                     ByteLines::new(BufReader::new(File::open(&filename).unwrap()))
                         .into_iter()
                         .par_bridge()
-                        .map_with(cpl.clone(), |cpl, r| {
-                            cpl.light_update();
+                        .map_with(pl.clone(), |pl, r| {
+                            pl.light_update();
                             HashableVecu8(r.unwrap())
                         })
                 },
@@ -101,8 +100,8 @@ fn main() -> Result<()> {
                     ))
                     .into_iter()
                     .par_bridge()
-                    .map_with(cpl.clone(), |cpl, r| {
-                        cpl.light_update();
+                    .map_with(pl.clone(), |pl, r| {
+                        pl.light_update();
                         HashableVecu8(r.unwrap())
                     })
                 },
@@ -117,7 +116,7 @@ fn main() -> Result<()> {
         let mut output = Vec::with_capacity(n);
         output.extend(0..n);
 
-        let mut keys; 
+        let mut keys;
         if args.zstd {
             for (i, k) in ByteLines::new(BufReader::new(
                 Decoder::new(File::open(&filename).unwrap()).unwrap(),
@@ -136,22 +135,18 @@ fn main() -> Result<()> {
             .take(100000000)
             .collect::<Vec<_>>();
         } else {
-            for (i, k) in ByteLines::new(BufReader::new(
-                File::open(&filename).unwrap(),
-            ))
-            .into_iter()
-            .enumerate()
+            for (i, k) in ByteLines::new(BufReader::new(File::open(&filename).unwrap()))
+                .into_iter()
+                .enumerate()
             {
                 output[func.hash(HashableVecu8(k.unwrap())) as usize] = i;
             }
 
-            keys = ByteLines::new(BufReader::new(
-                File::open(&filename).unwrap(),
-            ))
-            .into_iter()
-            .map(|r| r.unwrap())
-            .take(100000000)
-            .collect::<Vec<_>>();
+            keys = ByteLines::new(BufReader::new(File::open(&filename).unwrap()))
+                .into_iter()
+                .map(|r| r.unwrap())
+                .take(100000000)
+                .collect::<Vec<_>>();
         }
         pl.start("Querying (independent)...");
         for k in &keys {
