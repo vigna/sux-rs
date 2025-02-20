@@ -17,6 +17,7 @@ use pthash::{
 };
 use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
 use sux::{bit_field_vec, traits::BitFieldSlice};
+use zstd::Decoder;
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
 struct Args {
@@ -24,7 +25,10 @@ struct Args {
     /// A file containing UTF-8 keys, one per line. If not specified, the 64-bit keys [0..n) are used.
     filename: Option<String>,
     #[arg(short)]
-    /// The maximum number strings to use from the file, or the number of 64-bit keys.
+    /// The filename containing the keys is compressed with zstd.
+    #[arg(short, long)]
+    zstd: bool,
+    /// The number of 64-bit keys.
     n: Option<usize>,
 }
 
@@ -75,19 +79,37 @@ fn main() -> Result<()> {
 
         let mut func = PartitionedPhf::<Minimal, MurmurHash2_64, DictionaryDictionary>::new();
 
-        func.par_build_in_internal_memory_from_bytes(
-            || {
-                ByteLines::new(BufReader::new(File::open(&filename).unwrap()))
+        if args.zstd {
+            func.par_build_in_internal_memory_from_bytes(
+                || {
+                    ByteLines::new(BufReader::new(File::open(&filename).unwrap()))
+                        .into_iter()
+                        .par_bridge()
+                        .map_with(cpl.clone(), |cpl, r| {
+                            cpl.light_update();
+                            HashableVecu8(r.unwrap())
+                        })
+                },
+                &config,
+            )
+            .context("Failed to build MPH")?;
+        } else {
+            func.par_build_in_internal_memory_from_bytes(
+                || {
+                    ByteLines::new(BufReader::new(
+                        Decoder::new(File::open(&filename).unwrap()).unwrap(),
+                    ))
                     .into_iter()
                     .par_bridge()
                     .map_with(cpl.clone(), |cpl, r| {
                         cpl.light_update();
                         HashableVecu8(r.unwrap())
                     })
-            },
-            &config,
-        )
-        .context("Failed to build MPH")?;
+                },
+                &config,
+            )
+            .context("Failed to build MPH")?;
+        }
 
         let n = func.num_keys() as usize;
         pl.done();
@@ -95,19 +117,42 @@ fn main() -> Result<()> {
         let mut output = Vec::with_capacity(n);
         output.extend(0..n);
 
-        for (i, k) in ByteLines::new(BufReader::new(File::open(&filename).unwrap()))
+        let mut keys; 
+        if args.zstd {
+            for (i, k) in ByteLines::new(BufReader::new(
+                Decoder::new(File::open(&filename).unwrap()).unwrap(),
+            ))
             .into_iter()
             .enumerate()
-        {
-            output[func.hash(HashableVecu8(k.unwrap())) as usize] = i;
-        }
+            {
+                output[func.hash(HashableVecu8(k.unwrap())) as usize] = i;
+            }
 
-        let mut keys = ByteLines::new(BufReader::new(File::open(&filename).unwrap()))
+            keys = ByteLines::new(BufReader::new(
+                Decoder::new(File::open(&filename).unwrap()).unwrap(),
+            ))
             .into_iter()
             .map(|r| r.unwrap())
             .take(100000000)
             .collect::<Vec<_>>();
+        } else {
+            for (i, k) in ByteLines::new(BufReader::new(
+                File::open(&filename).unwrap(),
+            ))
+            .into_iter()
+            .enumerate()
+            {
+                output[func.hash(HashableVecu8(k.unwrap())) as usize] = i;
+            }
 
+            keys = ByteLines::new(BufReader::new(
+                File::open(&filename).unwrap(),
+            ))
+            .into_iter()
+            .map(|r| r.unwrap())
+            .take(100000000)
+            .collect::<Vec<_>>();
+        }
         pl.start("Querying (independent)...");
         for k in &keys {
             std::hint::black_box(func.hash(HashableVecu8(k)));
