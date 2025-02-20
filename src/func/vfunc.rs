@@ -20,6 +20,9 @@ use derive_setters::*;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
 use mem_dbg::*;
+use rand::rngs::SmallRng;
+use rand::Rng;
+use rand::SeedableRng;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
@@ -240,6 +243,10 @@ pub struct VBuilder<
     #[setters(generate = true)]
     offline: bool,
 
+    /// The seed for the random number generator.
+    #[setters(generate = true)]
+    seed: u64,
+
     /// The base-2 logarithm of the number of on-disk buckets. Used only if
     /// `offline` is `true`. The default is 8.
     #[setters(generate = true, strip_option)]
@@ -267,7 +274,6 @@ pub struct VBuilder<
     num_vertices: usize,
     /// Whether we are using lazy Gaussian elimination.
     lazy_gaussian: bool,
-
     #[doc(hidden)]
     _marker_t: PhantomData<T>,
     #[doc(hidden)]
@@ -1096,11 +1102,13 @@ where
         new: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, SHARDED>> {
-        let (mut seed, mut dup_count) = (0, 0);
+        let mut dup_count = 0;
         let start = Instant::now();
+        let mut prng = SmallRng::seed_from_u64(self.seed);
 
         // Loop until success or duplicate detection
         loop {
+            let seed = prng.random();
             pl.item_name("key");
             pl.start("Reading input...");
             pl.info(format_args!("Using {} buckets", 1 << self.log2_buckets));
@@ -1168,8 +1176,6 @@ where
                     }
                 }
             }
-
-            seed += 1;
         }
     }
 }
