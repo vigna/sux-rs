@@ -12,8 +12,7 @@ use bytelines::ByteLines;
 use clap::Parser;
 use dsi_progress_logger::*;
 use pthash::{
-    BuildConfiguration, DictionaryDictionary, Hashable, Minimal, MurmurHash2_64, PartitionedPhf,
-    Phf,
+    BuildConfiguration, DictionaryDictionary, Hashable, Minimal, MurmurHash2_128, MurmurHash2_64, PartitionedPhf, Phf
 };
 use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
 use sux::{bit_field_vec, traits::BitFieldSlice};
@@ -76,7 +75,7 @@ fn main() -> Result<()> {
 
         pl.start(format!("Building MPH with parameters: {:?}", config));
 
-        let mut func = PartitionedPhf::<Minimal, MurmurHash2_64, DictionaryDictionary>::new();
+        let mut func = PartitionedPhf::<Minimal, MurmurHash2_128, DictionaryDictionary>::new();
 
         if args.zstd {
             func.par_build_in_internal_memory_from_bytes(
