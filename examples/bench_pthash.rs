@@ -109,6 +109,10 @@ fn main() -> Result<()> {
             .context("Failed to build MPH")?;
         }
 
+        pl.info(format_args!("Construction completed"));
+
+        pl.info(format_args!("Assigning values..."));
+
         let n = func.num_keys() as usize;
         pl.done();
 
