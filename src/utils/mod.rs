@@ -13,9 +13,6 @@ pub use lenders::*;
 pub mod sig_store;
 pub use sig_store::*;
 
-pub mod spooky;
-pub use spooky::*;
-
 pub mod fair_chunks;
 pub use fair_chunks::FairChunks;
 

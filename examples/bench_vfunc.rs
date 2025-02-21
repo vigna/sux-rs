@@ -42,7 +42,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if let Some(filename) = args.filename {
-        let func = VFunc::<str, _, BitFieldVec<usize>, [u64; 2], true>::load_mem(&args.func)?;
+        let func = VFunc::<str, _, BitFieldVec<usize>>::load_mem(&args.func)?;
         let mut keys: Vec<_> = if args.zstd {
             ZstdLineLender::from_path(filename)?
                 .map_into_iter(|x| x.unwrap().to_owned())
@@ -64,9 +64,11 @@ fn main() -> Result<()> {
         pl.start("Querying (dependent)...");
         let mut x = 0;
         for key in &mut keys {
+            debug_assert!(key.len() > 0);
             unsafe {
-                let mut bytes = key.as_bytes_mut();
-                if bytes.len() != 0 {bytes[0] ^= (x & 1) as u8;}
+                // This as horrible as it can be, and will probably
+                // to harm if a key is the empty string
+                *key.as_bytes_mut().get_unchecked_mut(0) ^= (x & 1) as u8;
             }
             std::hint::black_box(x = func.get(key));
         }
