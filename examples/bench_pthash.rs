@@ -114,7 +114,6 @@ fn main() -> Result<()> {
         pl.info(format_args!("Assigning values..."));
 
         let n = func.num_keys() as usize;
-        pl.done();
 
         let mut output = Vec::with_capacity(n);
         output.extend(0..n);
@@ -151,6 +150,9 @@ fn main() -> Result<()> {
                 .take(100000000)
                 .collect::<Vec<_>>();
         }
+
+        pl.done();
+
         pl.start("Querying (independent)...");
         for k in &keys {
             std::hint::black_box(func.hash(HashableVecu8(k)));
