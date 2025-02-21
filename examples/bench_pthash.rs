@@ -12,7 +12,8 @@ use bytelines::ByteLines;
 use clap::Parser;
 use dsi_progress_logger::*;
 use pthash::{
-    BuildConfiguration, DictionaryDictionary, Hashable, Minimal, MurmurHash2_128, MurmurHash2_64, PartitionedPhf, Phf
+    BuildConfiguration, DictionaryDictionary, Hashable, Minimal, MurmurHash2_128, MurmurHash2_64,
+    PartitionedPhf, Phf,
 };
 use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
 use sux::{bit_field_vec, traits::BitFieldSlice};

@@ -29,18 +29,18 @@ use xxhash_rust::xxh3;
 
 pub trait Sig: ZeroCopy + PartialEq + Eq {
     /// Extract high bits from  the signature.
-    /// 
+    ///
     /// These bits are used to shard elements. Note that `high_bits` can be 0,
     /// but it is guaranteed to be less than 64.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// In debug mode this method should panic if `mask` is not equal to `(1 <<
     /// high_bits) - 1`.
     fn high_bits(&self, high_bits: u32, mask: u64) -> u64;
 
     /// Extract a 64-bit signature.
-    /// 
+    ///
     /// This method is used to build filters. It is masked to
     /// obtain a value to associate with a key.
     fn sig_u64(&self) -> u64;
