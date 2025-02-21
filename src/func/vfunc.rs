@@ -1,4 +1,4 @@
-<f/*
+/*
 *
 * SPDX-FileCopyrightText: 2023 Sebastiano Vigna
 *
