@@ -42,8 +42,8 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if let Some(filename) = args.filename {
-        let func = VFunc::<str, _, BitFieldVec<usize>, [u64; 2], true>::load_mem(&args.func)?;
-        let keys: Vec<_> = if args.zstd {
+        let func = VFunc::<_, _, BitFieldVec<usize>>::load_mem(&args.func)?;
+        let mut keys: Vec<_> = if args.zstd {
             ZstdLineLender::from_path(filename)?
                 .map_into_iter(|x| x.unwrap().to_owned())
                 .take(args.n)
@@ -55,11 +55,21 @@ fn main() -> Result<()> {
                 .collect()
         };
 
-        pl.start("Querying...");
-        for (i, key) in keys.iter().enumerate() {
-            assert_eq!(i, func.get(key));
+        pl.start("Querying (independent)...");
+        for key in &keys {
+            std::hint::black_box(func.get(key));
         }
-        pl.done_with_count(keys.len());
+        pl.done_with_count(args.n);
+
+        pl.start("Querying (dependent)...");
+        let mut x = 0;
+        for key in &mut keys {
+            unsafe {
+                key.as_bytes_mut()[0] ^= (x & 1) as u8;
+            }
+            std::hint::black_box(x = func.get(key));
+        }
+        pl.done_with_count(args.n);
     } else {
         let func = VFunc::<_, _, BitFieldVec<usize>, [u64; 2], true>::load_mem(&args.func)?;
 
