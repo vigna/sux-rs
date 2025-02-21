@@ -53,7 +53,6 @@ itertools = "0.14.0"
 pthash = { version = "0.4.0", features = ["rayon"] }
 bytelines = "2.5.0"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
-rapidhash = "1.4.0"
 
 [dev-dependencies]
 maligned = "0.2.1"

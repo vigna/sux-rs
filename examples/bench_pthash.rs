@@ -32,6 +32,8 @@ struct Args {
 }
 
 struct HashableU64(u64);
+struct HashableStr(String);
+
 impl Hashable for HashableU64 {
     type Bytes<'a>
         = [u8; 8]
