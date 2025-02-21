@@ -177,7 +177,7 @@ pub struct VFunc<
     shard_high_bits: u32,
     log2_seg_size: u32,
     shard_mask: u32,
-    seed: [u8; 192],
+    seed: u64,
     l: usize,
     num_keys: usize,
     data: D,
