@@ -157,15 +157,15 @@ fn main() -> Result<()> {
         for k in &keys {
             std::hint::black_box(output[func.hash(HashableVecu8(k)) as usize]);
         }
-        pl.done_with_count(n);
+        pl.done_with_count(keys.len());
 
         let mut result = 0;
         pl.start("Querying (dependent)...");
         for k in &mut keys {
-            k[0] ^= result as u8;
+            k[0] ^= (result & 1) as u8;
             std::hint::black_box(result = output[func.hash(HashableVecu8(k)) as usize]);
         }
-        pl.done_with_count(n);
+        pl.done_with_count(keys.len());
     } else if let Some(n) = args.n {
         // Tuned by zack on the 2023-09-06 graph on a machine with two Intel Xeon Gold 6342 CPUs
         let mut config = BuildConfiguration::new(temp_dir.path().into());
