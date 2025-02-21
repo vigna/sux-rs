@@ -81,20 +81,6 @@ fn main() -> Result<()> {
         if args.zstd {
             func.par_build_in_internal_memory_from_bytes(
                 || {
-                    ByteLines::new(BufReader::new(File::open(&filename).unwrap()))
-                        .into_iter()
-                        .par_bridge()
-                        .map_with(pl.clone(), |pl, r| {
-                            pl.light_update();
-                            HashableVecu8(r.unwrap())
-                        })
-                },
-                &config,
-            )
-            .context("Failed to build MPH")?;
-        } else {
-            func.par_build_in_internal_memory_from_bytes(
-                || {
                     ByteLines::new(BufReader::new(
                         Decoder::new(File::open(&filename).unwrap()).unwrap(),
                     ))
@@ -104,6 +90,20 @@ fn main() -> Result<()> {
                         pl.light_update();
                         HashableVecu8(r.unwrap())
                     })
+                },
+                &config,
+            )
+            .context("Failed to build MPH")?;
+        } else {
+            func.par_build_in_internal_memory_from_bytes(
+                || {
+                    ByteLines::new(BufReader::new(File::open(&filename).unwrap()))
+                        .into_iter()
+                        .par_bridge()
+                        .map_with(pl.clone(), |pl, r| {
+                            pl.light_update();
+                            HashableVecu8(r.unwrap())
+                        })
                 },
                 &config,
             )
