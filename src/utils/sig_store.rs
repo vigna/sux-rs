@@ -26,6 +26,7 @@ use mem_dbg::{MemDbg, MemSize};
 
 use rdst::RadixKey;
 use std::{collections::VecDeque, fs::File, io::*, marker::PhantomData};
+use xxhash_rust::xxh3;
 
 /// A signature and a value.
 
@@ -56,29 +57,29 @@ pub trait ToSig {
 
 impl ToSig for String {
     fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
-        let spooky = spooky_short(key, seed);
-        [spooky[0], spooky[1]]
+        let hash128 = xxh3::xxh3_128_with_seed(key.as_bytes(), seed);
+        [(hash128 >> 64) as u64, hash128 as u64]
     }
 }
 
 impl ToSig for &String {
     fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
-        let spooky = spooky_short(key, seed);
-        [spooky[0], spooky[1]]
+        let hash128 = xxh3::xxh3_128_with_seed(key.as_bytes(), seed);
+        [(hash128 >> 64) as u64, hash128 as u64]
     }
 }
 
 impl ToSig for str {
     fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
-        let spooky = spooky_short(key, seed);
-        [spooky[0], spooky[1]]
+        let hash128 = xxh3::xxh3_128_with_seed(key.as_bytes(), seed);
+        [(hash128 >> 64) as u64, hash128 as u64]
     }
 }
 
 impl ToSig for &str {
     fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
-        let spooky = spooky_short(key, seed);
-        [spooky[0], spooky[1]]
+        let hash128 = xxh3::xxh3_128_with_seed(key.as_bytes(), seed);
+        [(hash128 >> 64) as u64, hash128 as u64]
     }
 }
 
@@ -86,8 +87,8 @@ macro_rules! to_sig_prim {
     ($($ty:ty),*) => {$(
         impl ToSig for $ty {
             fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
-                let spooky = spooky_short(&key.to_ne_bytes(), seed);
-                [spooky[0], spooky[1]]
+                let hash128 = xxh3::xxh3_128_with_seed(&key.to_ne_bytes(), seed);
+                [(hash128 >> 64) as u64, hash128 as u64]
             }
         }
     )*};
@@ -100,8 +101,8 @@ macro_rules! to_sig_slice {
         impl ToSig for &[$ty] {
             fn to_sig(key: &Self, seed: u64) -> [u64; 2] {
                 // Alignemnt to u8 never fails or leave trailing/leading bytes
-                let spooky = spooky_short(unsafe {key.align_to::<u8>().1 }, seed);
-                [spooky[0], spooky[1]]
+                let hash128 = xxh3::xxh3_128_with_seed(unsafe {key.align_to::<u8>().1 }, seed);
+                [(hash128 >> 64) as u64, hash128 as u64]
             }
         }
     )*};
