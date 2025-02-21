@@ -1,4 +1,4 @@
-/*
+<f/*
 *
 * SPDX-FileCopyrightText: 2023 Sebastiano Vigna
 *
@@ -1072,14 +1072,10 @@ where
                 let t = (num_keys as f64 * eps * eps / 2.0).ln();
 
                 if t > 0.0 {
-                    // The multiplication by 2.05 increases slightly the shard size
-<<<<<<< Updated upstream
+                    // We correct the estimate to increase slightly the shard size
                     ((t - 1.92 * t.ln() - 1.22 * t.ln().ln()) / 2_f64.ln())
                         .ceil()
                         .max(3.) as u32
-=======
-                    ((t - 1.92 * t.ln() - 1.22 * t.ln().ln() ) / 2_f64.ln()).ceil().max(3.) as u32
->>>>>>> Stashed changes
                 } else {
                     0
                 }
