@@ -155,7 +155,7 @@ fn main() -> Result<()> {
 
         pl.start("Querying (independent)...");
         for k in &keys {
-            std::hint::black_box(func.hash(HashableVecu8(k)));
+            std::hint::black_box(output[func.hash(HashableVecu8(k)) as usize]);
         }
         pl.done_with_count(n);
 
@@ -163,7 +163,7 @@ fn main() -> Result<()> {
         pl.start("Querying (dependent)...");
         for k in &mut keys {
             k[0] ^= result as u8;
-            std::hint::black_box(result = func.hash(HashableVecu8(k)));
+            std::hint::black_box(result = output[func.hash(HashableVecu8(k)) as usize]);
         }
         pl.done_with_count(n);
     } else if let Some(n) = args.n {
