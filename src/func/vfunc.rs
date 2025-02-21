@@ -1379,8 +1379,6 @@ where
 }
 #[cfg(test)]
 mod tests {
-    use libc::_dyld_get_image_vmaddr_slide;
-
     use super::*;
 
     #[test]
@@ -1545,8 +1543,8 @@ mod tests {
         };
 
         let mut max_err = usize::MAX;
-        let mut best_corr0 = 0.0;
-        let mut best_corr1 = 0.0;
+        let mut _best_corr0 = 0.0;
+        let mut _best_corr1 = 0.0;
 
         for corr0 in 0..300 {
             for corr1 in 0..300 {
@@ -1569,13 +1567,13 @@ mod tests {
                 if err < max_err {
                     eprintln!("corr0: {} corr1: {} err: {}", corr0, corr1, err);
                     max_err = err;
-                    best_corr0 = corr0;
-                    best_corr1 = corr1;
+                    _best_corr0 = corr0;
+                    _best_corr1 = corr1;
 
                     for &(n, log2) in data_points.iter() {
                         let log2 = log2;
 
-                        let bound = bound(n, best_corr0, best_corr1) as usize;
+                        let bound = bound(n, _best_corr0, _best_corr1) as usize;
                         eprintln!("n: {} log2: {} bound: {}", n, log2, bound);
                     }
                 }
