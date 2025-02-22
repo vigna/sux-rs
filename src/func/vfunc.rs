@@ -182,7 +182,8 @@ pub struct VFunc<
     num_keys: usize,
     data: D,
     _marker_t: std::marker::PhantomData<T>,
-    _marker_os: std::marker::PhantomData<(W, S)>,
+    _marker_w: std::marker::PhantomData<W>,
+    _marker_s: std::marker::PhantomData<S>,
 }
 
 /// Filters with 10%-11% space overhead for large key sets, fast parallel
@@ -279,7 +280,7 @@ pub struct VBuilder<
     #[doc(hidden)]
     _marker_t: PhantomData<T>,
     #[doc(hidden)]
-    _marker_od: PhantomData<(V, W, D, S)>,
+    _marker_v: PhantomData<(V, W, D, S)>,
 }
 
 /// Fatal build errors.
@@ -1389,7 +1390,8 @@ where
             log2_seg_size: self.log2_seg_size,
             data,
             _marker_t: std::marker::PhantomData,
-            _marker_os: std::marker::PhantomData,
+            _marker_w: std::marker::PhantomData,
+            _marker_s: std::marker::PhantomData,
         })
     }
 }
