@@ -9,7 +9,7 @@
 * Added `#[delegatable_trait]` to the `indexed_dict` traits.
 
 * New `FairChunks` structure providing chunks of balanced weight.
- 
+
 ### Changed
 
 * Trait `DivCeilUnchecked` is no longer needed. The difference in codegen

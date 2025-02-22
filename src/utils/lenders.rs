@@ -10,7 +10,7 @@
 //! Some data structures in this crate have two features in common:
 //! - they must be able to read their input more than once;
 //! - they do not store the input they read, but rather some derived data, such
-//!   as hashes.
+//!   as hashes, so using owned data would be wasteful.
 //!
 //! For this kind of structures, we provide a [`RewindableIoLender`] trait,
 //! which is a [`Lender`] that can be rewound to the beginning. Rewindability
@@ -52,7 +52,6 @@ pub trait RewindableIoLender<T: ?Sized>:
 }
 
 // Common next function for all lenders
-
 fn next<'a>(buf: &mut impl BufRead, line: &'a mut String) -> Option<io::Result<&'a str>> {
     line.clear();
     match buf.read_line(line) {
