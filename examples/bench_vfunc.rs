@@ -137,7 +137,8 @@ where
         }
     } else {
         if args.dict {
-            let filter = VFilter::<u8, VFunc<usize, u8, Vec<u8>, S, SHARDED>>::load_full(&args.func)?;
+            let filter =
+                VFilter::<u8, VFunc<usize, u8, Vec<u8>, S, SHARDED>>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for i in 0..args.n {
@@ -152,7 +153,8 @@ where
             }
             pl.done_with_count(args.n);
         } else {
-            let func = VFunc::<usize, usize, BitFieldVec<usize>, S, SHARDED>::load_full(&args.func)?;
+            let func =
+                VFunc::<usize, usize, BitFieldVec<usize>, S, SHARDED>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for i in 0..args.n {
