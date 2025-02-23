@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::marker::PhantomData;
-
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
@@ -89,8 +87,11 @@ fn set_up_builder<
     D: BitFieldSlice<W> + Send + Sync,
     S,
     const SHARDED: bool,
-    V>
-(mut builder: VBuilder<T, W, D, S, SHARDED, V>, args: &Args) -> VBuilder<T, W, D, S, SHARDED, V> {
+    V,
+>(
+    mut builder: VBuilder<T, W, D, S, SHARDED, V>,
+    args: &Args,
+) -> VBuilder<T, W, D, S, SHARDED, V> {
     if let Some(seed) = args.seed {
         builder = builder.seed(seed);
     }

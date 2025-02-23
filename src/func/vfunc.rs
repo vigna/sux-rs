@@ -1113,18 +1113,24 @@ where
             self.lazy_gaussian = self.num_keys <= MAX_LIN_SIZE;
 
             (self.c, self.log2_seg_size) = if self.lazy_gaussian {
-                // Slightly loose bound to help with solvability
                 (1.10, lin_log2_seg_size(3, shard_size))
             } else {
                 (1.105, fuse_log2_seg_size(3, shard_size))
             };
         } else {
             self.lazy_gaussian = self.num_keys <= MAX_LIN_SHARD_SIZE;
-            self.c = fuse_c(3, self.num_keys);
-            self.log2_seg_size = if self.lazy_gaussian {
-                lin_log2_seg_size(3, self.num_keys)
+
+            (self.c, self.log2_seg_size) = if self.lazy_gaussian {
+                (1.10, lin_log2_seg_size(3, self.num_keys))
             } else {
-                fuse_log2_seg_size(3, self.num_keys)
+                if self.num_keys <= MAX_LIN_SIZE {
+                    (
+                        fuse_c(3, self.num_keys),
+                        fuse_log2_seg_size(3, self.num_keys),
+                    )
+                } else {
+                    (1.105, fuse_log2_seg_size(3, self.num_keys) + 1)
+                }
             };
         }
 
@@ -1610,6 +1616,32 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    fn log2_seg_size(n: usize) -> u32 {
+        fuse_log2_seg_size(3, n)
+    }
+
+    #[test]
+    fn test_log2_seg_size() {
+        let mut shard_size = 1024;
+        for _ in 0..50 {
+            if shard_size >= MIN_FUSE_SHARD {
+                let l2ss = log2_seg_size(shard_size);
+                let c = 1.105;
+                let l = ((c * shard_size as f64).ceil() as usize).div_ceil(1 << l2ss);
+                let ideal_num_vertices = c * shard_size as f64;
+                let num_vertices = (1 << l2ss) * (l + 2);
+                eprintln!(
+                    "n: {shard_size} log₂ seg size: {} ideal: {} actual m: {} ratio: {}",
+                    l2ss,
+                    ideal_num_vertices,
+                    num_vertices,
+                    100.0 * num_vertices as f64 / ideal_num_vertices
+                );
+            }
+            shard_size = shard_size * 3 / 2;
         }
     }
 }
