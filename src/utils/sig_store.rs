@@ -432,22 +432,17 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
 
             let to_aggr = 1 << (store.bucket_high_bits - store.shard_high_bits);
 
-            if to_aggr == 1 {
-                // TODO
-                Some(store.buckets[self.next_bucket].clone())
-            } else {
-                let len = store.shard_sizes[self.next_shard];
-                let mut shard = Vec::with_capacity(len);
+            let len = store.shard_sizes[self.next_shard];
+            let mut shard = Vec::with_capacity(len);
 
-                for i in self.next_bucket..self.next_bucket + to_aggr {
-                    shard.extend(store.buckets[i].iter());
-                }
-
-                let res = shard;
-                self.next_bucket += to_aggr;
-                self.next_shard += 1;
-                Some(res)
+            for i in self.next_bucket..self.next_bucket + to_aggr {
+                shard.extend(store.buckets[i].iter());
             }
+
+            let res = shard;
+            self.next_bucket += to_aggr;
+            self.next_shard += 1;
+            Some(res)
         } else {
             // We need to split buckets in several shards
             if self.shards.is_empty() {
