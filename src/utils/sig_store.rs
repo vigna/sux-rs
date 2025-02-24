@@ -24,7 +24,7 @@ use epserde::prelude::*;
 use mem_dbg::{MemDbg, MemSize};
 
 use rdst::RadixKey;
-use std::{borrow::BorrowMut, collections::VecDeque, fs::File, io::*, marker::PhantomData};
+use std::{collections::VecDeque, fs::File, io::*, marker::PhantomData, sync::Arc};
 use xxhash_rust::xxh3;
 
 pub trait Sig: ZeroCopy + PartialEq + Eq {
@@ -94,7 +94,7 @@ impl<V: ZeroCopy> RadixKey for SigVal<u64, V> {
     const LEVELS: usize = 8;
 
     fn get_level(&self, level: usize) -> u8 {
-        (self.sig >> (level % 8) * 8) as u8
+        (self.sig >> ((level % 8) * 8)) as u8
     }
 }
 
@@ -268,10 +268,10 @@ impl<S, V, B> ShardStore<S, V, B> {
 impl<'a, S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync, B> IntoIterator
     for &'a mut ShardStore<S, V, B>
 where
-    ShardIterator<'a, S, V, B>: Iterator<Item = Vec<SigVal<S, V>>>,
+    ShardIterator<'a, S, V, B>: Iterator<Item = Arc<Vec<SigVal<S, V>>>>,
 {
     type IntoIter = ShardIterator<'a, S, V, B>;
-    type Item = Vec<SigVal<S, V>>;
+    type Item = Arc<Vec<SigVal<S, V>>>;
     /// Return an iterator on shards.
     ///
     /// This method can be called multiple times.
@@ -308,7 +308,7 @@ pub struct ShardIterator<'a, S: ZeroCopy + Sig, V: ZeroCopy, B> {
 impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
     for ShardIterator<'_, S, V, BufReader<File>>
 {
-    type Item = Vec<SigVal<S, V>>;
+    type Item = Arc<Vec<SigVal<S, V>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let store = &mut self.store;
@@ -344,7 +344,7 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
             let res = shard;
             self.next_bucket += to_aggr;
             self.next_shard += 1;
-            Some(res)
+            Some(Arc::new(res))
         } else {
             // We need to split buckets in several shards
             if self.shards.is_empty() {
@@ -397,7 +397,7 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
             }
 
             self.next_shard += 1;
-            Some(self.shards.pop_front().unwrap())
+            Some(Arc::new(self.shards.pop_front().unwrap()))
         }
     }
 
@@ -408,9 +408,9 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
 }
 
 impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
-    for ShardIterator<'_, S, V, Vec<SigVal<S, V>>>
+    for ShardIterator<'_, S, V, Arc<Vec<SigVal<S, V>>>>
 {
-    type Item = Vec<SigVal<S, V>>;
+    type Item = Arc<Vec<SigVal<S, V>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let store = &mut self.store;
@@ -442,7 +442,7 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
             let res = shard;
             self.next_bucket += to_aggr;
             self.next_shard += 1;
-            Some(res)
+            Some(Arc::new(res))
         } else {
             // We need to split buckets in several shards
             if self.shards.is_empty() {
@@ -461,7 +461,7 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
 
                 let shard_mask = (1 << store.shard_high_bits) - 1;
                 // We move each signature/value pair into its shard
-                for &v in &store.buckets[self.next_bucket] {
+                for &mut v in Arc::get_mut(&mut store.buckets[self.next_bucket]).unwrap() {
                     let shard =
                         v.sig.high_bits(store.shard_high_bits, shard_mask) as usize - shard_offset;
                     self.shards[shard].push(v);
@@ -470,7 +470,7 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
             }
 
             self.next_shard += 1;
-            Some(self.shards.pop_front().unwrap())
+            Some(Arc::new(self.shards.pop_front().unwrap()))
         }
     }
 
@@ -490,7 +490,7 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> ExactSizeIterat
 }
 
 impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> ExactSizeIterator
-    for ShardIterator<'_, S, V, Vec<SigVal<S, V>>>
+    for ShardIterator<'_, S, V, Arc<Vec<SigVal<S, V>>>>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -537,12 +537,12 @@ impl<S: ZeroCopy + Sig, V: ZeroCopy> SigStore<S, V, BufWriter<File>> {
     }
 }
 
-impl<S: ZeroCopy + Sig, V: ZeroCopy> SigStore<S, V, Vec<SigVal<S, V>>> {
+impl<S: ZeroCopy + Sig, V: ZeroCopy> SigStore<S, V, Arc<Vec<SigVal<S, V>>>> {
     /// Create a new store with 2<sup>`buckets_high_bits`</sup> buffers, keeping
     /// counts for shards defined by at most `max_shard_high_bits` high bits.
     pub fn new_online(buckets_high_bits: u32, max_shard_high_bits: u32) -> Result<Self> {
         let mut writers = VecDeque::new();
-        writers.resize_with(1 << buckets_high_bits, std::vec::Vec::new);
+        writers.resize_with(1 << buckets_high_bits, || Arc::new(vec![]));
 
         Ok(Self {
             len: 0,
@@ -583,7 +583,9 @@ impl<S: ZeroCopy + Sig, V: ZeroCopy> TryPush<SigVal<S, V>> for SigStore<S, V, Bu
     }
 }
 
-impl<S: ZeroCopy + Sig, V: ZeroCopy> TryPush<SigVal<S, V>> for SigStore<S, V, Vec<SigVal<S, V>>> {
+impl<S: ZeroCopy + Sig, V: ZeroCopy> TryPush<SigVal<S, V>>
+    for SigStore<S, V, Arc<Vec<SigVal<S, V>>>>
+{
     type Error = std::convert::Infallible;
 
     fn try_push(&mut self, sig_val: SigVal<S, V>) -> Result<(), Self::Error> {
@@ -599,7 +601,9 @@ impl<S: ZeroCopy + Sig, V: ZeroCopy> TryPush<SigVal<S, V>> for SigStore<S, V, Ve
         self.bucket_sizes[buffer] += 1;
         self.shard_sizes[shard] += 1;
 
-        self.buckets[buffer].push(sig_val);
+        Arc::get_mut(&mut self.buckets[buffer])
+            .unwrap()
+            .push(sig_val);
         Ok(())
     }
 }
@@ -659,8 +663,10 @@ impl<S: ZeroCopy + Sig, V: ZeroCopy> IntoShardStore<S, V> for SigStore<S, V, Buf
     }
 }
 
-impl<S: ZeroCopy + Sig, V: ZeroCopy> IntoShardStore<S, V> for SigStore<S, V, Vec<SigVal<S, V>>> {
-    type Reader = Vec<SigVal<S, V>>;
+impl<S: ZeroCopy + Sig, V: ZeroCopy> IntoShardStore<S, V>
+    for SigStore<S, V, Arc<Vec<SigVal<S, V>>>>
+{
+    type Reader = Arc<Vec<SigVal<S, V>>>;
     /// Flush the buffers and return a pair given by [`ShardStore`] whose shards are defined by
     /// the `shard_high_bits` high bits of the signatures.
     ///
@@ -673,7 +679,7 @@ impl<S: ZeroCopy + Sig, V: ZeroCopy> IntoShardStore<S, V> for SigStore<S, V, Vec
             .buckets
             .into_iter()
             .map(|mut x| {
-                x.shrink_to_fit();
+                Arc::get_mut(&mut x).unwrap().shrink_to_fit();
                 x
             })
             .collect();
@@ -706,7 +712,7 @@ mod tests {
     where
         SigStore<S, u64, B>: IntoShardStore<S, u64> + TryPush<SigVal<S, u64>>,
         for<'a> &'a mut ShardStore<S, u64, <SigStore<S, u64, B> as IntoShardStore<S, u64>>::Reader>:
-            IntoIterator<Item = Vec<SigVal<S, u64>>>,
+            IntoIterator<Item = Arc<Vec<SigVal<S, u64>>>>,
     {
         let mut rand = SmallRng::seed_from_u64(0);
         let shard_high_bits = sig_store.max_shard_high_bits;
@@ -764,7 +770,7 @@ mod tests {
     where
         SigStore<S, u8, B>: IntoShardStore<S, u8> + TryPush<SigVal<S, u8>>,
         for<'a> &'a mut ShardStore<S, u8, <SigStore<S, u8, B> as IntoShardStore<S, u8>>::Reader>:
-            IntoIterator<Item = Vec<SigVal<S, u8>>>,
+            IntoIterator<Item = Arc<Vec<SigVal<S, u8>>>>,
     {
         let mut rand = SmallRng::seed_from_u64(0);
         for _ in (0..1000).rev() {

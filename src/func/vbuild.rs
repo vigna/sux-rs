@@ -27,8 +27,8 @@ use rand::SeedableRng;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
-use std::borrow::BorrowMut;
 use std::marker::PhantomData;
+use std::sync::Arc;
 use std::time::Instant;
 
 /// The log₂ of the segment size in the linear regime.
@@ -303,8 +303,7 @@ impl<
     /// This method returns an error if one of the shards cannot be solved, or
     /// if duplicates are detected.
     fn par_solve<
-        I: IntoIterator<Item = B> + Send,
-        B: BorrowMut<[SigVal<S, V>]> + Send,
+        I: IntoIterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
         C: ConcurrentProgressLog + Send + Sync,
         P: ProgressLog + Clone + Send + Sync,
     >(
@@ -312,7 +311,9 @@ impl<
         shard_iter: I,
         data: &mut D,
         new_data: impl Fn(usize, usize) -> D + Sync,
-        solve_shard: impl Fn(&Self, usize, B, D, &mut P) -> Result<(usize, D), ()> + Send + Sync,
+        solve_shard: impl Fn(&Self, usize, &mut Vec<SigVal<S, V>>, D, &mut P) -> Result<(usize, D), ()>
+            + Send
+            + Sync,
         thread_pool: &rayon::ThreadPool,
         main_pl: &mut C,
         pl: &mut P,
@@ -350,14 +351,11 @@ impl<
                             self.num_shards
                         ));
 
+                        let shard = Arc::get_mut(&mut shard).unwrap();
                         // Check for duplicates
-                        shard.borrow_mut().radix_sort_unstable();
+                        shard.radix_sort_unstable();
 
-                        if shard
-                            .borrow_mut()
-                            .par_windows(2)
-                            .any(|w| w[0].sig == w[1].sig)
-                        {
+                        if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
                             return Err(SolveError::DuplicateSignature);
                         }
 
@@ -401,14 +399,23 @@ impl<
     /// the shard index, the shard, the edge lists, the shard-local data, and
     /// the stack at the end of the peeling procedure in case of failure. These
     /// data can be then passed to a linear solver to complete the solution.
-    fn peel_shard<B: BorrowMut<[SigVal<S, V>]>, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    fn peel_shard<'a, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
         &self,
         shard_index: usize,
-        shard: B,
+        shard: &'a Vec<SigVal<S, V>>,
         data: D,
         get_val: &G,
         pl: &mut impl ProgressLog,
-    ) -> Result<(usize, D), (usize, B, Vec<EdgeIndexSideSet>, D, Vec<usize>)> {
+    ) -> Result<
+        (usize, D),
+        (
+            usize,
+            &'a Vec<SigVal<S, V>>,
+            Vec<EdgeIndexSideSet>,
+            D,
+            Vec<usize>,
+        ),
+    > {
         pl.start(format!(
             "Generating graph for shard {}/{}...",
             shard_index + 1,
@@ -416,21 +423,17 @@ impl<
         ));
         let mut edge_lists = Vec::new();
         edge_lists.resize_with(self.num_vertices, EdgeIndexSideSet::default);
-        shard
-            .borrow()
-            .iter()
-            .enumerate()
-            .for_each(|(edge_index, sig_val)| {
-                for (side, &v) in sig_val
-                    .sig
-                    .shard_edge(self.shard_high_bits, self.l, self.log2_seg_size)
-                    .iter()
-                    .enumerate()
-                {
-                    edge_lists[v].add(edge_index, side);
-                }
-            });
-        pl.done_with_count(shard.borrow().len());
+        shard.iter().enumerate().for_each(|(edge_index, sig_val)| {
+            for (side, &v) in sig_val
+                .sig
+                .shard_edge(self.shard_high_bits, self.l, self.log2_seg_size)
+                .iter()
+                .enumerate()
+            {
+                edge_lists[v].add(edge_index, side);
+            }
+        });
+        pl.done_with_count(shard.len());
 
         pl.start(format!(
             "Peeling graph for shard {}/{}...",
@@ -457,7 +460,7 @@ impl<
                 stack[curr] = v;
                 curr += 1;
 
-                let e = shard.borrow()[edge_index].sig.shard_edge(
+                let e = shard[edge_index].sig.shard_edge(
                     self.shard_high_bits,
                     self.l,
                     self.log2_seg_size,
@@ -499,17 +502,17 @@ impl<
             }
             stack.truncate(curr);
         }
-        if shard.borrow().len() != stack.len() {
+        if shard.len() != stack.len() {
             pl.info(format_args!(
                 "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
                 shard_index + 1,
                 self.num_shards,
                 stack.len(),
-                shard.borrow().len(),
+                shard.len(),
             ));
             return Err((shard_index, shard, edge_lists, data, stack));
         }
-        pl.done_with_count(shard.borrow().len());
+        pl.done_with_count(shard.len());
 
         Ok(self.assign(shard_index, shard, data, get_val, edge_lists, stack, pl))
     }
@@ -521,14 +524,13 @@ impl<
     fn assign(
         &self,
         shard_index: usize,
-        shard: impl BorrowMut<[SigVal<S, V>]>,
+        shard: &Vec<SigVal<S, V>>,
         mut data: D,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         edge_lists: Vec<EdgeIndexSideSet>,
         mut stack: Vec<usize>,
         pl: &mut impl ProgressLog,
     ) -> (usize, D) {
-        let shard = shard.borrow();
         pl.start(format!(
             "Assigning values for shard {}/{}...",
             shard_index + 1,
@@ -572,7 +574,7 @@ impl<
     fn lge_shard(
         &self,
         shard_index: usize,
-        shard: impl BorrowMut<[SigVal<S, V>]>,
+        shard: &Vec<SigVal<S, V>>,
         data: D,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         pl: &mut impl ProgressLog,
@@ -592,7 +594,7 @@ impl<
                 ));
 
                 // Build a ranked vector of unpeeled equation
-                let mut unpeeled = bit_vec![true; shard.borrow().len()];
+                let mut unpeeled = bit_vec![true; shard.len()];
                 stack
                     .iter()
                     .filter(|&v| edge_lists[*v].degree() == 0)
@@ -604,9 +606,8 @@ impl<
                 // Create data for an F₂ system using non-peeled edges
                 let mut var_to_eqs = Vec::with_capacity(self.num_vertices);
                 let mut c = vec![W::ZERO; unpeeled.num_ones()];
-                var_to_eqs.resize_with(self.num_vertices, || vec![]);
+                var_to_eqs.resize_with(self.num_vertices, std::vec::Vec::new);
                 shard
-                    .borrow()
                     .iter()
                     .enumerate()
                     .filter(|(edge_index, _)| unpeeled[*edge_index])
@@ -622,7 +623,7 @@ impl<
                             var_to_eqs[v].push(eq);
                         }
                     });
-                pl.done_with_count(shard.borrow().len());
+                pl.done_with_count(shard.len());
 
                 pl.start("Solving system...");
                 let result = Modulo2System::lazy_gaussian_elimination(
@@ -846,15 +847,13 @@ where
 
             (self.c, self.log2_seg_size) = if self.lazy_gaussian {
                 (1.10, lin_log2_seg_size(3, self.num_keys))
+            } else if self.num_keys <= MAX_LIN_SIZE {
+                (
+                    fuse_c(3, self.num_keys),
+                    fuse_log2_seg_size(3, self.num_keys),
+                )
             } else {
-                if self.num_keys <= MAX_LIN_SIZE {
-                    (
-                        fuse_c(3, self.num_keys),
-                        fuse_log2_seg_size(3, self.num_keys),
-                    )
-                } else {
-                    (1.105, fuse_log2_seg_size(3, self.num_keys) + 1)
-                }
+                (1.105, fuse_log2_seg_size(3, self.num_keys) + 1)
             };
         }
 
@@ -989,7 +988,7 @@ where
     where
         SigStore<S, V, B>: TryPush<SigVal<S, V>> + IntoShardStore<S, V>,
         for<'a> &'a mut ShardStore<S, V, <SigStore<S, V, B> as IntoShardStore<S, V>>::Reader>:
-            IntoIterator<Item = Vec<SigVal<S, V>>>,
+            IntoIterator<Item = Arc<Vec<SigVal<S, V>>>>,
         for<'a> <&'a mut ShardStore<S, V, <SigStore<S,V , B> as IntoShardStore<S, V>>::Reader> as IntoIterator>::IntoIter: Send,
 
     {
@@ -1059,7 +1058,7 @@ where
     /// actual storage of the values (offline or in core memory.)
     ///
     /// See [`VBuilder::_build`] for more details on the parameters.
-    fn try_build_from_shard_iter<I, B, P, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    fn try_build_from_shard_iter<I, P, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
         &mut self,
         seed: u64,
         mut data: D,
@@ -1070,8 +1069,7 @@ where
     ) -> Result<VFunc<T, W, D, S, SHARDED>, SolveError>
     where
         P: ProgressLog + Clone + Send + Sync,
-        B: BorrowMut<[SigVal<S, V>]> + Send,
-        I: Iterator<Item = B> + Send,
+        I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
     {
         let thread_pool = ThreadPoolBuilder::new()
             .num_threads(self.num_shards.min(self.max_num_threads) + 1) // Or it might hang
@@ -1291,7 +1289,7 @@ mod tests {
                     let log2 = log2;
 
                     let bound = bound(n, corr0, corr1) as usize;
-                    if log2 != bound as usize {
+                    if log2 != bound {
                         if bound > log2 {
                             err += (bound - log2) * 2;
                         } else {
