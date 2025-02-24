@@ -24,7 +24,7 @@ num_cpus = "1.16.0"
 num-traits = "0.2.15"
 dsi-progress-logger = "0.8.0"
 tempfile = "3.9.0"
-lender = "0.2.9"
+lender = "0.3.1"
 mmap-rs = "0.6.1"
 #epserde = "0.7.0"
 epserde = { path = "../epserde-rs/epserde" }
@@ -54,6 +54,7 @@ itertools = "0.14.0"
 pthash = { version = "0.4.0", features = ["rayon"] }
 bytelines = "2.5.0"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
+pluralizer = "0.5.0"
 
 [dev-dependencies]
 maligned = "0.2.1"

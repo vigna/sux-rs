@@ -5,6 +5,7 @@
 * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
 */
 
+use super::vfunc::*;
 use crate::bits::*;
 use crate::prelude::Rank9;
 use crate::traits::bit_field_slice;
@@ -19,6 +20,7 @@ use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
+use pluralizer::pluralize;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
@@ -28,7 +30,6 @@ use rdst::*;
 use std::borrow::BorrowMut;
 use std::marker::PhantomData;
 use std::time::Instant;
-use super::vfunc::*;
 
 /// The log₂ of the segment size in the linear regime.
 fn lin_log2_seg_size(arity: usize, n: usize) -> u32 {
@@ -800,9 +801,8 @@ where
     SigVal<S, V>: RadixKey + Send + Sync,
 {
     /// Return the number of high bits defining shards.
-    fn set_up_shards(&mut self) {
+    fn set_up_shards(&mut self, num_keys: usize) {
         let eps = 0.001; // Tolerance for deviation from the average shard size
-        let num_keys = self.num_keys;
         self.shard_high_bits = if SHARDED {
             if num_keys <= MAX_LIN_SIZE {
                 // We just try to make shards as big as possible,
@@ -897,7 +897,6 @@ where
             let seed = prng.random();
             pl.item_name("key");
             pl.start("Reading input...");
-            pl.info(format_args!("Using {} buckets", 1 << self.log2_buckets));
 
             into_values = into_values.rewind()?;
             into_keys = into_keys.rewind()?;
@@ -996,6 +995,17 @@ where
     {
         let mut max_value = W::ZERO;
 
+        if let Some(expected_num_keys) = self.expected_num_keys {
+            self.set_up_shards(expected_num_keys);
+            self.log2_buckets = self.shard_high_bits;
+        }
+
+        let num_buckets = 1 << self.log2_buckets;
+        pl.info(format_args!(
+            "Using {}",
+            pluralize("bucket", num_buckets, true)
+        ));
+
         while let Some(result) = into_keys.next() {
             match result {
                 Ok(key) => {
@@ -1019,7 +1029,7 @@ where
         self.num_keys = sig_store.len();
         self.bit_width = max_value.len() as usize;
 
-        self.set_up_shards();
+        self.set_up_shards(self.num_keys);
 
         let mut shard_store = sig_store.into_shard_store(self.shard_high_bits)?;
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);

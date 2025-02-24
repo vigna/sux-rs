@@ -33,7 +33,9 @@ use flate2::read::GzDecoder;
 use io::{BufRead, BufReader};
 use lender::*;
 use std::{
-    fs::File, io::{self, Read, Seek}, marker::PhantomData, num::NonZeroUsize, path::Path
+    fs::File,
+    io::{self, Read, Seek},
+    path::Path,
 };
 use zstd::Decoder;
 
@@ -41,7 +43,7 @@ use zstd::Decoder;
 ///
 /// Additionally, this trait provides a convenient method [to take the first
 /// lends of the lender](RewindableIoLender::take).
-/// 
+///
 /// Note that [`rewind`](RewindableIoLender::rewind) consumes `self` and returns
 /// it. This slightly inconvenient behavior is necessary to handle cleanly all
 /// implementations, and in particular those involving compression.
@@ -50,21 +52,11 @@ pub trait RewindableIoLender<T: ?Sized>:
 {
     type Error: std::error::Error + Send + Sync + 'static;
     /// Rewind the lender to the beginning.
-    /// 
+    ///
     /// This method consumes `self` and returns it. This is necessary to handle
     /// cleanly all implementations, and in particular those involving
     /// compression.
     fn rewind(self) -> Result<Self, Self::Error>;
-
-    /// Take the first `n` lends of this lender.
-    /// 
-    /// Note that the limit `n` applies at the output of the lender in its
-    /// current state. Thus, if you call this method on a [`RewindableIoLender`]
-    /// which is not positioned on its first lend, rewinding the resulting
-    /// lender will lead to confusing results.
-    fn take(self, n: usize) -> Take<T, Self> {
-        Take::new(self, n)
-    }
 }
 
 // Common next function for all lenders
@@ -265,94 +257,11 @@ impl<T: 'static, I: IntoIterator<Item = T> + Clone> From<I> for FromIntoIterator
     }
 }
 
-/// A struct for retaining only `n` lends from a [`RewindableIoLender`].
-/// 
-/// Note that invoking [`Lender::take`] on a [`RewindableIoLender`] returns a
-/// [`RewindableIoLender`], but just a [`Lender`].
-pub struct Take<T: ?Sized, L> {
-    lender: L,
-    n: usize,
-    _marker: std::marker::PhantomData<T>,
-}
-impl<T: ?Sized, L> Take<T, L> {
-    pub(crate) fn new(lender: L, n: usize) -> Take<T, L> {
-        Take { lender, n, _marker: PhantomData }
-    }
-}
-
-impl<T:?Sized,  L: RewindableIoLender<T>> RewindableIoLender<T> for Take<T, L>
-{
+impl<T: ?Sized, L: RewindableIoLender<T>> RewindableIoLender<T> for lender::Take<L> {
     type Error = L::Error;
 
     fn rewind(self) -> Result<Self, Self::Error> {
-        self.lender.rewind().map(|lender| Take::new(lender, self.n))
+        let (lender, n) = self.into_parts();
+        lender.rewind().map(|lender| lender.take(n))
     }
 }
-
-
-impl<'lend, T:?Sized,  L: RewindableIoLender<T>> Lending<'lend> for Take<T, L>
-{
-    type Lend = Lend<'lend, L>;
-}
-
-// This is duplicated code from the Lender crate. It would be better to have a
-// newtype around a lender::Take<L>, but lender::Take does not provide
-// into_inner, so we would be unable to implement RewindableIoLender::rewind for
-// it.
-
-impl<T: ?Sized, L: RewindableIoLender<T>> Lender for Take<T, L>
-{
-    #[inline]
-    fn next(&mut self) -> Option<Lend<'_, Self>> {
-        if self.n != 0 {
-            self.n -= 1;
-            self.lender.next()
-        } else {
-            None
-        }
-    }
-    #[inline]
-    fn nth(&mut self, n: usize) -> Option<Lend<'_, Self>> {
-        if self.n > n {
-            self.n -= n + 1;
-            self.lender.nth(n)
-        } else {
-            if self.n > 0 {
-                self.lender.nth(self.n - 1);
-                self.n = 0;
-            }
-            None
-        }
-    }
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        if self.n == 0 {
-            return (0, Some(0));
-        }
-
-        let (lower, upper) = self.lender.size_hint();
-
-        let lower = lower.min(self.n);
-
-        let upper = match upper {
-            Some(x) if x < self.n => Some(x),
-            _ => Some(self.n),
-        };
-
-        (lower, upper)
-    }
-    #[inline]
-    fn advance_by(&mut self, n: usize) -> Result<(), NonZeroUsize> {
-        let min = self.n.min(n);
-        let rem = match self.lender.advance_by(min) {
-            Ok(()) => 0,
-            Err(rem) => rem.get(),
-        };
-        let advanced = min - rem;
-        self.n -= advanced;
-        NonZeroUsize::new(n - advanced).map_or(Ok(()), Err)
-    }
-}
-
-impl<T: ?Sized, L: RewindableIoLender<T>> ExactSizeLender for Take<T, L> where L: ExactSizeLender {}
-impl<T: ?Sized, L: RewindableIoLender<T>> FusedLender for Take<T, L> where L: FusedLender {}
