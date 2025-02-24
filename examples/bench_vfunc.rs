@@ -102,14 +102,14 @@ where
             pl.start("Querying (dependent)...");
             let mut x = 0;
             for key in &mut keys {
-                debug_assert!(key.len() > 0);
+                debug_assert!(!key.is_empty());
                 unsafe {
                     // This as horrible as it can be, and will probably
                     // do harm if a key is the empty string, but we avoid
                     // testing
-                    *key.as_bytes_mut().get_unchecked_mut(0) ^= (x & 1) as u8;
+                    *key.as_bytes_mut().get_unchecked_mut(0) ^= x & 1;
                 }
-                std::hint::black_box(x = filter.get(key));
+                x = std::hint::black_box(filter.get(key));
             }
             pl.done_with_count(args.n);
         } else {
@@ -124,18 +124,20 @@ where
             pl.start("Querying (dependent)...");
             let mut x = 0;
             for key in &mut keys {
-                debug_assert!(key.len() > 0);
+                debug_assert!(!key.is_empty());
                 unsafe {
                     // This as horrible as it can be, and will probably
                     // do harm if a key is the empty string, but we avoid
                     // testing
                     *key.as_bytes_mut().get_unchecked_mut(0) ^= (x & 1) as u8;
                 }
-                std::hint::black_box(x = func.get(key));
+                x = func.get(key);
+                std::hint::black_box(());
             }
             pl.done_with_count(args.n);
         }
     } else {
+        // No filename
         if args.dict {
             let filter =
                 VFilter::<u8, VFunc<usize, u8, Vec<u8>, S, SHARDED>>::load_full(&args.func)?;
@@ -149,7 +151,8 @@ where
             pl.start("Querying (dependent)...");
             let mut x = 0;
             for i in 0..args.n {
-                std::hint::black_box(x = filter.contains(&(i ^ (x & 1))) as usize);
+                x = filter.contains(&(i ^ (x & 1))) as usize;
+                std::hint::black_box(());
             }
             pl.done_with_count(args.n);
         } else {
@@ -170,6 +173,5 @@ where
             pl.done_with_count(args.n);
         }
     }
-
     Ok(())
 }

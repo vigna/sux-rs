@@ -15,9 +15,7 @@ use sux::bits::BitFieldVec;
 use sux::func::{ShardEdge, VFilter, VFunc};
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
-use sux::utils::{
-    FromIntoIterator, LineLender, RewindableIoLender, Sig, SigVal, ToSig, ZstdLineLender,
-};
+use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
 
 #[derive(Parser, Debug)]
 #[command(about = "Generate a VFunc mapping each input to its rank and serialize it with ε-serde", long_about = None)]
@@ -75,12 +73,10 @@ fn main() -> Result<()> {
         } else {
             main_with_types::<[u64; 2], false>(args)
         }
+    } else if args.sig64 {
+        main_with_types::<u64, true>(args)
     } else {
-        if args.sig64 {
-            main_with_types::<u64, true>(args)
-        } else {
-            main_with_types::<[u64; 2], true>(args)
-        }
+        main_with_types::<[u64; 2], true>(args)
     }
 }
 
@@ -127,9 +123,9 @@ where
                 .log2_buckets(args.high_bits);
             builder = set_up_builder(builder, &args);
             let filter = if args.zstd {
-                builder.try_build_filter(ZstdLineLender::from_path(&filename)?.take(n), &mut pl)?
+                builder.try_build_filter(ZstdLineLender::from_path(filename)?.take(n), &mut pl)?
             } else {
-                let t = LineLender::from_path(&filename)?.take(n);
+                let t = LineLender::from_path(filename)?.take(n);
                 builder.try_build_filter(t, &mut pl)?
             };
             filter.store(&args.func)?;
@@ -140,41 +136,39 @@ where
             builder = set_up_builder(builder, &args);
             let func = if args.zstd {
                 builder.try_build_func(
-                    ZstdLineLender::from_path(&filename)?.take(n),
+                    ZstdLineLender::from_path(filename)?.take(n),
                     FromIntoIterator::from(0_usize..),
                     &mut pl,
                 )?
             } else {
                 builder.try_build_func(
-                    LineLender::from_path(&filename)?.take(n),
+                    LineLender::from_path(filename)?.take(n),
                     FromIntoIterator::from(0_usize..),
                     &mut pl,
                 )?
             };
             func.store(&args.func)?;
         }
+    } else if args.dict {
+        let mut builder = VBuilder::<_, u8, Vec<u8>, S, SHARDED, ()>::default()
+            .offline(args.offline)
+            .expected_num_keys(n)
+            .log2_buckets(args.high_bits);
+        builder = set_up_builder(builder, &args);
+        let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
+        filter.store(&args.func)?;
     } else {
-        if args.dict {
-            let mut builder = VBuilder::<_, u8, Vec<u8>, S, SHARDED, ()>::default()
-                .offline(args.offline)
-                .expected_num_keys(n)
-                .log2_buckets(args.high_bits);
-            builder = set_up_builder(builder, &args);
-            let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
-            filter.store(&args.func)?;
-        } else {
-            let mut builder = VBuilder::<_, _, BitFieldVec<usize>, S, SHARDED>::default()
-                .offline(args.offline)
-                .expected_num_keys(n)
-                .log2_buckets(args.high_bits);
-            builder = set_up_builder(builder, &args);
-            let func = builder.try_build_func(
-                FromIntoIterator::from(0_usize..n),
-                FromIntoIterator::from(0_usize..),
-                &mut pl,
-            )?;
-            func.store(&args.func)?;
-        }
+        let mut builder = VBuilder::<_, _, BitFieldVec<usize>, S, SHARDED>::default()
+            .offline(args.offline)
+            .expected_num_keys(n)
+            .log2_buckets(args.high_bits);
+        builder = set_up_builder(builder, &args);
+        let func = builder.try_build_func(
+            FromIntoIterator::from(0_usize..n),
+            FromIntoIterator::from(0_usize..),
+            &mut pl,
+        )?;
+        func.store(&args.func)?;
     }
 
     Ok(())
