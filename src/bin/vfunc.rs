@@ -9,12 +9,15 @@ use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use epserde::traits::{TypeHash, ZeroCopy};
+use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::func::{ShardEdge, VFilter, VFunc};
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
-use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
+use sux::utils::{
+    FromIntoIterator, LineLender, RewindableIoLender, Sig, SigVal, ToSig, ZstdLineLender,
+};
 
 #[derive(Parser, Debug)]
 #[command(about = "Generate a VFunc mapping each input to its rank and serialize it with ε-serde", long_about = None)]
@@ -24,17 +27,17 @@ use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLende
                 .args(&["filename", "n"]),
 ))]
 struct Args {
+    /// The number of keys. If no filename is provided, use the 64-bit keys
+    /// [0..n).
+    n: usize,
+    /// A name for the ε-serde serialized function.
+    func: String,
     #[arg(short, long)]
-    /// A file containing UTF-8 keys, one per line.
+    /// A file containing UTF-8 keys, one per line. At most N keys will be read.
     filename: Option<String>,
-    #[arg(short)]
-    /// Use the 64-bit keys [0..n). Mainly useful for testing and debugging.
-    n: Option<usize>,
     /// Use this number of threads.
     #[arg(short, long)]
     threads: Option<usize>,
-    /// A name for the ε-serde serialized function.
-    func: String,
     /// Whether the file is compressed with zstd.
     #[arg(short, long)]
     zstd: bool,
@@ -115,6 +118,7 @@ where
 {
     let mut pl = ProgressLogger::default();
     pl.display_memory(true);
+    let n = args.n;
 
     if let Some(ref filename) = &args.filename {
         if args.dict {
@@ -123,9 +127,10 @@ where
                 .log2_buckets(args.high_bits);
             builder = set_up_builder(builder, &args);
             let filter = if args.zstd {
-                builder.try_build_filter(ZstdLineLender::from_path(&filename)?, &mut pl)?
+                builder.try_build_filter(ZstdLineLender::from_path(&filename)?.take(n), &mut pl)?
             } else {
-                builder.try_build_filter(LineLender::from_path(&filename)?, &mut pl)?
+                let t = LineLender::from_path(&filename)?.take(n);
+                builder.try_build_filter(t, &mut pl)?
             };
             filter.store(&args.func)?;
         } else {
@@ -135,20 +140,20 @@ where
             builder = set_up_builder(builder, &args);
             let func = if args.zstd {
                 builder.try_build_func(
-                    ZstdLineLender::from_path(&filename)?,
+                    ZstdLineLender::from_path(&filename)?.take(n),
                     FromIntoIterator::from(0_usize..),
                     &mut pl,
                 )?
             } else {
                 builder.try_build_func(
-                    LineLender::from_path(&filename)?,
+                    LineLender::from_path(&filename)?.take(n),
                     FromIntoIterator::from(0_usize..),
                     &mut pl,
                 )?
             };
             func.store(&args.func)?;
         }
-    } else if let Some(n) = args.n {
+    } else {
         if args.dict {
             let mut builder = VBuilder::<_, u8, Vec<u8>, S, SHARDED, ()>::default()
                 .offline(args.offline)

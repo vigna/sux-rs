@@ -293,7 +293,10 @@ mod tests {
     use epserde::{deser::Deserialize, ser::Serialize, utils::AlignedCursor};
     use rdst::RadixKey;
 
-    use crate::{func::VBuilder, utils::{FromIntoIterator, Sig, SigVal, ToSig}};
+    use crate::{
+        func::VBuilder,
+        utils::{FromIntoIterator, Sig, SigVal, ToSig},
+    };
 
     use super::{ShardEdge, VFilter, VFunc};
 
