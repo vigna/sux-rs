@@ -89,7 +89,8 @@ fn test_vfilter() -> Result<()> {
             let filter = VBuilder::<_, _, BitFieldVec<usize>, [u64; 2], true, ()>::default()
                 .log2_buckets(4)
                 .offline(offline)
-                .try_build_filter(FromIntoIterator::from(0..n), 16, &mut pl)?;
+                .seed(1)
+                .try_build_filter(FromIntoIterator::from(0..n), 10, &mut pl)?;
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             filter.serialize(&mut cursor)?;
             cursor.set_position(0);
@@ -113,7 +114,7 @@ fn test_vfilter() -> Result<()> {
 
                 let failure_rate = (c as f64) / n as f64;
                 assert!(
-                    failure_rate < 1. / 65535.,
+                    failure_rate < 1. / 1023.,
                     "Failure rate is too high: 1 / {}",
                     1. / failure_rate
                 );
@@ -126,6 +127,7 @@ fn test_vfilter() -> Result<()> {
             dbg!(offline, n);
             let func = VBuilder::<_, _, Vec<u8>, [u64; 2], true, ()>::default()
                 .log2_buckets(4)
+                .seed(1)
                 .offline(offline)
                 .try_build_filter(FromIntoIterator::from(0..n), &mut pl)?;
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
