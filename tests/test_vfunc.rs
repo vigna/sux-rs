@@ -89,7 +89,6 @@ fn test_vfilter() -> Result<()> {
             let filter = VBuilder::<_, _, BitFieldVec<usize>, [u64; 2], true, ()>::default()
                 .log2_buckets(4)
                 .offline(offline)
-                .seed(1)
                 .try_build_filter(FromIntoIterator::from(0..n), 10, &mut pl)?;
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             filter.serialize(&mut cursor)?;
@@ -127,7 +126,6 @@ fn test_vfilter() -> Result<()> {
             dbg!(offline, n);
             let func = VBuilder::<_, _, Vec<u8>, [u64; 2], true, ()>::default()
                 .log2_buckets(4)
-                .seed(1)
                 .offline(offline)
                 .try_build_filter(FromIntoIterator::from(0..n), &mut pl)?;
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
@@ -176,6 +174,31 @@ fn test_dup_key() -> Result<()> {
             &mut ProgressLogger::default(),
         )
         .is_err());
+
+    Ok(())
+}
+
+#[test]
+fn test_broken() -> Result<()> {
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Info)
+        .try_init();
+
+
+    let n = 3_000_000;
+    let filter = VBuilder::<_, usize, BitFieldVec<usize>, [u64; 2], true, ()>::default()
+        .try_build_filter(FromIntoIterator::from(0..n), 10, no_logging![])?;
+
+    let mut pl = ProgressLogger::default();
+    pl.start("Querying (negative)...");
+    let mut c = 0;
+    for i in 0..n {
+        c += filter.contains(&(i + n)) as usize;
+    }
+    pl.done_with_count(n);
+
+    dbg!(c);
 
     Ok(())
 }
