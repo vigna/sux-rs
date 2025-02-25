@@ -6,12 +6,16 @@
 
 #![allow(clippy::collapsible_else_if)]
 use anyhow::Result;
+use average::{Estimate, MeanWithError};
 use clap::Parser;
 use dsi_progress_logger::{no_logging, progress_logger, ProgressLog};
+use epserde::prelude::*;
 use rdst::RadixKey;
-use sux::{bits::BitFieldVec, func::{ShardEdge, VBuilder}, utils::{FromIntoIterator, Sig, SigVal, ToSig}};
-use average::{MeanWithError, Estimate};
-
+use sux::{
+    bits::BitFieldVec,
+    func::{ShardEdge, VBuilder, VFilter, VFunc},
+    utils::{FromIntoIterator, Sig, SigVal, ToSig},
+};
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
 struct Args {
@@ -26,21 +30,24 @@ struct Args {
     sig64: bool,
 }
 
-fn _main<S: Sig + Send + Sync + ShardEdge, const SHARDED: bool>(args: Args) -> Result<()> where SigVal<S, ()>: RadixKey, usize: ToSig<S> {
+fn _main<S: Sig + Send + Sync + ShardEdge, const SHARDED: bool>(args: Args) -> Result<()>
+where
+    SigVal<S, ()>: RadixKey,
+    usize: ToSig<S>,
+    VFilter<usize, VFunc<usize, usize, BitFieldVec, S, SHARDED>>: TypeHash,
+{
     let mut m = MeanWithError::new();
 
-    let mut pl = progress_logger![item_name="sample"];
+    let mut pl = progress_logger![item_name = "sample"];
 
     pl.start("Sampling...");
 
-    for _ in 0..args.s {
+    for seed in 0..args.s {
         let filter = VBuilder::<_, usize, BitFieldVec<usize>, S, SHARDED, ()>::default()
-            .seed(1)
-            .try_build_filter(
-                FromIntoIterator::from(0..args.n),
-                args.dict,
-                no_logging![],
-            )?;
+            .log2_buckets(4)
+            .offline(false)
+            .seed(seed as u64)
+            .try_build_filter(FromIntoIterator::from(0..args.n), args.dict, no_logging![])?;
 
         let mut c = 0;
         for i in 0..args.n {
@@ -49,7 +56,14 @@ fn _main<S: Sig + Send + Sync + ShardEdge, const SHARDED: bool>(args: Args) -> R
 
         let error_rate = c as f64 / args.n as f64;
         m.add(error_rate);
-        println!("Error rate: {} (1/{}); Stats: {} ± {} (1/{})", error_rate, 1. / error_rate, m.mean(), m.error(), 1./ m.mean());    
+        println!(
+            "Error rate: {} (1/{}); Stats: {} ± {} (1/{})",
+            error_rate,
+            1. / error_rate,
+            m.mean(),
+            m.error(),
+            1. / m.mean()
+        );
         pl.update();
     }
 

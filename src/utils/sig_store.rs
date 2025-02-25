@@ -82,7 +82,7 @@ impl Sig for [u64; 2] {
 
     #[inline(always)]
     fn sig_u64(&self) -> u64 {
-        xxh3::xxh3_64_with_seed(&(self[0] ^ self[1]).to_ne_bytes(), 0)
+        self[0] ^ self[1]
     }
 }
 
@@ -95,7 +95,7 @@ impl Sig for [u64;1] {
 
     #[inline(always)]
     fn sig_u64(&self) -> u64 {
-        xxh3::xxh3_64_with_seed(&self[0].to_ne_bytes(), 0)
+        self[0]
     }
 }
 
