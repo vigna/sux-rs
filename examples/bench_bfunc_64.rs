@@ -32,7 +32,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     pl.start("Building...");
-    let builder = VBuilder::<u64, u16, Vec<_>, u64, false>::default();
+    let builder = VBuilder::<u64, u16, Vec<_>, [u64; 1], false>::default();
 
     let vfunc = builder.try_build_func(
         FromIntoIterator::from(0..args.n as u64),

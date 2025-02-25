@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+ #![allow(clippy::collapsible_else_if)]
 use std::{fs::File, io::BufReader};
 
 use anyhow::{Context, Result};
@@ -33,6 +34,7 @@ struct Args {
 }
 
 struct HashableU64(u64);
+#[allow(dead_code)]
 struct HashableStr(String);
 
 impl Hashable for HashableU64 {

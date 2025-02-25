@@ -18,7 +18,8 @@ use std::ops::Index;
 /// parallel construction, and fast queries.
 ///
 /// Instances of this structure are immutable; they are built using a
-/// [`VBuilder`], and can be serialized using [ε-serde](`epserde`).
+/// [`VBuilder`](crate::func::VBuilder) and can be serialized using
+/// [ε-serde](`epserde`).
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFunc<
     T: ?Sized + ToSig<S>,
@@ -43,7 +44,8 @@ pub struct VFunc<
 /// construction, and fast queries.
 ///
 /// Instances of this structure are immutable; they are built using a
-/// [`VBuilder`], and can be serialized using [ε-serde](`epserde`).
+/// [`VBuilder`](crate::func::VBuilder) and can be serialized using
+/// [ε-serde](`epserde`).
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFilter<W: ZeroCopy + Word, F> {
     pub(in crate::func) func: F,
@@ -129,15 +131,15 @@ impl ShardEdge for [u64; 2] {
 /// Note that the lower `shard_high_bits` of the bits used to select the first
 /// segment are the same as the bits used to select the shard, but being the
 /// result mostly sensitive to the high bits, this is not a problem.
-impl ShardEdge for u64 {
+impl ShardEdge for [u64; 1] {
     fn shard(&self, shard_high_bits: u32, shard_mask: u32) -> usize {
         // This must work even when shard_high_bits is zero
-        let xor = *self as u32 ^ (*self >> 32) as u32;
+        let xor = self[0] as u32 ^ (self[0] >> 32) as u32;
         (xor.rotate_left(shard_high_bits) & shard_mask) as usize
     }
 
     fn edge(&self, shard: usize, shard_high_bits: u32, l: usize, log2_seg_size: u32) -> [usize; 3] {
-        let xor = *self as u32 ^ (*self >> 32) as u32;
+        let xor = self[0] as u32 ^ (self[0] >> 32) as u32;
         let first_segment = ((xor.rotate_left(shard_high_bits) as u64 * l as u64) >> 32) as usize;
         let shard_offset = shard * ((l + 2) << log2_seg_size);
         let start = shard_offset + (first_segment << log2_seg_size);
@@ -145,9 +147,9 @@ impl ShardEdge for u64 {
         let segment_mask = segment_size - 1;
 
         [
-            (*self as usize & segment_mask) + start,
-            ((*self >> 21) as usize & segment_mask) + start + segment_size,
-            ((*self >> 42) as usize & segment_mask) + start + 2 * segment_size,
+            (self[0] as usize & segment_mask) + start,
+            ((self[0] >> 21) as usize & segment_mask) + start + segment_size,
+            ((self[0] >> 42) as usize & segment_mask) + start + 2 * segment_size,
         ]
     }
 }
@@ -302,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_filter_func() -> anyhow::Result<()> {
-        _test_filter_func::<u64>()?;
+        _test_filter_func::<[u64; 1]>()?;
         _test_filter_func::<[u64; 2]>()?;
         Ok(())
     }
