@@ -7,28 +7,34 @@
 
 //! Support for [rewindable I/O lenders](RewindableIoLender).
 //!
-//! Some data structures in this crate have two features in common:
+//! Some data structures in this crate have some features in common:
 //! - they must be able to read their input more than once;
+//! - they might read their input lazily from a source that might generate
+//!   errors, such as a file;
 //! - they do not store the input they read, but rather some derived data, such
 //!   as hashes, so using owned data would be wasteful.
 //!
 //! For this kind of structures, we provide a [`RewindableIoLender`] trait,
-//! which is a [`Lender`] that can be rewound to the beginning. Rewindability
-//! solves the first problem while lending solves the second problem.
+//! which is a [`Lender`] that can be rewound to the beginning, and whose
+//! returned items are [`Result`]s. Rewindability solves the first problem,
+//! [`Result`]s solve the second problem, while lending solves the third
+//! problem.
 //!
 //! The basic implementation for strings is [`LineLender`], which lends lines
 //! from a [`BufRead`] as a `&str`, but lends an internal buffer, rather than
 //! allocating a new string for each line. Convenience constructors are provided
-//! for [`File`] and [`Path`]. Analogously, we provide `ZstdLineLender` (enabled
-//! by the `zstd` feature) that lends lines from a zstd-compressed [`Read`], and
-//! [`GzipLineLender`], which lends lines from a gzip-compressed [`Read`].
+//! for [`File`](LineLender::from_file) and [`Path`](LineLender::from_path).
+//!  Analogously, we provide `ZstdLineLender` (enabled by the `zstd` feature)
+//! that lends lines from a zstd-compressed [`Read`], and [`GzipLineLender`],
+//! which lends lines from a gzip-compressed [`Read`].
 //!
 //! If you have a clonable [`IntoIterator`], you can use [`FromIntoIterator`] to
 //! lend its items; rewinding is implemented by cloning the iterator. Note that
 //! [`FromIntoIterator`] implements the [`From`] trait, but at this time due to
 //! the complex trait bounds of [`Lender`] type inference rarely works; you'll
-//! need to call [`FromIntoIterator::from`] explicitly.
-
+//! need to call [`FromIntoIterator::from`] explicitly. The error of the resulting
+//! [`RewindableIoLender`] is `core::convert::Infallible`.
+//! 
 use flate2::read::GzDecoder;
 use io::{BufRead, BufReader};
 use lender::*;
