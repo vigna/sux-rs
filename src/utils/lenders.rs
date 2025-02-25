@@ -39,10 +39,11 @@ use std::{
 };
 use zstd::Decoder;
 
-/// The main trait: a [`Lender`] that can be rewound to the beginning.
+/// The main trait: a [`Lender`] that can be rewound to the beginning, and whose
+/// returned item are [`Result`]s.
 ///
-/// Additionally, this trait provides a convenient method [to take the first
-/// lends of the lender](RewindableIoLender::take).
+/// Additionally, this trait is implemented on [`lender::Take`], so you can call
+/// `take` on a rewindable lender and obtain again a rewindable lender.
 ///
 /// Note that [`rewind`](RewindableIoLender::rewind) consumes `self` and returns
 /// it. This slightly inconvenient behavior is necessary to handle cleanly all

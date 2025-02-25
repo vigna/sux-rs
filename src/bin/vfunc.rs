@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
-
+#![allow(clippy::collapsible_else_if)]
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
@@ -69,15 +69,16 @@ fn main() -> Result<()> {
 
     if args.no_shards {
         if args.sig64 {
-            main_with_types::<u64, false>(args)
+            main_with_types::<[u64; 1], false>(args)
         } else {
             main_with_types::<[u64; 2], false>(args)
         }
-    } else if args.sig64 {
-        main_with_types::<u64, true>(args)
+    } else {if args.sig64 {
+        main_with_types::<[u64;1], true>(args)
     } else {
         main_with_types::<[u64; 2], true>(args)
     }
+}
 }
 
 fn set_up_builder<

@@ -8,13 +8,10 @@
 use super::vfunc::*;
 use crate::bits::*;
 use crate::prelude::Rank9;
-use crate::traits::bit_field_slice;
 use crate::traits::NumBits;
 use crate::traits::Rank;
 use crate::utils::*;
-use bit_field_slice::BitFieldSlice;
-use bit_field_slice::BitFieldSliceMut;
-use bit_field_slice::Word;
+use crate::traits::bit_field_slice::*;
 use common_traits::CastableInto;
 use derivative::Derivative;
 use derive_setters::*;
@@ -190,7 +187,7 @@ impl EdgeIndexSideSet {
 pub struct VBuilder<
     T: ?Sized + Send + Sync + ToSig<S>,
     W: ZeroCopy + Word,
-    D: bit_field_slice::BitFieldSlice<W> + Send + Sync = BitFieldVec<W>,
+    D: BitFieldSlice<W> + Send + Sync = BitFieldVec<W>,
     S = [u64; 2],
     const SHARDED: bool = false,
     V = W,
@@ -793,7 +790,7 @@ const LOG2_MAX_SHARDS: u32 = 10;
 impl<
         T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word,
-        D: bit_field_slice::BitFieldSlice<W> + bit_field_slice::BitFieldSliceMut<W> + Send + Sync,
+        D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
         S: Sig + ShardEdge,
         const SHARDED: bool,
         V: ZeroCopy + Send + Sync,
@@ -865,7 +862,7 @@ where
 impl<
         T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word,
-        D: bit_field_slice::BitFieldSlice<W> + bit_field_slice::BitFieldSliceMut<W> + Send + Sync,
+        D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
         S: Sig + ShardEdge,
         const SHARDED: bool,
         V: ZeroCopy + Send + Sync,
@@ -903,7 +900,7 @@ where
             match if self.offline {
                 self.try_seed(
                     seed,
-                    SigStore::<S, V, _>::new_offline(self.log2_buckets, LOG2_MAX_SHARDS)?,
+                    sig_store::new_offline::<S, V>(self.log2_buckets, LOG2_MAX_SHARDS)?,
                     &mut into_keys,
                     &mut into_values,
                     get_val,
@@ -913,7 +910,7 @@ where
             } else {
                 self.try_seed(
                     seed,
-                    SigStore::<S, V, _>::new_online(self.log2_buckets, LOG2_MAX_SHARDS)?,
+                    sig_store::new_online::<S, V>(self.log2_buckets, LOG2_MAX_SHARDS)?,
                     &mut into_keys,
                     &mut into_values,
                     get_val,
@@ -967,7 +964,7 @@ where
 impl<
         T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word,
-        D: bit_field_slice::BitFieldSlice<W> + bit_field_slice::BitFieldSliceMut<W> + Send + Sync,
+        D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
         S: Sig + ShardEdge,
         const SHARDED: bool,
         V: ZeroCopy + Send + Sync,
@@ -975,22 +972,16 @@ impl<
 where
     SigVal<S, V>: RadixKey + Send + Sync,
 {
-    fn  try_seed<B,G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    fn  try_seed<G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
         &mut self,
         seed: u64,
-        mut sig_store: SigStore<S, V, B>,
+        mut sig_store: impl SigStore<S, V>,
         into_keys: &mut impl RewindableIoLender<T>,
         into_values: &mut impl RewindableIoLender<V>,
         get_val: &G,
         new: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, SHARDED>>
-    where
-        SigStore<S, V, B>: TryPush<SigVal<S, V>> + IntoShardStore<S, V>,
-        for<'a> &'a mut ShardStore<S, V, <SigStore<S, V, B> as IntoShardStore<S, V>>::Reader>:
-            IntoIterator<Item = Arc<Vec<SigVal<S, V>>>>,
-        for<'a> <&'a mut ShardStore<S, V, <SigStore<S,V , B> as IntoShardStore<S, V>>::Reader> as IntoIterator>::IntoIter: Send,
-
     {
         let mut max_value = W::ZERO;
 
@@ -1047,7 +1038,7 @@ where
         } else {
             self.set_up_segments();
             let data = new(self.bit_width, self.num_vertices * self.num_shards);
-            self.try_build_from_shard_iter(seed, data, shard_store.into_iter(), new, get_val, pl)
+            self.try_build_from_shard_iter(seed, data, shard_store.iter(), new, get_val, pl)
                 .map_err(Into::into)
         }
     }

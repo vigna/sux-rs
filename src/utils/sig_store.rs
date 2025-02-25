@@ -5,19 +5,45 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Fast sorting and grouping of signatures and values into shards.
-//!
-//! A *signature* is a pair of 64-bit integers, and a *value* is a generic type
-//! implementing [`epserde::traits::ZeroCopy`].
+//! Fast sorting and grouping of signatures and values into shards, online and
+//! offline.
+//! 
+//! Traits and types in this module make it possible to accumulate key
+//! signatures (i.e., random-looking hashes associated to keys) and associated
+//! values, grouping them in different disk buffers by the high bits of the
+//! hash.
 //!
 //! A [`SigStore`] acts as a builder for a [`ShardStore`]: it accepts
-//! signature/value pairs in any order, and when you call
-//! [`SigStore::into_shard_store`] it returns an immutable  [`ShardStore`] that
-//! can [iterate on shards of pairs, where shards are defined by the highest
-//! bits of signatures](ShardStore::iter).
+//! [signature/value pairs](SigVal) in any order, and when you call
+//! [`into_shard_store`](SigStore::into_shard_store) it returns an immutable
+//! [`ShardStore`] that can iterate on shards of signature/value pairs.
 //!
+//! The implementation exploits the fact that signatures are randomly
+//! distributed, and thus bucket sorting is very effective: at construction time
+//! you specify the number of high bits to use for bucket sorting (say, 8), and
+//! when you [push](`SigStore::try_push`) signature/value pairs they will be
+//! stored in different buckets (in this case, 256) depending on their high
+//! bits.
+//!
+//! An [online](new_online) [`SigStore`] keeps the signature/value pairs in
+//! memory, while an [offline](new_offline) [`SigStore`] writes them to disk.
+//! After all key signatures and values have been accumulated,
+//! [`into_shard_store`](SigStore::into_shard_store) will return a
+//! [`ShardStore`]. [`into_shard_store`](SigStore::into_shard_store) takes the
+//! the number of high bits to use for grouping signatures into shards, and the
+//! necessary bucket splitting or merging will be handled automatically, albeit
+//! the most efficient scenario is the one in which the number of buckets is
+//! equal to the number of shards.
+//! 
 //! The trait [`ToSig`] provides a standard way to generate signatures for a
-//! [`SigStore`].
+//! [`SigStore`]. Implementations are provided for signatures types `[u64;1]`
+//! and `[u64; 2]`. In the first case, after a few billion keys you will start
+//! to find duplicate signatures. In both cases, shards are defined by the
+//! highest bits of the (first) signature.
+//!
+//! Both signatures and values must be [`ZeroCopy`] so that they might be
+//! serialized and deserialized efficiently in the offline case, and they must
+//! be [`Send`] and [`Sync`].
 
 use anyhow::Result;
 use epserde::prelude::*;
@@ -27,6 +53,7 @@ use rdst::RadixKey;
 use std::{collections::VecDeque, fs::File, io::*, marker::PhantomData, sync::Arc};
 use xxhash_rust::xxh3;
 
+/// A trait for types that can be used as signatures.
 pub trait Sig: ZeroCopy + PartialEq + Eq {
     /// Extract high bits from  the signature.
     ///
@@ -59,21 +86,20 @@ impl Sig for [u64; 2] {
     }
 }
 
-impl Sig for u64 {
+impl Sig for [u64;1] {
     #[inline(always)]
     fn high_bits(&self, high_bits: u32, mask: u64) -> u64 {
         debug_assert!(mask == (1 << high_bits) - 1);
-        self.rotate_left(high_bits) & mask
+        self[0].rotate_left(high_bits) & mask
     }
 
     #[inline(always)]
     fn sig_u64(&self) -> u64 {
-        xxh3::xxh3_64_with_seed(&self.to_ne_bytes(), 0)
+        xxh3::xxh3_64_with_seed(&self[0].to_ne_bytes(), 0)
     }
 }
 
 /// A signature and a value.
-
 #[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize)]
 #[repr(C)]
 #[zero_copy]
@@ -90,11 +116,11 @@ impl<V: ZeroCopy> RadixKey for SigVal<[u64; 2], V> {
     }
 }
 
-impl<V: ZeroCopy> RadixKey for SigVal<u64, V> {
+impl<V: ZeroCopy> RadixKey for SigVal<[u64; 1], V> {
     const LEVELS: usize = 8;
 
     fn get_level(&self, level: usize) -> u8 {
-        (self.sig >> ((level % 8) * 8)) as u8
+        (self.sig[0] >> ((level % 8) * 8)) as u8
     }
 }
 
@@ -117,9 +143,9 @@ impl ToSig<[u64; 2]> for String {
     }
 }
 
-impl ToSig<u64> for String {
-    fn to_sig(key: &Self, seed: u64) -> u64 {
-        xxh3::xxh3_64_with_seed(key.as_bytes(), seed)
+impl ToSig<[u64;1]> for String {
+    fn to_sig(key: &Self, seed: u64) -> [u64;1] {
+        [xxh3::xxh3_64_with_seed(key.as_bytes(), seed)]
     }
 }
 
@@ -130,9 +156,9 @@ impl ToSig<[u64; 2]> for &String {
     }
 }
 
-impl ToSig<u64> for &String {
-    fn to_sig(key: &Self, seed: u64) -> u64 {
-        xxh3::xxh3_64_with_seed(key.as_bytes(), seed)
+impl ToSig<[u64;1]> for &String {
+    fn to_sig(key: &Self, seed: u64) -> [u64; 1] {
+        [xxh3::xxh3_64_with_seed(key.as_bytes(), seed)]
     }
 }
 
@@ -143,9 +169,9 @@ impl ToSig<[u64; 2]> for str {
     }
 }
 
-impl ToSig<u64> for str {
-    fn to_sig(key: &Self, seed: u64) -> u64 {
-        xxh3::xxh3_64_with_seed(key.as_bytes(), seed)
+impl ToSig<[u64;1]> for str {
+    fn to_sig(key: &Self, seed: u64) -> [u64; 1] {
+        [xxh3::xxh3_64_with_seed(key.as_bytes(), seed)]
     }
 }
 
@@ -156,9 +182,9 @@ impl ToSig<[u64; 2]> for &str {
     }
 }
 
-impl ToSig<u64> for &str {
-    fn to_sig(key: &Self, seed: u64) -> u64 {
-        xxh3::xxh3_64_with_seed(key.as_bytes(), seed)
+impl ToSig<[u64;1]> for &str {
+    fn to_sig(key: &Self, seed: u64) -> [u64; 1] {
+        [xxh3::xxh3_64_with_seed(key.as_bytes(), seed)]
     }
 }
 
@@ -170,9 +196,9 @@ macro_rules! to_sig_prim {
                 [(hash128 >> 64) as u64, hash128 as u64]
             }
         }
-        impl ToSig<u64> for $ty {
-            fn to_sig(key: &Self, seed: u64) -> u64 {
-                xxh3::xxh3_64_with_seed(&key.to_ne_bytes(), seed)
+        impl ToSig<[u64;1]> for $ty {
+            fn to_sig(key: &Self, seed: u64) -> [u64; 1] {
+                [xxh3::xxh3_64_with_seed(&key.to_ne_bytes(), seed)]
             }
         }
     )*};
@@ -189,10 +215,10 @@ macro_rules! to_sig_slice {
                 [(hash128 >> 64) as u64, hash128 as u64]
             }
         }
-        impl ToSig<u64> for &[$ty] {
-            fn to_sig(key: &Self, seed: u64) -> u64 {
+        impl ToSig<[u64;1]> for &[$ty] {
+            fn to_sig(key: &Self, seed: u64) -> [u64; 1] {
                 // Alignemnt to u8 never fails or leave trailing/leading bytes
-                xxh3::xxh3_64_with_seed(unsafe {key.align_to::<u8>().1 }, seed)
+                [xxh3::xxh3_64_with_seed(unsafe {key.align_to::<u8>().1 }, seed)]
             }
         }
     )*};
@@ -200,26 +226,49 @@ macro_rules! to_sig_slice {
 
 to_sig_slice!(isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
 
-/// Accumulates key signatures (i.e., random-looking hashes associated to keys)
-/// and associated values, grouping them in different disk buffers by the high
-/// bits of the hash. Along the way, it keeps track of the number of signatures
-/// with the same `max_shard_high_bits` high bits.
-///
-/// The implementation exploits the fact that signatures are randomly
-/// distributed, and thus bucket sorting is very effective: at construction time
-/// you specify the number of high bits to use for bucket sorting (say, 8), and
-/// when you [push](`SigStore::push`) keys they will be stored in different disk
-/// buffers (in this case, 256) depending on their high bits. The buffers will
-/// be stored in a directory created by [`tempfile::TempDir`].
-///
-/// After all key signatures and values have been accumulated, you must call
-/// [`SigStore::into_shard_store`] to flush the buffers and obtain a
-/// [`ShardStore`]. [`SigStore::into_shard_store`] takes the the number of high
-/// bits to use for grouping signatures into shards, and the necessary buffer
-/// splitting or merging will be handled automatically by the resulting
-/// [`ShardStore`].
+/// A signature store.
+/// 
+/// The purpose of this trait is that of avoiding clumsy `where` clauses when
+/// passing around a signature store. There is only one implementation,
+/// [`SigStoreImpl`], but it is implemented only for certain combinations of
+/// type parameters. Having this trait greatly simplifies the type signatures.
+pub trait SigStore<S: Sig + ZeroCopy, V: ZeroCopy> {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    /// Try to add a new signature/value pair to the store.
+    fn try_push(&mut self, sig_val: SigVal<S, V>) -> Result<(), Self::Error>;
+
+    type ShardStore: ShardStore<S, V> + Send + Sync;
+    /// Turn this store into a [`ShardStore`] whose shards are defined by the
+    /// `shard_high_bits` high bits of the signatures.
+    ///
+    /// # Panics
+    ///
+    /// It must hold that `shard_high_bits` is at most
+    /// [`max_shard_high_bits`](SigStore::max_shard_high_bits) or this method
+    /// will panic.
+    fn into_shard_store(self, shard_high_bits: u32) -> Result<Self::ShardStore>;
+
+    /// Return the number of signature/value pairs added to the store so far.
+    fn len(&self) -> usize;
+
+    /// Return true if no signature/value pairs have been added to the store.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The maximum number of bits whose count we keep track of.
+    ///
+    /// Sharding cannot hppen with more bits than this.
+    fn max_shard_high_bits(&self) -> u32;
+}
+
+/// An implementation of [`SigStore`] that accumulates signature/value pairs in
+/// memory or on disk.
+/// 
+/// See the [module documentation](crate::utils::sig_store) for more information.
 #[derive(Debug)]
-pub struct SigStore<S, V, B> {
+pub struct SigStoreImpl<S, V, B> {
     /// Number of keys added so far.
     len: usize,
     /// The number of high bits used for bucket sorting (i.e., the number of files).
@@ -241,10 +290,220 @@ pub struct SigStore<S, V, B> {
     _marker: PhantomData<(S, V)>,
 }
 
-/// An container for the signatures and values accumulated by a [`SigStore`],
+/// Create a new on-disk store with 2<sup>`buckets_high_bits`</sup> buckets,
+/// keeping counts for shards defined by at most `max_shard_high_bits` high
+/// bits.
+/// 
+/// The type `S` is the type of the signatures (usually `[u64;1]` or `[u64;
+/// 2]`), while `V` is the type of the values. The store will be written to a
+/// [temporary directory](https://doc.rust-lang.org/std/env/fn.temp_dir.html),
+/// and the files will be deleted when the store is dropped.
+pub fn new_offline<S: ZeroCopy + Sig, V: ZeroCopy>(
+    buckets_high_bits: u32,
+    max_shard_high_bits: u32,
+) -> Result<SigStoreImpl<S, V, BufWriter<File>>> {
+    let temp_dir = tempfile::TempDir::new()?;
+    let mut writers = VecDeque::new();
+    for i in 0..1 << buckets_high_bits {
+        let file = File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(temp_dir.path().join(format!("{}.tmp", i)))?;
+        writers.push_back(BufWriter::new(file));
+    }
+
+    Ok(SigStoreImpl {
+        len: 0,
+        buckets_high_bits,
+        max_shard_high_bits,
+        buckets_mask: (1u64 << buckets_high_bits) - 1,
+        max_shard_mask: (1u64 << max_shard_high_bits) - 1,
+        buckets: writers,
+        bucket_sizes: vec![0; 1 << buckets_high_bits],
+        shard_sizes: vec![0; 1 << max_shard_high_bits],
+        _marker: PhantomData,
+    })
+}
+
+/// Create a new in-memory store with 2<sup>`buckets_high_bits`</sup> buckets,
+/// keeping counts for shards defined by at most `max_shard_high_bits` high
+/// bits.
+/// 
+/// The type `S` is the type of the signatures (usually `[u64;1]` or `[u64;
+/// 2]`), while `V` is the type of the values. The store will be written to a
+/// temporary directory, and the files will be deleted when the store is
+/// dropped.
+pub fn new_online<S: ZeroCopy + Sig, V: ZeroCopy>(
+    buckets_high_bits: u32,
+    max_shard_high_bits: u32,
+) -> Result<SigStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>> {
+    let mut writers = VecDeque::new();
+    writers.resize_with(1 << buckets_high_bits, || Arc::new(vec![]));
+
+    Ok(SigStoreImpl {
+        len: 0,
+        buckets_high_bits,
+        max_shard_high_bits,
+        buckets_mask: (1u64 << buckets_high_bits) - 1,
+        max_shard_mask: (1u64 << max_shard_high_bits) - 1,
+        buckets: writers,
+        bucket_sizes: vec![0; 1 << buckets_high_bits],
+        shard_sizes: vec![0; 1 << max_shard_high_bits],
+        _marker: PhantomData,
+    })
+}
+
+impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
+    for SigStoreImpl<S, V, BufWriter<File>>
+{
+    type Error = std::io::Error;
+
+    fn try_push(&mut self, sig_val: SigVal<S, V>) -> Result<(), Self::Error> {
+        self.len += 1;
+        // high_bits can be 0
+        let buffer = sig_val
+            .sig
+            .high_bits(self.buckets_high_bits, self.buckets_mask) as usize;
+        let shard = sig_val
+            .sig
+            .high_bits(self.max_shard_high_bits, self.max_shard_mask) as usize;
+
+        self.bucket_sizes[buffer] += 1;
+        self.shard_sizes[shard] += 1;
+
+        write_binary(&mut self.buckets[buffer], std::slice::from_ref(&sig_val))
+    }
+
+    type ShardStore = ShardStoreImpl<S, V, BufReader<File>>;
+
+    fn into_shard_store(mut self, shard_high_bits: u32) -> Result<Self::ShardStore> {
+        assert!(shard_high_bits <= self.max_shard_high_bits);
+        let mut files = Vec::with_capacity(self.buckets.len());
+
+        // Flush all writers
+        for _ in 0..1 << self.buckets_high_bits {
+            let mut writer = self.buckets.pop_front().unwrap();
+            writer.flush()?;
+            let mut file = writer.into_inner()?;
+            file.seek(SeekFrom::Start(0))?;
+            files.push(BufReader::new(file));
+        }
+
+        // Aggregate shard sizes as necessary
+        let shard_sizes = self
+            .shard_sizes
+            .chunks(1 << (self.max_shard_high_bits - shard_high_bits))
+            .map(|x| x.iter().sum())
+            .collect::<Vec<_>>();
+        Ok(ShardStoreImpl {
+            bucket_high_bits: self.buckets_high_bits,
+            shard_high_bits,
+            buckets: files,
+            buf_sizes: self.bucket_sizes,
+            shard_sizes,
+            _marker: PhantomData,
+        })
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn max_shard_high_bits(&self) -> u32 {
+        self.max_shard_high_bits
+    }
+}
+
+impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
+    for SigStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>
+{
+    type Error = std::convert::Infallible;
+
+    fn try_push(&mut self, sig_val: SigVal<S, V>) -> Result<(), Self::Error> {
+        self.len += 1;
+
+        let buffer = sig_val
+            .sig
+            .high_bits(self.buckets_high_bits, self.buckets_mask) as usize;
+        let shard = sig_val
+            .sig
+            .high_bits(self.max_shard_high_bits, self.max_shard_mask) as usize;
+
+        self.bucket_sizes[buffer] += 1;
+        self.shard_sizes[shard] += 1;
+
+        Arc::get_mut(&mut self.buckets[buffer])
+            .unwrap()
+            .push(sig_val);
+        Ok(())
+    }
+
+    type ShardStore = ShardStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>;
+
+    fn into_shard_store(self, shard_high_bits: u32) -> Result<Self::ShardStore> {
+        assert!(shard_high_bits <= self.max_shard_high_bits);
+        let files = self
+            .buckets
+            .into_iter()
+            .map(|mut x| {
+                Arc::get_mut(&mut x).unwrap().shrink_to_fit();
+                x
+            })
+            .collect();
+        // Aggregate shard sizes as necessary
+        let shard_sizes = self
+            .shard_sizes
+            .chunks(1 << (self.max_shard_high_bits - shard_high_bits))
+            .map(|x| x.iter().sum())
+            .collect::<Vec<_>>();
+        Ok(ShardStoreImpl {
+            bucket_high_bits: self.buckets_high_bits,
+            shard_high_bits,
+            buckets: files,
+            buf_sizes: self.bucket_sizes,
+            shard_sizes,
+            _marker: PhantomData,
+        })
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn max_shard_high_bits(&self) -> u32 {
+        self.max_shard_high_bits
+    }
+}
+
+/// A container for the signatures and values accumulated by a [`SigStore`],
 /// with the ability to [enumerate them grouped in shards](ShardStore::iter).
+/// 
+/// Also in this case, the purpose of this trait is that of avoiding clumsy
+/// `where` clauses when passing around a signature store. There is only one
+/// implementation, [`ShardStoreImpl`], but it is implemented only for certain
+/// combinations of type parameters. Having this trait greatly simplifies the
+/// type signatures.
+pub trait ShardStore<S: Sig + ZeroCopy, V: ZeroCopy> {
+    type ShardIterator<'a>: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync
+    where
+        Self: 'a;
+
+    /// Return the shard sizes.
+    fn shard_sizes(&self) -> &[usize];
+
+    /// Return an iterator on shards.
+    ///
+    /// This method can be called multiple times.
+    fn iter(&mut self) -> Self::ShardIterator<'_>;
+}
+
+/// An implementation of [`ShardStore`].
+/// 
+/// See the [module documentation](crate::utils::sig_store) for more information.
 #[derive(Debug)]
-pub struct ShardStore<S, V, B> {
+pub struct ShardStoreImpl<S, V, B> {
     /// The number of high bits used for bucket sorting.
     bucket_high_bits: u32,
     /// The number of high bits defining a shard.
@@ -258,24 +517,21 @@ pub struct ShardStore<S, V, B> {
     _marker: PhantomData<(S, V)>,
 }
 
-impl<S, V, B> ShardStore<S, V, B> {
-    /// Return the shard sizes.
-    pub fn shard_sizes(&self) -> &Vec<usize> {
+impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync, B: Send + Sync> ShardStore<S, V>
+    for ShardStoreImpl<S, V, B>
+where
+    for<'a> ShardIterator<'a, S, V, B>: Iterator<Item = Arc<Vec<SigVal<S, V>>>>,
+{
+    type ShardIterator<'a>
+        = ShardIterator<'a, S, V, B>
+    where
+        B: 'a;
+
+    fn shard_sizes(&self) -> &[usize] {
         &self.shard_sizes
     }
-}
 
-impl<'a, S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync, B> IntoIterator
-    for &'a mut ShardStore<S, V, B>
-where
-    ShardIterator<'a, S, V, B>: Iterator<Item = Arc<Vec<SigVal<S, V>>>>,
-{
-    type IntoIter = ShardIterator<'a, S, V, B>;
-    type Item = Arc<Vec<SigVal<S, V>>>;
-    /// Return an iterator on shards.
-    ///
-    /// This method can be called multiple times.
-    fn into_iter(self) -> ShardIterator<'a, S, V, B> {
+    fn iter(&mut self) -> ShardIterator<'_, S, V, B> {
         ShardIterator {
             store: self,
             next_bucket: 0,
@@ -286,16 +542,14 @@ where
     }
 }
 
-/// Enumerate shards in a [`ShardStore`].
+/// An iterator on shards in a [`ShardStore`].
 ///
 /// A [`ShardIterator`] handles the mapping between buckets and shards. If a
 /// shard is made by one or more buckets, it will aggregate them as necessary;
 /// if a bucket contains several shards, it will split the bucket into shards.
-///
-/// Note that a [`ShardIterator`] returns owned data.
 #[derive(Debug)]
 pub struct ShardIterator<'a, S: ZeroCopy + Sig, V: ZeroCopy, B> {
-    store: &'a mut ShardStore<S, V, B>,
+    store: &'a mut ShardStoreImpl<S, V, B>,
     /// The next bucket to examine.
     next_bucket: usize,
     /// The next shard to return.
@@ -480,17 +734,9 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
     }
 }
 
-impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> ExactSizeIterator
-    for ShardIterator<'_, S, V, BufReader<File>>
-{
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.store.shard_sizes.len() - self.next_shard
-    }
-}
-
-impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> ExactSizeIterator
-    for ShardIterator<'_, S, V, Arc<Vec<SigVal<S, V>>>>
+impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync, B: Send + Sync> ExactSizeIterator
+    for ShardIterator<'_, S, V, B>
+    where for<'a> ShardIterator<'a, S, V, B>: Iterator
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -508,214 +754,17 @@ fn write_binary<S: ZeroCopy + Sig, V: ZeroCopy>(
     writer.write_all(buf)
 }
 
-impl<S: ZeroCopy + Sig, V: ZeroCopy> SigStore<S, V, BufWriter<File>> {
-    /// Create a new store with 2<sup>`buckets_high_bits`</sup> buffers, keeping
-    /// counts for shards defined by at most `max_shard_high_bits` high bits.
-    pub fn new_offline(buckets_high_bits: u32, max_shard_high_bits: u32) -> Result<Self> {
-        let temp_dir = tempfile::TempDir::new()?;
-        let mut writers = VecDeque::new();
-        for i in 0..1 << buckets_high_bits {
-            let file = File::options()
-                .read(true)
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(temp_dir.path().join(format!("{}.tmp", i)))?;
-            writers.push_back(BufWriter::new(file));
-        }
-        Ok(Self {
-            len: 0,
-            buckets_high_bits,
-            max_shard_high_bits,
-            buckets_mask: (1u64 << buckets_high_bits) - 1,
-            max_shard_mask: (1u64 << max_shard_high_bits) - 1,
-            buckets: writers,
-            bucket_sizes: vec![0; 1 << buckets_high_bits],
-            shard_sizes: vec![0; 1 << max_shard_high_bits],
-            _marker: PhantomData,
-        })
-    }
-}
-
-impl<S: ZeroCopy + Sig, V: ZeroCopy> SigStore<S, V, Arc<Vec<SigVal<S, V>>>> {
-    /// Create a new store with 2<sup>`buckets_high_bits`</sup> buffers, keeping
-    /// counts for shards defined by at most `max_shard_high_bits` high bits.
-    pub fn new_online(buckets_high_bits: u32, max_shard_high_bits: u32) -> Result<Self> {
-        let mut writers = VecDeque::new();
-        writers.resize_with(1 << buckets_high_bits, || Arc::new(vec![]));
-
-        Ok(Self {
-            len: 0,
-            buckets_high_bits,
-            max_shard_high_bits,
-            buckets_mask: (1u64 << buckets_high_bits) - 1,
-            max_shard_mask: (1u64 << max_shard_high_bits) - 1,
-            buckets: writers,
-            bucket_sizes: vec![0; 1 << buckets_high_bits],
-            shard_sizes: vec![0; 1 << max_shard_high_bits],
-            _marker: PhantomData,
-        })
-    }
-}
-
-pub trait TryPush<V> {
-    type Error: std::error::Error + Send + Sync + 'static;
-    fn try_push(&mut self, sig_val: V) -> Result<(), Self::Error>;
-}
-
-impl<S: ZeroCopy + Sig, V: ZeroCopy> TryPush<SigVal<S, V>> for SigStore<S, V, BufWriter<File>> {
-    type Error = std::io::Error;
-
-    fn try_push(&mut self, sig_val: SigVal<S, V>) -> Result<(), Self::Error> {
-        self.len += 1;
-        // high_bits can be 0
-        let buffer = sig_val
-            .sig
-            .high_bits(self.buckets_high_bits, self.buckets_mask) as usize;
-        let shard = sig_val
-            .sig
-            .high_bits(self.max_shard_high_bits, self.max_shard_mask) as usize;
-
-        self.bucket_sizes[buffer] += 1;
-        self.shard_sizes[shard] += 1;
-
-        write_binary(&mut self.buckets[buffer], std::slice::from_ref(&sig_val))
-    }
-}
-
-impl<S: ZeroCopy + Sig, V: ZeroCopy> TryPush<SigVal<S, V>>
-    for SigStore<S, V, Arc<Vec<SigVal<S, V>>>>
-{
-    type Error = std::convert::Infallible;
-
-    fn try_push(&mut self, sig_val: SigVal<S, V>) -> Result<(), Self::Error> {
-        self.len += 1;
-        // high_bits can be 0
-        let buffer = sig_val
-            .sig
-            .high_bits(self.buckets_high_bits, self.buckets_mask) as usize;
-        let shard = sig_val
-            .sig
-            .high_bits(self.max_shard_high_bits, self.max_shard_mask) as usize;
-
-        self.bucket_sizes[buffer] += 1;
-        self.shard_sizes[shard] += 1;
-
-        Arc::get_mut(&mut self.buckets[buffer])
-            .unwrap()
-            .push(sig_val);
-        Ok(())
-    }
-}
-
-impl<S, V, B> SigStore<S, V, B> {
-    /// The number of signature/value pairs added to the store so far.
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-}
-
-pub trait IntoShardStore<S: ZeroCopy + Sig, V: ZeroCopy> {
-    type Reader: 'static;
-    fn into_shard_store(self, shard_high_bits: u32) -> Result<ShardStore<S, V, Self::Reader>>;
-}
-
-impl<S: ZeroCopy + Sig, V: ZeroCopy> IntoShardStore<S, V> for SigStore<S, V, BufWriter<File>> {
-    type Reader = BufReader<File>;
-
-    /// Flush the buffers and return a pair given by [`ShardStore`] whose shards are defined by
-    /// the `shard_high_bits` high bits of the signatures.
-    ///
-    /// It must hold that
-    /// `shard_high_bits` is at most the `max_shard_high_bits` value provided
-    /// at construction time, or this method will panic.
-    fn into_shard_store(mut self, shard_high_bits: u32) -> Result<ShardStore<S, V, Self::Reader>> {
-        assert!(shard_high_bits <= self.max_shard_high_bits);
-        let mut files = Vec::with_capacity(self.buckets.len());
-
-        // Flush all writers
-        for _ in 0..1 << self.buckets_high_bits {
-            let mut writer = self.buckets.pop_front().unwrap();
-            writer.flush()?;
-            let mut file = writer.into_inner()?;
-            file.seek(SeekFrom::Start(0))?;
-            files.push(BufReader::new(file));
-        }
-
-        // Aggregate shard sizes as necessary
-        let shard_sizes = self
-            .shard_sizes
-            .chunks(1 << (self.max_shard_high_bits - shard_high_bits))
-            .map(|x| x.iter().sum())
-            .collect::<Vec<_>>();
-        Ok(ShardStore {
-            bucket_high_bits: self.buckets_high_bits,
-            shard_high_bits,
-            buckets: files,
-            buf_sizes: self.bucket_sizes,
-            shard_sizes,
-            _marker: PhantomData,
-        })
-    }
-}
-
-impl<S: ZeroCopy + Sig, V: ZeroCopy> IntoShardStore<S, V>
-    for SigStore<S, V, Arc<Vec<SigVal<S, V>>>>
-{
-    type Reader = Arc<Vec<SigVal<S, V>>>;
-    /// Flush the buffers and return a pair given by [`ShardStore`] whose shards are defined by
-    /// the `shard_high_bits` high bits of the signatures.
-    ///
-    /// It must hold that
-    /// `shard_high_bits` is at most the `max_shard_high_bits` value provided
-    /// at construction time, or this method will panic.
-    fn into_shard_store(self, shard_high_bits: u32) -> Result<ShardStore<S, V, Self::Reader>> {
-        assert!(shard_high_bits <= self.max_shard_high_bits);
-        let files = self
-            .buckets
-            .into_iter()
-            .map(|mut x| {
-                Arc::get_mut(&mut x).unwrap().shrink_to_fit();
-                x
-            })
-            .collect();
-        // Aggregate shard sizes as necessary
-        let shard_sizes = self
-            .shard_sizes
-            .chunks(1 << (self.max_shard_high_bits - shard_high_bits))
-            .map(|x| x.iter().sum())
-            .collect::<Vec<_>>();
-        Ok(ShardStore {
-            bucket_high_bits: self.buckets_high_bits,
-            shard_high_bits,
-            buckets: files,
-            buf_sizes: self.bucket_sizes,
-            shard_sizes,
-            _marker: PhantomData,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
-    fn _test_sig_store<S: ZeroCopy + Sig + Send + Sync, B>(
-        mut sig_store: SigStore<S, u64, B>,
+    fn _test_sig_store<S: ZeroCopy + Sig + Send + Sync>(
+        mut sig_store: impl SigStore<S, u64>,
         get_rand_sig: fn(&mut SmallRng) -> S,
-    ) -> anyhow::Result<()>
-    where
-        SigStore<S, u64, B>: IntoShardStore<S, u64> + TryPush<SigVal<S, u64>>,
-        for<'a> &'a mut ShardStore<S, u64, <SigStore<S, u64, B> as IntoShardStore<S, u64>>::Reader>:
-            IntoIterator<Item = Arc<Vec<SigVal<S, u64>>>>,
-    {
+    ) -> anyhow::Result<()> {
         let mut rand = SmallRng::seed_from_u64(0);
-        let shard_high_bits = sig_store.max_shard_high_bits;
+        let shard_high_bits = sig_store.max_shard_high_bits();
 
         for _ in (0..10000).rev() {
             sig_store.try_push(SigVal {
@@ -725,8 +774,7 @@ mod tests {
         }
         let mut shard_store = sig_store.into_shard_store(shard_high_bits).unwrap();
         let mut count = 0;
-        let iter = shard_store.into_iter();
-        for shard in iter {
+        for shard in shard_store.iter() {
             for &w in shard.iter() {
                 assert_eq!(
                     count,
@@ -748,14 +796,12 @@ mod tests {
                     if shard_high_bits > max_shard_bits {
                         continue;
                     }
-                    _test_sig_store(
-                        SigStore::new_online(buckets_high_bits, max_shard_bits)?,
-                        |rand| [rand.random(), rand.random()],
-                    )?;
-                    _test_sig_store(
-                        SigStore::new_offline(buckets_high_bits, max_shard_bits)?,
-                        |rand| [rand.random(), rand.random()],
-                    )?;
+                    _test_sig_store(new_online(buckets_high_bits, max_shard_bits)?, |rand| {
+                        [rand.random(), rand.random()]
+                    })?;
+                    _test_sig_store(new_offline(buckets_high_bits, max_shard_bits)?, |rand| {
+                        [rand.random(), rand.random()]
+                    })?;
                 }
             }
         }
@@ -763,15 +809,10 @@ mod tests {
         Ok(())
     }
 
-    fn _test_u8<S: ZeroCopy + Sig, B>(
-        mut sig_store: SigStore<S, u8, B>,
+    fn _test_u8<S: ZeroCopy + Sig>(
+        mut sig_store: impl SigStore<S, u8>,
         get_rand_sig: fn(&mut SmallRng) -> S,
-    ) -> anyhow::Result<()>
-    where
-        SigStore<S, u8, B>: IntoShardStore<S, u8> + TryPush<SigVal<S, u8>>,
-        for<'a> &'a mut ShardStore<S, u8, <SigStore<S, u8, B> as IntoShardStore<S, u8>>::Reader>:
-            IntoIterator<Item = Arc<Vec<SigVal<S, u8>>>>,
-    {
+    ) -> anyhow::Result<()> {
         let mut rand = SmallRng::seed_from_u64(0);
         for _ in (0..1000).rev() {
             sig_store.try_push(SigVal {
@@ -782,8 +823,7 @@ mod tests {
         let mut shard_store = sig_store.into_shard_store(2)?;
         let mut count = 0;
 
-        let iter = shard_store.into_iter();
-        for shard in iter {
+        for shard in shard_store.iter() {
             for &w in shard.iter() {
                 assert_eq!(count, w.sig.high_bits(2, (1 << 2) - 1));
             }
@@ -796,12 +836,8 @@ mod tests {
 
     #[test]
     fn test_u8() -> anyhow::Result<()> {
-        _test_u8(SigStore::new_online(2, 2)?, |rand| {
-            [rand.random(), rand.random()]
-        })?;
-        _test_u8(SigStore::new_offline(2, 2)?, |rand| {
-            [rand.random(), rand.random()]
-        })?;
+        _test_u8(new_online(2, 2)?, |rand| [rand.random(), rand.random()])?;
+        _test_u8(new_offline(2, 2)?, |rand| [rand.random(), rand.random()])?;
         Ok(())
     }
 }

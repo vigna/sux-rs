@@ -89,7 +89,7 @@ fn test_vfilter() -> Result<()> {
             let filter = VBuilder::<_, _, BitFieldVec<usize>, [u64; 2], true, ()>::default()
                 .log2_buckets(4)
                 .offline(offline)
-                .try_build_filter(FromIntoIterator::from(0..n), 10, &mut pl)?;
+                .try_build_filter(FromIntoIterator::from(0..n), 16, &mut pl)?;
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             filter.serialize(&mut cursor)?;
             cursor.set_position(0);
@@ -113,7 +113,7 @@ fn test_vfilter() -> Result<()> {
 
                 let failure_rate = (c as f64) / n as f64;
                 assert!(
-                    failure_rate < 1. / 1023.,
+                    failure_rate < 1. / 65535.,
                     "Failure rate is too high: 1 / {}",
                     1. / failure_rate
                 );
