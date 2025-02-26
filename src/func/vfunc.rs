@@ -462,7 +462,7 @@ impl ShardEdge<[u64; 2], 3> for FuseShards {
 
             if t > 0.0 {
                                 ((t - t.ln()) / 2_f64.ln()).max(0.).
-                                min(0.13 * t.log2() - 0.75).ceil() as u32
+                                min(0.13 * (n as f64).log2() - 0.75).ceil() as u32
                 /*// We correct the estimate to increase slightly the shard size
                 ((t - 1.92 * t.ln() - 1.22 * t.ln().ln()) / 2_f64.ln())
                     .ceil()
@@ -484,7 +484,7 @@ impl ShardEdge<[u64; 2], 3> for FuseShards {
         (c, self.log2_seg_size) = if lazy_gaussian {
             (1.10, lin_log2_seg_size(3, shard_size))
         } else {
-            (1.105, fuse_log2_seg_size(3, shard_size))
+            (1.10, fuse_log2_seg_size(3, shard_size))
         };
 
         self.l = ((c * shard_size as f64).ceil() as usize)
@@ -575,7 +575,7 @@ impl ShardEdge<[u64; 1], 3> for FuseShards {
         (c, self.log2_seg_size) = if lazy_gaussian {
             (1.10, lin_log2_seg_size(3, shard_size))
         } else {
-            (1.105, fuse_log2_seg_size(3, shard_size))
+            (1.10, fuse_log2_seg_size(3, shard_size))
         };
 
         self.l = ((c * shard_size as f64).ceil() as usize)
@@ -641,7 +641,7 @@ impl Display for FuseNoShards {
 impl ShardEdge<[u64; 2], 3> for FuseNoShards {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
         let c = if n <= FuseShards::MAX_LIN_SIZE {
-            1.105
+            1.10
         } else {
             fuse_c(3, n)
         };
@@ -684,7 +684,7 @@ impl ShardEdge<[u64; 2], 3> for FuseNoShards {
 impl ShardEdge<[u64; 1], 3> for FuseNoShards {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
         let c = if n < FuseShards::MIN_FUSE_SHARD {
-            1.105
+            1.10
         } else {
             fuse_c(3, n)
         };
@@ -1074,7 +1074,7 @@ mod tests {
         for _ in 0..50 {
             if shard_size >= 1_000_000 {
                 let l2ss = log2_seg_size(shard_size);
-                let c = 1.105;
+                let c = 1.10;
                 let l = ((c * shard_size as f64).ceil() as usize).div_ceil(1 << l2ss);
                 let ideal_num_vertices = c * shard_size as f64;
                 let num_vertices = (1 << l2ss) * (l + 2);
