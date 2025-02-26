@@ -290,6 +290,7 @@ impl<
             // This thread copies shard-local solutions to the global solution
             scope.spawn(|_| {
                 for (shard_index, shard_data) in receive {
+                    #[cfg(not(feature = "vbuilder_no_data"))]
                     shard_data.copy(
                         0,
                         data,
@@ -313,7 +314,8 @@ impl<
                         ));
 
                         // Safety: only one thread may be accessing the shard
-                        let shard = unsafe { &mut *(Arc::as_ptr(&shard) as * mut Vec<SigVal<S, V>>)};
+                        let shard =
+                            unsafe { &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>) };
                         // Check for duplicates
                         shard.radix_sort_builder().with_low_mem_tuner().sort();
 
@@ -597,6 +599,7 @@ impl<
                     return Err(());
                 }
 
+                pl.expected_updates(Some(unpeeled.num_ones()));
                 pl.start("Solving system...");
                 let result = Modulo2System::lazy_gaussian_elimination(
                     None,
@@ -605,7 +608,7 @@ impl<
                     (0..self.shard_edge.num_vertices()).collect(),
                 )
                 .map_err(|_| ())?;
-                pl.done();
+                pl.done_with_count(unpeeled.num_ones());
 
                 for (v, &value) in result.iter().enumerate() {
                     data.set(v, value);
@@ -950,7 +953,7 @@ where
         into_keys: &mut impl RewindableIoLender<T>,
         into_values: &mut impl RewindableIoLender<V>,
         get_val: &G,
-        new: fn(usize, usize) -> D,
+        new_data: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, E>> {
         let mut max_value = W::ZERO;
@@ -1010,11 +1013,14 @@ where
         if max_shard as f64 > 1.01 * self.num_keys as f64 / self.shard_edge.num_shards() as f64 {
             Err(Into::into(SolveError::MaxShardTooBig))
         } else {
-            let data = new(
+            #[cfg(not(feature = "vbuilder_no_data"))]
+            let data = new_data(
                 self.bit_width,
                 self.shard_edge.num_vertices() * self.shard_edge.num_shards(),
             );
-            self.try_build_from_shard_iter(seed, data, shard_store.iter(), new, get_val, pl)
+            #[cfg(feature = "vbuilder_no_data")]
+            let data = new_data(self.bit_width, 0);
+            self.try_build_from_shard_iter(seed, data, shard_store.iter(), new_data, get_val, pl)
                 .map_err(Into::into)
         }
     }
