@@ -461,8 +461,8 @@ impl ShardEdge<[u64; 2], 3> for FuseShards {
             let t = (n as f64 * eps * eps / 2.0).ln();
 
             if t > 0.0 {
-                                ((t - t.ln()) / 2_f64.ln()).ceil().max(0.) as u32
-
+                                ((t - t.ln()) / 2_f64.ln()).max(0.).
+                                min(0.13 * t.log2() - 0.75).ceil() as u32
                 /*// We correct the estimate to increase slightly the shard size
                 ((t - 1.92 * t.ln() - 1.22 * t.ln().ln()) / 2_f64.ln())
                     .ceil()
