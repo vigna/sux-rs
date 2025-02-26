@@ -315,7 +315,7 @@ impl<
                         let shard = Arc::get_mut(&mut shard)
                             .expect(format!("Getting shard {shard_index} failed").as_str());
                         // Check for duplicates
-                        shard.radix_sort_unstable();
+                        shard.radix_sort_builder().with_low_mem_tuner().sort();
 
                         if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
                             return Err(SolveError::DuplicateSignature);
