@@ -10,7 +10,10 @@ use std::hint::black_box;
 use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
-use sux::{func::VBuilder, utils::FromIntoIterator};
+use sux::{
+    func::{FuseEdge, VBuilder},
+    utils::FromIntoIterator,
+};
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
@@ -32,7 +35,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     pl.start("Building...");
-    let builder = VBuilder::<u64, u16, Vec<_>, [u64; 1], false>::default();
+    let builder = VBuilder::<u64, u16, Vec<_>, [u64; 1], FuseEdge>::default();
 
     let vfunc = builder.try_build_func(
         FromIntoIterator::from(0..args.n as u64),

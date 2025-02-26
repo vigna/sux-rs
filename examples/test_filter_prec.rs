@@ -13,7 +13,7 @@ use epserde::prelude::*;
 use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
-    func::{ShardEdge, VBuilder, VFilter, VFunc},
+    func::{FuseEdge, ShardEdge, VBuilder, VFilter, VFunc},
     utils::{FromIntoIterator, Sig, SigVal, ToSig},
 };
 #[derive(Parser, Debug)]
@@ -30,11 +30,11 @@ struct Args {
     sig64: bool,
 }
 
-fn _main<S: Sig + Send + Sync + ShardEdge, const SHARDED: bool>(args: Args) -> Result<()>
+fn _main<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
 where
     SigVal<S, ()>: RadixKey,
     usize: ToSig<S>,
-    VFilter<usize, VFunc<usize, usize, BitFieldVec, S, SHARDED>>: TypeHash,
+    VFilter<usize, VFunc<usize, usize, BitFieldVec, S, E>>: TypeHash,
 {
     let mut m = MeanWithError::new();
 
@@ -43,7 +43,7 @@ where
     pl.start("Sampling...");
 
     for seed in 0..args.s {
-        let filter = VBuilder::<_, usize, BitFieldVec<usize>, S, SHARDED, ()>::default()
+        let filter = VBuilder::<_, usize, BitFieldVec<usize>, S, E, ()>::default()
             .log2_buckets(4)
             .offline(false)
             .seed(seed as u64)
@@ -82,9 +82,9 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.sig64 {
-        _main::<[u64; 1], true>(args)?;
+        _main::<[u64; 1], FuseEdge>(args)?;
     } else {
-        _main::<[u64; 2], true>(args)?;
+        _main::<[u64; 2], FuseEdge>(args)?;
     }
 
     Ok(())

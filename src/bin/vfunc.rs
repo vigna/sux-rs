@@ -7,12 +7,12 @@
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
-use epserde::ser::Serialize;
+use epserde::ser::{Serialize, SerializeInner};
 use epserde::traits::{TypeHash, ZeroCopy};
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::func::{ShardEdge, VFilter, VFunc};
+use sux::func::{FuseEdge, MwhcEdge, ShardEdge, VFilter, VFunc};
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
@@ -58,6 +58,9 @@ struct Args {
     /// Do not use sharding.
     #[arg(long)]
     no_shards: bool,
+    /// Use 3-hypergraph.
+    #[arg(long)]
+    mwhc: bool,
 }
 
 fn main() -> Result<()> {
@@ -67,18 +70,35 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    if args.no_shards {
-        if args.sig64 {
-            main_with_types::<[u64; 1], false>(args)
+    if args.mwhc {
+        if args.no_shards {
+            if args.sig64 {
+                main_with_types::<[u64; 1], MwhcEdge>(args)
+            } else {
+                main_with_types::<[u64; 2], MwhcEdge>(args)
+            }
         } else {
-            main_with_types::<[u64; 2], false>(args)
+            if args.sig64 {
+                main_with_types::<[u64; 1], MwhcEdge>(args)
+            } else {
+                main_with_types::<[u64; 2], MwhcEdge>(args)
+            }
         }
-    } else {if args.sig64 {
-        main_with_types::<[u64;1], true>(args)
     } else {
-        main_with_types::<[u64; 2], true>(args)
+        if args.no_shards {
+            if args.sig64 {
+                main_with_types::<[u64; 1], FuseEdge>(args)
+            } else {
+                main_with_types::<[u64; 2], FuseEdge>(args)
+            }
+        } else {
+            if args.sig64 {
+                main_with_types::<[u64; 1], FuseEdge>(args)
+            } else {
+                main_with_types::<[u64; 2], FuseEdge>(args)
+            }
+        }
     }
-}
 }
 
 fn set_up_builder<
@@ -86,12 +106,12 @@ fn set_up_builder<
     W: ZeroCopy + Word,
     D: BitFieldSlice<W> + Send + Sync,
     S,
-    const SHARDED: bool,
+    E: ShardEdge<S, 3>,
     V,
 >(
-    mut builder: VBuilder<T, W, D, S, SHARDED, V>,
+    mut builder: VBuilder<T, W, D, S, E, V>,
     args: &Args,
-) -> VBuilder<T, W, D, S, SHARDED, V> {
+) -> VBuilder<T, W, D, S, E, V> {
     if let Some(seed) = args.seed {
         builder = builder.seed(seed);
     }
@@ -101,17 +121,19 @@ fn set_up_builder<
     builder
 }
 
-fn main_with_types<S: Sig + ShardEdge, const SHARDED: bool>(args: Args) -> Result<()>
+fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
 where
     SigVal<S, usize>: RadixKey,
     SigVal<S, ()>: RadixKey,
     str: ToSig<S>,
     usize: ToSig<S>,
-    VFunc<str, usize, BitFieldVec, S, SHARDED>: Serialize,
-    VFunc<usize, usize, BitFieldVec, S, SHARDED>: Serialize,
-    VFunc<usize, u8, Vec<u8>, S, SHARDED>: Serialize,
-    VFunc<str, u8, Vec<u8>, S, SHARDED>: Serialize + TypeHash, // TODO: this is weird
-    VFilter<u8, VFunc<usize, u8, Vec<u8>, S, SHARDED>>: Serialize,
+    VFunc<str, usize, BitFieldVec, S, E>: Serialize,
+    VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
+    VFunc<usize, u8, Vec<u8>, S, E>: Serialize,
+    VFunc<str, u8, Vec<u8>, S, E>: Serialize + TypeHash, // TODO: this is weird
+    VFilter<u8, VFunc<usize, u8, Vec<u8>, S, E>>: Serialize,
+    <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Wierd
+    VFilter<u8, VFunc<str, u8, Vec<u8>, S, <E as SerializeInner>::SerType>>: TypeHash, // Weird
 {
     let mut pl = ProgressLogger::default();
     pl.display_memory(true);
@@ -119,7 +141,7 @@ where
 
     if let Some(ref filename) = &args.filename {
         if args.dict {
-            let mut builder = VBuilder::<str, u8, Vec<u8>, S, SHARDED, ()>::default()
+            let mut builder = VBuilder::<str, u8, Vec<u8>, S, E, ()>::default()
                 .offline(args.offline)
                 .log2_buckets(args.high_bits);
             builder = set_up_builder(builder, &args);
@@ -131,7 +153,7 @@ where
             };
             filter.store(&args.func)?;
         } else {
-            let mut builder = VBuilder::<_, _, BitFieldVec<usize>, S, SHARDED>::default()
+            let mut builder = VBuilder::<_, _, BitFieldVec<usize>, S, E>::default()
                 .offline(args.offline)
                 .log2_buckets(args.high_bits);
             builder = set_up_builder(builder, &args);
@@ -151,7 +173,7 @@ where
             func.store(&args.func)?;
         }
     } else if args.dict {
-        let mut builder = VBuilder::<_, u8, Vec<u8>, S, SHARDED, ()>::default()
+        let mut builder = VBuilder::<_, u8, Vec<u8>, S, E, ()>::default()
             .offline(args.offline)
             .expected_num_keys(n)
             .log2_buckets(args.high_bits);
@@ -159,7 +181,7 @@ where
         let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
         filter.store(&args.func)?;
     } else {
-        let mut builder = VBuilder::<_, _, BitFieldVec<usize>, S, SHARDED>::default()
+        let mut builder = VBuilder::<_, _, BitFieldVec<usize>, S, E>::default()
             .offline(args.offline)
             .expected_num_keys(n)
             .log2_buckets(args.high_bits);

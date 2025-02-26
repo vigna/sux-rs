@@ -7,7 +7,7 @@
 
 //! Fast sorting and grouping of signatures and values into shards, online and
 //! offline.
-//! 
+//!
 //! Traits and types in this module make it possible to accumulate key
 //! signatures (i.e., random-looking hashes associated to keys) and associated
 //! values, grouping them in different disk buffers by the high bits of the
@@ -34,7 +34,7 @@
 //! necessary bucket splitting or merging will be handled automatically, albeit
 //! the most efficient scenario is the one in which the number of buckets is
 //! equal to the number of shards.
-//! 
+//!
 //! The trait [`ToSig`] provides a standard way to generate signatures for a
 //! [`SigStore`]. Implementations are provided for signatures types `[u64;1]`
 //! and `[u64; 2]`. In the first case, after a few billion keys you will start
@@ -86,7 +86,7 @@ impl Sig for [u64; 2] {
     }
 }
 
-impl Sig for [u64;1] {
+impl Sig for [u64; 1] {
     #[inline(always)]
     fn high_bits(&self, high_bits: u32, mask: u64) -> u64 {
         debug_assert!(mask == (1 << high_bits) - 1);
@@ -143,8 +143,8 @@ impl ToSig<[u64; 2]> for String {
     }
 }
 
-impl ToSig<[u64;1]> for String {
-    fn to_sig(key: &Self, seed: u64) -> [u64;1] {
+impl ToSig<[u64; 1]> for String {
+    fn to_sig(key: &Self, seed: u64) -> [u64; 1] {
         [xxh3::xxh3_64_with_seed(key.as_bytes(), seed)]
     }
 }
@@ -156,7 +156,7 @@ impl ToSig<[u64; 2]> for &String {
     }
 }
 
-impl ToSig<[u64;1]> for &String {
+impl ToSig<[u64; 1]> for &String {
     fn to_sig(key: &Self, seed: u64) -> [u64; 1] {
         [xxh3::xxh3_64_with_seed(key.as_bytes(), seed)]
     }
@@ -169,7 +169,7 @@ impl ToSig<[u64; 2]> for str {
     }
 }
 
-impl ToSig<[u64;1]> for str {
+impl ToSig<[u64; 1]> for str {
     fn to_sig(key: &Self, seed: u64) -> [u64; 1] {
         [xxh3::xxh3_64_with_seed(key.as_bytes(), seed)]
     }
@@ -182,7 +182,7 @@ impl ToSig<[u64; 2]> for &str {
     }
 }
 
-impl ToSig<[u64;1]> for &str {
+impl ToSig<[u64; 1]> for &str {
     fn to_sig(key: &Self, seed: u64) -> [u64; 1] {
         [xxh3::xxh3_64_with_seed(key.as_bytes(), seed)]
     }
@@ -227,7 +227,7 @@ macro_rules! to_sig_slice {
 to_sig_slice!(isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
 
 /// A signature store.
-/// 
+///
 /// The purpose of this trait is that of avoiding clumsy `where` clauses when
 /// passing around a signature store. There is only one implementation,
 /// [`SigStoreImpl`], but it is implemented only for certain combinations of
@@ -265,7 +265,7 @@ pub trait SigStore<S: Sig + ZeroCopy, V: ZeroCopy> {
 
 /// An implementation of [`SigStore`] that accumulates signature/value pairs in
 /// memory or on disk.
-/// 
+///
 /// See the [module documentation](crate::utils::sig_store) for more information.
 #[derive(Debug)]
 pub struct SigStoreImpl<S, V, B> {
@@ -293,7 +293,7 @@ pub struct SigStoreImpl<S, V, B> {
 /// Create a new on-disk store with 2<sup>`buckets_high_bits`</sup> buckets,
 /// keeping counts for shards defined by at most `max_shard_high_bits` high
 /// bits.
-/// 
+///
 /// The type `S` is the type of the signatures (usually `[u64;1]` or `[u64;
 /// 2]`), while `V` is the type of the values. The store will be written to a
 /// [temporary directory](https://doc.rust-lang.org/std/env/fn.temp_dir.html),
@@ -330,7 +330,7 @@ pub fn new_offline<S: ZeroCopy + Sig, V: ZeroCopy>(
 /// Create a new in-memory store with 2<sup>`buckets_high_bits`</sup> buckets,
 /// keeping counts for shards defined by at most `max_shard_high_bits` high
 /// bits.
-/// 
+///
 /// The type `S` is the type of the signatures (usually `[u64;1]` or `[u64;
 /// 2]`), while `V` is the type of the values. The store will be written to a
 /// temporary directory, and the files will be deleted when the store is
@@ -479,7 +479,7 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
 
 /// A container for the signatures and values accumulated by a [`SigStore`],
 /// with the ability to [enumerate them grouped in shards](ShardStore::iter).
-/// 
+///
 /// Also in this case, the purpose of this trait is that of avoiding clumsy
 /// `where` clauses when passing around a signature store. There is only one
 /// implementation, [`ShardStoreImpl`], but it is implemented only for certain
@@ -500,7 +500,7 @@ pub trait ShardStore<S: Sig + ZeroCopy, V: ZeroCopy> {
 }
 
 /// An implementation of [`ShardStore`].
-/// 
+///
 /// See the [module documentation](crate::utils::sig_store) for more information.
 #[derive(Debug)]
 pub struct ShardStoreImpl<S, V, B> {
@@ -674,10 +674,10 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
                 return None;
             }
 
-            let res = &store.buckets[self.next_bucket];
+            let res = store.buckets[self.next_bucket].clone();
             self.next_bucket += 1;
             self.next_shard += 1;
-            Some(res.clone())
+            Some(res)
         } else if store.bucket_high_bits > store.shard_high_bits {
             // We need to aggregate one or more buckets to get a shard
             if self.next_bucket >= store.buckets.len() {
@@ -736,7 +736,8 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
 
 impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync, B: Send + Sync> ExactSizeIterator
     for ShardIterator<'_, S, V, B>
-    where for<'a> ShardIterator<'a, S, V, B>: Iterator
+where
+    for<'a> ShardIterator<'a, S, V, B>: Iterator,
 {
     #[inline(always)]
     fn len(&self) -> usize {
