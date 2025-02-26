@@ -12,7 +12,7 @@ use epserde::traits::{TypeHash, ZeroCopy};
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::func::{FuseEdge, MwhcEdge, ShardEdge, VFilter, VFunc};
+use sux::func::{FuseNoShards, FuseShards, MwhcNoShards, MwhcShards, ShardEdge, VFilter, VFunc};
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
@@ -73,29 +73,29 @@ fn main() -> Result<()> {
     if args.mwhc {
         if args.no_shards {
             if args.sig64 {
-                main_with_types::<[u64; 1], MwhcEdge>(args)
+                main_with_types::<[u64; 1], MwhcNoShards>(args)
             } else {
-                main_with_types::<[u64; 2], MwhcEdge>(args)
+                main_with_types::<[u64; 2], MwhcNoShards>(args)
             }
         } else {
             if args.sig64 {
-                main_with_types::<[u64; 1], MwhcEdge>(args)
+                main_with_types::<[u64; 1], MwhcShards>(args)
             } else {
-                main_with_types::<[u64; 2], MwhcEdge>(args)
+                main_with_types::<[u64; 2], MwhcShards>(args)
             }
         }
     } else {
         if args.no_shards {
             if args.sig64 {
-                main_with_types::<[u64; 1], FuseEdge>(args)
+                main_with_types::<[u64; 1], FuseNoShards>(args)
             } else {
-                main_with_types::<[u64; 2], FuseEdge>(args)
+                main_with_types::<[u64; 2], FuseNoShards>(args)
             }
         } else {
             if args.sig64 {
-                main_with_types::<[u64; 1], FuseEdge>(args)
+                main_with_types::<[u64; 1], FuseShards>(args)
             } else {
-                main_with_types::<[u64; 2], FuseEdge>(args)
+                main_with_types::<[u64; 2], FuseShards>(args)
             }
         }
     }
@@ -136,7 +136,6 @@ where
     VFilter<u8, VFunc<str, u8, Vec<u8>, S, <E as SerializeInner>::SerType>>: TypeHash, // Weird
 {
     let mut pl = ProgressLogger::default();
-    pl.display_memory(true);
     let n = args.n;
 
     if let Some(ref filename) = &args.filename {
