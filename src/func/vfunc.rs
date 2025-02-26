@@ -10,8 +10,10 @@ use crate::traits::bit_field_slice::*;
 use crate::utils::*;
 use common_traits::CastableInto;
 use epserde::prelude::*;
+use lender::Fuse;
 use mem_dbg::*;
 use std::borrow::Borrow;
+use std::fmt::Display;
 use std::ops::Index;
 
 /// The log₂ of the segment size in the linear regime.
@@ -62,7 +64,7 @@ pub struct VFunc<
     W: ZeroCopy + Word = usize,
     D: BitFieldSlice<W> = BitFieldVec<W>,
     S: Sig = [u64; 2],
-    E: ShardEdge<S, 3> = FuseEdge,
+    E: ShardEdge<S, 3> = FuseShards,
 > {
     pub(in crate::func) shard_edge: E,
     pub(in crate::func) seed: u64,
@@ -101,13 +103,13 @@ pub struct VFilter<W: ZeroCopy + Word, F> {
 /// first segment and in the following two (or more, in the case of higher
 /// degree).
 pub trait ShardEdge<S, const K: usize>:
-    Default + Clone + Copy + Send + Sync + SerializeInner + DeserializeInner + TypeHash + AlignHash
+    Default + Display + Clone + Copy + Send + Sync + SerializeInner + DeserializeInner + TypeHash + AlignHash
 {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool);
 
     fn shard(&self, sig: &S) -> usize;
 
-    fn shard_edge(&self, sig: &S) -> [usize; K];
+    fn local_edge(&self, sig: &S) -> [usize; K];
 
     fn edge(&self, sig: &S) -> [usize; K];
 
@@ -122,13 +124,57 @@ pub trait ShardEdge<S, const K: usize>:
 
 #[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
 #[deep_copy]
-pub struct MwhcEdge {
+pub struct MwhcShards {
     shard_high_bits: u32,
     shard_mask: u32,
     seg_size: usize,
 }
 
-impl ShardEdge<[u64; 2], 3> for MwhcEdge {
+impl Display for MwhcShards {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MWHC (shards) Number of shards: 2^{} Segment size: {}", self.shard_high_bits, self.seg_size)
+    }
+}
+
+impl MwhcShards {
+    #[inline(always)]
+    fn _edge_1(&self, shard: usize, sig: &[u64; 1]) -> [usize; 3] {
+        let seg_size: u64 = self.seg_size as _;
+        let start = shard as u64 * self.seg_size as u64 * 3;
+        let xor = sig[0] as u32 ^ (sig[0] >> 32) as u32;
+
+        [
+            (((sig[0] as u32 as u64 * seg_size) >> 32) + start) as _,
+            ((((sig[0] >> 32) * seg_size) >> 32) + start + seg_size) as _,
+            ((((xor as u64) * seg_size) >> 32) + start + 2 * seg_size) as _,
+        ]
+    }
+
+    #[inline(always)]
+    fn _edge_2(&self, shard: usize, sig: &[u64; 2]) -> [usize; 3] {
+        let seg_size = self.seg_size as u64;
+        let start = shard as u64 * seg_size * 3;
+
+        [
+            (((sig[0] as u32 as u64 * seg_size) >> 32) + start) as _,
+            ((((sig[1] >> 32) * seg_size) >> 32) + start + seg_size) as _,
+            ((((sig[1] as u32 as u64) * seg_size) >> 32) + start + 2 * seg_size) as _,
+        ]
+    }
+}
+#[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
+#[deep_copy]
+pub struct MwhcNoShards {
+    seg_size: usize,
+}
+
+impl Display for MwhcNoShards {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MWHC (no shards) Segment size: {}", self.seg_size)
+    }
+}
+
+impl ShardEdge<[u64; 2], 3> for MwhcShards {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
         let eps = 0.001; // Tolerance for deviation from the average shard size
         self.shard_high_bits = {
@@ -157,27 +203,13 @@ impl ShardEdge<[u64; 2], 3> for MwhcEdge {
     }
 
     #[inline(always)]
-    fn shard_edge(&self, sig: &[u64; 2]) -> [usize; 3] {
-        let seg_size: u64 = self.seg_size as _;
-
-        [
-            ((sig[0] as u32 as u64 * seg_size) >> 32) as _,
-            ((((sig[1] >> 32) * seg_size) >> 32) + seg_size) as _,
-            ((((sig[1] as u32 as u64) * seg_size) >> 32) + 2 * seg_size) as _,
-        ]
+    fn local_edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+        self._edge_2(0, sig)
     }
 
     #[inline(always)]
     fn edge(&self, sig: &[u64; 2]) -> [usize; 3] {
-        let shard = self.shard(sig);
-        let seg_size: u64 = self.seg_size as _;
-        let start = shard as u64 * seg_size * 3;
-
-        [
-            (((sig[0] as u32 as u64 * seg_size) >> 32) + start) as _,
-            ((((sig[1] >> 32) * seg_size) >> 32) + start + seg_size) as _,
-            ((((sig[1] as u32 as u64) * seg_size) >> 32) + start + 2 * seg_size) as _,
-        ]
+        self._edge_2(self.shard(sig), sig)
     }
 
     #[inline(always)]
@@ -191,7 +223,7 @@ impl ShardEdge<[u64; 2], 3> for MwhcEdge {
     }
 }
 
-impl ShardEdge<[u64; 1], 3> for MwhcEdge {
+impl ShardEdge<[u64; 1], 3> for MwhcShards {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
         let eps = 0.001; // Tolerance for deviation from the average shard size
         self.shard_high_bits = {
@@ -222,27 +254,13 @@ impl ShardEdge<[u64; 1], 3> for MwhcEdge {
     }
 
     #[inline(always)]
-    fn shard_edge(&self, sig: &[u64; 1]) -> [usize; 3] {
-        let seg_size: u64 = self.seg_size as _;
-
-        [
-            (((sig[0] & (1 << 21) - 1) * seg_size) >> 21) as _,
-            (((((sig[0] >> 21) & (1 << 21) - 1) * seg_size) >> 21) + seg_size) as _,
-            (((((sig[0] >> 42) & (1 << 21) - 1) * seg_size) >> 21) + 2 * seg_size) as _,
-        ]
+    fn local_edge(&self, sig: &[u64; 1]) -> [usize; 3] {
+        self._edge_1(0, sig)
     }
 
     #[inline(always)]
     fn edge(&self, sig: &[u64; 1]) -> [usize; 3] {
-        let seg_size: u64 = self.seg_size as _;
-        let shard = self.shard(sig);
-        let start = shard as u64 * self.seg_size as u64 * 3;
-
-        [
-            ((((sig[0] & (1 << 21) - 1) * seg_size) >> 21) + start) as _,
-            (((((sig[0] >> 21) & (1 << 21) - 1) * seg_size) >> 21) + start + seg_size) as _,
-            (((((sig[0] >> 42) & (1 << 21) - 1) * seg_size) >> 21) + start + 2 * seg_size) as _,
-        ]
+        self._edge_1(self.shard(sig), sig)
     }
 
     #[inline(always)]
@@ -256,53 +274,146 @@ impl ShardEdge<[u64; 1], 3> for MwhcEdge {
     }
 }
 
+impl ShardEdge<[u64; 2], 3> for MwhcNoShards {
+    fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
+        self.seg_size = ((n as f64 * 1.23).ceil() as usize).div_ceil(3);
+        (1.23, false)
+    }
+
+    #[inline(always)]
+    fn shard(&self, _sig: &[u64; 2]) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    fn local_edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+        let seg_size: u64 = self.seg_size as _;
+
+        [
+            ((sig[0] as u32 as u64 * seg_size) >> 32) as _,
+            (((sig[1] >> 32) * seg_size >> 32) + seg_size) as _,
+            (((sig[1] as u32 as u64) * seg_size >> 32) + 2 * seg_size) as _,
+        ]
+    }
+
+    #[inline(always)]
+    fn edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+        self.local_edge(sig)
+    }
+
+    #[inline(always)]
+    fn shard_high_bits(&self) -> u32 {
+        0
+    }
+
+    #[inline(always)]
+    fn num_vertices(&self) -> usize {
+        self.seg_size * 3
+    }
+}
+
+impl ShardEdge<[u64; 1], 3> for MwhcNoShards {
+    fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
+        self.seg_size = ((n as f64 * 1.23).ceil() as usize).div_ceil(3);
+        (1.23, false)
+    }
+
+    #[inline(always)]
+    fn shard(&self, _sig: &[u64; 1]) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    fn local_edge(&self, sig: &[u64; 1]) -> [usize; 3] {
+        let seg_size = self.seg_size as u64;
+        let xor = sig[0] as u32 ^ (sig[0] >> 32) as u32;
+
+        [
+            ((sig[0] as u32 as u64 * seg_size) >> 32) as _,
+            ((((sig[0] >> 32) * seg_size) >> 32) + seg_size) as _,
+            ((((xor as u64) * seg_size) >> 32) + 2 * seg_size) as _,
+        ]
+    }
+
+    #[inline(always)]
+    fn edge(&self, sig: &[u64; 1]) -> [usize; 3] {
+        self.local_edge(sig)
+    }
+
+    #[inline(always)]
+    fn shard_high_bits(&self) -> u32 {
+        0
+    }
+
+    #[inline(always)]
+    fn num_vertices(&self) -> usize {
+        self.seg_size * 3
+    }
+}
+
 #[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
 #[deep_copy]
-pub struct FuseEdge {
+pub struct FuseShards {
     shard_high_bits: u32,
     shard_mask: u32,
     log2_seg_size: u32,
     l: u32,
 }
 
-impl FuseEdge {
+impl Display for FuseShards {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Fuse (shards) Number of shards: 2^{} Segment size: 2^{} Number of segments: {}", self.shard_high_bits, self.log2_seg_size, self.l + 2)
+    }
+}
+
+#[inline(always)]
+fn fuse_edge_2(
+    shard: usize,
+    shard_high_bits: u32,
+    log2_seg_size: u32,
+    l: u32,
+    sig: &[u64; 2],
+) -> [usize; 3] {
+    let first_segment = (((sig[0] << shard_high_bits >> 32) * l as u64) >> 32) as usize;
+    let shard_offset = shard * ((l as usize + 2) << log2_seg_size);
+    let start = shard_offset + (first_segment << log2_seg_size);
+    let segment_size = 1 << log2_seg_size;
+    let segment_mask = segment_size - 1;
+
+    [
+        (sig[0] as usize & segment_mask) + start,
+        ((sig[1] >> 32) as usize & segment_mask) + start + segment_size,
+        (sig[1] as usize & segment_mask) + start + 2 * segment_size,
+    ]
+}
+
+#[inline(always)]
+fn fuse_edge_1(
+    shard: usize,
+    shard_high_bits: u32,
+    log2_seg_size: u32,
+    l: u32,
+    sig: &[u64; 1],
+) -> [usize; 3] {
+    let xor = sig[0] as u32 ^ (sig[0] >> 32) as u32;
+    let first_segment = ((xor.rotate_left(shard_high_bits) as u64 * l as u64) >> 32) as usize;
+    let shard_offset = shard * ((l as usize + 2) << log2_seg_size);
+    let start = shard_offset + (first_segment << log2_seg_size);
+    let segment_size = 1 << log2_seg_size;
+    let segment_mask = segment_size - 1;
+
+    [
+        (sig[0] as usize & segment_mask) + start,
+        ((sig[0] >> 21) as usize & segment_mask) + start + segment_size,
+        ((sig[0] >> 42) as usize & segment_mask) + start + 2 * segment_size,
+    ]
+}
+
+impl FuseShards {
     const MAX_LIN_SIZE: usize = 1_000_000;
     const MAX_LIN_SHARD_SIZE: usize = 100_000;
     const MIN_FUSE_SHARD: usize = 10_000_000;
     const LOG2_MAX_SHARDS: u32 = 10;
-
-    #[inline(always)]
-    fn _edge_2(&self, shard: usize, sig: &[u64; 2]) -> [usize; 3] {
-        let first_segment =
-            (((sig[0] << self.shard_high_bits >> 32) * self.l as u64) >> 32) as usize;
-        let shard_offset = shard * ((self.l as usize + 2) << self.log2_seg_size);
-        let start = shard_offset + (first_segment << self.log2_seg_size);
-        let segment_size = 1 << self.log2_seg_size;
-        let segment_mask = segment_size - 1;
-
-        [
-            (sig[0] as usize & segment_mask) + start,
-            ((sig[1] >> 32) as usize & segment_mask) + start + segment_size,
-            (sig[1] as usize & segment_mask) + start + 2 * segment_size,
-        ]
-    }
-
-    #[inline(always)]
-    fn _edge_1(&self, shard: usize, sig: &[u64; 1]) -> [usize; 3] {
-        let xor = sig[0] as u32 ^ (sig[0] >> 32) as u32;
-        let first_segment =
-            ((xor.rotate_left(self.shard_high_bits) as u64 * self.l as u64) >> 32) as usize;
-        let shard_offset = shard * ((self.l as usize + 2) << self.log2_seg_size);
-        let start = shard_offset + (first_segment << self.log2_seg_size);
-        let segment_size = 1 << self.log2_seg_size;
-        let segment_mask = segment_size - 1;
-
-        [
-            (sig[0] as usize & segment_mask) + start,
-            ((sig[0] >> 21) as usize & segment_mask) + start + segment_size,
-            ((sig[0] >> 42) as usize & segment_mask) + start + 2 * segment_size,
-        ]
-    }
 }
 
 /// In this implementation:
@@ -320,7 +431,7 @@ impl FuseEdge {
 /// segment are the same as the upper `shard_high_bits` of the bits used to
 /// select the first segment, but being the result mostly sensitive to the high
 /// bits, this is not a problem.
-impl ShardEdge<[u64; 2], 3> for FuseEdge {
+impl ShardEdge<[u64; 2], 3> for FuseShards {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
         let eps = 0.001; // Tolerance for deviation from the average shard size
         self.shard_high_bits = if n <= Self::MAX_LIN_SIZE {
@@ -371,13 +482,13 @@ impl ShardEdge<[u64; 2], 3> for FuseEdge {
     }
 
     #[inline(always)]
-    fn shard_edge(&self, sig: &[u64; 2]) -> [usize; 3] {
-        self._edge_2(0, sig)
+    fn local_edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+        fuse_edge_2(0, self.shard_high_bits, self.log2_seg_size, self.l, sig)
     }
 
     #[inline(always)]
     fn edge(&self, sig: &[u64; 2]) -> [usize; 3] {
-        self._edge_2(self.shard(sig), sig)
+        fuse_edge_2(self.shard(sig), self.shard_high_bits, self.log2_seg_size, self.l, sig)
     }
 
     #[inline(always)]
@@ -404,7 +515,7 @@ impl ShardEdge<[u64; 2], 3> for FuseEdge {
 /// Note that the lower `shard_high_bits` of the bits used to select the first
 /// segment are the same as the bits used to select the shard, but being the
 /// result mostly sensitive to the high bits, this is not a problem.
-impl ShardEdge<[u64; 1], 3> for FuseEdge {
+impl ShardEdge<[u64; 1], 3> for FuseShards {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
         let eps = 0.001; // Tolerance for deviation from the average shard size
         self.shard_high_bits = if n <= Self::MAX_LIN_SIZE {
@@ -457,18 +568,118 @@ impl ShardEdge<[u64; 1], 3> for FuseEdge {
     }
 
     #[inline(always)]
-    fn shard_edge(&self, sig: &[u64; 1]) -> [usize; 3] {
-        self._edge_1(0, sig)
+    fn local_edge(&self, sig: &[u64; 1]) -> [usize; 3] {
+        fuse_edge_1(0, self.shard_high_bits, self.log2_seg_size, self.l, sig)
     }
 
     #[inline(always)]
     fn edge(&self, sig: &[u64; 1]) -> [usize; 3] {
-        self._edge_1(self.shard(sig), sig)
+        fuse_edge_1(self.shard(sig), self.shard_high_bits, self.log2_seg_size, self.l, sig)
     }
 
     #[inline(always)]
     fn shard_high_bits(&self) -> u32 {
         self.shard_high_bits
+    }
+
+    #[inline(always)]
+    fn num_vertices(&self) -> usize {
+        (self.l as usize + 2) << self.log2_seg_size
+    }
+}
+
+#[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
+#[deep_copy]
+pub struct FuseNoShards {
+    log2_seg_size: u32,
+    l: u32,
+}
+
+impl Display for FuseNoShards {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Fuse (no shards) Segment size: 2^{} Number of segments: {}", self.log2_seg_size, self.l + 2)
+    }
+}
+
+
+impl ShardEdge<[u64; 2], 3> for FuseNoShards {
+    fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
+        let c = if n <= FuseShards::MAX_LIN_SIZE {
+            1.105
+        } else {
+            fuse_c(3, n)
+        };
+
+        self.log2_seg_size = fuse_log2_seg_size(3, n);
+        self.l = ((c * n as f64).ceil() as u64)
+            .div_ceil(1 << self.log2_seg_size)
+            .try_into()
+            .unwrap();
+
+        (c, false)
+    }
+
+    #[inline(always)]
+    fn shard(&self, _sig: &[u64; 2]) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    fn local_edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+        fuse_edge_2(0, 0, self.log2_seg_size, self.l, sig)
+    }
+
+    #[inline(always)]
+    fn edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+        self.local_edge(sig)
+    }
+
+    #[inline(always)]
+    fn shard_high_bits(&self) -> u32 {
+        0
+    }
+
+    #[inline(always)]
+    fn num_vertices(&self) -> usize {
+        (self.l as usize + 2) << self.log2_seg_size
+    }
+}
+
+impl ShardEdge<[u64; 1], 3> for FuseNoShards {
+    fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
+        let c = if n < FuseShards::MIN_FUSE_SHARD {
+            1.105
+        } else {
+            fuse_c(3, n)
+        };
+
+        self.log2_seg_size = fuse_log2_seg_size(3, n);
+        self.l = ((c * n as f64).ceil() as u64)
+            .div_ceil(1 << self.log2_seg_size)
+            .try_into()
+            .unwrap();
+
+        (c, false)
+    }
+
+    #[inline(always)]
+    fn shard(&self, _sig: &[u64; 1]) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    fn local_edge(&self, sig: &[u64; 1]) -> [usize; 3] {
+        fuse_edge_1(0, 0, self.log2_seg_size, self.l, sig)
+    }
+
+    #[inline(always)]
+    fn edge(&self, sig: &[u64; 1]) -> [usize; 3] {
+        self.local_edge(sig)
+    }
+
+    #[inline(always)]
+    fn shard_high_bits(&self) -> u32 {
+        0
     }
 
     #[inline(always)]
@@ -595,8 +806,8 @@ where
 mod tests {
     use dsi_progress_logger::no_logging;
     use epserde::{
-        deser::{Deserialize, DeserializeInner},
-        ser::{Serialize, SerializeInner},
+        deser::Deserialize,
+        ser::Serialize,
         traits::TypeHash,
         utils::AlignedCursor,
     };
@@ -607,7 +818,7 @@ mod tests {
         utils::{FromIntoIterator, Sig, SigVal, ToSig},
     };
 
-    use super::{fuse_log2_seg_size, FuseEdge, ShardEdge, VFilter, VFunc};
+    use super::{fuse_log2_seg_size, FuseShards, ShardEdge, VFilter, VFunc};
 
     #[test]
     fn test_filter_func() -> anyhow::Result<()> {
@@ -620,12 +831,12 @@ mod tests {
     where
         usize: ToSig<S>,
         SigVal<S, ()>: RadixKey,
-        FuseEdge: ShardEdge<S, 3>,
-        VFunc<usize, u8, Vec<u8>, S, FuseEdge>: Serialize + TypeHash, // Weird
-        VFilter<u8, VFunc<usize, u8, Vec<u8>, S, FuseEdge>>: Serialize,
+        FuseShards: ShardEdge<S, 3>,
+        VFunc<usize, u8, Vec<u8>, S, FuseShards>: Serialize + TypeHash, // Weird
+        VFilter<u8, VFunc<usize, u8, Vec<u8>, S, FuseShards>>: Serialize,
     {
         for n in [0_usize, 10, 1000, 100_000, 3_000_000] {
-            let filter = VBuilder::<_, _, Vec<u8>, S, FuseEdge, ()>::default()
+            let filter = VBuilder::<_, _, Vec<u8>, S, FuseShards, ()>::default()
                 .log2_buckets(4)
                 .offline(false)
                 .try_build_filter(FromIntoIterator::from(0..n), no_logging![])?;
@@ -634,7 +845,7 @@ mod tests {
             cursor.set_position(0);
             // TODO: This does not work with deserialize_eps
             let filter =
-                VFilter::<u8, VFunc<_, _, Vec<u8>, S, FuseEdge>>::deserialize_full(&mut cursor)?;
+                VFilter::<u8, VFunc<_, _, Vec<u8>, S, FuseShards>>::deserialize_full(&mut cursor)?;
             for i in 0..n {
                 let sig = ToSig::<S>::to_sig(&i, filter.func.seed);
                 assert_eq!(sig.sig_u64() & 0xFF, filter.get(&i) as u64);
@@ -723,7 +934,7 @@ mod tests {
 
         let mut t = 1024;
         for _ in 0..50 {
-            if t >= FuseEdge::MIN_FUSE_SHARD {
+            if t >= FuseShards::MIN_FUSE_SHARD {
                 eprintln!(
                     "n: {t}, 1.1: {} 1.5: {} bound2(2.05, 0): {} bound2(2, 1): {}",
                     bound(t, 1.1),

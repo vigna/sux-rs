@@ -13,7 +13,7 @@ use lender::*;
 use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
-    func::{FuseEdge, MwhcEdge, ShardEdge, VFilter, VFunc},
+    func::{FuseNoShards, FuseShards, MwhcShards, ShardEdge, VFilter, VFunc},
     utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender},
 };
 
@@ -56,30 +56,30 @@ fn main() -> Result<()> {
         if args.no_shards {
             if args.sig64 {
                 // TODO
-                main_with_types::<[u64; 1], MwhcEdge>(args)
+                main_with_types::<[u64; 1], MwhcShards>(args)
             } else {
-                main_with_types::<[u64; 2], MwhcEdge>(args)
+                main_with_types::<[u64; 2], MwhcShards>(args)
             }
         } else {
             if args.sig64 {
-                main_with_types::<[u64; 1], MwhcEdge>(args)
+                main_with_types::<[u64; 1], MwhcShards>(args)
             } else {
-                main_with_types::<[u64; 2], MwhcEdge>(args)
+                main_with_types::<[u64; 2], MwhcShards>(args)
             }
         }
     } else {
         if args.no_shards {
             if args.sig64 {
                 // TODO
-                main_with_types::<[u64; 1], FuseEdge>(args)
+                main_with_types::<[u64; 1], FuseNoShards>(args)
             } else {
-                main_with_types::<[u64; 2], FuseEdge>(args)
+                main_with_types::<[u64; 2], FuseNoShards>(args)
             }
         } else {
             if args.sig64 {
-                main_with_types::<[u64; 1], FuseEdge>(args)
+                main_with_types::<[u64; 1], FuseShards>(args)
             } else {
-                main_with_types::<[u64; 2], FuseEdge>(args)
+                main_with_types::<[u64; 2], FuseShards>(args)
             }
         }
     }

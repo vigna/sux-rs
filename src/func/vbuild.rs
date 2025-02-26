@@ -12,7 +12,7 @@ use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
 use crate::traits::NumBits;
 use crate::traits::Rank;
 use crate::utils::*;
-use common_traits::{Atomic, CastableInto};
+use common_traits::CastableInto;
 use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
@@ -156,7 +156,7 @@ pub struct VBuilder<
     W: ZeroCopy + Word,
     D: BitFieldSlice<W> + Send + Sync = BitFieldVec<W>,
     S = [u64; 2],
-    E: ShardEdge<S, 3> = FuseEdge,
+    E: ShardEdge<S, 3> = FuseShards,
     V = W,
 > {
     /// The optional expected number of keys.
@@ -305,15 +305,15 @@ impl<
                 .par_bridge()
                 .try_for_each_with(
                     (main_pl.clone(), pl.clone()),
-                    |(main_pl, pl), (shard_index, mut shard)| {
+                    |(main_pl, pl), (shard_index, shard)| {
                         main_pl.info(format_args!(
                             "Sorting and checking shard {}/{}",
                             shard_index + 1,
                             self.shard_edge.num_shards()
                         ));
 
-                        let shard = Arc::get_mut(&mut shard)
-                            .expect(format!("Getting shard {shard_index} failed").as_str());
+                        // Safety: only one thread may be accessing the shard
+                        let shard = unsafe { &mut *(Arc::as_ptr(&shard) as * mut Vec<SigVal<S, V>>)};
                         // Check for duplicates
                         shard.radix_sort_builder().with_low_mem_tuner().sort();
 
@@ -343,13 +343,15 @@ impl<
                             SolveError::UnsolvableShard
                         })
                         .map(|(shard_index, data)| {
-                            send.send((shard_index, data)).unwrap();
-                            main_pl.info(format_args!(
-                                "Completed shard {}/{}",
-                                shard_index + 1,
-                                self.shard_edge.num_shards()
-                            ));
-                            main_pl.update_and_display();
+                            if !self.failed.load(Ordering::Relaxed) {
+                                send.send((shard_index, data)).unwrap();
+                                main_pl.info(format_args!(
+                                    "Completed shard {}/{}",
+                                    shard_index + 1,
+                                    self.shard_edge.num_shards()
+                                ));
+                                main_pl.update_and_display();
+                            }
                         })
                     },
                 )
@@ -397,7 +399,7 @@ impl<
         let mut edge_lists = Vec::new();
         edge_lists.resize_with(self.shard_edge.num_vertices(), EdgeIndexSideSet::default);
         shard.iter().enumerate().for_each(|(edge_index, sig_val)| {
-            for (side, &v) in self.shard_edge.shard_edge(&sig_val.sig).iter().enumerate() {
+            for (side, &v) in self.shard_edge.local_edge(&sig_val.sig).iter().enumerate() {
                 edge_lists[v].add(edge_index, side);
             }
         });
@@ -432,7 +434,7 @@ impl<
                 stack[curr] = v;
                 curr += 1;
 
-                let e = self.shard_edge.shard_edge(&shard[edge_index].sig);
+                let e = self.shard_edge.local_edge(&shard[edge_index].sig);
                 // Remove edge from the lists of the other two vertices
                 match side {
                     0 => {
@@ -514,7 +516,7 @@ impl<
                 continue;
             }
             let (edge_index, side) = edge_lists[v].edge_index_and_side();
-            let edge = self.shard_edge.shard_edge(&shard[edge_index].sig);
+            let edge = self.shard_edge.local_edge(&shard[edge_index].sig);
             unsafe {
                 let value = match side {
                     0 => data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2]),
@@ -584,7 +586,7 @@ impl<
                         let eq = unpeeled.rank(edge_index);
                         c[eq] = get_val(sig_val);
 
-                        for &v in self.shard_edge.shard_edge(&sig_val.sig).iter() {
+                        for &v in self.shard_edge.local_edge(&sig_val.sig).iter() {
                             var_to_eqs[v].push(eq);
                         }
                         ()
@@ -993,14 +995,17 @@ where
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
 
         pl.info(format_args!(
-            "Keys: {} Max value: {} Bit width: {} Shards: 2^{} Max shard / average shard: {:.2}%",
-            self.num_keys,
-            max_value,
-            self.bit_width,
-            self.shard_edge.shard_high_bits(),
-            (100.0 * max_shard as f64)
-                / (self.num_keys as f64 / self.shard_edge.num_shards() as f64)
+            "Number of keys: {} Max value: {} Bit width: {}",
+            self.num_keys, max_value, self.bit_width,
         ));
+
+        if self.shard_edge.shard_high_bits() != 0 {
+            pl.info(format_args!(
+                "Max shard / average shard: {:.2}%",
+                (100.0 * max_shard as f64)
+                    / (self.num_keys as f64 / self.shard_edge.num_shards() as f64)
+            ));
+        }
 
         if max_shard as f64 > 1.01 * self.num_keys as f64 / self.shard_edge.num_shards() as f64 {
             Err(Into::into(SolveError::MaxShardTooBig))
@@ -1038,11 +1043,11 @@ where
             .build()
             .unwrap(); // Seroiusly, it's not going to fail
 
+        pl.info(format_args!("{}", self.shard_edge));
         pl.info(format_args!(
-            "c: {}, log₂ segment size: X Number of variables: {:.2}% Number of threads: {}",
+            "c: {}, Overhead: {:.2}% Number of threads: {}",
             self.c,
-            //self.log2_seg_size, TODO
-            (100.0 * (self.shard_edge.num_vertices() * self.shard_edge.num_shards()) as f64)
+            (self.shard_edge.num_vertices() * self.shard_edge.num_shards()) as f64
                 / (self.num_keys as f64),
             thread_pool.current_num_threads()
         ));
