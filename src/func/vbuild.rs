@@ -312,8 +312,8 @@ impl<
                             self.shard_edge.num_shards()
                         ));
 
-                        pl.info(format_args!("Trying to get shard {}", shard_index));
-                        let shard = Arc::get_mut(&mut shard).expect(format!("Getting shard {} failed", shard_index).as_str());
+                        let shard = Arc::get_mut(&mut shard)
+                            .expect(format!("Getting shard {shard_index} failed").as_str());
                         // Check for duplicates
                         shard.radix_sort_unstable();
 
@@ -592,7 +592,7 @@ impl<
                 pl.done_with_count(shard.len());
 
                 if self.failed.load(Ordering::Relaxed) {
-                    return Err(())
+                    return Err(());
                 }
 
                 pl.start("Solving system...");
