@@ -559,6 +559,7 @@ impl<
                 Ok((shard_index, data))
             }
             Err((shard_index, shard, edge_lists, mut data, stack)) => {
+                pl.info(format_args!("Switching to lazy Gaussian elimination..."));
                 // Likely result--we have solve the rest
                 pl.start(format!(
                     "Generating system for shard {}/{}...",
@@ -1058,34 +1059,17 @@ where
             thread_pool.current_num_threads()
         ));
 
-        if self.lazy_gaussian {
-            pl.info(format_args!("Switching to lazy Gaussian elimination"));
-
-            self.par_solve(
-                shard_iter,
-                &mut data,
-                new,
-                |this, shard_index, shard, data, pl| {
-                    this.lge_shard(shard_index, shard, data, get_val, pl)
-                },
-                &thread_pool,
-                &mut pl.concurrent(),
-                pl,
-            )?;
-        } else {
-            self.par_solve(
-                shard_iter,
-                &mut data,
-                new,
-                |this, shard_index, shard, data, pl| {
-                    this.peel_shard(shard_index, shard, data, get_val, pl)
-                        .map_err(|_| ())
-                },
-                &thread_pool,
-                &mut pl.concurrent(),
-                pl,
-            )?;
-        }
+        self.par_solve(
+            shard_iter,
+            &mut data,
+            new,
+            |this, shard_index, shard, data, pl| {
+                this.lge_shard(shard_index, shard, data, get_val, pl)
+            },
+            &thread_pool,
+            &mut pl.concurrent(),
+            pl,
+        )?;
 
         pl.info(format_args!(
             "Bits/keys: {} ({:.2}%)",
