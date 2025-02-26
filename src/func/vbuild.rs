@@ -30,6 +30,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 const LOG2_MAX_SHARDS: u32 = 12;
+const MAX_LGE_SIZE: usize = 200_000;
 
 /// A set of edge indices and sides represented by a 64-bit integer.
 ///
@@ -559,6 +560,10 @@ impl<
                 Ok((shard_index, data))
             }
             Err((shard_index, shard, edge_lists, mut data, stack)) => {
+                if shard.len() - stack.len() > MAX_LGE_SIZE {
+                    return Err(()); // Too big for lazy Gaussian elimination
+                }
+
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
                 // Likely result--we have solve the rest
                 pl.start(format!(
