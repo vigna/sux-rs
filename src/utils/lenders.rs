@@ -34,7 +34,7 @@
 //! the complex trait bounds of [`Lender`] type inference rarely works; you'll
 //! need to call [`FromIntoIterator::from`] explicitly. The error of the resulting
 //! [`RewindableIoLender`] is `core::convert::Infallible`.
-//! 
+//!
 use flate2::read::GzDecoder;
 use io::{BufRead, BufReader};
 use lender::*;

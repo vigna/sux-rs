@@ -8,11 +8,11 @@
 use super::vfunc::*;
 use crate::bits::*;
 use crate::prelude::Rank9;
+use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
 use crate::traits::NumBits;
 use crate::traits::Rank;
 use crate::utils::*;
-use crate::traits::bit_field_slice::*;
-use common_traits::CastableInto;
+use common_traits::{Atomic, CastableInto};
 use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
@@ -25,44 +25,11 @@ use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
 use std::marker::PhantomData;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-/// The log₂ of the segment size in the linear regime.
-fn lin_log2_seg_size(arity: usize, n: usize) -> u32 {
-    match arity {
-        3 => {
-            if n >= 100_000 {
-                10
-            } else {
-                (0.85 * (n.max(1) as f64).ln()).floor() as u32
-            }
-        }
-        _ => unimplemented!(),
-    }
-}
-
-/// The log₂ of the segment size in the fuse-graphs regime.
-fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
-    // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
-    // https://doi.org/10.1145/3510449
-    match arity {
-        3 => ((n.max(1) as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
-        4 => ((n.max(1) as f64).ln() / (2.91_f64).ln() - 0.5).floor() as u32,
-        _ => unimplemented!(),
-    }
-}
-
-/// The expansion factor in the unsharded fuse-graphs regime.
-fn fuse_c(arity: usize, n: usize) -> f64 {
-    // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
-    // https://doi.org/10.1145/3510449
-    match arity {
-        3 => 1.125_f64.max(0.875 + 0.25 * (1000000_f64).ln() / (n as f64).ln()),
-        4 => 1.075_f64.max(0.77 + 0.305 * (600000_f64).ln() / (n as f64).ln()),
-        _ => unimplemented!(),
-    }
-}
+const LOG2_MAX_SHARDS: u32 = 12;
 
 /// A set of edge indices and sides represented by a 64-bit integer.
 ///
@@ -189,7 +156,7 @@ pub struct VBuilder<
     W: ZeroCopy + Word,
     D: BitFieldSlice<W> + Send + Sync = BitFieldVec<W>,
     S = [u64; 2],
-    const SHARDED: bool = false,
+    E: ShardEdge<S, 3> = FuseEdge,
     V = W,
 > {
     /// The optional expected number of keys.
@@ -218,25 +185,16 @@ pub struct VBuilder<
 
     /// The bit width of the maximum value.
     bit_width: usize,
-    /// The number of high bits defining a shard. It is zero if `SHARDED` is
-    /// false.
-    shard_high_bits: u32,
-    /// The mask to select a shard.
-    shard_mask: u32,
+    /// The edge generator.
+    shard_edge: E,
     /// The number of keys.
     num_keys: usize,
-    /// The number of shards, i.e., `(1 << shard_high_bits)`.
-    num_shards: usize,
     /// The ratio between the number of variables and the number of equations.
     c: f64,
-    /// The base-2 logarithm of the segment size.
-    log2_seg_size: u32,
-    /// The number of segments minus 2.
-    l: usize,
-    /// The number of vertices in a hypergraph, i.e., `(1 << log2_seg_size) * (l + 2)`.
-    num_vertices: usize,
     /// Whether we are using lazy Gaussian elimination.
     lazy_gaussian: bool,
+    /// Fast-stop for failed attemps.
+    failed: AtomicBool,
     #[doc(hidden)]
     _marker_t: PhantomData<T>,
     #[doc(hidden)]
@@ -270,10 +228,10 @@ impl<
         T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word + Send + Sync,
         D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
-        S: Sig + ShardEdge + ZeroCopy + Send + Sync,
-        const SHARDED: bool,
+        S: Sig + ZeroCopy + Send + Sync,
+        E: ShardEdge<S, 3>,
         V: ZeroCopy + Send + Sync,
-    > VBuilder<T, W, D, S, SHARDED, V>
+    > VBuilder<T, W, D, S, E, V>
 {
     /// Solve in parallel the shards returned by the given iterator.
     ///
@@ -324,14 +282,20 @@ impl<
             crossbeam_channel::bounded::<(usize, D)>(2 * thread_pool.current_num_threads());
         main_pl
             .item_name("shard")
-            .expected_updates(Some(self.num_shards))
+            .expected_updates(Some(self.shard_edge.num_shards()))
             .display_memory(true)
             .start("Solving shards...");
+        self.failed.store(false, Ordering::Relaxed);
         let result = thread_pool.scope(|scope| {
             // This thread copies shard-local solutions to the global solution
             scope.spawn(|_| {
                 for (shard_index, shard_data) in receive {
-                    shard_data.copy(0, data, shard_index * self.num_vertices, self.num_vertices);
+                    shard_data.copy(
+                        0,
+                        data,
+                        shard_index * self.shard_edge.num_vertices(),
+                        self.shard_edge.num_vertices(),
+                    );
                 }
             });
 
@@ -345,10 +309,11 @@ impl<
                         main_pl.info(format_args!(
                             "Sorting and checking shard {}/{}",
                             shard_index + 1,
-                            self.num_shards
+                            self.shard_edge.num_shards()
                         ));
 
-                        let shard = Arc::get_mut(&mut shard).unwrap();
+                        pl.info(format_args!("Trying to get shard {}", shard_index));
+                        let shard = Arc::get_mut(&mut shard).expect(format!("Getting shard {} failed", shard_index).as_str());
                         // Check for duplicates
                         shard.radix_sort_unstable();
 
@@ -359,23 +324,30 @@ impl<
                         main_pl.info(format_args!(
                             "Solving shard {}/{}",
                             shard_index + 1,
-                            self.num_shards
+                            self.shard_edge.num_shards()
                         ));
+
+                        if self.failed.load(Ordering::Relaxed) {
+                            return Err(SolveError::UnsolvableShard);
+                        }
 
                         solve_shard(
                             self,
                             shard_index,
                             shard,
-                            new_data(self.bit_width, self.num_vertices),
+                            new_data(self.bit_width, self.shard_edge.num_vertices()),
                             pl,
                         )
-                        .map_err(|_| SolveError::UnsolvableShard)
+                        .map_err(|_| {
+                            self.failed.store(true, Ordering::Relaxed);
+                            SolveError::UnsolvableShard
+                        })
                         .map(|(shard_index, data)| {
                             send.send((shard_index, data)).unwrap();
                             main_pl.info(format_args!(
                                 "Completed shard {}/{}",
                                 shard_index + 1,
-                                self.num_shards
+                                self.shard_edge.num_shards()
                             ));
                             main_pl.update_and_display();
                         })
@@ -413,33 +385,36 @@ impl<
             Vec<usize>,
         ),
     > {
+        if self.failed.load(Ordering::Relaxed) {
+            return Err((shard_index, shard, vec![], data, vec![]));
+        }
+
         pl.start(format!(
             "Generating graph for shard {}/{}...",
             shard_index + 1,
-            self.num_shards
+            self.shard_edge.num_shards()
         ));
         let mut edge_lists = Vec::new();
-        edge_lists.resize_with(self.num_vertices, EdgeIndexSideSet::default);
+        edge_lists.resize_with(self.shard_edge.num_vertices(), EdgeIndexSideSet::default);
         shard.iter().enumerate().for_each(|(edge_index, sig_val)| {
-            for (side, &v) in sig_val
-                .sig
-                .shard_edge(self.shard_high_bits, self.l, self.log2_seg_size)
-                .iter()
-                .enumerate()
-            {
+            for (side, &v) in self.shard_edge.shard_edge(&sig_val.sig).iter().enumerate() {
                 edge_lists[v].add(edge_index, side);
             }
         });
         pl.done_with_count(shard.len());
 
+        if self.failed.load(Ordering::Relaxed) {
+            return Err((shard_index, shard, edge_lists, data, vec![]));
+        }
+
         pl.start(format!(
             "Peeling graph for shard {}/{}...",
             shard_index + 1,
-            self.num_shards
+            self.shard_edge.num_shards()
         ));
         let mut stack = Vec::new();
         // Breadth-first visit in reverse order
-        for v in (0..self.num_vertices).rev() {
+        for v in (0..self.shard_edge.num_vertices()).rev() {
             if edge_lists[v].degree() != 1 {
                 continue;
             }
@@ -457,11 +432,7 @@ impl<
                 stack[curr] = v;
                 curr += 1;
 
-                let e = shard[edge_index].sig.shard_edge(
-                    self.shard_high_bits,
-                    self.l,
-                    self.log2_seg_size,
-                );
+                let e = self.shard_edge.shard_edge(&shard[edge_index].sig);
                 // Remove edge from the lists of the other two vertices
                 match side {
                     0 => {
@@ -503,7 +474,7 @@ impl<
             pl.info(format_args!(
                 "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
                 shard_index + 1,
-                self.num_shards,
+                self.shard_edge.num_shards(),
                 stack.len(),
                 shard.len(),
             ));
@@ -528,10 +499,14 @@ impl<
         mut stack: Vec<usize>,
         pl: &mut impl ProgressLog,
     ) -> (usize, D) {
+        if self.failed.load(Ordering::Relaxed) {
+            return (shard_index, data);
+        }
+
         pl.start(format!(
             "Assigning values for shard {}/{}...",
             shard_index + 1,
-            self.num_shards
+            self.shard_edge.num_shards()
         ));
         while let Some(v) = stack.pop() {
             // Assignments after linear solving must skip unpeeled edges
@@ -539,10 +514,7 @@ impl<
                 continue;
             }
             let (edge_index, side) = edge_lists[v].edge_index_and_side();
-            let edge =
-                shard[edge_index]
-                    .sig
-                    .shard_edge(self.shard_high_bits, self.l, self.log2_seg_size);
+            let edge = self.shard_edge.shard_edge(&shard[edge_index].sig);
             unsafe {
                 let value = match side {
                     0 => data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2]),
@@ -587,7 +559,7 @@ impl<
                 pl.start(format!(
                     "Generating system for shard {}/{}...",
                     shard_index + 1,
-                    self.num_shards
+                    self.shard_edge.num_shards()
                 ));
 
                 // Build a ranked vector of unpeeled equation
@@ -601,9 +573,9 @@ impl<
                 let unpeeled = Rank9::new(unpeeled);
 
                 // Create data for an F₂ system using non-peeled edges
-                let mut var_to_eqs = Vec::with_capacity(self.num_vertices);
+                let mut var_to_eqs = Vec::with_capacity(self.shard_edge.num_vertices());
                 let mut c = vec![W::ZERO; unpeeled.num_ones()];
-                var_to_eqs.resize_with(self.num_vertices, std::vec::Vec::new);
+                var_to_eqs.resize_with(self.shard_edge.num_vertices(), std::vec::Vec::new);
                 shard
                     .iter()
                     .enumerate()
@@ -612,22 +584,23 @@ impl<
                         let eq = unpeeled.rank(edge_index);
                         c[eq] = get_val(sig_val);
 
-                        for &v in sig_val
-                            .sig
-                            .shard_edge(self.shard_high_bits, self.l, self.log2_seg_size)
-                            .iter()
-                        {
+                        for &v in self.shard_edge.shard_edge(&sig_val.sig).iter() {
                             var_to_eqs[v].push(eq);
                         }
+                        ()
                     });
                 pl.done_with_count(shard.len());
+
+                if self.failed.load(Ordering::Relaxed) {
+                    return Err(())
+                }
 
                 pl.start("Solving system...");
                 let result = Modulo2System::lazy_gaussian_elimination(
                     None,
                     var_to_eqs,
                     c,
-                    (0..self.num_vertices).collect(),
+                    (0..self.shard_edge.num_vertices()).collect(),
                 )
                 .map_err(|_| ())?;
                 pl.done();
@@ -650,9 +623,9 @@ impl<
 impl<
         T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word,
-        S: Sig + ShardEdge,
-        const SHARDED: bool,
-    > VBuilder<T, W, Vec<W>, S, SHARDED, W>
+        S: Sig + Send + Sync,
+        E: ShardEdge<S, 3>,
+    > VBuilder<T, W, Vec<W>, S, E, W>
 where
     SigVal<S, W>: RadixKey + Send + Sync,
     Vec<W>: BitFieldSliceMut<W> + BitFieldSlice<W>,
@@ -662,7 +635,7 @@ where
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, Vec<W>, S, SHARDED>> {
+    ) -> anyhow::Result<VFunc<T, W, Vec<W>, S, E>> {
         let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len];
         self.build_loop(into_keys, into_values, &get_val, new_data, pl)
@@ -677,9 +650,9 @@ where
 impl<
         T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word,
-        S: Sig + ShardEdge,
-        const SHARDED: bool,
-    > VBuilder<T, W, Vec<W>, S, SHARDED, ()>
+        S: Sig + Send + Sync,
+        E: ShardEdge<S, 3>,
+    > VBuilder<T, W, Vec<W>, S, E, ()>
 where
     SigVal<S, ()>: RadixKey + Send + Sync,
     Vec<W>: BitFieldSliceMut<W> + BitFieldSlice<W>,
@@ -689,7 +662,7 @@ where
         mut self,
         into_keys: impl RewindableIoLender<T>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFilter<W, VFunc<T, W, Vec<W>, S, SHARDED>>> {
+    ) -> anyhow::Result<VFilter<W, VFunc<T, W, Vec<W>, S, E>>> {
         let filter_mask = W::MAX;
         let get_val = |sig_val: &SigVal<S, ()>| sig_val.sig.sig_u64().cast();
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len];
@@ -719,9 +692,9 @@ where
 impl<
         T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word,
-        S: Sig + ShardEdge,
-        const SHARDED: bool,
-    > VBuilder<T, W, BitFieldVec<W>, S, SHARDED, W>
+        S: Sig + Send + Sync,
+        E: ShardEdge<S, 3>,
+    > VBuilder<T, W, BitFieldVec<W>, S, E, W>
 where
     SigVal<S, W>: RadixKey + Send + Sync,
 {
@@ -730,7 +703,7 @@ where
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, SHARDED>> {
+    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
         let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
         self.build_loop(into_keys, into_values, &get_val, new_data, pl)
@@ -749,9 +722,9 @@ where
 impl<
         T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word,
-        S: Sig + ShardEdge,
-        const SHARDED: bool,
-    > VBuilder<T, W, BitFieldVec<W>, S, SHARDED, ()>
+        S: Sig + Send + Sync,
+        E: ShardEdge<S, 3>,
+    > VBuilder<T, W, BitFieldVec<W>, S, E, ()>
 where
     SigVal<S, ()>: RadixKey + Send + Sync,
     Vec<W>: BitFieldSliceMut<W> + BitFieldSlice<W>,
@@ -762,7 +735,7 @@ where
         into_keys: impl RewindableIoLender<T>,
         filter_bits: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, SHARDED>>> {
+    ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>> {
         assert!(filter_bits > 0);
         assert!(filter_bits <= W::BITS);
         let filter_mask = W::MAX >> (W::BITS - filter_bits);
@@ -782,24 +755,18 @@ where
     }
 }
 
-const MAX_LIN_SIZE: usize = 1_000_000;
-const MAX_LIN_SHARD_SIZE: usize = 100_000;
-const MIN_FUSE_SHARD: usize = 10_000_000;
-const LOG2_MAX_SHARDS: u32 = 10;
-
 impl<
         T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word,
         D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
-        S: Sig + ShardEdge,
-        const SHARDED: bool,
+        S: Sig + Send + Sync,
+        E: ShardEdge<S, 3>,
         V: ZeroCopy + Send + Sync,
-    > VBuilder<T, W, D, S, SHARDED, V>
+    > VBuilder<T, W, D, S, E, V>
 where
     SigVal<S, V>: RadixKey + Send + Sync,
 {
-    /// Return the number of high bits defining shards.
-    fn set_up_shards(&mut self, num_keys: usize) {
+    /*fn set_up_shards(&mut self, num_keys: usize) {
         let eps = 0.001; // Tolerance for deviation from the average shard size
         self.shard_high_bits = if SHARDED {
             if num_keys <= MAX_LIN_SIZE {
@@ -825,12 +792,12 @@ where
             0
         };
 
-        self.num_shards = 1 << self.shard_high_bits;
+        self.shard_edge.num_shards = 1 << self.shard_high_bits;
         self.shard_mask = (1u32 << self.shard_high_bits) - 1;
     }
 
     fn set_up_segments(&mut self) {
-        let shard_size = self.num_keys.div_ceil(self.num_shards);
+        let shard_size = self.num_keys.div_ceil(self.shard_edge.num_shards);
         if SHARDED {
             self.lazy_gaussian = self.num_keys <= MAX_LIN_SIZE;
 
@@ -855,18 +822,20 @@ where
         }
 
         self.l = ((self.c * shard_size as f64).ceil() as usize).div_ceil(1 << self.log2_seg_size);
-        self.num_vertices = (1 << self.log2_seg_size) * (self.l + 2);
+        self.shard_edge.num_vertices() = (1 << self.log2_seg_size) * (self.l + 2);
     }
+
+    */
 }
 
 impl<
         T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word,
         D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
-        S: Sig + ShardEdge,
-        const SHARDED: bool,
+        S: Sig + Send + Sync,
+        E: ShardEdge<S, 3>,
         V: ZeroCopy + Send + Sync,
-    > VBuilder<T, W, D, S, SHARDED, V>
+    > VBuilder<T, W, D, S, E, V>
 where
     SigVal<S, V>: RadixKey + Send + Sync,
 {
@@ -883,7 +852,7 @@ where
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         new: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, D, S, SHARDED>> {
+    ) -> anyhow::Result<VFunc<T, W, D, S, E>> {
         let mut dup_count = 0;
         let start = Instant::now();
         let mut prng = SmallRng::seed_from_u64(self.seed);
@@ -965,14 +934,14 @@ impl<
         T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word,
         D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
-        S: Sig + ShardEdge,
-        const SHARDED: bool,
+        S: Sig + Send + Sync,
+        E: ShardEdge<S, 3>,
         V: ZeroCopy + Send + Sync,
-    > VBuilder<T, W, D, S, SHARDED, V>
+    > VBuilder<T, W, D, S, E, V>
 where
     SigVal<S, V>: RadixKey + Send + Sync,
 {
-    fn  try_seed<G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    fn try_seed<G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
         &mut self,
         seed: u64,
         mut sig_store: impl SigStore<S, V>,
@@ -981,13 +950,12 @@ where
         get_val: &G,
         new: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, D, S, SHARDED>>
-    {
+    ) -> anyhow::Result<VFunc<T, W, D, S, E>> {
         let mut max_value = W::ZERO;
 
         if let Some(expected_num_keys) = self.expected_num_keys {
-            self.set_up_shards(expected_num_keys);
-            self.log2_buckets = self.shard_high_bits;
+            self.shard_edge.set_up_shards(expected_num_keys);
+            self.log2_buckets = self.shard_edge.shard_high_bits();
         }
 
         let num_buckets = 1 << self.log2_buckets;
@@ -1019,9 +987,9 @@ where
         self.num_keys = sig_store.len();
         self.bit_width = max_value.len() as usize;
 
-        self.set_up_shards(self.num_keys);
+        (self.c, self.lazy_gaussian) = self.shard_edge.set_up_shards(self.num_keys);
 
-        let mut shard_store = sig_store.into_shard_store(self.shard_high_bits)?;
+        let mut shard_store = sig_store.into_shard_store(self.shard_edge.shard_high_bits())?;
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
 
         pl.info(format_args!(
@@ -1029,15 +997,18 @@ where
             self.num_keys,
             max_value,
             self.bit_width,
-            self.shard_high_bits,
-            (100.0 * max_shard as f64) / (self.num_keys as f64 / self.num_shards as f64)
+            self.shard_edge.shard_high_bits(),
+            (100.0 * max_shard as f64)
+                / (self.num_keys as f64 / self.shard_edge.num_shards() as f64)
         ));
 
-        if max_shard as f64 > 1.01 * self.num_keys as f64 / self.num_shards as f64 {
+        if max_shard as f64 > 1.01 * self.num_keys as f64 / self.shard_edge.num_shards() as f64 {
             Err(Into::into(SolveError::MaxShardTooBig))
         } else {
-            self.set_up_segments();
-            let data = new(self.bit_width, self.num_vertices * self.num_shards);
+            let data = new(
+                self.bit_width,
+                self.shard_edge.num_vertices() * self.shard_edge.num_shards(),
+            );
             self.try_build_from_shard_iter(seed, data, shard_store.iter(), new, get_val, pl)
                 .map_err(Into::into)
         }
@@ -1057,21 +1028,22 @@ where
         new: fn(usize, usize) -> D,
         get_val: &G,
         pl: &mut P,
-    ) -> Result<VFunc<T, W, D, S, SHARDED>, SolveError>
+    ) -> Result<VFunc<T, W, D, S, E>, SolveError>
     where
         P: ProgressLog + Clone + Send + Sync,
         I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
     {
         let thread_pool = ThreadPoolBuilder::new()
-            .num_threads(self.num_shards.min(self.max_num_threads) + 1) // Or it might hang
+            .num_threads(self.shard_edge.num_shards().min(self.max_num_threads) + 1) // Or it might hang
             .build()
             .unwrap(); // Seroiusly, it's not going to fail
 
         pl.info(format_args!(
-            "c: {}, log₂ segment size: {} Number of variables: {:.2}% Number of threads: {}",
+            "c: {}, log₂ segment size: X Number of variables: {:.2}% Number of threads: {}",
             self.c,
-            self.log2_seg_size,
-            (100.0 * (self.num_vertices * self.num_shards) as f64) / (self.num_keys as f64),
+            //self.log2_seg_size, TODO
+            (100.0 * (self.shard_edge.num_vertices() * self.shard_edge.num_shards()) as f64)
+                / (self.num_keys as f64),
             thread_pool.current_num_threads()
         ));
 
@@ -1110,225 +1082,14 @@ where
             100.0 * data.len() as f64 / self.num_keys as f64,
         ));
 
-        Ok(VFunc::<T, W, D, S, SHARDED> {
+        Ok(VFunc::<T, W, D, S, E> {
             seed,
-            l: self.l,
-            shard_high_bits: self.shard_high_bits,
-            shard_mask: self.shard_mask,
+            shard_edge: self.shard_edge,
             num_keys: self.num_keys,
-            log2_seg_size: self.log2_seg_size,
             data,
             _marker_t: std::marker::PhantomData,
             _marker_w: std::marker::PhantomData,
             _marker_s: std::marker::PhantomData,
         })
-    }
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[cfg(feature = "slow_tests")]
-    fn test_lin_log2_seg_size() -> anyhow::Result<()> {
-        use super::*;
-        // Manually tested values:
-        // 200000 -> 9
-        // 150000 -> 9
-        // 112500 -> 9
-        // 100000 -> 8
-        // 75000 -> 8
-        // 50000 -> 8
-        // 40000 -> 8
-        // 35000 -> 7
-        // 30000 -> 7
-        // 25000 -> 7
-        // 12500 -> 7
-        // 10000 -> 6
-        // 1000 -> 5
-        // 100 -> 3
-        // 10 -> 2
-
-        for n in 0..MAX_LIN_SHARD_SIZE * 2 {
-            if lin_log2_seg_size(3, n) != lin_log2_seg_size(3, n + 1) {
-                eprintln!(
-                    "Bulding function with {} keys (log₂ segment size = {})...",
-                    n,
-                    lin_log2_seg_size(3, n)
-                );
-                let _func = VBuilder::<_, _, BitFieldVec<_>, [u64; 2], true>::default().build(
-                    FromIntoIterator::from(0..n),
-                    FromIntoIterator::from(0_usize..),
-                    no_logging![],
-                )?;
-
-                eprintln!(
-                    "Bulding function with {} keys (log₂ segment size = {})...",
-                    n + 1,
-                    lin_log2_seg_size(3, n + 1)
-                );
-                let _func = VBuilder::<_, _, BitFieldVec<_>, [u64; 2], true>::default().build(
-                    FromIntoIterator::from(0..n + 1),
-                    FromIntoIterator::from(0_usize..),
-                    no_logging![],
-                )?;
-            }
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn compare_funcs() {
-        let eps = 0.001;
-        let bound = |n: usize, corr: f64| {
-            // Bound from urns and balls problem
-            let t = (n as f64 * eps * eps / 2.0).ln();
-
-            if t > 0.0 {
-                ((t - t.ln()) / 2_f64.ln() / corr).ceil() as u32
-            } else {
-                0
-            }
-        };
-
-        let bound2 = |n: usize, corr0: f64, corr1: f64| {
-            // Bound from urns and balls problem
-            let t = (n as f64 * eps * eps / 2.0).ln();
-
-            if t > 0.0 {
-                ((t - corr0 * t.ln() - corr1 * t.ln().ln()) / 2_f64.ln())
-                    .ceil()
-                    .max(2.) as u32
-            } else {
-                0
-            }
-        };
-
-        let mut t = 1024;
-        for _ in 0..50 {
-            if t >= MIN_FUSE_SHARD {
-                eprintln!(
-                    "n: {t}, 1.1: {} 1.5: {} bound2(2.05, 0): {} bound2(2, 1): {}",
-                    bound(t, 1.1),
-                    bound(t, 1.5),
-                    bound2(t, 2.05, 0.),
-                    bound2(t, 1.7, 1.)
-                );
-            }
-            t = t * 3 / 2;
-        }
-    }
-
-    #[test]
-    fn search_funcs() {
-        let data_points = vec![
-            (11491938_usize, 2),
-            (17237907, 2),
-            (25856860, 3),
-            (38785290, 3),
-            (58177935, 3),
-            (87266902, 4),
-            (130900353, 4),
-            (196350529, 4),
-            (294525793, 4),
-            (441788689, 4),
-            (662683033, 4),
-            (994024549, 4),
-            (1491036823, 4),
-            (2236555234, 4),
-            (3354832851, 5),
-            (5032249276, 5),
-            (7548373914, 5),
-            (11322560871, 6),
-            (16983841306, 6),
-            (25475761959, 6),
-            (38213642938, 7),
-            (57320464407, 7),
-            (85980696610, 8),
-            (128971044915, 8),
-            (193456567372, 9),
-            (290184851058, 9),
-            (435277276587, 10),
-        ];
-
-        let eps = 0.001;
-
-        let bound = |n: usize, corr0: f64, corr1: f64| {
-            // Bound from urns and balls problem
-            let t = (n as f64 * eps * eps / 2.0).ln();
-
-            if t > 0.0 {
-                ((t - corr0 * t.ln() - corr1 * t.ln().ln()) / 2_f64.ln())
-                    .ceil()
-                    .max(2.) as u32
-            } else {
-                0
-            }
-        };
-
-        let mut max_err = usize::MAX;
-        let mut _best_corr0 = 0.0;
-        let mut _best_corr1 = 0.0;
-
-        for corr0 in 0..300 {
-            for corr1 in 0..300 {
-                let corr0 = corr0 as f64 / 100.0;
-                let corr1 = corr1 as f64 / 100.0;
-                let mut err = 0;
-                for &(n, log2) in data_points.iter() {
-                    let log2 = log2;
-
-                    let bound = bound(n, corr0, corr1) as usize;
-                    if log2 != bound {
-                        if bound > log2 {
-                            err += (bound - log2) * 2;
-                        } else {
-                            err += log2 - bound;
-                        }
-                    }
-                }
-
-                if err < max_err {
-                    eprintln!("corr0: {} corr1: {} err: {}", corr0, corr1, err);
-                    max_err = err;
-                    _best_corr0 = corr0;
-                    _best_corr1 = corr1;
-
-                    for &(n, log2) in data_points.iter() {
-                        let log2 = log2;
-
-                        let bound = bound(n, _best_corr0, _best_corr1) as usize;
-                        eprintln!("n: {} log2: {} bound: {}", n, log2, bound);
-                    }
-                }
-            }
-        }
-    }
-
-    fn log2_seg_size(n: usize) -> u32 {
-        fuse_log2_seg_size(3, n)
-    }
-
-    #[test]
-    fn test_log2_seg_size() {
-        let mut shard_size = 1024;
-        for _ in 0..50 {
-            if shard_size >= MIN_FUSE_SHARD {
-                let l2ss = log2_seg_size(shard_size);
-                let c = 1.105;
-                let l = ((c * shard_size as f64).ceil() as usize).div_ceil(1 << l2ss);
-                let ideal_num_vertices = c * shard_size as f64;
-                let num_vertices = (1 << l2ss) * (l + 2);
-                eprintln!(
-                    "n: {shard_size} log₂ seg size: {} ideal: {} actual m: {} ratio: {}",
-                    l2ss,
-                    ideal_num_vertices,
-                    num_vertices,
-                    100.0 * num_vertices as f64 / ideal_num_vertices
-                );
-            }
-            shard_size = shard_size * 3 / 2;
-        }
     }
 }

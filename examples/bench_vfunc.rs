@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
- #![allow(clippy::collapsible_else_if)]
+#![allow(clippy::collapsible_else_if)]
 use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
@@ -13,7 +13,7 @@ use lender::*;
 use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
-    func::{ShardEdge, VFilter, VFunc},
+    func::{FuseEdge, MwhcEdge, ShardEdge, VFilter, VFunc},
     utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender},
 };
 
@@ -40,6 +40,9 @@ struct Args {
     /// Do not use sharding.
     #[arg(long)]
     no_shards: bool,
+    /// Use 3-hypergraph.
+    #[arg(long)]
+    mwhc: bool,
 }
 
 fn main() -> Result<()> {
@@ -49,32 +52,50 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    if args.no_shards {
-        if args.sig64 {
-            main_with_types::<[u64;1], false>(args)
+    if args.mwhc {
+        if args.no_shards {
+            if args.sig64 {
+                // TODO
+                main_with_types::<[u64; 1], MwhcEdge>(args)
+            } else {
+                main_with_types::<[u64; 2], MwhcEdge>(args)
+            }
         } else {
-            main_with_types::<[u64; 2], false>(args)
+            if args.sig64 {
+                main_with_types::<[u64; 1], MwhcEdge>(args)
+            } else {
+                main_with_types::<[u64; 2], MwhcEdge>(args)
+            }
         }
     } else {
-        if args.sig64 {
-            main_with_types::<[u64;1], true>(args)
+        if args.no_shards {
+            if args.sig64 {
+                // TODO
+                main_with_types::<[u64; 1], FuseEdge>(args)
+            } else {
+                main_with_types::<[u64; 2], FuseEdge>(args)
+            }
         } else {
-            main_with_types::<[u64; 2], true>(args)
+            if args.sig64 {
+                main_with_types::<[u64; 1], FuseEdge>(args)
+            } else {
+                main_with_types::<[u64; 2], FuseEdge>(args)
+            }
         }
     }
 }
 
-fn main_with_types<S: Sig + ShardEdge, const SHARDED: bool>(args: Args) -> Result<()>
+fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
 where
     SigVal<S, usize>: RadixKey,
     SigVal<S, ()>: RadixKey,
     str: ToSig<S>,
     usize: ToSig<S>,
-    VFunc<str, usize, BitFieldVec, S, SHARDED>: Deserialize,
-    VFunc<usize, usize, BitFieldVec, S, SHARDED>: Deserialize,
-    VFunc<usize, u8, Vec<u8>, S, SHARDED>: Deserialize,
-    VFunc<str, u8, Vec<u8>, S, SHARDED>: Deserialize + TypeHash, // TODO: this is weird
-    VFilter<u8, VFunc<usize, u8, Vec<u8>, S, SHARDED>>: Deserialize,
+    VFunc<str, usize, BitFieldVec, S, E>: Deserialize,
+    VFunc<usize, usize, BitFieldVec, S, E>: Deserialize,
+    VFunc<usize, u8, Vec<u8>, S, E>: Deserialize,
+    VFunc<str, u8, Vec<u8>, S, E>: Deserialize + TypeHash, // TODO: this is weird
+    VFilter<u8, VFunc<usize, u8, Vec<u8>, S, E>>: Deserialize,
 {
     let mut pl = ProgressLogger::default();
 
@@ -92,7 +113,7 @@ where
         };
 
         if args.dict {
-            let filter = VFilter::<u8, VFunc<str, u8, Vec<u8>, S, SHARDED>>::load_full(&args.func)?;
+            let filter = VFilter::<u8, VFunc<str, u8, Vec<u8>, S, E>>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for key in &keys {
@@ -114,7 +135,7 @@ where
             }
             pl.done_with_count(args.n);
         } else {
-            let func = VFunc::<str, usize, BitFieldVec, S, SHARDED>::load_full(&args.func)?;
+            let func = VFunc::<str, usize, BitFieldVec, S, E>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for key in &keys {
@@ -140,8 +161,7 @@ where
     } else {
         // No filename
         if args.dict {
-            let filter =
-                VFilter::<u8, VFunc<usize, u8, Vec<u8>, S, SHARDED>>::load_full(&args.func)?;
+            let filter = VFilter::<u8, VFunc<usize, u8, Vec<u8>, S, E>>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for i in 0..args.n {
@@ -157,8 +177,7 @@ where
             }
             pl.done_with_count(args.n);
         } else {
-            let func =
-                VFunc::<usize, usize, BitFieldVec<usize>, S, SHARDED>::load_full(&args.func)?;
+            let func = VFunc::<usize, usize, BitFieldVec<usize>, S, E>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for i in 0..args.n {
