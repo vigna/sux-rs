@@ -30,7 +30,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 const LOG2_MAX_SHARDS: u32 = 12;
-const MAX_LGE_SIZE: usize = 200_000;
+const MAX_LGE_SIZE: usize = 100_000;
 
 /// A set of edge indices and sides represented by a 64-bit integer.
 ///
