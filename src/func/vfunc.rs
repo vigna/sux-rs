@@ -10,7 +10,6 @@ use crate::traits::bit_field_slice::*;
 use crate::utils::*;
 use common_traits::CastableInto;
 use epserde::prelude::*;
-use lender::Fuse;
 use mem_dbg::*;
 use std::borrow::Borrow;
 use std::fmt::Display;
@@ -103,7 +102,16 @@ pub struct VFilter<W: ZeroCopy + Word, F> {
 /// first segment and in the following two (or more, in the case of higher
 /// degree).
 pub trait ShardEdge<S, const K: usize>:
-    Default + Display + Clone + Copy + Send + Sync + SerializeInner + DeserializeInner + TypeHash + AlignHash
+    Default
+    + Display
+    + Clone
+    + Copy
+    + Send
+    + Sync
+    + SerializeInner
+    + DeserializeInner
+    + TypeHash
+    + AlignHash
 {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool);
 
@@ -132,7 +140,11 @@ pub struct MwhcShards {
 
 impl Display for MwhcShards {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "MWHC (shards) Number of shards: 2^{} Segment size: {}", self.shard_high_bits, self.seg_size)
+        write!(
+            f,
+            "MWHC (shards) Number of shards: 2^{} Segment size: {}",
+            self.shard_high_bits, self.seg_size
+        )
     }
 }
 
@@ -362,7 +374,13 @@ pub struct FuseShards {
 
 impl Display for FuseShards {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Fuse (shards) Number of shards: 2^{} Segment size: 2^{} Number of segments: {}", self.shard_high_bits, self.log2_seg_size, self.l + 2)
+        write!(
+            f,
+            "Fuse (shards) Number of shards: 2^{} Segment size: 2^{} Number of segments: {}",
+            self.shard_high_bits,
+            self.log2_seg_size,
+            self.l + 2
+        )
     }
 }
 
@@ -488,7 +506,13 @@ impl ShardEdge<[u64; 2], 3> for FuseShards {
 
     #[inline(always)]
     fn edge(&self, sig: &[u64; 2]) -> [usize; 3] {
-        fuse_edge_2(self.shard(sig), self.shard_high_bits, self.log2_seg_size, self.l, sig)
+        fuse_edge_2(
+            self.shard(sig),
+            self.shard_high_bits,
+            self.log2_seg_size,
+            self.l,
+            sig,
+        )
     }
 
     #[inline(always)]
@@ -574,7 +598,13 @@ impl ShardEdge<[u64; 1], 3> for FuseShards {
 
     #[inline(always)]
     fn edge(&self, sig: &[u64; 1]) -> [usize; 3] {
-        fuse_edge_1(self.shard(sig), self.shard_high_bits, self.log2_seg_size, self.l, sig)
+        fuse_edge_1(
+            self.shard(sig),
+            self.shard_high_bits,
+            self.log2_seg_size,
+            self.l,
+            sig,
+        )
     }
 
     #[inline(always)]
@@ -597,10 +627,14 @@ pub struct FuseNoShards {
 
 impl Display for FuseNoShards {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Fuse (no shards) Segment size: 2^{} Number of segments: {}", self.log2_seg_size, self.l + 2)
+        write!(
+            f,
+            "Fuse (no shards) Segment size: 2^{} Number of segments: {}",
+            self.log2_seg_size,
+            self.l + 2
+        )
     }
 }
-
 
 impl ShardEdge<[u64; 2], 3> for FuseNoShards {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
@@ -805,12 +839,7 @@ where
 #[cfg(test)]
 mod tests {
     use dsi_progress_logger::no_logging;
-    use epserde::{
-        deser::Deserialize,
-        ser::Serialize,
-        traits::TypeHash,
-        utils::AlignedCursor,
-    };
+    use epserde::{deser::Deserialize, ser::Serialize, traits::TypeHash, utils::AlignedCursor};
     use rdst::RadixKey;
 
     use crate::{

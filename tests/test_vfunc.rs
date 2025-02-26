@@ -133,9 +133,10 @@ fn test_vfilter() -> Result<()> {
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             func.serialize(&mut cursor)?;
             cursor.set_position(0);
-            let filter = VFilter::<u8, VFunc<_, _, Vec<u8>, [u64; 2], FuseShards>>::deserialize_eps(
-                cursor.as_bytes(),
-            )?;
+            let filter =
+                VFilter::<u8, VFunc<_, _, Vec<u8>, [u64; 2], FuseShards>>::deserialize_eps(
+                    cursor.as_bytes(),
+                )?;
             pl.start("Querying (positive)...");
             for i in 0..n {
                 assert!(filter.contains(&i), "Contains failed for {}", i);
