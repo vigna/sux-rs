@@ -1109,7 +1109,7 @@ mod tests {
             }
         }
 
-        let mut size = 244140625;
+        let mut size = 1 << 20;
         loop {
             let std_log2_seg_size = fuse_log2_seg_size(3, size); 
             

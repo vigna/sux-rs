@@ -51,6 +51,17 @@ fn fuse_c(arity: usize, n: usize) -> f64 {
     }
 }
 
+fn balls_and_bins(n: usize, eps: f64) -> f64 {
+    // Bound from urns and balls problem
+    let t = n as f64 * eps * eps / 2.0;
+
+    if t.ln() >= 1. {
+        t.log2() - t.ln().log2()
+    } else {
+        0.0
+    }
+}
+
 /// Static functions with 10%-11% space overhead for large key sets, fast
 /// parallel construction, and fast queries.
 ///
@@ -189,17 +200,7 @@ impl Display for MwhcNoShards {
 impl ShardEdge<[u64; 2], 3> for MwhcShards {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
         let eps = 0.001; // Tolerance for deviation from the average shard size
-        self.shard_high_bits = {
-            // Bound from urns and balls problem
-            let t = (n as f64 * eps * eps / 2.0).ln();
-
-            if t > 0.0 {
-                ((t - t.ln()) / 2_f64.ln()).ceil().max(0.) as u32
-            } else {
-                0
-            }
-        };
-
+        self.shard_high_bits = balls_and_bins(n, eps).ceil() as u32;
         self.shard_mask = (1u32 << self.shard_high_bits) - 1;
         let num_shards = 1 << self.shard_high_bits;
         self.seg_size = ((n as f64 * 1.23).ceil() as usize)
@@ -238,16 +239,7 @@ impl ShardEdge<[u64; 2], 3> for MwhcShards {
 impl ShardEdge<[u64; 1], 3> for MwhcShards {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
         let eps = 0.001; // Tolerance for deviation from the average shard size
-        self.shard_high_bits = {
-            // Bound from urns and balls problem
-            let t = (n as f64 * eps * eps / 2.0).ln();
-
-            if t > 0.0 {
-                ((t - t.ln()) / 2_f64.ln()).max(0.) as u32
-            } else {
-                0
-            }
-        };
+        self.shard_high_bits = balls_and_bins(n, eps).ceil() as u32;
 
         self.shard_mask = (1u32 << self.shard_high_bits) - 1;
         let num_shards = 1 << self.shard_high_bits;
@@ -428,7 +420,7 @@ fn fuse_edge_1(
 }
 
 impl FuseShards {
-    const MAX_LIN_SIZE: usize = 1_000_000;
+    const MAX_LIN_SIZE: usize = 1_000_100;
     const MAX_LIN_SHARD_SIZE: usize = 100_000;
     const MIN_FUSE_SHARD: usize = 10_000_000;
     const LOG2_MAX_SHARDS: u32 = 10;
@@ -457,19 +449,11 @@ impl ShardEdge<[u64; 2], 3> for FuseShards {
             // within a maximum size of 2 * MAX_LIN_SHARD_SIZE
             (n / Self::MAX_LIN_SHARD_SIZE).max(1).ilog2()
         } else {
-            // Bound from urns and balls problem
-            let t = (n as f64 * eps * eps / 2.0).ln();
-
-            if t > 0.0 {
-                ((t - t.ln()) / 2_f64.ln())
-                    .max(0.)
-                    .ceil()
-                    .min((0.13 * (n as f64).log2() - 0.75).floor()) as u32
-            } else {
-                0
-            }
-            .min(Self::LOG2_MAX_SHARDS) // We don't really need too many shards
-            .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't smaller than MIN_FUSE_SHARD
+            (balls_and_bins(n, eps)
+                .ceil()
+                 as u32)
+                .min(Self::LOG2_MAX_SHARDS) // We don't really need too many shards
+                .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't smaller than MIN_FUSE_SHARD
         };
 
         self.shard_mask = (1u32 << self.shard_high_bits) - 1;
@@ -480,9 +464,18 @@ impl ShardEdge<[u64; 2], 3> for FuseShards {
 
         let c;
         (c, self.log2_seg_size) = if lazy_gaussian {
-            (1.10, lin_log2_seg_size(3, shard_size))
+            (1.12, lin_log2_seg_size(3, shard_size))
         } else {
-            (1.105, fuse_log2_seg_size(3, shard_size))
+            (
+                if n <= Self::MIN_FUSE_SHARD / 2 {
+                    1.12
+                } else if n <= Self::MIN_FUSE_SHARD {
+                    1.11
+                } else {
+                    1.105
+                },
+                fuse_log2_seg_size(3, shard_size),
+            )
         };
 
         self.l = ((c * shard_size as f64).ceil() as usize)
@@ -572,9 +565,18 @@ impl ShardEdge<[u64; 1], 3> for FuseShards {
 
         let c;
         (c, self.log2_seg_size) = if lazy_gaussian {
-            (1.10, lin_log2_seg_size(3, shard_size))
+            (1.12, lin_log2_seg_size(3, shard_size))
         } else {
-            (1.105, fuse_log2_seg_size(3, shard_size))
+            (
+                if n <= Self::MIN_FUSE_SHARD / 2 {
+                    1.12
+                } else if n <= Self::MIN_FUSE_SHARD {
+                    1.11
+                } else {
+                    1.105
+                },
+                fuse_log2_seg_size(3, shard_size),
+            )
         };
 
         self.l = ((c * shard_size as f64).ceil() as usize)
@@ -641,7 +643,7 @@ impl Display for FuseNoShards {
 impl ShardEdge<[u64; 2], 3> for FuseNoShards {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
         let c = if n <= FuseShards::MAX_LIN_SIZE {
-            1.105
+            1.115
         } else {
             fuse_c(3, n)
         };
@@ -685,7 +687,7 @@ impl ShardEdge<[u64; 2], 3> for FuseNoShards {
 impl ShardEdge<[u64; 1], 3> for FuseNoShards {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
         let c = if n < FuseShards::MIN_FUSE_SHARD {
-            1.105
+            1.115
         } else {
             fuse_c(3, n)
         };
@@ -936,48 +938,6 @@ mod tests {
         }
 
         Ok(())
-    }
-
-    #[test]
-    fn compare_funcs() {
-        let eps = 0.001;
-        let bound = |n: usize, corr: f64| {
-            // Bound from urns and balls problem
-            let t = (n as f64 * eps * eps / 2.0).ln();
-
-            if t > 0.0 {
-                ((t - t.ln()) / 2_f64.ln() / corr).ceil() as u32
-            } else {
-                0
-            }
-        };
-
-        let bound2 = |n: usize, corr0: f64, corr1: f64| {
-            // Bound from urns and balls problem
-            let t = (n as f64 * eps * eps / 2.0).ln();
-
-            if t > 0.0 {
-                ((t - corr0 * t.ln() - corr1 * t.ln().ln()) / 2_f64.ln())
-                    .ceil()
-                    .max(2.) as u32
-            } else {
-                0
-            }
-        };
-
-        let mut t = 1024;
-        for _ in 0..50 {
-            if t >= FuseShards::MIN_FUSE_SHARD {
-                eprintln!(
-                    "n: {t}, 1.1: {} 1.5: {} bound2(2.05, 0): {} bound2(2, 1): {}",
-                    bound(t, 1.1),
-                    bound(t, 1.5),
-                    bound2(t, 2.05, 0.),
-                    bound2(t, 1.7, 1.)
-                );
-            }
-            t = t * 3 / 2;
-        }
     }
 
     #[test]
