@@ -13,7 +13,7 @@ use epserde::prelude::*;
 use mem_dbg::*;
 use std::borrow::Borrow;
 use std::fmt::Display;
-use std::ops::Index;
+use std::ops::{Index, Sub};
 
 /// The log₂ of the segment size in the linear regime.
 fn lin_log2_seg_size(arity: usize, n: usize) -> u32 {
@@ -461,12 +461,10 @@ impl ShardEdge<[u64; 2], 3> for FuseShards {
             let t = (n as f64 * eps * eps / 2.0).ln();
 
             if t > 0.0 {
-                                ((t - t.ln()) / 2_f64.ln()).max(0.).
-                                min(0.13 * (n as f64).log2() - 0.75).ceil() as u32
-                /*// We correct the estimate to increase slightly the shard size
-                ((t - 1.92 * t.ln() - 1.22 * t.ln().ln()) / 2_f64.ln())
+                ((t - t.ln()) / 2_f64.ln())
+                    .max(0.)
                     .ceil()
-                    .max(3.) as u32*/
+                    .min((0.13 * (n as f64).log2() - 0.75).floor()) as u32
             } else {
                 0
             }
@@ -489,6 +487,7 @@ impl ShardEdge<[u64; 2], 3> for FuseShards {
 
         self.l = ((c * shard_size as f64).ceil() as usize)
             .div_ceil(1 << self.log2_seg_size)
+            .sub(2)
             .try_into()
             .unwrap();
 
@@ -580,6 +579,7 @@ impl ShardEdge<[u64; 1], 3> for FuseShards {
 
         self.l = ((c * shard_size as f64).ceil() as usize)
             .div_ceil(1 << self.log2_seg_size)
+            .sub(2)
             .try_into()
             .unwrap();
 
@@ -649,6 +649,7 @@ impl ShardEdge<[u64; 2], 3> for FuseNoShards {
         self.log2_seg_size = fuse_log2_seg_size(3, n);
         self.l = ((c * n as f64).ceil() as u64)
             .div_ceil(1 << self.log2_seg_size)
+            .sub(2)
             .try_into()
             .unwrap();
 
@@ -692,6 +693,7 @@ impl ShardEdge<[u64; 1], 3> for FuseNoShards {
         self.log2_seg_size = fuse_log2_seg_size(3, n);
         self.l = ((c * n as f64).ceil() as u64)
             .div_ceil(1 << self.log2_seg_size)
+            .sub(2)
             .try_into()
             .unwrap();
 
