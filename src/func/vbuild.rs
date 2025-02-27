@@ -418,7 +418,7 @@ impl<
             self.shard_edge.num_shards()
         ));
         let mut stack = Vec::new();
-        // Breadth-first visit in reverse order
+        // Breadth-first visit in reverse order TODO: check if this is the best order
         for v in (0..self.shard_edge.num_vertices()).rev() {
             if edge_lists[v].degree() != 1 {
                 continue;
@@ -1091,5 +1091,137 @@ where
             _marker_w: std::marker::PhantomData,
             _marker_s: std::marker::PhantomData,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::func::vbuild::EdgeIndexSideSet;
+    use rand::{rngs::SmallRng, Rng, SeedableRng};
+    use std::ops::Sub;
+
+    #[test]
+    fn test_peeling() {
+        fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
+            match arity {
+                3 => ((n.max(1) as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
+                _ => unimplemented!(),
+            }
+        }
+
+        let mut size = 244140625;
+        loop {
+            let std_log2_seg_size = fuse_log2_seg_size(3, size); 
+            
+            (std_log2_seg_size + 4..std_log2_seg_size + 8).for_each(|log2_seg_size| {
+                (0..10).for_each(|seed| {
+                    _test_peeling(size, log2_seg_size, seed)
+                });
+            });
+
+            size = size * 5 / 4;
+        }
+    }
+
+    fn _test_peeling(n: usize, log2_seg_size: u32, seed: u64) {
+        fn edge(l: usize, log2_seg_size: u32, sig: &[u64; 2]) -> [usize; 3] {
+            let first_segment = (((sig[0] >> 32) * l as u64) >> 32) as usize;
+            let start = first_segment << log2_seg_size;
+            let segment_size = 1 << log2_seg_size;
+            let segment_mask = segment_size - 1;
+
+            [
+                (sig[0] as usize & segment_mask) + start,
+                ((sig[1] >> 32) as usize & segment_mask) + start + segment_size,
+                (sig[1] as usize & segment_mask) + start + 2 * segment_size,
+            ]
+        }
+
+        let l = ((1.105 * n as f64).ceil() as usize)
+            .div_ceil(1 << log2_seg_size)
+            .sub(2)
+            .try_into()
+            .unwrap();
+
+        let num_vertices = (l + 2) << log2_seg_size;
+
+        let mut edge_lists = Vec::new();
+        edge_lists.resize_with(num_vertices, EdgeIndexSideSet::default);
+
+        let mut rand = SmallRng::seed_from_u64(seed);
+        let sigs = (0..n)
+            .map(|_| [rand.random(), rand.random()])
+            .collect::<Vec<_>>();
+
+        for i in 0..n {
+            for (side, &v) in edge(l, log2_seg_size, &sigs[i]).iter().enumerate() {
+                edge_lists[v].add(i, side);
+            }
+        }
+
+        let mut stack = Vec::new();
+        // Breadth-first visit in reverse order TODO: check if this is the best order
+        for v in (0..num_vertices).rev() {
+            if edge_lists[v].degree() != 1 {
+                continue;
+            }
+            let mut pos = stack.len();
+            let mut curr = stack.len();
+            stack.push(v);
+            while pos < stack.len() {
+                let v = stack[pos];
+                pos += 1;
+                if edge_lists[v].degree() == 0 {
+                    continue; // Skip no longer useful entries
+                }
+                let (edge_index, side) = edge_lists[v].edge_index_and_side();
+                edge_lists[v].zero();
+                stack[curr] = v;
+                curr += 1;
+
+                let e = edge(l, log2_seg_size, &sigs[edge_index]);
+                // Remove edge from the lists of the other two vertices
+                match side {
+                    0 => {
+                        edge_lists[e[1]].remove(edge_index, 1);
+                        if edge_lists[e[1]].degree() == 1 {
+                            stack.push(e[1]);
+                        }
+                        edge_lists[e[2]].remove(edge_index, 2);
+                        if edge_lists[e[2]].degree() == 1 {
+                            stack.push(e[2]);
+                        }
+                    }
+                    1 => {
+                        edge_lists[e[0]].remove(edge_index, 0);
+                        if edge_lists[e[0]].degree() == 1 {
+                            stack.push(e[0]);
+                        }
+                        edge_lists[e[2]].remove(edge_index, 2);
+                        if edge_lists[e[2]].degree() == 1 {
+                            stack.push(e[2]);
+                        }
+                    }
+                    2 => {
+                        edge_lists[e[0]].remove(edge_index, 0);
+                        if edge_lists[e[0]].degree() == 1 {
+                            stack.push(e[0]);
+                        }
+                        edge_lists[e[1]].remove(edge_index, 1);
+                        if edge_lists[e[1]].degree() == 1 {
+                            stack.push(e[1]);
+                        }
+                    }
+                    _ => unreachable!("{}", side),
+                }
+            }
+            stack.truncate(curr);
+        }
+        println!(
+            "{n} {log2_seg_size} {} {} {}",
+            n,
+            stack.len(),
+            n == stack.len()
+        );
     }
 }
