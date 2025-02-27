@@ -1097,8 +1097,8 @@ where
 #[cfg(test)]
 mod tests {
     use crate::func::vbuild::EdgeIndexSideSet;
-    use rand::{rngs::SmallRng, Rng, SeedableRng};
     use std::ops::Sub;
+    use xxhash_rust::xxh3;
 
     #[test]
     fn test_peeling() {
@@ -1110,20 +1110,23 @@ mod tests {
         }
 
         let mut size = 1 << 20;
+
         loop {
-            let std_log2_seg_size = fuse_log2_seg_size(3, size); 
-            
-            (std_log2_seg_size + 4..std_log2_seg_size + 8).for_each(|log2_seg_size| {
-                (0..10).for_each(|seed| {
-                    _test_peeling(size, log2_seg_size, seed)
-                });
-            });
+            let std_log2_seg_size = fuse_log2_seg_size(3, size);
+
+            'outer: for log2_seg_size in std_log2_seg_size + 4..std_log2_seg_size + 8 {
+                for seed in 0..5 {
+                    if !_test_peeling(size, log2_seg_size, seed) {
+                        break 'outer;
+                    }
+                }
+            }
 
             size = size * 5 / 4;
         }
     }
 
-    fn _test_peeling(n: usize, log2_seg_size: u32, seed: u64) {
+    fn _test_peeling(n: usize, log2_seg_size: u32, seed: u64) -> bool {
         fn edge(l: usize, log2_seg_size: u32, sig: &[u64; 2]) -> [usize; 3] {
             let first_segment = (((sig[0] >> 32) * l as u64) >> 32) as usize;
             let start = first_segment << log2_seg_size;
@@ -1137,6 +1140,11 @@ mod tests {
             ]
         }
 
+        fn sig(i: usize, seed: u64) -> [u64; 2] {
+            let hash128 = xxh3::xxh3_128_with_seed((i as u64).to_ne_bytes().as_ref(), seed);
+            [(hash128 >> 64) as u64, hash128 as u64]
+        }
+
         let l = ((1.105 * n as f64).ceil() as usize)
             .div_ceil(1 << log2_seg_size)
             .sub(2)
@@ -1148,13 +1156,8 @@ mod tests {
         let mut edge_lists = Vec::new();
         edge_lists.resize_with(num_vertices, EdgeIndexSideSet::default);
 
-        let mut rand = SmallRng::seed_from_u64(seed);
-        let sigs = (0..n)
-            .map(|_| [rand.random(), rand.random()])
-            .collect::<Vec<_>>();
-
         for i in 0..n {
-            for (side, &v) in edge(l, log2_seg_size, &sigs[i]).iter().enumerate() {
+            for (side, &v) in edge(l, log2_seg_size, &sig(i, seed)).iter().enumerate() {
                 edge_lists[v].add(i, side);
             }
         }
@@ -1179,7 +1182,7 @@ mod tests {
                 stack[curr] = v;
                 curr += 1;
 
-                let e = edge(l, log2_seg_size, &sigs[edge_index]);
+                let e = edge(l, log2_seg_size, &sig(edge_index, seed));
                 // Remove edge from the lists of the other two vertices
                 match side {
                     0 => {
@@ -1223,5 +1226,6 @@ mod tests {
             stack.len(),
             n == stack.len()
         );
+        n == stack.len()
     }
 }
