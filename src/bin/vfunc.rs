@@ -42,6 +42,9 @@ struct Args {
     /// Use disk-based buckets to reduce memory usage at construction time.
     #[arg(short, long)]
     offline: bool,
+    /// Sort shards and check for duplicate signatures.
+    #[arg(short, long)]
+    check_dups: bool,
     /// The number of high bits defining the number of buckets. Very large key
     /// sets may benefit from a larger number of buckets.
     #[arg(short = 'H', long, default_value_t = 8)]
@@ -101,7 +104,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn set_up_builder<
+fn set_builder<
     T: ?Sized + Send + Sync + ToSig<S>,
     W: ZeroCopy + Word,
     D: BitFieldSlice<W> + Send + Sync,
@@ -109,9 +112,14 @@ fn set_up_builder<
     E: ShardEdge<S, 3>,
     V,
 >(
-    mut builder: VBuilder<T, W, D, S, E, V>,
+    builder: VBuilder<T, W, D, S, E, V>,
     args: &Args,
 ) -> VBuilder<T, W, D, S, E, V> {
+    let mut builder = builder
+        .offline(args.offline)
+        .check_dups(args.check_dups)
+        .expected_num_keys(args.n)
+        .log2_buckets(args.high_bits);
     if let Some(seed) = args.seed {
         builder = builder.seed(seed);
     }
@@ -140,10 +148,7 @@ where
 
     if let Some(ref filename) = &args.filename {
         if args.dict {
-            let mut builder = VBuilder::<str, u8, Vec<u8>, S, E, ()>::default()
-                .offline(args.offline)
-                .log2_buckets(args.high_bits);
-            builder = set_up_builder(builder, &args);
+            let builder = set_builder(VBuilder::<str, u8, Vec<u8>, S, E, ()>::default(), &args);
             let filter = if args.zstd {
                 builder.try_build_filter(ZstdLineLender::from_path(filename)?.take(n), &mut pl)?
             } else {
@@ -152,10 +157,7 @@ where
             };
             filter.store(&args.func)?;
         } else {
-            let mut builder = VBuilder::<_, _, BitFieldVec<usize>, S, E>::default()
-                .offline(args.offline)
-                .log2_buckets(args.high_bits);
-            builder = set_up_builder(builder, &args);
+            let builder = set_builder(VBuilder::<_, _, BitFieldVec<usize>, S, E>::default(), &args);
             let func = if args.zstd {
                 builder.try_build_func(
                     ZstdLineLender::from_path(filename)?.take(n),
@@ -172,19 +174,11 @@ where
             func.store(&args.func)?;
         }
     } else if args.dict {
-        let mut builder = VBuilder::<_, u8, Vec<u8>, S, E, ()>::default()
-            .offline(args.offline)
-            .expected_num_keys(n)
-            .log2_buckets(args.high_bits);
-        builder = set_up_builder(builder, &args);
+        let builder = set_builder(VBuilder::<_, u8, Vec<u8>, S, E, ()>::default(), &args);
         let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
         filter.store(&args.func)?;
     } else {
-        let mut builder = VBuilder::<_, _, BitFieldVec<usize>, S, E>::default()
-            .offline(args.offline)
-            .expected_num_keys(n)
-            .log2_buckets(args.high_bits);
-        builder = set_up_builder(builder, &args);
+        let builder = set_builder(VBuilder::<_, _, BitFieldVec<usize>, S, E>::default(), &args);
         let func = builder.try_build_func(
             FromIntoIterator::from(0_usize..n),
             FromIntoIterator::from(0_usize..),
