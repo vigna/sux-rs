@@ -11,7 +11,7 @@ use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
 use sux::{
-    func::{FuseShards, VBuilder},
+    func::{Fuse3Shards, VBuilder},
     utils::FromIntoIterator,
 };
 
@@ -35,7 +35,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     pl.start("Building...");
-    let builder = VBuilder::<u64, u16, Vec<_>, [u64; 1], FuseShards>::default();
+    let builder = VBuilder::<u64, u16, Vec<_>, [u64; 1], Fuse3Shards>::default();
 
     let vfunc = builder.try_build_func(
         FromIntoIterator::from(0..args.n as u64),

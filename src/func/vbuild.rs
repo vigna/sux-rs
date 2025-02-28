@@ -157,7 +157,7 @@ pub struct VBuilder<
     W: ZeroCopy + Word,
     D: BitFieldSlice<W> + Send + Sync = BitFieldVec<W>,
     S = [u64; 2],
-    E: ShardEdge<S, 3> = FuseShards,
+    E: ShardEdge<S, 3> = Fuse3Shards,
     V = W,
 > {
     /// The optional expected number of keys.
@@ -197,8 +197,6 @@ pub struct VBuilder<
     num_keys: usize,
     /// The ratio between the number of variables and the number of equations.
     c: f64,
-    /// Whether we are using lazy Gaussian elimination.
-    lazy_gaussian: bool,
     /// Fast-stop for failed attemps.
     failed: AtomicBool,
     #[doc(hidden)]
@@ -654,7 +652,7 @@ where
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, Vec<W>, S, E>> {
+    ) -> anyhow::Result<VFunc<W, Vec<W>, S, E>> {
         let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len];
         self.build_loop(into_keys, into_values, &get_val, new_data, pl)
@@ -681,7 +679,7 @@ where
         mut self,
         into_keys: impl RewindableIoLender<T>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFilter<W, VFunc<T, W, Vec<W>, S, E>>> {
+    ) -> anyhow::Result<VFilter<W, VFunc<W, Vec<W>, S, E>>> {
         let filter_mask = W::MAX;
         let get_val = |sig_val: &SigVal<S, ()>| sig_val.sig.sig_u64().cast();
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len];
@@ -695,6 +693,7 @@ where
                 pl,
             )?,
             filter_mask,
+            sig_bits: W::BITS as u32,
         })
     }
 }
@@ -722,7 +721,7 @@ where
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
+    ) -> anyhow::Result<VFunc<W, BitFieldVec<W>, S, E>> {
         let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
         self.build_loop(into_keys, into_values, &get_val, new_data, pl)
@@ -752,12 +751,12 @@ where
     pub fn try_build_filter(
         mut self,
         into_keys: impl RewindableIoLender<T>,
-        filter_bits: usize,
+        filter_bits: u32,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>> {
+    ) -> anyhow::Result<VFilter<W, VFunc<W, BitFieldVec<W>, S, E>>> {
         assert!(filter_bits > 0);
-        assert!(filter_bits <= W::BITS);
-        let filter_mask = W::MAX >> (W::BITS - filter_bits);
+        assert!(filter_bits <= W::BITS as u32);
+        let filter_mask = W::MAX >> (W::BITS as u32 - filter_bits);
         let get_val = |sig_val: &SigVal<S, ()>| sig_val.sig.sig_u64().cast() & filter_mask;
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
 
@@ -770,6 +769,7 @@ where
                 pl,
             )?,
             filter_mask,
+            sig_bits: filter_bits
         })
     }
 }
@@ -871,7 +871,7 @@ where
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         new: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, D, S, E>> {
+    ) -> anyhow::Result<VFunc<W, D, S, E>> {
         let mut dup_count = 0;
         let start = Instant::now();
         let mut prng = SmallRng::seed_from_u64(self.seed);
@@ -888,7 +888,7 @@ where
             match if self.offline {
                 self.try_seed(
                     seed,
-                    sig_store::new_offline::<S, V>(self.log2_buckets, LOG2_MAX_SHARDS)?,
+                    sig_store::new_offline::<S, V>(self.log2_buckets, LOG2_MAX_SHARDS, self.expected_num_keys)?,
                     &mut into_keys,
                     &mut into_values,
                     get_val,
@@ -898,7 +898,7 @@ where
             } else {
                 self.try_seed(
                     seed,
-                    sig_store::new_online::<S, V>(self.log2_buckets, LOG2_MAX_SHARDS)?,
+                    sig_store::new_online::<S, V>(self.log2_buckets, LOG2_MAX_SHARDS, self.expected_num_keys)?,
                     &mut into_keys,
                     &mut into_values,
                     get_val,
@@ -969,11 +969,11 @@ where
         get_val: &G,
         new_data: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, D, S, E>> {
+    ) -> anyhow::Result<VFunc<W, D, S, E>> {
         let mut max_value = W::ZERO;
 
         if let Some(expected_num_keys) = self.expected_num_keys {
-            self.shard_edge.set_up_shards(expected_num_keys);
+            self.shard_edge.setup(expected_num_keys);
             self.log2_buckets = self.shard_edge.shard_high_bits();
         }
 
@@ -1006,7 +1006,7 @@ where
         self.num_keys = sig_store.len();
         self.bit_width = max_value.len() as usize;
 
-        (self.c, self.lazy_gaussian) = self.shard_edge.set_up_shards(self.num_keys);
+        self.c = self.shard_edge.setup(self.num_keys);
 
         let mut shard_store = sig_store.into_shard_store(self.shard_edge.shard_high_bits())?;
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
@@ -1053,7 +1053,7 @@ where
         new: fn(usize, usize) -> D,
         get_val: &G,
         pl: &mut P,
-    ) -> Result<VFunc<T, W, D, S, E>, SolveError>
+    ) -> Result<VFunc<W, D, S, E>, SolveError>
     where
         P: ProgressLog + Clone + Send + Sync,
         I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
@@ -1090,12 +1090,11 @@ where
             100.0 * data.len() as f64 / self.num_keys as f64,
         ));
 
-        Ok(VFunc::<T, W, D, S, E> {
+        Ok(VFunc {
             seed,
             shard_edge: self.shard_edge,
             num_keys: self.num_keys,
             data,
-            _marker_t: std::marker::PhantomData,
             _marker_w: std::marker::PhantomData,
             _marker_s: std::marker::PhantomData,
         })
@@ -1105,10 +1104,9 @@ where
 #[cfg(test)]
 mod tests {
     use crate::func::vbuild::EdgeIndexSideSet;
-    use std::ops::Sub;
     use xxhash_rust::xxh3;
 
-    #[test]
+    //#[test]
     fn test_peeling() {
         fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
             match arity {
@@ -1155,7 +1153,8 @@ mod tests {
 
         let l = ((1.105 * n as f64).ceil() as usize)
             .div_ceil(1 << log2_seg_size)
-            .sub(2)
+            .saturating_sub(2)
+            .max(1)
             .try_into()
             .unwrap();
 

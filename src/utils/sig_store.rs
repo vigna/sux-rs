@@ -301,7 +301,9 @@ pub struct SigStoreImpl<S, V, B> {
 pub fn new_offline<S: ZeroCopy + Sig, V: ZeroCopy>(
     buckets_high_bits: u32,
     max_shard_high_bits: u32,
+    _expected_num_keys: Option<usize>,
 ) -> Result<SigStoreImpl<S, V, BufWriter<File>>> {
+    // TODO: use expected_num_keys
     let temp_dir = tempfile::TempDir::new()?;
     let mut writers = VecDeque::new();
     for i in 0..1 << buckets_high_bits {
@@ -338,9 +340,15 @@ pub fn new_offline<S: ZeroCopy + Sig, V: ZeroCopy>(
 pub fn new_online<S: ZeroCopy + Sig, V: ZeroCopy>(
     buckets_high_bits: u32,
     max_shard_high_bits: u32,
+    expected_num_keys: Option<usize>,
 ) -> Result<SigStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>> {
     let mut writers = VecDeque::new();
-    writers.resize_with(1 << buckets_high_bits, || Arc::new(vec![]));
+    let initial_capacity = expected_num_keys
+        .map(|n| ((n.div_ceil(1 << buckets_high_bits) as f64 * 1.05) as usize))
+        .unwrap_or(0);
+    writers.resize_with(1 << buckets_high_bits, || {
+        Arc::new(Vec::with_capacity(initial_capacity))
+    });
 
     Ok(SigStoreImpl {
         len: 0,
@@ -797,10 +805,10 @@ mod tests {
                     if shard_high_bits > max_shard_bits {
                         continue;
                     }
-                    _test_sig_store(new_online(buckets_high_bits, max_shard_bits)?, |rand| {
+                    _test_sig_store(new_online(buckets_high_bits, max_shard_bits, None)?, |rand| {
                         [rand.random(), rand.random()]
                     })?;
-                    _test_sig_store(new_offline(buckets_high_bits, max_shard_bits)?, |rand| {
+                    _test_sig_store(new_offline(buckets_high_bits, max_shard_bits, None)?, |rand| {
                         [rand.random(), rand.random()]
                     })?;
                 }
@@ -837,8 +845,8 @@ mod tests {
 
     #[test]
     fn test_u8() -> anyhow::Result<()> {
-        _test_u8(new_online(2, 2)?, |rand| [rand.random(), rand.random()])?;
-        _test_u8(new_offline(2, 2)?, |rand| [rand.random(), rand.random()])?;
+        _test_u8(new_online(2, 2, None)?, |rand| [rand.random(), rand.random()])?;
+        _test_u8(new_offline(2, 2, None)?, |rand| [rand.random(), rand.random()])?;
         Ok(())
     }
 }
