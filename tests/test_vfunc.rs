@@ -171,6 +171,7 @@ fn test_dup_key() -> Result<()> {
         .try_init();
 
     assert!(VBuilder::<usize, usize>::default()
+        .check_dups(true)
         .try_build_func(
             FromIntoIterator::from(std::iter::repeat(0).take(10)),
             FromIntoIterator::from(0..),

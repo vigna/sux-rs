@@ -10,10 +10,41 @@ use crate::traits::bit_field_slice::*;
 use crate::utils::*;
 use common_traits::CastableInto;
 use epserde::prelude::*;
+use lambert_w::lambert_w0;
 use mem_dbg::*;
 use std::borrow::Borrow;
 use std::fmt::Display;
 use std::ops::{Index, Sub};
+
+const A: f64 = 0.41;
+const B: f64 = -3.0;
+
+/// The log₂ of the segment size in the fuse-graphs regime.
+fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
+    // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
+    // https://doi.org/10.1145/3510449
+    let n = n.max(1) as f64;
+    match arity {
+        3 => if n <= 10_000_000.0 {
+            n.ln() / (3.33_f64).ln() + 2.25
+        } else {
+            A * n.ln() * n.ln().max(1.).ln() + B
+        }
+        .floor() as u32,
+        _ => unimplemented!(),
+    }
+}
+
+fn fuse_dup_edge_bound(arity: usize, n: usize, c: f64, eps: f64) -> u32 {
+    let n = n as f64;
+    match arity {
+        3 => {
+            let subexpr = (1. / (2. * A)) * (-n / (2. * c * (1. - eps).ln()) - 2. * B).log2();
+            (n.log2() - subexpr / (2.0_f64.ln() * lambert_w0(subexpr))).floor() as u32
+        }
+        _ => unimplemented!(),
+    }
+}
 
 /// The log₂ of the segment size in the linear regime.
 fn lin_log2_seg_size(arity: usize, n: usize) -> u32 {
@@ -29,17 +60,6 @@ fn lin_log2_seg_size(arity: usize, n: usize) -> u32 {
     }
 }
 
-/// The log₂ of the segment size in the fuse-graphs regime.
-fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
-    // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
-    // https://doi.org/10.1145/3510449
-    match arity {
-        3 => ((n.max(1) as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
-        4 => ((n.max(1) as f64).ln() / (2.91_f64).ln() - 0.5).floor() as u32,
-        _ => unimplemented!(),
-    }
-}
-
 /// The expansion factor in the unsharded fuse-graphs regime.
 fn fuse_c(arity: usize, n: usize) -> f64 {
     // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
@@ -51,15 +71,10 @@ fn fuse_c(arity: usize, n: usize) -> f64 {
     }
 }
 
-fn balls_and_bins(n: usize, eps: f64) -> f64 {
-    // Bound from urns and balls problem
-    let t = n as f64 * eps * eps / 2.0;
-
-    if t.ln() >= 1. {
-        t.log2() - t.ln().log2()
-    } else {
-        0.0
-    }
+fn balls_and_bins(n: usize, eps: f64) -> u32 {
+    // Bound from balls and bins problem
+    let t = (n as f64 * eps * eps / 2.0).max(1.);
+    (t.log2() - t.ln().max(1.).log2()).floor() as u32
 }
 
 /// Static functions with 10%-11% space overhead for large key sets, fast
@@ -200,7 +215,7 @@ impl Display for MwhcNoShards {
 impl ShardEdge<[u64; 2], 3> for MwhcShards {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
         let eps = 0.001; // Tolerance for deviation from the average shard size
-        self.shard_high_bits = balls_and_bins(n, eps).ceil() as u32;
+        self.shard_high_bits = balls_and_bins(n, eps);
         self.shard_mask = (1u32 << self.shard_high_bits) - 1;
         let num_shards = 1 << self.shard_high_bits;
         self.seg_size = ((n as f64 * 1.23).ceil() as usize)
@@ -239,7 +254,7 @@ impl ShardEdge<[u64; 2], 3> for MwhcShards {
 impl ShardEdge<[u64; 1], 3> for MwhcShards {
     fn set_up_shards(&mut self, n: usize) -> (f64, bool) {
         let eps = 0.001; // Tolerance for deviation from the average shard size
-        self.shard_high_bits = balls_and_bins(n, eps).ceil() as u32;
+        self.shard_high_bits = balls_and_bins(n, eps);
 
         self.shard_mask = (1u32 << self.shard_high_bits) - 1;
         let num_shards = 1 << self.shard_high_bits;
@@ -449,11 +464,10 @@ impl ShardEdge<[u64; 2], 3> for FuseShards {
             // within a maximum size of 2 * MAX_LIN_SHARD_SIZE
             (n / Self::MAX_LIN_SHARD_SIZE).max(1).ilog2()
         } else {
-            (balls_and_bins(n, eps)
-                .ceil()
-                 as u32)
+            balls_and_bins(n, eps)
+                .min(fuse_dup_edge_bound(3, n, 1.105, 0.001))
                 .min(Self::LOG2_MAX_SHARDS) // We don't really need too many shards
-                .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't smaller than MIN_FUSE_SHARD
+                .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't be smaller than MIN_FUSE_SHARD
         };
 
         self.shard_mask = (1u32 << self.shard_high_bits) - 1;

@@ -174,12 +174,17 @@ pub struct VBuilder<
     #[setters(generate = true)]
     offline: bool,
 
+    /// Use radix sort to check for duplicated signatures.
+    #[setters(generate = true)]
+    check_dups: bool,
+
     /// The seed for the random number generator.
     #[setters(generate = true)]
     seed: u64,
 
-    /// The base-2 logarithm of the number of on-disk buckets. Used only if
-    /// `offline` is `true`. The default is 8.
+    /// The base-2 logarithm of buckets of the signature store.
+    /// The default is 8. This value is automatically set
+    /// if you provide an expected number of keys.
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "8"))]
     log2_buckets: u32,
@@ -317,11 +322,14 @@ impl<
                         // Safety: only one thread may be accessing the shard
                         let shard =
                             unsafe { &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>) };
-                        // Check for duplicates
-                        shard.radix_sort_builder().with_low_mem_tuner().sort();
 
-                        if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
-                            return Err(SolveError::DuplicateSignature);
+                        if self.check_dups {
+                            // Check for duplicates
+                            shard.radix_sort_builder().with_low_mem_tuner().sort();
+
+                            if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
+                                return Err(SolveError::DuplicateSignature);
+                            }
                         }
 
                         main_pl.info(format_args!(
