@@ -13,7 +13,7 @@ use epserde::prelude::*;
 use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
-    func::{FuseShards, ShardEdge, VBuilder, VFilter, VFunc},
+    func::{Fuse3Shards, ShardEdge, VBuilder, VFilter, VFunc},
     utils::{FromIntoIterator, Sig, SigVal, ToSig},
 };
 #[derive(Parser, Debug)]
@@ -22,7 +22,7 @@ struct Args {
     /// Number of keys
     n: usize,
     /// Precision
-    dict: usize,
+    dict: u32,
     /// Sample size
     s: usize,
     /// Use 64-bit signatures.
@@ -34,7 +34,7 @@ fn _main<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
 where
     SigVal<S, ()>: RadixKey,
     usize: ToSig<S>,
-    VFilter<usize, VFunc<usize, usize, BitFieldVec, S, E>>: TypeHash,
+    VFilter<usize, VFunc<usize, BitFieldVec, S, E>>: TypeHash,
 {
     let mut m = MeanWithError::new();
 
@@ -82,9 +82,9 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.sig64 {
-        _main::<[u64; 1], FuseShards>(args)?;
+        _main::<[u64; 1], Fuse3Shards>(args)?;
     } else {
-        _main::<[u64; 2], FuseShards>(args)?;
+        _main::<[u64; 2], Fuse3Shards>(args)?;
     }
 
     Ok(())

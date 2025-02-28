@@ -12,7 +12,7 @@ use epserde::traits::{TypeHash, ZeroCopy};
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::func::{FuseNoShards, FuseShards, MwhcNoShards, MwhcShards, ShardEdge, VFilter, VFunc};
+use sux::func::{FuseNoShards, Fuse3Shards, Mwhc3Shards, ShardEdge, VFilter, VFunc};
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
@@ -62,7 +62,7 @@ struct Args {
     #[arg(long)]
     no_shards: bool,
     /// Use 3-hypergraph.
-    #[arg(long)]
+    #[arg(long, conflicts_with ="no_shards")]
     mwhc: bool,
 }
 
@@ -74,18 +74,10 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.mwhc {
-        if args.no_shards {
-            if args.sig64 {
-                main_with_types::<[u64; 1], MwhcNoShards>(args)
-            } else {
-                main_with_types::<[u64; 2], MwhcNoShards>(args)
-            }
+        if args.sig64 {
+            main_with_types::<[u64; 1], Mwhc3Shards>(args)
         } else {
-            if args.sig64 {
-                main_with_types::<[u64; 1], MwhcShards>(args)
-            } else {
-                main_with_types::<[u64; 2], MwhcShards>(args)
-            }
+            main_with_types::<[u64; 2], Mwhc3Shards>(args)
         }
     } else {
         if args.no_shards {
@@ -96,9 +88,9 @@ fn main() -> Result<()> {
             }
         } else {
             if args.sig64 {
-                main_with_types::<[u64; 1], FuseShards>(args)
+                main_with_types::<[u64; 1], Fuse3Shards>(args)
             } else {
-                main_with_types::<[u64; 2], FuseShards>(args)
+                main_with_types::<[u64; 2], Fuse3Shards>(args)
             }
         }
     }
@@ -135,13 +127,13 @@ where
     SigVal<S, ()>: RadixKey,
     str: ToSig<S>,
     usize: ToSig<S>,
-    VFunc<str, usize, BitFieldVec, S, E>: Serialize,
-    VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
-    VFunc<usize, u8, Vec<u8>, S, E>: Serialize,
-    VFunc<str, u8, Vec<u8>, S, E>: Serialize + TypeHash, // TODO: this is weird
-    VFilter<u8, VFunc<usize, u8, Vec<u8>, S, E>>: Serialize,
+    VFunc<usize, BitFieldVec, S, E>: Serialize,
+    VFunc<usize, BitFieldVec, S, E>: Serialize,
+    VFunc<u8, Vec<u8>, S, E>: Serialize,
+    VFunc<u8, Vec<u8>, S, E>: Serialize + TypeHash, // TODO: this is weird
+    VFilter<u8, VFunc<u8, Vec<u8>, S, E>>: Serialize,
     <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Wierd
-    VFilter<u8, VFunc<str, u8, Vec<u8>, S, <E as SerializeInner>::SerType>>: TypeHash, // Weird
+    VFilter<u8, VFunc<u8, Vec<u8>, S, <E as SerializeInner>::SerType>>: TypeHash, // Weird
 {
     let mut pl = ProgressLogger::default();
     let n = args.n;

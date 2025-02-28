@@ -10,7 +10,7 @@ use dsi_progress_logger::*;
 use epserde::prelude::*;
 use sux::{
     bits::BitFieldVec,
-    func::{FuseShards, VFilter, VFunc},
+    func::{Fuse3Shards, VFilter, VFunc},
     prelude::VBuilder,
     utils::FromIntoIterator,
 };
@@ -27,7 +27,7 @@ fn test_vfunc() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let func = VBuilder::<_, _, BitFieldVec<_>, [u64; 2], FuseShards>::default()
+            let func = VBuilder::<_, _, BitFieldVec<_>, [u64; 2], Fuse3Shards>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .try_build_func(
@@ -38,7 +38,7 @@ fn test_vfunc() -> Result<()> {
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             func.serialize(&mut cursor)?;
             cursor.set_position(0);
-            let func = VFunc::<_, _, BitFieldVec<_>, [u64; 2], FuseShards>::deserialize_eps(
+            let func = VFunc::<_, BitFieldVec<_>, [u64; 2], Fuse3Shards>::deserialize_eps(
                 cursor.as_bytes(),
             )?;
             pl.start("Querying...");
@@ -52,7 +52,7 @@ fn test_vfunc() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let func = VBuilder::<_, _, Vec<_>, [u64; 2], FuseShards>::default()
+            let func = VBuilder::<_, _, Vec<_>, [u64; 2], Fuse3Shards>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .try_build_func(
@@ -64,7 +64,7 @@ fn test_vfunc() -> Result<()> {
             func.serialize(&mut cursor)?;
             cursor.set_position(0);
             let func =
-                VFunc::<_, _, Vec<_>, [u64; 2], FuseShards>::deserialize_eps(cursor.as_bytes())?;
+                VFunc::<_, Vec<_>, [u64; 2], Fuse3Shards>::deserialize_eps(cursor.as_bytes())?;
             pl.start("Querying...");
             for i in 0..n {
                 assert_eq!(i, func.get(&i));
@@ -88,7 +88,7 @@ fn test_vfilter() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let filter = VBuilder::<_, _, BitFieldVec<usize>, [u64; 2], FuseShards, ()>::default()
+            let filter = VBuilder::<_, _, BitFieldVec<usize>, [u64; 2], Fuse3Shards, ()>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .try_build_filter(FromIntoIterator::from(0..n), 10, &mut pl)?;
@@ -96,7 +96,7 @@ fn test_vfilter() -> Result<()> {
             filter.serialize(&mut cursor)?;
             cursor.set_position(0);
             let filter =
-                VFilter::<usize, VFunc<_, _, BitFieldVec<usize>, [u64; 2], FuseShards>>::deserialize_eps(
+                VFilter::<usize, VFunc<_, BitFieldVec<usize>, [u64; 2], Fuse3Shards>>::deserialize_eps(
                     cursor.as_bytes(),
                 )?;
             pl.start("Querying (positive)...");
@@ -126,17 +126,16 @@ fn test_vfilter() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let func = VBuilder::<_, _, Vec<u8>, [u64; 2], FuseShards, ()>::default()
+            let func = VBuilder::<_, _, Vec<u8>, [u64; 2], Fuse3Shards, ()>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .try_build_filter(FromIntoIterator::from(0..n), &mut pl)?;
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             func.serialize(&mut cursor)?;
             cursor.set_position(0);
-            let filter =
-                VFilter::<u8, VFunc<_, _, Vec<u8>, [u64; 2], FuseShards>>::deserialize_eps(
-                    cursor.as_bytes(),
-                )?;
+            let filter = VFilter::<u8, VFunc<_, Vec<u8>, [u64; 2], Fuse3Shards>>::deserialize_eps(
+                cursor.as_bytes(),
+            )?;
             pl.start("Querying (positive)...");
             for i in 0..n {
                 assert!(filter.contains(&i), "Contains failed for {}", i);
@@ -190,7 +189,7 @@ fn test_broken() -> Result<()> {
         .try_init();
 
     let n = 3_000_000;
-    let filter = VBuilder::<_, usize, BitFieldVec<usize>, [u64; 2], FuseShards, ()>::default()
+    let filter = VBuilder::<_, usize, BitFieldVec<usize>, [u64; 2], Fuse3Shards, ()>::default()
         .try_build_filter(FromIntoIterator::from(0..n), 10, no_logging![])?;
 
     let mut pl = ProgressLogger::default();

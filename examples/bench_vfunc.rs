@@ -13,7 +13,7 @@ use lender::*;
 use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
-    func::{FuseNoShards, FuseShards, MwhcShards, ShardEdge, VFilter, VFunc},
+    func::{FuseNoShards, Fuse3Shards, Mwhc3Shards, ShardEdge, VFilter, VFunc},
     utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender},
 };
 
@@ -56,15 +56,15 @@ fn main() -> Result<()> {
         if args.no_shards {
             if args.sig64 {
                 // TODO
-                main_with_types::<[u64; 1], MwhcShards>(args)
+                main_with_types::<[u64; 1], Mwhc3Shards>(args)
             } else {
-                main_with_types::<[u64; 2], MwhcShards>(args)
+                main_with_types::<[u64; 2], Mwhc3Shards>(args)
             }
         } else {
             if args.sig64 {
-                main_with_types::<[u64; 1], MwhcShards>(args)
+                main_with_types::<[u64; 1], Mwhc3Shards>(args)
             } else {
-                main_with_types::<[u64; 2], MwhcShards>(args)
+                main_with_types::<[u64; 2], Mwhc3Shards>(args)
             }
         }
     } else {
@@ -77,9 +77,9 @@ fn main() -> Result<()> {
             }
         } else {
             if args.sig64 {
-                main_with_types::<[u64; 1], FuseShards>(args)
+                main_with_types::<[u64; 1], Fuse3Shards>(args)
             } else {
-                main_with_types::<[u64; 2], FuseShards>(args)
+                main_with_types::<[u64; 2], Fuse3Shards>(args)
             }
         }
     }
@@ -90,12 +90,13 @@ where
     SigVal<S, usize>: RadixKey,
     SigVal<S, ()>: RadixKey,
     str: ToSig<S>,
+    String: ToSig<S>,
     usize: ToSig<S>,
-    VFunc<str, usize, BitFieldVec, S, E>: Deserialize,
-    VFunc<usize, usize, BitFieldVec, S, E>: Deserialize,
-    VFunc<usize, u8, Vec<u8>, S, E>: Deserialize,
-    VFunc<str, u8, Vec<u8>, S, E>: Deserialize + TypeHash, // TODO: this is weird
-    VFilter<u8, VFunc<usize, u8, Vec<u8>, S, E>>: Deserialize,
+    VFunc<usize, BitFieldVec, S, E>: Deserialize,
+    VFunc<usize, BitFieldVec, S, E>: Deserialize,
+    VFunc<u8, Vec<u8>, S, E>: Deserialize,
+    VFunc<u8, Vec<u8>, S, E>: Deserialize + TypeHash, // TODO: this is weird
+    VFilter<u8, VFunc<u8, Vec<u8>, S, E>>: Deserialize,
 {
     let mut pl = ProgressLogger::default();
 
@@ -113,7 +114,7 @@ where
         };
 
         if args.dict {
-            let filter = VFilter::<u8, VFunc<str, u8, Vec<u8>, S, E>>::load_full(&args.func)?;
+            let filter = VFilter::<u8, VFunc<u8, Vec<u8>, S, E>>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for key in &keys {
@@ -135,7 +136,7 @@ where
             }
             pl.done_with_count(args.n);
         } else {
-            let func = VFunc::<str, usize, BitFieldVec, S, E>::load_full(&args.func)?;
+            let func = VFunc::<usize, BitFieldVec, S, E>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for key in &keys {
@@ -161,7 +162,7 @@ where
     } else {
         // No filename
         if args.dict {
-            let filter = VFilter::<u8, VFunc<usize, u8, Vec<u8>, S, E>>::load_full(&args.func)?;
+            let filter = VFilter::<u8, VFunc<u8, Vec<u8>, S, E>>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for i in 0..args.n {
@@ -177,7 +178,7 @@ where
             }
             pl.done_with_count(args.n);
         } else {
-            let func = VFunc::<usize, usize, BitFieldVec<usize>, S, E>::load_full(&args.func)?;
+            let func = VFunc::<usize, BitFieldVec<usize>, S, E>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for i in 0..args.n {
