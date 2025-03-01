@@ -769,7 +769,7 @@ where
                 pl,
             )?,
             filter_mask,
-            sig_bits: filter_bits
+            sig_bits: filter_bits,
         })
     }
 }
@@ -888,7 +888,11 @@ where
             match if self.offline {
                 self.try_seed(
                     seed,
-                    sig_store::new_offline::<S, V>(self.log2_buckets, LOG2_MAX_SHARDS, self.expected_num_keys)?,
+                    sig_store::new_offline::<S, V>(
+                        self.log2_buckets,
+                        LOG2_MAX_SHARDS,
+                        self.expected_num_keys,
+                    )?,
                     &mut into_keys,
                     &mut into_values,
                     get_val,
@@ -898,7 +902,11 @@ where
             } else {
                 self.try_seed(
                     seed,
-                    sig_store::new_online::<S, V>(self.log2_buckets, LOG2_MAX_SHARDS, self.expected_num_keys)?,
+                    sig_store::new_online::<S, V>(
+                        self.log2_buckets,
+                        LOG2_MAX_SHARDS,
+                        self.expected_num_keys,
+                    )?,
                     &mut into_keys,
                     &mut into_values,
                     get_val,
@@ -1105,35 +1113,10 @@ where
 #[cfg(test)]
 mod tests {
     use crate::func::vbuild::EdgeIndexSideSet;
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
     use xxhash_rust::xxh3;
 
-    //#[test]
-    fn test_peeling() {
-        fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
-            match arity {
-                3 => ((n.max(1) as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
-                _ => unimplemented!(),
-            }
-        }
-
-        let mut size = 1 << 20;
-
-        loop {
-            let std_log2_seg_size = fuse_log2_seg_size(3, size);
-
-            'outer: for log2_seg_size in std_log2_seg_size + 4..std_log2_seg_size + 8 {
-                for seed in 0..5 {
-                    if !_test_peeling(size, log2_seg_size, seed) {
-                        break 'outer;
-                    }
-                }
-            }
-
-            size = size * 5 / 4;
-        }
-    }
-
-    fn _test_peeling(n: usize, log2_seg_size: u32, seed: u64) -> bool {
+    fn _test_peeling(n: usize, c: f64, log2_seg_size: u32, seed: u64) -> bool {
         fn edge(l: usize, log2_seg_size: u32, sig: &[u64; 2]) -> [usize; 3] {
             let first_segment = (((sig[0] >> 32) * l as u64) >> 32) as usize;
             let start = first_segment << log2_seg_size;
@@ -1152,7 +1135,7 @@ mod tests {
             [(hash128 >> 64) as u64, hash128 as u64]
         }
 
-        let l = ((1.105 * n as f64).ceil() as usize)
+        let l = ((c * n as f64).ceil() as usize)
             .div_ceil(1 << log2_seg_size)
             .saturating_sub(2)
             .max(1)
@@ -1228,12 +1211,59 @@ mod tests {
             }
             stack.truncate(curr);
         }
-        println!(
-            "{n} {log2_seg_size} {} {} {}",
-            n,
-            stack.len(),
-            n == stack.len()
-        );
         n == stack.len()
+    }
+
+    //#[test]
+    fn test_peeling() {
+        fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
+            match arity {
+                3 => ((n.max(1) as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
+                _ => unimplemented!(),
+            }
+        }
+
+        let mut size = 1 << 20;
+
+        loop {
+            let std_log2_seg_size = fuse_log2_seg_size(3, size);
+
+            'outer: for log2_seg_size in std_log2_seg_size + 4..std_log2_seg_size + 8 {
+                for seed in 0..5 {
+                    let failed = !_test_peeling(size, 1.105, log2_seg_size, seed);
+                    println!("{size} {log2_seg_size} {failed}");
+                    if failed {
+                        break 'outer;
+                    }
+                }
+            }
+
+            size = size * 5 / 4;
+        }
+    }
+    #[test]
+    fn explore_peeling() {
+        fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
+            match arity {
+                3 => ((n.max(1) as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
+                _ => unimplemented!(),
+            }
+        }
+
+        let mut size = 1 << 20;
+
+        loop {
+            for c in (1105..=1150).step_by(5) {
+                let c = c as f64 / 1000.0;
+                let base_log2_seg_size = fuse_log2_seg_size(3, size);
+                for log2_seg_size in base_log2_seg_size.saturating_sub(3)..base_log2_seg_size + 3 {
+                    let failures: usize = (0..100).into_par_iter().
+                        map(|seed| (!_test_peeling(size, c, log2_seg_size, seed)) as usize)
+                        .sum();
+                    eprintln!("{size} {c} {log2_seg_size} {failures}");
+                }
+            }
+            size = size * 5 / 4;
+        }
     }
 }
