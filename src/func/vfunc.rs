@@ -116,13 +116,23 @@ pub trait ShardEdge<S, const K: usize>:
     + TypeHash
     + AlignHash
 {
-    /// Set up the sharding and edge logic for the given number of keys.
+    /// Set up the sharding logic for the given number of keys.
     ///
     /// This method can be called multiple times. For example, it can be used to
     /// precompute the number of shards so to optimize a
     /// [`SigStore`](crate::utils::SigStore) by using the same number of
     /// buckets.
-    fn setup(&mut self, n: usize) -> f64;
+    fn set_up_shards(&mut self, n: usize);
+
+    /// Set up the edge logic for the given number of keys and maximum shard
+    /// size and return the expansion factor.
+    ///
+    /// It must be called after [`setup_shards`](ShardEdge::setup_shards),
+    /// albeit some no-sharding implementation might not require it.
+    ///
+    /// This method can be called multiple times. For example, it can be used to
+    /// precompute data and then refine it.
+    fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> f64;
 
     /// Return the number of high bits used for sharding.
     fn shard_high_bits(&self) -> u32;
@@ -220,14 +230,13 @@ impl Mwhc3Shards {
 }
 
 impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
-    fn setup(&mut self, n: usize) -> f64 {
+    fn set_up_shards(&mut self, n: usize) {
         self.shard_high_bits = sharding_high_bits(n, 0.001);
         self.shard_mask = (1u32 << self.shard_high_bits) - 1;
-        let num_shards = 1 << self.shard_high_bits;
-        self.seg_size = ((n as f64 * 1.23).ceil() as usize)
-            .div_ceil(num_shards)
-            .div_ceil(3);
+    }
 
+    fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> f64 {
+        self.seg_size = ((max_shard as f64 * 1.12) / 3.).ceil() as usize;
         1.23
     }
 
@@ -258,14 +267,13 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
 }
 
 impl ShardEdge<[u64; 1], 3> for Mwhc3Shards {
-    fn setup(&mut self, n: usize) -> f64 {
+    fn set_up_shards(&mut self, n: usize) {
         self.shard_high_bits = sharding_high_bits(n, 0.001);
         self.shard_mask = (1 << self.shard_high_bits) - 1;
-        let num_shards = 1 << self.shard_high_bits;
-        self.seg_size = ((n as f64 * 1.23).ceil() as usize)
-            .div_ceil(num_shards)
-            .div_ceil(3);
+    }
 
+    fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> f64 {
+        self.seg_size = ((max_shard as f64 * 1.12) / 3.).ceil() as usize;
         1.23
     }
 
@@ -503,7 +511,7 @@ impl Fuse3Shards {
         ]
     }
 
-    fn _setup(&mut self, n: usize) -> f64 {
+    fn _set_up_shards(&mut self, n: usize) {
         self.shard_high_bits = if n <= Self::MAX_LIN_SIZE {
             // We just try to make shards as big as possible,
             // within a maximum size of 2 * MAX_LIN_SHARD_SIZE
@@ -516,18 +524,18 @@ impl Fuse3Shards {
         };
 
         self.shard_mask = (1 << self.shard_high_bits) - 1;
-        let num_shards = 1 << self.shard_high_bits;
-        let shard_size = n.div_ceil(num_shards);
+    }
 
+    fn _set_up_graphs(&mut self, n: usize, max_shard: usize) -> f64 {
         let c;
         (c, self.log2_seg_size) = if n <= Self::MAX_LIN_SIZE {
             // Lazy Gaussian elimination TODO: improve shards
-            (1.12, Self::lin_log2_seg_size(3, shard_size))
+            (1.12, Self::lin_log2_seg_size(3, max_shard))
         } else {
-            (Self::c(3, n), Self::log2_seg_size(3, shard_size))
+            (Self::c(3, n), Self::log2_seg_size(3, max_shard))
         };
 
-        self.l = ((c * shard_size as f64).ceil() as usize)
+        self.l = ((c * max_shard as f64).ceil() as usize)
             .div_ceil(1 << self.log2_seg_size)
             .saturating_sub(2)
             .max(1)
@@ -539,8 +547,12 @@ impl Fuse3Shards {
 }
 
 impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
-    fn setup(&mut self, n: usize) -> f64 {
-        self._setup(n)
+    fn set_up_shards(&mut self, n: usize) {
+        self._set_up_shards(n);
+    }
+
+    fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> f64 {
+        self._set_up_graphs(n, max_shard)
     }
 
     #[inline(always)]
@@ -577,8 +589,12 @@ impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
 }
 
 impl ShardEdge<[u64; 1], 3> for Fuse3Shards {
-    fn setup(&mut self, n: usize) -> f64 {
-        self._setup(n)
+    fn set_up_shards(&mut self, n: usize) {
+        self._set_up_shards(n);
+    }
+
+    fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> f64 {
+        self._set_up_graphs(n, max_shard)
     }
 
     #[inline(always)]
@@ -675,9 +691,10 @@ impl FuseNoShards {
         }
     }
 
-    fn _setup(&mut self, n: usize) -> f64 {
+    fn _set_up_graphs(&mut self, n: usize) -> f64 {
+        // TODO: improve (because we have LGE)
         let c = if n <= Fuse3Shards::MAX_LIN_SIZE {
-            1.115
+            1.2
         } else {
             Self::c(3, n)
         };
@@ -695,8 +712,10 @@ impl FuseNoShards {
 }
 
 impl ShardEdge<[u64; 2], 3> for FuseNoShards {
-    fn setup(&mut self, n: usize) -> f64 {
-        self._setup(n)
+    fn set_up_shards(&mut self, _n: usize) {}
+
+    fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> f64 {
+        self._set_up_graphs(n)
     }
 
     #[inline(always)]
@@ -726,8 +745,10 @@ impl ShardEdge<[u64; 2], 3> for FuseNoShards {
 }
 
 impl ShardEdge<[u64; 1], 3> for FuseNoShards {
-    fn setup(&mut self, n: usize) -> f64 {
-        self._setup(n)
+    fn set_up_shards(&mut self, _n: usize) {}
+
+    fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> f64 {
+        self._set_up_graphs(n)
     }
 
     #[inline(always)]
@@ -882,7 +903,7 @@ mod tests {
         utils::{FromIntoIterator, Sig, SigVal, ToSig},
     };
 
-    use super::{fuse_log2_seg_size, Fuse3Shards, ShardEdge, VFilter, VFunc};
+    use super::{Fuse3Shards, ShardEdge, VFilter, VFunc};
 
     #[test]
     fn test_filter_func() -> anyhow::Result<()> {
@@ -1056,7 +1077,7 @@ mod tests {
     }
 
     fn log2_seg_size(n: usize) -> u32 {
-        fuse_log2_seg_size(3, n)
+        Fuse3Shards::log2_seg_size(3, n)
     }
 
     #[test]
