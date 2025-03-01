@@ -505,6 +505,11 @@ pub trait ShardStore<S: Sig + ZeroCopy, V: ZeroCopy> {
     ///
     /// This method can be called multiple times.
     fn iter(&mut self) -> Self::ShardIterator<'_>;
+
+    /// Return the number of signature/value pairs in the store.
+    fn len(&self) -> usize {
+        self.shard_sizes().iter().sum()
+    }
 }
 
 /// An implementation of [`ShardStore`].

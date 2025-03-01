@@ -973,7 +973,7 @@ where
         let mut max_value = W::ZERO;
 
         if let Some(expected_num_keys) = self.expected_num_keys {
-            self.shard_edge.setup(expected_num_keys);
+            self.shard_edge.set_up_shards(expected_num_keys);
             self.log2_buckets = self.shard_edge.shard_high_bits();
         }
 
@@ -1006,10 +1006,11 @@ where
         self.num_keys = sig_store.len();
         self.bit_width = max_value.len() as usize;
 
-        self.c = self.shard_edge.setup(self.num_keys);
-
         let mut shard_store = sig_store.into_shard_store(self.shard_edge.shard_high_bits())?;
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
+
+        self.shard_edge.set_up_shards(self.num_keys);
+        self.c = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
 
         pl.info(format_args!(
             "Number of keys: {} Max value: {} Bit width: {}",
@@ -1025,7 +1026,7 @@ where
         }
 
         if max_shard as f64 > 1.01 * self.num_keys as f64 / self.shard_edge.num_shards() as f64 {
-            Err(Into::into(SolveError::MaxShardTooBig))
+            Err(SolveError::MaxShardTooBig.into())
         } else {
             #[cfg(not(feature = "vbuilder_no_data"))]
             let data = new_data(
