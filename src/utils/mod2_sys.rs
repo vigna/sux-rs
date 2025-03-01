@@ -2,7 +2,7 @@
 use crate::{bits::bit_vec::BitVec, traits::Word};
 use anyhow::{bail, ensure, Result};
 use arbitrary_chunks::ArbitraryChunks;
-use core::{num, panic};
+use core::panic;
 use std::cmp::min;
 #[cfg(feature = "time_log")]
 use std::time::SystemTime;
@@ -483,32 +483,34 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
     }
 }
 
-pub fn build_var_to_eqs<I: Iterator<Item: IntoIterator<Item = usize>>>(
+pub fn build_var_to_eqs<'a, W:Word, I: Iterator<Item = (impl IntoIterator<Item = usize>, W)>>(
     num_vars: usize,
     get_iter: impl Fn() -> I,
-    var_to_eq_bits: &mut Vec<usize>,
-) -> Vec<&mut [usize]>
+    backend: &'a mut Vec<usize>,
+    const_terms: &mut Vec<W>,
+) -> Vec<&'a mut [usize]>
 {
     let mut var_count = vec![0usize; num_vars];
     let mut effective_variables = 0;
-    for it in get_iter() {
+    for (i, (it, c)) in get_iter().enumerate() {
+        const_terms[i] = c;
         for var in it.into_iter() {
             var_count[var] += 1;
             effective_variables += 1;
         }
     }
 
-    var_to_eq_bits.resize(effective_variables, 0);
+    backend.resize(effective_variables, 0);
     let mut var_to_eq: Vec<&mut [usize]> = Vec::with_capacity(num_vars);
 
-    var_to_eq_bits
+    backend
         .arbitrary_chunks_mut(&var_count)
         .for_each(|chunk| {
             var_to_eq.push(chunk);
         });
 
     let mut var_indices = vec![0usize; num_vars];
-    for (i, it) in get_iter().enumerate() {
+    for (i, (it, _)) in get_iter().enumerate() {
         for var in it.into_iter() {
             var_to_eq[var][var_indices[var]] = i;
             var_indices[var] += 1;
@@ -606,18 +608,20 @@ mod tests {
     #[test]
     fn test_var_to_vec_builder() {
         let iterator = vec![
-            vec![1usize, 4, 10],
-            vec![1, 4, 9],
-            vec![0, 6, 8],
-            vec![0, 6, 9],
-            vec![2, 4, 8],
-            vec![2, 6, 10],
+            (vec![1usize, 4, 10], 0),
+            (vec![1, 4, 9], 1),
+            (vec![0, 6, 8], 2),
+            (vec![0, 6, 9], 3),
+            (vec![2, 4, 8], 4),
+            (vec![2, 6, 10], 5),
         ];
         let mut bitvec: Vec<usize> = vec![];
+        let mut c = vec![0_usize; 6];
         let var_to_eqs = build_var_to_eqs(
             11,
             || iterator.clone().into_iter(),
             &mut bitvec,
+            &mut c
         );
         let expected_res = vec![
             vec![2, 3],
@@ -636,6 +640,7 @@ mod tests {
             .iter()
             .zip(expected_res.iter())
             .for_each(|(v, e)| v.iter().zip(e.iter()).for_each(|(x, y)| assert_eq!(x, y)));
+        assert_eq!(c, vec![0, 1, 2, 3, 4, 5]);
     }
 
     // Helper struct that implements the needed trait bounds
