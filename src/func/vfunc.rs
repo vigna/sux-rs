@@ -351,7 +351,7 @@ impl Fuse3Shards {
     /// See [`Self::MAX_LIN_SIZE`].
     const HALF_MAX_LIN_SHARD_SIZE: usize = 100_000;
     /// When we shard, we never create a shard smallar then this.
-    const MIN_FUSE_SHARD: usize = 10_000_000;
+    const MIN_FUSE_SHARD: usize = 20_000_000;
     /// The log₂ of the maximum number of shards.
     const LOG2_MAX_SHARDS: u32 = 11;
 
@@ -367,7 +367,7 @@ impl Fuse3Shards {
             3 => {
                 if n <= Self::MIN_FUSE_SHARD / 2 {
                     1.12
-                } else if n <= Self::MIN_FUSE_SHARD {
+                } else if n <= 20_000_000 {
                     1.11
                 } else {
                     1.105
@@ -533,7 +533,7 @@ impl Fuse3Shards {
             // Lazy Gaussian elimination TODO: improve shards
             (1.12, Self::lin_log2_seg_size(3, max_shard))
         } else {
-            (Self::c(3, n), Self::log2_seg_size(3, max_shard))
+            (Self::c(3, max_shard), Self::log2_seg_size(3, max_shard))
         };
 
         self.l = ((c * max_shard as f64).ceil() as usize)
@@ -900,7 +900,7 @@ mod tests {
     use rdst::RadixKey;
 
     use crate::{
-        func::VBuilder,
+        func::{FuseNoShards, VBuilder},
         utils::{FromIntoIterator, Sig, SigVal, ToSig},
     };
 
@@ -1102,4 +1102,15 @@ mod tests {
             shard_size = shard_size * 3 / 2;
         }
     }
+
+    #[test]
+    fn test_c() {
+        let mut n = 1024;
+        for i in 0..50 {
+            let c = Fuse3Shards::c(3, n * 3 / 2);
+            eprintln!("n: {} c: {} c2: {}", n, c, FuseNoShards::c(3, n));
+            n = 5 * n / 4;
+        }
+    }
+
 }
