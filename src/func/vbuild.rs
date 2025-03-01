@@ -613,11 +613,9 @@ impl<
 
                 pl.expected_updates(Some(unpeeled.num_ones()));
                 pl.start("Solving system...");
-                let result = Modulo2System::lazy_gaussian_elimination(
-                    None,
+                let result = Modulo2System::<W, Vec<usize>>::lazy_gaussian_elimination(
                     var_to_eqs,
                     c,
-                    (0..self.shard_edge.num_vertices()).collect(),
                 )
                 .map_err(|_| ())?;
                 pl.done_with_count(unpeeled.num_ones());

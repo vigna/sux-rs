@@ -206,11 +206,23 @@ impl<B> BitVec<B> {
 }
 
 impl<B: AsRef<[usize]>> BitVec<B> {
+    /// Returns an owned copy of the bit vector.
+    pub fn to_owned(&self)  -> BitVec {
+        BitVec {
+            bits: self.bits.as_ref().to_owned(),
+            len: self.len,
+        }
+    }
+
+    /// Returns true if the bit of given index is set.
     pub fn get(&self, index: usize) -> bool {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.get_unchecked(index) }
     }
 
+    /// Returns true if the bit of given index is set, without
+    /// bound checks.
+    /// 
     /// # Safety
     ///
     /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
