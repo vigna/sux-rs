@@ -232,11 +232,11 @@ impl Mwhc3Shards {
 impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
     fn set_up_shards(&mut self, n: usize) {
         self.shard_high_bits = sharding_high_bits(n, 0.001);
-        self.shard_mask = (1u32 << self.shard_high_bits) - 1;
+        self.shard_mask = (1 << self.shard_high_bits) - 1;
     }
 
     fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> f64 {
-        self.seg_size = ((max_shard as f64 * 1.12) / 3.).ceil() as usize;
+        self.seg_size = ((max_shard as f64 * 1.23) / 3.).ceil() as usize;
         1.23
     }
 
@@ -273,7 +273,7 @@ impl ShardEdge<[u64; 1], 3> for Mwhc3Shards {
     }
 
     fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> f64 {
-        self.seg_size = ((max_shard as f64 * 1.12) / 3.).ceil() as usize;
+        self.seg_size = ((max_shard as f64 * 1.23) / 3.).ceil() as usize;
         1.23
     }
 
@@ -360,7 +360,8 @@ impl Fuse3Shards {
 
     /// The expansion factor for fuse graphs.
     ///
-    /// Handcrafted for more than [`Self::MAX_LIN_SHARD_SIZE`] keys.
+    /// Handcrafted, and meaningful for more than [`Self::MAX_LIN_SHARD_SIZE`]
+    /// keys only.
     fn c(arity: usize, n: usize) -> f64 {
         match arity {
             3 => {
@@ -405,7 +406,7 @@ impl Fuse3Shards {
                 // https://doi.org/10.1145/3510449
                 //
                 // TODO: maybe more
-                // This estimate is correct for fuse_c(arity, n).
+                // This estimate is correct for c(arity, n).
                 n.ln() / (3.33_f64).ln() + 2.25
             } else {
                 let n = n.max(1) as f64;
@@ -683,7 +684,7 @@ impl FuseNoShards {
             //
             // TODO: maybe more
             // TODO: check floor
-            // This estimate is correct for fuse_c(arity, n).
+            // This estimate is correct for c(arity, n).
             {
                 (n.ln() / (3.33_f64).ln() + 2.25).floor() as u32
             }
