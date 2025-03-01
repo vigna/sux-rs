@@ -257,43 +257,6 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
         Ok(solution)
     }
 
-    pub fn build_var_to_eqs<I, J>(
-        var_to_eq_bits: &mut Vec<usize>,
-        iters: impl Fn() -> J,
-        num_vars: usize,
-    ) -> Vec<&mut [usize]>
-    where
-        for<'a> &'a I: IntoIterator<Item = &'a usize>,
-        J: Iterator<Item = I>,
-    {
-        let mut var_count = vec![0usize; num_vars];
-        let mut effective_variables = 0;
-        for it in iters() {
-            for &var in it.into_iter() {
-                var_count[var] += 1;
-                effective_variables += 1;
-            }
-        }
-
-        var_to_eq_bits.resize(effective_variables, 0);
-        let mut var_to_eq: Vec<&mut [usize]> = Vec::with_capacity(num_vars);
-
-        var_to_eq_bits
-            .arbitrary_chunks_mut(&var_count)
-            .for_each(|chunk| {
-                var_to_eq.push(chunk);
-            });
-
-        let mut var_indices = vec![0usize; num_vars];
-        for (i, it) in iters().enumerate() {
-            for &var in it.into_iter() {
-                var_to_eq[var][var_indices[var]] = i;
-                var_indices[var] += 1;
-            }
-        }
-        var_to_eq
-    }
-
     /// Solves a system using lazy Gaussian elimination.
     ///
     /// # Arguments
@@ -302,8 +265,12 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
     ///   in which it appears.
     ///
     /// * `c` - The vector of known terms, one for each equation.
-    pub fn lazy_gaussian_elimination(var_to_eqs: Vec<Vec<usize>>, c: Vec<W>) -> Result<Vec<W>> {
+    pub fn lazy_gaussian_elimination<A: AsRef<[usize]>, V: AsRef<[A]>>(
+        var_to_eqs: V,
+        c: Vec<W>,
+    ) -> Result<Vec<W>> {
         let num_equations = c.len();
+        let var_to_eqs = var_to_eqs.as_ref();
         let num_vars = var_to_eqs.len();
         if num_equations == 0 {
             return Ok(vec![W::ZERO; num_vars]);
@@ -337,7 +304,7 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
         let mut priority: Vec<usize> = vec![0; num_equations];
 
         for v in 0..num_vars {
-            let eq = &var_to_eqs[v];
+            let eq = &var_to_eqs[v].as_ref();
             if eq.is_empty() {
                 continue;
             }
@@ -397,7 +364,7 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
                     var = variables.pop().unwrap()
                 }
                 idle_normalized[var / usize::BITS as usize] ^= 1 << (var % usize::BITS as usize);
-                var_to_eqs[var].iter().for_each(|&eq| {
+                var_to_eqs[var].as_ref().iter().for_each(|&eq| {
                     priority[eq] -= 1;
                     if priority[eq] == 1 {
                         equation_list.push(eq)
@@ -434,6 +401,7 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
                     solved.push(first);
                     weight[pivot] = 0;
                     var_to_eqs[pivot]
+                        .as_ref()
                         .iter()
                         .filter(|&&eq_idx| eq_idx != first)
                         .for_each(|&eq| {
@@ -513,6 +481,40 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
         });
         Modulo2System::<W>::lazy_gaussian_elimination(var2_eq, c)
     }
+}
+
+pub fn build_var_to_eqs<I: Iterator<Item: IntoIterator<Item = usize>>>(
+    num_vars: usize,
+    get_iter: impl Fn() -> I,
+    var_to_eq_bits: &mut Vec<usize>,
+) -> Vec<&mut [usize]>
+{
+    let mut var_count = vec![0usize; num_vars];
+    let mut effective_variables = 0;
+    for it in get_iter() {
+        for var in it.into_iter() {
+            var_count[var] += 1;
+            effective_variables += 1;
+        }
+    }
+
+    var_to_eq_bits.resize(effective_variables, 0);
+    let mut var_to_eq: Vec<&mut [usize]> = Vec::with_capacity(num_vars);
+
+    var_to_eq_bits
+        .arbitrary_chunks_mut(&var_count)
+        .for_each(|chunk| {
+            var_to_eq.push(chunk);
+        });
+
+    let mut var_indices = vec![0usize; num_vars];
+    for (i, it) in get_iter().enumerate() {
+        for var in it.into_iter() {
+            var_to_eq[var][var_indices[var]] = i;
+            var_indices[var] += 1;
+        }
+    }
+    var_to_eq
 }
 
 #[cfg(test)]
@@ -612,7 +614,11 @@ mod tests {
             vec![2, 6, 10],
         ];
         let mut bitvec: Vec<usize> = vec![];
-        let var_to_eqs = Modulo2System::<usize>::build_var_to_eqs(&mut bitvec, || iterator.clone().into_iter(), 11);
+        let var_to_eqs = build_var_to_eqs(
+            11,
+            || iterator.clone().into_iter(),
+            &mut bitvec,
+        );
         let expected_res = vec![
             vec![2, 3],
             vec![0, 1],

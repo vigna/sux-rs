@@ -587,11 +587,22 @@ impl<
                         unpeeled.set(edge_lists[v].edge_index_and_side().0, false);
                     });
                 let unpeeled = Rank9::new(unpeeled);
-
+                
                 // Create data for an F₂ system using non-peeled edges
-                let mut var_to_eqs = Vec::with_capacity(self.shard_edge.num_vertices());
+                let mut v = vec![];
+                let var_to_eqs = build_var_to_eqs(
+                    self.shard_edge.num_vertices(),
+                    || {
+                        shard
+                            .iter()
+                            .enumerate()
+                            .filter(|(edge_index, _)| unpeeled[*edge_index])
+                            .map(|(_edge_index, sig_val)| self.shard_edge.local_edge(&sig_val.sig))
+                    },
+                    &mut v,
+                );
+
                 let mut c = vec![W::ZERO; unpeeled.num_ones()];
-                var_to_eqs.resize_with(self.shard_edge.num_vertices(), std::vec::Vec::new);
                 shard
                     .iter()
                     .enumerate()
@@ -599,13 +610,7 @@ impl<
                     .for_each(|(edge_index, sig_val)| {
                         let eq = unpeeled.rank(edge_index);
                         c[eq] = get_val(sig_val);
-
-                        for &v in self.shard_edge.local_edge(&sig_val.sig).iter() {
-                            var_to_eqs[v].push(eq);
-                        }
-                        ()
                     });
-                pl.done_with_count(shard.len());
 
                 if self.failed.load(Ordering::Relaxed) {
                     return Err(());
@@ -613,11 +618,9 @@ impl<
 
                 pl.expected_updates(Some(unpeeled.num_ones()));
                 pl.start("Solving system...");
-                let result = Modulo2System::<W, Vec<usize>>::lazy_gaussian_elimination(
-                    var_to_eqs,
-                    c,
-                )
-                .map_err(|_| ())?;
+                let result =
+                    Modulo2System::<W, Vec<usize>>::lazy_gaussian_elimination(var_to_eqs, c)
+                        .map_err(|_| ())?;
                 pl.done_with_count(unpeeled.num_ones());
 
                 for (v, &value) in result.iter().enumerate() {
@@ -1255,8 +1258,9 @@ mod tests {
                 let c = c as f64 / 1000.0;
                 let base_log2_seg_size = fuse_log2_seg_size(3, size);
                 for log2_seg_size in base_log2_seg_size.saturating_sub(3)..base_log2_seg_size + 3 {
-                    let failures: usize = (0..100).into_par_iter().
-                        map(|seed| (!_test_peeling(size, c, log2_seg_size, seed)) as usize)
+                    let failures: usize = (0..100)
+                        .into_par_iter()
+                        .map(|seed| (!_test_peeling(size, c, log2_seg_size, seed)) as usize)
                         .sum();
                     eprintln!("{size} {c} {log2_seg_size} {failures}");
                 }
