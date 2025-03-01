@@ -587,9 +587,11 @@ impl<
                         unpeeled.set(edge_lists[v].edge_index_and_side().0, false);
                     });
                 let unpeeled = Rank9::new(unpeeled);
+                let num_eqs = unpeeled.num_ones();
                 
                 // Create data for an F₂ system using non-peeled edges
                 let mut v = vec![];
+                let mut c = vec![W::ZERO; num_eqs];
                 let var_to_eqs = build_var_to_eqs(
                     self.shard_edge.num_vertices(),
                     || {
@@ -597,20 +599,11 @@ impl<
                             .iter()
                             .enumerate()
                             .filter(|(edge_index, _)| unpeeled[*edge_index])
-                            .map(|(_edge_index, sig_val)| self.shard_edge.local_edge(&sig_val.sig))
+                            .map(|(_edge_index, sig_val)| (self.shard_edge.local_edge(&sig_val.sig), get_val(sig_val)))
                     },
                     &mut v,
+                    &mut c
                 );
-
-                let mut c = vec![W::ZERO; unpeeled.num_ones()];
-                shard
-                    .iter()
-                    .enumerate()
-                    .filter(|(edge_index, _)| unpeeled[*edge_index])
-                    .for_each(|(edge_index, sig_val)| {
-                        let eq = unpeeled.rank(edge_index);
-                        c[eq] = get_val(sig_val);
-                    });
 
                 if self.failed.load(Ordering::Relaxed) {
                     return Err(());
