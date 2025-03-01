@@ -1,4 +1,13 @@
-#![allow(unexpected_cfgs)]
+/*
+ *
+ * SPDX-FileCopyrightText: 2025 Dario Moschetti
+ * SPDX-FileCopyrightText: 2025 Sebastiano Vigna
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ */
+
+
+ #![allow(unexpected_cfgs)]
 use crate::{bits::bit_vec::BitVec, traits::Word};
 use anyhow::{bail, ensure, Result};
 use arbitrary_chunks::ArbitraryChunks;
