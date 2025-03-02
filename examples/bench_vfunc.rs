@@ -13,7 +13,7 @@ use lender::*;
 use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
-    func::{Fuse3Shards, FuseNoShards, Mwhc3Shards, ShardEdge, VFilter, VFunc},
+    func::{Fuse3NoShards, Fuse3Shards, Mwhc3Shards, ShardEdge, VFilter, VFunc},
     utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender},
 };
 
@@ -71,9 +71,9 @@ fn main() -> Result<()> {
         if args.no_shards {
             if args.sig64 {
                 // TODO
-                main_with_types::<[u64; 1], FuseNoShards>(args)
+                main_with_types::<[u64; 1], Fuse3NoShards>(args)
             } else {
-                main_with_types::<[u64; 2], FuseNoShards>(args)
+                main_with_types::<[u64; 2], Fuse3NoShards>(args)
             }
         } else {
             if args.sig64 {
