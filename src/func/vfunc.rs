@@ -349,7 +349,7 @@ impl Fuse3Shards {
     /// unless we can create shards of at least [`Self::MIN_FUSE_SHARD`].
     const MAX_LIN_SIZE: usize = 1_100_000;
     /// See [`Self::MAX_LIN_SIZE`].
-    const HALF_MAX_LIN_SHARD_SIZE: usize = 100_000;
+    const HALF_MAX_LIN_SHARD_SIZE: usize = 200_000;
     /// When we shard, we never create a shard smallar then this.
     const MIN_FUSE_SHARD: usize = 20_000_000;
     /// The log₂ of the maximum number of shards.

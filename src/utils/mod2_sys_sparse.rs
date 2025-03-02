@@ -6,21 +6,20 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-
- #![allow(unexpected_cfgs)]
-use crate::{bits::bit_vec::BitVec, traits::Word};
+#![allow(unexpected_cfgs)]
+use crate::{bit_vec, bits::bit_vec::BitVec, traits::Word};
 use anyhow::{bail, ensure, Result};
 use arbitrary_chunks::ArbitraryChunks;
+use itertools::Itertools;
 use core::panic;
-use std::cmp::min;
 #[cfg(feature = "time_log")]
 use std::time::SystemTime;
 
 /// An equation on **F**~2~
 #[derive(Clone, Debug)]
-pub struct Modulo2Equation<W: Word = usize, B = Vec<usize>> {
+pub struct Modulo2Equation<W: Word = usize> {
     /// The bit vector representing the coefficients (one bit for each variable)
-    bit_vector: BitVec<B>,
+    vars: Vec<u32>,
     /// The constant term
     c: W,
     /// The index of the first variable in the equation, if any
@@ -30,14 +29,14 @@ pub struct Modulo2Equation<W: Word = usize, B = Vec<usize>> {
 /// Solver for linear systems on **F**~2~
 /// Variables are k-dimensional vectors on **F**~2~, with 0 $$\le$$ k $$\le$$ 64
 #[derive(Clone, Debug)]
-pub struct Modulo2System<W: Word = usize, B: AsRef<[usize]> + AsMut<[usize]> = Vec<usize>> {
+pub struct Modulo2System<W: Word = usize> {
     /// The number of variables
     num_vars: usize,
     /// The equations in the system
-    equations: Vec<Modulo2Equation<W, B>>,
+    equations: Vec<Modulo2Equation<W>>,
 }
 
-impl<W: Word> Modulo2Equation<W, Vec<usize>> {
+impl<W: Word> Modulo2Equation<W> {
     /// Creates a new `Modulo2Equation`.
     ///
     /// # Arguments
@@ -45,25 +44,16 @@ impl<W: Word> Modulo2Equation<W, Vec<usize>> {
     /// * `c` - The constant term of the equation.
     ///
     /// * `num_vars` - The total number of variables in the equation.
-    pub fn new(c: W, num_vars: usize) -> Self {
-        unreachable!();
+    pub fn new(c: W, _num_vars: usize) -> Self {
         Modulo2Equation {
-            bit_vector: BitVec::new(num_vars),
+            vars: vec![],
             c,
             first_var: None,
         }
     }
 }
 
-impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2Equation<W, B> {
-    pub fn to_owned(&self) -> Modulo2Equation<W, Vec<usize>> {
-        Modulo2Equation {
-            bit_vector: self.bit_vector.to_owned(),
-            c: self.c,
-            first_var: self.first_var,
-        }
-    }
-
+impl<W: Word> Modulo2Equation<W> {
     /// Creates a new `Modulo2Equation` from its components.
     ///
     /// # Safety
@@ -75,9 +65,9 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2Equation<W, B> {
     /// * `bit_vector` - The bit vector representing the variables in the equation.
     /// * `c` - The constant term of the equation.
     /// * `first_var` - The index of the first variable in the equation, if any.
-    pub unsafe fn from_parts(bit_vector: BitVec<B>, c: W, first_var: Option<u32>) -> Self {
+    pub unsafe fn from_parts(bit_vector: Vec<u32>, c: W, first_var: Option<u32>) -> Self {
         Modulo2Equation {
-            bit_vector,
+            vars: bit_vector,
             c,
             first_var,
         }
@@ -92,14 +82,14 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2Equation<W, B> {
     /// # Panics
     ///
     /// The method panics if the variable is already present in the equation.
-    pub fn add(&mut self, variable: usize) -> &mut Self {
+    pub fn add(&mut self, variable: u32) -> &mut Self {
         assert!(
-            !self.bit_vector.get(variable),
+            !self.vars.contains(&variable),
             "Variable {variable} already in equation"
         );
-        self.bit_vector.set(variable, true);
-        let variable = variable as u32;
-        self.first_var = Some(min(self.first_var.unwrap_or(variable), variable));
+        self.vars.push(variable);
+        self.vars.sort_unstable();
+        self.first_var = Some(self.vars[0]);
         self
     }
 
@@ -108,20 +98,59 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2Equation<W, B> {
     /// # Arguments
     ///
     /// * `equation` - The equation to be added.
-    pub fn add_equation(&mut self, equation: &Modulo2Equation<W, B>) {
+    pub fn add_equation(&mut self, equation: &Modulo2Equation<W>) {
         self.c ^= equation.c;
-        let x = self.bit_vector.as_mut();
-        let y = equation.bit_vector.as_ref();
-        self.first_var = None;
-        for i in 0..x.len() {
-            x[i] ^= y[i];
-        }
-        for (i, &w) in x.iter().enumerate() {
-            if w != 0 {
-                self.first_var = Some(i as u32 * usize::BITS + w.trailing_zeros());
-                break;
+        let a = &self.vars;
+        let b = &equation.vars;
+        let mut i = 0;
+        let mut j = 0;
+        let s = a.len();
+        let t = b.len();
+        let mut result = Vec::with_capacity(s + t);
+
+        if t != 0 && s != 0 {
+            loop {
+                if a[i] < b[j] {
+                    result.push(a[i]);
+
+                    i += 1;
+                    if i == s {
+                        break;
+                    }
+                } else if a[i] > b[j] {
+                    result.push(b[j]);
+
+                    j += 1;
+                    if j == t {
+                        break;
+                    }
+                } else {
+                    i += 1;
+                    j += 1;
+                    if i == s {
+                        break;
+                    }
+                    if j == t {
+                        break;
+                    }
+                }
             }
         }
+
+        while i < s {
+            result.push(a[i]);
+            i += 1;
+        }
+        while j < t {
+            result.push(b[j]);
+            j += 1;
+        }
+        self.vars = result;
+        self.first_var = if self.vars.len() > 0 {
+            Some(self.vars[0])
+        } else {
+            None
+        };
     }
 
     /// Checks if the equation is unsolvable.
@@ -142,30 +171,22 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2Equation<W, B> {
     ///
     /// * `values` - A slice of `usize` representing the values associated
     ///   with each variable.
-    fn scalar_product(bits: &[usize], values: &[W]) -> W {
+    fn scalar_product(vars: impl AsRef<[u32]>, values: &[W]) -> W {
         let mut sum = W::ZERO;
 
-        for (i, &word) in bits.iter().enumerate() {
-            let offset = i * usize::BITS as usize;
-            let mut word = word;
-            while word != 0 {
-                let lsb = word.trailing_zeros();
-                sum ^= values[offset + lsb as usize];
-                word &= word - 1;
-            }
+        for &var in vars.as_ref() {
+            sum ^= values[var as usize];
         }
         sum
     }
 
     /// Returns a vector of variables present in the equation.
-    pub fn variables(&self) -> Vec<usize> {
-        (0..self.bit_vector.len())
-            .filter(|&x| self.bit_vector.get(x))
-            .collect::<Vec<_>>()
+    pub fn variables(&self) -> &Vec<u32> {
+        &self.vars
     }
 }
 
-impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
+impl<W: Word> Modulo2System<W> {
     /// Creates a new `Modulo2System`.
     ///
     /// # Arguments
@@ -190,7 +211,7 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
     ///
     /// The caller must ensure that the number of variables in each equation matches
     /// the number of variables in the system.
-    pub unsafe fn from_parts(num_vars: usize, equations: Vec<Modulo2Equation<W, B>>) -> Self {
+    pub unsafe fn from_parts(num_vars: usize, equations: Vec<Modulo2Equation<W>>) -> Self {
         Modulo2System {
             num_vars,
             equations,
@@ -198,8 +219,7 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
     }
 
     /// Adds an equation to the system.
-    pub fn add(&mut self, equation: Modulo2Equation<W, B>) {
-        assert_eq!(equation.bit_vector.len(), self.num_vars, "The number of variables in the equation ({}) does not match the number of variables in the system ({})", equation.bit_vector.len(), self.num_vars);
+    pub fn add(&mut self, equation: Modulo2Equation<W>) {
         self.equations.push(equation);
     }
 
@@ -210,9 +230,9 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
     /// * `solution` - A slice of `usize` representing the proposed solution.
     pub fn check(&self, solution: &[W]) -> bool {
         assert_eq!(solution.len(), self.num_vars, "The number of variables in the solution ({}) does not match the number of variables in the system ({})", solution.len(), self.num_vars);
-        self.equations.iter().all(|eq| {
-            eq.c == Modulo2Equation::<W, B>::scalar_product(eq.bit_vector.as_ref(), solution)
-        })
+        self.equations
+            .iter()
+            .all(|eq| eq.c == Modulo2Equation::<W>::scalar_product(&eq.vars, solution))
     }
 
     /// Transforms the system into echelon form.
@@ -225,7 +245,7 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
             for j in i + 1..self.equations.len() {
                 // SAFETY: to add the two equations, multiple references to the vector
                 // of equations are needed, one of which is mutable
-                let eq_j = unsafe { &*(&self.equations[j] as *const Modulo2Equation<W, B>) };
+                let eq_j = unsafe { &*(&self.equations[j] as *const Modulo2Equation<W>) };
                 let eq_i = &mut self.equations[i];
 
                 let Some(first_var_j) = eq_j.first_var else {
@@ -261,8 +281,8 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
             .rev()
             .filter(|eq| !eq.is_identity())
             .for_each(|eq| {
-                solution[eq.first_var.expect("First variable is None") as usize] = eq.c
-                    ^ Modulo2Equation::<W, B>::scalar_product(eq.bit_vector.as_ref(), &solution);
+                solution[eq.first_var.expect("First variable is None") as usize] =
+                    eq.c ^ Modulo2Equation::<W>::scalar_product(&eq.vars, &solution);
             });
         Ok(solution)
     }
@@ -286,19 +306,10 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
             return Ok(vec![W::ZERO; num_vars]);
         }
 
-        let mut system = Modulo2System::<W, &mut [usize]>::new(num_vars);
-        let size_per_eq = num_vars.div_ceil(usize::BITS as usize);
-        let slice_size = size_per_eq * num_equations;
-        let mut equations_bits = vec![0usize; slice_size];
-
-        equations_bits
-            .chunks_mut(size_per_eq)
-            .zip(c.iter())
-            // SAFETY: num_vars is at most the number of bits in chunk
-            .for_each(|(chunk, &c)| unsafe {
-                let bv = BitVec::from_raw_parts(chunk, num_vars);
-                system.add(Modulo2Equation::<W, &mut [usize]>::from_parts(bv, c, None));
-            });
+        let mut system = Modulo2System::<W>::new(num_vars);
+        c.iter().for_each(|&c| {
+            system.add(Modulo2Equation::<W>::new(c, num_vars));
+        });
 
         #[cfg(feature = "time_log")]
         let mut measures = Vec::new();
@@ -319,7 +330,7 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
                 continue;
             }
 
-            system.equations[eq[0]].add(v);
+            system.equations[eq[0]].add(v as u32);
             weight[v] += 1;
             priority[eq[0]] += 1;
 
@@ -329,7 +340,7 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
                         eq[i] > eq[i - 1],
                         "Equations indices do not appear in nondecreasing order"
                     );
-                    system.equations[eq[i]].add(v);
+                    system.equations[eq[i]].add(v as u32);
                     weight[v] += 1;
                     priority[eq[i]] += 1;
                 } else {
@@ -364,7 +375,7 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
         let mut pivots: Vec<usize> = Vec::new();
 
         let equations = &mut system.equations;
-        let mut idle_normalized = vec![usize::MAX; num_vars.div_ceil(usize::BITS as usize)];
+        let mut idle_normalized = bit_vec![true; num_vars];
 
         let mut remaining = equations.len();
         while remaining != 0 {
@@ -373,7 +384,7 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
                 while weight[var] == 0 {
                     var = variables.pop().unwrap()
                 }
-                idle_normalized[var / usize::BITS as usize] ^= 1 << (var % usize::BITS as usize);
+                idle_normalized.set(var, false);
                 var_to_eqs[var].as_ref().iter().for_each(|&eq| {
                     priority[eq] -= 1;
                     if priority[eq] == 1 {
@@ -397,20 +408,13 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
                     // SAFETY: to add the equations, multiple references to the vector
                     // of equations are needed, one of which is mutable
                     let equation =
-                        unsafe { &*(&equations[first] as *const Modulo2Equation<W, &mut [usize]>) };
-                    let mut word_index = 0;
-                    while (equation.bit_vector.as_ref()[word_index] & idle_normalized[word_index])
-                        == 0
-                    {
-                        word_index += 1
-                    }
-                    let pivot = word_index * usize::BITS as usize
-                        + (equation.bit_vector.as_ref()[word_index] & idle_normalized[word_index])
-                            .trailing_zeros() as usize;
-                    pivots.push(pivot);
+                        unsafe { &*(&equations[first] as *const Modulo2Equation<W>) };
+                    assert_eq!(equation.vars.iter().copied().filter(|x| idle_normalized.get(*x as usize)).count(), 1);
+                    let pivot = equation.vars.iter().copied().find_or_first(|x| idle_normalized.get(*x as usize)).unwrap();
+                    pivots.push(pivot as usize);
                     solved.push(first);
-                    weight[pivot] = 0;
-                    var_to_eqs[pivot]
+                    weight[pivot as usize] = 0;
+                    var_to_eqs[pivot as usize]
                         .as_ref()
                         .iter()
                         .filter(|&&eq_idx| eq_idx != first)
@@ -446,7 +450,7 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
             let pivot = pivots[i];
             assert!(solution[pivot] == W::ZERO);
             solution[pivot] =
-                eq.c ^ Modulo2Equation::<W, B>::scalar_product(eq.bit_vector.as_ref(), &solution);
+                eq.c ^ Modulo2Equation::<W>::scalar_product(&eq.vars, &solution);
         }
 
         #[cfg(feature = "time_log")]
@@ -472,9 +476,8 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
         let mut var2_eq = vec![Vec::new(); num_vars];
         let mut d = vec![0; num_vars];
         self.equations.iter().for_each(|eq| {
-            (0..eq.bit_vector.len())
-                .filter(|&x| eq.bit_vector.get(x))
-                .for_each(|x| d[x] += 1)
+            eq.vars.iter()
+                .for_each(|x| d[*x as usize] += 1)
         });
 
         var2_eq
@@ -485,21 +488,20 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
         let mut c = vec![W::ZERO; self.equations.len()];
         self.equations.iter().enumerate().for_each(|(i, eq)| {
             c[i] = eq.c;
-            (0..eq.bit_vector.len())
-                .filter(|&x| eq.bit_vector.get(x))
-                .for_each(|x| var2_eq[x].push(i));
+
+            eq.vars.iter()
+                .for_each(|x| var2_eq[*x as usize].push(i));
         });
         Modulo2System::<W>::lazy_gaussian_elimination(var2_eq, c)
     }
 }
 
-pub fn build_var_to_eqs<'a, W:Word, I: Iterator<Item = (impl IntoIterator<Item = usize>, W)>>(
+pub fn build_var_to_eqs<'a, W: Word, I: Iterator<Item = (impl IntoIterator<Item = usize>, W)>>(
     num_vars: usize,
     get_iter: impl Fn() -> I,
     backend: &'a mut Vec<usize>,
     const_terms: &mut Vec<W>,
-) -> Vec<&'a mut [usize]>
-{
+) -> Vec<&'a mut [usize]> {
     let mut var_count = vec![0usize; num_vars];
     let mut effective_variables = 0;
     for (i, (it, c)) in get_iter().enumerate() {
@@ -513,11 +515,9 @@ pub fn build_var_to_eqs<'a, W:Word, I: Iterator<Item = (impl IntoIterator<Item =
     backend.resize(effective_variables, 0);
     let mut var_to_eq: Vec<&mut [usize]> = Vec::with_capacity(num_vars);
 
-    backend
-        .arbitrary_chunks_mut(&var_count)
-        .for_each(|chunk| {
-            var_to_eq.push(chunk);
-        });
+    backend.arbitrary_chunks_mut(&var_count).for_each(|chunk| {
+        var_to_eq.push(chunk);
+    });
 
     let mut var_indices = vec![0usize; num_vars];
     for (i, (it, _)) in get_iter().enumerate() {
@@ -538,7 +538,7 @@ mod tests {
         let mut eq = Modulo2Equation::<usize>::new(2, 3);
         eq.add(2).add(0).add(1);
         assert_eq!(eq.variables().len(), 3);
-        assert_eq!(eq.variables(), vec![0, 1, 2]);
+        assert_eq!(eq.variables().to_vec(), vec![0, 1, 2]);
     }
 
     #[test]
@@ -548,7 +548,7 @@ mod tests {
         let mut eq1 = Modulo2Equation::new(1, 11);
         eq1.add(1).add(4).add(10);
         eq0.add_equation(&eq1);
-        assert_eq!(eq0.variables(), vec![9, 10]);
+        assert_eq!(eq0.variables().to_vec(), vec![9, 10]);
         assert_eq!(eq0.c, 3);
     }
 
@@ -627,12 +627,7 @@ mod tests {
         ];
         let mut bitvec: Vec<usize> = vec![];
         let mut c = vec![0_usize; 6];
-        let var_to_eqs = build_var_to_eqs(
-            11,
-            || iterator.clone().into_iter(),
-            &mut bitvec,
-            &mut c
-        );
+        let var_to_eqs = build_var_to_eqs(11, || iterator.clone().into_iter(), &mut bitvec, &mut c);
         let expected_res = vec![
             vec![2, 3],
             vec![0, 1],

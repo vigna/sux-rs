@@ -612,7 +612,7 @@ impl<
                 pl.expected_updates(Some(unpeeled.num_ones()));
                 pl.start("Solving system...");
                 let result =
-                    Modulo2System::<W, Vec<usize>>::lazy_gaussian_elimination(var_to_eqs, c)
+                    crate::utils::mod2_sys_sparse::Modulo2System::<W>::lazy_gaussian_elimination(var_to_eqs, c)
                         .map_err(|_| ())?;
                 pl.done_with_count(unpeeled.num_ones());
 
