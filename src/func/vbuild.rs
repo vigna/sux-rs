@@ -1157,7 +1157,7 @@ mod tests {
         stack.len()
     }
 
-    //#[test]
+    #[test]
     fn test_peeling() {
         fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
             match arity {
@@ -1166,16 +1166,18 @@ mod tests {
             }
         }
 
-        let mut size = 1 << 20;
+        let mut size = 6938893866 * 5 / 4;
 
         loop {
             let std_log2_seg_size = fuse_log2_seg_size(3, size);
 
-            'outer: for log2_seg_size in std_log2_seg_size + 4..std_log2_seg_size + 8 {
+            'outer: for log2_seg_size in std_log2_seg_size + 6 ..std_log2_seg_size + 9 {
                 for seed in 0..5 {
-                    let failed = _test_peeling_c(size, 1.105, log2_seg_size, seed) != size;
-                    println!("{size} {log2_seg_size} {failed}");
-                    if failed {
+                    eprintln!("Testing {size} {log2_seg_size} (estimate: {std_log2_seg_size})...");
+                    let peeled = _test_peeling_c(size, 1.105, log2_seg_size, seed);
+                    let success = size == peeled;
+                    println!("{size} {log2_seg_size} {peeled} {success}");
+                    if ! success {
                         break 'outer;
                     }
                 }
