@@ -6,8 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-
- #![allow(unexpected_cfgs)]
+#![allow(unexpected_cfgs)]
 use crate::{bits::bit_vec::BitVec, traits::Word};
 use anyhow::{bail, ensure, Result};
 use arbitrary_chunks::ArbitraryChunks;
@@ -493,13 +492,12 @@ impl<W: Word, B: AsRef<[usize]> + AsMut<[usize]>> Modulo2System<W, B> {
     }
 }
 
-pub fn build_var_to_eqs<'a, W:Word, I: Iterator<Item = (impl IntoIterator<Item = usize>, W)>>(
+pub fn build_var_to_eqs<'a, W: Word, I: Iterator<Item = (impl IntoIterator<Item = usize>, W)>>(
     num_vars: usize,
     get_iter: impl Fn() -> I,
     backend: &'a mut Vec<usize>,
     const_terms: &mut Vec<W>,
-) -> Vec<&'a mut [usize]>
-{
+) -> Vec<&'a mut [usize]> {
     let mut var_count = vec![0usize; num_vars];
     let mut effective_variables = 0;
     for (i, (it, c)) in get_iter().enumerate() {
@@ -513,11 +511,9 @@ pub fn build_var_to_eqs<'a, W:Word, I: Iterator<Item = (impl IntoIterator<Item =
     backend.resize(effective_variables, 0);
     let mut var_to_eq: Vec<&mut [usize]> = Vec::with_capacity(num_vars);
 
-    backend
-        .arbitrary_chunks_mut(&var_count)
-        .for_each(|chunk| {
-            var_to_eq.push(chunk);
-        });
+    backend.arbitrary_chunks_mut(&var_count).for_each(|chunk| {
+        var_to_eq.push(chunk);
+    });
 
     let mut var_indices = vec![0usize; num_vars];
     for (i, (it, _)) in get_iter().enumerate() {
@@ -627,12 +623,7 @@ mod tests {
         ];
         let mut bitvec: Vec<usize> = vec![];
         let mut c = vec![0_usize; 6];
-        let var_to_eqs = build_var_to_eqs(
-            11,
-            || iterator.clone().into_iter(),
-            &mut bitvec,
-            &mut c
-        );
+        let var_to_eqs = build_var_to_eqs(11, || iterator.clone().into_iter(), &mut bitvec, &mut c);
         let expected_res = vec![
             vec![2, 3],
             vec![0, 1],
