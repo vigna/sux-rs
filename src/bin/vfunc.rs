@@ -12,7 +12,7 @@ use epserde::traits::{TypeHash, ZeroCopy};
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::func::{FuseNoShards, Fuse3Shards, Mwhc3Shards, ShardEdge, VFilter, VFunc};
+use sux::func::{Fuse3Shards, FuseNoShards, Mwhc3Shards, ShardEdge, VFilter, VFunc};
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
@@ -62,7 +62,7 @@ struct Args {
     #[arg(long)]
     no_shards: bool,
     /// Use 3-hypergraph.
-    #[arg(long, conflicts_with ="no_shards")]
+    #[arg(long, conflicts_with = "no_shards")]
     mwhc: bool,
 }
 

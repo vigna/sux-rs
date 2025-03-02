@@ -810,12 +810,14 @@ mod tests {
                     if shard_high_bits > max_shard_bits {
                         continue;
                     }
-                    _test_sig_store(new_online(buckets_high_bits, max_shard_bits, None)?, |rand| {
-                        [rand.random(), rand.random()]
-                    })?;
-                    _test_sig_store(new_offline(buckets_high_bits, max_shard_bits, None)?, |rand| {
-                        [rand.random(), rand.random()]
-                    })?;
+                    _test_sig_store(
+                        new_online(buckets_high_bits, max_shard_bits, None)?,
+                        |rand| [rand.random(), rand.random()],
+                    )?;
+                    _test_sig_store(
+                        new_offline(buckets_high_bits, max_shard_bits, None)?,
+                        |rand| [rand.random(), rand.random()],
+                    )?;
                 }
             }
         }
@@ -850,8 +852,12 @@ mod tests {
 
     #[test]
     fn test_u8() -> anyhow::Result<()> {
-        _test_u8(new_online(2, 2, None)?, |rand| [rand.random(), rand.random()])?;
-        _test_u8(new_offline(2, 2, None)?, |rand| [rand.random(), rand.random()])?;
+        _test_u8(new_online(2, 2, None)?, |rand| {
+            [rand.random(), rand.random()]
+        })?;
+        _test_u8(new_offline(2, 2, None)?, |rand| {
+            [rand.random(), rand.random()]
+        })?;
         Ok(())
     }
 }

@@ -30,7 +30,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 const LOG2_MAX_SHARDS: u32 = 12;
-const MAX_LGE_SIZE: usize = 150_000;
 
 /// A set of edge indices and sides represented by a 64-bit integer.
 ///
@@ -197,6 +196,8 @@ pub struct VBuilder<
     num_keys: usize,
     /// The ratio between the number of variables and the number of equations.
     c: f64,
+    /// Whether we should use lazy Gaussian elimination.
+    lge: bool,
     /// Fast-stop for failed attemps.
     failed: AtomicBool,
     #[doc(hidden)]
@@ -566,10 +567,6 @@ impl<
                 Ok((shard_index, data))
             }
             Err((shard_index, shard, edge_lists, mut data, stack)) => {
-                if shard.len() - stack.len() > MAX_LGE_SIZE {
-                    return Err(()); // Too big for lazy Gaussian elimination
-                }
-
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
                 // Likely result--we have solve the rest
                 pl.start(format!(
@@ -588,7 +585,7 @@ impl<
                     });
                 let unpeeled = Rank9::new(unpeeled);
                 let num_eqs = unpeeled.num_ones();
-                
+
                 // Create data for an F₂ system using non-peeled edges
                 let mut v = vec![];
                 let mut c = vec![W::ZERO; num_eqs];
@@ -599,10 +596,12 @@ impl<
                             .iter()
                             .enumerate()
                             .filter(|(edge_index, _)| unpeeled[*edge_index])
-                            .map(|(_edge_index, sig_val)| (self.shard_edge.local_edge(&sig_val.sig), get_val(sig_val)))
+                            .map(|(_edge_index, sig_val)| {
+                                (self.shard_edge.local_edge(&sig_val.sig), get_val(sig_val))
+                            })
                     },
                     &mut v,
-                    &mut c
+                    &mut c,
                 );
 
                 if self.failed.load(Ordering::Relaxed) {
@@ -779,79 +778,6 @@ impl<
 where
     SigVal<S, V>: RadixKey + Send + Sync,
 {
-    /*fn set_up_shards(&mut self, num_keys: usize) {
-        let eps = 0.001; // Tolerance for deviation from the average shard size
-        self.shard_high_bits = if SHARDED {
-            if num_keys <= MAX_LIN_SIZE {
-                // We just try to make shards as big as possible,
-                // within a maximum size of 2 * MAX_LIN_SHARD_SIZE
-                (num_keys / MAX_LIN_SHARD_SIZE).max(1).ilog2()
-            } else {
-                // Bound from urns and balls problem
-                let t = (num_keys as f64 * eps * eps / 2.0).ln();
-
-                if t > 0.0 {
-                    // We correct the estimate to increase slightly the shard size
-                    ((t - 1.92 * t.ln() - 1.22 * t.ln().ln()) / 2_f64.ln())
-                        .ceil()
-                        .max(3.) as u32
-                } else {
-                    0
-                }
-                .min(LOG2_MAX_SHARDS) // We don't really need too many shards
-                .min((num_keys / MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't smaller than MIN_FUSE_SHARD
-            }
-        } else {
-            0
-        };
-
-        self.shard_edge.num_shards = 1 << self.shard_high_bits;
-        self.shard_mask = (1u32 << self.shard_high_bits) - 1;
-    }
-
-    fn set_up_segments(&mut self) {
-        let shard_size = self.num_keys.div_ceil(self.shard_edge.num_shards);
-        if SHARDED {
-            self.lazy_gaussian = self.num_keys <= MAX_LIN_SIZE;
-
-            (self.c, self.log2_seg_size) = if self.lazy_gaussian {
-                (1.10, lin_log2_seg_size(3, shard_size))
-            } else {
-                (1.105, fuse_log2_seg_size(3, shard_size))
-            };
-        } else {
-            self.lazy_gaussian = self.num_keys <= MAX_LIN_SHARD_SIZE;
-
-            (self.c, self.log2_seg_size) = if self.lazy_gaussian {
-                (1.10, lin_log2_seg_size(3, self.num_keys))
-            } else if self.num_keys <= MAX_LIN_SIZE {
-                (
-                    fuse_c(3, self.num_keys),
-                    fuse_log2_seg_size(3, self.num_keys),
-                )
-            } else {
-                (1.105, fuse_log2_seg_size(3, self.num_keys) + 1)
-            };
-        }
-
-        self.l = ((self.c * shard_size as f64).ceil() as usize).div_ceil(1 << self.log2_seg_size);
-        self.shard_edge.num_vertices() = (1 << self.log2_seg_size) * (self.l + 2);
-    }
-
-    */
-}
-
-impl<
-        T: ?Sized + Send + Sync + ToSig<S>,
-        W: ZeroCopy + Word,
-        D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
-        S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
-        V: ZeroCopy + Send + Sync,
-    > VBuilder<T, W, D, S, E, V>
-where
-    SigVal<S, V>: RadixKey + Send + Sync,
-{
     /// Build and return a new function with given keys and values.
     ///
     /// This function can build functions based both on vectors and on bit-field
@@ -1012,7 +938,7 @@ where
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
 
         self.shard_edge.set_up_shards(self.num_keys);
-        self.c = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
+        (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
 
         pl.info(format_args!(
             "Number of keys: {} Max value: {} Bit width: {}",
@@ -1068,24 +994,40 @@ where
 
         pl.info(format_args!("{}", self.shard_edge));
         pl.info(format_args!(
-            "c: {}, Overhead: {:.2}% Number of threads: {}",
+            "c: {}, Overhead: {:.4}% Number of threads: {}",
             self.c,
             (self.shard_edge.num_vertices() * self.shard_edge.num_shards()) as f64
                 / (self.num_keys as f64),
             thread_pool.current_num_threads()
         ));
 
-        self.par_solve(
-            shard_iter,
-            &mut data,
-            new,
-            |this, shard_index, shard, data, pl| {
-                this.lge_shard(shard_index, shard, data, get_val, pl)
-            },
-            &thread_pool,
-            &mut pl.concurrent(),
-            pl,
-        )?;
+        if self.lge {
+            pl.info(format_args!("Switching to lazy Gaussian elimination"));
+            self.par_solve(
+                shard_iter,
+                &mut data,
+                new,
+                |this, shard_index, shard, data, pl| {
+                    this.lge_shard(shard_index, shard, data, get_val, pl)
+                },
+                &thread_pool,
+                &mut pl.concurrent(),
+                pl,
+            )?;
+        } else {
+            self.par_solve(
+                shard_iter,
+                &mut data,
+                new,
+                |this, shard_index, shard, data, pl| {
+                    this.peel_shard(shard_index, shard, data, get_val, pl)
+                        .map_err(|_| ())
+                },
+                &thread_pool,
+                &mut pl.concurrent(),
+                pl,
+            )?;
+        }
 
         pl.info(format_args!(
             "Bits/keys: {} ({:.2}%)",
@@ -1107,10 +1049,21 @@ where
 #[cfg(test)]
 mod tests {
     use crate::func::vbuild::EdgeIndexSideSet;
+    use itertools::Itertools;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
     use xxhash_rust::xxh3;
 
-    fn _test_peeling(n: usize, c: f64, log2_seg_size: u32, seed: u64) -> bool {
+    fn _test_peeling_c(n: usize, c: f64, log2_seg_size: u32, seed: u64) -> usize {
+        let l = ((c * n as f64).ceil() as usize)
+            .div_ceil(1 << log2_seg_size)
+            .saturating_sub(2)
+            .max(1)
+            .try_into()
+            .unwrap();
+        _test_peeling_l(n, l, log2_seg_size, seed)
+    }
+
+    fn _test_peeling_l(n: usize, l: usize, log2_seg_size: u32, seed: u64) -> usize {
         fn edge(l: usize, log2_seg_size: u32, sig: &[u64; 2]) -> [usize; 3] {
             let first_segment = (((sig[0] >> 32) * l as u64) >> 32) as usize;
             let start = first_segment << log2_seg_size;
@@ -1128,13 +1081,6 @@ mod tests {
             let hash128 = xxh3::xxh3_128_with_seed((i as u64).to_ne_bytes().as_ref(), seed);
             [(hash128 >> 64) as u64, hash128 as u64]
         }
-
-        let l = ((c * n as f64).ceil() as usize)
-            .div_ceil(1 << log2_seg_size)
-            .saturating_sub(2)
-            .max(1)
-            .try_into()
-            .unwrap();
 
         let num_vertices = (l + 2) << log2_seg_size;
 
@@ -1205,7 +1151,7 @@ mod tests {
             }
             stack.truncate(curr);
         }
-        n == stack.len()
+        stack.len()
     }
 
     //#[test]
@@ -1224,7 +1170,7 @@ mod tests {
 
             'outer: for log2_seg_size in std_log2_seg_size + 4..std_log2_seg_size + 8 {
                 for seed in 0..5 {
-                    let failed = !_test_peeling(size, 1.105, log2_seg_size, seed);
+                    let failed = _test_peeling_c(size, 1.105, log2_seg_size, seed) != size;
                     println!("{size} {log2_seg_size} {failed}");
                     if failed {
                         break 'outer;
@@ -1253,12 +1199,64 @@ mod tests {
                 for log2_seg_size in base_log2_seg_size.saturating_sub(3)..base_log2_seg_size + 3 {
                     let failures: usize = (0..100)
                         .into_par_iter()
-                        .map(|seed| (!_test_peeling(size, c, log2_seg_size, seed)) as usize)
+                        .map(|seed| (!_test_peeling_c(size, c, log2_seg_size, seed)) as usize)
                         .sum();
                     eprintln!("{size} {c} {log2_seg_size} {failures}");
                 }
             }
             size = size * 5 / 4;
+        }
+    }
+
+    #[test]
+    fn test_peelability() {
+        fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
+            match arity {
+                3 => ((n.max(1) as f64).ln() / (3.33_f64).ln() + 2.25).floor() as u32,
+                _ => unimplemented!(),
+            }
+        }
+
+        let mut size = 40_usize;
+
+        loop {
+            let mut peels = vec![];
+            for log2_seg_size in 0..20 {
+                let l = (1..1000)
+                    .filter(|l| ((l + 2) << log2_seg_size) as f64 / size as f64 <= 1.12)
+                    .max();
+
+                if let Some(l) = l {
+                    let mut tot_peeled = 0;
+                    for seed in 0..10 {
+                        let peeled = _test_peeling_l(size, l, log2_seg_size as u32, seed);
+                        tot_peeled += peeled;
+                    }
+
+                    eprintln!(
+                        "{size}\t{}\t{}\t{}%",
+                        log2_seg_size,
+                        l,
+                        100.0 * tot_peeled as f64 / (size as f64 * 10.)
+                    );
+                    peels.push((l, log2_seg_size, tot_peeled));
+                }
+            }
+
+            peels.sort_by(|(_, _, tot_peeled1), (_, _, tot_peeled2)| tot_peeled2.cmp(tot_peeled1));
+
+            peels[..3]
+                .iter()
+                .for_each(|&(l, log2_seg_size, tot_peeled)| {
+                    println!(
+                        "{size}\t{}\t{}\t{}%",
+                        l,
+                        log2_seg_size,
+                        100.0 * tot_peeled as f64 / (size as f64 * 10.)
+                    );
+                });
+
+            size = size * 20 / 19;
         }
     }
 }
