@@ -10,8 +10,8 @@
 use crate::{bit_vec, bits::bit_vec::BitVec, traits::Word};
 use anyhow::{bail, ensure, Result};
 use arbitrary_chunks::ArbitraryChunks;
-use itertools::Itertools;
 use core::panic;
+use itertools::Itertools;
 #[cfg(feature = "time_log")]
 use std::time::SystemTime;
 
@@ -22,8 +22,6 @@ pub struct Modulo2Equation<W: Word = usize> {
     vars: Vec<u32>,
     /// The constant term
     c: W,
-    /// The index of the first variable in the equation, if any
-    first_var: Option<u32>,
 }
 
 /// Solver for linear systems on **F**~2~
@@ -48,7 +46,6 @@ impl<W: Word> Modulo2Equation<W> {
         Modulo2Equation {
             vars: vec![],
             c,
-            first_var: None,
         }
     }
 }
@@ -65,11 +62,10 @@ impl<W: Word> Modulo2Equation<W> {
     /// * `bit_vector` - The bit vector representing the variables in the equation.
     /// * `c` - The constant term of the equation.
     /// * `first_var` - The index of the first variable in the equation, if any.
-    pub unsafe fn from_parts(bit_vector: Vec<u32>, c: W, first_var: Option<u32>) -> Self {
+    pub unsafe fn from_parts(bit_vector: Vec<u32>, c: W) -> Self {
         Modulo2Equation {
             vars: bit_vector,
             c,
-            first_var,
         }
     }
 
@@ -89,7 +85,6 @@ impl<W: Word> Modulo2Equation<W> {
         );
         self.vars.push(variable);
         self.vars.sort_unstable();
-        self.first_var = Some(self.vars[0]);
         self
     }
 
@@ -108,59 +103,35 @@ impl<W: Word> Modulo2Equation<W> {
         let t = b.len();
         let mut result = Vec::with_capacity(s + t);
 
-        if t != 0 && s != 0 {
-            loop {
-                if a[i] < b[j] {
-                    result.push(a[i]);
+        while i < s && j < t {
+            if a[i] < b[j] {
+                result.push(a[i]);
 
-                    i += 1;
-                    if i == s {
-                        break;
-                    }
-                } else if a[i] > b[j] {
-                    result.push(b[j]);
+                i += 1;
+            } else if a[i] > b[j] {
+                result.push(b[j]);
 
-                    j += 1;
-                    if j == t {
-                        break;
-                    }
-                } else {
-                    i += 1;
-                    j += 1;
-                    if i == s {
-                        break;
-                    }
-                    if j == t {
-                        break;
-                    }
-                }
+                j += 1;
+            } else {
+                i += 1;
+                j += 1;
             }
         }
 
-        while i < s {
-            result.push(a[i]);
-            i += 1;
-        }
-        while j < t {
-            result.push(b[j]);
-            j += 1;
-        }
+        result.extend_from_slice(&a[i..]);
+        result.extend_from_slice(&b[j..]);
+
         self.vars = result;
-        self.first_var = if self.vars.len() > 0 {
-            Some(self.vars[0])
-        } else {
-            None
-        };
     }
 
     /// Checks if the equation is unsolvable.
     fn is_unsolvable(&self) -> bool {
-        self.first_var.is_none() && self.c != W::ZERO
+        self.vars.is_empty() && self.c != W::ZERO
     }
 
     /// Checks if the equation is an identity.
     fn is_identity(&self) -> bool {
-        self.first_var.is_none() && self.c == W::ZERO
+        self.vars.is_empty() && self.c == W::ZERO
     }
 
     /// Returns the modulo-2 scalar product of the two provided bit vectors.
@@ -241,18 +212,16 @@ impl<W: Word> Modulo2System<W> {
             return Ok(());
         }
         'main: for i in 0..self.equations.len() - 1 {
-            ensure!(self.equations[i].first_var.is_some());
+            ensure!(!self.equations[i].vars.is_empty());
             for j in i + 1..self.equations.len() {
                 // SAFETY: to add the two equations, multiple references to the vector
                 // of equations are needed, one of which is mutable
                 let eq_j = unsafe { &*(&self.equations[j] as *const Modulo2Equation<W>) };
                 let eq_i = &mut self.equations[i];
 
-                let Some(first_var_j) = eq_j.first_var else {
-                    panic!("First variable of equation {} is None", j);
-                };
+                let first_var_j = eq_j.vars[0];
 
-                if eq_i.first_var.expect("First var is None") == first_var_j {
+                if eq_i.vars[0] == first_var_j {
                     eq_i.add_equation(eq_j);
                     if eq_i.is_unsolvable() {
                         bail!("System is unsolvable");
@@ -262,7 +231,7 @@ impl<W: Word> Modulo2System<W> {
                     }
                 }
 
-                if eq_i.first_var.expect("First var is None") > first_var_j {
+                if eq_i.vars[0] > first_var_j {
                     self.equations.swap(i, j)
                 }
             }
@@ -281,7 +250,7 @@ impl<W: Word> Modulo2System<W> {
             .rev()
             .filter(|eq| !eq.is_identity())
             .for_each(|eq| {
-                solution[eq.first_var.expect("First variable is None") as usize] =
+                solution[eq.vars[0] as usize] =
                     eq.c ^ Modulo2Equation::<W>::scalar_product(&eq.vars, &solution);
             });
         Ok(solution)
@@ -407,10 +376,22 @@ impl<W: Word> Modulo2System<W> {
                 } else if priority[first] == 1 {
                     // SAFETY: to add the equations, multiple references to the vector
                     // of equations are needed, one of which is mutable
-                    let equation =
-                        unsafe { &*(&equations[first] as *const Modulo2Equation<W>) };
-                    assert_eq!(equation.vars.iter().copied().filter(|x| idle_normalized.get(*x as usize)).count(), 1);
-                    let pivot = equation.vars.iter().copied().find_or_first(|x| idle_normalized.get(*x as usize)).unwrap();
+                    let equation = unsafe { &*(&equations[first] as *const Modulo2Equation<W>) };
+                    assert_eq!(
+                        equation
+                            .vars
+                            .iter()
+                            .copied()
+                            .filter(|x| idle_normalized.get(*x as usize))
+                            .count(),
+                        1
+                    );
+                    let pivot = equation
+                        .vars
+                        .iter()
+                        .copied()
+                        .find_or_first(|x| idle_normalized.get(*x as usize))
+                        .unwrap();
                     pivots.push(pivot as usize);
                     solved.push(first);
                     weight[pivot as usize] = 0;
@@ -449,8 +430,7 @@ impl<W: Word> Modulo2System<W> {
             let eq = &equations[solved[i]];
             let pivot = pivots[i];
             assert!(solution[pivot] == W::ZERO);
-            solution[pivot] =
-                eq.c ^ Modulo2Equation::<W>::scalar_product(&eq.vars, &solution);
+            solution[pivot] = eq.c ^ Modulo2Equation::<W>::scalar_product(&eq.vars, &solution);
         }
 
         #[cfg(feature = "time_log")]
@@ -475,10 +455,9 @@ impl<W: Word> Modulo2System<W> {
         let num_vars = self.num_vars;
         let mut var2_eq = vec![Vec::new(); num_vars];
         let mut d = vec![0; num_vars];
-        self.equations.iter().for_each(|eq| {
-            eq.vars.iter()
-                .for_each(|x| d[*x as usize] += 1)
-        });
+        self.equations
+            .iter()
+            .for_each(|eq| eq.vars.iter().for_each(|x| d[*x as usize] += 1));
 
         var2_eq
             .iter_mut()
@@ -489,8 +468,7 @@ impl<W: Word> Modulo2System<W> {
         self.equations.iter().enumerate().for_each(|(i, eq)| {
             c[i] = eq.c;
 
-            eq.vars.iter()
-                .for_each(|x| var2_eq[*x as usize].push(i));
+            eq.vars.iter().for_each(|x| var2_eq[*x as usize].push(i));
         });
         Modulo2System::<W>::lazy_gaussian_elimination(var2_eq, c)
     }
