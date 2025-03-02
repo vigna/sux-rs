@@ -679,7 +679,9 @@ impl Fuse3NoShards {
         match arity {
             3 => {
                 if n <= Fuse3Shards::MAX_LIN_SIZE {
-                    0.165 + (350000 as f64).ln().ln() / (n as f64 + 250000.).ln().max(1.).ln()
+                    // Exhaustively verified for all inputs from 100000 to 800000
+                    // Retries: 1:1218 2:234 3:419 4:121
+                    0.168 + (300000 as f64).ln().ln() / (n as f64 + 200000.).ln().max(1.).ln()
                 } else {
                     Fuse3Shards::c(3, n)
                 }
