@@ -10,7 +10,6 @@ use crate::bits::*;
 use crate::prelude::Rank9;
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
 use crate::traits::NumBits;
-use crate::traits::Rank;
 use crate::utils::*;
 use common_traits::CastableInto;
 use derivative::Derivative;
@@ -584,25 +583,31 @@ impl<
                         unpeeled.set(edge_lists[v].edge_index_and_side().0, false);
                     });
                 let unpeeled = Rank9::new(unpeeled);
-                let num_eqs = unpeeled.num_ones();
 
                 // Create data for an F₂ system using non-peeled edges
-                let mut v = vec![];
-                let mut c = vec![W::ZERO; num_eqs];
-                let var_to_eqs = build_var_to_eqs(
-                    self.shard_edge.num_vertices(),
-                    || {
+                let mut system = unsafe {
+                    crate::utils::mod2_sys_sparse::Modulo2System::from_parts(
+                        self.shard_edge.num_vertices(),
                         shard
                             .iter()
                             .enumerate()
                             .filter(|(edge_index, _)| unpeeled[*edge_index])
                             .map(|(_edge_index, sig_val)| {
-                                (self.shard_edge.local_edge(&sig_val.sig), get_val(sig_val))
+                                let mut eq: Vec<_> = self
+                                    .shard_edge
+                                    .local_edge(&sig_val.sig)
+                                    .iter()
+                                    .map(|x| *x as u32)
+                                    .collect();
+                                eq.sort_unstable();
+                                crate::utils::mod2_sys_sparse::Modulo2Equation::from_parts(
+                                    eq.to_vec(),
+                                    get_val(sig_val),
+                                )
                             })
-                    },
-                    &mut v,
-                    &mut c,
-                );
+                            .collect(),
+                    )
+                };
 
                 if self.failed.load(Ordering::Relaxed) {
                     return Err(());
@@ -610,9 +615,7 @@ impl<
 
                 pl.expected_updates(Some(unpeeled.num_ones()));
                 pl.start("Solving system...");
-                let result =
-                    crate::utils::mod2_sys_sparse::Modulo2System::<W>::lazy_gaussian_elimination(var_to_eqs, c)
-                        .map_err(|_| ())?;
+                let result = system.lazy_gaussian_elimination().map_err(|_| ())?;
                 pl.done_with_count(unpeeled.num_ones());
 
                 for (v, &value) in result.iter().enumerate() {
@@ -1181,7 +1184,7 @@ mod tests {
             size = size * 5 / 4;
         }
     }
-    #[test]
+    //#[test]
     fn explore_peeling() {
         fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
             match arity {

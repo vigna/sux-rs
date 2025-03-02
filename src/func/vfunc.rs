@@ -1111,14 +1111,4 @@ mod tests {
             shard_size = shard_size * 3 / 2;
         }
     }
-
-    #[test]
-    fn test_c() {
-        let mut n = 1024;
-        for _ in 0..50 {
-            let c = Fuse3Shards::c(3, n * 3 / 2);
-            eprintln!("n: {} c: {} c2: {}", n, c, FuseNoShards::c(3, n));
-            n = 5 * n / 4;
-        }
-    }
 }

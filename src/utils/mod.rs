@@ -20,7 +20,6 @@ pub mod mod2_sys;
 pub use mod2_sys::*;
 
 pub mod mod2_sys_sparse;
-pub use mod2_sys_sparse::*;
 
 /// Transmutes a vector of one type into a vector of another type.
 ///
