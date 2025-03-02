@@ -45,7 +45,6 @@ impl<W: Word> Modulo2Equation<W, Vec<usize>> {
     ///
     /// * `num_vars` - The total number of variables in the equation.
     pub fn new(c: W, num_vars: usize) -> Self {
-        unreachable!();
         Modulo2Equation {
             bit_vector: BitVec::new(num_vars),
             c,
