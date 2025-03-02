@@ -116,7 +116,7 @@ pub trait ShardEdge<S, const K: usize>:
     + TypeHash
     + AlignHash
 {
-    /// Set up the sharding logic for the given number of keys.
+    /// Sets up the sharding logic for the given number of keys.
     ///
     /// This method can be called multiple times. For example, it can be used to
     /// precompute the number of shards so to optimize a
@@ -124,17 +124,19 @@ pub trait ShardEdge<S, const K: usize>:
     /// buckets.
     fn set_up_shards(&mut self, n: usize);
 
-    /// Set up the edge logic for the given number of keys and maximum shard
-    /// size and return the expansion factor.
+    /// Sets up the edge logic for the given number of keys and maximum shard
+    /// size.
     ///
-    /// It must be called after [`setup_shards`](ShardEdge::setup_shards),
-    /// albeit some no-sharding implementation might not require it.
+    /// This methods must be called after
+    /// [`setup_shards`](ShardEdge::setup_shards), albeit some no-sharding
+    /// implementation might not require it. It returns the expansion factor and
+    /// whether the graph will need lazy Gaussian elimination.
     ///
     /// This method can be called multiple times. For example, it can be used to
     /// precompute data and then refine it.
-    fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> f64;
+    fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool);
 
-    /// Return the number of high bits used for sharding.
+    /// Returns the number of high bits used for sharding.
     fn shard_high_bits(&self) -> u32;
 
     /// Return the number of shards.
@@ -235,9 +237,9 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
         self.shard_mask = (1 << self.shard_high_bits) - 1;
     }
 
-    fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> f64 {
+    fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
         self.seg_size = ((max_shard as f64 * 1.23) / 3.).ceil() as usize;
-        1.23
+        (1.23, false)
     }
 
     #[inline(always)]
@@ -272,9 +274,9 @@ impl ShardEdge<[u64; 1], 3> for Mwhc3Shards {
         self.shard_mask = (1 << self.shard_high_bits) - 1;
     }
 
-    fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> f64 {
+    fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
         self.seg_size = ((max_shard as f64 * 1.23) / 3.).ceil() as usize;
-        1.23
+        (1.23, false)
     }
 
     #[inline(always)]
@@ -347,9 +349,12 @@ impl Fuse3Shards {
     /// to make shards as big as possible, within a maximum size of 2 *
     /// [`Self::HALF_MAX_LIN_SHARD_SIZE`]. Above this threshold we do not shard
     /// unless we can create shards of at least [`Self::MIN_FUSE_SHARD`].
-    const MAX_LIN_SIZE: usize = 1_100_000;
-    /// See [`Self::MAX_LIN_SIZE`].
-    const HALF_MAX_LIN_SHARD_SIZE: usize = 200_000;
+    const MAX_LIN_SIZE: usize = 800_000;
+    /// We try to keep shards large enough so that they are solvable and that
+    /// the size of the largest shard is close to the target average size, but
+    /// also small enough so that we can exploit parallelim. See
+    /// [`Self::MAX_LIN_SIZE`].
+    const HALF_MAX_LIN_SHARD_SIZE: usize = 50_000;
     /// When we shard, we never create a shard smallar then this.
     const MIN_FUSE_SHARD: usize = 20_000_000;
     /// The log₂ of the maximum number of shards.
@@ -360,14 +365,17 @@ impl Fuse3Shards {
 
     /// The expansion factor for fuse graphs.
     ///
-    /// Handcrafted, and meaningful for more than [`Self::MAX_LIN_SHARD_SIZE`]
-    /// keys only.
+    /// Handcrafted, and meaningful for more than 2 *
+    /// [`Self::HALF_MAX_LIN_SHARD_SIZE`] keys only.
     fn c(arity: usize, n: usize) -> f64 {
         match arity {
             3 => {
-                if n <= Self::MIN_FUSE_SHARD / 2 {
+                debug_assert!(n > 2 * Self::HALF_MAX_LIN_SHARD_SIZE);
+                if n <= Self::MIN_FUSE_SHARD / 4 {
+                    1.125
+                } else if n <= Self::MIN_FUSE_SHARD / 2 {
                     1.12
-                } else if n <= 20_000_000 {
+                } else if n <= Self::MIN_FUSE_SHARD {
                     1.11
                 } else {
                     1.105
@@ -382,15 +390,12 @@ impl Fuse3Shards {
     /// graphs solvable with high probability.
     ///
     /// This function should not be called for graphs larger than
-    /// 2 * [`Self::MAX_LIN_SHARD_SIZE`].
+    /// 2 * [`Self::HALF_MAX_LIN_SHARD_SIZE`].
     fn lin_log2_seg_size(arity: usize, n: usize) -> u32 {
         match arity {
             3 => {
-                if n >= 2 * Self::HALF_MAX_LIN_SHARD_SIZE {
-                    10
-                } else {
-                    (0.85 * (n.max(1) as f64).ln()).floor() as u32
-                }
+                debug_assert!(n <= 2 * Self::HALF_MAX_LIN_SHARD_SIZE);
+                (0.85 * (n.max(1) as f64).ln()).floor() as u32
             }
             _ => unimplemented!(),
         }
@@ -527,13 +532,16 @@ impl Fuse3Shards {
         self.shard_mask = (1 << self.shard_high_bits) - 1;
     }
 
-    fn _set_up_graphs(&mut self, n: usize, max_shard: usize) -> f64 {
-        let c;
-        (c, self.log2_seg_size) = if n <= Self::MAX_LIN_SIZE {
-            // Lazy Gaussian elimination TODO: improve shards
-            (1.12, Self::lin_log2_seg_size(3, max_shard))
+    fn _set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
+        let (c, lge);
+        (c, self.log2_seg_size, lge) = if n <= Self::MAX_LIN_SIZE {
+            (1.12, Self::lin_log2_seg_size(3, max_shard), true)
         } else {
-            (Self::c(3, max_shard), Self::log2_seg_size(3, max_shard))
+            (
+                Self::c(3, max_shard),
+                Self::log2_seg_size(3, max_shard),
+                false,
+            )
         };
 
         self.l = ((c * max_shard as f64).ceil() as usize)
@@ -543,7 +551,7 @@ impl Fuse3Shards {
             .try_into()
             .unwrap();
 
-        c
+        (c, lge)
     }
 }
 
@@ -552,7 +560,7 @@ impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
         self._set_up_shards(n);
     }
 
-    fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> f64 {
+    fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
         self._set_up_graphs(n, max_shard)
     }
 
@@ -594,7 +602,7 @@ impl ShardEdge<[u64; 1], 3> for Fuse3Shards {
         self._set_up_shards(n);
     }
 
-    fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> f64 {
+    fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
         self._set_up_graphs(n, max_shard)
     }
 
@@ -692,12 +700,13 @@ impl FuseNoShards {
         }
     }
 
-    fn _set_up_graphs(&mut self, n: usize) -> f64 {
+    fn _set_up_graphs(&mut self, n: usize) -> (f64, bool) {
         // TODO: improve (because we have LGE)
-        let c = if n <= Fuse3Shards::MAX_LIN_SIZE {
-            1.2
+        let (c, lge) = if n <= Fuse3Shards::MAX_LIN_SIZE {
+            (1.2, true)
         } else {
-            Self::c(3, n)
+            // TODO: better bounds (with some repeats)
+            (Self::c(3, n), false)
         };
 
         self.log2_seg_size = Self::log2_seg_size(3, n);
@@ -708,14 +717,14 @@ impl FuseNoShards {
             .try_into()
             .unwrap();
 
-        c
+        (c, lge)
     }
 }
 
 impl ShardEdge<[u64; 2], 3> for FuseNoShards {
     fn set_up_shards(&mut self, _n: usize) {}
 
-    fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> f64 {
+    fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
         self._set_up_graphs(n)
     }
 
@@ -748,7 +757,7 @@ impl ShardEdge<[u64; 2], 3> for FuseNoShards {
 impl ShardEdge<[u64; 1], 3> for FuseNoShards {
     fn set_up_shards(&mut self, _n: usize) {}
 
-    fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> f64 {
+    fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
         self._set_up_graphs(n)
     }
 
@@ -1106,11 +1115,10 @@ mod tests {
     #[test]
     fn test_c() {
         let mut n = 1024;
-        for i in 0..50 {
+        for _ in 0..50 {
             let c = Fuse3Shards::c(3, n * 3 / 2);
             eprintln!("n: {} c: {} c2: {}", n, c, FuseNoShards::c(3, n));
             n = 5 * n / 4;
         }
     }
-
 }
