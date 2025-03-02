@@ -366,7 +366,7 @@ impl Fuse3Shards {
     /// The expansion factor for fuse graphs.
     ///
     /// Handcrafted, and meaningful for more than 2 *
-    /// [`Self::HALF_MAX_LIN_SHARD_SIZE`] keys only.
+    /// [`Self::MAX_LIN_SIZE`] keys only.
     fn c(arity: usize, n: usize) -> f64 {
         match arity {
             3 => {
@@ -654,12 +654,12 @@ impl ShardEdge<[u64; 1], 3> for Fuse3Shards {
 /// choosing uniformly and at random a vertex in the segments *f*, *f* + 1 and *f* + 2.
 #[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
 #[deep_copy]
-pub struct FuseNoShards {
+pub struct Fuse3NoShards {
     log2_seg_size: u32,
     l: u32,
 }
 
-impl Display for FuseNoShards {
+impl Display for Fuse3NoShards {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -670,13 +670,21 @@ impl Display for FuseNoShards {
     }
 }
 
-impl FuseNoShards {
+impl Fuse3NoShards {
     /// The expansion factor for fuse graphs.
+    ///
+    /// Handcrafted, and meaningful for more than 2 *
+    /// [`Self::HALF_MAX_LIN_SHARD_SIZE`] keys only.
     fn c(arity: usize, n: usize) -> f64 {
-        // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
-        // https://doi.org/10.1145/3510449
         match arity {
-            3 => 1.125_f64.max(0.875 + 0.25 * (1000000_f64).ln() / (n as f64).ln()),
+            3 => {
+                if n <= Fuse3Shards::MAX_LIN_SIZE {
+                    0.165 + (350000 as f64).ln().ln() / (n as f64 + 250000.).ln().max(1.).ln()
+                } else {
+                    Fuse3Shards::c(3, n)
+                }
+            }
+
             _ => unimplemented!(),
         }
     }
@@ -701,15 +709,15 @@ impl FuseNoShards {
     }
 
     fn _set_up_graphs(&mut self, n: usize) -> (f64, bool) {
-        // TODO: improve (because we have LGE)
-        let (c, lge) = if n <= Fuse3Shards::MAX_LIN_SIZE {
-            (1.2, true)
+        let (c, lge);
+
+        (c, self.log2_seg_size, lge) = if n <= 2 * Fuse3Shards::HALF_MAX_LIN_SHARD_SIZE {
+            (1.13, Fuse3Shards::lin_log2_seg_size(3, n), true)
         } else {
             // TODO: better bounds (with some repeats)
-            (Self::c(3, n), false)
+            (Self::c(3, n), Self::log2_seg_size(3, n), false)
         };
 
-        self.log2_seg_size = Self::log2_seg_size(3, n);
         self.l = ((c * n as f64).ceil() as u64)
             .div_ceil(1 << self.log2_seg_size)
             .saturating_sub(2)
@@ -721,7 +729,7 @@ impl FuseNoShards {
     }
 }
 
-impl ShardEdge<[u64; 2], 3> for FuseNoShards {
+impl ShardEdge<[u64; 2], 3> for Fuse3NoShards {
     fn set_up_shards(&mut self, _n: usize) {}
 
     fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
@@ -754,7 +762,7 @@ impl ShardEdge<[u64; 2], 3> for FuseNoShards {
     }
 }
 
-impl ShardEdge<[u64; 1], 3> for FuseNoShards {
+impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
     fn set_up_shards(&mut self, _n: usize) {}
 
     fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
@@ -909,7 +917,7 @@ mod tests {
     use rdst::RadixKey;
 
     use crate::{
-        func::{FuseNoShards, VBuilder},
+        func::{Fuse3NoShards, VBuilder},
         utils::{FromIntoIterator, Sig, SigVal, ToSig},
     };
 
@@ -1109,6 +1117,22 @@ mod tests {
                 );
             }
             shard_size = shard_size * 3 / 2;
+        }
+    }
+
+    #[test]
+    fn test_c() {
+        fn c(n: usize) -> f64 {
+            0.165 + (350000 as f64).ln().ln() / (n as f64 + 250000.).ln().max(1.).ln()
+        }
+        let mut size = 100000;
+        loop {
+            print!("{size} {} {}\n", c(size), Fuse3NoShards::c(3, size));
+
+            size = size / 4 * 5;
+            if size > 10000000 {
+                break;
+            }
         }
     }
 }

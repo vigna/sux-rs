@@ -12,7 +12,7 @@ use epserde::traits::{TypeHash, ZeroCopy};
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::func::{Fuse3Shards, FuseNoShards, Mwhc3Shards, ShardEdge, VFilter, VFunc};
+use sux::func::{Fuse3NoShards, Fuse3Shards, Mwhc3Shards, ShardEdge, VFilter, VFunc};
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
@@ -82,9 +82,9 @@ fn main() -> Result<()> {
     } else {
         if args.no_shards {
             if args.sig64 {
-                main_with_types::<[u64; 1], FuseNoShards>(args)
+                main_with_types::<[u64; 1], Fuse3NoShards>(args)
             } else {
-                main_with_types::<[u64; 2], FuseNoShards>(args)
+                main_with_types::<[u64; 2], Fuse3NoShards>(args)
             }
         } else {
             if args.sig64 {

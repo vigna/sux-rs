@@ -601,7 +601,7 @@ impl<
                                     .collect();
                                 eq.sort_unstable();
                                 crate::utils::mod2_sys_sparse::Modulo2Equation::from_parts(
-                                    eq.to_vec(),
+                                    eq,
                                     get_val(sig_val),
                                 )
                             })
