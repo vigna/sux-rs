@@ -52,8 +52,8 @@ pub struct VFunc<
     pub(in crate::func) _marker_s: std::marker::PhantomData<S>,
 }
 
-/// Static filters (i.e., probabilistic dictionaries) with low space overhead,
-/// fast parallel construction, and fast queries.
+/// Static filters (i.e., static probabilistic dictionaries) with low space
+/// overhead, fast parallel construction, and fast queries.
 ///
 /// Space overhead with respect to the optimum depends on the [`ShardEdge`]
 /// type.
@@ -62,8 +62,8 @@ pub struct VFunc<
 /// [`VBuilder`](crate::func::VBuilder) and can be serialized using
 /// [ε-serde](`epserde`).
 ///
-/// Note that this structure implements the [`Index`] trait, which provides
-/// a convenient access to the filter.
+/// Note that this structure implements the [`Index`] trait, which provides a
+/// convenient access to the filter.
 ///
 /// # Generics
 ///
@@ -937,11 +937,11 @@ mod tests {
         usize: ToSig<S>,
         SigVal<S, ()>: RadixKey,
         Fuse3Shards: ShardEdge<S, 3>,
-        VFunc<u8, Vec<u8>, S, Fuse3Shards>: Serialize + TypeHash, // Weird
-        VFilter<u8, VFunc<u8, Vec<u8>, S, Fuse3Shards>>: Serialize,
+        VFunc<u8, Box<[u8]>, S, Fuse3Shards>: Serialize + TypeHash, // Weird
+        VFilter<u8, VFunc<u8, Box<[u8]>, S, Fuse3Shards>>: Serialize,
     {
         for n in [0_usize, 10, 1000, 100_000, 3_000_000] {
-            let filter = VBuilder::<_, _, Vec<u8>, S, Fuse3Shards, ()>::default()
+            let filter = VBuilder::<_, _, Box<[u8]>, S, Fuse3Shards, ()>::default()
                 .log2_buckets(4)
                 .offline(false)
                 .try_build_filter(FromIntoIterator::from(0..n), no_logging![])?;
@@ -950,7 +950,7 @@ mod tests {
             cursor.set_position(0);
             // TODO: This does not work with deserialize_eps
             let filter =
-                VFilter::<u8, VFunc<_, Vec<u8>, S, Fuse3Shards>>::deserialize_full(&mut cursor)?;
+                VFilter::<u8, VFunc<_, Box<[u8]>, S, Fuse3Shards>>::deserialize_full(&mut cursor)?;
             for i in 0..n {
                 let sig = ToSig::<S>::to_sig(&i, filter.func.seed);
                 assert_eq!(sig.sig_u64() & 0xFF, filter.get(&i) as u64);
@@ -1125,7 +1125,7 @@ mod tests {
     #[test]
     fn test_c() {
         fn c(n: usize) -> f64 {
-            0.165 + (350000 as f64).ln().ln() / (n as f64 + 250000.).ln().max(1.).ln()
+            0.168 + (300000 as f64).ln().ln() / (n as f64 + 200000.).ln().max(1.).ln()
         }
         let mut size = 100000;
         loop {
