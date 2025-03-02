@@ -13,7 +13,7 @@ use lender::*;
 use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
-    func::{FuseNoShards, Fuse3Shards, Mwhc3Shards, ShardEdge, VFilter, VFunc},
+    func::{Fuse3Shards, FuseNoShards, Mwhc3Shards, ShardEdge, VFilter, VFunc},
     utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender},
 };
 
