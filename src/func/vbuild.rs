@@ -153,7 +153,7 @@ impl EdgeIndexSideSet {
 pub struct VBuilder<
     T: ?Sized + Send + Sync + ToSig<S>,
     W: ZeroCopy + Word,
-    D: BitFieldSlice<W> + Send + Sync = BitFieldVec<W>,
+    D: BitFieldSlice<W> + Send + Sync = BitFieldVec<[W]>,
     S = [u64; 2],
     E: ShardEdge<S, 3> = Fuse3Shards,
     V = W,
@@ -638,19 +638,19 @@ impl<
         W: ZeroCopy + Word,
         S: Sig + Send + Sync,
         E: ShardEdge<S, 3>,
-    > VBuilder<T, W, Vec<W>, S, E, W>
+    > VBuilder<T, W, Box<[W]>, S, E, W>
 where
     SigVal<S, W>: RadixKey + Send + Sync,
-    Vec<W>: BitFieldSliceMut<W> + BitFieldSlice<W>,
+    Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
     pub fn try_build_func(
         mut self,
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<W, Vec<W>, S, E>> {
+    ) -> anyhow::Result<VFunc<W, Box<[W]>, S, E>> {
         let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
-        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len];
+        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
         self.build_loop(into_keys, into_values, &get_val, new_data, pl)
     }
 }
@@ -665,20 +665,20 @@ impl<
         W: ZeroCopy + Word,
         S: Sig + Send + Sync,
         E: ShardEdge<S, 3>,
-    > VBuilder<T, W, Vec<W>, S, E, ()>
+    > VBuilder<T, W, Box<[W]>, S, E, ()>
 where
     SigVal<S, ()>: RadixKey + Send + Sync,
-    Vec<W>: BitFieldSliceMut<W> + BitFieldSlice<W>,
+    Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
     u64: CastableInto<W>,
 {
     pub fn try_build_filter(
         mut self,
         into_keys: impl RewindableIoLender<T>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFilter<W, VFunc<W, Vec<W>, S, E>>> {
+    ) -> anyhow::Result<VFilter<W, VFunc<W, Box<[W]>, S, E>>> {
         let filter_mask = W::MAX;
         let get_val = |sig_val: &SigVal<S, ()>| sig_val.sig.sig_u64().cast();
-        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len];
+        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
 
         Ok(VFilter {
             func: self.build_loop(
@@ -741,7 +741,7 @@ impl<
     > VBuilder<T, W, BitFieldVec<W>, S, E, ()>
 where
     SigVal<S, ()>: RadixKey + Send + Sync,
-    Vec<W>: BitFieldSliceMut<W> + BitFieldSlice<W>,
+    Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
     u64: CastableInto<W>,
 {
     pub fn try_build_filter(
@@ -1052,7 +1052,6 @@ where
 #[cfg(test)]
 mod tests {
     use crate::func::vbuild::EdgeIndexSideSet;
-    use itertools::Itertools;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
     use xxhash_rust::xxh3;
 
