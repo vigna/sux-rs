@@ -50,10 +50,15 @@ use zstd::Decoder;
 ///
 /// Additionally, this trait is implemented on [`lender::Take`], so you can call
 /// `take` on a rewindable lender and obtain again a rewindable lender.
+/// 
+/// [`LineLender`] is an implementation reading lines from a file, but you can
+/// turn any clonable [`IntoIterator`] into a rewindable lender with
+/// [`FromIntoIterator`].
 ///
 /// Note that [`rewind`](RewindableIoLender::rewind) consumes `self` and returns
 /// it. This slightly inconvenient behavior is necessary to handle cleanly all
-/// implementations, and in particular those involving compression.
+/// implementations, and in particular those involving compression, such as
+/// [`ZstdLineLender`] and [`GzipLineLender`].
 pub trait RewindableIoLender<T: ?Sized>:
     Sized + Lender + for<'lend> Lending<'lend, Lend = Result<&'lend T, Self::Error>>
 {

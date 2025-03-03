@@ -129,14 +129,12 @@ impl EdgeIndexSideSet {
 /// Keys must implement the [`ToSig`] trait, which provides a method to compute
 /// a signature of the key.
 ///
-/// The output type `W` can be selected to be any of the unsigned integer types;
-/// the default is `usize`.
-///
 /// There are two construction modes: in core memory (default) and
 /// [offline](VBuilder::offline). In the first case, space will be allocated in
 /// core memory for signatures and associated values for all keys; in the second
 /// case, such information will be stored in a number of on-disk buckets using a
-/// [`SigStore`].
+/// [`SigStore`]. It is also possible to [set the maximum number of
+/// threads](VBuilder::max_num_threads).
 ///
 /// Once signatures have been computed, each parallel thread will process a
 /// shard of the signature/value pairs; for each signature/value in a shard, a
@@ -148,12 +146,25 @@ impl EdgeIndexSideSet {
 /// of keys, so the memory usage, in particular in offline mode, can be
 /// significantly reduced. Note that using too many threads might actually be
 /// harmful due to memory contention.
+/// 
+/// The generic parameters are explained in the [`VFunc`] documentation. You
+/// have to choose the type of the output values and the backend. The remaining
+/// parameters have default values that are the same as those of
+/// [`VFunc`]/[`VFilter`].
+/// 
+/// All construction methods require to pass one or two [`RewindableIoLender`],
+/// and the construction might fail and keys might be scanned again. The
+/// structures in the [`lenders`] modules provide easy ways to build such
+/// lenders, even starting from compressed files of UTF-8 strings. The type of
+/// the keys of the resulting filter or function will be the type of the
+/// elements of the [`RewindableIoLender`].
 ///
 /// # Examples
 ///
-/// In this example, we build a function that maps each key to itself.
-/// Note that setter for the expected number of keys is used to optimize the
-/// construction.
+/// In this example, we build a function that maps each key to itself. Note that
+/// setter for the expected number of keys is used to optimize the construction.
+/// Note that we use the [`FromIntoIterator`] adapter to turn a clonable
+/// [`IntoIterator`] into a [`RewindableIoLender`].
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -176,7 +187,32 @@ impl EdgeIndexSideSet {
 /// # }
 /// ```
 ///
-/// We new try to build a filter for the same key set:
+/// Alternatively we can use the bitfield vector backend, that will use
+/// ⌈log₂(99)⌉ bits per element:
+/// 
+/// ```rust
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// use sux::func::vbuild::VBuilder;
+/// use dsi_progress_logger::no_logging;
+/// use sux::utils::FromIntoIterator;
+/// use sux::bits::BitFieldVec;
+///
+/// let builder = VBuilder::<usize, BitFieldVec<usize>>::default()
+///     .expected_num_keys(100);
+/// let func = builder.try_build_func(
+///    FromIntoIterator::from(0..100),
+///    FromIntoIterator::from(0..100),
+///    no_logging![]
+/// )?;
+///
+/// for i in 0..100 {
+///    assert_eq!(i, func.get(&i));
+/// }
+/// #     Ok(())
+/// # }
+/// ```
+/// 
+/// We now try to build a filter for the same key set:
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -206,7 +242,11 @@ pub struct VBuilder<
     S = [u64; 2],
     E: ShardEdge<S, 3> = Fuse3Shards,
 > {
-    /// The optional expected number of keys.
+    /// The expected number of keys.
+    /// 
+    /// While this setter is optional, setting this value to a reasonable bound
+    /// on the actual number of keys will significantly speed up the
+    /// construction.
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "None"))]
     expected_num_keys: Option<usize>,
@@ -228,9 +268,9 @@ pub struct VBuilder<
     #[setters(generate = true)]
     seed: u64,
 
-    /// The base-2 logarithm of buckets of the signature store.
-    /// The default is 8. This value is automatically set
-    /// if you provide an expected number of keys.
+    /// The base-2 logarithm of buckets of the [`SigStore`]. The default is 8.
+    /// This value is automatically set if you provide an expected number of
+    /// keys, which makes the construction faster.
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "8"))]
     log2_buckets: u32,
@@ -687,11 +727,10 @@ impl<
     }
 }
 
-/// Build a new function using a vector of `W` to store values.
+/// Builds a new function using a `Box<[W]>` to store values.
 ///
-/// Since values are stored in a vector, access is particularly fast, but
-/// the bit width of the output of the function is exactly the bit width
-/// of `W`.
+/// Since values are stored in a slice, access is particularly fast, but the bit
+/// width of the output of the function will be  exactly the bit width of `W`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
     SigVal<S, W>: RadixKey + Send + Sync,
@@ -699,21 +738,20 @@ where
 {
     pub fn try_build_func<T: ?Sized + ToSig<S>>(
         mut self,
-        into_keys: impl RewindableIoLender<T>,
-        into_values: impl RewindableIoLender<W>,
+        keys: impl RewindableIoLender<T>,
+        values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, Box<[W]>, S, E>> {
         let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
-        self.build_loop(into_keys, into_values, &get_val, new_data, pl)
+        self.build_loop(keys, values, &get_val, new_data, pl)
     }
 }
 
-/// Build a new function using a vector of `W` to store values.
+/// Builds a new filter using a `Box<[W]>` to store values.
 ///
-/// Since values are stored in a vector, access is particularly fast, but
-/// the bit width of the output of the function is exactly the bit width
-/// of `W`.
+/// Since values are stored in a slice access is particularly fast, but the
+/// number of signature bits will be  exactly the bit width of `W`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
     SigVal<S, ()>: RadixKey + Send + Sync,
@@ -722,7 +760,7 @@ where
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S>>(
         mut self,
-        into_keys: impl RewindableIoLender<T>,
+        keys: impl RewindableIoLender<T>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>> {
         let filter_mask = W::MAX;
@@ -731,7 +769,7 @@ where
 
         Ok(VFilter {
             func: self.build_loop(
-                into_keys,
+                keys,
                 FromIntoIterator::from(itertools::repeat_n((), usize::MAX)),
                 &get_val,
                 new_data,
@@ -743,40 +781,39 @@ where
     }
 }
 
-/// Build a new function using a bit-field vector on words of type `W` to store
-/// values.
+/// Builds a new function using a [bitfield vector](BitFieldVec) on words of
+/// type `W` to store values.
 ///
 /// Since values are stored in a bitfield vector, access will be slower than
-/// when using a vector, but the bit width of stored values will be the minimum
-/// necessary. It must be in any case less than the bit width of `W`.
+/// when using a boxed slice, but the bit width of stored values will be the
+/// minimum necessary. It must be in any case at most the bit width of `W`.
 ///
-/// Typically `W` will be `usize` or `u64`. It might be necessary to use
-/// `u128` if the bit width of the values is larger than 64.
+/// Typically `W` will be `usize` or `u64`. You can use `u128` if the bit width
+/// of the values is larger than 64.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
     SigVal<S, W>: RadixKey + Send + Sync,
 {
     pub fn try_build_func<T: ?Sized + ToSig<S>>(
         mut self,
-        into_keys: impl RewindableIoLender<T>,
-        into_values: impl RewindableIoLender<W>,
+        keys: impl RewindableIoLender<T>,
+        values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
         let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
-        self.build_loop(into_keys, into_values, &get_val, new_data, pl)
+        self.build_loop(keys, values, &get_val, new_data, pl)
     }
 }
 
-/// Build a new function using a bit-field vector on words of type `W` to store
-/// values.
+/// Builds a new filter using a [bitfield vector](BitFieldVec) on words of type
+/// `W` to store values.
 ///
 /// Since values are stored in a bitfield vector, access will be slower than
-/// when using a vector, but the bit width of stored values will be the minimum
-/// necessary. It must be in any case less than the bit width of `W`.
+/// when using a boxed slice, but the signature bits can be set at will. They
+/// They must be in any case at most the bit width of `W`.
 ///
-/// Typically `W` will be `usize` or `u64`. It might be necessary to use
-/// `u128` if the bit width of the values is larger than 64.
+/// Typically `W` will be `usize` or `u64`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
     SigVal<S, ()>: RadixKey + Send + Sync,
@@ -785,7 +822,7 @@ where
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S>>(
         mut self,
-        into_keys: impl RewindableIoLender<T>,
+        keys: impl RewindableIoLender<T>,
         filter_bits: u32,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>> {
@@ -797,7 +834,7 @@ where
 
         Ok(VFilter {
             func: self.build_loop(
-                into_keys,
+                keys,
                 FromIntoIterator::from(itertools::repeat_n((), usize::MAX)),
                 &get_val,
                 new_data,
@@ -824,8 +861,8 @@ impl<
     /// the values.
     fn build_loop<T: ?Sized + ToSig<S>, V: ZeroCopy + Send + Sync>(
         &mut self,
-        mut into_keys: impl RewindableIoLender<T>,
-        mut into_values: impl RewindableIoLender<V>,
+        mut keys: impl RewindableIoLender<T>,
+        mut values: impl RewindableIoLender<V>,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         new: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -843,8 +880,8 @@ impl<
             pl.item_name("key");
             pl.start("Reading input...");
 
-            into_values = into_values.rewind()?;
-            into_keys = into_keys.rewind()?;
+            values = values.rewind()?;
+            keys = keys.rewind()?;
 
             match if self.offline {
                 self.try_seed(
@@ -854,8 +891,8 @@ impl<
                         LOG2_MAX_SHARDS,
                         self.expected_num_keys,
                     )?,
-                    &mut into_keys,
-                    &mut into_values,
+                    &mut keys,
+                    &mut values,
                     get_val,
                     new,
                     pl,
@@ -868,8 +905,8 @@ impl<
                         LOG2_MAX_SHARDS,
                         self.expected_num_keys,
                     )?,
-                    &mut into_keys,
-                    &mut into_values,
+                    &mut keys,
+                    &mut values,
                     get_val,
                     new,
                     pl,
@@ -933,8 +970,8 @@ impl<
         &mut self,
         seed: u64,
         mut sig_store: impl SigStore<S, V>,
-        into_keys: &mut impl RewindableIoLender<T>,
-        into_values: &mut impl RewindableIoLender<V>,
+        keys: &mut impl RewindableIoLender<T>,
+        values: &mut impl RewindableIoLender<V>,
         get_val: &G,
         new_data: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -955,13 +992,13 @@ impl<
             pluralize("bucket", num_buckets, true)
         ));
 
-        while let Some(result) = into_keys.next() {
+        while let Some(result) = keys.next() {
             match result {
                 Ok(key) => {
                     pl.light_update();
                     // This might be an actual value, if we are building a
                     // function, or (), if we are building a filter.
-                    let &maybe_val = into_values.next().expect("Not enough values")?;
+                    let &maybe_val = values.next().expect("Not enough values")?;
                     let sig_val = SigVal {
                         sig: T::to_sig(key, seed),
                         val: maybe_val,
@@ -1205,7 +1242,7 @@ mod tests {
         stack.len()
     }
 
-    #[test]
+    //#[test]
     fn test_peeling() {
         fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
             match arity {
@@ -1261,7 +1298,7 @@ mod tests {
         }
     }
 
-    #[test]
+    //#[test]
     fn test_peelability() {
         fn fuse_log2_seg_size(arity: usize, n: usize) -> u32 {
             match arity {

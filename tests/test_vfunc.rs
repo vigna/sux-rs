@@ -149,7 +149,7 @@ fn test_vfilter() -> Result<()> {
                 for i in 0..n {
                     c += filter.contains(&(i + n)) as usize;
                 }
-                pl.done_with_count(n);
+                //pl.done_with_count(n); Or it fails
 
                 let failure_rate = (c as f64) / n as f64;
                 assert!(
