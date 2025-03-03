@@ -5,7 +5,6 @@
 * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
 */
 
-use crate::bits::*;
 use crate::traits::bit_field_slice::*;
 use crate::utils::*;
 use common_traits::CastableInto;
@@ -103,7 +102,7 @@ fn sharding_high_bits(n: usize, eps: f64) -> u32 {
 ///
 /// There are a few different implementations depending on the type of graphs,
 /// on the size of signatures, and on whether sharding is used. See, for example,
-/// [`FuseShards`](crate::func::FuseShards).
+/// [`Fuse3Shards`](crate::func::Fuse3Shards).
 ///
 /// The implementation of the [`Display`] trait should return the relevant
 /// information about the sharding and edge logic.
@@ -179,14 +178,22 @@ pub trait ShardEdge<S, const K: usize>:
 /// This construction uses peelable 3-hypergraphs on sharded keys, giving a 23%
 /// space overhead. Duplicate edges are not possible, which makes it possible to
 /// shard keys with a finer grain than with [fuse
-/// graphs](crate::func::FuseShards).
-#[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
+/// graphs](crate::func::Fuse3Shards).
+#[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
 #[deep_copy]
 pub struct Mwhc3Shards {
-    shard_high_bits: u32,
-    shard_mask: u32,
     // One third of the number of vertices in a shard
     seg_size: usize,
+    shard_bits_shift: u32,
+}
+
+impl Default for Mwhc3Shards {
+    fn default() -> Self {
+        Self {
+            seg_size: 0,
+            shard_bits_shift: 63,
+        }
+    }
 }
 
 impl Display for Mwhc3Shards {
@@ -194,7 +201,7 @@ impl Display for Mwhc3Shards {
         write!(
             f,
             "MWHC (shards) Number of shards: 2^{} Number of vertice per shard: {}",
-            self.shard_high_bits,
+            self.shard_high_bits(),
             self.seg_size * 3
         )
     }
@@ -218,8 +225,7 @@ impl Mwhc3Shards {
 
 impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
     fn set_up_shards(&mut self, n: usize) {
-        self.shard_high_bits = sharding_high_bits(n, 0.001);
-        self.shard_mask = (1 << self.shard_high_bits) - 1;
+        self.shard_bits_shift = 63 - sharding_high_bits(n, 0.001);
     }
 
     fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
@@ -229,12 +235,12 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
 
     #[inline(always)]
     fn shard_high_bits(&self) -> u32 {
-        self.shard_high_bits
+        63 - self.shard_bits_shift
     }
 
     #[inline(always)]
     fn shard(&self, sig: &[u64; 2]) -> usize {
-        (sig[0].rotate_left(self.shard_high_bits) & self.shard_mask as u64) as usize
+        (sig[0] >> self.shard_bits_shift >> 1) as usize
     }
 
     #[inline(always)]
@@ -258,7 +264,7 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
 /// This construction uses peelable 3-hypergraphs on sharded keys, giving a 23%
 /// space overhead. Duplicate edges are not possible, which makes it possible to
 /// shard keys with a finer grain than with [fuse
-/// graphs](crate::func::FuseShards).
+/// graphs](crate::func::Fuse3Shards).
 #[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
 #[deep_copy]
 pub struct Mwhc3NoShards {
@@ -333,13 +339,22 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
 /// 𝓁, and then choosing uniformly and at random a vertex in the segments *f*,
 /// *f* + 1 and *f* + 2.
 
-#[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
+#[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
 #[deep_copy]
 pub struct Fuse3Shards {
-    shard_high_bits: u32,
-    shard_mask: u32,
+    shard_bits_shift: u32,
     log2_seg_size: u32,
     l: u32,
+}
+
+impl Default for Fuse3Shards {
+    fn default() -> Self {
+        Self {
+            shard_bits_shift: 63,
+            log2_seg_size: 0,
+            l: 0,
+        }
+    }
 }
 
 impl Display for Fuse3Shards {
@@ -347,7 +362,7 @@ impl Display for Fuse3Shards {
         write!(
             f,
             "Fuse (shards) Number of shards: 2^{} Segment size: 2^{} Number of segments: {}",
-            self.shard_high_bits,
+            ShardEdge::<[u64;1], 3>::shard_high_bits(self),
             self.log2_seg_size,
             self.l + 2
         )
@@ -474,12 +489,12 @@ impl Fuse3Shards {
     #[inline(always)]
     fn _edge_2(
         shard: usize,
-        shard_high_bits: u32,
+        shard_bits_shift: u32,
         log2_seg_size: u32,
         l: u32,
         sig: &[u64; 2],
     ) -> [usize; 3] {
-        let first_segment = (((sig[0] << shard_high_bits >> 32) * l as u64) >> 32) as usize;
+        let first_segment = (((sig[0].rotate_right(shard_bits_shift) >> 32) * l as u64) >> 32) as usize;
         let shard_offset = shard * ((l as usize + 2) << log2_seg_size);
         let start = shard_offset + (first_segment << log2_seg_size);
         let segment_size = 1 << log2_seg_size;
@@ -530,7 +545,7 @@ impl Fuse3Shards {
     }
 
     fn _set_up_shards(&mut self, n: usize) {
-        self.shard_high_bits = if n <= Self::MAX_LIN_SIZE {
+        self.shard_bits_shift = 63 - if n <= Self::MAX_LIN_SIZE {
             // We just try to make shards as big as possible,
             // within a maximum size of 2 * MAX_LIN_SHARD_SIZE
             (n / Self::HALF_MAX_LIN_SHARD_SIZE).max(1).ilog2()
@@ -540,8 +555,6 @@ impl Fuse3Shards {
                 .min(Self::LOG2_MAX_SHARDS) // We don't really need too many shards
                 .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't be smaller than MIN_FUSE_SHARD
         };
-
-        self.shard_mask = (1 << self.shard_high_bits) - 1;
     }
 
     fn _set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
@@ -578,13 +591,13 @@ impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
 
     #[inline(always)]
     fn shard_high_bits(&self) -> u32 {
-        self.shard_high_bits
+        63 - self.shard_bits_shift
     }
 
     #[inline(always)]
     fn shard(&self, sig: &[u64; 2]) -> usize {
         // This must work even when shard_high_bits is zero
-        (sig[0].rotate_left(self.shard_high_bits) & self.shard_mask as u64) as usize
+        (sig[0] >> self.shard_bits_shift >> 1) as usize
     }
 
     #[inline(always)]
@@ -594,14 +607,14 @@ impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
 
     #[inline(always)]
     fn local_edge(&self, sig: &[u64; 2]) -> [usize; 3] {
-        Fuse3Shards::_edge_2(0, self.shard_high_bits, self.log2_seg_size, self.l, sig)
+        Fuse3Shards::_edge_2(0, self.shard_bits_shift, self.log2_seg_size, self.l, sig)
     }
 
     #[inline(always)]
     fn edge(&self, sig: &[u64; 2]) -> [usize; 3] {
         Fuse3Shards::_edge_2(
             self.shard(sig),
-            self.shard_high_bits,
+            self.shard_bits_shift,
             self.log2_seg_size,
             self.l,
             sig,
@@ -620,13 +633,13 @@ impl ShardEdge<[u64; 1], 3> for Fuse3Shards {
 
     #[inline(always)]
     fn shard_high_bits(&self) -> u32 {
-        self.shard_high_bits
+        63 - self.shard_bits_shift
     }
 
     #[inline(always)]
     fn shard(&self, sig: &[u64; 1]) -> usize {
         // This must work even when shard_high_bits is zero
-        (sig[0].rotate_left(self.shard_high_bits) as u32 & self.shard_mask) as usize
+        (sig[0] >> self.shard_bits_shift >> 1) as usize
     }
 
     #[inline(always)]
@@ -636,14 +649,14 @@ impl ShardEdge<[u64; 1], 3> for Fuse3Shards {
 
     #[inline(always)]
     fn local_edge(&self, sig: &[u64; 1]) -> [usize; 3] {
-        Fuse3Shards::_edge_1(0, self.shard_high_bits, self.log2_seg_size, self.l, sig)
+        Fuse3Shards::_edge_1(0, self.shard_bits_shift, self.log2_seg_size, self.l, sig)
     }
 
     #[inline(always)]
     fn edge(&self, sig: &[u64; 1]) -> [usize; 3] {
         Fuse3Shards::_edge_1(
             self.shard(sig),
-            self.shard_high_bits,
+            self.shard_bits_shift,
             self.log2_seg_size,
             self.l,
             sig,
