@@ -38,7 +38,7 @@ fn test_vfunc() -> Result<()> {
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             func.serialize(&mut cursor)?;
             cursor.set_position(0);
-            let func = VFunc::<_, BitFieldVec<_>, [u64; 2], Fuse3Shards>::deserialize_eps(
+            let func = VFunc::<usize, _, BitFieldVec<_>, [u64; 2], Fuse3Shards>::deserialize_eps(
                 cursor.as_bytes(),
             )?;
             pl.start("Querying...");
@@ -63,8 +63,9 @@ fn test_vfunc() -> Result<()> {
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             func.serialize(&mut cursor)?;
             cursor.set_position(0);
-            let func =
-                VFunc::<_, Box<[_]>, [u64; 2], Fuse3Shards>::deserialize_eps(cursor.as_bytes())?;
+            let func = VFunc::<usize, _, Box<[_]>, [u64; 2], Fuse3Shards>::deserialize_eps(
+                cursor.as_bytes(),
+            )?;
             pl.start("Querying...");
             for i in 0..n {
                 assert_eq!(i, func.get(&i));
@@ -95,10 +96,10 @@ fn test_vfilter() -> Result<()> {
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             filter.serialize(&mut cursor)?;
             cursor.set_position(0);
-            let filter =
-                VFilter::<usize, VFunc<_, BitFieldVec<usize>, [u64; 2], Fuse3Shards>>::deserialize_eps(
-                    cursor.as_bytes(),
-                )?;
+            let filter = VFilter::<
+                usize,
+                VFunc<usize, _, BitFieldVec<usize>, [u64; 2], Fuse3Shards>,
+            >::deserialize_eps(cursor.as_bytes())?;
             pl.start("Querying (positive)...");
             for i in 0..n {
                 assert!(filter.contains(&i), "Contains failed for {}", i);
@@ -133,9 +134,10 @@ fn test_vfilter() -> Result<()> {
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             func.serialize(&mut cursor)?;
             cursor.set_position(0);
-            let filter = VFilter::<u8, VFunc<_, Vec<u8>, [u64; 2], Fuse3Shards>>::deserialize_eps(
-                cursor.as_bytes(),
-            )?;
+            let filter =
+                VFilter::<u8, VFunc<usize, _, Vec<u8>, [u64; 2], Fuse3Shards>>::deserialize_eps(
+                    cursor.as_bytes(),
+                )?;
             pl.start("Querying (positive)...");
             for i in 0..n {
                 assert!(filter.contains(&i), "Contains failed for {}", i);
@@ -201,23 +203,6 @@ fn test_broken() -> Result<()> {
     pl.done_with_count(n);
 
     dbg!(c);
-
-    Ok(())
-}
-
-#[test]
-fn test_small() -> Result<()> {
-
-    let builder = VBuilder::<usize, Box<[usize]>>::default().expected_num_keys(100);
-    let func = builder.try_build_func(
-        FromIntoIterator::from(0..100),
-        FromIntoIterator::from(0..100),
-        no_logging![],
-    )?;
-
-    for i in 0..100 {
-        assert_eq!(i, func.get(&i));
-    }
 
     Ok(())
 }

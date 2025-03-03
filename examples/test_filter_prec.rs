@@ -34,7 +34,7 @@ fn _main<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
 where
     SigVal<S, ()>: RadixKey,
     usize: ToSig<S>,
-    VFilter<usize, VFunc<usize, BitFieldVec, S, E>>: TypeHash,
+    VFilter<usize, VFunc<usize, usize, BitFieldVec, S, E>>: TypeHash,
 {
     let mut m = MeanWithError::new();
 

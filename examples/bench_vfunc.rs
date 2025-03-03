@@ -83,11 +83,11 @@ where
     str: ToSig<S>,
     String: ToSig<S>,
     usize: ToSig<S>,
-    VFunc<usize, BitFieldVec, S, E>: Deserialize,
-    VFunc<usize, BitFieldVec, S, E>: Deserialize,
-    VFunc<u8, Box<[u8]>, S, E>: Deserialize,
-    VFunc<u8, Box<[u8]>, S, E>: Deserialize + TypeHash, // TODO: this is weird
-    VFilter<u8, VFunc<u8, Box<[u8]>, S, E>>: Deserialize,
+    VFunc<usize, usize, BitFieldVec, S, E>: Deserialize,
+    VFunc<str, usize, BitFieldVec, S, E>: Deserialize,
+    VFunc<usize, u8, Box<[u8]>, S, E>: Deserialize,
+    VFunc<str, u8, Box<[u8]>, S, E>: Deserialize + TypeHash, // TODO: this is weird
+    VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, E>>: Deserialize,
 {
     let mut pl = ProgressLogger::default();
 
@@ -105,7 +105,7 @@ where
         };
 
         if args.dict {
-            let filter = VFilter::<u8, VFunc<u8, Box<[u8]>, S, E>>::load_full(&args.func)?;
+            let filter = VFilter::<u8, VFunc<str, u8, Box<[u8]>, S, E>>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for key in &keys {
@@ -127,7 +127,7 @@ where
             }
             pl.done_with_count(args.n);
         } else {
-            let func = VFunc::<usize, BitFieldVec, S, E>::load_full(&args.func)?;
+            let func = VFunc::<str, usize, BitFieldVec, S, E>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for key in &keys {
@@ -153,7 +153,7 @@ where
     } else {
         // No filename
         if args.dict {
-            let filter = VFilter::<u8, VFunc<u8, Box<[u8]>, S, E>>::load_full(&args.func)?;
+            let filter = VFilter::<u8, VFunc<usize, u8, Box<[u8]>, S, E>>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for i in 0..args.n {
@@ -169,7 +169,7 @@ where
             }
             pl.done_with_count(args.n);
         } else {
-            let func = VFunc::<usize, BitFieldVec<usize>, S, E>::load_full(&args.func)?;
+            let func = VFunc::<usize, usize, BitFieldVec<usize>, S, E>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for i in 0..args.n {
