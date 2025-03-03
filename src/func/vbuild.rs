@@ -23,6 +23,7 @@ use rand::SeedableRng;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
+use std::any::TypeId;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -132,16 +133,16 @@ impl EdgeIndexSideSet {
 /// the default is `usize`.
 ///
 /// There are two construction modes: in core memory (default) and
-/// [offline](VBuilder::offline). In the first case, space will be allocated
-/// in core memory for signatures and associated values for all keys; in
-/// the second case, such information will be stored in a number of on-disk
-/// buckets using a [`SigStore`].
+/// [offline](VBuilder::offline). In the first case, space will be allocated in
+/// core memory for signatures and associated values for all keys; in the second
+/// case, such information will be stored in a number of on-disk buckets using a
+/// [`SigStore`].
 ///
 /// Once signatures have been computed, each parallel thread will process a
-/// shard of the signatures; for each signature in a shard, a thread will
-/// allocate about two `usize` values in core memory; in the case of offline
-/// construction, also signatures and values in the shard will be stored in core
-/// memory.
+/// shard of the signature/value pairs; for each signature/value in a shard, a
+/// thread will allocate about two `usize` values in core memory; in the case of
+/// offline construction, also signatures and values in the shard will be stored
+/// in core memory.
 ///
 /// For very large key sets shards will be significantly smaller than the number
 /// of keys, so the memory usage, in particular in offline mode, can be
@@ -151,7 +152,6 @@ impl EdgeIndexSideSet {
 #[derivative(Default)]
 #[setters(generate = false)]
 pub struct VBuilder<
-    T: ?Sized + Send + Sync + ToSig<S>,
     W: ZeroCopy + Word,
     D: BitFieldSlice<W> + Send + Sync = BitFieldVec<[W]>,
     S = [u64; 2],
@@ -200,8 +200,6 @@ pub struct VBuilder<
     /// Fast-stop for failed attemps.
     failed: AtomicBool,
     #[doc(hidden)]
-    _marker_t: PhantomData<T>,
-    #[doc(hidden)]
     _marker_v: PhantomData<(V, W, D, S)>,
 }
 
@@ -229,13 +227,12 @@ pub enum SolveError {
 }
 
 impl<
-        T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word + Send + Sync,
         D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
         S: Sig + ZeroCopy + Send + Sync,
         E: ShardEdge<S, 3>,
         V: ZeroCopy + Send + Sync,
-    > VBuilder<T, W, D, S, E, V>
+    > VBuilder<W, D, S, E, V>
 {
     /// Solve in parallel the shards returned by the given iterator.
     ///
@@ -312,7 +309,7 @@ impl<
                     (main_pl.clone(), pl.clone()),
                     |(main_pl, pl), (shard_index, shard)| {
                         main_pl.info(format_args!(
-                            "Sorting and checking shard {}/{}",
+                            "Analyzing shard {}/{}...",
                             shard_index + 1,
                             self.shard_edge.num_shards()
                         ));
@@ -321,7 +318,21 @@ impl<
                         let shard =
                             unsafe { &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>) };
 
-                        if self.check_dups {
+                        if TypeId::of::<V>() == TypeId::of::<()>()
+                            && TypeId::of::<S>() == TypeId::of::<[u64; 1]>()
+                            && self.num_keys >= 100_000_000
+                        {
+                            // Filters using 64-bit hashes need special
+                            // treatment because duplicates can happen and can
+                            // be ignored. Below the size limit the probability
+                            // of a duplicate is less than 0.000391.
+                            shard.radix_sort_builder().with_low_mem_tuner().sort();
+                            // WARNING: we are screwing the internal state of
+                            // the SigSorter (the chunk sizes won't be correct
+                            // anymore), but we don't care because we are going
+                            // to throw it away.
+                            shard.dedup_by_key(|x| x.sig);
+                        } else if self.check_dups {
                             // Check for duplicates
                             shard.radix_sort_builder().with_low_mem_tuner().sort();
 
@@ -331,7 +342,7 @@ impl<
                         }
 
                         main_pl.info(format_args!(
-                            "Solving shard {}/{}",
+                            "Solving shard {}/{}...",
                             shard_index + 1,
                             self.shard_edge.num_shards()
                         ));
@@ -633,17 +644,12 @@ impl<
 /// Since values are stored in a vector, access is particularly fast, but
 /// the bit width of the output of the function is exactly the bit width
 /// of `W`.
-impl<
-        T: ?Sized + Send + Sync + ToSig<S>,
-        W: ZeroCopy + Word,
-        S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
-    > VBuilder<T, W, Box<[W]>, S, E, W>
+impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E, W>
 where
     SigVal<S, W>: RadixKey + Send + Sync,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
-    pub fn try_build_func(
+    pub fn try_build_func<T: ?Sized + ToSig<S>>(
         mut self,
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<W>,
@@ -660,18 +666,13 @@ where
 /// Since values are stored in a vector, access is particularly fast, but
 /// the bit width of the output of the function is exactly the bit width
 /// of `W`.
-impl<
-        T: ?Sized + Send + Sync + ToSig<S>,
-        W: ZeroCopy + Word,
-        S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
-    > VBuilder<T, W, Box<[W]>, S, E, ()>
+impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E, ()>
 where
     SigVal<S, ()>: RadixKey + Send + Sync,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
     u64: CastableInto<W>,
 {
-    pub fn try_build_filter(
+    pub fn try_build_filter<T: ?Sized + ToSig<S>>(
         mut self,
         into_keys: impl RewindableIoLender<T>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -703,16 +704,12 @@ where
 ///
 /// Typically `W` will be `usize` or `u64`. It might be necessary to use
 /// `u128` if the bit width of the values is larger than 64.
-impl<
-        T: ?Sized + Send + Sync + ToSig<S>,
-        W: ZeroCopy + Word,
-        S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
-    > VBuilder<T, W, BitFieldVec<W>, S, E, W>
+impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+    VBuilder<W, BitFieldVec<W>, S, E, W>
 where
     SigVal<S, W>: RadixKey + Send + Sync,
 {
-    pub fn try_build_func(
+    pub fn try_build_func<T: ?Sized + ToSig<S>>(
         mut self,
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<W>,
@@ -733,18 +730,14 @@ where
 ///
 /// Typically `W` will be `usize` or `u64`. It might be necessary to use
 /// `u128` if the bit width of the values is larger than 64.
-impl<
-        T: ?Sized + Send + Sync + ToSig<S>,
-        W: ZeroCopy + Word,
-        S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
-    > VBuilder<T, W, BitFieldVec<W>, S, E, ()>
+impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+    VBuilder<W, BitFieldVec<W>, S, E, ()>
 where
     SigVal<S, ()>: RadixKey + Send + Sync,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
     u64: CastableInto<W>,
 {
-    pub fn try_build_filter(
+    pub fn try_build_filter<T: ?Sized + ToSig<S>>(
         mut self,
         into_keys: impl RewindableIoLender<T>,
         filter_bits: u32,
@@ -771,13 +764,12 @@ where
 }
 
 impl<
-        T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word,
         D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
         S: Sig + Send + Sync,
         E: ShardEdge<S, 3>,
         V: ZeroCopy + Send + Sync,
-    > VBuilder<T, W, D, S, E, V>
+    > VBuilder<W, D, S, E, V>
 where
     SigVal<S, V>: RadixKey + Send + Sync,
 {
@@ -787,7 +779,7 @@ where
     /// vectors. The necessary abstraction is provided by the `new(bit_width,
     /// len)` function, which is called to create the data structure to store
     /// the values.
-    fn build_loop(
+    fn build_loop<T: ?Sized + ToSig<S>>(
         &mut self,
         mut into_keys: impl RewindableIoLender<T>,
         mut into_values: impl RewindableIoLender<V>,
@@ -881,17 +873,16 @@ where
 }
 
 impl<
-        T: ?Sized + Send + Sync + ToSig<S>,
         W: ZeroCopy + Word,
         D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
         S: Sig + Send + Sync,
         E: ShardEdge<S, 3>,
         V: ZeroCopy + Send + Sync,
-    > VBuilder<T, W, D, S, E, V>
+    > VBuilder<W, D, S, E, V>
 where
     SigVal<S, V>: RadixKey + Send + Sync,
 {
-    fn try_seed<G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    fn try_seed<T: ?Sized + ToSig<S>, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
         &mut self,
         seed: u64,
         mut sig_store: impl SigStore<S, V>,
@@ -1170,13 +1161,13 @@ mod tests {
         loop {
             let std_log2_seg_size = fuse_log2_seg_size(3, size);
 
-            'outer: for log2_seg_size in std_log2_seg_size + 6 ..std_log2_seg_size + 9 {
+            'outer: for log2_seg_size in std_log2_seg_size + 6..std_log2_seg_size + 9 {
                 for seed in 0..5 {
                     eprintln!("Testing {size} {log2_seg_size} (estimate: {std_log2_seg_size})...");
                     let peeled = _test_peeling_c(size, 1.105, log2_seg_size, seed);
                     let success = size == peeled;
                     println!("{size} {log2_seg_size} {peeled} {success}");
-                    if ! success {
+                    if !success {
                         break 'outer;
                     }
                 }

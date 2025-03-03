@@ -198,26 +198,8 @@ impl Display for Mwhc3Shards {
 }
 
 impl Mwhc3Shards {
-    // This code is common to the sharded and non-sharded implementations.
-    // We use the lower 32 bits of sig[0] for the first vertex, the higher 32
-    // bits of sig[0] for the second vertex, and the XOR of the two halfs
-    // for the third vertex.
-    #[inline(always)]
-    fn _edge_1(&self, shard: usize, sig: &[u64; 1]) -> [usize; 3] {
-        let seg_size: u64 = self.seg_size as _;
-        let start = shard as u64 * self.seg_size as u64 * 3;
-        let xor = sig[0] as u32 ^ (sig[0] >> 32) as u32;
-
-        [
-            (((sig[0] as u32 as u64 * seg_size) >> 32) + start) as _,
-            ((((sig[0] >> 32) * seg_size) >> 32) + start + seg_size) as _,
-            ((((xor as u64) * seg_size) >> 32) + start + 2 * seg_size) as _,
-        ]
-    }
-
-    /// This code is common to the sharded and non-sharded implementations. We
-    /// use the lower 32 bits of sig[0] for the first vertex, the higher 32 bits
-    /// of sig[1], and the lower 32 bits of sig[1] for the third vertex.
+    /// We use the lower 32 bits of sig[0] for the first vertex, the higher 32
+    /// bits of sig[1], and the lower 32 bits of sig[1] for the third vertex.
     #[inline(always)]
     fn _edge_2(&self, shard: usize, sig: &[u64; 2]) -> [usize; 3] {
         let seg_size = self.seg_size as u64;
@@ -268,20 +250,45 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
     }
 }
 
-impl ShardEdge<[u64; 1], 3> for Mwhc3Shards {
-    fn set_up_shards(&mut self, n: usize) {
-        self.shard_high_bits = sharding_high_bits(n, 0.001);
-        self.shard_mask = (1 << self.shard_high_bits) - 1;
-    }
+/// Unsharded 3-hypergraph MWHC construction.
+///
+/// This construction uses peelable 3-hypergraphs on sharded keys, giving a 23%
+/// space overhead. Duplicate edges are not possible, which makes it possible to
+/// shard keys with a finer grain than with [fuse
+/// graphs](crate::func::FuseShards).
+#[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
+#[deep_copy]
+pub struct Mwhc3NoShards {
+    // One third of the number of vertices in a shard
+    seg_size: usize,
+}
 
-    fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
-        self.seg_size = ((max_shard as f64 * 1.23) / 3.).ceil() as usize;
+impl Display for Mwhc3NoShards {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "MWHC (no shards) Number of vertice per shard: {}",
+            self.seg_size * 3
+        )
+    }
+}
+
+impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
+    fn set_up_shards(&mut self, _n: usize) {}
+
+    fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
+        self.seg_size = ((n as f64 * 1.23) / 3.).ceil() as usize;
         (1.23, false)
     }
 
     #[inline(always)]
     fn shard_high_bits(&self) -> u32 {
-        self.shard_high_bits
+        0
+    }
+
+    #[inline(always)]
+    fn shard(&self, _sig: &[u64; 2]) -> usize {
+        0
     }
 
     #[inline(always)]
@@ -290,20 +297,21 @@ impl ShardEdge<[u64; 1], 3> for Mwhc3Shards {
     }
 
     #[inline(always)]
-    fn shard(&self, sig: &[u64; 1]) -> usize {
-        // This must work even when shard_high_bits is zero
-        let xor = sig[0] as u32 ^ (sig[0] >> 32) as u32;
-        (xor.rotate_left(self.shard_high_bits) & self.shard_mask) as usize
+    fn local_edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+        // We use the lower 32 bits of sig[0] for the first vertex, the higher 32
+        // bits of sig[1], and the lower 32 bits of sig[1] for the third vertex.
+        let seg_size = self.seg_size as u64;
+
+        [
+            ((sig[0] as u32 as u64 * seg_size) >> 32) as _,
+            ((((sig[1] >> 32) * seg_size) >> 32) + seg_size) as _,
+            ((((sig[1] as u32 as u64) * seg_size) >> 32) + 2 * seg_size) as _,
+        ]
     }
 
     #[inline(always)]
-    fn local_edge(&self, sig: &[u64; 1]) -> [usize; 3] {
-        self._edge_1(0, sig)
-    }
-
-    #[inline(always)]
-    fn edge(&self, sig: &[u64; 1]) -> [usize; 3] {
-        self._edge_1(self.shard(sig), sig)
+    fn edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+        self.local_edge(sig)
     }
 }
 
@@ -498,13 +506,14 @@ impl Fuse3Shards {
     #[inline(always)]
     fn _edge_1(
         shard: usize,
-        shard_high_bits: u32,
+        _shard_high_bits: u32,
         log2_seg_size: u32,
         l: u32,
         sig: &[u64; 1],
     ) -> [usize; 3] {
-        let xor = sig[0] as u32 ^ (sig[0] >> 32) as u32;
-        let first_segment = ((xor.rotate_left(shard_high_bits) as u64 * l as u64) >> 32) as usize;
+        // We need to mix a bit the xor of the two halves
+        let hash = (sig[0] as u32 ^ (sig[0] >> 32) as u32).wrapping_mul(0x9E3779B9);
+        let first_segment = ((hash as u64 * l as u64) >> 32) as usize;
         let shard_offset = shard * ((l as usize + 2) << log2_seg_size);
         let start = shard_offset + (first_segment << log2_seg_size);
         let segment_size = 1 << log2_seg_size;
@@ -614,8 +623,7 @@ impl ShardEdge<[u64; 1], 3> for Fuse3Shards {
     #[inline(always)]
     fn shard(&self, sig: &[u64; 1]) -> usize {
         // This must work even when shard_high_bits is zero
-        let xor = sig[0] as u32 ^ (sig[0] >> 32) as u32;
-        (xor.rotate_left(self.shard_high_bits) & self.shard_mask) as usize
+        (sig[0].rotate_left(self.shard_high_bits) as u32 & self.shard_mask) as usize
     }
 
     #[inline(always)]
@@ -941,7 +949,7 @@ mod tests {
         VFilter<u8, VFunc<u8, Box<[u8]>, S, Fuse3Shards>>: Serialize,
     {
         for n in [0_usize, 10, 1000, 100_000, 3_000_000] {
-            let filter = VBuilder::<_, _, Box<[u8]>, S, Fuse3Shards, ()>::default()
+            let filter = VBuilder::<_, Box<[u8]>, S, Fuse3Shards, ()>::default()
                 .log2_buckets(4)
                 .offline(false)
                 .try_build_filter(FromIntoIterator::from(0..n), no_logging![])?;

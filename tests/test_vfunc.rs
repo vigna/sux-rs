@@ -27,7 +27,7 @@ fn test_vfunc() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let func = VBuilder::<_, _, BitFieldVec<_>, [u64; 2], Fuse3Shards>::default()
+            let func = VBuilder::<_, BitFieldVec<_>, [u64; 2], Fuse3Shards>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .try_build_func(
@@ -52,7 +52,7 @@ fn test_vfunc() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let func = VBuilder::<_, _, Vec<_>, [u64; 2], Fuse3Shards>::default()
+            let func = VBuilder::<_, Box<[_]>, [u64; 2], Fuse3Shards>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .try_build_func(
@@ -88,7 +88,7 @@ fn test_vfilter() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let filter = VBuilder::<_, _, BitFieldVec<usize>, [u64; 2], Fuse3Shards, ()>::default()
+            let filter = VBuilder::<_, BitFieldVec<usize>, [u64; 2], Fuse3Shards, ()>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .try_build_filter(FromIntoIterator::from(0..n), 10, &mut pl)?;
@@ -126,7 +126,7 @@ fn test_vfilter() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let func = VBuilder::<_, _, Vec<u8>, [u64; 2], Fuse3Shards, ()>::default()
+            let func = VBuilder::<_, Box<[u8]>, [u64; 2], Fuse3Shards, ()>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .try_build_filter(FromIntoIterator::from(0..n), &mut pl)?;
@@ -169,7 +169,7 @@ fn test_dup_key() -> Result<()> {
         .filter_level(log::LevelFilter::Info)
         .try_init();
 
-    assert!(VBuilder::<usize, usize>::default()
+    assert!(VBuilder::<usize, BitFieldVec<usize>>::default()
         .check_dups(true)
         .try_build_func(
             FromIntoIterator::from(std::iter::repeat(0).take(10)),
@@ -189,7 +189,7 @@ fn test_broken() -> Result<()> {
         .try_init();
 
     let n = 3_000_000;
-    let filter = VBuilder::<_, usize, BitFieldVec<usize>, [u64; 2], Fuse3Shards, ()>::default()
+    let filter = VBuilder::<usize, BitFieldVec<usize>, [u64; 2], Fuse3Shards, ()>::default()
         .try_build_filter(FromIntoIterator::from(0..n), 10, no_logging![])?;
 
     let mut pl = ProgressLogger::default();

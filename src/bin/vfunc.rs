@@ -12,7 +12,9 @@ use epserde::traits::{TypeHash, ZeroCopy};
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::func::{Fuse3NoShards, Fuse3Shards, Mwhc3Shards, ShardEdge, VFilter, VFunc};
+use sux::func::{
+    Fuse3NoShards, Fuse3Shards, Mwhc3NoShards, Mwhc3Shards, ShardEdge, VFilter, VFunc,
+};
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
@@ -62,7 +64,7 @@ struct Args {
     #[arg(long)]
     no_shards: bool,
     /// Use 3-hypergraph.
-    #[arg(long, conflicts_with = "no_shards")]
+    #[arg(long, conflicts_with = "sig64")]
     mwhc: bool,
 }
 
@@ -74,8 +76,8 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.mwhc {
-        if args.sig64 {
-            main_with_types::<[u64; 1], Mwhc3Shards>(args)
+        if args.no_shards {
+            main_with_types::<[u64; 2], Mwhc3NoShards>(args)
         } else {
             main_with_types::<[u64; 2], Mwhc3Shards>(args)
         }
@@ -96,17 +98,10 @@ fn main() -> Result<()> {
     }
 }
 
-fn set_builder<
-    T: ?Sized + Send + Sync + ToSig<S>,
-    W: ZeroCopy + Word,
-    D: BitFieldSlice<W> + Send + Sync,
-    S,
-    E: ShardEdge<S, 3>,
-    V,
->(
-    builder: VBuilder<T, W, D, S, E, V>,
+fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: ShardEdge<S, 3>, V>(
+    builder: VBuilder<W, D, S, E, V>,
     args: &Args,
-) -> VBuilder<T, W, D, S, E, V> {
+) -> VBuilder<W, D, S, E, V> {
     let mut builder = builder
         .offline(args.offline)
         .check_dups(args.check_dups)
@@ -129,18 +124,18 @@ where
     usize: ToSig<S>,
     VFunc<usize, BitFieldVec, S, E>: Serialize,
     VFunc<usize, BitFieldVec, S, E>: Serialize,
-    VFunc<u8, Vec<u8>, S, E>: Serialize,
-    VFunc<u8, Vec<u8>, S, E>: Serialize + TypeHash, // TODO: this is weird
-    VFilter<u8, VFunc<u8, Vec<u8>, S, E>>: Serialize,
+    VFunc<u8, Box<[u8]>, S, E>: Serialize,
+    VFunc<u8, Box<[u8]>, S, E>: Serialize + TypeHash, // TODO: this is weird
+    VFilter<u8, VFunc<u8, Box<[u8]>, S, E>>: Serialize,
     <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Wierd
-    VFilter<u8, VFunc<u8, Vec<u8>, S, <E as SerializeInner>::SerType>>: TypeHash, // Weird
+    VFilter<u8, VFunc<u8, Box<[u8]>, S, <E as SerializeInner>::SerType>>: TypeHash, // Weird
 {
     let mut pl = ProgressLogger::default();
     let n = args.n;
 
     if let Some(ref filename) = &args.filename {
         if args.dict {
-            let builder = set_builder(VBuilder::<str, u8, Vec<u8>, S, E, ()>::default(), &args);
+            let builder = set_builder(VBuilder::<u8, Box<[u8]>, S, E, ()>::default(), &args);
             let filter = if args.zstd {
                 builder.try_build_filter(ZstdLineLender::from_path(filename)?.take(n), &mut pl)?
             } else {
@@ -149,7 +144,7 @@ where
             };
             filter.store(&args.func)?;
         } else {
-            let builder = set_builder(VBuilder::<_, _, BitFieldVec<usize>, S, E>::default(), &args);
+            let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
             let func = if args.zstd {
                 builder.try_build_func(
                     ZstdLineLender::from_path(filename)?.take(n),
@@ -166,11 +161,11 @@ where
             func.store(&args.func)?;
         }
     } else if args.dict {
-        let builder = set_builder(VBuilder::<_, u8, Vec<u8>, S, E, ()>::default(), &args);
+        let builder = set_builder(VBuilder::<u8, Box<[u8]>, S, E, ()>::default(), &args);
         let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
         filter.store(&args.func)?;
     } else {
-        let builder = set_builder(VBuilder::<_, _, BitFieldVec<usize>, S, E>::default(), &args);
+        let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
         let func = builder.try_build_func(
             FromIntoIterator::from(0_usize..n),
             FromIntoIterator::from(0_usize..),
