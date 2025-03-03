@@ -23,20 +23,25 @@ use std::ops::Index;
 ///
 /// Instances of this structure are immutable; they are built using a
 /// [`VBuilder`](crate::func::VBuilder) and can be serialized using
-/// [ε-serde](`epserde`).
-///
+/// [ε-serde](`epserde`). Please see the documentation of
+/// [`VBuilder`](crate::func::VBuilder) for examples.
+/// 
 /// # Generics
 ///
 /// * `T`: The type of the keys.
-/// * `W`: The word used to store the data, which is also the output type.
+/// * `W`: The word used to store the data, which is also the output type. It
+///        can be any unsigned type.
 /// * `D`: The backend storing the function data. It can be a
-///        [`BitFieldSlice`](crate::traits::BitFieldSlice) of `W` or a boxed
-///        slice of `W`. In the first case, the data is stored using exactly the
-///        number of bits needed, but access is slightly slower, while in the
-///        second case the data is stored using a `W`, thus limiting the number
-///        of bits to the number of bits of `W`, but access is faster.
-/// * `S`: The signature type.
-/// * `E`: The sharding and edge logic type.
+///        [`BitFieldVec<W>`](crate::bits::BitFieldVec) or a `Box<[W]>`. In the
+///        first case, the data is stored using exactly the number of bits
+///        needed, but access is slightly slower, while in the second case the
+///        data is stored `W`, thus limiting the number of bits to the number of
+///        bits of `W`, but access will be faster.
+/// * `S`: The signature type. The default is `[u64; 2]`. You can switch
+///        to `[u64; 1]` for slightly faster construction and queries, but 
+///        the construction will not scale beyond a billion keys or so.
+/// * `E`: The sharding and edge logic type. The default is [`Fuse3Shards`].
+///        For small sets of keys you might try [`Fuse3NoShards`].
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFunc<
     T: ?Sized + ToSig<S>,
@@ -57,22 +62,20 @@ pub struct VFunc<
 /// Static filters (i.e., static probabilistic dictionaries) with low space
 /// overhead, fast parallel construction, and fast queries.
 ///
-/// Space overhead with respect to the optimum depends on the [`ShardEdge`]
-/// type.
-///
 /// Instances of this structure are immutable; they are built using a
 /// [`VBuilder`](crate::func::VBuilder) and can be serialized using
 /// [ε-serde](`epserde`).
 ///
 /// Note that this structure implements the [`Index`] trait, which provides a
-/// convenient access to the filter.
+/// convenient access to the filter. Please see the documentation of
+/// [`VBuilder`](crate::func::VBuilder) for examples.
 ///
 /// # Generics
 ///
 /// * `W`: The output type. See the discussion about the generic `D` of
-///        [`VFunc`](crate::func::VFunc).
-/// * `F`: The type of [`VFunc`](crate::func::VFunc) used to store the mapping
-///        from keys to signatures.
+///        [`VFunc`].
+/// * `F`: The type of [`VFunc`] used to store the mapping from keys to
+///        signatures.
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFilter<W: ZeroCopy + Word, F> {
     pub(in crate::func) func: F,
@@ -95,14 +98,12 @@ fn sharding_high_bits(n: usize, eps: f64) -> u32 {
 /// Shard and edge logic.
 ///
 /// This trait is used to derive shards and edges from key signatures. Instances
-/// are stored in a
-/// [`VFunc`](crate::func::VFunc)/[`VFilter`](crate::func::VFilter), and they
-/// contain the data and logic that turns a signature into an edge, and possibly
-/// a shard.
+/// are stored in a [`VFunc`]/[`VFilter`], and they contain the data and logic
+/// that turns a signature into an edge, and possibly a shard.
 ///
 /// There are a few different implementations depending on the type of graphs,
-/// on the size of signatures, and on whether sharding is used. See, for example,
-/// [`Fuse3Shards`](crate::func::Fuse3Shards).
+/// on the size of signatures, and on whether sharding is used. See, for
+/// example, [`Fuse3Shards`].
 ///
 /// The implementation of the [`Display`] trait should return the relevant
 /// information about the sharding and edge logic.
@@ -121,16 +122,15 @@ pub trait ShardEdge<S, const K: usize>:
     /// Sets up the sharding logic for the given number of keys.
     ///
     /// This method can be called multiple times. For example, it can be used to
-    /// precompute the number of shards so to optimize a
-    /// [`SigStore`](crate::utils::SigStore) by using the same number of
-    /// buckets.
+    /// precompute the number of shards so to optimize a [`SigStore`] by using
+    /// the same number of buckets.
     fn set_up_shards(&mut self, n: usize);
 
     /// Sets up the edge logic for the given number of keys and maximum shard
     /// size.
     ///
     /// This methods must be called after
-    /// [`setup_shards`](ShardEdge::setup_shards), albeit some no-sharding
+    /// [`set_up_shards`](ShardEdge::set_up_shards), albeit some no-sharding
     /// implementation might not require it. It returns the expansion factor and
     /// whether the graph will need lazy Gaussian elimination.
     ///
@@ -326,11 +326,11 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
 
 /// Zero-cost sharded fuse 3-hypergraphs.
 ///
-/// This construction uses [fuse 3-hypergraphs (see ”[Dense Peelable Random
+/// This construction uses fuse 3-hypergraphs (see ”[Dense Peelable Random
 /// Uniform Hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38)”) on
-/// sharded keys, giving a 10% space overhead. Duplicate edges are possible,
+/// sharded keys, giving a 10.5% space overhead. Duplicate edges are possible,
 /// which limits the amount of sharding with respect to
-/// [MWHC](crate::func::MwhcShards).
+/// [MWHC](crate::func::Mwhc3Shards).
 ///
 /// TODO: Quote Thomas
 ///
@@ -894,8 +894,8 @@ where
 
     /// Return whether a key is contained in the filter.
     ///
-    /// TT: ?Sized + ToSig<S>, he user should not normally call this method, but rather
-    /// [`contains`](T, VFilter::contains).
+    /// The user should not normally call this method, but rather
+    /// [`contains`](VFilter::contains).
     #[inline]
     pub fn contains(&self, key: &T) -> bool {
         self.contains_by_sig(&T::to_sig(key, self.func.seed))
@@ -950,7 +950,7 @@ mod tests {
     use rdst::RadixKey;
 
     use crate::{
-        func::{Fuse3NoShards, VBuilder},
+        func::VBuilder,
         utils::{FromIntoIterator, Sig, SigVal, ToSig},
     };
 
@@ -991,183 +991,5 @@ mod tests {
         }
 
         Ok(())
-    }
-
-    #[test]
-    #[cfg(feature = "slow_tests")]
-    fn test_lin_log2_seg_size() -> anyhow::Result<()> {
-        use super::*;
-        // Manually tested values:
-        // 200000 -> 9
-        // 150000 -> 9
-        // 112500 -> 9
-        // 100000 -> 8
-        // 75000 -> 8
-        // 50000 -> 8
-        // 40000 -> 8
-        // 35000 -> 7
-        // 30000 -> 7
-        // 25000 -> 7
-        // 12500 -> 7
-        // 10000 -> 6
-        // 1000 -> 5
-        // 100 -> 3
-        // 10 -> 2
-
-        for n in 0..MAX_LIN_SHARD_SIZE * 2 {
-            if lin_log2_seg_size(3, n) != lin_log2_seg_size(3, n + 1) {
-                eprintln!(
-                    "Bulding function with {} keys (log₂ segment size = {})...",
-                    n,
-                    lin_log2_seg_size(3, n)
-                );
-                let _func = VBuilder::<_, _, BitFieldVec<_>, [u64; 2], true>::default().build(
-                    FromIntoIterator::from(0..n),
-                    FromIntoIterator::from(0_usize..),
-                    no_logging![],
-                )?;
-
-                eprintln!(
-                    "Bulding function with {} keys (log₂ segment size = {})...",
-                    n + 1,
-                    lin_log2_seg_size(3, n + 1)
-                );
-                let _func = VBuilder::<_, _, BitFieldVec<_>, [u64; 2], true>::default().build(
-                    FromIntoIterator::from(0..n + 1),
-                    FromIntoIterator::from(0_usize..),
-                    no_logging![],
-                )?;
-            }
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn search_funcs() {
-        let data_points = vec![
-            (11491938_usize, 2),
-            (17237907, 2),
-            (25856860, 3),
-            (38785290, 3),
-            (58177935, 3),
-            (87266902, 4),
-            (130900353, 4),
-            (196350529, 4),
-            (294525793, 4),
-            (441788689, 4),
-            (662683033, 4),
-            (994024549, 4),
-            (1491036823, 4),
-            (2236555234, 4),
-            (3354832851, 5),
-            (5032249276, 5),
-            (7548373914, 5),
-            (11322560871, 6),
-            (16983841306, 6),
-            (25475761959, 6),
-            (38213642938, 7),
-            (57320464407, 7),
-            (85980696610, 8),
-            (128971044915, 8),
-            (193456567372, 9),
-            (290184851058, 9),
-            (435277276587, 10),
-        ];
-
-        let eps = 0.001;
-
-        let bound = |n: usize, corr0: f64, corr1: f64| {
-            // Bound from urns and balls problem
-            let t = (n as f64 * eps * eps / 2.0).ln();
-
-            if t > 0.0 {
-                ((t - corr0 * t.ln() - corr1 * t.ln().ln()) / 2_f64.ln())
-                    .ceil()
-                    .max(2.) as u32
-            } else {
-                0
-            }
-        };
-
-        let mut max_err = usize::MAX;
-        let mut _best_corr0 = 0.0;
-        let mut _best_corr1 = 0.0;
-
-        for corr0 in 0..300 {
-            for corr1 in 0..300 {
-                let corr0 = corr0 as f64 / 100.0;
-                let corr1 = corr1 as f64 / 100.0;
-                let mut err = 0;
-                for &(n, log2) in data_points.iter() {
-                    let log2 = log2;
-
-                    let bound = bound(n, corr0, corr1) as usize;
-                    if log2 != bound {
-                        if bound > log2 {
-                            err += (bound - log2) * 2;
-                        } else {
-                            err += log2 - bound;
-                        }
-                    }
-                }
-
-                if err < max_err {
-                    eprintln!("corr0: {} corr1: {} err: {}", corr0, corr1, err);
-                    max_err = err;
-                    _best_corr0 = corr0;
-                    _best_corr1 = corr1;
-
-                    for &(n, log2) in data_points.iter() {
-                        let log2 = log2;
-
-                        let bound = bound(n, _best_corr0, _best_corr1) as usize;
-                        eprintln!("n: {} log2: {} bound: {}", n, log2, bound);
-                    }
-                }
-            }
-        }
-    }
-
-    fn log2_seg_size(n: usize) -> u32 {
-        Fuse3Shards::log2_seg_size(3, n)
-    }
-
-    #[test]
-    fn test_log2_seg_size() {
-        let mut shard_size = 1024;
-        for _ in 0..50 {
-            if shard_size >= 1_000_000 {
-                let l2ss = log2_seg_size(shard_size);
-                let c = 1.105;
-                let l = ((c * shard_size as f64).ceil() as usize).div_ceil(1 << l2ss);
-                let ideal_num_vertices = c * shard_size as f64;
-                let num_vertices = (1 << l2ss) * (l + 2);
-                eprintln!(
-                    "n: {shard_size} log₂ seg size: {} ideal: {} actual m: {} ratio: {}",
-                    l2ss,
-                    ideal_num_vertices,
-                    num_vertices,
-                    100.0 * num_vertices as f64 / ideal_num_vertices
-                );
-            }
-            shard_size = shard_size * 3 / 2;
-        }
-    }
-
-    #[test]
-    fn test_c() {
-        fn c(n: usize) -> f64 {
-            0.168 + (300000 as f64).ln().ln() / (n as f64 + 200000.).ln().max(1.).ln()
-        }
-        let mut size = 100000;
-        loop {
-            print!("{size} {} {}\n", c(size), Fuse3NoShards::c(3, size));
-
-            size = size / 4 * 5;
-            if size > 10000000 {
-                break;
-            }
-        }
     }
 }
