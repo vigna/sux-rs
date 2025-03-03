@@ -13,7 +13,7 @@ use lender::*;
 use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
-    func::{Fuse3NoShards, Fuse3Shards, Mwhc3Shards, ShardEdge, VFilter, VFunc},
+    func::{Fuse3NoShards, Fuse3Shards, Mwhc3NoShards, Mwhc3Shards, ShardEdge, VFilter, VFunc},
     utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender},
 };
 
@@ -40,8 +40,8 @@ struct Args {
     /// Do not use sharding.
     #[arg(long)]
     no_shards: bool,
-    /// Use 3-hypergraph.
-    #[arg(long)]
+    /// Use 3-hypergraphs.
+    #[arg(long, conflicts_with = "sig64")]
     mwhc: bool,
 }
 
@@ -54,18 +54,9 @@ fn main() -> Result<()> {
 
     if args.mwhc {
         if args.no_shards {
-            if args.sig64 {
-                // TODO
-                main_with_types::<[u64; 1], Mwhc3Shards>(args)
-            } else {
-                main_with_types::<[u64; 2], Mwhc3Shards>(args)
-            }
+            main_with_types::<[u64; 2], Mwhc3NoShards>(args)
         } else {
-            if args.sig64 {
-                main_with_types::<[u64; 1], Mwhc3Shards>(args)
-            } else {
-                main_with_types::<[u64; 2], Mwhc3Shards>(args)
-            }
+            main_with_types::<[u64; 2], Mwhc3Shards>(args)
         }
     } else {
         if args.no_shards {
@@ -94,9 +85,9 @@ where
     usize: ToSig<S>,
     VFunc<usize, BitFieldVec, S, E>: Deserialize,
     VFunc<usize, BitFieldVec, S, E>: Deserialize,
-    VFunc<u8, Vec<u8>, S, E>: Deserialize,
-    VFunc<u8, Vec<u8>, S, E>: Deserialize + TypeHash, // TODO: this is weird
-    VFilter<u8, VFunc<u8, Vec<u8>, S, E>>: Deserialize,
+    VFunc<u8, Box<[u8]>, S, E>: Deserialize,
+    VFunc<u8, Box<[u8]>, S, E>: Deserialize + TypeHash, // TODO: this is weird
+    VFilter<u8, VFunc<u8, Box<[u8]>, S, E>>: Deserialize,
 {
     let mut pl = ProgressLogger::default();
 
@@ -114,7 +105,7 @@ where
         };
 
         if args.dict {
-            let filter = VFilter::<u8, VFunc<u8, Vec<u8>, S, E>>::load_full(&args.func)?;
+            let filter = VFilter::<u8, VFunc<u8, Box<[u8]>, S, E>>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for key in &keys {
@@ -162,7 +153,7 @@ where
     } else {
         // No filename
         if args.dict {
-            let filter = VFilter::<u8, VFunc<u8, Vec<u8>, S, E>>::load_full(&args.func)?;
+            let filter = VFilter::<u8, VFunc<u8, Box<[u8]>, S, E>>::load_full(&args.func)?;
 
             pl.start("Querying (independent)...");
             for i in 0..args.n {
