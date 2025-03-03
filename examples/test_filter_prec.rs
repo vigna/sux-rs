@@ -43,7 +43,7 @@ where
     pl.start("Sampling...");
 
     for seed in 0..args.s {
-        let filter = VBuilder::<usize, BitFieldVec<usize>, S, E, ()>::default()
+        let filter = VBuilder::<usize, BitFieldVec<usize>, S, E>::default()
             .log2_buckets(4)
             .offline(false)
             .seed(seed as u64)

@@ -148,6 +148,29 @@ impl EdgeIndexSideSet {
 /// of keys, so the memory usage, in particular in offline mode, can be
 /// significantly reduced. Note that using too many threads might actually be
 /// harmful due to memory contention: eight is usually a good value.
+/// 
+/// # Examples
+/// 
+/// ```rust 
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// use sux::func::vbuild::VBuilder;
+/// use dsi_progress_logger::no_logging;
+/// use sux::utils::FromIntoIterator;
+/// 
+/// let builder = VBuilder::<usize, Box<[usize]>>::default()
+///     .expected_num_keys(100);
+/// let func = builder.try_build_func(
+///    FromIntoIterator::from(0..100),
+///    FromIntoIterator::from(0..100),
+///    no_logging![]
+/// )?;
+/// 
+/// for i in 0..100 {
+///    assert_eq!(i, func.get(&i));
+/// }
+/// #     Ok(())
+/// # }
+/// ```
 #[derive(Setters, Debug, Derivative)]
 #[derivative(Default)]
 #[setters(generate = false)]
@@ -156,7 +179,6 @@ pub struct VBuilder<
     D: BitFieldSlice<W> + Send + Sync = BitFieldVec<[W]>,
     S = [u64; 2],
     E: ShardEdge<S, 3> = Fuse3Shards,
-    V = W,
 > {
     /// The optional expected number of keys.
     #[setters(generate = true, strip_option)]
@@ -200,7 +222,7 @@ pub struct VBuilder<
     /// Fast-stop for failed attemps.
     failed: AtomicBool,
     #[doc(hidden)]
-    _marker_v: PhantomData<(V, W, D, S)>,
+    _marker_v: PhantomData<(W, D, S)>,
 }
 
 /// Fatal build errors.
@@ -231,8 +253,7 @@ impl<
         D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
         S: Sig + ZeroCopy + Send + Sync,
         E: ShardEdge<S, 3>,
-        V: ZeroCopy + Send + Sync,
-    > VBuilder<W, D, S, E, V>
+    > VBuilder<W, D, S, E>
 {
     /// Solve in parallel the shards returned by the given iterator.
     ///
@@ -259,6 +280,7 @@ impl<
     /// This method returns an error if one of the shards cannot be solved, or
     /// if duplicates are detected.
     fn par_solve<
+        V: ZeroCopy + Send + Sync,
         I: IntoIterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
         C: ConcurrentProgressLog + Send + Sync,
         P: ProgressLog + Clone + Send + Sync,
@@ -390,7 +412,7 @@ impl<
     /// the shard index, the shard, the edge lists, the shard-local data, and
     /// the stack at the end of the peeling procedure in case of failure. These
     /// data can be then passed to a linear solver to complete the solution.
-    fn peel_shard<'a, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    fn peel_shard<'a, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
         &self,
         shard_index: usize,
         shard: &'a Vec<SigVal<S, V>>,
@@ -511,7 +533,7 @@ impl<
     ///
     /// This method might be called after a successful peeling procedure, or
     /// after a linear solver has been used to solve the remaining edges.
-    fn assign(
+    fn assign<V: ZeroCopy + Send + Sync>(
         &self,
         shard_index: usize,
         shard: &Vec<SigVal<S, V>>,
@@ -562,7 +584,7 @@ impl<
     ///
     /// Return the shard index and the data, in case of success, or `Err(())` in
     /// case of failure.
-    fn lge_shard(
+    fn lge_shard<V: ZeroCopy + Send + Sync>(
         &self,
         shard_index: usize,
         shard: &Vec<SigVal<S, V>>,
@@ -644,7 +666,7 @@ impl<
 /// Since values are stored in a vector, access is particularly fast, but
 /// the bit width of the output of the function is exactly the bit width
 /// of `W`.
-impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E, W>
+impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
     SigVal<S, W>: RadixKey + Send + Sync,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
@@ -666,7 +688,7 @@ where
 /// Since values are stored in a vector, access is particularly fast, but
 /// the bit width of the output of the function is exactly the bit width
 /// of `W`.
-impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E, ()>
+impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
     SigVal<S, ()>: RadixKey + Send + Sync,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
@@ -704,8 +726,7 @@ where
 ///
 /// Typically `W` will be `usize` or `u64`. It might be necessary to use
 /// `u128` if the bit width of the values is larger than 64.
-impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
-    VBuilder<W, BitFieldVec<W>, S, E, W>
+impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
     SigVal<S, W>: RadixKey + Send + Sync,
 {
@@ -730,8 +751,7 @@ where
 ///
 /// Typically `W` will be `usize` or `u64`. It might be necessary to use
 /// `u128` if the bit width of the values is larger than 64.
-impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
-    VBuilder<W, BitFieldVec<W>, S, E, ()>
+impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
     SigVal<S, ()>: RadixKey + Send + Sync,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
@@ -768,10 +788,7 @@ impl<
         D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
         S: Sig + Send + Sync,
         E: ShardEdge<S, 3>,
-        V: ZeroCopy + Send + Sync,
-    > VBuilder<W, D, S, E, V>
-where
-    SigVal<S, V>: RadixKey + Send + Sync,
+    > VBuilder<W, D, S, E>
 {
     /// Build and return a new function with given keys and values.
     ///
@@ -779,14 +796,17 @@ where
     /// vectors. The necessary abstraction is provided by the `new(bit_width,
     /// len)` function, which is called to create the data structure to store
     /// the values.
-    fn build_loop<T: ?Sized + ToSig<S>>(
+    fn build_loop<T: ?Sized + ToSig<S>, V: ZeroCopy + Send + Sync>(
         &mut self,
         mut into_keys: impl RewindableIoLender<T>,
         mut into_values: impl RewindableIoLender<V>,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         new: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<W, D, S, E>> {
+    ) -> anyhow::Result<VFunc<W, D, S, E>>
+    where
+        SigVal<S, V>: RadixKey + Send + Sync,
+    {
         let mut dup_count = 0;
         let start = Instant::now();
         let mut prng = SmallRng::seed_from_u64(self.seed);
@@ -877,12 +897,13 @@ impl<
         D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
         S: Sig + Send + Sync,
         E: ShardEdge<S, 3>,
-        V: ZeroCopy + Send + Sync,
-    > VBuilder<W, D, S, E, V>
-where
-    SigVal<S, V>: RadixKey + Send + Sync,
+    > VBuilder<W, D, S, E>
 {
-    fn try_seed<T: ?Sized + ToSig<S>, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    fn try_seed<
+        T: ?Sized + ToSig<S>,
+        V: ZeroCopy + Send + Sync,
+        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
+    >(
         &mut self,
         seed: u64,
         mut sig_store: impl SigStore<S, V>,
@@ -891,7 +912,10 @@ where
         get_val: &G,
         new_data: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<W, D, S, E>> {
+    ) -> anyhow::Result<VFunc<W, D, S, E>>
+    where
+        SigVal<S, V>: RadixKey + Send + Sync,
+    {
         let mut max_value = W::ZERO;
 
         if let Some(expected_num_keys) = self.expected_num_keys {
@@ -968,7 +992,7 @@ where
     /// actual storage of the values (offline or in core memory.)
     ///
     /// See [`VBuilder::_build`] for more details on the parameters.
-    fn try_build_from_shard_iter<I, P, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    fn try_build_from_shard_iter<I, P, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
         &mut self,
         seed: u64,
         mut data: D,
@@ -978,6 +1002,7 @@ where
         pl: &mut P,
     ) -> Result<VFunc<W, D, S, E>, SolveError>
     where
+        SigVal<S, V>: RadixKey,
         P: ProgressLog + Clone + Send + Sync,
         I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
     {

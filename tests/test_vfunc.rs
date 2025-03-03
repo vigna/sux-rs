@@ -64,7 +64,7 @@ fn test_vfunc() -> Result<()> {
             func.serialize(&mut cursor)?;
             cursor.set_position(0);
             let func =
-                VFunc::<_, Vec<_>, [u64; 2], Fuse3Shards>::deserialize_eps(cursor.as_bytes())?;
+                VFunc::<_, Box<[_]>, [u64; 2], Fuse3Shards>::deserialize_eps(cursor.as_bytes())?;
             pl.start("Querying...");
             for i in 0..n {
                 assert_eq!(i, func.get(&i));
@@ -88,7 +88,7 @@ fn test_vfilter() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let filter = VBuilder::<_, BitFieldVec<usize>, [u64; 2], Fuse3Shards, ()>::default()
+            let filter = VBuilder::<_, BitFieldVec<usize>, [u64; 2], Fuse3Shards>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .try_build_filter(FromIntoIterator::from(0..n), 10, &mut pl)?;
@@ -126,7 +126,7 @@ fn test_vfilter() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let func = VBuilder::<_, Box<[u8]>, [u64; 2], Fuse3Shards, ()>::default()
+            let func = VBuilder::<_, Box<[u8]>, [u64; 2], Fuse3Shards>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .try_build_filter(FromIntoIterator::from(0..n), &mut pl)?;
@@ -189,7 +189,7 @@ fn test_broken() -> Result<()> {
         .try_init();
 
     let n = 3_000_000;
-    let filter = VBuilder::<usize, BitFieldVec<usize>, [u64; 2], Fuse3Shards, ()>::default()
+    let filter = VBuilder::<usize, BitFieldVec<usize>, [u64; 2], Fuse3Shards>::default()
         .try_build_filter(FromIntoIterator::from(0..n), 10, no_logging![])?;
 
     let mut pl = ProgressLogger::default();
@@ -201,6 +201,23 @@ fn test_broken() -> Result<()> {
     pl.done_with_count(n);
 
     dbg!(c);
+
+    Ok(())
+}
+
+#[test]
+fn test_small() -> Result<()> {
+
+    let builder = VBuilder::<usize, Box<[usize]>>::default().expected_num_keys(100);
+    let func = builder.try_build_func(
+        FromIntoIterator::from(0..100),
+        FromIntoIterator::from(0..100),
+        no_logging![],
+    )?;
+
+    for i in 0..100 {
+        assert_eq!(i, func.get(&i));
+    }
 
     Ok(())
 }
