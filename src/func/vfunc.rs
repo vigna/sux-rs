@@ -28,19 +28,21 @@ use std::ops::Index;
 ///
 /// # Generics
 ///
+/// * `T`: The type of the keys.
 /// * `W`: The word used to store the data, which is also the output type.
 /// * `D`: The backend storing the function data. It can be a
-///   [`BitFieldSlice`](crate::traits::BitFieldSlice) of `W` or a boxed slice of
-///   `W`. In the first case, the data is stored using exactly the number of
-///   bits needed, but access is slightly slower, while in the second case the
-///   data is stored using a `W`, thus limiting the number of bits to the number
-///   of bits of `W`, but access is faster.
+///        [`BitFieldSlice`](crate::traits::BitFieldSlice) of `W` or a boxed
+///        slice of `W`. In the first case, the data is stored using exactly the
+///        number of bits needed, but access is slightly slower, while in the
+///        second case the data is stored using a `W`, thus limiting the number
+///        of bits to the number of bits of `W`, but access is faster.
 /// * `S`: The signature type.
 /// * `E`: The sharding and edge logic type.
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFunc<
+    T: ?Sized + ToSig<S>,
     W: ZeroCopy + Word = usize,
-    D: BitFieldSlice<W> = BitFieldVec<W>,
+    D: BitFieldSlice<W> = Box<[W]>,
     S: Sig = [u64; 2],
     E: ShardEdge<S, 3> = Fuse3Shards,
 > {
@@ -48,6 +50,7 @@ pub struct VFunc<
     pub(in crate::func) seed: u64,
     pub(in crate::func) num_keys: usize,
     pub(in crate::func) data: D,
+    pub(in crate::func) _marker_t: std::marker::PhantomData<T>,
     pub(in crate::func) _marker_w: std::marker::PhantomData<W>,
     pub(in crate::func) _marker_s: std::marker::PhantomData<S>,
 }
@@ -69,7 +72,7 @@ pub struct VFunc<
 ///
 /// * `W`: The output type. See the discussion about the generic `D` of
 ///        [`VFunc`](crate::func::VFunc).
-/// * `F`: The type of [`VFunct`](crate::func::VFunc) used to store the mapping
+/// * `F`: The type of [`VFunc`](crate::func::VFunc) used to store the mapping
 ///        from keys to signatures.
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFilter<W: ZeroCopy + Word, F> {
@@ -805,7 +808,9 @@ impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
     }
 }
 
-impl<W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>> VFunc<W, D, S, E> {
+impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
+    VFunc<T, W, D, S, E>
+{
     /// Return the value associated with the given signature, or a random value
     /// if the signature is not the signature of a key .
     ///
@@ -824,7 +829,7 @@ impl<W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>> VFunc<
     /// Return the value associated with the given key, or a random value if the
     /// key is not present.
     #[inline(always)]
-    pub fn get<T: ?Sized + ToSig<S>>(&self, key: &T) -> W {
+    pub fn get(&self, key: &T) -> W {
         self.get_by_sig(&T::to_sig(key, self.seed))
     }
 
@@ -839,8 +844,8 @@ impl<W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>> VFunc<
     }
 }
 
-impl<W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
-    VFilter<W, VFunc<W, D, S, E>>
+impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
+    VFilter<W, VFunc<T, W, D, S, E>>
 where
     u64: CastableInto<W>,
 {
@@ -861,7 +866,7 @@ where
     /// The user should not normally call this method, but rather
     /// [`contains`](VFilter::contains).
     #[inline]
-    pub fn get<T: ?Sized + ToSig<S>>(&self, key: &T) -> W {
+    pub fn get(&self, key: &T) -> W {
         self.func.get(key)
     }
 
@@ -876,10 +881,10 @@ where
 
     /// Return whether a key is contained in the filter.
     ///
-    /// The user should not normally call this method, but rather
-    /// [`contains`](VFilter::contains).
+    /// TT: ?Sized + ToSig<S>, he user should not normally call this method, but rather
+    /// [`contains`](T, VFilter::contains).
     #[inline]
-    pub fn contains<T: ?Sized + ToSig<S>>(&self, key: &T) -> bool {
+    pub fn contains(&self, key: &T) -> bool {
         self.contains_by_sig(&T::to_sig(key, self.func.seed))
     }
 
@@ -895,7 +900,6 @@ where
 
     /// Return the number of signature bits.
     ///
-    /// Note that this is the number of bits used to check if a signature is
     /// contained in the filter. The filter precision is
     /// thus 2<sup>-`sig_bits`</sup>.
     pub fn sig_bits(&self) -> u32 {
@@ -903,8 +907,14 @@ where
     }
 }
 
-impl<W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>, B: ToSig<S>> Index<B>
-    for VFilter<W, VFunc<W, D, S, E>>
+impl<
+        T: ?Sized + ToSig<S>,
+        W: ZeroCopy + Word,
+        D: BitFieldSlice<W>,
+        S: Sig,
+        E: ShardEdge<S, 3>,
+        B: Borrow<T>,
+    > Index<B> for VFilter<W, VFunc<T, W, D, S, E>>
 where
     u64: CastableInto<W>,
 {
@@ -945,8 +955,8 @@ mod tests {
         usize: ToSig<S>,
         SigVal<S, ()>: RadixKey,
         Fuse3Shards: ShardEdge<S, 3>,
-        VFunc<u8, Box<[u8]>, S, Fuse3Shards>: Serialize + TypeHash, // Weird
-        VFilter<u8, VFunc<u8, Box<[u8]>, S, Fuse3Shards>>: Serialize,
+        VFunc<usize, u8, Box<[u8]>, S, Fuse3Shards>: Serialize + TypeHash, // Weird
+        VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, Fuse3Shards>>: Serialize,
     {
         for n in [0_usize, 10, 1000, 100_000, 3_000_000] {
             let filter = VBuilder::<_, Box<[u8]>, S, Fuse3Shards>::default()
@@ -958,7 +968,9 @@ mod tests {
             cursor.set_position(0);
             // TODO: This does not work with deserialize_eps
             let filter =
-                VFilter::<u8, VFunc<_, Box<[u8]>, S, Fuse3Shards>>::deserialize_full(&mut cursor)?;
+                VFilter::<u8, VFunc<usize, _, Box<[u8]>, S, Fuse3Shards>>::deserialize_full(
+                    &mut cursor,
+                )?;
             for i in 0..n {
                 let sig = ToSig::<S>::to_sig(&i, filter.func.seed);
                 assert_eq!(sig.sig_u64() & 0xFF, filter.get(&i) as u64);

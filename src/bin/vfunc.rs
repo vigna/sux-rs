@@ -118,17 +118,17 @@ fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: Shar
 
 fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
 where
-    SigVal<S, usize>: RadixKey,
-    SigVal<S, ()>: RadixKey,
     str: ToSig<S>,
     usize: ToSig<S>,
-    VFunc<usize, BitFieldVec, S, E>: Serialize,
-    VFunc<usize, BitFieldVec, S, E>: Serialize,
-    VFunc<u8, Box<[u8]>, S, E>: Serialize,
-    VFunc<u8, Box<[u8]>, S, E>: Serialize + TypeHash, // TODO: this is weird
-    VFilter<u8, VFunc<u8, Box<[u8]>, S, E>>: Serialize,
+    SigVal<S, usize>: RadixKey,
+    SigVal<S, ()>: RadixKey,
     <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Wierd
-    VFilter<u8, VFunc<u8, Box<[u8]>, S, <E as SerializeInner>::SerType>>: TypeHash, // Weird
+    VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
+    VFunc<str, usize, BitFieldVec, S, E>: Serialize,
+    VFunc<usize, u8, Box<[u8]>, S, E>: Serialize,
+    VFunc<str, u8, Box<[u8]>, S, E>: Serialize + TypeHash, // TODO: this is weird
+    VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, E>>: Serialize,
+    VFilter<u8, VFunc<str, u8, Box<[u8]>, S, <E as SerializeInner>::SerType>>: TypeHash, // Weird
 {
     let mut pl = ProgressLogger::default();
     let n = args.n;

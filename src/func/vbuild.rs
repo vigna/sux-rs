@@ -147,16 +147,20 @@ impl EdgeIndexSideSet {
 /// For very large key sets shards will be significantly smaller than the number
 /// of keys, so the memory usage, in particular in offline mode, can be
 /// significantly reduced. Note that using too many threads might actually be
-/// harmful due to memory contention: eight is usually a good value.
-/// 
+/// harmful due to memory contention.
+///
 /// # Examples
-/// 
-/// ```rust 
+///
+/// In this example, we build a function that maps each key to itself.
+/// Note that setter for the expected number of keys is used to optimize the
+/// construction.
+///
+/// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use sux::func::vbuild::VBuilder;
 /// use dsi_progress_logger::no_logging;
 /// use sux::utils::FromIntoIterator;
-/// 
+///
 /// let builder = VBuilder::<usize, Box<[usize]>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_func(
@@ -164,19 +168,41 @@ impl EdgeIndexSideSet {
 ///    FromIntoIterator::from(0..100),
 ///    no_logging![]
 /// )?;
-/// 
+///
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
 /// }
 /// #     Ok(())
 /// # }
 /// ```
+///
+/// We new try to build a filter for the same key set:
+///
+/// ```rust
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// use sux::func::vbuild::VBuilder;
+/// use dsi_progress_logger::no_logging;
+/// use sux::utils::FromIntoIterator;
+///
+/// let builder = VBuilder::<usize, Box<[usize]>>::default()
+///     .expected_num_keys(100);
+/// let func = builder.try_build_filter(
+///    FromIntoIterator::from(0..100),
+///    no_logging![]
+/// )?;
+///
+/// for i in 0..100 {
+///    assert!(func[i]);
+/// }
+/// #     Ok(())
+/// # }
+
 #[derive(Setters, Debug, Derivative)]
 #[derivative(Default)]
 #[setters(generate = false)]
 pub struct VBuilder<
     W: ZeroCopy + Word,
-    D: BitFieldSlice<W> + Send + Sync = BitFieldVec<[W]>,
+    D: BitFieldSlice<W> + Send + Sync = Box<[W]>,
     S = [u64; 2],
     E: ShardEdge<S, 3> = Fuse3Shards,
 > {
@@ -185,7 +211,7 @@ pub struct VBuilder<
     #[derivative(Default(value = "None"))]
     expected_num_keys: Option<usize>,
 
-    /// The maximum number of parallel threads to use.
+    /// The maximum number of parallel threads to use. The default is 8.
     #[setters(generate = true)]
     #[derivative(Default(value = "8"))]
     max_num_threads: usize,
@@ -676,7 +702,7 @@ where
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<W, Box<[W]>, S, E>> {
+    ) -> anyhow::Result<VFunc<T, W, Box<[W]>, S, E>> {
         let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
         self.build_loop(into_keys, into_values, &get_val, new_data, pl)
@@ -698,7 +724,7 @@ where
         mut self,
         into_keys: impl RewindableIoLender<T>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFilter<W, VFunc<W, Box<[W]>, S, E>>> {
+    ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>> {
         let filter_mask = W::MAX;
         let get_val = |sig_val: &SigVal<S, ()>| sig_val.sig.sig_u64().cast();
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
@@ -735,7 +761,7 @@ where
         into_keys: impl RewindableIoLender<T>,
         into_values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<W, BitFieldVec<W>, S, E>> {
+    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
         let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
         self.build_loop(into_keys, into_values, &get_val, new_data, pl)
@@ -762,7 +788,7 @@ where
         into_keys: impl RewindableIoLender<T>,
         filter_bits: u32,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFilter<W, VFunc<W, BitFieldVec<W>, S, E>>> {
+    ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>> {
         assert!(filter_bits > 0);
         assert!(filter_bits <= W::BITS as u32);
         let filter_mask = W::MAX >> (W::BITS as u32 - filter_bits);
@@ -803,7 +829,7 @@ impl<
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         new: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<W, D, S, E>>
+    ) -> anyhow::Result<VFunc<T, W, D, S, E>>
     where
         SigVal<S, V>: RadixKey + Send + Sync,
     {
@@ -912,7 +938,7 @@ impl<
         get_val: &G,
         new_data: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<W, D, S, E>>
+    ) -> anyhow::Result<VFunc<T, W, D, S, E>>
     where
         SigVal<S, V>: RadixKey + Send + Sync,
     {
@@ -992,7 +1018,13 @@ impl<
     /// actual storage of the values (offline or in core memory.)
     ///
     /// See [`VBuilder::_build`] for more details on the parameters.
-    fn try_build_from_shard_iter<I, P, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    fn try_build_from_shard_iter<
+        T: ?Sized + ToSig<S>,
+        I,
+        P,
+        V: ZeroCopy + Send + Sync,
+        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
+    >(
         &mut self,
         seed: u64,
         mut data: D,
@@ -1000,7 +1032,7 @@ impl<
         new: fn(usize, usize) -> D,
         get_val: &G,
         pl: &mut P,
-    ) -> Result<VFunc<W, D, S, E>, SolveError>
+    ) -> Result<VFunc<T, W, D, S, E>, SolveError>
     where
         SigVal<S, V>: RadixKey,
         P: ProgressLog + Clone + Send + Sync,
@@ -1059,6 +1091,7 @@ impl<
             shard_edge: self.shard_edge,
             num_keys: self.num_keys,
             data,
+            _marker_t: std::marker::PhantomData,
             _marker_w: std::marker::PhantomData,
             _marker_s: std::marker::PhantomData,
         })
