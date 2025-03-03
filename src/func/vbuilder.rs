@@ -1137,7 +1137,7 @@ impl<
 
 #[cfg(test)]
 mod tests {
-    use crate::func::vbuild::EdgeIndexSideSet;
+    use crate::func::vbuilder::EdgeIndexSideSet;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
     use xxhash_rust::xxh3;
 
