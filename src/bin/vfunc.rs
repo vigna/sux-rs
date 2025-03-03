@@ -98,10 +98,10 @@ fn main() -> Result<()> {
     }
 }
 
-fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: ShardEdge<S, 3>, V>(
-    builder: VBuilder<W, D, S, E, V>,
+fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: ShardEdge<S, 3>>(
+    builder: VBuilder<W, D, S, E>,
     args: &Args,
-) -> VBuilder<W, D, S, E, V> {
+) -> VBuilder<W, D, S, E> {
     let mut builder = builder
         .offline(args.offline)
         .check_dups(args.check_dups)
@@ -135,7 +135,7 @@ where
 
     if let Some(ref filename) = &args.filename {
         if args.dict {
-            let builder = set_builder(VBuilder::<u8, Box<[u8]>, S, E, ()>::default(), &args);
+            let builder = set_builder(VBuilder::<u8, Box<[u8]>, S, E>::default(), &args);
             let filter = if args.zstd {
                 builder.try_build_filter(ZstdLineLender::from_path(filename)?.take(n), &mut pl)?
             } else {
@@ -161,7 +161,7 @@ where
             func.store(&args.func)?;
         }
     } else if args.dict {
-        let builder = set_builder(VBuilder::<u8, Box<[u8]>, S, E, ()>::default(), &args);
+        let builder = set_builder(VBuilder::<u8, Box<[u8]>, S, E>::default(), &args);
         let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
         filter.store(&args.func)?;
     } else {

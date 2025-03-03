@@ -949,7 +949,7 @@ mod tests {
         VFilter<u8, VFunc<u8, Box<[u8]>, S, Fuse3Shards>>: Serialize,
     {
         for n in [0_usize, 10, 1000, 100_000, 3_000_000] {
-            let filter = VBuilder::<_, Box<[u8]>, S, Fuse3Shards, ()>::default()
+            let filter = VBuilder::<_, Box<[u8]>, S, Fuse3Shards>::default()
                 .log2_buckets(4)
                 .offline(false)
                 .try_build_filter(FromIntoIterator::from(0..n), no_logging![])?;
