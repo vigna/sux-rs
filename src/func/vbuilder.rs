@@ -314,6 +314,9 @@ pub enum SolveError {
     UnsolvableShard,
 }
 
+type ShardIter<'a, W, D> = <D as BitFieldSliceMut<W>>::ChunksMut<'a>;
+type Shard<'a, W, D> = <ShardIter<'a, W, D> as Iterator>::Item;
+
 impl<
         W: ZeroCopy + Word + Send + Sync,
         D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
@@ -346,6 +349,7 @@ impl<
     /// This method returns an error if one of the shards cannot be solved, or
     /// if duplicates are detected.
     fn par_solve<
+        'b,
         V: ZeroCopy + Send + Sync,
         I: IntoIterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
         C: ConcurrentProgressLog + Send + Sync,
@@ -353,9 +357,14 @@ impl<
     >(
         &mut self,
         shard_iter: I,
-        data: &mut D,
-        new_data: impl Fn(usize, usize) -> D + Sync,
-        solve_shard: impl Fn(&Self, usize, &mut Vec<SigVal<S, V>>, D, &mut P) -> Result<(usize, D), ()>
+        data: &'b mut D,
+        solve_shard: impl Fn(
+                &Self,
+                usize,
+                &'b mut Vec<SigVal<S, V>>,
+                Shard<'b, W, D>,
+                &mut P,
+            ) -> Result<usize, ()>
             + Send
             + Sync,
         thread_pool: &rayon::ThreadPool,
@@ -365,37 +374,33 @@ impl<
     where
         I::IntoIter: Send,
         SigVal<S, V>: RadixKey + Send + Sync,
+        for<'a> ShardIter<'a, W, D>: Send,
+        for<'a> std::iter::Enumerate<std::iter::Zip<<I as IntoIterator>::IntoIter, ShardIter<'a, W, D>>>:
+            Send,
+        for<'a> (
+            usize,
+            (
+                Arc<Vec<SigVal<S, V>>>,
+                <ShardIter<'a, W, D> as Iterator>::Item,
+            ),
+        ): Send,
     {
         // TODO: optimize for the non-parallel case
-        let (send, receive) =
-            crossbeam_channel::bounded::<(usize, D)>(2 * thread_pool.current_num_threads());
         main_pl
             .item_name("shard")
             .expected_updates(Some(self.shard_edge.num_shards()))
             .display_memory(true)
             .start("Solving shards...");
         self.failed.store(false, Ordering::Relaxed);
-        let result = thread_pool.scope(|scope| {
-            // This thread copies shard-local solutions to the global solution
-            scope.spawn(|_| {
-                for (shard_index, shard_data) in receive {
-                    #[cfg(not(feature = "vbuilder_no_data"))]
-                    shard_data.copy(
-                        0,
-                        data,
-                        shard_index * self.shard_edge.num_vertices(),
-                        self.shard_edge.num_vertices(),
-                    );
-                }
-            });
-
+        let result = thread_pool.scope(|_| {
             shard_iter
                 .into_iter()
+                .zip(data.try_chunks_mut(self.shard_edge.num_vertices()).unwrap())
                 .enumerate()
                 .par_bridge()
                 .try_for_each_with(
                     (main_pl.clone(), pl.clone()),
-                    |(main_pl, pl), (shard_index, shard)| {
+                    |(main_pl, pl), (shard_index, (shard, data))| {
                         main_pl.info(format_args!(
                             "Analyzing shard {}/{}...",
                             shard_index + 1,
@@ -439,33 +444,23 @@ impl<
                             return Err(SolveError::UnsolvableShard);
                         }
 
-                        solve_shard(
-                            self,
-                            shard_index,
-                            shard,
-                            new_data(self.bit_width, self.shard_edge.num_vertices()),
-                            pl,
-                        )
-                        .map_err(|_| {
-                            self.failed.store(true, Ordering::Relaxed);
-                            SolveError::UnsolvableShard
-                        })
-                        .map(|(shard_index, data)| {
-                            if !self.failed.load(Ordering::Relaxed) {
-                                send.send((shard_index, data)).unwrap();
-                                main_pl.info(format_args!(
-                                    "Completed shard {}/{}",
-                                    shard_index + 1,
-                                    self.shard_edge.num_shards()
-                                ));
-                                main_pl.update_and_display();
-                            }
-                        })
+                        solve_shard(self, shard_index, shard, data, pl)
+                            .map_err(|_| {
+                                self.failed.store(true, Ordering::Relaxed);
+                                SolveError::UnsolvableShard
+                            })
+                            .map(|shard_index| {
+                                if !self.failed.load(Ordering::Relaxed) {
+                                    main_pl.info(format_args!(
+                                        "Completed shard {}/{}",
+                                        shard_index + 1,
+                                        self.shard_edge.num_shards()
+                                    ));
+                                    main_pl.update_and_display();
+                                }
+                            })
                     },
                 )
-                .map(|_| {
-                    drop(send);
-                })
         });
 
         main_pl.done();
@@ -482,21 +477,21 @@ impl<
         &self,
         shard_index: usize,
         shard: &'a Vec<SigVal<S, V>>,
-        data: D,
+        data: Shard<'a, W, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<
-        (usize, D),
+        usize,
         (
             usize,
             &'a Vec<SigVal<S, V>>,
+            Shard<'a, W, D>,
             Vec<EdgeIndexSideSet>,
-            D,
             Vec<usize>,
         ),
     > {
         if self.failed.load(Ordering::Relaxed) {
-            return Err((shard_index, shard, vec![], data, vec![]));
+            return Err((shard_index, shard, data, vec![], vec![]));
         }
 
         let num_vertices = self.shard_edge.num_vertices();
@@ -517,7 +512,7 @@ impl<
         pl.done_with_count(shard.len());
 
         if self.failed.load(Ordering::Relaxed) {
-            return Err((shard_index, shard, edge_sets, data, vec![]));
+            return Err((shard_index, shard, data, edge_sets, vec![]));
         }
 
         pl.start(format!(
@@ -525,7 +520,7 @@ impl<
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
-        let mut stack = vec![0; num_vertices];
+        let mut stack = vec![0; num_vertices + 1];
         // Preload all vertices of degree one in the visit queue
         let mut top = 0;
         for v in 0..num_vertices {
@@ -579,7 +574,7 @@ impl<
                 stack.len(),
                 shard.len(),
             ));
-            return Err((shard_index, shard, edge_sets, data, stack));
+            return Err((shard_index, shard, data, edge_sets, stack));
         }
         pl.done_with_count(shard.len());
 
@@ -590,18 +585,18 @@ impl<
     ///
     /// This method might be called after a successful peeling procedure, or
     /// after a linear solver has been used to solve the remaining edges.
-    fn assign<V: ZeroCopy + Send + Sync>(
+    fn assign<'a, V: ZeroCopy + Send + Sync>(
         &self,
         shard_index: usize,
         shard: &Vec<SigVal<S, V>>,
-        mut data: D,
+        mut data: Shard<'a, W, D>,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         edge_sets: Vec<EdgeIndexSideSet>,
         mut stack: Vec<usize>,
         pl: &mut impl ProgressLog,
-    ) -> (usize, D) {
+    ) -> usize {
         if self.failed.load(Ordering::Relaxed) {
-            return (shard_index, data);
+            return shard_index;
         }
 
         pl.start(format!(
@@ -633,7 +628,7 @@ impl<
         }
         pl.done_with_count(shard.len());
 
-        (shard_index, data)
+        shard_index
     }
 
     /// Solve a shard of given index using lazy Gaussian elimination, and store
@@ -641,21 +636,21 @@ impl<
     ///
     /// Return the shard index and the data, in case of success, or `Err(())` in
     /// case of failure.
-    fn lge_shard<V: ZeroCopy + Send + Sync>(
+    fn lge_shard<'a, V: ZeroCopy + Send + Sync>(
         &self,
         shard_index: usize,
-        shard: &Vec<SigVal<S, V>>,
-        data: D,
+        shard: &'a Vec<SigVal<S, V>>,
+        data: Shard<'a, W, D>,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         pl: &mut impl ProgressLog,
-    ) -> Result<(usize, D), ()> {
+    ) -> Result<usize, ()> {
         // Let's try to peel first
         match self.peel_shard(shard_index, shard, data, get_val, pl) {
-            Ok((_, data)) => {
+            Ok(shard_index) => {
                 // Unlikely result, but we're happy if it happens
-                Ok((shard_index, data))
+                Ok(shard_index)
             }
-            Err((shard_index, shard, edge_sets, mut data, stack)) => {
+            Err((shard_index, shard, mut data, edge_sets, stack)) => {
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
                 // Likely result--we have solve the rest
                 pl.start(format!(
@@ -732,7 +727,11 @@ where
         keys: impl RewindableIoLender<T>,
         values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, Box<[W]>, S, E>> {
+    ) -> anyhow::Result<VFunc<T, W, Box<[W]>, S, E>>
+    where
+        for<'a> ShardIter<'a, W, Box<[W]>>: Send,
+        for<'a> Shard<'a, W, Box<[W]>>: Send,
+    {
         let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
         self.build_loop(keys, values, &get_val, new_data, pl)
@@ -753,7 +752,11 @@ where
         mut self,
         keys: impl RewindableIoLender<T>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>> {
+    ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>>
+    where
+        for<'a> ShardIter<'a, W, Box<[W]>>: Send,
+        for<'a> Shard<'a, W, Box<[W]>>: Send,
+    {
         let filter_mask = W::MAX;
         let get_val = |sig_val: &SigVal<S, ()>| sig_val.sig.sig_u64().cast();
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
@@ -860,6 +863,8 @@ impl<
     ) -> anyhow::Result<VFunc<T, W, D, S, E>>
     where
         SigVal<S, V>: RadixKey + Send + Sync,
+        for<'a> ShardIter<'a, W, D>: Send,
+        for<'a> <ShardIter<'a, W, D> as Iterator>::Item: Send,
     {
         let mut dup_count = 0;
         let start = Instant::now();
@@ -969,6 +974,8 @@ impl<
     ) -> anyhow::Result<VFunc<T, W, D, S, E>>
     where
         SigVal<S, V>: RadixKey + Send + Sync,
+        for<'a> ShardIter<'a, W, D>: Send,
+        for<'a> <ShardIter<'a, W, D> as Iterator>::Item: Send,
     {
         let mut max_value = W::ZERO;
 
@@ -1035,7 +1042,7 @@ impl<
             );
             #[cfg(feature = "vbuilder_no_data")]
             let data = new_data(self.bit_width, 0);
-            self.try_build_from_shard_iter(seed, data, shard_store.iter(), new_data, get_val, pl)
+            self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
                 .map_err(Into::into)
         }
     }
@@ -1057,7 +1064,6 @@ impl<
         seed: u64,
         mut data: D,
         shard_iter: I,
-        new: fn(usize, usize) -> D,
         get_val: &G,
         pl: &mut P,
     ) -> Result<VFunc<T, W, D, S, E>, SolveError>
@@ -1065,9 +1071,19 @@ impl<
         SigVal<S, V>: RadixKey,
         P: ProgressLog + Clone + Send + Sync,
         I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
+        for<'a> ShardIter<'a, W, D>: Send,
+        for<'a> std::iter::Enumerate<std::iter::Zip<<I as IntoIterator>::IntoIter, ShardIter<'a, W, D>>>:
+            Send,
+        for<'a> (
+            usize,
+            (
+                Arc<Vec<SigVal<S, V>>>,
+                <ShardIter<'a, W, D> as Iterator>::Item,
+            ),
+        ): Send,
     {
         let thread_pool = ThreadPoolBuilder::new()
-            .num_threads(self.shard_edge.num_shards().min(self.max_num_threads) + 1) // Or it might hang
+            .num_threads(self.shard_edge.num_shards().min(self.max_num_threads))
             .build()
             .unwrap(); // Seroiusly, it's not going to fail
 
@@ -1085,7 +1101,6 @@ impl<
             self.par_solve(
                 shard_iter,
                 &mut data,
-                new,
                 |this, shard_index, shard, data, pl| {
                     this.lge_shard(shard_index, shard, data, get_val, pl)
                 },
@@ -1097,7 +1112,6 @@ impl<
             self.par_solve(
                 shard_iter,
                 &mut data,
-                new,
                 |this, shard_index, shard, data, pl| {
                     this.peel_shard(shard_index, shard, data, get_val, pl)
                         .map_err(|_| ())
