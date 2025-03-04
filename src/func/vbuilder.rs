@@ -533,6 +533,11 @@ impl<
             }
         }
         let (mut pos, mut curr) = (0, 0);
+        // This array, indexed by the side, gives the other two sides
+        let other_side = [1, 2, 0, 1];
+        // This array will be loaded with the vertices corresponding to
+        // the sides in other_side
+        let mut other_vertex = [0; 4];
 
         while pos < stack.len() {
             let v = stack[pos];
@@ -546,39 +551,18 @@ impl<
             curr += 1;
 
             let e = self.shard_edge.local_edge(&shard[edge_index].sig);
-            // Remove edge from the lists of the other two vertices
-            match side {
-                0 => {
-                    edge_sets[e[1]].remove(edge_index, 1);
-                    if edge_sets[e[1]].degree() == 1 {
-                        stack.push(e[1]);
-                    }
-                    edge_sets[e[2]].remove(edge_index, 2);
-                    if edge_sets[e[2]].degree() == 1 {
-                        stack.push(e[2]);
-                    }
-                }
-                1 => {
-                    edge_sets[e[0]].remove(edge_index, 0);
-                    if edge_sets[e[0]].degree() == 1 {
-                        stack.push(e[0]);
-                    }
-                    edge_sets[e[2]].remove(edge_index, 2);
-                    if edge_sets[e[2]].degree() == 1 {
-                        stack.push(e[2]);
-                    }
-                }
-                2 => {
-                    edge_sets[e[0]].remove(edge_index, 0);
-                    if edge_sets[e[0]].degree() == 1 {
-                        stack.push(e[0]);
-                    }
-                    edge_sets[e[1]].remove(edge_index, 1);
-                    if edge_sets[e[1]].degree() == 1 {
-                        stack.push(e[1]);
-                    }
-                }
-                _ => unreachable!("{}", side),
+
+            (other_vertex[0], other_vertex[1]) = (e[1], e[2]);
+            (other_vertex[2], other_vertex[3]) = (e[0], e[1]);
+
+            edge_sets[other_vertex[side]].remove(edge_index, other_side[side]);
+            if edge_sets[other_vertex[side]].degree() == 1 {
+                stack.push(other_vertex[side]);
+            }
+
+            edge_sets[other_vertex[side + 1]].remove(edge_index, other_side[side + 1]);
+            if edge_sets[other_vertex[side + 1]].degree() == 1 {
+                stack.push(other_vertex[side + 1]);
             }
         }
         debug_assert!(stack.len() <= num_vertices);
