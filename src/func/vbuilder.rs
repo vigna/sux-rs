@@ -525,11 +525,13 @@ impl<
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
-        let mut stack = Vec::with_capacity(num_vertices);
+        let mut stack = vec![0; num_vertices];
         // Preload all vertices of degree one in the visit queue
+        let mut top = 0;
         for v in 0..num_vertices {
+            stack[top] = v;
             if edge_sets[v].degree() == 1 {
-                stack.push(v);
+                top += 1;
             }
         }
         let (mut pos, mut curr) = (0, 0);
@@ -539,7 +541,7 @@ impl<
         // the sides in other_side
         let mut other_vertex = [0; 4];
 
-        while pos < stack.len() {
+        while pos < top {
             let v = stack[pos];
             pos += 1;
             if edge_sets[v].degree() == 0 {
@@ -556,16 +558,18 @@ impl<
             (other_vertex[2], other_vertex[3]) = (e[0], e[1]);
 
             edge_sets[other_vertex[side]].remove(edge_index, other_side[side]);
+            stack[top] = other_vertex[side];
             if edge_sets[other_vertex[side]].degree() == 1 {
-                stack.push(other_vertex[side]);
+                top += 1;
             }
 
             edge_sets[other_vertex[side + 1]].remove(edge_index, other_side[side + 1]);
+            stack[top] = other_vertex[side + 1];
             if edge_sets[other_vertex[side + 1]].degree() == 1 {
-                stack.push(other_vertex[side + 1]);
+                top += 1;
             }
         }
-        debug_assert!(stack.len() <= num_vertices);
+        debug_assert!(top <= num_vertices);
         stack.truncate(curr);
         if shard.len() != stack.len() {
             pl.info(format_args!(
