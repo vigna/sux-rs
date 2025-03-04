@@ -269,6 +269,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 /// This struct is created by the
 /// [`try_chunks_mut`](#impl-BitFieldSliceMut-for-BitFieldVec) method.
 pub struct ChunksMut<'a, W: Word> {
+    remaining: usize,
     bit_width: usize,
     chunk_size: usize,
     iter: std::slice::ChunksMut<'a, W>,
@@ -279,8 +280,11 @@ impl<'a, W: Word> Iterator for ChunksMut<'a, W> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|chunk| unsafe {
-            BitFieldVec::from_raw_parts(chunk, self.bit_width, self.chunk_size)
+        self.iter.next().map(|chunk| {
+            let size = Ord::min(self.chunk_size, self.remaining);
+            let next = unsafe { BitFieldVec::from_raw_parts(chunk, self.bit_width, size) };
+            self.remaining -= size;
+            next
         })
     }
 }
@@ -772,24 +776,30 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
         *self.bits.as_mut().get_unchecked_mut(last_word_idx) = write_buffer;
     }
 
+    type ChunksMut<'a>
+        = ChunksMut<'a, W>
+    where
+        Self: 'a;
+
     /// # Errors
     ///
     /// This method will return an error if the chunk size multiplied by the by
     /// the [bit width](BitFieldSliceCore::bit_width) is not a multiple of
-    /// `W::BITS`.
-    fn try_chunks_mut(&mut self, chunk_size: usize) -> Result<impl Iterator<Item: BitFieldSliceMut<W>>, ()> {
-        return if (chunk_size * self.bit_width) % W::BITS != 0 {
-            Err(())
-        } else {
+    /// `W::BITS` and more than one chunk must be returned.
+    fn try_chunks_mut(&mut self, chunk_size: usize) -> Result<Self::ChunksMut<'_>, ()> {
+        let len = self.len();
+        let bit_width = self.bit_width();
+        if len <= chunk_size || (chunk_size * bit_width) % W::BITS == 0 {
             Ok(ChunksMut {
+                remaining: len,
                 bit_width: self.bit_width,
                 chunk_size,
-                iter: self
-                    .bits
-                    .as_mut()
-                    .chunks_mut((chunk_size * self.bit_width) / W::BITS),
+                iter: self.bits.as_mut()[..(len * bit_width).div_ceil(W::BITS)]
+                    .chunks_mut((chunk_size * bit_width).div_ceil(W::BITS)),
             })
-        };
+        } else {
+            Err(())
+        }
     }
 }
 

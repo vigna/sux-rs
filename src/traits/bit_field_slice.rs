@@ -286,6 +286,10 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> {
         }
     }
 
+    type ChunksMut<'a>: Iterator<Item: BitFieldSliceMut<W>>
+    where
+        Self: 'a;
+
     /// Tries and returns an iterator over non-overlapping mutable chunks of a
     /// bit-field slice, starting at the beginning of the slice.
     ///
@@ -310,10 +314,7 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> {
     /// # Ok(())
     /// # }
     /// ```
-    fn try_chunks_mut(
-        &mut self,
-        chunk_size: usize,
-    ) -> Result<impl Iterator<Item: BitFieldSliceMut<W>>, ()>;
+    fn try_chunks_mut(&mut self, chunk_size: usize) -> Result<Self::ChunksMut<'_>, ()>;
 }
 
 /// A (tentatively) thread-safe slice of bit fields of constant bit width supporting atomic operations.
@@ -473,7 +474,9 @@ macro_rules! impl_mut {
                 dst.as_mut()[to..][..len].copy_from_slice(&self.as_ref()[from..][..len]);
             }
 
-            fn try_chunks_mut(&mut self, chunk_size: usize) -> Result<impl Iterator<Item: BitFieldSliceMut<$ty>>, ()> {
+            type ChunksMut<'a> = std::slice::ChunksMut<'a, $ty> where Self: 'a;
+
+            fn try_chunks_mut(&mut self, chunk_size: usize) -> Result<Self::ChunksMut<'_>, ()> {
                 Ok(self.as_mut().chunks_mut(chunk_size))
             }
         }

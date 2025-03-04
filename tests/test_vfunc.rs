@@ -52,7 +52,7 @@ fn test_vfunc() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let func = VBuilder::<_, Box<[_]>, [u64; 2], Fuse3Shards>::default()
+            let func = VBuilder::<usize, Box<[usize]>, [u64; 2], Fuse3Shards>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .try_build_func(

@@ -577,3 +577,25 @@ fn test_slice_atomic() {
     atomic_slice_eq(b.as_slice(), v.as_slice());
     assert_eq!(b.get_atomic(21, Ordering::Relaxed), 4);
 }
+
+#[test]
+fn test_try_chunks_mut() {
+    let mut b = bit_field_vec![7 => 1; 10];
+    assert!(b.try_chunks_mut(9).is_err());
+    assert_eq!(
+        b.try_chunks_mut(10).unwrap().next().unwrap(),
+        bit_field_vec![7 => 1; 10]
+    );
+    assert_eq!(
+        b.try_chunks_mut(11).unwrap().next().unwrap(),
+        bit_field_vec![7 => 1; 10]
+    );
+
+    let mut b = bit_field_vec![16 => 1; 10];
+    assert!(b.try_chunks_mut(3).is_err());
+    let mut iter = b.try_chunks_mut(4).unwrap();
+    assert_eq!(iter.next().unwrap(), bit_field_vec![16 => 1; 4]);
+    assert_eq!(iter.next().unwrap(), bit_field_vec![16 => 1; 4]);
+    assert_eq!(iter.next().unwrap(), bit_field_vec![16 => 1; 2]);
+    assert!(iter.next().is_none());
+}
