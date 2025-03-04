@@ -168,7 +168,7 @@ impl EdgeIndexSideSet {
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use sux::func::vbuild::VBuilder;
+/// use sux::func::vbuilder::VBuilder;
 /// use dsi_progress_logger::no_logging;
 /// use sux::utils::FromIntoIterator;
 ///
@@ -187,12 +187,12 @@ impl EdgeIndexSideSet {
 /// # }
 /// ```
 ///
-/// Alternatively we can use the bitfield vector backend, that will use
+/// Alternatively we can use the bit-field vector backend, that will use
 /// ⌈log₂(99)⌉ bits per element:
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use sux::func::vbuild::VBuilder;
+/// use sux::func::vbuilder::VBuilder;
 /// use dsi_progress_logger::no_logging;
 /// use sux::utils::FromIntoIterator;
 /// use sux::bits::BitFieldVec;
@@ -216,7 +216,7 @@ impl EdgeIndexSideSet {
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use sux::func::vbuild::VBuilder;
+/// use sux::func::vbuilder::VBuilder;
 /// use dsi_progress_logger::no_logging;
 /// use sux::utils::FromIntoIterator;
 ///
@@ -772,10 +772,10 @@ where
     }
 }
 
-/// Builds a new function using a [bitfield vector](BitFieldVec) on words of
+/// Builds a new function using a [bit-field vector](BitFieldVec) on words of
 /// type `W` to store values.
 ///
-/// Since values are stored in a bitfield vector, access will be slower than
+/// Since values are stored in a bit-field vector, access will be slower than
 /// when using a boxed slice, but the bit width of stored values will be the
 /// minimum necessary. It must be in any case at most the bit width of `W`.
 ///
@@ -797,10 +797,10 @@ where
     }
 }
 
-/// Builds a new filter using a [bitfield vector](BitFieldVec) on words of type
+/// Builds a new filter using a [bit-field vector](BitFieldVec) on words of type
 /// `W` to store values.
 ///
-/// Since values are stored in a bitfield vector, access will be slower than
+/// Since values are stored in a bit-field vector, access will be slower than
 /// when using a boxed slice, but the signature bits can be set at will. They
 /// They must be in any case at most the bit width of `W`.
 ///
