@@ -285,6 +285,35 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> {
             });
         }
     }
+
+    /// Tries and returns an iterator over non-overlapping mutable chunks of a
+    /// bit-field slice, starting at the beginning of the slice.
+    ///
+    /// This might not always be possible; implementations must document when
+    /// the method will success (see, for example, [the implementation for
+    /// `BitFieldVec`](#impl-BitFieldSliceMut-for-BitFieldVec)).
+    ///
+    /// When the slice len is not evenly divided by the chunk size, the last
+    /// chunk of the iteration will be the remainder.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # fn main() -> Result<(), ()> {
+    /// use sux::prelude::*;
+    ///
+    /// let mut b = bit_field_vec![32; 4, 500, 2, 3, 1];
+    /// for mut c in b.try_chunks_mut(2)? {
+    ///     c.set(0, 5);
+    /// }
+    /// assert_eq!(b, bit_field_vec![32; 5, 500, 5, 3, 5]);
+    /// # Ok(())
+    /// # }
+    /// ```
+    fn try_chunks_mut(
+        &mut self,
+        chunk_size: usize,
+    ) -> Result<impl Iterator<Item: BitFieldSliceMut<W>>, ()>;
 }
 
 /// A (tentatively) thread-safe slice of bit fields of constant bit width supporting atomic operations.
@@ -442,6 +471,10 @@ macro_rules! impl_mut {
             fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
                 let len = Ord::min(Ord::min(len, dst.len() - to), self.len() - from);
                 dst.as_mut()[to..][..len].copy_from_slice(&self.as_ref()[from..][..len]);
+            }
+
+            fn try_chunks_mut(&mut self, chunk_size: usize) -> Result<impl Iterator<Item: BitFieldSliceMut<$ty>>, ()> {
+                Ok(self.as_mut().chunks_mut(chunk_size))
             }
         }
     )*};
