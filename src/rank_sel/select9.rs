@@ -160,7 +160,7 @@ impl<R: BitLength, I> Select9<R, I> {
 impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>, Box<[usize]>> {
     pub fn new(rank9: Rank9<B, C>) -> Self {
         let num_bits = rank9.len();
-        let num_words = (num_bits + 63) / 64;
+        let num_words = num_bits.div_ceil(64);
         let inventory_size = rank9.num_ones().div_ceil(Self::ONES_PER_INVENTORY);
 
         let u64_per_subinventory = 4;

@@ -474,6 +474,11 @@ impl RearCodedListBuilder {
         }
     }
 
+    /// Returns the number of strings in the list.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
     /// Appends a string to the end of the list.
     pub fn push(&mut self, string: impl AsRef<str>) {
         let string = string.as_ref();

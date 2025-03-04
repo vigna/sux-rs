@@ -21,7 +21,7 @@
 //! - `BitFieldVec<AsRef<[W]>>`: an immutable bit-field vector, useful for
 //!   [ε-serde](epserde) support;
 //! - `BitFieldVec<AsRef<[W]> + AsMut<[W]>>`: a mutable (but not resizable) bit
-//!    vector;
+//!   vector;
 //! - `AtomicBitFieldVec<AsRef<[A]>>`: a partially thread-safe, mutable (but not
 //!   resizable) bit-field vector.
 //!
