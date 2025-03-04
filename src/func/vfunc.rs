@@ -472,20 +472,22 @@ impl Fuse3Shards {
 
     /// In this implementation, which is common to the sharded and non-sharded
     /// implementations:
-    /// - the `shard_high_bits` most significant bits of the first component are
-    ///   used to select a shard;
-    /// - the following 32 bits of the first component are used to select the first
-    ///   segment using fixed-point arithmetic;
-    /// - the lower 32 bits of first component are used to select the first vertex;
-    /// - the upper 32 bits of the second component are used to select the second
+    /// - the `shard_high_bits()` most significant bits of the first component
+    ///   are used to select a shard;
+    /// - the next bit is not used
+    /// - the following 32 bits of the first component are used to select the
+    ///   first segment using fixed-point arithmetic;
+    /// - the lower 32 bits of first component are used to select the first
     ///   vertex;
+    /// - the upper 32 bits of the second component are used to select the
+    ///   second vertex;
     /// - the lower 32 bits of the second component are used to select the third
     ///   vertex.
     ///
-    /// Note that the lower `shard_high_bits` of the bits used to select the first
-    /// segment are the same as the upper `shard_high_bits` of the bits used to
-    /// select the first segment, but being the result mostly sensitive to the high
-    /// bits, this is not a problem.
+    /// Note that the lower `shard_high_bits()` + 1 of the bits used to select
+    /// the first segment are the same as the upper `shard_high_bits()` of the
+    /// bits used to select the first element of the edge, but being the result
+    /// mostly sensitive to the high bits, this is not a problem.
     #[inline(always)]
     fn _edge_2(
         shard: usize,
@@ -494,6 +496,10 @@ impl Fuse3Shards {
         l: u32,
         sig: &[u64; 2],
     ) -> [usize; 3] {
+        // Note that we're losing here a random bit at the bottom because we
+        // would need a right rotation of one to move exactly the shard high
+        // bits to the bottom, but in this way we save an operation, and there
+        // are enough random bits anyway.
         let first_segment = (((sig[0].rotate_right(shard_bits_shift) >> 32) * l as u64) >> 32) as usize;
         let shard_offset = shard * ((l as usize + 2) << log2_seg_size);
         let start = shard_offset + (first_segment << log2_seg_size);
@@ -509,18 +515,14 @@ impl Fuse3Shards {
 
     /// In this implementation, which is common to the sharded and non-sharded
     /// implementations:
-    /// - the `shard_high_bits` most significant bits of the two 32-bit halves XOR'd
-    ///   together are used to select a shard;
-    /// - the two 32-bit halves XOR'd together and rotated to the left by
-    ///   `shard_high_bits` are used to select the first segment using fixed-point
+    /// - the `shard_high_bits()` most significant bits are used to select a
+    ///   shard;
+    /// - the two 32-bit halves XOR'd together and mixed with a multiplication
+    ///   by a constant are used to select the first segment using fixed-point
     ///   arithmetic;
     /// - the lower 21 bits are used to select the first vertex;
     /// - the next 21 bits are used to select the second vertex;
     /// - the next 21 bits are used to select the third vertex.
-    ///
-    /// Note that the lower `shard_high_bits` of the bits used to select the first
-    /// segment are the same as the bits used to select the shard, but being the
-    /// result mostly sensitive to the high bits, this is not a problem.
     #[inline(always)]
     fn _edge_1(
         shard: usize,
@@ -596,7 +598,6 @@ impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
 
     #[inline(always)]
     fn shard(&self, sig: &[u64; 2]) -> usize {
-        // This must work even when shard_high_bits is zero
         (sig[0] >> self.shard_bits_shift >> 1) as usize
     }
 
@@ -638,7 +639,6 @@ impl ShardEdge<[u64; 1], 3> for Fuse3Shards {
 
     #[inline(always)]
     fn shard(&self, sig: &[u64; 1]) -> usize {
-        // This must work even when shard_high_bits is zero
         (sig[0] >> self.shard_bits_shift >> 1) as usize
     }
 
