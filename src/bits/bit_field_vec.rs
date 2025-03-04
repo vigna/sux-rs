@@ -266,8 +266,8 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 /// When the vector len is not evenly divided by the chunk size, the last chunk
 /// of the iteration will be shorter.
 ///
-/// This struct is created by the [`chunks_mut`](BitFieldVec::chunks_mut)
-/// method.
+/// This struct is created by the
+/// [`try_chunks_mut`](#impl-BitFieldSliceMut-for-BitFieldVec) method.
 pub struct ChunksMut<'a, W: Word> {
     bit_width: usize,
     chunk_size: usize,
@@ -289,41 +289,6 @@ impl<W: Word, B: AsMut<[W]>> BitFieldVec<W, B> {
     /// Returns the backend of the vector as a mutable slice of `W`.
     pub fn as_mut_slice(&mut self) -> &mut [W] {
         self.bits.as_mut()
-    }
-
-    /// Returns an [iterator over non-overlapping mutable chunks](ChunksMut) of
-    /// a bit-field vector, starting at the beginning of the vector.
-    /// 
-    /// This is possible only if the chunk size multiplied by the [bit
-    /// width](BitFieldSliceCore::bit_width) is a multiple of `W::BITS`, as in
-    /// that case there are no elements spanning two twords.
-    ///
-    /// When the vector len is not evenly divided by the chunk size, the last
-    /// chunk of the iteration will be the remainder.
-    /// 
-    /// # Panics
-    /// 
-    /// This method will panic if the chunk size multiplied by the by the [bit
-    /// width](BitFieldSliceCore::bit_width) is not a multiple of `W::BITS`.
-    /// 
-    /// # Examples
-    ///
-    /// ```
-    /// use sux::prelude::*;
-    /// 
-    /// let mut b = bit_field_vec![32; 4, 500, 2, 3, 1];
-    /// for mut c in b.chunks_mut(2) {
-    ///     c.set(0, 5);
-    /// }
-    /// assert_eq!(b, bit_field_vec![32; 5, 500, 5, 3, 5]);
-    /// ```
-    pub fn chunks_mut(&mut self, chunk_size: usize) -> ChunksMut<'_, W> {
-        assert!((chunk_size * self.bit_width) % W::BITS == 0);
-        ChunksMut {
-            bit_width: self.bit_width,
-            chunk_size,
-            iter: self.bits.as_mut().chunks_mut((chunk_size * self.bit_width) / W::BITS),
-        }
     }
 }
 
@@ -805,6 +770,26 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
         }
 
         *self.bits.as_mut().get_unchecked_mut(last_word_idx) = write_buffer;
+    }
+
+    /// # Errors
+    ///
+    /// This method will return an error if the chunk size multiplied by the by
+    /// the [bit width](BitFieldSliceCore::bit_width) is not a multiple of
+    /// `W::BITS`.
+    fn try_chunks_mut(&mut self, chunk_size: usize) -> Result<impl Iterator<Item: BitFieldSliceMut<W>>, ()> {
+        return if (chunk_size * self.bit_width) % W::BITS != 0 {
+            Err(())
+        } else {
+            Ok(ChunksMut {
+                bit_width: self.bit_width,
+                chunk_size,
+                iter: self
+                    .bits
+                    .as_mut()
+                    .chunks_mut((chunk_size * self.bit_width) / W::BITS),
+            })
+        };
     }
 }
 
