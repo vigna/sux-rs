@@ -230,6 +230,9 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
 
     fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
         self.seg_size = ((max_shard as f64 * 1.23) / 3.).ceil() as usize;
+        if self.shard_high_bits() != 0 {
+            self.seg_size = self.seg_size.next_multiple_of(64);
+        }
         (1.23, false)
     }
 
