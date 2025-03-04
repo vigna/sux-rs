@@ -146,12 +146,12 @@ impl EdgeIndexSideSet {
 /// of keys, so the memory usage, in particular in offline mode, can be
 /// significantly reduced. Note that using too many threads might actually be
 /// harmful due to memory contention.
-/// 
+///
 /// The generic parameters are explained in the [`VFunc`] documentation. You
 /// have to choose the type of the output values and the backend. The remaining
 /// parameters have default values that are the same as those of
 /// [`VFunc`]/[`VFilter`].
-/// 
+///
 /// All construction methods require to pass one or two [`RewindableIoLender`],
 /// and the construction might fail and keys might be scanned again. The
 /// structures in the [`lenders`] modules provide easy ways to build such
@@ -189,7 +189,7 @@ impl EdgeIndexSideSet {
 ///
 /// Alternatively we can use the bitfield vector backend, that will use
 /// ⌈log₂(99)⌉ bits per element:
-/// 
+///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use sux::func::vbuild::VBuilder;
@@ -211,7 +211,7 @@ impl EdgeIndexSideSet {
 /// #     Ok(())
 /// # }
 /// ```
-/// 
+///
 /// We now try to build a filter for the same key set:
 ///
 /// ```rust
@@ -243,7 +243,7 @@ pub struct VBuilder<
     E: ShardEdge<S, 3> = Fuse3Shards,
 > {
     /// The expected number of keys.
-    /// 
+    ///
     /// While this setter is optional, setting this value to a reasonable bound
     /// on the actual number of keys will significantly speed up the
     /// construction.
@@ -499,22 +499,25 @@ impl<
             return Err((shard_index, shard, vec![], data, vec![]));
         }
 
+        let num_vertices = self.shard_edge.num_vertices();
+
         pl.start(format!(
             "Generating graph for shard {}/{}...",
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
-        let mut edge_lists = Vec::new();
-        edge_lists.resize_with(self.shard_edge.num_vertices(), EdgeIndexSideSet::default);
-        shard.iter().enumerate().for_each(|(edge_index, sig_val)| {
+
+        let mut edge_sets = Vec::new();
+        edge_sets.resize_with(num_vertices, EdgeIndexSideSet::default);
+        for (edge_index, sig_val) in shard.iter().enumerate() {
             for (side, &v) in self.shard_edge.local_edge(&sig_val.sig).iter().enumerate() {
-                edge_lists[v].add(edge_index, side);
+                edge_sets[v].add(edge_index, side);
             }
-        });
+        }
         pl.done_with_count(shard.len());
 
         if self.failed.load(Ordering::Relaxed) {
-            return Err((shard_index, shard, edge_lists, data, vec![]));
+            return Err((shard_index, shard, edge_sets, data, vec![]));
         }
 
         pl.start(format!(
@@ -522,64 +525,64 @@ impl<
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
-        let mut stack = Vec::new();
-        // Breadth-first visit in reverse order TODO: check if this is the best order
-        for v in (0..self.shard_edge.num_vertices()).rev() {
-            if edge_lists[v].degree() != 1 {
+        let mut stack = Vec::with_capacity(num_vertices);
+        // Preload all vertices of degree one in the visit queue
+        for v in 0..num_vertices {
+            if edge_sets[v].degree() == 1 {
+                stack.push(v);
+            }
+        }
+        let (mut pos, mut curr) = (0, 0);
+
+        while pos < stack.len() {
+            let v = stack[pos];
+            pos += 1;
+            if edge_sets[v].degree() == 0 {
                 continue;
             }
-            let mut pos = stack.len();
-            let mut curr = stack.len();
-            stack.push(v);
-            while pos < stack.len() {
-                let v = stack[pos];
-                pos += 1;
-                if edge_lists[v].degree() == 0 {
-                    continue; // Skip no longer useful entries
-                }
-                let (edge_index, side) = edge_lists[v].edge_index_and_side();
-                edge_lists[v].zero();
-                stack[curr] = v;
-                curr += 1;
+            let (edge_index, side) = edge_sets[v].edge_index_and_side();
+            edge_sets[v].zero();
+            stack[curr] = v;
+            curr += 1;
 
-                let e = self.shard_edge.local_edge(&shard[edge_index].sig);
-                // Remove edge from the lists of the other two vertices
-                match side {
-                    0 => {
-                        edge_lists[e[1]].remove(edge_index, 1);
-                        if edge_lists[e[1]].degree() == 1 {
-                            stack.push(e[1]);
-                        }
-                        edge_lists[e[2]].remove(edge_index, 2);
-                        if edge_lists[e[2]].degree() == 1 {
-                            stack.push(e[2]);
-                        }
+            let e = self.shard_edge.local_edge(&shard[edge_index].sig);
+            // Remove edge from the lists of the other two vertices
+            match side {
+                0 => {
+                    edge_sets[e[1]].remove(edge_index, 1);
+                    if edge_sets[e[1]].degree() == 1 {
+                        stack.push(e[1]);
                     }
-                    1 => {
-                        edge_lists[e[0]].remove(edge_index, 0);
-                        if edge_lists[e[0]].degree() == 1 {
-                            stack.push(e[0]);
-                        }
-                        edge_lists[e[2]].remove(edge_index, 2);
-                        if edge_lists[e[2]].degree() == 1 {
-                            stack.push(e[2]);
-                        }
+                    edge_sets[e[2]].remove(edge_index, 2);
+                    if edge_sets[e[2]].degree() == 1 {
+                        stack.push(e[2]);
                     }
-                    2 => {
-                        edge_lists[e[0]].remove(edge_index, 0);
-                        if edge_lists[e[0]].degree() == 1 {
-                            stack.push(e[0]);
-                        }
-                        edge_lists[e[1]].remove(edge_index, 1);
-                        if edge_lists[e[1]].degree() == 1 {
-                            stack.push(e[1]);
-                        }
-                    }
-                    _ => unreachable!("{}", side),
                 }
+                1 => {
+                    edge_sets[e[0]].remove(edge_index, 0);
+                    if edge_sets[e[0]].degree() == 1 {
+                        stack.push(e[0]);
+                    }
+                    edge_sets[e[2]].remove(edge_index, 2);
+                    if edge_sets[e[2]].degree() == 1 {
+                        stack.push(e[2]);
+                    }
+                }
+                2 => {
+                    edge_sets[e[0]].remove(edge_index, 0);
+                    if edge_sets[e[0]].degree() == 1 {
+                        stack.push(e[0]);
+                    }
+                    edge_sets[e[1]].remove(edge_index, 1);
+                    if edge_sets[e[1]].degree() == 1 {
+                        stack.push(e[1]);
+                    }
+                }
+                _ => unreachable!("{}", side),
             }
-            stack.truncate(curr);
         }
+        debug_assert!(stack.len() <= num_vertices);
+        stack.truncate(curr);
         if shard.len() != stack.len() {
             pl.info(format_args!(
                 "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
@@ -588,11 +591,11 @@ impl<
                 stack.len(),
                 shard.len(),
             ));
-            return Err((shard_index, shard, edge_lists, data, stack));
+            return Err((shard_index, shard, edge_sets, data, stack));
         }
         pl.done_with_count(shard.len());
 
-        Ok(self.assign(shard_index, shard, data, get_val, edge_lists, stack, pl))
+        Ok(self.assign(shard_index, shard, data, get_val, edge_sets, stack, pl))
     }
 
     /// Perform assignment of values based on peeling data.
@@ -605,7 +608,7 @@ impl<
         shard: &Vec<SigVal<S, V>>,
         mut data: D,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
-        edge_lists: Vec<EdgeIndexSideSet>,
+        edge_sets: Vec<EdgeIndexSideSet>,
         mut stack: Vec<usize>,
         pl: &mut impl ProgressLog,
     ) -> (usize, D) {
@@ -620,10 +623,10 @@ impl<
         ));
         while let Some(v) = stack.pop() {
             // Assignments after linear solving must skip unpeeled edges
-            if edge_lists[v].degree() != 0 {
+            if edge_sets[v].degree() != 0 {
                 continue;
             }
-            let (edge_index, side) = edge_lists[v].edge_index_and_side();
+            let (edge_index, side) = edge_sets[v].edge_index_and_side();
             let edge = self.shard_edge.local_edge(&shard[edge_index].sig);
             unsafe {
                 let value = match side {
@@ -664,7 +667,7 @@ impl<
                 // Unlikely result, but we're happy if it happens
                 Ok((shard_index, data))
             }
-            Err((shard_index, shard, edge_lists, mut data, stack)) => {
+            Err((shard_index, shard, edge_sets, mut data, stack)) => {
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
                 // Likely result--we have solve the rest
                 pl.start(format!(
@@ -677,9 +680,9 @@ impl<
                 let mut unpeeled = bit_vec![true; shard.len()];
                 stack
                     .iter()
-                    .filter(|&v| edge_lists[*v].degree() == 0)
+                    .filter(|&v| edge_sets[*v].degree() == 0)
                     .for_each(|&v| {
-                        unpeeled.set(edge_lists[v].edge_index_and_side().0, false);
+                        unpeeled.set(edge_sets[v].edge_index_and_side().0, false);
                     });
                 let unpeeled = Rank9::new(unpeeled);
 
@@ -721,7 +724,7 @@ impl<
                     data.set(v, value);
                 }
 
-                Ok(self.assign(shard_index, shard, data, get_val, edge_lists, stack, pl))
+                Ok(self.assign(shard_index, shard, data, get_val, edge_sets, stack, pl))
             }
         }
     }
@@ -1172,19 +1175,19 @@ mod tests {
 
         let num_vertices = (l + 2) << log2_seg_size;
 
-        let mut edge_lists = Vec::new();
-        edge_lists.resize_with(num_vertices, EdgeIndexSideSet::default);
+        let mut edge_sets = Vec::new();
+        edge_sets.resize_with(num_vertices, EdgeIndexSideSet::default);
 
         for i in 0..n {
             for (side, &v) in edge(l, log2_seg_size, &sig(i, seed)).iter().enumerate() {
-                edge_lists[v].add(i, side);
+                edge_sets[v].add(i, side);
             }
         }
 
         let mut stack = Vec::new();
         // Breadth-first visit in reverse order TODO: check if this is the best order
         for v in (0..num_vertices).rev() {
-            if edge_lists[v].degree() != 1 {
+            if edge_sets[v].degree() != 1 {
                 continue;
             }
             let mut pos = stack.len();
@@ -1193,11 +1196,11 @@ mod tests {
             while pos < stack.len() {
                 let v = stack[pos];
                 pos += 1;
-                if edge_lists[v].degree() == 0 {
+                if edge_sets[v].degree() == 0 {
                     continue; // Skip no longer useful entries
                 }
-                let (edge_index, side) = edge_lists[v].edge_index_and_side();
-                edge_lists[v].zero();
+                let (edge_index, side) = edge_sets[v].edge_index_and_side();
+                edge_sets[v].zero();
                 stack[curr] = v;
                 curr += 1;
 
@@ -1205,32 +1208,32 @@ mod tests {
                 // Remove edge from the lists of the other two vertices
                 match side {
                     0 => {
-                        edge_lists[e[1]].remove(edge_index, 1);
-                        if edge_lists[e[1]].degree() == 1 {
+                        edge_sets[e[1]].remove(edge_index, 1);
+                        if edge_sets[e[1]].degree() == 1 {
                             stack.push(e[1]);
                         }
-                        edge_lists[e[2]].remove(edge_index, 2);
-                        if edge_lists[e[2]].degree() == 1 {
+                        edge_sets[e[2]].remove(edge_index, 2);
+                        if edge_sets[e[2]].degree() == 1 {
                             stack.push(e[2]);
                         }
                     }
                     1 => {
-                        edge_lists[e[0]].remove(edge_index, 0);
-                        if edge_lists[e[0]].degree() == 1 {
+                        edge_sets[e[0]].remove(edge_index, 0);
+                        if edge_sets[e[0]].degree() == 1 {
                             stack.push(e[0]);
                         }
-                        edge_lists[e[2]].remove(edge_index, 2);
-                        if edge_lists[e[2]].degree() == 1 {
+                        edge_sets[e[2]].remove(edge_index, 2);
+                        if edge_sets[e[2]].degree() == 1 {
                             stack.push(e[2]);
                         }
                     }
                     2 => {
-                        edge_lists[e[0]].remove(edge_index, 0);
-                        if edge_lists[e[0]].degree() == 1 {
+                        edge_sets[e[0]].remove(edge_index, 0);
+                        if edge_sets[e[0]].degree() == 1 {
                             stack.push(e[0]);
                         }
-                        edge_lists[e[1]].remove(edge_index, 1);
-                        if edge_lists[e[1]].degree() == 1 {
+                        edge_sets[e[1]].remove(edge_index, 1);
+                        if edge_sets[e[1]].degree() == 1 {
                             stack.push(e[1]);
                         }
                     }

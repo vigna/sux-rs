@@ -50,7 +50,7 @@ use zstd::Decoder;
 ///
 /// Additionally, this trait is implemented on [`lender::Take`], so you can call
 /// `take` on a rewindable lender and obtain again a rewindable lender.
-/// 
+///
 /// [`LineLender`] is an implementation reading lines from a file, but you can
 /// turn any clonable [`IntoIterator`] into a rewindable lender with
 /// [`FromIntoIterator`].

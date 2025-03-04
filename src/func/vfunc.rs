@@ -25,7 +25,7 @@ use std::ops::Index;
 /// [`VBuilder`](crate::func::VBuilder) and can be serialized using
 /// [ε-serde](`epserde`). Please see the documentation of
 /// [`VBuilder`](crate::func::VBuilder) for examples.
-/// 
+///
 /// # Generics
 ///
 /// * `T`: The type of the keys.
@@ -38,7 +38,7 @@ use std::ops::Index;
 ///        data is stored `W`, thus limiting the number of bits to the number of
 ///        bits of `W`, but access will be faster.
 /// * `S`: The signature type. The default is `[u64; 2]`. You can switch
-///        to `[u64; 1]` for slightly faster construction and queries, but 
+///        to `[u64; 1]` for slightly faster construction and queries, but
 ///        the construction will not scale beyond a billion keys or so.
 /// * `E`: The sharding and edge logic type. The default is [`Fuse3Shards`].
 ///        For small sets of keys you might try [`Fuse3NoShards`].
@@ -362,7 +362,7 @@ impl Display for Fuse3Shards {
         write!(
             f,
             "Fuse (shards) Number of shards: 2^{} Segment size: 2^{} Number of segments: {}",
-            ShardEdge::<[u64;1], 3>::shard_high_bits(self),
+            ShardEdge::<[u64; 1], 3>::shard_high_bits(self),
             self.log2_seg_size,
             self.l + 2
         )
@@ -500,7 +500,8 @@ impl Fuse3Shards {
         // would need a right rotation of one to move exactly the shard high
         // bits to the bottom, but in this way we save an operation, and there
         // are enough random bits anyway.
-        let first_segment = (((sig[0].rotate_right(shard_bits_shift) >> 32) * l as u64) >> 32) as usize;
+        let first_segment =
+            (((sig[0].rotate_right(shard_bits_shift) >> 32) * l as u64) >> 32) as usize;
         let shard_offset = shard * ((l as usize + 2) << log2_seg_size);
         let start = shard_offset + (first_segment << log2_seg_size);
         let segment_size = 1 << log2_seg_size;
@@ -547,16 +548,17 @@ impl Fuse3Shards {
     }
 
     fn _set_up_shards(&mut self, n: usize) {
-        self.shard_bits_shift = 63 - if n <= Self::MAX_LIN_SIZE {
-            // We just try to make shards as big as possible,
-            // within a maximum size of 2 * MAX_LIN_SHARD_SIZE
-            (n / Self::HALF_MAX_LIN_SHARD_SIZE).max(1).ilog2()
-        } else {
-            sharding_high_bits(n, 0.001)
-                .min(Self::dup_edge_high_bits(3, n, 1.105, 0.001)) // No duplicate edges
-                .min(Self::LOG2_MAX_SHARDS) // We don't really need too many shards
-                .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't be smaller than MIN_FUSE_SHARD
-        };
+        self.shard_bits_shift = 63
+            - if n <= Self::MAX_LIN_SIZE {
+                // We just try to make shards as big as possible,
+                // within a maximum size of 2 * MAX_LIN_SHARD_SIZE
+                (n / Self::HALF_MAX_LIN_SHARD_SIZE).max(1).ilog2()
+            } else {
+                sharding_high_bits(n, 0.001)
+                    .min(Self::dup_edge_high_bits(3, n, 1.105, 0.001)) // No duplicate edges
+                    .min(Self::LOG2_MAX_SHARDS) // We don't really need too many shards
+                    .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't be smaller than MIN_FUSE_SHARD
+            };
     }
 
     fn _set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
