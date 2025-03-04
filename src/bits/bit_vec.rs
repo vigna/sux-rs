@@ -16,7 +16,7 @@
 //! - `BitVec<AsRef<[usize]>>`: an immutable bit vector, useful for
 //!   [ε-serde](epserde) support;
 //! - `BitVec<AsRef<[usize]> + AsMut<[usize]>>`: a mutable (but not resizable)
-//!    bit vector;
+//!   bit vector;
 //! - `AtomicBitVec<AsRef<[AtomicUsize]>>`: a thread-safe, mutable (but not
 //!   resizable) bit vector.
 //!
