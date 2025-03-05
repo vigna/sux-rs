@@ -592,7 +592,7 @@ impl<
         mut data: Shard<'a, W, D>,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         edge_sets: Vec<EdgeIndexSideSet>,
-        mut stack: Vec<usize>,
+        stack: Vec<usize>,
         pl: &mut impl ProgressLog,
     ) -> usize {
         if self.failed.load(Ordering::Relaxed) {
@@ -604,7 +604,8 @@ impl<
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
-        while let Some(v) = stack.pop() {
+        for i in (0..stack.len()).rev() {
+            let v = stack[i];
             // Assignments after linear solving must skip unpeeled edges
             if edge_sets[v].degree() != 0 {
                 continue;
@@ -910,7 +911,8 @@ impl<
             } {
                 Ok(func) => {
                     pl.info(format_args!(
-                        "Completed in {:.3} seconds ({:.3} ns/key)",
+                        "Completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                        self.num_keys,
                         start.elapsed().as_secs_f64(),
                         start.elapsed().as_nanos() as f64 / self.num_keys as f64
                     ));
