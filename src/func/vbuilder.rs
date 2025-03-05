@@ -711,7 +711,7 @@ where
     SigVal<S, W>: RadixKey + Send + Sync,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
-    pub fn try_build_func<T: ?Sized + ToSig<S>>(
+    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
         mut self,
         keys: impl RewindableIoLender<T>,
         values: impl RewindableIoLender<W>,
@@ -737,7 +737,7 @@ where
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
     u64: CastableInto<W>,
 {
-    pub fn try_build_filter<T: ?Sized + ToSig<S>>(
+    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
         mut self,
         keys: impl RewindableIoLender<T>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -777,7 +777,7 @@ impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, B
 where
     SigVal<S, W>: RadixKey + Send + Sync,
 {
-    pub fn try_build_func<T: ?Sized + ToSig<S>>(
+    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
         mut self,
         keys: impl RewindableIoLender<T>,
         values: impl RewindableIoLender<W>,
@@ -803,7 +803,7 @@ where
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
     u64: CastableInto<W>,
 {
-    pub fn try_build_filter<T: ?Sized + ToSig<S>>(
+    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
         mut self,
         keys: impl RewindableIoLender<T>,
         filter_bits: u32,
@@ -842,7 +842,7 @@ impl<
     /// vectors. The necessary abstraction is provided by the `new(bit_width,
     /// len)` function, which is called to create the data structure to store
     /// the values.
-    fn build_loop<T: ?Sized + ToSig<S>, V: ZeroCopy + Send + Sync>(
+    fn build_loop<T: ?Sized + ToSig<S> + std::fmt::Debug, V: ZeroCopy + Send + Sync>(
         &mut self,
         mut keys: impl RewindableIoLender<T>,
         mut values: impl RewindableIoLender<V>,
@@ -956,7 +956,7 @@ impl<
     > VBuilder<W, D, S, E>
 {
     fn try_seed<
-        T: ?Sized + ToSig<S>,
+        T: ?Sized + ToSig<S> + std::fmt::Debug,
         V: ZeroCopy + Send + Sync,
         G: Fn(&SigVal<S, V>) -> W + Send + Sync,
     >(

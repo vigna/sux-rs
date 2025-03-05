@@ -55,6 +55,7 @@ bytelines = "2.5.0"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 average = "0.15.1"
 lambert_w = { version = "1.0.17",  default-features = false, features = ["std"] }
+rapidhash = "1.4.0"
 
 [dev-dependencies]
 maligned = "0.2.1"
