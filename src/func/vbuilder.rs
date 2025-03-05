@@ -17,8 +17,8 @@ use derive_setters::*;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
 use rand::rngs::SmallRng;
-use rand::Rng;
 use rand::SeedableRng;
+use rand::{Fill, Rng, RngCore};
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
@@ -748,7 +748,13 @@ where
     {
         let filter_mask = W::MAX;
         let get_val = |sig_val: &SigVal<S, ()>| sig_val.sig.sig_u64().cast();
-        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
+        let new_data = |_bit_width: usize, len: usize| {
+            let mut v = vec![W::ZERO; len];
+            // We work around the fact that [usize] does not implement Fill
+            SmallRng::seed_from_u64(0)
+                .fill_bytes(unsafe { v.as_mut_slice().align_to_mut::<u8>().1 });
+            v.into()
+        };
 
         Ok(VFilter {
             func: self.build_loop(
@@ -813,7 +819,13 @@ where
         assert!(filter_bits <= W::BITS as u32);
         let filter_mask = W::MAX >> (W::BITS as u32 - filter_bits);
         let get_val = |sig_val: &SigVal<S, ()>| sig_val.sig.sig_u64().cast() & filter_mask;
-        let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
+        let new_data = |bit_width, len| {
+            let mut v = BitFieldVec::<W>::new(bit_width, len);
+            // We work around the fact that [usize] does not implement Fill
+            SmallRng::seed_from_u64(0)
+                .fill_bytes(unsafe { v.as_mut_slice().align_to_mut::<u8>().1 });
+            v
+        };
 
         Ok(VFilter {
             func: self.build_loop(

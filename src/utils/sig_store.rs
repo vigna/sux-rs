@@ -82,8 +82,7 @@ impl Sig for [u64; 2] {
 
     #[inline(always)]
     fn sig_u64(&self) -> u64 {
-        let sig = (self[0] ^ self[1]).wrapping_mul(0x9E3779B97F4A7C15);
-        sig ^ (sig >> 32)
+        self[0] ^ self[1]
     }
 }
 
@@ -96,8 +95,7 @@ impl Sig for [u64; 1] {
 
     #[inline(always)]
     fn sig_u64(&self) -> u64 {
-        let sig = self[0].wrapping_mul(0x9E3779B97F4A7C15);
-        sig ^ (sig >> 32)
+        self[0] ^ (self[0] >> 32)
     }
 }
 

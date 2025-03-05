@@ -13,7 +13,7 @@ use epserde::prelude::*;
 use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
-    func::{Fuse3Shards, ShardEdge, VBuilder, VFilter, VFunc},
+    func::{Fuse3NoShards, Fuse3Shards, ShardEdge, VBuilder, VFilter, VFunc},
     utils::{FromIntoIterator, Sig, SigVal, ToSig},
 };
 #[derive(Parser, Debug)]
@@ -43,7 +43,7 @@ where
     pl.start("Sampling...");
 
     for seed in 0..args.s {
-        let filter = VBuilder::<usize, BitFieldVec<usize>, S, E>::default()
+        let filter = VBuilder::<_, BitFieldVec<usize>, S, E>::default()
             .log2_buckets(4)
             .offline(false)
             .seed(seed as u64)
@@ -82,7 +82,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.sig64 {
-        _main::<[u64; 1], Fuse3Shards>(args)?;
+        _main::<[u64; 1], Fuse3NoShards>(args)?;
     } else {
         _main::<[u64; 2], Fuse3Shards>(args)?;
     }

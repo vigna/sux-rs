@@ -89,7 +89,7 @@ fn test_vfilter() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let filter = VBuilder::<_, BitFieldVec<usize>, [u64; 2], Fuse3Shards>::default()
+            let filter = VBuilder::<_, BitFieldVec, [u64; 2], Fuse3Shards>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .try_build_filter(FromIntoIterator::from(0..n), 10, &mut pl)?;
@@ -179,31 +179,6 @@ fn test_dup_key() -> Result<()> {
             &mut ProgressLogger::default(),
         )
         .is_err());
-
-    Ok(())
-}
-
-#[test]
-fn test_broken() -> Result<()> {
-    let _ = env_logger::builder()
-        .is_test(true)
-        .filter_level(log::LevelFilter::Info)
-        .try_init();
-
-    let n = 3_000_000;
-    let filter = VBuilder::<usize, BitFieldVec<usize>, [u64; 2], Fuse3Shards>::default()
-        .try_build_filter(FromIntoIterator::from(0..n), 10, no_logging![])?;
-
-    let mut pl = ProgressLogger::default();
-    pl.start("Querying (negative)...");
-    let mut c = 0;
-    for i in 0..n {
-        c += filter.contains(&(i + n)) as usize;
-    }
-    //pl.done_with_count(n);
-
-    dbg!(c);
-    dbg!(n as f64 / c as f64);
 
     Ok(())
 }
