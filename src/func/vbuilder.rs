@@ -912,8 +912,8 @@ impl<
                 Ok(func) => {
                     pl.info(format_args!(
                         "Completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                        self.num_keys,
                         start.elapsed().as_secs_f64(),
+                        self.num_keys,
                         start.elapsed().as_nanos() as f64 / self.num_keys as f64
                     ));
                     return Ok(func);

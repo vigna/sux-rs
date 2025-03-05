@@ -424,7 +424,7 @@ impl Fuse3Shards {
         match arity {
             3 => {
                 debug_assert!(n <= 2 * Self::HALF_MAX_LIN_SHARD_SIZE);
-                (0.85 * (n.max(1) as f64).ln()).floor() as u32
+                (0.85 * (n.max(1) as f64).ln()).floor().max(1.) as u32
             }
             _ => unimplemented!(),
         }
