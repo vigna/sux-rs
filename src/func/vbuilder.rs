@@ -410,9 +410,10 @@ impl<
                         let shard =
                             unsafe { &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>) };
 
+                        // Sorting the signatures increases locality
+                        shard.radix_sort_builder().with_low_mem_tuner().sort();
                         if self.check_dups {
                             // Check for duplicates
-                            shard.radix_sort_builder().with_low_mem_tuner().sort();
 
                             if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
                                 return Err(SolveError::DuplicateSignature);

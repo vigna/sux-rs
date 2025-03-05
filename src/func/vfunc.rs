@@ -310,14 +310,14 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
 
     #[inline(always)]
     fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
-        // We use the lower 32 bits of sig[0] for the first vertex, the higher 32
-        // bits of sig[1], and the lower 32 bits of sig[1] for the third vertex.
+        // We use the upper 32 bits of sig[0] for the first vertex, the lower 32
+        // bits of sig[0] for the second vertex, and the uper 32 bits of sig[1]
+        // for the third vertex.
         let seg_size = self.seg_size as u64;
-
         [
-            ((sig[0] as u32 as u64 * seg_size) >> 32) as _,
-            ((((sig[1] >> 32) * seg_size) >> 32) + seg_size) as _,
-            ((((sig[1] as u32 as u64) * seg_size) >> 32) + 2 * seg_size) as _,
+            ((sig[0] >> 32) * seg_size >> 32) as _,
+            (((sig[0] as u32 as u64) * seg_size >> 32) + seg_size) as _,
+            (((sig[1] >> 32) * seg_size >> 32) + 2 * seg_size) as _,
         ]
     }
 
