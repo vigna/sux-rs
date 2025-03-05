@@ -509,24 +509,12 @@ impl Fuse3Shards {
         let segment_size = 1 << log2_seg_size;
         let segment_mask = segment_size - 1;
 
-        let h0 = (sig[0] as usize & segment_mask) + start;
+        let v0 = (sig[0] as usize & segment_mask) + start;
         start += segment_size;
-        let h1 = ((sig[1] >> 32) as usize & segment_mask) + start;
+        let v1 = ((sig[1] >> 32) as usize & segment_mask) + start;
         start += segment_size;
-        let h2 = (sig[1] as usize & segment_mask) + start;
-        [h0, h1, h2]
-        /*
-        let start = (shard * (l + 2) as usize) << log2_seg_size;
-        let hash = sig[1];
-        let hi = ((hash as u128 * (l << log2_seg_size) as u128) >> 64) as u64;
-        let h0 = hi as usize;
-        let seg_size = 1 << log2_seg_size;
-        let mut h1 = h0 + seg_size;
-        let mut h2 = h1 + seg_size;
-        let seg_size_mask = seg_size - 1;
-        h1 ^= (hash as usize >> 18) & seg_size_mask;
-        h2 ^= (hash as usize) & seg_size_mask;
-        [h0 + start, h1 + start, h2 + start]*/
+        let v2 = (sig[1] as usize & segment_mask) + start;
+        [v0, v1, v2]
     }
 
     fn _set_up_shards(&mut self, n: usize) {
@@ -755,16 +743,17 @@ impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
 
     #[inline(always)]
     fn local_edge(&self, sig: [u64; 1]) -> [usize; 3] {
+        // From https://github.com/ayazhafiz/xorf
         let hash = sig[0];
         let hi = ((hash as u128 * (self.l << self.log2_seg_size) as u128) >> 64) as u64;
-        let h0 = hi as usize;
+        let v0 = hi as usize;
         let seg_size = 1 << self.log2_seg_size;
-        let mut h1 = h0 + seg_size;
-        let mut h2 = h1 + seg_size;
+        let mut v1 = v0 + seg_size;
+        let mut v2 = v1 + seg_size;
         let seg_size_mask = seg_size - 1;
-        h1 ^= (hash as usize >> 18) & seg_size_mask;
-        h2 ^= (hash as usize) & seg_size_mask;
-        [h0, h1, h2]
+        v1 ^= (hash as usize >> 18) & seg_size_mask;
+        v2 ^= (hash as usize) & seg_size_mask;
+        [v0, v1, v2]
     }
 
     #[inline(always)]
