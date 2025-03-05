@@ -53,7 +53,6 @@ itertools = "0.14.0"
 pthash = { version = "0.4.0", features = ["rayon"] }
 bytelines = "2.5.0"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
-pluralizer = "0.5.0"
 average = "0.15.1"
 lambert_w = { version = "1.0.17",  default-features = false, features = ["std"] }
 
