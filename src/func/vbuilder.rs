@@ -530,6 +530,8 @@ impl<
             }
         }
         let (mut pos, mut curr) = (0, 0);
+
+        // From https://github.com/ayazhafiz/xorf
         // This array, indexed by the side, gives the other two sides
         let other_side = [1, 2, 0, 1];
         // This array will be loaded with the vertices corresponding to
