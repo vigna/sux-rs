@@ -315,6 +315,9 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> {
     /// # }
     /// ```
     fn try_chunks_mut(&mut self, chunk_size: usize) -> Result<Self::ChunksMut<'_>, ()>;
+
+    /// Returns the backend of the slice as a mutable slice of `W`.
+    fn as_mut_slice(&mut self) -> &mut [W];
 }
 
 /// A (tentatively) thread-safe slice of bit fields of constant bit width supporting atomic operations.
@@ -478,6 +481,10 @@ macro_rules! impl_mut {
 
             fn try_chunks_mut(&mut self, chunk_size: usize) -> Result<Self::ChunksMut<'_>, ()> {
                 Ok(self.as_mut().chunks_mut(chunk_size))
+            }
+
+            fn as_mut_slice(&mut self) -> &mut [$ty] {
+                self.as_mut()
             }
         }
     )*};

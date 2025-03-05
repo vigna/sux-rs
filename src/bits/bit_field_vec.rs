@@ -289,13 +289,6 @@ impl<'a, W: Word> Iterator for ChunksMut<'a, W> {
     }
 }
 
-impl<W: Word, B: AsMut<[W]>> BitFieldVec<W, B> {
-    /// Returns the backend of the vector as a mutable slice of `W`.
-    pub fn as_mut_slice(&mut self) -> &mut [W] {
-        self.bits.as_mut()
-    }
-}
-
 impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {}
 
 impl<W: Word> BitFieldVec<W, Vec<W>> {
@@ -800,6 +793,10 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
         } else {
             Err(())
         }
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [W] {
+        self.bits.as_mut()
     }
 }
 

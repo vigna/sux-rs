@@ -89,17 +89,15 @@ fn test_vfilter() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let filter = VBuilder::<_, BitFieldVec, [u64; 2], Fuse3Shards>::default()
+            let filter = VBuilder::<_, Box<[u8]>>::default()
                 .log2_buckets(4)
                 .offline(offline)
-                .try_build_filter(FromIntoIterator::from(0..n), 10, &mut pl)?;
+                .try_build_filter(FromIntoIterator::from(0..n), &mut pl)?;
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             filter.serialize(&mut cursor)?;
             cursor.set_position(0);
-            let filter = VFilter::<
-                usize,
-                VFunc<usize, _, BitFieldVec<usize>, [u64; 2], Fuse3Shards>,
-            >::deserialize_eps(cursor.as_bytes())?;
+            let filter =
+                VFilter::<u8, VFunc<usize, _, Box<[u8]>>>::deserialize_eps(cursor.as_bytes())?;
             pl.start("Querying (positive)...");
             for i in 0..n {
                 assert!(filter.contains(&i), "Contains failed for {}", i);
@@ -116,7 +114,7 @@ fn test_vfilter() -> Result<()> {
 
                 let failure_rate = (c as f64) / n as f64;
                 assert!(
-                    failure_rate < 1. / 1023.,
+                    failure_rate < 1. / 256.,
                     "Failure rate is too high: 1 / {}",
                     1. / failure_rate
                 );
@@ -127,7 +125,7 @@ fn test_vfilter() -> Result<()> {
     for offline in [false, true] {
         for n in [0, 10, 1000, 100_000, 3_000_000] {
             dbg!(offline, n);
-            let func = VBuilder::<_, Box<[u8]>, [u64; 2], Fuse3Shards>::default()
+            let func = VBuilder::<_, Box<[u8]>>::default()
                 .log2_buckets(4)
                 .offline(offline)
                 .try_build_filter(FromIntoIterator::from(0..n), &mut pl)?;
@@ -135,9 +133,7 @@ fn test_vfilter() -> Result<()> {
             func.serialize(&mut cursor)?;
             cursor.set_position(0);
             let filter =
-                VFilter::<u8, VFunc<usize, _, Vec<u8>, [u64; 2], Fuse3Shards>>::deserialize_eps(
-                    cursor.as_bytes(),
-                )?;
+                VFilter::<u8, VFunc<usize, _, Box<[u8]>>>::deserialize_eps(cursor.as_bytes())?;
             pl.start("Querying (positive)...");
             for i in 0..n {
                 assert!(filter.contains(&i), "Contains failed for {}", i);
