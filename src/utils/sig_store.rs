@@ -334,20 +334,21 @@ pub fn new_offline<S: ZeroCopy + Sig, V: ZeroCopy>(
 /// bits.
 ///
 /// The type `S` is the type of the signatures (usually `[u64;1]` or `[u64;
-/// 2]`), while `V` is the type of the values. The store will be written to a
-/// temporary directory, and the files will be deleted when the store is
-/// dropped.
+/// 2]`), while `V` is the type of the values.
+/// 
+/// If `expected_num_keys` is `Some(n)`, the store will be preallocated to
+/// contain 1.05 * `n` keys.
 pub fn new_online<S: ZeroCopy + Sig, V: ZeroCopy>(
     buckets_high_bits: u32,
     max_shard_high_bits: u32,
     expected_num_keys: Option<usize>,
-) -> Result<SigStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>> {
+) -> Result<SigStoreImpl<S, V, Vec<SigVal<S, V>>>> {
     let mut writers = VecDeque::new();
     let initial_capacity = expected_num_keys
-        .map(|n| ((n.div_ceil(1 << buckets_high_bits) as f64 * 1.05) as usize))
+        .map(|n| (n.div_ceil(1 << buckets_high_bits) as f64 * 1.05) as usize)
         .unwrap_or(0);
     writers.resize_with(1 << buckets_high_bits, || {
-        Arc::new(Vec::with_capacity(initial_capacity))
+        Vec::with_capacity(initial_capacity)
     });
 
     Ok(SigStoreImpl {
@@ -425,7 +426,7 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
 }
 
 impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
-    for SigStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>
+    for SigStoreImpl<S, V, Vec<SigVal<S, V>>>
 {
     type Error = std::convert::Infallible;
 
@@ -442,9 +443,7 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
         self.bucket_sizes[buffer] += 1;
         self.shard_sizes[shard] += 1;
 
-        Arc::get_mut(&mut self.buckets[buffer])
-            .unwrap()
-            .push(sig_val);
+        self.buckets[buffer].push(sig_val);
         Ok(())
     }
 
@@ -456,8 +455,9 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
             .buckets
             .into_iter()
             .map(|mut x| {
-                Arc::get_mut(&mut x).unwrap().shrink_to_fit();
-                x
+                dbg!(x.capacity());
+                x.shrink_to_fit();
+                Arc::new(x)
             })
             .collect();
         // Aggregate shard sizes as necessary

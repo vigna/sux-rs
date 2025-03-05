@@ -16,7 +16,6 @@ use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
-use pluralizer::pluralize;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
@@ -269,8 +268,8 @@ pub struct VBuilder<
     seed: u64,
 
     /// The base-2 logarithm of buckets of the [`SigStore`]. The default is 8.
-    /// This value is automatically set if you provide an expected number of
-    /// keys, which makes the construction faster.
+    /// This value is automatically overriden, even if set, if you provide an
+    /// expected number of keys.
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "8"))]
     log2_buckets: u32,
@@ -873,6 +872,13 @@ impl<
         let start = Instant::now();
         let mut prng = SmallRng::seed_from_u64(self.seed);
 
+        if let Some(expected_num_keys) = self.expected_num_keys {
+            self.shard_edge.set_up_shards(expected_num_keys);
+            self.log2_buckets = self.shard_edge.shard_high_bits();
+        }
+
+        pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
+
         // Loop until success or duplicate detection
         loop {
             let seed = prng.random();
@@ -982,17 +988,6 @@ impl<
         for<'a> <ShardIter<'a, W, D> as Iterator>::Item: Send,
     {
         let mut max_value = W::ZERO;
-
-        if let Some(expected_num_keys) = self.expected_num_keys {
-            self.shard_edge.set_up_shards(expected_num_keys);
-            self.log2_buckets = self.shard_edge.shard_high_bits();
-        }
-
-        let num_buckets = 1 << self.log2_buckets;
-        pl.info(format_args!(
-            "Using {}",
-            pluralize("bucket", num_buckets, true)
-        ));
 
         while let Some(result) = keys.next() {
             match result {
