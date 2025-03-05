@@ -190,7 +190,7 @@ fn test_broken() -> Result<()> {
         .filter_level(log::LevelFilter::Info)
         .try_init();
 
-    let n = 10;
+    let n = 3_000_000;
     let filter = VBuilder::<usize, BitFieldVec<usize>, [u64; 2], Fuse3Shards>::default()
         .try_build_filter(FromIntoIterator::from(0..n), 10, no_logging![])?;
 
@@ -200,9 +200,10 @@ fn test_broken() -> Result<()> {
     for i in 0..n {
         c += filter.contains(&(i + n)) as usize;
     }
-    pl.done_with_count(n);
+    //pl.done_with_count(n);
 
     dbg!(c);
+    dbg!(n as f64 / c as f64);
 
     Ok(())
 }
