@@ -11,7 +11,7 @@ pub mod lenders;
 pub use lenders::*;
 
 pub mod sig_store;
-use rand::{Rng, RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng};
 pub use sig_store::*;
 
 pub mod fair_chunks;

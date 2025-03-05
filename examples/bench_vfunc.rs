@@ -20,17 +20,16 @@ use sux::{
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
 struct Args {
+    /// The maximum number strings to use from the file, or the number of 64-bit keys.
+    n: usize,
+    /// A name for the ε-serde serialized function with u64 keys.
+    func: String,
     #[arg(short = 'f', long)]
     /// A file containing UTF-8 keys, one per line. If not specified, the 64-bit keys [0..n) are used.
     filename: Option<String>,
     /// Whether the file is compressed with zstd.
     #[arg(short, long)]
     zstd: bool,
-    #[arg(short)]
-    /// The maximum number strings to use from the file, or the number of 64-bit keys.
-    n: usize,
-    /// A name for the ε-serde serialized function with u64 keys.
-    func: String,
     /// The function is an approximate 8-bit dictionary
     #[arg(short, long)]
     dict: bool,

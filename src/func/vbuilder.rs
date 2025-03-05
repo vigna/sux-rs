@@ -11,18 +11,19 @@ use crate::prelude::Rank9;
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
 use crate::traits::NumBits;
 use crate::utils::*;
-use common_traits::CastableInto;
+use common_traits::{invariant, CastableInto};
 use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
-use rand::{Fill, Rng, RngCore};
+use rand::{Rng, RngCore};
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
 use std::any::TypeId;
+use std::hint::unreachable_unchecked;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -516,16 +517,14 @@ impl<
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
-        let mut stack = vec![0; num_vertices + 1];
+        let mut stack = Vec::with_capacity(num_vertices + 1);
+        let mut eqs = Vec::with_capacity(shard.len());
         // Preload all vertices of degree one in the visit queue
-        let mut top = 0;
         for v in 0..num_vertices {
-            stack[top] = v;
             if edge_sets[v].degree() == 1 {
-                top += 1;
+                stack.push(v);
             }
         }
-        let (mut pos, mut curr) = (0, 0);
 
         // From https://github.com/ayazhafiz/xorf
         // This array, indexed by the side, gives the other two sides
@@ -533,17 +532,13 @@ impl<
         // This array will be loaded with the vertices corresponding to
         // the sides in other_side
         let mut other_vertex = [0; 4];
-
-        while pos < top {
-            let v = stack[pos];
-            pos += 1;
+        while let Some(v) = stack.pop() {
             if edge_sets[v].degree() == 0 {
                 continue;
             }
             let (edge_index, side) = edge_sets[v].edge_index_and_side();
             edge_sets[v].zero();
-            stack[curr] = v;
-            curr += 1;
+            eqs.push(edge_index << 2 | side);
 
             let e = self.shard_edge.local_edge(shard[edge_index].sig);
 
@@ -551,32 +546,29 @@ impl<
             (other_vertex[2], other_vertex[3]) = (e[0], e[1]);
 
             edge_sets[other_vertex[side]].remove(edge_index, other_side[side]);
-            stack[top] = other_vertex[side];
             if edge_sets[other_vertex[side]].degree() == 1 {
-                top += 1;
+                stack.push(other_vertex[side]);
             }
 
             edge_sets[other_vertex[side + 1]].remove(edge_index, other_side[side + 1]);
-            stack[top] = other_vertex[side + 1];
             if edge_sets[other_vertex[side + 1]].degree() == 1 {
-                top += 1;
+                stack.push(other_vertex[side + 1]);
             }
-        }
-        debug_assert!(top <= num_vertices);
-        stack.truncate(curr);
-        if shard.len() != stack.len() {
+        };
+
+        if shard.len() != eqs.len() {
             pl.info(format_args!(
                 "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
                 shard_index + 1,
                 self.shard_edge.num_shards(),
-                stack.len(),
+                eqs.len(),
                 shard.len(),
             ));
             return Err((shard_index, shard, data, edge_sets, stack));
         }
         pl.done_with_count(shard.len());
 
-        Ok(self.assign(shard_index, shard, data, get_val, edge_sets, stack, pl))
+        Ok(self.assign(shard_index, shard, data, get_val, edge_sets, eqs, pl))
     }
 
     /// Perform assignment of values based on peeling data.
@@ -590,7 +582,7 @@ impl<
         mut data: Shard<'a, W, D>,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         edge_sets: Vec<EdgeIndexSideSet>,
-        stack: Vec<usize>,
+        mut stack: Vec<usize>,
         pl: &mut impl ProgressLog,
     ) -> usize {
         if self.failed.load(Ordering::Relaxed) {
@@ -603,23 +595,22 @@ impl<
             self.shard_edge.num_shards()
         ));
 
-        for i in (0..stack.len()).rev() {
-            let v = stack[i];
+        while let Some(edge_index_side) = stack.pop() {
             // Assignments after linear solving must skip unpeeled edges
-            if edge_sets[v].degree() != 0 {
+            /*if edge_sets[v].degree() != 0 {
                 continue;
-            }
-            let (edge_index, side) = edge_sets[v].edge_index_and_side();
+            }*/
+            let (edge_index, side) = (edge_index_side >> 2, edge_index_side & 3);
             let edge = self.shard_edge.local_edge(shard[edge_index].sig);
             unsafe {
                 let value = match side {
                     0 => data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2]),
                     1 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[2]),
                     2 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[1]),
-                    _ => unreachable!(),
+                    _ => core::hint::unreachable_unchecked()
                 };
 
-                data.set_unchecked(v, get_val(&shard[edge_index]) ^ value);
+                data.set_unchecked(edge[side], get_val(&shard[edge_index]) ^ value);
             }
             debug_assert_eq!(
                 data.get(edge[0]) ^ data.get(edge[1]) ^ data.get(edge[2]),
