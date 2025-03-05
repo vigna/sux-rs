@@ -455,7 +455,6 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
             .buckets
             .into_iter()
             .map(|mut x| {
-                dbg!(x.capacity());
                 x.shrink_to_fit();
                 Arc::new(x)
             })

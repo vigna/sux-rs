@@ -410,21 +410,7 @@ impl<
                         let shard =
                             unsafe { &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>) };
 
-                        if TypeId::of::<V>() == TypeId::of::<()>()
-                            && TypeId::of::<S>() == TypeId::of::<[u64; 1]>()
-                            && self.num_keys >= 100_000_000
-                        {
-                            // Filters using 64-bit hashes need special
-                            // treatment because duplicates can happen and can
-                            // be ignored. Below the size limit the probability
-                            // of a duplicate is less than 0.000391.
-                            shard.radix_sort_builder().with_low_mem_tuner().sort();
-                            // WARNING: we are screwing the internal state of
-                            // the SigSorter (the chunk sizes won't be correct
-                            // anymore), but we don't care because we are going
-                            // to throw it away.
-                            shard.dedup_by_key(|x| x.sig);
-                        } else if self.check_dups {
+                        if self.check_dups {
                             // Check for duplicates
                             shard.radix_sort_builder().with_low_mem_tuner().sort();
 
