@@ -156,21 +156,21 @@ pub trait ShardEdge<S, const K: usize>:
     ///
     /// This method is mainly used for testing and debugging, as
     /// [`edge`](ShardEdge::edge) already computes the shard.
-    fn shard(&self, sig: &S) -> usize;
+    fn shard(&self, sig: S) -> usize;
 
     /// Return the local edge assigned to a signature.
     ///
     /// The edge returned is local to the shard the signature belongs to. If
     /// there is no sharding, this method has the same value as
     /// [`edge`](ShardEdge::edge).
-    fn local_edge(&self, sig: &S) -> [usize; K];
+    fn local_edge(&self, sig: S) -> [usize; K];
 
     /// Return the edge assigned to a signature.
     ///
     /// The edge returned is global, that is, its vertices are absolute indices
     /// into the backend. If there is no sharding, this method has the same
     /// value as [`edge`](ShardEdge::edge).
-    fn edge(&self, sig: &S) -> [usize; K];
+    fn edge(&self, sig: S) -> [usize; K];
 }
 
 /// Zero-cost sharded 3-hypergraph MWHC construction.
@@ -211,7 +211,7 @@ impl Mwhc3Shards {
     /// We use the lower 32 bits of sig[0] for the first vertex, the higher 32
     /// bits of sig[1], and the lower 32 bits of sig[1] for the third vertex.
     #[inline(always)]
-    fn _edge_2(&self, shard: usize, sig: &[u64; 2]) -> [usize; 3] {
+    fn _edge_2(&self, shard: usize, sig: [u64; 2]) -> [usize; 3] {
         let seg_size = self.seg_size as u64;
         let start = shard as u64 * seg_size * 3;
 
@@ -242,7 +242,7 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
     }
 
     #[inline(always)]
-    fn shard(&self, sig: &[u64; 2]) -> usize {
+    fn shard(&self, sig: [u64; 2]) -> usize {
         (sig[0] >> self.shard_bits_shift >> 1) as usize
     }
 
@@ -252,12 +252,12 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
     }
 
     #[inline(always)]
-    fn local_edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+    fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
         self._edge_2(0, sig)
     }
 
     #[inline(always)]
-    fn edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+    fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
         self._edge_2(self.shard(sig), sig)
     }
 }
@@ -299,7 +299,7 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
     }
 
     #[inline(always)]
-    fn shard(&self, _sig: &[u64; 2]) -> usize {
+    fn shard(&self, _sig: [u64; 2]) -> usize {
         0
     }
 
@@ -309,7 +309,7 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
     }
 
     #[inline(always)]
-    fn local_edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+    fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
         // We use the lower 32 bits of sig[0] for the first vertex, the higher 32
         // bits of sig[1], and the lower 32 bits of sig[1] for the third vertex.
         let seg_size = self.seg_size as u64;
@@ -322,7 +322,7 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
     }
 
     #[inline(always)]
-    fn edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+    fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
         self.local_edge(sig)
     }
 }
@@ -365,7 +365,7 @@ impl Display for Fuse3Shards {
         write!(
             f,
             "Fuse (shards) Number of shards: 2^{} Segment size: 2^{} Number of segments: {}",
-            ShardEdge::<[u64; 1], 3>::shard_high_bits(self),
+            self.shard_high_bits(),
             self.log2_seg_size,
             self.l + 2
         )
@@ -497,57 +497,36 @@ impl Fuse3Shards {
         shard_bits_shift: u32,
         log2_seg_size: u32,
         l: u32,
-        sig: &[u64; 2],
+        sig: [u64; 2],
     ) -> [usize; 3] {
         // Note that we're losing here a random bit at the bottom because we
         // would need a right rotation of one to move exactly the shard high
         // bits to the bottom, but in this way we save an operation, and there
         // are enough random bits anyway.
         let first_segment =
-            (((sig[0].rotate_right(shard_bits_shift) >> 32) * l as u64) >> 32) as usize;
-        let shard_offset = shard * ((l as usize + 2) << log2_seg_size);
-        let start = shard_offset + (first_segment << log2_seg_size);
+            ((sig[0].rotate_right(shard_bits_shift) as u128 * l as u128) >> 64) as usize;
+        let mut start = (shard * (l as usize + 2) + first_segment) << log2_seg_size;
         let segment_size = 1 << log2_seg_size;
         let segment_mask = segment_size - 1;
 
-        [
-            (sig[0] as usize & segment_mask) + start,
-            ((sig[1] >> 32) as usize & segment_mask) + start + segment_size,
-            (sig[1] as usize & segment_mask) + start + 2 * segment_size,
-        ]
-    }
-
-    /// In this implementation, which is common to the sharded and non-sharded
-    /// implementations:
-    /// - the `shard_high_bits()` most significant bits are used to select a
-    ///   shard;
-    /// - the two 32-bit halves XOR'd together and mixed with a multiplication
-    ///   by a constant are used to select the first segment using fixed-point
-    ///   arithmetic;
-    /// - the lower 21 bits are used to select the first vertex;
-    /// - the next 21 bits are used to select the second vertex;
-    /// - the next 21 bits are used to select the third vertex.
-    #[inline(always)]
-    fn _edge_1(
-        shard: usize,
-        _shard_high_bits: u32,
-        log2_seg_size: u32,
-        l: u32,
-        sig: &[u64; 1],
-    ) -> [usize; 3] {
-        // We need to mix a bit the xor of the two halves
-        let hash = (sig[0] as u32 ^ (sig[0] >> 32) as u32).wrapping_mul(0x9E3779B9);
-        let first_segment = ((hash as u64 * l as u64) >> 32) as usize;
-        let shard_offset = shard * ((l as usize + 2) << log2_seg_size);
-        let start = shard_offset + (first_segment << log2_seg_size);
-        let segment_size = 1 << log2_seg_size;
-        let segment_mask = segment_size - 1;
-
-        [
-            (sig[0] as usize & segment_mask) + start,
-            ((sig[0] >> 21) as usize & segment_mask) + start + segment_size,
-            ((sig[0] >> 42) as usize & segment_mask) + start + 2 * segment_size,
-        ]
+        let h0 = (sig[0] as usize & segment_mask) + start;
+        start += segment_size;
+        let h1 = ((sig[1] >> 32) as usize & segment_mask) + start;
+        start += segment_size;
+        let h2 = (sig[1] as usize & segment_mask) + start;
+        [h0, h1, h2]
+        /*
+        let start = (shard * (l + 2) as usize) << log2_seg_size;
+        let hash = sig[1];
+        let hi = ((hash as u128 * (l << log2_seg_size) as u128) >> 64) as u64;
+        let h0 = hi as usize;
+        let seg_size = 1 << log2_seg_size;
+        let mut h1 = h0 + seg_size;
+        let mut h2 = h1 + seg_size;
+        let seg_size_mask = seg_size - 1;
+        h1 ^= (hash as usize >> 18) & seg_size_mask;
+        h2 ^= (hash as usize) & seg_size_mask;
+        [h0 + start, h1 + start, h2 + start]*/
     }
 
     fn _set_up_shards(&mut self, n: usize) {
@@ -602,7 +581,7 @@ impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
     }
 
     #[inline(always)]
-    fn shard(&self, sig: &[u64; 2]) -> usize {
+    fn shard(&self, sig: [u64; 2]) -> usize {
         (sig[0] >> self.shard_bits_shift >> 1) as usize
     }
 
@@ -612,54 +591,13 @@ impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
     }
 
     #[inline(always)]
-    fn local_edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+    fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
         Fuse3Shards::_edge_2(0, self.shard_bits_shift, self.log2_seg_size, self.l, sig)
     }
 
     #[inline(always)]
-    fn edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+    fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
         Fuse3Shards::_edge_2(
-            self.shard(sig),
-            self.shard_bits_shift,
-            self.log2_seg_size,
-            self.l,
-            sig,
-        )
-    }
-}
-
-impl ShardEdge<[u64; 1], 3> for Fuse3Shards {
-    fn set_up_shards(&mut self, n: usize) {
-        self._set_up_shards(n);
-    }
-
-    fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
-        self._set_up_graphs(n, max_shard)
-    }
-
-    #[inline(always)]
-    fn shard_high_bits(&self) -> u32 {
-        63 - self.shard_bits_shift
-    }
-
-    #[inline(always)]
-    fn shard(&self, sig: &[u64; 1]) -> usize {
-        (sig[0] >> self.shard_bits_shift >> 1) as usize
-    }
-
-    #[inline(always)]
-    fn num_vertices(&self) -> usize {
-        (self.l as usize + 2) << self.log2_seg_size
-    }
-
-    #[inline(always)]
-    fn local_edge(&self, sig: &[u64; 1]) -> [usize; 3] {
-        Fuse3Shards::_edge_1(0, self.shard_bits_shift, self.log2_seg_size, self.l, sig)
-    }
-
-    #[inline(always)]
-    fn edge(&self, sig: &[u64; 1]) -> [usize; 3] {
-        Fuse3Shards::_edge_1(
             self.shard(sig),
             self.shard_bits_shift,
             self.log2_seg_size,
@@ -773,7 +711,7 @@ impl ShardEdge<[u64; 2], 3> for Fuse3NoShards {
     }
 
     #[inline(always)]
-    fn shard(&self, _sig: &[u64; 2]) -> usize {
+    fn shard(&self, _sig: [u64; 2]) -> usize {
         0
     }
 
@@ -783,12 +721,12 @@ impl ShardEdge<[u64; 2], 3> for Fuse3NoShards {
     }
 
     #[inline(always)]
-    fn local_edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+    fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
         Fuse3Shards::_edge_2(0, 0, self.log2_seg_size, self.l, sig)
     }
 
     #[inline(always)]
-    fn edge(&self, sig: &[u64; 2]) -> [usize; 3] {
+    fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
         self.local_edge(sig)
     }
 }
@@ -806,7 +744,7 @@ impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
     }
 
     #[inline(always)]
-    fn shard(&self, _sig: &[u64; 1]) -> usize {
+    fn shard(&self, _sig: [u64; 1]) -> usize {
         0
     }
 
@@ -816,12 +754,21 @@ impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
     }
 
     #[inline(always)]
-    fn local_edge(&self, sig: &[u64; 1]) -> [usize; 3] {
-        Fuse3Shards::_edge_1(0, 0, self.log2_seg_size, self.l, sig)
+    fn local_edge(&self, sig: [u64; 1]) -> [usize; 3] {
+        let hash = sig[0];
+        let hi = ((hash as u128 * (self.l << self.log2_seg_size) as u128) >> 64) as u64;
+        let h0 = hi as usize;
+        let seg_size = 1 << self.log2_seg_size;
+        let mut h1 = h0 + seg_size;
+        let mut h2 = h1 + seg_size;
+        let seg_size_mask = seg_size - 1;
+        h1 ^= (hash as usize >> 18) & seg_size_mask;
+        h2 ^= (hash as usize) & seg_size_mask;
+        [h0, h1, h2]
     }
 
     #[inline(always)]
-    fn edge(&self, sig: &[u64; 1]) -> [usize; 3] {
+    fn edge(&self, sig: [u64; 1]) -> [usize; 3] {
         self.local_edge(sig)
     }
 }
@@ -834,7 +781,7 @@ impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: S
     ///
     /// This method is mainly useful in the construction of compound functions.
     #[inline(always)]
-    pub fn get_by_sig(&self, sig: &S) -> W {
+    pub fn get_by_sig(&self, sig: S) -> W {
         let edge = self.shard_edge.edge(sig);
 
         unsafe {
@@ -848,7 +795,7 @@ impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: S
     /// key is not present.
     #[inline(always)]
     pub fn get(&self, key: &T) -> W {
-        self.get_by_sig(&T::to_sig(key, self.seed))
+        self.get_by_sig(T::to_sig(key, self.seed))
     }
 
     /// Return the number of keys in the function.
@@ -874,7 +821,7 @@ where
     /// The user should not normally call this method, but rather
     /// [`contains_by_sig`](VFilter::contains_by_sig).
     #[inline(always)]
-    pub fn get_by_sig(&self, sig: &S) -> W {
+    pub fn get_by_sig(&self, sig: S) -> W {
         self.func.get_by_sig(sig)
     }
 
@@ -893,7 +840,7 @@ where
     /// The user should not normally call this method, but rather
     /// [`contains`](VFilter::contains).
     #[inline(always)]
-    pub fn contains_by_sig(&self, sig: &S) -> bool {
+    pub fn contains_by_sig(&self, sig: S) -> bool {
         self.func.get_by_sig(sig) == sig.sig_u64().cast() & self.filter_mask
     }
 
@@ -903,7 +850,7 @@ where
     /// [`contains`](VFilter::contains).
     #[inline]
     pub fn contains(&self, key: &T) -> bool {
-        self.contains_by_sig(&T::to_sig(key, self.func.seed))
+        self.contains_by_sig(T::to_sig(key, self.func.seed))
     }
 
     /// Return the number of keys in the filter.
