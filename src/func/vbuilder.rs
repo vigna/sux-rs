@@ -399,7 +399,7 @@ impl<
                 .par_bridge()
                 .try_for_each_with(
                     (main_pl.clone(), pl.clone()),
-                    |(main_pl, pl), (shard_index, (shard, data))| {
+                    |(main_pl, pl), (shard_index, (shard, mut data))| {
                         main_pl.info(format_args!(
                             "Analyzing shard {}/{}...",
                             shard_index + 1,
@@ -428,6 +428,16 @@ impl<
 
                         if self.failed.load(Ordering::Relaxed) {
                             return Err(SolveError::UnsolvableShard);
+                        }
+
+                        if TypeId::of::<V>() == TypeId::of::<()>() {
+                            // For filters, we fill the array with random data, otherwise
+                            // elements with signature 0 would have a significantly higher
+                            // probability of being false positives.
+                            //
+                            // We work around the fact that [usize] does not implement Fill
+                            Mwc192::seed_from_u64(0)
+                                .fill_bytes(unsafe { data.as_mut_slice().align_to_mut::<u8>().1 });
                         }
 
                         solve_shard(self, shard_index, shard, data, pl)
@@ -592,6 +602,7 @@ impl<
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
+
         for i in (0..stack.len()).rev() {
             let v = stack[i];
             // Assignments after linear solving must skip unpeeled edges
@@ -748,13 +759,7 @@ where
     {
         let filter_mask = W::MAX;
         let get_val = |sig_val: &SigVal<S, ()>| sig_val.sig.sig_u64().cast();
-        let new_data = |_bit_width: usize, len: usize| {
-            let mut v = vec![W::ZERO; len];
-            // We work around the fact that [usize] does not implement Fill
-            SmallRng::seed_from_u64(0)
-                .fill_bytes(unsafe { v.as_mut_slice().align_to_mut::<u8>().1 });
-            v.into()
-        };
+        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
 
         Ok(VFilter {
             func: self.build_loop(
@@ -819,13 +824,7 @@ where
         assert!(filter_bits <= W::BITS as u32);
         let filter_mask = W::MAX >> (W::BITS as u32 - filter_bits);
         let get_val = |sig_val: &SigVal<S, ()>| sig_val.sig.sig_u64().cast() & filter_mask;
-        let new_data = |bit_width, len| {
-            let mut v = BitFieldVec::<W>::new(bit_width, len);
-            // We work around the fact that [usize] does not implement Fill
-            SmallRng::seed_from_u64(0)
-                .fill_bytes(unsafe { v.as_mut_slice().align_to_mut::<u8>().1 });
-            v
-        };
+        let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
 
         Ok(VFilter {
             func: self.build_loop(

@@ -913,18 +913,16 @@ mod tests {
         VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, Fuse3Shards>>: Serialize,
     {
         for n in [0_usize, 10, 1000, 100_000, 3_000_000] {
-            let filter = VBuilder::<_, Box<[u8]>, S, Fuse3Shards>::default()
+            let filter = VBuilder::<u8, Box<[_]>, S, Fuse3Shards>::default()
                 .log2_buckets(4)
                 .offline(false)
                 .try_build_filter(FromIntoIterator::from(0..n), no_logging![])?;
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             filter.serialize(&mut cursor).unwrap();
             cursor.set_position(0);
-            // TODO: This does not work with deserialize_eps
-            let filter =
-                VFilter::<u8, VFunc<usize, _, Box<[u8]>, S, Fuse3Shards>>::deserialize_full(
-                    &mut cursor,
-                )?;
+            let filter = VFilter::<u8, VFunc<usize, _, Box<[_]>, S, Fuse3Shards>>::deserialize_eps(
+                cursor.as_bytes(),
+            )?;
             for i in 0..n {
                 let sig = ToSig::<S>::to_sig(&i, filter.func.seed);
                 assert_eq!(sig.sig_u64() & 0xFF, filter.get(&i) as u64);
