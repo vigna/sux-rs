@@ -505,7 +505,7 @@ impl<
         let mut edge_sets = Vec::new();
         edge_sets.resize_with(num_vertices, EdgeIndexSideSet::default);
         for (edge_index, sig_val) in shard.iter().enumerate() {
-            for (side, &v) in self.shard_edge.local_edge(&sig_val.sig).iter().enumerate() {
+            for (side, &v) in self.shard_edge.local_edge(sig_val.sig).iter().enumerate() {
                 edge_sets[v].add(edge_index, side);
             }
         }
@@ -547,7 +547,7 @@ impl<
             stack[curr] = v;
             curr += 1;
 
-            let e = self.shard_edge.local_edge(&shard[edge_index].sig);
+            let e = self.shard_edge.local_edge(shard[edge_index].sig);
 
             (other_vertex[0], other_vertex[1]) = (e[1], e[2]);
             (other_vertex[2], other_vertex[3]) = (e[0], e[1]);
@@ -610,7 +610,7 @@ impl<
                 continue;
             }
             let (edge_index, side) = edge_sets[v].edge_index_and_side();
-            let edge = self.shard_edge.local_edge(&shard[edge_index].sig);
+            let edge = self.shard_edge.local_edge(shard[edge_index].sig);
             unsafe {
                 let value = match side {
                     0 => data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2]),
@@ -680,7 +680,7 @@ impl<
                             .map(|(_edge_index, sig_val)| {
                                 let mut eq: Vec<_> = self
                                     .shard_edge
-                                    .local_edge(&sig_val.sig)
+                                    .local_edge(sig_val.sig)
                                     .iter()
                                     .map(|x| *x as u32)
                                     .collect();

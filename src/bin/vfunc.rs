@@ -89,11 +89,7 @@ fn main() -> Result<()> {
                 main_with_types::<[u64; 2], Fuse3NoShards>(args)
             }
         } else {
-            if args.sig64 {
-                main_with_types::<[u64; 1], Fuse3Shards>(args)
-            } else {
-                main_with_types::<[u64; 2], Fuse3Shards>(args)
-            }
+            main_with_types::<[u64; 2], Fuse3Shards>(args)
         }
     }
 }
