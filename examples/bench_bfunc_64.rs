@@ -35,7 +35,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     pl.start("Building...");
-    let builder = VBuilder::<u16, Box<[_]>, [u64; 1], Fuse3Shards>::default();
+    let builder = VBuilder::<u16, Box<[_]>, [u64; 2], Fuse3Shards>::default();
 
     let vfunc = builder.try_build_func(
         FromIntoIterator::from(0..args.n as u64),
