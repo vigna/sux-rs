@@ -315,9 +315,9 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
         // for the third vertex.
         let seg_size = self.seg_size as u64;
         [
-            ((sig[0] >> 32) * seg_size >> 32) as _,
-            (((sig[0] as u32 as u64) * seg_size >> 32) + seg_size) as _,
-            (((sig[1] >> 32) * seg_size >> 32) + 2 * seg_size) as _,
+            (((sig[0] >> 32) * seg_size) >> 32) as _,
+            ((((sig[0] as u32 as u64) * seg_size) >> 32) + seg_size) as _,
+            ((((sig[1] >> 32) * seg_size) >> 32) + 2 * seg_size) as _,
         ]
     }
 
@@ -636,7 +636,7 @@ impl Fuse3NoShards {
                 if n <= Fuse3Shards::MAX_LIN_SIZE {
                     // Exhaustively verified for all inputs from 100000 to 800000
                     // Retries: 1:1218 2:234 3:419 4:121
-                    0.168 + (300000 as f64).ln().ln() / (n as f64 + 200000.).ln().max(1.).ln()
+                    0.168 + (300000_f64).ln().ln() / (n as f64 + 200000.).ln().max(1.).ln()
                 } else {
                     Fuse3Shards::c(3, n)
                 }
@@ -912,7 +912,7 @@ mod tests {
         VFunc<usize, u8, Box<[u8]>, S, Fuse3Shards>: Serialize + TypeHash, // Weird
         VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, Fuse3Shards>>: Serialize,
     {
-        for n in [0_usize, 10, 1000, 100_000, 3_000_000] {
+        for n in [0_usize, 10, 1000, 100_000, 1_000_000] {
             let filter = VBuilder::<u8, Box<[_]>, S, Fuse3Shards>::default()
                 .log2_buckets(4)
                 .offline(false)

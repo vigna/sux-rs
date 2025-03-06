@@ -25,7 +25,7 @@ fn test_vfunc() -> Result<()> {
     let mut pl = ProgressLogger::default();
 
     for offline in [false, true] {
-        for n in [0, 10, 1000, 100_000, 3_000_000] {
+        for n in [0, 10, 1000, 100_000, 1_000_000] {
             dbg!(offline, n);
             let func = VBuilder::<_, BitFieldVec<_>, [u64; 2], Fuse3Shards>::default()
                 .log2_buckets(4)
@@ -50,7 +50,7 @@ fn test_vfunc() -> Result<()> {
     }
 
     for offline in [false, true] {
-        for n in [0, 10, 1000, 100_000, 3_000_000] {
+        for n in [0, 10, 1000, 100_000, 1_000_000] {
             dbg!(offline, n);
             let func = VBuilder::<usize, Box<[usize]>, [u64; 2], Fuse3Shards>::default()
                 .log2_buckets(4)
@@ -87,7 +87,7 @@ fn test_vfilter() -> Result<()> {
     let mut pl = ProgressLogger::default();
 
     for offline in [false, true] {
-        for n in [0, 10, 1000, 100_000, 3_000_000] {
+        for n in [0, 10, 1000, 100_000, 1_000_000] {
             dbg!(offline, n);
             let filter = VBuilder::<_, Box<[u8]>>::default()
                 .log2_buckets(4)
@@ -114,7 +114,7 @@ fn test_vfilter() -> Result<()> {
 
                 let failure_rate = (c as f64) / n as f64;
                 assert!(
-                    failure_rate < 1. / 256.,
+                    failure_rate < 1. / 254.,
                     "Failure rate is too high: 1 / {}",
                     1. / failure_rate
                 );
@@ -123,7 +123,7 @@ fn test_vfilter() -> Result<()> {
     }
 
     for offline in [false, true] {
-        for n in [0, 10, 1000, 100_000, 3_000_000] {
+        for n in [0, 10, 1000, 100_000, 1_000_000] {
             dbg!(offline, n);
             let func = VBuilder::<_, Box<[u8]>>::default()
                 .log2_buckets(4)

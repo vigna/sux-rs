@@ -495,7 +495,7 @@ pub fn build_var_to_eqs<'a, W: Word, I: Iterator<Item = (impl IntoIterator<Item 
     num_vars: usize,
     get_iter: impl Fn() -> I,
     backend: &'a mut Vec<usize>,
-    const_terms: &mut Vec<W>,
+    const_terms: &mut [W],
 ) -> Vec<&'a mut [usize]> {
     let mut var_count = vec![0usize; num_vars];
     let mut effective_variables = 0;
