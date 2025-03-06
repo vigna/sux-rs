@@ -12,9 +12,7 @@ use epserde::traits::{TypeHash, ZeroCopy};
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::func::{
-    Fuse3NoShards, Fuse3Shards, Mwhc3NoShards, Mwhc3Shards, ShardEdge, VFilter, VFunc,
-};
+use sux::func::*;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
@@ -60,7 +58,8 @@ struct Args {
     /// Do not use sharding.
     #[arg(long)]
     no_shards: bool,
-    /// Use 3-hypergraph.
+    /// Use random 3-hypergraph.
+    #[cfg(feature = "mwhc")]
     #[arg(long, conflicts_with = "sig64")]
     mwhc: bool,
 }
@@ -72,22 +71,23 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
+    #[cfg(feature = "mwhc")]
     if args.mwhc {
-        if args.no_shards {
+        return if args.no_shards {
             main_with_types::<[u64; 2], Mwhc3NoShards>(args)
         } else {
             main_with_types::<[u64; 2], Mwhc3Shards>(args)
+        };
+    }
+
+    if args.no_shards {
+        if args.sig64 {
+            main_with_types::<[u64; 1], Fuse3NoShards>(args)
+        } else {
+            main_with_types::<[u64; 2], Fuse3NoShards>(args)
         }
     } else {
-        if args.no_shards {
-            if args.sig64 {
-                main_with_types::<[u64; 1], Fuse3NoShards>(args)
-            } else {
-                main_with_types::<[u64; 2], Fuse3NoShards>(args)
-            }
-        } else {
-            main_with_types::<[u64; 2], Fuse3Shards>(args)
-        }
+        main_with_types::<[u64; 2], Fuse3Shards>(args)
     }
 }
 

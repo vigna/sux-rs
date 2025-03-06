@@ -68,6 +68,7 @@ cli = []                 # Build the binary utils
 fuzz = ["dep:arbitrary"]
 slow_tests = []          # Run slow tests (use --release)
 vbuilder_no_data = []    # VBulder does not allocate data (for benchmarking and experiments)
+mwhc = []				 # Compile MWHC data structures (mainly for benchmarking)
 
 [profile.release]
 opt-level = 3 # like --release

@@ -7,9 +7,7 @@
 
 use super::vfunc::*;
 use crate::bits::*;
-use crate::prelude::Rank9;
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
-use crate::traits::NumBits;
 use crate::utils::*;
 use common_traits::CastableInto;
 use derivative::Derivative;
@@ -24,7 +22,7 @@ use rayon::ThreadPoolBuilder;
 use rdst::*;
 use std::any::TypeId;
 use std::hint::unreachable_unchecked;
-use std::iter::{Copied, Map};
+use std::iter::Copied;
 use std::marker::PhantomData;
 use std::slice::Iter;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -32,148 +30,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 const LOG2_MAX_SHARDS: u32 = 12;
-
-/// A set of edge indices and sides represented by a 64-bit integer.
-///
-/// Each (*k*-hyper)edge is a set of *k* vertices (by construction fuse graphs
-/// to not have degenerate edges), but we represent it internally as a vector.
-/// We call *side* the position of a vertex in the edge.
-///
-/// For each vertex, we store both the indices of the edges incident to the
-/// vertex and the sides of the vertex in such edges. While technically not
-/// necessary to perform peeling, the knowledge of the sides speeds up the
-/// peeling breadth-first visit by reducing the number of tests that are
-/// necessary to update the degrees once the edge is peeled (see the
-/// `peel_shard` method).
-///
-/// Edge indices and sides are packed together using Djamal's XOR trick (see
-/// “Cache-Oblivious Peeling of Random Hypergraphs”,
-/// https://doi.org/10.1109/DCC.2014.48): since during the peeling breadth-first
-/// visit we need to know the content of the list only when a single edge index
-/// is present, we can XOR together all the edge indices and sides.
-///
-/// The lower SIDE_SHIFT bits contain a XOR of the edge indices; the next two
-/// bits contain a XOR of the sides; the remaining upper bits contain the
-/// degree. The degree can be stored with a small number of bits because the
-/// graph is random, so the maximum degree is *O*(log log *n*).
-///
-/// When we peel an edge, we do not remove its index from the list of the vertex
-/// it was peeled from, but rather we zero the degree. This allows us to store
-/// the peeled edge and its side in the list.
-///
-/// This approach reduces the core memory usage for the hypergraph to a `u64`
-/// per vertex. Edges are derived on the fly from signatures using the edge
-/// indices. The breadth-first queue and the stack of peeled edges can be
-/// represented just using vertices, as the edge indices can be
-/// retrieved from this list.
-#[derive(Debug, Default)]
-struct EdgeIndexSideSet(u64);
-impl EdgeIndexSideSet {
-    const DEG_SHIFT: u32 = u64::BITS - 16;
-    const SIDE_SHIFT: u32 = u64::BITS - 18;
-    const SIDE_MASK: usize = 3;
-    const EDGE_INDEX_MASK: u64 = (1_u64 << Self::SIDE_SHIFT) - 1;
-    const DEG: u64 = 1_u64 << Self::DEG_SHIFT;
-    const MAX_DEG: usize = (u64::MAX >> Self::DEG_SHIFT) as usize;
-
-    /// Add an edge index and a side to the set.
-    #[inline(always)]
-    fn add(&mut self, edge_index: usize, side: usize) {
-        debug_assert!(self.degree() < Self::MAX_DEG);
-        self.0 += Self::DEG;
-        self.0 ^= (side as u64) << Self::SIDE_SHIFT | edge_index as u64;
-    }
-
-    /// Remove an edge index and a side from the set.
-    #[inline(always)]
-    fn remove(&mut self, edge_index: usize, side: usize) {
-        debug_assert!(self.degree() > 0);
-        self.0 -= Self::DEG;
-        self.0 ^= (side as u64) << Self::SIDE_SHIFT | edge_index as u64;
-    }
-
-    /// Return the degree of the vertex.
-    ///
-    /// When the degree is zero, the list stores a peeled edge and the
-    /// associated side.
-    #[inline(always)]
-    fn degree(&self) -> usize {
-        (self.0 >> Self::DEG_SHIFT) as usize
-    }
-
-    /// Retrieve an edge index and its side.
-    ///
-    /// This method return meaningful values only when the degree is zero (i.e.,
-    /// the edge has been peeled and we use the list to store it) or one (i.e.,
-    /// the edge is peelable and we can retrieved as it is the only vertex).
-    #[inline(always)]
-    fn edge_index_and_side(&self) -> (usize, usize) {
-        debug_assert!(self.degree() < 2);
-        (
-            (self.0 & EdgeIndexSideSet::EDGE_INDEX_MASK) as usize,
-            (self.0 >> Self::SIDE_SHIFT) as usize & Self::SIDE_MASK,
-        )
-    }
-
-    /// Zero the degree of the vertex.
-    ///
-    /// This method should be called when the degree is one, and the list is
-    /// used to store a peeled edge and the associated side.
-    #[inline(always)]
-    fn zero(&mut self) {
-        debug_assert!(self.degree() == 1);
-        self.0 &= (1 << Self::DEG_SHIFT) - 1;
-    }
-}
-
-struct XorGraph {
-    edges: Box<[u32]>,
-    degrees_sides: Box<[u8]>,
-}
-
-impl XorGraph {
-    pub fn new(n: usize) -> XorGraph {
-        XorGraph {
-            edges: vec![0; n].into(),
-            degrees_sides: vec![0; n].into(),
-        }
-    }
-
-    pub fn add(&mut self, v: usize, edge: usize, side: usize) {
-        debug_assert!(edge <= u32::MAX as usize);
-        debug_assert!(side < 3);
-        self.degrees_sides[v] += 4;
-        self.degrees_sides[v] ^= side as u8;
-        self.edges[v] ^= edge as u32;
-    }
-
-    pub fn remove(&mut self, v: usize, edge: usize, side: usize) {
-        debug_assert!(edge <= u32::MAX as usize);
-        debug_assert!(side < 3);
-        self.degrees_sides[v] -= 4;
-        self.degrees_sides[v] ^= side as u8;
-        self.edges[v] ^= edge as u32;
-    }
-
-    pub fn zero(&mut self, v: usize) {
-        self.degrees_sides[v] &= 0b11;
-    }
-
-    pub fn edge_index_and_side(&self, v: usize) -> (usize, usize) {
-        debug_assert!(self.degree(v) < 2);
-        (self.edges[v] as _, (self.degrees_sides[v] & 0b11) as _)
-    }
-
-    pub fn degree(&self, v: usize) -> u8 {
-        self.degrees_sides[v] >> 2
-    }
-
-    pub fn degrees(
-        &self,
-    ) -> std::iter::Map<std::iter::Copied<std::slice::Iter<'_, u8>>, fn(u8) -> u8> {
-        self.degrees_sides.iter().copied().map(|d| d >> 2)
-    }
-}
 
 /// A builder for [`VFunc`] and [`VFilter`].
 ///
@@ -365,8 +221,107 @@ pub enum SolveError {
     UnsolvableShard,
 }
 
+
+/// A graph represented compactly.
+///
+/// Each (*k*-hyper)edge is a set of *k* vertices (by construction fuse graphs
+/// to not have degenerate edges), but we represent it internally as a vector.
+/// We call *side* the position of a vertex in the edge.
+///
+/// For each vertex, we store both the indices of the edges incident to the
+/// vertex and the sides of the vertex in such edges. While technically not
+/// necessary to perform peeling, the knowledge of the sides speeds up the
+/// peeling visit by reducing the number of tests that are necessary to update
+/// the degrees once the edge is peeled (see the `peel_shard` method). For the
+/// same reason it also speeds up assignment.
+///
+/// Edge indices and sides are packed together using Djamal's XOR trick (see
+/// “Cache-Oblivious Peeling of Random Hypergraphs”,
+/// https://doi.org/10.1109/DCC.2014.48): since during the peeling b visit we
+/// need to know the content of the list only when a single edge index is
+/// present, we can XOR together all the edge indices and and XOR together all
+/// sides.
+///
+/// Assuming less than 2³² vertices in a shard, we can stored XOR'd edges in a
+/// `u32`. We then use a single by to store the degree (six upper bits) and the
+/// sides (lower two bits). The degree can be stored with a small number of bits
+/// because the graph is random, so the maximum degree is *O*(log log *n*).
+///
+/// When we peel an edge, we just zero the degree, leaving the edge index and
+/// the side in place for further processing later.
+///
+/// This approach reduces the core memory usage for the hypergraph to 5 bytes
+/// per vertex. Edges are derived on the fly from signatures using the edge
+/// indices. The visit stack and the stack of peeled edges can be
+/// represented just using vertices, as the edge indices can be retrieved from
+/// this list.
+/// 
+/// Note that this approach adds a layer of indirection with respect to storing
+/// hashes and values XOR's together, but in a parallel environment the reduction
+/// of memory contention is worth the extra work.
+struct XorGraph {
+    edges: Box<[u32]>,
+    degrees_sides: Box<[u8]>,
+}
+
+impl XorGraph {
+    pub fn new(n: usize) -> XorGraph {
+        XorGraph {
+            edges: vec![0; n].into(),
+            degrees_sides: vec![0; n].into(),
+        }
+    }
+
+    #[inline(always)]
+    pub fn add(&mut self, v: usize, edge: usize, side: usize) {
+        debug_assert!(edge <= u32::MAX as usize);
+        debug_assert!(side < 3);
+        self.degrees_sides[v] += 4;
+        self.degrees_sides[v] ^= side as u8;
+        self.edges[v] ^= edge as u32;
+    }
+
+    #[inline(always)]
+    pub fn remove(&mut self, v: usize, edge: usize, side: usize) {
+        debug_assert!(edge <= u32::MAX as usize);
+        debug_assert!(side < 3);
+        self.degrees_sides[v] -= 4;
+        self.degrees_sides[v] ^= side as u8;
+        self.edges[v] ^= edge as u32;
+    }
+
+    #[inline(always)]
+    pub fn zero(&mut self, v: usize) {
+        self.degrees_sides[v] &= 0b11;
+    }
+
+    #[inline(always)]
+    pub fn edge_index_and_side(&self, v: usize) -> (usize, usize) {
+        debug_assert!(self.degree(v) < 2);
+        (self.edges[v] as _, (self.degrees_sides[v] & 0b11) as _)
+    }
+
+    #[inline(always)]
+    pub fn degree(&self, v: usize) -> u8 {
+        self.degrees_sides[v] >> 2
+    }
+
+    pub fn degrees(
+        &self,
+    ) -> std::iter::Map<std::iter::Copied<std::slice::Iter<'_, u8>>, fn(u8) -> u8> {
+        self.degrees_sides.iter().copied().map(|d| d >> 2)
+    }
+}
+
+/// Two stacks in the same vector.
+/// 
+/// This struct implements a pair of stacks sharing the same memory. The lower
+/// stack grows from the beginning of the vector, the upper stack grows from the
+/// end of the vector. Since we use the lower stack for peeled vertices and the
+/// upper stack for vertices to visit, the sum of the lengths of the two stacks
+/// cannot exceed the length of the vector.
 struct DoubleStack<V> {
-    stack: Box<[V]>,
+    stack: Vec<V>,
     lower: usize,
     upper: usize,
 }
@@ -374,7 +329,7 @@ struct DoubleStack<V> {
 impl<V: Default + Copy> DoubleStack<V> {
     fn new(n: usize) -> DoubleStack<V> {
         DoubleStack {
-            stack: vec![V::default(); n].into(),
+            stack: vec![V::default(); n],
             lower: 0,
             upper: n,
         }
@@ -382,14 +337,22 @@ impl<V: Default + Copy> DoubleStack<V> {
 }
 
 impl<V: Copy> DoubleStack<V> {
+    #[inline(always)]
     fn push_lower(&mut self, v: V) {
         debug_assert!(self.lower < self.upper);
         self.stack[self.lower] = v;
         self.lower += 1;
     }
 
-    fn pop_lower(&mut self) -> Option<V> {
+    #[inline(always)]
+    fn push_upper(&mut self, v: V) {
         debug_assert!(self.lower < self.upper);
+        self.upper -= 1;
+        self.stack[self.upper] = v;
+    }
+
+    #[inline(always)]
+    fn pop_lower(&mut self) -> Option<V> {
         if self.lower == 0 {
             None
         } else {
@@ -398,24 +361,12 @@ impl<V: Copy> DoubleStack<V> {
         }
     }
 
-    fn push_upper(&mut self, v: V) {
-        debug_assert!(self.lower < self.upper);
-        self.upper -= 1;
-        self.stack[self.upper] = v;
+    fn upper_len(&self) -> usize {
+        self.stack.len() - self.upper
     }
 
-    fn pop_upper(&mut self) -> Option<V> {
-        if self.upper == self.stack.len() {
-            None
-        } else {
-            let next = Some(self.stack[self.upper]);
-            self.upper += 1;
-            next
-        }
-    }
-
-    fn lower_len(&self) -> usize {
-        self.lower
+    fn iter_upper(&self) -> Copied<Iter<'_, V>> {
+        self.stack[self.upper..].iter().copied()
     }
 }
 
@@ -589,9 +540,26 @@ impl<
         data: Shard<'a, W, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
-    ) -> Result<usize, (usize, &'a Vec<SigVal<S, V>>, Shard<'a, W, D>, XorGraph, DoubleStack<u32>, Vec<u8>)> {
+    ) -> Result<
+        usize,
+        (
+            usize,
+            &'a Vec<SigVal<S, V>>,
+            Shard<'a, W, D>,
+            XorGraph,
+            DoubleStack<u32>,
+            Vec<u8>,
+        ),
+    > {
         if self.failed.load(Ordering::Relaxed) {
-            return Err((shard_index, shard, data, XorGraph::new(0), DoubleStack::new(0), vec![]));
+            return Err((
+                shard_index,
+                shard,
+                data,
+                XorGraph::new(0),
+                DoubleStack::new(0),
+                vec![],
+            ));
         }
 
         let num_vertices = self.shard_edge.num_vertices();
@@ -611,7 +579,14 @@ impl<
         pl.done_with_count(shard.len());
 
         if self.failed.load(Ordering::Relaxed) {
-            return Err((shard_index, shard, data, XorGraph::new(0), DoubleStack::new(0), vec![]));
+            return Err((
+                shard_index,
+                shard,
+                data,
+                XorGraph::new(0),
+                DoubleStack::new(0),
+                vec![],
+            ));
         }
 
         pl.start(format!(
@@ -627,11 +602,11 @@ impl<
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
             if degree == 1 {
-                double_stack.push_upper(v as u32);
+                double_stack.push_lower(v as u32);
             }
         }
 
-        while let Some(v) = double_stack.pop_upper()  {
+        while let Some(v) = double_stack.pop_lower() {
             let v = v as usize;
             if xor_graph.degree(v) == 0 {
                 continue;
@@ -640,7 +615,7 @@ impl<
             let (edge_index, side) = xor_graph.edge_index_and_side(v);
             debug_assert!(edge_index < shard.len());
             xor_graph.zero(v);
-            double_stack.push_lower(edge_index as u32);
+            double_stack.push_upper(edge_index as u32);
             sides_stack.push(side as u8);
 
             let e = self.shard_edge.local_edge(shard[edge_index].sig);
@@ -648,31 +623,31 @@ impl<
             match side {
                 0 => {
                     if xor_graph.degree(e[1]) == 2 {
-                        double_stack.push_upper(e[1] as u32);
+                        double_stack.push_lower(e[1] as u32);
                     }
                     xor_graph.remove(e[1], edge_index, 1);
                     if xor_graph.degree(e[2]) == 2 {
-                        double_stack.push_upper(e[2] as u32);
+                        double_stack.push_lower(e[2] as u32);
                     }
                     xor_graph.remove(e[2], edge_index, 2);
                 }
                 1 => {
                     if xor_graph.degree(e[0]) == 2 {
-                        double_stack.push_upper(e[0] as u32);
+                        double_stack.push_lower(e[0] as u32);
                     }
                     xor_graph.remove(e[0], edge_index, 0);
                     if xor_graph.degree(e[2]) == 2 {
-                        double_stack.push_upper(e[2] as u32);
+                        double_stack.push_lower(e[2] as u32);
                     }
                     xor_graph.remove(e[2], edge_index, 2);
                 }
                 2 => {
                     if xor_graph.degree(e[0]) == 2 {
-                        double_stack.push_upper(e[0] as u32);
+                        double_stack.push_lower(e[0] as u32);
                     }
                     xor_graph.remove(e[0], edge_index, 0);
                     if xor_graph.degree(e[1]) == 2 {
-                        double_stack.push_upper(e[1] as u32);
+                        double_stack.push_lower(e[1] as u32);
                     }
                     xor_graph.remove(e[1], edge_index, 1);
                 }
@@ -680,19 +655,34 @@ impl<
             }
         }
 
-        if shard.len() != double_stack.lower_len() {
+        if shard.len() != double_stack.upper_len() {
             pl.info(format_args!(
                 "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
                 shard_index + 1,
                 self.shard_edge.num_shards(),
-                double_stack.lower_len(),
+                double_stack.upper_len(),
                 shard.len(),
             ));
-            return Err((shard_index, shard, data, xor_graph, double_stack, sides_stack));
+            return Err((
+                shard_index,
+                shard,
+                data,
+                xor_graph,
+                double_stack,
+                sides_stack,
+            ));
         }
         pl.done_with_count(shard.len());
 
-        Ok(self.assign(shard_index, shard, data, get_val, double_stack, sides_stack, pl))
+        Ok(self.assign(
+            shard_index,
+            shard,
+            data,
+            get_val,
+            double_stack,
+            sides_stack,
+            pl,
+        ))
     }
 
     /// Perform assignment of values based on peeling data.
@@ -705,8 +695,8 @@ impl<
         shard: &[SigVal<S, V>],
         mut data: Shard<'_, W, D>,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
-        mut double_stack: DoubleStack<u32>,
-        mut sides_stack: Vec<u8>,
+        double_stack: DoubleStack<u32>,
+        sides_stack: Vec<u8>,
         pl: &mut impl ProgressLog,
     ) -> usize {
         if self.failed.load(Ordering::Relaxed) {
@@ -719,7 +709,7 @@ impl<
             self.shard_edge.num_shards()
         ));
 
-        while let (Some(edge_index), Some(side)) = (double_stack.pop_lower(), sides_stack.pop()) {
+        for (edge_index, side) in double_stack.iter_upper().zip(sides_stack.into_iter().rev()) {
             let edge_index = edge_index as usize;
             let edge = self.shard_edge.local_edge(shard[edge_index].sig);
             unsafe {
@@ -747,7 +737,7 @@ impl<
                     ^ data.get(edge[2] as usize),
                 get_val(&shard[edge_index])
             );
-        };
+        }
         pl.done_with_count(shard.len());
 
         shard_index
@@ -778,10 +768,13 @@ impl<
                     self.shard_edge.num_shards()
                 ));
 
+                let num_vertices = self.shard_edge.num_vertices();
+                let mut used_vars = BitVec::new(num_vertices);
+
                 // Create data for an F₂ system using non-peeled edges
                 let mut system = unsafe {
                     crate::utils::mod2_sys_sparse::Modulo2System::from_parts(
-                        self.shard_edge.num_vertices(),
+                        num_vertices,
                         shard
                             .iter()
                             .enumerate()
@@ -791,7 +784,10 @@ impl<
                                     .shard_edge
                                     .local_edge(sig_val.sig)
                                     .iter()
-                                    .map(|x| *x as u32)
+                                    .map(|&x| {
+                                        used_vars.set(x, true);
+                                        x as u32
+                                    })
                                     .collect();
                                 eq.sort_unstable();
                                 crate::utils::mod2_sys_sparse::Modulo2Equation::from_parts(
@@ -812,11 +808,19 @@ impl<
                 let result = system.lazy_gaussian_elimination().map_err(|_| ())?;
                 pl.done_with_count(system.num_equations());
 
-                for (v, &value) in result.iter().enumerate() {
+                for (v, &value) in result.iter().enumerate().filter(|(v, _)| used_vars[*v]) {
                     data.set(v, value);
                 }
 
-                Ok(self.assign(shard_index, shard, data, get_val, double_stack, sides_stack, pl))
+                Ok(self.assign(
+                    shard_index,
+                    shard,
+                    data,
+                    get_val,
+                    double_stack,
+                    sides_stack,
+                    pl,
+                ))
             }
         }
     }
@@ -919,7 +923,7 @@ where
 /// Typically `W` will be `usize` or `u64`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
-    SigVal<S, ()>: RadixKey + Send + Sync,
+    SigVal<S, ()>: RadixKey,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
     u64: CastableInto<W>,
 {
@@ -989,6 +993,7 @@ impl<
         // Loop until success or duplicate detection
         loop {
             let seed = prng.random();
+            pl.expected_updates(self.expected_num_keys);
             pl.item_name("key");
             pl.start("Reading input...");
 
@@ -1090,7 +1095,7 @@ impl<
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, E>>
     where
-        SigVal<S, V>: RadixKey + Send + Sync,
+        SigVal<S, V>: RadixKey,
         for<'a> ShardIter<'a, W, D>: Send,
         for<'a> <ShardIter<'a, W, D> as Iterator>::Item: Send,
     {
@@ -1248,9 +1253,10 @@ impl<
 
 #[cfg(test)]
 mod tests {
-    use crate::func::vbuilder::EdgeIndexSideSet;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
     use xxhash_rust::xxh3;
+
+    use crate::func::vbuilder::XorGraph;
 
     fn _test_peeling_c(n: usize, c: f64, log2_seg_size: u32, seed: u64) -> usize {
         let l = ((c * n as f64).ceil() as usize)
@@ -1283,19 +1289,18 @@ mod tests {
 
         let num_vertices = (l + 2) << log2_seg_size;
 
-        let mut edge_sets = Vec::new();
-        edge_sets.resize_with(num_vertices, EdgeIndexSideSet::default);
+        let mut xor_graph = XorGraph::new(num_vertices);
 
         for i in 0..n {
             for (side, &v) in edge(l, log2_seg_size, &sig(i, seed)).iter().enumerate() {
-                edge_sets[v].add(i, side);
+                xor_graph.add(v, i, side);
             }
         }
 
         let mut stack = Vec::new();
         // Breadth-first visit in reverse order TODO: check if this is the best order
         for v in (0..num_vertices).rev() {
-            if edge_sets[v].degree() != 1 {
+            if xor_graph.degree(v) != 1 {
                 continue;
             }
             let mut pos = stack.len();
@@ -1304,11 +1309,11 @@ mod tests {
             while pos < stack.len() {
                 let v = stack[pos];
                 pos += 1;
-                if edge_sets[v].degree() == 0 {
+                if xor_graph.degree(v) == 0 {
                     continue; // Skip no longer useful entries
                 }
-                let (edge_index, side) = edge_sets[v].edge_index_and_side();
-                edge_sets[v].zero();
+                let (edge_index, side) = xor_graph.edge_index_and_side(v);
+                xor_graph.zero(v);
                 stack[curr] = v;
                 curr += 1;
 
@@ -1316,32 +1321,32 @@ mod tests {
                 // Remove edge from the lists of the other two vertices
                 match side {
                     0 => {
-                        edge_sets[e[1]].remove(edge_index, 1);
-                        if edge_sets[e[1]].degree() == 1 {
+                        xor_graph.remove(e[1], edge_index, 1);
+                        if xor_graph.degree(e[1]) == 1 {
                             stack.push(e[1]);
                         }
-                        edge_sets[e[2]].remove(edge_index, 2);
-                        if edge_sets[e[2]].degree() == 1 {
+                        xor_graph.remove(e[2], edge_index, 2);
+                        if xor_graph.degree(e[2]) == 1 {
                             stack.push(e[2]);
                         }
                     }
                     1 => {
-                        edge_sets[e[0]].remove(edge_index, 0);
-                        if edge_sets[e[0]].degree() == 1 {
+                        xor_graph.remove(e[0], edge_index, 0);
+                        if xor_graph.degree(e[0]) == 1 {
                             stack.push(e[0]);
                         }
-                        edge_sets[e[2]].remove(edge_index, 2);
-                        if edge_sets[e[2]].degree() == 1 {
+                        xor_graph.remove(e[2], edge_index, 2);
+                        if xor_graph.degree(e[2]) == 1 {
                             stack.push(e[2]);
                         }
                     }
                     2 => {
-                        edge_sets[e[0]].remove(edge_index, 0);
-                        if edge_sets[e[0]].degree() == 1 {
+                        xor_graph.remove(e[0], edge_index, 0);
+                        if xor_graph.degree(e[0]) == 1 {
                             stack.push(e[0]);
                         }
-                        edge_sets[e[1]].remove(edge_index, 1);
-                        if edge_sets[e[1]].degree() == 1 {
+                        xor_graph.remove(e[1], edge_index, 1);
+                        if xor_graph.degree(e[1]) == 1 {
                             stack.push(e[1]);
                         }
                     }

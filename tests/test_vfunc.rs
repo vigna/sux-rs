@@ -16,7 +16,16 @@ use sux::{
 };
 
 #[test]
-fn test_vfunc() -> Result<()> {
+fn test_vfunc_lge() -> Result<()> {
+    _test_vfunc(&[0, 10, 1000, 100_000])
+}
+
+#[test]
+fn test_vfunc_peeling() -> Result<()> {
+    _test_vfunc(&[1_000_000])
+}
+
+fn _test_vfunc(sizes: &[usize]) -> Result<()> {
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Info)
@@ -25,7 +34,7 @@ fn test_vfunc() -> Result<()> {
     let mut pl = ProgressLogger::default();
 
     for offline in [false, true] {
-        for n in [0, 10, 1000, 100_000, 1_000_000] {
+        for &n in sizes {
             dbg!(offline, n);
             let func = VBuilder::<_, BitFieldVec<_>, [u64; 2], Fuse3Shards>::default()
                 .log2_buckets(4)
@@ -50,7 +59,7 @@ fn test_vfunc() -> Result<()> {
     }
 
     for offline in [false, true] {
-        for n in [0, 10, 1000, 100_000, 1_000_000] {
+        for &n in sizes {
             dbg!(offline, n);
             let func = VBuilder::<usize, Box<[usize]>, [u64; 2], Fuse3Shards>::default()
                 .log2_buckets(4)
@@ -77,8 +86,8 @@ fn test_vfunc() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_vfilter() -> Result<()> {
+
+fn _test_vfilter(sizes: &[usize]) -> Result<()> {
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Info)
@@ -87,7 +96,7 @@ fn test_vfilter() -> Result<()> {
     let mut pl = ProgressLogger::default();
 
     for offline in [false, true] {
-        for n in [0, 10, 1000, 100_000, 1_000_000] {
+        for &n in sizes {
             dbg!(offline, n);
             let filter = VBuilder::<_, Box<[u8]>>::default()
                 .log2_buckets(4)
@@ -123,7 +132,7 @@ fn test_vfilter() -> Result<()> {
     }
 
     for offline in [false, true] {
-        for n in [0, 10, 1000, 100_000, 1_000_000] {
+        for &n in sizes {
             dbg!(offline, n);
             let func = VBuilder::<_, Box<[u8]>>::default()
                 .log2_buckets(4)
@@ -158,6 +167,16 @@ fn test_vfilter() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[test]
+fn test_vfilter_lge() -> Result<()> {
+    _test_vfilter(&[0, 10, 1000, 100_000])
+}
+
+#[test]
+fn test_vfilter_peeling() -> Result<()> {
+    _test_vfilter(&[1_000_000])
 }
 
 #[test]
