@@ -180,15 +180,14 @@ where
 
         pl.start("Querying (independent)...");
         for i in 0..args.n {
-            std::hint::black_box(filter.get(&i));
+            std::hint::black_box(filter.contains(&i));
         }
         pl.done_with_count(args.n);
 
         pl.start("Querying (dependent)...");
         let mut x = 0;
         for i in 0..args.n {
-            x = filter.contains(&(i ^ (x & 1))) as usize;
-            std::hint::black_box(());
+            x = std::hint::black_box(filter.contains(&(i ^ x))) as usize;
         }
         pl.done_with_count(args.n);
     }

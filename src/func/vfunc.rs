@@ -175,17 +175,6 @@ pub trait ShardEdge<S, const K: usize>:
 
 /// Fixed-point arithmetic range reduction.
 ///
-/// This macro computes ⌊⍺ * *n*⌋, where ⍺ ∈ [0..1), using 64-bit fixed-point
-/// arithmetic. ⍺ is represented by a 32-bit unsigned integer *x*. In
-/// fixed-point arithmetic, this amounts to computing ⌊*x* * *n* / 2³²⌋.
-macro_rules! fixed_point_reduce_64 {
-    ($x:expr, $n:expr) => {
-        (($x as u64 * $n as u64) >> 32) as usize
-    };
-}
-
-/// Fixed-point arithmetic range reduction.
-///
 /// This macro computes ⌊⍺ * *n*⌋, where ⍺ ∈ [0..1), using 128-bit fixed-point
 /// arithmetic. ⍺ is represented by a 64-bit unsigned integer *x*. In
 /// fixed-point arithmetic, this amounts to computing ⌊*x* * *n* / 2⁶⁴⌋.
@@ -198,6 +187,17 @@ macro_rules! fixed_point_reduce_128 {
 #[cfg(feature = "mwhc")]
 mod mwhc {
     use super::*;
+
+    /// Fixed-point arithmetic range reduction.
+    ///
+    /// This macro computes ⌊⍺ * *n*⌋, where ⍺ ∈ [0..1), using 64-bit fixed-point
+    /// arithmetic. ⍺ is represented by a 32-bit unsigned integer *x*. In
+    /// fixed-point arithmetic, this amounts to computing ⌊*x* * *n* / 2³²⌋.
+    macro_rules! fixed_point_reduce_64 {
+        ($x:expr, $n:expr) => {
+            (($x as u64 * $n as u64) >> 32) as usize
+        };
+    }
     /// Zero-cost sharded 3-hypergraph MWHC construction.
     ///
     /// This construction uses peelable 3-hypergraphs on sharded keys, giving a 23%
