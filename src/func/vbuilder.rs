@@ -517,12 +517,17 @@ impl<
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
-        let mut stack = Vec::with_capacity(num_vertices + 1);
-        let mut eqs = Vec::with_capacity(shard.len());
-        // Preload all vertices of degree one in the visit queue
+        let mut upper = num_vertices;
+        let mut lower = 0;
+        // Two stacks in the same array: one grows downwards from 
+        // upper to visit the graph, the other one grows upwards from
+        // lower to accumulate the peeled edges.
+        let mut double_stack = vec![0; num_vertices];
+        // Preload all vertices of degree one in the visit stack
         for v in 0..num_vertices {
             if edge_sets[v].degree() == 1 {
-                stack.push(v);
+                upper -= 1;
+                double_stack[upper] = v;
             }
         }
 
@@ -532,13 +537,16 @@ impl<
         // This array will be loaded with the vertices corresponding to
         // the sides in other_side
         let mut other_vertex = [0; 4];
-        while let Some(v) = stack.pop() {
+        while upper < num_vertices {
+            let v = double_stack[upper];
+            upper += 1;
             if edge_sets[v].degree() == 0 {
                 continue;
             }
             let (edge_index, side) = edge_sets[v].edge_index_and_side();
             edge_sets[v].zero();
-            eqs.push(edge_index << 2 | side);
+            double_stack[lower] = edge_index << 2 | side;
+            lower += 1;
 
             let e = self.shard_edge.local_edge(shard[edge_index].sig);
 
@@ -547,28 +555,31 @@ impl<
 
             edge_sets[other_vertex[side]].remove(edge_index, other_side[side]);
             if edge_sets[other_vertex[side]].degree() == 1 {
-                stack.push(other_vertex[side]);
+                upper -= 1;
+                double_stack[upper] = other_vertex[side];
             }
 
             edge_sets[other_vertex[side + 1]].remove(edge_index, other_side[side + 1]);
             if edge_sets[other_vertex[side + 1]].degree() == 1 {
-                stack.push(other_vertex[side + 1]);
+                upper -= 1;
+                double_stack[upper] = other_vertex[side + 1];
             }
-        };
+        }
 
-        if shard.len() != eqs.len() {
+        if shard.len() != lower {
             pl.info(format_args!(
                 "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
                 shard_index + 1,
                 self.shard_edge.num_shards(),
-                eqs.len(),
+                lower,
                 shard.len(),
             ));
-            return Err((shard_index, shard, data, edge_sets, stack));
+            return Err((shard_index, shard, data, edge_sets, double_stack));
         }
         pl.done_with_count(shard.len());
 
-        Ok(self.assign(shard_index, shard, data, get_val, edge_sets, eqs, pl))
+        double_stack.truncate(lower);
+        Ok(self.assign(shard_index, shard, data, get_val, edge_sets, double_stack, pl))
     }
 
     /// Perform assignment of values based on peeling data.
@@ -607,7 +618,7 @@ impl<
                     0 => data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2]),
                     1 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[2]),
                     2 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[1]),
-                    _ => core::hint::unreachable_unchecked()
+                    _ => core::hint::unreachable_unchecked(),
                 };
 
                 data.set_unchecked(edge[side], get_val(&shard[edge_index]) ^ value);
@@ -652,12 +663,9 @@ impl<
 
                 // Build a ranked vector of unpeeled equation
                 let mut unpeeled = bit_vec![true; shard.len()];
-                stack
-                    .iter()
-                    .filter(|&v| edge_sets[*v].degree() == 0)
-                    .for_each(|&v| {
-                        unpeeled.set(edge_sets[v].edge_index_and_side().0, false);
-                    });
+                stack.iter().for_each(|&edge_index_side| {
+                    unpeeled.set(edge_index_side >> 2, false);
+                });
                 let unpeeled = Rank9::new(unpeeled);
 
                 // Create data for an F₂ system using non-peeled edges
