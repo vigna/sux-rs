@@ -12,9 +12,7 @@ use epserde::traits::{TypeHash, ZeroCopy};
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::func::{
-    Fuse3NoShards, Fuse3Shards, Mwhc3NoShards, Mwhc3Shards, ShardEdge, VFilter, VFunc,
-};
+use sux::func::*;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
@@ -30,8 +28,8 @@ struct Args {
     /// The number of keys. If no filename is provided, use the 64-bit keys
     /// [0..n).
     n: usize,
-    /// A name for the ε-serde serialized function.
-    func: String,
+    /// An optional name for the ε-serde serialized function.
+    func: Option<String>,
     #[arg(short, long)]
     /// A file containing UTF-8 keys, one per line. At most N keys will be read.
     filename: Option<String>,
@@ -61,6 +59,7 @@ struct Args {
     #[arg(long)]
     no_shards: bool,
     /// Use 3-hypergraph.
+    #[cfg(feature = "mwhc")]
     #[arg(long, conflicts_with = "sig64")]
     mwhc: bool,
 }
@@ -72,22 +71,23 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
+    #[cfg(feature = "mwhc")]
     if args.mwhc {
-        if args.no_shards {
+        return if args.no_shards {
             main_with_types::<[u64; 2], Mwhc3NoShards>(args)
         } else {
             main_with_types::<[u64; 2], Mwhc3Shards>(args)
+        };
+    }
+
+    if args.no_shards {
+        if args.sig64 {
+            main_with_types::<[u64; 1], Fuse3NoShards>(args)
+        } else {
+            main_with_types::<[u64; 2], Fuse3NoShards>(args)
         }
     } else {
-        if args.no_shards {
-            if args.sig64 {
-                main_with_types::<[u64; 1], Fuse3NoShards>(args)
-            } else {
-                main_with_types::<[u64; 2], Fuse3NoShards>(args)
-            }
-        } else {
-            main_with_types::<[u64; 2], Fuse3Shards>(args)
-        }
+        main_with_types::<[u64; 2], Fuse3Shards>(args)
     }
 }
 
@@ -134,11 +134,15 @@ where
             let t = LineLender::from_path(filename)?.take(n);
             builder.try_build_filter(t, &mut pl)?
         };
-        filter.store(&args.func)?;
+        if let Some(func) = args.func {
+            filter.store(func)?;
+        }
     } else {
         let builder = set_builder(VBuilder::<u8, Box<[u8]>, S, E>::default(), &args);
         let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
-        filter.store(&args.func)?;
+        if let Some(func) = args.func {
+            filter.store(func)?;
+        }
     }
 
     Ok(())
