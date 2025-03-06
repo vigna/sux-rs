@@ -82,7 +82,7 @@ where
     VFunc<str, u8, Box<[u8]>, S, E>: Deserialize + TypeHash, // TODO: this is weird
     VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, E>>: Deserialize,
 {
-    let mut pl = ProgressLogger::default();
+    let mut pl = progress_logger![item_name = "key"];
 
     if let Some(filename) = args.filename {
         let mut keys: Vec<_> = if args.zstd {
