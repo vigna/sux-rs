@@ -604,7 +604,6 @@ impl<
             shard,
             data,
             get_val,
-            edge_sets,
             double_stack,
             pl,
         ))
@@ -620,7 +619,6 @@ impl<
         shard: &Vec<SigVal<S, V>>,
         mut data: Shard<'a, W, D>,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
-        edge_sets: Vec<EdgeIndexSideSet>,
         mut stack: Vec<usize>,
         pl: &mut impl ProgressLog,
     ) -> usize {
@@ -731,7 +729,7 @@ impl<
                     data.set(v, value);
                 }
 
-                Ok(self.assign(shard_index, shard, data, get_val, edge_sets, stack, pl))
+                Ok(self.assign(shard_index, shard, data, get_val, stack, pl))
             }
         }
     }
