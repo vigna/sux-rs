@@ -173,6 +173,28 @@ pub trait ShardEdge<S, const K: usize>:
     fn edge(&self, sig: S) -> [usize; K];
 }
 
+/// Fixed-point arithmetic range reduction.
+///
+/// This macro computes ⌊⍺ * *n*⌋, where ⍺ ∈ [0..1), using 64-bit fixed-point
+/// arithmetic. ⍺ is represented by a 32-bit unsigned integer *x*. In
+/// fixed-point arithmetic, this amounts to computing ⌊*x* * *n* / 2³²⌋.
+macro_rules! fixed_point_reduce_64 {
+    ($x:expr, $n:expr) => {
+        (($x as u64 * $n as u64) >> 32) as usize
+    };
+}
+
+/// Fixed-point arithmetic range reduction.
+///
+/// This macro computes ⌊⍺ * *n*⌋, where ⍺ ∈ [0..1), using 128-bit fixed-point
+/// arithmetic. ⍺ is represented by a 64-bit unsigned integer *x*. In
+/// fixed-point arithmetic, this amounts to computing ⌊*x* * *n* / 2⁶⁴⌋.
+macro_rules! fixed_point_reduce_128 {
+    ($x:expr, $n:expr) => {
+        (($x as u128 * $n as u128) >> 64) as usize
+    };
+}
+
 #[cfg(feature = "mwhc")]
 mod mwhc {
     use super::*;
@@ -203,7 +225,7 @@ mod mwhc {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
-                "MWHC (shards) Number of shards: 2^{} Number of vertice per shard: {}",
+                "MWHC (shards) Number of shards: 2^{} Number of vertices per shard: {}",
                 self.shard_high_bits(),
                 self.seg_size * 3
             )
@@ -215,27 +237,21 @@ mod mwhc {
         /// bits of sig[1], and the lower 32 bits of sig[1] for the third vertex.
         #[inline(always)]
         fn _edge_2(&self, shard: usize, sig: [u64; 2]) -> [usize; 3] {
-            let seg_size = self.seg_size as u64;
-            let start = shard as u64 * seg_size * 3;
-
-            [
-                (((sig[0] as u32 as u64 * seg_size) >> 32) + start) as _,
-                ((((sig[1] >> 32) * seg_size) >> 32) + start + seg_size) as _,
-                ((((sig[1] as u32 as u64) * seg_size) >> 32) + start + 2 * seg_size) as _,
-            ]
+            let seg_size = self.seg_size;
+            let mut start = shard * seg_size * 3;
+            let v0 = fixed_point_reduce_64!(sig[0] as u32, seg_size) + start;
+            start += seg_size;
+            let v1 = fixed_point_reduce_64!(sig[1] >> 32, seg_size) + start;
+            start += seg_size;
+            let v2 = fixed_point_reduce_64!(sig[1] as u32, seg_size) + start;
+            [v0, v1, v2]
         }
 
         /// We use the lower 32 bits of sig[0] for the first vertex, the higher 32
         /// bits of sig[1], and the lower 32 bits of sig[1] for the third vertex.
         #[inline(always)]
         fn _local_edge_2(&self, sig: [u64; 2]) -> [usize; 3] {
-            let seg_size = self.seg_size as u64;
-
-            [
-                ((sig[0] as u32 as u64 * seg_size) >> 32) as _,
-                (((sig[1] >> 32) * seg_size) >> 32) as _,
-                (((sig[1] as u32 as u64) * seg_size) >> 32) as _,
-            ]
+            self._edge_2(0, sig)
         }
     }
 
@@ -247,7 +263,7 @@ mod mwhc {
         fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
             self.seg_size = ((max_shard as f64 * 1.23) / 3.).ceil() as usize;
             if self.shard_high_bits() != 0 {
-                self.seg_size = self.seg_size.next_multiple_of(64);
+                self.seg_size = self.seg_size.next_multiple_of(128);
             }
             (1.23, false)
         }
@@ -295,7 +311,7 @@ mod mwhc {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
-                "MWHC (no shards) Number of vertice per shard: {}",
+                "MWHC (no shards) Number of vertices per shard: {}",
                 self.seg_size * 3
             )
         }
@@ -329,25 +345,17 @@ mod mwhc {
             // We use the upper 32 bits of sig[0] for the first vertex, the lower 32
             // bits of sig[0] for the second vertex, and the uper 32 bits of sig[1]
             // for the third vertex.
-            let seg_size = self.seg_size as u64;
-            [
-                (((sig[0] >> 32) * seg_size) >> 32) as _,
-                ((((sig[0] as u32 as u64) * seg_size) >> 32) + seg_size) as _,
-                ((((sig[1] >> 32) * seg_size) >> 32) + 2 * seg_size) as _,
-            ]
+            let seg_size = self.seg_size;
+            let v0 = fixed_point_reduce_64!(sig[0] >> 32, seg_size);
+            let v1 = fixed_point_reduce_64!(sig[0] as u32, seg_size) + seg_size;
+            let v2 = fixed_point_reduce_64!(sig[1] >> 32, seg_size) + 2 * seg_size;
+
+            [v0, v1, v2]
         }
 
         #[inline(always)]
         fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
-            // We use the upper 32 bits of sig[0] for the first vertex, the lower 32
-            // bits of sig[0] for the second vertex, and the uper 32 bits of sig[1]
-            // for the third vertex.
-            let seg_size = self.seg_size as u64;
-            [
-                (((sig[0] >> 32) * seg_size) >> 32) as _,
-                ((((sig[0] as u32 as u64) * seg_size) >> 32) + seg_size) as _,
-                ((((sig[1] >> 32) * seg_size) >> 32) + 2 * seg_size) as _,
-            ]
+            self.local_edge(sig)
         }
     }
 }
@@ -531,8 +539,7 @@ impl Fuse3Shards {
         // would need a right rotation of one to move exactly the shard high
         // bits to the bottom, but in this way we save an operation, and there
         // are enough random bits anyway.
-        let first_segment =
-            ((sig[0].rotate_right(shard_bits_shift) as u128 * l as u128) >> 64) as usize;
+        let first_segment = fixed_point_reduce_128!(sig[0].rotate_right(shard_bits_shift), l);
         let mut start = (shard * (l as usize + 2) + first_segment) << log2_seg_size;
         let segment_size = 1 << log2_seg_size;
         let segment_mask = segment_size - 1;
@@ -609,9 +616,9 @@ impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
     #[inline(always)]
     fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
         let first_segment =
-            ((sig[0].rotate_right(self.shard_bits_shift) as u128 * self.l as u128) >> 64) as usize;
+            fixed_point_reduce_128!(sig[0].rotate_right(self.shard_bits_shift), self.l);
         let mut start = first_segment << self.log2_seg_size;
-        let segment_size = 1_usize << self.log2_seg_size;
+        let segment_size = 1 << self.log2_seg_size;
         let segment_mask = segment_size - 1;
 
         let v0 = start + (sig[0] as u32 as usize & segment_mask);
@@ -749,7 +756,7 @@ impl ShardEdge<[u64; 2], 3> for Fuse3NoShards {
 
     #[inline(always)]
     fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
-        let first_segment = ((sig[0] as u128 * self.l as u128) >> 64) as usize;
+        let first_segment = fixed_point_reduce_128!(sig[0], self.l);
         let mut start = first_segment << self.log2_seg_size;
         let segment_size = 1 << self.log2_seg_size;
         let segment_mask = segment_size - 1;
@@ -794,7 +801,7 @@ impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
     fn local_edge(&self, sig: [u64; 1]) -> [usize; 3] {
         // From https://github.com/ayazhafiz/xorf
         let hash = sig[0];
-        let hi = ((hash as u128 * (self.l << self.log2_seg_size) as u128) >> 64) as u64;
+        let hi = fixed_point_reduce_128!(hash, self.l << self.log2_seg_size);
         let v0 = hi as usize;
         let seg_size = 1 << self.log2_seg_size;
         let mut v1 = v0 + seg_size;
@@ -809,7 +816,7 @@ impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
     fn edge(&self, sig: [u64; 1]) -> [usize; 3] {
         // From https://github.com/ayazhafiz/xorf
         let hash = sig[0];
-        let hi = ((hash as u128 * (self.l << self.log2_seg_size) as u128) >> 64) as u64;
+        let hi = fixed_point_reduce_128!(hash, self.l << self.log2_seg_size);
         let v0 = hi as usize;
         let seg_size = 1 << self.log2_seg_size;
         let mut v1 = v0 + seg_size;

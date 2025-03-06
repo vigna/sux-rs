@@ -29,7 +29,7 @@ struct Args {
     /// [0..n).
     n: usize,
     /// A name for the ε-serde serialized function.
-    func: String,
+    func: Option<String>,
     #[arg(short, long)]
     /// A file containing UTF-8 keys, one per line. At most N keys will be read.
     filename: Option<String>,
@@ -136,7 +136,9 @@ where
                 &mut pl,
             )?
         };
-        func.store(&args.func)?;
+        if let Some(filename) = args.func {
+            func.store(filename)?;
+        }
     } else {
         let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
         let func = builder.try_build_func(
@@ -144,7 +146,9 @@ where
             FromIntoIterator::from(0_usize..),
             &mut pl,
         )?;
-        func.store(&args.func)?;
+        if let Some(filename) = args.func {
+            func.store(filename)?;
+        }
     }
 
     Ok(())

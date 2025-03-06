@@ -30,7 +30,7 @@ struct Args {
     /// [0..n).
     n: usize,
     /// An optional name for the ε-serde serialized function.
-    func: Option<String>,
+    filter: Option<String>,
     /// The number of bits of the signatures.
     #[arg(short, long, default_value_t = 8)]
     bits: u32,
@@ -190,14 +190,14 @@ where
             let t = LineLender::from_path(filename)?.take(n);
             builder.try_build_filter(t, &mut pl)?
         };
-        if let Some(func) = args.func {
-            filter.store(func)?;
+        if let Some(filename) = args.filter {
+            filter.store(filename)?;
         }
     } else {
         let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
         let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
-        if let Some(func) = args.func {
-            filter.store(func)?;
+        if let Some(filename) = args.filter {
+            filter.store(filename)?;
         }
     }
 
