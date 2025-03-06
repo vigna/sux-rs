@@ -484,18 +484,9 @@ impl<
         data: Shard<'a, W, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
-    ) -> Result<
-        usize,
-        (
-            usize,
-            &'a Vec<SigVal<S, V>>,
-            Shard<'a, W, D>,
-            Vec<EdgeIndexSideSet>,
-            Vec<usize>,
-        ),
-    > {
+    ) -> Result<usize, (usize, &'a Vec<SigVal<S, V>>, Shard<'a, W, D>, Vec<usize>)> {
         if self.failed.load(Ordering::Relaxed) {
-            return Err((shard_index, shard, data, vec![], vec![]));
+            return Err((shard_index, shard, data, vec![]));
         }
 
         let num_vertices = self.shard_edge.num_vertices();
@@ -516,7 +507,7 @@ impl<
         pl.done_with_count(shard.len());
 
         if self.failed.load(Ordering::Relaxed) {
-            return Err((shard_index, shard, data, edge_sets, vec![]));
+            return Err((shard_index, shard, data, vec![]));
         }
 
         pl.start(format!(
@@ -531,8 +522,8 @@ impl<
         // lower to accumulate the peeled edges.
         let mut double_stack = vec![0; num_vertices];
         // Preload all vertices of degree one in the visit stack
-        for v in 0..num_vertices {
-            if edge_sets[v].degree() == 1 {
+        for (v, edge_set) in edge_sets.iter().enumerate() {
+            if edge_set.degree() == 1 {
                 double_stack[upper] = v;
                 upper -= 1;
             }
@@ -602,7 +593,7 @@ impl<
                 lower,
                 shard.len(),
             ));
-            return Err((shard_index, shard, data, edge_sets, double_stack));
+            return Err((shard_index, shard, data, double_stack));
         }
         pl.done_with_count(shard.len());
 
@@ -613,11 +604,11 @@ impl<
     ///
     /// This method might be called after a successful peeling procedure, or
     /// after a linear solver has been used to solve the remaining edges.
-    fn assign<'a, V: ZeroCopy + Send + Sync>(
+    fn assign<V: ZeroCopy + Send + Sync>(
         &self,
         shard_index: usize,
-        shard: &Vec<SigVal<S, V>>,
-        mut data: Shard<'a, W, D>,
+        shard: &[SigVal<S, V>],
+        mut data: Shard<'_, W, D>,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         mut stack: Vec<usize>,
         pl: &mut impl ProgressLog,
@@ -675,7 +666,7 @@ impl<
         // Let's try to peel first
         match self.peel_shard(shard_index, shard, data, get_val, pl) {
             Ok(shard_index) => Ok(shard_index),
-            Err((shard_index, shard, mut data, edge_sets, stack)) => {
+            Err((shard_index, shard, mut data, stack)) => {
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
                 // Likely result--we have solve the rest
                 pl.start(format!(
