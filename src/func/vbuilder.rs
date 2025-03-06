@@ -24,7 +24,9 @@ use rayon::ThreadPoolBuilder;
 use rdst::*;
 use std::any::TypeId;
 use std::hint::unreachable_unchecked;
+use std::iter::{Copied, Map};
 use std::marker::PhantomData;
+use std::slice::Iter;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -121,6 +123,55 @@ impl EdgeIndexSideSet {
     fn zero(&mut self) {
         debug_assert!(self.degree() == 1);
         self.0 &= (1 << Self::DEG_SHIFT) - 1;
+    }
+}
+
+struct XorGraph {
+    edges: Box<[u32]>,
+    degrees_sides: Box<[u8]>,
+}
+
+impl XorGraph {
+    pub fn new(n: usize) -> XorGraph {
+        XorGraph {
+            edges: vec![0; n].into(),
+            degrees_sides: vec![0; n].into(),
+        }
+    }
+
+    pub fn add(&mut self, v: usize, edge: usize, side: usize) {
+        debug_assert!(edge <= u32::MAX as usize);
+        debug_assert!(side < 3);
+        self.degrees_sides[v] += 4;
+        self.degrees_sides[v] ^= side as u8;
+        self.edges[v] ^= edge as u32;
+    }
+
+    pub fn remove(&mut self, v: usize, edge: usize, side: usize) {
+        debug_assert!(edge <= u32::MAX as usize);
+        debug_assert!(side < 3);
+        self.degrees_sides[v] -= 4;
+        self.degrees_sides[v] ^= side as u8;
+        self.edges[v] ^= edge as u32;
+    }
+
+    pub fn zero(&mut self, v: usize) {
+        self.degrees_sides[v] &= 0b11;
+    }
+
+    pub fn edge_index_and_side(&self, v: usize) -> (usize, usize) {
+        debug_assert!(self.degree(v) < 2);
+        (self.edges[v] as _, (self.degrees_sides[v] & 0b11) as _)
+    }
+
+    pub fn degree(&self, v: usize) -> u8 {
+        self.degrees_sides[v] >> 2
+    }
+
+    pub fn degrees(
+        &self,
+    ) -> std::iter::Map<std::iter::Copied<std::slice::Iter<'_, u8>>, fn(u8) -> u8> {
+        self.degrees_sides.iter().copied().map(|d| d >> 2)
     }
 }
 
@@ -314,6 +365,60 @@ pub enum SolveError {
     UnsolvableShard,
 }
 
+struct DoubleStack<V> {
+    stack: Box<[V]>,
+    lower: usize,
+    upper: usize,
+}
+
+impl<V: Default + Copy> DoubleStack<V> {
+    fn new(n: usize) -> DoubleStack<V> {
+        DoubleStack {
+            stack: vec![V::default(); n].into(),
+            lower: 0,
+            upper: n,
+        }
+    }
+}
+
+impl<V: Copy> DoubleStack<V> {
+    fn push_lower(&mut self, v: V) {
+        debug_assert!(self.lower < self.upper);
+        self.stack[self.lower] = v;
+        self.lower += 1;
+    }
+
+    fn pop_lower(&mut self) -> Option<V> {
+        debug_assert!(self.lower < self.upper);
+        if self.lower == 0 {
+            None
+        } else {
+            self.lower -= 1;
+            Some(self.stack[self.lower])
+        }
+    }
+
+    fn push_upper(&mut self, v: V) {
+        debug_assert!(self.lower < self.upper);
+        self.upper -= 1;
+        self.stack[self.upper] = v;
+    }
+
+    fn pop_upper(&mut self) -> Option<V> {
+        if self.upper == self.stack.len() {
+            None
+        } else {
+            let next = Some(self.stack[self.upper]);
+            self.upper += 1;
+            next
+        }
+    }
+
+    fn lower_len(&self) -> usize {
+        self.lower
+    }
+}
+
 type ShardIter<'a, W, D> = <D as BitFieldSliceMut<W>>::ChunksMut<'a>;
 type Shard<'a, W, D> = <ShardIter<'a, W, D> as Iterator>::Item;
 
@@ -444,7 +549,7 @@ impl<
                             // probability of being false positives.
                             //
                             // We work around the fact that [usize] does not implement Fill
-                            Mwc192::seed_from_u64(0)
+                            Mwc192::seed_from_u64(self.seed)
                                 .fill_bytes(unsafe { data.as_mut_slice().align_to_mut::<u8>().1 });
                         }
 
@@ -484,9 +589,9 @@ impl<
         data: Shard<'a, W, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
-    ) -> Result<usize, (usize, &'a Vec<SigVal<S, V>>, Shard<'a, W, D>, Vec<usize>)> {
+    ) -> Result<usize, (usize, &'a Vec<SigVal<S, V>>, Shard<'a, W, D>, XorGraph, DoubleStack<u32>, Vec<u8>)> {
         if self.failed.load(Ordering::Relaxed) {
-            return Err((shard_index, shard, data, vec![]));
+            return Err((shard_index, shard, data, XorGraph::new(0), DoubleStack::new(0), vec![]));
         }
 
         let num_vertices = self.shard_edge.num_vertices();
@@ -497,17 +602,16 @@ impl<
             self.shard_edge.num_shards()
         ));
 
-        let mut edge_sets = Vec::new();
-        edge_sets.resize_with(num_vertices, EdgeIndexSideSet::default);
+        let mut xor_graph = XorGraph::new(num_vertices);
         for (edge_index, sig_val) in shard.iter().enumerate() {
             for (side, &v) in self.shard_edge.local_edge(sig_val.sig).iter().enumerate() {
-                edge_sets[v].add(edge_index, side);
+                xor_graph.add(v, edge_index, side);
             }
         }
         pl.done_with_count(shard.len());
 
         if self.failed.load(Ordering::Relaxed) {
-            return Err((shard_index, shard, data, vec![]));
+            return Err((shard_index, shard, data, XorGraph::new(0), DoubleStack::new(0), vec![]));
         }
 
         pl.start(format!(
@@ -515,89 +619,80 @@ impl<
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
-        let mut upper = num_vertices - 1;
-        let mut lower = 0;
-        // Two stacks in the same array: one grows downwards from
-        // upper to visit the graph, the other one grows upwards from
-        // lower to accumulate the peeled edges.
-        let mut double_stack = vec![0; num_vertices];
+        // The upper stack contains vertices to be visited. The lower stack
+        // contains peeled edges. The sum of the lengths of these two items
+        // cannot exceed the number of vertices.
+        let mut double_stack = DoubleStack::<u32>::new(num_vertices);
+        let mut sides_stack = Vec::<u8>::new();
         // Preload all vertices of degree one in the visit stack
-        for (v, edge_set) in edge_sets.iter().enumerate() {
-            if edge_set.degree() == 1 {
-                double_stack[upper] = v;
-                upper -= 1;
+        for (v, degree) in xor_graph.degrees().enumerate() {
+            if degree == 1 {
+                double_stack.push_upper(v as u32);
             }
         }
 
-        while upper < num_vertices - 1 {
-            upper += 1;
-            let v = double_stack[upper];
-            if edge_sets[v].degree() == 0 {
+        while let Some(v) = double_stack.pop_upper()  {
+            let v = v as usize;
+            if xor_graph.degree(v) == 0 {
                 continue;
             }
-            let (edge_index, side) = edge_sets[v].edge_index_and_side();
-            edge_sets[v].zero();
-            double_stack[lower] = edge_index << 2 | side;
-            lower += 1;
+            debug_assert!(xor_graph.degree(v) == 1);
+            let (edge_index, side) = xor_graph.edge_index_and_side(v);
+            debug_assert!(edge_index < shard.len());
+            xor_graph.zero(v);
+            double_stack.push_lower(edge_index as u32);
+            sides_stack.push(side as u8);
 
             let e = self.shard_edge.local_edge(shard[edge_index].sig);
 
             match side {
                 0 => {
-                    if edge_sets[e[1]].degree() == 2 {
-                        double_stack[upper] = e[1];
-                        upper -= 1;
+                    if xor_graph.degree(e[1]) == 2 {
+                        double_stack.push_upper(e[1] as u32);
                     }
-                    edge_sets[e[1]].remove(edge_index, 1);
-                    if edge_sets[e[2]].degree() == 2 {
-                        double_stack[upper] = e[2];
-                        upper -= 1;
+                    xor_graph.remove(e[1], edge_index, 1);
+                    if xor_graph.degree(e[2]) == 2 {
+                        double_stack.push_upper(e[2] as u32);
                     }
-                    edge_sets[e[2]].remove(edge_index, 2);
+                    xor_graph.remove(e[2], edge_index, 2);
                 }
                 1 => {
-                    if edge_sets[e[0]].degree() == 2 {
-                        double_stack[upper] = e[0];
-                        upper -= 1;
+                    if xor_graph.degree(e[0]) == 2 {
+                        double_stack.push_upper(e[0] as u32);
                     }
-                    edge_sets[e[0]].remove(edge_index, 0);
-                    if edge_sets[e[2]].degree() == 2 {
-                        double_stack[upper] = e[2];
-                        upper -= 1;
+                    xor_graph.remove(e[0], edge_index, 0);
+                    if xor_graph.degree(e[2]) == 2 {
+                        double_stack.push_upper(e[2] as u32);
                     }
-                    edge_sets[e[2]].remove(edge_index, 2);
+                    xor_graph.remove(e[2], edge_index, 2);
                 }
                 2 => {
-                    if edge_sets[e[0]].degree() == 2 {
-                        double_stack[upper] = e[0];
-                        upper -= 1;
+                    if xor_graph.degree(e[0]) == 2 {
+                        double_stack.push_upper(e[0] as u32);
                     }
-                    edge_sets[e[0]].remove(edge_index, 0);
-                    if edge_sets[e[1]].degree() == 2 {
-                        double_stack[upper] = e[1];
-                        upper -= 1;
+                    xor_graph.remove(e[0], edge_index, 0);
+                    if xor_graph.degree(e[1]) == 2 {
+                        double_stack.push_upper(e[1] as u32);
                     }
-                    edge_sets[e[1]].remove(edge_index, 1);
+                    xor_graph.remove(e[1], edge_index, 1);
                 }
                 _ => unsafe { unreachable_unchecked() },
             }
         }
 
-        double_stack.truncate(lower);
-
-        if shard.len() != lower {
+        if shard.len() != double_stack.lower_len() {
             pl.info(format_args!(
                 "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
                 shard_index + 1,
                 self.shard_edge.num_shards(),
-                lower,
+                double_stack.lower_len(),
                 shard.len(),
             ));
-            return Err((shard_index, shard, data, double_stack));
+            return Err((shard_index, shard, data, xor_graph, double_stack, sides_stack));
         }
         pl.done_with_count(shard.len());
 
-        Ok(self.assign(shard_index, shard, data, get_val, double_stack, pl))
+        Ok(self.assign(shard_index, shard, data, get_val, double_stack, sides_stack, pl))
     }
 
     /// Perform assignment of values based on peeling data.
@@ -610,7 +705,8 @@ impl<
         shard: &[SigVal<S, V>],
         mut data: Shard<'_, W, D>,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
-        mut stack: Vec<usize>,
+        mut double_stack: DoubleStack<u32>,
+        mut sides_stack: Vec<u8>,
         pl: &mut impl ProgressLog,
     ) -> usize {
         if self.failed.load(Ordering::Relaxed) {
@@ -623,28 +719,35 @@ impl<
             self.shard_edge.num_shards()
         ));
 
-        while let Some(edge_index_side) = stack.pop() {
-            // Assignments after linear solving must skip unpeeled edges
-            /*if edge_sets[v].degree() != 0 {
-                continue;
-            }*/
-            let (edge_index, side) = (edge_index_side >> 2, edge_index_side & 3);
+        while let (Some(edge_index), Some(side)) = (double_stack.pop_lower(), sides_stack.pop()) {
+            let edge_index = edge_index as usize;
             let edge = self.shard_edge.local_edge(shard[edge_index].sig);
             unsafe {
                 let value = match side {
-                    0 => data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2]),
-                    1 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[2]),
-                    2 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[1]),
+                    0 => {
+                        data.get_unchecked(edge[1] as usize) ^ data.get_unchecked(edge[2] as usize)
+                    }
+                    1 => {
+                        data.get_unchecked(edge[0] as usize) ^ data.get_unchecked(edge[2] as usize)
+                    }
+                    2 => {
+                        data.get_unchecked(edge[0] as usize) ^ data.get_unchecked(edge[1] as usize)
+                    }
                     _ => core::hint::unreachable_unchecked(),
                 };
 
-                data.set_unchecked(edge[side], get_val(&shard[edge_index]) ^ value);
+                data.set_unchecked(
+                    edge[side as usize] as usize,
+                    get_val(&shard[edge_index]) ^ value,
+                );
             }
             debug_assert_eq!(
-                data.get(edge[0]) ^ data.get(edge[1]) ^ data.get(edge[2]),
+                data.get(edge[0] as usize)
+                    ^ data.get(edge[1] as usize)
+                    ^ data.get(edge[2] as usize),
                 get_val(&shard[edge_index])
             );
-        }
+        };
         pl.done_with_count(shard.len());
 
         shard_index
@@ -666,7 +769,7 @@ impl<
         // Let's try to peel first
         match self.peel_shard(shard_index, shard, data, get_val, pl) {
             Ok(shard_index) => Ok(shard_index),
-            Err((shard_index, shard, mut data, stack)) => {
+            Err((shard_index, shard, mut data, xor_graph, double_stack, sides_stack)) => {
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
                 // Likely result--we have solve the rest
                 pl.start(format!(
@@ -675,13 +778,6 @@ impl<
                     self.shard_edge.num_shards()
                 ));
 
-                // Build a ranked vector of unpeeled equation
-                let mut unpeeled = bit_vec![true; shard.len()];
-                stack.iter().for_each(|&edge_index_side| {
-                    unpeeled.set(edge_index_side >> 2, false);
-                });
-                let unpeeled = Rank9::new(unpeeled);
-
                 // Create data for an F₂ system using non-peeled edges
                 let mut system = unsafe {
                     crate::utils::mod2_sys_sparse::Modulo2System::from_parts(
@@ -689,7 +785,7 @@ impl<
                         shard
                             .iter()
                             .enumerate()
-                            .filter(|(edge_index, _)| unpeeled[*edge_index])
+                            .filter(|(edge_index, _)| xor_graph.degree(*edge_index) != 0)
                             .map(|(_edge_index, sig_val)| {
                                 let mut eq: Vec<_> = self
                                     .shard_edge
@@ -711,16 +807,16 @@ impl<
                     return Err(());
                 }
 
-                pl.expected_updates(Some(unpeeled.num_ones()));
+                pl.expected_updates(Some(system.num_equations()));
                 pl.start("Solving system...");
                 let result = system.lazy_gaussian_elimination().map_err(|_| ())?;
-                pl.done_with_count(unpeeled.num_ones());
+                pl.done_with_count(system.num_equations());
 
                 for (v, &value) in result.iter().enumerate() {
                     data.set(v, value);
                 }
 
-                Ok(self.assign(shard_index, shard, data, get_val, stack, pl))
+                Ok(self.assign(shard_index, shard, data, get_val, double_stack, sides_stack, pl))
             }
         }
     }

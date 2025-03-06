@@ -221,6 +221,19 @@ impl Mwhc3Shards {
             ((((sig[1] as u32 as u64) * seg_size) >> 32) + start + 2 * seg_size) as _,
         ]
     }
+
+    /// We use the lower 32 bits of sig[0] for the first vertex, the higher 32
+    /// bits of sig[1], and the lower 32 bits of sig[1] for the third vertex.
+    #[inline(always)]
+    fn _local_edge_2(&self, sig: [u64; 2]) -> [usize; 3] {
+        let seg_size = self.seg_size as u64;
+
+        [
+            ((sig[0] as u32 as u64 * seg_size) >> 32) as _,
+            (((sig[1] >> 32) * seg_size) >> 32) as _,
+            (((sig[1] as u32 as u64) * seg_size) >> 32) as _,
+        ]
+    }
 }
 
 impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
@@ -253,7 +266,7 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
 
     #[inline(always)]
     fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
-        self._edge_2(0, sig)
+        self._local_edge_2(sig)
     }
 
     #[inline(always)]
@@ -323,7 +336,15 @@ impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
 
     #[inline(always)]
     fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
-        self.local_edge(sig)
+        // We use the upper 32 bits of sig[0] for the first vertex, the lower 32
+        // bits of sig[0] for the second vertex, and the uper 32 bits of sig[1]
+        // for the third vertex.
+        let seg_size = self.seg_size as u64;
+        [
+            (((sig[0] >> 32) * seg_size) >> 32) as _,
+            ((((sig[0] as u32 as u64) * seg_size) >> 32) + seg_size) as _,
+            ((((sig[1] >> 32) * seg_size) >> 32) + 2 * seg_size) as _,
+        ]
     }
 }
 
@@ -580,7 +601,18 @@ impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
 
     #[inline(always)]
     fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
-        Fuse3Shards::_edge_2(0, self.shard_bits_shift, self.log2_seg_size, self.l, sig)
+        let first_segment =
+            ((sig[0].rotate_right(self.shard_bits_shift) as u128 * self.l as u128) >> 64) as usize;
+        let mut start = first_segment << self.log2_seg_size;
+        let segment_size = 1_usize << self.log2_seg_size;
+        let segment_mask = segment_size - 1;
+
+        let v0 = start + (sig[0] as u32 as usize & segment_mask);
+        start += segment_size;
+        let v1 = start + ((sig[1] >> 32) as usize & segment_mask);
+        start += segment_size;
+        let v2 = start + (sig[1] as u32 as usize & segment_mask);
+        [v0, v1, v2]
     }
 
     #[inline(always)]
@@ -710,12 +742,22 @@ impl ShardEdge<[u64; 2], 3> for Fuse3NoShards {
 
     #[inline(always)]
     fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
-        Fuse3Shards::_edge_2(0, 0, self.log2_seg_size, self.l, sig)
+        let first_segment = ((sig[0] as u128 * self.l as u128) >> 64) as usize;
+        let mut start = first_segment << self.log2_seg_size;
+        let segment_size = 1 << self.log2_seg_size;
+        let segment_mask = segment_size - 1;
+
+        let v0 = (sig[0] as u32 as usize & segment_mask) + start;
+        start += segment_size;
+        let v1 = ((sig[1] >> 32) as usize & segment_mask) + start;
+        start += segment_size;
+        let v2 = (sig[1] as u32 as usize & segment_mask) + start;
+        [v0, v1, v2]
     }
 
     #[inline(always)]
     fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
-        self.local_edge(sig)
+        Fuse3Shards::_edge_2(0, 0, self.log2_seg_size, self.l, sig)
     }
 }
 
@@ -758,7 +800,17 @@ impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
 
     #[inline(always)]
     fn edge(&self, sig: [u64; 1]) -> [usize; 3] {
-        self.local_edge(sig)
+        // From https://github.com/ayazhafiz/xorf
+        let hash = sig[0];
+        let hi = ((hash as u128 * (self.l << self.log2_seg_size) as u128) >> 64) as u64;
+        let v0 = hi as usize;
+        let seg_size = 1 << self.log2_seg_size;
+        let mut v1 = v0 + seg_size;
+        let mut v2 = v1 + seg_size;
+        let seg_size_mask = seg_size - 1;
+        v1 ^= (hash as usize >> 18) & seg_size_mask;
+        v2 ^= (hash as usize) & seg_size_mask;
+        [v0 as _, v1 as _, v2 as _]
     }
 }
 
