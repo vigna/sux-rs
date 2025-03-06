@@ -45,10 +45,6 @@ struct Args {
     /// Sort shards and check for duplicate signatures.
     #[arg(short, long)]
     check_dups: bool,
-    /// The number of high bits defining the number of buckets. Very large key
-    /// sets may benefit from a larger number of buckets.
-    #[arg(short = 'H', long, default_value_t = 8)]
-    high_bits: u32,
     /// A 64-bit seed for the pseudorandom number generator.
     #[arg(long)]
     seed: Option<u64>,
@@ -98,8 +94,7 @@ fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: Shar
     let mut builder = builder
         .offline(args.offline)
         .check_dups(args.check_dups)
-        .expected_num_keys(args.n)
-        .log2_buckets(args.high_bits);
+        .expected_num_keys(args.n);
     if let Some(seed) = args.seed {
         builder = builder.seed(seed);
     }
