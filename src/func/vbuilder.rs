@@ -11,7 +11,7 @@ use crate::prelude::Rank9;
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
 use crate::traits::NumBits;
 use crate::utils::*;
-use common_traits::{invariant, CastableInto};
+use common_traits::CastableInto;
 use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
@@ -411,8 +411,15 @@ impl<
                         let shard =
                             unsafe { &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>) };
 
+                        pl.start(format!(
+                            "Sorting shard {}/{}...",
+                            shard_index + 1,
+                            self.shard_edge.num_shards()
+                        ));
                         // Sorting the signatures increases locality
                         shard.radix_sort_builder().with_low_mem_tuner().sort();
+                        pl.done_with_count(shard.len());
+
                         if self.check_dups {
                             // Check for duplicates
 
@@ -599,14 +606,7 @@ impl<
         }
         pl.done_with_count(shard.len());
 
-        Ok(self.assign(
-            shard_index,
-            shard,
-            data,
-            get_val,
-            double_stack,
-            pl,
-        ))
+        Ok(self.assign(shard_index, shard, data, get_val, double_stack, pl))
     }
 
     /// Perform assignment of values based on peeling data.
