@@ -6,15 +6,16 @@
 #![allow(clippy::collapsible_else_if)]
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
+use common_traits::CastableFrom;
 use dsi_progress_logger::*;
 use epserde::ser::{Serialize, SerializeInner};
-use epserde::traits::{TypeHash, ZeroCopy};
+use epserde::traits::{AlignHash, TypeHash, ZeroCopy};
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::func::*;
 use sux::prelude::VBuilder;
-use sux::traits::{BitFieldSlice, Word};
+use sux::traits::{BitFieldSlice, BitFieldSliceMut, Word};
 use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
 
 #[derive(Parser, Debug)]
@@ -30,6 +31,9 @@ struct Args {
     n: usize,
     /// An optional name for the ε-serde serialized function.
     func: Option<String>,
+    /// The number of bits of the signatures.
+    #[arg(short, long, default_value_t = 8)]
+    bits: u32,
     #[arg(short, long)]
     /// A file containing UTF-8 keys, one per line. At most N keys will be read.
     filename: Option<String>,
@@ -45,10 +49,6 @@ struct Args {
     /// Sort shards and check for duplicate signatures.
     #[arg(short, long)]
     check_dups: bool,
-    /// The number of high bits defining the number of buckets. Very large key
-    /// sets may benefit from a larger number of buckets.
-    #[arg(short = 'H', long, default_value_t = 8)]
-    high_bits: u32,
     /// A 64-bit seed for the pseudorandom number generator.
     #[arg(long)]
     seed: Option<u64>,
@@ -73,21 +73,67 @@ fn main() -> Result<()> {
 
     #[cfg(feature = "mwhc")]
     if args.mwhc {
-        return if args.no_shards {
-            main_with_types::<[u64; 2], Mwhc3NoShards>(args)
-        } else {
-            main_with_types::<[u64; 2], Mwhc3Shards>(args)
+        return match args.bits {
+            8 => {
+                if args.no_shards {
+                    main_with_types::<u8, [u64; 2], Mwhc3NoShards>(args)
+                } else {
+                    main_with_types::<u8, [u64; 2], Mwhc3Shards>(args)
+                }
+            }
+            16 => {
+                if args.no_shards {
+                    main_with_types::<u16, [u64; 2], Mwhc3NoShards>(args)
+                } else {
+                    main_with_types::<u16, [u64; 2], Mwhc3Shards>(args)
+                }
+            }
+            32 => {
+                if args.no_shards {
+                    main_with_types::<u32, [u64; 2], Mwhc3NoShards>(args)
+                } else {
+                    main_with_types::<u32, [u64; 2], Mwhc3Shards>(args)
+                }
+            }
+            _ => unimplemented!("{}-bit signatures", args.bits),
         };
     }
 
-    if args.no_shards {
-        if args.sig64 {
-            main_with_types::<[u64; 1], Fuse3NoShards>(args)
-        } else {
-            main_with_types::<[u64; 2], Fuse3NoShards>(args)
+    match args.bits {
+        8 => {
+            if args.no_shards {
+                if args.sig64 {
+                    main_with_types::<u8, [u64; 1], Fuse3NoShards>(args)
+                } else {
+                    main_with_types::<u8, [u64; 2], Fuse3NoShards>(args)
+                }
+            } else {
+                main_with_types::<u8, [u64; 2], Fuse3Shards>(args)
+            }
         }
-    } else {
-        main_with_types::<[u64; 2], Fuse3Shards>(args)
+        16 => {
+            if args.no_shards {
+                if args.sig64 {
+                    main_with_types::<u16, [u64; 1], Fuse3NoShards>(args)
+                } else {
+                    main_with_types::<u16, [u64; 2], Fuse3NoShards>(args)
+                }
+            } else {
+                main_with_types::<u16, [u64; 2], Fuse3Shards>(args)
+            }
+        }
+        32 => {
+            if args.no_shards {
+                if args.sig64 {
+                    main_with_types::<u32, [u64; 1], Fuse3NoShards>(args)
+                } else {
+                    main_with_types::<u32, [u64; 2], Fuse3NoShards>(args)
+                }
+            } else {
+                main_with_types::<u32, [u64; 2], Fuse3Shards>(args)
+            }
+        }
+        _ => unimplemented!("{}-bit signatures", args.bits),
     }
 }
 
@@ -98,8 +144,7 @@ fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: Shar
     let mut builder = builder
         .offline(args.offline)
         .check_dups(args.check_dups)
-        .expected_num_keys(args.n)
-        .log2_buckets(args.high_bits);
+        .expected_num_keys(args.n);
     if let Some(seed) = args.seed {
         builder = builder.seed(seed);
     }
@@ -109,25 +154,36 @@ fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: Shar
     builder
 }
 
-fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
+fn main_with_types<W: Word + ZeroCopy + Send + Sync, S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+    args: Args,
+) -> Result<()>
 where
+    W: CastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
+    <W as SerializeInner>::SerType: Word + ZeroCopy,
     str: ToSig<S>,
     usize: ToSig<S>,
     SigVal<S, usize>: RadixKey,
     SigVal<S, ()>: RadixKey,
+    Box<[W]>: BitFieldSlice<W> + BitFieldSliceMut<W>,
+    for<'a> <Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a>: Send,
+    for<'a> <<Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a> as Iterator>::Item: Send,
     <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Wierd
     VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
-    VFunc<usize, u8, Box<[u8]>, S, E>: Serialize,
-    VFunc<str, u8, Box<[u8]>, S, E>: Serialize + TypeHash, // TODO: this is weird
-    VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, E>>: Serialize,
-    VFilter<u8, VFunc<str, u8, Box<[u8]>, S, <E as SerializeInner>::SerType>>: TypeHash, // Weird
+    VFunc<usize, W, Box<[W]>, S, E>: Serialize,
+    VFunc<str, W, Box<[W]>, S, E>: Serialize + TypeHash, // TODO: this is weird
+    VFilter<W, VFunc<usize, W, Box<[W]>, S, E>>: Serialize,
+    VFilter<W, VFunc<usize, W, Box<[W]>, S, <E as SerializeInner>::SerType>>: TypeHash,
+    VFilter<
+        <W as SerializeInner>::SerType,
+        VFunc<str, W, Box<[W]>, S, <E as SerializeInner>::SerType>,
+    >: TypeHash + AlignHash, // Weird
 {
     let mut pl = ProgressLogger::default();
     let n = args.n;
 
     if let Some(ref filename) = &args.filename {
-        let builder = set_builder(VBuilder::<u8, Box<[u8]>, S, E>::default(), &args);
+        let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
         let filter = if args.zstd {
             builder.try_build_filter(ZstdLineLender::from_path(filename)?.take(n), &mut pl)?
         } else {
@@ -138,7 +194,7 @@ where
             filter.store(func)?;
         }
     } else {
-        let builder = set_builder(VBuilder::<u8, Box<[u8]>, S, E>::default(), &args);
+        let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
         let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
         if let Some(func) = args.func {
             filter.store(func)?;
