@@ -40,7 +40,6 @@ impl<W: Word> Modulo2Equation<W> {
         Modulo2Equation { vars, c }
     }
 
-    /// Adds another equation to this equation.
     pub fn add(&mut self, other: &Modulo2Equation<W>) {
         let a = &self.vars;
         let b = &other.vars;
@@ -105,6 +104,16 @@ impl<W: Word> Modulo2System<W> {
             equations: vec![],
         }
     }
+
+    pub fn num_vars(&self) -> usize {
+        self.num_vars
+    }
+
+    pub fn num_equations(&self) -> usize {
+        self.equations.len()
+    }
+
+    /// Adds another equation to this equation.
 
     /// Creates a new `Modulo2System` from existing equations.
     ///
