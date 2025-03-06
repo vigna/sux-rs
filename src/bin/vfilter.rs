@@ -20,7 +20,7 @@ use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
 
 #[derive(Parser, Debug)]
-#[command(about = "Generates a VFunc mapping each input to its rank and serializes it with ε-serde", long_about = None)]
+#[command(about = "Generates a VFilter and serializes it with ε-serde", long_about = None)]
 #[clap(group(
             ArgGroup::new("input")
                 .required(true)
@@ -127,29 +127,18 @@ where
     let n = args.n;
 
     if let Some(ref filename) = &args.filename {
-        let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
-        let func = if args.zstd {
-            builder.try_build_func(
-                ZstdLineLender::from_path(filename)?.take(n),
-                FromIntoIterator::from(0_usize..),
-                &mut pl,
-            )?
+        let builder = set_builder(VBuilder::<u8, Box<[u8]>, S, E>::default(), &args);
+        let filter = if args.zstd {
+            builder.try_build_filter(ZstdLineLender::from_path(filename)?.take(n), &mut pl)?
         } else {
-            builder.try_build_func(
-                LineLender::from_path(filename)?.take(n),
-                FromIntoIterator::from(0_usize..),
-                &mut pl,
-            )?
+            let t = LineLender::from_path(filename)?.take(n);
+            builder.try_build_filter(t, &mut pl)?
         };
-        func.store(&args.func)?;
+        filter.store(&args.func)?;
     } else {
-        let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
-        let func = builder.try_build_func(
-            FromIntoIterator::from(0_usize..n),
-            FromIntoIterator::from(0_usize..),
-            &mut pl,
-        )?;
-        func.store(&args.func)?;
+        let builder = set_builder(VBuilder::<u8, Box<[u8]>, S, E>::default(), &args);
+        let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
+        filter.store(&args.func)?;
     }
 
     Ok(())
