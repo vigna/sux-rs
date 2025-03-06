@@ -517,17 +517,17 @@ impl<
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
-        let mut upper = num_vertices;
+        let mut upper = num_vertices - 1;
         let mut lower = 0;
-        // Two stacks in the same array: one grows downwards from 
+        // Two stacks in the same array: one grows downwards from
         // upper to visit the graph, the other one grows upwards from
         // lower to accumulate the peeled edges.
         let mut double_stack = vec![0; num_vertices];
         // Preload all vertices of degree one in the visit stack
         for v in 0..num_vertices {
             if edge_sets[v].degree() == 1 {
-                upper -= 1;
                 double_stack[upper] = v;
+                upper -= 1;
             }
         }
 
@@ -537,9 +537,9 @@ impl<
         // This array will be loaded with the vertices corresponding to
         // the sides in other_side
         let mut other_vertex = [0; 4];
-        while upper < num_vertices {
-            let v = double_stack[upper];
+        while upper < num_vertices - 1 {
             upper += 1;
+            let v = double_stack[upper];
             if edge_sets[v].degree() == 0 {
                 continue;
             }
@@ -550,19 +550,44 @@ impl<
 
             let e = self.shard_edge.local_edge(shard[edge_index].sig);
 
-            (other_vertex[0], other_vertex[1]) = (e[1], e[2]);
-            (other_vertex[2], other_vertex[3]) = (e[0], e[1]);
-
-            edge_sets[other_vertex[side]].remove(edge_index, other_side[side]);
-            if edge_sets[other_vertex[side]].degree() == 1 {
-                upper -= 1;
-                double_stack[upper] = other_vertex[side];
-            }
-
-            edge_sets[other_vertex[side + 1]].remove(edge_index, other_side[side + 1]);
-            if edge_sets[other_vertex[side + 1]].degree() == 1 {
-                upper -= 1;
-                double_stack[upper] = other_vertex[side + 1];
+            match side {
+                0 => {
+                    if edge_sets[e[1]].degree() == 2 {
+                        double_stack[upper] = e[1];
+                        upper -= 1;
+                    }
+                    edge_sets[e[1]].remove(edge_index, 1);
+                    if edge_sets[e[2]].degree() == 2 {
+                        double_stack[upper] = e[2];
+                        upper -= 1;
+                    }
+                    edge_sets[e[2]].remove(edge_index, 2);
+                }
+                1 => {
+                    if edge_sets[e[0]].degree() == 2 {
+                        double_stack[upper] = e[0];
+                        upper -= 1;
+                    }
+                    edge_sets[e[0]].remove(edge_index, 0);
+                    if edge_sets[e[2]].degree() == 2 {
+                        double_stack[upper] = e[2];
+                        upper -= 1;
+                    }
+                    edge_sets[e[2]].remove(edge_index, 2);
+                }
+                2 => {
+                    if edge_sets[e[0]].degree() == 2 {
+                        double_stack[upper] = e[0];
+                        upper -= 1;
+                    }
+                    edge_sets[e[0]].remove(edge_index, 0);
+                    if edge_sets[e[1]].degree() == 2 {
+                        double_stack[upper] = e[1];
+                        upper -= 1;
+                    }
+                    edge_sets[e[1]].remove(edge_index, 1);
+                }
+                _ => unsafe { unreachable_unchecked() },
             }
         }
 
@@ -579,7 +604,15 @@ impl<
         pl.done_with_count(shard.len());
 
         double_stack.truncate(lower);
-        Ok(self.assign(shard_index, shard, data, get_val, edge_sets, double_stack, pl))
+        Ok(self.assign(
+            shard_index,
+            shard,
+            data,
+            get_val,
+            edge_sets,
+            double_stack,
+            pl,
+        ))
     }
 
     /// Perform assignment of values based on peeling data.
