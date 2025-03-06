@@ -531,12 +531,6 @@ impl<
             }
         }
 
-        // From https://github.com/ayazhafiz/xorf
-        // This array, indexed by the side, gives the other two sides
-        let other_side = [1, 2, 0, 1];
-        // This array will be loaded with the vertices corresponding to
-        // the sides in other_side
-        let mut other_vertex = [0; 4];
         while upper < num_vertices - 1 {
             upper += 1;
             let v = double_stack[upper];
@@ -591,6 +585,8 @@ impl<
             }
         }
 
+        double_stack.truncate(lower);
+
         if shard.len() != lower {
             pl.info(format_args!(
                 "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
@@ -603,7 +599,6 @@ impl<
         }
         pl.done_with_count(shard.len());
 
-        double_stack.truncate(lower);
         Ok(self.assign(
             shard_index,
             shard,
@@ -681,10 +676,7 @@ impl<
     ) -> Result<usize, ()> {
         // Let's try to peel first
         match self.peel_shard(shard_index, shard, data, get_val, pl) {
-            Ok(shard_index) => {
-                // Unlikely result, but we're happy if it happens
-                Ok(shard_index)
-            }
+            Ok(shard_index) => Ok(shard_index),
             Err((shard_index, shard, mut data, edge_sets, stack)) => {
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
                 // Likely result--we have solve the rest
