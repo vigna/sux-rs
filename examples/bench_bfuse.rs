@@ -5,8 +5,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::hint::black_box;
-
 use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
@@ -36,9 +34,16 @@ fn main() -> Result<()> {
     let filter = BinaryFuse8::try_from(&keys).unwrap();
     pl.done_with_count(args.n);
 
-    pl.start("Querying...");
+    pl.start("Querying (independent)...");
     for i in 0..args.s as u64 {
-        black_box(filter.contains(&i));
+        std::hint::black_box(filter.contains(&i));
+    }
+    pl.done_with_count(args.s);
+
+    pl.start("Querying (dependent)...");
+    let mut x = 0;
+    for i in 0..args.s as u64 {
+        x = std::hint::black_box(filter.contains(&(i ^ x))) as u64;
     }
     pl.done_with_count(args.s);
 
