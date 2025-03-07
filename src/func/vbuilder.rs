@@ -524,13 +524,15 @@ impl<
         result
     }
 
-    /// Solve a shard by peeling.
+    /// Peels a hard via edge indices.
     ///
-    /// Return the shard index and the shard-local data, in case of success, or
-    /// the shard index, the shard, the edge lists, the shard-local data, and
-    /// the stack at the end of the peeling procedure in case of failure. These
-    /// data can be then passed to a linear solver to complete the solution.
-    fn peel_shard_index<'a, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    /// This peeler uses only about 10 bytes per key, but it is slower than
+    /// [`VBuilder::peel_shard_by_sig_vals`], as it has to go through a cache-unfriendly memory
+    /// indirection every time it has to retrieved a [`SigVal`] from the shard.
+    /// It is the peeler of choice when significant parallelism is involved, or
+    /// when lazy Gaussian elimination is required, as the latter requires edge
+    /// indices.
+    fn peel_shard_by_edge_indices<'a, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
         &self,
         shard_index: usize,
         shard: &'a Vec<SigVal<S, V>>,
@@ -673,13 +675,14 @@ impl<
         ))
     }
 
-    /// Solve a shard by peeling.
+    /// Peels a shard via signature/value pairs.
     ///
-    /// Return the shard index and the shard-local data, in case of success, or
-    /// the shard index, the shard, the edge lists, the shard-local data, and
-    /// the stack at the end of the peeling procedure in case of failure. These
-    /// data can be then passed to a linear solver to complete the solution.
-    fn peel_shard_hash<'a, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    /// This peeler uses about two [`SigVal`]s per key of core memory, but it is
+    /// significantly faster than [`VBuilder::peel_shard_hash_by_edge_indices`],
+    /// as it stores directly [`SigVal`] It is the peeler of choice when there
+    /// is no significant parallelism is involved and lazy Gaussian elimination
+    /// is not required, as the latter requires edge indices.
+    fn peel_shard_by_sig_vals<'a, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
         &self,
         shard_index: usize,
         shard: &'a Vec<SigVal<S, V>>,
@@ -715,9 +718,9 @@ impl<
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
-        let mut sig_vals_stack = Vec::<SigVal<S, V>>::new();
-        let mut sides_stack = Vec::<u8>::new();
-        let mut visit_stack = Vec::<u32>::new();
+        let mut sig_vals_stack = Vec::<SigVal<S, V>>::with_capacity(shard.len());
+        let mut sides_stack = Vec::<u8>::with_capacity(shard.len());
+        let mut visit_stack = Vec::<u32>::with_capacity(shard.len());
 
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
@@ -859,7 +862,7 @@ impl<
         pl: &mut impl ProgressLog,
     ) -> Result<usize, ()> {
         // Let's try to peel first
-        match self.peel_shard_index(shard_index, shard, data, get_val, pl) {
+        match self.peel_shard_by_edge_indices(shard_index, shard, data, get_val, pl) {
             Ok(shard_index) => Ok(shard_index),
             Err((shard_index, shard, mut data, xor_graph, double_stack, sides_stack)) => {
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
@@ -1211,7 +1214,7 @@ impl<
                 Ok(key) => {
                     pl.light_update();
                     // This might be an actual value, if we are building a
-                    // function, or (), if we are building a filter.
+                    // function, or EmptyVal, if we are building a filter.
                     let &maybe_val = values.next().expect("Not enough values")?;
                     let sig_val = SigVal {
                         sig: T::to_sig(key, seed),
@@ -1329,7 +1332,7 @@ impl<
                 shard_iter,
                 &mut data,
                 |this, shard_index, shard, data, pl| {
-                    this.peel_shard_index(shard_index, shard, data, get_val, pl)
+                    this.peel_shard_by_edge_indices(shard_index, shard, data, get_val, pl)
                         .map_err(|_| ())
                 },
                 &thread_pool,
@@ -1341,7 +1344,7 @@ impl<
                 shard_iter,
                 &mut data,
                 |this, shard_index, shard, data, pl| {
-                    this.peel_shard_hash(shard_index, shard, data, get_val, pl)
+                    this.peel_shard_by_sig_vals(shard_index, shard, data, get_val, pl)
                         .map_err(|_| ())
                 },
                 &thread_pool,

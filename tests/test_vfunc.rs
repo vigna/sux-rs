@@ -21,7 +21,7 @@ fn test_vfunc_lge() -> Result<()> {
 }
 
 #[test]
-fn test_vfunc_peeling() -> Result<()> {
+fn test_vfunc_peeling_by_sig_vals() -> Result<()> {
     _test_vfunc(&[1_000_000])
 }
 
@@ -37,7 +37,7 @@ fn _test_vfunc(sizes: &[usize]) -> Result<()> {
         for &n in sizes {
             dbg!(offline, n);
             let func = VBuilder::<_, BitFieldVec<_>, [u64; 2], Fuse3Shards>::default()
-                .log2_buckets(4)
+                .expected_num_keys(n)
                 .offline(offline)
                 .try_build_func(
                     FromIntoIterator::from(0..n),
@@ -62,7 +62,7 @@ fn _test_vfunc(sizes: &[usize]) -> Result<()> {
         for &n in sizes {
             dbg!(offline, n);
             let func = VBuilder::<usize, Box<[usize]>, [u64; 2], Fuse3Shards>::default()
-                .log2_buckets(4)
+                .expected_num_keys(n)
                 .offline(offline)
                 .try_build_func(
                     FromIntoIterator::from(0..n),
@@ -99,7 +99,7 @@ fn _test_vfilter(sizes: &[usize]) -> Result<()> {
         for &n in sizes {
             dbg!(offline, n);
             let filter = VBuilder::<_, Box<[u8]>>::default()
-                .log2_buckets(4)
+                .expected_num_keys(n)
                 .offline(offline)
                 .try_build_filter(FromIntoIterator::from(0..n), &mut pl)?;
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
@@ -135,7 +135,7 @@ fn _test_vfilter(sizes: &[usize]) -> Result<()> {
         for &n in sizes {
             dbg!(offline, n);
             let func = VBuilder::<_, Box<[u8]>>::default()
-                .log2_buckets(4)
+                .expected_num_keys(n)
                 .offline(offline)
                 .try_build_filter(FromIntoIterator::from(0..n), &mut pl)?;
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
@@ -175,7 +175,7 @@ fn test_vfilter_lge() -> Result<()> {
 }
 
 #[test]
-fn test_vfilter_peeling() -> Result<()> {
+fn test_vfilter_peeling_by_sig_vals() -> Result<()> {
     _test_vfilter(&[1_000_000])
 }
 
