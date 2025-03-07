@@ -500,7 +500,7 @@ impl FuseLge3Shards {
 
     /// Return the maximum number of high bits for sharding the given number of
     /// keys so that the probability of a duplicate edge in a fuse graph with
-    /// segments defined by [`log2_seg_size`] is at most `eps`.
+    /// segments defined by [`FuseLge3Shards::log2_seg_size`] is at most `eps`.
     ///
     /// From “Zero–Cost Sharding: Scaling Hypergraph-Based Static Functions and
     /// Filters to Trillions of Keys”
@@ -670,7 +670,7 @@ impl FuseLge3NoShards {
     /// The expansion factor for fuse graphs.
     ///
     /// Handcrafted, and meaningful for more than 2 *
-    /// [`Self::HALF_MAX_LIN_SHARD_SIZE`] keys only.
+    /// [`FuseLge3Shards::HALF_MAX_LIN_SHARD_SIZE`] keys only.
     fn c(arity: usize, n: usize) -> f64 {
         match arity {
             3 => {
@@ -796,8 +796,7 @@ impl ShardEdge<[u64; 1], 3> for FuseLge3NoShards {
     fn local_edge(&self, sig: [u64; 1]) -> [usize; 3] {
         // From https://github.com/ayazhafiz/xorf
         let hash = sig[0];
-        let hi = fixed_point_reduce_128!(hash, self.l << self.log2_seg_size);
-        let v0 = hi as usize;
+        let v0 = fixed_point_reduce_128!(hash, self.l << self.log2_seg_size);
         let seg_size = 1 << self.log2_seg_size;
         let mut v1 = v0 + seg_size;
         let mut v2 = v1 + seg_size;

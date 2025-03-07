@@ -45,13 +45,23 @@
 //! serialized and deserialized efficiently in the offline case, and they must
 //! be [`Send`] and [`Sync`].
 
+#![allow(clippy::comparison_chain)]
+#![allow(clippy::type_complexity)]
 use anyhow::Result;
 use epserde::prelude::*;
 use mem_dbg::{MemDbg, MemSize};
 
 use rapidhash::RapidInlineHasher;
 use rdst::RadixKey;
-use std::{collections::VecDeque, fs::File, hash::Hasher, io::*, marker::PhantomData, ops::{BitXor, BitXorAssign}, sync::Arc};
+use std::{
+    collections::VecDeque,
+    fs::File,
+    hash::Hasher,
+    io::*,
+    marker::PhantomData,
+    ops::{BitXor, BitXorAssign},
+    sync::Arc,
+};
 
 /// A trait for types that can be used as signatures.
 pub trait Sig: ZeroCopy + Default + PartialEq + Eq + std::fmt::Debug {
@@ -127,7 +137,7 @@ impl<V: ZeroCopy> RadixKey for SigVal<[u64; 1], V> {
 #[derive(Epserde, Debug, Clone, Copy, Default, MemDbg, MemSize)]
 #[repr(C)]
 #[zero_copy]
-pub struct EmptyVal (());
+pub struct EmptyVal(());
 
 impl BitXor for EmptyVal {
     type Output = EmptyVal;
@@ -141,7 +151,10 @@ impl BitXorAssign for EmptyVal {
     fn bitxor_assign(&mut self, _: EmptyVal) {}
 }
 
-impl<V: ZeroCopy + BitXor> BitXor<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V> where V::Output: ZeroCopy {
+impl<V: ZeroCopy + BitXor> BitXor<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V>
+where
+    V::Output: ZeroCopy,
+{
     type Output = SigVal<[u64; 1], V::Output>;
 
     fn bitxor(self, rhs: SigVal<[u64; 1], V>) -> Self::Output {
@@ -152,12 +165,18 @@ impl<V: ZeroCopy + BitXor> BitXor<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V> w
     }
 }
 
-impl<V: ZeroCopy + BitXor> BitXor<SigVal<[u64; 2], V>> for SigVal<[u64; 2], V> where V::Output: ZeroCopy {
+impl<V: ZeroCopy + BitXor> BitXor<SigVal<[u64; 2], V>> for SigVal<[u64; 2], V>
+where
+    V::Output: ZeroCopy,
+{
     type Output = SigVal<[u64; 2], V::Output>;
 
     fn bitxor(self, rhs: SigVal<[u64; 2], V>) -> Self::Output {
         SigVal {
-            sig: [self.sig[0].bitxor(rhs.sig[0]), self.sig[1].bitxor(rhs.sig[1])],
+            sig: [
+                self.sig[0].bitxor(rhs.sig[0]),
+                self.sig[1].bitxor(rhs.sig[1]),
+            ],
             val: self.val.bitxor(rhs.val),
         }
     }

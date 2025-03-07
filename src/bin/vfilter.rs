@@ -156,11 +156,14 @@ fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: Shar
     builder
 }
 
-fn main_with_types<W: Word + ZeroCopy + Send + Sync, S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+fn main_with_types<
+    W: Word + ZeroCopy + Send + Sync + CastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+>(
     args: Args,
 ) -> Result<()>
 where
-    W: CastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
     <W as SerializeInner>::SerType: Word + ZeroCopy,
     str: ToSig<S>,
     usize: ToSig<S>,

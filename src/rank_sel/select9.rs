@@ -149,7 +149,7 @@ impl<R: BitLength, I> Select9<R, I> {
     /// Returns the number of bits in the underlying bit vector.
     ///
     /// This method is equivalent to
-    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// [`BitLength::len`], but it is provided to
     /// reduce ambiguity in method resolution.
     #[inline(always)]
     pub fn len(&self) -> usize {
