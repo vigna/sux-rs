@@ -1102,7 +1102,6 @@ impl<
         for<'a> <ShardIter<'a, W, D> as Iterator>::Item: Send,
     {
         let mut dup_count = 0;
-        let start = Instant::now();
         let mut prng = SmallRng::seed_from_u64(self.seed);
 
         if let Some(expected_num_keys) = self.expected_num_keys {
@@ -1155,12 +1154,6 @@ impl<
                 )
             } {
                 Ok(func) => {
-                    pl.info(format_args!(
-                        "Completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                        start.elapsed().as_secs_f64(),
-                        self.num_keys,
-                        start.elapsed().as_nanos() as f64 / self.num_keys as f64
-                    ));
                     return Ok(func);
                 }
                 Err(error) => {
@@ -1246,6 +1239,8 @@ impl<
         }
         pl.done();
 
+        let start = Instant::now();
+
         self.num_keys = sig_store.len();
         self.bit_width = max_value.len() as usize;
 
@@ -1279,6 +1274,15 @@ impl<
             #[cfg(feature = "vbuilder_no_data")]
             let data = new_data(self.bit_width, 0);
             self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
+                .map(|func| {
+                    pl.info(format_args!(
+                        "Construction from hashes completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                        start.elapsed().as_secs_f64(),
+                        self.num_keys,
+                        start.elapsed().as_nanos() as f64 / self.num_keys as f64
+                    ));
+                    func
+                })
                 .map_err(Into::into)
         }
     }
