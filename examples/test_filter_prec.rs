@@ -5,6 +5,8 @@
  */
 
 #![allow(clippy::collapsible_else_if)]
+use std::ops::{BitXor, BitXorAssign};
+
 use anyhow::Result;
 use average::{Estimate, MeanWithError};
 use clap::Parser;
@@ -14,7 +16,7 @@ use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
     func::{Fuse3NoShards, Fuse3Shards, ShardEdge, VBuilder, VFilter, VFunc},
-    utils::{FromIntoIterator, Sig, SigVal, ToSig},
+    utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
 };
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
@@ -32,7 +34,7 @@ struct Args {
 
 fn _main<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
 where
-    SigVal<S, ()>: RadixKey,
+    SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     usize: ToSig<S>,
     VFilter<usize, VFunc<usize, usize, BitFieldVec, S, E>>: TypeHash,
 {
