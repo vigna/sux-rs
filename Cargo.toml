@@ -26,8 +26,7 @@ dsi-progress-logger = "0.8.0"
 tempfile = "3.9.0"
 lender = "0.3.1"
 mmap-rs = "0.6.1"
-#epserde = "0.8.0"
-epserde = { path = "../epserde-rs/epserde" }
+epserde = "0.8.0"
 zstd = { version = "0.13.1" }
 flate2 = "1.0.28"
 rand = { version = "0.9.0", features = ["small_rng"] }
@@ -47,7 +46,7 @@ arbitrary = { version = "1.3.2", features = ["derive"], optional = true }
 arbitrary-chunks = "0.4.1"
 derivative = "2.2.0"
 derive_setters = "0.1.6"
-xorf = { path = "../xorf" }# "0.11.0"
+xorf = "0.11.0"
 crossbeam-channel = "0.5.14"
 thiserror = "2.0.11"
 itertools = "0.14.0"
