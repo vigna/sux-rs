@@ -120,11 +120,14 @@ fn main() -> Result<()> {
     }
 }
 
-fn main_with_types<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+fn main_with_types<
+    W: ZeroCopy + Word + CastableFrom<u64> + DowncastableInto<u8> + TypeHash + AlignHash,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+>(
     args: Args,
 ) -> Result<()>
 where
-    W: CastableFrom<u64> + DowncastableInto<u8> + TypeHash + AlignHash,
     SigVal<S, usize>: RadixKey,
     SigVal<S, ()>: RadixKey,
     str: ToSig<S>,

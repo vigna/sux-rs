@@ -47,9 +47,10 @@ fn _test_vfunc(sizes: &[usize]) -> Result<()> {
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             func.serialize(&mut cursor)?;
             cursor.set_position(0);
-            let func = VFunc::<usize, _, BitFieldVec<_>, [u64; 2], FuseLge3Shards>::deserialize_eps(
-                cursor.as_bytes(),
-            )?;
+            let func =
+                VFunc::<usize, _, BitFieldVec<_>, [u64; 2], FuseLge3Shards>::deserialize_eps(
+                    cursor.as_bytes(),
+                )?;
             pl.start("Querying...");
             for i in 0..n {
                 assert_eq!(i, func.get(&i));
@@ -85,7 +86,6 @@ fn _test_vfunc(sizes: &[usize]) -> Result<()> {
 
     Ok(())
 }
-
 
 fn _test_vfilter(sizes: &[usize]) -> Result<()> {
     let _ = env_logger::builder()

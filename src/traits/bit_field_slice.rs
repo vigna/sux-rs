@@ -64,6 +64,8 @@
 //! slice.set(0, 1, Ordering::Relaxed);
 //! assert_eq!(slice.get(0, Ordering::Relaxed), 1);
 //! ```
+
+#![allow(clippy::result_unit_err)]
 use common_traits::*;
 use core::sync::atomic::*;
 use mem_dbg::{MemDbg, MemSize};

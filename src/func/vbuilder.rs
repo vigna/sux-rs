@@ -5,6 +5,9 @@
 * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
 */
 
+#![allow(clippy::type_complexity)]
+#![allow(clippy::too_many_arguments)]
+
 use super::vfunc::*;
 use crate::bits::*;
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
@@ -44,27 +47,23 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// threads](VBuilder::max_num_threads).
 ///
 /// Once signatures have been computed, each parallel thread will process a
-/// shard of the signature/value pairs; for each signature/value in a shard, a
-/// thread will allocate about two `usize` values in core memory; in the case of
-/// offline construction, also signatures and values in the shard will be stored
-/// in core memory.
-///
-/// For very large key sets shards will be significantly smaller than the number
-/// of keys, so the memory usage, in particular in offline mode, can be
-/// significantly reduced. Note that using too many threads might actually be
-/// harmful due to memory contention.
+/// shard of the signature/value pairs. For very large key sets shards will be
+/// significantly smaller than the number of keys, so the memory usage, in
+/// particular in offline mode, can be significantly reduced. Note that using
+/// too many threads might actually be harmful due to memory contention.
 ///
 /// The generic parameters are explained in the [`VFunc`] documentation. You
 /// have to choose the type of the output values and the backend. The remaining
 /// parameters have default values that are the same as those of
-/// [`VFunc`]/[`VFilter`].
+/// [`VFunc`]/[`VFilter`], and some elaboration about them can be found in the
+/// documentation of the [`vfunc`](crate::func::vfunc) module.
 ///
-/// All construction methods require to pass one or two [`RewindableIoLender`],
-/// and the construction might fail and keys might be scanned again. The
-/// structures in the [`lenders`] modules provide easy ways to build such
-/// lenders, even starting from compressed files of UTF-8 strings. The type of
-/// the keys of the resulting filter or function will be the type of the
-/// elements of the [`RewindableIoLender`].
+/// All construction methods require to pass one or two [`RewindableIoLender`]s
+/// (keys and possibly values), and the construction might fail and keys might
+/// be scanned again. The structures in the [`lenders`] modules module provide
+/// easy ways to build such lenders, even starting from compressed files of
+/// UTF-8 strings. The type of the keys of the resulting filter or function will
+/// be the type of the elements of the [`RewindableIoLender`].
 ///
 /// # Examples
 ///
@@ -167,7 +166,9 @@ pub struct VBuilder<
     #[setters(generate = true)]
     offline: bool,
 
-    /// Use radix sort to check for duplicated signatures.
+    /// Check for duplicated signatures. This is not necessary in general,
+    /// but if you suspect you might be feeding duplicate keys, you can
+    /// enable this check.
     #[setters(generate = true)]
     check_dups: bool,
 
@@ -177,7 +178,7 @@ pub struct VBuilder<
 
     /// The base-2 logarithm of buckets of the [`SigStore`]. The default is 8.
     /// This value is automatically overriden, even if set, if you provide an
-    /// expected number of keys.
+    /// [expected number of keys](VBuilder::expected_num_keys).
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "8"))]
     log2_buckets: u32,
@@ -221,6 +222,7 @@ pub enum SolveError {
     UnsolvableShard,
 }
 
+/// The result of a peeling operation.
 enum PeelResult<
     'a,
     W: ZeroCopy + Word + Send + Sync,
@@ -228,14 +230,14 @@ enum PeelResult<
     S: Sig + ZeroCopy + Send + Sync,
     V: ZeroCopy,
 > {
-    Peeled(),
-    Failed {
+    Complete(),
+    Partial {
         /// The shard index.
         shard_index: usize,
         /// The shard.
         shard: &'a [SigVal<S, V>],
         /// The data.
-        data: Shard<'a, W, D>,
+        data: ShardData<'a, W, D>,
         /// The double stack whose upper stack contains the peeled edges.
         double_stack: DoubleStack<u32>,
         /// The sides stack.
@@ -249,37 +251,36 @@ enum PeelResult<
 /// to not have degenerate edges), but we represent it internally as a vector.
 /// We call *side* the position of a vertex in the edge.
 ///
-/// For each vertex, we store both the indices of the edges incident to the
-/// vertex and the sides of the vertex in such edges. While technically not
-/// necessary to perform peeling, the knowledge of the sides speeds up the
-/// peeling visit by reducing the number of tests that are necessary to update
-/// the degrees once the edge is peeled (see the `peel_shard` method). For the
-/// same reason it also speeds up assignment.
+/// For each vertex, information about the edges incident to the vertex and the
+/// sides of the vertex in such edges. While technically not necessary to
+/// perform peeling, the knowledge of the sides speeds up the peeling visit by
+/// reducing the number of tests that are necessary to update the degrees once
+/// the edge is peeled (see the `peel_shard` method). For the same reason it
+/// also speeds up assignment.
 ///
-/// Edge indices and sides are packed together using Djamal's XOR trick (see
-/// “Cache-Oblivious Peeling of Random Hypergraphs”,
-/// https://doi.org/10.1109/DCC.2014.48): since during the peeling b visit we
-/// need to know the content of the list only when a single edge index is
-/// present, we can XOR together all the edge indices and and XOR together all
-/// sides.
+/// Depending on the peeling method, the graph will store edge indices or
+/// signature/value pairs (the generic parameter `X`).
 ///
-/// Assuming less than 2³² vertices in a shard, we can stored XOR'd edges in a
-/// `u32`. We then use a single by to store the degree (six upper bits) and the
-/// sides (lower two bits). The degree can be stored with a small number of bits
-/// because the graph is random, so the maximum degree is *O*(log log *n*).
+/// Edge information is packed together using Djamal's XOR trick (see
+/// [“Cache-Oblivious Peeling of Random
+/// Hypergraphs”](https://doi.org/10.1109/DCC.2014.48)): since during the
+/// peeling b visit we need to know the content of the list only when a single
+/// edge index is present, we can XOR together all the edge information.
 ///
-/// When we peel an edge, we just zero the degree, leaving the edge index and
-/// the side in place for further processing later.
+/// Assuming less than 2³² vertices in a shard, we can store XOR'd edges in a
+/// `u32`. We then use a single byte to store the degree (six upper bits) and
+/// the XOR of the sides (lower two bits). The degree can be stored with a small
+/// number of bits because the graph is random, so the maximum degree is *O*(log
+/// log *n*).
+///
+/// When we peel an edge, we just zero the degree, leaving the edge information
+/// and the side in place for further processing later.
 ///
 /// This approach reduces the core memory usage for the hypergraph to 5 bytes
-/// per vertex. Edges are derived on the fly from signatures using the edge
-/// indices. The visit stack and the stack of peeled edges can be
-/// represented just using vertices, as the edge indices can be retrieved from
-/// this list.
-///
-/// Note that this approach adds a layer of indirection with respect to storing
-/// hashes and values XOR's together, but in a parallel environment the reduction
-/// of memory contention is worth the extra work.
+/// per vertex when storing edge indices. Edges are derived on the fly from
+/// signatures using the edge indices and indexing the shard. If instead
+/// signature/value pairs are stored, the memory usage is significantly higher,
+/// but obtaining an edge does not require accessing the shard.
 struct XorGraph<X: BitXor + BitXorAssign + Default + Copy> {
     edges: Box<[X]>,
     degrees_sides: Box<[u8]>,
@@ -390,8 +391,470 @@ impl<V: Copy> DoubleStack<V> {
     }
 }
 
-type ShardIter<'a, W, D> = <D as BitFieldSliceMut<W>>::ChunksMut<'a>;
-type Shard<'a, W, D> = <ShardIter<'a, W, D> as Iterator>::Item;
+/// An iterator over segments of data associated with each shard.
+type ShardDataIter<'a, W, D> = <D as BitFieldSliceMut<W>>::ChunksMut<'a>;
+/// A segment of data associated with a specific shard.
+type ShardData<'a, W, D> = <ShardDataIter<'a, W, D> as Iterator>::Item;
+
+/// Builds a new function using a `Box<[W]>` to store values.
+///
+/// Since values are stored in a slice, access is particularly fast, but the bit
+/// width of the output of the function will be  exactly the bit width of `W`.
+impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
+where
+    SigVal<S, W>: RadixKey + BitXor + BitXorAssign,
+    Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
+{
+    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
+        mut self,
+        keys: impl RewindableIoLender<T>,
+        values: impl RewindableIoLender<W>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFunc<T, W, Box<[W]>, S, E>>
+    where
+        for<'a> ShardDataIter<'a, W, Box<[W]>>: Send,
+        for<'a> ShardData<'a, W, Box<[W]>>: Send,
+    {
+        let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
+        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
+        self.build_loop(keys, values, &get_val, new_data, pl)
+    }
+}
+
+/// Builds a new filter using a `Box<[W]>` to store values.
+///
+/// Since values are stored in a slice access is particularly fast, but the
+/// number of signature bits will be  exactly the bit width of `W`.
+impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
+where
+    SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
+    u64: CastableInto<W>,
+{
+    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
+        mut self,
+        keys: impl RewindableIoLender<T>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>>
+    where
+        for<'a> ShardDataIter<'a, W, Box<[W]>>: Send,
+        for<'a> ShardData<'a, W, Box<[W]>>: Send,
+    {
+        let filter_mask = W::MAX;
+        let get_val = |sig_val: &SigVal<S, EmptyVal>| sig_val.sig.sig_u64().cast();
+        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
+
+        Ok(VFilter {
+            func: self.build_loop(
+                keys,
+                FromIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
+                &get_val,
+                new_data,
+                pl,
+            )?,
+            filter_mask,
+            sig_bits: W::BITS as u32,
+        })
+    }
+}
+
+/// Builds a new function using a [bit-field vector](BitFieldVec) on words of
+/// type `W` to store values.
+///
+/// Since values are stored in a bit-field vector, access will be slower than
+/// when using a boxed slice, but the bit width of stored values will be the
+/// minimum necessary. It must be in any case at most the bit width of `W`.
+///
+/// Typically `W` will be `usize` or `u64`. You can use `u128` if the bit width
+/// of the values is larger than 64.
+impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
+where
+    SigVal<S, W>: RadixKey + BitXor + BitXorAssign,
+{
+    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
+        mut self,
+        keys: impl RewindableIoLender<T>,
+        values: impl RewindableIoLender<W>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
+        let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
+        let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
+        self.build_loop(keys, values, &get_val, new_data, pl)
+    }
+}
+
+/// Builds a new filter using a [bit-field vector](BitFieldVec) on words of type
+/// `W` to store values.
+///
+/// Since values are stored in a bit-field vector, access will be slower than
+/// when using a boxed slice, but the signature bits can be set at will. They
+/// must be in any case at most the bit width of `W`.
+///
+/// Typically `W` will be `usize` or `u64`.
+impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
+where
+    SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
+    u64: CastableInto<W>,
+{
+    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
+        mut self,
+        keys: impl RewindableIoLender<T>,
+        filter_bits: u32,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>> {
+        assert!(filter_bits > 0);
+        assert!(filter_bits <= W::BITS as u32);
+        let filter_mask = W::MAX >> (W::BITS as u32 - filter_bits);
+        let get_val = |sig_val: &SigVal<S, EmptyVal>| sig_val.sig.sig_u64().cast() & filter_mask;
+        let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
+
+        Ok(VFilter {
+            func: self.build_loop(
+                keys,
+                FromIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
+                &get_val,
+                new_data,
+                pl,
+            )?,
+            filter_mask,
+            sig_bits: filter_bits,
+        })
+    }
+}
+
+impl<
+        W: ZeroCopy + Word,
+        D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
+        S: Sig + Send + Sync,
+        E: ShardEdge<S, 3>,
+    > VBuilder<W, D, S, E>
+{
+    /// Builds and return a new function with given keys and values.
+    ///
+    /// This function can build functions based both on vectors and on bit-field
+    /// vectors. The necessary abstraction is provided by the `new_data(bit_width,
+    /// len)` function, which is called to create the data structure to store
+    /// the values.
+    ///
+    /// When `V` is [`EmptyVal`], the this method builds a function supporting a
+    /// filter by mapping each key to its signature. The necessary abstraction
+    /// is provided by the `get_val` function, which is called to extract the
+    /// value from the signature/value pair`; in the case of functions it
+    /// returns the value stored in the signature/value pair, and in the case of
+    /// filters it returns the lower bits of [`SigVal::sig_u64`].
+    fn build_loop<T: ?Sized + ToSig<S> + std::fmt::Debug, V: ZeroCopy + Default + Send + Sync>(
+        &mut self,
+        mut keys: impl RewindableIoLender<T>,
+        mut values: impl RewindableIoLender<V>,
+        get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
+        new_data: fn(usize, usize) -> D,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFunc<T, W, D, S, E>>
+    where
+        SigVal<S, V>: RadixKey + BitXor + BitXorAssign + Send + Sync,
+        for<'a> ShardDataIter<'a, W, D>: Send,
+        for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
+    {
+        let mut dup_count = 0;
+        let mut prng = SmallRng::seed_from_u64(self.seed);
+
+        if let Some(expected_num_keys) = self.expected_num_keys {
+            self.shard_edge.set_up_shards(expected_num_keys);
+            self.log2_buckets = self.shard_edge.shard_high_bits();
+        }
+
+        pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
+
+        // Loop until success or duplicate detection
+        loop {
+            let seed = prng.random();
+            pl.expected_updates(self.expected_num_keys);
+            pl.item_name("key");
+            pl.start(format!(
+                "Reading input and hashing keys to {} bits...",
+                std::mem::size_of::<S>() * 8
+            ));
+
+            values = values.rewind()?;
+            keys = keys.rewind()?;
+
+            match if self.offline {
+                self.try_seed(
+                    seed,
+                    sig_store::new_offline::<S, V>(
+                        self.log2_buckets,
+                        LOG2_MAX_SHARDS,
+                        self.expected_num_keys,
+                    )?,
+                    &mut keys,
+                    &mut values,
+                    get_val,
+                    new_data,
+                    pl,
+                )
+            } else {
+                self.try_seed(
+                    seed,
+                    sig_store::new_online::<S, V>(
+                        self.log2_buckets,
+                        LOG2_MAX_SHARDS,
+                        self.expected_num_keys,
+                    )?,
+                    &mut keys,
+                    &mut values,
+                    get_val,
+                    new_data,
+                    pl,
+                )
+            } {
+                Ok(func) => {
+                    return Ok(func);
+                }
+                Err(error) => {
+                    match error.downcast::<SolveError>() {
+                        Ok(vfunc_error) => match vfunc_error {
+                            // Let's try another seed, but just a few times--most likely,
+                            // duplicate keys
+                            SolveError::DuplicateSignature => {
+                                if dup_count >= 3 {
+                                    pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with four different seeds)"));
+                                    return Err(BuildError::DuplicateKey.into());
+                                }
+                                pl.warn(format_args!(
+                                "Duplicate 128-bit signature, trying again with a different seed..."
+                            ));
+                                dup_count += 1;
+                            }
+                            SolveError::MaxShardTooBig => {
+                                pl.warn(format_args!(
+                                "The maximum shard is too big, trying again with a different seed..."
+                               ));
+                            }
+                            // Let's just try another seed
+                            SolveError::UnsolvableShard => {
+                                pl.warn(format_args!(
+                                    "Unsolvable shard, trying again with a different seed..."
+                                ));
+                            }
+                        },
+                        Err(error) => return Err(error),
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<
+        W: ZeroCopy + Word,
+        D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
+        S: Sig + Send + Sync,
+        E: ShardEdge<S, 3>,
+    > VBuilder<W, D, S, E>
+{
+    /// Tries to build a function using specific seed. See the comments in the
+    /// [`VBuilder::build_loop`] method for more details.
+    ///
+    /// This methods reads the input, sets up the shards, allocates the backend
+    /// using `new_data`, and passes the backend and an iterator on shards to
+    /// the [`VBuilder::try_build_from_shard_iter`] method.
+    fn try_seed<
+        T: ?Sized + ToSig<S> + std::fmt::Debug,
+        V: ZeroCopy + Default + Send + Sync,
+        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
+    >(
+        &mut self,
+        seed: u64,
+        mut sig_store: impl SigStore<S, V>,
+        keys: &mut impl RewindableIoLender<T>,
+        values: &mut impl RewindableIoLender<V>,
+        get_val: &G,
+        new_data: fn(usize, usize) -> D,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFunc<T, W, D, S, E>>
+    where
+        SigVal<S, V>: RadixKey + BitXor + BitXorAssign,
+        for<'a> ShardDataIter<'a, W, D>: Send,
+        for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
+    {
+        let mut max_value = W::ZERO;
+
+        while let Some(result) = keys.next() {
+            match result {
+                Ok(key) => {
+                    pl.light_update();
+                    // This might be an actual value, if we are building a
+                    // function, or EmptyVal, if we are building a filter.
+                    let &maybe_val = values.next().expect("Not enough values")?;
+                    let sig_val = SigVal {
+                        sig: T::to_sig(key, seed),
+                        val: maybe_val,
+                    };
+                    let val = get_val(&sig_val);
+                    max_value = Ord::max(max_value, val);
+                    sig_store.try_push(sig_val)?;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+        pl.done();
+
+        let start = Instant::now();
+
+        self.num_keys = sig_store.len();
+        self.bit_width = max_value.len() as usize;
+
+        let mut shard_store = sig_store.into_shard_store(self.shard_edge.shard_high_bits())?;
+        let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
+
+        self.shard_edge.set_up_shards(self.num_keys);
+        (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
+
+        pl.info(format_args!(
+            "Number of keys: {} Max value: {} Bit width: {}",
+            self.num_keys, max_value, self.bit_width,
+        ));
+
+        if self.shard_edge.shard_high_bits() != 0 {
+            pl.info(format_args!(
+                "Max shard / average shard: {:.2}%",
+                (100.0 * max_shard as f64)
+                    / (self.num_keys as f64 / self.shard_edge.num_shards() as f64)
+            ));
+        }
+
+        if max_shard as f64 > 1.01 * self.num_keys as f64 / self.shard_edge.num_shards() as f64 {
+            // This might sometimes happen with small sharded graphs
+            Err(SolveError::MaxShardTooBig.into())
+        } else {
+            #[cfg(not(feature = "vbuilder_no_data"))]
+            let data = new_data(
+                self.bit_width,
+                self.shard_edge.num_vertices() * self.shard_edge.num_shards(),
+            );
+            #[cfg(feature = "vbuilder_no_data")]
+            let data = new_data(self.bit_width, 0);
+            self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
+                .inspect(|_| {
+                    pl.info(format_args!(
+                        "Construction from hashes completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                        start.elapsed().as_secs_f64(),
+                        self.num_keys,
+                        start.elapsed().as_nanos() as f64 / self.num_keys as f64
+                    ));
+                })
+                .map_err(Into::into)
+        }
+    }
+
+    /// Builds and return a new function starting from an iterator on shards.
+    ///
+    /// This method provide construction logic that is independent from the
+    /// actual storage of the values (offline or in core memory.)
+    ///
+    /// See [`VBuilder::build_loop`] for more details on the parameters.
+    fn try_build_from_shard_iter<
+        T: ?Sized + ToSig<S>,
+        I,
+        P,
+        V: ZeroCopy + Default + Send + Sync,
+        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
+    >(
+        &mut self,
+        seed: u64,
+        mut data: D,
+        shard_iter: I,
+        get_val: &G,
+        pl: &mut P,
+    ) -> Result<VFunc<T, W, D, S, E>, SolveError>
+    where
+        SigVal<S, V>: RadixKey + BitXor + BitXorAssign,
+        P: ProgressLog + Clone + Send + Sync,
+        I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
+        for<'a> ShardDataIter<'a, W, D>: Send,
+        for<'a> std::iter::Enumerate<
+            std::iter::Zip<<I as IntoIterator>::IntoIter, ShardDataIter<'a, W, D>>,
+        >: Send,
+        for<'a> (
+            usize,
+            (
+                Arc<Vec<SigVal<S, V>>>,
+                <ShardDataIter<'a, W, D> as Iterator>::Item,
+            ),
+        ): Send,
+    {
+        let thread_pool = ThreadPoolBuilder::new()
+            .num_threads(self.shard_edge.num_shards().min(self.max_num_threads))
+            .build()
+            .unwrap(); // Seriously, it's not going to fail
+
+        pl.info(format_args!("{}", self.shard_edge));
+        pl.info(format_args!(
+            "c: {}, Overhead: {:.4}% Number of threads: {}",
+            self.c,
+            (self.shard_edge.num_vertices() * self.shard_edge.num_shards()) as f64
+                / (self.num_keys as f64),
+            thread_pool.current_num_threads()
+        ));
+
+        if self.lge {
+            pl.info(format_args!("Peeling towards lazy Gaussian elimination"));
+            self.par_solve(
+                shard_iter,
+                &mut data,
+                |this, shard_index, shard, data, pl| {
+                    this.lge_shard(shard_index, shard, data, get_val, pl)
+                },
+                &thread_pool,
+                &mut pl.concurrent(),
+                pl,
+            )?;
+        } else if self.shard_edge.num_shards() <= 2 {
+            // More memory, but more speed
+            self.par_solve(
+                shard_iter,
+                &mut data,
+                |this, shard_index, shard, data, pl| {
+                    this.peel_shard_by_sig_vals(shard_index, shard, data, get_val, pl)
+                },
+                &thread_pool,
+                &mut pl.concurrent(),
+                pl,
+            )?;
+        } else {
+            // Much less memory, but slower
+            self.par_solve(
+                shard_iter,
+                &mut data,
+                |this, shard_index, shard, data, pl| {
+                    this.peel_shard_by_edge_indices(shard_index, shard, data, get_val, pl)
+                        .map(|_| ())
+                        .map_err(|_| ())
+                },
+                &thread_pool,
+                &mut pl.concurrent(),
+                pl,
+            )?;
+        }
+
+        pl.info(format_args!(
+            "Bits/keys: {} ({:.2}%)",
+            data.len() as f64 * self.bit_width as f64 / self.num_keys as f64,
+            100.0 * data.len() as f64 / self.num_keys as f64,
+        ));
+
+        Ok(VFunc {
+            seed,
+            shard_edge: self.shard_edge,
+            num_keys: self.num_keys,
+            data,
+            _marker_t: std::marker::PhantomData,
+            _marker_w: std::marker::PhantomData,
+            _marker_s: std::marker::PhantomData,
+        })
+    }
+}
 
 impl<
         W: ZeroCopy + Word + Send + Sync,
@@ -400,7 +863,8 @@ impl<
         E: ShardEdge<S, 3>,
     > VBuilder<W, D, S, E>
 {
-    /// Solve in parallel the shards returned by the given iterator.
+    /// Solves in parallel shards returned by an iterator, storing
+    /// the result in `data`.
     ///
     /// # Arguments
     ///
@@ -408,12 +872,9 @@ impl<
     ///
     /// * `data`: the storage for the solution values.
     ///
-    /// * `new_data`: a function to create shard-local storage for the values.
-    ///
     /// * `solve_shard`: a method to solve a shard; it takes the shard index,
-    ///   the shard, shard-local storage, and a progress logger, and returns the
-    ///   shard index and the shard-local storage filled with a solution, or an
-    ///   error.
+    ///   the shard, shard-local data, and a progress logger. It may
+    ///   fail by returning an error.
     ///
     /// * `main_pl`: the progress logger for the overall computation.
     ///
@@ -434,7 +895,7 @@ impl<
         &mut self,
         shard_iter: I,
         data: &'b mut D,
-        solve_shard: impl Fn(&Self, usize, &'b mut Vec<SigVal<S, V>>, Shard<'b, W, D>, &mut P) -> Result<(), ()>
+        solve_shard: impl Fn(&Self, usize, &'b mut [SigVal<S, V>], ShardData<'b, W, D>, &mut P) -> Result<(), ()>
             + Send
             + Sync,
         thread_pool: &rayon::ThreadPool,
@@ -444,24 +905,26 @@ impl<
     where
         I::IntoIter: Send,
         SigVal<S, V>: RadixKey + Send + Sync,
-        for<'a> ShardIter<'a, W, D>: Send,
-        for<'a> std::iter::Enumerate<std::iter::Zip<<I as IntoIterator>::IntoIter, ShardIter<'a, W, D>>>:
-            Send,
+        for<'a> ShardDataIter<'a, W, D>: Send,
+        for<'a> std::iter::Enumerate<
+            std::iter::Zip<<I as IntoIterator>::IntoIter, ShardDataIter<'a, W, D>>,
+        >: Send,
         for<'a> (
             usize,
             (
                 Arc<Vec<SigVal<S, V>>>,
-                <ShardIter<'a, W, D> as Iterator>::Item,
+                <ShardDataIter<'a, W, D> as Iterator>::Item,
             ),
         ): Send,
     {
-        // TODO: optimize for the non-parallel case
         main_pl
             .item_name("shard")
             .expected_updates(Some(self.shard_edge.num_shards()))
             .display_memory(true)
             .start("Solving shards...");
+
         self.failed.store(false, Ordering::Relaxed);
+
         let result = thread_pool.scope(|_| {
             shard_iter
                 .into_iter()
@@ -492,7 +955,6 @@ impl<
 
                         if self.check_dups {
                             // Check for duplicates
-
                             if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
                                 return Err(SolveError::DuplicateSignature);
                             }
@@ -541,14 +1003,16 @@ impl<
         result
     }
 
-    /// Peels a hard via edge indices.
+    /// Peels a shard via edge indices.
     ///
     /// This peeler uses only about 10 bytes per key, but it is slower than
-    /// [`VBuilder::peel_shard_by_sig_vals`], as it has to go through a cache-unfriendly memory
-    /// indirection every time it has to retrieved a [`SigVal`] from the shard.
-    /// It is the peeler of choice when significant parallelism is involved, or
-    /// when lazy Gaussian elimination is required, as the latter requires edge
-    /// indices.
+    /// [`VBuilder::peel_shard_by_sig_vals`], as it has to go through a
+    /// cache-unfriendly memory indirection every time it has to retrieve a
+    /// [`SigVal`] from the shard. It is the peeler of choice when significant
+    /// parallelism is involved, or when lazy Gaussian elimination is required,
+    /// as the latter requires edge indices.
+    ///
+    /// This method shares the same logic as [`VBuilder::peel_shard_by_sig_vals`],
     fn peel_shard_by_edge_indices<
         'a,
         V: ZeroCopy + Send + Sync,
@@ -556,8 +1020,8 @@ impl<
     >(
         &self,
         shard_index: usize,
-        shard: &'a Vec<SigVal<S, V>>,
-        data: Shard<'a, W, D>,
+        shard: &'a [SigVal<S, V>],
+        data: ShardData<'a, W, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<PeelResult<'a, W, D, S, V>, ()> {
@@ -606,7 +1070,7 @@ impl<
             debug_assert!(xor_graph.degree(v) == 1);
             let (edge_index, side) = xor_graph.edge_index_and_side(v);
             xor_graph.zero(v);
-            double_stack.push_upper(edge_index as u32);
+            double_stack.push_upper(edge_index);
             sides_stack.push(side as u8);
 
             let e = self.shard_edge.local_edge(shard[edge_index as usize].sig);
@@ -654,7 +1118,7 @@ impl<
                 double_stack.upper_len(),
                 shard.len(),
             ));
-            return Ok(PeelResult::Failed {
+            return Ok(PeelResult::Partial {
                 shard_index,
                 shard,
                 data,
@@ -677,16 +1141,20 @@ impl<
             pl,
         );
 
-        Ok(PeelResult::Peeled())
+        Ok(PeelResult::Complete())
     }
 
     /// Peels a shard via signature/value pairs.
     ///
-    /// This peeler uses about two [`SigVal`]s per key of core memory, but it is
-    /// significantly faster than [`VBuilder::peel_shard_hash_by_edge_indices`],
-    /// as it stores directly [`SigVal`] It is the peeler of choice when there
-    /// is no significant parallelism is involved and lazy Gaussian elimination
-    /// is not required, as the latter requires edge indices.
+    /// This peeler uses about two [`SigVal`]s per key of core memory, plus a
+    /// stack of bytes, but it is significantly faster than
+    /// [`VBuilder::peel_shard_by_edge_indices`], as it stores directly
+    /// [`SigVal`]. It is the peeler of choice when there is no significant
+    /// parallelism is involved and lazy Gaussian elimination is not required,
+    /// as the latter requires edge indices.
+    ///
+    /// This method shares the peeling code with the
+    /// [`VBuilder::peel_shard_by_edge_indices`].
     fn peel_shard_by_sig_vals<
         'a,
         V: ZeroCopy + Send + Sync,
@@ -694,8 +1162,8 @@ impl<
     >(
         &self,
         shard_index: usize,
-        shard: &'a Vec<SigVal<S, V>>,
-        data: Shard<'a, W, D>,
+        shard: &'a [SigVal<S, V>],
+        data: ShardData<'a, W, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()>
@@ -812,14 +1280,124 @@ impl<
         Ok(())
     }
 
+    /// Solves a shard of given index possibly using lazy Gaussian elimination,
+    /// and stores the solution in the given data.
+    ///
+    /// As a first try, the shard is peeled. If the peeling is
+    /// [partial](PeelResult::Partial), lazy Gaussian elimination is used to
+    /// solve the remaining edges.
+    ///
+    /// This method will scan the double stack, without emptying it, to check
+    /// which edges have been peeled. The information will be then passed
+    /// to [`VBuilder::assign`] to complete the assignment of values.
+    fn lge_shard<'a, V: ZeroCopy + Send + Sync>(
+        &self,
+        shard_index: usize,
+        shard: &'a [SigVal<S, V>],
+        data: ShardData<'a, W, D>,
+        get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
+        pl: &mut impl ProgressLog,
+    ) -> Result<(), ()> {
+        // Let's try to peel first
+        match self.peel_shard_by_edge_indices(shard_index, shard, data, get_val, pl) {
+            Err(()) => Err(()),
+            Ok(PeelResult::Complete()) => Ok(()),
+            Ok(PeelResult::Partial {
+                shard_index,
+                shard,
+                mut data,
+                double_stack,
+                sides_stack,
+            }) => {
+                pl.info(format_args!("Switching to lazy Gaussian elimination..."));
+                // Likely result--we have solve the rest
+                pl.start(format!(
+                    "Generating system for shard {}/{}...",
+                    shard_index + 1,
+                    self.shard_edge.num_shards()
+                ));
+
+                let num_vertices = self.shard_edge.num_vertices();
+                let mut peeled_edges = BitVec::new(shard.len());
+                let mut used_vars = BitVec::new(num_vertices);
+                for &edge in double_stack.iter_upper() {
+                    peeled_edges.set(edge as _, true);
+                }
+
+                // Create data for an F₂ system using non-peeled edges
+                //
+                // SAFETY: there is no undefined behavior here, but the
+                // raw construction methods we use assume that the
+                // equations are sorted, that the variables are not repeated,
+                // and the variables are in the range [0..num_vertices).
+                let mut system = unsafe {
+                    crate::utils::mod2_sys::Modulo2System::from_parts(
+                        num_vertices,
+                        shard
+                            .iter()
+                            .enumerate()
+                            .filter(|(edge_index, _)| !peeled_edges[*edge_index])
+                            .map(|(_edge_index, sig_val)| {
+                                let mut eq: Vec<_> = self
+                                    .shard_edge
+                                    .local_edge(sig_val.sig)
+                                    .iter()
+                                    .map(|&x| {
+                                        used_vars.set(x, true);
+                                        x as u32
+                                    })
+                                    .collect();
+                                eq.sort_unstable();
+                                crate::utils::mod2_sys::Modulo2Equation::from_parts(
+                                    eq,
+                                    get_val(sig_val),
+                                )
+                            })
+                            .collect(),
+                    )
+                };
+
+                if self.failed.load(Ordering::Relaxed) {
+                    return Err(());
+                }
+
+                pl.expected_updates(Some(system.num_equations()));
+                pl.start("Solving system...");
+                let result = system.lazy_gaussian_elimination().map_err(|_| ())?;
+                pl.done_with_count(system.num_equations());
+
+                for (v, &value) in result.iter().enumerate().filter(|(v, _)| used_vars[*v]) {
+                    data.set(v, value);
+                }
+
+                self.assign(
+                    shard_index,
+                    data,
+                    double_stack
+                        .iter_upper()
+                        .map(|&edge_index| {
+                            let sig_val = &shard[edge_index as usize];
+                            (sig_val.sig, get_val(sig_val))
+                        })
+                        .zip(sides_stack.into_iter().rev()),
+                    pl,
+                );
+                Ok(())
+            }
+        }
+    }
+
     /// Perform assignment of values based on peeling data.
     ///
     /// This method might be called after a successful peeling procedure, or
     /// after a linear solver has been used to solve the remaining edges.
+    ///
+    /// `sig_vals_sides` is an iterator returning pairs of signature/value pairs
+    /// and sides in reverse peeling order.
     fn assign(
         &self,
         shard_index: usize,
-        mut data: Shard<'_, W, D>,
+        mut data: ShardData<'_, W, D>,
         sigs_vals_sides: impl Iterator<Item = ((S, W), u8)>,
         pl: &mut impl ProgressLog,
     ) {
@@ -850,548 +1428,6 @@ impl<
         }
         pl.done();
     }
-
-    /// Solve a shard of given index using lazy Gaussian elimination, and store
-    /// the solution in the given data.
-    ///
-    /// Return the shard index and the data, in case of success, or `Err(())` in
-    /// case of failure.
-    fn lge_shard<'a, V: ZeroCopy + Send + Sync>(
-        &self,
-        shard_index: usize,
-        shard: &'a Vec<SigVal<S, V>>,
-        data: Shard<'a, W, D>,
-        get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
-        pl: &mut impl ProgressLog,
-    ) -> Result<(), ()> {
-        // Let's try to peel first
-        match self.peel_shard_by_edge_indices(shard_index, shard, data, get_val, pl) {
-            Err(()) => Err(()),
-            Ok(PeelResult::Peeled()) => Ok(()),
-            Ok(PeelResult::Failed {
-                shard_index,
-                shard,
-                mut data,
-                double_stack,
-                sides_stack,
-            }) => {
-                pl.info(format_args!("Switching to lazy Gaussian elimination..."));
-                // Likely result--we have solve the rest
-                pl.start(format!(
-                    "Generating system for shard {}/{}...",
-                    shard_index + 1,
-                    self.shard_edge.num_shards()
-                ));
-
-                let num_vertices = self.shard_edge.num_vertices();
-                let mut peeled_edges = BitVec::new(shard.len());
-                let mut used_vars = BitVec::new(num_vertices);
-                for &edge in double_stack.iter_upper() {
-                    peeled_edges.set(edge as _, true);
-                }
-
-                // Create data for an F₂ system using non-peeled edges
-                let mut system = unsafe {
-                    crate::utils::mod2_sys_sparse::Modulo2System::from_parts(
-                        num_vertices,
-                        shard
-                            .iter()
-                            .enumerate()
-                            .filter(|(edge_index, _)| !peeled_edges[*edge_index])
-                            .map(|(_edge_index, sig_val)| {
-                                let mut eq: Vec<_> = self
-                                    .shard_edge
-                                    .local_edge(sig_val.sig)
-                                    .iter()
-                                    .map(|&x| {
-                                        used_vars.set(x, true);
-                                        x as u32
-                                    })
-                                    .collect();
-                                eq.sort_unstable();
-                                crate::utils::mod2_sys_sparse::Modulo2Equation::from_parts(
-                                    eq,
-                                    get_val(sig_val),
-                                )
-                            })
-                            .collect(),
-                    )
-                };
-
-                if self.failed.load(Ordering::Relaxed) {
-                    return Err(());
-                }
-
-                pl.expected_updates(Some(system.num_equations()));
-                pl.start("Solving system...");
-                let result = system.lazy_gaussian_elimination().map_err(|_| ())?;
-                pl.done_with_count(system.num_equations());
-
-                for (v, &value) in result.iter().enumerate().filter(|(v, _)| used_vars[*v]) {
-                    data.set(v, value);
-                }
-
-                Ok(self.assign(
-                    shard_index,
-                    data,
-                    double_stack
-                        .iter_upper()
-                        .map(|&edge_index| {
-                            let sig_val = &shard[edge_index as usize];
-                            (sig_val.sig, get_val(sig_val))
-                        })
-                        .zip(sides_stack.into_iter().rev()),
-                    pl,
-                ))
-            }
-        }
-    }
-}
-
-/// Builds a new function using a `Box<[W]>` to store values.
-///
-/// Since values are stored in a slice, access is particularly fast, but the bit
-/// width of the output of the function will be  exactly the bit width of `W`.
-impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
-where
-    SigVal<S, W>: RadixKey + BitXor + BitXorAssign,
-    Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
-{
-    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
-        mut self,
-        keys: impl RewindableIoLender<T>,
-        values: impl RewindableIoLender<W>,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, Box<[W]>, S, E>>
-    where
-        for<'a> ShardIter<'a, W, Box<[W]>>: Send,
-        for<'a> Shard<'a, W, Box<[W]>>: Send,
-    {
-        let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
-        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
-        self.build_loop(keys, values, &get_val, new_data, pl)
-    }
-}
-
-/// Builds a new filter using a `Box<[W]>` to store values.
-///
-/// Since values are stored in a slice access is particularly fast, but the
-/// number of signature bits will be  exactly the bit width of `W`.
-impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
-where
-    SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
-    u64: CastableInto<W>,
-{
-    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
-        mut self,
-        keys: impl RewindableIoLender<T>,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>>
-    where
-        for<'a> ShardIter<'a, W, Box<[W]>>: Send,
-        for<'a> Shard<'a, W, Box<[W]>>: Send,
-    {
-        let filter_mask = W::MAX;
-        let get_val = |sig_val: &SigVal<S, EmptyVal>| sig_val.sig.sig_u64().cast();
-        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
-
-        Ok(VFilter {
-            func: self.build_loop(
-                keys,
-                FromIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
-                &get_val,
-                new_data,
-                pl,
-            )?,
-            filter_mask,
-            sig_bits: W::BITS as u32,
-        })
-    }
-}
-
-/// Builds a new function using a [bit-field vector](BitFieldVec) on words of
-/// type `W` to store values.
-///
-/// Since values are stored in a bit-field vector, access will be slower than
-/// when using a boxed slice, but the bit width of stored values will be the
-/// minimum necessary. It must be in any case at most the bit width of `W`.
-///
-/// Typically `W` will be `usize` or `u64`. You can use `u128` if the bit width
-/// of the values is larger than 64.
-impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
-where
-    SigVal<S, W>: RadixKey + BitXor + BitXorAssign,
-{
-    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
-        mut self,
-        keys: impl RewindableIoLender<T>,
-        values: impl RewindableIoLender<W>,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
-        let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
-        let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
-        self.build_loop(keys, values, &get_val, new_data, pl)
-    }
-}
-
-/// Builds a new filter using a [bit-field vector](BitFieldVec) on words of type
-/// `W` to store values.
-///
-/// Since values are stored in a bit-field vector, access will be slower than
-/// when using a boxed slice, but the signature bits can be set at will. They
-/// They must be in any case at most the bit width of `W`.
-///
-/// Typically `W` will be `usize` or `u64`.
-impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
-where
-    SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
-    u64: CastableInto<W>,
-{
-    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
-        mut self,
-        keys: impl RewindableIoLender<T>,
-        filter_bits: u32,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>> {
-        assert!(filter_bits > 0);
-        assert!(filter_bits <= W::BITS as u32);
-        let filter_mask = W::MAX >> (W::BITS as u32 - filter_bits);
-        let get_val = |sig_val: &SigVal<S, EmptyVal>| sig_val.sig.sig_u64().cast() & filter_mask;
-        let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
-
-        Ok(VFilter {
-            func: self.build_loop(
-                keys,
-                FromIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
-                &get_val,
-                new_data,
-                pl,
-            )?,
-            filter_mask,
-            sig_bits: filter_bits,
-        })
-    }
-}
-
-impl<
-        W: ZeroCopy + Word,
-        D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
-        S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
-    > VBuilder<W, D, S, E>
-{
-    /// Build and return a new function with given keys and values.
-    ///
-    /// This function can build functions based both on vectors and on bit-field
-    /// vectors. The necessary abstraction is provided by the `new(bit_width,
-    /// len)` function, which is called to create the data structure to store
-    /// the values.
-    fn build_loop<T: ?Sized + ToSig<S> + std::fmt::Debug, V: ZeroCopy + Default + Send + Sync>(
-        &mut self,
-        mut keys: impl RewindableIoLender<T>,
-        mut values: impl RewindableIoLender<V>,
-        get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
-        new: fn(usize, usize) -> D,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, D, S, E>>
-    where
-        SigVal<S, V>: RadixKey + BitXor + BitXorAssign + Send + Sync,
-        for<'a> ShardIter<'a, W, D>: Send,
-        for<'a> <ShardIter<'a, W, D> as Iterator>::Item: Send,
-    {
-        let mut dup_count = 0;
-        let mut prng = SmallRng::seed_from_u64(self.seed);
-
-        if let Some(expected_num_keys) = self.expected_num_keys {
-            self.shard_edge.set_up_shards(expected_num_keys);
-            self.log2_buckets = self.shard_edge.shard_high_bits();
-        }
-
-        pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
-
-        // Loop until success or duplicate detection
-        loop {
-            let seed = prng.random();
-            pl.expected_updates(self.expected_num_keys);
-            pl.item_name("key");
-            pl.start(format!(
-                "Reading input and hashing keys to {} bits...",
-                std::mem::size_of::<S>() * 8
-            ));
-
-            values = values.rewind()?;
-            keys = keys.rewind()?;
-
-            match if self.offline {
-                self.try_seed(
-                    seed,
-                    sig_store::new_offline::<S, V>(
-                        self.log2_buckets,
-                        LOG2_MAX_SHARDS,
-                        self.expected_num_keys,
-                    )?,
-                    &mut keys,
-                    &mut values,
-                    get_val,
-                    new,
-                    pl,
-                )
-            } else {
-                self.try_seed(
-                    seed,
-                    sig_store::new_online::<S, V>(
-                        self.log2_buckets,
-                        LOG2_MAX_SHARDS,
-                        self.expected_num_keys,
-                    )?,
-                    &mut keys,
-                    &mut values,
-                    get_val,
-                    new,
-                    pl,
-                )
-            } {
-                Ok(func) => {
-                    return Ok(func);
-                }
-                Err(error) => {
-                    match error.downcast::<SolveError>() {
-                        Ok(vfunc_error) => match vfunc_error {
-                            // Let's try another seed, but just a few times--most likely,
-                            // duplicate keys
-                            SolveError::DuplicateSignature => {
-                                if dup_count >= 3 {
-                                    pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with four different seeds)"));
-                                    return Err(BuildError::DuplicateKey.into());
-                                }
-                                pl.warn(format_args!(
-                                "Duplicate 128-bit signature, trying again with a different seed..."
-                            ));
-                                dup_count += 1;
-                            }
-                            SolveError::MaxShardTooBig => {
-                                pl.warn(format_args!(
-                                "The maximum shard is too big, trying again with a different seed..."
-                               ));
-                            }
-                            // Let's just try another seed
-                            SolveError::UnsolvableShard => {
-                                pl.warn(format_args!(
-                                    "Unsolvable shard, trying again with a different seed..."
-                                ));
-                            }
-                        },
-                        Err(error) => return Err(error),
-                    }
-                }
-            }
-        }
-    }
-}
-
-impl<
-        W: ZeroCopy + Word,
-        D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
-        S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
-    > VBuilder<W, D, S, E>
-{
-    fn try_seed<
-        T: ?Sized + ToSig<S> + std::fmt::Debug,
-        V: ZeroCopy + Default + Send + Sync,
-        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
-    >(
-        &mut self,
-        seed: u64,
-        mut sig_store: impl SigStore<S, V>,
-        keys: &mut impl RewindableIoLender<T>,
-        values: &mut impl RewindableIoLender<V>,
-        get_val: &G,
-        new_data: fn(usize, usize) -> D,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, D, S, E>>
-    where
-        SigVal<S, V>: RadixKey + BitXor + BitXorAssign,
-        for<'a> ShardIter<'a, W, D>: Send,
-        for<'a> <ShardIter<'a, W, D> as Iterator>::Item: Send,
-    {
-        let mut max_value = W::ZERO;
-
-        while let Some(result) = keys.next() {
-            match result {
-                Ok(key) => {
-                    pl.light_update();
-                    // This might be an actual value, if we are building a
-                    // function, or EmptyVal, if we are building a filter.
-                    let &maybe_val = values.next().expect("Not enough values")?;
-                    let sig_val = SigVal {
-                        sig: T::to_sig(key, seed),
-                        val: maybe_val,
-                    };
-                    let val = get_val(&sig_val);
-                    max_value = Ord::max(max_value, val);
-                    sig_store.try_push(sig_val)?;
-                }
-                Err(e) => return Err(e.into()),
-            }
-        }
-        pl.done();
-
-        let start = Instant::now();
-
-        self.num_keys = sig_store.len();
-        self.bit_width = max_value.len() as usize;
-
-        let mut shard_store = sig_store.into_shard_store(self.shard_edge.shard_high_bits())?;
-        let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
-
-        self.shard_edge.set_up_shards(self.num_keys);
-        (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
-
-        pl.info(format_args!(
-            "Number of keys: {} Max value: {} Bit width: {}",
-            self.num_keys, max_value, self.bit_width,
-        ));
-
-        if self.shard_edge.shard_high_bits() != 0 {
-            pl.info(format_args!(
-                "Max shard / average shard: {:.2}%",
-                (100.0 * max_shard as f64)
-                    / (self.num_keys as f64 / self.shard_edge.num_shards() as f64)
-            ));
-        }
-
-        if max_shard as f64 > 1.01 * self.num_keys as f64 / self.shard_edge.num_shards() as f64 {
-            Err(SolveError::MaxShardTooBig.into())
-        } else {
-            #[cfg(not(feature = "vbuilder_no_data"))]
-            let data = new_data(
-                self.bit_width,
-                self.shard_edge.num_vertices() * self.shard_edge.num_shards(),
-            );
-            #[cfg(feature = "vbuilder_no_data")]
-            let data = new_data(self.bit_width, 0);
-            self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
-                .map(|func| {
-                    pl.info(format_args!(
-                        "Construction from hashes completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                        start.elapsed().as_secs_f64(),
-                        self.num_keys,
-                        start.elapsed().as_nanos() as f64 / self.num_keys as f64
-                    ));
-                    func
-                })
-                .map_err(Into::into)
-        }
-    }
-
-    /// Build and return a new function starting from an iterator on shards.
-    ///
-    /// This method provide construction logic that is independent from the
-    /// actual storage of the values (offline or in core memory.)
-    ///
-    /// See [`VBuilder::_build`] for more details on the parameters.
-    fn try_build_from_shard_iter<
-        T: ?Sized + ToSig<S>,
-        I,
-        P,
-        V: ZeroCopy + Default + Send + Sync,
-        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
-    >(
-        &mut self,
-        seed: u64,
-        mut data: D,
-        shard_iter: I,
-        get_val: &G,
-        pl: &mut P,
-    ) -> Result<VFunc<T, W, D, S, E>, SolveError>
-    where
-        SigVal<S, V>: RadixKey + BitXor + BitXorAssign,
-        P: ProgressLog + Clone + Send + Sync,
-        I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
-        for<'a> ShardIter<'a, W, D>: Send,
-        for<'a> std::iter::Enumerate<std::iter::Zip<<I as IntoIterator>::IntoIter, ShardIter<'a, W, D>>>:
-            Send,
-        for<'a> (
-            usize,
-            (
-                Arc<Vec<SigVal<S, V>>>,
-                <ShardIter<'a, W, D> as Iterator>::Item,
-            ),
-        ): Send,
-    {
-        let thread_pool = ThreadPoolBuilder::new()
-            .num_threads(self.shard_edge.num_shards().min(self.max_num_threads))
-            .build()
-            .unwrap(); // Seriously, it's not going to fail
-
-        pl.info(format_args!("{}", self.shard_edge));
-        pl.info(format_args!(
-            "c: {}, Overhead: {:.4}% Number of threads: {}",
-            self.c,
-            (self.shard_edge.num_vertices() * self.shard_edge.num_shards()) as f64
-                / (self.num_keys as f64),
-            thread_pool.current_num_threads()
-        ));
-
-        if self.lge {
-            pl.info(format_args!("Peeling towards lazy Gaussian elimination"));
-            self.par_solve(
-                shard_iter,
-                &mut data,
-                |this, shard_index, shard, data, pl| {
-                    this.lge_shard(shard_index, shard, data, get_val, pl)
-                },
-                &thread_pool,
-                &mut pl.concurrent(),
-                pl,
-            )?;
-        } else if self.shard_edge.num_shards() <= 2 {
-            // More memory, but more speed
-            self.par_solve(
-                shard_iter,
-                &mut data,
-                |this, shard_index, shard, data, pl| {
-                    this.peel_shard_by_sig_vals(shard_index, shard, data, get_val, pl)
-                },
-                &thread_pool,
-                &mut pl.concurrent(),
-                pl,
-            )?;
-        } else {
-            // Much less memory, but slower
-            self.par_solve(
-                shard_iter,
-                &mut data,
-                |this, shard_index, shard, data, pl| {
-                    this.peel_shard_by_edge_indices(shard_index, shard, data, get_val, pl)
-                        .map(|_| ())
-                        .map_err(|_| ())
-                },
-                &thread_pool,
-                &mut pl.concurrent(),
-                pl,
-            )?;
-        }
-
-        pl.info(format_args!(
-            "Bits/keys: {} ({:.2}%)",
-            data.len() as f64 * self.bit_width as f64 / self.num_keys as f64,
-            100.0 * data.len() as f64 / self.num_keys as f64,
-        ));
-
-        Ok(VFunc {
-            seed,
-            shard_edge: self.shard_edge,
-            num_keys: self.num_keys,
-            data,
-            _marker_t: std::marker::PhantomData,
-            _marker_w: std::marker::PhantomData,
-            _marker_s: std::marker::PhantomData,
-        })
-    }
 }
 
 #[cfg(test)]
@@ -1405,9 +1441,7 @@ mod tests {
         let l = ((c * n as f64).ceil() as usize)
             .div_ceil(1 << log2_seg_size)
             .saturating_sub(2)
-            .max(1)
-            .try_into()
-            .unwrap();
+            .max(1);
         _test_peeling_l(n, l, log2_seg_size, seed)
     }
 
@@ -1548,7 +1582,7 @@ mod tests {
                 for log2_seg_size in base_log2_seg_size.saturating_sub(3)..base_log2_seg_size + 3 {
                     let failures: usize = (0..100)
                         .into_par_iter()
-                        .map(|seed| (!_test_peeling_c(size, c, log2_seg_size, seed)) as usize)
+                        .map(|seed| !_test_peeling_c(size, c, log2_seg_size, seed))
                         .sum();
                     eprintln!("{size} {c} {log2_seg_size} {failures}");
                 }
