@@ -147,7 +147,7 @@ pub struct VBuilder<
     W: ZeroCopy + Word,
     D: BitFieldSlice<W> + Send + Sync = Box<[W]>,
     S = [u64; 2],
-    E: ShardEdge<S, 3> = Fuse3Shards,
+    E: ShardEdge<S, 3> = FuseLge3Shards,
 > {
     /// The expected number of keys.
     ///

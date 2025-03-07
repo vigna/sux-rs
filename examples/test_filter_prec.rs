@@ -15,7 +15,7 @@ use epserde::prelude::*;
 use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
-    func::{Fuse3NoShards, Fuse3Shards, ShardEdge, VBuilder, VFilter, VFunc},
+    func::{FuseLge3NoShards, FuseLge3Shards, ShardEdge, VBuilder, VFilter, VFunc},
     utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
 };
 #[derive(Parser, Debug)]
@@ -84,9 +84,9 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.sig64 {
-        _main::<[u64; 1], Fuse3NoShards>(args)?;
+        _main::<[u64; 1], FuseLge3NoShards>(args)?;
     } else {
-        _main::<[u64; 2], Fuse3Shards>(args)?;
+        _main::<[u64; 2], FuseLge3Shards>(args)?;
     }
 
     Ok(())

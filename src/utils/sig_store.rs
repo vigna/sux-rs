@@ -182,7 +182,7 @@ impl<V: ZeroCopy + BitXorAssign> BitXorAssign<SigVal<[u64; 2], V>> for SigVal<[u
 ///
 /// We provide implementations for all primitive types, `str`, `String`, `&str`,
 /// `&String`, and slices of primitive types, by turning them into byte and
-/// calling [`xxh3::xxh3_128_with_seed`].
+/// calling [`rapidhash::RapidInlineHasher`].
 ///
 /// Note that for efficiency reasons the implementations are not
 /// endianness-independent.
