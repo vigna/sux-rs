@@ -15,7 +15,8 @@ use epserde::prelude::*;
 use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
-    func::{FuseLge3NoShards, FuseLge3Shards, ShardEdge, VBuilder, VFilter, VFunc},
+    dict::VFilter,
+    func::{FuseLge3NoShards, FuseLge3Shards, ShardEdge, VBuilder, VFunc},
     utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
 };
 #[derive(Parser, Debug)]

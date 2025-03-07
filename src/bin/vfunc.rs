@@ -117,8 +117,6 @@ where
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
     VFunc<usize, u8, Box<[u8]>, S, E>: Serialize,
     VFunc<str, u8, Box<[u8]>, S, E>: Serialize + TypeHash, // TODO: this is weird
-    VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, E>>: Serialize,
-    VFilter<u8, VFunc<str, u8, Box<[u8]>, S, <E as SerializeInner>::SerType>>: TypeHash, // Weird
 {
     let mut pl = ProgressLogger::default();
     let n = args.n;

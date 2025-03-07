@@ -15,6 +15,7 @@ use epserde::traits::{AlignHash, TypeHash, ZeroCopy};
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
+use sux::dict::VFilter;
 use sux::func::*;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, BitFieldSliceMut, Word};
