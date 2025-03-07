@@ -80,12 +80,12 @@ fn main() -> Result<()> {
 
     if args.no_shards {
         if args.sig64 {
-            main_with_types::<[u64; 1], Fuse3NoShards>(args)
+            main_with_types::<[u64; 1], FuseLge3NoShards>(args)
         } else {
-            main_with_types::<[u64; 2], Fuse3NoShards>(args)
+            main_with_types::<[u64; 2], FuseLge3NoShards>(args)
         }
     } else {
-        main_with_types::<[u64; 2], Fuse3Shards>(args)
+        main_with_types::<[u64; 2], FuseLge3Shards>(args)
     }
 }
 

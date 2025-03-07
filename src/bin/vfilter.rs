@@ -105,34 +105,34 @@ fn main() -> Result<()> {
         8 => {
             if args.no_shards {
                 if args.sig64 {
-                    main_with_types::<u8, [u64; 1], Fuse3NoShards>(args)
+                    main_with_types::<u8, [u64; 1], FuseLge3NoShards>(args)
                 } else {
-                    main_with_types::<u8, [u64; 2], Fuse3NoShards>(args)
+                    main_with_types::<u8, [u64; 2], FuseLge3NoShards>(args)
                 }
             } else {
-                main_with_types::<u8, [u64; 2], Fuse3Shards>(args)
+                main_with_types::<u8, [u64; 2], FuseLge3Shards>(args)
             }
         }
         16 => {
             if args.no_shards {
                 if args.sig64 {
-                    main_with_types::<u16, [u64; 1], Fuse3NoShards>(args)
+                    main_with_types::<u16, [u64; 1], FuseLge3NoShards>(args)
                 } else {
-                    main_with_types::<u16, [u64; 2], Fuse3NoShards>(args)
+                    main_with_types::<u16, [u64; 2], FuseLge3NoShards>(args)
                 }
             } else {
-                main_with_types::<u16, [u64; 2], Fuse3Shards>(args)
+                main_with_types::<u16, [u64; 2], FuseLge3Shards>(args)
             }
         }
         32 => {
             if args.no_shards {
                 if args.sig64 {
-                    main_with_types::<u32, [u64; 1], Fuse3NoShards>(args)
+                    main_with_types::<u32, [u64; 1], FuseLge3NoShards>(args)
                 } else {
-                    main_with_types::<u32, [u64; 2], Fuse3NoShards>(args)
+                    main_with_types::<u32, [u64; 2], FuseLge3NoShards>(args)
                 }
             } else {
-                main_with_types::<u32, [u64; 2], Fuse3Shards>(args)
+                main_with_types::<u32, [u64; 2], FuseLge3Shards>(args)
             }
         }
         _ => unimplemented!("{}-bit signatures", args.bits),

@@ -10,7 +10,7 @@ use dsi_progress_logger::*;
 use epserde::prelude::*;
 use sux::{
     bits::BitFieldVec,
-    func::{Fuse3Shards, VFilter, VFunc},
+    func::{FuseLge3Shards, VFilter, VFunc},
     prelude::VBuilder,
     utils::FromIntoIterator,
 };
@@ -36,7 +36,7 @@ fn _test_vfunc(sizes: &[usize]) -> Result<()> {
     for offline in [false, true] {
         for &n in sizes {
             dbg!(offline, n);
-            let func = VBuilder::<_, BitFieldVec<_>, [u64; 2], Fuse3Shards>::default()
+            let func = VBuilder::<_, BitFieldVec<_>, [u64; 2], FuseLge3Shards>::default()
                 .expected_num_keys(n)
                 .offline(offline)
                 .try_build_func(
@@ -47,7 +47,7 @@ fn _test_vfunc(sizes: &[usize]) -> Result<()> {
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             func.serialize(&mut cursor)?;
             cursor.set_position(0);
-            let func = VFunc::<usize, _, BitFieldVec<_>, [u64; 2], Fuse3Shards>::deserialize_eps(
+            let func = VFunc::<usize, _, BitFieldVec<_>, [u64; 2], FuseLge3Shards>::deserialize_eps(
                 cursor.as_bytes(),
             )?;
             pl.start("Querying...");
@@ -61,7 +61,7 @@ fn _test_vfunc(sizes: &[usize]) -> Result<()> {
     for offline in [false, true] {
         for &n in sizes {
             dbg!(offline, n);
-            let func = VBuilder::<usize, Box<[usize]>, [u64; 2], Fuse3Shards>::default()
+            let func = VBuilder::<usize, Box<[usize]>, [u64; 2], FuseLge3Shards>::default()
                 .expected_num_keys(n)
                 .offline(offline)
                 .try_build_func(
@@ -72,7 +72,7 @@ fn _test_vfunc(sizes: &[usize]) -> Result<()> {
             let mut cursor = <AlignedCursor<maligned::A16>>::new();
             func.serialize(&mut cursor)?;
             cursor.set_position(0);
-            let func = VFunc::<usize, _, Box<[_]>, [u64; 2], Fuse3Shards>::deserialize_eps(
+            let func = VFunc::<usize, _, Box<[_]>, [u64; 2], FuseLge3Shards>::deserialize_eps(
                 cursor.as_bytes(),
             )?;
             pl.start("Querying...");
