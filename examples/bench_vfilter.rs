@@ -13,7 +13,7 @@ use epserde::prelude::*;
 use lender::*;
 use rdst::RadixKey;
 use sux::{
-    bits::BitFieldVec, dict::VFilter, func::*, traits::{BitFieldSlice, Word}, utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender}
+    bits::BitFieldVec, dict::VFilter, func::{*, shard_edge::*}, traits::{BitFieldSlice, Word}, utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender}
 };
 
 #[derive(Parser, Debug)]

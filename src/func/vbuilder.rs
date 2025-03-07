@@ -1,14 +1,13 @@
 /*
-*
-* SPDX-FileCopyrightText: 2023 Sebastiano Vigna
-*
-* SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
-*/
+ * SPDX-FileCopyrightText: 2025 Sebastiano Vigna
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ */
 
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 
-use crate::func::*;
+use crate::func::{*, shard_edge::ShardEdge};
 use crate::bits::*;
 use crate::dict::VFilter;
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
@@ -33,6 +32,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
+use super::shard_edge::FuseLge3Shards;
+
 const LOG2_MAX_SHARDS: u32 = 12;
 
 /// A builder for [`VFunc`] and [`VFilter`].
@@ -56,8 +57,8 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// The generic parameters are explained in the [`VFunc`] documentation. You
 /// have to choose the type of the output values and the backend. The remaining
 /// parameters have default values that are the same as those of
-/// [`VFunc`]/[`VFilter`], and some elaboration about them can be found in the
-/// documentation of the [`vfunc`](crate::func::vfunc) module.
+/// [`VFunc`]/[`VFilter`], and some elaboration about them can be found in their
+/// documentation.
 ///
 /// All construction methods require to pass one or two [`RewindableIoLender`]s
 /// (keys and possibly values), and the construction might fail and keys might

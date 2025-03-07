@@ -11,7 +11,7 @@ use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
 use sux::{
-    func::{FuseLge3Shards, VBuilder},
+    func::{shard_edge::FuseLge3Shards, VBuilder},
     utils::FromIntoIterator,
 };
 

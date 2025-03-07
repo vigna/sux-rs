@@ -18,8 +18,10 @@
 //! See [`VFunc`] for more details.
 
 
-pub mod vfunc;
+mod vfunc;
 pub use vfunc::*;
 
-pub mod vbuilder;
+mod vbuilder;
 pub use vbuilder::*;
+
+pub mod shard_edge;

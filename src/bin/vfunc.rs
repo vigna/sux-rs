@@ -14,7 +14,7 @@ use epserde::traits::{TypeHash, ZeroCopy};
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::func::*;
+use sux::func::{*, shard_edge::*};
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};

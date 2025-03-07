@@ -16,7 +16,7 @@ use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
     dict::VFilter,
-    func::{FuseLge3NoShards, FuseLge3Shards, ShardEdge, VBuilder, VFunc},
+    func::{shard_edge::{FuseLge3NoShards, FuseLge3Shards, ShardEdge}, VBuilder, VFunc},
     utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
 };
 #[derive(Parser, Debug)]
