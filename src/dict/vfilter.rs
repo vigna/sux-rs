@@ -5,7 +5,7 @@
 * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
 */
 
-use crate::func::{ShardEdge, VFunc};
+use crate::func::{shard_edge::ShardEdge, VFunc};
 use crate::traits::bit_field_slice::*;
 use crate::utils::{Sig, ToSig};
 use common_traits::CastableInto;
@@ -131,7 +131,7 @@ mod tests {
     use rdst::RadixKey;
 
     use crate::{
-        func::{FuseLge3Shards, VBuilder},
+        func::{shard_edge::FuseLge3Shards, VBuilder},
         utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
     };
 
