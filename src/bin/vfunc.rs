@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 #![allow(clippy::collapsible_else_if)]
+use std::ops::{BitXor, BitXorAssign};
+
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
@@ -15,7 +17,7 @@ use sux::bits::BitFieldVec;
 use sux::func::*;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
-use sux::utils::{FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
+use sux::utils::{EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
 
 #[derive(Parser, Debug)]
 #[command(about = "Generates a VFunc mapping each input to its rank and serializes it with ε-serde", long_about = None)]
@@ -49,7 +51,7 @@ struct Args {
     #[arg(long)]
     seed: Option<u64>,
     /// Use 64-bit signatures.
-    #[arg(long)]
+    #[arg(long, requires = "no_shards")]
     sig64: bool,
     /// Do not use sharding.
     #[arg(long)]
@@ -108,8 +110,8 @@ fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Resu
 where
     str: ToSig<S>,
     usize: ToSig<S>,
-    SigVal<S, usize>: RadixKey,
-    SigVal<S, ()>: RadixKey,
+    SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
+    SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Wierd
     VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,

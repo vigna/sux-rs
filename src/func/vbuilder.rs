@@ -22,8 +22,8 @@ use rayon::ThreadPoolBuilder;
 use rdst::*;
 use std::any::TypeId;
 use std::hint::unreachable_unchecked;
-use std::iter::Copied;
 use std::marker::PhantomData;
+use std::ops::{BitXor, BitXorAssign};
 use std::slice::Iter;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -192,7 +192,7 @@ pub struct VBuilder<
     c: f64,
     /// Whether we should use lazy Gaussian elimination.
     lge: bool,
-    /// Fast-stop for failed attemps.
+    /// Fast-stop for failed attempts.
     failed: AtomicBool,
     #[doc(hidden)]
     _marker_v: PhantomData<(W, D, S)>,
@@ -220,7 +220,6 @@ pub enum SolveError {
     /// A shard cannot be solved.
     UnsolvableShard,
 }
-
 
 /// A graph represented compactly.
 ///
@@ -255,39 +254,37 @@ pub enum SolveError {
 /// indices. The visit stack and the stack of peeled edges can be
 /// represented just using vertices, as the edge indices can be retrieved from
 /// this list.
-/// 
+///
 /// Note that this approach adds a layer of indirection with respect to storing
 /// hashes and values XOR's together, but in a parallel environment the reduction
 /// of memory contention is worth the extra work.
-struct XorGraph {
-    edges: Box<[u32]>,
+struct XorGraph<X: BitXor + BitXorAssign + Default + Copy> {
+    edges: Box<[X]>,
     degrees_sides: Box<[u8]>,
 }
 
-impl XorGraph {
-    pub fn new(n: usize) -> XorGraph {
+impl<X: BitXor + BitXorAssign + Default + Copy> XorGraph<X> {
+    pub fn new(n: usize) -> XorGraph<X> {
         XorGraph {
-            edges: vec![0; n].into(),
+            edges: vec![X::default(); n].into(),
             degrees_sides: vec![0; n].into(),
         }
     }
 
     #[inline(always)]
-    pub fn add(&mut self, v: usize, edge: usize, side: usize) {
-        debug_assert!(edge <= u32::MAX as usize);
+    pub fn add(&mut self, v: usize, x: X, side: usize) {
         debug_assert!(side < 3);
         self.degrees_sides[v] += 4;
         self.degrees_sides[v] ^= side as u8;
-        self.edges[v] ^= edge as u32;
+        self.edges[v] ^= x;
     }
 
     #[inline(always)]
-    pub fn remove(&mut self, v: usize, edge: usize, side: usize) {
-        debug_assert!(edge <= u32::MAX as usize);
+    pub fn remove(&mut self, v: usize, x: X, side: usize) {
         debug_assert!(side < 3);
         self.degrees_sides[v] -= 4;
         self.degrees_sides[v] ^= side as u8;
-        self.edges[v] ^= edge as u32;
+        self.edges[v] ^= x;
     }
 
     #[inline(always)]
@@ -296,7 +293,7 @@ impl XorGraph {
     }
 
     #[inline(always)]
-    pub fn edge_index_and_side(&self, v: usize) -> (usize, usize) {
+    pub fn edge_index_and_side(&self, v: usize) -> (X, usize) {
         debug_assert!(self.degree(v) < 2);
         (self.edges[v] as _, (self.degrees_sides[v] & 0b11) as _)
     }
@@ -314,7 +311,7 @@ impl XorGraph {
 }
 
 /// Two stacks in the same vector.
-/// 
+///
 /// This struct implements a pair of stacks sharing the same memory. The lower
 /// stack grows from the beginning of the vector, the upper stack grows from the
 /// end of the vector. Since we use the lower stack for peeled vertices and the
@@ -365,8 +362,8 @@ impl<V: Copy> DoubleStack<V> {
         self.stack.len() - self.upper
     }
 
-    fn iter_upper(&self) -> Copied<Iter<'_, V>> {
-        self.stack[self.upper..].iter().copied()
+    fn iter_upper(&self) -> Iter<'_, V> {
+        self.stack[self.upper..].iter()
     }
 }
 
@@ -533,7 +530,7 @@ impl<
     /// the shard index, the shard, the edge lists, the shard-local data, and
     /// the stack at the end of the peeling procedure in case of failure. These
     /// data can be then passed to a linear solver to complete the solution.
-    fn peel_shard<'a, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    fn peel_shard_index<'a, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
         &self,
         shard_index: usize,
         shard: &'a Vec<SigVal<S, V>>,
@@ -546,22 +543,11 @@ impl<
             usize,
             &'a Vec<SigVal<S, V>>,
             Shard<'a, W, D>,
-            XorGraph,
+            XorGraph<u32>,
             DoubleStack<u32>,
             Vec<u8>,
         ),
     > {
-        if self.failed.load(Ordering::Relaxed) {
-            return Err((
-                shard_index,
-                shard,
-                data,
-                XorGraph::new(0),
-                DoubleStack::new(0),
-                vec![],
-            ));
-        }
-
         let num_vertices = self.shard_edge.num_vertices();
 
         pl.start(format!(
@@ -570,10 +556,10 @@ impl<
             self.shard_edge.num_shards()
         ));
 
-        let mut xor_graph = XorGraph::new(num_vertices);
+        let mut xor_graph = XorGraph::<u32>::new(num_vertices);
         for (edge_index, sig_val) in shard.iter().enumerate() {
             for (side, &v) in self.shard_edge.local_edge(sig_val.sig).iter().enumerate() {
-                xor_graph.add(v, edge_index, side);
+                xor_graph.add(v, edge_index as u32, side);
             }
         }
         pl.done_with_count(shard.len());
@@ -590,7 +576,7 @@ impl<
         }
 
         pl.start(format!(
-            "Peeling graph for shard {}/{}...",
+            "Peeling graph for shard {}/{} by edge indices...",
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
@@ -613,12 +599,11 @@ impl<
             }
             debug_assert!(xor_graph.degree(v) == 1);
             let (edge_index, side) = xor_graph.edge_index_and_side(v);
-            debug_assert!(edge_index < shard.len());
             xor_graph.zero(v);
             double_stack.push_upper(edge_index as u32);
             sides_stack.push(side as u8);
 
-            let e = self.shard_edge.local_edge(shard[edge_index].sig);
+            let e = self.shard_edge.local_edge(shard[edge_index as usize].sig);
 
             match side {
                 0 => {
@@ -676,11 +661,139 @@ impl<
 
         Ok(self.assign(
             shard_index,
-            shard,
             data,
-            get_val,
-            double_stack,
-            sides_stack,
+            double_stack
+                .iter_upper()
+                .map(|&edge_index| {
+                    let sig_val = &shard[edge_index as usize];
+                    (sig_val.sig, get_val(sig_val))
+                })
+                .zip(sides_stack.iter().copied().rev()),
+            pl,
+        ))
+    }
+
+    /// Solve a shard by peeling.
+    ///
+    /// Return the shard index and the shard-local data, in case of success, or
+    /// the shard index, the shard, the edge lists, the shard-local data, and
+    /// the stack at the end of the peeling procedure in case of failure. These
+    /// data can be then passed to a linear solver to complete the solution.
+    fn peel_shard_hash<'a, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+        &self,
+        shard_index: usize,
+        shard: &'a Vec<SigVal<S, V>>,
+        data: Shard<'a, W, D>,
+        get_val: &G,
+        pl: &mut impl ProgressLog,
+    ) -> Result<usize, ()>
+    where
+        SigVal<S, V>: BitXor + BitXorAssign + Default,
+    {
+        let num_vertices = self.shard_edge.num_vertices();
+
+        pl.start(format!(
+            "Generating graph for shard {}/{}...",
+            shard_index + 1,
+            self.shard_edge.num_shards()
+        ));
+
+        let mut xor_graph = XorGraph::<SigVal<S, V>>::new(num_vertices);
+        for &sig_val in shard {
+            for (side, &v) in self.shard_edge.local_edge(sig_val.sig).iter().enumerate() {
+                xor_graph.add(v, sig_val, side);
+            }
+        }
+        pl.done_with_count(shard.len());
+
+        if self.failed.load(Ordering::Relaxed) {
+            return Err(());
+        }
+
+        pl.start(format!(
+            "Peeling graph for shard {}/{} by hashes...",
+            shard_index + 1,
+            self.shard_edge.num_shards()
+        ));
+        let mut sig_vals_stack = Vec::<SigVal<S, V>>::new();
+        let mut sides_stack = Vec::<u8>::new();
+        let mut visit_stack = Vec::<u32>::new();
+
+        // Preload all vertices of degree one in the visit stack
+        for (v, degree) in xor_graph.degrees().enumerate() {
+            if degree == 1 {
+                visit_stack.push(v as u32);
+            }
+        }
+
+        while let Some(v) = visit_stack.pop() {
+            let v = v as usize;
+            if xor_graph.degree(v) == 0 {
+                continue;
+            }
+            debug_assert!(xor_graph.degree(v) == 1);
+            let (sig_val, side) = xor_graph.edge_index_and_side(v);
+            xor_graph.zero(v);
+            sig_vals_stack.push(sig_val);
+            sides_stack.push(side as u8);
+
+            let e = self.shard_edge.local_edge(sig_val.sig);
+
+            match side {
+                0 => {
+                    if xor_graph.degree(e[1]) == 2 {
+                        visit_stack.push(e[1] as u32);
+                    }
+                    xor_graph.remove(e[1], sig_val, 1);
+                    if xor_graph.degree(e[2]) == 2 {
+                        visit_stack.push(e[2] as u32);
+                    }
+                    xor_graph.remove(e[2], sig_val, 2);
+                }
+                1 => {
+                    if xor_graph.degree(e[0]) == 2 {
+                        visit_stack.push(e[0] as u32);
+                    }
+                    xor_graph.remove(e[0], sig_val, 0);
+                    if xor_graph.degree(e[2]) == 2 {
+                        visit_stack.push(e[2] as u32);
+                    }
+                    xor_graph.remove(e[2], sig_val, 2);
+                }
+                2 => {
+                    if xor_graph.degree(e[0]) == 2 {
+                        visit_stack.push(e[0] as u32);
+                    }
+                    xor_graph.remove(e[0], sig_val, 0);
+                    if xor_graph.degree(e[1]) == 2 {
+                        visit_stack.push(e[1] as u32);
+                    }
+                    xor_graph.remove(e[1], sig_val, 1);
+                }
+                _ => unsafe { unreachable_unchecked() },
+            }
+        }
+
+        if shard.len() != sig_vals_stack.len() {
+            pl.info(format_args!(
+                "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
+                shard_index + 1,
+                self.shard_edge.num_shards(),
+                sig_vals_stack.len(),
+                shard.len(),
+            ));
+            return Err(());
+        }
+        pl.done_with_count(shard.len());
+
+        Ok(self.assign(
+            shard_index,
+            data,
+            sig_vals_stack
+                .iter()
+                .rev()
+                .map(|sig_val| (sig_val.sig, get_val(sig_val)))
+                .zip(sides_stack.iter().copied().rev()),
             pl,
         ))
     }
@@ -689,14 +802,11 @@ impl<
     ///
     /// This method might be called after a successful peeling procedure, or
     /// after a linear solver has been used to solve the remaining edges.
-    fn assign<V: ZeroCopy + Send + Sync>(
+    fn assign(
         &self,
         shard_index: usize,
-        shard: &[SigVal<S, V>],
         mut data: Shard<'_, W, D>,
-        get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
-        double_stack: DoubleStack<u32>,
-        sides_stack: Vec<u8>,
+        sigs_vals_sides: impl Iterator<Item = ((S, W), u8)>,
         pl: &mut impl ProgressLog,
     ) -> usize {
         if self.failed.load(Ordering::Relaxed) {
@@ -709,36 +819,28 @@ impl<
             self.shard_edge.num_shards()
         ));
 
-        for (edge_index, side) in double_stack.iter_upper().zip(sides_stack.into_iter().rev()) {
-            let edge_index = edge_index as usize;
-            let edge = self.shard_edge.local_edge(shard[edge_index].sig);
+        for ((sig, val), side) in sigs_vals_sides {
+            let edge = self.shard_edge.local_edge(sig);
+            let side = side as usize;
             unsafe {
-                let value = match side {
+                let xor = match side {
                     0 => {
-                        data.get_unchecked(edge[1] as usize) ^ data.get_unchecked(edge[2] as usize)
+                        data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2])
                     }
                     1 => {
-                        data.get_unchecked(edge[0] as usize) ^ data.get_unchecked(edge[2] as usize)
+                        data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[2])
                     }
                     2 => {
-                        data.get_unchecked(edge[0] as usize) ^ data.get_unchecked(edge[1] as usize)
+                        data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[1])
                     }
                     _ => core::hint::unreachable_unchecked(),
                 };
 
-                data.set_unchecked(
-                    edge[side as usize] as usize,
-                    get_val(&shard[edge_index]) ^ value,
-                );
+                data.set_unchecked(edge[side], val ^ xor);
             }
-            debug_assert_eq!(
-                data.get(edge[0] as usize)
-                    ^ data.get(edge[1] as usize)
-                    ^ data.get(edge[2] as usize),
-                get_val(&shard[edge_index])
-            );
+            pl.light_update();
         }
-        pl.done_with_count(shard.len());
+        pl.done();
 
         shard_index
     }
@@ -757,7 +859,7 @@ impl<
         pl: &mut impl ProgressLog,
     ) -> Result<usize, ()> {
         // Let's try to peel first
-        match self.peel_shard(shard_index, shard, data, get_val, pl) {
+        match self.peel_shard_index(shard_index, shard, data, get_val, pl) {
             Ok(shard_index) => Ok(shard_index),
             Err((shard_index, shard, mut data, xor_graph, double_stack, sides_stack)) => {
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
@@ -814,11 +916,14 @@ impl<
 
                 Ok(self.assign(
                     shard_index,
-                    shard,
                     data,
-                    get_val,
-                    double_stack,
-                    sides_stack,
+                    double_stack
+                        .iter_upper()
+                        .map(|&edge_index| {
+                            let sig_val = &shard[edge_index as usize];
+                            (sig_val.sig, get_val(sig_val))
+                        })
+                        .zip(sides_stack.into_iter()),
                     pl,
                 ))
             }
@@ -832,7 +937,7 @@ impl<
 /// width of the output of the function will be  exactly the bit width of `W`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
-    SigVal<S, W>: RadixKey + Send + Sync,
+    SigVal<S, W>: RadixKey + BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
@@ -857,7 +962,7 @@ where
 /// number of signature bits will be  exactly the bit width of `W`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
-    SigVal<S, ()>: RadixKey + Send + Sync,
+    SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
     u64: CastableInto<W>,
 {
@@ -871,13 +976,13 @@ where
         for<'a> Shard<'a, W, Box<[W]>>: Send,
     {
         let filter_mask = W::MAX;
-        let get_val = |sig_val: &SigVal<S, ()>| sig_val.sig.sig_u64().cast();
+        let get_val = |sig_val: &SigVal<S, EmptyVal>| sig_val.sig.sig_u64().cast();
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
 
         Ok(VFilter {
             func: self.build_loop(
                 keys,
-                FromIntoIterator::from(itertools::repeat_n((), usize::MAX)),
+                FromIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
                 &get_val,
                 new_data,
                 pl,
@@ -899,7 +1004,7 @@ where
 /// of the values is larger than 64.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
-    SigVal<S, W>: RadixKey + Send + Sync,
+    SigVal<S, W>: RadixKey + BitXor + BitXorAssign,
 {
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
         mut self,
@@ -923,7 +1028,7 @@ where
 /// Typically `W` will be `usize` or `u64`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
-    SigVal<S, ()>: RadixKey,
+    SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
     u64: CastableInto<W>,
 {
@@ -936,13 +1041,13 @@ where
         assert!(filter_bits > 0);
         assert!(filter_bits <= W::BITS as u32);
         let filter_mask = W::MAX >> (W::BITS as u32 - filter_bits);
-        let get_val = |sig_val: &SigVal<S, ()>| sig_val.sig.sig_u64().cast() & filter_mask;
+        let get_val = |sig_val: &SigVal<S, EmptyVal>| sig_val.sig.sig_u64().cast() & filter_mask;
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
 
         Ok(VFilter {
             func: self.build_loop(
                 keys,
-                FromIntoIterator::from(itertools::repeat_n((), usize::MAX)),
+                FromIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
                 &get_val,
                 new_data,
                 pl,
@@ -966,7 +1071,7 @@ impl<
     /// vectors. The necessary abstraction is provided by the `new(bit_width,
     /// len)` function, which is called to create the data structure to store
     /// the values.
-    fn build_loop<T: ?Sized + ToSig<S> + std::fmt::Debug, V: ZeroCopy + Send + Sync>(
+    fn build_loop<T: ?Sized + ToSig<S> + std::fmt::Debug, V: ZeroCopy + Default + Send + Sync>(
         &mut self,
         mut keys: impl RewindableIoLender<T>,
         mut values: impl RewindableIoLender<V>,
@@ -975,7 +1080,7 @@ impl<
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, E>>
     where
-        SigVal<S, V>: RadixKey + Send + Sync,
+        SigVal<S, V>: RadixKey + BitXor + BitXorAssign + Send + Sync,
         for<'a> ShardIter<'a, W, D>: Send,
         for<'a> <ShardIter<'a, W, D> as Iterator>::Item: Send,
     {
@@ -995,7 +1100,7 @@ impl<
             let seed = prng.random();
             pl.expected_updates(self.expected_num_keys);
             pl.item_name("key");
-            pl.start("Reading input...");
+            pl.start(format!("Reading input and hashing keys to {} bits...", std::mem::size_of::<S>() * 8));
 
             values = values.rewind()?;
             keys = keys.rewind()?;
@@ -1082,7 +1187,7 @@ impl<
 {
     fn try_seed<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
-        V: ZeroCopy + Send + Sync,
+        V: ZeroCopy + Default + Send + Sync,
         G: Fn(&SigVal<S, V>) -> W + Send + Sync,
     >(
         &mut self,
@@ -1095,7 +1200,7 @@ impl<
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, E>>
     where
-        SigVal<S, V>: RadixKey,
+        SigVal<S, V>: RadixKey + BitXor + BitXorAssign,
         for<'a> ShardIter<'a, W, D>: Send,
         for<'a> <ShardIter<'a, W, D> as Iterator>::Item: Send,
     {
@@ -1168,7 +1273,7 @@ impl<
         T: ?Sized + ToSig<S>,
         I,
         P,
-        V: ZeroCopy + Send + Sync,
+        V: ZeroCopy + Default + Send + Sync,
         G: Fn(&SigVal<S, V>) -> W + Send + Sync,
     >(
         &mut self,
@@ -1179,7 +1284,7 @@ impl<
         pl: &mut P,
     ) -> Result<VFunc<T, W, D, S, E>, SolveError>
     where
-        SigVal<S, V>: RadixKey,
+        SigVal<S, V>: RadixKey + BitXor + BitXorAssign,
         P: ProgressLog + Clone + Send + Sync,
         I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
         for<'a> ShardIter<'a, W, D>: Send,
@@ -1196,7 +1301,7 @@ impl<
         let thread_pool = ThreadPoolBuilder::new()
             .num_threads(self.shard_edge.num_shards().min(self.max_num_threads))
             .build()
-            .unwrap(); // Seroiusly, it's not going to fail
+            .unwrap(); // Seriously, it's not going to fail
 
         pl.info(format_args!("{}", self.shard_edge));
         pl.info(format_args!(
@@ -1219,12 +1324,24 @@ impl<
                 &mut pl.concurrent(),
                 pl,
             )?;
+        } else if self.shard_edge.num_shards() > 2 {
+            self.par_solve(
+                shard_iter,
+                &mut data,
+                |this, shard_index, shard, data, pl| {
+                    this.peel_shard_index(shard_index, shard, data, get_val, pl)
+                        .map_err(|_| ())
+                },
+                &thread_pool,
+                &mut pl.concurrent(),
+                pl,
+            )?;
         } else {
             self.par_solve(
                 shard_iter,
                 &mut data,
                 |this, shard_index, shard, data, pl| {
-                    this.peel_shard(shard_index, shard, data, get_val, pl)
+                    this.peel_shard_hash(shard_index, shard, data, get_val, pl)
                         .map_err(|_| ())
                 },
                 &thread_pool,

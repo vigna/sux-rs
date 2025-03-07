@@ -952,13 +952,15 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::ops::{BitXor, BitXorAssign};
+
     use dsi_progress_logger::no_logging;
     use epserde::{deser::Deserialize, ser::Serialize, traits::TypeHash, utils::AlignedCursor};
     use rdst::RadixKey;
 
     use crate::{
         func::VBuilder,
-        utils::{FromIntoIterator, Sig, SigVal, ToSig},
+        utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
     };
 
     use super::{Fuse3Shards, ShardEdge, VFilter, VFunc};
@@ -973,7 +975,7 @@ mod tests {
     fn _test_filter_func<S: Sig + Send + Sync>() -> anyhow::Result<()>
     where
         usize: ToSig<S>,
-        SigVal<S, ()>: RadixKey,
+        SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
         Fuse3Shards: ShardEdge<S, 3>,
         VFunc<usize, u8, Box<[u8]>, S, Fuse3Shards>: Serialize + TypeHash, // Weird
         VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, Fuse3Shards>>: Serialize,

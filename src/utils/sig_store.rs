@@ -51,10 +51,10 @@ use mem_dbg::{MemDbg, MemSize};
 
 use rapidhash::RapidInlineHasher;
 use rdst::RadixKey;
-use std::{collections::VecDeque, fs::File, hash::Hasher, io::*, marker::PhantomData, sync::Arc};
+use std::{collections::VecDeque, fs::File, hash::Hasher, io::*, marker::PhantomData, ops::{BitXor, BitXorAssign}, sync::Arc};
 
 /// A trait for types that can be used as signatures.
-pub trait Sig: ZeroCopy + PartialEq + Eq + std::fmt::Debug {
+pub trait Sig: ZeroCopy + Default + PartialEq + Eq + std::fmt::Debug {
     /// Extract high bits from  the signature.
     ///
     /// These bits are used to shard elements. Note that `high_bits` can be 0,
@@ -100,7 +100,7 @@ impl Sig for [u64; 1] {
 }
 
 /// A signature and a value.
-#[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize)]
+#[derive(Epserde, Debug, Clone, Copy, Default, MemDbg, MemSize)]
 #[repr(C)]
 #[zero_copy]
 pub struct SigVal<S: ZeroCopy + Sig, V: ZeroCopy> {
@@ -121,6 +121,60 @@ impl<V: ZeroCopy> RadixKey for SigVal<[u64; 1], V> {
 
     fn get_level(&self, level: usize) -> u8 {
         (self.sig[0] >> ((level % 8) * 8)) as u8
+    }
+}
+
+#[derive(Epserde, Debug, Clone, Copy, Default, MemDbg, MemSize)]
+#[repr(C)]
+#[zero_copy]
+pub struct EmptyVal (());
+
+impl BitXor for EmptyVal {
+    type Output = EmptyVal;
+
+    fn bitxor(self, _: EmptyVal) -> Self::Output {
+        EmptyVal(())
+    }
+}
+
+impl BitXorAssign for EmptyVal {
+    fn bitxor_assign(&mut self, _: EmptyVal) {}
+}
+
+impl<V: ZeroCopy + BitXor> BitXor<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V> where V::Output: ZeroCopy {
+    type Output = SigVal<[u64; 1], V::Output>;
+
+    fn bitxor(self, rhs: SigVal<[u64; 1], V>) -> Self::Output {
+        SigVal {
+            sig: [self.sig[0].bitxor(rhs.sig[0])],
+            val: self.val.bitxor(rhs.val),
+        }
+    }
+}
+
+impl<V: ZeroCopy + BitXor> BitXor<SigVal<[u64; 2], V>> for SigVal<[u64; 2], V> where V::Output: ZeroCopy {
+    type Output = SigVal<[u64; 2], V::Output>;
+
+    fn bitxor(self, rhs: SigVal<[u64; 2], V>) -> Self::Output {
+        SigVal {
+            sig: [self.sig[0].bitxor(rhs.sig[0]), self.sig[1].bitxor(rhs.sig[1])],
+            val: self.val.bitxor(rhs.val),
+        }
+    }
+}
+
+impl<V: ZeroCopy + BitXorAssign> BitXorAssign<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V> {
+    fn bitxor_assign(&mut self, rhs: SigVal<[u64; 1], V>) {
+        self.sig[0] ^= rhs.sig[0];
+        self.val ^= rhs.val;
+    }
+}
+
+impl<V: ZeroCopy + BitXorAssign> BitXorAssign<SigVal<[u64; 2], V>> for SigVal<[u64; 2], V> {
+    fn bitxor_assign(&mut self, rhs: SigVal<[u64; 2], V>) {
+        self.sig[0] ^= rhs.sig[0];
+        self.sig[1] ^= rhs.sig[1];
+        self.val ^= rhs.val;
     }
 }
 
@@ -226,7 +280,7 @@ macro_rules! to_sig_prim {
                 rapid0.write(&bytes);
                 rapid1.write(&bytes);
                 [rapid0.finish(), rapid1.finish()]
-            }
+                }
         }
         impl ToSig<[u64;1]> for $ty {
             fn to_sig(key: &Self, seed: u64) -> [u64; 1] {
