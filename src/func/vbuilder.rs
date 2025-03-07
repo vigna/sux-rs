@@ -221,6 +221,28 @@ pub enum SolveError {
     UnsolvableShard,
 }
 
+enum PeelResult<
+    'a,
+    W: ZeroCopy + Word + Send + Sync,
+    D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync + 'a,
+    S: Sig + ZeroCopy + Send + Sync,
+    V: ZeroCopy,
+> {
+    Peeled(),
+    Failed {
+        /// The shard index.
+        shard_index: usize,
+        /// The shard.
+        shard: &'a [SigVal<S, V>],
+        /// The data.
+        data: Shard<'a, W, D>,
+        /// The double stack whose upper stack contains the peeled edges.
+        double_stack: DoubleStack<u32>,
+        /// The sides stack.
+        sides_stack: Vec<u8>,
+    },
+}
+
 /// A graph represented compactly.
 ///
 /// Each (*k*-hyper)edge is a set of *k* vertices (by construction fuse graphs
@@ -317,6 +339,7 @@ impl<X: BitXor + BitXorAssign + Default + Copy> XorGraph<X> {
 /// end of the vector. Since we use the lower stack for peeled vertices and the
 /// upper stack for vertices to visit, the sum of the lengths of the two stacks
 /// cannot exceed the length of the vector.
+#[derive(Debug)]
 struct DoubleStack<V> {
     stack: Vec<V>,
     lower: usize,
@@ -411,13 +434,7 @@ impl<
         &mut self,
         shard_iter: I,
         data: &'b mut D,
-        solve_shard: impl Fn(
-                &Self,
-                usize,
-                &'b mut Vec<SigVal<S, V>>,
-                Shard<'b, W, D>,
-                &mut P,
-            ) -> Result<usize, ()>
+        solve_shard: impl Fn(&Self, usize, &'b mut Vec<SigVal<S, V>>, Shard<'b, W, D>, &mut P) -> Result<(), ()>
             + Send
             + Sync,
         thread_pool: &rayon::ThreadPool,
@@ -506,7 +523,7 @@ impl<
                                 self.failed.store(true, Ordering::Relaxed);
                                 SolveError::UnsolvableShard
                             })
-                            .map(|shard_index| {
+                            .map(|_| {
                                 if !self.failed.load(Ordering::Relaxed) {
                                     main_pl.info(format_args!(
                                         "Completed shard {}/{}",
@@ -532,24 +549,18 @@ impl<
     /// It is the peeler of choice when significant parallelism is involved, or
     /// when lazy Gaussian elimination is required, as the latter requires edge
     /// indices.
-    fn peel_shard_by_edge_indices<'a, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    fn peel_shard_by_edge_indices<
+        'a,
+        V: ZeroCopy + Send + Sync,
+        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
+    >(
         &self,
         shard_index: usize,
         shard: &'a Vec<SigVal<S, V>>,
         data: Shard<'a, W, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
-    ) -> Result<
-        usize,
-        (
-            usize,
-            &'a Vec<SigVal<S, V>>,
-            Shard<'a, W, D>,
-            XorGraph<u32>,
-            DoubleStack<u32>,
-            Vec<u8>,
-        ),
-    > {
+    ) -> Result<PeelResult<'a, W, D, S, V>, ()> {
         let num_vertices = self.shard_edge.num_vertices();
 
         pl.start(format!(
@@ -567,14 +578,7 @@ impl<
         pl.done_with_count(shard.len());
 
         if self.failed.load(Ordering::Relaxed) {
-            return Err((
-                shard_index,
-                shard,
-                data,
-                XorGraph::new(0),
-                DoubleStack::new(0),
-                vec![],
-            ));
+            return Err(());
         }
 
         pl.start(format!(
@@ -650,18 +654,17 @@ impl<
                 double_stack.upper_len(),
                 shard.len(),
             ));
-            return Err((
+            return Ok(PeelResult::Failed {
                 shard_index,
                 shard,
                 data,
-                xor_graph,
                 double_stack,
                 sides_stack,
-            ));
+            });
         }
         pl.done_with_count(shard.len());
 
-        Ok(self.assign(
+        self.assign(
             shard_index,
             data,
             double_stack
@@ -670,9 +673,11 @@ impl<
                     let sig_val = &shard[edge_index as usize];
                     (sig_val.sig, get_val(sig_val))
                 })
-                .zip(sides_stack.iter().copied().rev()),
+                .zip(sides_stack.into_iter().rev()),
             pl,
-        ))
+        );
+
+        Ok(PeelResult::Peeled())
     }
 
     /// Peels a shard via signature/value pairs.
@@ -682,14 +687,18 @@ impl<
     /// as it stores directly [`SigVal`] It is the peeler of choice when there
     /// is no significant parallelism is involved and lazy Gaussian elimination
     /// is not required, as the latter requires edge indices.
-    fn peel_shard_by_sig_vals<'a, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    fn peel_shard_by_sig_vals<
+        'a,
+        V: ZeroCopy + Send + Sync,
+        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
+    >(
         &self,
         shard_index: usize,
         shard: &'a Vec<SigVal<S, V>>,
         data: Shard<'a, W, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
-    ) -> Result<usize, ()>
+    ) -> Result<(), ()>
     where
         SigVal<S, V>: BitXor + BitXorAssign + Default,
     {
@@ -789,7 +798,7 @@ impl<
         }
         pl.done_with_count(shard.len());
 
-        Ok(self.assign(
+        self.assign(
             shard_index,
             data,
             sig_vals_stack
@@ -798,7 +807,9 @@ impl<
                 .map(|sig_val| (sig_val.sig, get_val(sig_val)))
                 .zip(sides_stack.iter().copied().rev()),
             pl,
-        ))
+        );
+
+        Ok(())
     }
 
     /// Perform assignment of values based on peeling data.
@@ -811,9 +822,9 @@ impl<
         mut data: Shard<'_, W, D>,
         sigs_vals_sides: impl Iterator<Item = ((S, W), u8)>,
         pl: &mut impl ProgressLog,
-    ) -> usize {
+    ) {
         if self.failed.load(Ordering::Relaxed) {
-            return shard_index;
+            return;
         }
 
         pl.start(format!(
@@ -827,15 +838,9 @@ impl<
             let side = side as usize;
             unsafe {
                 let xor = match side {
-                    0 => {
-                        data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2])
-                    }
-                    1 => {
-                        data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[2])
-                    }
-                    2 => {
-                        data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[1])
-                    }
+                    0 => data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2]),
+                    1 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[2]),
+                    2 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[1]),
                     _ => core::hint::unreachable_unchecked(),
                 };
 
@@ -844,8 +849,6 @@ impl<
             pl.light_update();
         }
         pl.done();
-
-        shard_index
     }
 
     /// Solve a shard of given index using lazy Gaussian elimination, and store
@@ -860,11 +863,18 @@ impl<
         data: Shard<'a, W, D>,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         pl: &mut impl ProgressLog,
-    ) -> Result<usize, ()> {
+    ) -> Result<(), ()> {
         // Let's try to peel first
         match self.peel_shard_by_edge_indices(shard_index, shard, data, get_val, pl) {
-            Ok(shard_index) => Ok(shard_index),
-            Err((shard_index, shard, mut data, xor_graph, double_stack, sides_stack)) => {
+            Err(()) => Err(()),
+            Ok(PeelResult::Peeled()) => Ok(()),
+            Ok(PeelResult::Failed {
+                shard_index,
+                shard,
+                mut data,
+                double_stack,
+                sides_stack,
+            }) => {
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
                 // Likely result--we have solve the rest
                 pl.start(format!(
@@ -874,7 +884,11 @@ impl<
                 ));
 
                 let num_vertices = self.shard_edge.num_vertices();
+                let mut peeled_edges = BitVec::new(shard.len());
                 let mut used_vars = BitVec::new(num_vertices);
+                for &edge in double_stack.iter_upper() {
+                    peeled_edges.set(edge as _, true);
+                }
 
                 // Create data for an F₂ system using non-peeled edges
                 let mut system = unsafe {
@@ -883,7 +897,7 @@ impl<
                         shard
                             .iter()
                             .enumerate()
-                            .filter(|(edge_index, _)| xor_graph.degree(*edge_index) != 0)
+                            .filter(|(edge_index, _)| !peeled_edges[*edge_index])
                             .map(|(_edge_index, sig_val)| {
                                 let mut eq: Vec<_> = self
                                     .shard_edge
@@ -926,7 +940,7 @@ impl<
                             let sig_val = &shard[edge_index as usize];
                             (sig_val.sig, get_val(sig_val))
                         })
-                        .zip(sides_stack.into_iter()),
+                        .zip(sides_stack.into_iter().rev()),
                     pl,
                 ))
             }
@@ -1103,7 +1117,10 @@ impl<
             let seed = prng.random();
             pl.expected_updates(self.expected_num_keys);
             pl.item_name("key");
-            pl.start(format!("Reading input and hashing keys to {} bits...", std::mem::size_of::<S>() * 8));
+            pl.start(format!(
+                "Reading input and hashing keys to {} bits...",
+                std::mem::size_of::<S>() * 8
+            ));
 
             values = values.rewind()?;
             keys = keys.rewind()?;
@@ -1316,7 +1333,7 @@ impl<
         ));
 
         if self.lge {
-            pl.info(format_args!("Switching to lazy Gaussian elimination"));
+            pl.info(format_args!("Peeling towards lazy Gaussian elimination"));
             self.par_solve(
                 shard_iter,
                 &mut data,
@@ -1327,24 +1344,26 @@ impl<
                 &mut pl.concurrent(),
                 pl,
             )?;
-        } else if self.shard_edge.num_shards() > 2 {
+        } else if self.shard_edge.num_shards() <= 2 {
+            // More memory, but more speed
             self.par_solve(
                 shard_iter,
                 &mut data,
                 |this, shard_index, shard, data, pl| {
-                    this.peel_shard_by_edge_indices(shard_index, shard, data, get_val, pl)
-                        .map_err(|_| ())
+                    this.peel_shard_by_sig_vals(shard_index, shard, data, get_val, pl)
                 },
                 &thread_pool,
                 &mut pl.concurrent(),
                 pl,
             )?;
         } else {
+            // Much less memory, but slower
             self.par_solve(
                 shard_iter,
                 &mut data,
                 |this, shard_index, shard, data, pl| {
-                    this.peel_shard_by_sig_vals(shard_index, shard, data, get_val, pl)
+                    this.peel_shard_by_edge_indices(shard_index, shard, data, get_val, pl)
+                        .map(|_| ())
                         .map_err(|_| ())
                 },
                 &thread_pool,
