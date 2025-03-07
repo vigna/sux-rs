@@ -12,9 +12,7 @@ use epserde::prelude::*;
 use lender::*;
 use rdst::RadixKey;
 use sux::{
-    bits::BitFieldVec,
-    func::*,
-    utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender},
+    bits::BitFieldVec, func::*, utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender}
 };
 
 #[derive(Parser, Debug)]
@@ -80,7 +78,6 @@ where
     VFunc<str, usize, BitFieldVec, S, E>: Deserialize,
     VFunc<usize, u8, Box<[u8]>, S, E>: Deserialize,
     VFunc<str, u8, Box<[u8]>, S, E>: Deserialize + TypeHash, // TODO: this is weird
-    VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, E>>: Deserialize,
 {
     let mut pl = progress_logger![item_name = "key"];
 
