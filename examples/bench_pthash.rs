@@ -17,7 +17,7 @@ use pthash::{
     PartitionedPhf, Phf,
 };
 use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
-use sux::{bit_field_vec, traits::BitFieldSlice};
+use sux::{bit_field_vec, traits::{BitFieldSlice, BitFieldSliceMut}};
 use zstd::Decoder;
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
@@ -190,23 +190,28 @@ fn main() -> Result<()> {
         .context("Failed to build MPH")?;
         pl.done_with_count(n);
 
-        let mut output = Vec::with_capacity(n);
-        output.extend(0..n);
+        let mut output = bit_field_vec![(n - 1).ilog2() as usize + 1 => 0; n];
+        for i in 0..n {
+            output.set(func.hash(i.to_ne_bytes().as_slice()) as usize, i);
+        }
 
-        let output = bit_field_vec![n.ilog2() as usize => 0; n];
+        // We have to feed non-consecutive keys or we will not pay for
+        // memory access
+        let mut key: usize = 0;
 
         pl.start("Querying (independent)...");
-        for i in 0..n {
-            std::hint::black_box(output.get(func.hash(i.to_ne_bytes().as_slice()) as usize));
+        for _ in 0..100_000_000 {
+            key = key.wrapping_add(0x9e3779b97f4a7c15);
+            std::hint::black_box(output.get(func.hash(key.to_ne_bytes().as_slice()) as usize));
         }
         pl.done_with_count(n);
 
-        let mut x = 0;
-
         pl.start("Querying (dependent)...");
-        for i in 0..n {
-            x = output.get(func.hash((i ^ (x & 1)).to_ne_bytes().as_slice()) as usize);
-            std::hint::black_box(());
+        let mut x = 0;
+        let mut key: usize = 0;
+        for _ in 0..100_000_000 {
+            key = key.wrapping_add(0x9e3779b97f4a7c15);
+            x = std::hint::black_box(output.get(func.hash((key ^ (x & 1)).to_ne_bytes().as_slice()) as usize));
         }
         pl.done_with_count(n);
     }
