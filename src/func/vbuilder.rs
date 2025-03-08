@@ -373,7 +373,7 @@ impl<X: Copy + Default> FastStack<X> {
 
     pub fn push(&mut self, x: X, cond: bool) {
         debug_assert!(self.top < self.stack.len());
-        unsafe { *self.stack.get_unchecked_mut(self.top) = x };
+        self.stack[self.top] = x;
         self.top += cond as usize;
     }
 
@@ -382,7 +382,7 @@ impl<X: Copy + Default> FastStack<X> {
             None
         } else {
             self.top -= 1;
-            Some(*unsafe { self.stack.get_unchecked(self.top) })
+            Some(self.stack[self.top])
         }
     }
 
@@ -1499,13 +1499,13 @@ impl<
             let side = side as usize;
             unsafe {
                 let xor = match side {
-                    0 => data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2]),
-                    1 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[2]),
-                    2 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[1]),
+                    0 => data.get(edge[1]) ^ data.get(edge[2]),
+                    1 => data.get(edge[0]) ^ data.get(edge[2]),
+                    2 => data.get(edge[0]) ^ data.get(edge[1]),
                     _ => core::hint::unreachable_unchecked(),
                 };
 
-                data.set_unchecked(edge[side], val ^ xor);
+                data.set(edge[side], val ^ xor);
             }
             pl.light_update();
         }
