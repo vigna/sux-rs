@@ -215,6 +215,7 @@ impl<B: AsRef<[usize]>> BitVec<B> {
     }
 
     /// Returns true if the bit of given index is set.
+    #[inline]
     pub fn get(&self, index: usize) -> bool {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.get_unchecked(index) }
@@ -226,6 +227,7 @@ impl<B: AsRef<[usize]>> BitVec<B> {
     /// # Safety
     ///
     /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
+    #[inline(always)]
     pub unsafe fn get_unchecked(&self, index: usize) -> bool {
         let word_index = index / BITS;
         let word = self.bits.as_ref().get_unchecked(word_index);
@@ -234,6 +236,7 @@ impl<B: AsRef<[usize]>> BitVec<B> {
 }
 
 impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
+    #[inline]
     pub fn set(&mut self, index: usize, value: bool) {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.set_unchecked(index, value) }

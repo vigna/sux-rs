@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use std::borrow::Borrow;
+
 use crate::traits::bit_field_slice::*;
 use crate::utils::*;
 use epserde::prelude::*;
@@ -77,9 +79,9 @@ impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: S
 
     /// Return the value associated with the given key, or a random value if the
     /// key is not present.
-    #[inline(always)]
-    pub fn get(&self, key: &T) -> W {
-        self.get_by_sig(T::to_sig(key, self.seed))
+    #[inline]
+    pub fn get(&self, key: impl Borrow<T>) -> W {
+        self.get_by_sig(T::to_sig(key.borrow(), self.seed))
     }
 
     /// Return the number of keys in the function.

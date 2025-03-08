@@ -60,7 +60,7 @@ where
     /// The user should not normally call this method, but rather
     /// [`contains`](VFilter::contains).
     #[inline]
-    pub fn get(&self, key: &T) -> W {
+    pub fn get(&self, key: impl Borrow<T>) -> W {
         self.func.get(key)
     }
 
@@ -75,8 +75,8 @@ where
 
     /// Return whether a key is contained in the filter.
     #[inline]
-    pub fn contains(&self, key: &T) -> bool {
-        self.contains_by_sig(T::to_sig(key, self.func.seed))
+    pub fn contains(&self, key: impl Borrow<T>) -> bool {
+        self.contains_by_sig(T::to_sig(key.borrow(), self.func.seed))
     }
 
     /// Return the number of keys in the filter.
@@ -113,7 +113,7 @@ where
 
     #[inline(always)]
     fn index(&self, key: B) -> &Self::Output {
-        if self.contains(key.borrow()) {
+        if self.contains(key) {
             &true
         } else {
             &false
@@ -165,7 +165,7 @@ mod tests {
                     cursor.as_bytes(),
                 )?;
             for i in 0..n {
-                let sig = ToSig::<S>::to_sig(&i, filter.func.seed);
+                let sig = ToSig::<S>::to_sig(i, filter.func.seed);
                 assert_eq!(sig.sig_u64() & 0xFF, filter.get(&i) as u64);
             }
         }

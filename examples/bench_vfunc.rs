@@ -98,7 +98,7 @@ where
 
         pl.start("Querying (independent)...");
         for key in &keys {
-            std::hint::black_box(func.get(key));
+            std::hint::black_box(func.get(key.as_str()));
         }
         pl.done_with_count(args.n);
 
@@ -112,7 +112,7 @@ where
                 // testing
                 *key.as_bytes_mut().get_unchecked_mut(0) ^= (x & 1) as u8;
             }
-            x = func.get(key);
+            x = func.get(key.as_str());
             std::hint::black_box(());
         }
         pl.done_with_count(args.n);
