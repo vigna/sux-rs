@@ -358,6 +358,43 @@ impl<X: BitXor + BitXorAssign + Default + Copy> XorGraph<X> {
     }
 }
 
+struct FastStack<X: Copy + Default> {
+    stack: Vec<X>,
+    top: usize,
+}
+
+impl<X: Copy + Default> FastStack<X> {
+    pub fn new(n: usize) -> FastStack<X> {
+        FastStack {
+            stack: vec![X::default(); n + 1],
+            top: 0,
+        }
+    }
+
+    pub fn push(&mut self, x: X, cond: bool) {
+        debug_assert!(self.top < self.stack.len());
+        unsafe { *self.stack.get_unchecked_mut(self.top) = x };
+        self.top += cond as usize;
+    }
+
+    pub fn pop(&mut self) -> Option<X> {
+        if self.top == 0 {
+            None
+        } else {
+            self.top -= 1;
+            Some(*unsafe { self.stack.get_unchecked(self.top) })
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.top
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, X> {
+        self.stack[..self.top].iter()
+    }
+}
+
 /// Two stacks in the same vector.
 ///
 /// This struct implements a pair of stacks sharing the same memory. The lower
@@ -1250,19 +1287,17 @@ impl<
         ));
         // If peeling succeeds, these two stacks will be filled, so it
         // makes sense to preallocate them.
-        let mut sig_vals_stack = Vec::<SigVal<S, V>>::with_capacity(shard.len());
-        let mut sides_stack = Vec::<u8>::with_capacity(shard.len());
+        let mut sig_vals_stack = FastStack::<SigVal<S, V>>::new(shard.len());
+        let mut sides_stack = FastStack::<u8>::new(shard.len());
         // We are doing a stack-based visit on a random graph--the stack we need
         // is very likely to be much smaller. Experimentally, it is about 1/4
         // of the number of vertices, so we preallocate it with a capacity of
         // num_vertices / 3 to stay on the safe side.
-        let mut visit_stack = Vec::<u32>::with_capacity(num_vertices / 3);
+        let mut visit_stack = FastStack::<u32>::new(num_vertices);
 
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
-            if degree == 1 {
-                visit_stack.push(v as u32);
-            }
+            visit_stack.push(v as u32, degree == 1);
         }
 
         while let Some(v) = visit_stack.pop() {
@@ -1273,40 +1308,28 @@ impl<
             debug_assert!(xor_graph.degree(v) == 1);
             let (sig_val, side) = xor_graph.edge_index_and_side(v);
             xor_graph.zero(v);
-            sig_vals_stack.push(sig_val);
-            sides_stack.push(side as u8);
+            sig_vals_stack.push(sig_val, true);
+            sides_stack.push(side as u8, true);
 
             let e = self.shard_edge.local_edge(sig_val.sig);
 
             match side {
                 0 => {
-                    if xor_graph.degree(e[1]) == 2 {
-                        visit_stack.push(e[1] as u32);
-                    }
+                    visit_stack.push(e[1] as u32, xor_graph.degree(e[1]) == 2);
                     xor_graph.remove(e[1], sig_val, 1);
-                    if xor_graph.degree(e[2]) == 2 {
-                        visit_stack.push(e[2] as u32);
-                    }
+                    visit_stack.push(e[2] as u32, xor_graph.degree(e[2]) == 2);
                     xor_graph.remove(e[2], sig_val, 2);
                 }
                 1 => {
-                    if xor_graph.degree(e[0]) == 2 {
-                        visit_stack.push(e[0] as u32);
-                    }
+                    visit_stack.push(e[0] as u32, xor_graph.degree(e[0]) == 2);
                     xor_graph.remove(e[0], sig_val, 0);
-                    if xor_graph.degree(e[2]) == 2 {
-                        visit_stack.push(e[2] as u32);
-                    }
+                    visit_stack.push(e[2] as u32, xor_graph.degree(e[2]) == 2);
                     xor_graph.remove(e[2], sig_val, 2);
                 }
                 2 => {
-                    if xor_graph.degree(e[0]) == 2 {
-                        visit_stack.push(e[0] as u32);
-                    }
+                    visit_stack.push(e[0] as u32, xor_graph.degree(e[0]) == 2);
                     xor_graph.remove(e[0], sig_val, 0);
-                    if xor_graph.degree(e[1]) == 2 {
-                        visit_stack.push(e[1] as u32);
-                    }
+                    visit_stack.push(e[1] as u32, xor_graph.degree(e[1]) == 2);
                     xor_graph.remove(e[1], sig_val, 1);
                 }
                 _ => unsafe { unreachable_unchecked() },
