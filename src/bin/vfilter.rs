@@ -16,7 +16,7 @@ use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::dict::VFilter;
-use sux::func::{*, shard_edge::*};
+use sux::func::{shard_edge::*, *};
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, BitFieldSliceMut, Word};
 use sux::utils::{EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
@@ -67,6 +67,31 @@ struct Args {
     mwhc: bool,
 }
 
+macro_rules! fuse {
+    ($args: expr, $main: ident, $ty: ty) => {
+        if $args.no_shards {
+            if $args.sig64 {
+                $main::<$ty, [u64; 1], FuseLge3NoShards>($args)
+            } else {
+                $main::<$ty, [u64; 2], FuseLge3NoShards>($args)
+            }
+        } else {
+            $main::<$ty, [u64; 2], FuseLge3Shards>($args)
+        }
+    };
+}
+
+#[cfg(feature = "mwhc")]
+macro_rules! mwhc {
+    ($args: expr, $main: ident, $ty: ty) => {
+        if $args.no_shards {
+            $main::<$ty, [u64; 2], Mwhc3NoShards>($args)
+        } else {
+            $main::<$ty, [u64; 2], Mwhc3Shards>($args)
+        }
+    };
+}
+
 fn main() -> Result<()> {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
@@ -77,66 +102,20 @@ fn main() -> Result<()> {
     #[cfg(feature = "mwhc")]
     if args.mwhc {
         return match args.bits {
-            8 => {
-                if args.no_shards {
-                    main_with_types::<u8, [u64; 2], Mwhc3NoShards>(args)
-                } else {
-                    main_with_types::<u8, [u64; 2], Mwhc3Shards>(args)
-                }
-            }
-            16 => {
-                if args.no_shards {
-                    main_with_types::<u16, [u64; 2], Mwhc3NoShards>(args)
-                } else {
-                    main_with_types::<u16, [u64; 2], Mwhc3Shards>(args)
-                }
-            }
-            32 => {
-                if args.no_shards {
-                    main_with_types::<u32, [u64; 2], Mwhc3NoShards>(args)
-                } else {
-                    main_with_types::<u32, [u64; 2], Mwhc3Shards>(args)
-                }
-            }
-            _ => unimplemented!("{}-bit signatures", args.bits),
+            8 => mwhc!(args, main_with_types_boxed_slice, u8),
+            16 => mwhc!(args, main_with_types_boxed_slice, u16),
+            32 => mwhc!(args, main_with_types_boxed_slice, u32),
+            64 => mwhc!(args, main_with_types_boxed_slice, u64),
+            _ => mwhc!(args, main_with_types_bit_field_vec, u64),
         };
     }
 
     match args.bits {
-        8 => {
-            if args.no_shards {
-                if args.sig64 {
-                    main_with_types::<u8, [u64; 1], FuseLge3NoShards>(args)
-                } else {
-                    main_with_types::<u8, [u64; 2], FuseLge3NoShards>(args)
-                }
-            } else {
-                main_with_types::<u8, [u64; 2], FuseLge3Shards>(args)
-            }
-        }
-        16 => {
-            if args.no_shards {
-                if args.sig64 {
-                    main_with_types::<u16, [u64; 1], FuseLge3NoShards>(args)
-                } else {
-                    main_with_types::<u16, [u64; 2], FuseLge3NoShards>(args)
-                }
-            } else {
-                main_with_types::<u16, [u64; 2], FuseLge3Shards>(args)
-            }
-        }
-        32 => {
-            if args.no_shards {
-                if args.sig64 {
-                    main_with_types::<u32, [u64; 1], FuseLge3NoShards>(args)
-                } else {
-                    main_with_types::<u32, [u64; 2], FuseLge3NoShards>(args)
-                }
-            } else {
-                main_with_types::<u32, [u64; 2], FuseLge3Shards>(args)
-            }
-        }
-        _ => unimplemented!("{}-bit signatures", args.bits),
+        8 => fuse!(args, main_with_types_boxed_slice, u8),
+        16 => fuse!(args, main_with_types_boxed_slice, u16),
+        32 => fuse!(args, main_with_types_boxed_slice, u32),
+        64 => fuse!(args, main_with_types_boxed_slice, u64),
+        _ => fuse!(args, main_with_types_bit_field_vec, u64),
     }
 }
 
@@ -157,7 +136,7 @@ fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: Shar
     builder
 }
 
-fn main_with_types<
+fn main_with_types_boxed_slice<
     W: Word + ZeroCopy + Send + Sync + CastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
@@ -202,6 +181,67 @@ where
     } else {
         let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
         let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
+        if let Some(filename) = args.filter {
+            filter.store(filename)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn main_with_types_bit_field_vec<
+    W: Word + ZeroCopy + Send + Sync + CastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+>(
+    args: Args,
+) -> Result<()>
+where
+    <W as SerializeInner>::SerType: Word + ZeroCopy,
+    str: ToSig<S>,
+    usize: ToSig<S>,
+    SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
+    SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    BitFieldVec<W>: BitFieldSlice<W> + BitFieldSliceMut<W>,
+    for<'a> <BitFieldVec<W> as BitFieldSliceMut<W>>::ChunksMut<'a>: Send,
+    for<'a> <<BitFieldVec<W> as BitFieldSliceMut<W>>::ChunksMut<'a> as Iterator>::Item: Send,
+    <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Weird
+    VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
+    VFunc<str, usize, BitFieldVec, S, E>: Serialize,
+    VFunc<usize, W, BitFieldVec<W>, S, E>: Serialize,
+    VFunc<str, W, BitFieldVec<W>, S, E>: Serialize + TypeHash, // TODO: this is weird
+    VFilter<W, VFunc<usize, W, BitFieldVec<W>, S, E>>: Serialize,
+    VFilter<W, VFunc<usize, W, BitFieldVec<W>, S, <E as SerializeInner>::SerType>>: TypeHash,
+    VFilter<
+        <W as SerializeInner>::SerType,
+        VFunc<str, W, BitFieldVec<W>, S, <E as SerializeInner>::SerType>,
+    >: TypeHash + AlignHash, // Weird
+    VFilter<W, VFunc<str, W, BitFieldVec<W>, S, E>>: SerializeInner,
+    <VFilter<W, VFunc<str, W, BitFieldVec<W>, S, E>> as SerializeInner>::SerType:
+        TypeHash + AlignHash, // Weird
+{
+    let mut pl = ProgressLogger::default();
+    let n = args.n;
+
+    if let Some(ref filename) = &args.filename {
+        let builder = set_builder(VBuilder::<W, BitFieldVec<W>, S, E>::default(), &args);
+        let filter = if args.zstd {
+            builder.try_build_filter(
+                ZstdLineLender::from_path(filename)?.take(n),
+                args.bits,
+                &mut pl,
+            )?
+        } else {
+            let t = LineLender::from_path(filename)?.take(n);
+            builder.try_build_filter(t, args.bits, &mut pl)?
+        };
+        if let Some(filename) = args.filter {
+            filter.store(filename)?;
+        }
+    } else {
+        let builder = set_builder(VBuilder::<W, BitFieldVec<W>, S, E>::default(), &args);
+        let filter =
+            builder.try_build_filter(FromIntoIterator::from(0_usize..n), args.bits, &mut pl)?;
         if let Some(filename) = args.filter {
             filter.store(filename)?;
         }
