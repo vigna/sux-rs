@@ -10,8 +10,8 @@ use dsi_progress_logger::*;
 use epserde::prelude::*;
 use sux::{
     bits::BitFieldVec,
-    func::{shard_edge::FuseLge3Shards, VFunc},
     dict::VFilter,
+    func::{shard_edge::FuseLge3Shards, VFunc},
     prelude::VBuilder,
     utils::FromIntoIterator,
 };
