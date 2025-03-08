@@ -258,7 +258,7 @@ enum PeelResult<
 /// sides of the vertex in such edges. While technically not necessary to
 /// perform peeling, the knowledge of the sides speeds up the peeling visit by
 /// reducing the number of tests that are necessary to update the degrees once
-/// the edge is peeled (see the `peel_shard` method). For the same reason it
+/// the edge is peeled (see the `peel_shard_by_*` methods). For the same reason it
 /// also speeds up assignment.
 ///
 /// Depending on the peeling method, the graph will store edge indices or
@@ -1203,9 +1203,15 @@ impl<
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
+        // If peeling succeeds, these two stacks will be filled, so it
+        // makes sense to preallocate them.
         let mut sig_vals_stack = Vec::<SigVal<S, V>>::with_capacity(shard.len());
         let mut sides_stack = Vec::<u8>::with_capacity(shard.len());
-        let mut visit_stack = Vec::<u32>::with_capacity(shard.len());
+        // We are doing a stack-based visit on a random graph--the stack we need
+        // is very likely to be much smaller. Experimentally, it is about 1/4
+        // of the number of vertices, so we preallocate it with a capacity of
+        // num_vertices / 3 to stay on the safe side.
+        let mut visit_stack = Vec::<u32>::with_capacity(num_vertices / 3);
 
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
