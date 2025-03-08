@@ -181,7 +181,7 @@ pub struct VBuilder<
     seed: u64,
 
     /// The base-2 logarithm of buckets of the [`SigStore`]. The default is 8.
-    /// This value is automatically overriden, even if set, if you provide an
+    /// This value is automatically overridden, even if set, if you provide an
     /// [expected number of keys](VBuilder::expected_num_keys).
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "8"))]

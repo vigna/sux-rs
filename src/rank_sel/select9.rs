@@ -295,7 +295,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
                         word &= word - 1;
                     }
 
-                    // move to the next word and boundcheck
+                    // move to the next word and bound check
                     word_idx += 1;
                     if word_idx == end_word_idx {
                         break;
