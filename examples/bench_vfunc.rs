@@ -114,8 +114,7 @@ where
                 // testing
                 *key.as_bytes_mut().get_unchecked_mut(0) ^= (x & 1) as u8;
             }
-            x = func.get(key.as_str());
-            std::hint::black_box(());
+            x = std::hint::black_box(func.get(key.as_str()));
         }
         pl.done_with_count(args.n);
     } else {
