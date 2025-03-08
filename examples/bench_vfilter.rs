@@ -137,7 +137,7 @@ where
 
         pl.start("Querying (independent)...");
         for key in &keys {
-            std::hint::black_box(filter.get(key));
+            std::hint::black_box(filter.get(key.as_str()));
         }
         pl.done_with_count(args.n);
 
@@ -151,7 +151,7 @@ where
                 // testing
                 *key.as_bytes_mut().get_unchecked_mut(0) ^= x.downcast() & 1;
             }
-            x = std::hint::black_box(filter.get(key));
+            x = std::hint::black_box(filter.get(key.as_str()));
         }
         pl.done_with_count(args.n);
     } else {
@@ -160,14 +160,14 @@ where
 
         pl.start("Querying (independent)...");
         for i in 0..args.n {
-            std::hint::black_box(filter.contains(&i));
+            std::hint::black_box(filter.contains(i));
         }
         pl.done_with_count(args.n);
 
         pl.start("Querying (dependent)...");
         let mut x = 0;
         for i in 0..args.n {
-            x = std::hint::black_box(filter.contains(&(i ^ x))) as usize;
+            x = std::hint::black_box(filter.contains(i ^ x)) as usize;
         }
         pl.done_with_count(args.n);
     }
@@ -214,7 +214,7 @@ where
 
         pl.start("Querying (independent)...");
         for key in &keys {
-            std::hint::black_box(filter.get(key));
+            std::hint::black_box(filter.get(key.as_str()));
         }
         pl.done_with_count(args.n);
 
@@ -228,7 +228,7 @@ where
                 // testing
                 *key.as_bytes_mut().get_unchecked_mut(0) ^= x.downcast() & 1;
             }
-            x = std::hint::black_box(filter.get(key));
+            x = std::hint::black_box(filter.get(key.as_str()));
         }
         pl.done_with_count(args.n);
     } else {
@@ -237,14 +237,14 @@ where
 
         pl.start("Querying (independent)...");
         for i in 0..args.n {
-            std::hint::black_box(filter.contains(&i));
+            std::hint::black_box(filter.contains(i));
         }
         pl.done_with_count(args.n);
 
         pl.start("Querying (dependent)...");
         let mut x = 0;
         for i in 0..args.n {
-            x = std::hint::black_box(filter.contains(&(i ^ x))) as usize;
+            x = std::hint::black_box(filter.contains(i ^ x)) as usize;
         }
         pl.done_with_count(args.n);
     }

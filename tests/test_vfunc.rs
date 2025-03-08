@@ -110,7 +110,7 @@ fn _test_vfilter(sizes: &[usize]) -> Result<()> {
                 VFilter::<u8, VFunc<usize, _, Box<[u8]>>>::deserialize_eps(cursor.as_bytes())?;
             pl.start("Querying (positive)...");
             for i in 0..n {
-                assert!(filter.contains(&i), "Contains failed for {}", i);
+                assert!(filter.contains(i), "Contains failed for {}", i);
             }
             pl.done_with_count(n);
 
@@ -118,7 +118,7 @@ fn _test_vfilter(sizes: &[usize]) -> Result<()> {
                 pl.start("Querying (negative)...");
                 let mut c = 0;
                 for i in 0..n {
-                    c += filter.contains(&(i + n)) as usize;
+                    c += filter.contains(i + n) as usize;
                 }
                 pl.done_with_count(n);
 
@@ -146,14 +146,14 @@ fn _test_vfilter(sizes: &[usize]) -> Result<()> {
                 VFilter::<u8, VFunc<usize, _, Box<[u8]>>>::deserialize_eps(cursor.as_bytes())?;
             pl.start("Querying (positive)...");
             for i in 0..n {
-                assert!(filter.contains(&i), "Contains failed for {}", i);
+                assert!(filter.contains(i), "Contains failed for {}", i);
             }
             pl.done_with_count(n);
             if n > 1_000_000 {
                 pl.start("Querying (negative)...");
                 let mut c = 0;
                 for i in 0..n {
-                    c += filter.contains(&(i + n)) as usize;
+                    c += filter.contains(i + n) as usize;
                 }
                 //pl.done_with_count(n); Or it fails
 

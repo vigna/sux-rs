@@ -54,7 +54,7 @@ where
 
         let mut c = 0;
         for i in 0..args.n {
-            c += filter.contains(&(i + args.n)) as usize;
+            c += filter.contains(i + args.n) as usize;
         }
 
         let error_rate = c as f64 / args.n as f64;

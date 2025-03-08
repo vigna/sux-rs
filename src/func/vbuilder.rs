@@ -77,7 +77,7 @@ const LOG2_MAX_SHARDS: u32 = 12;
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use sux::func::vbuilder::VBuilder;
+/// use sux::func::VBuilder;
 /// use dsi_progress_logger::no_logging;
 /// use sux::utils::FromIntoIterator;
 ///
@@ -101,7 +101,7 @@ const LOG2_MAX_SHARDS: u32 = 12;
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use sux::func::vbuilder::VBuilder;
+/// use sux::func::VBuilder;
 /// use dsi_progress_logger::no_logging;
 /// use sux::utils::FromIntoIterator;
 /// use sux::bits::BitFieldVec;
@@ -125,7 +125,7 @@ const LOG2_MAX_SHARDS: u32 = 12;
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use sux::func::vbuilder::VBuilder;
+/// use sux::func::VBuilder;
 /// use dsi_progress_logger::no_logging;
 /// use sux::utils::FromIntoIterator;
 ///
