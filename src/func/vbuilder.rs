@@ -7,9 +7,9 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 
-use crate::func::{*, shard_edge::ShardEdge};
 use crate::bits::*;
 use crate::dict::VFilter;
+use crate::func::{shard_edge::ShardEdge, *};
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
 use crate::utils::*;
 use common_traits::CastableInto;
@@ -17,6 +17,7 @@ use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
+use log::info;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use rand::{Rng, RngCore};
@@ -681,6 +682,8 @@ impl<
     {
         let mut max_value = W::ZERO;
 
+        let start = Instant::now();
+
         while let Some(result) = keys.next() {
             match result {
                 Ok(key) => {
@@ -701,10 +704,17 @@ impl<
         }
         pl.done();
 
-        let start = Instant::now();
-
         self.num_keys = sig_store.len();
         self.bit_width = max_value.len() as usize;
+
+        info!(
+            "Computation of hashes from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+            start.elapsed().as_secs_f64(),
+            self.num_keys,
+            start.elapsed().as_nanos() as f64 / self.num_keys as f64
+        );
+
+        let start = Instant::now();
 
         let mut shard_store = sig_store.into_shard_store(self.shard_edge.shard_high_bits())?;
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
@@ -735,12 +745,12 @@ impl<
             );
             self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
                 .inspect(|_| {
-                    pl.info(format_args!(
+                    info!(
                         "Construction from hashes completed in {:.3} seconds ({} keys, {:.3} ns/key)",
                         start.elapsed().as_secs_f64(),
                         self.num_keys,
                         start.elapsed().as_nanos() as f64 / self.num_keys as f64
-                    ));
+                    );
                 })
                 .map_err(Into::into)
         }
