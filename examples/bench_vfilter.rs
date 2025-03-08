@@ -44,6 +44,32 @@ struct Args {
     mwhc: bool,
 }
 
+macro_rules! fuse {
+    ($args: expr, $main: ident, $ty: ty) => {
+        if $args.no_shards {
+            if $args.sig64 {
+                $main::<$ty, [u64; 1], FuseLge3NoShards>($args)
+            } else {
+                $main::<$ty, [u64; 2], FuseLge3NoShards>($args)
+            }
+        } else {
+            $main::<$ty, [u64; 2], FuseLge3Shards>($args)
+        }
+    };
+}
+
+#[cfg(feature = "mwhc")]
+macro_rules! mwhc {
+    ($args: expr, $main: ident, $ty: ty) => {
+        if $args.no_shards {
+            $main::<$ty, [u64; 2], Mwhc3NoShards>($args)
+        } else {
+            $main::<$ty, [u64; 2], Mwhc3Shards>($args)
+        }
+    };
+}
+
+
 fn main() -> Result<()> {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
@@ -54,70 +80,24 @@ fn main() -> Result<()> {
     #[cfg(feature = "mwhc")]
     if args.mwhc {
         return match args.bits {
-            8 => {
-                if args.no_shards {
-                    main_with_types::<u8, [u64; 2], Mwhc3NoShards>(args)
-                } else {
-                    main_with_types::<u8, [u64; 2], Mwhc3Shards>(args)
-                }
-            }
-            16 => {
-                if args.no_shards {
-                    main_with_types::<u16, [u64; 2], Mwhc3NoShards>(args)
-                } else {
-                    main_with_types::<u16, [u64; 2], Mwhc3Shards>(args)
-                }
-            }
-            32 => {
-                if args.no_shards {
-                    main_with_types::<u32, [u64; 2], Mwhc3NoShards>(args)
-                } else {
-                    main_with_types::<u32, [u64; 2], Mwhc3Shards>(args)
-                }
-            }
-            _ => unimplemented!("{}-bit signatures", args.bits),
+            8 => mwhc!(args, main_with_types_boxed_slice, u8),
+            16 => mwhc!(args, main_with_types_boxed_slice, u16),
+            32 => mwhc!(args, main_with_types_boxed_slice, u32),
+            64 => mwhc!(args, main_with_types_boxed_slice, u64),
+            _ => mwhc!(args, main_with_types_bit_field_vec, u64),
         };
     }
 
     match args.bits {
-        8 => {
-            if args.no_shards {
-                if args.sig64 {
-                    main_with_types::<u8, [u64; 1], FuseLge3NoShards>(args)
-                } else {
-                    main_with_types::<u8, [u64; 2], FuseLge3NoShards>(args)
-                }
-            } else {
-                main_with_types::<u8, [u64; 2], FuseLge3Shards>(args)
-            }
-        }
-        16 => {
-            if args.no_shards {
-                if args.sig64 {
-                    main_with_types::<u16, [u64; 1], FuseLge3NoShards>(args)
-                } else {
-                    main_with_types::<u16, [u64; 2], FuseLge3NoShards>(args)
-                }
-            } else {
-                main_with_types::<u16, [u64; 2], FuseLge3Shards>(args)
-            }
-        }
-        32 => {
-            if args.no_shards {
-                if args.sig64 {
-                    main_with_types::<u32, [u64; 1], FuseLge3NoShards>(args)
-                } else {
-                    main_with_types::<u32, [u64; 2], FuseLge3NoShards>(args)
-                }
-            } else {
-                main_with_types::<u32, [u64; 2], FuseLge3Shards>(args)
-            }
-        }
-        _ => unimplemented!("{}-bit signatures", args.bits),
+        8 => fuse!(args, main_with_types_boxed_slice, u8),
+        16 => fuse!(args, main_with_types_boxed_slice, u16),
+        32 => fuse!(args, main_with_types_boxed_slice, u32),
+        64 => fuse!(args, main_with_types_boxed_slice, u64),
+        _ => fuse!(args, main_with_types_bit_field_vec, u64),
     }
 }
 
-fn main_with_types<
+fn main_with_types_boxed_slice<
     W: ZeroCopy + Word + CastableFrom<u64> + DowncastableInto<u8> + TypeHash + AlignHash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
@@ -177,6 +157,83 @@ where
     } else {
         // No filename
         let filter = VFilter::<W, VFunc<usize, W, Box<[W]>, S, E>>::load_full(&args.func)?;
+
+        pl.start("Querying (independent)...");
+        for i in 0..args.n {
+            std::hint::black_box(filter.contains(&i));
+        }
+        pl.done_with_count(args.n);
+
+        pl.start("Querying (dependent)...");
+        let mut x = 0;
+        for i in 0..args.n {
+            x = std::hint::black_box(filter.contains(&(i ^ x))) as usize;
+        }
+        pl.done_with_count(args.n);
+    }
+    Ok(())
+}
+
+
+fn main_with_types_bit_field_vec<
+    W: ZeroCopy + Word + CastableFrom<u64> + DowncastableInto<u8> + TypeHash + AlignHash,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+>(
+    args: Args,
+) -> Result<()>
+where
+    SigVal<S, usize>: RadixKey,
+    SigVal<S, ()>: RadixKey,
+    str: ToSig<S>,
+    String: ToSig<S>,
+    usize: ToSig<S>,
+    VFunc<usize, usize, BitFieldVec, S, E>: DeserializeInner + TypeHash + AlignHash,
+    VFunc<str, usize, BitFieldVec, S, E>: DeserializeInner + TypeHash + AlignHash,
+    VFunc<usize, W, BitFieldVec<W>, S, E>: DeserializeInner + TypeHash + AlignHash,
+    VFunc<str, W, BitFieldVec<W>, S, E>: DeserializeInner + TypeHash + AlignHash, // TODO: this is weird
+    VFilter<W, VFunc<usize, W, BitFieldVec<W>, S, E>>: DeserializeInner + TypeHash + AlignHash,
+    VFilter<W, VFunc<str, W, BitFieldVec<W>, S, E>>: DeserializeInner + TypeHash + AlignHash,
+{
+    let mut pl = progress_logger![item_name = "key"];
+
+    if let Some(filename) = args.filename {
+        let mut keys: Vec<_> = if args.zstd {
+            ZstdLineLender::from_path(filename)?
+                .map_into_iter(|x| x.unwrap().to_owned())
+                .take(args.n)
+                .collect()
+        } else {
+            LineLender::from_path(filename)?
+                .map_into_iter(|x| x.unwrap().to_owned())
+                .take(args.n)
+                .collect()
+        };
+
+        let filter = VFilter::<W, VFunc<str, W, BitFieldVec<W>, S, E>>::load_full(&args.func)?;
+
+        pl.start("Querying (independent)...");
+        for key in &keys {
+            std::hint::black_box(filter.get(key));
+        }
+        pl.done_with_count(args.n);
+
+        pl.start("Querying (dependent)...");
+        let mut x = W::ZERO;
+        for key in &mut keys {
+            debug_assert!(!key.is_empty());
+            unsafe {
+                // This as horrible as it can be, and will probably
+                // do harm if a key is the empty string, but we avoid
+                // testing
+                *key.as_bytes_mut().get_unchecked_mut(0) ^= x.downcast() & 1;
+            }
+            x = std::hint::black_box(filter.get(key));
+        }
+        pl.done_with_count(args.n);
+    } else {
+        // No filename
+        let filter = VFilter::<W, VFunc<usize, W, BitFieldVec<W>, S, E>>::load_full(&args.func)?;
 
         pl.start("Querying (independent)...");
         for i in 0..args.n {

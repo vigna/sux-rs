@@ -496,7 +496,6 @@ where
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
     u64: CastableInto<W>,
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
@@ -730,13 +729,10 @@ impl<
             // This might sometimes happen with small sharded graphs
             Err(SolveError::MaxShardTooBig.into())
         } else {
-            #[cfg(not(feature = "vbuilder_no_data"))]
             let data = new_data(
                 self.bit_width,
                 self.shard_edge.num_vertices() * self.shard_edge.num_shards(),
             );
-            #[cfg(feature = "vbuilder_no_data")]
-            let data = new_data(self.bit_width, 0);
             self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
                 .inspect(|_| {
                     pl.info(format_args!(
