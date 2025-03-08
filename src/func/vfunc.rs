@@ -6,11 +6,11 @@
 
 use std::borrow::Borrow;
 
+use crate::func::shard_edge::ShardEdge;
 use crate::traits::bit_field_slice::*;
 use crate::utils::*;
 use epserde::prelude::*;
 use mem_dbg::*;
-use crate::func::shard_edge::ShardEdge;
 
 use super::shard_edge::FuseLge3Shards;
 /// Static functions with low space overhead, fast parallel construction, and
@@ -50,13 +50,13 @@ pub struct VFunc<
     S: Sig = [u64; 2],
     E: ShardEdge<S, 3> = FuseLge3Shards,
 > {
-    pub(in crate) shard_edge: E,
-    pub(in crate) seed: u64,
-    pub(in crate) num_keys: usize,
-    pub(in crate) data: D,
-    pub(in crate) _marker_t: std::marker::PhantomData<T>,
-    pub(in crate) _marker_w: std::marker::PhantomData<W>,
-    pub(in crate) _marker_s: std::marker::PhantomData<S>,
+    pub(crate) shard_edge: E,
+    pub(crate) seed: u64,
+    pub(crate) num_keys: usize,
+    pub(crate) data: D,
+    pub(crate) _marker_t: std::marker::PhantomData<T>,
+    pub(crate) _marker_w: std::marker::PhantomData<W>,
+    pub(crate) _marker_s: std::marker::PhantomData<S>,
 }
 
 impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
@@ -94,4 +94,3 @@ impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: S
         self.len() == 0
     }
 }
-

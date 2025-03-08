@@ -54,7 +54,14 @@ use mem_dbg::{MemDbg, MemSize};
 use rapidhash::RapidInlineHasher;
 use rdst::RadixKey;
 use std::{
-    borrow::Borrow, collections::VecDeque, fs::File, hash::Hasher, io::*, marker::PhantomData, ops::{BitXor, BitXorAssign}, sync::Arc
+    borrow::Borrow,
+    collections::VecDeque,
+    fs::File,
+    hash::Hasher,
+    io::*,
+    marker::PhantomData,
+    ops::{BitXor, BitXorAssign},
+    sync::Arc,
 };
 
 /// A trait for types that can be used as signatures.

@@ -27,6 +27,7 @@ use rdst::*;
 use std::any::TypeId;
 use std::hint::unreachable_unchecked;
 use std::marker::PhantomData;
+use std::mem::transmute;
 use std::ops::{BitXor, BitXorAssign};
 use std::slice::Iter;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -248,6 +249,27 @@ enum PeelResult<
     },
 }
 
+/// Newtype transparent wrapper to sort signatures only partially.
+#[repr(transparent)]
+#[derive(Copy, Clone, Debug)]
+pub struct SortSigVal<S: ZeroCopy + Sig, V: ZeroCopy>(SigVal<S, V>);
+
+impl<V: ZeroCopy> RadixKey for SortSigVal<[u64; 2], V> {
+    const LEVELS: usize = 5;
+
+    fn get_level(&self, level: usize) -> u8 {
+        (self.0.sig[0] >> ((level % 8) * 8)) as u8
+    }
+}
+
+impl<V: ZeroCopy> RadixKey for SortSigVal<[u64; 1], V> {
+    const LEVELS: usize = 3;
+
+    fn get_level(&self, level: usize) -> u8 {
+        (self.0.sig[0] >> ((level % 8) * 8)) as u8
+    }
+}
+
 /// A graph represented compactly.
 ///
 /// Each (*k*-hyper)edge is a set of *k* vertices (by construction fuse graphs
@@ -406,6 +428,7 @@ type ShardData<'a, W, D> = <ShardDataIter<'a, W, D> as Iterator>::Item;
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
     SigVal<S, W>: RadixKey + BitXor + BitXorAssign,
+    SortSigVal<S, W>: RadixKey,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
@@ -431,6 +454,7 @@ where
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    SortSigVal<S, EmptyVal>: RadixKey,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
     u64: CastableInto<W>,
 {
@@ -473,6 +497,7 @@ where
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
     SigVal<S, W>: RadixKey + BitXor + BitXorAssign,
+    SortSigVal<S, W>: RadixKey,
 {
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
         mut self,
@@ -497,6 +522,7 @@ where
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    SortSigVal<S, EmptyVal>: RadixKey,
     u64: CastableInto<W>,
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
@@ -555,6 +581,7 @@ impl<
     ) -> anyhow::Result<VFunc<T, W, D, S, E>>
     where
         SigVal<S, V>: RadixKey + BitXor + BitXorAssign + Send + Sync,
+        SortSigVal<S, V>: RadixKey,
         for<'a> ShardDataIter<'a, W, D>: Send,
         for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
     {
@@ -677,6 +704,7 @@ impl<
     ) -> anyhow::Result<VFunc<T, W, D, S, E>>
     where
         SigVal<S, V>: RadixKey + BitXor + BitXorAssign,
+        SortSigVal<S, V>: RadixKey,
         for<'a> ShardDataIter<'a, W, D>: Send,
         for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
     {
@@ -778,6 +806,7 @@ impl<
     ) -> Result<VFunc<T, W, D, S, E>, SolveError>
     where
         SigVal<S, V>: RadixKey + BitXor + BitXorAssign,
+        SortSigVal<S, V>: RadixKey,
         P: ProgressLog + Clone + Send + Sync,
         I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
         for<'a> ShardDataIter<'a, W, D>: Send,
@@ -913,6 +942,7 @@ impl<
     where
         I::IntoIter: Send,
         SigVal<S, V>: RadixKey + Send + Sync,
+        SortSigVal<S, V>: RadixKey,
         for<'a> ShardDataIter<'a, W, D>: Send,
         for<'a> std::iter::Enumerate<
             std::iter::Zip<<I as IntoIterator>::IntoIter, ShardDataIter<'a, W, D>>,
@@ -958,7 +988,22 @@ impl<
                             self.shard_edge.num_shards()
                         ));
                         // Sorting the signatures increases locality
-                        shard.radix_sort_builder().with_low_mem_tuner().sort();
+                        if self.check_dups {
+                            // We do a full sort if we need to check duplicates
+                            shard.radix_sort_builder().with_low_mem_tuner().sort();
+                        } else {
+                            // Otherwise, sorting by the first three bytes is
+                            // more than sufficient.
+                            // SAFETY: It's a transparent wrapper
+                            unsafe {
+                                transmute::<&mut [SigVal<S, V>], &mut [SortSigVal<S, V>]>(
+                                    shard.as_mut(),
+                                )
+                            }
+                            .radix_sort_builder()
+                            .with_low_mem_tuner()
+                            .sort();
+                        }
                         pl.done_with_count(shard.len());
 
                         if self.check_dups {

@@ -33,9 +33,9 @@ use std::ops::Index;
 ///        signatures. This type will also imply the type of the keys.
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFilter<W: ZeroCopy + Word, F> {
-    pub(in crate) func: F,
-    pub(in crate) filter_mask: W,
-    pub(in crate) sig_bits: u32,
+    pub(crate) func: F,
+    pub(crate) filter_mask: W,
+    pub(crate) sig_bits: u32,
 }
 
 impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
@@ -121,7 +121,6 @@ where
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::ops::{BitXor, BitXorAssign};
@@ -131,7 +130,7 @@ mod tests {
     use rdst::RadixKey;
 
     use crate::{
-        func::{shard_edge::FuseLge3Shards, VBuilder},
+        func::{shard_edge::FuseLge3Shards, SortSigVal, VBuilder},
         utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
     };
 
@@ -148,6 +147,7 @@ mod tests {
     where
         usize: ToSig<S>,
         SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+        SortSigVal<S, EmptyVal>: RadixKey,
         FuseLge3Shards: ShardEdge<S, 3>,
         VFunc<usize, u8, Box<[u8]>, S, FuseLge3Shards>: Serialize + TypeHash, // Weird
         VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, FuseLge3Shards>>: Serialize,

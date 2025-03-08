@@ -13,7 +13,11 @@ use epserde::prelude::*;
 use lender::*;
 use rdst::RadixKey;
 use sux::{
-    bits::BitFieldVec, dict::VFilter, func::{*, shard_edge::*}, traits::{BitFieldSlice, Word}, utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender}
+    bits::BitFieldVec,
+    dict::VFilter,
+    func::{shard_edge::*, *},
+    traits::{BitFieldSlice, Word},
+    utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender},
 };
 
 #[derive(Parser, Debug)]
@@ -68,7 +72,6 @@ macro_rules! mwhc {
         }
     };
 }
-
 
 fn main() -> Result<()> {
     env_logger::builder()
@@ -173,7 +176,6 @@ where
     }
     Ok(())
 }
-
 
 fn main_with_types_bit_field_vec<
     W: ZeroCopy + Word + CastableFrom<u64> + DowncastableInto<u8> + TypeHash + AlignHash,

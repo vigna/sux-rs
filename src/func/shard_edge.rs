@@ -42,7 +42,7 @@ pub trait ShardEdge<S, const K: usize>:
     ///
     /// This method can be called multiple times. For example, it can be used to
     /// precompute the number of shards so to optimize a
-	///  [`SigStore`](crate::utils::SigStore) by using the same number of
+    ///  [`SigStore`](crate::utils::SigStore) by using the same number of
     /// buckets.
     ///
     /// After this call, [`shard_high_bits`](ShardEdge::shard_high_bits) will
@@ -63,6 +63,10 @@ pub trait ShardEdge<S, const K: usize>:
 
     /// Returns the number of high bits used for sharding.
     fn shard_high_bits(&self) -> u32;
+
+    /// Returns the suggested number of high bits that should
+    /// be used for sorting the keys to increase locality.
+    fn sort_high_bits(&self) -> u32;
 
     /// Return the number of shards.
     fn num_shards(&self) -> usize {
@@ -119,7 +123,6 @@ fn sharding_high_bits(n: usize, eps: f64) -> u32 {
     let t = (n as f64 * eps * eps / 2.0).max(1.);
     (t.log2() - t.ln().max(1.).log2()).floor() as u32
 }
-
 
 #[cfg(feature = "mwhc")]
 mod mwhc {
@@ -205,6 +208,10 @@ mod mwhc {
             63 - self.shard_bits_shift
         }
 
+        fn sort_high_bits(&self) -> u32 {
+            self.shard_high_bits()
+        }
+
         #[inline(always)]
         fn shard(&self, sig: [u64; 2]) -> usize {
             (sig[0] >> self.shard_bits_shift >> 1) as usize
@@ -261,6 +268,10 @@ mod mwhc {
             0
         }
 
+        fn sort_high_bits(&self) -> u32 {
+            0
+        }
+
         #[inline(always)]
         fn shard(&self, _sig: [u64; 2]) -> usize {
             0
@@ -293,7 +304,11 @@ mod mwhc {
 
 use std::fmt::Display;
 
-use epserde::{deser::DeserializeInner, ser::SerializeInner, traits::{AlignHash, TypeHash}};
+use epserde::{
+    deser::DeserializeInner,
+    ser::SerializeInner,
+    traits::{AlignHash, TypeHash},
+};
 #[cfg(feature = "mwhc")]
 pub use mwhc::*;
 
@@ -545,6 +560,10 @@ impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
         63 - self.shard_bits_shift
     }
 
+    fn sort_high_bits(&self) -> u32 {
+        self.shard_high_bits() + self.l.ilog2() * 3 / 2
+    }
+
     #[inline(always)]
     fn shard(&self, sig: [u64; 2]) -> usize {
         (sig[0] >> self.shard_bits_shift >> 1) as usize
@@ -673,6 +692,10 @@ impl ShardEdge<[u64; 2], 3> for FuseLge3NoShards {
         0
     }
 
+    fn sort_high_bits(&self) -> u32 {
+        3 * self.l.ilog2() / 2
+    }
+
     #[inline(always)]
     fn shard(&self, _sig: [u64; 2]) -> usize {
         0
@@ -714,6 +737,10 @@ impl ShardEdge<[u64; 1], 3> for FuseLge3NoShards {
     #[inline(always)]
     fn shard_high_bits(&self) -> u32 {
         0
+    }
+
+    fn sort_high_bits(&self) -> u32 {
+        3 * self.l.ilog2() / 2
     }
 
     #[inline(always)]

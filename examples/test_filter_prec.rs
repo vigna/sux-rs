@@ -16,7 +16,10 @@ use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
     dict::VFilter,
-    func::{shard_edge::{FuseLge3NoShards, FuseLge3Shards, ShardEdge}, VBuilder, VFunc},
+    func::{
+        shard_edge::{FuseLge3NoShards, FuseLge3Shards, ShardEdge},
+        SortSigVal, VBuilder, VFunc,
+    },
     utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
 };
 #[derive(Parser, Debug)]
@@ -36,6 +39,7 @@ struct Args {
 fn _main<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
 where
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    SortSigVal<S, EmptyVal>: RadixKey,
     usize: ToSig<S>,
     VFilter<usize, VFunc<usize, usize, BitFieldVec, S, E>>: TypeHash,
 {

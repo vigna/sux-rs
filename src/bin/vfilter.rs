@@ -149,6 +149,8 @@ where
     usize: ToSig<S>,
     SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    SortSigVal<S, usize>: RadixKey,
+    SortSigVal<S, EmptyVal>: RadixKey,
     Box<[W]>: BitFieldSlice<W> + BitFieldSliceMut<W>,
     for<'a> <Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a>: Send,
     for<'a> <<Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a> as Iterator>::Item: Send,
@@ -164,10 +166,10 @@ where
         VFunc<str, W, Box<[W]>, S, <E as SerializeInner>::SerType>,
     >: TypeHash + AlignHash, // Weird
 {
-    #[cfg(not(feature="no_logging"))]
+    #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
-    #[cfg(feature="no_logging")]
-    let mut pl = Option::<ConcurrentWrapper::<ProgressLogger>>::None;
+    #[cfg(feature = "no_logging")]
+    let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
     let n = args.n;
 
     if let Some(ref filename) = &args.filename {
@@ -205,6 +207,8 @@ where
     usize: ToSig<S>,
     SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    SortSigVal<S, usize>: RadixKey,
+    SortSigVal<S, EmptyVal>: RadixKey,
     BitFieldVec<W>: BitFieldSlice<W> + BitFieldSliceMut<W>,
     for<'a> <BitFieldVec<W> as BitFieldSliceMut<W>>::ChunksMut<'a>: Send,
     for<'a> <<BitFieldVec<W> as BitFieldSliceMut<W>>::ChunksMut<'a> as Iterator>::Item: Send,
@@ -223,10 +227,10 @@ where
     <VFilter<W, VFunc<str, W, BitFieldVec<W>, S, E>> as SerializeInner>::SerType:
         TypeHash + AlignHash, // Weird
 {
-    #[cfg(not(feature="no_logging"))]
+    #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
-    #[cfg(feature="no_logging")]
-    let mut pl = Option::<ConcurrentWrapper::<ProgressLogger>>::None;
+    #[cfg(feature = "no_logging")]
+    let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
     let n = args.n;
 
     if let Some(ref filename) = &args.filename {

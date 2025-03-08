@@ -17,7 +17,10 @@ use pthash::{
     PartitionedPhf, Phf,
 };
 use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
-use sux::{bit_field_vec, traits::{BitFieldSlice, BitFieldSliceMut}};
+use sux::{
+    bit_field_vec,
+    traits::{BitFieldSlice, BitFieldSliceMut},
+};
 use zstd::Decoder;
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
@@ -211,7 +214,9 @@ fn main() -> Result<()> {
         let mut key: usize = 0;
         for _ in 0..100_000_000 {
             key = key.wrapping_add(0x9e3779b97f4a7c15);
-            x = std::hint::black_box(output.get(func.hash((key ^ (x & 1)).to_ne_bytes().as_slice()) as usize));
+            x = std::hint::black_box(
+                output.get(func.hash((key ^ (x & 1)).to_ne_bytes().as_slice()) as usize),
+            );
         }
         pl.done_with_count(n);
     }

@@ -12,7 +12,9 @@ use epserde::prelude::*;
 use lender::*;
 use rdst::RadixKey;
 use sux::{
-    bits::BitFieldVec, func::{*, shard_edge::*}, utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender}
+    bits::BitFieldVec,
+    func::{shard_edge::*, *},
+    utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender},
 };
 
 #[derive(Parser, Debug)]
