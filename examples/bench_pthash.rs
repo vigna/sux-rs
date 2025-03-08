@@ -191,34 +191,36 @@ fn main() -> Result<()> {
             &config,
         )
         .context("Failed to build MPH")?;
-        pl.done_with_count(n);
 
         let mut output = bit_field_vec![(n - 1).ilog2() as usize + 1 => 0; n];
         for i in 0..n {
             output.set(func.hash(i.to_ne_bytes().as_slice()) as usize, i);
         }
 
+        pl.done_with_count(n);
+
         // We have to feed non-consecutive keys or we will not pay for
         // memory access
         let mut key: usize = 0;
 
         pl.start("Querying (independent)...");
-        for _ in 0..100_000_000 {
+        let samples = 100_000_000;
+        for _ in 0..samples {
             key = key.wrapping_add(0x9e3779b97f4a7c15);
             std::hint::black_box(output.get(func.hash(key.to_ne_bytes().as_slice()) as usize));
         }
-        pl.done_with_count(n);
+        pl.done_with_count(samples);
 
         pl.start("Querying (dependent)...");
         let mut x = 0;
         let mut key: usize = 0;
-        for _ in 0..100_000_000 {
+        for _ in 0..samples {
             key = key.wrapping_add(0x9e3779b97f4a7c15);
             x = std::hint::black_box(
                 output.get(func.hash((key ^ (x & 1)).to_ne_bytes().as_slice()) as usize),
             );
         }
-        pl.done_with_count(n);
+        pl.done_with_count(samples);
     }
     Ok(())
 }

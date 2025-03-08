@@ -160,16 +160,20 @@ where
     } else {
         // No filename
         let filter = VFilter::<W, VFunc<usize, W, Box<[W]>, S, E>>::load_full(&args.func)?;
+        let mut key: usize = 0;
 
         pl.start("Querying (independent)...");
         for i in 0..args.n {
+            key = key.wrapping_add(0x9e3779b97f4a7c15);
             std::hint::black_box(filter.contains(i));
         }
         pl.done_with_count(args.n);
 
         pl.start("Querying (dependent)...");
         let mut x = 0;
+        let mut key: usize = 0;
         for i in 0..args.n {
+            key = key.wrapping_add(0x9e3779b97f4a7c15);
             x = std::hint::black_box(filter.contains(i ^ x)) as usize;
         }
         pl.done_with_count(args.n);
