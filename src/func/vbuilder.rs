@@ -902,9 +902,10 @@ impl<
                 shard_iter,
                 &mut data,
                 |this, shard_index, shard, data, pl| {
-                    this.peel_shard_by_edge_indices(shard_index, shard, data, get_val, pl)
-                        .map(|_| ())
-                        .map_err(|_| ())
+                    match this.peel_shard_by_edge_indices(shard_index, shard, data, get_val, pl) {
+                        Ok(PeelResult::Complete()) => Ok(()),
+                        _ => Err(()),
+                    }
                 },
                 &thread_pool,
                 &mut pl.concurrent(),
