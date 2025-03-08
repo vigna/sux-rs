@@ -112,13 +112,17 @@ where
     usize: ToSig<S>,
     SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Wierd
+    <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Weird
     VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
     VFunc<usize, u8, Box<[u8]>, S, E>: Serialize,
     VFunc<str, u8, Box<[u8]>, S, E>: Serialize + TypeHash, // TODO: this is weird
 {
+    #[cfg(not(feature="no_logging"))]
     let mut pl = ProgressLogger::default();
+    #[cfg(feature="no_logging")]
+    let mut pl = Option::<ConcurrentWrapper::<ProgressLogger>>::None;
+
     let n = args.n;
 
     if let Some(ref filename) = &args.filename {

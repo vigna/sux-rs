@@ -164,7 +164,10 @@ where
         VFunc<str, W, Box<[W]>, S, <E as SerializeInner>::SerType>,
     >: TypeHash + AlignHash, // Weird
 {
+    #[cfg(not(feature="no_logging"))]
     let mut pl = ProgressLogger::default();
+    #[cfg(feature="no_logging")]
+    let mut pl = Option::<ConcurrentWrapper::<ProgressLogger>>::None;
     let n = args.n;
 
     if let Some(ref filename) = &args.filename {
@@ -220,7 +223,10 @@ where
     <VFilter<W, VFunc<str, W, BitFieldVec<W>, S, E>> as SerializeInner>::SerType:
         TypeHash + AlignHash, // Weird
 {
+    #[cfg(not(feature="no_logging"))]
     let mut pl = ProgressLogger::default();
+    #[cfg(feature="no_logging")]
+    let mut pl = Option::<ConcurrentWrapper::<ProgressLogger>>::None;
     let n = args.n;
 
     if let Some(ref filename) = &args.filename {
