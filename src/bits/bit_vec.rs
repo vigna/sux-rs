@@ -63,7 +63,7 @@
 //! let mut b: BitVec<Box<[usize]>> = b.into();
 //! b.set(2, false);
 //!
-//! // If we create an artifically dirty bit vector, everything still works.
+//! // If we create an artificially dirty bit vector, everything still works.
 //! let ones = [usize::MAX; 2];
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones, 1) }.count_ones(), 1);
 //! ```
