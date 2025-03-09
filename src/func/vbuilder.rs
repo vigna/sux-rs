@@ -1188,7 +1188,11 @@ impl<
                 }
                 _ => unsafe { unreachable_unchecked() },
             }
+
+            pl.light_update();
         }
+
+        pl.done();
 
         if shard.len() != double_stack.upper_len() {
             pl.info(format_args!(
@@ -1206,7 +1210,6 @@ impl<
                 sides_stack,
             });
         }
-        pl.done_with_count(shard.len());
 
         self.assign(
             shard_index,
@@ -1295,7 +1298,6 @@ impl<
             if xor_graph.degree(v) == 0 {
                 continue;
             }
-            debug_assert!(xor_graph.degree(v) == 1);
             let (sig_val, side) = xor_graph.edge_index_and_side(v);
             xor_graph.zero(v);
             sig_vals_stack.push(sig_val, true);
@@ -1324,7 +1326,11 @@ impl<
                 }
                 _ => unsafe { unreachable_unchecked() },
             }
+
+            pl.light_update();
         }
+
+        pl.done();
 
         if shard.len() != sig_vals_stack.len() {
             pl.info(format_args!(
@@ -1336,7 +1342,6 @@ impl<
             ));
             return Err(());
         }
-        pl.done_with_count(shard.len());
 
         self.assign(
             shard_index,
