@@ -149,8 +149,7 @@ where
     usize: ToSig<S>,
     SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    SortSigVal<S, usize>: RadixKey,
-    SortSigVal<S, EmptyVal>: RadixKey,
+
     Box<[W]>: BitFieldSlice<W> + BitFieldSliceMut<W>,
     for<'a> <Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a>: Send,
     for<'a> <<Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a> as Iterator>::Item: Send,
@@ -207,8 +206,7 @@ where
     usize: ToSig<S>,
     SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    SortSigVal<S, usize>: RadixKey,
-    SortSigVal<S, EmptyVal>: RadixKey,
+
     BitFieldVec<W>: BitFieldSlice<W> + BitFieldSliceMut<W>,
     for<'a> <BitFieldVec<W> as BitFieldSliceMut<W>>::ChunksMut<'a>: Send,
     for<'a> <<BitFieldVec<W> as BitFieldSliceMut<W>>::ChunksMut<'a> as Iterator>::Item: Send,

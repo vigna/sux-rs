@@ -112,8 +112,6 @@ where
     usize: ToSig<S>,
     SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    SortSigVal<S, usize>: RadixKey,
-    SortSigVal<S, EmptyVal>: RadixKey,
     <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Weird
     VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
