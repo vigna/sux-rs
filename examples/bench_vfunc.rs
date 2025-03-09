@@ -78,8 +78,6 @@ where
     usize: ToSig<S>,
     VFunc<usize, usize, BitFieldVec, S, E>: Deserialize,
     VFunc<str, usize, BitFieldVec, S, E>: Deserialize,
-    VFunc<usize, u8, Box<[u8]>, S, E>: Deserialize,
-    VFunc<str, u8, Box<[u8]>, S, E>: Deserialize + TypeHash, // TODO: this is weird
 {
     let mut pl = progress_logger![item_name = "key"];
 
