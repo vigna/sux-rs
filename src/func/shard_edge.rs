@@ -205,6 +205,7 @@ mod mwhc {
             if self.shard_high_bits() != 0 {
                 self.seg_size = self.seg_size.next_multiple_of(128);
             }
+            assert!(self.seg_size * 3 <= u32::MAX as usize + 1);
             (1.23, false)
         }
 
@@ -269,6 +270,7 @@ mod mwhc {
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             self.seg_size = ((n as f64 * 1.23) / 3.).ceil() as usize;
+            assert!(self.seg_size * 3 <= u32::MAX as usize + 1);
             (1.23, false)
         }
 
@@ -554,7 +556,7 @@ impl FuseLge3Shards {
             .max(1)
             .try_into()
             .unwrap();
-
+        assert!((self.l as usize + 2) << self.log2_seg_size <= u32::MAX as usize + 1);
         (c, lge)
     }
 }
@@ -694,7 +696,7 @@ impl FuseLge3NoShards {
             .max(1)
             .try_into()
             .unwrap();
-
+        assert!((self.l as usize + 2) << self.log2_seg_size <= u32::MAX as usize + 1);
         (c, lge)
     }
 }
