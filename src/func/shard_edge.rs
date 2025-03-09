@@ -64,9 +64,14 @@ pub trait ShardEdge<S, const K: usize>:
     /// Returns the number of high bits used for sharding.
     fn shard_high_bits(&self) -> u32;
 
-    /// Returns the suggested number of high bits that should
-    /// be used for sorting the keys to increase locality.
-    fn sort_high_bits(&self) -> u32;
+    /// Returns the number of sorting keys to be used for sorting
+    /// signatures before processing. If no sorting is needed, this
+    /// method should return 1.
+    fn num_sort_keys(&self) -> usize;
+
+    /// Returns the sort key for the given signature.
+    /// If not sorting is needed, this method should return 0.
+    fn sort_key(&self, sig: S) -> usize;
 
     /// Return the number of shards.
     fn num_shards(&self) -> usize {
@@ -208,8 +213,12 @@ mod mwhc {
             63 - self.shard_bits_shift
         }
 
-        fn sort_high_bits(&self) -> u32 {
-            self.shard_high_bits()
+        fn num_sort_keys(&self) -> usize {
+            1
+        }
+
+        fn sort_key(&self, _sig: [u64; 2]) -> usize {
+            0
         }
 
         #[inline(always)]
@@ -268,7 +277,11 @@ mod mwhc {
             0
         }
 
-        fn sort_high_bits(&self) -> u32 {
+        fn num_sort_keys(&self) -> usize {
+            1
+        }
+
+        fn sort_key(&self, _sig: [u64; 2]) -> usize {
             0
         }
 
@@ -485,7 +498,7 @@ impl FuseLge3Shards {
     /// of fixed-point arithmetic mostly sensitive to the high bits, this is not
     /// a problem.
     #[inline(always)]
-    fn _edge_2(
+    fn edge_2(
         shard: usize,
         shard_bits_shift: u32,
         log2_seg_size: u32,
@@ -560,8 +573,12 @@ impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
         63 - self.shard_bits_shift
     }
 
-    fn sort_high_bits(&self) -> u32 {
-        self.shard_high_bits() + self.l.ilog2() * 3 / 2
+    fn num_sort_keys(&self) -> usize {
+        self.l as usize
+    }
+    
+    fn sort_key(&self, sig: [u64; 2]) -> usize {
+        fixed_point_reduce_128!(sig[0].rotate_right(self.shard_bits_shift), self.l)
     }
 
     #[inline(always)]
@@ -576,12 +593,12 @@ impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
 
     #[inline(always)]
     fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
-        FuseLge3Shards::_edge_2(0, self.shard_bits_shift, self.log2_seg_size, self.l, sig)
+        FuseLge3Shards::edge_2(0, self.shard_bits_shift, self.log2_seg_size, self.l, sig)
     }
 
     #[inline(always)]
     fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
-        FuseLge3Shards::_edge_2(
+        FuseLge3Shards::edge_2(
             self.shard(sig),
             self.shard_bits_shift,
             self.log2_seg_size,
@@ -692,8 +709,12 @@ impl ShardEdge<[u64; 2], 3> for FuseLge3NoShards {
         0
     }
 
-    fn sort_high_bits(&self) -> u32 {
-        3 * self.l.ilog2() / 2
+    fn num_sort_keys(&self) -> usize {
+        self.l as usize
+    }
+    
+    fn sort_key(&self, sig: [u64; 2]) -> usize {
+        fixed_point_reduce_128!(sig[0], self.l)
     }
 
     #[inline(always)]
@@ -739,8 +760,12 @@ impl ShardEdge<[u64; 1], 3> for FuseLge3NoShards {
         0
     }
 
-    fn sort_high_bits(&self) -> u32 {
-        3 * self.l.ilog2() / 2
+    fn num_sort_keys(&self) -> usize {
+        self.l as usize
+    }
+    
+    fn sort_key(&self, sig: [u64; 1]) -> usize {
+        fixed_point_reduce_128!(sig[0], self.l)
     }
 
     #[inline(always)]

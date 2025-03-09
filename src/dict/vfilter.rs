@@ -130,7 +130,7 @@ mod tests {
     use rdst::RadixKey;
 
     use crate::{
-        func::{shard_edge::FuseLge3Shards, SortSigVal, VBuilder},
+        func::{shard_edge::FuseLge3Shards, VBuilder},
         utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
     };
 
@@ -147,7 +147,7 @@ mod tests {
     where
         usize: ToSig<S>,
         SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-        SortSigVal<S, EmptyVal>: RadixKey,
+    
         FuseLge3Shards: ShardEdge<S, 3>,
         VFunc<usize, u8, Box<[u8]>, S, FuseLge3Shards>: Serialize + TypeHash, // Weird
         VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, FuseLge3Shards>>: Serialize,
