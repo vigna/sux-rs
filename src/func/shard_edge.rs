@@ -666,8 +666,6 @@ impl FuseLge3NoShards {
             // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
             // https://doi.org/10.1145/3510449
             //
-            // TODO: maybe more
-            // TODO: check floor
             // This estimate is correct for c(arity, n).
             {
                 (n.ln() / (3.33_f64).ln() + 2.25).floor() as u32
@@ -682,8 +680,12 @@ impl FuseLge3NoShards {
         (c, self.log2_seg_size, lge) = if n <= 2 * FuseLge3Shards::HALF_MAX_LIN_SHARD_SIZE {
             (1.13, FuseLge3Shards::lin_log2_seg_size(3, n), true)
         } else {
-            // TODO: better bounds (with some repeats)
-            (Self::c(3, n), Self::log2_seg_size(3, n), false)
+            // The minimization has only effect on very large inputs. By
+            // reducing the segment size, we increase locality. The speedup in
+            // the peeling phase for 2B keys is 1.5x. We cannot to the same in
+            // the sharded case because we would significantly increase the
+            // probability of duplicate edges.
+            (Self::c(3, n), Self::log2_seg_size(3, n).min(18), false)
         };
 
         self.l = ((c * n as f64).ceil() as u64)
