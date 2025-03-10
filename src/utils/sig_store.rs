@@ -84,6 +84,17 @@ pub trait Sig: ZeroCopy + Default + PartialEq + Eq + std::fmt::Debug {
     fn sig_u64(&self) -> u64;
 }
 
+/// Avalanches bits using the finalization step of Austin Appleby's
+/// [MurmurHash3](http://code.google.com/p/smhasher/).
+const fn mix64(mut k: u64) -> u64 {
+    k ^= k >> 33;
+    k = k.overflowing_mul(0xff51_afd7_ed55_8ccd).0;
+    k ^= k >> 33;
+    k = k.overflowing_mul(0xc4ce_b9fe_1a85_ec53).0;
+    k ^= k >> 33;
+    k
+}
+
 impl Sig for [u64; 2] {
     #[inline(always)]
     fn high_bits(&self, high_bits: u32, mask: u64) -> u64 {
@@ -93,7 +104,7 @@ impl Sig for [u64; 2] {
 
     #[inline(always)]
     fn sig_u64(&self) -> u64 {
-        self[0] ^ self[1]
+        mix64(self[1])
     }
 }
 
@@ -106,7 +117,7 @@ impl Sig for [u64; 1] {
 
     #[inline(always)]
     fn sig_u64(&self) -> u64 {
-        self[0] ^ (self[0] >> 32)
+        mix64(self[0])
     }
 }
 

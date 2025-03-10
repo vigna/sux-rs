@@ -10,6 +10,7 @@ use std::ops::{BitXor, BitXorAssign};
 use anyhow::Result;
 use average::{Estimate, MeanWithError};
 use clap::Parser;
+use common_traits::UnsignedInt;
 use dsi_progress_logger::{no_logging, progress_logger, ProgressLog};
 use epserde::prelude::*;
 use rdst::RadixKey;
@@ -29,7 +30,7 @@ struct Args {
     n: usize,
     /// Precision
     dict: u32,
-    /// Sample size
+    /// Number of seeds
     s: usize,
     /// Use 64-bit signatures.
     #[arg(long)]
@@ -43,7 +44,9 @@ where
     usize: ToSig<S>,
     VFilter<usize, VFunc<usize, usize, BitFieldVec, S, E>>: TypeHash,
 {
-    let mut m = MeanWithError::new();
+    let mut max = MeanWithError::new();
+    let mut min = MeanWithError::new();
+    let mut avg = MeanWithError::new();
 
     let mut pl = progress_logger![item_name = "sample"];
 
@@ -56,27 +59,54 @@ where
             .seed(seed as u64)
             .try_build_filter(FromIntoIterator::from(0..args.n), args.dict, no_logging![])?;
 
-        let mut c = 0;
-        for i in 0..args.n {
-            c += filter.contains(i + args.n) as usize;
+        let mut counts = vec![0; 1_usize << args.dict];
+        let samples = args.n * args.n;
+        for i in 0..samples {
+            counts[filter.get(i + args.n)] += filter.contains(i + args.n) as usize;
         }
 
-        let error_rate = c as f64 / args.n as f64;
-        m.add(error_rate);
+        let max_error_rate = counts
+            .iter()
+            .map(|&c| c as f64 / (samples as f64 / (1 << args.dict) as f64))
+            .fold(-f64::INFINITY, |a, b| a.max(b));
+        let min_error_rate = counts
+            .iter()
+            .map(|&c| c as f64 / (samples as f64 / (1 << args.dict) as f64))
+            .fold(f64::INFINITY, |a, b| a.min(b));
+        let avg_error_rate =
+            counts.iter().sum::<usize>() as f64 / samples as f64;
+        max.add(max_error_rate);
+        min.add(min_error_rate);
+        avg.add(avg_error_rate);
         println!(
-            "Error rate: {} (1/{}); Stats: {} ± {} (1/{})",
-            error_rate,
-            1. / error_rate,
-            m.mean(),
-            m.error(),
-            1. / m.mean()
+            "Max Error rate: {} (1/{}); Stats: {} ± {} (1/{})",
+            max_error_rate,
+            1. / max_error_rate,
+            max.mean(),
+            max.error(),
+            1. / max.mean()
         );
+        println!(
+            "Min Error rate: {} (1/{}); Stats: {} ± {} (1/{})",
+            min_error_rate,
+            1. / min_error_rate,
+            min.mean(),
+            min.error(),
+            1. / min.mean()
+        );
+        println!(
+            "Avg Error rate: {} (1/{}); Stats: {} ± {} (1/{})",
+            avg_error_rate,
+            1. / avg_error_rate,
+            avg.mean(),
+            avg.error(),
+            1. / avg.mean()
+        );
+
         pl.update();
     }
 
     pl.done();
-
-    println!("{} ± {}", m.mean(), m.error());
 
     Ok(())
 }
