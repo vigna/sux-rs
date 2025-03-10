@@ -34,6 +34,9 @@ struct Args {
     zstd: bool,
     /// The number of 64-bit keys.
     n: Option<usize>,
+    /// Use 64-bit signatures.
+    #[arg(long)]
+    sig64: bool,
 }
 
 struct HashableU64(u64);
@@ -69,7 +72,14 @@ fn main() -> Result<()> {
         .try_init()?;
 
     let args = Args::parse();
+    if args.sig64 {
+        _main::<Minimal, MurmurHash2_64, DictionaryDictionary>(args)
+    } else {
+        _main::<Minimal, MurmurHash2_128, DictionaryDictionary>(args)
+    }
+}
 
+fn _main<M: pthash::Minimality, H: pthash::Hasher, D: pthash::Encoder>(args: Args) -> Result<()> {
     let mut pl = concurrent_progress_logger![];
     let temp_dir = tempfile::TempDir::new()?;
 
@@ -82,8 +92,7 @@ fn main() -> Result<()> {
         config.num_threads = num_cpus::get() as u64;
 
         pl.start(format!("Building MPH with parameters: {:?}", config));
-
-        let mut func = PartitionedPhf::<Minimal, MurmurHash2_128, DictionaryDictionary>::new();
+        let mut func = PartitionedPhf::<M, H, D>::new();
 
         if args.zstd {
             func.par_build_in_internal_memory_from_bytes(
@@ -136,6 +145,7 @@ fn main() -> Result<()> {
             {
                 output[func.hash(HashableVecu8(k.unwrap())) as usize] = i;
             }
+            pl.done();
 
             keys = ByteLines::new(BufReader::new(
                 Decoder::new(File::open(&filename).unwrap()).unwrap(),
@@ -151,6 +161,7 @@ fn main() -> Result<()> {
             {
                 output[func.hash(HashableVecu8(k.unwrap())) as usize] = i;
             }
+            pl.done();
 
             keys = ByteLines::new(BufReader::new(File::open(&filename).unwrap()))
                 .into_iter()
@@ -158,8 +169,6 @@ fn main() -> Result<()> {
                 .take(100000000)
                 .collect::<Vec<_>>();
         }
-
-        pl.done();
 
         pl.start("Querying (independent)...");
         for k in &keys {
@@ -184,7 +193,7 @@ fn main() -> Result<()> {
 
         pl.start(format!("Building MPH with parameters: {:?}", config));
 
-        let mut func = PartitionedPhf::<Minimal, MurmurHash2_64, DictionaryDictionary>::new();
+        let mut func = PartitionedPhf::<M, H, D>::new();
 
         func.par_build_in_internal_memory_from_bytes(
             || (0_u64..n as u64).into_par_iter().map(HashableU64),
