@@ -1285,9 +1285,9 @@ impl<
         let mut sig_vals_stack = FastStack::<SigVal<S, V>>::new(shard.len());
         let mut sides_stack = FastStack::<u8>::new(shard.len());
         #[cfg(feature = "usize_stack")]
-        let mut visit_stack = FastStack::<usize>::new(num_vertices);
+        let mut visit_stack = Vec::<usize>::with_capacity(num_vertices / 3);
         #[cfg(not(feature = "usize_stack"))]
-        let mut visit_stack = FastStack::<u32>::new(num_vertices);
+        let mut visit_stack = Vec::<u32>::with_capacity(num_vertices / 3);
 
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
