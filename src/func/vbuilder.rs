@@ -336,6 +336,10 @@ impl<X: BitXor + BitXorAssign + Default + Copy> XorGraph<X> {
     }
 }
 
+/// A preallocated stack implementation that avoids the expensive (even if
+/// rarely taken) branch of the `Vec` implementation in which memory is
+/// reallocated. Note that using [`Vec::with_capacity`] is not enough, because
+/// for the CPU the branch is still there.
 struct FastStack<X: Copy + Default> {
     stack: Vec<X>,
     top: usize,
@@ -1277,20 +1281,18 @@ impl<
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
-        // If peeling succeeds, these two stacks will be filled, so it
-        // makes sense to preallocate them.
+
         let mut sig_vals_stack = FastStack::<SigVal<S, V>>::new(shard.len());
         let mut sides_stack = FastStack::<u8>::new(shard.len());
-        // We are doing a stack-based visit on a random graph--the stack we need
-        // is very likely to be much smaller. Experimentally, it is about 1/4
-        // of the number of vertices, so we preallocate it with a capacity of
-        // num_vertices / 3 to stay on the safe side.
+        #[cfg(feature = "usize_stack")]
+        let mut visit_stack = FastStack::<usize>::new(num_vertices);
+        #[cfg(not(feature = "usize_stack"))]
         let mut visit_stack = FastStack::<u32>::new(num_vertices);
 
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
             if degree == 1 {
-                visit_stack.push(v as u32);
+                visit_stack.push(v as _);
             }
         }
 
@@ -1309,31 +1311,31 @@ impl<
             match side {
                 0 => {
                     if xor_graph.degree(e[1]) == 2 {
-                        visit_stack.push(e[1] as u32);
+                        visit_stack.push(e[1] as _);
                     }
                     xor_graph.remove(e[1], sig_val, 1);
                     if xor_graph.degree(e[2]) == 2 {
-                        visit_stack.push(e[2] as u32);
+                        visit_stack.push(e[2] as _);
                     }
                     xor_graph.remove(e[2], sig_val, 2);
                 }
                 1 => {
                     if xor_graph.degree(e[0]) == 2 {
-                        visit_stack.push(e[0] as u32);
+                        visit_stack.push(e[0] as _);
                     }
                     xor_graph.remove(e[0], sig_val, 0);
                     if xor_graph.degree(e[2]) == 2 {
-                        visit_stack.push(e[2] as u32);
+                        visit_stack.push(e[2] as _);
                     }
                     xor_graph.remove(e[2], sig_val, 2);
                 }
                 2 => {
                     if xor_graph.degree(e[0]) == 2 {
-                        visit_stack.push(e[0] as u32);
+                        visit_stack.push(e[0] as _);
                     }
                     xor_graph.remove(e[0], sig_val, 0);
                     if xor_graph.degree(e[1]) == 2 {
-                        visit_stack.push(e[1] as u32);
+                        visit_stack.push(e[1] as _);
                     }
                     xor_graph.remove(e[1], sig_val, 1);
                 }

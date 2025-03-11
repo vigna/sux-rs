@@ -73,8 +73,7 @@ where
             .iter()
             .map(|&c| c as f64 / (samples as f64 / (1 << args.dict) as f64))
             .fold(f64::INFINITY, |a, b| a.min(b));
-        let avg_error_rate =
-            counts.iter().sum::<usize>() as f64 / samples as f64;
+        let avg_error_rate = counts.iter().sum::<usize>() as f64 / samples as f64;
         max.add(max_error_rate);
         min.add(min_error_rate);
         avg.add(avg_error_rate);
