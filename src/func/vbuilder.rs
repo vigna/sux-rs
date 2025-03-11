@@ -349,10 +349,10 @@ impl<X: Copy + Default> FastStack<X> {
         }
     }
 
-    pub fn push(&mut self, x: X, cond: bool) {
+    pub fn push(&mut self, x: X) {
         debug_assert!(self.top < self.stack.len());
         self.stack[self.top] = x;
-        self.top += cond as usize;
+        self.top += 1;
     }
 
     pub fn pop(&mut self) -> Option<X> {
@@ -1039,7 +1039,6 @@ impl<
                         }
                         pl.done_with_count(shard.len());
 
-
                         main_pl.info(format_args!(
                             "Solving shard {}/{}...",
                             shard_index + 1,
@@ -1290,7 +1289,9 @@ impl<
 
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
-            visit_stack.push(v as u32, degree == 1);
+            if degree == 1 {
+                visit_stack.push(v as u32);
+            }
         }
 
         while let Some(v) = visit_stack.pop() {
@@ -1300,28 +1301,40 @@ impl<
             }
             let (sig_val, side) = xor_graph.edge_index_and_side(v);
             xor_graph.zero(v);
-            sig_vals_stack.push(sig_val, true);
-            sides_stack.push(side as u8, true);
+            sig_vals_stack.push(sig_val);
+            sides_stack.push(side as u8);
 
             let e = self.shard_edge.local_edge(sig_val.sig);
 
             match side {
                 0 => {
-                    visit_stack.push(e[1] as u32, xor_graph.degree(e[1]) == 2);
+                    if xor_graph.degree(e[1]) == 2 {
+                        visit_stack.push(e[1] as u32);
+                    }
                     xor_graph.remove(e[1], sig_val, 1);
-                    visit_stack.push(e[2] as u32, xor_graph.degree(e[2]) == 2);
+                    if xor_graph.degree(e[2]) == 2 {
+                        visit_stack.push(e[2] as u32);
+                    }
                     xor_graph.remove(e[2], sig_val, 2);
                 }
                 1 => {
-                    visit_stack.push(e[0] as u32, xor_graph.degree(e[0]) == 2);
+                    if xor_graph.degree(e[0]) == 2 {
+                        visit_stack.push(e[0] as u32);
+                    }
                     xor_graph.remove(e[0], sig_val, 0);
-                    visit_stack.push(e[2] as u32, xor_graph.degree(e[2]) == 2);
+                    if xor_graph.degree(e[2]) == 2 {
+                        visit_stack.push(e[2] as u32);
+                    }
                     xor_graph.remove(e[2], sig_val, 2);
                 }
                 2 => {
-                    visit_stack.push(e[0] as u32, xor_graph.degree(e[0]) == 2);
+                    if xor_graph.degree(e[0]) == 2 {
+                        visit_stack.push(e[0] as u32);
+                    }
                     xor_graph.remove(e[0], sig_val, 0);
-                    visit_stack.push(e[1] as u32, xor_graph.degree(e[1]) == 2);
+                    if xor_graph.degree(e[1]) == 2 {
+                        visit_stack.push(e[1] as u32);
+                    }
                     xor_graph.remove(e[1], sig_val, 1);
                 }
                 _ => unsafe { unreachable_unchecked() },
