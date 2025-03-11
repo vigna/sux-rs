@@ -348,7 +348,7 @@ struct FastStack<X: Copy + Default> {
 impl<X: Copy + Default> FastStack<X> {
     pub fn new(n: usize) -> FastStack<X> {
         FastStack {
-            stack: vec![X::default(); n + 1],
+            stack: vec![X::default(); n],
             top: 0,
         }
     }
