@@ -392,7 +392,7 @@ impl FuseLge3Shards {
     /// [`Self::MAX_LIN_SIZE`].
     const HALF_MAX_LIN_SHARD_SIZE: usize = 50_000;
     /// When we shard, we never create a shard smaller then this.
-    const MIN_FUSE_SHARD: usize = 20_000_000;
+    const MIN_FUSE_SHARD: usize = 10_000_000;
     /// The log₂ of the maximum number of shards.
     const LOG2_MAX_SHARDS: u32 = 11;
 
@@ -407,11 +407,11 @@ impl FuseLge3Shards {
         match arity {
             3 => {
                 debug_assert!(n > 2 * Self::HALF_MAX_LIN_SHARD_SIZE);
-                if n <= Self::MIN_FUSE_SHARD / 4 {
+                if n <= Self::MIN_FUSE_SHARD / 2 {
                     1.125
-                } else if n <= Self::MIN_FUSE_SHARD / 2 {
-                    1.12
                 } else if n <= Self::MIN_FUSE_SHARD {
+                    1.12
+                } else if n <= 2 * Self::MIN_FUSE_SHARD {
                     1.11
                 } else {
                     1.105
@@ -441,7 +441,7 @@ impl FuseLge3Shards {
     /// graphs peelable with high probability.
     fn log2_seg_size(arity: usize, n: usize) -> u32 {
         match arity {
-            3 => if n <= Self::MIN_FUSE_SHARD {
+            3 => if n <= 2 * Self::MIN_FUSE_SHARD {
                 let n = n.max(1) as f64;
                 // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
                 // https://doi.org/10.1145/3510449
