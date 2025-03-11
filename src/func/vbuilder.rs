@@ -859,7 +859,7 @@ impl<
                 &mut pl.concurrent(),
                 pl,
             )?;
-        } else if self.shard_edge.num_shards() <= 2 {
+        } else if self.shard_edge.num_shards() <= 2 || thread_pool.current_num_threads() == 1 {
             // More memory, but more speed
             self.par_solve(
                 shard_iter,
