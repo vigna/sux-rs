@@ -270,6 +270,7 @@ mod mwhc {
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             self.seg_size = ((n as f64 * 1.23) / 3.).ceil() as usize;
+            #[cfg(not(feature = "usize_stack"))]
             assert!(self.seg_size * 3 <= u32::MAX as usize + 1);
             (1.23, false)
         }
@@ -578,7 +579,7 @@ impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
     fn num_sort_keys(&self) -> usize {
         self.l as usize
     }
-    
+
     fn sort_key(&self, sig: [u64; 2]) -> usize {
         fixed_point_reduce_128!(sig[0].rotate_right(self.shard_bits_shift), self.l)
     }
@@ -696,6 +697,7 @@ impl FuseLge3NoShards {
             .max(1)
             .try_into()
             .unwrap();
+        #[cfg(not(feature = "usize_stack"))]
         assert!((self.l as usize + 2) << self.log2_seg_size <= u32::MAX as usize + 1);
         (c, lge)
     }
@@ -716,7 +718,7 @@ impl ShardEdge<[u64; 2], 3> for FuseLge3NoShards {
     fn num_sort_keys(&self) -> usize {
         self.l as usize
     }
-    
+
     fn sort_key(&self, sig: [u64; 2]) -> usize {
         fixed_point_reduce_128!(sig[0], self.l)
     }
@@ -767,7 +769,7 @@ impl ShardEdge<[u64; 1], 3> for FuseLge3NoShards {
     fn num_sort_keys(&self) -> usize {
         self.l as usize
     }
-    
+
     fn sort_key(&self, sig: [u64; 1]) -> usize {
         fixed_point_reduce_128!(sig[0], self.l)
     }

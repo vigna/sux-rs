@@ -147,7 +147,7 @@ mod tests {
     where
         usize: ToSig<S>,
         SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    
+
         FuseLge3Shards: ShardEdge<S, 3>,
         VFunc<usize, u8, Box<[u8]>, S, FuseLge3Shards>: Serialize + TypeHash, // Weird
         VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, FuseLge3Shards>>: Serialize,
