@@ -620,9 +620,6 @@ impl<
 
         pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
 
-        values = values.rewind()?;
-        keys = keys.rewind()?;
-
         // Loop until success or duplicate detection
         loop {
             let seed = prng.random();
@@ -671,7 +668,7 @@ impl<
                                 }
                                 pl.warn(format_args!(
                                 "Duplicate 128-bit signature, trying again with a different seed..."
-                            ));
+                                ));
                                 dup_count += 1;
                             }
                             SolveError::MaxShardTooBig => {
@@ -690,6 +687,9 @@ impl<
                     }
                 }
             }
+
+            values = values.rewind()?;
+            keys = keys.rewind()?;
         }
     }
 }
