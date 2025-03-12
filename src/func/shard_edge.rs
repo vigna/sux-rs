@@ -13,13 +13,17 @@ use mem_dbg::*;
 /// Shard and edge logic.
 ///
 /// This trait is used to derive shards and edges from key signatures. Instances
-/// are stored, for example, in a [`VFunc`](crate::func::VFunc) or
-/// [`VFilter`](crate::dict::VFilter), and they contain the data and logic that
+/// are stored, for example, in a [`VFunc`](crate::func::VFunc) or in a
+/// [`VBuilder`](crate::func::VBuilder). They contain the data and logic that
 /// turns a signature into an edge, and possibly a shard.
 ///
 /// Having this trait makes it possible to test different types of generation
-/// techniques for `K`-uniform hypergraphs.
+/// techniques for `K`-uniform hypergraphs. Moreover, it decouples entirely
+/// the sharding and edge-generation logic from the rest of the code.
 ///
+/// If you compile with the `mwhc` feature, you will get additional
+/// implementations for the classic MWHC construction.
+/// 
 /// There are a few different implementations depending on the type of graphs,
 /// on the size of signatures, and on whether sharding is used. See, for
 /// example, [`FuseLge3Shards`].
@@ -73,32 +77,32 @@ pub trait ShardEdge<S, const K: usize>:
     /// If not sorting is needed, this method should return 0.
     fn sort_key(&self, sig: S) -> usize;
 
-    /// Return the number of shards.
+    /// Returns the number of shards.
     fn num_shards(&self) -> usize {
         1 << self.shard_high_bits()
     }
 
-    /// Return the number of vertices in a shard.
+    /// Returns the number of vertices in a shard.
     ///
     /// If there is no sharding, this method returns the overall
     /// number of vertices.
     fn num_vertices(&self) -> usize;
 
-    /// Return the shard assigned to a signature.
+    /// Returns the shard assigned to a signature.
     ///
     /// This method is mainly used for testing and debugging, as
     /// [`edge`](ShardEdge::edge) already takes sharding
     /// into consideration.
     fn shard(&self, sig: S) -> usize;
 
-    /// Return the local edge assigned to a signature.
+    /// Returns the local edge assigned to a signature.
     ///
     /// The edge returned is local to the shard the signature belongs to. If
     /// there is no sharding, this method has the same value as
     /// [`edge`](ShardEdge::edge).
     fn local_edge(&self, sig: S) -> [usize; K];
 
-    /// Return the edge assigned to a signature.
+    /// Returns the edge assigned to a signature.
     ///
     /// The edge returned is global, that is, its vertices are absolute indices
     /// into the backend. If there is no sharding, this method has the same
@@ -117,7 +121,7 @@ macro_rules! fixed_point_reduce_128 {
     };
 }
 
-/// Return the maximum number of high bits for sharding the given number of keys
+/// Returns the maximum number of high bits for sharding the given number of keys
 /// so that the overhead of the maximum shard size with respect to the average
 /// shard size is with high probability `eps`.
 ///
@@ -332,17 +336,18 @@ pub use mwhc::*;
 ///
 /// This construction uses fuse 3-hypergraphs (see ”[Dense Peelable Random
 /// Uniform Hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38)”) on
-/// sharded keys, giving a 10.5% space overhead. Duplicate edges are possible,
-/// which limits the amount of possible sharding.
+/// sharded keys, giving a 10.5% space overhead for large key sets; smaller key
+/// sets have a slightly larger overhead. Duplicate edges are possible, which
+/// limits the amount of possible sharding.
 ///
 /// In a fuse graph there are 𝓁 + 2 *segments* of size *s*. A random edge is
 /// chosen by selecting a first segment *f* uniformly at random among the first
 /// 𝓁, and then choosing uniformly and at random a vertex in the segments *f*,
-/// *f* + 1 and *f* + 2. The probability of duplicates thus increases as segments
-/// gets smaller. This construction uses new empirical estimate of segment
-/// sizes to obtain much better sharding than previously possible. See
-/// “Zero–Cost Sharding: Scaling Hypergraph-Based Static Functions and
-/// Filters to Trillions of Keys”.
+/// *f* + 1 and *f* + 2. The probability of duplicates thus increases as
+/// segments gets smaller. This construction uses new empirical estimate of
+/// segment sizes to obtain much better sharding than previously possible. See
+/// “Zero–Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters
+/// to Trillions of Keys”.
 ///
 /// Below a few million keys, fuse graphs have a much higher space overhead.
 /// This construction in that case switches to sharding and lazy Gaussian
@@ -381,11 +386,11 @@ impl Display for FuseLge3Shards {
 }
 
 impl FuseLge3Shards {
-    /// The maximum size intended for linear solving. While linear solving is
-    /// always active, under this size we change our sharding strategy and we
-    /// try to make shards as big as possible, within a maximum size of 2 *
-    /// [`Self::HALF_MAX_LIN_SHARD_SIZE`]. Above this threshold we do not shard
-    /// unless we can create shards of at least [`Self::MIN_FUSE_SHARD`].
+    /// The maximum size intended for linear solving. Under this size we change
+    /// our sharding strategy and we try to make shards as big as possible,
+    /// within a maximum size of 2 * [`Self::HALF_MAX_LIN_SHARD_SIZE`]. Above
+    /// this threshold we do not shard unless we can create shards of at least
+    /// [`Self::MIN_FUSE_SHARD`].
     const MAX_LIN_SIZE: usize = 800_000;
     /// We try to keep shards large enough so that they are solvable and that
     /// the size of the largest shard is close to the target average size, but
@@ -395,15 +400,12 @@ impl FuseLge3Shards {
     /// When we shard, we never create a shard smaller then this.
     const MIN_FUSE_SHARD: usize = 10_000_000;
     /// The log₂ of the maximum number of shards.
-    const LOG2_MAX_SHARDS: u32 = 11;
+    const LOG2_MAX_SHARDS: u32 = 12;
 
-    const A: f64 = 0.41;
-    const B: f64 = -3.0;
-
-    /// The expansion factor for fuse graphs.
+    /// Returns the expansion factor for fuse graphs.
     ///
-    /// Handcrafted, and meaningful for more than 2 *
-    /// [`Self::MAX_LIN_SIZE`] keys only.
+    /// Handcrafted, and meaningful for more than 2 * [`Self::MAX_LIN_SIZE`]
+    /// keys only.
     fn c(arity: usize, n: usize) -> f64 {
         match arity {
             3 => {
@@ -423,7 +425,7 @@ impl FuseLge3Shards {
         }
     }
 
-    /// Return the maximum log₂ of segment size for fuse graphs that makes the
+    /// Returns the maximum log₂ of segment size for fuse graphs that makes the
     /// graphs solvable with high probability.
     ///
     /// This function should not be called for graphs larger than 2 *
@@ -438,16 +440,17 @@ impl FuseLge3Shards {
         }
     }
 
-    /// Return the maximum log₂ of segment size for fuse graphs that makes the
+    const A: f64 = 0.41;
+    const B: f64 = -3.0;
+
+    /// Returns the maximum log₂ of segment size for fuse graphs that makes the
     /// graphs peelable with high probability.
     fn log2_seg_size(arity: usize, n: usize) -> u32 {
         match arity {
             3 => if n <= 2 * Self::MIN_FUSE_SHARD {
                 let n = n.max(1) as f64;
-                // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
-                // https://doi.org/10.1145/3510449
+                // From Graf and Lemire
                 //
-                // TODO: maybe more
                 // This estimate is correct for c(arity, n).
                 n.ln() / (3.33_f64).ln() + 2.25
             } else {
@@ -463,7 +466,7 @@ impl FuseLge3Shards {
         }
     }
 
-    /// Return the maximum number of high bits for sharding the given number of
+    /// Returns the maximum number of high bits for sharding the given number of
     /// keys so that the probability of a duplicate edge in a fuse graph with
     /// segments defined by [`FuseLge3Shards::log2_seg_size`] is at most `eps`.
     ///
@@ -485,9 +488,8 @@ impl FuseLge3Shards {
     /// implementations:
     /// - the `shard_high_bits()` most significant bits of the first component
     ///   are used to select a shard;
-    /// - the next bit is not used
-    /// - the following 32 bits of the first component are used to select the
-    ///   first segment using fixed-point arithmetic;
+    /// - the first component is rotated to the left by `shard_high_bits()` plus
+    ///   one and the used to select first segment using fixed-point arithmetic;
     /// - the lower 32 bits of first component are used to select the first
     ///   vertex;
     /// - the upper 32 bits of the second component are used to select the
@@ -495,8 +497,7 @@ impl FuseLge3Shards {
     /// - the lower 32 bits of the second component are used to select the third
     ///   vertex.
     ///
-    /// Note that the lower `shard_high_bits()` + 1 of the bits used to select
-    /// the first segment are the same as the upper `shard_high_bits()` of the
+    /// Note that the lower bits used to select the first segment are the same
     /// bits used to select the first element of the edge, but being the result
     /// of fixed-point arithmetic mostly sensitive to the high bits, this is not
     /// a problem.
@@ -640,7 +641,7 @@ impl Display for FuseLge3NoShards {
 }
 
 impl FuseLge3NoShards {
-    /// The expansion factor for fuse graphs.
+    /// Returns the expansion factor for fuse graphs.
     ///
     /// Handcrafted, and meaningful for more than 2 *
     /// [`FuseLge3Shards::HALF_MAX_LIN_SHARD_SIZE`] keys only.
@@ -660,14 +661,13 @@ impl FuseLge3NoShards {
         }
     }
 
-    /// Return the maximum log₂ of segment size for fuse graphs that makes the
+    /// Returns the maximum log₂ of segment size for fuse graphs that makes the
     /// graphs peelable with high probability.
     fn log2_seg_size(arity: usize, n: usize) -> u32 {
         let n = n.max(1) as f64;
         match arity {
             3 =>
-            // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
-            // https://doi.org/10.1145/3510449
+            // From Graf and Lemire
             //
             // This estimate is correct for c(arity, n).
             {
@@ -786,7 +786,7 @@ impl ShardEdge<[u64; 1], 3> for FuseLge3NoShards {
 
     #[inline(always)]
     fn local_edge(&self, sig: [u64; 1]) -> [usize; 3] {
-        // From https://github.com/ayazhafiz/xorf
+        // From Graf and Lemire
         let hash = sig[0];
         let v0 = fixed_point_reduce_128!(hash, self.l << self.log2_seg_size);
         let seg_size = 1 << self.log2_seg_size;

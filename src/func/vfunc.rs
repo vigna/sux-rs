@@ -62,7 +62,7 @@ pub struct VFunc<
 impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
     VFunc<T, W, D, S, E>
 {
-    /// Return the value associated with the given signature, or a random value
+    /// Returns the value associated with the given signature, or a random value
     /// if the signature is not the signature of a key .
     ///
     /// This method is mainly useful in the construction of compound functions.
@@ -72,19 +72,19 @@ impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: S
         self.data.get(edge[0]) ^ self.data.get(edge[1]) ^ self.data.get(edge[2])
     }
 
-    /// Return the value associated with the given key, or a random value if the
+    /// Returns the value associated with the given key, or a random value if the
     /// key is not present.
     #[inline]
     pub fn get(&self, key: impl Borrow<T>) -> W {
         self.get_by_sig(T::to_sig(key.borrow(), self.seed))
     }
 
-    /// Return the number of keys in the function.
+    /// Returns the number of keys in the function.
     pub fn len(&self) -> usize {
         self.num_keys
     }
 
-    /// Return whether the function has no keys.
+    /// Returns whether the function has no keys.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
