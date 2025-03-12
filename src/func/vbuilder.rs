@@ -296,6 +296,7 @@ enum PeelResult<
 struct XorGraph<X: BitXor + BitXorAssign + Default + Copy> {
     edges: Box<[X]>,
     degrees_sides: Box<[u8]>,
+    overflow: bool,
 }
 
 impl<X: BitXor + BitXorAssign + Default + Copy> XorGraph<X> {
@@ -303,13 +304,16 @@ impl<X: BitXor + BitXorAssign + Default + Copy> XorGraph<X> {
         XorGraph {
             edges: vec![X::default(); n].into(),
             degrees_sides: vec![0; n].into(),
+            overflow: false,
         }
     }
 
     #[inline(always)]
     pub fn add(&mut self, v: usize, x: X, side: usize) {
         debug_assert!(side < 3);
-        self.degrees_sides[v] += 4;
+        let (degree_size, overflow) = self.degrees_sides[v].overflowing_add(4);
+        self.degrees_sides[v] = degree_size;
+        self.overflow |= overflow;
         self.degrees_sides[v] ^= side as u8;
         self.edges[v] ^= x;
     }
@@ -1128,6 +1132,13 @@ impl<
         }
         pl.done_with_count(shard.len());
 
+        assert!(
+            ! xor_graph.overflow,
+            "Degree overflow for shard {}/{}",
+            shard_index + 1,
+            self.shard_edge.num_shards()
+        );
+
         if self.failed.load(Ordering::Relaxed) {
             return Err(());
         }
@@ -1275,6 +1286,13 @@ impl<
             }
         }
         pl.done_with_count(shard.len());
+
+        assert!(
+            ! xor_graph.overflow,
+            "Degree overflow for shard {}/{}",
+            shard_index + 1,
+            self.shard_edge.num_shards()
+        );
 
         if self.failed.load(Ordering::Relaxed) {
             return Err(());
