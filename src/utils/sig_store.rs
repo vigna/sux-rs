@@ -388,6 +388,9 @@ pub trait SigStore<S: Sig + ZeroCopy, V: ZeroCopy> {
     ///
     /// Sharding cannot happen with more bits than this.
     fn max_shard_high_bits(&self) -> u32;
+
+    /// The temporary directory used by the store, if any.
+    fn temp_dir(&self) -> Option<&tempfile::TempDir>;
 }
 
 /// An implementation of [`SigStore`] that accumulates signature/value pairs in
@@ -414,6 +417,8 @@ pub struct SigStoreImpl<S, V, B> {
     bucket_sizes: Vec<usize>,
     /// The number of keys with the same `max_shard_high_bits` high bits.
     shard_sizes: Vec<usize>,
+    /// The temporary directory used by the store, if offline.
+    temp_dir: Option<tempfile::TempDir>,
     _marker: PhantomData<(S, V)>,
 }
 
@@ -430,7 +435,6 @@ pub fn new_offline<S: ZeroCopy + Sig, V: ZeroCopy>(
     max_shard_high_bits: u32,
     _expected_num_keys: Option<usize>,
 ) -> Result<SigStoreImpl<S, V, BufWriter<File>>> {
-    // TODO: use expected_num_keys
     let temp_dir = tempfile::TempDir::new()?;
     let mut writers = VecDeque::new();
     for i in 0..1 << buckets_high_bits {
@@ -452,6 +456,7 @@ pub fn new_offline<S: ZeroCopy + Sig, V: ZeroCopy>(
         buckets: writers,
         bucket_sizes: vec![0; 1 << buckets_high_bits],
         shard_sizes: vec![0; 1 << max_shard_high_bits],
+        temp_dir: Some(temp_dir),
         _marker: PhantomData,
     })
 }
@@ -487,6 +492,7 @@ pub fn new_online<S: ZeroCopy + Sig, V: ZeroCopy>(
         buckets: writers,
         bucket_sizes: vec![0; 1 << buckets_high_bits],
         shard_sizes: vec![0; 1 << max_shard_high_bits],
+        temp_dir: None,
         _marker: PhantomData,
     })
 }
@@ -550,6 +556,10 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
     fn max_shard_high_bits(&self) -> u32 {
         self.max_shard_high_bits
     }
+
+    fn temp_dir(&self) -> Option<&tempfile::TempDir> {
+        self.temp_dir.as_ref()
+    }
 }
 
 impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
@@ -608,6 +618,10 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
 
     fn max_shard_high_bits(&self) -> u32 {
         self.max_shard_high_bits
+    }
+
+    fn temp_dir(&self) -> Option<&tempfile::TempDir> {
+        None
     }
 }
 

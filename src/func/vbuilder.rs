@@ -25,6 +25,7 @@ use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
 use std::any::TypeId;
+use std::borrow::Cow;
 use std::hint::unreachable_unchecked;
 use std::marker::PhantomData;
 use std::ops::{BitXor, BitXorAssign};
@@ -32,6 +33,7 @@ use std::slice::Iter;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
+use tempfile::TempDir;
 
 use super::shard_edge::FuseLge3Shards;
 
@@ -618,18 +620,12 @@ impl<
 
         pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
 
+        values = values.rewind()?;
+        keys = keys.rewind()?;
+
         // Loop until success or duplicate detection
         loop {
             let seed = prng.random();
-            pl.expected_updates(self.expected_num_keys);
-            pl.item_name("key");
-            pl.start(format!(
-                "Reading input and hashing keys to {} bits...",
-                std::mem::size_of::<S>() * 8
-            ));
-
-            values = values.rewind()?;
-            keys = keys.rewind()?;
 
             match if self.offline {
                 self.try_seed(
@@ -730,6 +726,17 @@ impl<
         for<'a> ShardDataIter<'a, W, D>: Send,
         for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
     {
+        pl.expected_updates(self.expected_num_keys);
+        pl.item_name("key");
+        pl.start(format!(
+            "Reading input and hashing keys to {} using {} bits...",
+            sig_store
+                .temp_dir()
+                .map(|d| d.path().to_string_lossy())
+                .unwrap_or(Cow::Borrowed("memory")),
+            std::mem::size_of::<S>() * 8,
+        ));
+
         let mut max_value = W::ZERO;
 
         let start = Instant::now();
@@ -1138,7 +1145,7 @@ impl<
         pl.done_with_count(shard.len());
 
         assert!(
-            ! xor_graph.overflow,
+            !xor_graph.overflow,
             "Degree overflow for shard {}/{}",
             shard_index + 1,
             self.shard_edge.num_shards()
@@ -1295,7 +1302,7 @@ impl<
         pl.done_with_count(shard.len());
 
         assert!(
-            ! xor_graph.overflow,
+            !xor_graph.overflow,
             "Degree overflow for shard {}/{}",
             shard_index + 1,
             self.shard_edge.num_shards()
