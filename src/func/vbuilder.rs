@@ -175,6 +175,15 @@ pub struct VBuilder<
     #[setters(generate = true)]
     check_dups: bool,
 
+    /// Use always the peel-by-index algorithm (true) or the peel-by-hash
+    /// algorithm (false). The former is significantly slower, but it uses much
+    /// less memory. Normally [`VBuilder`] use peel-by-hash and switches to
+    /// peel-by-index only if there is more than two threads and more than four
+    /// shards.
+    #[setters(generate = true, strip_option)]
+    #[derivative(Default(value = "None"))]
+    peel_by_index: Option<bool>,
+
     /// The seed for the random number generator.
     #[setters(generate = true)]
     seed: u64,
@@ -251,7 +260,7 @@ enum PeelResult<
 /// A graph represented compactly.
 ///
 /// Each (*k*-hyper)edge is a set of *k* vertices (by construction fuse graphs
-/// to not have degenerate edges), but we represent it internally as a vector.
+/// do not have degenerate edges), but we represent it internally as a vector.
 /// We call *side* the position of a vertex in the edge.
 ///
 /// For each vertex, information about the edges incident to the vertex and the
@@ -357,15 +366,6 @@ impl<X: Copy + Default> FastStack<X> {
         debug_assert!(self.top < self.stack.len());
         self.stack[self.top] = x;
         self.top += 1;
-    }
-
-    pub fn pop(&mut self) -> Option<X> {
-        if self.top == 0 {
-            None
-        } else {
-            self.top -= 1;
-            Some(self.stack[self.top])
-        }
     }
 
     pub fn len(&self) -> usize {
@@ -859,19 +859,11 @@ impl<
                 &mut pl.concurrent(),
                 pl,
             )?;
-        } else if self.shard_edge.num_shards() <= 2 || thread_pool.current_num_threads() == 1 {
-            // More memory, but more speed
-            self.par_solve(
-                shard_iter,
-                &mut data,
-                |this, shard_index, shard, data, pl| {
-                    this.peel_shard_by_sig_vals(shard_index, shard, data, get_val, pl)
-                },
-                &thread_pool,
-                &mut pl.concurrent(),
-                pl,
-            )?;
-        } else {
+        } else if self.peel_by_index == Some(true)
+            || self.peel_by_index.is_none()
+                && thread_pool.current_num_threads() > 2
+                && self.shard_edge.num_shards() > 2
+        {
             // Much less memory, but slower
             self.par_solve(
                 shard_iter,
@@ -885,6 +877,18 @@ impl<
                 ) {
                     Ok(PeelResult::Complete()) => Ok(()),
                     _ => Err(()),
+                },
+                &thread_pool,
+                &mut pl.concurrent(),
+                pl,
+            )?;
+        } else {
+            // More memory, but more speed
+            self.par_solve(
+                shard_iter,
+                &mut data,
+                |this, shard_index, shard, data, pl| {
+                    this.peel_shard_by_sig_vals(shard_index, shard, data, get_val, pl)
                 },
                 &thread_pool,
                 &mut pl.concurrent(),
