@@ -18,11 +18,12 @@ use mem_dbg::*;
 /// turns a signature into an edge, and possibly a shard.
 ///
 /// Having this trait makes it possible to test different types of generation
-/// techniques for `K`-uniform hypergraphs. Moreover, it decouples entirely
-/// the sharding and edge-generation logic from the rest of the code.
+/// techniques for `K`-uniform hypergraphs. Moreover, it decouples entirely the
+/// sharding and edge-generation logic from the rest of the code.
 ///
 /// If you compile with the `mwhc` feature, you will get additional
-/// implementations for the classic MWHC construction.
+/// implementations for the classic [MWHC
+/// construction](https://doi.org/10.1093/comjnl/39.6.547).
 ///
 /// There are a few different implementations depending on the type of graphs,
 /// on the size of signatures, and on whether sharding is used. See, for
@@ -149,7 +150,8 @@ mod mwhc {
             (($x as u64 * $n as u64) >> 32) as usize
         };
     }
-    /// Zero-cost sharded 3-hypergraph MWHC construction.
+    /// Zero-cost sharded 3-hypergraph [MWHC
+    /// construction](https://doi.org/10.1093/comjnl/39.6.547).
     ///
     /// This construction uses uses zero-cost sharding (“Zero–Cost Sharding:
     /// Scaling Hypergraph-Based Static Functions and Filters to Trillions of
@@ -159,9 +161,9 @@ mod mwhc {
     /// graphs](crate::func::shard_edge::FuseLge3Shards).
     ///
     /// The MWHC construction has been obsoleted by [fuse
-    /// graphs](crate::func::shard_edge::FuseLge3Shards), but it is still useful for
-    /// benchmarking and comparison. It also provides slightly faster queries
-    /// due to the simpler edge-generation logic, albeit construction is
+    /// graphs](crate::func::shard_edge::FuseLge3Shards), but it is still useful
+    /// for benchmarking and comparison. It also provides slightly faster
+    /// queries due to the simpler edge-generation logic, albeit construction is
     /// slower due to cache-unfriendly accesses.
     #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
     #[deep_copy]
@@ -257,7 +259,8 @@ mod mwhc {
         }
     }
 
-    /// Unsharded 3-hypergraph MWHC construction.
+    /// Unsharded 3-hypergraph [MWHC
+    /// construction](https://doi.org/10.1093/comjnl/39.6.547).
     ///
     /// This construction uses random peelable 3-hypergraphs, giving a 23% space
     /// overhead. See [`Mwhc3Shards`] for more information.
