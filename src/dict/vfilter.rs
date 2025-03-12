@@ -23,12 +23,12 @@ use std::ops::Index;
 /// [ε-serde](`epserde`). They contain a mapping from keys to hashes stored in a
 /// [`VFunc`]; [`contains`](VFilter::contains) checks that the hash of a key is
 /// equal of the hash stored by the function for the same key.
-/// 
+///
 /// Please read the [`VFunc`] documentation for more information about the space
 /// usage and the ways in which a filter can be built. A construction time you
 /// have to choose a number *b* of hash bits per key, and the filter precision
 /// (false-positive rate) will be 2⁻*ᵇ*.
-/// 
+///
 /// Note that this structure implements the [`Index`] trait, which provides a
 /// convenient access to the filter. Please see the documentation of
 /// [`VBuilder`](crate::func::VBuilder) for examples.
@@ -98,7 +98,7 @@ where
     }
 
     /// Returns the number bits of the hash associated with keys.
-    /// 
+    ///
     /// The filter precision (false-positive rate) is 2<sup>-`hash_bits`</sup>.
     pub fn hash_bits(&self) -> u32 {
         self.hash_bits

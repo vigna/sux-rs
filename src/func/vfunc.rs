@@ -17,7 +17,7 @@ use super::shard_edge::FuseLge3Shards;
 /// fast queries.
 ///
 /// Space overhead with respect to the optimum depends on the [`ShardEdge`]
-/// type.
+/// type. The default is [`FuseLge3Shards`].
 ///
 /// Instances of this structure are immutable; they are built using a
 /// [`VBuilder`](crate::func::VBuilder) and can be serialized using

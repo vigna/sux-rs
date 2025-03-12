@@ -23,7 +23,7 @@ use mem_dbg::*;
 ///
 /// If you compile with the `mwhc` feature, you will get additional
 /// implementations for the classic MWHC construction.
-/// 
+///
 /// There are a few different implementations depending on the type of graphs,
 /// on the size of signatures, and on whether sharding is used. See, for
 /// example, [`FuseLge3Shards`].
@@ -151,10 +151,18 @@ mod mwhc {
     }
     /// Zero-cost sharded 3-hypergraph MWHC construction.
     ///
-    /// This construction uses random peelable 3-hypergraphs on sharded keys,
-    /// giving a 23% space overhead. Duplicate edges are not possible, which
-    /// makes it possible to shard keys with a finer grain than with [fuse
-    /// graphs](crate::func::FuseLge3Shards).
+    /// This construction uses uses zero-cost sharding (“Zero–Cost Sharding:
+    /// Scaling Hypergraph-Based Static Functions and Filters to Trillions of
+    /// Keys”) to shard keys and then random peelable 3-hypergraphs on sharded
+    /// keys, giving a 23% space overhead. Duplicate edges are not possible,
+    /// which makes it possible to shard keys with a finer grain than with [fuse
+    /// graphs](crate::func::shard_edge::FuseLge3Shards).
+    ///
+    /// The MWHC construction has been obsoleted by [fuse
+    /// graphs](crate::func::shard_edge::FuseLge3Shards), but it is still useful for
+    /// benchmarking and comparison. It also provides slightly faster queries
+    /// due to the simpler edge-generation logic, albeit construction is
+    /// slower due to cache-unfriendly accesses.
     #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
     #[deep_copy]
     pub struct Mwhc3Shards {
@@ -209,6 +217,8 @@ mod mwhc {
             if self.shard_high_bits() != 0 {
                 self.seg_size = self.seg_size.next_multiple_of(128);
             }
+
+            #[cfg(not(feature = "big_shards"))]
             assert!(self.seg_size * 3 <= u32::MAX as usize + 1);
             (1.23, false)
         }
@@ -250,8 +260,7 @@ mod mwhc {
     /// Unsharded 3-hypergraph MWHC construction.
     ///
     /// This construction uses random peelable 3-hypergraphs, giving a 23% space
-    /// overhead. Due to very low locality, this construction is mainly
-    /// useful for comparison and testing.
+    /// overhead. See [`Mwhc3Shards`] for more information.
     #[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
     #[deep_copy]
     pub struct Mwhc3NoShards {
@@ -274,6 +283,7 @@ mod mwhc {
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             self.seg_size = ((n as f64 * 1.23) / 3.).ceil() as usize;
+
             #[cfg(not(feature = "big_shards"))]
             assert!(self.seg_size * 3 <= u32::MAX as usize + 1);
             (1.23, false)
@@ -334,20 +344,20 @@ pub use mwhc::*;
 
 /// Zero-cost sharded fuse 3-hypergraphs with lazy Gaussian elimination.
 ///
-/// This construction uses fuse 3-hypergraphs (see ”[Dense Peelable Random
-/// Uniform Hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38)”) on
-/// sharded keys, giving a 10.5% space overhead for large key sets; smaller key
-/// sets have a slightly larger overhead. Duplicate edges are possible, which
-/// limits the amount of possible sharding.
+/// This construction uses zero-cost sharding (“Zero–Cost Sharding: Scaling
+/// Hypergraph-Based Static Functions and Filters to Trillions of Keys”) to
+/// shard keys and then fuse 3-hypergraphs (see ”[Dense Peelable Random Uniform
+/// Hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38)”) on sharded keys,
+/// giving a 10.5% space overhead for large key sets; smaller key sets have a
+/// slightly larger overhead. Duplicate edges are possible, which limits the
+/// amount of possible sharding.
 ///
 /// In a fuse graph there are 𝓁 + 2 *segments* of size *s*. A random edge is
 /// chosen by selecting a first segment *f* uniformly at random among the first
 /// 𝓁, and then choosing uniformly and at random a vertex in the segments *f*,
 /// *f* + 1 and *f* + 2. The probability of duplicates thus increases as
 /// segments gets smaller. This construction uses new empirical estimate of
-/// segment sizes to obtain much better sharding than previously possible. See
-/// “Zero–Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters
-/// to Trillions of Keys”.
+/// segment sizes to obtain much better sharding than previously possible.
 ///
 /// Below a few million keys, fuse graphs have a much higher space overhead.
 /// This construction in that case switches to sharding and lazy Gaussian
@@ -449,7 +459,8 @@ impl FuseLge3Shards {
         match arity {
             3 => if n <= 2 * Self::MIN_FUSE_SHARD {
                 let n = n.max(1) as f64;
-                // From Graf and Lemire
+                // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
+                // https://doi.org/10.1145/3510449
                 //
                 // This estimate is correct for c(arity, n).
                 n.ln() / (3.33_f64).ln() + 2.25
@@ -471,7 +482,7 @@ impl FuseLge3Shards {
     /// segments defined by [`FuseLge3Shards::log2_seg_size`] is at most `eps`.
     ///
     /// From “Zero–Cost Sharding: Scaling Hypergraph-Based Static Functions and
-    /// Filters to Trillions of Keys”
+    /// Filters to Trillions of Keys”.
     fn dup_edge_high_bits(arity: usize, n: usize, c: f64, eps: f64) -> u32 {
         let n = n as f64;
         match arity {
@@ -558,6 +569,8 @@ impl FuseLge3Shards {
             .max(1)
             .try_into()
             .unwrap();
+
+        #[cfg(not(feature = "big_shards"))]
         assert!((self.l as usize + 2) << self.log2_seg_size <= u32::MAX as usize + 1);
         (c, lge)
     }
@@ -667,7 +680,8 @@ impl FuseLge3NoShards {
         let n = n.max(1) as f64;
         match arity {
             3 =>
-            // From Graf and Lemire
+            // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
+            // https://doi.org/10.1145/3510449
             //
             // This estimate is correct for c(arity, n).
             {
@@ -697,6 +711,7 @@ impl FuseLge3NoShards {
             .max(1)
             .try_into()
             .unwrap();
+
         #[cfg(not(feature = "big_shards"))]
         assert!((self.l as usize + 2) << self.log2_seg_size <= u32::MAX as usize + 1);
         (c, lge)
@@ -786,7 +801,8 @@ impl ShardEdge<[u64; 1], 3> for FuseLge3NoShards {
 
     #[inline(always)]
     fn local_edge(&self, sig: [u64; 1]) -> [usize; 3] {
-        // From Graf and Lemire
+        // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
+        // https://doi.org/10.1145/3510449
         let hash = sig[0];
         let v0 = fixed_point_reduce_128!(hash, self.l << self.log2_seg_size);
         let seg_size = 1 << self.log2_seg_size;
