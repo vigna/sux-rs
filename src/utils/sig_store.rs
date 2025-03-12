@@ -84,7 +84,7 @@ pub trait Sig: ZeroCopy + Default + PartialEq + Eq + std::fmt::Debug {
     /// 
     /// Note that this value could be equal to the signature itself. If you are
     /// reusing the same signature for different purposes, you should mix
-    /// thoroughly this value (see, e.g., [`mix64`](crate::utils::mix64)).
+    /// thoroughly this value (see, e.g., [`mix64`](crate::func::mix64)).
     fn sig_u64(&self) -> u64;
 }
 

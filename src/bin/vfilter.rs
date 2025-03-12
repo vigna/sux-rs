@@ -22,7 +22,7 @@ use sux::traits::{BitFieldSlice, BitFieldSliceMut, Word};
 use sux::utils::{EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
 
 #[derive(Parser, Debug)]
-#[command(about = "Generates a VFilter and serializes it with ε-serde", long_about = None)]
+#[command(about = "Creates a VFilter and serializes it with ε-serde", long_about = None)]
 #[clap(group(
             ArgGroup::new("input")
                 .required(true)

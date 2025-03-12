@@ -20,7 +20,7 @@ use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
 
 #[derive(Parser, Debug)]
-#[command(about = "Generates a VFunc mapping each input to its rank and serializes it with ε-serde", long_about = None)]
+#[command(about = "Creates a VFunc mapping each input to its rank and serializes it with ε-serde", long_about = None)]
 #[clap(group(
             ArgGroup::new("input")
                 .required(true)

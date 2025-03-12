@@ -44,10 +44,12 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// a signature of the key.
 ///
 /// There are two construction modes: in core memory (default) and
-/// [offline](VBuilder::offline). In the first case, space will be allocated in
-/// core memory for signatures and associated values for all keys; in the second
-/// case, such information will be stored in a number of on-disk buckets using a
-/// [`SigStore`]. It is also possible to [set the maximum number of
+/// [offline](VBuilder::offline); both use a [`SigStore`]. In the first case,
+/// space will be allocated in core memory for signatures and associated values
+/// for all keys; in the second case, such information will be stored in a
+/// number of on-disk buckets.
+/// 
+/// There are several setters: for example, you can set [set the maximum number of
 /// threads](VBuilder::max_num_threads).
 ///
 /// Once signatures have been computed, each parallel thread will process a
@@ -68,6 +70,13 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// easy ways to build such lenders, even starting from compressed files of
 /// UTF-8 strings. The type of the keys of the resulting filter or function will
 /// be the type of the elements of the [`RewindableIoLender`].
+/// 
+/// # Implementation Notes
+/// 
+/// By default, we assume that the maximum number of vertices in a shard
+/// is 2³², which is sufficient up to hundreds of trillion of keys. If for
+/// some reason you need to build large structures without sharding, 
+/// you can enable the `big_shards` feature.
 ///
 /// # Examples
 ///
@@ -122,7 +131,7 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// # }
 /// ```
 ///
-/// We now try to build a filter for the same key set:
+/// We now try to build a fast 8-bit filter for the same key set:
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -130,7 +139,7 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// use dsi_progress_logger::no_logging;
 /// use sux::utils::FromIntoIterator;
 ///
-/// let builder = VBuilder::<usize, Box<[usize]>>::default()
+/// let builder = VBuilder::<u8, Box<[u8]>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_filter(
 ///    FromIntoIterator::from(0..100),
@@ -142,6 +151,32 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// }
 /// #     Ok(())
 /// # }
+/// ```
+/// 
+/// Since the keys are very few, we can switch to 64-bit
+/// signatures, and no shards, which will yield faster
+/// queries:
+///
+/// ```rust
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// use sux::func::VBuilder;
+/// use sux::func::shard_edge::FuseLge3NoShards;
+/// use dsi_progress_logger::no_logging;
+/// use sux::utils::FromIntoIterator;
+///
+/// let builder = VBuilder::<u8, Box<[u8]>, [u64; 1], FuseLge3NoShards>::default()
+///     .expected_num_keys(100);
+/// let func = builder.try_build_filter(
+///    FromIntoIterator::from(0..100),
+///    no_logging![]
+/// )?;
+///
+/// for i in 0..100 {
+///    assert!(func[i]);
+/// }
+/// #     Ok(())
+/// # }
+/// ```
 
 #[derive(Setters, Debug, Derivative)]
 #[derivative(Default)]
@@ -228,14 +263,14 @@ pub enum SolveError {
     /// A duplicate signature was detected.
     DuplicateSignature,
     #[error("Max shard too big")]
-    /// The maximum shard is too big.
+    /// The maximum shard is too big relatively to the average shard.
     MaxShardTooBig,
     #[error("Unsolvable shard")]
     /// A shard cannot be solved.
     UnsolvableShard,
 }
 
-/// The result of a peeling operation.
+/// The result of a peeling procedure.
 enum PeelResult<
     'a,
     W: ZeroCopy + Word + Send + Sync,
@@ -252,16 +287,16 @@ enum PeelResult<
         /// The data.
         data: ShardData<'a, W, D>,
         /// The double stack whose upper stack contains the peeled edges.
-        double_stack: DoubleStack<EdgeIndex>,
+        double_stack: DoubleStack<GraphIndex>,
         /// The sides stack.
         sides_stack: Vec<u8>,
     },
 }
 
 #[cfg(not(feature = "big_shards"))]
-type EdgeIndex = u32;
+type GraphIndex = u32;
 #[cfg(feature = "big_shards")]
-type EdgeIndex = usize;
+type GraphIndex = usize;
 
 /// A graph represented compactly.
 ///
@@ -269,15 +304,15 @@ type EdgeIndex = usize;
 /// do not have degenerate edges), but we represent it internally as a vector.
 /// We call *side* the position of a vertex in the edge.
 ///
-/// For each vertex, information about the edges incident to the vertex and the
-/// sides of the vertex in such edges. While technically not necessary to
-/// perform peeling, the knowledge of the sides speeds up the peeling visit by
-/// reducing the number of tests that are necessary to update the degrees once
-/// the edge is peeled (see the `peel_shard_by_*` methods). For the same reason it
-/// also speeds up assignment.
+/// For each vertex we store information about the edges incident to the vertex
+/// and the sides of the vertex in such edges. While technically not necessary
+/// to perform peeling, the knowledge of the sides speeds up the peeling visit
+/// by reducing the number of tests that are necessary to update the degrees
+/// once the edge is peeled (see the `peel_shard_by_*` methods). For the same
+/// reason it also speeds up assignment.
 ///
-/// Depending on the peeling method, the graph will store edge indices or
-/// signature/value pairs (the generic parameter `X`).
+/// Depending on the peeling method (by hash or by index), the graph will store
+/// edge indices or signature/value pairs (the generic parameter `X`).
 ///
 /// Edge information is packed together using Djamal's XOR trick (see
 /// [“Cache-Oblivious Peeling of Random
@@ -289,7 +324,9 @@ type EdgeIndex = usize;
 /// `u32`. We then use a single byte to store the degree (six upper bits) and
 /// the XOR of the sides (lower two bits). The degree can be stored with a small
 /// number of bits because the graph is random, so the maximum degree is *O*(log
-/// log *n*).
+/// log *n*). The type [`GraphIndex`] can be selected to be a `usize` with
+/// the `big_shards` feature if for some reason you need to build large
+/// structures without sharding.
 ///
 /// When we peel an edge, we just zero the degree, leaving the edge information
 /// and the side in place for further processing later.
@@ -298,7 +335,8 @@ type EdgeIndex = usize;
 /// per vertex when storing edge indices. Edges are derived on the fly from
 /// signatures using the edge indices and indexing the shard. If instead
 /// signature/value pairs are stored, the memory usage is significantly higher,
-/// but obtaining an edge does not require accessing the shard.
+/// but obtaining an edge does not require accessing the shard, removing
+/// a level of memory indirection, and greatly increasing performance.
 struct XorGraph<X: BitXor + BitXorAssign + Default + Copy> {
     edges: Box<[X]>,
     degrees_sides: Box<[u8]>,
@@ -478,7 +516,7 @@ where
 /// Builds a new filter using a `Box<[W]>` to store values.
 ///
 /// Since values are stored in a slice access is particularly fast, but the
-/// number of signature bits will be  exactly the bit width of `W`.
+/// number of bits of the hashes will be  exactly the bit width of `W`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
@@ -541,8 +579,8 @@ where
 /// `W` to store values.
 ///
 /// Since values are stored in a bit-field vector, access will be slower than
-/// when using a boxed slice, but the signature bits can be set at will. They
-/// must be in any case at most the bit width of `W`.
+/// when using a boxed slice, but the number of bits of the hashes can be set at
+/// will. It must be in any case at most the bit width of `W`.
 ///
 /// Typically `W` will be `usize` or `u64`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
@@ -585,17 +623,18 @@ impl<
 {
     /// Builds and return a new function with given keys and values.
     ///
-    /// This function can build functions based both on vectors and on bit-field
-    /// vectors. The necessary abstraction is provided by the `new_data(bit_width,
-    /// len)` function, which is called to create the data structure to store
-    /// the values.
+    /// This method can build functions based both on vectors and on bit-field
+    /// vectors. The necessary abstraction is provided by the
+    /// `new_data(bit_width, len)` function, which is called to create the data
+    /// structure to store the values.
     ///
     /// When `V` is [`EmptyVal`], the this method builds a function supporting a
-    /// filter by mapping each key to its signature. The necessary abstraction
-    /// is provided by the `get_val` function, which is called to extract the
-    /// value from the signature/value pair`; in the case of functions it
-    /// returns the value stored in the signature/value pair, and in the case of
-    /// filters it returns the lower bits of [`SigVal::sig_u64`] mixed with the
+    /// filter by mapping each key to a mix of its [64-bit
+    /// signature](Sig::sig_u64). The necessary abstraction is provided by the
+    /// `get_val` function, which is called to extract the value from the
+    /// signature/value pair; in the case of functions it returns the value
+    /// stored in the signature/value pair, and in the case of filters it
+    /// returns the lower bits of [`Sig::sig_u64`] mixed with the
     /// [`mix64`](mix64) function.
     fn build_loop<T: ?Sized + ToSig<S> + std::fmt::Debug, V: ZeroCopy + Default + Send + Sync>(
         &mut self,
@@ -1116,6 +1155,9 @@ impl<
     /// as the latter requires edge indices.
     ///
     /// This method shares the same logic as [`VBuilder::peel_shard_by_sig_vals`],
+    /// 
+    /// In case the feature `big_shards` is enabled, this method uses about 18
+    /// bytes per key.
     fn peel_shard_by_edge_indices<
         'a,
         V: ZeroCopy + Send + Sync,
@@ -1136,7 +1178,7 @@ impl<
             self.shard_edge.num_shards()
         ));
 
-        let mut xor_graph = XorGraph::<EdgeIndex>::new(num_vertices);
+        let mut xor_graph = XorGraph::<GraphIndex>::new(num_vertices);
         for (edge_index, sig_val) in shard.iter().enumerate() {
             for (side, &v) in self.shard_edge.local_edge(sig_val.sig).iter().enumerate() {
                 xor_graph.add(v, edge_index as _, side);
@@ -1158,7 +1200,7 @@ impl<
         // The upper stack contains vertices to be visited. The lower stack
         // contains peeled edges. The sum of the lengths of these two items
         // cannot exceed the number of vertices.
-        let mut double_stack = DoubleStack::<EdgeIndex>::new(num_vertices);
+        let mut double_stack = DoubleStack::<GraphIndex>::new(num_vertices);
         let mut sides_stack = Vec::<u8>::new();
 
         pl.start(format!(
@@ -1314,7 +1356,7 @@ impl<
 
         let mut sig_vals_stack = FastStack::<SigVal<S, V>>::new(shard.len());
         let mut sides_stack = FastStack::<u8>::new(shard.len());
-        let mut visit_stack = Vec::<EdgeIndex>::with_capacity(num_vertices / 3);
+        let mut visit_stack = Vec::<GraphIndex>::with_capacity(num_vertices / 3);
 
         pl.start(format!(
             "Peeling graph for shard {}/{} by hashes...",

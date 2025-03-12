@@ -21,6 +21,8 @@ Presently, it provides:
 - [indexed dictionaries], including an implementation of the [Elias–Fano
   representation of monotone sequences] and [lists of strings compressed by
   prefix omission].
+- New state-of-the-arc structures for [static functions] and [static filters],
+  scaling to trillions of keys, and providing very fast queries.
 
 The focus is on efficiency (in particular, there are unchecked versions of all
 methods) and on flexible composability (e.g., you can fine-tune your Elias–Fano
@@ -145,3 +147,6 @@ Union nor the Italian MUR can be held responsible for them
 [`Rank9`]: <https://docs.rs/sux/latest/sux/rank_sel/struct.Rank9.html>
 [`SelectSmall`]: <https://docs.rs/sux/latest/sux/rank_sel/struct.SelectSmall.html>
 [`SelectAdapt`]: <https://docs.rs/sux/latest/sux/rank_sel/struct.SelectAdapt.html>
+[static functions]: <https://docs.rs/sux/latest/sux/func/vfunc/struct.VFunc.html>
+[static filters]: <https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html>
+
