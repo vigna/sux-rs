@@ -10,8 +10,8 @@
 //!
 //! Traits and types in this module make it possible to accumulate key
 //! signatures (i.e., random-looking hashes associated to keys) and associated
-//! values, grouping them in different disk buffers by the high bits of the
-//! hash.
+//! values, grouping them in different buffers (on disk or in core memory) by
+//! the high bits of the hash.
 //!
 //! A [`SigStore`] acts as a builder for a [`ShardStore`]: it accepts
 //! [signature/value pairs](SigVal) in any order, and when you call
@@ -66,7 +66,7 @@ use std::{
 
 /// A trait for types that can be used as signatures.
 pub trait Sig: ZeroCopy + Default + PartialEq + Eq + std::fmt::Debug {
-    /// Extract high bits from  the signature.
+    /// Extracts high bits from  the signature.
     ///
     /// These bits are used to shard elements. Note that `high_bits` can be 0,
     /// but it is guaranteed to be less than 64.
@@ -77,22 +77,11 @@ pub trait Sig: ZeroCopy + Default + PartialEq + Eq + std::fmt::Debug {
     /// high_bits) - 1`.
     fn high_bits(&self, high_bits: u32, mask: u64) -> u64;
 
-    /// Extract a 64-bit signature.
-    ///
-    /// This method is used to build filters. It is masked to
-    /// obtain a value to associate with a key.
+    /// Extracts a 64-bit signature.
+    /// 
+    /// This method is useful to obtain a 64-bit signature
+    /// independently of the specific type of signature.
     fn sig_u64(&self) -> u64;
-}
-
-/// Avalanches bits using the finalization step of Austin Appleby's
-/// [MurmurHash3](http://code.google.com/p/smhasher/).
-const fn mix64(mut k: u64) -> u64 {
-    k ^= k >> 33;
-    k = k.overflowing_mul(0xff51_afd7_ed55_8ccd).0;
-    k ^= k >> 33;
-    k = k.overflowing_mul(0xc4ce_b9fe_1a85_ec53).0;
-    k ^= k >> 33;
-    k
 }
 
 impl Sig for [u64; 2] {
@@ -104,7 +93,7 @@ impl Sig for [u64; 2] {
 
     #[inline(always)]
     fn sig_u64(&self) -> u64 {
-        mix64(self[1])
+        self[0] ^ self[1] 
     }
 }
 
@@ -117,7 +106,7 @@ impl Sig for [u64; 1] {
 
     #[inline(always)]
     fn sig_u64(&self) -> u64 {
-        mix64(self[0])
+        self[0]
     }
 }
 
