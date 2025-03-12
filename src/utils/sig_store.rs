@@ -330,7 +330,7 @@ macro_rules! to_sig_slice {
     ($($ty:ty),*) => {$(
         impl ToSig<[u64; 2]> for &[$ty] {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
-                // Alignemnt to u8 never fails or leave trailing/leading bytes
+                // Alignment to u8 never fails or leave trailing/leading bytes
                 let bytes = unsafe {key.borrow().align_to::<u8>().1 };
                 let mut rapid0 = RapidInlineHasher::new(seed);
                 let mut rapid1 = RapidInlineHasher::new(!seed);
@@ -341,7 +341,7 @@ macro_rules! to_sig_slice {
         }
         impl ToSig<[u64;1]> for &[$ty] {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
-                // Alignemnt to u8 never fails or leave trailing/leading bytes
+                // Alignment to u8 never fails or leave trailing/leading bytes
                 let bytes = unsafe {key.borrow().align_to::<u8>().1 };
                 let mut rapid = RapidInlineHasher::new(seed);
                 rapid.write(&bytes);
@@ -386,7 +386,7 @@ pub trait SigStore<S: Sig + ZeroCopy, V: ZeroCopy> {
 
     /// The maximum number of bits whose count we keep track of.
     ///
-    /// Sharding cannot hppen with more bits than this.
+    /// Sharding cannot happen with more bits than this.
     fn max_shard_high_bits(&self) -> u32;
 }
 
