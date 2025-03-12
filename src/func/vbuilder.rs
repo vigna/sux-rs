@@ -33,7 +33,6 @@ use std::slice::Iter;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tempfile::TempDir;
 
 use super::shard_edge::FuseLge3Shards;
 
@@ -496,7 +495,7 @@ where
         for<'a> ShardData<'a, W, Box<[W]>>: Send,
     {
         let filter_mask = W::MAX;
-        let get_val = |sig_val: &SigVal<S, EmptyVal>| sig_val.sig.sig_u64().cast();
+        let get_val = |sig_val: &SigVal<S, EmptyVal>| mix64(sig_val.sig.sig_u64()).cast();
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
 
         Ok(VFilter {
@@ -560,7 +559,7 @@ where
         assert!(filter_bits > 0);
         assert!(filter_bits <= W::BITS as u32);
         let filter_mask = W::MAX >> (W::BITS as u32 - filter_bits);
-        let get_val = |sig_val: &SigVal<S, EmptyVal>| sig_val.sig.sig_u64().cast() & filter_mask;
+        let get_val = |sig_val: &SigVal<S, EmptyVal>| mix64(sig_val.sig.sig_u64()).cast() & filter_mask;
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
 
         Ok(VFilter {
@@ -596,7 +595,8 @@ impl<
     /// is provided by the `get_val` function, which is called to extract the
     /// value from the signature/value pair`; in the case of functions it
     /// returns the value stored in the signature/value pair, and in the case of
-    /// filters it returns the lower bits of [`SigVal::sig_u64`].
+    /// filters it returns the lower bits of [`SigVal::sig_u64`] mixed with the
+    /// [`mix64`](mix64) function.
     fn build_loop<T: ?Sized + ToSig<S> + std::fmt::Debug, V: ZeroCopy + Default + Send + Sync>(
         &mut self,
         mut keys: impl RewindableIoLender<T>,
