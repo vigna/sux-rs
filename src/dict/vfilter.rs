@@ -20,23 +20,30 @@ use std::ops::Index;
 ///
 /// Instances of this structure are immutable; they are built using a
 /// [`VBuilder`](crate::func::VBuilder) and can be serialized using
-/// [ε-serde](`epserde`).
-///
+/// [ε-serde](`epserde`). They contain a mapping from keys to hashes stored in a
+/// [`VFunc`]; [`contains`](VFilter::contains) checks that the hash of a key is
+/// equal of the hash stored by the function for the same key.
+/// 
+/// Please read the [`VFunc`] documentation for more information about the space
+/// usage and the ways in which a filter can be built. A construction time you
+/// have to choose a number *b* of hash bits per key, and the filter precision
+/// (false-positive rate) will be 2⁻*ᵇ*.
+/// 
 /// Note that this structure implements the [`Index`] trait, which provides a
 /// convenient access to the filter. Please see the documentation of
 /// [`VBuilder`](crate::func::VBuilder) for examples.
 ///
 /// # Generics
 ///
-/// * `W`: The output type. See the discussion about the generic `D` of
-///        [`VFunc`].
-/// * `F`: The type of [`VFunc`] used to store the mapping from keys to
-///        signatures. This type will also imply the type of the keys.
+/// * `W`: The type of the hashes associated to keys. See the discussion about
+///        the generic `D` of [`VFunc`].
+/// * `F`: The type of [`VFunc`] used to store the mapping from keys to hashes.
+///        This type will also imply the type of the keys.
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFilter<W: ZeroCopy + Word, F> {
     pub(crate) func: F,
     pub(crate) filter_mask: W,
-    pub(crate) sig_bits: u32,
+    pub(crate) hash_bits: u32,
 }
 
 impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
@@ -44,8 +51,8 @@ impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: S
 where
     u64: CastableInto<W>,
 {
-    /// Return the value associated with the given signature by the underlying
-    /// function, or a random value if the signature is not the signature of a
+    /// Returns the hash associated with the given signature by the underlying
+    /// function, or a random hash if the signature is not the signature of a
     /// key .
     ///
     /// The user should not normally call this method, but rather
@@ -55,8 +62,8 @@ where
         self.func.get_by_sig(sig)
     }
 
-    /// Return the value associated with the given key by the underlying
-    /// function, or a random value if the key is not present.
+    /// Returns the hash associated with the given key by the underlying
+    /// function, or a random hash if the key is not present.
     ///
     /// The user should not normally call this method, but rather
     /// [`contains`](VFilter::contains).
@@ -65,7 +72,7 @@ where
         self.func.get(key)
     }
 
-    /// Return whether a signature is contained in the filter.
+    /// Returns whether a signature is contained in the filter.
     ///
     /// The user should not normally call this method, but rather
     /// [`contains`](VFilter::contains).
@@ -74,28 +81,27 @@ where
         self.func.get_by_sig(sig) == mix64(sig.sig_u64()).cast() & self.filter_mask
     }
 
-    /// Return whether a key is contained in the filter.
+    /// Returns whether a key is contained in the filter.
     #[inline]
     pub fn contains(&self, key: impl Borrow<T>) -> bool {
         self.contains_by_sig(T::to_sig(key.borrow(), self.func.seed))
     }
 
-    /// Return the number of keys in the filter.
+    /// Returns the number of keys in the filter.
     pub fn len(&self) -> usize {
         self.func.len()
     }
 
-    /// Return whether the function has no keys.
+    /// Returns whether the function has no keys.
     pub fn is_empty(&self) -> bool {
         self.func.is_empty()
     }
 
-    /// Return the number of signature bits.
-    ///
-    /// contained in the filter. The filter precision is
-    /// thus 2<sup>-`sig_bits`</sup>.
-    pub fn sig_bits(&self) -> u32 {
-        self.sig_bits
+    /// Returns the number bits of the hash associated with keys.
+    /// 
+    /// The filter precision (false-positive rate) is 2<sup>-`hash_bits`</sup>.
+    pub fn hash_bits(&self) -> u32 {
+        self.hash_bits
     }
 }
 

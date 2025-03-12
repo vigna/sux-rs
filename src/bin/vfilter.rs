@@ -34,7 +34,7 @@ struct Args {
     n: usize,
     /// An optional name for the ε-serde serialized function.
     filter: Option<String>,
-    /// The number of bits of the signatures.
+    /// The number of bits of the hashes used by the filter.
     #[arg(short, long, default_value_t = 8)]
     bits: u32,
     #[arg(short, long)]

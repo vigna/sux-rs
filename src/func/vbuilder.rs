@@ -507,7 +507,7 @@ where
                 pl,
             )?,
             filter_mask,
-            sig_bits: W::BITS as u32,
+            hash_bits: W::BITS as u32,
         })
     }
 }
@@ -571,7 +571,7 @@ where
                 pl,
             )?,
             filter_mask,
-            sig_bits: filter_bits,
+            hash_bits: filter_bits,
         })
     }
 }

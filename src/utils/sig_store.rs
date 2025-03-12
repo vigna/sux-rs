@@ -79,8 +79,12 @@ pub trait Sig: ZeroCopy + Default + PartialEq + Eq + std::fmt::Debug {
 
     /// Extracts a 64-bit signature.
     /// 
-    /// This method is useful to obtain a 64-bit signature
-    /// independently of the specific type of signature.
+    /// This method is useful to obtain a 64-bit signature independently of the
+    /// specific type of signature.
+    /// 
+    /// Note that this value could be equal to the signature itself. If you are
+    /// reusing the same signature for different purposes, you should mix
+    /// thoroughly this value (see, e.g., [`mix64`](crate::utils::mix64)).
     fn sig_u64(&self) -> u64;
 }
 
@@ -138,6 +142,8 @@ impl<V: ZeroCopy> RadixKey for SigVal<[u64; 1], V> {
 #[derive(Epserde, Debug, Clone, Copy, Default, MemDbg, MemSize)]
 #[repr(C)]
 #[zero_copy]
+/// A newtype around `()` that is used to implement [`BitXor`] and
+/// [`BitXorAssign`] as no-ops.
 pub struct EmptyVal(());
 
 impl BitXor for EmptyVal {
@@ -198,7 +204,7 @@ impl<V: ZeroCopy + BitXorAssign> BitXorAssign<SigVal<[u64; 2], V>> for SigVal<[u
     }
 }
 
-/// Trait for types that must be turned into a signature.
+/// Trait for types that can be turned into a signature.
 ///
 /// We provide implementations for all primitive types, `str`, `String`, `&str`,
 /// `&String`, and slices of primitive types, by turning them into byte and
@@ -351,11 +357,11 @@ to_sig_slice!(isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
 pub trait SigStore<S: Sig + ZeroCopy, V: ZeroCopy> {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    /// Try to add a new signature/value pair to the store.
+    /// Tries to add a new signature/value pair to the store.
     fn try_push(&mut self, sig_val: SigVal<S, V>) -> Result<(), Self::Error>;
 
     type ShardStore: ShardStore<S, V> + Send + Sync;
-    /// Turn this store into a [`ShardStore`] whose shards are defined by the
+    /// Turns this store into a [`ShardStore`] whose shards are defined by the
     /// `shard_high_bits` high bits of the signatures.
     ///
     /// # Panics
@@ -365,15 +371,15 @@ pub trait SigStore<S: Sig + ZeroCopy, V: ZeroCopy> {
     /// will panic.
     fn into_shard_store(self, shard_high_bits: u32) -> Result<Self::ShardStore>;
 
-    /// Return the number of signature/value pairs added to the store so far.
+    /// Returns the number of signature/value pairs added to the store so far.
     fn len(&self) -> usize;
 
-    /// Return true if no signature/value pairs have been added to the store.
+    /// Returns true if no signature/value pairs have been added to the store.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// The maximum number of bits whose count we keep track of.
+    /// Returns the maximum number of high bits whose count we keep track of.
     ///
     /// Sharding cannot happen with more bits than this.
     fn max_shard_high_bits(&self) -> u32;
@@ -385,7 +391,8 @@ pub trait SigStore<S: Sig + ZeroCopy, V: ZeroCopy> {
 /// An implementation of [`SigStore`] that accumulates signature/value pairs in
 /// memory or on disk.
 ///
-/// See the [module documentation](crate::utils::sig_store) for more information.
+/// See the [module documentation](crate::utils::sig_store) for more
+/// information.
 #[derive(Debug)]
 pub struct SigStoreImpl<S, V, B> {
     /// Number of keys added so far.
@@ -411,7 +418,7 @@ pub struct SigStoreImpl<S, V, B> {
     _marker: PhantomData<(S, V)>,
 }
 
-/// Create a new on-disk store with 2<sup>`buckets_high_bits`</sup> buckets,
+/// Creates a new on-disk store with 2<sup>`buckets_high_bits`</sup> buckets,
 /// keeping counts for shards defined by at most `max_shard_high_bits` high
 /// bits.
 ///
@@ -450,7 +457,7 @@ pub fn new_offline<S: ZeroCopy + Sig, V: ZeroCopy>(
     })
 }
 
-/// Create a new in-memory store with 2<sup>`buckets_high_bits`</sup> buckets,
+/// Creates a new in-memory store with 2<sup>`buckets_high_bits`</sup> buckets,
 /// keeping counts for shards defined by at most `max_shard_high_bits` high
 /// bits.
 ///
@@ -627,15 +634,15 @@ pub trait ShardStore<S: Sig + ZeroCopy, V: ZeroCopy> {
     where
         Self: 'a;
 
-    /// Return the shard sizes.
+    /// Returns the shard sizes.
     fn shard_sizes(&self) -> &[usize];
 
-    /// Return an iterator on shards.
+    /// Returns an iterator on shards.
     ///
     /// This method can be called multiple times.
     fn iter(&mut self) -> Self::ShardIterator<'_>;
 
-    /// Return the number of signature/value pairs in the store.
+    /// Returns the number of signature/value pairs in the store.
     fn len(&self) -> usize {
         self.shard_sizes().iter().sum()
     }
@@ -643,7 +650,8 @@ pub trait ShardStore<S: Sig + ZeroCopy, V: ZeroCopy> {
 
 /// An implementation of [`ShardStore`].
 ///
-/// See the [module documentation](crate::utils::sig_store) for more information.
+/// See the [module documentation](crate::utils::sig_store) for more
+/// information.
 #[derive(Debug)]
 pub struct ShardStoreImpl<S, V, B> {
     /// The number of high bits used for bucket sorting.
