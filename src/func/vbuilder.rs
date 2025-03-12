@@ -48,7 +48,7 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// space will be allocated in core memory for signatures and associated values
 /// for all keys; in the second case, such information will be stored in a
 /// number of on-disk buckets.
-/// 
+///
 /// There are several setters: for example, you can set [set the maximum number of
 /// threads](VBuilder::max_num_threads).
 ///
@@ -70,12 +70,12 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// easy ways to build such lenders, even starting from compressed files of
 /// UTF-8 strings. The type of the keys of the resulting filter or function will
 /// be the type of the elements of the [`RewindableIoLender`].
-/// 
+///
 /// # Implementation Notes
-/// 
+///
 /// By default, we assume that the maximum number of vertices in a shard
 /// is 2³², which is sufficient up to hundreds of trillion of keys. If for
-/// some reason you need to build large structures without sharding, 
+/// some reason you need to build large structures without sharding,
 /// you can enable the `big_shards` feature.
 ///
 /// # Examples
@@ -152,7 +152,7 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// #     Ok(())
 /// # }
 /// ```
-/// 
+///
 /// Since the keys are very few, we can switch to 64-bit
 /// signatures, and no shards, which will yield faster
 /// queries:
@@ -597,7 +597,8 @@ where
         assert!(filter_bits > 0);
         assert!(filter_bits <= W::BITS as u32);
         let filter_mask = W::MAX >> (W::BITS as u32 - filter_bits);
-        let get_val = |sig_val: &SigVal<S, EmptyVal>| mix64(sig_val.sig.sig_u64()).cast() & filter_mask;
+        let get_val =
+            |sig_val: &SigVal<S, EmptyVal>| mix64(sig_val.sig.sig_u64()).cast() & filter_mask;
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
 
         Ok(VFilter {
@@ -1155,7 +1156,7 @@ impl<
     /// as the latter requires edge indices.
     ///
     /// This method shares the same logic as [`VBuilder::peel_shard_by_sig_vals`],
-    /// 
+    ///
     /// In case the feature `big_shards` is enabled, this method uses about 18
     /// bytes per key.
     fn peel_shard_by_edge_indices<
