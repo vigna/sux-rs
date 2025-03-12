@@ -1148,16 +1148,18 @@ impl<
             return Err(());
         }
 
-        pl.start(format!(
-            "Peeling graph for shard {}/{} by edge indices...",
-            shard_index + 1,
-            self.shard_edge.num_shards()
-        ));
         // The upper stack contains vertices to be visited. The lower stack
         // contains peeled edges. The sum of the lengths of these two items
         // cannot exceed the number of vertices.
         let mut double_stack = DoubleStack::<EdgeIndex>::new(num_vertices);
         let mut sides_stack = Vec::<u8>::new();
+
+        pl.start(format!(
+            "Peeling graph for shard {}/{} by edge indices...",
+            shard_index + 1,
+            self.shard_edge.num_shards()
+        ));
+
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
             if degree == 1 {
@@ -1303,15 +1305,15 @@ impl<
             return Err(());
         }
 
+        let mut sig_vals_stack = FastStack::<SigVal<S, V>>::new(shard.len());
+        let mut sides_stack = FastStack::<u8>::new(shard.len());
+        let mut visit_stack = Vec::<EdgeIndex>::with_capacity(num_vertices / 3);
+
         pl.start(format!(
             "Peeling graph for shard {}/{} by hashes...",
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
-
-        let mut sig_vals_stack = FastStack::<SigVal<S, V>>::new(shard.len());
-        let mut sides_stack = FastStack::<u8>::new(shard.len());
-        let mut visit_stack = Vec::<EdgeIndex>::with_capacity(num_vertices / 3);
 
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
