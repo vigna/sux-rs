@@ -69,7 +69,7 @@ fuzz = ["dep:arbitrary"]
 slow_tests = []          # Run slow tests (use --release)
 mwhc = []				 # Compile MWHC data structures (mainly for benchmarking)
 no_logging = []		     # Disable logging for binaries that build functions and filters (for benchmarking)
-usize_stack = []         # Use a usize stack for peel-by-hash, lifting the 32-bit limit on the number of vertices per shard
+big_shards = []          # Use a usize to represent edges and vertices (mostly for benchmarking)
 
 [profile.release]
 opt-level = 3 # like --release

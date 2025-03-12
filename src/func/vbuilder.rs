@@ -251,11 +251,16 @@ enum PeelResult<
         /// The data.
         data: ShardData<'a, W, D>,
         /// The double stack whose upper stack contains the peeled edges.
-        double_stack: DoubleStack<u32>,
+        double_stack: DoubleStack<EdgeIndex>,
         /// The sides stack.
         sides_stack: Vec<u8>,
     },
 }
+
+#[cfg(not(feature = "big_shards"))]
+type EdgeIndex = u32;
+#[cfg(feature = "big_shards")]
+type EdgeIndex = usize;
 
 /// A graph represented compactly.
 ///
@@ -332,7 +337,7 @@ impl<X: BitXor + BitXorAssign + Default + Copy> XorGraph<X> {
     }
 
     #[inline(always)]
-    pub fn edge_index_and_side(&self, v: usize) -> (X, usize) {
+    pub fn edge_and_side(&self, v: usize) -> (X, usize) {
         debug_assert!(self.degree(v) < 2);
         (self.edges[v] as _, (self.degrees_sides[v] & 0b11) as _)
     }
@@ -1124,10 +1129,10 @@ impl<
             self.shard_edge.num_shards()
         ));
 
-        let mut xor_graph = XorGraph::<u32>::new(num_vertices);
+        let mut xor_graph = XorGraph::<EdgeIndex>::new(num_vertices);
         for (edge_index, sig_val) in shard.iter().enumerate() {
             for (side, &v) in self.shard_edge.local_edge(sig_val.sig).iter().enumerate() {
-                xor_graph.add(v, edge_index as u32, side);
+                xor_graph.add(v, edge_index as _, side);
             }
         }
         pl.done_with_count(shard.len());
@@ -1151,12 +1156,12 @@ impl<
         // The upper stack contains vertices to be visited. The lower stack
         // contains peeled edges. The sum of the lengths of these two items
         // cannot exceed the number of vertices.
-        let mut double_stack = DoubleStack::<u32>::new(num_vertices);
+        let mut double_stack = DoubleStack::<EdgeIndex>::new(num_vertices);
         let mut sides_stack = Vec::<u8>::new();
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
             if degree == 1 {
-                double_stack.push_lower(v as u32);
+                double_stack.push_lower(v as _);
             }
         }
 
@@ -1166,7 +1171,7 @@ impl<
                 continue;
             }
             debug_assert!(xor_graph.degree(v) == 1);
-            let (edge_index, side) = xor_graph.edge_index_and_side(v);
+            let (edge_index, side) = xor_graph.edge_and_side(v);
             xor_graph.zero(v);
             double_stack.push_upper(edge_index);
             sides_stack.push(side as u8);
@@ -1176,31 +1181,31 @@ impl<
             match side {
                 0 => {
                     if xor_graph.degree(e[1]) == 2 {
-                        double_stack.push_lower(e[1] as u32);
+                        double_stack.push_lower(e[1] as _);
                     }
                     xor_graph.remove(e[1], edge_index, 1);
                     if xor_graph.degree(e[2]) == 2 {
-                        double_stack.push_lower(e[2] as u32);
+                        double_stack.push_lower(e[2] as _);
                     }
                     xor_graph.remove(e[2], edge_index, 2);
                 }
                 1 => {
                     if xor_graph.degree(e[0]) == 2 {
-                        double_stack.push_lower(e[0] as u32);
+                        double_stack.push_lower(e[0] as _);
                     }
                     xor_graph.remove(e[0], edge_index, 0);
                     if xor_graph.degree(e[2]) == 2 {
-                        double_stack.push_lower(e[2] as u32);
+                        double_stack.push_lower(e[2] as _);
                     }
                     xor_graph.remove(e[2], edge_index, 2);
                 }
                 2 => {
                     if xor_graph.degree(e[0]) == 2 {
-                        double_stack.push_lower(e[0] as u32);
+                        double_stack.push_lower(e[0] as _);
                     }
                     xor_graph.remove(e[0], edge_index, 0);
                     if xor_graph.degree(e[1]) == 2 {
-                        double_stack.push_lower(e[1] as u32);
+                        double_stack.push_lower(e[1] as _);
                     }
                     xor_graph.remove(e[1], edge_index, 1);
                 }
@@ -1306,10 +1311,7 @@ impl<
 
         let mut sig_vals_stack = FastStack::<SigVal<S, V>>::new(shard.len());
         let mut sides_stack = FastStack::<u8>::new(shard.len());
-        #[cfg(feature = "usize_stack")]
-        let mut visit_stack = Vec::<usize>::with_capacity(num_vertices / 3);
-        #[cfg(not(feature = "usize_stack"))]
-        let mut visit_stack = Vec::<u32>::with_capacity(num_vertices / 3);
+        let mut visit_stack = Vec::<EdgeIndex>::with_capacity(num_vertices / 3);
 
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
@@ -1323,7 +1325,7 @@ impl<
             if xor_graph.degree(v) == 0 {
                 continue;
             }
-            let (sig_val, side) = xor_graph.edge_index_and_side(v);
+            let (sig_val, side) = xor_graph.edge_and_side(v);
             xor_graph.zero(v);
             sig_vals_stack.push(sig_val);
             sides_stack.push(side as u8);
