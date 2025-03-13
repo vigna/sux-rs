@@ -1126,12 +1126,12 @@ impl<
                                 }
                             }
                             shard[pos] = shard[shard.len() - 1];
-
-                            shard = &mut shard[..pos + 1];
+                            pos += 1;
                             pl.info(format_args!(
                                 "Duplicate hashes: {}",
-                                shard.len() - pos - 1
+                                shard.len() - pos
                             ));
+                            shard = &mut shard[..pos];
                         } else {
                             // Sorting the signatures increases locality
                             if self.shard_edge.num_sort_keys() != 1 {
