@@ -31,6 +31,16 @@ use mem_dbg::*;
 ///
 /// The implementation of the [`Display`] trait should return the relevant
 /// information about the sharding and edge logic.
+///
+/// Sometimes sorting signatures by a certain key improves performance when
+/// generating a hypergraph. In this case, the implementation of
+/// [`num_sort_keys`](ShardEdge::num_sort_keys) should return the number of keys
+/// used for sorting, and [`sort_key`](ShardEdge::sort_key) should return the
+/// key to be used for sorting.
+///
+/// Note that [`VBuilder`](crate::func::VBuilder) assumes internally that
+/// sorting the signatures themselves gives an order very similar to that
+/// obtained sorting by the key returned by [`sort_key`](ShardEdge::sort_key).
 pub trait ShardEdge<S, const K: usize>:
     Default
     + Display
@@ -74,8 +84,8 @@ pub trait ShardEdge<S, const K: usize>:
     /// method should return 1.
     fn num_sort_keys(&self) -> usize;
 
-    /// Returns the sort key for the given signature.
-    /// If not sorting is needed, this method should return 0.
+    /// Returns the sort key for the given signature. If not sorting is needed,
+    /// this method should return 0.
     fn sort_key(&self, sig: S) -> usize;
 
     /// Returns the number of shards.
@@ -391,7 +401,7 @@ impl Display for FuseLge3Shards {
         write!(
             f,
             "Fuse (shards) Number of shards: 2^{} Segment size: 2^{} Number of segments: {}",
-            ShardEdge::<[u64; 2], 3>::shard_high_bits(self),
+            self.shard_high_bits(),
             self.log2_seg_size,
             self.l + 2
         )
@@ -540,29 +550,6 @@ impl FuseLge3Shards {
         [v0, v1, v2]
     }
 
-    fn edge_1(
-        shard: usize,
-        shard_bits_shift: u32,
-        log2_seg_size: u32,
-        l: u32,
-        sig: [u64; 1],
-    ) -> [usize; 3] {
-        // Note that we're losing here a random bit at the bottom because we
-        // would need a right rotation of one to move exactly the shard high
-        // bits to the bottom, but in this way we save an operation, and there
-        // are enough random bits anyway.
-        let start = (shard * (l as usize + 2)) << log2_seg_size;
-        let v0 = start
-            + fixed_point_reduce_128!(sig[0].rotate_right(shard_bits_shift), l << log2_seg_size);
-        let seg_size = 1 << log2_seg_size;
-        let mut v1 = v0 + seg_size;
-        let mut v2 = v1 + seg_size;
-        let seg_size_mask = seg_size - 1;
-        v1 ^= (sig[0] as usize >> 18) & seg_size_mask;
-        v2 ^= (sig[0] as usize) & seg_size_mask;
-        [v0, v1, v2]
-    }
-
     fn _set_up_shards(&mut self, n: usize) {
         self.shard_bits_shift = 63
             - if n <= Self::MAX_LIN_SIZE {
@@ -642,55 +629,6 @@ impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
     #[inline(always)]
     fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
         FuseLge3Shards::edge_2(
-            self.shard(sig),
-            self.shard_bits_shift,
-            self.log2_seg_size,
-            self.l,
-            sig,
-        )
-    }
-}
-
-impl ShardEdge<[u64; 1], 3> for FuseLge3Shards {
-    fn set_up_shards(&mut self, n: usize) {
-        self._set_up_shards(n);
-    }
-
-    fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
-        self._set_up_graphs(n, max_shard)
-    }
-
-    #[inline(always)]
-    fn shard_high_bits(&self) -> u32 {
-        63 - self.shard_bits_shift
-    }
-
-    fn num_sort_keys(&self) -> usize {
-        self.l as usize
-    }
-
-    fn sort_key(&self, sig: [u64; 1]) -> usize {
-        fixed_point_reduce_128!(sig[0].rotate_right(self.shard_bits_shift), self.l)
-    }
-
-    #[inline(always)]
-    fn shard(&self, sig: [u64; 1]) -> usize {
-        (sig[0] >> self.shard_bits_shift >> 1) as usize
-    }
-
-    #[inline(always)]
-    fn num_vertices(&self) -> usize {
-        (self.l as usize + 2) << self.log2_seg_size
-    }
-
-    #[inline(always)]
-    fn local_edge(&self, sig: [u64; 1]) -> [usize; 3] {
-        FuseLge3Shards::edge_1(0, self.shard_bits_shift, self.log2_seg_size, self.l, sig)
-    }
-
-    #[inline(always)]
-    fn edge(&self, sig: [u64; 1]) -> [usize; 3] {
-        FuseLge3Shards::edge_1(
             self.shard(sig),
             self.shard_bits_shift,
             self.log2_seg_size,

@@ -56,7 +56,7 @@ struct Args {
     #[arg(long)]
     seed: Option<u64>,
     /// Use 64-bit signatures.
-    #[arg(long)]
+    #[arg(long, requires = "no_shards")]
     sig64: bool,
     /// Always use the peel-by-index algorithm (slower, requires less memory).
     #[arg(long)]
@@ -82,11 +82,7 @@ macro_rules! fuse {
                 $main::<$ty, [u64; 2], FuseLge3NoShards>($args)
             }
         } else {
-            if $args.sig64 {
-                $main::<$ty, [u64; 1], FuseLge3Shards>($args)
-            } else {
-                $main::<$ty, [u64; 2], FuseLge3Shards>($args)
-            }
+            $main::<$ty, [u64; 2], FuseLge3Shards>($args)
         }
     };
 }

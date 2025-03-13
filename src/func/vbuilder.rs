@@ -78,13 +78,6 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// of keys. If for some reason you need to build large structures without
 /// sharding, you can enable the `big_shards` feature.
 ///
-/// When building filters for more than 2³¹ keys using 64-bit signatures,
-/// duplicate signatures will be eliminated. This does not change the semantics
-/// of the filter, and extends the range of sizes that can be used with 64-bit
-/// signatures to several billion keys, albeit at some point the insufficient random
-/// bits yield duplicate edges. For functions, instead, duplicate signatures
-/// lead to try a different seed.
-///
 /// # Examples
 ///
 /// In this example, we build a function that maps each key to itself. Note that
@@ -1085,9 +1078,8 @@ impl<
                         ));
 
                         // Safety: only one thread may be accessing the shard
-                        let mut shard = &mut unsafe {
-                            &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>)
-                        }[..];
+                        let shard =
+                            unsafe { &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>) };
 
                         pl.start(format!(
                             "Sorting shard {}/{}...",
@@ -1095,15 +1087,7 @@ impl<
                             self.shard_edge.num_shards()
                         ));
 
-                        if self.check_dups
-                            || TypeId::of::<S>() == TypeId::of::<[u64; 1]>()
-                                && self.num_keys > 1 << 31
-                        {
-                            // Either we need to check for duplicates, or we are
-                            // building a filter with a shard with 64-bit
-                            // signatures and more than 2³¹ keys.  We need to
-                            // sort the signatures.
-                            //
+                        if self.check_dups {
                             // Note: here we are implicitly assuming that
                             // sorting by signature will also lead to a good
                             // locality, that is, that sorting by signature
@@ -1111,33 +1095,8 @@ impl<
                             // shard_edge.sort_key(sig).
                             shard.radix_sort_builder().with_low_mem_tuner().sort();
 
-                            if self.check_dups {
-                                if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
-                                    return Err(SolveError::DuplicateSignature);
-                                }
-                            } else {
-                                // We have to remove duplicate signatures. This
-                                // will not change the semantics of the filter
-                                // but will make the the graph peelable.
-
-                                let mut pos = 0;
-                                for i in 1..shard.len() {
-                                    if shard[i - 1].sig != shard[i].sig {
-                                        shard[pos] = shard[i - 1];
-                                        pos += 1;
-                                    }
-                                }
-                                shard[pos] = shard[shard.len() - 1];
-                                pos += 1;
-                                pl.info(format_args!(
-                                    "Duplicate signatures: {}",
-                                    shard.len() - pos
-                                ));
-                                if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
-                                    // It's a function, we cannot have duplicates
-                                    return Err(SolveError::DuplicateSignature);
-                                }
-                                shard = &mut shard[..pos];
+                            if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
+                                return Err(SolveError::DuplicateSignature);
                             }
                         } else {
                             // Sorting the signatures increases locality
