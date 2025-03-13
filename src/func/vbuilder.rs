@@ -839,7 +839,7 @@ impl<
                 self.bit_width,
                 self.shard_edge.num_vertices() * self.shard_edge.num_shards(),
             );
-            self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
+            self.try_build_from_shard_iter(seed, data, shard_store.into_iter(), get_val, pl)
                 .inspect(|_| {
                     info!(
                         "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",

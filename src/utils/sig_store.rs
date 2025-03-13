@@ -35,6 +35,11 @@
 //! the most efficient scenario is the one in which the number of buckets is
 //! equal to the number of shards.
 //!
+//! You can iterate over the shards in a [`ShardStore`] multiple times using the
+//! method [`iter`](ShardStore::iter), or just once using the method
+//! [`into_iter`](ShardStore::into_iter). In the latter case resources
+//! (i.e., files or memory) will be released as soon as they are consumed.
+//!
 //! The trait [`ToSig`] provides a standard way to generate signatures for a
 //! [`SigStore`]. Implementations are provided for signatures types `[u64;1]`
 //! and `[u64; 2]`. In the first case, after a few billion keys you will start
@@ -54,7 +59,7 @@ use mem_dbg::{MemDbg, MemSize};
 use rapidhash::RapidInlineHasher;
 use rdst::RadixKey;
 use std::{
-    borrow::Borrow,
+    borrow::{Borrow, BorrowMut},
     collections::VecDeque,
     fs::File,
     hash::Hasher,
@@ -634,6 +639,8 @@ pub trait ShardStore<S: Sig + ZeroCopy, V: ZeroCopy> {
     where
         Self: 'a;
 
+    type ShardIntoIterator: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync;
+
     /// Returns the shard sizes.
     fn shard_sizes(&self) -> &[usize];
 
@@ -641,6 +648,11 @@ pub trait ShardStore<S: Sig + ZeroCopy, V: ZeroCopy> {
     ///
     /// This method can be called multiple times.
     fn iter(&mut self) -> Self::ShardIterator<'_>;
+
+    /// Returns an iterator on shards, consuming self.
+    ///
+    /// This method can be called multiple times.
+    fn into_iter(self) -> Self::ShardIntoIterator;
 
     /// Returns the number of signature/value pairs in the store.
     fn len(&self) -> usize {
@@ -670,20 +682,35 @@ pub struct ShardStoreImpl<S, V, B> {
 impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync, B: Send + Sync> ShardStore<S, V>
     for ShardStoreImpl<S, V, B>
 where
-    for<'a> ShardIterator<'a, S, V, B>: Iterator<Item = Arc<Vec<SigVal<S, V>>>>,
+    for<'a> ShardIterator<S, V, B, Self>: Iterator<Item = Arc<Vec<SigVal<S, V>>>>,
+    for<'a> ShardIterator<S, V, B, &'a mut Self>: Iterator<Item = Arc<Vec<SigVal<S, V>>>>,
 {
     type ShardIterator<'a>
-        = ShardIterator<'a, S, V, B>
+        = ShardIterator<S, V, B, &'a mut Self>
     where
         B: 'a;
+
+    type ShardIntoIterator = ShardIterator<S, V, B, Self>;
 
     fn shard_sizes(&self) -> &[usize] {
         &self.shard_sizes
     }
 
-    fn iter(&mut self) -> ShardIterator<'_, S, V, B> {
+    fn iter(&mut self) -> ShardIterator<S, V, B, &'_ mut Self> {
         ShardIterator {
             store: self,
+            borrowed: true,
+            next_bucket: 0,
+            next_shard: 0,
+            shards: VecDeque::from(vec![]),
+            _marker: PhantomData,
+        }
+    }
+
+    fn into_iter<'a>(self) -> ShardIterator<S, V, B, Self> {
+        ShardIterator {
+            store: self,
+            borrowed: false,
             next_bucket: 0,
             next_shard: 0,
             shards: VecDeque::from(vec![]),
@@ -698,24 +725,28 @@ where
 /// shard is made by one or more buckets, it will aggregate them as necessary;
 /// if a bucket contains several shards, it will split the bucket into shards.
 #[derive(Debug)]
-pub struct ShardIterator<'a, S: ZeroCopy + Sig, V: ZeroCopy, B> {
-    store: &'a mut ShardStoreImpl<S, V, B>,
+pub struct ShardIterator<S: ZeroCopy + Sig, V: ZeroCopy, B, T: BorrowMut<ShardStoreImpl<S, V, B>>> {
+    store: T,
+    /// Whether the store is borrowed.
+    borrowed: bool,
     /// The next bucket to examine.
     next_bucket: usize,
     /// The next shard to return.
     next_shard: usize,
     /// The remaining shards to emit, if there are several shards per bucket.
     shards: VecDeque<Vec<SigVal<S, V>>>,
-    _marker: PhantomData<V>,
+    _marker: PhantomData<(B, V)>,
 }
 
-impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
-    for ShardIterator<'_, S, V, BufReader<File>>
+impl<
+        S: ZeroCopy + Sig + Send + Sync,
+        V: ZeroCopy + Send + Sync,
+        T: BorrowMut<ShardStoreImpl<S, V, BufReader<File>>>,
+    > Iterator for ShardIterator<S, V, BufReader<File>, T>
 {
     type Item = Arc<Vec<SigVal<S, V>>>;
-
     fn next(&mut self) -> Option<Self::Item> {
-        let store = &mut self.store;
+        let store = self.store.borrow_mut();
         if store.bucket_high_bits >= store.shard_high_bits {
             // We need to aggregate one or more buckets to get a shard
             if self.next_bucket >= store.buckets.len() {
@@ -740,7 +771,10 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
                 assert!(post.is_empty());
                 for i in self.next_bucket..self.next_bucket + to_aggr {
                     let bytes = store.buf_sizes[i] * core::mem::size_of::<SigVal<S, V>>();
+                    store.buckets[i].seek(SeekFrom::Start(0)).unwrap();
                     store.buckets[i].read_exact(&mut buf[..bytes]).unwrap();
+                    // TODO: find a way to truncate / delete files
+                    // in the borrowed case
                     buf = &mut buf[bytes..];
                 }
             }
@@ -811,20 +845,28 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
     }
 }
 
-impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
-    for ShardIterator<'_, S, V, Arc<Vec<SigVal<S, V>>>>
+impl<
+        S: ZeroCopy + Sig + Send + Sync,
+        V: ZeroCopy + Send + Sync,
+        T: BorrowMut<ShardStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>>,
+    > Iterator for ShardIterator<S, V, Arc<Vec<SigVal<S, V>>>, T>
 {
     type Item = Arc<Vec<SigVal<S, V>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let store = &mut self.store;
+        let store = self.store.borrow_mut();
         if store.bucket_high_bits == store.shard_high_bits {
             // Shards and buckets are the same
             if self.next_bucket >= store.buckets.len() {
                 return None;
             }
 
-            let res = store.buckets[self.next_bucket].clone();
+            let res = if self.borrowed {
+                store.buckets[self.next_bucket].clone()
+            } else {
+                std::mem::take(&mut store.buckets[self.next_bucket])
+            };
+
             self.next_bucket += 1;
             self.next_shard += 1;
             Some(res)
@@ -839,8 +881,10 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
             let len = store.shard_sizes[self.next_shard];
             let mut shard = Vec::with_capacity(len);
 
-            for i in self.next_bucket..self.next_bucket + to_aggr {
-                shard.extend(store.buckets[i].iter());
+            if self.borrowed {
+                shard.extend(store.buckets[self.next_bucket].iter());
+            } else {
+                shard.extend(std::mem::take(&mut store.buckets[self.next_bucket]).iter());
             }
 
             let res = shard;
@@ -865,10 +909,13 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
 
                 let shard_mask = (1 << store.shard_high_bits) - 1;
                 // We move each signature/value pair into its shard
-                for &mut v in Arc::get_mut(&mut store.buckets[self.next_bucket]).unwrap() {
+                for &v in store.buckets[self.next_bucket].iter() {
                     let shard =
                         v.sig.high_bits(store.shard_high_bits, shard_mask) as usize - shard_offset;
                     self.shards[shard].push(v);
+                }
+                if !self.borrowed {
+                    drop(std::mem::take(&mut store.buckets[self.next_bucket]));
                 }
                 self.next_bucket += 1;
             }
@@ -884,14 +931,18 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> Iterator
     }
 }
 
-impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync, B: Send + Sync> ExactSizeIterator
-    for ShardIterator<'_, S, V, B>
+impl<
+        S: ZeroCopy + Sig + Send + Sync,
+        V: ZeroCopy + Send + Sync,
+        B: Send + Sync,
+        T: BorrowMut<ShardStoreImpl<S, V, B>>,
+    > ExactSizeIterator for ShardIterator<S, V, B, T>
 where
-    for<'a> ShardIterator<'a, S, V, B>: Iterator,
+    for<'a> ShardIterator<S, V, B, T>: Iterator,
 {
     #[inline(always)]
     fn len(&self) -> usize {
-        self.store.shard_sizes.len() - self.next_shard
+        self.store.borrow().shard_sizes.len() - self.next_shard
     }
 }
 
@@ -924,8 +975,23 @@ mod tests {
             })?;
         }
         let mut shard_store = sig_store.into_shard_store(shard_high_bits).unwrap();
+
+        for _ in 0..2 {
+            let mut count = 0;
+            for shard in shard_store.iter() {
+                for &w in shard.iter() {
+                    assert_eq!(
+                        count,
+                        w.sig.high_bits(shard_high_bits, (1 << shard_high_bits) - 1)
+                    );
+                }
+                count += 1;
+            }
+            assert_eq!(count, 1 << shard_high_bits);
+        }
+
         let mut count = 0;
-        for shard in shard_store.iter() {
+        for shard in shard_store.into_iter() {
             for &w in shard.iter() {
                 assert_eq!(
                     count,
