@@ -282,7 +282,7 @@ enum PeelResult<
         /// The shard index.
         shard_index: usize,
         /// The shard.
-        shard: &'a [SigVal<S, V>],
+        shard: Arc<Vec<SigVal<S, V>>>,
         /// The data.
         data: ShardData<'a, W, D>,
         /// The double stack whose upper stack contains the peeled edges.
@@ -812,7 +812,7 @@ impl<
 
         let start = Instant::now();
 
-        let mut shard_store = sig_store.into_shard_store(self.shard_edge.shard_high_bits())?;
+        let shard_store = sig_store.into_shard_store(self.shard_edge.shard_high_bits())?;
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
 
         self.shard_edge.set_up_shards(self.num_keys);
@@ -1029,7 +1029,7 @@ impl<
         &mut self,
         shard_iter: I,
         data: &'b mut D,
-        solve_shard: impl Fn(&Self, usize, &'b mut [SigVal<S, V>], ShardData<'b, W, D>, &mut P) -> Result<(), ()>
+        solve_shard: impl Fn(&Self, usize, Arc<Vec<SigVal<S, V>>>, ShardData<'b, W, D>, &mut P) -> Result<(), ()>
             + Send
             + Sync,
         thread_pool: &rayon::ThreadPool,
@@ -1077,31 +1077,34 @@ impl<
                             self.shard_edge.num_shards()
                         ));
 
-                        // Safety: only one thread may be accessing the shard
-                        let shard =
-                            unsafe { &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>) };
-
                         pl.start(format!(
                             "Sorting shard {}/{}...",
                             shard_index + 1,
                             self.shard_edge.num_shards()
                         ));
 
-                        if self.check_dups {
-                            // Note: here we are implicitly assuming that
-                            // sorting by signature will also lead to a good
-                            // locality, that is, that sorting by signature
-                            // gives a similar order to sorting by
-                            // shard_edge.sort_key(sig).
-                            shard.radix_sort_builder().with_low_mem_tuner().sort();
+                        {
+                            // SAFETY: only one thread may be accessing the shard
+                            let shard =
+                                unsafe { &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>) };
 
-                            if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
-                                return Err(SolveError::DuplicateSignature);
-                            }
-                        } else {
-                            // Sorting the signatures increases locality
-                            if self.shard_edge.num_sort_keys() != 1 {
-                                self.count_sort::<V>(shard);
+                            if self.check_dups {
+                                // Note: here we are implicitly assuming that
+                                // sorting by signature will also lead to a good
+                                // locality, that is, that sorting by signature
+                                // gives a similar order to sorting by
+                                // shard_edge.sort_key(sig).
+
+                                shard.radix_sort_builder().with_low_mem_tuner().sort();
+
+                                if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
+                                    return Err(SolveError::DuplicateSignature);
+                                }
+                            } else {
+                                // Sorting the signatures increases locality
+                                if self.shard_edge.num_sort_keys() != 1 {
+                                    self.count_sort::<V>(shard);
+                                }
                             }
                         }
 
@@ -1170,7 +1173,7 @@ impl<
     >(
         &self,
         shard_index: usize,
-        shard: &'a [SigVal<S, V>],
+        shard: Arc<Vec<SigVal<S, V>>>,
         data: ShardData<'a, W, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
@@ -1324,7 +1327,7 @@ impl<
     >(
         &self,
         shard_index: usize,
-        shard: &'a [SigVal<S, V>],
+        shard: Arc<Vec<SigVal<S, V>>>,
         data: ShardData<'a, W, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
@@ -1333,7 +1336,7 @@ impl<
         SigVal<S, V>: BitXor + BitXorAssign + Default,
     {
         let num_vertices = self.shard_edge.num_vertices();
-
+        let shard_len = shard.len();
         pl.start(format!(
             "Generating graph for shard {}/{}...",
             shard_index + 1,
@@ -1341,12 +1344,15 @@ impl<
         ));
 
         let mut xor_graph = XorGraph::<SigVal<S, V>>::new(num_vertices);
-        for &sig_val in shard {
+        for &sig_val in shard.iter() {
             for (side, &v) in self.shard_edge.local_edge(sig_val.sig).iter().enumerate() {
                 xor_graph.add(v, sig_val, side);
             }
         }
         pl.done_with_count(shard.len());
+        // We are using a consuming iterator over the signature store, so this
+        // drop will free the memory used by the signatures
+        drop(shard);
 
         assert!(
             !xor_graph.overflow,
@@ -1359,8 +1365,8 @@ impl<
             return Err(());
         }
 
-        let mut sig_vals_stack = FastStack::<SigVal<S, V>>::new(shard.len());
-        let mut sides_stack = FastStack::<u8>::new(shard.len());
+        let mut sig_vals_stack = FastStack::<SigVal<S, V>>::new(shard_len);
+        let mut sides_stack = FastStack::<u8>::new(shard_len);
         let mut visit_stack = Vec::<GraphIndex>::with_capacity(num_vertices / 3);
 
         pl.start(format!(
@@ -1427,13 +1433,13 @@ impl<
 
         pl.done();
 
-        if shard.len() != sig_vals_stack.len() {
+        if shard_len != sig_vals_stack.len() {
             pl.info(format_args!(
                 "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
                 shard_index + 1,
                 self.shard_edge.num_shards(),
                 sig_vals_stack.len(),
-                shard.len(),
+                shard_len
             ));
             return Err(());
         }
@@ -1465,7 +1471,7 @@ impl<
     fn lge_shard<'a, V: ZeroCopy + Send + Sync>(
         &self,
         shard_index: usize,
-        shard: &'a [SigVal<S, V>],
+        shard: Arc<Vec<SigVal<S, V>>>,
         data: ShardData<'a, W, D>,
         get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
         pl: &mut impl ProgressLog,
