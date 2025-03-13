@@ -1061,9 +1061,11 @@ impl<
                 .try_for_each_with(
                     (main_pl.clone(), pl.clone()),
                     |(main_pl, pl), (shard_index, (shard, mut data))| {
+
                         if shard.len() == 0 {
                             return Ok(());
                         }
+                        
                         main_pl.info(format_args!(
                             "Analyzing shard {}/{}...",
                             shard_index + 1,
@@ -1322,7 +1324,7 @@ impl<
     /// It uses a [`SigVal`] and a byte per vertex (for the [`XorGraph`]), a
     /// [`GraphIndex`] per vertex (for visit stack, albeit usually the stack
     /// never contains more than a third of the vertices), and a [`SigVal`] and
-    /// a byte per vertex (for the stack of peeled edges).
+    /// a byte per key (for the stack of peeled edges).
     ///
     /// This is the fastest and more memory-consuming peeler. It has however
     /// just a small advantage during assignment with respect to
