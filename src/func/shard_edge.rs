@@ -552,7 +552,8 @@ impl FuseLge3Shards {
         // bits to the bottom, but in this way we save an operation, and there
         // are enough random bits anyway.
         let start = (shard * (l as usize + 2)) << log2_seg_size;
-        let v0 = start + fixed_point_reduce_128!(sig[0].rotate_right(shard_bits_shift), l << log2_seg_size);
+        let v0 = start
+            + fixed_point_reduce_128!(sig[0].rotate_right(shard_bits_shift), l << log2_seg_size);
         let seg_size = 1 << log2_seg_size;
         let mut v1 = v0 + seg_size;
         let mut v2 = v1 + seg_size;
@@ -560,7 +561,6 @@ impl FuseLge3Shards {
         v1 ^= (sig[0] as usize >> 18) & seg_size_mask;
         v2 ^= (sig[0] as usize) & seg_size_mask;
         [v0, v1, v2]
-
     }
 
     fn _set_up_shards(&mut self, n: usize) {

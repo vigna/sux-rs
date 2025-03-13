@@ -769,12 +769,12 @@ impl<
         pl.expected_updates(self.expected_num_keys);
         pl.item_name("key");
         pl.start(format!(
-            "Reading input and hashing keys to {} using {} bits...",
+            "Storing {}-bit signatures in {}...",
+            std::mem::size_of::<S>() * 8,
             sig_store
                 .temp_dir()
                 .map(|d| d.path().to_string_lossy())
                 .unwrap_or(Cow::Borrowed("memory")),
-            std::mem::size_of::<S>() * 8,
         ));
 
         let mut max_value = W::ZERO;
@@ -1127,10 +1127,7 @@ impl<
                             }
                             shard[pos] = shard[shard.len() - 1];
                             pos += 1;
-                            pl.info(format_args!(
-                                "Duplicate hashes: {}",
-                                shard.len() - pos
-                            ));
+                            pl.info(format_args!("Duplicate hashes: {}", shard.len() - pos));
                             shard = &mut shard[..pos];
                         } else {
                             // Sorting the signatures increases locality
