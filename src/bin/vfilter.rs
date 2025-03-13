@@ -56,7 +56,7 @@ struct Args {
     #[arg(long)]
     seed: Option<u64>,
     /// Use 64-bit signatures.
-    #[arg(long, requires = "no_shards")]
+    #[arg(long)]
     sig64: bool,
     /// Always use the peel-by-index algorithm (slower, requires less memory).
     #[arg(long)]
