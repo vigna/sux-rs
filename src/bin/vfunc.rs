@@ -53,12 +53,12 @@ struct Args {
     /// Use 64-bit signatures.
     #[arg(long, requires = "no_shards")]
     sig64: bool,
-    /// Always use the peel-by-index algorithm (slower, requires less memory).
+    /// Always use the low-mem peel-by-signature algorithm (slightly slower).
     #[arg(long)]
     low_mem: bool,
-    /// Always use the peel-by-signature algorithm (faster, requires more memory).
+    /// Always use the high-mem peel-by-signature algorithm (slightly faster).
     #[arg(long, conflicts_with = "low_mem")]
-    fast: bool,
+    high_mem: bool,
     /// Do not use sharding.
     #[arg(long)]
     no_shards: bool,
@@ -110,10 +110,10 @@ fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: Shar
         builder = builder.max_num_threads(threads);
     }
     if args.low_mem {
-        builder = builder.peel_by_index(true);
+        builder = builder.low_mem(true);
     }
-    if args.fast {
-        builder = builder.peel_by_index(false);
+    if args.high_mem {
+        builder = builder.low_mem(false);
     }
     builder
 }
