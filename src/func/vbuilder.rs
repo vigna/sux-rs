@@ -210,14 +210,14 @@ pub struct VBuilder<
     #[setters(generate = true)]
     check_dups: bool,
 
-    /// Use always the peel-by-index algorithm (true) or the peel-by-signature
-    /// algorithm (false). The former is significantly slower, but it uses much
-    /// less memory. Normally [`VBuilder`] use peel-by-signature and switches to
-    /// peel-by-index only if there is more than two threads and more than four
-    /// shards.
+    /// Use always the low-memory peel-by-signature algorithm (true) or the
+    /// high-memory peel-by-index algorithm (false). The former is slightly
+    /// slower, but it uses much less memory. Normally [`VBuilder`] uses
+    /// high-mem and switches to low-mem if there are more
+    /// than two threads and more than four shards.
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "None"))]
-    peel_by_index: Option<bool>,
+    low_mem: Option<bool>,
 
     /// The seed for the random number generator.
     #[setters(generate = true)]
@@ -307,7 +307,7 @@ type GraphIndex = usize;
 /// and the sides of the vertex in such edges. While technically not necessary
 /// to perform peeling, the knowledge of the sides speeds up the peeling visit
 /// by reducing the number of tests that are necessary to update the degrees
-/// once the edge is peeled (see the `peel_shard_by_*` methods). For the same
+/// once the edge is peeled (see the `peel_by_*` methods). For the same
 /// reason it also speeds up assignment.
 ///
 /// Depending on the peeling method (by hash or by index), the graph will store
@@ -914,8 +914,8 @@ impl<
                 &mut pl.concurrent(),
                 pl,
             )?;
-        } else if self.peel_by_index == Some(true)
-            || self.peel_by_index.is_none()
+        } else if self.low_mem == Some(true)
+            || self.low_mem.is_none()
                 && thread_pool.current_num_threads() > 2
                 && self.shard_edge.num_shards() > 2
         {
@@ -923,15 +923,8 @@ impl<
             self.par_solve(
                 shard_iter,
                 &mut data,
-                |this, shard_index, shard, data, pl| match this.peel_shard_by_edge_indices(
-                    shard_index,
-                    shard,
-                    data,
-                    get_val,
-                    pl,
-                ) {
-                    Ok(PeelResult::Complete()) => Ok(()),
-                    _ => Err(()),
+                |this, shard_index, shard, data, pl| {
+                    this.peel_by_sig_vals_low_mem(shard_index, shard, data, get_val, pl)
                 },
                 &thread_pool,
                 &mut pl.concurrent(),
@@ -943,7 +936,7 @@ impl<
                 shard_iter,
                 &mut data,
                 |this, shard_index, shard, data, pl| {
-                    this.peel_shard_by_sig_vals(shard_index, shard, data, get_val, pl)
+                    this.peel_by_sig_vals_high_mem(shard_index, shard, data, get_val, pl)
                 },
                 &thread_pool,
                 &mut pl.concurrent(),
@@ -1155,18 +1148,29 @@ impl<
 
     /// Peels a shard via edge indices.
     ///
-    /// This peeler uses only about 10 bytes per key, but it is slower than
-    /// [`VBuilder::peel_shard_by_sig_vals`], as it has to go through a
-    /// cache-unfriendly memory indirection every time it has to retrieve a
-    /// [`SigVal`] from the shard. It is the peeler of choice when significant
-    /// parallelism is involved, or when lazy Gaussian elimination is required,
-    /// as the latter requires edge indices.
+    /// This peeler uses a [`SigVal`] per key (the shard), a [`GraphIndex`] and
+    /// a byte per vertex (for the [`XorGraph`]), a [`GraphIndex`] per vertex
+    /// (for the [`DoubleStack`]), and a final byte per vertex (for the stack of
+    /// sides).
     ///
-    /// This method shares the same logic as [`VBuilder::peel_shard_by_sig_vals`],
+    /// This peeler uses more memory than
+    /// [`peek_by_sig_vals_low_mem`](VBuilder::peel_by_sig_vals_low_mem) but
+    /// less memory than
+    /// [`peel_by_sig_vals_high_mem`](VBuilder::peel_by_sig_vals_high_mem). It
+    /// is fairly slow as it has to go through a cache-unfriendly memory
+    /// indirection every time it has to retrieve a [`SigVal`] from the shard,
+    /// but it is the peeler of choice when lazy Gaussian elimination is
+    /// required, as after a failed peel-by-sig-vals it is not possible to
+    /// retrieve information about the signature/value pairs in the shard.
     ///
-    /// In case the feature `big_shards` is enabled, this method uses about 18
-    /// bytes per key.
-    fn peel_shard_by_edge_indices<
+    /// In theory one could avoid the stack of sides by putting vertices,
+    /// instead of edge indices, on the upper stack, and retrieving edge indices
+    /// and sides from the [`XorGraph`], as
+    /// [`peel_by_sig_vals_low_mem`](VBuilder::peel_by_sig_vals_low_mem) does,
+    ///  but this would be less cache friendly. This peeler is only used for
+    /// very small instances, and since we are going to pass through lazy
+    /// Gaussian elimination some additional speed is a good idea.
+    fn peel_by_index<
         'a,
         V: ZeroCopy + Send + Sync,
         G: Fn(&SigVal<S, V>) -> W + Send + Sync,
@@ -1309,18 +1313,27 @@ impl<
         Ok(PeelResult::Complete())
     }
 
-    /// Peels a shard via signature/value pairs.
+    /// Peels a shard via signature/value pairs using a stack of peeled
+    /// signatures/value pairs.
     ///
-    /// This peeler uses about two [`SigVal`]s per key of core memory, plus a
-    /// stack of bytes, but it is significantly faster than
-    /// [`VBuilder::peel_shard_by_edge_indices`], as it stores directly
-    /// [`SigVal`]. It is the peeler of choice when there is no significant
-    /// parallelism is involved and lazy Gaussian elimination is not required,
-    /// as the latter requires edge indices.
+    /// This peeler does not need the shard once the [`XorGraph`] is built, so
+    /// it drops it immediately after building the graph.
     ///
-    /// This method shares the peeling code with the
-    /// [`VBuilder::peel_shard_by_edge_indices`].
-    fn peel_shard_by_sig_vals<
+    /// It uses a [`SigVal`] and a byte per vertex (for the [`XorGraph`]), a
+    /// [`GraphIndex`] per vertex (for visit stack, albeit usually the stack
+    /// never contains more than a third of the vertices), and a [`SigVal`] and
+    /// a byte per vertex (for the stack of peeled edges).
+    ///
+    /// This is the fastest and more memory-consuming peeler. It has however
+    /// just a small advantage during assignment with respect to
+    /// [`peek_by_sig_vals_low_mem`](VBuilder::peel_by_sig_vals_low_mem), which
+    /// uses almost half the memory. It is the peeler of choice for low
+    /// levels of parallelism.
+    ///
+    /// This peeler cannot be used in conjunction with lazy Gaussian elimination
+    /// as after a failed peeling it is not possible to retrieve information
+    /// about the signature/value pairs in the shard.
+    fn peel_by_sig_vals_high_mem<
         'a,
         V: ZeroCopy + Send + Sync,
         G: Fn(&SigVal<S, V>) -> W + Send + Sync,
@@ -1458,16 +1471,170 @@ impl<
         Ok(())
     }
 
+    /// Peels a shard via signature/value pairs using a stack of vertices to
+    /// represent peeled edges.
+    ///
+    /// This peeler does not need the shard once the [`XorGraph`] is built, so
+    /// it drops it immediately after building the graph.
+    ///
+    /// It uses a [`SigVal`] and a byte per vertex (for the [`XorGraph`]) and a
+    /// [`GraphIndex`] per vertex (for a [`DoubleStack`]).
+    ///
+    /// This is by far the less memory-hungry peeler, and it is just slightly
+    /// slower than
+    /// [`peek_by_sig_vals_high_mem`](VBuilder::peel_by_sig_vals_high_mem),
+    /// which uses almost twice the memory. It is the peeler of choice for
+    /// significant levels of parallelism.
+    ///
+    /// This peeler cannot be used in conjunction with lazy Gaussian elimination
+    /// as after a failed peeling it is not possible to retrieve information
+    /// about the signature/value pairs in the shard.
+    fn peel_by_sig_vals_low_mem<
+        'a,
+        V: ZeroCopy + Send + Sync,
+        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
+    >(
+        &self,
+        shard_index: usize,
+        shard: Arc<Vec<SigVal<S, V>>>,
+        data: ShardData<'a, W, D>,
+        get_val: &G,
+        pl: &mut impl ProgressLog,
+    ) -> Result<(), ()>
+    where
+        SigVal<S, V>: BitXor + BitXorAssign + Default,
+    {
+        let num_vertices = self.shard_edge.num_vertices();
+        let shard_len = shard.len();
+
+        pl.start(format!(
+            "Generating graph for shard {}/{}...",
+            shard_index + 1,
+            self.shard_edge.num_shards()
+        ));
+
+        let mut xor_graph = XorGraph::<SigVal<S, V>>::new(num_vertices);
+        for &sig_val in shard.iter() {
+            for (side, &v) in self.shard_edge.local_edge(sig_val.sig).iter().enumerate() {
+                xor_graph.add(v, sig_val, side);
+            }
+        }
+        pl.done_with_count(shard.len());
+        // We are using a consuming iterator over the signature store, so this
+        // drop will free the memory used by the signatures
+        drop(shard);
+
+        assert!(
+            !xor_graph.overflow,
+            "Degree overflow for shard {}/{}",
+            shard_index + 1,
+            self.shard_edge.num_shards()
+        );
+
+        if self.failed.load(Ordering::Relaxed) {
+            return Err(());
+        }
+
+        let mut visit_stack = DoubleStack::<GraphIndex>::new(num_vertices);
+
+        pl.start(format!(
+            "Peeling graph for shard {}/{} by signatures...",
+            shard_index + 1,
+            self.shard_edge.num_shards()
+        ));
+
+        // Preload all vertices of degree one in the visit stack
+        for (v, degree) in xor_graph.degrees().enumerate() {
+            if degree == 1 {
+                visit_stack.push_lower(v as _);
+            }
+        }
+
+        while let Some(v) = visit_stack.pop_lower() {
+            let v = v as usize;
+            if xor_graph.degree(v) == 0 {
+                continue;
+            }
+            let (sig_val, side) = xor_graph.edge_and_side(v);
+            xor_graph.zero(v);
+            visit_stack.push_upper(v as _);
+
+            let e = self.shard_edge.local_edge(sig_val.sig);
+
+            match side {
+                0 => {
+                    if xor_graph.degree(e[1]) == 2 {
+                        visit_stack.push_lower(e[1] as _);
+                    }
+                    xor_graph.remove(e[1], sig_val, 1);
+                    if xor_graph.degree(e[2]) == 2 {
+                        visit_stack.push_lower(e[2] as _);
+                    }
+                    xor_graph.remove(e[2], sig_val, 2);
+                }
+                1 => {
+                    if xor_graph.degree(e[0]) == 2 {
+                        visit_stack.push_lower(e[0] as _);
+                    }
+                    xor_graph.remove(e[0], sig_val, 0);
+                    if xor_graph.degree(e[2]) == 2 {
+                        visit_stack.push_lower(e[2] as _);
+                    }
+                    xor_graph.remove(e[2], sig_val, 2);
+                }
+                2 => {
+                    if xor_graph.degree(e[0]) == 2 {
+                        visit_stack.push_lower(e[0] as _);
+                    }
+                    xor_graph.remove(e[0], sig_val, 0);
+                    if xor_graph.degree(e[1]) == 2 {
+                        visit_stack.push_lower(e[1] as _);
+                    }
+                    xor_graph.remove(e[1], sig_val, 1);
+                }
+                _ => unsafe { unreachable_unchecked() },
+            }
+
+            pl.light_update();
+        }
+
+        pl.done();
+
+        if shard_len != visit_stack.upper_len() {
+            pl.info(format_args!(
+                "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
+                shard_index + 1,
+                self.shard_edge.num_shards(),
+                visit_stack.upper_len(),
+                shard_len
+            ));
+            return Err(());
+        }
+
+        self.assign(
+            shard_index,
+            data,
+            visit_stack.iter_upper().map(|&v| {
+                let (sig_val, side) = xor_graph.edge_and_side(v as _);
+
+                ((sig_val.sig, get_val(&sig_val)), side as u8)
+            }),
+            pl,
+        );
+
+        Ok(())
+    }
+
     /// Solves a shard of given index possibly using lazy Gaussian elimination,
     /// and stores the solution in the given data.
     ///
-    /// As a first try, the shard is peeled. If the peeling is
-    /// [partial](PeelResult::Partial), lazy Gaussian elimination is used to
-    /// solve the remaining edges.
+    /// As a first try, the shard is [peeled by index](VBuilder::peel_by_index).
+    /// If the peeling is [partial](PeelResult::Partial), lazy Gaussian
+    /// elimination is used to solve the remaining edges.
     ///
     /// This method will scan the double stack, without emptying it, to check
-    /// which edges have been peeled. The information will be then passed
-    /// to [`VBuilder::assign`] to complete the assignment of values.
+    /// which edges have been peeled. The information will be then passed to
+    /// [`VBuilder::assign`] to complete the assignment of values.
     fn lge_shard<'a, V: ZeroCopy + Send + Sync>(
         &self,
         shard_index: usize,
@@ -1477,7 +1644,7 @@ impl<
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()> {
         // Let's try to peel first
-        match self.peel_shard_by_edge_indices(shard_index, shard, data, get_val, pl) {
+        match self.peel_by_index(shard_index, shard, data, get_val, pl) {
             Err(()) => Err(()),
             Ok(PeelResult::Complete()) => Ok(()),
             Ok(PeelResult::Partial {
