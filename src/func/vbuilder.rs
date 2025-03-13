@@ -49,8 +49,8 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// for all keys; in the second case, such information will be stored in a
 /// number of on-disk buckets.
 ///
-/// There are several setters: for example, you can set [set the maximum number of
-/// threads](VBuilder::max_num_threads).
+/// There are several setters: for example, you can set [set the maximum number
+/// of threads](VBuilder::max_num_threads).
 ///
 /// Once signatures have been computed, each parallel thread will process a
 /// shard of the signature/value pairs. For very large key sets shards will be
@@ -73,10 +73,17 @@ const LOG2_MAX_SHARDS: u32 = 12;
 ///
 /// # Implementation Notes
 ///
-/// By default, we assume that the maximum number of vertices in a shard
-/// is 2³², which is sufficient up to hundreds of trillion of keys. If for
-/// some reason you need to build large structures without sharding,
-/// you can enable the `big_shards` feature.
+/// By default, we assume that the maximum number of vertices in the hypergraph
+/// generated for a shard is 2³², which is sufficient up to hundreds of trillions
+/// of keys. If for some reason you need to build large structures without
+/// sharding, you can enable the `big_shards` feature.
+///
+/// When building filters for more than 2³¹ keys using 64-bit signatures,
+/// duplicate signatures will be eliminated. This does not change the semantics
+/// of the filter, and extends the range of sizes that can be used with 64-bit
+/// signatures to several billion keys, albeit at some point the insufficient random
+/// bits yield duplicate edges. For functions, instead, duplicate signatures
+/// lead to try a different seed.
 ///
 /// # Examples
 ///
@@ -153,9 +160,8 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// # }
 /// ```
 ///
-/// Since the keys are very few, we can switch to 64-bit
-/// signatures, and no shards, which will yield faster
-/// queries:
+/// Since the keys are very few, we can switch to 64-bit signatures, and no
+/// shards, which will yield faster queries:
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -211,9 +217,9 @@ pub struct VBuilder<
     #[setters(generate = true)]
     check_dups: bool,
 
-    /// Use always the peel-by-index algorithm (true) or the peel-by-hash
+    /// Use always the peel-by-index algorithm (true) or the peel-by-signature
     /// algorithm (false). The former is significantly slower, but it uses much
-    /// less memory. Normally [`VBuilder`] use peel-by-hash and switches to
+    /// less memory. Normally [`VBuilder`] use peel-by-signature and switches to
     /// peel-by-index only if there is more than two threads and more than four
     /// shards.
     #[setters(generate = true, strip_option)]
@@ -805,7 +811,7 @@ impl<
         self.bit_width = max_value.len() as usize;
 
         info!(
-            "Computation of hashes from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+            "Computation of signatures from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
             start.elapsed().as_secs_f64(),
             self.num_keys,
             start.elapsed().as_nanos() as f64 / self.num_keys as f64
@@ -843,7 +849,7 @@ impl<
             self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
                 .inspect(|_| {
                     info!(
-                        "Construction from hashes completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                        "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
                         start.elapsed().as_secs_f64(),
                         self.num_keys,
                         start.elapsed().as_nanos() as f64 / self.num_keys as f64
@@ -1089,28 +1095,14 @@ impl<
                             self.shard_edge.num_shards()
                         ));
 
-                        if self.check_dups {
-                            // We do a full sort if we need to check duplicates
-                            //
-                            // Note: here we are implicitly assuming that
-                            // sorting by signature will also lead to a good
-                            // locality, that is, that sorting by signature
-                            // gives a similar order to sorting by
-                            // shard_edge.sort_key(sig).
-                            shard.radix_sort_builder().with_low_mem_tuner().sort();
-                            // Check for duplicates
-                            if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
-                                return Err(SolveError::DuplicateSignature);
-                            }
-                        } else if TypeId::of::<V>() == TypeId::of::<EmptyVal>()
-                            && TypeId::of::<S>() == TypeId::of::<[u64; 1]>()
-                            && self.num_keys > 1 << 31
+                        if self.check_dups
+                            || TypeId::of::<S>() == TypeId::of::<[u64; 1]>()
+                                && self.num_keys > 1 << 31
                         {
-                            // We are building a shard with 64-bit signatures
-                            // and more than 2³¹ keys. We have to remove
-                            // duplicate hashes. This will make the the graph
-                            // peelable, and in fact increase the precision of
-                            // the filter.
+                            // Either we need to check for duplicates, or we are
+                            // building a filter with a shard with 64-bit
+                            // signatures and more than 2³¹ keys.  We need to
+                            // sort the signatures.
                             //
                             // Note: here we are implicitly assuming that
                             // sorting by signature will also lead to a good
@@ -1118,23 +1110,42 @@ impl<
                             // gives a similar order to sorting by
                             // shard_edge.sort_key(sig).
                             shard.radix_sort_builder().with_low_mem_tuner().sort();
-                            let mut pos = 0;
-                            for i in 1..shard.len() {
-                                if shard[i - 1].sig != shard[i].sig {
-                                    shard[pos] = shard[i - 1];
-                                    pos += 1;
+
+                            if self.check_dups {
+                                if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
+                                    return Err(SolveError::DuplicateSignature);
                                 }
+                            } else {
+                                // We have to remove duplicate signatures. This
+                                // will not change the semantics of the filter
+                                // but will make the the graph peelable.
+
+                                let mut pos = 0;
+                                for i in 1..shard.len() {
+                                    if shard[i - 1].sig != shard[i].sig {
+                                        shard[pos] = shard[i - 1];
+                                        pos += 1;
+                                    }
+                                }
+                                shard[pos] = shard[shard.len() - 1];
+                                pos += 1;
+                                pl.info(format_args!(
+                                    "Duplicate signatures: {}",
+                                    shard.len() - pos
+                                ));
+                                if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
+                                    // It's a function, we cannot have duplicates
+                                    return Err(SolveError::DuplicateSignature);
+                                }
+                                shard = &mut shard[..pos];
                             }
-                            shard[pos] = shard[shard.len() - 1];
-                            pos += 1;
-                            pl.info(format_args!("Duplicate hashes: {}", shard.len() - pos));
-                            shard = &mut shard[..pos];
                         } else {
                             // Sorting the signatures increases locality
                             if self.shard_edge.num_sort_keys() != 1 {
                                 self.count_sort::<V>(shard);
                             }
                         }
+
                         pl.done_with_count(shard.len());
 
                         main_pl.info(format_args!(
@@ -1394,7 +1405,7 @@ impl<
         let mut visit_stack = Vec::<GraphIndex>::with_capacity(num_vertices / 3);
 
         pl.start(format!(
-            "Peeling graph for shard {}/{} by hashes...",
+            "Peeling graph for shard {}/{} by signatures...",
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
