@@ -12,7 +12,7 @@
 //! - they might read their input lazily from a source that might generate
 //!   errors, such as a file;
 //! - they do not store the input they read, but rather some derived data, such
-//!   as hashes, so using owned data would be wasteful.
+//!   as signatures, so using owned data would be wasteful.
 //!
 //! For this kind of structures, we provide a [`RewindableIoLender`] trait,
 //! which is a [`Lender`] that can be rewound to the beginning, and whose

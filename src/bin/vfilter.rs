@@ -61,7 +61,7 @@ struct Args {
     /// Always use the peel-by-index algorithm (slower, requires less memory).
     #[arg(long)]
     low_mem: bool,
-    /// Always use the peel-by-hash algorithm (faster, requires more memory).
+    /// Always use the peel-by-signature algorithm (faster, requires more memory).
     #[arg(long, conflicts_with = "low_mem")]
     fast: bool,
     /// Do not use sharding.
