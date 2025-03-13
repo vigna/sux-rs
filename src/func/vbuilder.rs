@@ -1104,10 +1104,10 @@ impl<
                             }
                         } else if TypeId::of::<V>() == TypeId::of::<EmptyVal>()
                             && TypeId::of::<S>() == TypeId::of::<[u64; 1]>()
-                            && shard.len() > 1 << 32
+                            && self.num_keys > 1 << 31
                         {
                             // We are building a shard with 64-bit signatures
-                            // and more than 2³² keys. We have to remove
+                            // and more than 2³¹ keys. We have to remove
                             // duplicate hashes. This will make the the graph
                             // peelable, and in fact increase the precision of
                             // the filter.
@@ -1128,6 +1128,10 @@ impl<
                             shard[pos] = shard[shard.len() - 1];
 
                             shard = &mut shard[..pos + 1];
+                            pl.info(format_args!(
+                                "Duplicate hashes: {}",
+                                shard.len() - pos - 1
+                            ));
                         } else {
                             // Sorting the signatures increases locality
                             if self.shard_edge.num_sort_keys() != 1 {
