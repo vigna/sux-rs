@@ -1069,6 +1069,9 @@ impl<
                 .try_for_each_with(
                     (main_pl.clone(), pl.clone()),
                     |(main_pl, pl), (shard_index, (shard, mut data))| {
+                        if shard.len() == 0 {
+                            return Ok(());
+                        }
                         main_pl.info(format_args!(
                             "Analyzing shard {}/{}...",
                             shard_index + 1,
@@ -1076,8 +1079,9 @@ impl<
                         ));
 
                         // Safety: only one thread may be accessing the shard
-                        let shard =
-                            unsafe { &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>) };
+                        let mut shard = &mut unsafe {
+                            &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>)
+                        }[..];
 
                         pl.start(format!(
                             "Sorting shard {}/{}...",
@@ -1088,13 +1092,42 @@ impl<
                         if self.check_dups {
                             // We do a full sort if we need to check duplicates
                             //
-                            // Note: here we are assuming that sorting by signature
-                            // will also lead to a good locality
+                            // Note: here we are implicitly assuming that
+                            // sorting by signature will also lead to a good
+                            // locality, that is, that sorting by signature
+                            // gives a similar order to sorting by
+                            // shard_edge.sort_key(sig).
                             shard.radix_sort_builder().with_low_mem_tuner().sort();
                             // Check for duplicates
                             if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
                                 return Err(SolveError::DuplicateSignature);
                             }
+                        } else if TypeId::of::<V>() == TypeId::of::<EmptyVal>()
+                            && TypeId::of::<S>() == TypeId::of::<[u64; 1]>()
+                            && shard.len() > 1 << 32
+                        {
+                            // We are building a shard with 64-bit signatures
+                            // and more than 2³² keys. We have to remove
+                            // duplicate hashes. This will make the the graph
+                            // peelable, and in fact increase the precision of
+                            // the filter.
+                            //
+                            // Note: here we are implicitly assuming that
+                            // sorting by signature will also lead to a good
+                            // locality, that is, that sorting by signature
+                            // gives a similar order to sorting by
+                            // shard_edge.sort_key(sig).
+                            shard.radix_sort_builder().with_low_mem_tuner().sort();
+                            let mut pos = 0;
+                            for i in 1..shard.len() {
+                                if shard[i - 1].sig != shard[i].sig {
+                                    shard[pos] = shard[i - 1];
+                                    pos += 1;
+                                }
+                            }
+                            shard[pos] = shard[shard.len() - 1];
+
+                            shard = &mut shard[..pos + 1];
                         } else {
                             // Sorting the signatures increases locality
                             if self.shard_edge.num_sort_keys() != 1 {
