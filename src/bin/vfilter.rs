@@ -82,7 +82,11 @@ macro_rules! fuse {
                 $main::<$ty, [u64; 2], FuseLge3NoShards>($args)
             }
         } else {
-            $main::<$ty, [u64; 2], FuseLge3Shards>($args)
+            if $args.sig64 {
+                $main::<$ty, [u64; 1], FuseLge3Shards>($args)
+            } else {
+                $main::<$ty, [u64; 2], FuseLge3Shards>($args)
+            }
         }
     };
 }
