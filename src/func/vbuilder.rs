@@ -962,6 +962,44 @@ impl<
     }
 }
 
+macro_rules! remove_edge {
+    ($xor_graph: ident, $e: ident, $side: ident, $edge: ident, $stack: ident, $push:ident) => {
+        match $side {
+            0 => {
+                if $xor_graph.degree($e[1]) == 2 {
+                    $stack.$push($e[1] as _);
+                }
+                $xor_graph.remove($e[1], $edge, 1);
+                if $xor_graph.degree($e[2]) == 2 {
+                    $stack.$push($e[2] as _);
+                }
+                $xor_graph.remove($e[2], $edge, 2);
+            }
+            1 => {
+                if $xor_graph.degree($e[0]) == 2 {
+                    $stack.$push($e[0] as _);
+                }
+                $xor_graph.remove($e[0], $edge, 0);
+                if $xor_graph.degree($e[2]) == 2 {
+                    $stack.$push($e[2] as _);
+                }
+                $xor_graph.remove($e[2], $edge, 2);
+            }
+            2 => {
+                if $xor_graph.degree($e[0]) == 2 {
+                    $stack.$push($e[0] as _);
+                }
+                $xor_graph.remove($e[0], $edge, 0);
+                if $xor_graph.degree($e[1]) == 2 {
+                    $stack.$push($e[1] as _);
+                }
+                $xor_graph.remove($e[1], $edge, 1);
+            }
+            _ => unsafe { unreachable_unchecked() },
+        }
+    };
+}
+
 impl<
         W: ZeroCopy + Word + Send + Sync,
         D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
@@ -1061,11 +1099,10 @@ impl<
                 .try_for_each_with(
                     (main_pl.clone(), pl.clone()),
                     |(main_pl, pl), (shard_index, (shard, mut data))| {
-
                         if shard.len() == 0 {
                             return Ok(());
                         }
-                        
+
                         main_pl.info(format_args!(
                             "Analyzing shard {}/{}...",
                             shard_index + 1,
@@ -1172,11 +1209,7 @@ impl<
     ///  but this would be less cache friendly. This peeler is only used for
     /// very small instances, and since we are going to pass through lazy
     /// Gaussian elimination some additional speed is a good idea.
-    fn peel_by_index<
-        'a,
-        V: ZeroCopy + Send + Sync,
-        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
-    >(
+    fn peel_by_index<'a, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
@@ -1242,41 +1275,7 @@ impl<
             sides_stack.push(side as u8);
 
             let e = self.shard_edge.local_edge(shard[edge_index as usize].sig);
-
-            match side {
-                0 => {
-                    if xor_graph.degree(e[1]) == 2 {
-                        double_stack.push_lower(e[1] as _);
-                    }
-                    xor_graph.remove(e[1], edge_index, 1);
-                    if xor_graph.degree(e[2]) == 2 {
-                        double_stack.push_lower(e[2] as _);
-                    }
-                    xor_graph.remove(e[2], edge_index, 2);
-                }
-                1 => {
-                    if xor_graph.degree(e[0]) == 2 {
-                        double_stack.push_lower(e[0] as _);
-                    }
-                    xor_graph.remove(e[0], edge_index, 0);
-                    if xor_graph.degree(e[2]) == 2 {
-                        double_stack.push_lower(e[2] as _);
-                    }
-                    xor_graph.remove(e[2], edge_index, 2);
-                }
-                2 => {
-                    if xor_graph.degree(e[0]) == 2 {
-                        double_stack.push_lower(e[0] as _);
-                    }
-                    xor_graph.remove(e[0], edge_index, 0);
-                    if xor_graph.degree(e[1]) == 2 {
-                        double_stack.push_lower(e[1] as _);
-                    }
-                    xor_graph.remove(e[1], edge_index, 1);
-                }
-                _ => unsafe { unreachable_unchecked() },
-            }
-
+            remove_edge!(xor_graph, e, side, edge_index, double_stack, push_lower);
             pl.light_update();
         }
 
@@ -1365,7 +1364,7 @@ impl<
             }
         }
         pl.done_with_count(shard.len());
-        // We are using a consuming iterator over the signature store, so this
+        // We are using a consuming iterator over the shard store, so this
         // drop will free the memory used by the signatures
         drop(shard);
 
@@ -1382,6 +1381,8 @@ impl<
 
         let mut sig_vals_stack = FastStack::<SigVal<S, V>>::new(shard_len);
         let mut sides_stack = FastStack::<u8>::new(shard_len);
+        // Experimentally this stack never grows beyond a little more than
+        // num_vertices / 4
         let mut visit_stack = Vec::<GraphIndex>::with_capacity(num_vertices / 3);
 
         pl.start(format!(
@@ -1408,41 +1409,7 @@ impl<
             sides_stack.push(side as u8);
 
             let e = self.shard_edge.local_edge(sig_val.sig);
-
-            match side {
-                0 => {
-                    if xor_graph.degree(e[1]) == 2 {
-                        visit_stack.push(e[1] as _);
-                    }
-                    xor_graph.remove(e[1], sig_val, 1);
-                    if xor_graph.degree(e[2]) == 2 {
-                        visit_stack.push(e[2] as _);
-                    }
-                    xor_graph.remove(e[2], sig_val, 2);
-                }
-                1 => {
-                    if xor_graph.degree(e[0]) == 2 {
-                        visit_stack.push(e[0] as _);
-                    }
-                    xor_graph.remove(e[0], sig_val, 0);
-                    if xor_graph.degree(e[2]) == 2 {
-                        visit_stack.push(e[2] as _);
-                    }
-                    xor_graph.remove(e[2], sig_val, 2);
-                }
-                2 => {
-                    if xor_graph.degree(e[0]) == 2 {
-                        visit_stack.push(e[0] as _);
-                    }
-                    xor_graph.remove(e[0], sig_val, 0);
-                    if xor_graph.degree(e[1]) == 2 {
-                        visit_stack.push(e[1] as _);
-                    }
-                    xor_graph.remove(e[1], sig_val, 1);
-                }
-                _ => unsafe { unreachable_unchecked() },
-            }
-
+            remove_edge!(xor_graph, e, side, sig_val, visit_stack, push);
             pl.light_update();
         }
 
@@ -1522,7 +1489,7 @@ impl<
             }
         }
         pl.done_with_count(shard.len());
-        // We are using a consuming iterator over the signature store, so this
+        // We are using a consuming iterator over the shard store, so this
         // drop will free the memory used by the signatures
         drop(shard);
 
@@ -1562,41 +1529,7 @@ impl<
             visit_stack.push_upper(v as _);
 
             let e = self.shard_edge.local_edge(sig_val.sig);
-
-            match side {
-                0 => {
-                    if xor_graph.degree(e[1]) == 2 {
-                        visit_stack.push_lower(e[1] as _);
-                    }
-                    xor_graph.remove(e[1], sig_val, 1);
-                    if xor_graph.degree(e[2]) == 2 {
-                        visit_stack.push_lower(e[2] as _);
-                    }
-                    xor_graph.remove(e[2], sig_val, 2);
-                }
-                1 => {
-                    if xor_graph.degree(e[0]) == 2 {
-                        visit_stack.push_lower(e[0] as _);
-                    }
-                    xor_graph.remove(e[0], sig_val, 0);
-                    if xor_graph.degree(e[2]) == 2 {
-                        visit_stack.push_lower(e[2] as _);
-                    }
-                    xor_graph.remove(e[2], sig_val, 2);
-                }
-                2 => {
-                    if xor_graph.degree(e[0]) == 2 {
-                        visit_stack.push_lower(e[0] as _);
-                    }
-                    xor_graph.remove(e[0], sig_val, 0);
-                    if xor_graph.degree(e[1]) == 2 {
-                        visit_stack.push_lower(e[1] as _);
-                    }
-                    xor_graph.remove(e[1], sig_val, 1);
-                }
-                _ => unsafe { unreachable_unchecked() },
-            }
-
+            remove_edge!(xor_graph, e, side, sig_val, visit_stack, push_lower);
             pl.light_update();
         }
 
@@ -1618,7 +1551,6 @@ impl<
             data,
             visit_stack.iter_upper().map(|&v| {
                 let (sig_val, side) = xor_graph.edge_and_side(v as _);
-
                 ((sig_val.sig, get_val(&sig_val)), side as u8)
             }),
             pl,
