@@ -1115,7 +1115,7 @@ impl<
                             return Err(SolveError::UnsolvableShard);
                         }
 
-                        if TypeId::of::<V>() == TypeId::of::<()>() {
+                        if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
                             // For filters, we fill the array with random data, otherwise
                             // elements with signature 0 would have a significantly higher
                             // probability of being false positives.
