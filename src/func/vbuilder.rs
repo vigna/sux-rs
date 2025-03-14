@@ -768,7 +768,7 @@ impl<
         pl.expected_updates(self.expected_num_keys);
         pl.item_name("key");
         pl.start(format!(
-            "Storing {}-bit signatures in {}...",
+            "Computing and storing {}-bit signatures in {}...",
             std::mem::size_of::<S>() * 8,
             sig_store
                 .temp_dir()
@@ -1385,7 +1385,7 @@ impl<
         let mut visit_stack = Vec::<GraphIndex>::with_capacity(num_vertices / 3);
 
         pl.start(format!(
-            "Peeling graph for shard {}/{} by signatures...",
+            "Peeling graph for shard {}/{} by signatures (high-mem)...",
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
@@ -1540,7 +1540,7 @@ impl<
         let mut visit_stack = DoubleStack::<GraphIndex>::new(num_vertices);
 
         pl.start(format!(
-            "Peeling graph for shard {}/{} by signatures...",
+            "Peeling graph for shard {}/{} by signatures (low-mem)...",
             shard_index + 1,
             self.shard_edge.num_shards()
         ));
