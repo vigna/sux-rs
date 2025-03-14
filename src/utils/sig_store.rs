@@ -881,10 +881,12 @@ impl<
             let len = store.shard_sizes[self.next_shard];
             let mut shard = Vec::with_capacity(len);
 
-            if self.borrowed {
-                shard.extend(store.buckets[self.next_bucket].iter());
-            } else {
-                shard.extend(std::mem::take(&mut store.buckets[self.next_bucket]).iter());
+            for i in self.next_bucket..self.next_bucket + to_aggr {
+                if self.borrowed {
+                    shard.extend(store.buckets[i].iter());
+                } else {
+                    shard.extend(std::mem::take(&mut store.buckets[i]).iter());
+                }
             }
 
             let res = shard;
