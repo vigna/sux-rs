@@ -156,7 +156,7 @@ mod tests {
         usize: ToSig<S>,
         u128: UpcastableFrom<usize>,
         SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-        SigVal<<FuseLge3Shards as ShardEdge<S, 3>>::EdgeSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+        SigVal<<FuseLge3Shards as ShardEdge<S, 3>>::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
         FuseLge3Shards: ShardEdge<S, 3>,
         VFunc<usize, u8, Box<[u8]>, S, FuseLge3Shards>: Serialize + TypeHash, // Weird
         VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, FuseLge3Shards>>: Serialize,

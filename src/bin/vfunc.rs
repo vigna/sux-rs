@@ -126,8 +126,8 @@ where
     u128: UpcastableFrom<usize>,
     SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    SigVal<E::EdgeSig, usize>: RadixKey + BitXor + BitXorAssign,
-    SigVal<E::EdgeSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    SigVal<E::LocalSig, usize>: RadixKey + BitXor + BitXorAssign,
+    SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Weird
     VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
