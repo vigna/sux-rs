@@ -6,12 +6,12 @@
 
 use std::borrow::Borrow;
 
+use super::shard_edge::FuseLge3Shards;
 use crate::func::shard_edge::ShardEdge;
 use crate::traits::bit_field_slice::*;
 use crate::utils::*;
 use epserde::prelude::*;
 use mem_dbg::*;
-use super::shard_edge::FuseLge3Shards;
 /// Static functions with low space overhead, fast parallel construction, and
 /// fast queries.
 ///
