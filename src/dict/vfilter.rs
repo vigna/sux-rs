@@ -9,7 +9,7 @@ use crate::func::mix64;
 use crate::func::{shard_edge::ShardEdge, VFunc};
 use crate::traits::bit_field_slice::*;
 use crate::utils::{Sig, ToSig};
-use common_traits::CastableInto;
+use common_traits::{CastableInto, DowncastableInto};
 use epserde::prelude::*;
 use mem_dbg::*;
 use std::borrow::Borrow;
@@ -78,7 +78,8 @@ where
     /// [`contains`](VFilter::contains).
     #[inline(always)]
     pub fn contains_by_sig(&self, sig: S) -> bool {
-        self.func.get_by_sig(sig) == mix64(sig.sig_u64()).cast() & self.filter_mask
+        self.func.get_by_sig(sig)
+            == mix64(self.func.shard_edge.local_sig(sig).sig_u64()).cast() & self.filter_mask
     }
 
     /// Returns whether a key is contained in the filter.
@@ -137,7 +138,11 @@ mod tests {
     use rdst::RadixKey;
 
     use crate::{
-        func::{mix64, shard_edge::{FuseLge3NoShards, FuseLge3Shards}, VBuilder},
+        func::{
+            mix64,
+            shard_edge::{FuseLge3NoShards, FuseLge3Shards},
+            VBuilder,
+        },
         utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
     };
 
@@ -150,7 +155,8 @@ mod tests {
         Ok(())
     }
 
-    fn _test_filter_func<S: Sig + Send + Sync, E: ShardEdge<S, 3, LocalSig = [u64; 1]>>() -> anyhow::Result<()>
+    fn _test_filter_func<S: Sig + Send + Sync, E: ShardEdge<S, 3, LocalSig = [u64; 1]>>(
+    ) -> anyhow::Result<()>
     where
         usize: ToSig<S>,
         u128: UpcastableFrom<usize>,
@@ -164,7 +170,10 @@ mod tests {
                 .try_build_filter(FromIntoIterator::from(0..n), no_logging![])?;
             for i in 0..n {
                 let sig = ToSig::<S>::to_sig(i, filter.func.seed);
-                assert_eq!(mix64(filter.func.shard_edge.local_sig(sig)[0]) & 0xFF, filter.get(&i) as u64);
+                assert_eq!(
+                    mix64(filter.func.shard_edge.local_sig(sig)[0]) & 0xFF,
+                    filter.get(&i) as u64
+                );
             }
         }
 

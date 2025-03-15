@@ -815,10 +815,13 @@ impl<
                     };
                     max_value = Ord::max(max_value, maybe_val);
 
-                    max2 = Ord::max(max2, get_val(SigVal {
-                        sig: self.shard_edge.local_sig(sig_val.sig),
-                        val: maybe_val
-                    }));
+                    max2 = Ord::max(
+                        max2,
+                        get_val(SigVal {
+                            sig: self.shard_edge.local_sig(sig_val.sig),
+                            val: maybe_val,
+                        }),
+                    );
 
                     sig_store.try_push(sig_val)?;
                 }
@@ -1332,10 +1335,9 @@ impl<
             double_stack.push_upper(edge_index);
             sides_stack.push(side as u8);
 
-            let e = self.shard_edge.local_edge(
-                self.shard_edge
-                    .local_sig(shard[edge_index.upcast()].sig),
-            );
+            let e = self
+                .shard_edge
+                .local_edge(self.shard_edge.local_sig(shard[edge_index.upcast()].sig));
             remove_edge!(xor_graph, e, side, edge_index, double_stack, push_lower);
             pl.light_update();
         }
