@@ -507,7 +507,7 @@ where
         for<'a> ShardDataIter<'a, W, Box<[W]>>: Send,
         for<'a> ShardData<'a, W, Box<[W]>>: Send,
     {
-        let get_val = |sig_val: &SigVal<E::LocalSig, W>| sig_val.val;
+        let get_val = |sig_val: SigVal<E::LocalSig, W>| sig_val.val;
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
         self.build_loop(keys, values, None, &get_val, new_data, pl)
     }
@@ -535,7 +535,7 @@ where
         for<'a> ShardData<'a, W, Box<[W]>>: Send,
     {
         let filter_mask = W::MAX;
-        let get_val = |sig_val: &SigVal<E::LocalSig, EmptyVal>| mix64(sig_val.sig.sig_u64()).cast();
+        let get_val = |sig_val: SigVal<E::LocalSig, EmptyVal>| mix64(sig_val.sig.sig_u64()).cast();
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
 
         Ok(VFilter {
@@ -574,7 +574,7 @@ where
         values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
-        let get_val = |sig_val: &SigVal<E::LocalSig, W>| sig_val.val;
+        let get_val = |sig_val: SigVal<E::LocalSig, W>| sig_val.val;
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
         self.build_loop(keys, values, None, &get_val, new_data, pl)
     }
@@ -604,7 +604,7 @@ where
         assert!(filter_bits > 0);
         assert!(filter_bits <= W::BITS);
         let filter_mask = W::MAX >> (W::BITS - filter_bits);
-        let get_val = |sig_val: &SigVal<E::LocalSig, EmptyVal>| {
+        let get_val = |sig_val: SigVal<E::LocalSig, EmptyVal>| {
             mix64(sig_val.sig.sig_u64()).cast() & filter_mask
         };
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
@@ -654,7 +654,7 @@ impl<
         mut keys: impl RewindableIoLender<T>,
         mut values: impl RewindableIoLender<V>,
         bit_width: Option<usize>,
-        get_val: &(impl Fn(&SigVal<E::LocalSig, V>) -> W + Send + Sync),
+        get_val: &(impl Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync),
         new_data: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, E>>
@@ -767,7 +767,7 @@ impl<
     fn try_seed<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         V: ZeroCopy + Default + Send + Sync + Ord + UpcastableInto<u128>,
-        G: Fn(&SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &mut self,
         seed: u64,
@@ -815,7 +815,7 @@ impl<
                     };
                     max_value = Ord::max(max_value, maybe_val);
 
-                    max2 = Ord::max(max2, get_val(&SigVal {
+                    max2 = Ord::max(max2, get_val(SigVal {
                         sig: self.shard_edge.local_sig(sig_val.sig),
                         val: maybe_val
                     }));
@@ -911,7 +911,7 @@ impl<
         I,
         P,
         V: ZeroCopy + Default + Send + Sync,
-        G: Fn(&SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &mut self,
         seed: u64,
@@ -1261,7 +1261,7 @@ impl<
     fn peel_by_index<
         'a,
         V: ZeroCopy + Send + Sync,
-        G: Fn(&SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &self,
         shard_index: usize,
@@ -1369,7 +1369,7 @@ impl<
                     let local_edge_sig = self.shard_edge.local_sig(sig_val.sig);
                     (
                         local_edge_sig,
-                        get_val(&SigVal {
+                        get_val(SigVal {
                             sig: local_edge_sig,
                             val: sig_val.val,
                         }),
@@ -1405,7 +1405,7 @@ impl<
     fn peel_by_sig_vals_high_mem<
         'a,
         V: ZeroCopy + Send + Sync,
-        G: Fn(&SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &self,
         shard_index: usize,
@@ -1513,7 +1513,7 @@ impl<
             sig_vals_stack
                 .iter()
                 .rev()
-                .map(|sig_val| (sig_val.sig, get_val(sig_val)))
+                .map(|&sig_val| (sig_val.sig, get_val(sig_val)))
                 .zip(sides_stack.iter().copied().rev()),
             pl,
         );
@@ -1542,7 +1542,7 @@ impl<
     fn peel_by_sig_vals_low_mem<
         'a,
         V: ZeroCopy + Send + Sync,
-        G: Fn(&SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &self,
         shard_index: usize,
@@ -1646,7 +1646,7 @@ impl<
             data,
             visit_stack.iter_upper().map(|&v| {
                 let (sig_val, side) = xor_graph.edge_and_side(v.upcast());
-                ((sig_val.sig, get_val(&sig_val)), side as u8)
+                ((sig_val.sig, get_val(sig_val)), side as u8)
             }),
             pl,
         );
@@ -1669,7 +1669,7 @@ impl<
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
         data: ShardData<'a, W, D>,
-        get_val: &(impl Fn(&SigVal<E::LocalSig, V>) -> W + Send + Sync),
+        get_val: &(impl Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync),
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()> {
         // Let's try to peel first
@@ -1725,7 +1725,7 @@ impl<
                                 eq.sort_unstable();
                                 crate::utils::mod2_sys::Modulo2Equation::from_parts(
                                     eq,
-                                    get_val(&SigVal {
+                                    get_val(SigVal {
                                         sig: local_edge_sig,
                                         val: sig_val.val,
                                     }),
@@ -1758,7 +1758,7 @@ impl<
                             let local_edge_sig = self.shard_edge.local_sig(sig_val.sig);
                             (
                                 local_edge_sig,
-                                get_val(&SigVal {
+                                get_val(SigVal {
                                     sig: local_edge_sig,
                                     val: sig_val.val,
                                 }),
