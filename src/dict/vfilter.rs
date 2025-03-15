@@ -134,48 +134,37 @@ mod tests {
 
     use common_traits::UpcastableFrom;
     use dsi_progress_logger::no_logging;
-    use epserde::{deser::Deserialize, ser::Serialize, traits::TypeHash, utils::AlignedCursor};
     use rdst::RadixKey;
 
     use crate::{
-        func::{mix64, shard_edge::FuseLge3Shards, VBuilder},
+        func::{mix64, shard_edge::{FuseLge3NoShards, FuseLge3Shards}, VBuilder},
         utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
     };
 
-    use super::{ShardEdge, VFilter, VFunc};
+    use super::ShardEdge;
 
     #[test]
     fn test_filter_func() -> anyhow::Result<()> {
-        _test_filter_func::<[u64; 2]>()?;
-        _test_filter_func::<[u64; 2]>()?;
+        _test_filter_func::<[u64; 1], FuseLge3NoShards>()?;
+        _test_filter_func::<[u64; 2], FuseLge3Shards>()?;
         Ok(())
     }
 
-    fn _test_filter_func<S: Sig + Send + Sync>() -> anyhow::Result<()>
+    fn _test_filter_func<S: Sig + Send + Sync, E: ShardEdge<S, 3, LocalSig = [u64; 1]>>() -> anyhow::Result<()>
     where
         usize: ToSig<S>,
         u128: UpcastableFrom<usize>,
         SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-        SigVal<<FuseLge3Shards as ShardEdge<S, 3>>::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-        FuseLge3Shards: ShardEdge<S, 3>,
-        VFunc<usize, u8, Box<[u8]>, S, FuseLge3Shards>: Serialize + TypeHash, // Weird
-        VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, FuseLge3Shards>>: Serialize,
+        SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     {
         for n in [0_usize, 10, 1000, 100_000, 1_000_000] {
-            let filter = VBuilder::<u8, Box<[_]>, S, FuseLge3Shards>::default()
+            let filter = VBuilder::<u8, Box<[_]>, S, E>::default()
                 .log2_buckets(4)
                 .offline(false)
                 .try_build_filter(FromIntoIterator::from(0..n), no_logging![])?;
-            let mut cursor = <AlignedCursor<maligned::A16>>::new();
-            filter.serialize(&mut cursor).unwrap();
-            cursor.set_position(0);
-            let filter =
-                VFilter::<u8, VFunc<usize, _, Box<[_]>, S, FuseLge3Shards>>::deserialize_eps(
-                    cursor.as_bytes(),
-                )?;
             for i in 0..n {
                 let sig = ToSig::<S>::to_sig(i, filter.func.seed);
-                assert_eq!(mix64(sig.sig_u64()) & 0xFF, filter.get(&i) as u64);
+                assert_eq!(mix64(filter.func.shard_edge.local_sig(sig)[0]) & 0xFF, filter.get(&i) as u64);
             }
         }
 
