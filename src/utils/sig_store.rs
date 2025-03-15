@@ -53,6 +53,7 @@
 #![allow(clippy::comparison_chain)]
 #![allow(clippy::type_complexity)]
 use anyhow::Result;
+use common_traits::UpcastableInto;
 use epserde::prelude::*;
 use mem_dbg::{MemDbg, MemSize};
 
@@ -144,7 +145,7 @@ impl<V: ZeroCopy> RadixKey for SigVal<[u64; 1], V> {
     }
 }
 
-#[derive(Epserde, Debug, Clone, Copy, Default, MemDbg, MemSize)]
+#[derive(Epserde, Debug, Clone, Copy, Default, MemDbg, MemSize, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 #[zero_copy]
 /// A newtype around `()` that is used to implement [`BitXor`] and
@@ -191,6 +192,13 @@ where
             ],
             val: self.val.bitxor(rhs.val),
         }
+    }
+}
+
+// Fake implementation to treat EmptyVal like a value.
+impl UpcastableInto<u128> for EmptyVal {
+    fn upcast(self) -> u128 {
+        0
     }
 }
 

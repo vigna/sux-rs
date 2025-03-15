@@ -53,6 +53,9 @@ pub trait ShardEdge<S, const K: usize>:
     + TypeHash
     + AlignHash
 {
+    type EdgeSig: Sig;
+    type GraphIndex;
+
     /// Sets up the sharding logic for the given number of keys.
     ///
     /// This method can be called multiple times. For example, it can be used to
@@ -106,12 +109,15 @@ pub trait ShardEdge<S, const K: usize>:
     /// into consideration.
     fn shard(&self, sig: S) -> usize;
 
+    /// Extracts the signature used to generate a local edge.
+    fn local_edge_sig(&self, sig: S) -> Self::EdgeSig;
+
     /// Returns the local edge assigned to a signature.
     ///
     /// The edge returned is local to the shard the signature belongs to. If
     /// there is no sharding, this method has the same value as
     /// [`edge`](ShardEdge::edge).
-    fn local_edge(&self, sig: S) -> [usize; K];
+    fn local_edge(&self, local_sig: Self::EdgeSig) -> [usize; K];
 
     /// Returns the edge assigned to a signature.
     ///
@@ -220,6 +226,9 @@ mod mwhc {
     }
 
     impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
+        type EdgeSig = [u64; 2];
+        type GraphIndex = u32;
+
         fn set_up_shards(&mut self, n: usize) {
             self.shard_bits_shift = 63 - sharding_high_bits(n, 0.001);
         }
@@ -259,8 +268,13 @@ mod mwhc {
         }
 
         #[inline(always)]
-        fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
-            self._edge_2(0, sig)
+        fn local_edge_sig(&self, sig: [u64; 2]) -> Self::EdgeSig {
+            sig
+        }
+
+        #[inline(always)]
+        fn local_edge(&self, local_sig: Self::EdgeSig) -> [usize; 3] {
+            self._edge_2(0, local_sig)
         }
 
         #[inline(always)]
@@ -292,6 +306,9 @@ mod mwhc {
     }
 
     impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
+        type EdgeSig = [u64; 2];
+        type GraphIndex = usize;
+
         fn set_up_shards(&mut self, _n: usize) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
@@ -326,14 +343,19 @@ mod mwhc {
         }
 
         #[inline(always)]
-        fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
+        fn local_edge_sig(&self, sig: [u64; 2]) -> Self::EdgeSig {
+            sig
+        }
+
+        #[inline(always)]
+        fn local_edge(&self, local_sig: Self::EdgeSig) -> [usize; 3] {
             // We use the upper 32 bits of sig[0] for the first vertex, the
             // lower 32 bits of sig[0] for the second vertex, and the upper 32
             // bits of sig[1] for the third vertex.
             let seg_size = self.seg_size;
-            let v0 = fixed_point_reduce_64!(sig[0] >> 32, seg_size);
-            let v1 = fixed_point_reduce_64!(sig[0] as u32, seg_size) + seg_size;
-            let v2 = fixed_point_reduce_64!(sig[1] >> 32, seg_size) + 2 * seg_size;
+            let v0 = fixed_point_reduce_64!(local_sig[0] >> 32, seg_size);
+            let v1 = fixed_point_reduce_64!(local_sig[0] as u32, seg_size) + seg_size;
+            let v2 = fixed_point_reduce_64!(local_sig[1] >> 32, seg_size) + 2 * seg_size;
 
             [v0, v1, v2]
         }
@@ -354,6 +376,8 @@ use epserde::{
 };
 #[cfg(feature = "mwhc")]
 pub use mwhc::*;
+
+use crate::utils::Sig;
 
 /// Zero-cost sharded fuse 3-hypergraphs with lazy Gaussian elimination.
 ///
@@ -550,6 +574,21 @@ impl FuseLge3Shards {
         [v0, v1, v2]
     }
 
+    #[inline(always)]
+    fn edge_1(shard: usize, log2_seg_size: u32, l: u32, sig: [u64; 1]) -> [usize; 3] {
+        let start = (shard * (l as usize + 2)) << log2_seg_size;
+        // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
+        // https://doi.org/10.1145/3510449
+        let v0 = start + fixed_point_reduce_128!(sig[0], l << log2_seg_size);
+        let seg_size = 1 << log2_seg_size;
+        let mut v1 = v0 + seg_size;
+        let mut v2 = v1 + seg_size;
+        let seg_size_mask = seg_size - 1;
+        v1 ^= (sig[0] as usize >> 18) & seg_size_mask;
+        v2 ^= (sig[0] as usize) & seg_size_mask;
+        [v0, v1, v2]
+    }
+
     fn _set_up_shards(&mut self, n: usize) {
         self.shard_bits_shift = 63
             - if n <= Self::MAX_LIN_SIZE {
@@ -590,6 +629,9 @@ impl FuseLge3Shards {
 }
 
 impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
+    type EdgeSig = [u64; 1];
+    type GraphIndex = u32;
+
     fn set_up_shards(&mut self, n: usize) {
         self._set_up_shards(n);
     }
@@ -622,19 +664,18 @@ impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
     }
 
     #[inline(always)]
-    fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
-        FuseLge3Shards::edge_2(0, self.shard_bits_shift, self.log2_seg_size, self.l, sig)
+    fn local_edge_sig(&self, sig: [u64; 2]) -> Self::EdgeSig {
+        [sig[1]]
+    }
+
+    #[inline(always)]
+    fn local_edge(&self, local_sig: Self::EdgeSig) -> [usize; 3] {
+        FuseLge3Shards::edge_1(0, self.log2_seg_size, self.l, local_sig)
     }
 
     #[inline(always)]
     fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
-        FuseLge3Shards::edge_2(
-            self.shard(sig),
-            self.shard_bits_shift,
-            self.log2_seg_size,
-            self.l,
-            sig,
-        )
+        FuseLge3Shards::edge_1(self.shard(sig), self.log2_seg_size, self.l, [sig[1]])
     }
 }
 
@@ -732,6 +773,9 @@ impl FuseLge3NoShards {
 }
 
 impl ShardEdge<[u64; 2], 3> for FuseLge3NoShards {
+    type EdgeSig = [u64; 2];
+    type GraphIndex = usize;
+
     fn set_up_shards(&mut self, _n: usize) {}
 
     fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
@@ -762,27 +806,35 @@ impl ShardEdge<[u64; 2], 3> for FuseLge3NoShards {
     }
 
     #[inline(always)]
-    fn local_edge(&self, sig: [u64; 2]) -> [usize; 3] {
-        let first_segment = fixed_point_reduce_128!(sig[0], self.l);
+    fn local_edge_sig(&self, sig: [u64; 2]) -> Self::EdgeSig {
+        sig
+    }
+
+    #[inline(always)]
+    fn local_edge(&self, local_sig: Self::EdgeSig) -> [usize; 3] {
+        let first_segment = fixed_point_reduce_128!(local_sig[0], self.l);
         let mut start = first_segment << self.log2_seg_size;
         let segment_size = 1 << self.log2_seg_size;
         let segment_mask = segment_size - 1;
 
-        let v0 = (sig[0] as u32 as usize & segment_mask) + start;
+        let v0 = (local_sig[0] as u32 as usize & segment_mask) + start;
         start += segment_size;
-        let v1 = ((sig[1] >> 32) as usize & segment_mask) + start;
+        let v1 = ((local_sig[1] >> 32) as usize & segment_mask) + start;
         start += segment_size;
-        let v2 = (sig[1] as u32 as usize & segment_mask) + start;
+        let v2 = (local_sig[1] as u32 as usize & segment_mask) + start;
         [v0, v1, v2]
     }
 
     #[inline(always)]
     fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
-        self.local_edge(sig)
+        <Self as ShardEdge<[u64; 2], 3>>::local_edge(self, sig)
     }
 }
 
 impl ShardEdge<[u64; 1], 3> for FuseLge3NoShards {
+    type EdgeSig = [u64; 1];
+    type GraphIndex = usize;
+
     fn set_up_shards(&mut self, _n: usize) {}
 
     fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
@@ -808,12 +860,17 @@ impl ShardEdge<[u64; 1], 3> for FuseLge3NoShards {
     }
 
     #[inline(always)]
+    fn local_edge_sig(&self, sig: [u64; 1]) -> Self::EdgeSig {
+        sig
+    }
+
+    #[inline(always)]
     fn num_vertices(&self) -> usize {
         (self.l as usize + 2) << self.log2_seg_size
     }
 
     #[inline(always)]
-    fn local_edge(&self, sig: [u64; 1]) -> [usize; 3] {
+    fn local_edge(&self, sig: Self::EdgeSig) -> [usize; 3] {
         // From “Binary Fuse Filters: Fast and Smaller Than Xor Filters”
         // https://doi.org/10.1145/3510449
         let hash = sig[0];
@@ -829,6 +886,6 @@ impl ShardEdge<[u64; 1], 3> for FuseLge3NoShards {
 
     #[inline(always)]
     fn edge(&self, sig: [u64; 1]) -> [usize; 3] {
-        self.local_edge(sig)
+        <Self as ShardEdge<[u64; 1], 3>>::local_edge(self, sig)
     }
 }

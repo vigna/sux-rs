@@ -8,6 +8,7 @@ use std::ops::{BitXor, BitXorAssign};
 
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
+use common_traits::UpcastableFrom;
 use dsi_progress_logger::*;
 use epserde::ser::{Serialize, SerializeInner};
 use epserde::traits::{TypeHash, ZeroCopy};
@@ -122,8 +123,11 @@ fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Resu
 where
     str: ToSig<S>,
     usize: ToSig<S>,
+    u128: UpcastableFrom<usize>,
     SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    SigVal<E::EdgeSig, usize>: RadixKey + BitXor + BitXorAssign,
+    SigVal<E::EdgeSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Weird
     VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
