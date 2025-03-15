@@ -455,7 +455,7 @@ mod fuse {
         let seg_size_mask = seg_size - 1;
         v1 ^= (sig[0] as usize) & seg_size_mask;
         let mut v2 = v1 + seg_size;
-        v2 ^= ((sig[0] >> 21) as usize) & seg_size_mask;
+        v2 ^= ((sig[0] >> log2_seg_size) as usize) & seg_size_mask;
         [v0, v1, v2]
     }
 
@@ -852,7 +852,7 @@ pub use fuse::*;
 fn test() {
     let mut size = 1_u128 << 20;
     for _ in 0..12 {
-        let log2_seg_sze = FuseLge3Shards::log2_seg_size(3, size as usize);
+        let log2_seg_sze = FuseLge3NoShards::log2_seg_size(3, size as usize);
         eprintln!("{}\t{}\t{}", size, log2_seg_sze, 1 << log2_seg_sze);
         size *= 2;
     }
