@@ -278,6 +278,7 @@ enum PeelResult<
     W: ZeroCopy + Word + Send + Sync,
     D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync + 'a,
     S: Sig + ZeroCopy + Send + Sync,
+    E: ShardEdge<S, 3>,
     V: ZeroCopy,
 > {
     Complete(),
@@ -289,16 +290,11 @@ enum PeelResult<
         /// The data.
         data: ShardData<'a, W, D>,
         /// The double stack whose upper stack contains the peeled edges.
-        double_stack: DoubleStack<GraphIndex>,
+        double_stack: DoubleStack<E::Vertex>,
         /// The sides stack.
         sides_stack: Vec<u8>,
     },
 }
-
-#[cfg(not(feature = "big_shards"))]
-type GraphIndex = u32;
-#[cfg(feature = "big_shards")]
-type GraphIndex = usize;
 
 /// A graph represented compactly.
 ///
@@ -1020,31 +1016,31 @@ macro_rules! remove_edge {
         match $side {
             0 => {
                 if $xor_graph.degree($e[1]) == 2 {
-                    $stack.$push($e[1] as _);
+                    $stack.$push($e[1].cast());
                 }
                 $xor_graph.remove($e[1], $edge, 1);
                 if $xor_graph.degree($e[2]) == 2 {
-                    $stack.$push($e[2] as _);
+                    $stack.$push($e[2].cast());
                 }
                 $xor_graph.remove($e[2], $edge, 2);
             }
             1 => {
                 if $xor_graph.degree($e[0]) == 2 {
-                    $stack.$push($e[0] as _);
+                    $stack.$push($e[0].cast());
                 }
                 $xor_graph.remove($e[0], $edge, 0);
                 if $xor_graph.degree($e[2]) == 2 {
-                    $stack.$push($e[2] as _);
+                    $stack.$push($e[2].cast());
                 }
                 $xor_graph.remove($e[2], $edge, 2);
             }
             2 => {
                 if $xor_graph.degree($e[0]) == 2 {
-                    $stack.$push($e[0] as _);
+                    $stack.$push($e[0].cast());
                 }
                 $xor_graph.remove($e[0], $edge, 0);
                 if $xor_graph.degree($e[1]) == 2 {
-                    $stack.$push($e[1] as _);
+                    $stack.$push($e[1].cast());
                 }
                 $xor_graph.remove($e[1], $edge, 1);
             }
@@ -1273,7 +1269,7 @@ impl<
         data: ShardData<'a, W, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
-    ) -> Result<PeelResult<'a, W, D, S, V>, ()> {
+    ) -> Result<PeelResult<'a, W, D, S, E, V>, ()> {
         let num_vertices = self.shard_edge.num_vertices();
 
         pl.start(format!(
@@ -1282,7 +1278,7 @@ impl<
             self.shard_edge.num_shards()
         ));
 
-        let mut xor_graph = XorGraph::<GraphIndex>::new(num_vertices);
+        let mut xor_graph = XorGraph::<E::Vertex>::new(num_vertices);
         for (edge_index, sig_val) in shard.iter().enumerate() {
             for (side, &v) in self
                 .shard_edge
@@ -1290,7 +1286,7 @@ impl<
                 .iter()
                 .enumerate()
             {
-                xor_graph.add(v, edge_index as _, side);
+                xor_graph.add(v, edge_index.cast(), side);
             }
         }
         pl.done_with_count(shard.len());
@@ -1309,7 +1305,7 @@ impl<
         // The upper stack contains vertices to be visited. The lower stack
         // contains peeled edges. The sum of the lengths of these two items
         // cannot exceed the number of vertices.
-        let mut double_stack = DoubleStack::<GraphIndex>::new(num_vertices);
+        let mut double_stack = DoubleStack::<E::Vertex>::new(num_vertices);
         let mut sides_stack = Vec::<u8>::new();
 
         pl.start(format!(
@@ -1321,12 +1317,12 @@ impl<
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
             if degree == 1 {
-                double_stack.push_lower(v as _);
+                double_stack.push_lower(v.cast());
             }
         }
 
         while let Some(v) = double_stack.pop_lower() {
-            let v = v as usize;
+            let v: usize = v.upcast();
             if xor_graph.degree(v) == 0 {
                 continue;
             }
@@ -1338,7 +1334,7 @@ impl<
 
             let e = self.shard_edge.local_edge(
                 self.shard_edge
-                    .local_sig(shard[edge_index as usize].sig),
+                    .local_sig(shard[edge_index.upcast()].sig),
             );
             remove_edge!(xor_graph, e, side, edge_index, double_stack, push_lower);
             pl.light_update();
@@ -1369,7 +1365,7 @@ impl<
             double_stack
                 .iter_upper()
                 .map(|&edge_index| {
-                    let sig_val = &shard[edge_index as usize];
+                    let sig_val = &shard[edge_index.upcast()];
                     let local_edge_sig = self.shard_edge.local_sig(sig_val.sig);
                     (
                         local_edge_sig,
@@ -1468,7 +1464,7 @@ impl<
         let mut sides_stack = FastStack::<u8>::new(shard_len);
         // Experimentally this stack never grows beyond a little more than
         // num_vertices / 4
-        let mut visit_stack = Vec::<GraphIndex>::with_capacity(num_vertices / 3);
+        let mut visit_stack = Vec::<E::Vertex>::with_capacity(num_vertices / 3);
 
         pl.start(format!(
             "Peeling graph for shard {}/{} by signatures (high-mem)...",
@@ -1479,12 +1475,12 @@ impl<
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
             if degree == 1 {
-                visit_stack.push(v as _);
+                visit_stack.push(v.cast());
             }
         }
 
         while let Some(v) = visit_stack.pop() {
-            let v = v as usize;
+            let v: usize = v.upcast();
             if xor_graph.degree(v) == 0 {
                 continue;
             }
@@ -1603,7 +1599,7 @@ impl<
             return Err(());
         }
 
-        let mut visit_stack = DoubleStack::<GraphIndex>::new(num_vertices);
+        let mut visit_stack = DoubleStack::<E::Vertex>::new(num_vertices);
 
         pl.start(format!(
             "Peeling graph for shard {}/{} by signatures (low-mem)...",
@@ -1614,18 +1610,18 @@ impl<
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
             if degree == 1 {
-                visit_stack.push_lower(v as _);
+                visit_stack.push_lower(v.cast());
             }
         }
 
         while let Some(v) = visit_stack.pop_lower() {
-            let v = v as usize;
+            let v: usize = v.upcast();
             if xor_graph.degree(v) == 0 {
                 continue;
             }
             let (sig_val, side) = xor_graph.edge_and_side(v);
             xor_graph.zero(v);
-            visit_stack.push_upper(v as _);
+            visit_stack.push_upper(v.cast());
 
             let e = self.shard_edge.local_edge(sig_val.sig);
             remove_edge!(xor_graph, e, side, sig_val, visit_stack, push_lower);
@@ -1649,7 +1645,7 @@ impl<
             shard_index,
             data,
             visit_stack.iter_upper().map(|&v| {
-                let (sig_val, side) = xor_graph.edge_and_side(v as _);
+                let (sig_val, side) = xor_graph.edge_and_side(v.upcast());
                 ((sig_val.sig, get_val(&sig_val)), side as u8)
             }),
             pl,
@@ -1699,7 +1695,7 @@ impl<
                 let mut peeled_edges = BitVec::new(shard.len());
                 let mut used_vars = BitVec::new(num_vertices);
                 for &edge in double_stack.iter_upper() {
-                    peeled_edges.set(edge as _, true);
+                    peeled_edges.set(edge.upcast(), true);
                 }
 
                 // Create data for an F₂ system using non-peeled edges
@@ -1758,7 +1754,7 @@ impl<
                     double_stack
                         .iter_upper()
                         .map(|&edge_index| {
-                            let sig_val = &shard[edge_index as usize];
+                            let sig_val = &shard[edge_index.upcast()];
                             let local_edge_sig = self.shard_edge.local_sig(sig_val.sig);
                             (
                                 local_edge_sig,
