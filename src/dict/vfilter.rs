@@ -132,6 +132,7 @@ where
 mod tests {
     use std::ops::{BitXor, BitXorAssign};
 
+    use common_traits::UpcastableFrom;
     use dsi_progress_logger::no_logging;
     use epserde::{deser::Deserialize, ser::Serialize, traits::TypeHash, utils::AlignedCursor};
     use rdst::RadixKey;
@@ -153,8 +154,9 @@ mod tests {
     fn _test_filter_func<S: Sig + Send + Sync>() -> anyhow::Result<()>
     where
         usize: ToSig<S>,
+        u128: UpcastableFrom<usize>,
         SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-
+        SigVal<<FuseLge3Shards as ShardEdge<S, 3>>::EdgeSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
         FuseLge3Shards: ShardEdge<S, 3>,
         VFunc<usize, u8, Box<[u8]>, S, FuseLge3Shards>: Serialize + TypeHash, // Weird
         VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, FuseLge3Shards>>: Serialize,

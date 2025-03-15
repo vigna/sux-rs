@@ -8,7 +8,7 @@ use std::ops::{BitXor, BitXorAssign};
 
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
-use common_traits::CastableFrom;
+use common_traits::{CastableFrom, UpcastableFrom};
 use dsi_progress_logger::*;
 use epserde::ser::{Serialize, SerializeInner};
 use epserde::traits::{AlignHash, TypeHash, ZeroCopy};
@@ -36,7 +36,7 @@ struct Args {
     filter: Option<String>,
     /// The number of bits of the hashes used by the filter.
     #[arg(short, long, default_value_t = 8)]
-    bits: u32,
+    bits: usize,
     #[arg(short, long)]
     /// A file containing UTF-8 keys, one per line. At most N keys will be read.
     filename: Option<String>,
@@ -159,9 +159,11 @@ where
     <W as SerializeInner>::SerType: Word + ZeroCopy,
     str: ToSig<S>,
     usize: ToSig<S>,
+    u128: UpcastableFrom<W>,
     SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-
+    SigVal<E::EdgeSig, usize>: RadixKey + BitXor + BitXorAssign,
+    SigVal<E::EdgeSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     Box<[W]>: BitFieldSlice<W> + BitFieldSliceMut<W>,
     for<'a> <Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a>: Send,
     for<'a> <<Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a> as Iterator>::Item: Send,
@@ -216,9 +218,11 @@ where
     <W as SerializeInner>::SerType: Word + ZeroCopy,
     str: ToSig<S>,
     usize: ToSig<S>,
+    u128: UpcastableFrom<W>,
     SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-
+    SigVal<E::EdgeSig, usize>: RadixKey + BitXor + BitXorAssign,
+    SigVal<E::EdgeSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     BitFieldVec<W>: BitFieldSlice<W> + BitFieldSliceMut<W>,
     for<'a> <BitFieldVec<W> as BitFieldSliceMut<W>>::ChunksMut<'a>: Send,
     for<'a> <<BitFieldVec<W> as BitFieldSliceMut<W>>::ChunksMut<'a> as Iterator>::Item: Send,

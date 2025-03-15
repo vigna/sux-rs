@@ -10,7 +10,7 @@ use std::ops::{BitXor, BitXorAssign};
 use anyhow::Result;
 use average::{Estimate, MeanWithError};
 use clap::Parser;
-use common_traits::UnsignedInt;
+use common_traits::{UnsignedInt, UpcastableFrom};
 use dsi_progress_logger::{no_logging, progress_logger, ProgressLog};
 use epserde::prelude::*;
 use rdst::RadixKey;
@@ -29,7 +29,7 @@ struct Args {
     /// Number of keys
     n: usize,
     /// Precision
-    dict: u32,
+    dict: usize,
     /// Number of seeds
     s: usize,
     /// Use 64-bit signatures.
@@ -40,8 +40,9 @@ struct Args {
 fn _main<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
 where
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-
     usize: ToSig<S>,
+    SigVal<E::EdgeSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    u128: UpcastableFrom<usize>,
     VFilter<usize, VFunc<usize, usize, BitFieldVec, S, E>>: TypeHash,
 {
     let mut max = MeanWithError::new();

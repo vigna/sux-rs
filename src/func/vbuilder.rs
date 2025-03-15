@@ -12,7 +12,7 @@ use crate::dict::VFilter;
 use crate::func::{shard_edge::ShardEdge, *};
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
 use crate::utils::*;
-use common_traits::CastableInto;
+use common_traits::{CastableInto, UnsignedInt, UpcastableFrom, UpcastableInto};
 use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
@@ -252,6 +252,9 @@ pub enum BuildError {
     #[error("Duplicate key")]
     /// A duplicate key was detected.
     DuplicateKey,
+    #[error("Value too large for specified bit size")]
+    /// A value is too large for the specified bit size.
+    ValueTooLarge,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -493,7 +496,9 @@ type ShardData<'a, W, D> = <ShardDataIter<'a, W, D> as Iterator>::Item;
 /// width of the output of the function will be  exactly the bit width of `W`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
-    SigVal<S, W>: RadixKey + BitXor + BitXorAssign,
+    u128: UpcastableFrom<W>,
+    SigVal<S, W>: RadixKey,
+    SigVal<E::EdgeSig, W>: BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
@@ -506,9 +511,9 @@ where
         for<'a> ShardDataIter<'a, W, Box<[W]>>: Send,
         for<'a> ShardData<'a, W, Box<[W]>>: Send,
     {
-        let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
+        let get_val = |sig_val: &SigVal<E::EdgeSig, W>| sig_val.val;
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
-        self.build_loop(keys, values, &get_val, new_data, pl)
+        self.build_loop(keys, values, None, &get_val, new_data, pl)
     }
 }
 
@@ -518,9 +523,11 @@ where
 /// number of bits of the hashes will be  exactly the bit width of `W`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
-    SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    SigVal<S, EmptyVal>: RadixKey,
+    SigVal<E::EdgeSig, EmptyVal>: BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
     u64: CastableInto<W>,
+    u128: UpcastableFrom<W>,
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
         mut self,
@@ -532,13 +539,14 @@ where
         for<'a> ShardData<'a, W, Box<[W]>>: Send,
     {
         let filter_mask = W::MAX;
-        let get_val = |sig_val: &SigVal<S, EmptyVal>| mix64(sig_val.sig.sig_u64()).cast();
+        let get_val = |sig_val: &SigVal<E::EdgeSig, EmptyVal>| mix64(sig_val.sig.sig_u64()).cast();
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
 
         Ok(VFilter {
             func: self.build_loop(
                 keys,
                 FromIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
+                Some(W::BITS),
                 &get_val,
                 new_data,
                 pl,
@@ -560,7 +568,9 @@ where
 /// of the values is larger than 64.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
-    SigVal<S, W>: RadixKey + BitXor + BitXorAssign,
+    u128: UpcastableFrom<W>,
+    SigVal<S, W>: RadixKey,
+    SigVal<E::EdgeSig, W>: BitXor + BitXorAssign,
 {
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
         mut self,
@@ -568,9 +578,9 @@ where
         values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
-        let get_val = |sig_val: &SigVal<S, W>| sig_val.val;
+        let get_val = |sig_val: &SigVal<E::EdgeSig, W>| sig_val.val;
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
-        self.build_loop(keys, values, &get_val, new_data, pl)
+        self.build_loop(keys, values, None, &get_val, new_data, pl)
     }
 }
 
@@ -584,32 +594,36 @@ where
 /// Typically `W` will be `usize` or `u64`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
-    SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    SigVal<S, EmptyVal>: RadixKey,
+    SigVal<E::EdgeSig, EmptyVal>: BitXor + BitXorAssign,
     u64: CastableInto<W>,
+    u128: UpcastableFrom<W>,
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
         mut self,
         keys: impl RewindableIoLender<T>,
-        filter_bits: u32,
+        filter_bits: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>> {
         assert!(filter_bits > 0);
-        assert!(filter_bits <= W::BITS as u32);
-        let filter_mask = W::MAX >> (W::BITS as u32 - filter_bits);
-        let get_val =
-            |sig_val: &SigVal<S, EmptyVal>| mix64(sig_val.sig.sig_u64()).cast() & filter_mask;
+        assert!(filter_bits <= W::BITS);
+        let filter_mask = W::MAX >> (W::BITS - filter_bits);
+        let get_val = |sig_val: &SigVal<E::EdgeSig, EmptyVal>| {
+            mix64(sig_val.sig.sig_u64()).cast() & filter_mask
+        };
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
 
         Ok(VFilter {
             func: self.build_loop(
                 keys,
                 FromIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
+                Some(filter_bits),
                 &get_val,
                 new_data,
                 pl,
             )?,
             filter_mask,
-            hash_bits: filter_bits,
+            hash_bits: filter_bits as _,
         })
     }
 }
@@ -636,16 +650,22 @@ impl<
     /// stored in the signature/value pair, and in the case of filters it
     /// returns the lower bits of [`Sig::sig_u64`] mixed with the
     /// [`mix64`](mix64) function.
-    fn build_loop<T: ?Sized + ToSig<S> + std::fmt::Debug, V: ZeroCopy + Default + Send + Sync>(
+    fn build_loop<
+        T: ?Sized + ToSig<S> + std::fmt::Debug,
+        V: ZeroCopy + Default + Send + Sync + Ord + UpcastableInto<u128>,
+    >(
         &mut self,
         mut keys: impl RewindableIoLender<T>,
         mut values: impl RewindableIoLender<V>,
-        get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
+        bit_width: Option<usize>,
+        get_val: &(impl Fn(&SigVal<E::EdgeSig, V>) -> W + Send + Sync),
         new_data: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, E>>
     where
-        SigVal<S, V>: RadixKey + BitXor + BitXorAssign + Send + Sync,
+        u128: UpcastableFrom<W>,
+        SigVal<S, V>: RadixKey + Send + Sync,
+        SigVal<E::EdgeSig, V>: BitXor + BitXorAssign,
         for<'a> ShardDataIter<'a, W, D>: Send,
         for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
     {
@@ -673,7 +693,8 @@ impl<
                     )?,
                     &mut keys,
                     &mut values,
-                    get_val,
+                    bit_width,
+                    &get_val,
                     new_data,
                     pl,
                 )
@@ -687,6 +708,7 @@ impl<
                     )?,
                     &mut keys,
                     &mut values,
+                    bit_width,
                     get_val,
                     new_data,
                     pl,
@@ -748,20 +770,22 @@ impl<
     /// the [`VBuilder::try_build_from_shard_iter`] method.
     fn try_seed<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
-        V: ZeroCopy + Default + Send + Sync,
-        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
+        V: ZeroCopy + Default + Send + Sync + Ord + UpcastableInto<u128>,
+        G: Fn(&SigVal<E::EdgeSig, V>) -> W + Send + Sync,
     >(
         &mut self,
         seed: u64,
         mut sig_store: impl SigStore<S, V>,
         keys: &mut impl RewindableIoLender<T>,
         values: &mut impl RewindableIoLender<V>,
+        bit_width: Option<usize>,
         get_val: &G,
         new_data: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, E>>
     where
-        SigVal<S, V>: RadixKey + BitXor + BitXorAssign,
+        SigVal<S, V>: RadixKey,
+        SigVal<E::EdgeSig, V>: BitXor + BitXorAssign,
         for<'a> ShardDataIter<'a, W, D>: Send,
         for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
     {
@@ -776,9 +800,11 @@ impl<
                 .unwrap_or(Cow::Borrowed("memory")),
         ));
 
-        let mut max_value = W::ZERO;
+        let mut max_value = V::default();
 
         let start = Instant::now();
+
+        let mut max2 = W::ZERO;
 
         while let Some(result) = keys.next() {
             match result {
@@ -791,8 +817,13 @@ impl<
                         sig: T::to_sig(key, seed),
                         val: maybe_val,
                     };
-                    let val = get_val(&sig_val);
-                    max_value = Ord::max(max_value, val);
+                    max_value = Ord::max(max_value, maybe_val);
+
+                    max2 = Ord::max(max2, get_val(&SigVal {
+                        sig: self.shard_edge.local_edge_sig(sig_val.sig),
+                        val: maybe_val
+                    }));
+
                     sig_store.try_push(sig_val)?;
                 }
                 Err(e) => return Err(e.into()),
@@ -801,7 +832,19 @@ impl<
         pl.done();
 
         self.num_keys = sig_store.len();
-        self.bit_width = max_value.len() as usize;
+        self.bit_width = if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
+            bit_width.expect("Bit width must be set for filters")
+        } else {
+            let len_width = max_value.upcast().len() as usize;
+            if let Some(bit_width) = bit_width {
+                if len_width > bit_width {
+                    return Err(BuildError::ValueTooLarge.into());
+                }
+                bit_width
+            } else {
+                len_width
+            }
+        };
 
         info!(
             "Computation of signatures from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
@@ -818,10 +861,19 @@ impl<
         self.shard_edge.set_up_shards(self.num_keys);
         (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
 
-        pl.info(format_args!(
-            "Number of keys: {} Max value: {} Bit width: {}",
-            self.num_keys, max_value, self.bit_width,
-        ));
+        if TypeId::of::<V>() != TypeId::of::<EmptyVal>() {
+            pl.info(format_args!(
+                "Number of keys: {} Bit width: {}",
+                self.num_keys, self.bit_width,
+            ));
+        } else {
+            pl.info(format_args!(
+                "Number of keys: {} Max value: {} Bit width: {}",
+                self.num_keys,
+                max_value.upcast(),
+                self.bit_width,
+            ));
+        }
 
         if self.shard_edge.shard_high_bits() != 0 {
             pl.info(format_args!(
@@ -863,7 +915,7 @@ impl<
         I,
         P,
         V: ZeroCopy + Default + Send + Sync,
-        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
+        G: Fn(&SigVal<E::EdgeSig, V>) -> W + Send + Sync,
     >(
         &mut self,
         seed: u64,
@@ -873,7 +925,8 @@ impl<
         pl: &mut P,
     ) -> Result<VFunc<T, W, D, S, E>, SolveError>
     where
-        SigVal<S, V>: RadixKey + BitXor + BitXorAssign,
+        SigVal<S, V>: RadixKey,
+        SigVal<E::EdgeSig, V>: BitXor + BitXorAssign,
         P: ProgressLog + Clone + Send + Sync,
         I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
         for<'a> ShardDataIter<'a, W, D>: Send,
@@ -1209,7 +1262,11 @@ impl<
     ///  but this would be less cache friendly. This peeler is only used for
     /// very small instances, and since we are going to pass through lazy
     /// Gaussian elimination some additional speed is a good idea.
-    fn peel_by_index<'a, V: ZeroCopy + Send + Sync, G: Fn(&SigVal<S, V>) -> W + Send + Sync>(
+    fn peel_by_index<
+        'a,
+        V: ZeroCopy + Send + Sync,
+        G: Fn(&SigVal<E::EdgeSig, V>) -> W + Send + Sync,
+    >(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
@@ -1227,7 +1284,12 @@ impl<
 
         let mut xor_graph = XorGraph::<GraphIndex>::new(num_vertices);
         for (edge_index, sig_val) in shard.iter().enumerate() {
-            for (side, &v) in self.shard_edge.local_edge(sig_val.sig).iter().enumerate() {
+            for (side, &v) in self
+                .shard_edge
+                .local_edge(self.shard_edge.local_edge_sig(sig_val.sig))
+                .iter()
+                .enumerate()
+            {
                 xor_graph.add(v, edge_index as _, side);
             }
         }
@@ -1274,7 +1336,10 @@ impl<
             double_stack.push_upper(edge_index);
             sides_stack.push(side as u8);
 
-            let e = self.shard_edge.local_edge(shard[edge_index as usize].sig);
+            let e = self.shard_edge.local_edge(
+                self.shard_edge
+                    .local_edge_sig(shard[edge_index as usize].sig),
+            );
             remove_edge!(xor_graph, e, side, edge_index, double_stack, push_lower);
             pl.light_update();
         }
@@ -1305,7 +1370,14 @@ impl<
                 .iter_upper()
                 .map(|&edge_index| {
                     let sig_val = &shard[edge_index as usize];
-                    (sig_val.sig, get_val(sig_val))
+                    let local_edge_sig = self.shard_edge.local_edge_sig(sig_val.sig);
+                    (
+                        local_edge_sig,
+                        get_val(&SigVal {
+                            sig: local_edge_sig,
+                            val: sig_val.val,
+                        }),
+                    )
                 })
                 .zip(sides_stack.into_iter().rev()),
             pl,
@@ -1337,7 +1409,7 @@ impl<
     fn peel_by_sig_vals_high_mem<
         'a,
         V: ZeroCopy + Send + Sync,
-        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
+        G: Fn(&SigVal<E::EdgeSig, V>) -> W + Send + Sync,
     >(
         &self,
         shard_index: usize,
@@ -1347,7 +1419,7 @@ impl<
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()>
     where
-        SigVal<S, V>: BitXor + BitXorAssign + Default,
+        SigVal<E::EdgeSig, V>: BitXor + BitXorAssign + Default,
     {
         let num_vertices = self.shard_edge.num_vertices();
         let shard_len = shard.len();
@@ -1357,10 +1429,23 @@ impl<
             self.shard_edge.num_shards()
         ));
 
-        let mut xor_graph = XorGraph::<SigVal<S, V>>::new(num_vertices);
+        let mut xor_graph = XorGraph::<SigVal<E::EdgeSig, V>>::new(num_vertices);
         for &sig_val in shard.iter() {
-            for (side, &v) in self.shard_edge.local_edge(sig_val.sig).iter().enumerate() {
-                xor_graph.add(v, sig_val, side);
+            let local_edge_sig = self.shard_edge.local_edge_sig(sig_val.sig);
+            for (side, &v) in self
+                .shard_edge
+                .local_edge(local_edge_sig)
+                .iter()
+                .enumerate()
+            {
+                xor_graph.add(
+                    v,
+                    SigVal {
+                        sig: local_edge_sig,
+                        val: sig_val.val,
+                    },
+                    side,
+                );
             }
         }
         pl.done_with_count(shard.len());
@@ -1379,7 +1464,7 @@ impl<
             return Err(());
         }
 
-        let mut sig_vals_stack = FastStack::<SigVal<S, V>>::new(shard_len);
+        let mut sig_vals_stack = FastStack::<SigVal<E::EdgeSig, V>>::new(shard_len);
         let mut sides_stack = FastStack::<u8>::new(shard_len);
         // Experimentally this stack never grows beyond a little more than
         // num_vertices / 4
@@ -1461,7 +1546,7 @@ impl<
     fn peel_by_sig_vals_low_mem<
         'a,
         V: ZeroCopy + Send + Sync,
-        G: Fn(&SigVal<S, V>) -> W + Send + Sync,
+        G: Fn(&SigVal<E::EdgeSig, V>) -> W + Send + Sync,
     >(
         &self,
         shard_index: usize,
@@ -1471,7 +1556,8 @@ impl<
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()>
     where
-        SigVal<S, V>: BitXor + BitXorAssign + Default,
+        SigVal<S, V>: Default,
+        SigVal<E::EdgeSig, V>: BitXor + BitXorAssign + Default,
     {
         let num_vertices = self.shard_edge.num_vertices();
         let shard_len = shard.len();
@@ -1482,10 +1568,23 @@ impl<
             self.shard_edge.num_shards()
         ));
 
-        let mut xor_graph = XorGraph::<SigVal<S, V>>::new(num_vertices);
+        let mut xor_graph = XorGraph::<SigVal<E::EdgeSig, V>>::new(num_vertices);
         for &sig_val in shard.iter() {
-            for (side, &v) in self.shard_edge.local_edge(sig_val.sig).iter().enumerate() {
-                xor_graph.add(v, sig_val, side);
+            let local_edge_sig = self.shard_edge.local_edge_sig(sig_val.sig);
+            for (side, &v) in self
+                .shard_edge
+                .local_edge(local_edge_sig)
+                .iter()
+                .enumerate()
+            {
+                xor_graph.add(
+                    v,
+                    SigVal {
+                        sig: local_edge_sig,
+                        val: sig_val.val,
+                    },
+                    side,
+                );
             }
         }
         pl.done_with_count(shard.len());
@@ -1574,7 +1673,7 @@ impl<
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
         data: ShardData<'a, W, D>,
-        get_val: &(impl Fn(&SigVal<S, V>) -> W + Send + Sync),
+        get_val: &(impl Fn(&SigVal<E::EdgeSig, V>) -> W + Send + Sync),
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()> {
         // Let's try to peel first
@@ -1617,9 +1716,10 @@ impl<
                             .enumerate()
                             .filter(|(edge_index, _)| !peeled_edges[*edge_index])
                             .map(|(_edge_index, sig_val)| {
+                                let local_edge_sig = self.shard_edge.local_edge_sig(sig_val.sig);
                                 let mut eq: Vec<_> = self
                                     .shard_edge
-                                    .local_edge(sig_val.sig)
+                                    .local_edge(local_edge_sig)
                                     .iter()
                                     .map(|&x| {
                                         used_vars.set(x, true);
@@ -1629,7 +1729,10 @@ impl<
                                 eq.sort_unstable();
                                 crate::utils::mod2_sys::Modulo2Equation::from_parts(
                                     eq,
-                                    get_val(sig_val),
+                                    get_val(&SigVal {
+                                        sig: local_edge_sig,
+                                        val: sig_val.val,
+                                    }),
                                 )
                             })
                             .collect(),
@@ -1656,7 +1759,14 @@ impl<
                         .iter_upper()
                         .map(|&edge_index| {
                             let sig_val = &shard[edge_index as usize];
-                            (sig_val.sig, get_val(sig_val))
+                            let local_edge_sig = self.shard_edge.local_edge_sig(sig_val.sig);
+                            (
+                                local_edge_sig,
+                                get_val(&SigVal {
+                                    sig: local_edge_sig,
+                                    val: sig_val.val,
+                                }),
+                            )
                         })
                         .zip(sides_stack.into_iter().rev()),
                     pl,
@@ -1677,7 +1787,7 @@ impl<
         &self,
         shard_index: usize,
         mut data: ShardData<'_, W, D>,
-        sigs_vals_sides: impl Iterator<Item = ((S, W), u8)>,
+        sigs_vals_sides: impl Iterator<Item = ((E::EdgeSig, W), u8)>,
         pl: &mut impl ProgressLog,
     ) {
         if self.failed.load(Ordering::Relaxed) {
