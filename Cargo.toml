@@ -69,7 +69,6 @@ fuzz = ["dep:arbitrary"]
 slow_tests = []          # Run slow tests (use --release)
 mwhc = []				 # Compile MWHC data structures (mainly for benchmarking)
 no_logging = []		     # Disable logging for binaries that build functions and filters (for benchmarking)
-big_shards = []          # Use a usize to represent edges and vertices (mostly for benchmarking)
 
 [profile.release]
 opt-level = 3 # like --release

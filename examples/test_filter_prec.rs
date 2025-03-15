@@ -41,7 +41,7 @@ fn _main<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
 where
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     usize: ToSig<S>,
-    SigVal<E::EdgeSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
+    SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     u128: UpcastableFrom<usize>,
     VFilter<usize, VFunc<usize, usize, BitFieldVec, S, E>>: TypeHash,
 {
