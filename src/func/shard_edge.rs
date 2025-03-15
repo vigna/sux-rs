@@ -650,7 +650,7 @@ impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
     }
 
     fn sort_key(&self, sig: [u64; 2]) -> usize {
-        fixed_point_reduce_128!(sig[0].rotate_right(self.shard_bits_shift), self.l)
+        fixed_point_reduce_128!(sig[1], self.l)
     }
 
     #[inline(always)]
