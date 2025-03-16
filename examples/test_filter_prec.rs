@@ -10,7 +10,7 @@ use std::ops::{BitXor, BitXorAssign};
 use anyhow::Result;
 use average::{Estimate, MeanWithError};
 use clap::Parser;
-use common_traits::{UnsignedInt, UpcastableFrom};
+use common_traits::UpcastableFrom;
 use dsi_progress_logger::{no_logging, progress_logger, ProgressLog};
 use epserde::prelude::*;
 use rdst::RadixKey;

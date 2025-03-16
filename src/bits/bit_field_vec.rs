@@ -429,7 +429,6 @@ impl<W: Word, T> BitFieldSliceCore<W> for BitFieldVec<W, T> {
 }
 
 impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
-    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> W {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
@@ -461,7 +460,6 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
         }
     }
 
-    #[inline]
     unsafe fn set_unchecked(&mut self, index: usize, value: W) {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
@@ -535,13 +533,13 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
 
         if src_first_word == src_last_word && dst_first_word == dst_last_word {
             let mask = W::MAX >> (W::BITS - bit_len);
-            let word = source[src_first_word] >> src_bit & mask;
+            let word = (source[src_first_word] >> src_bit) & mask;
             dest[dst_first_word] &= !(mask << dst_bit);
             dest[dst_first_word] |= word << dst_bit;
         } else if src_first_word == src_last_word {
             // dst_first_word != dst_last_word
             let mask = W::MAX >> (W::BITS - bit_len);
-            let word = source[src_first_word] >> src_bit & mask;
+            let word = (source[src_first_word] >> src_bit) & mask;
             dest[dst_first_word] &= !(mask << dst_bit);
             dest[dst_first_word] |= (word & mask) << dst_bit;
             dest[dst_last_word] &= !(mask >> (W::BITS - dst_bit));
@@ -549,8 +547,8 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
         } else if dst_first_word == dst_last_word {
             // src_first_word != src_last_word
             let mask = W::MAX >> (W::BITS - bit_len);
-            let word = (source[src_first_word] >> src_bit
-                | source[src_last_word] << (W::BITS - src_bit))
+            let word = ((source[src_first_word] >> src_bit)
+                | (source[src_last_word] << (W::BITS - src_bit)))
                 & mask;
             dest[dst_first_word] &= !(mask << dst_bit);
             dest[dst_first_word] |= word << dst_bit;
@@ -579,7 +577,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
 
             let mut word = source[src_first_word] >> (W::BITS - shift);
             for i in 1..dst_last_word - dst_first_word {
-                dest[dst_first_word + i] = word | source[src_first_word + i] << shift;
+                dest[dst_first_word + i] = word | (source[src_first_word + i] << shift);
                 word = source[src_first_word + i] >> (W::BITS - shift);
             }
             let residual =

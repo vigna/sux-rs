@@ -367,8 +367,8 @@ mod tests {
 
     #[test]
     fn test_add_ptr() {
-        let a = vec![0, 1, 3, 4];
-        let b = vec![0, 2, 4, 5];
+        let a = [0, 1, 3, 4];
+        let b = [0, 2, 4, 5];
         let mut c = Vec::with_capacity(a.len() + b.len());
 
         let ra = a.as_ptr_range();

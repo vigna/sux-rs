@@ -73,6 +73,10 @@ pub trait ShardEdge<S, const K: usize>:
     /// [`set_up_graphs`](ShardEdge::set_up_graphs) should panic
     /// if the number of vertices in a shard is larger than the maximum value
     /// representable by this type.
+    ///
+    /// Note that since all our graphs have more vertices than edges, this
+    /// type is also used to represent an edge by its index (i.e., the
+    /// index of the associated key).
     type Vertex: UnsignedInt + CastableFrom<usize> + UpcastableInto<usize>;
 
     /// Sets up the sharding logic for the given number of keys.
