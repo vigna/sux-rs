@@ -42,6 +42,10 @@ struct Args {
     /// Do not use sharding.
     #[arg(long)]
     no_shards: bool,
+    /// Use slower edge logic reducing the probability of duplicate arcs for big
+    /// shards.
+    #[arg(long, conflicts_with_all = ["sig64", "mwhc"])]
+    big_shards: bool,
     /// Use 3-hypergraphs.
     #[cfg(feature = "mwhc")]
     #[arg(long, conflicts_with = "sig64")]
@@ -57,7 +61,11 @@ macro_rules! fuse {
                 $main::<$ty, [u64; 2], FuseLge3NoShards>($args)
             }
         } else {
-            $main::<$ty, [u64; 2], FuseLge3Shards>($args)
+            if $args.big_shards {
+                $main::<$ty, [u64; 2], FuseLge3BigShards>($args)
+            } else {
+                $main::<$ty, [u64; 2], FuseLge3Shards>($args)
+            }
         }
     };
 }
