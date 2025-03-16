@@ -9,7 +9,7 @@ use crate::func::mix64;
 use crate::func::{shard_edge::ShardEdge, VFunc};
 use crate::traits::bit_field_slice::*;
 use crate::utils::{Sig, ToSig};
-use common_traits::{CastableInto, DowncastableInto};
+use common_traits::CastableInto;
 use epserde::prelude::*;
 use mem_dbg::*;
 use std::borrow::Borrow;

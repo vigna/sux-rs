@@ -847,13 +847,3 @@ mod fuse {
 }
 
 pub use fuse::*;
-
-#[test]
-fn test() {
-    let mut size = 1_u128 << 20;
-    for _ in 0..12 {
-        let log2_seg_sze = FuseLge3NoShards::log2_seg_size(3, size as usize);
-        eprintln!("{}\t{}\t{}", size, log2_seg_sze, 1 << log2_seg_sze);
-        size *= 2;
-    }
-}
