@@ -48,7 +48,7 @@ fn main() -> Result<()> {
     pl.item_name("nodes");
     pl.start("Querying...");
     for i in 0..args.s as u64 {
-        black_box(vfunc.get(&i));
+        black_box(vfunc.get(i));
     }
     pl.done_with_count(args.s);
 

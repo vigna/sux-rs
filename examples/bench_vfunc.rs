@@ -121,14 +121,14 @@ where
 
         pl.start("Querying (independent)...");
         for i in 0..args.n {
-            std::hint::black_box(func.get(&i));
+            std::hint::black_box(func.get(i));
         }
         pl.done_with_count(args.n);
 
         pl.start("Querying (dependent)...");
         let mut x = 0;
         for i in 0..args.n {
-            x = std::hint::black_box(func.get(&(i ^ (x & 1))));
+            x = std::hint::black_box(func.get(i ^ (x & 1)));
         }
         pl.done_with_count(args.n);
     }

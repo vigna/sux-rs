@@ -283,7 +283,9 @@ enum PeelResult<
         shard: Arc<Vec<SigVal<S, V>>>,
         /// The data.
         data: ShardData<'a, W, D>,
-        /// The double stack whose upper stack contains the peeled edges.
+        /// The double stack whose upper stack contains the peeled edges
+        /// (possibly represented by the vertex from which they have been
+        /// peeled).
         double_stack: DoubleStack<E::Vertex>,
         /// The sides stack.
         sides_stack: Vec<u8>,
@@ -300,11 +302,11 @@ enum PeelResult<
 /// and the sides of the vertex in such edges. While technically not necessary
 /// to perform peeling, the knowledge of the sides speeds up the peeling visit
 /// by reducing the number of tests that are necessary to update the degrees
-/// once the edge is peeled (see the `peel_by_*` methods). For the same
-/// reason it also speeds up assignment.
+/// once the edge is peeled (see the `peel_by_*` methods). For the same reason
+/// it also speeds up assignment.
 ///
-/// Depending on the peeling method (by hash or by index), the graph will store
-/// edge indices or signature/value pairs (the generic parameter `X`).
+/// Depending on the peeling method (by signature or by index), the graph will
+/// store edge indices or signature/value pairs (the generic parameter `X`).
 ///
 /// Edge information is packed together using Djamal's XOR trick (see
 /// [“Cache-Oblivious Peeling of Random
@@ -312,24 +314,15 @@ enum PeelResult<
 /// peeling b visit we need to know the content of the list only when a single
 /// edge index is present, we can XOR together all the edge information.
 ///
-/// Assuming less than 2³² vertices in a shard, we can store XOR'd edges in a
-/// `u32`. We then use a single byte to store the degree (six upper bits) and
-/// the XOR of the sides (lower two bits). The degree can be stored with a small
-/// number of bits because the graph is random, so the maximum degree is *O*(log
-/// log *n*). The type [`GraphIndex`] can be selected to be a `usize` with
-/// the `big_shards` feature if for some reason you need to build large
-/// structures without sharding.
+/// We use a single byte to store the degree (six upper bits) and the XOR of the
+/// sides (lower two bits). The degree can be stored with a small number of bits
+/// because the graph is random, so the maximum degree is *O*(log log *n*).
+/// In any case, the Boolean field `overflow` will become `true` in case of
+/// overflow.
 ///
-/// When we peel an edge, we just zero the degree, leaving the edge information
-/// and the side in place for further processing later.
-///
-/// This approach reduces the core memory usage for the hypergraph to 5 bytes
-/// per vertex when storing edge indices. Edges are derived on the fly from
-/// signatures using the edge indices and indexing the shard. If instead
-/// signature/value pairs are stored, the memory usage is significantly higher,
-/// but obtaining an edge does not require accessing the shard, removing
-/// a level of memory indirection, and greatly increasing performance.
-struct XorGraph<X: BitXor + BitXorAssign + Default + Copy> {
+/// When we peel an edge, we just [zero the degree](Self::zero), leaving the
+/// edge information and the side in place for further processing later.
+struct XorGraph<X: Copy + Default + BitXor + BitXorAssign> {
     edges: Box<[X]>,
     degrees_sides: Box<[u8]>,
     overflow: bool,
@@ -421,9 +414,10 @@ impl<X: Copy + Default> FastStack<X> {
 ///
 /// This struct implements a pair of stacks sharing the same memory. The lower
 /// stack grows from the beginning of the vector, the upper stack grows from the
-/// end of the vector. Since we use the lower stack for peeled vertices and the
-/// upper stack for vertices to visit, the sum of the lengths of the two stacks
-/// cannot exceed the length of the vector.
+/// end of the vector. Since we use the lower stack for the visit and the upper
+/// stack for peeled edges (possibly represented by the vertex from which they
+/// have been peeled), the sum of the lengths of the two stacks cannot exceed
+/// the length of the vector.
 #[derive(Debug)]
 struct DoubleStack<V> {
     stack: Vec<V>,
@@ -482,8 +476,9 @@ type ShardData<'a, W, D> = <ShardDataIter<'a, W, D> as Iterator>::Item;
 
 /// Builds a new function using a `Box<[W]>` to store values.
 ///
-/// Since values are stored in a slice, access is particularly fast, but the bit
-/// width of the output of the function will be  exactly the bit width of `W`.
+/// Since values are stored in a boxed slice access is particularly fast, but
+/// the bit width of the output of the function will be exactly the bit width of
+/// the unsigned type `W`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
     u128: UpcastableFrom<W>,
@@ -509,8 +504,9 @@ where
 
 /// Builds a new filter using a `Box<[W]>` to store values.
 ///
-/// Since values are stored in a slice access is particularly fast, but the
-/// number of bits of the hashes will be  exactly the bit width of `W`.
+/// Since values are stored in a boxed slice access is particularly fast, but
+/// the number of bits of the hashes will be  exactly the bit width of the
+/// unsigned type `W`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
     SigVal<S, EmptyVal>: RadixKey,
@@ -548,14 +544,13 @@ where
 }
 
 /// Builds a new function using a [bit-field vector](BitFieldVec) on words of
-/// type `W` to store values.
+/// the unsigned type `W` to store values.
 ///
-/// Since values are stored in a bit-field vector, access will be slower than
+/// Since values are stored in a bit-field vector access will be slower than
 /// when using a boxed slice, but the bit width of stored values will be the
 /// minimum necessary. It must be in any case at most the bit width of `W`.
 ///
-/// Typically `W` will be `usize` or `u64`. You can use `u128` if the bit width
-/// of the values is larger than 64.
+/// Typically `W` will be `usize` or `u64`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
     u128: UpcastableFrom<W>,
@@ -574,10 +569,10 @@ where
     }
 }
 
-/// Builds a new filter using a [bit-field vector](BitFieldVec) on words of type
-/// `W` to store values.
+/// Builds a new filter using a [bit-field vector](BitFieldVec) on words of the
+/// unsigned type `W` to store values.
 ///
-/// Since values are stored in a bit-field vector, access will be slower than
+/// Since values are stored in a bit-field vector access will be slower than
 /// when using a boxed slice, but the number of bits of the hashes can be set at
 /// will. It must be in any case at most the bit width of `W`.
 ///
@@ -625,7 +620,7 @@ impl<
         E: ShardEdge<S, 3>,
     > VBuilder<W, D, S, E>
 {
-    /// Builds and return a new function with given keys and values.
+    /// Builds and returns a new function with given keys and values.
     ///
     /// This method can build functions based both on vectors and on bit-field
     /// vectors. The necessary abstraction is provided by the
@@ -684,7 +679,7 @@ impl<
                     &mut keys,
                     &mut values,
                     bit_width,
-                    &get_val,
+                    get_val,
                     new_data,
                     pl,
                 )
@@ -791,11 +786,9 @@ impl<
             seed
         ));
 
-        let mut max_value = V::default();
-
+        // This will be the maximum value for functions and EmptyVal for filters
+        let mut maybe_max_value = V::default();
         let start = Instant::now();
-
-        let mut max2 = W::ZERO;
 
         while let Some(result) = keys.next() {
             match result {
@@ -808,16 +801,7 @@ impl<
                         sig: T::to_sig(key, seed),
                         val: maybe_val,
                     };
-                    max_value = Ord::max(max_value, maybe_val);
-
-                    max2 = Ord::max(
-                        max2,
-                        get_val(SigVal {
-                            sig: self.shard_edge.local_sig(sig_val.sig),
-                            val: maybe_val,
-                        }),
-                    );
-
+                    maybe_max_value = Ord::max(maybe_max_value, maybe_val);
                     sig_store.try_push(sig_val)?;
                 }
                 Err(e) => return Err(e.into()),
@@ -829,7 +813,7 @@ impl<
         self.bit_width = if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
             bit_width.expect("Bit width must be set for filters")
         } else {
-            let len_width = max_value.upcast().len() as usize;
+            let len_width = maybe_max_value.upcast().len() as usize;
             if let Some(bit_width) = bit_width {
                 if len_width > bit_width {
                     return Err(BuildError::ValueTooLarge.into());
@@ -855,7 +839,7 @@ impl<
         self.shard_edge.set_up_shards(self.num_keys);
         (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
 
-        if TypeId::of::<V>() != TypeId::of::<EmptyVal>() {
+        if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
             pl.info(format_args!(
                 "Number of keys: {} Bit width: {}",
                 self.num_keys, self.bit_width,
@@ -864,7 +848,7 @@ impl<
             pl.info(format_args!(
                 "Number of keys: {} Max value: {} Bit width: {}",
                 self.num_keys,
-                max_value.upcast(),
+                maybe_max_value.upcast(),
                 self.bit_width,
             ));
         }
@@ -899,9 +883,6 @@ impl<
     }
 
     /// Builds and return a new function starting from an iterator on shards.
-    ///
-    /// This method provide construction logic that is independent from the
-    /// actual storage of the values (offline or in core memory.)
     ///
     /// See [`VBuilder::build_loop`] for more details on the parameters.
     fn try_build_from_shard_iter<
@@ -966,7 +947,7 @@ impl<
                 && thread_pool.current_num_threads() > 2
                 && self.shard_edge.num_shards() > 2
         {
-            // Much less memory, but slower
+            // Less memory, but slower
             self.par_solve(
                 shard_iter,
                 &mut data,
@@ -978,7 +959,7 @@ impl<
                 pl,
             )?;
         } else {
-            // More memory, but more speed
+            // More memory, but faster
             self.par_solve(
                 shard_iter,
                 &mut data,
@@ -1057,17 +1038,20 @@ impl<
     fn count_sort<V: ZeroCopy>(&self, data: &mut [SigVal<S, V>]) {
         let num_sort_keys = self.shard_edge.num_sort_keys();
         let mut count = vec![0; num_sort_keys];
+
         let mut copied = Box::new_uninit_slice(data.len());
         for (&sig_val, copy) in data.iter().zip(copied.iter_mut()) {
             count[self.shard_edge.sort_key(sig_val.sig)] += 1;
             copy.write(sig_val);
         }
+        let copied = unsafe { copied.assume_init() };
+
         count.iter_mut().fold(0, |acc, c| {
             let old = *c;
             *c = acc;
             acc + old
         });
-        let copied = unsafe { copied.assume_init() };
+
         for &sig_val in copied.iter() {
             let key = self.shard_edge.sort_key(sig_val.sig);
             data[count[key]] = sig_val;
@@ -1101,15 +1085,16 @@ impl<
         'b,
         V: ZeroCopy + Send + Sync,
         I: IntoIterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
+        SS: Fn(&Self, usize, Arc<Vec<SigVal<S, V>>>, ShardData<'b, W, D>, &mut P) -> Result<(), ()>
+            + Send
+            + Sync,
         C: ConcurrentProgressLog + Send + Sync,
         P: ProgressLog + Clone + Send + Sync,
     >(
         &mut self,
         shard_iter: I,
         data: &'b mut D,
-        solve_shard: impl Fn(&Self, usize, Arc<Vec<SigVal<S, V>>>, ShardData<'b, W, D>, &mut P) -> Result<(), ()>
-            + Send
-            + Sync,
+        solve_shard: SS,
         thread_pool: &rayon::ThreadPool,
         main_pl: &mut C,
         pl: &mut P,
@@ -1136,6 +1121,7 @@ impl<
             .start("Solving shards...");
 
         self.failed.store(false, Ordering::Relaxed);
+        let num_shards = self.shard_edge.num_shards();
 
         let result = thread_pool.scope(|_| {
             shard_iter
@@ -1153,13 +1139,13 @@ impl<
                         main_pl.info(format_args!(
                             "Analyzing shard {}/{}...",
                             shard_index + 1,
-                            self.shard_edge.num_shards()
+                            num_shards
                         ));
 
                         pl.start(format!(
                             "Sorting shard {}/{}...",
                             shard_index + 1,
-                            self.shard_edge.num_shards()
+                            num_shards
                         ));
 
                         {
@@ -1168,22 +1154,16 @@ impl<
                                 unsafe { &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>) };
 
                             if self.check_dups {
-                                // Note: here we are implicitly assuming that
-                                // sorting by signature will also lead to a good
-                                // locality, that is, that sorting by signature
-                                // gives a similar order to sorting by
-                                // shard_edge.sort_key(sig).
-
                                 shard.radix_sort_builder().with_low_mem_tuner().sort();
 
                                 if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
                                     return Err(SolveError::DuplicateSignature);
                                 }
-                            } else {
-                                // Sorting the signatures increases locality
-                                if self.shard_edge.num_sort_keys() != 1 {
-                                    self.count_sort::<V>(shard);
-                                }
+                            }
+
+                            // Sorting the signatures increases locality
+                            if self.shard_edge.num_sort_keys() != 1 {
+                                self.count_sort::<V>(shard);
                             }
                         }
 
@@ -1192,7 +1172,7 @@ impl<
                         main_pl.info(format_args!(
                             "Solving shard {}/{}...",
                             shard_index + 1,
-                            self.shard_edge.num_shards()
+                            num_shards
                         ));
 
                         if self.failed.load(Ordering::Relaxed) {
@@ -1204,7 +1184,7 @@ impl<
                             // elements with signature 0 would have a significantly higher
                             // probability of being false positives.
                             //
-                            // We work around the fact that [usize] does not implement Fill
+                            // SAFETY: We work around the fact that [usize] does not implement Fill
                             Mwc192::seed_from_u64(self.seed)
                                 .fill_bytes(unsafe { data.as_mut_slice().align_to_mut::<u8>().1 });
                         }
@@ -1219,7 +1199,7 @@ impl<
                                     main_pl.info(format_args!(
                                         "Completed shard {}/{}",
                                         shard_index + 1,
-                                        self.shard_edge.num_shards()
+                                        num_shards
                                     ));
                                     main_pl.update_and_display();
                                 }
@@ -1268,19 +1248,20 @@ impl<
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<PeelResult<'a, W, D, S, E, V>, ()> {
-        let num_vertices = self.shard_edge.num_vertices();
+        let shard_edge = &self.shard_edge;
+        let num_vertices = shard_edge.num_vertices();
+        let num_shards = shard_edge.num_shards();
 
         pl.start(format!(
             "Generating graph for shard {}/{}...",
             shard_index + 1,
-            self.shard_edge.num_shards()
+            num_shards
         ));
 
         let mut xor_graph = XorGraph::<E::Vertex>::new(num_vertices);
         for (edge_index, sig_val) in shard.iter().enumerate() {
-            for (side, &v) in self
-                .shard_edge
-                .local_edge(self.shard_edge.local_sig(sig_val.sig))
+            for (side, &v) in shard_edge
+                .local_edge(shard_edge.local_sig(sig_val.sig))
                 .iter()
                 .enumerate()
             {
@@ -1293,23 +1274,22 @@ impl<
             !xor_graph.overflow,
             "Degree overflow for shard {}/{}",
             shard_index + 1,
-            self.shard_edge.num_shards()
+            num_shards
         );
 
         if self.failed.load(Ordering::Relaxed) {
             return Err(());
         }
 
-        // The upper stack contains vertices to be visited. The lower stack
-        // contains peeled edges. The sum of the lengths of these two items
-        // cannot exceed the number of vertices.
+        // The lower stack contains vertices to be visited. The upper stack
+        // contains peeled edges.
         let mut double_stack = DoubleStack::<E::Vertex>::new(num_vertices);
         let mut sides_stack = Vec::<u8>::new();
 
         pl.start(format!(
             "Peeling graph for shard {}/{} by edge indices...",
             shard_index + 1,
-            self.shard_edge.num_shards()
+            num_shards
         ));
 
         // Preload all vertices of degree one in the visit stack
@@ -1330,9 +1310,7 @@ impl<
             double_stack.push_upper(edge_index);
             sides_stack.push(side as u8);
 
-            let e = self
-                .shard_edge
-                .local_edge(self.shard_edge.local_sig(shard[edge_index.upcast()].sig));
+            let e = shard_edge.local_edge(shard_edge.local_sig(shard[edge_index.upcast()].sig));
             remove_edge!(xor_graph, e, side, edge_index, double_stack, push_lower);
             pl.light_update();
         }
@@ -1343,7 +1321,7 @@ impl<
             pl.info(format_args!(
                 "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
                 shard_index + 1,
-                self.shard_edge.num_shards(),
+                num_shards,
                 double_stack.upper_len(),
                 shard.len(),
             ));
@@ -1362,8 +1340,10 @@ impl<
             double_stack
                 .iter_upper()
                 .map(|&edge_index| {
+                    // Turn edge indices into local edge signatures
+                    // and associated values
                     let sig_val = &shard[edge_index.upcast()];
-                    let local_edge_sig = self.shard_edge.local_sig(sig_val.sig);
+                    let local_edge_sig = shard_edge.local_sig(sig_val.sig);
                     (
                         local_edge_sig,
                         get_val(SigVal {
@@ -1393,44 +1373,41 @@ impl<
     /// This is the fastest and more memory-consuming peeler. It has however
     /// just a small advantage during assignment with respect to
     /// [`peek_by_sig_vals_low_mem`](VBuilder::peel_by_sig_vals_low_mem), which
-    /// uses almost half the memory. It is the peeler of choice for low
-    /// levels of parallelism.
+    /// uses almost half the memory. It is the peeler of choice for low levels
+    /// of parallelism.
     ///
     /// This peeler cannot be used in conjunction with lazy Gaussian elimination
     /// as after a failed peeling it is not possible to retrieve information
     /// about the signature/value pairs in the shard.
     fn peel_by_sig_vals_high_mem<
-        'a,
         V: ZeroCopy + Send + Sync,
         G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
-        data: ShardData<'a, W, D>,
+        data: ShardData<'_, W, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()>
     where
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign + Default,
     {
-        let num_vertices = self.shard_edge.num_vertices();
+        let shard_edge = &self.shard_edge;
+        let num_vertices = shard_edge.num_vertices();
+        let num_shards = shard_edge.num_shards();
         let shard_len = shard.len();
+
         pl.start(format!(
             "Generating graph for shard {}/{}...",
             shard_index + 1,
-            self.shard_edge.num_shards()
+            num_shards
         ));
 
         let mut xor_graph = XorGraph::<SigVal<E::LocalSig, V>>::new(num_vertices);
         for &sig_val in shard.iter() {
-            let local_edge_sig = self.shard_edge.local_sig(sig_val.sig);
-            for (side, &v) in self
-                .shard_edge
-                .local_edge(local_edge_sig)
-                .iter()
-                .enumerate()
-            {
+            let local_edge_sig = shard_edge.local_sig(sig_val.sig);
+            for (side, &v) in shard_edge.local_edge(local_edge_sig).iter().enumerate() {
                 xor_graph.add(
                     v,
                     SigVal {
@@ -1442,6 +1419,7 @@ impl<
             }
         }
         pl.done_with_count(shard.len());
+
         // We are using a consuming iterator over the shard store, so this
         // drop will free the memory used by the signatures
         drop(shard);
@@ -1450,7 +1428,7 @@ impl<
             !xor_graph.overflow,
             "Degree overflow for shard {}/{}",
             shard_index + 1,
-            self.shard_edge.num_shards()
+            num_shards
         );
 
         if self.failed.load(Ordering::Relaxed) {
@@ -1466,7 +1444,7 @@ impl<
         pl.start(format!(
             "Peeling graph for shard {}/{} by signatures (high-mem)...",
             shard_index + 1,
-            self.shard_edge.num_shards()
+            num_shards
         ));
 
         // Preload all vertices of degree one in the visit stack
@@ -1497,7 +1475,7 @@ impl<
             pl.info(format_args!(
                 "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
                 shard_index + 1,
-                self.shard_edge.num_shards(),
+                num_shards,
                 sig_vals_stack.len(),
                 shard_len
             ));
@@ -1537,14 +1515,13 @@ impl<
     /// as after a failed peeling it is not possible to retrieve information
     /// about the signature/value pairs in the shard.
     fn peel_by_sig_vals_low_mem<
-        'a,
         V: ZeroCopy + Send + Sync,
         G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
-        data: ShardData<'a, W, D>,
+        data: ShardData<'_, W, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()>
@@ -1552,24 +1529,21 @@ impl<
         SigVal<S, V>: Default,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign + Default,
     {
-        let num_vertices = self.shard_edge.num_vertices();
+        let shard_edge = &self.shard_edge;
+        let num_vertices = shard_edge.num_vertices();
+        let num_shards = shard_edge.num_shards();
         let shard_len = shard.len();
 
         pl.start(format!(
             "Generating graph for shard {}/{}...",
             shard_index + 1,
-            self.shard_edge.num_shards()
+            num_shards,
         ));
 
         let mut xor_graph = XorGraph::<SigVal<E::LocalSig, V>>::new(num_vertices);
         for &sig_val in shard.iter() {
-            let local_edge_sig = self.shard_edge.local_sig(sig_val.sig);
-            for (side, &v) in self
-                .shard_edge
-                .local_edge(local_edge_sig)
-                .iter()
-                .enumerate()
-            {
+            let local_edge_sig = shard_edge.local_sig(sig_val.sig);
+            for (side, &v) in shard_edge.local_edge(local_edge_sig).iter().enumerate() {
                 xor_graph.add(
                     v,
                     SigVal {
@@ -1581,6 +1555,7 @@ impl<
             }
         }
         pl.done_with_count(shard.len());
+
         // We are using a consuming iterator over the shard store, so this
         // drop will free the memory used by the signatures
         drop(shard);
@@ -1589,7 +1564,7 @@ impl<
             !xor_graph.overflow,
             "Degree overflow for shard {}/{}",
             shard_index + 1,
-            self.shard_edge.num_shards()
+            num_shards
         );
 
         if self.failed.load(Ordering::Relaxed) {
@@ -1601,7 +1576,7 @@ impl<
         pl.start(format!(
             "Peeling graph for shard {}/{} by signatures (low-mem)...",
             shard_index + 1,
-            self.shard_edge.num_shards()
+            num_shards
         ));
 
         // Preload all vertices of degree one in the visit stack
@@ -1631,7 +1606,7 @@ impl<
             pl.info(format_args!(
                 "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
                 shard_index + 1,
-                self.shard_edge.num_shards(),
+                num_shards,
                 visit_stack.upper_len(),
                 shard_len
             ));
@@ -1661,14 +1636,15 @@ impl<
     /// This method will scan the double stack, without emptying it, to check
     /// which edges have been peeled. The information will be then passed to
     /// [`VBuilder::assign`] to complete the assignment of values.
-    fn lge_shard<'a, V: ZeroCopy + Send + Sync>(
+    fn lge_shard<V: ZeroCopy + Send + Sync, G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync>(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
-        data: ShardData<'a, W, D>,
-        get_val: &(impl Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync),
+        data: ShardData<'_, W, D>,
+        get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()> {
+        let shard_edge = &self.shard_edge;
         // Let's try to peel first
         match self.peel_by_index(shard_index, shard, data, get_val, pl) {
             Err(()) => Err(()),
@@ -1685,17 +1661,17 @@ impl<
                 pl.start(format!(
                     "Generating system for shard {}/{}...",
                     shard_index + 1,
-                    self.shard_edge.num_shards()
+                    shard_edge.num_shards()
                 ));
 
-                let num_vertices = self.shard_edge.num_vertices();
+                let num_vertices = shard_edge.num_vertices();
                 let mut peeled_edges = BitVec::new(shard.len());
                 let mut used_vars = BitVec::new(num_vertices);
                 for &edge in double_stack.iter_upper() {
                     peeled_edges.set(edge.upcast(), true);
                 }
 
-                // Create data for an F₂ system using non-peeled edges
+                // Create data for a system using non-peeled edges
                 //
                 // SAFETY: there is no undefined behavior here, but the
                 // raw construction methods we use assume that the
@@ -1709,9 +1685,8 @@ impl<
                             .enumerate()
                             .filter(|(edge_index, _)| !peeled_edges[*edge_index])
                             .map(|(_edge_index, sig_val)| {
-                                let local_edge_sig = self.shard_edge.local_sig(sig_val.sig);
-                                let mut eq: Vec<_> = self
-                                    .shard_edge
+                                let local_edge_sig = shard_edge.local_sig(sig_val.sig);
+                                let mut eq: Vec<_> = shard_edge
                                     .local_edge(local_edge_sig)
                                     .iter()
                                     .map(|&x| {
@@ -1752,7 +1727,7 @@ impl<
                         .iter_upper()
                         .map(|&edge_index| {
                             let sig_val = &shard[edge_index.upcast()];
-                            let local_edge_sig = self.shard_edge.local_sig(sig_val.sig);
+                            let local_edge_sig = shard_edge.local_sig(sig_val.sig);
                             (
                                 local_edge_sig,
                                 get_val(SigVal {
@@ -1798,13 +1773,13 @@ impl<
             let side = side as usize;
             unsafe {
                 let xor = match side {
-                    0 => data.get(edge[1]) ^ data.get(edge[2]),
-                    1 => data.get(edge[0]) ^ data.get(edge[2]),
-                    2 => data.get(edge[0]) ^ data.get(edge[1]),
+                    0 => data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2]),
+                    1 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[2]),
+                    2 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[1]),
                     _ => core::hint::unreachable_unchecked(),
                 };
 
-                data.set(edge[side], val ^ xor);
+                data.set_unchecked(edge[side], val ^ xor);
             }
             pl.light_update();
         }

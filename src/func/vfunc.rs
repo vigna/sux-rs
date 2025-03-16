@@ -68,7 +68,11 @@ impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: S
     #[inline(always)]
     pub fn get_by_sig(&self, sig: S) -> W {
         let edge = self.shard_edge.edge(sig);
-        self.data.get(edge[0]) ^ self.data.get(edge[1]) ^ self.data.get(edge[2])
+        unsafe {
+            self.data.get_unchecked(edge[0])
+                ^ self.data.get_unchecked(edge[1])
+                ^ self.data.get_unchecked(edge[2])
+        }
     }
 
     /// Returns the value associated with the given key, or a random value if the

@@ -53,7 +53,7 @@ fn _test_vfunc(sizes: &[usize], offline: bool, low_mem: bool) -> Result<()> {
             )?;
         pl.start("Querying...");
         for i in 0..n {
-            assert_eq!(i, func.get(&i));
+            assert_eq!(i, func.get(i));
         }
         pl.done_with_count(n);
     }

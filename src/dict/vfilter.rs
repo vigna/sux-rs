@@ -172,7 +172,7 @@ mod tests {
                 let sig = ToSig::<S>::to_sig(i, filter.func.seed);
                 assert_eq!(
                     mix64(filter.func.shard_edge.local_sig(sig)[0]) & 0xFF,
-                    filter.get(&i) as u64
+                    filter.get(i) as u64
                 );
             }
         }
