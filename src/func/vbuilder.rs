@@ -1711,7 +1711,6 @@ impl<
                     return Err(());
                 }
 
-                pl.expected_updates(Some(system.num_equations()));
                 pl.start("Solving system...");
                 let result = system.lazy_gaussian_elimination().map_err(|_| ())?;
                 pl.done_with_count(system.num_equations());

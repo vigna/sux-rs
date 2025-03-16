@@ -401,24 +401,31 @@ mod fuse {
     ///
     /// This construction uses zero-cost sharding (“Zero–Cost Sharding: Scaling
     /// Hypergraph-Based Static Functions and Filters to Trillions of Keys”) to
-    /// shard keys and then fuse 3-hypergraphs (see ”[Dense Peelable Random Uniform
-    /// Hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38)”) on sharded keys,
-    /// giving a 10.5% space overhead for large key sets; smaller key sets have a
-    /// slightly larger overhead. Duplicate edges are possible, which limits the
-    /// amount of possible sharding.
+    /// shard keys and then fuse 3-hypergraphs (see ”[Dense Peelable Random
+    /// Uniform Hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38)”) on
+    /// sharded keys, giving a 10.5% space overhead for large key sets; smaller
+    /// key sets have a slightly larger overhead. Duplicate edges are possible,
+    /// which limits the amount of possible sharding.
     ///
-    /// In a fuse graph there are 𝓁 + 2 *segments* of size *s*. A random edge is
-    /// chosen by selecting a first segment *f* uniformly at random among the first
-    /// 𝓁, and then choosing uniformly and at random a vertex in the segments *f*,
-    /// *f* + 1 and *f* + 2. The probability of duplicates thus increases as
-    /// segments gets smaller. This construction uses new empirical estimate of
-    /// segment sizes to obtain much better sharding than previously possible.
+    /// In a fuse graph there are 𝓁 + 2 *segments* of size *s*. A random edge
+    /// is chosen by selecting a first segment *f* uniformly at random among the
+    /// first 𝓁, and then choosing uniformly and at random a vertex in the
+    /// segments *f*, *f* + 1 and *f* + 2. The probability of duplicates thus
+    /// increases as segments gets smaller. This construction uses new empirical
+    /// estimate of segment sizes to obtain much better sharding than previously
+    /// possible.
     ///
     /// Below a few million keys, fuse graphs have a much higher space overhead.
     /// This construction in that case switches to sharding and lazy Gaussian
-    /// elimination to provide a close, albeit slightly larger, space overhead. The
-    /// construction time per keys increases by an order of magnitude, but since the
-    /// number of keys is small, the impact is limited.
+    /// elimination to provide a close, albeit slightly larger, space overhead.
+    /// The construction time per keys increases by an order of magnitude, but
+    /// since the number of keys is small, the impact is limited.
+    /// 
+    /// For shards above a few hundred million keys we suggest to use
+    /// [`FuseLge3BigShards`], as uses more bits from the signature, yielding an
+    /// (empirically) smaller chance of generating duplicate edges in exchange
+    /// for a slightly slower edge generation and larger space consumption at
+    /// construction time.
 
     #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
     #[deep_copy]
@@ -846,6 +853,104 @@ mod fuse {
         #[inline(always)]
         fn edge(&self, sig: [u64; 1]) -> [usize; 3] {
             edge_1(0, self.log2_seg_size, self.l, sig)
+        }
+    }
+
+    /// Zero-cost sharded fuse 3-hypergraphs with lazy Gaussian elimination for
+    /// big shards.
+    /// 
+    /// This construction should be preferred to [`FuseLge3Shards`] for very
+    /// large shards (above a few hundred million keys), as it uses more bits
+    /// from the signature, reducing (empirically) the chance of duplicate
+    /// edges. As a result, it is slightly slower and uses more space at
+    /// construction time.
+    /// 
+    /// The rest of the logic is identical.
+    #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
+    #[deep_copy]    pub struct FuseLge3BigShards(FuseLge3Shards);
+    impl Default for FuseLge3BigShards {
+        fn default() -> Self {
+            Self(FuseLge3Shards::default())
+        }
+    }
+
+    impl Display for FuseLge3BigShards {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.0.fmt(f)
+        }
+    }
+
+    #[inline(always)]
+    fn edge_2_big(
+        shard: usize,
+        shard_high_bits: u32,
+        log2_seg_size: u32,
+        l: u32,
+        sig: [u64; 2],
+    ) -> [usize; 3] {
+        // This strategy will work up to 10^16 keys
+        let mut start = (shard as usize * (l as usize + 2)
+            + fixed_point_reduce_64!(sig[0].rotate_right(shard_high_bits) >> 32, l))
+            << log2_seg_size;
+        let segment_size = 1 << log2_seg_size;
+        let segment_mask = segment_size - 1;
+
+        let v0 = (sig[0] as u32 as usize & segment_mask) + start;
+        start += segment_size;
+        let v1 = ((sig[1] >> 32) as usize & segment_mask) + start;
+        start += segment_size;
+        let v2 = (sig[1] as u32 as usize & segment_mask) + start;
+        [v0, v1, v2]
+    }
+
+    impl ShardEdge<[u64; 2], 3> for FuseLge3BigShards {
+        type LocalSig = [u64; 2];
+        type Vertex = u32;
+
+        fn set_up_shards(&mut self, n: usize) {
+            self.0.set_up_shards(n);
+        }
+
+        fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
+            self.0.set_up_graphs(n, max_shard)
+        }
+
+        #[inline(always)]
+        fn shard_high_bits(&self) -> u32 {
+            self.0.shard_high_bits()
+        }
+
+        fn num_sort_keys(&self) -> usize {
+            self.0.num_sort_keys()
+        }
+
+        fn sort_key(&self, sig: [u64; 2]) -> usize {
+            fixed_point_reduce_64!(sig[0].rotate_right(self.0.shard_bits_shift) >> 32, self.0.l)
+        }
+
+        #[inline(always)]
+        fn shard(&self, sig: [u64; 2]) -> usize {
+            (sig[0] >> self.0.shard_bits_shift >> 1) as usize
+        }
+
+        #[inline(always)]
+        fn num_vertices(&self) -> usize {
+            self.0.num_vertices()
+        }
+
+        #[inline(always)]
+        fn local_sig(&self, sig: [u64; 2]) -> Self::LocalSig {
+            sig
+        }
+
+        #[inline(always)]
+        fn local_edge(&self, local_sig: Self::LocalSig) -> [usize; 3] {
+            edge_2_big(0, self.0.shard_bits_shift, self.0.log2_seg_size, self.0.l, local_sig)
+        }
+
+        #[inline(always)]
+        fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
+            edge_2_big(self.shard(sig), self.0.shard_bits_shift, self.0.log2_seg_size, self.0.l, sig)
         }
     }
 }

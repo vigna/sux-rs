@@ -5,34 +5,28 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use std::ops::{BitXor, BitXorAssign};
+
 use anyhow::Result;
 use dsi_progress_logger::*;
-use epserde::prelude::*;
+use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
-    dict::VFilter,
-    func::{shard_edge::FuseLge3Shards, VFunc},
+    func::shard_edge::{FuseLge3BigShards, FuseLge3NoShards, FuseLge3Shards, ShardEdge},
     prelude::VBuilder,
-    utils::FromIntoIterator,
+    utils::{FromIntoIterator, Sig, SigVal, ToSig},
 };
 
-#[test]
-fn test_vfunc_lge() -> Result<()> {
-    _test_vfunc(&[0, 10, 1000, 100_000], false, false)?;
-    _test_vfunc(&[0, 10, 1000, 100_000], true, false)?;
-    Ok(())
-}
-
-#[test]
-fn test_vfunc_peeling_by_sig_vals() -> Result<()> {
-    _test_vfunc(&[1_000_000], false, false)?;
-    _test_vfunc(&[1_000_000], false, true)?;
-    _test_vfunc(&[1_000_000], true, false)?;
-    _test_vfunc(&[1_000_000], true, true)?;
-    Ok(())
-}
-
-fn _test_vfunc(sizes: &[usize], offline: bool, low_mem: bool) -> Result<()> {
+fn _test_vfunc<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+    sizes: &[usize],
+    offline: bool,
+    low_mem: bool,
+) -> Result<()>
+where
+    usize: ToSig<S>,
+    SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
+    SigVal<S, usize>: RadixKey,
+{
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Info)
@@ -42,7 +36,7 @@ fn _test_vfunc(sizes: &[usize], offline: bool, low_mem: bool) -> Result<()> {
 
     for &n in sizes {
         dbg!(offline, n);
-        let func = VBuilder::<_, BitFieldVec<_>, [u64; 2], FuseLge3Shards>::default()
+        let func = VBuilder::<_, BitFieldVec<_>, S, E>::default()
             .expected_num_keys(n)
             .offline(offline)
             .low_mem(low_mem)
@@ -61,7 +55,35 @@ fn _test_vfunc(sizes: &[usize], offline: bool, low_mem: bool) -> Result<()> {
     Ok(())
 }
 
-fn _test_vfilter(sizes: &[usize], offline: bool, low_mem: bool) -> Result<()> {
+#[test]
+fn test_vfunc_lge() -> Result<()> {
+    _test_vfunc::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], false, false)?;
+    _test_vfunc::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], true, false)?;
+    _test_vfunc::<[u64; 1], FuseLge3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
+    _test_vfunc::<[u64; 1], FuseLge3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
+    Ok(())
+}
+
+#[test]
+fn test_vfunc_peeling_by_sig_vals() -> Result<()> {
+    _test_vfunc::<[u64; 2], FuseLge3Shards>(&[1_000_000], false, false)?;
+    _test_vfunc::<[u64; 2], FuseLge3Shards>(&[1_000_000], false, true)?;
+    _test_vfunc::<[u64; 2], FuseLge3Shards>(&[1_000_000], true, false)?;
+    _test_vfunc::<[u64; 2], FuseLge3Shards>(&[1_000_000], true, true)?;
+    _test_vfunc::<[u64; 1], FuseLge3NoShards>(&[1_000_000], false, false)?;
+    _test_vfunc::<[u64; 1], FuseLge3NoShards>(&[1_000_000], false, true)?;
+    _test_vfunc::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, false)?;
+    _test_vfunc::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, true)?;
+    _test_vfunc::<[u64; 2], FuseLge3BigShards>(&[1_000_000], false, false)?;
+    _test_vfunc::<[u64; 2], FuseLge3BigShards>(&[1_000_000], false, true)?;
+    Ok(())
+}
+
+fn _test_vfilter<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+    sizes: &[usize],
+    offline: bool,
+    low_mem: bool,
+) -> Result<()> {
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Info)
@@ -76,10 +98,6 @@ fn _test_vfilter(sizes: &[usize], offline: bool, low_mem: bool) -> Result<()> {
             .offline(offline)
             .low_mem(low_mem)
             .try_build_filter(FromIntoIterator::from(0..n), &mut pl)?;
-        let mut cursor = <AlignedCursor<maligned::A16>>::new();
-        filter.serialize(&mut cursor)?;
-        cursor.set_position(0);
-        let filter = VFilter::<u8, VFunc<usize, _, Box<[u8]>>>::deserialize_eps(cursor.as_bytes())?;
         pl.start("Querying (positive)...");
         for i in 0..n {
             assert!(filter.contains(i), "Contains failed for {}", i);
@@ -108,17 +126,25 @@ fn _test_vfilter(sizes: &[usize], offline: bool, low_mem: bool) -> Result<()> {
 
 #[test]
 fn test_vfilter_lge() -> Result<()> {
-    _test_vfilter(&[0, 10, 1000, 100_000], false, false)?;
-    _test_vfilter(&[0, 10, 1000, 100_000], true, false)?;
+    _test_vfilter::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], false, false)?;
+    _test_vfilter::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], true, false)?;
+    _test_vfilter::<[u64; 1], FuseLge3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
+    _test_vfilter::<[u64; 1], FuseLge3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
     Ok(())
 }
 
 #[test]
 fn test_vfilter_peeling_by_sig_vals() -> Result<()> {
-    _test_vfilter(&[1_000_000], false, false)?;
-    _test_vfilter(&[1_000_000], false, true)?;
-    _test_vfilter(&[1_000_000], true, false)?;
-    _test_vfilter(&[1_000_000], true, true)?;
+    _test_vfilter::<[u64; 2], FuseLge3Shards>(&[1_000_000], false, false)?;
+    _test_vfilter::<[u64; 2], FuseLge3Shards>(&[1_000_000], false, true)?;
+    _test_vfilter::<[u64; 2], FuseLge3Shards>(&[1_000_000], true, false)?;
+    _test_vfilter::<[u64; 2], FuseLge3Shards>(&[1_000_000], true, true)?;
+    _test_vfilter::<[u64; 1], FuseLge3NoShards>(&[1_000_000], false, false)?;
+    _test_vfilter::<[u64; 1], FuseLge3NoShards>(&[1_000_000], false, true)?;
+    _test_vfilter::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, false)?;
+    _test_vfilter::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, true)?;
+    _test_vfilter::<[u64; 2], FuseLge3BigShards>(&[1_000_000], false, false)?;
+    _test_vfilter::<[u64; 2], FuseLge3BigShards>(&[1_000_000], false, true)?;
     Ok(())
 }
 
