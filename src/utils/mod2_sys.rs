@@ -8,6 +8,8 @@
 
 #![allow(unexpected_cfgs)]
 #![allow(clippy::comparison_chain)]
+use std::ptr;
+
 use crate::{bit_vec, traits::Word};
 use anyhow::{bail, ensure, Result};
 use arbitrary_chunks::ArbitraryChunks;
@@ -41,41 +43,53 @@ impl<W: Word> Modulo2Equation<W> {
         Modulo2Equation { vars, c }
     }
 
-    pub fn add(&mut self, other: &Modulo2Equation<W>) {
-        let a = &self.vars;
-        let b = &other.vars;
-        let mut i = 0;
-        let mut j = 0;
-        let s = a.len();
-        let t = b.len();
-        let mut vars = Vec::with_capacity(s + t);
+    #[inline(always)]
+    unsafe fn add_ptr(
+        mut left: *const u32,
+        left_end: *const u32,
+        mut right: *const u32,
+        right_end: *const u32,
+        mut dst: *mut u32,
+    ) -> *mut u32 {
+        while left != left_end && right != right_end {
+            let less = *left <= *right;
+            let more = *left >= *right;
 
-        loop {
-            if a[i] < b[j] {
-                vars.push(a[i]);
-                i += 1;
-                if i == s {
-                    break;
-                }
-            } else if a[i] > b[j] {
-                vars.push(b[j]);
-                j += 1;
-                if j == t {
-                    break;
-                }
-            } else {
-                i += 1;
-                j += 1;
-                if i == s || j == t {
-                    break;
-                }
-            }
+            let src = if less { left } else { right };
+            *dst = *src;
+
+            left = left.add(less as usize);
+            right = right.add(more as usize);
+            dst = dst.add((less ^ more) as usize);
         }
 
-        vars.extend_from_slice(&a[i..]);
-        vars.extend_from_slice(&b[j..]);
-        self.c ^= other.c;
+        let rem_left = left_end.offset_from(left) as usize;
+        ptr::copy_nonoverlapping(left, dst, rem_left);
+        dst = dst.add(rem_left);
+        let rem_right = right_end.offset_from(right) as usize;
+        ptr::copy_nonoverlapping(right, dst, rem_right);
+        dst = dst.add(rem_right);
+        dst
+    }
+
+    pub fn add(&mut self, other: &Modulo2Equation<W>) {
+        let left_range = self.vars.as_ptr_range();
+        let left = left_range.start;
+        let left_end = left_range.end;
+        let right_range = other.vars.as_ptr_range();
+        let right = right_range.start;
+        let right_end = right_range.end;
+        let mut vars = Vec::with_capacity(self.vars.len() + other.vars.len());
+        let dst = vars.as_mut_ptr();
+
+        unsafe {
+            let copied =
+                Self::add_ptr(left, left_end, right, right_end, dst).offset_from(dst) as usize;
+            vars.set_len(copied);
+        }
+
         self.vars = vars;
+        self.c ^= other.c;
     }
 
     /// Checks whether the equation is unsolvable.
@@ -350,6 +364,23 @@ impl<W: Word> Modulo2System<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_add_ptr() {
+        let a = vec![0, 1, 3, 4];
+        let b = vec![0, 2, 4, 5];
+        let mut c = Vec::with_capacity(a.len() + b.len());
+
+        let ra = a.as_ptr_range();
+        let rb = b.as_ptr_range();
+        let mut dst = c.as_mut_ptr();
+        unsafe {
+            dst = Modulo2Equation::<u32>::add_ptr(ra.start, ra.end, rb.start, rb.end, dst);
+            assert_eq!(dst.offset_from(c.as_ptr()), 4);
+            c.set_len(4);
+            assert_eq!(c, vec![1, 2, 3, 5]);
+        }
+    }
 
     #[test]
     fn test_equation_builder() {
