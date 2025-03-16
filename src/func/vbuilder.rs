@@ -66,17 +66,10 @@ const LOG2_MAX_SHARDS: u32 = 12;
 ///
 /// All construction methods require to pass one or two [`RewindableIoLender`]s
 /// (keys and possibly values), and the construction might fail and keys might
-/// be scanned again. The structures in the [`lenders`] modules module provide
-/// easy ways to build such lenders, even starting from compressed files of
-/// UTF-8 strings. The type of the keys of the resulting filter or function will
-/// be the type of the elements of the [`RewindableIoLender`].
-///
-/// # Implementation Notes
-///
-/// By default, we assume that the maximum number of vertices in the hypergraph
-/// generated for a shard is 2³², which is sufficient up to hundreds of trillions
-/// of keys. If for some reason you need to build large structures without
-/// sharding, you can enable the `big_shards` feature.
+/// be scanned again. The structures in the [`lenders`] module provide easy ways
+/// to build such lenders, even starting from compressed files of UTF-8 strings.
+/// The type of the keys of the resulting filter or function will be the type of
+/// the elements of the [`RewindableIoLender`].
 ///
 /// # Examples
 ///
@@ -236,7 +229,8 @@ pub struct VBuilder<
     shard_edge: E,
     /// The number of keys.
     num_keys: usize,
-    /// The ratio between the number of variables and the number of equations.
+    /// The ratio between the number of vertices and the number of edges
+    /// (i.e., between the number of variables and the number of equations).
     c: f64,
     /// Whether we should use lazy Gaussian elimination.
     lge: bool,
@@ -788,12 +782,13 @@ impl<
         pl.expected_updates(self.expected_num_keys);
         pl.item_name("key");
         pl.start(format!(
-            "Computing and storing {}-bit signatures in {}...",
+            "Computing and storing {}-bit signatures in {} using seed 0x{:016x}...",
             std::mem::size_of::<S>() * 8,
             sig_store
                 .temp_dir()
                 .map(|d| d.path().to_string_lossy())
                 .unwrap_or(Cow::Borrowed("memory")),
+            seed
         ));
 
         let mut max_value = V::default();
