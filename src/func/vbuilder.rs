@@ -1343,11 +1343,11 @@ impl<
                     // Turn edge indices into local edge signatures
                     // and associated values
                     let sig_val = &shard[edge_index.upcast()];
-                    let local_edge_sig = shard_edge.local_sig(sig_val.sig);
+                    let local_sig = shard_edge.local_sig(sig_val.sig);
                     (
-                        local_edge_sig,
+                        local_sig,
                         get_val(SigVal {
-                            sig: local_edge_sig,
+                            sig: local_sig,
                             val: sig_val.val,
                         }),
                     )
@@ -1406,12 +1406,12 @@ impl<
 
         let mut xor_graph = XorGraph::<SigVal<E::LocalSig, V>>::new(num_vertices);
         for &sig_val in shard.iter() {
-            let local_edge_sig = shard_edge.local_sig(sig_val.sig);
-            for (side, &v) in shard_edge.local_edge(local_edge_sig).iter().enumerate() {
+            let local_sig = shard_edge.local_sig(sig_val.sig);
+            for (side, &v) in shard_edge.local_edge(local_sig).iter().enumerate() {
                 xor_graph.add(
                     v,
                     SigVal {
-                        sig: local_edge_sig,
+                        sig: local_sig,
                         val: sig_val.val,
                     },
                     side,
@@ -1542,12 +1542,12 @@ impl<
 
         let mut xor_graph = XorGraph::<SigVal<E::LocalSig, V>>::new(num_vertices);
         for &sig_val in shard.iter() {
-            let local_edge_sig = shard_edge.local_sig(sig_val.sig);
-            for (side, &v) in shard_edge.local_edge(local_edge_sig).iter().enumerate() {
+            let local_sig = shard_edge.local_sig(sig_val.sig);
+            for (side, &v) in shard_edge.local_edge(local_sig).iter().enumerate() {
                 xor_graph.add(
                     v,
                     SigVal {
-                        sig: local_edge_sig,
+                        sig: local_sig,
                         val: sig_val.val,
                     },
                     side,
@@ -1685,9 +1685,9 @@ impl<
                             .enumerate()
                             .filter(|(edge_index, _)| !peeled_edges[*edge_index])
                             .map(|(_edge_index, sig_val)| {
-                                let local_edge_sig = shard_edge.local_sig(sig_val.sig);
+                                let local_sig = shard_edge.local_sig(sig_val.sig);
                                 let mut eq: Vec<_> = shard_edge
-                                    .local_edge(local_edge_sig)
+                                    .local_edge(local_sig)
                                     .iter()
                                     .map(|&x| {
                                         used_vars.set(x, true);
@@ -1698,7 +1698,7 @@ impl<
                                 crate::utils::mod2_sys::Modulo2Equation::from_parts(
                                     eq,
                                     get_val(SigVal {
-                                        sig: local_edge_sig,
+                                        sig: local_sig,
                                         val: sig_val.val,
                                     }),
                                 )
@@ -1727,11 +1727,11 @@ impl<
                         .iter_upper()
                         .map(|&edge_index| {
                             let sig_val = &shard[edge_index.upcast()];
-                            let local_edge_sig = shard_edge.local_sig(sig_val.sig);
+                            let local_sig = shard_edge.local_sig(sig_val.sig);
                             (
-                                local_edge_sig,
+                                local_sig,
                                 get_val(SigVal {
-                                    sig: local_edge_sig,
+                                    sig: local_sig,
                                     val: sig_val.val,
                                 }),
                             )
