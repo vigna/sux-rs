@@ -65,8 +65,8 @@ pub trait ShardEdge<S, const K: usize>:
     ///
     /// In general, local edges will depend on a local signature, which might
     /// depend only on a fraction of the global signature bits. The method
-    /// [`local_edge_sig`](ShardEdge::local_edge_sig), which returns this type,
-    /// returns the local signature.
+    /// [`local_sig`](ShardEdge::local_sig), which returns this type, returns
+    /// the local signature.
     type LocalSig: Sig;
     /// The type representing vertices local to a shard.
     ///
