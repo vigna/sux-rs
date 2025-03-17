@@ -1,5 +1,15 @@
 # Change Log
 
+## [0.7.0] - 2025-03-18
+
+### New
+
+* New `VFunc`/`VFilter` implementation of static functions and filters.
+
+* New `copy` and `try_chunks_mut` methods for `BitFieldVec`.
+
+* A `SigStore` can now be online (in-memory) or offline (on-disk).
+
 ## [0.6.0] - 2025-03-17
 
 ### New

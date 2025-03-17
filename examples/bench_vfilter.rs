@@ -146,23 +146,9 @@ where
 
         let filter = VFilter::<W, VFunc<str, W, Box<[W]>, S, E>>::load_full(&args.func)?;
 
-        pl.start("Querying (independent)...");
+        pl.start("Querying...");
         for key in &keys {
             std::hint::black_box(filter.get(key.as_str()));
-        }
-        pl.done_with_count(args.n);
-
-        pl.start("Querying (dependent)...");
-        let mut x = W::ZERO;
-        for key in &mut keys {
-            debug_assert!(!key.is_empty());
-            unsafe {
-                // This as horrible as it can be, and will probably
-                // do harm if a key is the empty string, but we avoid
-                // testing
-                *key.as_bytes_mut().get_unchecked_mut(0) ^= x.downcast() & 1;
-            }
-            x = std::hint::black_box(filter.get(key.as_str()));
         }
         pl.done_with_count(args.n);
     } else {
@@ -170,19 +156,10 @@ where
         let filter = VFilter::<W, VFunc<usize, W, Box<[W]>, S, E>>::load_full(&args.func)?;
         let mut key: usize = 0;
 
-        pl.start("Querying (independent)...");
+        pl.start("Querying...");
         for i in 0..args.n {
             key = key.wrapping_add(0x9e3779b97f4a7c15);
             std::hint::black_box(filter.contains(i));
-        }
-        pl.done_with_count(args.n);
-
-        pl.start("Querying (dependent)...");
-        let mut x = 0;
-        let mut key: usize = 0;
-        for i in 0..args.n {
-            key = key.wrapping_add(0x9e3779b97f4a7c15);
-            x = std::hint::black_box(filter.contains(i ^ x)) as usize;
         }
         pl.done_with_count(args.n);
     }
@@ -226,39 +203,18 @@ where
 
         let filter = VFilter::<W, VFunc<str, W, BitFieldVec<W>, S, E>>::load_full(&args.func)?;
 
-        pl.start("Querying (independent)...");
+        pl.start("Querying...");
         for key in &keys {
             std::hint::black_box(filter.get(key.as_str()));
-        }
-        pl.done_with_count(args.n);
-
-        pl.start("Querying (dependent)...");
-        let mut x = W::ZERO;
-        for key in &mut keys {
-            debug_assert!(!key.is_empty());
-            unsafe {
-                // This as horrible as it can be, and will probably
-                // do harm if a key is the empty string, but we avoid
-                // testing
-                *key.as_bytes_mut().get_unchecked_mut(0) ^= x.downcast() & 1;
-            }
-            x = std::hint::black_box(filter.get(key.as_str()));
         }
         pl.done_with_count(args.n);
     } else {
         // No filename
         let filter = VFilter::<W, VFunc<usize, W, BitFieldVec<W>, S, E>>::load_full(&args.func)?;
 
-        pl.start("Querying (independent)...");
+        pl.start("Querying...");
         for i in 0..args.n {
             std::hint::black_box(filter.contains(i));
-        }
-        pl.done_with_count(args.n);
-
-        pl.start("Querying (dependent)...");
-        let mut x = 0;
-        for i in 0..args.n {
-            x = std::hint::black_box(filter.contains(i ^ x)) as usize;
         }
         pl.done_with_count(args.n);
     }
