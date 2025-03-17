@@ -10,8 +10,8 @@ use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use common_traits::UpcastableFrom;
 use dsi_progress_logger::*;
-use epserde::ser::{Serialize, SerializeInner};
-use epserde::traits::{TypeHash, ZeroCopy};
+use epserde::ser::Serialize;
+use epserde::traits::ZeroCopy;
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
@@ -132,15 +132,14 @@ where
     str: ToSig<S>,
     usize: ToSig<S>,
     u128: UpcastableFrom<usize>,
-    SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
-    SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    SigVal<E::LocalSig, usize>: RadixKey + BitXor + BitXorAssign,
-    SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Weird
+    SigVal<S, usize>: RadixKey,
+    SigVal<S, EmptyVal>: RadixKey,
+    SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
+    SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
     VFunc<usize, u8, Box<[u8]>, S, E>: Serialize,
-    VFunc<str, u8, Box<[u8]>, S, E>: Serialize + TypeHash, // TODO: this is weird
+    VFunc<str, u8, Box<[u8]>, S, E>: Serialize,
 {
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();

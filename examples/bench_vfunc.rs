@@ -26,6 +26,9 @@ struct Args {
     #[arg(short = 'f', long)]
     /// A file containing UTF-8 keys, one per line. If not specified, the 64-bit keys [0..n) are used.
     filename: Option<String>,
+    /// The number of repetitions.
+    #[arg(short, long, default_value = "5")]
+    repeats: usize,
     /// Whether the file is compressed with zstd.
     #[arg(short, long)]
     zstd: bool,
