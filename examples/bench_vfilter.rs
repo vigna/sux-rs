@@ -132,7 +132,7 @@ where
     let mut pl = progress_logger![item_name = "key"];
 
     if let Some(filename) = args.filename {
-        let mut keys: Vec<_> = if args.zstd {
+        let keys: Vec<_> = if args.zstd {
             ZstdLineLender::from_path(filename)?
                 .map_into_iter(|x| x.unwrap().to_owned())
                 .take(args.n)
@@ -189,7 +189,7 @@ where
     let mut pl = progress_logger![item_name = "key"];
 
     if let Some(filename) = args.filename {
-        let mut keys: Vec<_> = if args.zstd {
+        let keys: Vec<_> = if args.zstd {
             ZstdLineLender::from_path(filename)?
                 .map_into_iter(|x| x.unwrap().to_owned())
                 .take(args.n)

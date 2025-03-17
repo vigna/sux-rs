@@ -14,7 +14,7 @@ use sux::{
     bits::BitFieldVec,
     func::shard_edge::{FuseLge3BigShards, FuseLge3NoShards, FuseLge3Shards, ShardEdge},
     prelude::VBuilder,
-    utils::{FromIntoIterator, Sig, SigVal, ToSig},
+    utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
 };
 
 fn _test_vfunc<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
@@ -83,7 +83,12 @@ fn _test_vfilter<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
     sizes: &[usize],
     offline: bool,
     low_mem: bool,
-) -> Result<()> {
+) -> Result<()>
+where
+    usize: ToSig<S>,
+    SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
+    SigVal<S, EmptyVal>: RadixKey,
+{
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Info)
@@ -93,7 +98,7 @@ fn _test_vfilter<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
 
     for &n in sizes {
         dbg!(offline, n);
-        let filter = VBuilder::<_, Box<[u8]>>::default()
+        let filter = VBuilder::<_, Box<[u8]>, S, E>::default()
             .expected_num_keys(n)
             .offline(offline)
             .low_mem(low_mem)
