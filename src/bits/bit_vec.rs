@@ -63,7 +63,7 @@
 //! let mut b: BitVec<Box<[usize]>> = b.into();
 //! b.set(2, false);
 //!
-//! // If we create an artifically dirty bit vector, everything still works.
+//! // If we create an artificially dirty bit vector, everything still works.
 //! let ones = [usize::MAX; 2];
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones, 1) }.count_ones(), 1);
 //! ```
@@ -209,14 +209,28 @@ impl<B> BitVec<B> {
 }
 
 impl<B: AsRef<[usize]>> BitVec<B> {
+    /// Returns an owned copy of the bit vector.
+    pub fn to_owned(&self) -> BitVec {
+        BitVec {
+            bits: self.bits.as_ref().to_owned(),
+            len: self.len,
+        }
+    }
+
+    /// Returns true if the bit of given index is set.
+    #[inline]
     pub fn get(&self, index: usize) -> bool {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.get_unchecked(index) }
     }
 
+    /// Returns true if the bit of given index is set, without
+    /// bound checks.
+    ///
     /// # Safety
     ///
     /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
+    #[inline(always)]
     pub unsafe fn get_unchecked(&self, index: usize) -> bool {
         let word_index = index / BITS;
         let word = self.bits.as_ref().get_unchecked(word_index);
@@ -225,6 +239,7 @@ impl<B: AsRef<[usize]>> BitVec<B> {
 }
 
 impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
+    #[inline]
     pub fn set(&mut self, index: usize, value: bool) {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.set_unchecked(index, value) }
