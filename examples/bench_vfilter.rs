@@ -11,13 +11,12 @@ use common_traits::{CastableFrom, DowncastableInto};
 use dsi_progress_logger::*;
 use epserde::prelude::*;
 use lender::*;
-use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
     dict::VFilter,
     func::{shard_edge::*, *},
     traits::{BitFieldSlice, Word},
-    utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender},
+    utils::{LineLender, Sig, ToSig, ZstdLineLender},
 };
 
 #[derive(Parser, Debug)]
@@ -33,6 +32,9 @@ struct Args {
     #[arg(short = 'f', long)]
     /// A file containing UTF-8 keys, one per line. If not specified, the 64-bit keys [0..n) are used.
     filename: Option<String>,
+    /// The number of repetitions.
+    #[arg(short, long, default_value = "5")]
+    repeats: usize,
     /// Whether the file is compressed with zstd.
     #[arg(short, long)]
     zstd: bool,
@@ -167,17 +169,10 @@ fn main_with_types_bit_field_vec<
     args: Args,
 ) -> Result<()>
 where
-    SigVal<S, usize>: RadixKey,
-    SigVal<S, ()>: RadixKey,
     str: ToSig<S>,
-    String: ToSig<S>,
     usize: ToSig<S>,
-    VFunc<usize, usize, BitFieldVec, S, E>: DeserializeInner + TypeHash + AlignHash,
-    VFunc<str, usize, BitFieldVec, S, E>: DeserializeInner + TypeHash + AlignHash,
-    VFunc<usize, W, BitFieldVec<W>, S, E>: DeserializeInner + TypeHash + AlignHash,
-    VFunc<str, W, BitFieldVec<W>, S, E>: DeserializeInner + TypeHash + AlignHash, // TODO: this is weird
-    VFilter<W, VFunc<usize, W, BitFieldVec<W>, S, E>>: DeserializeInner + TypeHash + AlignHash,
-    VFilter<W, VFunc<str, W, BitFieldVec<W>, S, E>>: DeserializeInner + TypeHash + AlignHash,
+    VFilter<W, VFunc<usize, W, BitFieldVec<W>, S, E>>: Deserialize,
+    VFilter<W, VFunc<str, W, BitFieldVec<W>, S, E>>: Deserialize,
 {
     let mut pl = progress_logger![item_name = "key"];
 

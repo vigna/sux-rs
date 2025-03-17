@@ -24,8 +24,8 @@ fn _test_vfunc<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
 ) -> Result<()>
 where
     usize: ToSig<S>,
-    SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
     SigVal<S, usize>: RadixKey,
+    SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
 {
     let _ = env_logger::builder()
         .is_test(true)
@@ -86,8 +86,8 @@ fn _test_vfilter<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
 ) -> Result<()>
 where
     usize: ToSig<S>,
-    SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey,
+    SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
 {
     let _ = env_logger::builder()
         .is_test(true)
