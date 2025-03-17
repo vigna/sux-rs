@@ -60,7 +60,14 @@ use mem_dbg::{MemDbg, MemSize};
 use rapidhash::RapidInlineHasher;
 use rdst::RadixKey;
 use std::{
-    borrow::{Borrow, BorrowMut}, collections::VecDeque, fs::{self, File}, hash::Hasher, io::*, marker::PhantomData, ops::{BitXor, BitXorAssign}, ptr, sync::Arc
+    borrow::{Borrow, BorrowMut},
+    collections::VecDeque,
+    fs::File,
+    hash::Hasher,
+    io::*,
+    marker::PhantomData,
+    ops::{BitXor, BitXorAssign},
+    sync::Arc,
 };
 
 /// A trait for types that can be used as signatures.
@@ -775,7 +782,7 @@ impl<
                     let bytes = store.buf_sizes[i] * core::mem::size_of::<SigVal<S, V>>();
                     store.buckets[i].seek(SeekFrom::Start(0)).unwrap();
                     store.buckets[i].read_exact(&mut buf[..bytes]).unwrap();
-                    if ! self.borrowed {
+                    if !self.borrowed {
                         let _ = store.buckets[i].get_mut().set_len(0);
                     }
                     buf = &mut buf[bytes..];
