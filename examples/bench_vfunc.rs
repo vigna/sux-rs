@@ -104,39 +104,18 @@ where
 
         let func = VFunc::<str, usize, BitFieldVec, S, E>::load_full(&args.func)?;
 
-        pl.start("Querying (independent)...");
+        pl.start("Querying...");
         for key in &keys {
             std::hint::black_box(func.get(key.as_str()));
-        }
-        pl.done_with_count(args.n);
-
-        pl.start("Querying (dependent)...");
-        let mut x = 0;
-        for key in &mut keys {
-            debug_assert!(!key.is_empty());
-            unsafe {
-                // This as horrible as it can be, and will probably
-                // do harm if a key is the empty string, but we avoid
-                // testing
-                *key.as_bytes_mut().get_unchecked_mut(0) ^= (x & 1) as u8;
-            }
-            x = std::hint::black_box(func.get(key.as_str()));
         }
         pl.done_with_count(args.n);
     } else {
         // No filename
         let func = VFunc::<usize, usize, BitFieldVec<usize>, S, E>::load_full(&args.func)?;
 
-        pl.start("Querying (independent)...");
+        pl.start("Querying...");
         for i in 0..args.n {
             std::hint::black_box(func.get(i));
-        }
-        pl.done_with_count(args.n);
-
-        pl.start("Querying (dependent)...");
-        let mut x = 0;
-        for i in 0..args.n {
-            x = std::hint::black_box(func.get(i ^ (x & 1)));
         }
         pl.done_with_count(args.n);
     }
