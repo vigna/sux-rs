@@ -8,7 +8,6 @@
 use anyhow::Result;
 use clap::Parser;
 use common_traits::{CastableFrom, DowncastableInto};
-use dsi_progress_logger::*;
 use epserde::prelude::*;
 use lender::*;
 use sux::{
@@ -18,6 +17,24 @@ use sux::{
     traits::{BitFieldSlice, Word},
     utils::{LineLender, Sig, ToSig, ZstdLineLender},
 };
+
+fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
+    let mut timings = Vec::with_capacity(repeats);
+    for _ in 0..repeats {
+        let start = std::time::Instant::now();
+        f();
+        timings.push(start.elapsed().as_nanos() as f64 / n as f64);
+        eprintln!("{} ns/key", timings.last().unwrap());
+    }
+    timings.sort_unstable_by(|a, b| a.total_cmp(b));
+    println!(
+        "Min: {} Median: {} Max: {} Average: {}",
+        timings[0],
+        timings[timings.len() / 2],
+        timings.last().unwrap(),
+        timings.iter().sum::<f64>() / timings.len() as f64
+    );
+}
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFilter with strings or 64-bit integers", long_about = None)]
@@ -124,8 +141,6 @@ where
     VFilter<W, VFunc<usize, W, Box<[W]>, S, E>>: Deserialize,
     VFilter<W, VFunc<str, W, Box<[W]>, S, E>>: Deserialize,
 {
-    let mut pl = progress_logger![item_name = "key"];
-
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
             ZstdLineLender::from_path(filename)?
@@ -141,22 +156,22 @@ where
 
         let filter = VFilter::<W, VFunc<str, W, Box<[W]>, S, E>>::load_full(&args.func)?;
 
-        pl.start("Querying...");
-        for key in &keys {
-            std::hint::black_box(filter.get(key.as_str()));
-        }
-        pl.done_with_count(args.n);
+        bench(args.n, args.repeats, || {
+            for key in &keys {
+                std::hint::black_box(filter.get(key.as_str()));
+            }
+        });
     } else {
         // No filename
         let filter = VFilter::<W, VFunc<usize, W, Box<[W]>, S, E>>::load_full(&args.func)?;
-        let mut key: usize = 0;
 
-        pl.start("Querying...");
-        for i in 0..args.n {
-            key = key.wrapping_add(0x9e3779b97f4a7c15);
-            std::hint::black_box(filter.contains(i));
-        }
-        pl.done_with_count(args.n);
+        bench(args.n, args.repeats, || {
+            let mut key: usize = 0;
+            for _ in 0..args.n {
+                key = key.wrapping_add(0x9e3779b97f4a7c15);
+                std::hint::black_box(filter.contains(key));
+            }
+        });
     }
     Ok(())
 }
@@ -174,8 +189,6 @@ where
     VFilter<W, VFunc<usize, W, BitFieldVec<W>, S, E>>: Deserialize,
     VFilter<W, VFunc<str, W, BitFieldVec<W>, S, E>>: Deserialize,
 {
-    let mut pl = progress_logger![item_name = "key"];
-
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
             ZstdLineLender::from_path(filename)?
@@ -191,20 +204,22 @@ where
 
         let filter = VFilter::<W, VFunc<str, W, BitFieldVec<W>, S, E>>::load_full(&args.func)?;
 
-        pl.start("Querying...");
-        for key in &keys {
-            std::hint::black_box(filter.get(key.as_str()));
-        }
-        pl.done_with_count(args.n);
+        bench(args.n, args.repeats, || {
+            for key in &keys {
+                std::hint::black_box(filter.get(key.as_str()));
+            }
+        });
     } else {
         // No filename
         let filter = VFilter::<W, VFunc<usize, W, BitFieldVec<W>, S, E>>::load_full(&args.func)?;
 
-        pl.start("Querying...");
-        for i in 0..args.n {
-            std::hint::black_box(filter.contains(i));
-        }
-        pl.done_with_count(args.n);
+        bench(args.n, args.repeats, || {
+            let mut key: usize = 0;
+            for _ in 0..args.n {
+                key = key.wrapping_add(0x9e3779b97f4a7c15);
+                std::hint::black_box(filter.contains(key));
+            }
+        });
     }
     Ok(())
 }

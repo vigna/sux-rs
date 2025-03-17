@@ -7,7 +7,6 @@
 #![allow(clippy::collapsible_else_if)]
 use anyhow::Result;
 use clap::Parser;
-use dsi_progress_logger::*;
 use epserde::prelude::*;
 use lender::*;
 use sux::{
@@ -15,6 +14,24 @@ use sux::{
     func::{shard_edge::*, *},
     utils::{LineLender, Sig, ToSig, ZstdLineLender},
 };
+
+fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
+    let mut timings = Vec::with_capacity(repeats);
+    for _ in 0..repeats {
+        let start = std::time::Instant::now();
+        f();
+        timings.push(start.elapsed().as_nanos() as f64 / n as f64);
+        eprintln!("{} ns/key", timings.last().unwrap());
+    }
+    timings.sort_unstable_by(|a, b| a.total_cmp(b));
+    println!(
+        "Min: {} Median: {} Max: {} Average: {}",
+        timings[0],
+        timings[timings.len() / 2],
+        timings.last().unwrap(),
+        timings.iter().sum::<f64>() / timings.len() as f64
+    );
+}
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
@@ -86,8 +103,6 @@ where
     VFunc<usize, usize, BitFieldVec, S, E>: Deserialize,
     VFunc<str, usize, BitFieldVec, S, E>: Deserialize,
 {
-    let mut pl = progress_logger![item_name = "key"];
-
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
             ZstdLineLender::from_path(filename)?
@@ -102,21 +117,21 @@ where
         };
 
         let func = VFunc::<str, usize, BitFieldVec, S, E>::load_full(&args.func)?;
-
-        pl.start("Querying...");
-        for key in &keys {
-            std::hint::black_box(func.get(key.as_str()));
-        }
-        pl.done_with_count(args.n);
+        bench(args.n, args.repeats, || {
+            for key in &keys {
+                std::hint::black_box(func.get(key.as_str()));
+            }
+        });
     } else {
         // No filename
         let func = VFunc::<usize, usize, BitFieldVec<usize>, S, E>::load_full(&args.func)?;
-
-        pl.start("Querying...");
-        for i in 0..args.n {
-            std::hint::black_box(func.get(i));
-        }
-        pl.done_with_count(args.n);
+        bench(args.n, args.repeats, || {
+            let mut key: usize = 0;
+            for _ in 0..args.n {
+                key = key.wrapping_add(0x9e3779b97f4a7c15);
+                std::hint::black_box(func.get(key));
+            }
+        });
     }
     Ok(())
 }
