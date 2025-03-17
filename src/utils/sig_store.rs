@@ -642,7 +642,7 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
 /// implementation, [`ShardStoreImpl`], but it is implemented only for certain
 /// combinations of type parameters. Having this trait greatly simplifies the
 /// type signatures.
-pub trait ShardStore<S: Sig + ZeroCopy, V: ZeroCopy> {
+pub trait ShardStore<S: Sig, V: ZeroCopy> {
     type ShardIterator<'a>: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync
     where
         Self: 'a;

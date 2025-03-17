@@ -509,11 +509,11 @@ where
 /// unsigned type `W`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
+    u128: UpcastableFrom<W>,
+    u64: CastableInto<W>,
     SigVal<S, EmptyVal>: RadixKey,
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
-    u64: CastableInto<W>,
-    u128: UpcastableFrom<W>,
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
         mut self,
@@ -579,10 +579,10 @@ where
 /// Typically `W` will be `usize` or `u64`.
 impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
+    u128: UpcastableFrom<W>,
+    u64: CastableInto<W>,
     SigVal<S, EmptyVal>: RadixKey,
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
-    u64: CastableInto<W>,
-    u128: UpcastableFrom<W>,
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
         mut self,
@@ -649,7 +649,7 @@ impl<
     ) -> anyhow::Result<VFunc<T, W, D, S, E>>
     where
         u128: UpcastableFrom<W>,
-        SigVal<S, V>: RadixKey + Send + Sync,
+        SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
         for<'a> ShardDataIter<'a, W, D>: Send,
         for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
@@ -905,16 +905,7 @@ impl<
         P: ProgressLog + Clone + Send + Sync,
         I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
         for<'a> ShardDataIter<'a, W, D>: Send,
-        for<'a> std::iter::Enumerate<
-            std::iter::Zip<<I as IntoIterator>::IntoIter, ShardDataIter<'a, W, D>>,
-        >: Send,
-        for<'a> (
-            usize,
-            (
-                Arc<Vec<SigVal<S, V>>>,
-                <ShardDataIter<'a, W, D> as Iterator>::Item,
-            ),
-        ): Send,
+        for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
     {
         let thread_pool = ThreadPoolBuilder::new()
             .num_threads(self.shard_edge.num_shards().min(self.max_num_threads))
@@ -1101,18 +1092,9 @@ impl<
     ) -> Result<(), SolveError>
     where
         I::IntoIter: Send,
-        SigVal<S, V>: RadixKey + Send + Sync,
+        SigVal<S, V>: RadixKey,
         for<'a> ShardDataIter<'a, W, D>: Send,
-        for<'a> std::iter::Enumerate<
-            std::iter::Zip<<I as IntoIterator>::IntoIter, ShardDataIter<'a, W, D>>,
-        >: Send,
-        for<'a> (
-            usize,
-            (
-                Arc<Vec<SigVal<S, V>>>,
-                <ShardDataIter<'a, W, D> as Iterator>::Item,
-            ),
-        ): Send,
+        for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
     {
         main_pl
             .item_name("shard")
@@ -1526,7 +1508,6 @@ impl<
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()>
     where
-        SigVal<S, V>: Default,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign + Default,
     {
         let shard_edge = &self.shard_edge;

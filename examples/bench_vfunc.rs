@@ -10,19 +10,18 @@ use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
 use lender::*;
-use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
     func::{shard_edge::*, *},
-    utils::{LineLender, Sig, SigVal, ToSig, ZstdLineLender},
+    utils::{LineLender, Sig, ToSig, ZstdLineLender},
 };
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
 struct Args {
-    /// The maximum number strings to use from the file, or the number of 64-bit keys.
+    /// The maximum number of strings to read from the file, or the number of 64-bit keys.
     n: usize,
-    /// A name for the ε-serde serialized function with u64 keys.
+    /// A name for the ε-serde serialized function.
     func: String,
     #[arg(short = 'f', long)]
     /// A file containing UTF-8 keys, one per line. If not specified, the 64-bit keys [0..n) are used.
@@ -79,10 +78,7 @@ fn main() -> Result<()> {
 
 fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
 where
-    SigVal<S, usize>: RadixKey,
-    SigVal<S, ()>: RadixKey,
     str: ToSig<S>,
-    String: ToSig<S>,
     usize: ToSig<S>,
     VFunc<usize, usize, BitFieldVec, S, E>: Deserialize,
     VFunc<str, usize, BitFieldVec, S, E>: Deserialize,

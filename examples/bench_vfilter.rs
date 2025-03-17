@@ -21,11 +21,11 @@ use sux::{
 };
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None)]
+#[command(about = "Benchmark VFilter with strings or 64-bit integers", long_about = None)]
 struct Args {
     /// The maximum number strings to use from the file, or the number of 64-bit keys.
     n: usize,
-    /// A name for the ε-serde serialized function with u64 keys.
+    /// A name for the ε-serde serialized filter.
     func: String,
     /// The number of bits of the hashes used by the filter.
     #[arg(short, long, default_value_t = 8)]
@@ -116,18 +116,11 @@ fn main_with_types_boxed_slice<
     args: Args,
 ) -> Result<()>
 where
-    SigVal<S, usize>: RadixKey,
-    SigVal<S, ()>: RadixKey,
     str: ToSig<S>,
-    String: ToSig<S>,
     usize: ToSig<S>,
     Box<[W]>: BitFieldSlice<W>,
-    VFunc<usize, usize, BitFieldVec, S, E>: DeserializeInner + TypeHash + AlignHash,
-    VFunc<str, usize, BitFieldVec, S, E>: DeserializeInner + TypeHash + AlignHash,
-    VFunc<usize, W, Box<[W]>, S, E>: DeserializeInner + TypeHash + AlignHash,
-    VFunc<str, W, Box<[W]>, S, E>: DeserializeInner + TypeHash + AlignHash, // TODO: this is weird
-    VFilter<W, VFunc<usize, W, Box<[W]>, S, E>>: DeserializeInner + TypeHash + AlignHash,
-    VFilter<W, VFunc<str, W, Box<[W]>, S, E>>: DeserializeInner + TypeHash + AlignHash,
+    VFilter<W, VFunc<usize, W, Box<[W]>, S, E>>: Deserialize,
+    VFilter<W, VFunc<str, W, Box<[W]>, S, E>>: Deserialize,
 {
     let mut pl = progress_logger![item_name = "key"];
 
