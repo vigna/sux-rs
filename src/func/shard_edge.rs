@@ -865,12 +865,8 @@ mod fuse {
     /// The rest of the logic is identical.
     #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
     #[deep_copy]
+    #[derive(Default)]
     pub struct FuseLge3BigShards(FuseLge3Shards);
-    impl Default for FuseLge3BigShards {
-        fn default() -> Self {
-            Self(FuseLge3Shards::default())
-        }
-    }
 
     impl Display for FuseLge3BigShards {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -887,7 +883,7 @@ mod fuse {
         sig: [u64; 2],
     ) -> [usize; 3] {
         // This strategy will work up to 10^16 keys
-        let mut start = (shard as usize * (l as usize + 2)
+        let mut start = (shard * (l as usize + 2)
             + fixed_point_reduce_64!(sig[0].rotate_right(shard_high_bits) >> 32, l))
             << log2_seg_size;
         let segment_size = 1 << log2_seg_size;
