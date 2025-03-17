@@ -376,10 +376,7 @@ mod mwhc {
             let seg_size = self.seg_size;
             let v0 = fixed_point_reduce_128!(local_sig[0], seg_size);
             let v1 = fixed_point_reduce_128!(local_sig[1], seg_size) + seg_size;
-            let v2 = fixed_point_reduce_128!(
-                (local_sig[0] as u32 as u64) << 32 | (local_sig[1] as u32 as u64),
-                seg_size
-            ) + 2 * seg_size;
+            let v2 = fixed_point_reduce_128!(local_sig[0] ^ local_sig[1], seg_size) + 2 * seg_size;
 
             [v0, v1, v2]
         }
@@ -420,7 +417,7 @@ mod fuse {
     /// elimination to provide a close, albeit slightly larger, space overhead.
     /// The construction time per keys increases by an order of magnitude, but
     /// since the number of keys is small, the impact is limited.
-    /// 
+    ///
     /// For shards above a few hundred million keys we suggest to use
     /// [`FuseLge3BigShards`], as uses more bits from the signature, yielding an
     /// (empirically) smaller chance of generating duplicate edges in exchange
@@ -858,16 +855,17 @@ mod fuse {
 
     /// Zero-cost sharded fuse 3-hypergraphs with lazy Gaussian elimination for
     /// big shards.
-    /// 
+    ///
     /// This construction should be preferred to [`FuseLge3Shards`] for very
     /// large shards (above a few hundred million keys), as it uses more bits
     /// from the signature, reducing (empirically) the chance of duplicate
     /// edges. As a result, it is slightly slower and uses more space at
     /// construction time.
-    /// 
+    ///
     /// The rest of the logic is identical.
     #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
-    #[deep_copy]    pub struct FuseLge3BigShards(FuseLge3Shards);
+    #[deep_copy]
+    pub struct FuseLge3BigShards(FuseLge3Shards);
     impl Default for FuseLge3BigShards {
         fn default() -> Self {
             Self(FuseLge3Shards::default())
@@ -945,12 +943,24 @@ mod fuse {
 
         #[inline(always)]
         fn local_edge(&self, local_sig: Self::LocalSig) -> [usize; 3] {
-            edge_2_big(0, self.0.shard_bits_shift, self.0.log2_seg_size, self.0.l, local_sig)
+            edge_2_big(
+                0,
+                self.0.shard_bits_shift,
+                self.0.log2_seg_size,
+                self.0.l,
+                local_sig,
+            )
         }
 
         #[inline(always)]
         fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
-            edge_2_big(self.shard(sig), self.0.shard_bits_shift, self.0.log2_seg_size, self.0.l, sig)
+            edge_2_big(
+                self.shard(sig),
+                self.0.shard_bits_shift,
+                self.0.log2_seg_size,
+                self.0.l,
+                sig,
+            )
         }
     }
 }
