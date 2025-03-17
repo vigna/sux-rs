@@ -27,7 +27,7 @@ fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
         eprintln!("{} ns/key", timings.last().unwrap());
     }
     timings.sort_unstable_by(|a, b| a.total_cmp(b));
-    println!(
+    eprintln!(
         "Min: {} Median: {} Max: {} Average: {}",
         timings[0],
         timings[timings.len() / 2],
