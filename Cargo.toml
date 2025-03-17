@@ -37,12 +37,26 @@ core_affinity = "0.8.1"
 env_logger = { version = "0.11.0" }
 ambassador = "0.4.0"
 impl-tools = "0.10.0"
+clap = { version = "4.4.18", features = ["derive"] }
 
 # Fuzz
 arbitrary = { version = "1.3.2", features = ["derive"], optional = true }
 
 # Cli
-clap = { version = "4.4.18", features = ["derive"], optional = true }
+arbitrary-chunks = "0.4.1"
+derivative = "2.2.0"
+derive_setters = "0.1.6"
+# xorf = "0.11.0"
+xorf = { path = "../xorf" }
+crossbeam-channel = "0.5.14"
+thiserror = "2.0.11"
+itertools = "0.14.0"
+pthash = { version = "0.4.0", features = ["rayon"] }
+bytelines = "2.5.0"
+xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
+average = "0.15.1"
+lambert_w = { version = "1.0.17",  default-features = false, features = ["std"] }
+rapidhash = "1.4.0"
 
 [dev-dependencies]
 maligned = "0.2.1"
@@ -50,9 +64,11 @@ criterion = { version = "0.5.1", features = ["html_reports"] }
 
 [features]
 default = ["rayon"]
-cli = ["dep:clap"]       # Build the binary utils
+cli = []                 # Build the binary utils
 fuzz = ["dep:arbitrary"]
 slow_tests = []          # Run slow tests (use --release)
+mwhc = []				 # Compile MWHC data structures (mainly for benchmarking)
+no_logging = []		     # Disable logging for binaries that build functions and filters (for benchmarking)
 
 [profile.release]
 opt-level = 3            # like --release

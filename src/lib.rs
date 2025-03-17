@@ -15,6 +15,7 @@ compile_error!("`target_pointer_width` must be 64");
 
 pub mod bits;
 pub mod dict;
+pub mod func;
 pub mod rank_sel;
 pub mod traits;
 pub mod utils;
@@ -27,6 +28,7 @@ pub mod prelude {
     pub use crate::bit_vec;
     pub use crate::bits::*;
     pub use crate::dict::*;
+    pub use crate::func::*;
     pub use crate::rank_sel::*;
     pub use crate::rank_small;
     pub use crate::traits::bit_field_slice;

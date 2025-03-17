@@ -262,13 +262,36 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
         self.bits.as_ref()
     }
 }
+/// An iterator over non-overlapping chunks of a bit-field vector, starting at
+/// the beginning of the vector.
+///
+/// When the vector len is not evenly divided by the chunk size, the last chunk
+/// of the iteration will be shorter.
+///
+/// This struct is created by the
+/// [`try_chunks_mut`](#impl-BitFieldSliceMut-for-BitFieldVec) method.
+pub struct ChunksMut<'a, W: Word> {
+    remaining: usize,
+    bit_width: usize,
+    chunk_size: usize,
+    iter: std::slice::ChunksMut<'a, W>,
+}
 
-impl<W: Word, B: AsMut<[W]>> BitFieldVec<W, B> {
-    /// Returns the backend of the vector as a mutable slice of `W`.
-    pub fn as_mut_slice(&mut self) -> &mut [W] {
-        self.bits.as_mut()
+impl<'a, W: Word> Iterator for ChunksMut<'a, W> {
+    type Item = BitFieldVec<W, &'a mut [W]>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|chunk| {
+            let size = Ord::min(self.chunk_size, self.remaining);
+            let next = unsafe { BitFieldVec::from_raw_parts(chunk, self.bit_width, size) };
+            self.remaining -= size;
+            next
+        })
     }
 }
+
+impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {}
 
 impl<W: Word> BitFieldVec<W, Vec<W>> {
     /// Creates a new zero-initialized vector of given bit width and length.
@@ -408,7 +431,6 @@ impl<W: Word, T> BitFieldSliceCore<W> for BitFieldVec<W, T> {
 }
 
 impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
-    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> W {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
@@ -440,7 +462,6 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
         }
     }
 
-    #[inline]
     unsafe fn set_unchecked(&mut self, index: usize, value: W) {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
@@ -488,6 +509,114 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
             .for_each(|x| *x = W::ZERO);
         if residual != 0 {
             bits[full_words] &= W::MAX << residual;
+        }
+    }
+
+    /// This implementation perform the copy word by word, which is
+    /// significantly faster than the default implementation.
+    fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
+        assert_eq!(
+            self.bit_width, dst.bit_width,
+            "Bit widths must be equal (self: {}, dest: {})",
+            self.bit_width, dst.bit_width
+        );
+        // Reduce len to the elements available in both vectors
+        let len = Ord::min(Ord::min(len, dst.len - to), self.len - from);
+        if len == 0 {
+            return;
+        }
+        let bit_width = Ord::min(self.bit_width, dst.bit_width);
+        let bit_len = len * bit_width;
+        let src_pos = from * self.bit_width;
+        let dst_pos = to * dst.bit_width;
+        let src_bit = src_pos % W::BITS;
+        let dst_bit = dst_pos % W::BITS;
+        let src_first_word = src_pos / W::BITS;
+        let dst_first_word = dst_pos / W::BITS;
+        let src_last_word = (src_pos + bit_len - 1) / W::BITS;
+        let dst_last_word = (dst_pos + bit_len - 1) / W::BITS;
+        let source = self.bits.as_ref();
+        let dest = dst.bits.as_mut();
+
+        if src_first_word == src_last_word && dst_first_word == dst_last_word {
+            let mask = W::MAX >> (W::BITS - bit_len);
+            let word = (source[src_first_word] >> src_bit) & mask;
+            dest[dst_first_word] &= !(mask << dst_bit);
+            dest[dst_first_word] |= word << dst_bit;
+        } else if src_first_word == src_last_word {
+            // dst_first_word != dst_last_word
+            let mask = W::MAX >> (W::BITS - bit_len);
+            let word = (source[src_first_word] >> src_bit) & mask;
+            dest[dst_first_word] &= !(mask << dst_bit);
+            dest[dst_first_word] |= (word & mask) << dst_bit;
+            dest[dst_last_word] &= !(mask >> (W::BITS - dst_bit));
+            dest[dst_last_word] |= (word & mask) >> (W::BITS - dst_bit);
+        } else if dst_first_word == dst_last_word {
+            // src_first_word != src_last_word
+            let mask = W::MAX >> (W::BITS - bit_len);
+            let word = ((source[src_first_word] >> src_bit)
+                | (source[src_last_word] << (W::BITS - src_bit)))
+                & mask;
+            dest[dst_first_word] &= !(mask << dst_bit);
+            dest[dst_first_word] |= word << dst_bit;
+        } else if src_bit == dst_bit {
+            // src_first_word != src_last_word && dst_first_word != dst_last_word
+            let mask = W::MAX << dst_bit;
+            dest[dst_first_word] &= !mask;
+            dest[dst_first_word] |= source[src_first_word] & mask;
+
+            dest[(1 + dst_first_word)..dst_last_word]
+                .copy_from_slice(&source[(1 + src_first_word)..src_last_word]);
+
+            let residual =
+                bit_len - (W::BITS - src_bit) - (dst_last_word - dst_first_word - 1) * W::BITS;
+            let mask = W::MAX >> (W::BITS - residual);
+            dest[dst_last_word] &= !mask;
+            dest[dst_last_word] |= source[src_last_word] & mask;
+        } else if src_bit < dst_bit {
+            // src_first_word != src_last_word && dst_first_word !=
+            // dst_last_word
+            let dst_mask = W::MAX << dst_bit;
+            let src_mask = W::MAX << src_bit;
+            let shift = dst_bit - src_bit;
+            dest[dst_first_word] &= !dst_mask;
+            dest[dst_first_word] |= (source[src_first_word] & src_mask) << shift;
+
+            let mut word = source[src_first_word] >> (W::BITS - shift);
+            for i in 1..dst_last_word - dst_first_word {
+                dest[dst_first_word + i] = word | (source[src_first_word + i] << shift);
+                word = source[src_first_word + i] >> (W::BITS - shift);
+            }
+            let residual =
+                bit_len - (W::BITS - dst_bit) - (dst_last_word - dst_first_word - 1) * W::BITS;
+            let mask = W::MAX >> (W::BITS - residual);
+            dest[dst_last_word] &= !mask;
+            dest[dst_last_word] |= source[src_last_word] & mask;
+        } else {
+            // src_first_word != src_last_word && dst_first_word !=
+            // dst_last_word && src_bit > dst_bit
+            let dst_mask = W::MAX << dst_bit;
+            let src_mask = W::MAX << src_bit;
+            let shift = src_bit - dst_bit;
+            dest[dst_first_word] &= !dst_mask;
+            dest[dst_first_word] |= (source[src_first_word] & src_mask) >> shift;
+            dest[dst_first_word] |= source[src_first_word + 1] << (W::BITS - shift);
+
+            let mut word = source[src_first_word + 1] >> shift;
+
+            for i in 1..dst_last_word - dst_first_word {
+                word |= source[src_first_word + i + 1] << (W::BITS - shift);
+                dest[dst_first_word + i] = word;
+                word = source[src_first_word + i + 1] >> shift;
+            }
+
+            word |= source[src_last_word] << (W::BITS - shift);
+
+            let residual =
+                bit_len - (W::BITS - dst_bit) - (dst_last_word - dst_first_word - 1) * W::BITS;
+            let mask = W::MAX >> (W::BITS - residual);
+            dest[dst_last_word] &= !mask;
+            dest[dst_last_word] |= word & mask;
         }
     }
 
@@ -643,6 +772,36 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
         }
 
         *self.bits.as_mut().get_unchecked_mut(last_word_idx) = write_buffer;
+    }
+
+    type ChunksMut<'a>
+        = ChunksMut<'a, W>
+    where
+        Self: 'a;
+
+    /// # Errors
+    ///
+    /// This method will return an error if the chunk size multiplied by the by
+    /// the [bit width](BitFieldSliceCore::bit_width) is not a multiple of
+    /// `W::BITS` and more than one chunk must be returned.
+    fn try_chunks_mut(&mut self, chunk_size: usize) -> Result<Self::ChunksMut<'_>, ()> {
+        let len = self.len();
+        let bit_width = self.bit_width();
+        if len <= chunk_size || (chunk_size * bit_width) % W::BITS == 0 {
+            Ok(ChunksMut {
+                remaining: len,
+                bit_width: self.bit_width,
+                chunk_size,
+                iter: self.bits.as_mut()[..(len * bit_width).div_ceil(W::BITS)]
+                    .chunks_mut((chunk_size * bit_width).div_ceil(W::BITS)),
+            })
+        } else {
+            Err(())
+        }
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [W] {
+        self.bits.as_mut()
     }
 }
 
@@ -1290,5 +1449,89 @@ mod tests {
             b.push(0);
         }
         assert_eq!(b.bits.capacity(), capacity);
+    }
+
+    fn copy<W: Word, B: AsRef<[W]>, C: AsRef<[W]> + AsMut<[W]>>(
+        source: &BitFieldVec<W, B>,
+        from: usize,
+        dest: &mut BitFieldVec<W, C>,
+        to: usize,
+        len: usize,
+    ) {
+        let len = Ord::min(Ord::min(len, dest.len - to), source.len - from);
+        for i in 0..len {
+            dest.set(to + i, source.get(from + i));
+        }
+    }
+
+    #[test]
+    fn test_copy() {
+        for src_pattern in 0..8 {
+            for dst_pattern in 0..8 {
+                // if from_first_word == from_last_word && to_first_word == to_last_word
+                let source = bit_field_vec![3 => src_pattern; 100];
+                let mut dest_actual = bit_field_vec![3 => dst_pattern; 100];
+                let mut dest_expected = dest_actual.clone();
+                source.copy(1, &mut dest_actual, 2, 10);
+                copy(&source, 1, &mut dest_expected, 2, 10);
+                assert_eq!(dest_actual, dest_expected);
+                // else if from_first_word == from_last_word
+                let source = bit_field_vec![3 => src_pattern; 100];
+                let mut dest_actual = bit_field_vec![3 => dst_pattern; 100];
+                let mut dest_expected = dest_actual.clone();
+                source.copy(1, &mut dest_actual, 20, 10);
+                copy(&source, 1, &mut dest_expected, 20, 10);
+                assert_eq!(dest_actual, dest_expected);
+                // else if to_first_word == to_last_word
+                let source = bit_field_vec![3 => src_pattern; 100];
+                let mut dest_actual = bit_field_vec![3 => dst_pattern; 100];
+                let mut dest_expected = dest_actual.clone();
+                source.copy(20, &mut dest_actual, 1, 10);
+                copy(&source, 20, &mut dest_expected, 1, 10);
+                assert_eq!(dest_actual, dest_expected);
+                // else if src_bit == dest_bit (residual = 1)
+                let source = bit_field_vec![3 => src_pattern; 1000];
+                let mut dest_actual = bit_field_vec![3 => dst_pattern; 1000];
+                let mut dest_expected = dest_actual.clone();
+                source.copy(3, &mut dest_actual, 3 + 3 * 128, 40);
+                copy(&source, 3, &mut dest_expected, 3 + 3 * 128, 40);
+                assert_eq!(dest_actual, dest_expected);
+                // else if src_bit == dest_bit (residual = 64)
+                let source = bit_field_vec![3 => src_pattern; 1000];
+                let mut dest_actual = bit_field_vec![3 => dst_pattern; 1000];
+                let mut dest_expected = dest_actual.clone();
+                source.copy(3, &mut dest_actual, 3 + 3 * 128, 61);
+                copy(&source, 3, &mut dest_expected, 3 + 3 * 128, 61);
+                assert_eq!(dest_actual, dest_expected);
+                // else if src_bit < dest_bit (residual = 1)
+                let source = bit_field_vec![3 => src_pattern; 1000];
+                let mut dest_actual = bit_field_vec![3 => dst_pattern; 1000];
+                let mut dest_expected = dest_actual.clone();
+                source.copy(3, &mut dest_actual, 7 + 64 * 3, 40);
+                copy(&source, 3, &mut dest_expected, 7 + 64 * 3, 40);
+                assert_eq!(dest_actual, dest_expected);
+                // else if src_bit < dest_bit (residual = 64)
+                let source = bit_field_vec![3 => src_pattern; 1000];
+                let mut dest_actual = bit_field_vec![3 => dst_pattern; 1000];
+                let mut dest_expected = dest_actual.clone();
+                source.copy(3, &mut dest_actual, 7 + 64 * 3, 40 + 17);
+                copy(&source, 3, &mut dest_expected, 7 + 64 * 3, 40 + 17);
+                assert_eq!(dest_actual, dest_expected);
+                // else if src_bit > dest_bit (residual = 1)
+                let source = bit_field_vec![3 => src_pattern; 1000];
+                let mut dest_actual = bit_field_vec![3 => dst_pattern; 1000];
+                let mut dest_expected = dest_actual.clone();
+                source.copy(7, &mut dest_actual, 3 + 64 * 3, 40 + 64);
+                copy(&source, 7, &mut dest_expected, 3 + 64 * 3, 40 + 64);
+                assert_eq!(dest_actual, dest_expected);
+                // else if src_bit > dest_bit (residual = 64)
+                let source = bit_field_vec![3 => src_pattern; 1000];
+                let mut dest_actual = bit_field_vec![3 => dst_pattern; 1000];
+                let mut dest_expected = dest_actual.clone();
+                source.copy(7, &mut dest_actual, 3 + 64 * 3, 40 + 21 + 64);
+                copy(&source, 7, &mut dest_expected, 3 + 64 * 3, 40 + 21 + 64);
+                assert_eq!(dest_actual, dest_expected);
+            }
+        }
     }
 }

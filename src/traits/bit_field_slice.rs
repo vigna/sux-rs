@@ -64,6 +64,8 @@
 //! slice.set(0, 1, Ordering::Relaxed);
 //! assert_eq!(slice.get(0, Ordering::Relaxed), 1);
 //! ```
+
+#![allow(clippy::result_unit_err)]
 use common_traits::*;
 use core::sync::atomic::*;
 use mem_dbg::{MemDbg, MemSize};
@@ -144,7 +146,7 @@ pub trait BitFieldSlice<W: Word>: BitFieldSliceCore<W> {
 }
 
 /// A mutable slice of bit fields of constant bit width.
-pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
+pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> {
     /// Returns the mask to apply to values to ensure they fit in
     /// [`bit_width`](BitFieldSliceCore::bit_width) bits.
     #[inline(always)]
@@ -193,6 +195,33 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
     /// Sets all values to zero using a parallel implementation.
     #[cfg(feature = "rayon")]
     fn par_reset(&mut self);
+
+    /// Copy part of the content of the vector to another vector.
+    ///
+    /// At most `len` elements are copied, compatibly with the elements
+    /// available in both vectors.
+    ///
+    /// # Arguments
+    ///
+    /// * `from`: the index of the first element to copy.
+    ///
+    /// * `dst`: the destination vector.
+    ///
+    /// * `to`: the index of the first element in the destination vector.
+    ///
+    /// * `len`: the maximum number of elements to copy.
+    ///
+    /// # Implementation Notes
+    ///
+    /// The default implementation is a simple loop that copies the elements one
+    /// by one. It is expected to be implemented in a more efficient way.
+    fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
+        // Reduce len to the elements available in both vectors
+        let len = Ord::min(Ord::min(len, dst.len() - to), self.len() - from);
+        for i in 0..len {
+            dst.set(to + i, self.get(from + i));
+        }
+    }
 
     /// Applies a function to all elements of the slice in place without
     /// checking [bit widths](BitFieldSliceCore::bit_width).
@@ -266,6 +295,39 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSliceCore<W> {
             });
         }
     }
+
+    type ChunksMut<'a>: Iterator<Item: BitFieldSliceMut<W>>
+    where
+        Self: 'a;
+
+    /// Tries and returns an iterator over non-overlapping mutable chunks of a
+    /// bit-field slice, starting at the beginning of the slice.
+    ///
+    /// This might not always be possible; implementations must document when
+    /// the method will success (see, for example, [the implementation for
+    /// `BitFieldVec`](#impl-BitFieldSliceMut-for-BitFieldVec)).
+    ///
+    /// When the slice len is not evenly divided by the chunk size, the last
+    /// chunk of the iteration will be the remainder.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # fn main() -> Result<(), ()> {
+    /// use sux::prelude::*;
+    ///
+    /// let mut b = bit_field_vec![32; 4, 500, 2, 3, 1];
+    /// for mut c in b.try_chunks_mut(2)? {
+    ///     c.set(0, 5);
+    /// }
+    /// assert_eq!(b, bit_field_vec![32; 5, 500, 5, 3, 5]);
+    /// # Ok(())
+    /// # }
+    /// ```
+    fn try_chunks_mut(&mut self, chunk_size: usize) -> Result<Self::ChunksMut<'_>, ()>;
+
+    /// Returns the backend of the slice as a mutable slice of `W`.
+    fn as_mut_slice(&mut self) -> &mut [W];
 }
 
 /// A (tentatively) thread-safe slice of bit fields of constant bit width supporting atomic operations.
@@ -301,7 +363,7 @@ where
     /// No bound or bit-width check is performed.
     unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering);
 
-    /// Setss the element of the slice at the specified index.
+    /// Sets the element of the slice at the specified index.
     ///
     /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
     /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
@@ -433,6 +495,21 @@ macro_rules! impl_mut {
                     .par_iter_mut()
                     .with_min_len(crate::RAYON_MIN_LEN)
                     .for_each(|w| { *w = 0 });
+            }
+
+            fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
+                let len = Ord::min(Ord::min(len, dst.len() - to), self.len() - from);
+                dst.as_mut()[to..][..len].copy_from_slice(&self.as_ref()[from..][..len]);
+            }
+
+            type ChunksMut<'a> = std::slice::ChunksMut<'a, $ty> where Self: 'a;
+
+            fn try_chunks_mut(&mut self, chunk_size: usize) -> Result<Self::ChunksMut<'_>, ()> {
+                Ok(self.as_mut().chunks_mut(chunk_size))
+            }
+
+            fn as_mut_slice(&mut self) -> &mut [$ty] {
+                self.as_mut()
             }
         }
     )*};
