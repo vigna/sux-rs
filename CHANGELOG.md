@@ -1,11 +1,17 @@
 # Change Log
 
-## [0.6.0] - 2025-02-11
+## [0.6.0] - 2025-03-17
 
 ### New
 
-* New explicit `par_*` methods for parallel operations. All such
-  operations use `with_min_len(RAYON_MIN_LEN)` to reduce overhead.
+* Updated dependencies.
+
+* New explicit parallel methods enabled by the `rayon` feature for operations
+  that were enabled with the `rayon` feature. Moreover, we use `with_min_len`
+  to reduce overhead.
+
+* New `FairChunks` struct that provides chunks of balanced weight using a
+  `SuccUnchecked` structure.
 
 ## [0.5.0] - 2025-01-30
 
