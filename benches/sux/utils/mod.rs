@@ -71,12 +71,7 @@ pub fn create_bitvec(
     (num_ones_first_half, num_ones_second_half, bits)
 }
 
-// #[inline(always)]
-// pub fn fastrange(rng: &mut SmallRng, range: u64) -> u64 {
-//     ((rng.gen::<u64>() as u128).wrapping_mul(range as u128) >> 64) as u64
-// }
-
-/// Return the memory cost of the struct in percentage.
+/// Returns the memory cost of the struct in percentage.
 /// Depends on the length of underlying bit vector and the total memory size of the struct.
 pub fn mem_cost(benched_struct: impl MemDbg + BitLength) -> f64 {
     (((benched_struct.mem_size(SizeFlags::default()) * 8 - benched_struct.len()) * 100) as f64)
@@ -106,7 +101,7 @@ pub fn save_mem_cost<B: Build<BitVec> + MemDbg + BitLength>(
 }
 
 #[inline(always)]
-pub fn fastrange_non_uniform(rng: &mut SmallRng, first_half: u64, second_half: u64) -> u64 {
+pub fn non_uniform(rng: &mut SmallRng, first_half: u64, second_half: u64) -> u64 {
     if rng.random_bool(0.5) {
         ((rng.gen::<u64>() as u128).wrapping_mul(first_half as u128) >> 64) as u64
     } else {
@@ -139,7 +134,7 @@ pub fn bench_select<S: Build<BitVec> + Select + MemDbg + BitLength>(
                 let sel: S = S::new(bits);
                 let mut routine = || {
                     let r =
-                        fastrange_non_uniform(&mut rng, num_ones_first_half, num_ones_second_half);
+                        non_uniform(&mut rng, num_ones_first_half, num_ones_second_half);
                     black_box(unsafe { sel.select_unchecked(r as usize) });
                 };
                 bench_group.bench_function(
@@ -178,7 +173,7 @@ pub fn bench_rank<R: Build<BitVec> + Rank + MemDbg + BitLength>(
                 let sel: R = R::new(bits);
                 let mut routine = || {
                     let r =
-                        fastrange_non_uniform(&mut rng, num_ones_first_half, num_ones_second_half);
+                        non_uniform(&mut rng, num_ones_first_half, num_ones_second_half);
                     black_box(unsafe { sel.rank_unchecked(r as usize) });
                 };
                 bench_group.bench_function(

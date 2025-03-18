@@ -35,7 +35,7 @@ pub trait IntoIteratorFrom: IntoIterator {
 #[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
 pub trait UncheckedIterator {
     type Item;
-    /// Return the next item in the iterator. If there is no next item,
+    /// Returns the next item in the iterator. If there is no next item,
     /// the result is undefined.
     /// # Safety
     /// The caller must ensure that there is a next item.
@@ -50,12 +50,12 @@ pub trait IntoUncheckedIterator: Sized {
     type Item;
     type IntoUncheckedIter: UncheckedIterator<Item = Self::Item>;
 
-    /// Create an unchecked iterator starting from the first position.
+    /// Creates an unchecked iterator starting from the first position.
     fn into_unchecked_iter(self) -> Self::IntoUncheckedIter {
         self.into_unchecked_iter_from(0)
     }
 
-    /// Create an unchecked iterator starting from the given position.
+    /// Creates an unchecked iterator starting from the given position.
     fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter;
 }
 
@@ -71,8 +71,8 @@ pub trait IntoReverseUncheckedIterator: Sized {
     type Item;
     type IntoRevUncheckedIter: UncheckedIterator<Item = Self::Item>;
 
-    /// Create a reverse unchecked iterator starting from the end.
+    /// Creates a reverse unchecked iterator starting from the end.
     fn into_rev_unchecked_iter(self) -> Self::IntoRevUncheckedIter;
-    /// Create a reverse unchecked iterator starting from the given position.
+    /// Creates a reverse unchecked iterator starting from the given position.
     fn into_rev_unchecked_iter_from(self, from: usize) -> Self::IntoRevUncheckedIter;
 }

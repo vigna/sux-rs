@@ -123,7 +123,7 @@ fn main() -> Result<()> {
 
         let first = *values.first().unwrap();
 
-        pl.start("Benchmarkins s.pred()...");
+        pl.start("Benchmarking s.pred()...");
         for _ in 0..args.t {
             black_box(
                 elias_fano_s
