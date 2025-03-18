@@ -78,8 +78,9 @@ where
     /// [`contains`](VFilter::contains).
     #[inline(always)]
     pub fn contains_by_sig(&self, sig: S) -> bool {
+        let shard_edge = &self.func.shard_edge;
         self.func.get_by_sig(sig)
-            == mix64(self.func.shard_edge.local_sig(sig).sig_u64()).cast() & self.filter_mask
+            == mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))).cast() & self.filter_mask
     }
 
     /// Returns whether a key is contained in the filter.
@@ -168,10 +169,11 @@ mod tests {
                 .log2_buckets(4)
                 .offline(false)
                 .try_build_filter(FromIntoIterator::from(0..n), no_logging![])?;
+            let shard_edge = &filter.func.shard_edge;
             for i in 0..n {
                 let sig = ToSig::<S>::to_sig(i, filter.func.seed);
                 assert_eq!(
-                    mix64(filter.func.shard_edge.local_sig(sig)[0]) & 0xFF,
+                    mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))) & 0xFF,
                     filter.get(i) as u64
                 );
             }
