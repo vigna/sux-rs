@@ -101,7 +101,7 @@ pub struct FairChunks<I: SuccUnchecked<Input = usize, Output = usize>> {
 }
 
 impl<I: SuccUnchecked<Input = usize, Output = usize>> FairChunks<I> {
-    /// Create a fair chunk iterator using a structure supporting unchecked
+    /// Creates a fair chunk iterator using a structure supporting unchecked
     /// successor queries.
     ///
     /// This constructor does not require the cumulative weight function to
@@ -131,7 +131,7 @@ impl<I: SuccUnchecked<Input = usize, Output = usize>> FairChunks<I> {
 }
 
 impl<I: Succ<Input = usize, Output = usize>> FairChunks<I> {
-    /// Create a fair chunk iterator using a structure supporting successor
+    /// Creates a fair chunk iterator using a structure supporting successor
     /// queries.
     ///
     /// This constructor requires that the cumulative weight function implements
