@@ -262,7 +262,7 @@ impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
         }
     }
 
-    /// Set all bits to the given value.
+    /// Sets all bits to the given value.
     pub fn fill(&mut self, value: bool) {
         let full_words = self.len() / BITS;
         let residual = self.len % BITS;
@@ -275,7 +275,7 @@ impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
         }
     }
 
-    /// Set all bits to the given value using a parallel implementation.
+    /// Sets all bits to the given value using a parallel implementation.
     #[cfg(feature = "rayon")]
     pub fn par_fill(&mut self, value: bool) {
         let full_words = self.len() / BITS;
@@ -292,12 +292,12 @@ impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
         }
     }
 
-    /// Set all bits to zero.
+    /// Sets all bits to zero.
     pub fn reset(&mut self) {
         self.fill(false);
     }
 
-    /// Set all bits to zero using a parallel implementation.
+    /// Sets all bits to zero using a parallel implementation.
     #[cfg(feature = "rayon")]
     pub fn par_reset(&mut self) {
         self.par_fill(false);
@@ -812,7 +812,7 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
         (old_word >> (bit_index)) & 1 != 0
     }
 
-    /// Set all bits to the given value.
+    /// Sets all bits to the given value.
     pub fn fill(&mut self, value: bool, ordering: Ordering) {
         let full_words = self.len() / BITS;
         let residual = self.len % BITS;
@@ -833,7 +833,7 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
         }
     }
 
-    /// Set all bits to the given value using a parallel implementation.
+    /// Sets all bits to the given value using a parallel implementation.
     #[cfg(feature = "rayon")]
     pub fn par_fill(&mut self, value: bool, ordering: Ordering) {
         let full_words = self.len() / BITS;
@@ -857,12 +857,12 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
         }
     }
 
-    /// Set all bits to zero.
+    /// Sets all bits to zero.
     pub fn reset(&mut self, ordering: Ordering) {
         self.fill(false, ordering);
     }
 
-    /// Set all bits to zero using a parallel implementation.
+    /// Sets all bits to zero using a parallel implementation.
     #[cfg(feature = "rayon")]
     pub fn par_reset(&mut self, ordering: Ordering) {
         self.par_fill(false, ordering);

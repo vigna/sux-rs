@@ -56,7 +56,6 @@ pub fn compare_adapt_const(
             BenchmarkId::from_parameter(format!("{}_{}_0", bitvec_id.0, bitvec_id.1)),
             |b| {
                 b.iter(|| {
-                    // use fastrange
                     let r =
                         ((rng.gen::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64) as usize;
                     black_box(unsafe { sel.select_unchecked(r) });
@@ -80,7 +79,6 @@ pub fn compare_adapt_const(
             BenchmarkId::from_parameter(format!("{}_{}_0", bitvec_id.0, bitvec_id.1)),
             |b| {
                 b.iter(|| {
-                    // use fastrange
                     let r =
                         ((rng.gen::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64) as usize;
                     black_box(unsafe { sel.select_unchecked(r) });
@@ -117,8 +115,7 @@ macro_rules! bench_select_adapt_const {
                 &$log_inv_size,
                 |b, _| {
                     b.iter(|| {
-                        // use fastrange
-                        let r =  fastrange_non_uniform(&mut rng, bitvec_id.3, bitvec_id.4) as usize;
+                        let r =  non_uniform(&mut rng, bitvec_id.3, bitvec_id.4) as usize;
                         black_box(unsafe { sel.select_unchecked(r) });
                     })
                 },

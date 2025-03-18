@@ -175,7 +175,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
     const ONES_PER_INVENTORY: usize = (1 << LOG2_ONES_PER_INVENTORY);
     const ONES_PER_INVENTORY_MASK: usize = (1 << LOG2_ONES_PER_INVENTORY) - 1;
 
-    // Compute adaptively the number of 32-bit subinventory entries
+    /// Computes adaptively the number of 32-bit subinventory entries
     #[inline(always)]
     fn log2_ones_per_sub32(span: usize) -> usize {
         debug_assert!(span >= 1 << 16);
@@ -380,7 +380,7 @@ impl<
                     debug_assert!(next_quantum <= end_bit_idx);
                     // find the quantum bit in the word
                     let in_word_index = word.select_in_word(next_quantum - past_ones);
-                    // compute the global index of the quantum bit in the bitvec
+                    // compute the global index of the quantum bit in the bit vector
                     let bit_index = (word_idx * usize::BITS as usize) + in_word_index;
 
                     // This exit is necessary in case the number of ones per
