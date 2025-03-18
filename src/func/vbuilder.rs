@@ -1057,7 +1057,9 @@ impl<
         }
     }
 
-    const MAX_NO_DUP_EDGE_CHECK: usize = 1 << 32;
+    /// After this number of keys, in the case of filters we remove duplicate
+    /// edges.
+    const MAX_NO_DUP_EDGE_REMOVAL: usize = 1 << 30;
 
     /// Solves in parallel shards returned by an iterator, storing
     /// the result in `data`.
@@ -1157,7 +1159,7 @@ impl<
                             }
 
                             if TypeId::of::<V>() == TypeId::of::<EmptyVal>()
-                                && self.num_keys > Self::MAX_NO_DUP_EDGE_CHECK
+                                && self.num_keys > Self::MAX_NO_DUP_EDGE_REMOVAL
                             {
                                 // Large filters: we eliminate duplicate edges.
 

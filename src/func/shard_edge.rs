@@ -209,8 +209,8 @@ fn sharding_high_bits(n: usize, eps: f64) -> u32 {
 
 #[cfg(feature = "mwhc")]
 mod mwhc {
-    use epserde::Epserde;
     use crate::utils::SigVal;
+    use epserde::Epserde;
 
     use super::*;
 
