@@ -82,16 +82,6 @@ pub trait Sig: ZeroCopy + Default + PartialEq + Eq + std::fmt::Debug {
     /// In debug mode this method should panic if `mask` is not equal to `(1 <<
     /// high_bits) - 1`.
     fn high_bits(&self, high_bits: u32, mask: u64) -> u64;
-
-    /// Extracts a 64-bit signature.
-    ///
-    /// This method is useful to obtain a 64-bit signature independently of the
-    /// specific type of signature.
-    ///
-    /// Note that this value could be equal to the signature itself. If you are
-    /// reusing the same signature for different purposes, you should mix
-    /// thoroughly this value (see, e.g., [`mix64`](crate::func::mix64)).
-    fn sig_u64(&self) -> u64;
 }
 
 impl Sig for [u64; 2] {
@@ -100,11 +90,6 @@ impl Sig for [u64; 2] {
         debug_assert!(mask == (1 << high_bits) - 1);
         self[0].rotate_left(high_bits) & mask
     }
-
-    #[inline(always)]
-    fn sig_u64(&self) -> u64 {
-        self[0] ^ self[1]
-    }
 }
 
 impl Sig for [u64; 1] {
@@ -112,11 +97,6 @@ impl Sig for [u64; 1] {
     fn high_bits(&self, high_bits: u32, mask: u64) -> u64 {
         debug_assert!(mask == (1 << high_bits) - 1);
         self[0].rotate_left(high_bits) & mask
-    }
-
-    #[inline(always)]
-    fn sig_u64(&self) -> u64 {
-        self[0]
     }
 }
 
@@ -142,6 +122,12 @@ impl<V: ZeroCopy> RadixKey for SigVal<[u64; 1], V> {
 
     fn get_level(&self, level: usize) -> u8 {
         (self.sig[0] >> ((level % 8) * 8)) as u8
+    }
+}
+
+impl<S: Sig + PartialEq, V: ZeroCopy> PartialEq for SigVal<S, V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.sig == other.sig
     }
 }
 

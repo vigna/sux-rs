@@ -133,8 +133,7 @@ pub fn bench_select<S: Build<BitVec> + Select + MemDbg + BitLength>(
 
                 let sel: S = S::new(bits);
                 let mut routine = || {
-                    let r =
-                        non_uniform(&mut rng, num_ones_first_half, num_ones_second_half);
+                    let r = non_uniform(&mut rng, num_ones_first_half, num_ones_second_half);
                     black_box(unsafe { sel.select_unchecked(r as usize) });
                 };
                 bench_group.bench_function(
@@ -172,8 +171,7 @@ pub fn bench_rank<R: Build<BitVec> + Rank + MemDbg + BitLength>(
 
                 let sel: R = R::new(bits);
                 let mut routine = || {
-                    let r =
-                        non_uniform(&mut rng, num_ones_first_half, num_ones_second_half);
+                    let r = non_uniform(&mut rng, num_ones_first_half, num_ones_second_half);
                     black_box(unsafe { sel.rank_unchecked(r as usize) });
                 };
                 bench_group.bench_function(

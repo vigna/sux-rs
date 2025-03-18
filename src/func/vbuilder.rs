@@ -28,6 +28,7 @@ use std::any::TypeId;
 use std::borrow::Cow;
 use std::hint::unreachable_unchecked;
 use std::marker::PhantomData;
+use std::mem::transmute;
 use std::ops::{BitXor, BitXorAssign};
 use std::slice::Iter;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -496,7 +497,7 @@ where
         for<'a> ShardDataIter<'a, W, Box<[W]>>: Send,
         for<'a> ShardData<'a, W, Box<[W]>>: Send,
     {
-        let get_val = |sig_val: SigVal<E::LocalSig, W>| sig_val.val;
+        let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
         self.build_loop(keys, values, None, &get_val, new_data, pl)
     }
@@ -525,7 +526,9 @@ where
         for<'a> ShardData<'a, W, Box<[W]>>: Send,
     {
         let filter_mask = W::MAX;
-        let get_val = |sig_val: SigVal<E::LocalSig, EmptyVal>| mix64(sig_val.sig.sig_u64()).cast();
+        let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
+            mix64(shard_edge.edge_hash(sig_val.sig)).cast()
+        };
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
 
         Ok(VFilter {
@@ -563,7 +566,7 @@ where
         values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
-        let get_val = |sig_val: SigVal<E::LocalSig, W>| sig_val.val;
+        let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
         self.build_loop(keys, values, None, &get_val, new_data, pl)
     }
@@ -593,8 +596,8 @@ where
         assert!(filter_bits > 0);
         assert!(filter_bits <= W::BITS);
         let filter_mask = W::MAX >> (W::BITS - filter_bits);
-        let get_val = |sig_val: SigVal<E::LocalSig, EmptyVal>| {
-            mix64(sig_val.sig.sig_u64()).cast() & filter_mask
+        let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
+            mix64(shard_edge.edge_hash(sig_val.sig)).cast() & filter_mask
         };
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
 
@@ -643,7 +646,7 @@ impl<
         mut keys: impl RewindableIoLender<T>,
         mut values: impl RewindableIoLender<V>,
         bit_width: Option<usize>,
-        get_val: &(impl Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync),
+        get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
         new_data: fn(usize, usize) -> D,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, D, S, E>>
@@ -658,7 +661,10 @@ impl<
         let mut prng = SmallRng::seed_from_u64(self.seed);
 
         if let Some(expected_num_keys) = self.expected_num_keys {
-            self.shard_edge.set_up_shards(expected_num_keys);
+            self.shard_edge.set_up_shards(
+                expected_num_keys,
+                TypeId::of::<V>() == TypeId::of::<EmptyVal>(), // Filter
+            );
             self.log2_buckets = self.shard_edge.shard_high_bits();
         }
 
@@ -756,7 +762,7 @@ impl<
     fn try_seed<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         V: ZeroCopy + Default + Send + Sync + Ord + UpcastableInto<u128>,
-        G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &mut self,
         seed: u64,
@@ -835,11 +841,12 @@ impl<
 
         let shard_store = sig_store.into_shard_store(self.shard_edge.shard_high_bits())?;
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
+        let filter = TypeId::of::<V>() == TypeId::of::<EmptyVal>();
 
-        self.shard_edge.set_up_shards(self.num_keys);
+        self.shard_edge.set_up_shards(self.num_keys, filter);
         (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
 
-        if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
+        if filter {
             pl.info(format_args!(
                 "Number of keys: {} Bit width: {}",
                 self.num_keys, self.bit_width,
@@ -890,7 +897,7 @@ impl<
         I,
         P,
         V: ZeroCopy + Default + Send + Sync,
-        G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &mut self,
         seed: u64,
@@ -1050,6 +1057,8 @@ impl<
         }
     }
 
+    const MAX_NO_DUP_EDGE_CHECK: usize = 1 << 32;
+
     /// Solves in parallel shards returned by an iterator, storing
     /// the result in `data`.
     ///
@@ -1131,20 +1140,62 @@ impl<
                         ));
 
                         {
-                            // SAFETY: only one thread may be accessing the shard
+                            // SAFETY: only one thread may be accessing the
+                            // shard, and we will be consuming it
                             let shard =
                                 unsafe { &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>) };
 
                             if self.check_dups {
-                                shard.radix_sort_builder().with_low_mem_tuner().sort();
-
+                                shard
+                                    .radix_sort_builder()
+                                    .with_low_mem_tuner()
+                                    .with_parallel(true)
+                                    .sort();
                                 if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
                                     return Err(SolveError::DuplicateSignature);
                                 }
                             }
 
-                            // Sorting the signatures increases locality
-                            if self.shard_edge.num_sort_keys() != 1 {
+                            if TypeId::of::<V>() == TypeId::of::<EmptyVal>()
+                                && self.num_keys > Self::MAX_NO_DUP_EDGE_CHECK
+                            {
+                                // Large filters: we eliminate duplicate edges.
+
+                                // E::SortSig provides a transmutable view of
+                                // SigVal with an implementation of RadixKey
+                                // that is compatible with the key returned by
+                                // ShardEdge::sort_key, and equality that
+                                // implies equality of generated edges.
+
+                                // SAFETY: we drop this immediately after sorting.
+                                let shard = unsafe {
+                                    transmute::<&mut Vec<SigVal<S, V>>, &mut Vec<E::SortSigVal<V>>>(
+                                        shard,
+                                    )
+                                };
+
+                                let builder = shard.radix_sort_builder();
+                                if self.max_num_threads == 1 {
+                                    builder.with_single_threaded_tuner().with_parallel(false)
+                                } else {
+                                    builder.with_low_mem_tuner().with_parallel(true)
+                                }
+                                .sort();
+
+                                // Duplicate edges on large filters can be
+                                // simply removed: they do not change the semantics
+                                // of the filter because hashes are computed on
+                                // signatures.
+                                let shard_len = shard.len();
+                                shard.dedup();
+                                if shard_len != shard.len() {
+                                    pl.info(format_args!(
+                                        "Removed edges: {}",
+                                        shard_len - shard.len()
+                                    ));
+                                }
+                            } else if self.shard_edge.num_sort_keys() != 1 {
+                                // Sorting the signatures increases locality
                                 self.count_sort::<V>(shard);
                             }
                         }
@@ -1221,7 +1272,7 @@ impl<
     fn peel_by_index<
         'a,
         V: ZeroCopy + Send + Sync,
-        G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &self,
         shard_index: usize,
@@ -1328,10 +1379,13 @@ impl<
                     let local_sig = shard_edge.local_sig(sig_val.sig);
                     (
                         local_sig,
-                        get_val(SigVal {
-                            sig: local_sig,
-                            val: sig_val.val,
-                        }),
+                        get_val(
+                            &shard_edge,
+                            SigVal {
+                                sig: local_sig,
+                                val: sig_val.val,
+                            },
+                        ),
                     )
                 })
                 .zip(sides_stack.into_iter().rev()),
@@ -1363,7 +1417,7 @@ impl<
     /// about the signature/value pairs in the shard.
     fn peel_by_sig_vals_high_mem<
         V: ZeroCopy + Send + Sync,
-        G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &self,
         shard_index: usize,
@@ -1470,7 +1524,7 @@ impl<
             sig_vals_stack
                 .iter()
                 .rev()
-                .map(|&sig_val| (sig_val.sig, get_val(sig_val)))
+                .map(|&sig_val| (sig_val.sig, get_val(&shard_edge, sig_val)))
                 .zip(sides_stack.iter().copied().rev()),
             pl,
         );
@@ -1498,7 +1552,7 @@ impl<
     /// about the signature/value pairs in the shard.
     fn peel_by_sig_vals_low_mem<
         V: ZeroCopy + Send + Sync,
-        G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &self,
         shard_index: usize,
@@ -1599,7 +1653,7 @@ impl<
             data,
             visit_stack.iter_upper().map(|&v| {
                 let (sig_val, side) = xor_graph.edge_and_side(v.upcast());
-                ((sig_val.sig, get_val(sig_val)), side as u8)
+                ((sig_val.sig, get_val(&shard_edge, sig_val)), side as u8)
             }),
             pl,
         );
@@ -1617,7 +1671,10 @@ impl<
     /// This method will scan the double stack, without emptying it, to check
     /// which edges have been peeled. The information will be then passed to
     /// [`VBuilder::assign`] to complete the assignment of values.
-    fn lge_shard<V: ZeroCopy + Send + Sync, G: Fn(SigVal<E::LocalSig, V>) -> W + Send + Sync>(
+    fn lge_shard<
+        V: ZeroCopy + Send + Sync,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+    >(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
@@ -1678,10 +1735,13 @@ impl<
                                 eq.sort_unstable();
                                 crate::utils::mod2_sys::Modulo2Equation::from_parts(
                                     eq,
-                                    get_val(SigVal {
-                                        sig: local_sig,
-                                        val: sig_val.val,
-                                    }),
+                                    get_val(
+                                        &shard_edge,
+                                        SigVal {
+                                            sig: local_sig,
+                                            val: sig_val.val,
+                                        },
+                                    ),
                                 )
                             })
                             .collect(),
@@ -1710,10 +1770,13 @@ impl<
                             let local_sig = shard_edge.local_sig(sig_val.sig);
                             (
                                 local_sig,
-                                get_val(SigVal {
-                                    sig: local_sig,
-                                    val: sig_val.val,
-                                }),
+                                get_val(
+                                    &shard_edge,
+                                    SigVal {
+                                        sig: local_sig,
+                                        val: sig_val.val,
+                                    },
+                                ),
                             )
                         })
                         .zip(sides_stack.into_iter().rev()),
