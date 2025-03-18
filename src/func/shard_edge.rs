@@ -65,10 +65,11 @@ pub trait ShardEdge<S, const K: usize>:
     /// The type to use for sorting signature when looking for duplicate edges.
     ///
     /// This type must be [transmutable](std::mem::transmute) with `SigVal<S,
-    /// V>`, but it must implement [`PartialEq`] and [`RadixKey`] so that after
-    /// a radix sort elements generating duplicate edges are adjacent and equal.
-    /// Using `SigVal<S, V>` always works, but it might be possible to use less
-    /// information. See, for example, [`LowSortSigVal`].
+    /// V>`, but it must implement [`PartialEq`] and [`RadixKey`] so that equal
+    /// `SortSigVal` generate identical edges and after radix sort equal
+    /// `SortSigVal` are adjacent. Using `SigVal<S, V>` always works, but it
+    /// might be possible to use less information. See, for example,
+    /// [`LowSortSigVal`].
     type SortSigVal<V: ZeroCopy + Send + Sync>: RadixKey + Send + Sync + Copy + PartialEq;
 
     /// The type of local signatures used to generate local edges.
@@ -78,6 +79,7 @@ pub trait ShardEdge<S, const K: usize>:
     /// [`local_sig`](ShardEdge::local_sig), which returns this type, returns
     /// the local signature.
     type LocalSig: Sig;
+
     /// The type representing vertices local to a shard.
     ///
     /// [`set_up_graphs`](ShardEdge::set_up_graphs) should panic
@@ -268,7 +270,7 @@ mod mwhc {
     }
 
     impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
-        type SortSigVal<V: ZeroCopy + Send + Sync> = LowSortSigVal<V>;
+        type SortSigVal<V: ZeroCopy + Send + Sync> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u32;
 
