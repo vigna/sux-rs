@@ -69,11 +69,11 @@ struct Args {
     no_shards: bool,
     /// Use slower edge logic reducing the probability of duplicate arcs for big
     /// shards.
-    #[arg(long, conflicts_with_all = ["sig64", "mwhc"])]
-    big_shards: bool,
-    /// Use 3-hypergraph.
-    #[cfg(feature = "mwhc")]
     #[arg(long, conflicts_with = "sig64")]
+    big_shards: bool,
+    /// Use 3-hypergraphs.
+    #[cfg(feature = "mwhc")]
+    #[arg(long, conflicts_with_all = ["sig64", "big_shards"])]
     mwhc: bool,
 }
 

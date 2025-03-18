@@ -10,6 +10,7 @@ use crate::utils::Sig;
 use common_traits::{CastableFrom, UnsignedInt, UpcastableInto};
 use epserde::prelude::*;
 use mem_dbg::*;
+use rdst::RadixKey;
 use std::fmt::Display;
 
 use epserde::{
@@ -61,6 +62,15 @@ pub trait ShardEdge<S, const K: usize>:
     + TypeHash
     + AlignHash
 {
+    /// The type to use for sorting signature when looking for duplicate edges.
+    ///
+    /// This type must be [transmutable](std::mem::transmute) with `SigVal<S,
+    /// V>`, but it must implement [`PartialEq`] and [`RadixKey`] so that after
+    /// a radix sort elements generating duplicate edges are adjacent and equal.
+    /// Using `SigVal<S, V>` always works, but it might be possible to use less
+    /// information. See, for example, [`LowSortSigVal`].
+    type SortSigVal<V: ZeroCopy + Send + Sync>: RadixKey + Send + Sync + Copy + PartialEq;
+
     /// The type of local signatures used to generate local edges.
     ///
     /// In general, local edges will depend on a local signature, which might
@@ -81,6 +91,9 @@ pub trait ShardEdge<S, const K: usize>:
 
     /// Sets up the sharding logic for the given number of keys.
     ///
+    /// The `filter` parameter is used to indicate whether the sharding is used
+    /// for a filter or for a function.
+    ///
     /// This method can be called multiple times. For example, it can be used to
     /// precompute the number of shards so to optimize a
     ///  [`SigStore`](crate::utils::SigStore) by using the same number of
@@ -88,7 +101,7 @@ pub trait ShardEdge<S, const K: usize>:
     ///
     /// After this call, [`shard_high_bits`](ShardEdge::shard_high_bits) will
     /// and [`num_shards`](ShardEdge::num_shards) contain sharding information.
-    fn set_up_shards(&mut self, n: usize);
+    fn set_up_shards(&mut self, n: usize, filter: bool);
 
     /// Sets up the edge logic for the given number of keys and maximum shard
     /// size.
@@ -113,6 +126,10 @@ pub trait ShardEdge<S, const K: usize>:
     /// Returns the sort key for the given signature. If not sorting is needed,
     /// this method should return 0.
     fn sort_key(&self, sig: S) -> usize;
+
+    /// Extracts a 64-bit hash from a signature with the guarantee that
+    /// signatures generating duplicate edges have the same hash.
+    fn edge_hash(&self, sig: Self::LocalSig) -> u64;
 
     /// Returns the number of shards.
     fn num_shards(&self) -> usize {
@@ -191,6 +208,7 @@ fn sharding_high_bits(n: usize, eps: f64) -> u32 {
 #[cfg(feature = "mwhc")]
 mod mwhc {
     use epserde::Epserde;
+    use crate::utils::SigVal;
 
     use super::*;
 
@@ -239,7 +257,6 @@ mod mwhc {
 
     /// We use the lower 32 bits of sig[0] for the first vertex, the higher 32
     /// bits of sig[1], and the lower 32 bits of sig[1] for the third vertex.
-    #[inline(always)]
     fn edge(shard: usize, seg_size: usize, sig: [u64; 2]) -> [usize; 3] {
         let mut start = shard * seg_size * 3;
         let v0 = fixed_point_reduce_64!(sig[0] as u32, seg_size) + start;
@@ -251,10 +268,11 @@ mod mwhc {
     }
 
     impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
+        type SortSigVal<V: ZeroCopy + Send + Sync> = LowSortSigVal<V>;
         type LocalSig = [u64; 2];
         type Vertex = u32;
 
-        fn set_up_shards(&mut self, n: usize) {
+        fn set_up_shards(&mut self, n: usize, _filter: bool) {
             self.shard_bits_shift = 63 - sharding_high_bits(n, 0.001);
         }
 
@@ -277,8 +295,14 @@ mod mwhc {
             1
         }
 
+        #[inline(always)]
         fn sort_key(&self, _sig: [u64; 2]) -> usize {
             0
+        }
+
+        #[inline(always)]
+        fn edge_hash(&self, sig: [u64; 2]) -> u64 {
+            sig[1]
         }
 
         #[inline(always)]
@@ -330,10 +354,11 @@ mod mwhc {
     }
 
     impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
+        type SortSigVal<V: ZeroCopy + Send + Sync> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = usize;
 
-        fn set_up_shards(&mut self, _n: usize) {}
+        fn set_up_shards(&mut self, _n: usize, _filter: bool) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             self.seg_size = ((n as f64 * 1.23) / 3.).ceil() as usize;
@@ -349,8 +374,14 @@ mod mwhc {
             1
         }
 
+        #[inline(always)]
         fn sort_key(&self, _sig: [u64; 2]) -> usize {
             0
+        }
+
+        #[inline(always)]
+        fn edge_hash(&self, sig: [u64; 2]) -> u64 {
+            sig[1]
         }
 
         #[inline(always)]
@@ -368,7 +399,6 @@ mod mwhc {
             sig
         }
 
-        #[inline(always)]
         fn local_edge(&self, local_sig: Self::LocalSig) -> [usize; 3] {
             // We use fixed-point arithmetic on sig[0] and sig[1] for the first
             // two vertices. Then, we reuse the two lower halves for the third
@@ -392,8 +422,11 @@ mod mwhc {
 pub use mwhc::*;
 
 mod fuse {
+    use crate::utils::SigVal;
+
     use super::*;
     use lambert_w::lambert_w0;
+    use rdst::RadixKey;
     /// Zero-cost sharded fuse 3-hypergraphs with lazy Gaussian elimination.
     ///
     /// This construction uses zero-cost sharding (“Zero–Cost Sharding: Scaling
@@ -454,7 +487,6 @@ mod fuse {
         }
     }
 
-    #[inline(always)]
     fn edge_1(shard: usize, log2_seg_size: u32, l: u32, sig: [u64; 1]) -> [usize; 3] {
         let start = (shard * (l as usize + 2)) << log2_seg_size;
         let v0 = start + fixed_point_reduce_128!(sig[0], l << log2_seg_size);
@@ -467,7 +499,6 @@ mod fuse {
         [v0, v1, v2]
     }
 
-    #[inline(always)]
     fn edge_2(log2_seg_size: u32, l: u32, sig: [u64; 2]) -> [usize; 3] {
         // This strategy will work up to 10^16 keys
         let first_segment = fixed_point_reduce_64!((sig[0] >> 32) as u32, l);
@@ -498,7 +529,7 @@ mod fuse {
         /// When we shard, we never create a shard smaller then this.
         const MIN_FUSE_SHARD: usize = 10_000_000;
         /// The log₂ of the maximum number of shards.
-        const LOG2_MAX_SHARDS: u32 = 12;
+        const LOG2_MAX_SHARDS: u32 = 16;
 
         /// Returns the expansion factor for fuse graphs.
         ///
@@ -584,20 +615,43 @@ mod fuse {
         }
     }
 
+    /// A newtype for sorting by the second value of a `[u64; 2]` signature.
+    #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
+    #[repr(transparent)]
+    pub struct LowSortSigVal<V: ZeroCopy + Send + Sync>(SigVal<[u64; 2], V>);
+
+    impl<V: ZeroCopy + Send + Sync> RadixKey for LowSortSigVal<V> {
+        const LEVELS: usize = 8;
+
+        fn get_level(&self, level: usize) -> u8 {
+            (self.0.sig[1] >> ((level % 8) * 8)) as u8
+        }
+    }
+
+    impl<V: ZeroCopy + Send + Sync> PartialEq for LowSortSigVal<V> {
+        fn eq(&self, other: &Self) -> bool {
+            self.0.sig[1] == other.0.sig[1]
+        }
+    }
+
     impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
+        type SortSigVal<V: ZeroCopy + Send + Sync> = LowSortSigVal<V>;
         type LocalSig = [u64; 1];
         type Vertex = u32;
 
-        fn set_up_shards(&mut self, n: usize) {
+        fn set_up_shards(&mut self, n: usize, filter: bool) {
             self.shard_bits_shift = 63
                 - if n <= Self::MAX_LIN_SIZE {
                     // We just try to make shards as big as possible,
                     // within a maximum size of 2 * MAX_LIN_SHARD_SIZE
                     (n / Self::HALF_MAX_LIN_SHARD_SIZE).max(1).ilog2()
                 } else {
-                    sharding_high_bits(n, 0.001)
-                        .min(Self::dup_edge_high_bits(3, n, 1.105, 0.001)) // No duplicate edges
-                        .min(Self::LOG2_MAX_SHARDS) // We don't really need too many shards
+                    let mut b = sharding_high_bits(n, 0.001);
+                    if !filter {
+                        // Filters can tolerate duplicates
+                        b = b.min(Self::dup_edge_high_bits(3, n, 1.105, 0.001));
+                    }
+                    b.min(Self::LOG2_MAX_SHARDS) // We don't really need too many shards
                         .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't be smaller than MIN_FUSE_SHARD
                 };
         }
@@ -634,8 +688,14 @@ mod fuse {
             self.l as usize
         }
 
+        #[inline(always)]
         fn sort_key(&self, sig: [u64; 2]) -> usize {
             fixed_point_reduce_128!(sig[1], self.l)
+        }
+
+        #[inline(always)]
+        fn edge_hash(&self, sig: Self::LocalSig) -> u64 {
+            sig[0]
         }
 
         #[inline(always)]
@@ -756,10 +816,11 @@ mod fuse {
     }
 
     impl ShardEdge<[u64; 2], 3> for FuseLge3NoShards {
+        type SortSigVal<V: ZeroCopy + Send + Sync> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = usize;
 
-        fn set_up_shards(&mut self, _n: usize) {}
+        fn set_up_shards(&mut self, _n: usize, _filter: bool) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             FuseLge3NoShards::set_up_graphs(self, n)
@@ -774,8 +835,14 @@ mod fuse {
             self.l as usize
         }
 
+        #[inline(always)]
         fn sort_key(&self, sig: [u64; 2]) -> usize {
             fixed_point_reduce_128!(sig[0], self.l)
+        }
+
+        #[inline(always)]
+        fn edge_hash(&self, sig: [u64; 2]) -> u64 {
+            sig[1]
         }
 
         #[inline(always)]
@@ -805,10 +872,11 @@ mod fuse {
     }
 
     impl ShardEdge<[u64; 1], 3> for FuseLge3NoShards {
+        type SortSigVal<V: ZeroCopy + Send + Sync> = SigVal<[u64; 1], V>;
         type LocalSig = [u64; 1];
         type Vertex = usize;
 
-        fn set_up_shards(&mut self, _n: usize) {}
+        fn set_up_shards(&mut self, _n: usize, _filter: bool) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             FuseLge3NoShards::set_up_graphs(self, n)
@@ -823,8 +891,14 @@ mod fuse {
             self.l as usize
         }
 
+        #[inline(always)]
         fn sort_key(&self, sig: [u64; 1]) -> usize {
             fixed_point_reduce_128!(sig[0], self.l)
+        }
+
+        #[inline(always)]
+        fn edge_hash(&self, sig: [u64; 1]) -> u64 {
+            sig[0]
         }
 
         #[inline(always)]
@@ -874,7 +948,6 @@ mod fuse {
         }
     }
 
-    #[inline(always)]
     fn edge_2_big(
         shard: usize,
         shard_high_bits: u32,
@@ -884,7 +957,10 @@ mod fuse {
     ) -> [usize; 3] {
         // This strategy will work up to 10^16 keys
         let mut start = (shard * (l as usize + 2)
-            + fixed_point_reduce_64!(sig[0].rotate_right(shard_high_bits) >> 32, l))
+            + fixed_point_reduce_64!(
+                sig[0].rotate_right(shard_high_bits).rotate_right(1) >> 32,
+                l
+            ))
             << log2_seg_size;
         let segment_size = 1 << log2_seg_size;
         let segment_mask = segment_size - 1;
@@ -898,11 +974,12 @@ mod fuse {
     }
 
     impl ShardEdge<[u64; 2], 3> for FuseLge3BigShards {
+        type SortSigVal<V: ZeroCopy + Send + Sync> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u32;
 
-        fn set_up_shards(&mut self, n: usize) {
-            self.0.set_up_shards(n);
+        fn set_up_shards(&mut self, n: usize, filter: bool) {
+            self.0.set_up_shards(n, filter);
         }
 
         fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
@@ -918,8 +995,17 @@ mod fuse {
             self.0.num_sort_keys()
         }
 
+        #[inline(always)]
         fn sort_key(&self, sig: [u64; 2]) -> usize {
-            fixed_point_reduce_64!(sig[0].rotate_right(self.0.shard_bits_shift) >> 32, self.0.l)
+            fixed_point_reduce_64!(
+                sig[0].rotate_right(self.0.shard_bits_shift).rotate_right(1) >> 32,
+                self.0.l
+            )
+        }
+
+        #[inline(always)]
+        fn edge_hash(&self, sig: [u64; 2]) -> u64 {
+            sig[1]
         }
 
         #[inline(always)]
