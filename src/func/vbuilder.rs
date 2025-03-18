@@ -1190,12 +1190,7 @@ impl<
                                 // signatures.
                                 let shard_len = shard.len();
                                 shard.dedup();
-                                if shard_len != shard.len() {
-                                    pl.info(format_args!(
-                                        "Removed edges: {}",
-                                        shard_len - shard.len()
-                                    ));
-                                }
+                                pl.info(format_args!("Removed edges: {}", shard_len - shard.len()));
                             } else if self.shard_edge.num_sort_keys() != 1 {
                                 // Sorting the signatures increases locality
                                 self.count_sort::<V>(shard);
