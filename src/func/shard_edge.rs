@@ -270,13 +270,32 @@ mod mwhc {
         [v0, v1, v2]
     }
 
+    /// Returns the maximum number of high bits for sharding the given number of
+    /// keys so that the probability of a duplicate edge in a hypergraph is at
+    /// most `eta`.
+    ///
+    /// From “ε-cost Sharding: Scaling Hypergraph-Based Static Functions and
+    /// Filters to Trillions of Keys”.
+    fn dup_edge_high_bits(arity: usize, n: usize, c: f64, eta: f64) -> u32 {
+        let n = n as f64;
+        match arity {
+            3 => dbg!(
+                0.5 * (n.log2() + 1. + 3. * c.log2() - 3. * 3_f64.log2()
+                    + (-(1. - eta).ln()).log2())
+            )
+            .floor() as u32,
+            _ => unimplemented!(),
+        }
+    }
+
     impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
         type SortSigVal<V: ZeroCopy + Send + Sync> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u32;
 
         fn set_up_shards(&mut self, n: usize, eps: f64) {
-            self.shard_bits_shift = 63 - sharding_high_bits(n, eps);
+            self.shard_bits_shift =
+                63 - sharding_high_bits(n, eps).min(dup_edge_high_bits(3, n, 1.23, 0.001));
         }
 
         fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
@@ -601,16 +620,16 @@ mod fuse {
 
         /// Returns the maximum number of high bits for sharding the given number of
         /// keys so that the probability of a duplicate edge in a fuse graph with
-        /// segments defined by [`FuseLge3Shards::log2_seg_size`] is at most `eps`.
+        /// segments defined by [`FuseLge3Shards::log2_seg_size`] is at most `eta`.
         ///
         /// From “ε-cost Sharding: Scaling Hypergraph-Based Static Functions and
         /// Filters to Trillions of Keys”.
-        fn dup_edge_high_bits(arity: usize, n: usize, c: f64, eps: f64) -> u32 {
+        fn dup_edge_high_bits(arity: usize, n: usize, c: f64, eta: f64) -> u32 {
             let n = n as f64;
             match arity {
                 3 => {
                     let subexpr = (1. / (2. * Self::A))
-                        * (-n / (2. * c * (1. - eps).ln()) - 2. * Self::B).log2();
+                        * (-n / (2. * c * (1. - eta).ln()) - 2. * Self::B).log2();
                     (n.log2() - subexpr / (2.0_f64.ln() * lambert_w0(subexpr))).floor() as u32
                 }
                 _ => unimplemented!(),
