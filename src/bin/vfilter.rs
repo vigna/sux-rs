@@ -58,6 +58,9 @@ struct Args {
     /// Use 64-bit signatures.
     #[arg(long, requires = "no_shards")]
     sig64: bool,
+    /// The target relative space overhead due to sharding.
+    #[arg(long, default_value_t = 0.001)]
+    eps: f64,
     /// Always use the low-mem peel-by-signature algorithm (slightly slower).
     #[arg(long)]
     low_mem: bool,
@@ -140,7 +143,8 @@ fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: Shar
     let mut builder = builder
         .offline(args.offline)
         .check_dups(args.check_dups)
-        .expected_num_keys(args.n);
+        .expected_num_keys(args.n)
+        .eps(args.eps);
     if let Some(seed) = args.seed {
         builder = builder.seed(seed);
     }

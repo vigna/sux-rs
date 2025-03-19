@@ -93,9 +93,10 @@ pub trait ShardEdge<S, const K: usize>:
 
     /// Sets up the sharding logic for the given number of keys.
     ///
-    /// The `filter` parameter is used to indicate whether the sharding is used
-    /// for a filter or for a function.
-    ///
+    /// `eps` is the target relative space overhead. See “Zero–Cost Sharding:
+    /// Scaling Hypergraph-Based Static Functions and Filters to Trillions of
+    /// Keys” for more information.
+    /// 
     /// This method can be called multiple times. For example, it can be used to
     /// precompute the number of shards so to optimize a
     ///  [`SigStore`](crate::utils::SigStore) by using the same number of
@@ -103,7 +104,7 @@ pub trait ShardEdge<S, const K: usize>:
     ///
     /// After this call, [`shard_high_bits`](ShardEdge::shard_high_bits) will
     /// and [`num_shards`](ShardEdge::num_shards) contain sharding information.
-    fn set_up_shards(&mut self, n: usize, filter: bool);
+    fn set_up_shards(&mut self, n: usize, eps: f64);
 
     /// Sets up the edge logic for the given number of keys and maximum shard
     /// size.
@@ -274,8 +275,8 @@ mod mwhc {
         type LocalSig = [u64; 2];
         type Vertex = u32;
 
-        fn set_up_shards(&mut self, n: usize, _filter: bool) {
-            self.shard_bits_shift = 63 - sharding_high_bits(n, 0.001);
+        fn set_up_shards(&mut self, n: usize, eps: f64) {
+            self.shard_bits_shift = 63 - sharding_high_bits(n, eps);
         }
 
         fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
@@ -360,7 +361,7 @@ mod mwhc {
         type LocalSig = [u64; 2];
         type Vertex = usize;
 
-        fn set_up_shards(&mut self, _n: usize, _filter: bool) {}
+        fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             self.seg_size = ((n as f64 * 1.23) / 3.).ceil() as usize;
@@ -641,19 +642,16 @@ mod fuse {
         type LocalSig = [u64; 1];
         type Vertex = u32;
 
-        fn set_up_shards(&mut self, n: usize, filter: bool) {
+        fn set_up_shards(&mut self, n: usize, eps: f64) {
             self.shard_bits_shift = 63
                 - if n <= Self::MAX_LIN_SIZE {
                     // We just try to make shards as big as possible,
                     // within a maximum size of 2 * MAX_LIN_SHARD_SIZE
                     (n / Self::HALF_MAX_LIN_SHARD_SIZE).max(1).ilog2()
                 } else {
-                    let mut b = sharding_high_bits(n, 0.001);
-                    if !filter {
-                        // Filters can tolerate duplicates
-                        b = b.min(Self::dup_edge_high_bits(3, n, 1.105, 0.001));
-                    }
-                    b.min(Self::LOG2_MAX_SHARDS) // We don't really need too many shards
+                    sharding_high_bits(n, eps)
+                        .min(Self::dup_edge_high_bits(3, n, 1.105, 0.001))
+                        .min(Self::LOG2_MAX_SHARDS) // We don't really need too many shards
                         .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't be smaller than MIN_FUSE_SHARD
                 };
         }
@@ -822,7 +820,7 @@ mod fuse {
         type LocalSig = [u64; 2];
         type Vertex = usize;
 
-        fn set_up_shards(&mut self, _n: usize, _filter: bool) {}
+        fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             FuseLge3NoShards::set_up_graphs(self, n)
@@ -878,7 +876,7 @@ mod fuse {
         type LocalSig = [u64; 1];
         type Vertex = usize;
 
-        fn set_up_shards(&mut self, _n: usize, _filter: bool) {}
+        fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             FuseLge3NoShards::set_up_graphs(self, n)
@@ -980,8 +978,8 @@ mod fuse {
         type LocalSig = [u64; 2];
         type Vertex = u32;
 
-        fn set_up_shards(&mut self, n: usize, filter: bool) {
-            self.0.set_up_shards(n, filter);
+        fn set_up_shards(&mut self, n: usize, eps: f64) {
+            self.0.set_up_shards(n, eps);
         }
 
         fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
