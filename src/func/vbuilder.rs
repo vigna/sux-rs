@@ -1208,13 +1208,20 @@ impl<
                                         let shard_len = shard.len();
                                         shard.dedup();
                                         pl.info(format_args!(
-                                            "Removed edges: {}",
+                                            "Removed signatures: {}",
                                             shard_len - shard.len()
                                         ));
                                     } else if self.shard_edge.num_sort_keys() != 1 {
                                         // Sorting the signatures increases locality
                                         self.count_sort::<V>(shard);
                                     }
+                                    shard.par_sort_unstable_by_key(|sig| self.shard_edge.local_edge(self.shard_edge.local_sig(sig.sig)));
+                                    let shard_len = shard.len();
+                                    shard.dedup_by_key(|sig| self.shard_edge.local_edge(self.shard_edge.local_sig(sig.sig)));
+                                    pl.info(format_args!(
+                                        "Removed edges: {}",
+                                        shard_len - shard.len()
+                                    ));
                                 }
 
                                 pl.done_with_count(shard.len());
