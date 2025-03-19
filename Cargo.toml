@@ -34,12 +34,7 @@ env_logger = { version = "0.11.0" }
 ambassador = "0.4.0"
 impl-tools = "0.10.0"
 clap = { version = "4.4.18", features = ["derive"] }
-pthash = { version = "0.4.0", features = ["rayon"] }
-
-# Fuzz
-arbitrary = { version = "1.3.2", features = ["derive"], optional = true }
-
-# Cli
+crossbeam-channel = "0.5.14"
 arbitrary-chunks = "0.4.1"
 derivative = "2.2.0"
 derive_setters = "0.1.6"
@@ -47,8 +42,9 @@ thiserror = "2.0.11"
 itertools = "0.14.0"
 lambert_w = { version = "1.0.17",  default-features = false, features = ["std"] }
 rapidhash = "1.4.0"
-average = "0.16.0"
-crossbeam-channel = "0.5.14"
+
+# Fuzz
+arbitrary = { version = "1.3.2", features = ["derive"], optional = true }
 
 [dev-dependencies]
 maligned = "0.2.1"
