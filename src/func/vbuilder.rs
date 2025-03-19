@@ -1134,7 +1134,9 @@ impl<
                     .zip(data.try_chunks_mut(self.shard_edge.num_vertices()).unwrap())
                     .enumerate()
                 {
-                    data_send.send(val).unwrap();
+                    if data_send.send(val).is_err() {
+                        break;
+                    }
                 }
 
                 drop(data_send);
