@@ -1089,11 +1089,12 @@ impl<
         I: IntoIterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
         SS: Fn(&Self, usize, Arc<Vec<SigVal<S, V>>>, ShardData<'b, W, D>, &mut P) -> Result<(), ()>
             + Send
-            + Sync,
+            + Sync
+            + Copy,
         C: ConcurrentProgressLog + Send + Sync,
         P: ProgressLog + Clone + Send + Sync,
     >(
-        &mut self,
+        &self,
         shard_iter: I,
         data: &'b mut D,
         solve_shard: SS,
@@ -1115,116 +1116,137 @@ impl<
 
         self.failed.store(false, Ordering::Relaxed);
         let num_shards = self.shard_edge.num_shards();
+        let num_threads = thread_pool.current_num_threads();
+        let buffer_size = num_threads.ilog2() as usize;
 
-        let result = thread_pool.scope(|_| {
-            shard_iter
-                .into_iter()
-                .zip(data.try_chunks_mut(self.shard_edge.num_vertices()).unwrap())
-                .enumerate()
-                .par_bridge()
-                .try_for_each_with(
-                    (main_pl.clone(), pl.clone()),
-                    |(main_pl, pl), (shard_index, (shard, mut data))| {
-                        if shard.len() == 0 {
-                            return Ok(());
-                        }
+        let (out_tx, out_rx) = crossbeam_channel::bounded::<_>(buffer_size);
+        let (in_tx, in_rx) = crossbeam_channel::bounded::<(
+            usize,
+            (Arc<Vec<SigVal<S, V>>>, ShardData<'_, W, D>),
+        )>(buffer_size);
 
-                        main_pl.info(format_args!(
-                            "Analyzing shard {}/{}...",
-                            shard_index + 1,
-                            num_shards
-                        ));
-
-                        pl.start(format!(
-                            "Sorting shard {}/{}...",
-                            shard_index + 1,
-                            num_shards
-                        ));
-
-                        {
-                            // SAFETY: only one thread may be accessing the
-                            // shard, and we will be consuming it
-                            let shard =
-                                unsafe { &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>) };
-
-                            if self.check_dups {
-                                shard
-                                    .radix_sort_builder()
-                                    .with_low_mem_tuner()
-                                    .with_parallel(true)
-                                    .sort();
-                                if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
-                                    return Err(SolveError::DuplicateSignature);
+        let result = thread_pool.in_place_scope(|scope| {
+            for _thread_id in 0..num_threads {
+                let mut main_pl = main_pl.clone();
+                let mut pl = pl.clone();
+                let out_tx = out_tx.clone();
+                let in_rx = in_rx.clone();
+                scope.spawn(move |_| {
+                    loop {
+                        match in_rx.recv() {
+                            Err(_) => return,
+                            Ok((shard_index, (shard, mut data))) => {
+                                if shard.len() == 0 {
+                                    return;
                                 }
-                            }
 
-                            if TypeId::of::<V>() == TypeId::of::<EmptyVal>()
-                                && self.num_keys > Self::MAX_NO_DUP_EDGE_REMOVAL
-                            {
-                                // Large filters: we eliminate duplicate edges.
+                                main_pl.info(format_args!(
+                                    "Analyzing shard {}/{}...",
+                                    shard_index + 1,
+                                    num_shards
+                                ));
 
-                                // E::SortSig provides a transmutable view of
-                                // SigVal with an implementation of RadixKey
-                                // that is compatible with the key returned by
-                                // ShardEdge::sort_key, and equality that
-                                // implies equality of generated edges.
+                                pl.start(format!(
+                                    "Sorting shard {}/{}...",
+                                    shard_index + 1,
+                                    num_shards
+                                ));
 
-                                // SAFETY: we drop this immediately after sorting.
-                                let shard = unsafe {
-                                    transmute::<&mut Vec<SigVal<S, V>>, &mut Vec<E::SortSigVal<V>>>(
-                                        shard,
-                                    )
-                                };
+                                {
+                                    // SAFETY: only one thread may be accessing the
+                                    // shard, and we will be consuming it
+                                    let shard = unsafe {
+                                        &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>)
+                                    };
 
-                                let builder = shard.radix_sort_builder();
-                                if self.max_num_threads == 1 {
-                                    builder.with_single_threaded_tuner().with_parallel(false)
-                                } else {
-                                    builder.with_low_mem_tuner().with_parallel(true)
+                                    if self.check_dups {
+                                        shard
+                                            .radix_sort_builder()
+                                            .with_low_mem_tuner()
+                                            .with_parallel(true)
+                                            .sort();
+                                        if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
+                                            let _ =
+                                                out_tx.send(Err(SolveError::DuplicateSignature));
+                                            return;
+                                        }
+                                    }
+
+                                    if TypeId::of::<V>() == TypeId::of::<EmptyVal>()
+                                        && self.num_keys > Self::MAX_NO_DUP_EDGE_REMOVAL
+                                    {
+                                        // Large filters: we eliminate duplicate edges.
+
+                                        // E::SortSig provides a transmutable view of
+                                        // SigVal with an implementation of RadixKey
+                                        // that is compatible with the key returned by
+                                        // ShardEdge::sort_key, and equality that
+                                        // implies equality of generated edges.
+
+                                        // SAFETY: we drop this immediately after sorting.
+                                        let shard = unsafe {
+                                            transmute::<
+                                                &mut Vec<SigVal<S, V>>,
+                                                &mut Vec<E::SortSigVal<V>>,
+                                            >(shard)
+                                        };
+
+                                        let builder = shard.radix_sort_builder();
+                                        if self.max_num_threads == 1 {
+                                            builder
+                                                .with_single_threaded_tuner()
+                                                .with_parallel(false)
+                                        } else {
+                                            builder.with_low_mem_tuner().with_parallel(true)
+                                        }
+                                        .sort();
+
+                                        // Duplicate edges on large filters can be
+                                        // simply removed: they do not change the semantics
+                                        // of the filter because hashes are computed on
+                                        // signatures.
+                                        let shard_len = shard.len();
+                                        shard.dedup();
+                                        pl.info(format_args!(
+                                            "Removed edges: {}",
+                                            shard_len - shard.len()
+                                        ));
+                                    } else if self.shard_edge.num_sort_keys() != 1 {
+                                        // Sorting the signatures increases locality
+                                        self.count_sort::<V>(shard);
+                                    }
                                 }
-                                .sort();
 
-                                // Duplicate edges on large filters can be
-                                // simply removed: they do not change the semantics
-                                // of the filter because hashes are computed on
-                                // signatures.
-                                let shard_len = shard.len();
-                                shard.dedup();
-                                pl.info(format_args!("Removed edges: {}", shard_len - shard.len()));
-                            } else if self.shard_edge.num_sort_keys() != 1 {
-                                // Sorting the signatures increases locality
-                                self.count_sort::<V>(shard);
-                            }
-                        }
+                                pl.done_with_count(shard.len());
 
-                        pl.done_with_count(shard.len());
+                                main_pl.info(format_args!(
+                                    "Solving shard {}/{}...",
+                                    shard_index + 1,
+                                    num_shards
+                                ));
 
-                        main_pl.info(format_args!(
-                            "Solving shard {}/{}...",
-                            shard_index + 1,
-                            num_shards
-                        ));
+                                if self.failed.load(Ordering::Relaxed) {
+                                    let _ = out_tx.send(Err(SolveError::UnsolvableShard));
+                                    return;
+                                }
 
-                        if self.failed.load(Ordering::Relaxed) {
-                            return Err(SolveError::UnsolvableShard);
-                        }
+                                if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
+                                    // For filters, we fill the array with random data, otherwise
+                                    // elements with signature 0 would have a significantly higher
+                                    // probability of being false positives.
+                                    //
+                                    // SAFETY: We work around the fact that [usize] does not implement Fill
+                                    Mwc192::seed_from_u64(self.seed).fill_bytes(unsafe {
+                                        data.as_mut_slice().align_to_mut::<u8>().1
+                                    });
+                                }
 
-                        if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
-                            // For filters, we fill the array with random data, otherwise
-                            // elements with signature 0 would have a significantly higher
-                            // probability of being false positives.
-                            //
-                            // SAFETY: We work around the fact that [usize] does not implement Fill
-                            Mwc192::seed_from_u64(self.seed)
-                                .fill_bytes(unsafe { data.as_mut_slice().align_to_mut::<u8>().1 });
-                        }
+                                if let Err(_) = solve_shard(self, shard_index, shard, data, &mut pl)
+                                {
+                                    let _ = out_tx.send(Err(SolveError::UnsolvableShard));
+                                    return;
+                                }
 
-                        solve_shard(self, shard_index, shard, data, pl)
-                            .map_err(|_| {
-                                self.failed.store(true, Ordering::Relaxed);
-                                SolveError::UnsolvableShard
-                            })
-                            .map(|_| {
                                 if !self.failed.load(Ordering::Relaxed) {
                                     main_pl.info(format_args!(
                                         "Completed shard {}/{}",
@@ -1232,10 +1254,35 @@ impl<
                                         num_shards
                                     ));
                                     main_pl.update_and_display();
+                                } else {
+                                    return;
                                 }
-                            })
-                    },
-                )
+                            }
+                        }
+                    }
+                });
+            }
+
+            for val in shard_iter
+                .into_iter()
+                .zip(data.try_chunks_mut(self.shard_edge.num_vertices()).unwrap())
+                .enumerate()
+            {
+                in_tx.send(val).unwrap();
+            }
+
+            drop(out_tx);
+            drop(in_rx);
+            drop(in_tx);
+
+            for result in out_rx {
+                if result.is_err() {
+                    self.failed.store(true, Ordering::Relaxed);
+                    return result;
+                }
+            }
+
+            Ok(())
         });
 
         main_pl.done();
