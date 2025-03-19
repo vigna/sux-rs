@@ -46,7 +46,7 @@ use std::ops::Index;
 /// convenient and faster to use [`SelectAdapt`], even with `M` set to 1 (in
 /// which case the additional space is 1.5-3% of the original bit vector).
 /// However, when used in combination with [`RankSmall`], [`SelectSmall`] and
-/// [`SelectZeroSmall`] provide effective and almost zero-cost selection
+/// [`SelectZeroSmall`] provide effective and almost ε-cost selection
 /// structures.
 ///
 /// # Examples
