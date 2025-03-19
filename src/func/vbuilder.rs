@@ -663,7 +663,7 @@ impl<
         if let Some(expected_num_keys) = self.expected_num_keys {
             self.shard_edge.set_up_shards(
                 expected_num_keys,
-                false // TypeId::of::<V>() == TypeId::of::<EmptyVal>(), // Filter TODO 
+                false, // TypeId::of::<V>() == TypeId::of::<EmptyVal>(), // Filter TODO
             );
             self.log2_buckets = self.shard_edge.shard_high_bits();
         }
@@ -915,7 +915,7 @@ impl<
         for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
     {
         let thread_pool = ThreadPoolBuilder::new()
-            .num_threads(self.shard_edge.num_shards().min(self.max_num_threads))
+            .num_threads(self.shard_edge.num_shards().min(self.max_num_threads) + 1)
             .build()
             .unwrap(); // Seriously, it's not going to fail
 
@@ -925,7 +925,7 @@ impl<
             self.c,
             (self.shard_edge.num_vertices() * self.shard_edge.num_shards()) as f64
                 / (self.num_keys as f64),
-            thread_pool.current_num_threads()
+            thread_pool.current_num_threads() - 1
         ));
 
         if self.lge {
@@ -942,7 +942,7 @@ impl<
             )?;
         } else if self.low_mem == Some(true)
             || self.low_mem.is_none()
-                && thread_pool.current_num_threads() > 2
+                && thread_pool.current_num_threads() > 3
                 && self.shard_edge.num_shards() > 2
         {
             // Less memory, but slower
@@ -1116,24 +1116,36 @@ impl<
 
         self.failed.store(false, Ordering::Relaxed);
         let num_shards = self.shard_edge.num_shards();
-        let num_threads = thread_pool.current_num_threads();
+        let num_threads = thread_pool.current_num_threads() - 1;
         let buffer_size = num_threads.ilog2() as usize;
 
-        let (out_tx, out_rx) = crossbeam_channel::bounded::<_>(buffer_size);
-        let (in_tx, in_rx) = crossbeam_channel::bounded::<(
+        let (err_send, err_recv) = crossbeam_channel::bounded::<_>(num_threads);
+        let (data_send, data_recv) = crossbeam_channel::bounded::<(
             usize,
             (Arc<Vec<SigVal<S, V>>>, ShardData<'_, W, D>),
         )>(buffer_size);
 
         let result = thread_pool.in_place_scope(|scope| {
+            scope.spawn(move |_| {
+                for val in shard_iter
+                    .into_iter()
+                    .zip(data.try_chunks_mut(self.shard_edge.num_vertices()).unwrap())
+                    .enumerate()
+                {
+                    data_send.send(val).unwrap();
+                }
+
+                drop(data_send);
+            });
+
             for _thread_id in 0..num_threads {
                 let mut main_pl = main_pl.clone();
                 let mut pl = pl.clone();
-                let out_tx = out_tx.clone();
-                let in_rx = in_rx.clone();
+                let err_send = err_send.clone();
+                let data_recv = data_recv.clone();
                 scope.spawn(move |_| {
                     loop {
-                        match in_rx.recv() {
+                        match data_recv.recv() {
                             Err(_) => return,
                             Ok((shard_index, (shard, mut data))) => {
                                 if shard.len() == 0 {
@@ -1166,8 +1178,7 @@ impl<
                                             .with_parallel(true)
                                             .sort();
                                         if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
-                                            let _ =
-                                                out_tx.send(Err(SolveError::DuplicateSignature));
+                                            let _ = err_send.send(SolveError::DuplicateSignature);
                                             return;
                                         }
                                     }
@@ -1215,9 +1226,15 @@ impl<
                                         // Sorting the signatures increases locality
                                         self.count_sort::<V>(shard);
                                     }
-                                    shard.par_sort_unstable_by_key(|sig| self.shard_edge.local_edge(self.shard_edge.local_sig(sig.sig)));
+                                    shard.par_sort_unstable_by_key(|sig| {
+                                        self.shard_edge
+                                            .local_edge(self.shard_edge.local_sig(sig.sig))
+                                    });
                                     let shard_len = shard.len();
-                                    shard.dedup_by_key(|sig| self.shard_edge.local_edge(self.shard_edge.local_sig(sig.sig)));
+                                    shard.dedup_by_key(|sig| {
+                                        self.shard_edge
+                                            .local_edge(self.shard_edge.local_sig(sig.sig))
+                                    });
                                     pl.info(format_args!(
                                         "Removed edges: {}",
                                         shard_len - shard.len()
@@ -1233,7 +1250,6 @@ impl<
                                 ));
 
                                 if self.failed.load(Ordering::Relaxed) {
-                                    let _ = out_tx.send(Err(SolveError::UnsolvableShard));
                                     return;
                                 }
 
@@ -1250,43 +1266,32 @@ impl<
 
                                 if let Err(_) = solve_shard(self, shard_index, shard, data, &mut pl)
                                 {
-                                    let _ = out_tx.send(Err(SolveError::UnsolvableShard));
+                                    let _ = err_send.send(SolveError::UnsolvableShard);
                                     return;
                                 }
 
-                                if !self.failed.load(Ordering::Relaxed) {
-                                    main_pl.info(format_args!(
-                                        "Completed shard {}/{}",
-                                        shard_index + 1,
-                                        num_shards
-                                    ));
-                                    main_pl.update_and_display();
-                                } else {
+                                if self.failed.load(Ordering::Relaxed) {
                                     return;
                                 }
+
+                                main_pl.info(format_args!(
+                                    "Completed shard {}/{}",
+                                    shard_index + 1,
+                                    num_shards
+                                ));
+                                main_pl.update_and_display();
                             }
                         }
                     }
                 });
             }
 
-            for val in shard_iter
-                .into_iter()
-                .zip(data.try_chunks_mut(self.shard_edge.num_vertices()).unwrap())
-                .enumerate()
-            {
-                in_tx.send(val).unwrap();
-            }
+            drop(err_send);
+            drop(data_recv);
 
-            drop(out_tx);
-            drop(in_rx);
-            drop(in_tx);
-
-            for result in out_rx {
-                if result.is_err() {
-                    self.failed.store(true, Ordering::Relaxed);
-                    return result;
-                }
+            for result in err_recv {
+                self.failed.store(true, Ordering::Relaxed);
+                return Err(result);
             }
 
             Ok(())
