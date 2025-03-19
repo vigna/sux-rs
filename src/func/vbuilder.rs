@@ -1256,7 +1256,7 @@ impl<
                                     });
                                 }
 
-                                if let Err(_) = solve_shard(self, shard_index, shard, data, &mut pl)
+                                if solve_shard(self, shard_index, shard, data, &mut pl).is_err()
                                 {
                                     let _ = err_send.send(SolveError::UnsolvableShard);
                                     return;
@@ -1281,9 +1281,9 @@ impl<
             drop(err_send);
             drop(data_recv);
 
-            for result in err_recv {
+            if let Some(error) = err_recv.into_iter().next() {
                 self.failed.store(true, Ordering::Relaxed);
-                return Err(result);
+                return Err(error);
             }
 
             Ok(())
@@ -1428,7 +1428,7 @@ impl<
                     (
                         local_sig,
                         get_val(
-                            &shard_edge,
+                            shard_edge,
                             SigVal {
                                 sig: local_sig,
                                 val: sig_val.val,
@@ -1572,7 +1572,7 @@ impl<
             sig_vals_stack
                 .iter()
                 .rev()
-                .map(|&sig_val| (sig_val.sig, get_val(&shard_edge, sig_val)))
+                .map(|&sig_val| (sig_val.sig, get_val(shard_edge, sig_val)))
                 .zip(sides_stack.iter().copied().rev()),
             pl,
         );
@@ -1701,7 +1701,7 @@ impl<
             data,
             visit_stack.iter_upper().map(|&v| {
                 let (sig_val, side) = xor_graph.edge_and_side(v.upcast());
-                ((sig_val.sig, get_val(&shard_edge, sig_val)), side as u8)
+                ((sig_val.sig, get_val(shard_edge, sig_val)), side as u8)
             }),
             pl,
         );
@@ -1784,7 +1784,7 @@ impl<
                                 crate::utils::mod2_sys::Modulo2Equation::from_parts(
                                     eq,
                                     get_val(
-                                        &shard_edge,
+                                        shard_edge,
                                         SigVal {
                                             sig: local_sig,
                                             val: sig_val.val,
@@ -1819,7 +1819,7 @@ impl<
                             (
                                 local_sig,
                                 get_val(
-                                    &shard_edge,
+                                    shard_edge,
                                     SigVal {
                                         sig: local_sig,
                                         val: sig_val.val,
