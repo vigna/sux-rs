@@ -663,7 +663,7 @@ impl<
         if let Some(expected_num_keys) = self.expected_num_keys {
             self.shard_edge.set_up_shards(
                 expected_num_keys,
-                TypeId::of::<V>() == TypeId::of::<EmptyVal>(), // Filter
+                false // TypeId::of::<V>() == TypeId::of::<EmptyVal>(), // Filter TODO 
             );
             self.log2_buckets = self.shard_edge.shard_high_bits();
         }
@@ -843,7 +843,7 @@ impl<
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
         let filter = TypeId::of::<V>() == TypeId::of::<EmptyVal>();
 
-        self.shard_edge.set_up_shards(self.num_keys, filter);
+        self.shard_edge.set_up_shards(self.num_keys, false); // TODO
         (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
 
         if filter {
