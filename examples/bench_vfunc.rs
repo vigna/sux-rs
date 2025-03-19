@@ -58,10 +58,10 @@ struct Args {
     /// Use slower edge logic reducing the probability of duplicate arcs for big
     /// shards.
     #[arg(long, conflicts_with = "sig64")]
-    big_shards: bool,
+    full_sigs: bool,
     /// Use 3-hypergraphs.
     #[cfg(feature = "mwhc")]
-    #[arg(long, conflicts_with_all = ["sig64", "big_shards"])]
+    #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
     mwhc: bool,
 }
 
@@ -88,7 +88,7 @@ fn main() -> Result<()> {
             main_with_types::<[u64; 2], FuseLge3NoShards>(args)
         }
     } else {
-        if args.big_shards {
+        if args.full_sigs {
             main_with_types::<[u64; 2], FuseLge3BigShards>(args)
         } else {
             main_with_types::<[u64; 2], FuseLge3Shards>(args)

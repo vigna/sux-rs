@@ -93,7 +93,7 @@ pub trait ShardEdge<S, const K: usize>:
 
     /// Sets up the sharding logic for the given number of keys.
     ///
-    /// `eps` is the target relative space overhead. See “Zero–Cost Sharding:
+    /// `eps` is the target relative space overhead. See “ε-cost Sharding:
     /// Scaling Hypergraph-Based Static Functions and Filters to Trillions of
     /// Keys” for more information.
     ///
@@ -200,7 +200,7 @@ macro_rules! fixed_point_reduce_128 {
 /// so that the overhead of the maximum shard size with respect to the average
 /// shard size is with high probability `eps`.
 ///
-/// From “Zero–Cost Sharding: Scaling Hypergraph-Based Static Functions and
+/// From “ε-cost Sharding: Scaling Hypergraph-Based Static Functions and
 /// Filters to Trillions of Keys”
 fn sharding_high_bits(n: usize, eps: f64) -> u32 {
     // Bound from balls and bins problem
@@ -215,10 +215,10 @@ mod mwhc {
 
     use super::*;
 
-    /// Zero-cost sharded 3-hypergraph [MWHC
+    /// ε-cost sharded 3-hypergraph [MWHC
     /// construction](https://doi.org/10.1093/comjnl/39.6.547).
     ///
-    /// This construction uses uses zero-cost sharding (“Zero–Cost Sharding:
+    /// This construction uses uses ε-cost sharding (“ε-cost Sharding:
     /// Scaling Hypergraph-Based Static Functions and Filters to Trillions of
     /// Keys”) to shard keys and then random peelable 3-hypergraphs on sharded
     /// keys, giving a 23% space overhead. Duplicate edges are not possible,
@@ -430,9 +430,9 @@ mod fuse {
     use super::*;
     use lambert_w::lambert_w0;
     use rdst::RadixKey;
-    /// Zero-cost sharded fuse 3-hypergraphs with lazy Gaussian elimination.
+    /// ε-cost sharded fuse 3-hypergraphs with lazy Gaussian elimination.
     ///
-    /// This construction uses zero-cost sharding (“Zero–Cost Sharding: Scaling
+    /// This construction uses ε-cost sharding (“ε-cost Sharding: Scaling
     /// Hypergraph-Based Static Functions and Filters to Trillions of Keys”) to
     /// shard keys and then fuse 3-hypergraphs (see ”[Dense Peelable Random
     /// Uniform Hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38)”) on
@@ -588,7 +588,7 @@ mod fuse {
                     n.ln() / (3.33_f64).ln() + 2.25
                 } else {
                     let n = n.max(1) as f64;
-                    // From “Zero–Cost Sharding: Scaling Hypergraph-Based
+                    // From “ε-cost Sharding: Scaling Hypergraph-Based
                     // Static Functions and Filters to Trillions of Keys”
                     //
                     // This estimate is correct for c = 1.105.
@@ -603,7 +603,7 @@ mod fuse {
         /// keys so that the probability of a duplicate edge in a fuse graph with
         /// segments defined by [`FuseLge3Shards::log2_seg_size`] is at most `eps`.
         ///
-        /// From “Zero–Cost Sharding: Scaling Hypergraph-Based Static Functions and
+        /// From “ε-cost Sharding: Scaling Hypergraph-Based Static Functions and
         /// Filters to Trillions of Keys”.
         fn dup_edge_high_bits(arity: usize, n: usize, c: f64, eps: f64) -> u32 {
             let n = n as f64;
@@ -927,7 +927,7 @@ mod fuse {
         }
     }
 
-    /// Zero-cost sharded fuse 3-hypergraphs with lazy Gaussian elimination for
+    /// ε-cost sharded fuse 3-hypergraphs with lazy Gaussian elimination for
     /// big shards.
     ///
     /// This construction should be preferred to [`FuseLge3Shards`] for very
