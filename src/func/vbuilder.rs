@@ -1256,8 +1256,7 @@ impl<
                                     });
                                 }
 
-                                if solve_shard(self, shard_index, shard, data, &mut pl).is_err()
-                                {
+                                if solve_shard(self, shard_index, shard, data, &mut pl).is_err() {
                                     let _ = err_send.send(SolveError::UnsolvableShard);
                                     return;
                                 }
