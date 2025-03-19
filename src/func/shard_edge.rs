@@ -96,7 +96,7 @@ pub trait ShardEdge<S, const K: usize>:
     /// `eps` is the target relative space overhead. See “Zero–Cost Sharding:
     /// Scaling Hypergraph-Based Static Functions and Filters to Trillions of
     /// Keys” for more information.
-    /// 
+    ///
     /// This method can be called multiple times. For example, it can be used to
     /// precompute the number of shards so to optimize a
     ///  [`SigStore`](crate::utils::SigStore) by using the same number of
