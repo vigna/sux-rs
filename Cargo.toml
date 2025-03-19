@@ -48,6 +48,7 @@ itertools = "0.14.0"
 lambert_w = { version = "1.0.17",  default-features = false, features = ["std"] }
 rapidhash = "1.4.0"
 average = "0.16.0"
+crossbeam-channel = "0.5.14"
 
 [dev-dependencies]
 maligned = "0.2.1"
