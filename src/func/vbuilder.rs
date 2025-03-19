@@ -224,6 +224,11 @@ pub struct VBuilder<
     #[derivative(Default(value = "8"))]
     log2_buckets: u32,
 
+    /// The target relative space loss due to sharding. The default is 0.001.
+    #[setters(generate = true, strip_option)]
+    #[derivative(Default(value = "0.001"))]
+    eps: f64,
+
     /// The bit width of the maximum value.
     bit_width: usize,
     /// The edge generator.
@@ -661,10 +666,7 @@ impl<
         let mut prng = SmallRng::seed_from_u64(self.seed);
 
         if let Some(expected_num_keys) = self.expected_num_keys {
-            self.shard_edge.set_up_shards(
-                expected_num_keys,
-                false, // TypeId::of::<V>() == TypeId::of::<EmptyVal>(), // Filter TODO
-            );
+            self.shard_edge.set_up_shards(expected_num_keys, self.eps);
             self.log2_buckets = self.shard_edge.shard_high_bits();
         }
 
@@ -843,7 +845,7 @@ impl<
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
         let filter = TypeId::of::<V>() == TypeId::of::<EmptyVal>();
 
-        self.shard_edge.set_up_shards(self.num_keys, false); // TODO
+        self.shard_edge.set_up_shards(self.num_keys, self.eps);
         (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
 
         if filter {
@@ -1186,13 +1188,16 @@ impl<
                                     if TypeId::of::<V>() == TypeId::of::<EmptyVal>()
                                         && self.num_keys > Self::MAX_NO_DUP_EDGE_REMOVAL
                                     {
-                                        // Large filters: we eliminate duplicate edges.
+                                        // Large filters: we eliminate duplicate
+                                        // signatures.
 
-                                        // E::SortSig provides a transmutable view of
-                                        // SigVal with an implementation of RadixKey
-                                        // that is compatible with the key returned by
-                                        // ShardEdge::sort_key, and equality that
-                                        // implies equality of generated edges.
+                                        // E::SortSig provides a transmutable
+                                        // view of SigVal with an implementation
+                                        // of RadixKey that is compatible with
+                                        // the sort induced by the key returned
+                                        // by ShardEdge::sort_key, and equality
+                                        // that implies equality of local
+                                        // signatures.
 
                                         // SAFETY: we drop this immediately after sorting.
                                         let shard = unsafe {
@@ -1226,19 +1231,6 @@ impl<
                                         // Sorting the signatures increases locality
                                         self.count_sort::<V>(shard);
                                     }
-                                    shard.par_sort_unstable_by_key(|sig| {
-                                        self.shard_edge
-                                            .local_edge(self.shard_edge.local_sig(sig.sig))
-                                    });
-                                    let shard_len = shard.len();
-                                    shard.dedup_by_key(|sig| {
-                                        self.shard_edge
-                                            .local_edge(self.shard_edge.local_sig(sig.sig))
-                                    });
-                                    pl.info(format_args!(
-                                        "Removed edges: {}",
-                                        shard_len - shard.len()
-                                    ));
                                 }
 
                                 pl.done_with_count(shard.len());
