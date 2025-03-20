@@ -23,11 +23,6 @@ use sux::utils::{EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, Zst
 
 #[derive(Parser, Debug)]
 #[command(about = "Creates a VFilter and serializes it with ε-serde", long_about = None)]
-#[clap(group(
-            ArgGroup::new("input")
-                .required(true)
-                .args(&["filename", "n"]),
-))]
 struct Args {
     /// The number of keys. If no filename is provided, use the 64-bit keys
     /// [0..n).
