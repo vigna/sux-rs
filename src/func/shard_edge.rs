@@ -279,10 +279,8 @@ mod mwhc {
     fn dup_edge_high_bits(arity: usize, n: usize, c: f64, eta: f64) -> u32 {
         let n = n as f64;
         match arity {
-            3 => dbg!(
-                0.5 * (n.log2() + 1. + 3. * c.log2() - 3. * 3_f64.log2()
-                    + (-(1. - eta).ln()).log2())
-            )
+            3 => (0.5
+                * (n.log2() + 1. + 3. * c.log2() - 3. * 3_f64.log2() + (-(1. - eta).ln()).log2()))
             .floor() as u32,
             _ => unimplemented!(),
         }
