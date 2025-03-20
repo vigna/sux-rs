@@ -1176,11 +1176,7 @@ impl<
                                     };
 
                                     if self.check_dups {
-                                        shard
-                                            .radix_sort_builder()
-                                            .with_low_mem_tuner()
-                                            .with_parallel(true)
-                                            .sort();
+                                        shard.radix_sort_builder().sort();
                                         if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
                                             let _ = err_send.send(SolveError::DuplicateSignature);
                                             return;
@@ -1215,7 +1211,7 @@ impl<
                                                 .with_single_threaded_tuner()
                                                 .with_parallel(false)
                                         } else {
-                                            builder.with_low_mem_tuner().with_parallel(true)
+                                            builder
                                         }
                                         .sort();
 
