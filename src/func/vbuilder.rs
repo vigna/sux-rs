@@ -24,6 +24,7 @@ use rand::{Rng, RngCore};
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
+use thread_priority::ThreadPriority;
 use std::any::TypeId;
 use std::borrow::Cow;
 use std::hint::unreachable_unchecked;
@@ -1129,6 +1130,7 @@ impl<
 
         let result = thread_pool.in_place_scope(|scope| {
             scope.spawn(move |_| {
+                let _ = thread_priority::set_current_thread_priority(ThreadPriority::Max);
                 for val in shard_iter
                     .into_iter()
                     .zip(data.try_chunks_mut(self.shard_edge.num_vertices()).unwrap())
