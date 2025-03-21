@@ -1062,7 +1062,7 @@ impl<
 
     /// After this number of keys, in the case of filters we remove duplicate
     /// edges.
-    const MAX_NO_DUP_EDGE_REMOVAL: usize = 1 << 30;
+    const MAX_NO_DUP_EDGE_REMOVAL: usize = 1 << 33;
 
     /// Solves in parallel shards returned by an iterator, storing
     /// the result in `data`.
