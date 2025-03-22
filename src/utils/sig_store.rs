@@ -57,18 +57,17 @@ use common_traits::UpcastableInto;
 use epserde::prelude::*;
 use mem_dbg::{MemDbg, MemSize};
 
-use rapidhash::RapidInlineHasher;
 use rdst::RadixKey;
 use std::{
     borrow::{Borrow, BorrowMut},
     collections::VecDeque,
     fs::File,
-    hash::Hasher,
     io::*,
     marker::PhantomData,
     ops::{BitXor, BitXorAssign},
     sync::Arc,
 };
+use xxhash_rust::xxh3;
 
 /// A trait for types that can be used as signatures.
 pub trait Sig: ZeroCopy + Default + PartialEq + Eq + std::fmt::Debug {
@@ -218,80 +217,60 @@ pub trait ToSig<S> {
 impl ToSig<[u64; 2]> for String {
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
         let bytes = key.borrow().as_bytes();
-        let mut rapid0 = RapidInlineHasher::new(seed);
-        let mut rapid1 = RapidInlineHasher::new(!seed);
-        rapid0.write(bytes);
-        rapid1.write(bytes);
-        [rapid0.finish(), rapid1.finish()]
+        let hash128 = xxh3::xxh3_128_with_seed(bytes, seed);
+        [(hash128 >> 64) as u64, hash128 as u64]
     }
 }
 
 impl ToSig<[u64; 1]> for String {
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
-        let mut rapid = RapidInlineHasher::new(seed);
         let bytes = key.borrow().as_bytes();
-        rapid.write(bytes);
-        [rapid.finish()]
+        [xxh3::xxh3_64_with_seed(bytes, seed)]
     }
 }
 
 impl ToSig<[u64; 2]> for &String {
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
-        let mut rapid0 = RapidInlineHasher::new(seed);
-        let mut rapid1 = RapidInlineHasher::new(!seed);
         let bytes = key.borrow().as_bytes();
-        rapid0.write(bytes);
-        rapid1.write(bytes);
-        [rapid0.finish(), rapid1.finish()]
+        let hash128 = xxh3::xxh3_128_with_seed(bytes, seed);
+        [(hash128 >> 64) as u64, hash128 as u64]
     }
 }
 
 impl ToSig<[u64; 1]> for &String {
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
-        let mut rapid = RapidInlineHasher::new(seed);
         let bytes = key.borrow().as_bytes();
-        rapid.write(bytes);
-        [rapid.finish()]
+        [xxh3::xxh3_64_with_seed(bytes, seed)]
     }
 }
 
 impl ToSig<[u64; 2]> for str {
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
-        let mut rapid0 = RapidInlineHasher::new(seed);
-        let mut rapid1 = RapidInlineHasher::new(!seed);
         let bytes = key.borrow().as_bytes();
-        rapid0.write(bytes);
-        rapid1.write(bytes);
-        [rapid0.finish(), rapid1.finish()]
+        let hash128 = xxh3::xxh3_128_with_seed(bytes, seed);
+        [(hash128 >> 64) as u64, hash128 as u64]
     }
 }
 
 impl ToSig<[u64; 1]> for str {
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
-        let mut rapid = RapidInlineHasher::new(seed);
         let bytes = key.borrow().as_bytes();
-        rapid.write(bytes);
-        [rapid.finish()]
+        [xxh3::xxh3_64_with_seed(bytes, seed)]
     }
 }
 
 impl ToSig<[u64; 2]> for &str {
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
-        let mut rapid0 = RapidInlineHasher::new(seed);
-        let mut rapid1 = RapidInlineHasher::new(!seed);
         let bytes = key.borrow().as_bytes();
-        rapid0.write(bytes);
-        rapid1.write(bytes);
-        [rapid0.finish(), rapid1.finish()]
+        let hash128 = xxh3::xxh3_128_with_seed(bytes, seed);
+        [(hash128 >> 64) as u64, hash128 as u64]
     }
 }
 
 impl ToSig<[u64; 1]> for &str {
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
-        let mut rapid = RapidInlineHasher::new(seed);
         let bytes = key.borrow().as_bytes();
-        rapid.write(bytes);
-        [rapid.finish()]
+        [xxh3::xxh3_64_with_seed(bytes, seed)]
     }
 }
 
@@ -300,19 +279,14 @@ macro_rules! to_sig_prim {
         impl ToSig<[u64; 2]> for $ty {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
                 let bytes = key.borrow().to_ne_bytes();
-                let mut rapid0 = RapidInlineHasher::new(seed);
-                let mut rapid1 = RapidInlineHasher::new(!seed);
-                rapid0.write(&bytes);
-                rapid1.write(&bytes);
-                [rapid0.finish(), rapid1.finish()]
+                let hash128 = xxh3::xxh3_128_with_seed(bytes.as_slice(), seed);
+                [(hash128 >> 64) as u64, hash128 as u64]
                 }
         }
         impl ToSig<[u64;1]> for $ty {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
                 let bytes = key.borrow().to_ne_bytes();
-                let mut rapid = RapidInlineHasher::new(seed);
-                rapid.write(&bytes);
-                [rapid.finish()]
+                [xxh3::xxh3_64_with_seed(bytes.as_slice(), seed)]
             }
         }
     )*};
@@ -326,20 +300,15 @@ macro_rules! to_sig_slice {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
                 // Alignment to u8 never fails or leave trailing/leading bytes
                 let bytes = unsafe {key.borrow().align_to::<u8>().1 };
-                let mut rapid0 = RapidInlineHasher::new(seed);
-                let mut rapid1 = RapidInlineHasher::new(!seed);
-                rapid0.write(bytes);
-                rapid1.write(bytes);
-                [rapid0.finish(), rapid1.finish()]
+                let hash128 = xxh3::xxh3_128_with_seed(bytes, seed);
+                [(hash128 >> 64) as u64, hash128 as u64]
             }
         }
         impl ToSig<[u64;1]> for &[$ty] {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
                 // Alignment to u8 never fails or leave trailing/leading bytes
                 let bytes = unsafe {key.borrow().align_to::<u8>().1 };
-                let mut rapid = RapidInlineHasher::new(seed);
-                rapid.write(&bytes);
-                [rapid.finish()]
+                [xxh3::xxh3_64_with_seed(bytes, seed)]
             }
         }
     )*};

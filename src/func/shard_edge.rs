@@ -279,10 +279,8 @@ mod mwhc {
     fn dup_edge_high_bits(arity: usize, n: usize, c: f64, eta: f64) -> u32 {
         let n = n as f64;
         match arity {
-            3 => dbg!(
-                0.5 * (n.log2() + 1. + 3. * c.log2() - 3. * 3_f64.log2()
-                    + (-(1. - eta).ln()).log2())
-            )
+            3 => (0.5
+                * (n.log2() + 1. + 3. * c.log2() - 3. * 3_f64.log2() + (-(1. - eta).ln()).log2()))
             .floor() as u32,
             _ => unimplemented!(),
         }
@@ -513,8 +511,9 @@ mod fuse {
         let start = (shard * (l as usize + 2)) << log2_seg_size;
         let v0 = start + fixed_point_reduce_128!(sig[0], l << log2_seg_size);
         let seg_size = 1 << log2_seg_size;
-        let mut v1 = v0 + seg_size;
         let seg_size_mask = seg_size - 1;
+
+        let mut v1 = v0 + seg_size;
         v1 ^= (sig[0] as usize) & seg_size_mask;
         let mut v2 = v1 + seg_size;
         v2 ^= ((sig[0] >> log2_seg_size) as usize) & seg_size_mask;
@@ -975,20 +974,20 @@ mod fuse {
         sig: [u64; 2],
     ) -> [usize; 3] {
         // This strategy will work up to 10^16 keys
-        let mut start = (shard * (l as usize + 2)
-            + fixed_point_reduce_64!(
-                sig[0].rotate_right(shard_high_bits).rotate_right(1) >> 32,
-                l
-            ))
-            << log2_seg_size;
+        let start = (shard * (l as usize + 2)) << log2_seg_size;
+        let v0 = start
+            + fixed_point_reduce_128!(
+                sig[0].rotate_right(shard_high_bits).rotate_right(1),
+                l << log2_seg_size
+            );
+
         let segment_size = 1 << log2_seg_size;
         let segment_mask = segment_size - 1;
 
-        let v0 = (sig[0] as u32 as usize & segment_mask) + start;
-        start += segment_size;
-        let v1 = ((sig[1] >> 32) as usize & segment_mask) + start;
-        start += segment_size;
-        let v2 = (sig[1] as u32 as usize & segment_mask) + start;
+        let mut v1 = v0 + segment_size;
+        v1 ^= (sig[1] >> 32) as usize & segment_mask;
+        let mut v2 = v1 + segment_size;
+        v2 ^= sig[1] as u32 as usize & segment_mask;
         [v0, v1, v2]
     }
 

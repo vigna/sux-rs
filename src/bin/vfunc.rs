@@ -7,7 +7,7 @@
 use std::ops::{BitXor, BitXorAssign};
 
 use anyhow::Result;
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 use common_traits::UpcastableFrom;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
@@ -22,6 +22,11 @@ use sux::utils::{EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, Zst
 
 #[derive(Parser, Debug)]
 #[command(about = "Creates a VFunc mapping each input to its rank and serializes it with ε-serde", long_about = None)]
+#[clap(group(
+            ArgGroup::new("input")
+                .required(true)
+                .args(&["filename", "n"]),
+))]
 struct Args {
     /// The number of keys. If no filename is provided, use the 64-bit keys
     /// [0..n).
