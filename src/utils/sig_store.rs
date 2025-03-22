@@ -205,8 +205,7 @@ impl<V: ZeroCopy + BitXorAssign> BitXorAssign<SigVal<[u64; 2], V>> for SigVal<[u
 /// Trait for types that can be turned into a signature.
 ///
 /// We provide implementations for all primitive types, `str`, `String`, `&str`,
-/// `&String`, and slices of primitive types, by turning them into byte and
-/// calling [`rapidhash::RapidInlineHasher`].
+/// `&String`, and slices of primitive types, by turning them into bytes.
 ///
 /// Note that for efficiency reasons the implementations are not
 /// endianness-independent.
