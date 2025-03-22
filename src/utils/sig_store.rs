@@ -62,7 +62,6 @@ use std::{
     borrow::{Borrow, BorrowMut},
     collections::VecDeque,
     fs::File,
-    hash::Hasher,
     io::*,
     marker::PhantomData,
     ops::{BitXor, BitXorAssign},
@@ -227,7 +226,6 @@ impl ToSig<[u64; 1]> for String {
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
         let bytes = key.borrow().as_bytes();
         [xxh3::xxh3_64_with_seed(bytes, seed)]
-
     }
 }
 

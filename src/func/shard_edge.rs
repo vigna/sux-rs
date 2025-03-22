@@ -975,8 +975,8 @@ mod fuse {
     ) -> [usize; 3] {
         // This strategy will work up to 10^16 keys
         let start = (shard * (l as usize + 2)) << log2_seg_size;
-        let v0 = start + 
-            fixed_point_reduce_128!(
+        let v0 = start
+            + fixed_point_reduce_128!(
                 sig[0].rotate_right(shard_high_bits).rotate_right(1),
                 l << log2_seg_size
             );

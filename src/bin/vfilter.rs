@@ -7,7 +7,7 @@
 use std::ops::{BitXor, BitXorAssign};
 
 use anyhow::Result;
-use clap::{ArgGroup, Parser};
+use clap::Parser;
 use common_traits::{CastableFrom, UpcastableFrom};
 use dsi_progress_logger::*;
 use epserde::ser::{Serialize, SerializeInner};

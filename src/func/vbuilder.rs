@@ -24,7 +24,6 @@ use rand::{Rng, RngCore};
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use rdst::*;
-use thread_priority::ThreadPriority;
 use std::any::TypeId;
 use std::borrow::Cow;
 use std::hint::unreachable_unchecked;
@@ -35,6 +34,7 @@ use std::slice::Iter;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
+use thread_priority::ThreadPriority;
 
 use super::shard_edge::FuseLge3Shards;
 
@@ -253,6 +253,9 @@ pub enum BuildError {
     #[error("Duplicate key")]
     /// A duplicate key was detected.
     DuplicateKey,
+    #[error("Duplicate local signatures: use full signatures")]
+    /// A duplicate key was detected.
+    DuplicateLocalSignatures,
     #[error("Value too large for specified bit size")]
     /// A value is too large for the specified bit size.
     ValueTooLarge,
@@ -265,6 +268,9 @@ pub enum SolveError {
     #[error("Duplicate signature")]
     /// A duplicate signature was detected.
     DuplicateSignature,
+    #[error("Duplicate local signature")]
+    /// A duplicate local signature was detected.
+    DuplicateLocalSignature,
     #[error("Max shard too big")]
     /// The maximum shard is too big relatively to the average shard.
     MaxShardTooBig,
@@ -664,6 +670,7 @@ impl<
         for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
     {
         let mut dup_count = 0;
+        let mut local_dup_count = 0;
         let mut prng = SmallRng::seed_from_u64(self.seed);
 
         if let Some(expected_num_keys) = self.expected_num_keys {
@@ -725,6 +732,17 @@ impl<
                                 "Duplicate 128-bit signature, trying again with a different seed..."
                                 ));
                                 dup_count += 1;
+                            }
+                            // Let's try another seed, but just a few times
+                            SolveError::DuplicateLocalSignature => {
+                                if local_dup_count >= 2 {
+                                    pl.error(format_args!("Duplicate local signatures: use full signatures (duplicate local signatures with three different seeds)"));
+                                    return Err(BuildError::DuplicateLocalSignatures.into());
+                                }
+                                pl.warn(format_args!(
+                                "Duplicate local signature, trying again with a different seed..."
+                                ));
+                                local_dup_count += 1;
                             }
                             SolveError::MaxShardTooBig => {
                                 pl.warn(format_args!(
@@ -1062,7 +1080,7 @@ impl<
 
     /// After this number of keys, in the case of filters we remove duplicate
     /// edges.
-    const MAX_NO_DUP_EDGE_REMOVAL: usize = 1 << 33;
+    const MAX_NO_LOCAL_SIG_CHECK: usize = 1 << 33;
 
     /// Solves in parallel shards returned by an iterator, storing
     /// the result in `data`.
@@ -1185,11 +1203,10 @@ impl<
                                         }
                                     }
 
-                                    if TypeId::of::<V>() == TypeId::of::<EmptyVal>()
-                                        && self.num_keys > Self::MAX_NO_DUP_EDGE_REMOVAL
+                                    if TypeId::of::<E::LocalSig>() != TypeId::of::<S>()
+                                        && self.num_keys > Self::MAX_NO_LOCAL_SIG_CHECK
                                     {
-                                        // Large filters: we eliminate duplicate
-                                        // signatures.
+                                        // Check for duplicate local signatures
 
                                         // E::SortSig provides a transmutable
                                         // view of SigVal with an implementation
@@ -1217,16 +1234,28 @@ impl<
                                         }
                                         .sort();
 
-                                        // Duplicate edges on large filters can be
-                                        // simply removed: they do not change the semantics
-                                        // of the filter because hashes are computed on
-                                        // signatures.
                                         let shard_len = shard.len();
                                         shard.dedup();
-                                        pl.info(format_args!(
-                                            "Removed signatures: {}",
-                                            shard_len - shard.len()
-                                        ));
+
+                                        if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
+                                            // Duplicate local signatures on
+                                            // large filters can be simply
+                                            // removed: they do not change the
+                                            // semantics of the filter because
+                                            // hashes are computed on
+                                            // local signatures.
+                                            pl.info(format_args!(
+                                                "Removed signatures: {}",
+                                                shard_len - shard.len()
+                                            ));
+                                        } else {
+                                            // For function, we have to try again
+                                            if shard_len != shard.len() {
+                                                let _ = err_send
+                                                    .send(SolveError::DuplicateLocalSignature);
+                                                return;
+                                            }
+                                        }
                                     } else if self.shard_edge.num_sort_keys() != 1 {
                                         // Sorting the signatures increases locality
                                         self.count_sort::<V>(shard);
