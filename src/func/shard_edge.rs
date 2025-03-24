@@ -22,7 +22,7 @@
 //! Here we discuss pros and cons of the main alternatives; further options are
 //! available, but they are mostly interesting for benchmarking or for
 //! historical reasons. More details can be found in the documentation of each
-//! implementation, and in “ε-cost Sharding: Scaling Hypergraph-Based Static
+//! implementation, and in “ε-Cost Sharding: Scaling Hypergraph-Based Static
 //! Functions and Filters to Trillions of Keys”.
 //!
 //! - [`FuseLge3Shards`] with 128-bit signatures and 64-bit local signatures:
@@ -30,7 +30,7 @@
 //!   generates edges from 64-bit local signatures using a fuse 3-hypergraph
 //!   with a 10.5% (ε = 0.001) space overhead for key sets above a few million
 //!   keys. Below 800000 keys, it switches to lazy Gaussian elimination, which
-//!   increases construction time but still contains space overhead to 12%.
+//!   increases construction time but still contains space overhead to 12.5%.
 //!   Sharding makes parallelism possible above a few dozen million keys.
 //!   Depending on the amount of sharding, functions with more than a few dozen
 //!   billion keys might incur in duplicate local signatures, which requires
@@ -51,6 +51,8 @@
 //!   incur in duplicate local signatures. This logic is slightly slower and
 //!   uses almost double memory during construction, but uses full local
 //!   signatures, which cannot lead to duplicates with overwhelming probability.
+//!   Filter do not have this problem as local signatures can be deduplicated
+//!   without affecting the semantics of the filter.
 //!
 //! - `Mwhc3Shards` with 128-bit signatures (requires the `mwhc`feature): this
 //!   choice gives much worse overhead (23%) but can be sharded very finely.
@@ -78,9 +80,9 @@ use epserde::{
 /// [`VBuilder`](crate::func::VBuilder). They contain the data and logic that
 /// turns a signature into an edge, and possibly a shard.
 ///
-/// Having this trait makes it possible to test different types of generation
-/// techniques for `K`-uniform hypergraphs. Moreover, it decouples entirely the
-/// sharding and edge-generation logic from the rest of the code.
+/// This trait makes it possible to test different types of generation
+/// techniques for hypergraphs. Moreover, it decouples entirely the sharding and
+/// edge-generation logic from the rest of the code.
 ///
 /// If you compile with the `mwhc` feature, you will get additional
 /// implementations for the classic [MWHC
@@ -147,7 +149,7 @@ pub trait ShardEdge<S, const K: usize>:
 
     /// Sets up the sharding logic for the given number of keys.
     ///
-    /// `eps` is the target relative space overhead. See “ε-cost Sharding:
+    /// `eps` is the target relative space overhead. See “ε-Cost Sharding:
     /// Scaling Hypergraph-Based Static Functions and Filters to Trillions of
     /// Keys” for more information.
     ///
@@ -175,17 +177,18 @@ pub trait ShardEdge<S, const K: usize>:
     /// Returns the number of high bits used for sharding.
     fn shard_high_bits(&self) -> u32;
 
-    /// Returns the number of sorting keys to be used for sorting
-    /// signatures before processing. If no sorting is needed, this
-    /// method should return 1.
+    /// Returns the number of sorting keys to be used for count sorting
+    /// signatures before processing.
+    /// 
+    /// If no count sorting is needed, this method should return 1.
     fn num_sort_keys(&self) -> usize;
 
-    /// Returns the sort key for the given signature. If not sorting is needed,
-    /// this method should return 0.
+    /// Returns the sort key for the given signature.
+    /// 
+    /// If no count sorting is needed, this method should return 0.
     fn sort_key(&self, sig: S) -> usize;
 
-    /// Extracts a 64-bit hash from a signature with the guarantee that
-    /// signatures generating duplicate edges have the same hash.
+    /// Extracts a 64-bit hash from a local signature.
     fn edge_hash(&self, sig: Self::LocalSig) -> u64;
 
     /// Returns the number of shards.
@@ -254,7 +257,7 @@ macro_rules! fixed_point_reduce_128 {
 /// so that the overhead of the maximum shard size with respect to the average
 /// shard size is with high probability `eps`.
 ///
-/// From “ε-cost Sharding: Scaling Hypergraph-Based Static Functions and
+/// From “ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and
 /// Filters to Trillions of Keys”
 fn sharding_high_bits(n: usize, eps: f64) -> u32 {
     // Bound from balls and bins problem
@@ -272,7 +275,7 @@ mod mwhc {
     /// ε-cost sharded 3-hypergraph [MWHC
     /// construction](https://doi.org/10.1093/comjnl/39.6.547).
     ///
-    /// This construction uses uses ε-cost sharding (“ε-cost Sharding:
+    /// This construction uses uses ε-cost sharding (“ε-Cost Sharding:
     /// Scaling Hypergraph-Based Static Functions and Filters to Trillions of
     /// Keys”) to shard keys and then random peelable 3-hypergraphs on sharded
     /// keys, giving a 23% space overhead. Duplicate edges are not possible,
@@ -328,7 +331,7 @@ mod mwhc {
     /// keys so that the probability of a duplicate edge in a hypergraph is at
     /// most `eta`.
     ///
-    /// From “ε-cost Sharding: Scaling Hypergraph-Based Static Functions and
+    /// From “ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and
     /// Filters to Trillions of Keys”.
     fn dup_edge_high_bits(arity: usize, n: usize, c: f64, eta: f64) -> u32 {
         let n = n as f64;
@@ -501,11 +504,12 @@ mod fuse {
     use super::*;
     use lambert_w::lambert_w0;
     use rdst::RadixKey;
-    /// ε-cost sharded fuse 3-hypergraphs with lazy Gaussian elimination.
+    /// ε-cost sharded fuse 3-hypergraphs with lazy Gaussian elimination
+    /// using 64-bit local signatures.
     ///
-    /// This construction uses ε-cost sharding (“ε-cost Sharding: Scaling
+    /// This construction uses ε-cost sharding (“ε-Cost Sharding: Scaling
     /// Hypergraph-Based Static Functions and Filters to Trillions of Keys”) to
-    /// shard keys and then fuse 3-hypergraphs (see ”[Dense Peelable Random
+    /// shard keys and then fuse 3-hypergraphs (see “[Dense Peelable Random
     /// Uniform Hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38)”) on
     /// sharded keys, giving a 10.5% space overhead for large key sets; smaller
     /// key sets have a slightly larger overhead. Duplicate edges are possible,
@@ -521,16 +525,15 @@ mod fuse {
     ///
     /// Below a few million keys, fuse graphs have a much higher space overhead.
     /// This construction in that case switches to sharding and lazy Gaussian
-    /// elimination to provide a close, albeit slightly larger, space overhead.
-    /// The construction time per keys increases by an order of magnitude, but
-    /// since the number of keys is small, the impact is limited.
+    /// elimination to provide a 12.5% overhead. The construction time per keys
+    /// increases by an order of magnitude, but since the number of keys is
+    /// small, the impact is limited.
     ///
-    /// For key sets above a few dozen billion keys we suggest to use
-    /// [`FuseLge3FullSigs`], as uses more bits from the signature, yielding an
-    /// (empirically) smaller chance of generating duplicate local signatures in
-    /// exchange for a slightly slower edge generation and larger space
-    /// consumption at construction time.
-
+    /// When building functions over key sets above a few dozen billion keys
+    /// (but this depends on the sharding parameter ε) we suggest to use
+    /// [`FuseLge3FullSigs`]. It uses full signatures as local signatures,
+    /// making the probability of a duplicate local signature negligible. As a
+    /// result, it is slightly slower and uses more space at construction time.
     #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
     #[deep_copy]
     pub struct FuseLge3Shards {
@@ -658,7 +661,7 @@ mod fuse {
                     n.ln() / (3.33_f64).ln() + 2.25
                 } else {
                     let n = n.max(1) as f64;
-                    // From “ε-cost Sharding: Scaling Hypergraph-Based
+                    // From “ε-Cost Sharding: Scaling Hypergraph-Based
                     // Static Functions and Filters to Trillions of Keys”
                     //
                     // This estimate is correct for c = 1.105.
@@ -673,7 +676,7 @@ mod fuse {
         /// keys so that the probability of a duplicate edge in a fuse graph with
         /// segments defined by [`FuseLge3Shards::log2_seg_size`] is at most `eta`.
         ///
-        /// From “ε-cost Sharding: Scaling Hypergraph-Based Static Functions and
+        /// From “ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and
         /// Filters to Trillions of Keys”.
         fn dup_edge_high_bits(arity: usize, n: usize, c: f64, eta: f64) -> u32 {
             let n = n as f64;
@@ -798,12 +801,14 @@ mod fuse {
     ///
     /// See [`FuseLge3Shards`] for a general description of fuse graphs.
     ///
-    /// This construction does not use sharding, so it has a higher space overhead
-    /// for a small number of keys, albeit it uses lazy Gaussian elimination
-    /// in the smaller cases to improve the overhead.
+    /// This construction does not use sharding, so it has a higher space
+    /// overhead for a small number of keys, albeit it uses lazy Gaussian
+    /// elimination in the smaller cases to improve the overhead.
     ///
-    /// This construction, coupled `[u64; 1]` signatures, is the fastest for small
-    /// sets of keys, but it does not scale beyond a billion keys or so.
+    /// This construction, coupled `[u64; 1]` signatures, is the fastest for
+    /// small sets of keys, but it does not scale beyond two billion keys or so.
+    /// It is mostly equivalent to that described in [“Binary Fuse Filters: Fast
+    /// and Smaller Than Xor Filters”](https://doi.org/10.1145/3510449).
     #[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
     #[deep_copy]
     pub struct FuseLge3NoShards {
@@ -997,13 +1002,15 @@ mod fuse {
         }
     }
 
-    /// ε-cost sharded fuse 3-hypergraphs with lazy Gaussian elimination for
-    /// big shards.
+    /// ε-cost sharded fuse 3-hypergraphs with lazy Gaussian elimination using
+    /// full local signatures.
     ///
-    /// This construction should be preferred to [`FuseLge3Shards`] for very
-    /// large shards (above a few hundred million keys), as it uses more bits
-    /// from the signature, reducing (empirically) the chance of duplicate
-    /// edges. As a result, it is slightly slower and uses more space at
+    ///
+    /// This construction should be preferred to [`FuseLge3Shards`] when
+    /// building functions over key sets above a few dozen billion keys (but
+    /// this depends on the sharding parameter ε). It uses full signatures as
+    /// local signatures, making the probability of a duplicate local signature
+    /// negligible. As a result, it is slightly slower and uses more space at
     /// construction time.
     ///
     /// The rest of the logic is identical.
