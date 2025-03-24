@@ -12,7 +12,7 @@ use dsi_progress_logger::*;
 use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,
-    func::shard_edge::{FuseLge3BigShards, FuseLge3NoShards, FuseLge3Shards, ShardEdge},
+    func::shard_edge::{FuseLge3FullSigs, FuseLge3NoShards, FuseLge3Shards, ShardEdge},
     prelude::VBuilder,
     utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
 };
@@ -74,8 +74,8 @@ fn test_vfunc_peeling_by_sig_vals() -> Result<()> {
     _test_vfunc::<[u64; 1], FuseLge3NoShards>(&[1_000_000], false, true)?;
     _test_vfunc::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, false)?;
     _test_vfunc::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, true)?;
-    _test_vfunc::<[u64; 2], FuseLge3BigShards>(&[1_000_000], false, false)?;
-    _test_vfunc::<[u64; 2], FuseLge3BigShards>(&[1_000_000], false, true)?;
+    _test_vfunc::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, false)?;
+    _test_vfunc::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, true)?;
     Ok(())
 }
 
@@ -148,8 +148,8 @@ fn test_vfilter_peeling_by_sig_vals() -> Result<()> {
     _test_vfilter::<[u64; 1], FuseLge3NoShards>(&[1_000_000], false, true)?;
     _test_vfilter::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, false)?;
     _test_vfilter::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, true)?;
-    _test_vfilter::<[u64; 2], FuseLge3BigShards>(&[1_000_000], false, false)?;
-    _test_vfilter::<[u64; 2], FuseLge3BigShards>(&[1_000_000], false, true)?;
+    _test_vfilter::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, false)?;
+    _test_vfilter::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, true)?;
     Ok(())
 }
 

@@ -8,7 +8,7 @@ use std::ops::{BitXor, BitXorAssign};
 
 use anyhow::Result;
 use clap::Parser;
-use common_traits::{CastableFrom, UpcastableFrom};
+use common_traits::{DowncastableFrom, UpcastableFrom};
 use dsi_progress_logger::*;
 use epserde::ser::{Serialize, SerializeInner};
 use epserde::traits::{AlignHash, TypeHash, ZeroCopy};
@@ -85,7 +85,7 @@ macro_rules! fuse {
             }
         } else {
             if $args.full_sigs {
-                $main::<$ty, [u64; 2], FuseLge3BigShards>($args)
+                $main::<$ty, [u64; 2], FuseLge3FullSigs>($args)
             } else {
                 $main::<$ty, [u64; 2], FuseLge3Shards>($args)
             }
@@ -156,7 +156,7 @@ fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: Shar
 }
 
 fn main_with_types_boxed_slice<
-    W: Word + ZeroCopy + Send + Sync + CastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
+    W: Word + ZeroCopy + Send + Sync + DowncastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 >(
@@ -215,7 +215,7 @@ where
 }
 
 fn main_with_types_bit_field_vec<
-    W: Word + ZeroCopy + Send + Sync + CastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
+    W: Word + ZeroCopy + Send + Sync + DowncastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 >(

@@ -81,7 +81,7 @@ macro_rules! fuse {
             }
         } else {
             if $args.full_sigs {
-                $main::<$ty, [u64; 2], FuseLge3BigShards>($args)
+                $main::<$ty, [u64; 2], FuseLge3FullSigs>($args)
             } else {
                 $main::<$ty, [u64; 2], FuseLge3Shards>($args)
             }

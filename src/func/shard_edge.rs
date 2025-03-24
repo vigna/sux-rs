@@ -5,6 +5,58 @@
  */
 
 //! Strategies to shard keys and to generate edges in hypergraphs.
+//!
+//! The code for [`VFunc`](crate::func::VFunc)/[`VFilter`](crate::dict::VFilter)
+//! and [`VBuilder`](crate::func::VBuilder) is generic with respect to the size
+//! of signatures and to the logic that possibly shards keys and generates edges
+//! from keys; such a logic is defined by a [`ShardEdge`] implementation. While
+//! the default should be a reasonable choice in most cases, there are possible
+//! alternatives.
+//!
+//! The amount of sharding is partially controlled by the parameter ε of
+//! [`ShardEdge::set_up_shards`], which specifies the target space loss due to
+//! ε-cost sharding. Usually, the larger the loss, the finer the sharding, but
+//! depending on the technique there are other bounds involved that might limit
+//! the amount of sharding.
+//!
+//! Here we discuss pros and cons of the main alternatives; further options are
+//! available, but they are mostly interesting for benchmarking or for
+//! historical reasons. More details can be found in the documentation of each
+//! implementation, and in “ε-cost Sharding: Scaling Hypergraph-Based Static
+//! Functions and Filters to Trillions of Keys”.
+//!
+//! - [`FuseLge3Shards`] with 128-bit signatures and 64-bit local signatures:
+//!   this is the default choice. It shards keys using ε-cost sharding and
+//!   generates edges from 64-bit local signatures using a fuse 3-hypergraph
+//!   with a 10.5% (ε = 0.001) space overhead for key sets above a few million
+//!   keys. Below 800000 keys, it switches to lazy Gaussian elimination, which
+//!   increases construction time but still contains space overhead to 12%.
+//!   Sharding makes parallelism possible above a few dozen million keys.
+//!   Depending on the amount of sharding, functions with more than a few dozen
+//!   billion keys might incur in duplicate local signatures, which requires
+//!   switching to [`FuseLge3FullSigs`].
+//!
+//! - [`FuseLge3NoShards`] with 64-bit signatures: this choice provides fast
+//!   queries on key sets of less than two billion keys. Construction, however,
+//!   cannot be parallelized. It generates edges using a fuse 3-hypergraph with
+//!   a 10.5% space overhead for key sets above a few million keys: the overhead
+//!   increases slightly for smaller key sets, but below 100000 keys we use lazy
+//!   Gaussian elimination to keep overhead within 12.5%. Above that threshold,
+//!   this logic is that of a standard fuse 3-hypergraph and thus mostly
+//!   equivalent to that described in [“Binary Fuse Filters: Fast and Smaller
+//!   Than Xor Filters”](https://doi.org/10.1145/3510449).
+//!
+//! - [`FuseLge3FullSigs`]: When building functions with more than a few dozen
+//!   billion keys, depending on the amount of sharding [`FuseLge3Shards`] might
+//!   incur in duplicate local signatures. This logic is slightly slower and
+//!   uses almost double memory during construction, but uses full local
+//!   signatures, which cannot lead to duplicates with overwhelming probability.
+//!
+//! - `Mwhc3Shards` with 128-bit signatures (requires the `mwhc`feature): this
+//!   choice gives much worse overhead (23%) but can be sharded very finely.
+//!   With ε = 0.01 (and thus 24% space overhead) sharding can already happen at
+//!   very small sizes, providing the fastest parallel construction. Query speed
+//!   is similar to [`FuseLge3Shards`].
 
 use crate::utils::Sig;
 use common_traits::{CastableFrom, UnsignedInt, UpcastableInto};
@@ -36,7 +88,8 @@ use epserde::{
 ///
 /// There are a few different implementations depending on the type of graphs,
 /// on the size of signatures, and on whether sharding is used. See, for
-/// example, [`FuseLge3Shards`].
+/// example, [`FuseLge3Shards`]. The [module
+/// documentation](crate::func::shard_edge) contains some discussion.
 ///
 /// The implementation of the [`Display`] trait should return the relevant
 /// information about the sharding and edge logic.
@@ -46,10 +99,6 @@ use epserde::{
 /// [`num_sort_keys`](ShardEdge::num_sort_keys) should return the number of keys
 /// used for sorting, and [`sort_key`](ShardEdge::sort_key) should return the
 /// key to be used for sorting.
-///
-/// Note that [`VBuilder`](crate::func::VBuilder) assumes internally that
-/// sorting the signatures themselves gives an order very similar to that
-/// obtained sorting by the key returned by [`sort_key`](ShardEdge::sort_key).
 pub trait ShardEdge<S, const K: usize>:
     Default
     + Display
@@ -70,6 +119,11 @@ pub trait ShardEdge<S, const K: usize>:
     /// `SortSigVal` are adjacent. Using `SigVal<S, V>` always works, but it
     /// might be possible to use less information. See, for example,
     /// [`LowSortSigVal`].
+    ///
+    /// Note that [`VBuilder`](crate::func::VBuilder) assumes internally that
+    /// sorting the signatures by this type gives an order very similar to that
+    /// obtained sorting by the key returned by
+    /// [`sort_key`](ShardEdge::sort_key).
     type SortSigVal<V: ZeroCopy + Send + Sync>: RadixKey + Send + Sync + Copy + PartialEq;
 
     /// The type of local signatures used to generate local edges.
@@ -471,11 +525,11 @@ mod fuse {
     /// The construction time per keys increases by an order of magnitude, but
     /// since the number of keys is small, the impact is limited.
     ///
-    /// For shards above a few hundred million keys we suggest to use
-    /// [`FuseLge3BigShards`], as uses more bits from the signature, yielding an
-    /// (empirically) smaller chance of generating duplicate edges in exchange
-    /// for a slightly slower edge generation and larger space consumption at
-    /// construction time.
+    /// For key sets above a few dozen billion keys we suggest to use
+    /// [`FuseLge3FullSigs`], as uses more bits from the signature, yielding an
+    /// (empirically) smaller chance of generating duplicate local signatures in
+    /// exchange for a slightly slower edge generation and larger space
+    /// consumption at construction time.
 
     #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
     #[deep_copy]
@@ -956,9 +1010,9 @@ mod fuse {
     #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
     #[deep_copy]
     #[derive(Default)]
-    pub struct FuseLge3BigShards(FuseLge3Shards);
+    pub struct FuseLge3FullSigs(FuseLge3Shards);
 
-    impl Display for FuseLge3BigShards {
+    impl Display for FuseLge3FullSigs {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             self.0.fmt(f)
         }
@@ -989,7 +1043,7 @@ mod fuse {
         [v0, v1, v2]
     }
 
-    impl ShardEdge<[u64; 2], 3> for FuseLge3BigShards {
+    impl ShardEdge<[u64; 2], 3> for FuseLge3FullSigs {
         type SortSigVal<V: ZeroCopy + Send + Sync> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u32;
