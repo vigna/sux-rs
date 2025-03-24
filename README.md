@@ -21,7 +21,7 @@ Presently, it provides:
 - [indexed dictionaries], including an implementation of the [Elias–Fano
   representation of monotone sequences] and [lists of strings compressed by
   prefix omission].
-- New state-of-the-arc structures for [static functions] and [static filters],
+- New state-of-the-art structures for [static functions] and [static filters],
   scaling to trillions of keys, and providing very fast queries.
 
 The focus is on efficiency (in particular, there are unchecked versions of all
