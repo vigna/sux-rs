@@ -77,9 +77,10 @@ const LOG2_MAX_SHARDS: u32 = 12;
 ///
 /// # Examples
 ///
-/// In this example, we build a function that maps each key to itself. Note that
-/// setter for the expected number of keys is used to optimize the construction.
-/// Note that we use the [`FromIntoIterator`] adapter to turn a clonable
+/// In this example, we build a function that maps each key to itself using a
+/// boxed slice of `usize` as a backend (note that this is really wasteful).
+/// Note that setter for the expected number of keys is used to optimize the
+/// construction. We use the [`FromIntoIterator`] adapter to turn a clonable
 /// [`IntoIterator`] into a [`RewindableIoLender`].
 ///
 /// ```rust
@@ -104,7 +105,7 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// ```
 ///
 /// Alternatively we can use the bit-field vector backend, that will use
-/// ⌈log₂(99)⌉ bits per element:
+/// ⌈log₂(99)⌉ bits per backend element:
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -128,7 +129,9 @@ const LOG2_MAX_SHARDS: u32 = 12;
 /// # }
 /// ```
 ///
-/// We now try to build a fast 8-bit filter for the same key set:
+/// We now try to build a fast 8-bit filter for the same key set,
+/// using a boxed slice of `u8` as a backend (this is not wasteful,
+/// as the filter uses 8-bit hashes):
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -227,7 +230,17 @@ pub struct VBuilder<
     #[derivative(Default(value = "8"))]
     log2_buckets: u32,
 
-    /// The target relative space loss due to sharding. The default is 0.001.
+    /// The target relative space loss due to ε-cost sharding. 
+    /// 
+    /// The default is 0.001. Setting a larger target, for example, 0.01, will
+    /// increase the space overhead due to sharding, but will provide in general
+    /// finer shards. This might not always happen, however, because the ε-cost
+    /// bound is just one of the bounds concurring in limiting the amount of
+    /// sharding for a specific [`ShardEdge`]. For example, increasing the
+    /// target to 0.01 will provide very fine sharding using `Mwhc3Shards`
+    /// shard/edge logic, activated by the `mwhc` feature, but will affect only
+    /// slightly [`FuseLge3Shards`] or
+    /// [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "0.001"))]
     eps: f64,
