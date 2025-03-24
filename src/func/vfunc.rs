@@ -16,12 +16,17 @@ use mem_dbg::*;
 /// fast queries.
 ///
 /// Space overhead with respect to the optimum depends on the [`ShardEdge`]
-/// type. The default is [`FuseLge3Shards`].
+/// type. The default is [`FuseLge3Shards`], which provides 10.5% space overhead
+/// for large key sets (above a few million keys), which grow up to 12% going
+/// towards smaller key sets. Details on other possible [`ShardEdge`]
+/// implementations can be found in the [`shard_edge`](crate::func::shard_edge)
+/// module documentation.
 ///
 /// Instances of this structure are immutable; they are built using a
 /// [`VBuilder`](crate::func::VBuilder) and can be serialized using
 /// [ε-serde](`epserde`). Please see the documentation of
 /// [`VBuilder`](crate::func::VBuilder) for examples.
+///
 ///
 /// # Generics
 ///

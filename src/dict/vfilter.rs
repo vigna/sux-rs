@@ -15,8 +15,8 @@ use mem_dbg::*;
 use std::borrow::Borrow;
 use std::ops::Index;
 
-/// Static filters (i.e., static probabilistic dictionaries) with low space
-/// overhead, fast parallel construction, and fast queries.
+/// Static filters (i.e., static approximate dictionaries with false positives)
+/// with low space overhead, fast parallel construction, and fast queries.
 ///
 /// Instances of this structure are immutable; they are built using a
 /// [`VBuilder`](crate::func::VBuilder) and can be serialized using
@@ -27,7 +27,8 @@ use std::ops::Index;
 /// Please read the [`VFunc`] documentation for more information about the space
 /// usage and the ways in which a filter can be built. A construction time you
 /// have to choose a number *b* of hash bits per key, and the filter precision
-/// (false-positive rate) will be 2⁻*ᵇ*.
+/// (false-positive rate) will be 2⁻*ᵇ*. For values of *b* that correspond to
+/// the size of an unsigned type, you can use a boxed slice as a backend.
 ///
 /// Note that this structure implements the [`Index`] trait, which provides a
 /// convenient access to the filter. Please see the documentation of

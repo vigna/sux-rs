@@ -12,7 +12,9 @@ use crate::dict::VFilter;
 use crate::func::{shard_edge::ShardEdge, *};
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
 use crate::utils::*;
-use common_traits::{CastableInto, UnsignedInt, UpcastableFrom, UpcastableInto};
+use common_traits::{
+    CastableInto, DowncastableFrom, DowncastableInto, UnsignedInt, UpcastableFrom, UpcastableInto,
+};
 use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
@@ -520,10 +522,10 @@ where
 /// Since values are stored in a boxed slice access is particularly fast, but
 /// the number of bits of the hashes will be  exactly the bit width of the
 /// unsigned type `W`.
-impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
+impl<W: ZeroCopy + Word + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+    VBuilder<W, Box<[W]>, S, E>
 where
     u128: UpcastableFrom<W>,
-    u64: CastableInto<W>,
     SigVal<S, EmptyVal>: RadixKey,
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
@@ -539,7 +541,7 @@ where
     {
         let filter_mask = W::MAX;
         let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
-            mix64(shard_edge.edge_hash(sig_val.sig)).cast()
+            mix64(shard_edge.edge_hash(sig_val.sig)).downcast()
         };
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
 
@@ -592,10 +594,10 @@ where
 /// will. It must be in any case at most the bit width of `W`.
 ///
 /// Typically `W` will be `usize` or `u64`.
-impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
+impl<W: ZeroCopy + Word + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+    VBuilder<W, BitFieldVec<W>, S, E>
 where
     u128: UpcastableFrom<W>,
-    u64: CastableInto<W>,
     SigVal<S, EmptyVal>: RadixKey,
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
 {
@@ -609,7 +611,8 @@ where
         assert!(filter_bits <= W::BITS);
         let filter_mask = W::MAX >> (W::BITS - filter_bits);
         let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
-            mix64(shard_edge.edge_hash(sig_val.sig)).cast() & filter_mask
+            <W as DowncastableFrom<u64>>::downcast_from(mix64(shard_edge.edge_hash(sig_val.sig)))
+                & filter_mask
         };
         let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
 

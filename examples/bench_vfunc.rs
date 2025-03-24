@@ -89,7 +89,7 @@ fn main() -> Result<()> {
         }
     } else {
         if args.full_sigs {
-            main_with_types::<[u64; 2], FuseLge3BigShards>(args)
+            main_with_types::<[u64; 2], FuseLge3FullSigs>(args)
         } else {
             main_with_types::<[u64; 2], FuseLge3Shards>(args)
         }

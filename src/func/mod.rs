@@ -11,9 +11,9 @@
 //! querying a static function with a key outside of the original set will lead
 //! to an arbitrary result.
 //!
-//! In exchange, static functions have a very low space overhead, and make it
-//! possible to store the association between keys and values just in the space
-//! required by the values (with a small overhead).
+//! In exchange, static functions make it possible to store the association
+//! between keys and values just in the space required by the values, plus
+//! a small overhead.
 //!
 //! See [`VFunc`] for more details.
 
