@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.7.2] - 2025-03-25
+
+* Completed links to relevant papers.
+
 ## [0.7.1] - 2025-03-24
 
 * Better documentation for the `shard_edge` module, `VFunc` and `VFilter`.

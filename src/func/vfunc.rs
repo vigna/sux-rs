@@ -20,14 +20,15 @@ use mem_dbg::*;
 /// querying a static function with a key outside of the original set will lead
 /// to an arbitrary result. Another name for static functions *retrieval data
 /// structure*.
-/// 
+///
 /// In exchange, static functions have a very low space overhead, and make it
 /// possible to store the association between keys and values just in the space
 /// required by the values (with a small overhead).
-/// 
-/// This structure is based on “ε-Cost Sharding: Scaling Hypergraph-Based Static
-/// Functions and Filters to Trillions of Keys”. Space overhead with respect to
-/// the optimum depends on the [`ShardEdge`] type. The default is
+///
+/// This structure is based on “[ε-Cost Sharding: Scaling Hypergraph-Based
+/// Static Functions and Filters to Trillions of
+/// Keys](https://arxiv.org/abs/2503.18397)”. Space overhead with respect to the
+/// optimum depends on the [`ShardEdge`] type. The default is
 /// [`FuseLge3Shards`], which provides 10.5% space overhead for large key sets
 /// (above a few million keys), which grow up to 12% going towards smaller key
 /// sets. Details on other possible [`ShardEdge`] implementations can be found

@@ -203,7 +203,8 @@ impl<W: Word> Modulo2System<W> {
         Ok(solution)
     }
 
-    /// Builds the data structures needed for lazy Gaussian elimination.
+    /// Builds the data structures needed for [lazy Gaussian
+    /// elimination](https://doi.org/10.1016/j.ic.2020.104517).
     ///
     /// This method returns the variable-to-equation mapping, the weight of each
     /// variable (the number of equations in which it appears), and the priority
@@ -246,7 +247,8 @@ impl<W: Word> Modulo2System<W> {
         (var_to_eq, weight, priority)
     }
 
-    /// Solves the system using lazy Gaussian elimination.
+    /// Solves the system using [lazy Gaussian
+    /// elimination](https://doi.org/10.1016/j.ic.2020.104517).
     pub fn lazy_gaussian_elimination(&mut self) -> Result<Vec<W>> {
         let num_vars = self.num_vars;
         let num_equations = self.equations.len();
