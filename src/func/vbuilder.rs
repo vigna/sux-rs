@@ -230,8 +230,9 @@ pub struct VBuilder<
     #[derivative(Default(value = "8"))]
     log2_buckets: u32,
 
-    /// The target relative space loss due to ε-cost sharding. 
-    /// 
+    /// The target relative space loss due to [ε-cost
+    /// sharding](https://doi.org/10.4230/LIPIcs.ESA.2019.38).s
+    ///
     /// The default is 0.001. Setting a larger target, for example, 0.01, will
     /// increase the space overhead due to sharding, but will provide in general
     /// finer shards. This might not always happen, however, because the ε-cost
@@ -254,7 +255,8 @@ pub struct VBuilder<
     /// The ratio between the number of vertices and the number of edges
     /// (i.e., between the number of variables and the number of equations).
     c: f64,
-    /// Whether we should use lazy Gaussian elimination.
+    /// Whether we should use [lazy Gaussian
+    /// elimination](https://doi.org/10.1016/j.ic.2020.104517).
     lge: bool,
     /// Fast-stop for failed attempts.
     failed: AtomicBool,
@@ -1350,9 +1352,10 @@ impl<
     /// [`peel_by_sig_vals_high_mem`](VBuilder::peel_by_sig_vals_high_mem). It
     /// is fairly slow as it has to go through a cache-unfriendly memory
     /// indirection every time it has to retrieve a [`SigVal`] from the shard,
-    /// but it is the peeler of choice when lazy Gaussian elimination is
-    /// required, as after a failed peel-by-sig-vals it is not possible to
-    /// retrieve information about the signature/value pairs in the shard.
+    /// but it is the peeler of choice when [lazy Gaussian
+    /// elimination](https://doi.org/10.1016/j.ic.2020.104517) is required, as
+    /// after a failed peel-by-sig-vals it is not possible to retrieve
+    /// information about the signature/value pairs in the shard.
     ///
     /// In theory one could avoid the stack of sides by putting vertices,
     /// instead of edge indices, on the upper stack, and retrieving edge indices
@@ -1504,9 +1507,10 @@ impl<
     /// uses almost half the memory. It is the peeler of choice for low levels
     /// of parallelism.
     ///
-    /// This peeler cannot be used in conjunction with lazy Gaussian elimination
-    /// as after a failed peeling it is not possible to retrieve information
-    /// about the signature/value pairs in the shard.
+    /// This peeler cannot be used in conjunction with [lazy Gaussian
+    /// elimination](https://doi.org/10.1016/j.ic.2020.104517) as after a failed
+    /// peeling it is not possible to retrieve information about the
+    /// signature/value pairs in the shard.
     fn peel_by_sig_vals_high_mem<
         V: ZeroCopy + Send + Sync,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
@@ -1639,9 +1643,10 @@ impl<
     /// which uses almost twice the memory. It is the peeler of choice for
     /// significant levels of parallelism.
     ///
-    /// This peeler cannot be used in conjunction with lazy Gaussian elimination
-    /// as after a failed peeling it is not possible to retrieve information
-    /// about the signature/value pairs in the shard.
+    /// This peeler cannot be used in conjunction with [lazy ]Gaussian
+    /// elimination](https://doi.org/10.1016/j.ic.2020.104517) as after a failed
+    /// peeling it is not possible to retrieve information about the
+    /// signature/value pairs in the shard.
     fn peel_by_sig_vals_low_mem<
         V: ZeroCopy + Send + Sync,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
@@ -1753,8 +1758,9 @@ impl<
         Ok(())
     }
 
-    /// Solves a shard of given index possibly using lazy Gaussian elimination,
-    /// and stores the solution in the given data.
+    /// Solves a shard of given index possibly using [lazy Gaussian
+    /// elimination](https://doi.org/10.1016/j.ic.2020.104517), and stores the
+    /// solution in the given data.
     ///
     /// As a first try, the shard is [peeled by index](VBuilder::peel_by_index).
     /// If the peeling is [partial](PeelResult::Partial), lazy Gaussian
