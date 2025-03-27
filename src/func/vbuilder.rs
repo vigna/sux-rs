@@ -23,8 +23,8 @@ use log::info;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use rand::{Rng, RngCore};
-use rayon::prelude::*;
-use rayon::ThreadPoolBuilder;
+use rayon::iter::ParallelIterator;
+use rayon::slice::ParallelSlice;
 use rdst::*;
 use std::any::TypeId;
 use std::borrow::Cow;
@@ -258,6 +258,8 @@ pub struct VBuilder<
     /// Whether we should use [lazy Gaussian
     /// elimination](https://doi.org/10.1016/j.ic.2020.104517).
     lge: bool,
+    /// The number of threads to use.
+    num_threads: usize,
     /// Fast-stop for failed attempts.
     failed: AtomicBool,
     #[doc(hidden)]
@@ -953,10 +955,7 @@ impl<
         for<'a> ShardDataIter<'a, W, D>: Send,
         for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
     {
-        let thread_pool = ThreadPoolBuilder::new()
-            .num_threads(self.shard_edge.num_shards().min(self.max_num_threads) + 1)
-            .build()
-            .unwrap(); // Seriously, it's not going to fail
+        self.num_threads = self.shard_edge.num_shards().min(self.max_num_threads);
 
         pl.info(format_args!("{}", self.shard_edge));
         pl.info(format_args!(
@@ -964,7 +963,7 @@ impl<
             self.c,
             (self.shard_edge.num_vertices() * self.shard_edge.num_shards()) as f64
                 / (self.num_keys as f64),
-            thread_pool.current_num_threads() - 1
+            self.num_threads
         ));
 
         if self.lge {
@@ -975,13 +974,12 @@ impl<
                 |this, shard_index, shard, data, pl| {
                     this.lge_shard(shard_index, shard, data, get_val, pl)
                 },
-                &thread_pool,
                 &mut pl.concurrent(),
                 pl,
             )?;
         } else if self.low_mem == Some(true)
             || self.low_mem.is_none()
-                && thread_pool.current_num_threads() > 3
+                && self.num_threads > 3
                 && self.shard_edge.num_shards() > 2
         {
             // Less memory, but slower
@@ -991,7 +989,6 @@ impl<
                 |this, shard_index, shard, data, pl| {
                     this.peel_by_sig_vals_low_mem(shard_index, shard, data, get_val, pl)
                 },
-                &thread_pool,
                 &mut pl.concurrent(),
                 pl,
             )?;
@@ -1003,7 +1000,6 @@ impl<
                 |this, shard_index, shard, data, pl| {
                     this.peel_by_sig_vals_high_mem(shard_index, shard, data, get_val, pl)
                 },
-                &thread_pool,
                 &mut pl.concurrent(),
                 pl,
             )?;
@@ -1137,7 +1133,6 @@ impl<
         shard_iter: I,
         data: &'b mut D,
         solve_shard: SS,
-        thread_pool: &rayon::ThreadPool,
         main_pl: &mut C,
         pl: &mut P,
     ) -> Result<(), SolveError>
@@ -1155,17 +1150,16 @@ impl<
 
         self.failed.store(false, Ordering::Relaxed);
         let num_shards = self.shard_edge.num_shards();
-        let num_threads = thread_pool.current_num_threads() - 1;
-        let buffer_size = num_threads.ilog2() as usize;
+        let buffer_size = self.num_threads.ilog2() as usize;
 
-        let (err_send, err_recv) = crossbeam_channel::bounded::<_>(num_threads);
+        let (err_send, err_recv) = crossbeam_channel::bounded::<_>(self.num_threads);
         let (data_send, data_recv) = crossbeam_channel::bounded::<(
             usize,
             (Arc<Vec<SigVal<S, V>>>, ShardData<'_, W, D>),
         )>(buffer_size);
 
-        let result = thread_pool.in_place_scope(|scope| {
-            scope.spawn(move |_| {
+        let result = std::thread::scope(|scope| {
+            scope.spawn(move || {
                 let _ = thread_priority::set_current_thread_priority(ThreadPriority::Max);
                 for val in shard_iter
                     .into_iter()
@@ -1180,12 +1174,12 @@ impl<
                 drop(data_send);
             });
 
-            for _thread_id in 0..num_threads {
+            for _thread_id in 0..self.num_threads {
                 let mut main_pl = main_pl.clone();
                 let mut pl = pl.clone();
                 let err_send = err_send.clone();
                 let data_recv = data_recv.clone();
-                scope.spawn(move |_| {
+                scope.spawn(move || {
                     loop {
                         match data_recv.recv() {
                             Err(_) => return,
@@ -1440,7 +1434,6 @@ impl<
 
             let e = shard_edge.local_edge(shard_edge.local_sig(shard[edge_index.upcast()].sig));
             remove_edge!(xor_graph, e, side, edge_index, double_stack, push_lower);
-            pl.light_update();
         }
 
         pl.done();
@@ -1598,7 +1591,6 @@ impl<
 
             let e = self.shard_edge.local_edge(sig_val.sig);
             remove_edge!(xor_graph, e, side, sig_val, visit_stack, push);
-            pl.light_update();
         }
 
         pl.done();
@@ -1729,7 +1721,6 @@ impl<
 
             let e = self.shard_edge.local_edge(sig_val.sig);
             remove_edge!(xor_graph, e, side, sig_val, visit_stack, push_lower);
-            pl.light_update();
         }
 
         pl.done();
@@ -1922,7 +1913,6 @@ impl<
 
                 data.set_unchecked(edge[side], val ^ xor);
             }
-            pl.light_update();
         }
         pl.done();
     }

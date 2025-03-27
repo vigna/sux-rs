@@ -35,12 +35,9 @@ use std::ops::Index;
 /// [`SelectSmall`] adds a very sparse first-level inventory to a [`RankSmall`]
 /// structure to locate approximately the position of the desired one; the bit
 /// is then located using binary searches over [`RankSmall`]'s counters; this
-/// technique is called _hinted bsearch_ and is described in Sebastiano Vigna in
-/// “[Broadword Implementation of Rank/Select
-/// Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
-/// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
-/// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
-/// Springer, 2008.
+/// technique is called _hinted bsearch_ and is described in “[Broadword
+/// Implementation of Rank/Select
+/// Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”.
 ///
 /// The resulting selection methods are quite slow, and in general it is
 /// convenient and faster to use [`SelectAdapt`], even with `M` set to 1 (in
