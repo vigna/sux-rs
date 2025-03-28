@@ -40,7 +40,7 @@ use thread_priority::ThreadPriority;
 
 use super::shard_edge::FuseLge3Shards;
 
-const LOG2_MAX_SHARDS: u32 = 12;
+const LOG2_MAX_SHARDS: u32 = 16;
 
 /// A builder for [`VFunc`] and [`VFilter`].
 ///
@@ -821,6 +821,8 @@ impl<
         for<'a> ShardDataIter<'a, W, D>: Send,
         for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
     {
+        let shard_edge = &mut self.shard_edge;
+
         pl.expected_updates(self.expected_num_keys);
         pl.item_name("key");
         pl.start(format!(
@@ -880,12 +882,12 @@ impl<
 
         let start = Instant::now();
 
-        let shard_store = sig_store.into_shard_store(self.shard_edge.shard_high_bits())?;
+        let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
         let filter = TypeId::of::<V>() == TypeId::of::<EmptyVal>();
 
-        self.shard_edge.set_up_shards(self.num_keys, self.eps);
-        (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
+        shard_edge.set_up_shards(self.num_keys, self.eps);
+        (self.c, self.lge) = shard_edge.set_up_graphs(self.num_keys, max_shard);
 
         if filter {
             pl.info(format_args!(
@@ -901,21 +903,21 @@ impl<
             ));
         }
 
-        if self.shard_edge.shard_high_bits() != 0 {
+        if shard_edge.shard_high_bits() != 0 {
             pl.info(format_args!(
                 "Max shard / average shard: {:.2}%",
                 (100.0 * max_shard as f64)
-                    / (self.num_keys as f64 / self.shard_edge.num_shards() as f64)
+                    / (self.num_keys as f64 / shard_edge.num_shards() as f64)
             ));
         }
 
-        if max_shard as f64 > 1.01 * self.num_keys as f64 / self.shard_edge.num_shards() as f64 {
+        if max_shard as f64 > 1.01 * self.num_keys as f64 / shard_edge.num_shards() as f64 {
             // This might sometimes happen with small sharded graphs
             Err(SolveError::MaxShardTooBig.into())
         } else {
             let data = new_data(
                 self.bit_width,
-                self.shard_edge.num_vertices() * self.shard_edge.num_shards(),
+                shard_edge.num_vertices() * shard_edge.num_shards(),
             );
             self.try_build_from_shard_iter(seed, data, shard_store.into_iter(), get_val, pl)
                 .inspect(|_| {
@@ -955,14 +957,14 @@ impl<
         for<'a> ShardDataIter<'a, W, D>: Send,
         for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
     {
-        self.num_threads = self.shard_edge.num_shards().min(self.max_num_threads);
+        let shard_edge = &self.shard_edge;
+        self.num_threads = shard_edge.num_shards().min(self.max_num_threads);
 
         pl.info(format_args!("{}", self.shard_edge));
         pl.info(format_args!(
             "c: {}, Overhead: {:.4}% Number of threads: {}",
             self.c,
-            (self.shard_edge.num_vertices() * self.shard_edge.num_shards()) as f64
-                / (self.num_keys as f64),
+            (shard_edge.num_vertices() * shard_edge.num_shards()) as f64 / (self.num_keys as f64),
             self.num_threads
         ));
 
@@ -978,9 +980,7 @@ impl<
                 pl,
             )?;
         } else if self.low_mem == Some(true)
-            || self.low_mem.is_none()
-                && self.num_threads > 3
-                && self.shard_edge.num_shards() > 2
+            || self.low_mem.is_none() && self.num_threads > 3 && shard_edge.num_shards() > 2
         {
             // Less memory, but slower
             self.par_solve(

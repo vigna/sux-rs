@@ -585,10 +585,12 @@ mod fuse {
 
     fn edge_2(log2_seg_size: u32, l: u32, sig: [u64; 2]) -> [usize; 3] {
         // This strategy will work up to 10^16 keys
-        let v0 = fixed_point_reduce_128!(sig[0], l << log2_seg_size);
+        let first_segment = fixed_point_reduce_64!((sig[0] >> 32) as u32, l);
+        let start = first_segment << log2_seg_size;
         let segment_size = 1 << log2_seg_size;
         let segment_mask = segment_size - 1;
 
+        let v0 = (sig[0] as u32 as usize & segment_mask) + start;
         let mut v1 = v0 + segment_size;
         v1 ^= (sig[1] >> 32) as usize & segment_mask;
         let mut v2 = v1 + segment_size;
@@ -610,8 +612,6 @@ mod fuse {
         const HALF_MAX_LIN_SHARD_SIZE: usize = 50_000;
         /// When we shard, we never create a shard smaller then this.
         const MIN_FUSE_SHARD: usize = 10_000_000;
-        /// The log₂ of the maximum number of shards.
-        const LOG2_MAX_SHARDS: u32 = 16;
 
         /// Returns the expansion factor for fuse graphs.
         ///
@@ -733,7 +733,6 @@ mod fuse {
                 } else {
                     sharding_high_bits(n, eps)
                         .min(Self::dup_edge_high_bits(3, n, 1.105, 0.001))
-                        .min(Self::LOG2_MAX_SHARDS) // We don't really need too many shards
                         .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't be smaller than MIN_FUSE_SHARD
                 };
         }
