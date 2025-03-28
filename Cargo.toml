@@ -22,7 +22,6 @@ log = "0.4.20"
 dsi-progress-logger = "0.8.1"
 tempfile = "3.9.0"
 lender = "0.3.1"
-mmap-rs = "0.6.1"
 epserde = "0.8.0"
 zstd = { version = "0.13.1" }
 flate2 = "1.0.28"
@@ -52,13 +51,14 @@ maligned = "0.2.1"
 criterion = { version = "0.5.1", features = ["html_reports"] }
 
 [features]
-default = ["rayon"]
+default = ["rayon", "mmap"]
 cli = []                 # Build the binary utils
 fuzz = ["dep:arbitrary"]
 slow_tests = []      # Run slow tests (use --release)
 mwhc = []            # Compile MWHC data structures (mainly for benchmarking)
 no_logging = []      # Disable logging for binaries that build functions and filters (for benchmarking)
 rayon = ["dep:rayon"]
+mmap = ["epserde/mmap"]
 
 [profile.release]
 opt-level = 3            # like --release
@@ -82,6 +82,14 @@ bench = false
 [[bin]]
 name = "rcl"
 required-features = ["cli"]
+
+[[bin]]
+name = "vfunc"
+required-features = ["rayon"]
+
+[[bin]]
+name = "vfilter"
+required-features = ["rayon"]
 
 [[bin]]
 name = "mem_usage"

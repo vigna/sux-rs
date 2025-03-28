@@ -1,10 +1,22 @@
 # Change Log
 
+## [0.7.3]
+
+### New
+
+* The `rayon` feature now gates all uses of rayon, including `VBuilder`.
+
+* New `mmap` feature that is passed to ε-serde.
+
 ## [0.7.2] - 2025-03-25
+
+### New
 
 * Completed links to relevant papers.
 
 ## [0.7.1] - 2025-03-24
+
+### New
 
 * Better documentation for the `shard_edge` module, `VFunc` and `VFilter`.
 

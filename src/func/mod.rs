@@ -20,7 +20,9 @@
 mod vfunc;
 pub use vfunc::*;
 
+#[cfg(feature = "rayon")]
 mod vbuilder;
+#[cfg(feature = "rayon")]
 pub use vbuilder::*;
 
 pub mod shard_edge;

@@ -131,7 +131,7 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "rayon"))]
 mod tests {
     use std::ops::{BitXor, BitXorAssign};
 
