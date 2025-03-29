@@ -913,7 +913,7 @@ mod fuse {
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
-            FuseLge3NoShards::set_up_graphs(self, n, Self::Vertex::MAX as u128)
+            FuseLge3NoShards::set_up_graphs(self, n, Self::Vertex::MAX as u128 + 1)
         }
 
         #[inline(always)]
@@ -969,7 +969,7 @@ mod fuse {
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
-            FuseLge3NoShards::set_up_graphs(self, n, Self::Vertex::MAX as u128)
+            FuseLge3NoShards::set_up_graphs(self, n, Self::Vertex::MAX as u128 + 1)
         }
 
         #[inline(always)]
