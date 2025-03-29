@@ -233,23 +233,23 @@ pub trait ShardEdge<S, const K: usize>:
     fn edge(&self, sig: S) -> [usize; K];
 }
 
-/// Fixed-point arithmetic range reduction.
+/// Inversion by 64-bit fixed-point arithmetic.
 ///
-/// This macro computes ⌊⍺ * *n*⌋, where ⍺ ∈ [0..1), using 64-bit fixed-point
-/// arithmetic. ⍺ is represented by a 32-bit unsigned integer *x*. In
-/// fixed-point arithmetic, this amounts to computing ⌊*x* * *n* / 2³²⌋.
-macro_rules! fixed_point_reduce_64 {
+/// This macro computes the inversion ⌊⍺*n*⌋, where ⍺ ∈ [0..1), using 64-bit
+/// fixed-point arithmetic, that is, computing ⌊*xn* / 2³²⌋, where *x* is
+/// 32-bit unsigned integer representing ⍺.
+macro_rules! fixed_point_inv_64 {
     ($x:expr, $n:expr) => {
         (($x as u64 * $n as u64) >> 32) as usize
     };
 }
 
-/// Fixed-point arithmetic range reduction.
+/// Inversion by 128-bit fixed-point arithmetic.
 ///
-/// This macro computes ⌊⍺ * *n*⌋, where ⍺ ∈ [0..1), using 128-bit fixed-point
-/// arithmetic. ⍺ is represented by a 64-bit unsigned integer *x*. In
-/// fixed-point arithmetic, this amounts to computing ⌊*x* * *n* / 2⁶⁴⌋.
-macro_rules! fixed_point_reduce_128 {
+/// This macro computes the inversion ⌊⍺*n*⌋, where ⍺ ∈ [0..1), using 128-bit
+/// fixed-point arithmetic, that is, computing ⌊*xn* / 2⁶⁴⌋, where *x* is
+/// 64-bit unsigned integer representing ⍺.
+macro_rules! fixed_point_inv_128 {
     ($x:expr, $n:expr) => {
         (($x as u128 * $n as u128) >> 64) as usize
     };
@@ -322,11 +322,11 @@ mod mwhc {
     /// bits of sig[1], and the lower 32 bits of sig[1] for the third vertex.
     fn edge(shard: usize, seg_size: usize, sig: [u64; 2]) -> [usize; 3] {
         let mut start = shard * seg_size * 3;
-        let v0 = fixed_point_reduce_64!(sig[0] as u32, seg_size) + start;
+        let v0 = fixed_point_inv_64!(sig[0] as u32, seg_size) + start;
         start += seg_size;
-        let v1 = fixed_point_reduce_64!(sig[1] >> 32, seg_size) + start;
+        let v1 = fixed_point_inv_64!(sig[1] >> 32, seg_size) + start;
         start += seg_size;
-        let v2 = fixed_point_reduce_64!(sig[1] as u32, seg_size) + start;
+        let v2 = fixed_point_inv_64!(sig[1] as u32, seg_size) + start;
         [v0, v1, v2]
     }
 
@@ -484,9 +484,9 @@ mod mwhc {
             // two vertices. Then, we reuse the two lower halves for the third
             // vertex.
             let seg_size = self.seg_size;
-            let v0 = fixed_point_reduce_128!(local_sig[0], seg_size);
-            let v1 = fixed_point_reduce_128!(local_sig[1], seg_size) + seg_size;
-            let v2 = fixed_point_reduce_128!(local_sig[0] ^ local_sig[1], seg_size) + 2 * seg_size;
+            let v0 = fixed_point_inv_128!(local_sig[0], seg_size);
+            let v1 = fixed_point_inv_128!(local_sig[1], seg_size) + seg_size;
+            let v2 = fixed_point_inv_128!(local_sig[0] ^ local_sig[1], seg_size) + 2 * seg_size;
 
             [v0, v1, v2]
         }
@@ -572,7 +572,7 @@ mod fuse {
 
     fn edge_1(shard: usize, log2_seg_size: u32, l: u32, sig: [u64; 1]) -> [usize; 3] {
         let start = (shard * (l as usize + 2)) << log2_seg_size;
-        let v0 = start + fixed_point_reduce_128!(sig[0], (l as u64) << log2_seg_size);
+        let v0 = start + fixed_point_inv_128!(sig[0], (l as u64) << log2_seg_size);
         let seg_size = 1 << log2_seg_size;
         let seg_size_mask = seg_size - 1;
 
@@ -585,7 +585,7 @@ mod fuse {
 
     fn edge_2(log2_seg_size: u32, l: u32, sig: [u64; 2]) -> [usize; 3] {
         // This strategy will work up to 10^16 keys
-        let v0 = fixed_point_reduce_128!(sig[0], (l as u64) << log2_seg_size);
+        let v0 = fixed_point_inv_128!(sig[0], (l as u64) << log2_seg_size);
         let segment_size = 1 << log2_seg_size;
         let segment_mask = segment_size - 1;
 
@@ -769,7 +769,7 @@ mod fuse {
 
         #[inline(always)]
         fn sort_key(&self, sig: [u64; 2]) -> usize {
-            fixed_point_reduce_128!(sig[1], self.l)
+            fixed_point_inv_128!(sig[1], self.l)
         }
 
         #[inline(always)]
@@ -927,7 +927,7 @@ mod fuse {
 
         #[inline(always)]
         fn sort_key(&self, sig: [u64; 2]) -> usize {
-            fixed_point_reduce_128!(sig[0], self.l)
+            fixed_point_inv_128!(sig[0], self.l)
         }
 
         #[inline(always)]
@@ -983,7 +983,7 @@ mod fuse {
 
         #[inline(always)]
         fn sort_key(&self, sig: [u64; 1]) -> usize {
-            fixed_point_reduce_128!(sig[0], self.l)
+            fixed_point_inv_128!(sig[0], self.l)
         }
 
         #[inline(always)]
@@ -1052,7 +1052,7 @@ mod fuse {
         // This strategy will work up to 10^16 keys
         let start = (shard * (l as usize + 2)) << log2_seg_size;
         let v0 = start
-            + fixed_point_reduce_128!(
+            + fixed_point_inv_128!(
                 sig[0].rotate_right(shard_high_bits).rotate_right(1),
                 (l as u64) << log2_seg_size
             );
@@ -1091,7 +1091,7 @@ mod fuse {
 
         #[inline(always)]
         fn sort_key(&self, sig: [u64; 2]) -> usize {
-            fixed_point_reduce_64!(
+            fixed_point_inv_64!(
                 sig[0].rotate_right(self.0.shard_bits_shift).rotate_right(1) >> 32,
                 self.0.l
             )
