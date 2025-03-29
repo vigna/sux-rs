@@ -572,7 +572,7 @@ mod fuse {
 
     fn edge_1(shard: usize, log2_seg_size: u32, l: u32, sig: [u64; 1]) -> [usize; 3] {
         let start = (shard * (l as usize + 2)) << log2_seg_size;
-        let v0 = start + fixed_point_reduce_128!(sig[0], l << log2_seg_size);
+        let v0 = start + fixed_point_reduce_128!(sig[0], (l as u64) << log2_seg_size);
         let seg_size = 1 << log2_seg_size;
         let seg_size_mask = seg_size - 1;
 
@@ -585,12 +585,10 @@ mod fuse {
 
     fn edge_2(log2_seg_size: u32, l: u32, sig: [u64; 2]) -> [usize; 3] {
         // This strategy will work up to 10^16 keys
-        let first_segment = fixed_point_reduce_64!((sig[0] >> 32) as u32, l);
-        let start = first_segment << log2_seg_size;
+        let v0 = fixed_point_reduce_128!(sig[0], (l as u64) << log2_seg_size);
         let segment_size = 1 << log2_seg_size;
         let segment_mask = segment_size - 1;
 
-        let v0 = (sig[0] as u32 as usize & segment_mask) + start;
         let mut v1 = v0 + segment_size;
         v1 ^= (sig[1] >> 32) as usize & segment_mask;
         let mut v2 = v1 + segment_size;
@@ -1056,7 +1054,7 @@ mod fuse {
         let v0 = start
             + fixed_point_reduce_128!(
                 sig[0].rotate_right(shard_high_bits).rotate_right(1),
-                l << log2_seg_size
+                (l as u64) << log2_seg_size
             );
 
         let segment_size = 1 << log2_seg_size;
