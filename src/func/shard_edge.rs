@@ -964,7 +964,7 @@ mod fuse {
     impl ShardEdge<[u64; 1], 3> for FuseLge3NoShards {
         type SortSigVal<V: ZeroCopy + Send + Sync> = SigVal<[u64; 1], V>;
         type LocalSig = [u64; 1];
-        type Vertex = usize;
+        type Vertex = u32;
 
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
