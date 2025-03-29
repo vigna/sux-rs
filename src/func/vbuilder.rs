@@ -1573,12 +1573,14 @@ impl<
         ));
 
         // Preload all vertices of degree one in the visit stack
+        let mut max_deg = 0;
         for (v, degree) in xor_graph.degrees().enumerate() {
             if degree == 1 {
                 visit_stack.push(v.cast());
             }
+            max_deg = max_deg.max(degree);
         }
-
+        dbg!(max_deg);
         while let Some(v) = visit_stack.pop() {
             let v: usize = v.upcast();
             if xor_graph.degree(v) == 0 {
