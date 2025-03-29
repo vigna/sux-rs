@@ -876,7 +876,7 @@ mod fuse {
             }
         }
 
-        fn set_up_graphs(&mut self, n: usize) -> (f64, bool) {
+        fn set_up_graphs(&mut self, n: usize, max_vertices: u128) -> (f64, bool) {
             let (c, lge);
 
             (c, self.log2_seg_size, lge) = if n <= 2 * FuseLge3Shards::HALF_MAX_LIN_SHARD_SIZE {
@@ -890,7 +890,13 @@ mod fuse {
                 (Self::c(3, n), Self::log2_seg_size(3, n).min(18), false)
             };
 
-            self.l = ((c * n as f64).ceil() as u64)
+            let num_vertices = (c * n as f64).ceil() as u128;
+            assert!(
+                num_vertices <= max_vertices,
+                "This ShardEdge does not support more than {max_vertices} vertices, but you are requesting {num_vertices}"
+            );
+
+            self.l = num_vertices
                 .div_ceil(1 << self.log2_seg_size)
                 .saturating_sub(2)
                 .max(1)
@@ -909,7 +915,7 @@ mod fuse {
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
-            FuseLge3NoShards::set_up_graphs(self, n)
+            FuseLge3NoShards::set_up_graphs(self, n, Self::Vertex::MAX as u128)
         }
 
         #[inline(always)]
@@ -965,7 +971,7 @@ mod fuse {
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
-            FuseLge3NoShards::set_up_graphs(self, n)
+            FuseLge3NoShards::set_up_graphs(self, n, Self::Vertex::MAX as u128)
         }
 
         #[inline(always)]
