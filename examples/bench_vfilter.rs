@@ -61,7 +61,7 @@ struct Args {
     /// Do not use sharding.
     #[arg(long)]
     no_shards: bool,
-    /// Use unaligned access.
+    /// Use unaligned reads.
     #[arg(long)]
     unaligned: bool,
     /// Use slower edge logic reducing the probability of duplicate arcs for big
@@ -145,7 +145,7 @@ where
     VFilter<W, VFunc<str, W, Box<[W]>, S, E>>: Deserialize,
 {
     if args.unaligned {
-        panic!("Unaligned access not supported for backend Box<[W]>");
+        panic!("Unaligned reads are not supported for backend Box<[W]>");
     }
 
     if let Some(filename) = args.filename {
