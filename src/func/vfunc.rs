@@ -7,6 +7,7 @@
 use std::borrow::Borrow;
 
 use super::shard_edge::FuseLge3Shards;
+use crate::bits::BitFieldVec;
 use crate::func::shard_edge::ShardEdge;
 use crate::traits::bit_field_slice::*;
 use crate::utils::*;
@@ -83,10 +84,10 @@ impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: S
     VFunc<T, W, D, S, E>
 {
     /// Returns the value associated with the given signature, or a random value
-    /// if the signature is not the signature of a key .
+    /// if the signature is not the signature of a key.
     ///
     /// This method is mainly useful in the construction of compound functions.
-    #[inline(always)]
+    #[inline]
     pub fn get_by_sig(&self, sig: S) -> W {
         let edge = self.shard_edge.edge(sig);
         unsafe {
@@ -98,7 +99,7 @@ impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: S
 
     /// Returns the value associated with the given key, or a random value if the
     /// key is not present.
-    #[inline]
+    #[inline(always)]
     pub fn get(&self, key: impl Borrow<T>) -> W {
         self.get_by_sig(T::to_sig(key.borrow(), self.seed))
     }
@@ -111,5 +112,38 @@ impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: S
     /// Returns whether the function has no keys.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+}
+
+impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, S: Sig, E: ShardEdge<S, 3>>
+    VFunc<T, W, BitFieldVec<W>, S, E>
+{
+    /// Returns the value associated with the given signature, or a random value
+    /// if the signature is not the signature of a key, using [unaligned
+    /// access](BitFieldVec::get_unaligned).
+    ///
+    /// This method uses [`BitFieldVec::get_unaligned`], and has
+    /// the same constraints.
+    ///
+    /// This method is mainly useful in the construction of compound functions.
+    #[inline]
+    pub fn get_by_sig_unaligned(&self, sig: S) -> W {
+        let edge = self.shard_edge.edge(sig);
+        unsafe {
+            self.data.get_unaligned_unchecked(edge[0])
+                ^ self.data.get_unaligned_unchecked(edge[1])
+                ^ self.data.get_unaligned_unchecked(edge[2])
+        }
+    }
+
+    /// Returns the value associated with the given key, or a random value if
+    /// the key is not present, using [unaligned
+    /// access](BitFieldVec::get_unaligned).
+    ///
+    /// This method uses [`BitFieldVec::get_unaligned`], and has
+    /// the same constraints.
+    #[inline(always)]
+    pub fn get_unaligned(&self, key: impl Borrow<T>) -> W {
+        self.get_by_sig_unaligned(T::to_sig(key.borrow(), self.seed))
     }
 }
