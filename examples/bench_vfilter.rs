@@ -61,6 +61,9 @@ struct Args {
     /// Do not use sharding.
     #[arg(long)]
     no_shards: bool,
+    /// Use unaligned access.
+    #[arg(long)]
+    unaligned: bool,
     /// Use slower edge logic reducing the probability of duplicate arcs for big
     /// shards.
     #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
@@ -141,6 +144,10 @@ where
     VFilter<W, VFunc<usize, W, Box<[W]>, S, E>>: Deserialize,
     VFilter<W, VFunc<str, W, Box<[W]>, S, E>>: Deserialize,
 {
+    if args.unaligned {
+        panic!("Unaligned access not supported for backend Box<[W]>");
+    }
+
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
             ZstdLineLender::from_path(filename)?
@@ -205,8 +212,14 @@ where
         let filter = VFilter::<W, VFunc<str, W, BitFieldVec<W>, S, E>>::load_full(&args.func)?;
 
         bench(args.n, args.repeats, || {
-            for key in &keys {
-                std::hint::black_box(filter.get(key.as_str()));
+            if args.unaligned {
+                for key in &keys {
+                    std::hint::black_box(filter.contains_unaligned(key.as_str()));
+                }
+            } else {
+                for key in &keys {
+                    std::hint::black_box(filter.contains(key.as_str()));
+                }
             }
         });
     } else {
@@ -215,9 +228,16 @@ where
 
         bench(args.n, args.repeats, || {
             let mut key: usize = 0;
-            for _ in 0..args.n {
-                key = key.wrapping_add(0x9e3779b97f4a7c15);
-                std::hint::black_box(filter.contains(key));
+            if args.unaligned {
+                for _ in 0..args.n {
+                    key = key.wrapping_add(0x9e3779b97f4a7c15);
+                    std::hint::black_box(filter.contains_unaligned(key));
+                }
+            } else {
+                for _ in 0..args.n {
+                    key = key.wrapping_add(0x9e3779b97f4a7c15);
+                    std::hint::black_box(filter.contains(key));
+                }
             }
         });
     }

@@ -233,6 +233,11 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     ///
     /// This method can be used for bit width smaller than or equal to `W::BITS
     /// - 8 + 2` or equal to `W::BITS - 8 + 4` or `W::BITS`.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic in debug mode if the constraints
+    /// above are not respected.
     pub fn get_unaligned(&self, index: usize) -> W {
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.get_unaligned_unchecked(index) }
@@ -244,6 +249,11 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     ///
     /// This method can be used for bit width smaller than or equal
     /// to `W::BITS - 8 + 2` or equal to `W::BITS - 8 + 4` or `W::BITS`.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic in debug mode if the safety constraints
+    /// are not respected.
     pub unsafe fn get_unaligned_unchecked(&self, index: usize) -> W {
         debug_assert!(
             self.bit_width <= W::BITS - 8 + 2
