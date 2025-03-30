@@ -59,7 +59,7 @@ use mem_dbg::*;
 ///        `[u64; 1]` (and possibly
 ///        [`FuseLge3NoShards`](crate::func::shard_edge::FuseLge3NoShards)) for
 ///        slightly faster construction and queries, but the construction will
-///        not scale beyond two billion keys or so.
+///        not scale beyond 3.8 billion keys.
 /// * `E`: The sharding and edge logic type. The default is [`FuseLge3Shards`].
 ///        For small sets of keys you might try
 ///        [`FuseLge3NoShards`](crate::func::shard_edge::FuseLge3NoShards),
