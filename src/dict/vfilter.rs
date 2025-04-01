@@ -23,7 +23,9 @@ use std::ops::Index;
 /// [`VBuilder`](crate::func::VBuilder) and can be serialized using
 /// [ε-serde](`epserde`). They contain a mapping from keys to hashes stored in a
 /// [`VFunc`]; [`contains`](VFilter::contains) checks that the hash of a key is
-/// equal of the hash stored by the function for the same key.
+/// equal of the hash stored by the function for the same key. On some
+/// architectures, and with some constraints,
+/// [`contains_unaligned`](VFilter::contains_unaligned) might be faster.
 ///
 /// Please read the [`VFunc`] documentation for more information about the space
 /// usage and the ways in which a filter can be built. A construction time you

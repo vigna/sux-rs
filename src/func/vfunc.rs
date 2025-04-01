@@ -20,7 +20,9 @@ use mem_dbg::*;
 /// *Static functions* map keys to values, but they do not store the keys:
 /// querying a static function with a key outside of the original set will lead
 /// to an arbitrary result. Another name for static functions *retrieval data
-/// structure*.
+/// structure*. Values are retrieved using the [`get`](VFunc::get) method. On
+/// some architectures, and with some constraints,
+/// [`get_unaligned`](VFunc::get_unaligned) might be faster.
 ///
 /// In exchange, static functions have a very low space overhead, and make it
 /// possible to store the association between keys and values just in the space
@@ -39,7 +41,6 @@ use mem_dbg::*;
 /// [`VBuilder`](crate::func::VBuilder) and can be serialized using
 /// [ε-serde](`epserde`). Please see the documentation of
 /// [`VBuilder`](crate::func::VBuilder) for examples.
-///
 ///
 /// # Generics
 ///

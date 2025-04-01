@@ -232,7 +232,13 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     /// Like [`BitFieldSlice::get`], but using unaligned reads.
     ///
     /// This method can be used only for bit width smaller than or equal to
-    /// `W::BITS - 8 + 2` or equal to `W::BITS - 8 + 4` or `W::BITS`.
+    /// `W::BITS - 8 + 2` or equal to `W::BITS - 8 + 4` or `W::BITS`. Moreover,
+    /// an additional padding word must be present at the end of the vector.
+    ///
+    /// Note that to guarantee the absence of undefined behavior this method
+    /// has to perform several tests. Consider using
+    /// [`get_unaligned_unchecked`](Self::get_unaligned_unchecked) if you are
+    /// sure that the constraints are respected.
     ///
     /// # Panics
     ///
@@ -244,6 +250,9 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
                 || self.bit_width == W::BITS
         );
         panic_if_out_of_bounds!(index, self.len);
+        assert!(
+            (index * self.bit_width) / W::BYTES + W::BYTES <= self.bits.as_ref().len() * W::BYTES
+        );
         unsafe { self.get_unaligned_unchecked(index) }
     }
 
@@ -252,7 +261,8 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     /// # Safety
     ///
     /// This method can be used only for bit width smaller than or equal to
-    /// `W::BITS - 8 + 2` or equal to `W::BITS - 8 + 4` or `W::BITS`.
+    /// `W::BITS - 8 + 2` or equal to `W::BITS - 8 + 4` or `W::BITS`. Moreover,
+    /// an additional padding word must be present at the end of the vector.
     ///
     /// # Panics
     ///
@@ -266,6 +276,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
         );
         let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
         let start_bit = index * self.bit_width;
+        debug_assert!(start_bit / W::BYTES + W::BYTES <= self.bits.as_ref().len() * W::BYTES);
         let ptr = base_ptr.add(start_bit / W::BYTES) as *const W;
         let word = core::ptr::read_unaligned(ptr);
         (word >> (start_bit % 8)) & self.mask
