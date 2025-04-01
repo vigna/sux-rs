@@ -55,6 +55,9 @@ struct Args {
     /// Do not use sharding.
     #[arg(long)]
     no_shards: bool,
+    /// Use unaligned reads.
+    #[arg(long)]
+    unaligned: bool,
     /// Use slower edge logic reducing the probability of duplicate arcs for big
     /// shards.
     #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
@@ -118,8 +121,14 @@ where
 
         let func = VFunc::<str, usize, BitFieldVec, S, E>::load_full(&args.func)?;
         bench(args.n, args.repeats, || {
-            for key in &keys {
-                std::hint::black_box(func.get(key.as_str()));
+            if args.unaligned {
+                for key in &keys {
+                    std::hint::black_box(func.get_unaligned(key.as_str()));
+                }
+            } else {
+                for key in &keys {
+                    std::hint::black_box(func.get(key.as_str()));
+                }
             }
         });
     } else {
@@ -127,9 +136,16 @@ where
         let func = VFunc::<usize, usize, BitFieldVec<usize>, S, E>::load_full(&args.func)?;
         bench(args.n, args.repeats, || {
             let mut key: usize = 0;
-            for _ in 0..args.n {
-                key = key.wrapping_add(0x9e3779b97f4a7c15);
-                std::hint::black_box(func.get(key));
+            if args.unaligned {
+                for _ in 0..args.n {
+                    key = key.wrapping_add(0x9e3779b97f4a7c15);
+                    std::hint::black_box(func.get_unaligned(key));
+                }
+            } else {
+                for _ in 0..args.n {
+                    key = key.wrapping_add(0x9e3779b97f4a7c15);
+                    std::hint::black_box(func.get(key));
+                }
             }
         });
     }

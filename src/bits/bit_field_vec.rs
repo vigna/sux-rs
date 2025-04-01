@@ -320,6 +320,23 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         }
     }
 
+    /// Creates a new zero-initialized vector of given bit width and length,
+    /// adding padding bits to the end of the vector so that unaligned reads are
+    /// possible.
+    ///
+    /// Note that this convenience method is a one-off: if the vector is resized
+    /// or expanded, the padding will be lost.
+    pub fn new_unaligned(bit_width: usize, len: usize) -> Self {
+        let n_of_words = (len * bit_width).div_ceil(W::BITS);
+        Self {
+            // We add a word at the end
+            bits: vec![W::ZERO; n_of_words + 1],
+            bit_width,
+            mask: mask(bit_width),
+            len,
+        }
+    }
+
     /// Creates an empty vector that doesn't need to reallocate for up to
     /// `capacity` elements.
     pub fn with_capacity(bit_width: usize, capacity: usize) -> Self {
@@ -402,7 +419,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         self.len += 1;
     }
 
-    /// Truncates or exted with `value` the vector.
+    /// Truncates or extend with `value` the vector.
     pub fn resize(&mut self, new_len: usize, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
         if new_len > self.len {

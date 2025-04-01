@@ -598,7 +598,7 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
         let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
-        let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
+        let new_data = |bit_width, len| BitFieldVec::<W>::new_unaligned(bit_width, len);
         self.build_loop(keys, values, None, &get_val, new_data, pl)
     }
 }
@@ -631,7 +631,7 @@ where
             <W as DowncastableFrom<u64>>::downcast_from(mix64(shard_edge.edge_hash(sig_val.sig)))
                 & filter_mask
         };
-        let new_data = |bit_width, len| BitFieldVec::<W>::new(bit_width, len);
+        let new_data = |bit_width, len| BitFieldVec::<W>::new_unaligned(bit_width, len);
 
         Ok(VFilter {
             func: self.build_loop(
