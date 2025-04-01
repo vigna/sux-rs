@@ -116,7 +116,7 @@ where
 {
     /// Returns the hash associated with the given signature by the underlying
     /// function, or a random hash if the signature is not the signature of a
-    /// key, using [unaligned access](BitFieldVec::get_unaligned)..
+    /// key, using [unaligned reads](BitFieldVec::get_unaligned)..
     ///
     /// This method uses [`BitFieldVec::get_unaligned`], and has
     /// the same constraints.
@@ -130,7 +130,7 @@ where
 
     /// Returns the hash associated with the given key by the underlying
     /// function, or a random hash if the key is not present, using [unaligned
-    /// access](BitFieldVec::get_unaligned).
+    /// reads](BitFieldVec::get_unaligned).
     ///
     /// This method uses [`BitFieldVec::get_unaligned`], and has
     /// the same constraints.
@@ -143,7 +143,7 @@ where
     }
 
     /// Returns whether a signature is contained in the filter, using [unaligned
-    /// access](BitFieldVec::get_unaligned).
+    /// reads](BitFieldVec::get_unaligned).
     ///
     /// This method uses [`BitFieldVec::get_unaligned`], and has
     /// the same constraints.
@@ -158,7 +158,7 @@ where
     }
 
     /// Returns whether a key is contained in the filter, using [unaligned
-    /// access](BitFieldVec::get_unaligned).
+    /// reads](BitFieldVec::get_unaligned).
     ///
     /// This method uses [`BitFieldVec::get_unaligned`], and has
     /// the same constraints.

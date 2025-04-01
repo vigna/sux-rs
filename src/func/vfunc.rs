@@ -51,12 +51,15 @@ use mem_dbg::*;
 ///        first case, the data is stored using exactly the number of bits
 ///        needed, but access is slightly slower, while in the second case the
 ///        data is stored in a boxed slice of `W`, thus forcing the number of
-///        bits to the number of bits of `W`, but access will be faster.
+///        bits to the number of bits of `W`, but access will be faster. Note
+///        that for most bit sizes in the first case on some architectures you
+///        can use [unaligned reads](VFunc::get_unaligned) to get faster
+///        queries.
 /// * `S`: The signature type. The default is `[u64; 2]`. You can switch to
 ///        `[u64; 1]` (and possibly
 ///        [`FuseLge3NoShards`](crate::func::shard_edge::FuseLge3NoShards)) for
 ///        slightly faster construction and queries, but the construction will
-///        not scale beyond two billion keys or so.
+///        not scale beyond 3.8 billion keys.
 /// * `E`: The sharding and edge logic type. The default is [`FuseLge3Shards`].
 ///        For small sets of keys you might try
 ///        [`FuseLge3NoShards`](crate::func::shard_edge::FuseLge3NoShards),
@@ -120,7 +123,7 @@ impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, S: Sig, E: ShardEdge<S, 3>>
 {
     /// Returns the value associated with the given signature, or a random value
     /// if the signature is not the signature of a key, using [unaligned
-    /// access](BitFieldVec::get_unaligned).
+    /// reads](BitFieldVec::get_unaligned).
     ///
     /// This method uses [`BitFieldVec::get_unaligned`], and has
     /// the same constraints.
@@ -138,7 +141,7 @@ impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, S: Sig, E: ShardEdge<S, 3>>
 
     /// Returns the value associated with the given key, or a random value if
     /// the key is not present, using [unaligned
-    /// access](BitFieldVec::get_unaligned).
+    /// reads](BitFieldVec::get_unaligned).
     ///
     /// This method uses [`BitFieldVec::get_unaligned`], and has
     /// the same constraints.

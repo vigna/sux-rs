@@ -231,29 +231,33 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 
     /// Like [`BitFieldSlice::get`], but using unaligned reads.
     ///
-    /// This method can be used for bit width smaller than or equal to `W::BITS
-    /// - 8 + 2` or equal to `W::BITS - 8 + 4` or `W::BITS`.
+    /// This method can be used only for bit width smaller than or equal to
+    /// `W::BITS - 8 + 2` or equal to `W::BITS - 8 + 4` or `W::BITS`.
     ///
     /// # Panics
     ///
-    /// This method will panic in debug mode if the constraints
-    /// above are not respected.
+    /// This method will panic if the constraints above are not respected.
     pub fn get_unaligned(&self, index: usize) -> W {
+        assert!(
+            self.bit_width <= W::BITS - 8 + 2
+                || self.bit_width == W::BITS - 8 + 4
+                || self.bit_width == W::BITS
+        );
         panic_if_out_of_bounds!(index, self.len);
         unsafe { self.get_unaligned_unchecked(index) }
     }
 
-    /// Like [`BitFieldSlice::get`], but using unaligned reads.
+    /// Like [`BitFieldSlice::get_unchecked`], but using unaligned reads.
     ///
     /// # Safety
     ///
-    /// This method can be used for bit width smaller than or equal
-    /// to `W::BITS - 8 + 2` or equal to `W::BITS - 8 + 4` or `W::BITS`.
+    /// This method can be used only for bit width smaller than or equal to
+    /// `W::BITS - 8 + 2` or equal to `W::BITS - 8 + 4` or `W::BITS`.
     ///
     /// # Panics
     ///
-    /// This method will panic in debug mode if the safety constraints
-    /// are not respected.
+    /// This method will panic in debug mode if the safety constraints are not
+    /// respected.
     pub unsafe fn get_unaligned_unchecked(&self, index: usize) -> W {
         debug_assert!(
             self.bit_width <= W::BITS - 8 + 2
@@ -310,6 +314,23 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         let n_of_words = Ord::max(1, (len * bit_width).div_ceil(W::BITS));
         Self {
             bits: vec![W::ZERO; n_of_words],
+            bit_width,
+            mask: mask(bit_width),
+            len,
+        }
+    }
+
+    /// Creates a new zero-initialized vector of given bit width and length,
+    /// adding padding bits to the end of the vector so that unaligned reads are
+    /// possible.
+    ///
+    /// Note that this convenience method is a one-off: if the vector is resized
+    /// or expanded, the padding will be lost.
+    pub fn new_unaligned(bit_width: usize, len: usize) -> Self {
+        let n_of_words = (len * bit_width).div_ceil(W::BITS);
+        Self {
+            // We add a word at the end
+            bits: vec![W::ZERO; n_of_words + 1],
             bit_width,
             mask: mask(bit_width),
             len,
@@ -398,7 +419,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         self.len += 1;
     }
 
-    /// Truncates or exted with `value` the vector.
+    /// Truncates or extend with `value` the vector.
     pub fn resize(&mut self, new_len: usize, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
         if new_len > self.len {

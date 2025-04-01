@@ -39,7 +39,7 @@ derivative = "2.2.0"
 derive_setters = "0.1.6"
 thiserror = "2.0.11"
 itertools = "0.14.0"
-lambert_w = { version = "1.0.17",  default-features = false, features = ["std"] }
+lambert_w = { version = "1.0.17", default-features = false, features = ["std"] }
 
 # Fuzz
 arbitrary = { version = "1.3.2", features = ["derive"], optional = true }
@@ -54,16 +54,17 @@ criterion = { version = "0.5.1", features = ["html_reports"] }
 
 [features]
 default = ["rayon", "mmap"]
-cli = []                 # Build the binary utils
+cli = [] # Build the binary utils
 fuzz = ["dep:arbitrary"]
-slow_tests = []      # Run slow tests (use --release)
-mwhc = []            # Compile MWHC data structures (mainly for benchmarking)
-no_logging = []      # Disable logging for binaries that build functions and filters (for benchmarking)
+slow_tests = [] # Run slow tests (use --release)
+mwhc = [] # Compile MWHC data structures (mainly for benchmarking)
+no_logging = [
+] # Disable logging for binaries that build functions and filters (for benchmarking)
 rayon = ["dep:rayon"]
 mmap = ["epserde/mmap"]
 
 [profile.release]
-opt-level = 3            # like --release
+opt-level = 3 # like --release
 #lto = "fat"              # Full LTO
 debug = true             # Include debug info.
 overflow-checks = false  # Disable integer overflow checks.

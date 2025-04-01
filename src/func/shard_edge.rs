@@ -38,7 +38,7 @@
 //!   switching to [`FuseLge3FullSigs`].
 //!
 //! - [`FuseLge3NoShards`] with 64-bit signatures: this choice provides fast
-//!   queries on key sets of less than two billion keys. Construction, however,
+//!   queries on key sets of less than 3.8 billion keys. Construction, however,
 //!   cannot be parallelized. It generates edges using a fuse 3-hypergraph with
 //!   a 10.5% space overhead for key sets above a few million keys: the overhead
 //!   increases slightly for smaller key sets, but below 100000 keys we use lazy
@@ -815,9 +815,9 @@ mod fuse {
     /// cases to improve the overhead.
     ///
     /// This construction, coupled `[u64; 1]` signatures, is the fastest for
-    /// small sets of keys, but it does not scale beyond two billion keys or so.
-    /// It is mostly equivalent to that described in [“Binary Fuse Filters: Fast
-    /// and Smaller Than Xor Filters”](https://doi.org/10.1145/3510449).
+    /// small sets of keys, but it works only up to 3.8 billion keys. It is
+    /// mostly equivalent to that described in [“Binary Fuse Filters: Fast and
+    /// Smaller Than Xor Filters”](https://doi.org/10.1145/3510449).
     #[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
     #[deep_copy]
     pub struct FuseLge3NoShards {
