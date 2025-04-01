@@ -1,5 +1,13 @@
 # Change Log
 
+## [9.7.4]
+
+### Chqnged
+
+* `BitFieldVec::get_unaligned` has now assertions for all undefined
+  behaviors, which make it quite slow. Consider using
+  `BitFieldVec::get_unaligned_unchecked`.
+
 ## [0.7.3]
 
 ### New

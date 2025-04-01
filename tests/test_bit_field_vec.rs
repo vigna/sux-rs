@@ -326,9 +326,9 @@ fn test_pop() {
 #[test]
 fn test_unaligned() {
     for bit_width in [50, 56, 57, 58, 60, 64] {
-        let mut c = BitFieldVec::new(bit_width, 0);
-        for i in 0_usize..10 {
-            c.push(i);
+        let mut c = BitFieldVec::new_unaligned(bit_width, 100);
+        for i in 0..10 {
+            c.set(i, i);
         }
         for i in 0_usize..10 {
             assert_eq!(c.get_unaligned(i), i);
@@ -339,12 +339,50 @@ fn test_unaligned() {
 #[cfg(debug_assertions)]
 #[should_panic]
 #[test]
+fn test_unaligned_unchecked_59() {
+    let c = BitFieldVec::<usize, _>::new(59, 1);
+    assert_eq!(unsafe { c.get_unaligned_unchecked(0) }, 0);
+}
+
+#[cfg(debug_assertions)]
+#[should_panic]
+#[test]
+fn test_unaligned_unchecked_61() {
+    let c = BitFieldVec::<usize, _>::new(59, 1);
+    assert_eq!(unsafe { c.get_unaligned_unchecked(0) }, 0);
+}
+
+#[cfg(debug_assertions)]
+#[should_panic]
+#[test]
+fn test_unaligned_unchecked_62() {
+    let c = BitFieldVec::<usize, _>::new(59, 1);
+    assert_eq!(unsafe { c.get_unaligned_unchecked(0) }, 0);
+}
+
+#[cfg(debug_assertions)]
+#[should_panic]
+#[test]
+fn test_unaligned_unchecked_63() {
+    let c = BitFieldVec::<usize, _>::new(59, 1);
+    assert_eq!(unsafe { c.get_unaligned_unchecked(0) }, 0);
+}
+
+#[cfg(debug_assertions)]
+#[should_panic]
+#[test]
+fn test_unaligned_unchecked_no_padding() {
+    let c = BitFieldVec::<usize, _>::new(17, 2);
+    assert_eq!(unsafe { c.get_unaligned_unchecked(1) }, 0);
+}
+
+#[should_panic]
+#[test]
 fn test_unaligned_59() {
     let c = BitFieldVec::<usize, _>::new(59, 1);
     assert_eq!(c.get_unaligned(0), 0);
 }
 
-#[cfg(debug_assertions)]
 #[should_panic]
 #[test]
 fn test_unaligned_61() {
@@ -352,7 +390,6 @@ fn test_unaligned_61() {
     assert_eq!(c.get_unaligned(0), 0);
 }
 
-#[cfg(debug_assertions)]
 #[should_panic]
 #[test]
 fn test_unaligned_62() {
@@ -360,12 +397,18 @@ fn test_unaligned_62() {
     assert_eq!(c.get_unaligned(0), 0);
 }
 
-#[cfg(debug_assertions)]
 #[should_panic]
 #[test]
 fn test_unaligned_63() {
     let c = BitFieldVec::<usize, _>::new(59, 1);
     assert_eq!(c.get_unaligned(0), 0);
+}
+
+#[should_panic]
+#[test]
+fn test_unaligned_no_padding() {
+    let c = BitFieldVec::<usize, _>::new(17, 2);
+    assert_eq!(c.get_unaligned(1), 0);
 }
 
 #[test]
