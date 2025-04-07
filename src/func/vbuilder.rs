@@ -78,10 +78,14 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// # Examples
 ///
 /// In this example, we build a function that maps each key to itself using a
-/// boxed slice of `usize` as a backend (note that this is really wasteful).
-/// Note that setter for the expected number of keys is used to optimize the
-/// construction. We use the [`FromIntoIterator`] adapter to turn a clonable
-/// [`IntoIterator`] into a [`RewindableIoLender`].
+/// boxed slice of `usize` as a backend (note that this is really wasteful). The
+/// setter for the expected number of keys is used to optimize the construction.
+/// We use the [`FromIntoIterator`] adapter to turn a clonable [`IntoIterator`]
+/// into a [`RewindableIoLender`]. Note that you need the
+/// [`dsi-progress-logger`](https://crates.io/crates/dsi-progress-logger) crate,
+/// and that type inference derives the output type (`usize`), which is the
+/// first type parameter, from the backend type (`Box<[usize]>`), which is the
+/// second parameter:
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -89,7 +93,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// use dsi_progress_logger::no_logging;
 /// use sux::utils::FromIntoIterator;
 ///
-/// let builder = VBuilder::<usize, Box<[usize]>>::default()
+/// let builder = VBuilder::<_, Box<[usize]>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_func(
 ///    FromIntoIterator::from(0..100),
@@ -114,7 +118,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// use sux::utils::FromIntoIterator;
 /// use sux::bits::BitFieldVec;
 ///
-/// let builder = VBuilder::<usize, BitFieldVec<usize>>::default()
+/// let builder = VBuilder::<_, BitFieldVec<usize>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_func(
 ///    FromIntoIterator::from(0..100),
@@ -129,9 +133,35 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// # }
 /// ```
 ///
-/// We now try to build a fast 8-bit filter for the same key set,
-/// using a boxed slice of `u8` as a backend (this is not wasteful,
-/// as the filter uses 8-bit hashes):
+/// Since the numbers are small, we can also try to use a fixed-size output;
+/// type inference takes care of making the second range `0..100` a range of `u8`:
+///
+/// ```rust
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// use sux::func::VBuilder;
+/// use dsi_progress_logger::no_logging;
+/// use sux::utils::FromIntoIterator;
+/// use sux::bits::BitFieldVec;
+///
+/// let builder = VBuilder::<_, Box<[u8]>>::default()
+///     .expected_num_keys(100);
+/// let func = builder.try_build_func(
+///    FromIntoIterator::from(0..100),
+///    FromIntoIterator::from(0..100),
+///    no_logging![]
+/// )?;
+///
+/// for i in 0..100 {
+///    assert_eq!(i, func.get(&i));
+/// }
+/// #     Ok(())
+/// # }
+/// ```
+///
+///
+/// We now try to build a fast 8-bit filter for the same key set, using a boxed
+/// slice of `u8` as a backend (this is not wasteful, as the filter uses 8-bit
+/// hashes):
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -139,7 +169,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// use dsi_progress_logger::no_logging;
 /// use sux::utils::FromIntoIterator;
 ///
-/// let builder = VBuilder::<u8, Box<[u8]>>::default()
+/// let builder = VBuilder::<_, Box<[u8]>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_filter(
 ///    FromIntoIterator::from(0..100),
@@ -163,7 +193,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// use dsi_progress_logger::no_logging;
 /// use sux::utils::FromIntoIterator;
 ///
-/// let builder = VBuilder::<u8, Box<[u8]>, [u64; 1], FuseLge3NoShards>::default()
+/// let builder = VBuilder::<_, Box<[u8]>, [u64; 1], FuseLge3NoShards>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_filter(
 ///    FromIntoIterator::from(0..100),
@@ -1184,7 +1214,7 @@ impl<
                         match data_recv.recv() {
                             Err(_) => return,
                             Ok((shard_index, (shard, mut data))) => {
-                                if shard.len() == 0 {
+                                if shard.is_empty() {
                                     return;
                                 }
 
