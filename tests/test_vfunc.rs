@@ -163,7 +163,7 @@ fn test_dup_key() -> Result<()> {
     assert!(VBuilder::<usize, BitFieldVec<usize>>::default()
         .check_dups(true)
         .try_build_func(
-            FromIntoIterator::from(std::iter::repeat(0).take(10)),
+            FromIntoIterator::from(std::iter::repeat_n(0, 10)),
             FromIntoIterator::from(0..),
             &mut ProgressLogger::default(),
         )

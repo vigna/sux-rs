@@ -46,27 +46,26 @@ use mem_dbg::*;
 ///
 /// * `T`: The type of the keys.
 /// * `W`: The word used to store the data, which is also the output type. It
-///        can be any unsigned type.
+///   can be any unsigned type.
 /// * `D`: The backend storing the function data. It can be a
-///        [`BitFieldVec<W>`](crate::bits::BitFieldVec) or a `Box<[W]>`. In the
-///        first case, the data is stored using exactly the number of bits
-///        needed, but access is slightly slower, while in the second case the
-///        data is stored in a boxed slice of `W`, thus forcing the number of
-///        bits to the number of bits of `W`, but access will be faster. Note
-///        that for most bit sizes in the first case on some architectures you
-///        can use [unaligned reads](VFunc::get_unaligned) to get faster
-///        queries.
+///   [`BitFieldVec<W>`](crate::bits::BitFieldVec) or a `Box<[W]>`. In the first
+///   case, the data is stored using exactly the number of bits needed, but
+///   access is slightly slower, while in the second case the data is stored in
+///   a boxed slice of `W`, thus forcing the number of bits to the number of
+///   bits of `W`, but access will be faster. Note that for most bit sizes in
+///   the first case on some architectures you can use [unaligned
+///   reads](VFunc::get_unaligned) to get faster queries.
 /// * `S`: The signature type. The default is `[u64; 2]`. You can switch to
-///        `[u64; 1]` (and possibly
-///        [`FuseLge3NoShards`](crate::func::shard_edge::FuseLge3NoShards)) for
-///        slightly faster construction and queries, but the construction will
-///        not scale beyond 3.8 billion keys.
+///   `[u64; 1]` (and possibly
+///   [`FuseLge3NoShards`](crate::func::shard_edge::FuseLge3NoShards)) for
+///   slightly faster construction and queries, but the construction will not
+///   scale beyond 3.8 billion keys.
 /// * `E`: The sharding and edge logic type. The default is [`FuseLge3Shards`].
-///        For small sets of keys you might try
-///        [`FuseLge3NoShards`](crate::func::shard_edge::FuseLge3NoShards),
-///        possibly coupled with `[u64; 1]` signatures. For functions with more
-///        than a few dozen billion keys, you might try
-///       [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
+///   For small sets of keys you might try
+///   [`FuseLge3NoShards`](crate::func::shard_edge::FuseLge3NoShards), possibly
+///   coupled with `[u64; 1]` signatures. For functions with more than a few
+///   dozen billion keys, you might try
+///   `FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFunc<
     T: ?Sized + ToSig<S>,

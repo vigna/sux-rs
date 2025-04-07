@@ -40,9 +40,9 @@ use std::ops::Index;
 /// # Generics
 ///
 /// * `W`: The type of the hashes associated to keys. See the discussion about
-///        the generic `D` of [`VFunc`].
+///   the generic `D` of [`VFunc`].
 /// * `F`: The type of [`VFunc`] used to store the mapping from keys to hashes.
-///        This type will also imply the type of the keys.
+///   This type will also imply the type of the keys.
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFilter<W: ZeroCopy + Word, F> {
     pub(crate) func: F,
