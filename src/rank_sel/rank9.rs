@@ -140,8 +140,7 @@ impl<B, C> Rank9<B, C> {
 impl<B: BitLength, C> Rank9<B, C> {
     /// Returns the number of bits in the underlying bit vector.
     ///
-    /// This method is equivalent to
-    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// This method is equivalent to [`BitLength::len`], but it is provided to
     /// reduce ambiguity in method resolution.
     #[inline(always)]
     pub fn len(&self) -> usize {
