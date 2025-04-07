@@ -737,8 +737,10 @@ mod fuse {
 
         fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
             let (c, lge);
-            (c, self.log2_seg_size, lge) = if n <= Self::MAX_LIN_SIZE {
-                (1.12, Self::lin_log2_seg_size(3, max_shard), true)
+            (c, self.log2_seg_size, lge) = if n <= 100 {
+                (1.23, Self::lin_log2_seg_size(3, max_shard), true)
+            } else if n <= Self::MAX_LIN_SIZE {
+                (1.125, Self::lin_log2_seg_size(3, max_shard), true)
             } else {
                 (
                     Self::c(3, max_shard),
@@ -877,7 +879,9 @@ mod fuse {
         fn set_up_graphs(&mut self, n: usize, max_vertices: u128) -> (f64, bool) {
             let (c, lge);
 
-            (c, self.log2_seg_size, lge) = if n <= 2 * FuseLge3Shards::HALF_MAX_LIN_SHARD_SIZE {
+            (c, self.log2_seg_size, lge) = if n <= 100 {
+                (1.23, FuseLge3Shards::lin_log2_seg_size(3, n), true)
+            } else if n <= 2 * FuseLge3Shards::HALF_MAX_LIN_SHARD_SIZE {
                 (1.13, FuseLge3Shards::lin_log2_seg_size(3, n), true)
             } else {
                 // The minimization has only effect on very large inputs. By

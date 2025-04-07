@@ -697,13 +697,12 @@ impl<
     /// structure to store the values.
     ///
     /// When `V` is [`EmptyVal`], the this method builds a function supporting a
-    /// filter by mapping each key to a mix of its [64-bit
-    /// signature](Sig::sig_u64). The necessary abstraction is provided by the
-    /// `get_val` function, which is called to extract the value from the
-    /// signature/value pair; in the case of functions it returns the value
-    /// stored in the signature/value pair, and in the case of filters it
-    /// returns the lower bits of [`Sig::sig_u64`] mixed with the
-    /// [`mix64`](mix64) function.
+    /// filter by mapping each key to a mix of its local signature. The
+    /// necessary abstraction is provided by the `get_val` function, which is
+    /// called to extract the value from the signature/value pair; in the case
+    /// of functions it returns the value stored in the signature/value pair,
+    /// and in the case of filters it returns the hash associated with the
+    /// signature.
     fn build_loop<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         V: ZeroCopy + Default + Send + Sync + Ord + UpcastableInto<u128>,
@@ -996,9 +995,11 @@ impl<
 
         pl.info(format_args!("{}", self.shard_edge));
         pl.info(format_args!(
-            "c: {}, Overhead: {:.4}% Number of threads: {}",
+            "c: {}, Overhead: {:+.4}% Number of threads: {}",
             self.c,
-            (shard_edge.num_vertices() * shard_edge.num_shards()) as f64 / (self.num_keys as f64),
+            100. * ((shard_edge.num_vertices() * shard_edge.num_shards()) as f64
+                / (self.num_keys as f64)
+                - 1.),
             self.num_threads
         ));
 
@@ -1040,9 +1041,9 @@ impl<
         }
 
         pl.info(format_args!(
-            "Bits/keys: {} ({:.2}%)",
+            "Bits/keys: {} ({:+.4}%)",
             data.len() as f64 * self.bit_width as f64 / self.num_keys as f64,
-            100.0 * data.len() as f64 / self.num_keys as f64,
+            100.0 * (data.len() as f64 / self.num_keys as f64 - 1.),
         ));
 
         Ok(VFunc {
@@ -1369,10 +1370,10 @@ impl<
 
     /// Peels a shard via edge indices.
     ///
-    /// This peeler uses a [`SigVal`] per key (the shard), a [`GraphIndex`] and
-    /// a byte per vertex (for the [`XorGraph`]), a [`GraphIndex`] per vertex
-    /// (for the [`DoubleStack`]), and a final byte per vertex (for the stack of
-    /// sides).
+    /// This peeler uses a [`SigVal`] per key (the shard), a
+    /// [`ShardEdge::Vertex`] and a byte per vertex (for the [`XorGraph`]), a
+    /// [`ShardEdge::Vertex`] per vertex (for the [`DoubleStack`]), and a final
+    /// byte per vertex (for the stack of sides).
     ///
     /// This peeler uses more memory than
     /// [`peek_by_sig_vals_low_mem`](VBuilder::peel_by_sig_vals_low_mem) but
@@ -1524,7 +1525,7 @@ impl<
     /// it drops it immediately after building the graph.
     ///
     /// It uses a [`SigVal`] and a byte per vertex (for the [`XorGraph`]), a
-    /// [`GraphIndex`] per vertex (for visit stack, albeit usually the stack
+    /// [`ShardEdge::Vertex`] per vertex (for visit stack, albeit usually the stack
     /// never contains more than a third of the vertices), and a [`SigVal`] and
     /// a byte per key (for the stack of peeled edges).
     ///
@@ -1661,7 +1662,7 @@ impl<
     /// it drops it immediately after building the graph.
     ///
     /// It uses a [`SigVal`] and a byte per vertex (for the [`XorGraph`]) and a
-    /// [`GraphIndex`] per vertex (for a [`DoubleStack`]).
+    /// [`ShardEdge::Vertex`] per vertex (for a [`DoubleStack`]).
     ///
     /// This is by far the less memory-hungry peeler, and it is just slightly
     /// slower than
@@ -1669,9 +1670,9 @@ impl<
     /// which uses almost twice the memory. It is the peeler of choice for
     /// significant levels of parallelism.
     ///
-    /// This peeler cannot be used in conjunction with [lazy ]Gaussian
-    /// elimination](https://doi.org/10.1016/j.ic.2020.104517) as after a failed
-    /// peeling it is not possible to retrieve information about the
+    /// This peeler cannot be used in conjunction with [lazy Gaussian
+    /// elimination](https://doi.org/10.1016/j.ic.2020.104517) as after a
+    /// failed peeling it is not possible to retrieve information about the
     /// signature/value pairs in the shard.
     fn peel_by_sig_vals_low_mem<
         V: ZeroCopy + Send + Sync,

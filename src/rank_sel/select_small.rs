@@ -152,8 +152,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
 {
     /// Returns the number of bits in the bit vector.
     ///
-    /// This method is equivalent to
-    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// This method is equivalent to [`BitLength::len`], but it is provided to
     /// reduce ambiguity in method resolution.
     #[inline(always)]
     pub fn len(&self) -> usize {
@@ -553,7 +552,7 @@ impl_rank_small_sel!(1; 11);
 impl_rank_small_sel!(3; 13);
 
 /// A trait providing the semantics of
-/// [`partition_point`](std::slice::partition_point), but using a linear search.
+/// [`partition_point`](slice::partition_point), but using a linear search.
 trait LinearPartitionPointExt<T>: AsRef<[T]> {
     fn linear_partition_point<P>(&self, mut pred: P) -> usize
     where
