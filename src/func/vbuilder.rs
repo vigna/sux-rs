@@ -82,10 +82,12 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// setter for the expected number of keys is used to optimize the construction.
 /// We use the [`FromIntoIterator`] adapter to turn a clonable [`IntoIterator`]
 /// into a [`RewindableIoLender`]. Note that you need the
-/// [`dsi-progress-logger`](https://crates.io/crates/dsi-progress-logger) crate,
-/// and that type inference derives the output type (`usize`), which is the
-/// first type parameter, from the backend type (`Box<[usize]>`), which is the
-/// second parameter:
+/// [`dsi-progress-logger`](https://crates.io/crates/dsi-progress-logger) crate.
+///
+/// Type inference derives the input type (`usize`) from the type of the items
+/// returned by the first [`RewindableIoLender`], and the output type (again,
+/// `usize`, the first type parameter), from the backend type (`Box<[usize]>`,
+/// the second type parameter):
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -133,8 +135,10 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// # }
 /// ```
 ///
-/// Since the numbers are small, we can also try to use a fixed-size output;
-/// type inference takes care of making the second range `0..100` a range of `u8`:
+/// Since the numbers are small, we can also try to use a fixed-size output:
+/// type inference takes care of making the second range `0..100` a range of
+/// `u8`. Note that the type of keys is always `usize`, as it is still inferred
+/// from the type of the items returned by the first [`RewindableIoLender`]:
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
