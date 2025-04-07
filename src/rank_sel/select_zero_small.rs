@@ -32,7 +32,7 @@ use std::ops::Index;
 // NOTE: to make parallel modifications with SelectSmall as easy as possible,
 // "ones" are considered to be zeros in the following code.
 
-/// A version of [`SelectSmall`](super::SelectSmall) implementing [selection on
+/// A version of [`SelectSmall`] implementing [selection on
 /// zeros](crate::traits::SelectZero).
 ///
 ///
@@ -115,8 +115,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
 {
     /// Returns the number of bits in the bit vector.
     ///
-    /// This method is equivalent to
-    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// This method is equivalent to [`BitLength::len`], but it is provided to
     /// reduce ambiguity in method resolution.
     #[inline(always)]
     pub fn len(&self) -> usize {
@@ -565,7 +564,7 @@ impl_select_zero_small!(1; 11);
 impl_select_zero_small!(3; 13);
 
 /// A trait providing the semantics of
-/// [`partition_point`](std::slice::partition_point), but using a linear search.
+/// [`partition_point`](slice::partition_point), but using a linear search.
 trait LinearPartitionPointExt<T>: AsRef<[T]> {
     fn linear_partition_point<P>(&self, mut pred: P) -> usize
     where

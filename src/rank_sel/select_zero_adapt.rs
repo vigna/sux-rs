@@ -194,8 +194,7 @@ impl<B, I> SelectZeroAdapt<B, I> {
 impl<B: BitLength, C> SelectZeroAdapt<B, C> {
     /// Returns the number of bits in the bit vector.
     ///
-    /// This method is equivalent to
-    /// [`BitLength::len`](crate::traits::BitLength::len), but it is provided to
+    /// This method is equivalent to [`BitLength::len`], but it is provided to
     /// reduce ambiguity in method resolution.
     #[inline(always)]
     pub fn len(&self) -> usize {

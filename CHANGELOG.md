@@ -1,13 +1,5 @@
 # Change Log
 
-## [9.7.4]
-
-### Chqnged
-
-* `BitFieldVec::get_unaligned` has now assertions for all undefined
-  behaviors, which make it quite slow. Consider using
-  `BitFieldVec::get_unaligned_unchecked`.
-
 ## [0.7.3]
 
 ### New
@@ -15,6 +7,17 @@
 * The `rayon` feature now gates all uses of rayon, including `VBuilder`.
 
 * New `mmap` feature that is passed to ε-serde.
+
+### Changed
+
+* `BitFieldVec::get_unaligned` has now assertions for all undefined
+  behaviors, which make it quite slow. Consider using
+  `BitFieldVec::get_unaligned_unchecked`.
+
+### Fixed
+
+* Fuse-graph based constructions use now an expansion factor of 1.23 below 100
+  keys. In a few cases a lower factor could lead to an infinite loop.
 
 ## [0.7.2] - 2025-03-25
 
