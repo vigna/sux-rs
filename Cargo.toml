@@ -54,6 +54,7 @@ criterion = { version = "0.5.1", features = ["html_reports"] }
 
 [features]
 default = ["rayon", "mmap"]
+cli = [] # Build the binary utils (it's here so that cargo bench doesn't build them)
 fuzz = ["dep:arbitrary"]
 slow_tests = [] # Run slow tests (use --release)
 mwhc = [] # Compile MWHC data structures (mainly for benchmarking)
@@ -83,30 +84,36 @@ bench = false
 
 [[bin]]
 name = "rcl"
+required-features = ["cli"]
 
 [[bin]]
 name = "vfunc"
-required-features = ["rayon"]
+required-features = ["cli", "rayon"]
 
 [[bin]]
 name = "vfilter"
-required-features = ["rayon"]
+required-features = ["cli", "rayon"]
 
 [[bin]]
 name = "mem_usage"
+required-features = ["cli"]
+
+[[example]]
+name = "bench_bit_field_vec"
+required-features = ["cli"]
+
+[[example]]
+name = "bench_rank9"
+required-features = ["cli"]
+
+[[example]]
+name = "bench_elias_fano"
+required-features = ["cli"]
+
+[[example]]
+name = "bench_rear_coded_list"
+required-features = ["cli"]
 
 [[bench]]
 name = "sux"
 harness = false
-
-[[example]]
-name = "bench_bit_field_vec"
-
-[[example]]
-name = "bench_rank9"
-
-[[example]]
-name = "bench_elias_fano"
-
-[[example]]
-name = "bench_rear_coded_list"
