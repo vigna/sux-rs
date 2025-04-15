@@ -103,9 +103,9 @@ pub fn save_mem_cost<B: Build<BitVec> + MemDbg + BitLength>(
 #[inline(always)]
 pub fn non_uniform(rng: &mut SmallRng, first_half: u64, second_half: u64) -> u64 {
     if rng.random_bool(0.5) {
-        ((rng.gen::<u64>() as u128).wrapping_mul(first_half as u128) >> 64) as u64
+        ((rng.random::<u64>() as u128).wrapping_mul(first_half as u128) >> 64) as u64
     } else {
-        first_half + ((rng.gen::<u64>() as u128).wrapping_mul(second_half as u128) >> 64) as u64
+        first_half + ((rng.random::<u64>() as u128).wrapping_mul(second_half as u128) >> 64) as u64
     }
 }
 
