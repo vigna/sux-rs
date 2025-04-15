@@ -56,8 +56,8 @@ pub fn compare_adapt_const(
             BenchmarkId::from_parameter(format!("{}_{}_0", bitvec_id.0, bitvec_id.1)),
             |b| {
                 b.iter(|| {
-                    let r =
-                        ((rng.random::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64) as usize;
+                    let r = ((rng.random::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64)
+                        as usize;
                     black_box(unsafe { sel.select_unchecked(r) });
                 })
             },
@@ -79,8 +79,8 @@ pub fn compare_adapt_const(
             BenchmarkId::from_parameter(format!("{}_{}_0", bitvec_id.0, bitvec_id.1)),
             |b| {
                 b.iter(|| {
-                    let r =
-                        ((rng.random::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64) as usize;
+                    let r = ((rng.random::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64)
+                        as usize;
                     black_box(unsafe { sel.select_unchecked(r) });
                 })
             },

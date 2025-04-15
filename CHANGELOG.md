@@ -1,5 +1,16 @@
 # Change Log
 
+## [0.7.4]
+
+### Changed
+
+* The `cli` feature is now necessary to build all binaries. It is no
+  longer necessary to run `cargo bench`.
+
+### Fixed
+
+* `cargo bench` now build its targets correctly.
+
 ## [0.7.3]
 
 ### New
