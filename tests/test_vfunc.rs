@@ -9,7 +9,6 @@ use std::ops::{BitXor, BitXorAssign};
 
 use anyhow::Result;
 use dsi_progress_logger::*;
-use rand::{rngs::SmallRng, Rng, SeedableRng};
 use rdst::RadixKey;
 use sux::{
     bits::BitFieldVec,

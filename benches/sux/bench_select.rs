@@ -57,7 +57,7 @@ pub fn compare_adapt_const(
             |b| {
                 b.iter(|| {
                     let r =
-                        ((rng.gen::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64) as usize;
+                        ((rng.random::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64) as usize;
                     black_box(unsafe { sel.select_unchecked(r) });
                 })
             },
@@ -80,7 +80,7 @@ pub fn compare_adapt_const(
             |b| {
                 b.iter(|| {
                     let r =
-                        ((rng.gen::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64) as usize;
+                        ((rng.random::<u64>() as u128).wrapping_mul(num_ones as u128) >> 64) as usize;
                     black_box(unsafe { sel.select_unchecked(r) });
                 })
             },

@@ -67,7 +67,7 @@ pub fn main() -> Result<()> {
 
     let start = std::time::Instant::now();
     for _ in 0..args.accesses {
-        let i = rand.gen::<usize>() % rca.len();
+        let i = rand.random::<u64>() as usize % rca.len();
         let _ = black_box(rca.get(i));
     }
     let elapsed = start.elapsed();

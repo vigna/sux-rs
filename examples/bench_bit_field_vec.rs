@@ -48,7 +48,7 @@ pub fn main() -> Result<()> {
         pl.item_name("write");
         pl.start("Writing...");
         for _ in 0..args.n {
-            let x = rand.gen::<usize>() & mask;
+            let x = rand.random::<u64>() as usize & mask;
             unsafe { a.set_unchecked(x, 1) };
             black_box(());
         }
@@ -58,7 +58,7 @@ pub fn main() -> Result<()> {
         pl.start("Reading (random)...");
         for _ in 0..args.n {
             unsafe {
-                black_box(a.get_unchecked(rand.gen::<usize>() & mask));
+                black_box(a.get_unchecked(rand.random::<u64>() as usize & mask));
             }
         }
         pl.done_with_count(args.n);
