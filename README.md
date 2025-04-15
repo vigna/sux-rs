@@ -4,7 +4,7 @@
 [![dependents](https://img.shields.io/librariesio/dependents/cargo/sux)](https://crates.io/crates/sux/reverse_dependencies)
 ![GitHub CI](https://github.com/vigna/sux-rs/actions/workflows/rust.yml/badge.svg)
 ![license](https://img.shields.io/crates/l/sux)
-[![](https://tokei.rs/b1/github/vigna/sux-rs?type=Rust,Python)](https://github.com/vigna/sux-rs)
+[![Line count](https://tokei.rs/b1/github/vigna/sux-rs?type=Rust,Python)](https://github.com/vigna/sux-rs)
 [![Latest version](https://img.shields.io/crates/v/sux.svg)](https://crates.io/crates/sux)
 [![Documentation](https://docs.rs/sux/badge.svg)](https://docs.rs/sux)
 [![Coverage Status](https://coveralls.io/repos/github/vigna/sux-rs/badge.svg?branch=main)](https://coveralls.io/github/vigna/sux-rs?branch=main)  
@@ -81,18 +81,25 @@ What this crate does not provide:
 - High genericity: all bit vectors are based on the rather concrete trait combination
   `AsRef<[usize]>` + [`BitLength`].
 
+## Binaries
+
+A few binaries make it possible to build and serialize structures with ε-serde
+(e.g., `rcl`, `vfunc`, and `vfilter`). Moreover, there are examples benchmarking
+the structures (e.g., `bench_rear_coded_list`, `bench_vfunc`, and
+`bench_vfilter`). You have to use the feature `cli` to build them.
+
 ## Benchmarks
 
 You can run a number of benchmarks on the structures. Try
 
 ```bash
-cargo bench --bench sux --features cli -- --help
+cargo bench --bench sux -- --help
 ```
 
 to see the available tests. For example, with
 
 ```bash
-cargo bench --bench sux --features cli -- Rank9 -d 0.5 -r 1 -l 100000,1000000,10000000
+cargo bench --bench sux -- Rank9 -d 0.5 -r 1 -l 100000,1000000,10000000
 ```
 
 you can test the [`Rank9`] structure with a density of 0.5, using one test
@@ -112,7 +119,7 @@ By specifying multiple structures (using also substring matching), you can
 compare the behavior of different structures. For example,
   
 ```bash
-cargo bench --bench sux --features cli -- SelectSmall SelectAdapt0 -d 0.5 -r 1 -l 100000,1000000,10000000
+cargo bench --bench sux -- SelectSmall SelectAdapt0 -d 0.5 -r 1 -l 100000,1000000,10000000
 ```
 
 will test all variants of [`SelectSmall`] against a [`SelectAdapt`] with one (2⁰)
@@ -149,4 +156,3 @@ Union nor the Italian MUR can be held responsible for them
 [`SelectAdapt`]: <https://docs.rs/sux/latest/sux/rank_sel/struct.SelectAdapt.html>
 [static functions]: <https://docs.rs/sux/latest/sux/func/vfunc/struct.VFunc.html>
 [static filters]: <https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html>
-
