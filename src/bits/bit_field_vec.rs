@@ -466,13 +466,16 @@ impl<W: Word, T> BitFieldSliceCore<W> for BitFieldVec<W, T> {
         debug_assert!(self.bit_width <= W::BITS);
         self.bit_width
     }
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.len
-    }
 }
 
-impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
+impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {}
+
+impl<W: Word, B: AsRef<[W]>> Types for BitFieldVec<W, B> {
+    type Input = W;
+    type Output = W;
+}
+
+impl<W: Word, B: AsRef<[W]>> IndexedSeq for BitFieldVec<W, B> {
     unsafe fn get_unchecked(&self, index: usize) -> W {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
@@ -486,6 +489,11 @@ impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
                 | (*bits.get_unchecked(word_index + 1) << (W::BITS - bit_index)))
                 & self.mask
         }
+    }
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len
     }
 }
 
@@ -1115,7 +1123,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 /// This implementation provides some concurrency guarantees, albeit not
 /// full-fledged thread safety: more precisely, we can guarantee thread-safety
 /// if the bit width is a power of two; otherwise, concurrent writes to values
-/// that cross word boundaries might end up in different threads succeding in
+/// that cross word boundaries might end up in different threads succeeding in
 /// writing only part of a value. If the user can guarantee that no two threads
 /// ever write to the same boundary-crossing value, then no race condition can
 /// happen.
@@ -1199,16 +1207,31 @@ where
     }
 }
 
-impl<W: Word + IntoAtomic, B> BitFieldSliceCore<W::AtomicType> for AtomicBitFieldVec<W, B> {
-    #[inline(always)]
-    fn bit_width(&self) -> usize {
-        debug_assert!(self.bit_width <= W::BITS);
-        self.bit_width
+impl<W: Word + IntoAtomic, B> Types for AtomicBitFieldVec<W, B> {
+    type Input = W;
+    type Output = W;
+}
+
+impl<W: Word + IntoAtomic, T: AsRef<[W::AtomicType]>> IndexedSeq for AtomicBitFieldVec<W, T>
+where
+    W::AtomicType: AtomicUnsignedInt + AsBytes,
+{
+    /// Returns the value at the specified index with ordering [`Ordering::Relaxed`].
+    unsafe fn get_unchecked(&self, index: usize) -> W {
+        self.get_atomic_unchecked(index, Ordering::Relaxed)
     }
 
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
+    }
+}
+
+impl<W: Word + IntoAtomic, B> BitFieldSliceCore<W::AtomicType> for AtomicBitFieldVec<W, B> {
+    #[inline(always)]
+    fn bit_width(&self) -> usize {
+        debug_assert!(self.bit_width <= W::BITS);
+        self.bit_width
     }
 }
 
@@ -1295,7 +1318,7 @@ where
             // this should increase the probability of having consistency
             // between two concurrent writes as they will both execute the set
             // of the bits in the same order, and the release / acquire fence
-            // should try to syncronize the threads as much as possible
+            // should try to synchronize the threads as much as possible
             compiler_fence(Ordering::SeqCst);
 
             let mut word = bits.get_unchecked(word_index + 1).load(order);

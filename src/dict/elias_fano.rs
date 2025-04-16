@@ -81,6 +81,7 @@ pub type EfSeqDict = EliasFano<
 
 use crate::prelude::*;
 use crate::traits::bit_field_slice::*;
+use crate::traits::indexed_dict::IndexedSeq;
 use core::sync::atomic::Ordering;
 use epserde::*;
 use mem_dbg::*;
@@ -439,7 +440,8 @@ where
             let lower_bits = unsafe { iter.next_unchecked() };
             let mut word_idx = bit_pos / (usize::BITS as usize);
             let bit_idx = bit_pos % (usize::BITS as usize);
-            if self.high_bits.get(word_idx) & (1_usize << bit_idx) == 0 {
+            // TODO: unchecked?
+            if *self.high_bits.as_ref().get_unchecked(word_idx) & (1_usize << bit_idx) == 0 {
                 let mut zeros = bit_idx;
                 let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) }
                     & !(usize::MAX << bit_idx);

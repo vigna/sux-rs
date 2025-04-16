@@ -40,7 +40,7 @@
 //! [`Borrow`].
 //!
 //! We suggest that every implementation of [`IndexedSeq`] also implements
-//! [`IntoIterator`]/[`IntoIteratoFrom`](crate::traits::iter::IntoIteratorFrom)
+//! [`IntoIterator`]/[`IntoIteratorFrom`](crate::traits::iter::IntoIteratorFrom)
 //! with `Item = Self::Output` on a reference. This property can be tested on a
 //! type `T` with the clause `where for<'a> &'a T: IntoIteratorFrom<Item =
 //! Self::Output>` (or `where for<'a> &'a T: IntoIterator<Item = Self::Output>`,

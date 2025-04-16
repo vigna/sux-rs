@@ -422,7 +422,7 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
     /// density of ones in the bit vector. Thus, this constructor makes sense
     /// only if the density is known in advance.
     ///
-    /// Unless you understand all the implications, it is preferrable to use the
+    /// Unless you understand all the implications, it is preferable to use the
     /// [standard constructor](SelectAdapt::new).
     ///
     /// # Arguments
@@ -808,7 +808,7 @@ impl<B: AsRef<[usize]> + BitLength + SelectHinted, I: AsRef<[usize]>> SelectUnch
         let spill_idx =
             { *inventory.get_unchecked(inventory_start_pos + 1) } + subrank - u64_per_subinventory;
         debug_assert!(spill_idx < self.spill.as_ref().len());
-        self.spill.get_unchecked(spill_idx)
+        *self.spill.as_ref().get_unchecked(spill_idx)
     }
 }
 

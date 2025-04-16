@@ -10,7 +10,10 @@
 use crate::bits::*;
 use crate::dict::VFilter;
 use crate::func::{shard_edge::ShardEdge, *};
-use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
+use crate::traits::{
+    bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word},
+    IndexedSeq,
+};
 use crate::utils::*;
 use common_traits::{
     CastableInto, DowncastableFrom, DowncastableInto, UnsignedInt, UpcastableFrom, UpcastableInto,

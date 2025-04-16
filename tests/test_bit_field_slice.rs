@@ -7,6 +7,7 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use common_traits::SequenceMut;
 use sux::prelude::*;
 
 #[test]
@@ -45,12 +46,11 @@ fn test_set_atomic() {
     s.set_atomic(0, 1, Ordering::Relaxed);
     assert_eq!(s.get_atomic(0, Ordering::Relaxed), 1);
 
-    use sux::traits::bit_field_slice::AtomicHelper;
-    s.set(0, 1, Ordering::Relaxed);
-    assert_eq!(s.get(0, Ordering::Relaxed), 1);
+    s.set_atomic(0, 1, Ordering::Relaxed);
+    assert_eq!(s.get_atomic(0, Ordering::Relaxed), 1);
     unsafe {
-        s.set_unchecked(0, 1, Ordering::Relaxed);
-        assert_eq!(s.get_unchecked(0, Ordering::Relaxed), 1);
+        s.set_atomic_unchecked(0, 1, Ordering::Relaxed);
+        assert_eq!(s.get_atomic_unchecked(0, Ordering::Relaxed), 1);
     }
 
     let s = AtomicBitFieldVec::<usize, _>::new(0, 10);
@@ -86,7 +86,7 @@ fn test_iterator() {
 fn test_slices() {
     let mut s = vec![0_u32, 1, 2, 3];
     assert_eq!(s.bit_width(), 32);
-    assert_eq!(BitFieldSliceCore::len(&s), 4);
+    assert_eq!(IndexedSeq::len(s.as_ref()), 4);
 
     s.set(0, 1);
     assert_eq!(s.get(0), 1);

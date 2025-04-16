@@ -14,8 +14,8 @@ use mem_dbg::{MemDbg, MemSize};
 use std::cmp::{max, min};
 
 use crate::{
-    prelude::{BitCount, BitFieldSlice, BitLength, Select, SelectHinted},
-    traits::{NumBits, SelectUnchecked},
+    prelude::{BitCount, BitLength, Select, SelectHinted},
+    traits::{IndexedSeq, NumBits, SelectUnchecked},
 };
 
 use crate::ambassador_impl_AsRef;
@@ -572,7 +572,7 @@ impl<
         let spill_idx =
             { *inventory.get_unchecked(inventory_start_pos + 1) } + subrank - u64_per_subinventory;
         debug_assert!(spill_idx < self.spill.as_ref().len());
-        self.spill.get_unchecked(spill_idx)
+        *self.spill.as_ref().get_unchecked(spill_idx)
     }
 }
 

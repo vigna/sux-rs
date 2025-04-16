@@ -89,12 +89,6 @@ pub trait BitFieldSliceCore<W> {
     ///
     /// All elements stored in the slice must fit within this bit width.
     fn bit_width(&self) -> usize;
-    /// Returns the length of the slice.
-    fn len(&self) -> usize;
-    /// Returns true if the slice has length zero.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 }
 
 macro_rules! panic_if_out_of_bounds {
@@ -115,6 +109,8 @@ macro_rules! panic_if_value {
 }
 pub(crate) use panic_if_value;
 
+use super::{IndexedSeq, Types};
+
 macro_rules! debug_assert_bounds {
     ($index: expr, $len: expr) => {
         debug_assert!(
@@ -127,22 +123,9 @@ macro_rules! debug_assert_bounds {
 }
 
 /// A slice of bit fields of constant bit width.
-pub trait BitFieldSlice<W: Word>: BitFieldSliceCore<W> {
-    /// Returns the value at the specified index.
-    ///
-    /// # Safety
-    ///
-    /// `index` must be in [0..[len](`BitFieldSliceCore::len`)). No bounds checking is performed.
-    unsafe fn get_unchecked(&self, index: usize) -> W;
-
-    /// Returns the value at the specified index.
-    ///
-    /// # Panics
-    /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
-    fn get(&self, index: usize) -> W {
-        panic_if_out_of_bounds!(index, self.len());
-        unsafe { self.get_unchecked(index) }
-    }
+pub trait BitFieldSlice<W: Word>:
+    BitFieldSliceCore<W> + Types<Input = W, Output = W> + IndexedSeq
+{
 }
 
 /// A mutable slice of bit fields of constant bit width.
@@ -334,7 +317,8 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> {
 ///
 /// Different implementations might provide different atomicity guarantees. See
 /// [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec) for an example.
-pub trait AtomicBitFieldSlice<W: Word + IntoAtomic>: BitFieldSliceCore<W::AtomicType>
+pub trait AtomicBitFieldSlice<W: Word + IntoAtomic>:
+    BitFieldSliceCore<W::AtomicType> + Types<Input = W, Output = W> + IndexedSeq
 where
     W::AtomicType: AtomicUnsignedInt + AsBytes,
 {
@@ -445,11 +429,20 @@ macro_rules! impl_core {
             fn bit_width(&self) -> usize {
                 <$ty>::BITS as usize
             }
-            #[inline(always)]
+        }
+        impl Types for [$ty] {
+            type Input = $ty;
+            type Output = $ty;
+        }
+        impl IndexedSeq for [$ty] {
             fn len(&self) -> usize {
-                self.as_ref().len()
+                self.len()
+            }
+            unsafe fn get_unchecked(&self, index: usize) -> $ty {
+                *self.get_unchecked(index)
             }
         }
+        impl<T: AsRef<[$ty]> + Types<Input = $ty, Output = $ty> + IndexedSeq> BitFieldSlice<$ty> for T {}
     )*};
 }
 
@@ -458,25 +451,11 @@ impl_core!(u8, u16, u32, u64, u128, usize);
 // with expressions like [1, 2, 3].len() when using the prelude.
 // Without this implementation, the compiler complains that
 // BitFieldSliceCore is not implemented for [i32; 3].
-impl_core!(i8, i16, i32, i64, i128, isize);
-
-macro_rules! impl_ref {
-    ($($ty:ty),*) => {$(
-        impl<T: AsRef<[$ty]>> BitFieldSlice<$ty> for T {
-            #[inline(always)]
-            unsafe fn get_unchecked(&self, index: usize) -> $ty {
-                debug_assert_bounds!(index, self.len());
-                *self.as_ref().get_unchecked(index)
-            }
-        }
-    )*};
-}
-
-impl_ref!(u8, u16, u32, u64, u128, usize);
+// TODO impl_core!(i8, i16, i32, i64, i128, isize);
 
 macro_rules! impl_mut {
     ($($ty:ty),*) => {$(
-        impl<T: AsMut<[$ty]> + AsRef<[$ty]>> BitFieldSliceMut<$ty> for T {
+        impl<T: AsMut<[$ty]> + AsRef<[$ty]> + BitFieldSlice<$ty>> BitFieldSliceMut<$ty> for T {
             #[inline(always)]
             unsafe fn set_unchecked(&mut self, index: usize, value: $ty) {
                 debug_assert_bounds!(index, self.len());
@@ -526,10 +505,6 @@ macro_rules! impl_core_atomic {
             fn bit_width(&self) -> usize {
                 <$aty>::BITS as usize
             }
-            #[inline(always)]
-            fn len(&self) -> usize {
-                self.as_ref().len()
-            }
         }
     )*};
 }
@@ -538,7 +513,9 @@ impl_core_atomic!(AtomicU8, AtomicU16, AtomicU32, AtomicU64, AtomicUsize);
 
 macro_rules! impl_atomic {
     ($std:ty, $atomic:ty) => {
-        impl<T: AsRef<[$atomic]>> AtomicBitFieldSlice<$std> for T {
+        impl<T: AsRef<[$atomic]> + Types<Input = $std, Output = $std> + IndexedSeq>
+            AtomicBitFieldSlice<$std> for T
+        {
             #[inline(always)]
             unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> $std {
                 debug_assert_bounds!(index, self.len());
