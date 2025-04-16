@@ -1,6 +1,12 @@
 # Change Log
 
-## [0.7.4]
+## [0.7.5]
+
+### New
+
+* `IntoIteratorFrom` implementation for `BitFieldVec`.
+
+## [0.7.4] - 2025-04-15
 
 ### Changed
 

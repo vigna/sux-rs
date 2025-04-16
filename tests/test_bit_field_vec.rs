@@ -656,3 +656,14 @@ fn test_try_chunks_mut() {
     assert_eq!(iter.next().unwrap(), bit_field_vec![16 => 1; 2]);
     assert!(iter.next().is_none());
 }
+
+#[test]
+fn test_iter_from() {
+    let b = bit_field_vec![7; 0, 1, 2, 3, 4, 5];
+    for i in 0..b.len() {
+        let mut iter = b.iter_from(i);
+        for j in i..b.len() {
+            assert_eq!(iter.next(), Some(j));
+        }
+    }
+}
