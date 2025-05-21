@@ -214,62 +214,58 @@ pub trait ToSig<S> {
 }
 
 impl ToSig<[u64; 2]> for String {
+    #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
-        let bytes = key.borrow().as_bytes();
-        let hash128 = xxh3::xxh3_128_with_seed(bytes, seed);
-        [(hash128 >> 64) as u64, hash128 as u64]
+        <&str>::to_sig(&**key.borrow(), seed)
     }
 }
 
 impl ToSig<[u64; 1]> for String {
+    #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
-        let bytes = key.borrow().as_bytes();
-        [xxh3::xxh3_64_with_seed(bytes, seed)]
+        <&str>::to_sig(&**key.borrow(), seed)
     }
 }
 
 impl ToSig<[u64; 2]> for &String {
+    #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
-        let bytes = key.borrow().as_bytes();
-        let hash128 = xxh3::xxh3_128_with_seed(bytes, seed);
-        [(hash128 >> 64) as u64, hash128 as u64]
+        <&str>::to_sig(&***key.borrow(), seed)
     }
 }
 
 impl ToSig<[u64; 1]> for &String {
+    #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
-        let bytes = key.borrow().as_bytes();
-        [xxh3::xxh3_64_with_seed(bytes, seed)]
+        <&str>::to_sig(&***key.borrow(), seed)
     }
 }
 
 impl ToSig<[u64; 2]> for str {
+    #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
-        let bytes = key.borrow().as_bytes();
-        let hash128 = xxh3::xxh3_128_with_seed(bytes, seed);
-        [(hash128 >> 64) as u64, hash128 as u64]
+        <&str>::to_sig(key.borrow(), seed)
     }
 }
 
 impl ToSig<[u64; 1]> for str {
+    #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
-        let bytes = key.borrow().as_bytes();
-        [xxh3::xxh3_64_with_seed(bytes, seed)]
+        <&str>::to_sig(key.borrow(), seed)
     }
 }
 
 impl ToSig<[u64; 2]> for &str {
+    #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
-        let bytes = key.borrow().as_bytes();
-        let hash128 = xxh3::xxh3_128_with_seed(bytes, seed);
-        [(hash128 >> 64) as u64, hash128 as u64]
+        <&[u8]>::to_sig(key.borrow().as_bytes(), seed)
     }
 }
 
 impl ToSig<[u64; 1]> for &str {
+    #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
-        let bytes = key.borrow().as_bytes();
-        [xxh3::xxh3_64_with_seed(bytes, seed)]
+        <&[u8]>::to_sig(key.borrow().as_bytes(), seed)
     }
 }
 
