@@ -65,7 +65,7 @@ use mem_dbg::*;
 ///   [`FuseLge3NoShards`](crate::func::shard_edge::FuseLge3NoShards), possibly
 ///   coupled with `[u64; 1]` signatures. For functions with more than a few
 ///   dozen billion keys, you might try
-///   `FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
+///   [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
 #[derive(Epserde, Debug, MemDbg, MemSize)]
 pub struct VFunc<
     T: ?Sized + ToSig<S>,
