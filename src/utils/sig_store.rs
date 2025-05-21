@@ -306,6 +306,17 @@ macro_rules! to_sig_slice {
                 [xxh3::xxh3_64_with_seed(bytes, seed)]
             }
         }
+
+        impl ToSig<[u64; 2]> for [$ty] {
+            fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
+                <&[$ty]>::to_sig(key.borrow(), seed)
+            }
+        }
+        impl ToSig<[u64;1]> for [$ty] {
+            fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
+                <&[$ty]>::to_sig(key.borrow(), seed)
+            }
+        }
     )*};
 }
 
