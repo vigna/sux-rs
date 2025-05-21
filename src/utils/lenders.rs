@@ -1,6 +1,7 @@
 /*
  *
  * SPDX-FileCopyrightText: 2023 Sebastiano Vigna
+ * SPDX-FileCopyrightText: 2025 Inria
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
@@ -268,6 +269,93 @@ impl<T: 'static, I: IntoIterator<Item = T> + Clone> From<I> for FromIntoIterator
         }
     }
 }
+
+/// An adapter lending the items of a function returning lenders.
+pub struct FromLenderFactory<
+    T: Send + Sync,
+    L: Lender,
+    E: std::error::Error + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> {
+    f: F,
+    lender: L,
+    item: Option<T>,
+}
+
+impl<
+        'lend,
+        T: Send + Sync,
+        L: Lender,
+        E: std::error::Error + Send + Sync + 'static,
+        F: FnMut() -> Result<L, E>,
+    > Lending<'lend> for FromLenderFactory<T, L, E, F>
+{
+    type Lend = Result<&'lend T, E>;
+}
+
+impl<
+        T: Send + Sync,
+        L: Lender<Lend = T>,
+        E: std::error::Error + Send + Sync + 'static,
+        F: FnMut() -> Result<L, E>,
+    > Lender for FromLenderFactory<T, L, E, F>
+{
+    fn next(&mut self) -> Option<Lend<'_, Self>> {
+        self.item = self.lender.next();
+        self.item.as_ref().map(Ok)
+    }
+}
+
+impl<
+        T: Send + Sync,
+        L: Lender<Lend = T>,
+        E: std::error::Error + Send + Sync + 'static,
+        F: FnMut() -> Result<L, E>,
+    > RewindableIoLender<T> for FromLenderFactory<T, L, E, F>
+{
+    type Error = E;
+    fn rewind(mut self) -> Result<Self, Self::Error> {
+        self.lender = (self.f)()?;
+        Ok(self)
+    }
+}
+
+impl<
+        T: Send + Sync,
+        L: Lender,
+        E: std::error::Error + Send + Sync + 'static,
+        F: FnMut() -> Result<L, E>,
+    > FromLenderFactory<T, L, E, F>
+{
+    pub fn new(mut f: F) -> Result<Self, E> {
+        f().map(|lender| FromLenderFactory {
+            lender,
+            f,
+            item: None,
+        })
+    }
+}
+
+/* Errors with:
+ *  error[E0119]: conflicting implementations of trait `std::convert::TryFrom<_>` for type `utils::lenders::FromLenderFactory<_, _, _, _>`
+
+ *  = note: conflicting implementation in crate `core`:
+ *          - impl<T, U> std::convert::TryFrom<U> for T
+ *            where U: std::convert::Into<T>;
+impl<
+        T: Send + Sync,
+        L: Lender,
+        E: std::error::Error + Send + Sync + 'static,
+        F: FnMut() -> Result<L, E>,
+    > TryFrom<F> for FromLenderFactory<T, L, E, F>
+{
+    type Error = E;
+
+    fn try_from(f: F) -> Result<Self, Self::Error> {
+        Self::new(f)
+    }
+}
+*/
 
 impl<T: ?Sized, L: RewindableIoLender<T>> RewindableIoLender<T> for lender::Take<L> {
     type Error = L::Error;
