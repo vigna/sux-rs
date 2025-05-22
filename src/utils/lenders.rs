@@ -178,7 +178,7 @@ impl<R: Read + Seek> RewindableIoLender<str> for ZstdLineLender<R> {
     type Error = io::Error;
     fn rewind(mut self) -> io::Result<Self> {
         let mut read = self.buf.into_inner().finish();
-        read.stream_position()?;
+        read.rewind()?;
         self.buf = BufReader::new(Decoder::with_buffer(read)?);
         Ok(self)
     }
@@ -227,7 +227,7 @@ impl<R: Read + Seek> RewindableIoLender<str> for GzipLineLender<R> {
     type Error = io::Error;
     fn rewind(mut self) -> io::Result<Self> {
         let mut read = self.buf.into_inner().into_inner();
-        read.stream_position()?;
+        read.rewind()?;
         self.buf = BufReader::new(GzDecoder::new(read));
         Ok(self)
     }
