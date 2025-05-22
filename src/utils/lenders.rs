@@ -130,7 +130,7 @@ impl<B: BufRead> Lender for LineLender<B> {
 impl<B: BufRead + Seek> RewindableIoLender<str> for LineLender<B> {
     type Error = io::Error;
     fn rewind(mut self) -> io::Result<Self> {
-        self.buf.seek(io::SeekFrom::Start(0)).map(|_| ())?;
+        self.buf.rewind()?;
         Ok(self)
     }
 }
