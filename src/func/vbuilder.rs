@@ -552,7 +552,7 @@ where
     SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
-    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: Borrow<T>>(
+    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
         keys: impl RewindableIoLender<B>,
         values: impl RewindableIoLender<W>,
@@ -581,7 +581,7 @@ where
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
-    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: Borrow<T>>(
+    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
         keys: impl RewindableIoLender<B>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -625,7 +625,7 @@ where
     SigVal<S, W>: RadixKey,
     SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
 {
-    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: Borrow<T>>(
+    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
         keys: impl RewindableIoLender<B>,
         values: impl RewindableIoLender<W>,
@@ -652,7 +652,7 @@ where
     SigVal<S, EmptyVal>: RadixKey,
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
 {
-    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: Borrow<T>>(
+    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
         keys: impl RewindableIoLender<B>,
         filter_bits: usize,
@@ -705,7 +705,7 @@ impl<
     /// signature.
     fn build_loop<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: Borrow<T>,
+        B: ?Sized + Borrow<T>,
         V: ZeroCopy + Default + Send + Sync + Ord + UpcastableInto<u128>,
     >(
         &mut self,
@@ -836,7 +836,7 @@ impl<
     /// the [`VBuilder::try_build_from_shard_iter`] method.
     fn try_seed<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: Borrow<T>,
+        B: ?Sized + Borrow<T>,
         V: ZeroCopy + Default + Send + Sync + Ord + UpcastableInto<u128>,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
