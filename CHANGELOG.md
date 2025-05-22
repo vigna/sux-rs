@@ -6,6 +6,12 @@
 
 * `IntoIteratorFrom` implementation for `BitFieldVec`.
 
+### Improved
+
+* All build methods of `VBuilder` now take a `RewindableIoLender`
+  of `Borrow<T>` instead of `T`, which should make construction
+  more flexible.
+
 ## [0.7.4] - 2025-04-15
 
 ### Changed

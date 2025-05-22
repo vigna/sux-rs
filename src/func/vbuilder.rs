@@ -27,7 +27,7 @@ use rayon::iter::ParallelIterator;
 use rayon::slice::ParallelSlice;
 use rdst::*;
 use std::any::TypeId;
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::hint::unreachable_unchecked;
 use std::marker::PhantomData;
 use std::mem::transmute;
@@ -552,9 +552,9 @@ where
     SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
-    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
+    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: Borrow<T>>(
         mut self,
-        keys: impl RewindableIoLender<T>,
+        keys: impl RewindableIoLender<B>,
         values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, Box<[W]>, S, E>>
@@ -581,9 +581,9 @@ where
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
-    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
+    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: Borrow<T>>(
         mut self,
-        keys: impl RewindableIoLender<T>,
+        keys: impl RewindableIoLender<B>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>>
     where
@@ -625,9 +625,9 @@ where
     SigVal<S, W>: RadixKey,
     SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
 {
-    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug>(
+    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: Borrow<T>>(
         mut self,
-        keys: impl RewindableIoLender<T>,
+        keys: impl RewindableIoLender<B>,
         values: impl RewindableIoLender<W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
@@ -652,9 +652,9 @@ where
     SigVal<S, EmptyVal>: RadixKey,
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
 {
-    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug>(
+    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: Borrow<T>>(
         mut self,
-        keys: impl RewindableIoLender<T>,
+        keys: impl RewindableIoLender<B>,
         filter_bits: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>> {
@@ -705,10 +705,11 @@ impl<
     /// signature.
     fn build_loop<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: Borrow<T>,
         V: ZeroCopy + Default + Send + Sync + Ord + UpcastableInto<u128>,
     >(
         &mut self,
-        mut keys: impl RewindableIoLender<T>,
+        mut keys: impl RewindableIoLender<B>,
         mut values: impl RewindableIoLender<V>,
         bit_width: Option<usize>,
         get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
@@ -835,13 +836,14 @@ impl<
     /// the [`VBuilder::try_build_from_shard_iter`] method.
     fn try_seed<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: Borrow<T>,
         V: ZeroCopy + Default + Send + Sync + Ord + UpcastableInto<u128>,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &mut self,
         seed: u64,
         mut sig_store: impl SigStore<S, V>,
-        keys: &mut impl RewindableIoLender<T>,
+        keys: &mut impl RewindableIoLender<B>,
         values: &mut impl RewindableIoLender<V>,
         bit_width: Option<usize>,
         get_val: &G,
@@ -880,7 +882,7 @@ impl<
                     // function, or EmptyVal, if we are building a filter.
                     let &maybe_val = values.next().expect("Not enough values")?;
                     let sig_val = SigVal {
-                        sig: T::to_sig(key, seed),
+                        sig: T::to_sig(key.borrow(), seed),
                         val: maybe_val,
                     };
                     maybe_max_value = Ord::max(maybe_max_value, maybe_val);
