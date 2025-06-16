@@ -277,7 +277,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
         let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
         let start_bit = index * self.bit_width;
         debug_assert!(start_bit / W::BYTES + W::BYTES <= self.bits.as_ref().len() * W::BYTES);
-        let ptr = base_ptr.add(start_bit / W::BYTES) as *const W;
+        let ptr = base_ptr.add(start_bit / 8) as *const W;
         let word = core::ptr::read_unaligned(ptr);
         (word >> (start_bit % 8)) & self.mask
     }
