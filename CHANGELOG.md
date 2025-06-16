@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.7.6]
+
+### Fixed
+
+* Bug in `BitFieldVec::get_unaligned` only present with `W != u64` and `W != usize`.
+
 ## [0.7.5]
 
 ### New
