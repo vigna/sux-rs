@@ -305,7 +305,7 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> {
     ///
     /// This might not always be possible; implementations must document when
     /// the method will success (see, for example, [the implementation for
-    /// `BitFieldVec`](#impl-BitFieldSliceMut-for-BitFieldVec)).
+    /// `BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec#impl-BitFieldSliceMut<W>-for-BitFieldVec<W,+B>)).
     ///
     /// When the slice len is not evenly divided by the chunk size, the last
     /// chunk of the iteration will be the remainder.
