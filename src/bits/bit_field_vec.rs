@@ -294,7 +294,8 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 /// of the iteration will be shorter.
 ///
 /// This struct is created by the
-/// [`try_chunks_mut`](#impl-BitFieldSliceMut-for-BitFieldVec) method.
+/// [`try_chunks_mut`](crate::bits::bit_field_vec::BitFieldVec#impl-BitFieldSliceMut<W>-for-BitFieldVec<W,+B>)
+/// method.
 pub struct ChunksMut<'a, W: Word> {
     remaining: usize,
     bit_width: usize,
@@ -1295,7 +1296,7 @@ where
             // this should increase the probability of having consistency
             // between two concurrent writes as they will both execute the set
             // of the bits in the same order, and the release / acquire fence
-            // should try to syncronize the threads as much as possible
+            // should try to synchronize the threads as much as possible
             compiler_fence(Ordering::SeqCst);
 
             let mut word = bits.get_unchecked(word_index + 1).load(order);
