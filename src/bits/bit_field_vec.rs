@@ -164,8 +164,7 @@ macro_rules! bit_field_vec {
 }
 
 /// A vector of bit fields of fixed width.
-#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
-#[derive(value_traits::Subslices)]
+#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize, value_traits::Subslices)]
 #[value_traits_subslices(bound = "B: AsRef<[W]>")]
 #[derive(value_traits::SubslicesMut)]
 #[value_traits_subslices_mut(bound = "B: AsRef<[W]> + AsMut<[W]>")]
@@ -1617,6 +1616,72 @@ impl<W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFrom for BitField
         from: usize,
     ) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
         self.iter_from(from)
+    }
+}
+
+impl<'a, 'b, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueGat<'a>
+    for BitFieldVecSubsliceImpl<'b, W, B>
+{
+    type Item = W;
+    type Iter = BitFieldVecIterator<'a, W, B>;
+}
+
+impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValue
+    for BitFieldVecSubsliceImpl<'a, W, B>
+{
+    fn iter_value(&self) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
+        self.slice.iter_from(0)
+    }
+}
+
+impl<'a, 'b, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFromGat<'a>
+    for BitFieldVecSubsliceImpl<'b, W, B>
+{
+    type Item = W;
+    type IterFrom = BitFieldVecIterator<'a, W, B>;
+}
+
+impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFrom
+    for BitFieldVecSubsliceImpl<'a, W, B>
+{
+    fn iter_value_from(
+        &self,
+        from: usize,
+    ) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
+        self.slice.iter_from(from)
+    }
+}
+
+impl<'a, 'b, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueGat<'a>
+    for BitFieldVecSubsliceImplMut<'b, W, B>
+{
+    type Item = W;
+    type Iter = BitFieldVecIterator<'a, W, B>;
+}
+
+impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValue
+    for BitFieldVecSubsliceImplMut<'a, W, B>
+{
+    fn iter_value(&self) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
+        self.slice.iter_from(0)
+    }
+}
+
+impl<'a, 'b, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFromGat<'a>
+    for BitFieldVecSubsliceImplMut<'b, W, B>
+{
+    type Item = W;
+    type IterFrom = BitFieldVecIterator<'a, W, B>;
+}
+
+impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFrom
+    for BitFieldVecSubsliceImplMut<'a, W, B>
+{
+    fn iter_value_from(
+        &self,
+        from: usize,
+    ) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
+        self.slice.iter_from(from)
     }
 }
 
