@@ -1,7 +1,7 @@
 # `sux`
 
 [![downloads](https://img.shields.io/crates/d/sux)](https://crates.io/crates/sux)
-[![dependents](https://img.shields.io/librariesio/dependents/cargo/sux)](https://crates.io/crates/sux/reverse_dependencies)
+[![dependents](https://dependents.info/vigna/sux-rs/badge?id=UGFja2FnZS0zNjgwNjY4NDg2)](https://dependents.info/vigna/sux-rs?id=UGFja2FnZS0zNjgwNjY4NDg2)
 ![GitHub CI](https://github.com/vigna/sux-rs/actions/workflows/rust.yml/badge.svg)
 ![license](https://img.shields.io/crates/l/sux)
 [![Line count](https://tokei.rs/b1/github/vigna/sux-rs?type=Rust,Python)](https://github.com/vigna/sux-rs)
@@ -28,6 +28,12 @@ The focus is on efficiency (in particular, there are unchecked versions of all
 methods) and on flexible composability (e.g., you can fine-tune your Elias–Fano
 instance by choosing different types of internal indices, and whether to index
 zeros or ones).
+
+## Used by
+
+<a href="https://dependents.info/vigna/sux-rs?id=UGFja2FnZS0zNjgwNjY4NDg2">
+  <img src="https://dependents.info/vigna/sux-rs/image?id=UGFja2FnZS0zNjgwNjY4NDg2" />
+</a>
 
 ## ε-serde support
 
