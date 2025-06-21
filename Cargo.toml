@@ -45,7 +45,8 @@ lambert_w = { version = "1.0.17", default-features = false, features = ["std"] }
 arbitrary = { version = "1.3.2", features = ["derive"], optional = true }
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 thread-priority = "2.1.0"
-value-traits = {version = "0.1.1", git = "https://github.com/vigna/value-traits-rs"}
+value-traits = "0.1.4"
+
 [dev-dependencies]
 maligned = "0.2.1"
 criterion = { version = "0.6.0", features = ["html_reports"] }
