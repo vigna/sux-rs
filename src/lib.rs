@@ -6,9 +6,9 @@
  */
 
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
-#![warn(missing_docs)]
-#![warn(clippy::missing_errors_doc)]
-#![warn(clippy::missing_panics_doc)]
+//#![warn(missing_docs)]
+//#![warn(clippy::missing_errors_doc)]
+//#![warn(clippy::missing_panics_doc)]
 #![deny(unconditional_recursion)]
 #![allow(clippy::duplicated_attributes)]
 #![allow(clippy::len_without_is_empty)]
