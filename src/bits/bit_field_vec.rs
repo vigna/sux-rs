@@ -467,7 +467,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
 }
 
 impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldVec<W, B> {
-    /// A version of [`BitFieldSlice::set`] that returns the previous value.
+    /// A version of [`BitFieldSliceMut::set`] that returns the previous value.
     ///
     /// # Panics
     /// - If `index` is out of bounds.

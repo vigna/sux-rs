@@ -1,16 +1,17 @@
 # Change Log
 
-## [0.7.6]
-
-### Fixed
-
-* Bug in `BitFieldVec::get_unaligned` only present with `W != u64` and `W != usize`.
-
-## [0.7.5]
+## [0.8.0] - 2025-06-21
 
 ### New
 
 * `IntoIteratorFrom` implementation for `BitFieldVec`.
+
+* `value-traits` implementations for `BitFieldVec` and `EliasFano`.
+
+### Fixed
+
+* Bug in `BitFieldVec::get_unaligned` only present with `W != u64` and `W
+  != usize`.
 
 ### Improved
 
