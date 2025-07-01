@@ -1,5 +1,6 @@
+use std::hint::black_box;
+
 use crate::utils::*;
-use criterion::black_box;
 use criterion::BenchmarkId;
 use criterion::Criterion;
 use rand::rngs::SmallRng;

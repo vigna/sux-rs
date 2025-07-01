@@ -1,8 +1,9 @@
-use criterion::{black_box, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion};
 use mem_dbg::{MemDbg, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use std::fs::create_dir_all;
+use std::hint::black_box;
 use std::io::Write;
 use sux::bits::BitVec;
 use sux::traits::{BitCount, BitLength, Rank, Select};
