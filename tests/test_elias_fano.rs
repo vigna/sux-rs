@@ -188,6 +188,14 @@ fn test_too_many_values() {
 
 #[test]
 #[should_panic]
+fn test_too_few_values() {
+    let mut efb = EliasFanoBuilder::new(2, 10);
+    efb.push(0);
+    efb.build();
+}
+
+#[test]
+#[should_panic]
 fn test_non_monotone() {
     let mut efb = EliasFanoBuilder::new(2, 10);
     efb.push(1);

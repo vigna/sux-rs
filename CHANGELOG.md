@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.8.1] - 
+
+### Fixed
+
+* Adding too few values to Elias-Fano structures was causing undefined
+  behavior.
+
 ## [0.8.0] - 2025-06-21
 
 ### New

@@ -873,7 +873,7 @@ impl EliasFanoBuilder {
     /// Builds an Elias-Fano structure.
     ///
     /// The resulting structure has no selection structure attached. To use it
-    /// propertly, you need to call [`EliasFano::map_high_bits`] to add to the
+    /// property, you need to call [`EliasFano::map_high_bits`] to add to the
     /// high bits a selection structure.
     ///
     /// Usually, however, the default implementations returned by the
@@ -882,6 +882,12 @@ impl EliasFanoBuilder {
     /// [`build_with_seq_and_dict`](EliasFanoConcurrentBuilder::build_with_seq_and_dict)
     /// methods are more convenient.
     pub fn build(self) -> EliasFano {
+        assert!(
+            self.count == self.n,
+            "The declared size ({}) is not equal to the number of values ({})",
+            self.n,
+            self.count
+        );
         let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
         EliasFano {
             n: self.n,
