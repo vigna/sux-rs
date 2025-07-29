@@ -12,14 +12,36 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - 1.85.0
+          - stable
+          - beta
+          - nightly
+        features:
+          - ''
+          - '--no-default-features'
+
+    steps:
+      - name: Install rust (${{ matrix.rust }})
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          profile: minimal
+          override: true
+      - uses: actions/checkout@v3
+      - name: Build
+        run: cargo build --verbose
+
+  lint:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - name: Check formatting
         run: cargo fmt -- --check
       - name: Run clippy
         run: cargo clippy
-      - name: Build
-        run: cargo build --verbose
 
   coverage:
     needs: build
