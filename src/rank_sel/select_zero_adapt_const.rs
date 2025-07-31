@@ -125,7 +125,7 @@ use std::ops::Index;
 /// assert_eq!(rank9_sel[7], false);
 /// ```
 
-#[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
+#[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
