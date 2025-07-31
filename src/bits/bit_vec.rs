@@ -170,7 +170,7 @@ macro_rules! panic_if_out_of_bounds {
     };
 }
 
-#[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
+#[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize)]
 /// A bit vector.
 pub struct BitVec<B = Vec<usize>> {
     bits: B,

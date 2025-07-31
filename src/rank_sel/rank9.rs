@@ -68,7 +68,7 @@ use std::ops::Index;
 /// assert_eq!(rank9[7], true);
 /// ```
 
-#[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
+#[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
