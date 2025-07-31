@@ -70,7 +70,7 @@ use std::ops::Index;
 /// assert_eq!(sel.select(2), Some(6));
 /// assert_eq!(sel.select(3), None);
 /// ```
-#[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
+#[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[delegate(AsRef<[usize]>, target = "small_counters")]
 #[delegate(Index<usize>, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "small_counters")]
