@@ -40,7 +40,7 @@
 //! [`Borrow`].
 //!
 //! We suggest that every implementation of [`IndexedSeq`] also implements
-//! [`IntoIterator`]/[`IntoIteratoFrom`](crate::traits::iter::IntoIteratorFrom)
+//! [`IntoIterator`]/[`IntoIteratorFrom`](crate::traits::iter::IntoIteratorFrom)
 //! with `Item = Self::Output` on a reference. This property can be tested on a
 //! type `T` with the clause `where for<'a> &'a T: IntoIteratorFrom<Item =
 //! Self::Output>` (or `where for<'a> &'a T: IntoIterator<Item = Self::Output>`,
@@ -48,6 +48,7 @@
 //! offer also equivalent `iter`/`iter_from` convenience methods.
 
 use ambassador::delegatable_trait;
+use epserde::deser::{DeserializeInner, MemCase};
 use impl_tools::autoimpl;
 use std::borrow::Borrow;
 
@@ -316,5 +317,81 @@ where
     #[inline(always)]
     fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
         (*self).pred_strict(value)
+    }
+}
+
+impl<S: DeserializeInner> Types for MemCase<S>
+where
+    for<'a> S::DeserType<'a>: Types,
+{
+    type Input = <S::DeserType<'static> as Types>::Input;
+    type Output = <S::DeserType<'static> as Types>::Output;
+}
+
+impl<S: DeserializeInner> IndexedSeq for MemCase<S>
+where
+    for<'a> S::DeserType<'a>: IndexedSeq,
+    <S::DeserType<'static> as Types>::Output: 'static,
+{
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
+        let value = self.get().get_unchecked(index);
+        std::mem::transmute(value)
+    }
+
+    fn len(&self) -> usize {
+        self.get().len()
+    }
+}
+
+impl<S: DeserializeInner> IndexedDict for MemCase<S>
+where
+    for<'a> S::DeserType<'a>: IndexedDict,
+{
+    fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
+        let borrow = unsafe {
+            std::mem::transmute::<
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'static> as Types>::Input,
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'_> as Types>::Input,
+            >(value.borrow())
+        };
+        self.get().index_of(borrow)
+    }
+
+    fn contains(&self, value: impl Borrow<Self::Input>) -> bool {
+        let borrow = unsafe {
+            std::mem::transmute::<
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'static> as Types>::Input,
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'_> as Types>::Input,
+            >(value.borrow())
+        };
+        self.get().contains(borrow)
+    }
+}
+
+impl<S: DeserializeInner> SuccUnchecked for MemCase<S>
+where
+    Self::Input: PartialOrd<Self::Output> + PartialOrd,
+    Self::Output: PartialOrd<Self::Input> + PartialOrd,
+    for<'a> S::DeserType<'a>: SuccUnchecked,
+{
+    unsafe fn succ_unchecked<const STRICT: bool>(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, Self::Output) {
+        let borrow = unsafe {
+            std::mem::transmute::<
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'static> as Types>::Input,
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'_> as Types>::Input,
+            >(value.borrow())
+        };
+        // SAFETY: We assume that the Output type is the same across all lifetimes
+        // and doesn't contain any references. This is true for types like usize, String, etc.
+        // that are typically used with MemCase. The transmute is safe because we're
+        // converting between the same type with different lifetimes.
+        let s = self.get();
+        // Use transmute to work around lifetime constraints
+        let s_static: &S::DeserType<'static> = unsafe { std::mem::transmute(s) };
+        let result = s_static.succ_unchecked::<STRICT>(borrow);
+        (result.0, result.1)
     }
 }
