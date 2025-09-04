@@ -334,12 +334,12 @@ where
     <S::DeserType<'static> as Types>::Output: 'static,
 {
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
-        let value = self.get().get_unchecked(index);
+        let value = self.uncase().get_unchecked(index);
         std::mem::transmute(value)
     }
 
     fn len(&self) -> usize {
-        self.get().len()
+        self.uncase().len()
     }
 }
 
@@ -354,7 +354,7 @@ where
                 &<<S as epserde::deser::DeserializeInner>::DeserType<'_> as Types>::Input,
             >(value.borrow())
         };
-        self.get().index_of(borrow)
+        self.uncase().index_of(borrow)
     }
 
     fn contains(&self, value: impl Borrow<Self::Input>) -> bool {
@@ -364,7 +364,7 @@ where
                 &<<S as epserde::deser::DeserializeInner>::DeserType<'_> as Types>::Input,
             >(value.borrow())
         };
-        self.get().contains(borrow)
+        self.uncase().contains(borrow)
     }
 }
 
@@ -388,7 +388,7 @@ where
         // and doesn't contain any references. This is true for types like usize, String, etc.
         // that are typically used with MemCase. The transmute is safe because we're
         // converting between the same type with different lifetimes.
-        let s = self.get();
+        let s = self.uncase();
         // Use transmute to work around lifetime constraints
         let s_static: &S::DeserType<'static> = unsafe { std::mem::transmute(s) };
         let result = s_static.succ_unchecked::<STRICT>(borrow);

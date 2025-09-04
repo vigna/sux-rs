@@ -119,7 +119,7 @@ where
                 .collect()
         };
 
-        let func = VFunc::<str, usize, BitFieldVec, S, E>::load_full(&args.func)?;
+        let func = unsafe { VFunc::<str, usize, BitFieldVec, S, E>::load_full(&args.func) }?;
         bench(args.n, args.repeats, || {
             if args.unaligned {
                 for key in &keys {
@@ -133,7 +133,8 @@ where
         });
     } else {
         // No filename
-        let func = VFunc::<usize, usize, BitFieldVec<usize>, S, E>::load_full(&args.func)?;
+        let func =
+            unsafe { VFunc::<usize, usize, BitFieldVec<usize>, S, E>::load_full(&args.func) }?;
         bench(args.n, args.repeats, || {
             let mut key: usize = 0;
             if args.unaligned {

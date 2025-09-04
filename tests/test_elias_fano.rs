@@ -243,14 +243,16 @@ fn test_epserde() -> Result<()> {
 
         let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
         let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);
-        let schema = ef.serialize_with_schema(&mut file)?;
+        let schema = unsafe { ef.serialize_with_schema(&mut file) }?;
         drop(file);
         println!("{}", schema.to_csv());
 
-        let c = <EliasFano<
-            SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>>,
-            BitFieldVec<usize, Box<[usize]>>,
-        >>::mmap(&tmp_file, epserde::deser::Flags::empty())?;
+        let c = unsafe {
+            <EliasFano<
+                SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>>,
+                BitFieldVec<usize, Box<[usize]>>,
+            >>::mmap(&tmp_file, epserde::deser::Flags::empty())
+        }?;
 
         for i in 0..n {
             assert_eq!(ef.get(i), c.get(i));

@@ -161,7 +161,7 @@ where
                 .collect()
         };
 
-        let filter = VFilter::<W, VFunc<str, W, Box<[W]>, S, E>>::load_full(&args.func)?;
+        let filter = unsafe { VFilter::<W, VFunc<str, W, Box<[W]>, S, E>>::load_full(&args.func) }?;
 
         bench(args.n, args.repeats, || {
             for key in &keys {
@@ -170,7 +170,8 @@ where
         });
     } else {
         // No filename
-        let filter = VFilter::<W, VFunc<usize, W, Box<[W]>, S, E>>::load_full(&args.func)?;
+        let filter =
+            unsafe { VFilter::<W, VFunc<usize, W, Box<[W]>, S, E>>::load_full(&args.func) }?;
 
         bench(args.n, args.repeats, || {
             let mut key: usize = 0;
@@ -209,7 +210,8 @@ where
                 .collect()
         };
 
-        let filter = VFilter::<W, VFunc<str, W, BitFieldVec<W>, S, E>>::load_full(&args.func)?;
+        let filter =
+            unsafe { VFilter::<W, VFunc<str, W, BitFieldVec<W>, S, E>>::load_full(&args.func) }?;
 
         bench(args.n, args.repeats, || {
             if args.unaligned {
@@ -224,7 +226,8 @@ where
         });
     } else {
         // No filename
-        let filter = VFilter::<W, VFunc<usize, W, BitFieldVec<W>, S, E>>::load_full(&args.func)?;
+        let filter =
+            unsafe { VFilter::<W, VFunc<usize, W, BitFieldVec<W>, S, E>>::load_full(&args.func) }?;
 
         bench(args.n, args.repeats, || {
             let mut key: usize = 0;
