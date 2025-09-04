@@ -22,7 +22,8 @@ log = "0.4.20"
 dsi-progress-logger = "0.8.1"
 tempfile = "3.9.0"
 lender = "0.3.1"
-epserde = "0.8.0"
+#epserde = "0.8.0"
+epserde = { git = "https://github.com/vigna/epserde.git" }
 zstd = { version = "0.13.1" }
 flate2 = "1.0.28"
 rand = { version = "0.9.0", features = ["small_rng"] }
@@ -55,7 +56,8 @@ criterion = { version = "0.6.0", features = ["html_reports"] }
 
 [features]
 default = ["rayon", "mmap"]
-cli = [] # Build the binary utils (it's here so that cargo bench doesn't build them)
+cli = [
+] # Build the binary utils (it's here so that cargo bench doesn't build them)
 fuzz = ["dep:arbitrary"]
 slow_tests = [] # Run slow tests (use --release)
 mwhc = [] # Compile MWHC data structures (mainly for benchmarking)
