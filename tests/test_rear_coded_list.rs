@@ -79,11 +79,11 @@ fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
 
     let tmp_file = std::env::temp_dir().join("test_serdes_rcl.bin");
     let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);
-    let schema = rca.serialize_with_schema(&mut file)?;
+    let schema = unsafe { rca.serialize_with_schema(&mut file)? };
     drop(file);
     println!("{}", schema.to_csv());
 
-    let c = <RearCodedList>::mmap(&tmp_file, epserde::deser::Flags::empty())?;
+    let c = unsafe { <RearCodedList>::mmap(&tmp_file, epserde::deser::Flags::empty())? };
 
     for (i, word) in words.iter().enumerate() {
         assert_eq!(&c.get(i), word);
@@ -138,11 +138,11 @@ fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
 
     let tmp_file = std::env::temp_dir().join("test_serdes_rcl.bin");
     let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);
-    let schema = rca.serialize_with_schema(&mut file)?;
+    let schema = unsafe { rca.serialize_with_schema(&mut file)? };
     drop(file);
     println!("{}", schema.to_csv());
 
-    let c = <RearCodedList>::mmap(&tmp_file, epserde::deser::Flags::empty())?;
+    let c = unsafe { <RearCodedList>::mmap(&tmp_file, epserde::deser::Flags::empty())? };
 
     for (i, word) in shuffled_words.iter().enumerate() {
         assert_eq!(&c.get(i), word);
