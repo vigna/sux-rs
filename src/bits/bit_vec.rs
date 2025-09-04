@@ -712,17 +712,17 @@ impl<B: AsRef<[usize]>> Iterator for ZerosIterator<'_, B> {
 impl<B: AsRef<[usize]>> BitVec<B> {
     // Returns an iterator over the bits of the bit vector.
     #[inline(always)]
-    pub fn iter(&self) -> BitIterator<B> {
+    pub fn iter(&self) -> BitIterator<'_, B> {
         self.into_iter()
     }
 
     // Returns an iterator over the positions of the ones in this bit vector.
-    pub fn iter_ones(&self) -> OnesIterator<B> {
+    pub fn iter_ones(&self) -> OnesIterator<'_, B> {
         OnesIterator::new(&self.bits, self.len)
     }
 
     // Returns an iterator over the positions of the zeros in this bit vector.
-    pub fn iter_zeros(&self) -> ZerosIterator<B> {
+    pub fn iter_zeros(&self) -> ZerosIterator<'_, B> {
         ZerosIterator::new(&self.bits, self.len)
     }
 }
@@ -1156,7 +1156,7 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
     // Note that this method takes a mutable reference to the bit vector,
     // so no outstanding references are allowed while iterating.
     #[inline(always)]
-    pub fn iter(&mut self) -> AtomicBitIterator<B> {
+    pub fn iter(&mut self) -> AtomicBitIterator<'_, B> {
         self.into_iter()
     }
 }
