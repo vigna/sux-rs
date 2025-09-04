@@ -164,7 +164,7 @@ macro_rules! bit_field_vec {
 }
 
 /// A vector of bit fields of fixed width.
-#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize, value_traits::Subslices)]
+#[derive(Epserde, Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
 #[value_traits_subslices(bound = "B: AsRef<[W]>")]
 #[derive(value_traits::SubslicesMut)]
 #[value_traits_subslices_mut(bound = "B: AsRef<[W]> + AsMut<[W]>")]
