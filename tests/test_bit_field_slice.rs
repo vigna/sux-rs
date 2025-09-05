@@ -6,7 +6,6 @@
  */
 
 use std::sync::atomic::{AtomicU32, Ordering};
-
 use sux::prelude::*;
 
 #[test]

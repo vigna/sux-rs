@@ -218,13 +218,13 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> Types for RearCodedList<D, P> {
-    type Output = String;
+    type Output<'a> = String;
     type Input = str;
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedSeq for RearCodedList<D, P> {
     #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
         let mut result = Vec::with_capacity(128);
         self.get_in_place(index, &mut result);
         String::from_utf8(result).unwrap()
