@@ -53,8 +53,10 @@ fn compress<BR: BufRead>(buf_read: BR, dest: impl Borrow<str>, k: usize) -> Resu
     let rcl = rclb.build();
     let dst_file = std::fs::File::create(dest.borrow()).expect("Cannot create destination file");
     let mut dst_file = std::io::BufWriter::new(dst_file);
-    rcl.serialize(&mut dst_file)
-        .expect("Cannot serialize rear-coded list");
+    unsafe {
+        rcl.serialize(&mut dst_file)
+            .expect("Cannot serialize rear-coded list")
+    };
     Ok(())
 }
 
