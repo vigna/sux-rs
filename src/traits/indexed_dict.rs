@@ -335,7 +335,10 @@ where
 {
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
         let value = self.uncase().get_unchecked(index);
-        std::mem::transmute(value)
+        std::mem::transmute::<
+            <<S as DeserializeInner>::DeserType<'_> as Types>::Output,
+            <<S as DeserializeInner>::DeserType<'_> as Types>::Output,
+        >(value)
     }
 
     fn len(&self) -> usize {
@@ -370,8 +373,10 @@ where
 
 impl<S: DeserializeInner> SuccUnchecked for MemCase<S>
 where
-    Self::Input: PartialOrd<Self::Output> + PartialOrd,
-    Self::Output: PartialOrd<Self::Input> + PartialOrd,
+    for<'a, 'b> <S::DeserType<'a> as Types>::Input:
+        PartialOrd<<S::DeserType<'b> as Types>::Output> + PartialOrd,
+    for<'a, 'b> <S::DeserType<'a> as Types>::Output:
+        PartialOrd<<S::DeserType<'b> as Types>::Input> + PartialOrd,
     for<'a> S::DeserType<'a>: SuccUnchecked,
 {
     unsafe fn succ_unchecked<const STRICT: bool>(
@@ -384,14 +389,13 @@ where
                 &<<S as epserde::deser::DeserializeInner>::DeserType<'_> as Types>::Input,
             >(value.borrow())
         };
-        // SAFETY: We assume that the Output type is the same across all lifetimes
-        // and doesn't contain any references. This is true for types like usize, String, etc.
-        // that are typically used with MemCase. The transmute is safe because we're
-        // converting between the same type with different lifetimes.
-        let s = self.uncase();
-        // Use transmute to work around lifetime constraints
-        let s_static: &S::DeserType<'static> = unsafe { std::mem::transmute(s) };
-        let result = s_static.succ_unchecked::<STRICT>(borrow);
-        (result.0, result.1)
+        let result = self.uncase().succ_unchecked::<STRICT>(borrow);
+        (
+            result.0,
+            std::mem::transmute::<
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output,
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output,
+            >(result.1),
+        )
     }
 }
