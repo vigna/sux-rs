@@ -48,14 +48,14 @@ where
     usize: PartialEq<O>,
 {
     type Input = usize;
-    type Output = O;
+    type Output<'a> = O;
 }
 
 impl<O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>> IndexedSeq for SliceSeq<O, A>
 where
     usize: PartialEq<O>,
 {
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
         unsafe { *self.0.as_ref().get_unchecked(index) }
     }
 

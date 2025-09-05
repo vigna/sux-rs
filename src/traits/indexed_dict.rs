@@ -56,8 +56,8 @@ use std::borrow::Borrow;
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait Types {
-    type Input: PartialEq<Self::Output> + PartialEq + ?Sized;
-    type Output: PartialEq<Self::Input> + PartialEq;
+    type Input: for<'a> PartialEq<Self::Output<'a>> + PartialEq + ?Sized;
+    type Output<'a>: PartialEq<Self::Input> + PartialEq;
 }
 
 /// Access by position to the dictionary.
@@ -87,7 +87,7 @@ pub trait IndexedSeq: Types {
     ///
     /// # Panics
     /// May panic if the index is not in in [0..[len](`IndexedSeq::len`)).
-    fn get(&self, index: usize) -> Self::Output {
+    fn get(&self, index: usize) -> Self::Output<'_> {
         if index >= self.len() {
             panic!("Index out of bounds: {} >= {}", index, self.len())
         } else {
@@ -99,7 +99,7 @@ pub trait IndexedSeq: Types {
     ///
     /// # Safety
     /// `index` must be in [0..[len](`IndexedSeq::len`)). No bounds checking is performed.
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Output;
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_>;
 
     /// Returns the length (number of items) of the dictionary.
     fn len(&self) -> usize;
@@ -131,8 +131,8 @@ pub trait IndexedDict: Types {
 #[delegatable_trait]
 pub trait SuccUnchecked: Types
 where
-    Self::Input: PartialOrd<Self::Output> + PartialOrd,
-    Self::Output: PartialOrd<Self::Input> + PartialOrd,
+    Self::Input: for<'a> PartialOrd<Self::Output<'a>> + PartialOrd,
+    for<'a> Self::Output<'a>: PartialOrd<Self::Input> + PartialOrd,
 {
     /// Returns the index of the successor and the successor of the given value.
     ///
@@ -150,19 +150,19 @@ where
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> (usize, Self::Output);
+    ) -> (usize, Self::Output<'_>);
 }
 
-impl<I, O, T: SuccUnchecked<Input = I, Output = O> + ?Sized> SuccUnchecked for &T
+impl<T: SuccUnchecked + ?Sized> SuccUnchecked for &T
 where
-    I: PartialOrd<O> + PartialOrd,
-    O: PartialOrd<I> + PartialOrd,
+    T::Input: for<'a> PartialOrd<T::Output<'a>> + PartialOrd,
+    for<'a> T::Output<'a>: PartialOrd<T::Input> + PartialOrd,
 {
     #[inline(always)]
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> (usize, Self::Output) {
+    ) -> (usize, Self::Output<'_>) {
         (*self).succ_unchecked::<STRICT>(value)
     }
 }
@@ -171,8 +171,8 @@ where
 #[delegatable_trait]
 pub trait Succ: SuccUnchecked + IndexedSeq
 where
-    Self::Input: PartialOrd<Self::Output> + PartialOrd,
-    Self::Output: PartialOrd<Self::Input> + PartialOrd,
+    Self::Input: for<'a> PartialOrd<Self::Output<'a>> + PartialOrd,
+    for<'a> Self::Output<'a>: PartialOrd<Self::Input> + PartialOrd,
 {
     /// Returns the index of the successor and the successor
     /// of the given value, or `None` if there is no successor.
@@ -182,7 +182,7 @@ where
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
-    fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+    fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
         if self.is_empty() || *value.borrow() > self.get(self.len() - 1) {
             None
         } else {
@@ -198,7 +198,7 @@ where
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
-    fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+    fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
         if self.is_empty() || *value.borrow() >= self.get(self.len() - 1) {
             None
         } else {
@@ -207,18 +207,18 @@ where
     }
 }
 
-impl<I, O, T: Succ<Input = I, Output = O> + ?Sized> Succ for &T
+impl<T: Succ + ?Sized> Succ for &T
 where
-    I: PartialOrd<O> + PartialOrd,
-    O: PartialOrd<I> + PartialOrd,
+    T::Input: for<'a> PartialOrd<T::Output<'a>> + PartialOrd,
+    for<'a> T::Output<'a>: PartialOrd<T::Input> + PartialOrd,
 {
     #[inline(always)]
-    fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+    fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
         (*self).succ(value)
     }
 
     #[inline(always)]
-    fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+    fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
         (*self).succ_strict(value)
     }
 }
@@ -227,8 +227,8 @@ where
 #[delegatable_trait]
 pub trait PredUnchecked: Types
 where
-    Self::Input: PartialOrd<Self::Output> + PartialOrd,
-    Self::Output: PartialOrd<Self::Input> + PartialOrd,
+    Self::Input: for<'a> PartialOrd<Self::Output<'a>> + PartialOrd,
+    for<'a> Self::Output<'a>: PartialOrd<Self::Input> + PartialOrd,
 {
     /// Returns the index of the predecessor and the predecessor of the given
     /// value, or `None` if there is no predecessor.
@@ -247,19 +247,19 @@ where
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> (usize, Self::Output);
+    ) -> (usize, Self::Output<'_>);
 }
 
-impl<I, O, T: PredUnchecked<Input = I, Output = O> + ?Sized> PredUnchecked for &T
+impl<T: PredUnchecked + ?Sized> PredUnchecked for &T
 where
-    I: PartialOrd<O> + PartialOrd,
-    O: PartialOrd<I> + PartialOrd,
+    T::Input: for<'a> PartialOrd<T::Output<'a>> + PartialOrd,
+    for<'a> T::Output<'a>: PartialOrd<T::Input> + PartialOrd,
 {
     #[inline(always)]
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> (usize, Self::Output) {
+    ) -> (usize, Self::Output<'_>) {
         (*self).pred_unchecked::<STRICT>(value)
     }
 }
@@ -268,8 +268,8 @@ where
 #[delegatable_trait]
 pub trait Pred: PredUnchecked + IndexedSeq
 where
-    Self::Input: PartialOrd<Self::Output> + PartialOrd,
-    Self::Output: PartialOrd<Self::Input> + PartialOrd,
+    Self::Input: for<'a> PartialOrd<Self::Output<'a>> + PartialOrd,
+    for<'a> Self::Output<'a>: PartialOrd<Self::Input> + PartialOrd,
 {
     /// Returns the index of the predecessor and the predecessor
     /// of the given value, or `None` if there is no predecessor.
@@ -279,7 +279,7 @@ where
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
-    fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+    fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
         if self.is_empty() || *value.borrow() < self.get(0) {
             None
         } else {
@@ -295,7 +295,7 @@ where
     ///
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
-    fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+    fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
         if self.is_empty() || *value.borrow() <= self.get(0) {
             None
         } else {
@@ -304,18 +304,18 @@ where
     }
 }
 
-impl<I, O, T: Pred<Input = I, Output = O> + ?Sized> Pred for &T
+impl<T: Pred + ?Sized> Pred for &T
 where
-    I: PartialOrd<O> + PartialOrd,
-    O: PartialOrd<I> + PartialOrd,
+    T::Input: for<'a> PartialOrd<T::Output<'a>> + PartialOrd,
+    for<'a> T::Output<'a>: PartialOrd<T::Input> + PartialOrd,
 {
     #[inline(always)]
-    fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+    fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
         (*self).pred(value)
     }
 
     #[inline(always)]
-    fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output)> {
+    fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
         (*self).pred_strict(value)
     }
 }
@@ -325,19 +325,18 @@ where
     for<'a> S::DeserType<'a>: Types,
 {
     type Input = <S::DeserType<'static> as Types>::Input;
-    type Output = <S::DeserType<'static> as Types>::Output;
+    type Output<'a> = <S::DeserType<'static> as Types>::Output<'a>;
 }
 
 impl<S: DeserializeInner> IndexedSeq for MemCase<S>
 where
     for<'a> S::DeserType<'a>: IndexedSeq,
-    <S::DeserType<'static> as Types>::Output: 'static,
 {
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Output {
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
         let value = self.uncase().get_unchecked(index);
         std::mem::transmute::<
-            <<S as DeserializeInner>::DeserType<'_> as Types>::Output,
-            <<S as DeserializeInner>::DeserType<'_> as Types>::Output,
+            <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+            <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
         >(value)
     }
 
@@ -373,16 +372,16 @@ where
 
 impl<S: DeserializeInner> SuccUnchecked for MemCase<S>
 where
-    for<'a, 'b> <S::DeserType<'a> as Types>::Input:
-        PartialOrd<<S::DeserType<'b> as Types>::Output> + PartialOrd,
-    for<'a, 'b> <S::DeserType<'a> as Types>::Output:
+    for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Input:
+        PartialOrd<<S::DeserType<'b> as Types>::Output<'c>> + PartialOrd,
+    for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Output<'c>:
         PartialOrd<<S::DeserType<'b> as Types>::Input> + PartialOrd,
     for<'a> S::DeserType<'a>: SuccUnchecked,
 {
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> (usize, Self::Output) {
+    ) -> (usize, Self::Output<'_>) {
         let borrow = unsafe {
             std::mem::transmute::<
                 &<<S as epserde::deser::DeserializeInner>::DeserType<'static> as Types>::Input,
@@ -393,8 +392,8 @@ where
         (
             result.0,
             std::mem::transmute::<
-                <<S as DeserializeInner>::DeserType<'_> as Types>::Output,
-                <<S as DeserializeInner>::DeserType<'_> as Types>::Output,
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
             >(result.1),
         )
     }

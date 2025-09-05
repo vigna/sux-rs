@@ -277,7 +277,7 @@ impl<H, L> EliasFano<H, L> {
 }
 
 impl<H: AsRef<[usize]>, L: BitFieldSlice<usize>> Types for EliasFano<H, L> {
-    type Output = usize;
+    type Output<'a> = usize;
     type Input = usize;
 }
 
@@ -360,7 +360,7 @@ where
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> (usize, Self::Output) {
+    ) -> (usize, Self::Output<'_>) {
         let value = *value.borrow();
         let zeros_to_skip = value >> self.l;
         let bit_pos = if zeros_to_skip == 0 {
@@ -426,7 +426,7 @@ where
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> (usize, Self::Output) {
+    ) -> (usize, Self::Output<'_>) {
         let value = *value.borrow();
         let zeros_to_skip = value >> self.l;
         let mut bit_pos = self.high_bits.select_zero_unchecked(zeros_to_skip) - 1;
