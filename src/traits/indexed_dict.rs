@@ -398,3 +398,114 @@ where
         )
     }
 }
+
+impl<S: DeserializeInner> Succ for MemCase<S>
+where
+    for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Input:
+        PartialOrd<<S::DeserType<'b> as Types>::Output<'c>> + PartialOrd,
+    for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Output<'c>:
+        PartialOrd<<S::DeserType<'b> as Types>::Input> + PartialOrd,
+    for<'a> S::DeserType<'a>: Succ,
+{
+    fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
+        let borrow = unsafe {
+            std::mem::transmute::<
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'static> as Types>::Input,
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'_> as Types>::Input,
+            >(value.borrow())
+        };
+        let result = self.uncase().succ(borrow)?;
+        Some((result.0, unsafe {
+            std::mem::transmute::<
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+            >(result.1)
+        }))
+    }
+
+    fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
+        let borrow = unsafe {
+            std::mem::transmute::<
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'static> as Types>::Input,
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'_> as Types>::Input,
+            >(value.borrow())
+        };
+        let result = self.uncase().succ_strict(borrow)?;
+        Some((result.0, unsafe {
+            std::mem::transmute::<
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+            >(result.1)
+        }))
+    }
+}
+
+impl<S: DeserializeInner> PredUnchecked for MemCase<S>
+where
+    for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Input:
+        PartialOrd<<S::DeserType<'b> as Types>::Output<'c>> + PartialOrd,
+    for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Output<'c>:
+        PartialOrd<<S::DeserType<'b> as Types>::Input> + PartialOrd,
+    for<'a> S::DeserType<'a>: PredUnchecked,
+{
+    unsafe fn pred_unchecked<const STRICT: bool>(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, Self::Output<'_>) {
+        let borrow = unsafe {
+            std::mem::transmute::<
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'static> as Types>::Input,
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'_> as Types>::Input,
+            >(value.borrow())
+        };
+        let result = self.uncase().pred_unchecked::<STRICT>(borrow);
+        (
+            result.0,
+            std::mem::transmute::<
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+            >(result.1),
+        )
+    }
+}
+
+impl<S: DeserializeInner> Pred for MemCase<S>
+where
+    for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Input:
+        PartialOrd<<S::DeserType<'b> as Types>::Output<'c>> + PartialOrd,
+    for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Output<'c>:
+        PartialOrd<<S::DeserType<'b> as Types>::Input> + PartialOrd,
+    for<'a> S::DeserType<'a>: Pred,
+{
+    fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
+        let borrow = unsafe {
+            std::mem::transmute::<
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'static> as Types>::Input,
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'_> as Types>::Input,
+            >(value.borrow())
+        };
+        let result = self.uncase().pred(borrow)?;
+        Some((result.0, unsafe {
+            std::mem::transmute::<
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+            >(result.1)
+        }))
+    }
+
+    fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
+        let borrow = unsafe {
+            std::mem::transmute::<
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'static> as Types>::Input,
+                &<<S as epserde::deser::DeserializeInner>::DeserType<'_> as Types>::Input,
+            >(value.borrow())
+        };
+        let result = self.uncase().pred_strict(borrow)?;
+        Some((result.0, unsafe {
+            std::mem::transmute::<
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+            >(result.1)
+        }))
+    }
+}
