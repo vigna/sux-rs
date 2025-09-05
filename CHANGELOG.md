@@ -1,6 +1,23 @@
 # Change Log
 
-## [0.8.1] - 
+## [0.9.0]
+
+### New
+
+* This crate has been aligned with the new `MemCase` implementation from
+  ε-serde, which does not implements `Deref` and `AsRef` anymore, as those
+  implementations were unsound. In particular, we are starting to introduce
+  delegation of the main traits of the crate to `MemCase`'d structures.
+  Delegation makes it possible to use a standard or `MemCase`'d structure
+  interchangeably. Due to the orphan rule, such delegations must happen
+  in the crate defining the traits.
+
+### Changed
+
+* The associated output value for `Types` (and thus `IndexedSeq`, etc.) has now
+  a lifetime to make it possible to return references (e.g., for sequences of
+  strings). Bounds of the form `IndexedSeq<Input = I, Output = O>` will have to
+  be rewritten as `for<'a> IndexedSeq<Input = I, Output<'a> = O>`.
 
 ### Fixed
 
