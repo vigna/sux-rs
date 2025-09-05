@@ -201,13 +201,13 @@ where
             builder.try_build_filter(t, &mut pl)?
         };
         if let Some(filename) = args.filter {
-            filter.store(filename)?;
+            unsafe { filter.store(filename) }?;
         }
     } else {
         let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
         let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
         if let Some(filename) = args.filter {
-            filter.store(filename)?;
+            unsafe { filter.store(filename) }?;
         }
     }
 
@@ -267,14 +267,14 @@ where
             builder.try_build_filter(t, args.bits, &mut pl)?
         };
         if let Some(filename) = args.filter {
-            filter.store(filename)?;
+            unsafe { filter.store(filename)? };
         }
     } else {
         let builder = set_builder(VBuilder::<W, BitFieldVec<W>, S, E>::default(), &args);
         let filter =
             builder.try_build_filter(FromIntoIterator::from(0_usize..n), args.bits, &mut pl)?;
         if let Some(filename) = args.filter {
-            filter.store(filename)?;
+            unsafe { filter.store(filename)? };
         }
     }
 

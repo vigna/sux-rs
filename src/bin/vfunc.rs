@@ -168,7 +168,7 @@ where
             )?
         };
         if let Some(filename) = args.func {
-            func.store(filename)?;
+            unsafe { func.store(filename) }?;
         }
     } else {
         let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
@@ -178,7 +178,7 @@ where
             &mut pl,
         )?;
         if let Some(filename) = args.func {
-            func.store(filename)?;
+            unsafe { func.store(filename) }?;
         }
     }
 

@@ -336,7 +336,7 @@ where
         let value = self.uncase().get_unchecked(index);
         std::mem::transmute::<
             <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
-            <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+            <<S as DeserializeInner>::DeserType<'static> as Types>::Output<'_>,
         >(value)
     }
 
@@ -393,7 +393,7 @@ where
             result.0,
             std::mem::transmute::<
                 <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
-                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+                <<S as DeserializeInner>::DeserType<'static> as Types>::Output<'_>,
             >(result.1),
         )
     }
@@ -418,7 +418,7 @@ where
         Some((result.0, unsafe {
             std::mem::transmute::<
                 <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
-                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+                <<S as DeserializeInner>::DeserType<'static> as Types>::Output<'_>,
             >(result.1)
         }))
     }
@@ -434,7 +434,7 @@ where
         Some((result.0, unsafe {
             std::mem::transmute::<
                 <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
-                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+                <<S as DeserializeInner>::DeserType<'static> as Types>::Output<'_>,
             >(result.1)
         }))
     }
@@ -463,7 +463,7 @@ where
             result.0,
             std::mem::transmute::<
                 <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
-                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+                <<S as DeserializeInner>::DeserType<'static> as Types>::Output<'_>,
             >(result.1),
         )
     }
@@ -488,7 +488,7 @@ where
         Some((result.0, unsafe {
             std::mem::transmute::<
                 <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
-                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+                <<S as DeserializeInner>::DeserType<'static> as Types>::Output<'_>,
             >(result.1)
         }))
     }
@@ -504,7 +504,7 @@ where
         Some((result.0, unsafe {
             std::mem::transmute::<
                 <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
-                <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
+                <<S as DeserializeInner>::DeserType<'static> as Types>::Output<'_>,
             >(result.1)
         }))
     }
