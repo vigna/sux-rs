@@ -83,10 +83,7 @@ use crate::traits::{Succ, SuccUnchecked};
 /// ```
 
 #[derive(Debug, Clone, Copy)]
-pub struct FairChunks<I: SuccUnchecked<Input = usize>>
-where
-    for<'a> I: SuccUnchecked<Output<'a> = usize>,
-{
+pub struct FairChunks<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize>> {
     /// Cumulative weight function. This is used to generate chunks with
     /// approximately the same target weight.
     cwf: I,
@@ -103,10 +100,7 @@ where
     max_weight: usize,
 }
 
-impl<I: SuccUnchecked<Input = usize>> FairChunks<I>
-where
-    for<'a> I: SuccUnchecked<Output<'a> = usize>,
-{
+impl<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize>> FairChunks<I> {
     /// Creates a fair chunk iterator using a structure supporting unchecked
     /// successor queries.
     ///
@@ -136,10 +130,7 @@ where
     }
 }
 
-impl<I: Succ<Input = usize>> FairChunks<I>
-where
-    for<'a> I: SuccUnchecked<Output<'a> = usize>,
-{
+impl<I: for<'a> Succ<Input = usize, Output<'a> = usize>> FairChunks<I> {
     /// Creates a fair chunk iterator using a structure supporting successor
     /// queries.
     ///
@@ -169,10 +160,7 @@ where
     }
 }
 
-impl<I: SuccUnchecked<Input = usize>> Iterator for FairChunks<I>
-where
-    for<'a> I: SuccUnchecked<Output<'a> = usize>,
-{
+impl<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize>> Iterator for FairChunks<I> {
     type Item = core::ops::Range<usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
