@@ -178,9 +178,8 @@ where
     VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
     VFunc<usize, W, Box<[W]>, S, E>: Serialize,
-    VFunc<str, W, Box<[W]>, S, E>: Serialize + TypeHash, // TODO: this is weird
+    VFunc<str, W, Box<[W]>, S, E>: Serialize,
     VFilter<W, VFunc<usize, W, Box<[W]>, S, E>>: Serialize,
-    VFilter<W, VFunc<usize, W, Box<[W]>, S, <E as SerializeInner>::SerType>>: TypeHash,
     VFilter<
         <W as SerializeInner>::SerType,
         VFunc<str, W, Box<[W]>, S, <E as SerializeInner>::SerType>,
@@ -237,9 +236,7 @@ where
     VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
     VFunc<usize, W, BitFieldVec<W>, S, E>: Serialize,
-    VFunc<str, W, BitFieldVec<W>, S, E>: Serialize + TypeHash, // TODO: this is weird
     VFilter<W, VFunc<usize, W, BitFieldVec<W>, S, E>>: Serialize,
-    VFilter<W, VFunc<usize, W, BitFieldVec<W>, S, <E as SerializeInner>::SerType>>: TypeHash,
     VFilter<
         <W as SerializeInner>::SerType,
         VFunc<str, W, BitFieldVec<W>, S, <E as SerializeInner>::SerType>,
