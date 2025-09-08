@@ -4,20 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use epserde::{deser::MemCase, Epserde};
+use epserde::{deser::Deserialize, ser::Serialize, Epserde};
+use std::io::Cursor;
 use sux::traits::{IndexedSeq, Types};
 
 #[derive(Epserde, Debug, Clone, PartialEq, Eq)]
-struct VecString(Vec<String>);
+struct Wrapper<A>(A);
 
-impl Types for VecString {
+// A newtype for Vec<String> returning an &str on a get
+impl<S: AsRef<str>> Types for Wrapper<Vec<S>> {
     type Input = String;
     type Output<'a> = &'a str;
 }
 
-impl IndexedSeq for VecString {
+impl<S: AsRef<str>> IndexedSeq for Wrapper<Vec<S>> {
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-        self.0.get_unchecked(index).as_str()
+        self.0.get_unchecked(index).as_ref()
     }
 
     fn len(&self) -> usize {
@@ -26,12 +28,17 @@ impl IndexedSeq for VecString {
 }
 
 fn main() {
-    let vec = VecString(vec![
+    let vec = Wrapper(vec![
         "foo".to_string(),
         "bar".to_string(),
         "baz".to_string(),
     ]);
-    let mem_case = MemCase::<VecString>::encase(vec);
+
+    let mut buffer = Vec::new();
+    unsafe { vec.serialize(&mut buffer).unwrap() };
+    let cursor = Cursor::new(&buffer);
+    let mem_case = unsafe { <Wrapper<Vec<String>>>::read_mem(cursor, buffer.len()).unwrap() };
+
     let s = mem_case.get(0);
     drop(mem_case);
     assert_eq!(s, "foo");

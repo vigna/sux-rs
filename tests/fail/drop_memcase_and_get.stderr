@@ -1,11 +1,12 @@
 error[E0505]: cannot move out of `mem_case` because it is borrowed
-  --> tests/fail/drop_memcase_and_get.rs:36:10
+  --> tests/fail/drop_memcase_and_get.rs:43:10
    |
-34 |     let mem_case = MemCase::<VecString>::encase(vec);
+40 |     let mem_case = unsafe { <Wrapper<Vec<String>>>::read_mem(cursor, buffer.len()).unwrap() };
    |         -------- binding `mem_case` declared here
-35 |     let s = mem_case.get(0);
+41 |
+42 |     let s = mem_case.get(0);
    |             -------- borrow of `mem_case` occurs here
-36 |     drop(mem_case);
+43 |     drop(mem_case);
    |          ^^^^^^^^ move out of `mem_case` occurs here
-37 |     assert_eq!(s, "foo");
+44 |     assert_eq!(s, "foo");
    |     -------------------- borrow later used here
