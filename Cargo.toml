@@ -23,7 +23,7 @@ dsi-progress-logger = "0.8.1"
 tempfile = "3.9.0"
 lender = "0.3.1"
 #epserde = "0.8.0"
-epserde = { git = "https://github.com/vigna/epserde.git" }
+epserde = { git = "https://github.com/vigna/epserde-rs" }
 zstd = { version = "0.13.1" }
 flate2 = "1.0.28"
 rand = { version = "0.9.0", features = ["small_rng"] }
