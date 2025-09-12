@@ -26,6 +26,10 @@ pub mod utils;
 #[cfg(feature = "fuzz")]
 pub mod fuzz;
 
+/// Imports the most common items. Note that
+/// [`bit_field_slice`](crate::traits::bit_field_slice) and
+/// [`indexed_dict`](crate::traits::indexed_dict) are not included in the
+/// prelude, as they may cause ambiguities in some contexts.
 pub mod prelude {
     pub use crate::bit_field_vec;
     pub use crate::bit_vec;
@@ -35,7 +39,8 @@ pub mod prelude {
     pub use crate::rank_sel::*;
     pub use crate::rank_small;
     pub use crate::traits::bit_field_slice;
-    pub use crate::traits::*;
+    pub use crate::traits::indexed_dict;
+    pub use crate::traits::{iter::*, rank_sel::*};
 }
 
 #[ambassador::delegatable_trait_remote]

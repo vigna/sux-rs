@@ -8,6 +8,7 @@
 
 use anyhow::Result;
 use epserde::prelude::*;
+use indexed_dict::*;
 use lender::*;
 use rand::prelude::*;
 use std::io::prelude::*;

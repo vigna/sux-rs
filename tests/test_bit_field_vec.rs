@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use bit_field_slice::*;
 use common_traits::AsBytes;
 use common_traits::Atomic;
 use common_traits::AtomicUnsignedInt;

@@ -79,7 +79,7 @@
 //! assert_eq!(b.get(4), 1);
 //! ```
 
-use crate::prelude::*;
+use crate::prelude::{bit_field_slice::*, *};
 use crate::traits::bit_field_slice::{panic_if_out_of_bounds, panic_if_value};
 use crate::utils::{transmute_boxed_slice, transmute_vec};
 #[cfg(feature = "rayon")]
