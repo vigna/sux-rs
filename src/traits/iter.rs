@@ -18,12 +18,55 @@ use impl_tools::autoimpl;
 /// [`skip`](Iterator::skip) would be sufficient, but for many compressed and
 /// succinct data structures the setup of an iterator can be expensive, and that
 /// setup is usually required again after a skip.
+///
+/// We provide implementations for (references to) slices, vectors, and boxed
+/// slices, and delegations for [`MemCase`].
 pub trait IntoIteratorFrom: IntoIterator {
     /// Which kind of iterator are we turning this into?
     type IntoIterFrom: Iterator<Item = <Self as IntoIterator>::Item>;
 
     /// Creates an iterator from a value and a starting position.
     fn into_iter_from(self, from: usize) -> Self::IntoIterFrom;
+}
+
+impl<'a, T> IntoIteratorFrom for &'a [T] {
+    type IntoIterFrom = std::iter::Skip<std::slice::Iter<'a, T>>;
+
+    fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
+        self.into_iter().skip(from)
+    }
+}
+
+impl<'a, T> IntoIteratorFrom for Vec<T> {
+    type IntoIterFrom = std::iter::Skip<std::vec::IntoIter<T>>;
+
+    fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
+        self.into_iter().skip(from)
+    }
+}
+
+impl<'a, T> IntoIteratorFrom for &'a Vec<T> {
+    type IntoIterFrom = std::iter::Skip<std::slice::Iter<'a, T>>;
+
+    fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
+        self.into_iter().skip(from)
+    }
+}
+
+impl<T> IntoIteratorFrom for Box<[T]> {
+    type IntoIterFrom = std::iter::Skip<std::vec::IntoIter<T>>;
+
+    fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
+        IntoIterator::into_iter(self).skip(from)
+    }
+}
+
+impl<'a, T> IntoIteratorFrom for &'a Box<[T]> {
+    type IntoIterFrom = std::iter::Skip<std::slice::Iter<'a, T>>;
+
+    fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
+        self.into_iter().skip(from)
+    }
 }
 
 impl<'a, S: DeserializeInner> IntoIteratorFrom for &'a MemCase<S>
