@@ -25,6 +25,15 @@
   strings). Bounds of the form `IndexedSeq<Input = I, Output = O>` will have to
   be rewritten as `for<'a> IndexedSeq<Input = I, Output<'a> = O>`.
 
+* `BitFieldSlice` has no longer blanket implementations for `AsRef<[W]>`.
+  Rather, we provide implementations for slices, vectors and boxed slices.
+  Because of this change however, now importing both `IndexedSeq` and
+  `BitFieldSlice` results in `len` and `get` becoming ambiguous. Thus, now the
+  prelude imports the modules `indexed_dict` and `bit_field_slice`, but not the
+  traits therein. You have to manually `use indexed_dict::*` or `use
+  bit_field_slice::*` to use the traits. This change made it possible to
+  write delegations of `BitFieldSlice` for `MemCase`.
+
 ### Fixed
 
 * Adding too few values to Elias-Fano structures was causing undefined
