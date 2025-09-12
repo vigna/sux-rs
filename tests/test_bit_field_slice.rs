@@ -6,7 +6,10 @@
  */
 
 use std::sync::atomic::{AtomicU32, Ordering};
-use sux::prelude::*;
+use sux::prelude::{
+    AtomicBitFieldSlice, AtomicBitFieldVec, BitFieldSlice, BitFieldSliceCore, BitFieldSliceMut,
+    BitFieldVec,
+};
 
 #[test]
 fn test_is_empty() {
