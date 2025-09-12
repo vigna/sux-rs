@@ -12,6 +12,12 @@
   interchangeably. Due to the orphan rule, such delegations must happen
   in the crate defining the traits.
 
+* `IndexedSeq` has now implementations for (references of) slices, vectors,
+  and boxed slices. This should make `SliceSeq` unnecessary in most cases.
+
+* `IntoIteratorFrom` has now implementations for (references of) slices, vectors,
+  and boxed slices.
+
 ### Changed
 
 * The associated output value for `Types` (and thus `IndexedSeq`, etc.) has now
