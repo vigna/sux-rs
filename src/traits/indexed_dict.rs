@@ -48,7 +48,7 @@
 //! offer also equivalent `iter`/`iter_from` convenience methods.
 
 use ambassador::delegatable_trait;
-use epserde::deser::{DeserializeInner, MemCase};
+use epserde::deser::{DeserType, DeserializeInner, MemCase};
 use impl_tools::autoimpl;
 use std::borrow::Borrow;
 
@@ -376,8 +376,8 @@ where
             // SAFETY:the output will have the lifetime of self
             unsafe {
                 std::mem::transmute::<
-                    <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
-                    <<S as DeserializeInner>::DeserType<'static> as Types>::Output<'_>,
+                    <DeserType<'_, S> as Types>::Output<'_>,
+                    <DeserType<'static, S> as Types>::Output<'_>,
                 >(result.1)
             },
         )
@@ -400,8 +400,8 @@ where
             // SAFETY:the output will have the lifetime of self
             unsafe {
                 std::mem::transmute::<
-                    <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
-                    <<S as DeserializeInner>::DeserType<'static> as Types>::Output<'_>,
+                    <DeserType<'_, S> as Types>::Output<'_>,
+                    <DeserType<'static, S> as Types>::Output<'_>,
                 >(result.1)
             },
         ))
@@ -415,8 +415,8 @@ where
             // SAFETY:the output will have the lifetime of self
             unsafe {
                 std::mem::transmute::<
-                    <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
-                    <<S as DeserializeInner>::DeserType<'static> as Types>::Output<'_>,
+                    <DeserType<'_, S> as Types>::Output<'_>,
+                    <DeserType<'static, S> as Types>::Output<'_>,
                 >(result.1)
             },
         ))
@@ -442,8 +442,8 @@ where
             // SAFETY:the output will have the lifetime of self
             unsafe {
                 std::mem::transmute::<
-                    <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
-                    <<S as DeserializeInner>::DeserType<'static> as Types>::Output<'_>,
+                    <DeserType<'_, S> as Types>::Output<'_>,
+                    <DeserType<'static, S> as Types>::Output<'_>,
                 >(result.1)
             },
         )
@@ -466,8 +466,8 @@ where
             // SAFETY:the output will have the lifetime of self
             unsafe {
                 std::mem::transmute::<
-                    <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
-                    <<S as DeserializeInner>::DeserType<'static> as Types>::Output<'_>,
+                    <DeserType<'_, S> as Types>::Output<'_>,
+                    <DeserType<'static, S> as Types>::Output<'_>,
                 >(result.1)
             },
         ))
@@ -481,8 +481,8 @@ where
             // SAFETY:the output will have the lifetime of self
             unsafe {
                 std::mem::transmute::<
-                    <<S as DeserializeInner>::DeserType<'_> as Types>::Output<'_>,
-                    <<S as DeserializeInner>::DeserType<'static> as Types>::Output<'_>,
+                    <DeserType<'_, S> as Types>::Output<'_>,
+                    <DeserType<'static, S> as Types>::Output<'_>,
                 >(result.1)
             },
         ))
