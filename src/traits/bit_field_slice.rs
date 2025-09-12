@@ -494,7 +494,7 @@ macro_rules! impl_delegation {
             #[inline(always)]
             unsafe fn get_unchecked(&self, index: usize) -> W {
                 debug_assert_bounds!(index, self.len());
-                <$ty>::get_unchecked(self, index)
+                T::get_unchecked(self, index)
             }
             #[inline(always)]
             fn get(&self, index: usize) -> W {
@@ -536,12 +536,12 @@ macro_rules! impl_mut_delegation {
             #[inline(always)]
             unsafe fn set_unchecked(&mut self, index: usize, value: W) {
                 debug_assert_bounds!(index, self.len());
-                self.set_unchecked(index, value);
+                T::set_unchecked(self, index, value);
             }
             #[inline(always)]
             fn set(&mut self, index: usize, value: W) {
                 debug_assert_bounds!(index, self.len());
-                self.set(index, value);
+                T::set(self, index, value);
             }
             #[inline(always)]
             fn reset(&mut self) {
