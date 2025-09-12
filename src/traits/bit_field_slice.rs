@@ -69,6 +69,7 @@
 use common_traits::*;
 use core::sync::atomic::*;
 use core::{marker::PhantomData, ops::Deref};
+use epserde::deser::{DeserType, DeserializeInner, MemCase};
 use mem_dbg::{MemDbg, MemSize};
 #[cfg(feature = "rayon")]
 use rayon::iter::{
@@ -796,53 +797,36 @@ macro_rules! impl_atomic_delegation {
 // Can't delegate on &T because reset requires &mut T
 impl_atomic_delegation!(&mut T, Box<T>);
 
-/// Helper trait eliminating `_atomic` from all methods of [`AtomicBitFieldSlice`]
-/// using a blanked implementation.
-///
-/// Note that using this trait and [`BitFieldSlice`] in the same module might cause
-/// ambiguity problems.
-pub trait AtomicHelper<W: Word + IntoAtomic>: AtomicBitFieldSlice<W>
+// MemCase delegations
+
+impl<S: DeserializeInner, W> BitFieldSliceCore<W> for MemCase<S>
 where
-    W::AtomicType: AtomicUnsignedInt + AsBytes,
+    for<'a> S::DeserType<'a>: BitFieldSliceCore<W>,
 {
-    /// Delegates to [`AtomicBitFieldSlice::get_atomic_unchecked`]
-    /// # Safety
-    /// See [`AtomicBitFieldSlice::get_atomic_unchecked`]
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W {
-        self.get_atomic_unchecked(index, order)
+    fn bit_width(&self) -> usize {
+        self.uncase_static().bit_width()
     }
 
-    /// Delegates to [`AtomicBitFieldSlice::set_atomic`]
-    #[inline(always)]
-    fn get(&self, index: usize, order: Ordering) -> W {
-        self.get_atomic(index, order)
+    fn len(&self) -> usize {
+        self.uncase_static().len()
     }
 
-    /// Delegates to [`AtomicBitFieldSlice::set_atomic_unchecked`]
-    /// # Safety
-    /// See [`AtomicBitFieldSlice::get_atomic_unchecked`]
-    #[inline(always)]
-    unsafe fn set_unchecked(&self, index: usize, value: W, order: Ordering) {
-        self.set_atomic_unchecked(index, value, order)
-    }
-
-    /// Delegates to [`AtomicBitFieldSlice::set_atomic`]
-    #[inline(always)]
-    fn set(&self, index: usize, value: W, order: Ordering) {
-        self.set_atomic(index, value, order)
-    }
-
-    /// Delegates to [`AtomicBitFieldSlice::reset_atomic`]
-    #[inline(always)]
-    fn reset(&mut self, order: Ordering) {
-        self.reset_atomic(order);
+    fn is_empty(&self) -> bool {
+        self.uncase_static().is_empty()
     }
 }
 
-impl<T, W: Word + IntoAtomic> AtomicHelper<W> for T
+impl<S: DeserializeInner, W: Word> BitFieldSlice<W> for MemCase<S>
 where
-    T: AtomicBitFieldSlice<W>,
-    W::AtomicType: AtomicUnsignedInt + AsBytes,
+    for<'a> S::DeserType<'a>: BitFieldSlice<W>,
 {
+    unsafe fn get_unchecked(&self, index: usize) -> W {
+        // SAFETY: We are just using the reference to invoke the method
+        unsafe { self.uncase_static().get_unchecked(index) }
+    }
+
+    fn get(&self, index: usize) -> W {
+        // SAFETY: We are just using the reference to invoke the method
+        unsafe { self.uncase_static().get(index) }
+    }
 }
