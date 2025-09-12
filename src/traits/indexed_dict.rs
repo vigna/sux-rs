@@ -488,3 +488,57 @@ where
         ))
     }
 }
+
+// Delegations for slices, vectors, and boxed slices
+
+macro_rules! impl_types {
+    ($($ty:ty),*) => {$(
+        impl Types for [$ty] {
+            type Input = $ty;
+            type Output<'a> = $ty;
+        }
+
+        impl Types for Vec<$ty> {
+            type Input = $ty;
+            type Output<'a> = $ty;
+        }
+    )*};
+}
+
+impl_types!(u8, u16, u32, u64, u128, usize);
+impl_types!(i8, i16, i32, i64, i128, isize);
+
+macro_rules! impl_indexed_seq {
+    ($($ty:ty),*) => {$(
+        impl IndexedSeq for [$ty] {
+            unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
+                *self.get_unchecked(index)
+            }
+
+            fn len(&self) -> usize {
+                self.len()
+            }
+
+            fn is_empty(&self) -> bool {
+                self.is_empty()
+            }
+        }
+
+        impl IndexedSeq for Vec<$ty> {
+            unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
+                *(AsRef::<[$ty]>::as_ref(self).get_unchecked(index))
+            }
+
+            fn len(&self) -> usize {
+                self.len()
+            }
+
+            fn is_empty(&self) -> bool {
+                self.is_empty()
+            }
+        }
+    )*};
+}
+
+impl_indexed_seq!(u8, u16, u32, u64, u128, usize);
+impl_indexed_seq!(i8, i16, i32, i64, i128, isize);
