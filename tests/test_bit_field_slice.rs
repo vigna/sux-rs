@@ -5,11 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use bit_field_slice::*;
 use std::sync::atomic::{AtomicU32, Ordering};
-use sux::prelude::{
-    AtomicBitFieldSlice, AtomicBitFieldVec, BitFieldSlice, BitFieldSliceCore, BitFieldSliceMut,
-    BitFieldVec,
-};
+use sux::prelude::*;
 
 #[test]
 fn test_is_empty() {
