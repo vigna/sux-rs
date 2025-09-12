@@ -8,7 +8,7 @@
 
 use super::{Inventory, SpanType};
 use crate::{
-    prelude::{BitCount, BitFieldSlice, BitLength},
+    prelude::{BitCount, BitLength},
     traits::{NumBits, SelectZero, SelectZeroHinted, SelectZeroUnchecked},
 };
 use ambassador::Delegate;
@@ -565,7 +565,7 @@ impl<
         let spill_idx =
             { *inventory.get_unchecked(inventory_start_pos + 1) } + subrank - u64_per_subinventory;
         debug_assert!(spill_idx < self.spill.as_ref().len());
-        self.spill.get_unchecked(spill_idx)
+        *self.spill.as_ref().get_unchecked(spill_idx)
     }
 }
 

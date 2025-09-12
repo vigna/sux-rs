@@ -33,11 +33,11 @@ impl<'a, T> IntoIteratorFrom for &'a [T] {
     type IntoIterFrom = std::iter::Skip<std::slice::Iter<'a, T>>;
 
     fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
-        self.into_iter().skip(from)
+        self.iter().skip(from)
     }
 }
 
-impl<'a, T> IntoIteratorFrom for Vec<T> {
+impl<T> IntoIteratorFrom for Vec<T> {
     type IntoIterFrom = std::iter::Skip<std::vec::IntoIter<T>>;
 
     fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
@@ -49,7 +49,7 @@ impl<'a, T> IntoIteratorFrom for &'a Vec<T> {
     type IntoIterFrom = std::iter::Skip<std::slice::Iter<'a, T>>;
 
     fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
-        self.into_iter().skip(from)
+        self.iter().skip(from)
     }
 }
 

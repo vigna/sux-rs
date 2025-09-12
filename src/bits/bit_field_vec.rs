@@ -1104,7 +1104,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, B> {
         let len = vec.len();
         if from > len {
             panic!(
-                "Start index out of bounds: {} > 
+                "Start index out of bounds: {} >
             {}",
                 from, len
             );
