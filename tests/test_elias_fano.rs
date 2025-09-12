@@ -10,6 +10,7 @@ use std::iter::zip;
 
 use anyhow::Result;
 use epserde::prelude::*;
+use indexed_dict::*;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;

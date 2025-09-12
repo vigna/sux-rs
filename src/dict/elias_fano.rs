@@ -79,7 +79,7 @@ pub type EfSeqDict = EliasFano<
     >,
 >;
 
-use crate::prelude::*;
+use crate::prelude::{indexed_dict::*, *};
 use crate::traits::bit_field_slice::*;
 use core::sync::atomic::Ordering;
 use epserde::*;
