@@ -797,6 +797,57 @@ macro_rules! impl_atomic_delegation {
 // Can't delegate on &T because reset requires &mut T
 impl_atomic_delegation!(&mut T, Box<T>);
 
+/// Helper trait eliminating `_atomic` from all methods of [`AtomicBitFieldSlice`]
+/// using a blanked implementation.
+///
+/// Note that using this trait and [`BitFieldSlice`] in the same module might cause
+/// ambiguity problems.
+pub trait AtomicHelper<W: Word + IntoAtomic>: AtomicBitFieldSlice<W>
+where
+    W::AtomicType: AtomicUnsignedInt + AsBytes,
+{
+    /// Delegates to [`AtomicBitFieldSlice::get_atomic_unchecked`]
+    /// # Safety
+    /// See [`AtomicBitFieldSlice::get_atomic_unchecked`]
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W {
+        self.get_atomic_unchecked(index, order)
+    }
+
+    /// Delegates to [`AtomicBitFieldSlice::set_atomic`]
+    #[inline(always)]
+    fn get(&self, index: usize, order: Ordering) -> W {
+        self.get_atomic(index, order)
+    }
+
+    /// Delegates to [`AtomicBitFieldSlice::set_atomic_unchecked`]
+    /// # Safety
+    /// See [`AtomicBitFieldSlice::get_atomic_unchecked`]
+    #[inline(always)]
+    unsafe fn set_unchecked(&self, index: usize, value: W, order: Ordering) {
+        self.set_atomic_unchecked(index, value, order)
+    }
+
+    /// Delegates to [`AtomicBitFieldSlice::set_atomic`]
+    #[inline(always)]
+    fn set(&self, index: usize, value: W, order: Ordering) {
+        self.set_atomic(index, value, order)
+    }
+
+    /// Delegates to [`AtomicBitFieldSlice::reset_atomic`]
+    #[inline(always)]
+    fn reset(&mut self, order: Ordering) {
+        self.reset_atomic(order);
+    }
+}
+
+impl<T, W: Word + IntoAtomic> AtomicHelper<W> for T
+where
+    T: AtomicBitFieldSlice<W>,
+    W::AtomicType: AtomicUnsignedInt + AsBytes,
+{
+}
+
 // MemCase delegations
 
 impl<S: DeserializeInner, W> BitFieldSliceCore<W> for MemCase<S>
