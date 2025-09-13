@@ -114,7 +114,7 @@ pub trait IntoUncheckedIterator: Sized {
     fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter;
 }
 
-/* TODO: sends the type resolution into an infinite loop
+/*
 impl<'a, S: DeserializeInner> IntoUncheckedIterator for &'a MemCase<S>
 where
     &'a DeserType<'a, S>: IntoUncheckedIterator,
@@ -132,6 +132,7 @@ where
     }
 }
 */
+
 /// A trait for types that can turn into an [`UncheckedIterator`] moving backwards.
 ///
 /// Differently from [`IntoIterator`], this trait provides a way
