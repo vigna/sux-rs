@@ -45,7 +45,7 @@ fn test_set_atomic() {
     s.set_atomic(0, 1, Ordering::Relaxed);
     assert_eq!(s.get_atomic(0, Ordering::Relaxed), 1);
 
-    use sux::traits:bit_field_slice::AtomicHelper;
+    use sux::traits::bit_field_slice::AtomicHelper;
     s.set(0, 1, Ordering::Relaxed);
     assert_eq!(s.get(0, Ordering::Relaxed), 1);
     unsafe {
