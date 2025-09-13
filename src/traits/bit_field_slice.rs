@@ -804,15 +804,15 @@ where
     for<'a> S::DeserType<'a>: BitFieldSliceCore<W>,
 {
     fn bit_width(&self) -> usize {
-        self.uncase_static().bit_width()
+        unsafe { self.uncase_static().bit_width() }
     }
 
     fn len(&self) -> usize {
-        self.uncase_static().len()
+        unsafe { self.uncase_static().len() }
     }
 
     fn is_empty(&self) -> bool {
-        self.uncase_static().is_empty()
+        unsafe { self.uncase_static().is_empty() }
     }
 }
 
