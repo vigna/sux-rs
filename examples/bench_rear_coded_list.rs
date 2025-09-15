@@ -8,6 +8,7 @@
 use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
+use indexed_dict::IndexedSeq;
 use lender::prelude::*;
 use rand::rngs::SmallRng;
 use rand::Rng;

@@ -12,13 +12,17 @@
   interchangeably. Due to the orphan rule, such delegations must happen
   in the crate defining the traits.
 
-* `IndexedSeq` has now implementations for (references of) slices, vectors,
-  and boxed slices. This should make `SliceSeq` unnecessary in most cases.
+* `IndexedSeq` has now implementations for slices, vectors,
+  and arrays. This should make `SliceSeq` unnecessary in most cases.
 
 * `IntoIteratorFrom` has now implementations for (references of) slices, vectors,
   and boxed slices.
 
 ### Changed
+
+* The type hash for tuples has changed, as the previous one was ambiguous.
+  If you serialized a structure using tuples, it will be no longer
+  deserializable.
 
 * The associated output value for `Types` (and thus `IndexedSeq`, etc.) has now
   a lifetime to make it possible to return references (e.g., for sequences of
@@ -26,7 +30,7 @@
   be rewritten as `for<'a> IndexedSeq<Input = I, Output<'a> = O>`.
 
 * `BitFieldSlice` has no longer blanket implementations for `AsRef<[W]>`.
-  Rather, we provide implementations for slices, vectors and boxed slices.
+  Rather, we provide implementations for slices, vectors and arrays.
   Because of this change however, now importing both `IndexedSeq` and
   `BitFieldSlice` results in `len` and `get` becoming ambiguous. Thus, now the
   prelude imports the modules `indexed_dict` and `bit_field_slice`, but not the

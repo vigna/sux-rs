@@ -8,6 +8,7 @@
 use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
+use indexed_dict::*;
 use mem_dbg::DbgFlags;
 use mem_dbg::MemDbg;
 use rand::rngs::SmallRng;
