@@ -58,3 +58,34 @@ pub(crate) trait Index<Idx> {
 /// bit](crate::bits::BitVec::reset) vector, should pass this argument to
 /// [IndexedParallelIterator::with_min_len](`rayon::iter::IndexedParallelIterator::with_min_len`).
 pub const RAYON_MIN_LEN: usize = 100_000;
+
+macro_rules! panic_if_out_of_bounds {
+    ($index: expr, $len: expr) => {
+        if $index >= $len {
+            panic!("Index out of bounds: {} >= {}", $index, $len)
+        }
+    };
+}
+pub(crate) use panic_if_out_of_bounds;
+
+macro_rules! panic_if_value {
+    ($value: expr, $mask: expr, $bit_width: expr) => {
+        if $value & $mask != $value {
+            panic!("Value {} does not fit in {} bits", $value, $bit_width);
+        }
+    };
+}
+pub(crate) use panic_if_value;
+
+macro_rules! debug_assert_bounds {
+    ($index: expr, $len: expr) => {
+        debug_assert!(
+            $index < $len || ($index == 0 && $len == 0),
+            "Index out of bounds: {} >= {}",
+            $index,
+            $len
+        );
+    };
+}
+
+pub(crate) use debug_assert_bounds;

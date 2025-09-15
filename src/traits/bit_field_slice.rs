@@ -76,6 +76,8 @@ use rayon::iter::{
     IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
 
+use crate::{debug_assert_bounds, panic_if_out_of_bounds, panic_if_value};
+
 /// A derived trait that the types used as a parameter for [`BitFieldSlice`] must satisfy.
 /// To be usable in an [`AtomicBitFieldSlice`], the type must also implement [`IntoAtomic`].
 pub trait Word: UnsignedInt + FiniteRangeNumber + AsBytes {}
@@ -96,35 +98,6 @@ pub trait BitFieldSliceCore<W> {
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
-}
-
-macro_rules! panic_if_out_of_bounds {
-    ($index: expr, $len: expr) => {
-        if $index >= $len {
-            panic!("Index out of bounds: {} >= {}", $index, $len)
-        }
-    };
-}
-pub(crate) use panic_if_out_of_bounds;
-
-macro_rules! panic_if_value {
-    ($value: expr, $mask: expr, $bit_width: expr) => {
-        if $value & $mask != $value {
-            panic!("Value {} does not fit in {} bits", $value, $bit_width);
-        }
-    };
-}
-pub(crate) use panic_if_value;
-
-macro_rules! debug_assert_bounds {
-    ($index: expr, $len: expr) => {
-        debug_assert!(
-            $index < $len || ($index == 0 && $len == 0),
-            "Index out of bounds: {} >= {}",
-            $index,
-            $len
-        );
-    };
 }
 
 /// A slice of bit fields of constant bit width.
@@ -466,7 +439,7 @@ macro_rules! impl_core {
             }
             #[inline(always)]
             fn len(&self) -> usize {
-                <[$ty]>::len(self)
+                self.len()
             }
         }
 
@@ -477,7 +450,7 @@ macro_rules! impl_core {
             }
             #[inline(always)]
             fn len(&self) -> usize {
-                <Vec<$ty>>::len(self)
+                self.len()
             }
         }
 
@@ -488,7 +461,7 @@ macro_rules! impl_core {
             }
             #[inline(always)]
             fn len(&self) -> usize {
-                <[$ty; N] as AsRef<[$ty]>>::as_ref(self).len()
+                self.as_slice().len()
             }
         }
     )*};
@@ -518,7 +491,7 @@ macro_rules! impl_delegation {
 
 impl_delegation!(&T, &mut T, Box<T>);
 
-macro_rules! impl_ref {
+macro_rules! impl_slice {
     ($($ty:ty),*) => {$(
         impl BitFieldSlice<$ty> for [$ty] {
             #[inline(always)]
@@ -528,7 +501,7 @@ macro_rules! impl_ref {
 
             unsafe fn get_unchecked(&self, index: usize) -> $ty {
                 debug_assert_bounds!(index, self.len());
-                *<[$ty]>::get_unchecked(self, index)
+                *self.get_unchecked(index)
             }
         }
 
@@ -541,7 +514,8 @@ macro_rules! impl_ref {
             #[inline(always)]
             unsafe fn get_unchecked(&self, index: usize) -> $ty {
                 debug_assert_bounds!(index, self.len());
-                *<[$ty]>::get_unchecked(self, index)
+                use std::ops::Deref;
+                *self.deref().get_unchecked(index)
             }
         }
 
@@ -553,13 +527,15 @@ macro_rules! impl_ref {
 
             #[inline(always)]
             unsafe fn get_unchecked(&self, index: usize) -> $ty {
-                *<[$ty]>::get_unchecked(self, index)
+                let as_slice = self.as_slice();
+                debug_assert_bounds!(index, as_slice.len());
+                *as_slice.get_unchecked(index)
             }
         }
     )*};
 }
 
-impl_ref!(u8, u16, u32, u64, u128, usize);
+impl_slice!(u8, u16, u32, u64, u128, usize);
 
 macro_rules! impl_mut_delegation {
     ($($ty:ty),*) => {$(
@@ -624,7 +600,7 @@ macro_rules! impl_mut_delegation {
 
 impl_mut_delegation!(&mut T, Box<T>);
 
-macro_rules! impl_mut {
+macro_rules! impl_slice_mut {
     ($($ty:ty),*) => {$(
         impl BitFieldSliceMut<$ty> for [$ty] {
             #[inline(always)]
@@ -665,13 +641,13 @@ macro_rules! impl_mut {
         impl BitFieldSliceMut<$ty> for Vec<$ty> {
             #[inline(always)]
             unsafe fn set_unchecked(&mut self, index: usize, value: $ty) {
-                debug_assert_bounds!(index, <[$ty]>::len(self));
+                debug_assert_bounds!(index, <Vec<$ty>>::len(self));
                 *self.get_unchecked_mut(index) = value;
             }
 
             fn reset(&mut self) {
                 for idx in 0..<[$ty]>::len(self) {
-                    unsafe{BitFieldSliceMut::<$ty>::set_unchecked(self, idx, 0)};
+                    unsafe{ BitFieldSliceMut::<$ty>::set_unchecked(self, idx, 0) };
                 }
             }
 
@@ -684,7 +660,7 @@ macro_rules! impl_mut {
             }
 
             fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
-                let len = Ord::min(Ord::min(len, <[$ty]>::len(dst) - to), self.len() - from);
+                let len = Ord::min(Ord::min(len, <Vec<$ty>>::len(dst) - to), self.len() - from);
                 dst[to..][..len].copy_from_slice(&self[from..][..len]);
             }
 
@@ -698,16 +674,17 @@ macro_rules! impl_mut {
                 self
             }
         }
+
         impl<const N: usize> BitFieldSliceMut<$ty> for [$ty; N] {
             #[inline(always)]
             unsafe fn set_unchecked(&mut self, index: usize, value: $ty) {
-                debug_assert_bounds!(index, <[$ty]>::len(self));
+                debug_assert_bounds!(index, self.as_slice().len());
                 *self.get_unchecked_mut(index) = value;
             }
 
             fn reset(&mut self) {
                 for idx in 0..<[$ty]>::len(self) {
-                    unsafe{BitFieldSliceMut::<$ty>::set_unchecked(self, idx, 0)};
+                    unsafe{ BitFieldSliceMut::<$ty>::set_unchecked(self, idx, 0) };
                 }
             }
 
@@ -720,7 +697,7 @@ macro_rules! impl_mut {
             }
 
             fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
-                let len = Ord::min(Ord::min(len, <[$ty]>::len(dst) - to), <[$ty; N] as AsRef<[$ty]>>::as_ref(self).len() - from);
+                let len = Ord::min(Ord::min(len, dst.as_slice().len() - to), self.as_slice().len() - from);
                 dst[to..][..len].copy_from_slice(&self[from..][..len]);
             }
 
@@ -738,7 +715,7 @@ macro_rules! impl_mut {
     )*};
 }
 
-impl_mut!(u8, u16, u32, u64, u128, usize);
+impl_slice_mut!(u8, u16, u32, u64, u128, usize);
 
 // Implementations for slices of atomic types
 
@@ -751,7 +728,7 @@ macro_rules! impl_core_atomic {
             }
             #[inline(always)]
             fn len(&self) -> usize {
-                <[$aty]>::len(self)
+                self.len()
             }
         }
 
@@ -762,7 +739,7 @@ macro_rules! impl_core_atomic {
             }
             #[inline(always)]
             fn len(&self) -> usize {
-                <Vec<$aty>>::len(self)
+                self.len()
             }
         }
 
