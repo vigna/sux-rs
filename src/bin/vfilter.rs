@@ -174,16 +174,11 @@ where
     Box<[W]>: BitFieldSlice<W> + BitFieldSliceMut<W>,
     for<'a> <Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a>: Send,
     for<'a> <<Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a> as Iterator>::Item: Send,
-    <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Weird
     VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
     VFunc<usize, W, Box<[W]>, S, E>: Serialize,
     VFunc<str, W, Box<[W]>, S, E>: Serialize,
     VFilter<W, VFunc<usize, W, Box<[W]>, S, E>>: Serialize,
-    VFilter<
-        <W as SerializeInner>::SerType,
-        VFunc<str, W, Box<[W]>, S, <E as SerializeInner>::SerType>,
-    >: TypeHash + AlignHash, // Weird
 {
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
@@ -232,18 +227,11 @@ where
     BitFieldVec<W>: BitFieldSlice<W> + BitFieldSliceMut<W>,
     for<'a> <BitFieldVec<W> as BitFieldSliceMut<W>>::ChunksMut<'a>: Send,
     for<'a> <<BitFieldVec<W> as BitFieldSliceMut<W>>::ChunksMut<'a> as Iterator>::Item: Send,
-    <E as SerializeInner>::SerType: ShardEdge<S, 3>, // Weird
     VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
     VFunc<usize, W, BitFieldVec<W>, S, E>: Serialize,
     VFilter<W, VFunc<usize, W, BitFieldVec<W>, S, E>>: Serialize,
-    VFilter<
-        <W as SerializeInner>::SerType,
-        VFunc<str, W, BitFieldVec<W>, S, <E as SerializeInner>::SerType>,
-    >: TypeHash + AlignHash, // Weird
     VFilter<W, VFunc<str, W, BitFieldVec<W>, S, E>>: SerializeInner,
-    <VFilter<W, VFunc<str, W, BitFieldVec<W>, S, E>> as SerializeInner>::SerType:
-        TypeHash + AlignHash, // Weird
 {
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();

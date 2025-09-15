@@ -34,7 +34,7 @@ use std::ops::Index;
 /// This trait is implemented by [`RankSmall`], but it is propagated by
 /// [`SelectSmall`](crate::rank_sel::SelectSmall) and
 /// [`SelectZeroSmall`](crate::rank_sel::SelectZeroSmall), making it
-/// possible to combine selection structures arbitarily.
+/// possible to combine selection structures arbitrarily.
 #[delegatable_trait]
 pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     fn upper_counts(&self) -> &[usize];
@@ -53,7 +53,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// at the expense of a high-level additional list of 64-bit counters that
 /// contain the actual absolute cumulative counts for each block of 2³² bits.
 /// Since in most applications these counters will be very few, their additional
-/// space in neglibigle, and they will usually accessed without cache misses.
+/// space in negligible, and they will usually accessed without cache misses.
 ///
 /// The [`RankSmall`] variants are parameterized by the number of 32-bit word
 /// per block and by the size of the relative counters. Only certain
