@@ -69,7 +69,7 @@
 use common_traits::*;
 use core::sync::atomic::*;
 use core::{marker::PhantomData, ops::Deref};
-use epserde::deser::{DeserType, DeserializeInner, MemCase};
+use epserde::deser::{DeserializeInner, MemCase};
 use mem_dbg::{MemDbg, MemSize};
 #[cfg(feature = "rayon")]
 use rayon::iter::{
