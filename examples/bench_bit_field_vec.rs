@@ -6,6 +6,7 @@
  */
 
 use anyhow::Result;
+use bit_field_slice::*;
 use clap::Parser;
 use dsi_progress_logger::*;
 use rand::rngs::SmallRng;
