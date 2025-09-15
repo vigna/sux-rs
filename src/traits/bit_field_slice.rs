@@ -466,9 +466,10 @@ macro_rules! impl_core {
             }
             #[inline(always)]
             fn len(&self) -> usize {
-                self.len()
+                <[$ty]>::len(self)
             }
         }
+
         impl BitFieldSliceCore<$ty> for Vec<$ty> {
             #[inline(always)]
             fn bit_width(&self) -> usize {
@@ -476,7 +477,18 @@ macro_rules! impl_core {
             }
             #[inline(always)]
             fn len(&self) -> usize {
-                self.len()
+                <Vec<$ty>>::len(self)
+            }
+        }
+
+        impl<const N: usize> BitFieldSliceCore<$ty> for [$ty; N] {
+            #[inline(always)]
+            fn bit_width(&self) -> usize {
+                <$ty>::BITS as usize
+            }
+            #[inline(always)]
+            fn len(&self) -> usize {
+                <[$ty; N] as AsRef<[$ty]>>::as_ref(self).len()
             }
         }
     )*};
@@ -493,13 +505,13 @@ macro_rules! impl_delegation {
     ($($ty:ty),*) => {$(
         impl<W: Word, T: BitFieldSlice<W> + ?Sized> BitFieldSlice<W> for $ty {
             #[inline(always)]
+            fn get(&self, index: usize) -> W {
+                self.deref().get(index)
+            }
+            #[inline(always)]
             unsafe fn get_unchecked(&self, index: usize) -> W {
                 debug_assert_bounds!(index, self.len());
                 T::get_unchecked(self, index)
-            }
-            #[inline(always)]
-            fn get(&self, index: usize) -> W {
-                self.deref().get(index)
             }
         }
 )*}}
@@ -510,15 +522,37 @@ macro_rules! impl_ref {
     ($($ty:ty),*) => {$(
         impl BitFieldSlice<$ty> for [$ty] {
             #[inline(always)]
+            fn get(&self, index: usize) -> $ty {
+                self[index]
+            }
+
             unsafe fn get_unchecked(&self, index: usize) -> $ty {
                 debug_assert_bounds!(index, self.len());
-                *self.get_unchecked(index)
+                *<[$ty]>::get_unchecked(self, index)
             }
         }
+
         impl BitFieldSlice<$ty> for Vec<$ty> {
+            #[inline(always)]
+            fn get(&self, index: usize) -> $ty {
+                self[index]
+            }
+
             #[inline(always)]
             unsafe fn get_unchecked(&self, index: usize) -> $ty {
                 debug_assert_bounds!(index, self.len());
+                *<[$ty]>::get_unchecked(self, index)
+            }
+        }
+
+        impl<const N: usize> BitFieldSlice<$ty> for [$ty; N] {
+            #[inline(always)]
+            fn get(&self, index: usize) -> $ty {
+                self[index]
+            }
+
+            #[inline(always)]
+            unsafe fn get_unchecked(&self, index: usize) -> $ty {
                 *<[$ty]>::get_unchecked(self, index)
             }
         }
@@ -664,6 +698,43 @@ macro_rules! impl_mut {
                 self
             }
         }
+        impl<const N: usize> BitFieldSliceMut<$ty> for [$ty; N] {
+            #[inline(always)]
+            unsafe fn set_unchecked(&mut self, index: usize, value: $ty) {
+                debug_assert_bounds!(index, <[$ty]>::len(self));
+                *self.get_unchecked_mut(index) = value;
+            }
+
+            fn reset(&mut self) {
+                for idx in 0..<[$ty]>::len(self) {
+                    unsafe{BitFieldSliceMut::<$ty>::set_unchecked(self, idx, 0)};
+                }
+            }
+
+            #[cfg(feature = "rayon")]
+            fn par_reset(&mut self) {
+                self
+                    .par_iter_mut()
+                    .with_min_len(crate::RAYON_MIN_LEN)
+                    .for_each(|w| { *w = 0 });
+            }
+
+            fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
+                let len = Ord::min(Ord::min(len, <[$ty]>::len(dst) - to), <[$ty; N] as AsRef<[$ty]>>::as_ref(self).len() - from);
+                dst[to..][..len].copy_from_slice(&self[from..][..len]);
+            }
+
+            type ChunksMut<'a> = core::slice::ChunksMut<'a, $ty> where Self: 'a;
+
+            fn try_chunks_mut(&mut self, chunk_size: usize) -> Result<Self::ChunksMut<'_>, ()> {
+                Ok(self.chunks_mut(chunk_size))
+            }
+
+            fn as_mut_slice(&mut self) -> &mut [$ty] {
+                self
+            }
+        }
+
     )*};
 }
 
@@ -680,9 +751,10 @@ macro_rules! impl_core_atomic {
             }
             #[inline(always)]
             fn len(&self) -> usize {
-                self.len()
+                <[$aty]>::len(self)
             }
         }
+
         impl BitFieldSliceCore<$aty> for Vec<$aty> {
             #[inline(always)]
             fn bit_width(&self) -> usize {
@@ -690,7 +762,18 @@ macro_rules! impl_core_atomic {
             }
             #[inline(always)]
             fn len(&self) -> usize {
-                self.len()
+                <Vec<$aty>>::len(self)
+            }
+        }
+
+        impl<const N: usize> BitFieldSliceCore<$aty> for [$aty; N] {
+            #[inline(always)]
+            fn bit_width(&self) -> usize {
+                <$aty>::BITS as usize
+            }
+            #[inline(always)]
+            fn len(&self) -> usize {
+                <[$aty; N] as AsRef<[$aty]>>::as_ref(self).len()
             }
         }
     )*};
@@ -726,7 +809,34 @@ macro_rules! impl_atomic {
                     .for_each(|w| w.store(0, order));
             }
         }
+
         impl AtomicBitFieldSlice<$std> for Vec<$atomic> {
+            #[inline(always)]
+            unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> $std {
+                debug_assert_bounds!(index, self.len());
+                self.as_slice().get_unchecked(index).load(order)
+            }
+            #[inline(always)]
+            unsafe fn set_atomic_unchecked(&self, index: usize, value: $std, order: Ordering) {
+                debug_assert_bounds!(index, self.len());
+                self.as_slice().get_unchecked(index).store(value, order);
+            }
+
+            fn reset_atomic(&mut self, order: Ordering) {
+                for idx in 0..self.len() {
+                    unsafe { self.set_atomic_unchecked(idx, 0, order) };
+                }
+            }
+
+            #[cfg(feature = "rayon")]
+            fn par_reset_atomic(&mut self, order: Ordering) {
+                self.par_iter()
+                    .with_min_len(crate::RAYON_MIN_LEN)
+                    .for_each(|w| w.store(0, order));
+            }
+        }
+
+        impl<const N: usize> AtomicBitFieldSlice<$std> for [$atomic; N] {
             #[inline(always)]
             unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> $std {
                 debug_assert_bounds!(index, self.len());
