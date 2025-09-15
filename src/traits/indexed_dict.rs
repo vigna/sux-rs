@@ -52,6 +52,8 @@ use epserde::deser::{DeserType, DeserializeInner, MemCase};
 use impl_tools::autoimpl;
 use std::borrow::Borrow;
 
+use crate::{debug_assert_bounds, panic_if_out_of_bounds};
+
 /// The types of the dictionary.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
@@ -88,11 +90,8 @@ pub trait IndexedSeq: Types {
     /// # Panics
     /// May panic if the index is not in in [0..[len](`IndexedSeq::len`)).
     fn get(&self, index: usize) -> Self::Output<'_> {
-        if index >= self.len() {
-            panic!("Index out of bounds: {} >= {}", index, self.len())
-        } else {
-            unsafe { self.get_unchecked(index) }
-        }
+        panic_if_out_of_bounds!(index, self.len());
+        unsafe { self.get_unchecked(index) }
     }
 
     /// Returns the value at the specified index.
@@ -521,6 +520,7 @@ macro_rules! impl_indexed_seq {
             }
 
             unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
+                debug_assert_bounds!(index, self.len());
                 *self.get_unchecked(index)
             }
 
@@ -540,6 +540,7 @@ macro_rules! impl_indexed_seq {
 
             unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
                 use std::ops::Deref;
+                debug_assert_bounds!(index, self.len());
                 *self.deref().get_unchecked(index)
             }
 
@@ -558,17 +559,18 @@ macro_rules! impl_indexed_seq {
             }
 
             unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-                <[$ty; N] as AsRef<[$ty]>>::as_ref(self)
+                debug_assert_bounds!(index, self.len());
+                self.as_slice()
                     .get_unchecked(index)
                     .clone()
             }
 
             fn len(&self) -> usize {
-                <[$ty; N] as AsRef<[$ty]>>::as_ref(self).len()
+                self.as_slice().len()
             }
 
             fn is_empty(&self) -> bool {
-                <[$ty; N] as AsRef<[$ty]>>::as_ref(self).is_empty()
+                self.as_slice().is_empty()
             }
         }
     )*};
