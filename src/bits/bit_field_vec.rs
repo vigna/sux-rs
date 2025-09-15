@@ -80,10 +80,10 @@
 //! ```
 
 use crate::prelude::{bit_field_slice::*, *};
-use crate::traits::bit_field_slice::{panic_if_out_of_bounds, panic_if_value};
 use crate::utils::{transmute_boxed_slice, transmute_vec};
 #[cfg(feature = "rayon")]
 use crate::RAYON_MIN_LEN;
+use crate::{panic_if_out_of_bounds, panic_if_value};
 use anyhow::{bail, Result};
 use common_traits::{
     invariant_eq, AsBytes, Atomic, AtomicInteger, AtomicUnsignedInt, CastableInto, IntoAtomic,
