@@ -529,10 +529,11 @@ fn test_from() {
     }
     let (bits, w, l) = b.into_raw_parts();
     let b = unsafe { BitFieldVec::<usize, &[usize]>::from_raw_parts(bits.as_ref(), w, l) };
-    let b: AtomicBitFieldVec<usize, &[AtomicUsize]> = b.into();
-    let b: BitFieldVec<usize, &[usize]> = b.into();
-    for i in 0..10 {
-        assert_eq!(b.get(i), i);
+    if let Result::<AtomicBitFieldVec<usize, &[AtomicUsize]>, _>::Ok(b) = b.try_into() {
+        let b: BitFieldVec<usize, &[usize]> = b.into();
+        for i in 0..10 {
+            assert_eq!(b.get(i), i);
+        }
     }
 
     // Mutable reference to mutable reference
@@ -542,10 +543,11 @@ fn test_from() {
     for i in 0..10 {
         b.set(i, i);
     }
-    let b: AtomicBitFieldVec<usize, &mut [AtomicUsize]> = b.into();
-    let b: BitFieldVec<usize, &mut [usize]> = b.into();
-    for i in 0..10 {
-        assert_eq!(b.get(i), i);
+    if let Result::<AtomicBitFieldVec<usize, &mut [AtomicUsize]>, _>::Ok(b) = b.try_into() {
+        let b: BitFieldVec<usize, &mut [usize]> = b.into();
+        for i in 0..10 {
+            assert_eq!(b.get(i), i);
+        }
     }
 
     // Vec to boxed slice

@@ -49,9 +49,9 @@
 //! when the bit width makes it possible.
 //!
 //! # Examples
-//! ```rust
-//! use sux::prelude::*;
-//!
+//! ```
+//! # use sux::prelude::*;
+//! # use bit_field_slice::*;
 //! // Bit field vector of bit width 5 and length 10, all entries set to zero
 //! let mut b = <BitFieldVec<usize>>::new(5, 10);
 //! assert_eq!(b.len(), 10);
@@ -79,20 +79,23 @@
 //! assert_eq!(b.get(4), 1);
 //! ```
 
-use crate::prelude::{bit_field_slice::*, *};
-use crate::utils::{transmute_boxed_slice, transmute_vec};
 #[cfg(feature = "rayon")]
 use crate::RAYON_MIN_LEN;
+use crate::prelude::{bit_field_slice::*, *};
+use crate::utils::{
+    CannotCastToAtomicError, transmute_boxed_slice_from_atomic, transmute_boxed_slice_into_atomic,
+    transmute_vec_from_atomic, transmute_vec_into_atomic,
+};
 use crate::{panic_if_out_of_bounds, panic_if_value};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use common_traits::{
-    invariant_eq, AsBytes, Atomic, AtomicInteger, AtomicUnsignedInt, CastableInto, IntoAtomic,
+    AsBytes, Atomic, AtomicInteger, AtomicUnsignedInt, CastableInto, IntoAtomic, invariant_eq,
 };
 use epserde::*;
 use mem_dbg::*;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
-use std::sync::atomic::{compiler_fence, fence, Ordering};
+use std::sync::atomic::{Ordering, compiler_fence, fence};
 
 /// Convenient, [`vec!`]-like macro to initialize `usize`-based bit-field
 /// vectors.
@@ -103,9 +106,9 @@ use std::sync::atomic::{compiler_fence, fence, Ordering};
 ///
 /// # Examples
 ///
-/// ```rust
-/// use sux::prelude::*;
-///
+/// ```
+/// # use sux::prelude::*;
+/// # use bit_field_slice::*;
 /// // Empty bit field vector of bit width 5
 /// let b = bit_field_vec![5];
 /// assert_eq!(b.len(), 0);
@@ -133,8 +136,8 @@ macro_rules! bit_field_vec {
         $crate::bits::BitFieldVec::<usize, _>::new($w, 0)
     };
     ($w:expr; $n:expr; $v:expr) => {
-        {
             let mut bit_field_vec = $crate::bits::BitFieldVec::<usize, _>::with_capacity($w, $n);
+        {
             // Force type
             let v: usize = $v;
             bit_field_vec.resize($n, v);
@@ -1190,7 +1193,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 /// This implementation provides some concurrency guarantees, albeit not
 /// full-fledged thread safety: more precisely, we can guarantee thread-safety
 /// if the bit width is a power of two; otherwise, concurrent writes to values
-/// that cross word boundaries might end up in different threads succeding in
+/// that cross word boundaries might end up in different threads succeeding in
 /// writing only part of a value. If the user can guarantee that no two threads
 /// ever write to the same boundary-crossing value, then no race condition can
 /// happen.
@@ -1429,7 +1432,7 @@ impl<W: Word + IntoAtomic> From<AtomicBitFieldVec<W, Vec<W::AtomicType>>>
     #[inline]
     fn from(value: AtomicBitFieldVec<W, Vec<W::AtomicType>>) -> Self {
         BitFieldVec {
-            bits: unsafe { transmute_vec::<W::AtomicType, W>(value.bits) },
+            bits: transmute_vec_from_atomic(value.bits),
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
@@ -1443,7 +1446,7 @@ impl<W: Word + IntoAtomic> From<AtomicBitFieldVec<W, Box<[W::AtomicType]>>>
     #[inline]
     fn from(value: AtomicBitFieldVec<W, Box<[W::AtomicType]>>) -> Self {
         BitFieldVec {
-            bits: unsafe { transmute_boxed_slice::<W::AtomicType, W>(value.bits) },
+            bits: transmute_boxed_slice_from_atomic(value.bits),
 
             len: value.len,
             bit_width: value.bit_width,
@@ -1488,7 +1491,8 @@ impl<W: Word + IntoAtomic> From<BitFieldVec<W, Vec<W>>>
     #[inline]
     fn from(value: BitFieldVec<W, Vec<W>>) -> Self {
         AtomicBitFieldVec {
-            bits: unsafe { transmute_vec::<W, W::AtomicType>(value.bits) },
+            bits: transmute_vec_into_atomic(value.bits),
+
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
@@ -1502,7 +1506,7 @@ impl<W: Word + IntoAtomic> From<BitFieldVec<W, Box<[W]>>>
     #[inline]
     fn from(value: BitFieldVec<W, Box<[W]>>) -> Self {
         AtomicBitFieldVec {
-            bits: unsafe { transmute_boxed_slice::<W, W::AtomicType>(value.bits) },
+            bits: transmute_boxed_slice_into_atomic(value.bits),
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
@@ -1510,33 +1514,43 @@ impl<W: Word + IntoAtomic> From<BitFieldVec<W, Box<[W]>>>
     }
 }
 
-impl<'a, W: Word + IntoAtomic> From<BitFieldVec<W, &'a [W]>>
+impl<'a, W: Word + IntoAtomic> TryFrom<BitFieldVec<W, &'a [W]>>
     for AtomicBitFieldVec<W, &'a [W::AtomicType]>
 {
+    type Error = CannotCastToAtomicError<W>;
+
     #[inline]
-    fn from(value: BitFieldVec<W, &'a [W]>) -> Self {
-        AtomicBitFieldVec {
+    fn try_from(value: BitFieldVec<W, &'a [W]>) -> Result<Self, Self::Error> {
+        if core::mem::align_of::<W::AtomicType>() != core::mem::align_of::<W>() {
+            return Err(CannotCastToAtomicError::default());
+        }
+        Ok(AtomicBitFieldVec {
             bits: unsafe { core::mem::transmute::<&'a [W], &'a [W::AtomicType]>(value.bits) },
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
-        }
+        })
     }
 }
 
-impl<'a, W: Word + IntoAtomic> From<BitFieldVec<W, &'a mut [W]>>
+impl<'a, W: Word + IntoAtomic> TryFrom<BitFieldVec<W, &'a mut [W]>>
     for AtomicBitFieldVec<W, &'a mut [W::AtomicType]>
 {
+    type Error = CannotCastToAtomicError<W>;
+
     #[inline]
-    fn from(value: BitFieldVec<W, &'a mut [W]>) -> Self {
-        AtomicBitFieldVec {
+    fn try_from(value: BitFieldVec<W, &'a mut [W]>) -> Result<Self, Self::Error> {
+        if core::mem::align_of::<W::AtomicType>() != core::mem::align_of::<W>() {
+            return Err(CannotCastToAtomicError::default());
+        }
+        Ok(AtomicBitFieldVec {
             bits: unsafe {
                 core::mem::transmute::<&'a mut [W], &'a mut [W::AtomicType]>(value.bits)
             },
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
-        }
+        })
     }
 }
 
