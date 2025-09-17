@@ -5,8 +5,8 @@ authors = [
 	"Sebastiano Vigna <sebastiano.vigna@unimi.it>",
 ]
 description = "A pure Rust implementation of succinct and compressed data structures"
-version = "0.8.0"
-edition = "2021"
+version = "0.9.0"
+edition = "2024"
 repository = "https://github.com/vigna/sux-rs/"
 license = "Apache-2.0 OR LGPL-2.1-or-later"
 readme = "README.md"
@@ -22,8 +22,7 @@ log = "0.4.20"
 dsi-progress-logger = "0.8.1"
 tempfile = "3.9.0"
 lender = "0.3.1"
-#epserde = "0.8.0"
-epserde = { git = "https://github.com/vigna/epserde-rs" }
+epserde = "0.9.0"
 zstd = { version = "0.13.1" }
 flate2 = "1.0.28"
 rand = { version = "0.9.0", features = ["small_rng"] }

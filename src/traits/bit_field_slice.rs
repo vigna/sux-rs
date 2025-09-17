@@ -56,10 +56,10 @@
 //! or a number of ambiguities in trait resolution will arise. In particular, if
 //! you plan to use [`AtomicHelper`], we suggest that you do not import the
 //! prelude.
-//! ```rust
-//! use sux::traits::bit_field_slice::{AtomicBitFieldSlice,AtomicHelper};
-//! use std::sync::atomic::Ordering;
 //!
+//! ```
+//! # use sux::traits::bit_field_slice::{AtomicBitFieldSlice,AtomicHelper};
+//! # use std::sync::atomic::Ordering;
 //! let slice = sux::bits::AtomicBitFieldVec::<usize>::new(3, 3);
 //! slice.set(0, 1, Ordering::Relaxed);
 //! assert_eq!(slice.get(0, Ordering::Relaxed), 1);
@@ -238,9 +238,9 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> {
     /// The function is applied from the first element to the last: thus,
     /// it possible to compute cumulative sums as follows:
     ///
-    /// ```rust
-    /// use sux::bits::BitFieldVec;
-    /// use sux::traits::BitFieldSliceMut;
+    /// ```
+    /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::BitFieldSliceMut;
     ///
     /// let mut vec = BitFieldVec::<u16>::new(9, 10);
     ///
@@ -288,8 +288,8 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> {
     ///
     /// ```
     /// # fn main() -> Result<(), ()> {
-    /// use sux::prelude::*;
-    ///
+    /// # use sux::prelude::*;
+    /// # use bit_field_slice::*;
     /// let mut b = bit_field_vec![32; 4, 500, 2, 3, 1];
     /// for mut c in b.try_chunks_mut(2)? {
     ///     c.set(0, 5);

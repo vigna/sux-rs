@@ -491,12 +491,13 @@ fn test_from() {
     }
     let (bits, l) = b.into_raw_parts();
     let b = unsafe { BitVec::<&[usize]>::from_raw_parts(bits.as_ref(), l) };
-    let b: AtomicBitVec<&[AtomicUsize]> = b.into();
-    let (bits, l) = b.into_raw_parts();
-    let b = unsafe { AtomicBitVec::<&[AtomicUsize]>::from_raw_parts(bits, l) };
-    let b: BitVec<&[usize]> = b.into();
-    for i in 0..10 {
-        assert_eq!(b.get(i), i % 2 == 0);
+    if let Result::<AtomicBitVec<&[AtomicUsize]>, _>::Ok(b) = b.try_into() {
+        let (bits, l) = b.into_raw_parts();
+        let b = unsafe { AtomicBitVec::<&[AtomicUsize]>::from_raw_parts(bits, l) };
+        let b: BitVec<&[usize]> = b.into();
+        for i in 0..10 {
+            assert_eq!(b.get(i), i % 2 == 0);
+        }
     }
 
     // Mutable reference to mutable reference
@@ -505,10 +506,11 @@ fn test_from() {
     for i in 0..10 {
         b.set(i, i % 2 == 0);
     }
-    let b: AtomicBitVec<&mut [AtomicUsize]> = b.into();
-    let b: BitVec<&mut [usize]> = b.into();
-    for i in 0..10 {
-        assert_eq!(b.get(i), i % 2 == 0);
+    if let Result::<AtomicBitVec<&mut [AtomicUsize]>, _>::Ok(b) = b.try_into() {
+        let b: BitVec<&mut [usize]> = b.into();
+        for i in 0..10 {
+            assert_eq!(b.get(i), i % 2 == 0);
+        }
     }
 
     // Vec to boxed slice

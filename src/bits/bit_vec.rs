@@ -83,7 +83,10 @@ use std::{
 
 use crate::{
     traits::rank_sel::*,
-    utils::{transmute_boxed_slice, transmute_vec},
+    utils::{
+        CannotCastToAtomicError, transmute_boxed_slice_from_atomic,
+        transmute_boxed_slice_into_atomic, transmute_vec_from_atomic, transmute_vec_into_atomic,
+    },
 };
 
 #[cfg(feature = "rayon")]
@@ -153,7 +156,7 @@ macro_rules! bit_vec {
     ($($x:expr),+ $(,)?) => {
         {
             let mut b = $crate::bits::BitVec::with_capacity([$($x),+].len());
-            $( b.push($x != 0); )*
+            $( $crate::bits::BitVec::push(&mut b, $x != 0); )*
             b
         }
     };
@@ -996,36 +999,44 @@ impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
 impl<W: IntoAtomic> From<BitVec<Vec<W>>> for AtomicBitVec<Vec<W::AtomicType>> {
     fn from(value: BitVec<Vec<W>>) -> Self {
         AtomicBitVec {
-            bits: unsafe { transmute_vec::<W, W::AtomicType>(value.bits) },
+            bits: transmute_vec_into_atomic(value.bits),
             len: value.len,
         }
     }
 }
 
-impl<'a, W: IntoAtomic> From<BitVec<&'a [W]>> for AtomicBitVec<&'a [W::AtomicType]> {
-    fn from(value: BitVec<&'a [W]>) -> Self {
-        AtomicBitVec {
+impl<'a, W: IntoAtomic> TryFrom<BitVec<&'a [W]>> for AtomicBitVec<&'a [W::AtomicType]> {
+    type Error = CannotCastToAtomicError<W>;
+    fn try_from(value: BitVec<&'a [W]>) -> Result<Self, Self::Error> {
+        if core::mem::align_of::<W>() != core::mem::align_of::<W::AtomicType>() {
+            return Err(CannotCastToAtomicError::default());
+        }
+        Ok(AtomicBitVec {
             bits: unsafe { core::mem::transmute::<&'a [W], &'a [W::AtomicType]>(value.bits) },
             len: value.len,
-        }
+        })
     }
 }
 
-impl<'a, W: IntoAtomic> From<BitVec<&'a mut [W]>> for AtomicBitVec<&'a mut [W::AtomicType]> {
-    fn from(value: BitVec<&'a mut [W]>) -> Self {
-        AtomicBitVec {
+impl<'a, W: IntoAtomic> TryFrom<BitVec<&'a mut [W]>> for AtomicBitVec<&'a mut [W::AtomicType]> {
+    type Error = CannotCastToAtomicError<W>;
+    fn try_from(value: BitVec<&'a mut [W]>) -> Result<Self, Self::Error> {
+        if core::mem::align_of::<W>() != core::mem::align_of::<W::AtomicType>() {
+            return Err(CannotCastToAtomicError::default());
+        }
+        Ok(AtomicBitVec {
             bits: unsafe {
                 core::mem::transmute::<&'a mut [W], &'a mut [W::AtomicType]>(value.bits)
             },
             len: value.len,
-        }
+        })
     }
 }
 
 impl<W: IntoAtomic> From<AtomicBitVec<Vec<W::AtomicType>>> for BitVec<Vec<W>> {
     fn from(value: AtomicBitVec<Vec<W::AtomicType>>) -> Self {
         BitVec {
-            bits: unsafe { transmute_vec::<W::AtomicType, W>(value.bits) },
+            bits: transmute_vec_from_atomic::<W::AtomicType>(value.bits),
             len: value.len,
         }
     }
@@ -1034,16 +1045,16 @@ impl<W: IntoAtomic> From<AtomicBitVec<Vec<W::AtomicType>>> for BitVec<Vec<W>> {
 impl<W: IntoAtomic> From<AtomicBitVec<Box<[W::AtomicType]>>> for BitVec<Box<[W]>> {
     fn from(value: AtomicBitVec<Box<[W::AtomicType]>>) -> Self {
         BitVec {
-            bits: unsafe { transmute_boxed_slice::<W::AtomicType, W>(value.bits) },
+            bits: transmute_boxed_slice_from_atomic::<W::AtomicType>(value.bits),
             len: value.len,
         }
     }
 }
 
-impl<W: IntoAtomic> From<BitVec<Box<[W]>>> for AtomicBitVec<Box<[W::AtomicType]>> {
+impl<W: IntoAtomic + Copy> From<BitVec<Box<[W]>>> for AtomicBitVec<Box<[W::AtomicType]>> {
     fn from(value: BitVec<Box<[W]>>) -> Self {
         AtomicBitVec {
-            bits: unsafe { transmute_boxed_slice::<W, W::AtomicType>(value.bits) },
+            bits: transmute_boxed_slice_into_atomic::<W>(value.bits),
             len: value.len,
         }
     }
