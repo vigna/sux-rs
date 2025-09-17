@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use epserde::{deser::Deserialize, ser::Serialize, Epserde};
+use epserde::{Epserde, deser::Deserialize, ser::Serialize};
 use std::io::Cursor;
 use sux::traits::{IndexedSeq, Types};
 
@@ -19,7 +19,7 @@ impl<S: AsRef<str>> Types for Wrapper<Vec<S>> {
 
 impl<S: AsRef<str>> IndexedSeq for Wrapper<Vec<S>> {
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-        self.0.get_unchecked(index).as_ref()
+        unsafe { self.0.get_unchecked(index).as_ref() }
     }
 
     fn len(&self) -> usize {

@@ -38,6 +38,14 @@
   bit_field_slice::*` to use the traits. This change made it possible to
   write delegations of `BitFieldSlice` for `MemCase`.
 
+* The unsafe `transmute_vec` and `transmute_boxed_slice` functions have
+  been replace by four specific, safe functions
+  `transmute_(vec|boxed_slice)_(from|into)_atomic` that take care of the case of
+  a transmute from a non-atomic type into an atomic type with strictly greater
+  alignment requirements. In this case, we create a correctly aligned copy. We
+  cannot do the same for references, so in that case what was previously a
+  `From` implementation has been replaced by a `TryFrom` implementation.
+
 ### Fixed
 
 * Adding too few values to Elias-Fano structures was causing undefined

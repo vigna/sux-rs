@@ -1,11 +1,13 @@
 /*
  *
+ * SPDX-FileCopyrightText: 2025 Inria
  * SPDX-FileCopyrightText: 2023 Sebastiano Vigna
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
 //! Utility traits and implementations.
+use common_traits::{Atomic, IntoAtomic};
 
 pub mod lenders;
 pub use lenders::*;
@@ -20,32 +22,103 @@ pub use fair_chunks::FairChunks;
 pub mod mod2_sys;
 pub use mod2_sys::*;
 
-/// Transmutes a vector of one type into a vector of another type.
+/// An error type raised when attempting to cast a non-atomic type to an atomic
+/// type with incompatible alignments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CannotCastToAtomicError<T: IntoAtomic>(core::marker::PhantomData<T>);
+
+impl<T: IntoAtomic> Default for CannotCastToAtomicError<T> {
+    fn default() -> Self {
+        CannotCastToAtomicError(core::marker::PhantomData)
+    }
+}
+
+impl<T: IntoAtomic> core::fmt::Display for CannotCastToAtomicError<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        assert_ne!(
+            core::mem::align_of::<T>(),
+            core::mem::align_of::<T::AtomicType>()
+        );
+        write!(
+            f,
+            "Cannot cast {} (align_of: {}) to atomic type {} (align_of: {}) because the have incompatible alignments",
+            core::any::type_name::<T>(),
+            core::mem::align_of::<T>(),
+            core::any::type_name::<T::AtomicType>(),
+            core::mem::align_of::<T::AtomicType>()
+        )
+    }
+}
+
+impl<T: IntoAtomic + core::fmt::Debug> core::error::Error for CannotCastToAtomicError<T> {}
+
+/// Transmutes a vector of elements of non-atomic type into a vector of elements
+/// of the associated atomic type.
 ///
 /// [It is not safe to transmute a
 /// vector](https://doc.rust-lang.org/std/mem/fn.transmute.html). This method
 /// implements a correct transmutation of the vector content.
 ///
-/// # Safety
+/// Since the alignment of the atomic type might be greater than that of the
+/// non-atomic type, we can only perform a direct transmutation when the
+/// alignment of the atomic type is greater than or equal to that of the
+/// non-atomic type. In this case, we simply reinterpret the vector's pointer.
 ///
-/// The caller must ensure the source and destination types have the same size
-/// and memory layout.
-pub unsafe fn transmute_vec<S, D>(v: Vec<S>) -> Vec<D> {
-    // Ensure the original vector is not dropped
-    let mut v = std::mem::ManuallyDrop::new(v);
-    Vec::from_raw_parts(v.as_mut_ptr() as *mut D, v.len(), v.capacity())
+/// Otherwise, we fall back to a safe but less efficient method that allocates a
+/// new vector and copies the elements one by one. The compiler might be able
+/// to optimize this case away in some situations.
+pub fn transmute_vec_into_atomic<W: IntoAtomic>(v: Vec<W>) -> Vec<W::AtomicType> {
+    if core::mem::align_of::<W::AtomicType>() == core::mem::align_of::<W>() {
+        let mut v = std::mem::ManuallyDrop::new(v);
+        unsafe { Vec::from_raw_parts(v.as_mut_ptr() as *mut W::AtomicType, v.len(), v.capacity()) }
+    } else {
+        v.into_iter().map(W::to_atomic).collect()
+    }
 }
 
-/// Transmutes a boxed slice of one type into a boxed slice of another type.
+/// Transmutes a vector of elements of atomic type into a vector of elements of
+/// the associated atomic non-atomic type.
 ///
-/// # Safety
+/// [It is not safe to transmute a
+/// vector](https://doc.rust-lang.org/std/mem/fn.transmute.html). This method
+/// implements a correct transmutation of the vector content.
+pub fn transmute_vec_from_atomic<A: Atomic>(v: Vec<A>) -> Vec<A::NonAtomicType> {
+    let mut v = std::mem::ManuallyDrop::new(v);
+    // this is always safe because atomic types have bigger or equal alignment
+    // than their non-atomic counterparts
+    unsafe {
+        Vec::from_raw_parts(
+            v.as_mut_ptr() as *mut A::NonAtomicType,
+            v.len(),
+            v.capacity(),
+        )
+    }
+}
+
+/// Transmutes a boxed slice of elements of non-atomic type into a boxed slice
+/// of elements of the associated atomic type.
 ///
-/// The caller must ensure the source and destination types have
-/// the same size and memory layout.
-pub unsafe fn transmute_boxed_slice<S, D>(b: Box<[S]>) -> Box<[D]> {
-    // Ensure the original boxed value is not dropped
+/// See [`transmute_vec_into_atomic`] for details.
+pub fn transmute_boxed_slice_into_atomic<W: IntoAtomic + Copy>(
+    b: Box<[W]>,
+) -> Box<[W::AtomicType]> {
+    if core::mem::align_of::<W::AtomicType>() == core::mem::align_of::<W>() {
+        let mut b = std::mem::ManuallyDrop::new(b);
+        unsafe { Box::from_raw(b.as_mut() as *mut [W] as *mut [W::AtomicType]) }
+    } else {
+        IntoIterator::into_iter(b).map(W::to_atomic).collect()
+    }
+}
+
+/// Transmutes a boxed slice of values of atomic type into a boxed slice of
+/// values of the associated non-atomic type.
+///
+/// [It is not safe to transmute a
+/// vector](https://doc.rust-lang.org/std/mem/fn.transmute.html). This method
+/// implements a correct transmutation of the vector content.
+pub fn transmute_boxed_slice_from_atomic<A: Atomic>(b: Box<[A]>) -> Box<[A::NonAtomicType]> {
     let mut b = std::mem::ManuallyDrop::new(b);
-    Box::from_raw(b.as_mut() as *mut [S] as *mut [D])
+    unsafe { Box::from_raw(b.as_mut() as *mut [A] as *mut [A::NonAtomicType]) }
 }
 
 pub struct Mwc192 {
