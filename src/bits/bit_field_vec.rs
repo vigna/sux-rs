@@ -136,8 +136,8 @@ macro_rules! bit_field_vec {
         $crate::bits::BitFieldVec::<usize, _>::new($w, 0)
     };
     ($w:expr; $n:expr; $v:expr) => {
-            let mut bit_field_vec = $crate::bits::BitFieldVec::<usize, _>::with_capacity($w, $n);
         {
+            let mut bit_field_vec = $crate::bits::BitFieldVec::<usize, _>::with_capacity($w, $n);
             // Force type
             let v: usize = $v;
             bit_field_vec.resize($n, v);
