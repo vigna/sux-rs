@@ -285,8 +285,8 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
         let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
         let start_bit = index * self.bit_width;
         debug_assert!(start_bit / W::BYTES + W::BYTES <= self.bits.as_ref().len() * W::BYTES);
-        let ptr = base_ptr.add(start_bit / 8) as *const W;
-        let word = core::ptr::read_unaligned(ptr);
+        let ptr = unsafe { base_ptr.add(start_bit / 8) } as *const W;
+        let word = unsafe { core::ptr::read_unaligned(ptr) };
         (word >> (start_bit % 8)) & self.mask
     }
 
@@ -492,26 +492,28 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldVec<W, B> {
         let bit_index = pos % W::BITS;
         let bits = self.bits.as_mut();
 
-        if bit_index + self.bit_width <= W::BITS {
-            let mut word = *bits.get_unchecked_mut(word_index);
-            let old_value = (word >> bit_index) & self.mask;
-            word &= !(self.mask << bit_index);
-            word |= value << bit_index;
-            *bits.get_unchecked_mut(word_index) = word;
-            old_value
-        } else {
-            let mut word = *bits.get_unchecked_mut(word_index);
-            let mut old_value = word >> bit_index;
-            word &= (W::ONE << bit_index) - W::ONE;
-            word |= value << bit_index;
-            *bits.get_unchecked_mut(word_index) = word;
+        unsafe {
+            if bit_index + self.bit_width <= W::BITS {
+                let mut word = *bits.get_unchecked_mut(word_index);
+                let old_value = (word >> bit_index) & self.mask;
+                word &= !(self.mask << bit_index);
+                word |= value << bit_index;
+                *bits.get_unchecked_mut(word_index) = word;
+                old_value
+            } else {
+                let mut word = *bits.get_unchecked_mut(word_index);
+                let mut old_value = word >> bit_index;
+                word &= (W::ONE << bit_index) - W::ONE;
+                word |= value << bit_index;
+                *bits.get_unchecked_mut(word_index) = word;
 
-            let mut word = *bits.get_unchecked_mut(word_index + 1);
-            old_value |= word << (W::BITS - bit_index);
-            word &= !(self.mask >> (W::BITS - bit_index));
-            word |= value >> (W::BITS - bit_index);
-            *bits.get_unchecked_mut(word_index + 1) = word;
-            old_value & self.mask
+                let mut word = *bits.get_unchecked_mut(word_index + 1);
+                old_value |= word << (W::BITS - bit_index);
+                word &= !(self.mask >> (W::BITS - bit_index));
+                word |= value >> (W::BITS - bit_index);
+                *bits.get_unchecked_mut(word_index + 1) = word;
+                old_value & self.mask
+            }
         }
     }
 }
@@ -535,12 +537,14 @@ impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
         let bit_index = pos % W::BITS;
         let bits = self.bits.as_ref();
 
-        if bit_index + self.bit_width <= W::BITS {
-            (*bits.get_unchecked(word_index) >> bit_index) & self.mask
-        } else {
-            ((*bits.get_unchecked(word_index) >> bit_index)
-                | (*bits.get_unchecked(word_index + 1) << (W::BITS - bit_index)))
-                & self.mask
+        unsafe {
+            if bit_index + self.bit_width <= W::BITS {
+                (*bits.get_unchecked(word_index) >> bit_index) & self.mask
+            } else {
+                ((*bits.get_unchecked(word_index) >> bit_index)
+                    | (*bits.get_unchecked(word_index + 1) << (W::BITS - bit_index)))
+                    & self.mask
+            }
         }
     }
 }
@@ -566,21 +570,23 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
         let bit_index = pos % W::BITS;
         let bits = self.bits.as_mut();
 
-        if bit_index + self.bit_width <= W::BITS {
-            let mut word = *bits.get_unchecked_mut(word_index);
-            word &= !(self.mask << bit_index);
-            word |= value << bit_index;
-            *bits.get_unchecked_mut(word_index) = word;
-        } else {
-            let mut word = *bits.get_unchecked_mut(word_index);
-            word &= (W::ONE << bit_index) - W::ONE;
-            word |= value << bit_index;
-            *bits.get_unchecked_mut(word_index) = word;
+        unsafe {
+            if bit_index + self.bit_width <= W::BITS {
+                let mut word = *bits.get_unchecked_mut(word_index);
+                word &= !(self.mask << bit_index);
+                word |= value << bit_index;
+                *bits.get_unchecked_mut(word_index) = word;
+            } else {
+                let mut word = *bits.get_unchecked_mut(word_index);
+                word &= (W::ONE << bit_index) - W::ONE;
+                word |= value << bit_index;
+                *bits.get_unchecked_mut(word_index) = word;
 
-            let mut word = *bits.get_unchecked_mut(word_index + 1);
-            word &= !(self.mask >> (W::BITS - bit_index));
-            word |= value >> (W::BITS - bit_index);
-            *bits.get_unchecked_mut(word_index + 1) = word;
+                let mut word = *bits.get_unchecked_mut(word_index + 1);
+                word &= !(self.mask >> (W::BITS - bit_index));
+                word |= value >> (W::BITS - bit_index);
+                *bits.get_unchecked_mut(word_index + 1) = word;
+            }
         }
     }
 
@@ -739,7 +745,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
         let last_word_idx = number_of_words.saturating_sub(1);
 
         let mut write_buffer: W = W::ZERO;
-        let mut read_buffer: W = *self.bits.as_ref().get_unchecked(0);
+        let mut read_buffer: W = *unsafe { self.bits.as_ref().get_unchecked(0) };
 
         // specialized case because it's much faster
         if bit_width.is_power_of_two() {
@@ -753,7 +759,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
 
             for read_idx in 1..number_of_words {
                 // pre-load the next word so it loads while we parse the buffer
-                let next_word: W = *self.bits.as_ref().get_unchecked(read_idx);
+                let next_word: W = *unsafe { self.bits.as_ref().get_unchecked(read_idx) };
 
                 // parse as much as we can from the buffer
                 loop {
@@ -775,7 +781,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
                 }
 
                 invariant_eq!(read_buffer, W::ZERO);
-                *self.bits.as_mut().get_unchecked_mut(read_idx - 1) = write_buffer;
+                *unsafe { self.bits.as_mut().get_unchecked_mut(read_idx - 1) } = write_buffer;
                 read_buffer = next_word;
                 write_buffer = W::ZERO;
                 bits_in_buffer = 0;
@@ -794,7 +800,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
                 bits_in_buffer += bit_width;
             }
 
-            *self.bits.as_mut().get_unchecked_mut(last_word_idx) = write_buffer;
+            *unsafe { self.bits.as_mut().get_unchecked_mut(last_word_idx) } = write_buffer;
             return;
         }
 
@@ -826,7 +832,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
             }
 
             // We retrieve the next word from the bitvec.
-            let next_word = *self.bits.as_ref().get_unchecked(word_number + 1);
+            let next_word = *unsafe { self.bits.as_ref().get_unchecked(word_number + 1) };
 
             let mut new_write_buffer = W::ZERO;
             if upper_word_limit != global_bit_index {
@@ -847,7 +853,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
 
             read_buffer = next_word;
 
-            *self.bits.as_mut().get_unchecked_mut(word_number) = write_buffer;
+            *unsafe { self.bits.as_mut().get_unchecked_mut(word_number) } = write_buffer;
 
             write_buffer = new_write_buffer;
             lower_word_limit = upper_word_limit;
@@ -869,7 +875,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
             offset += bit_width;
         }
 
-        *self.bits.as_mut().get_unchecked_mut(last_word_idx) = write_buffer;
+        *unsafe { self.bits.as_mut().get_unchecked_mut(last_word_idx) } = write_buffer;
     }
 
     type ChunksMut<'a>
@@ -997,7 +1003,7 @@ impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
 
         let res = self.window;
         self.word_index += 1;
-        self.window = *self.vec.bits.as_ref().get_unchecked(self.word_index);
+        self.window = *unsafe { self.vec.bits.as_ref().get_unchecked(self.word_index) };
         let res = (res | (self.window << self.fill)) & self.vec.mask;
         let used = bit_width - self.fill;
         self.window >>= used;
@@ -1070,7 +1076,7 @@ impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
 
         let mut res = self.window.rotate_left(self.fill as u32);
         self.word_index -= 1;
-        self.window = *self.vec.bits.as_ref().get_unchecked(self.word_index);
+        self.window = *unsafe { self.vec.bits.as_ref().get_unchecked(self.word_index) };
         let used = bit_width - self.fill;
         res = ((res << used) | (self.window >> (W::BITS - used))) & self.vec.mask;
         self.window <<= used;
@@ -1302,12 +1308,14 @@ where
         let bit_index = pos % W::BITS;
         let bits = self.bits.as_ref();
 
-        if bit_index + self.bit_width <= W::BITS {
-            (bits.get_unchecked(word_index).load(order) >> bit_index) & self.mask
-        } else {
-            ((bits.get_unchecked(word_index).load(order) >> bit_index)
-                | (bits.get_unchecked(word_index + 1).load(order) << (W::BITS - bit_index)))
-                & self.mask
+        unsafe {
+            if bit_index + self.bit_width <= W::BITS {
+                (bits.get_unchecked(word_index).load(order) >> bit_index) & self.mask
+            } else {
+                ((bits.get_unchecked(word_index).load(order) >> bit_index)
+                    | (bits.get_unchecked(word_index + 1).load(order) << (W::BITS - bit_index)))
+                    & self.mask
+            }
         }
     }
 
@@ -1328,70 +1336,72 @@ where
 
     #[inline]
     unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering) {
-        debug_assert!(self.bit_width != W::BITS);
-        let pos = index * self.bit_width;
-        let word_index = pos / W::BITS;
-        let bit_index = pos % W::BITS;
-        let bits = self.bits.as_ref();
+        unsafe {
+            debug_assert!(self.bit_width != W::BITS);
+            let pos = index * self.bit_width;
+            let word_index = pos / W::BITS;
+            let bit_index = pos % W::BITS;
+            let bits = self.bits.as_ref();
 
-        if bit_index + self.bit_width <= W::BITS {
-            // this is consistent
-            let mut current = bits.get_unchecked(word_index).load(order);
-            loop {
-                let mut new = current;
-                new &= !(self.mask << bit_index);
-                new |= value << bit_index;
+            if bit_index + self.bit_width <= W::BITS {
+                // this is consistent
+                let mut current = bits.get_unchecked(word_index).load(order);
+                loop {
+                    let mut new = current;
+                    new &= !(self.mask << bit_index);
+                    new |= value << bit_index;
 
-                match bits
-                    .get_unchecked(word_index)
-                    .compare_exchange(current, new, order, order)
-                {
-                    Ok(_) => break,
-                    Err(e) => current = e,
+                    match bits
+                        .get_unchecked(word_index)
+                        .compare_exchange(current, new, order, order)
+                    {
+                        Ok(_) => break,
+                        Err(e) => current = e,
+                    }
                 }
-            }
-        } else {
-            let mut word = bits.get_unchecked(word_index).load(order);
-            // try to wait for the other thread to finish
-            fence(Ordering::Acquire);
-            loop {
-                let mut new = word;
-                new &= (W::ONE << bit_index) - W::ONE;
-                new |= value << bit_index;
+            } else {
+                let mut word = bits.get_unchecked(word_index).load(order);
+                // try to wait for the other thread to finish
+                fence(Ordering::Acquire);
+                loop {
+                    let mut new = word;
+                    new &= (W::ONE << bit_index) - W::ONE;
+                    new |= value << bit_index;
 
-                match bits
-                    .get_unchecked(word_index)
-                    .compare_exchange(word, new, order, order)
-                {
-                    Ok(_) => break,
-                    Err(e) => word = e,
+                    match bits
+                        .get_unchecked(word_index)
+                        .compare_exchange(word, new, order, order)
+                    {
+                        Ok(_) => break,
+                        Err(e) => word = e,
+                    }
                 }
-            }
-            fence(Ordering::Release);
+                fence(Ordering::Release);
 
-            // ensures that the compiler does not reorder the two atomic operations
-            // this should increase the probability of having consistency
-            // between two concurrent writes as they will both execute the set
-            // of the bits in the same order, and the release / acquire fence
-            // should try to synchronize the threads as much as possible
-            compiler_fence(Ordering::SeqCst);
+                // ensures that the compiler does not reorder the two atomic operations
+                // this should increase the probability of having consistency
+                // between two concurrent writes as they will both execute the set
+                // of the bits in the same order, and the release / acquire fence
+                // should try to synchronize the threads as much as possible
+                compiler_fence(Ordering::SeqCst);
 
-            let mut word = bits.get_unchecked(word_index + 1).load(order);
-            fence(Ordering::Acquire);
-            loop {
-                let mut new = word;
-                new &= !(self.mask >> (W::BITS - bit_index));
-                new |= value >> (W::BITS - bit_index);
+                let mut word = bits.get_unchecked(word_index + 1).load(order);
+                fence(Ordering::Acquire);
+                loop {
+                    let mut new = word;
+                    new &= !(self.mask >> (W::BITS - bit_index));
+                    new |= value >> (W::BITS - bit_index);
 
-                match bits
-                    .get_unchecked(word_index + 1)
-                    .compare_exchange(word, new, order, order)
-                {
-                    Ok(_) => break,
-                    Err(e) => word = e,
+                    match bits
+                        .get_unchecked(word_index + 1)
+                        .compare_exchange(word, new, order, order)
+                    {
+                        Ok(_) => break,
+                        Err(e) => word = e,
+                    }
                 }
+                fence(Ordering::Release);
             }
-            fence(Ordering::Release);
         }
     }
 
@@ -1586,7 +1596,7 @@ impl<W: Word, B: AsRef<[W]>> value_traits::slices::SliceByValue for BitFieldVec<
 
 impl<W: Word, B: AsRef<[W]>> value_traits::slices::SliceByValueGet for BitFieldVec<W, B> {
     unsafe fn get_value_unchecked(&self, index: usize) -> Self::Value {
-        <Self as BitFieldSlice<W>>::get_unchecked(self, index)
+        unsafe { <Self as BitFieldSlice<W>>::get_unchecked(self, index) }
     }
 }
 
@@ -1594,7 +1604,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> value_traits::slices::SliceByValueSet
     for BitFieldVec<W, B>
 {
     unsafe fn set_value_unchecked(&mut self, index: usize, value: Self::Value) {
-        <Self as BitFieldSliceMut<W>>::set_unchecked(self, index, value);
+        unsafe { <Self as BitFieldSliceMut<W>>::set_unchecked(self, index, value) };
     }
 }
 
@@ -1602,7 +1612,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> value_traits::slices::SliceByValueRepl
     for BitFieldVec<W, B>
 {
     unsafe fn replace_value_unchecked(&mut self, index: usize, value: Self::Value) -> Self::Value {
-        self.replace_unchecked(index, value)
+        unsafe { self.replace_unchecked(index, value) }
     }
 }
 

@@ -6,8 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use super::rank9::BlockCounters;
 use super::Rank9;
+use super::rank9::BlockCounters;
 use crate::{
     prelude::SelectUnchecked,
     traits::{BitLength, NumBits, Select},
@@ -321,128 +321,135 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
     for Select9<Rank9<B, C>, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
-        let inventory_index_left = rank >> Self::LOG2_ZEROS_PER_INVENTORY;
+        unsafe {
+            let inventory_index_left = rank >> Self::LOG2_ZEROS_PER_INVENTORY;
 
-        debug_assert!(inventory_index_left <= self.inventory_size);
-        let inventory_left = *self.inventory.as_ref().get_unchecked(inventory_index_left);
+            debug_assert!(inventory_index_left <= self.inventory_size);
+            let inventory_left = *self.inventory.as_ref().get_unchecked(inventory_index_left);
 
-        let block_right = (*self
-            .inventory
-            .as_ref()
-            .get_unchecked(inventory_index_left + 1))
-            / 64;
-        let mut block_left = inventory_left / 64;
-        let span = block_right / 4 - block_left / 4;
+            let block_right = (*self
+                .inventory
+                .as_ref()
+                .get_unchecked(inventory_index_left + 1))
+                / 64;
+            let mut block_left = inventory_left / 64;
+            let span = block_right / 4 - block_left / 4;
 
-        let subinv_pos = block_left / 4;
-        let subinv_ref = self.subinventory.as_ref();
+            let subinv_pos = block_left / 4;
+            let subinv_ref = self.subinventory.as_ref();
 
-        let counts = self.rank9.counts.as_ref();
+            let counts = self.rank9.counts.as_ref();
 
-        let mut count_left;
-        let rank_in_block;
+            let mut count_left;
+            let rank_in_block;
 
-        match span {
-            0..=1 => {
-                block_left &= !7;
-                count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
+            match span {
+                0..=1 => {
+                    block_left &= !7;
+                    count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
 
-                debug_assert!(rank < counts.get_unchecked(count_left + 1).absolute);
-                rank_in_block = rank - counts.get_unchecked(count_left).absolute;
-            }
-            2..=15 => {
-                block_left &= !7;
-                count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
-                let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute;
+                    debug_assert!(rank < counts.get_unchecked(count_left + 1).absolute);
+                    rank_in_block = rank - counts.get_unchecked(count_left).absolute;
+                }
+                2..=15 => {
+                    block_left &= !7;
+                    count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
+                    let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute;
 
-                let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
+                    let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
 
-                let first = *subinv_ref.get_unchecked(subinv_pos);
-                let second = *subinv_ref.get_unchecked(subinv_pos + 1);
+                    let first = *subinv_ref.get_unchecked(subinv_pos);
+                    let second = *subinv_ref.get_unchecked(subinv_pos + 1);
 
-                let where_: usize = (ULEQ_STEP_16!(first, rank_in_superblock_step_16).count_ones()
-                    as usize
-                    + ULEQ_STEP_16!(second, rank_in_superblock_step_16).count_ones() as usize)
-                    * 2;
-
-                debug_assert!(where_ <= 16);
-
-                block_left += where_ * 4;
-                count_left += where_ / 2;
-
-                rank_in_block = rank - counts.get_unchecked(count_left).absolute;
-                debug_assert!(rank_in_block < 512);
-            }
-            16..=127 => {
-                block_left &= !7;
-                count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
-                let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute;
-                let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
-
-                let first = *subinv_ref.get_unchecked(subinv_pos);
-                let second = *subinv_ref.get_unchecked(subinv_pos + 1);
-
-                let where0 = (ULEQ_STEP_16!(first, rank_in_superblock_step_16).count_ones()
-                    as usize
-                    + ULEQ_STEP_16!(second, rank_in_superblock_step_16).count_ones() as usize)
-                    * 2;
-
-                debug_assert!(where0 <= 16);
-
-                let first_bis = *self
-                    .subinventory
-                    .as_ref()
-                    .get_unchecked(subinv_pos + where0 + 2);
-                let second_bis = *self
-                    .subinventory
-                    .as_ref()
-                    .get_unchecked(subinv_pos + where0 + 2 + 1);
-
-                let where1 = where0 * 8
-                    + (ULEQ_STEP_16!(first_bis, rank_in_superblock_step_16).count_ones() as usize
-                        + ULEQ_STEP_16!(second_bis, rank_in_superblock_step_16).count_ones()
-                            as usize)
+                    let where_: usize = (ULEQ_STEP_16!(first, rank_in_superblock_step_16)
+                        .count_ones() as usize
+                        + ULEQ_STEP_16!(second, rank_in_superblock_step_16).count_ones() as usize)
                         * 2;
 
-                block_left += where1 * 4;
-                count_left += where1 / 2;
-                rank_in_block = rank - counts.get_unchecked(count_left).absolute;
+                    debug_assert!(where_ <= 16);
 
-                debug_assert!(rank_in_block < 512);
+                    block_left += where_ * 4;
+                    count_left += where_ / 2;
+
+                    rank_in_block = rank - counts.get_unchecked(count_left).absolute;
+                    debug_assert!(rank_in_block < 512);
+                }
+                16..=127 => {
+                    block_left &= !7;
+                    count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
+                    let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute;
+                    let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
+
+                    let first = *subinv_ref.get_unchecked(subinv_pos);
+                    let second = *subinv_ref.get_unchecked(subinv_pos + 1);
+
+                    let where0 = (ULEQ_STEP_16!(first, rank_in_superblock_step_16).count_ones()
+                        as usize
+                        + ULEQ_STEP_16!(second, rank_in_superblock_step_16).count_ones() as usize)
+                        * 2;
+
+                    debug_assert!(where0 <= 16);
+
+                    let first_bis = *self
+                        .subinventory
+                        .as_ref()
+                        .get_unchecked(subinv_pos + where0 + 2);
+                    let second_bis = *self
+                        .subinventory
+                        .as_ref()
+                        .get_unchecked(subinv_pos + where0 + 2 + 1);
+
+                    let where1 = where0 * 8
+                        + (ULEQ_STEP_16!(first_bis, rank_in_superblock_step_16).count_ones()
+                            as usize
+                            + ULEQ_STEP_16!(second_bis, rank_in_superblock_step_16).count_ones()
+                                as usize)
+                            * 2;
+
+                    block_left += where1 * 4;
+                    count_left += where1 / 2;
+                    rank_in_block = rank - counts.get_unchecked(count_left).absolute;
+
+                    debug_assert!(rank_in_block < 512);
+                }
+                128..=255 => {
+                    let (_, s, _) = subinv_ref
+                        .get_unchecked(subinv_pos..self.subinventory_size)
+                        .align_to::<u16>();
+                    return *s.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize
+                        + inventory_left;
+                }
+                256..=511 => {
+                    let (_, s, _) = subinv_ref
+                        .get_unchecked(subinv_pos..self.subinventory_size)
+                        .align_to::<u32>();
+                    return *s.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize
+                        + inventory_left;
+                }
+                _ => {
+                    return *subinv_ref.get_unchecked(rank % Self::ONES_PER_INVENTORY);
+                }
             }
-            128..=255 => {
-                let (_, s, _) = subinv_ref
-                    .get_unchecked(subinv_pos..self.subinventory_size)
-                    .align_to::<u16>();
-                return *s.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize + inventory_left;
-            }
-            256..=511 => {
-                let (_, s, _) = subinv_ref
-                    .get_unchecked(subinv_pos..self.subinventory_size)
-                    .align_to::<u32>();
-                return *s.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize + inventory_left;
-            }
-            _ => {
-                return *subinv_ref.get_unchecked(rank % Self::ONES_PER_INVENTORY);
-            }
+
+            let rank_in_block_step_9 = rank_in_block * ONES_STEP_9;
+            let relative = counts.get_unchecked(count_left).relative;
+
+            let offset_in_block =
+                ULEQ_STEP_9!(relative, rank_in_block_step_9).count_ones() as usize;
+            debug_assert!(offset_in_block <= 7);
+
+            let word = block_left + offset_in_block;
+            let rank_in_word =
+                rank_in_block - counts.get_unchecked(count_left).rel(offset_in_block);
+
+            word * 64
+                + self
+                    .rank9
+                    .bits
+                    .as_ref()
+                    .get_unchecked(word)
+                    .select_in_word(rank_in_word)
         }
-
-        let rank_in_block_step_9 = rank_in_block * ONES_STEP_9;
-        let relative = counts.get_unchecked(count_left).relative;
-
-        let offset_in_block = ULEQ_STEP_9!(relative, rank_in_block_step_9).count_ones() as usize;
-        debug_assert!(offset_in_block <= 7);
-
-        let word = block_left + offset_in_block;
-        let rank_in_word = rank_in_block - counts.get_unchecked(count_left).rel(offset_in_block);
-
-        word * 64
-            + self
-                .rank9
-                .bits
-                .as_ref()
-                .get_unchecked(word)
-                .select_in_word(rank_in_word)
     }
 }
 

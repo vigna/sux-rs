@@ -203,7 +203,7 @@ impl<B: BitLength, C> SelectZeroAdapt<B, C> {
 }
 
 impl<B: AsRef<[usize]> + BitCount> SelectZeroAdapt<B, Box<[usize]>> {
-    /// Creates a new selection structure over a bit vecotr using a
+    /// Creates a new selection structure over a bit vector using a
     /// [default target inventory
     /// span](SelectZeroAdapt::DEFAULT_TARGET_INVENTORY_SPAN).
     ///
@@ -273,7 +273,7 @@ impl<B: AsRef<[usize]> + BitCount> SelectZeroAdapt<B, Box<[usize]>> {
     /// density of ones in the bit vector. Thus, this constructor makes sense
     /// only if the density is known in advance.
     ///
-    /// Unless you understand all the implications, it is preferrable to use the
+    /// Unless you understand all the implications, it is preferable to use the
     /// [standard constructor](SelectZeroAdapt::new).
     ///
     /// # Arguments
@@ -589,81 +589,84 @@ impl<B: AsRef<[usize]> + BitLength + SelectZeroHinted, I: AsRef<[usize]>> Select
     for SelectZeroAdapt<B, I>
 {
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
-        let inventory = self.inventory.as_ref();
-        let inventory_index = rank >> self.log2_ones_per_inventory;
-        let inventory_start_pos =
-            (inventory_index << self.log2_u64_per_subinventory) + inventory_index;
+        unsafe {
+            let inventory = self.inventory.as_ref();
+            let inventory_index = rank >> self.log2_ones_per_inventory;
+            let inventory_start_pos =
+                (inventory_index << self.log2_u64_per_subinventory) + inventory_index;
 
-        let inventory_rank = { *inventory.get_unchecked(inventory_start_pos) };
-        let subrank = rank & self.ones_per_inventory_mask;
+            let inventory_rank = { *inventory.get_unchecked(inventory_start_pos) };
+            let subrank = rank & self.ones_per_inventory_mask;
 
-        if inventory_rank.is_u16_span() {
-            let subinventory = inventory
-                .get_unchecked(inventory_start_pos + 1..)
-                .align_to::<u16>()
-                .1;
+            if inventory_rank.is_u16_span() {
+                let subinventory = inventory
+                    .get_unchecked(inventory_start_pos + 1..)
+                    .align_to::<u16>()
+                    .1;
 
-            debug_assert!(subrank >> self.log2_ones_per_sub16 < subinventory.len());
+                debug_assert!(subrank >> self.log2_ones_per_sub16 < subinventory.len());
 
-            let hint_pos = inventory_rank
-                + *subinventory.get_unchecked(subrank >> self.log2_ones_per_sub16) as usize;
-            let residual = subrank & self.ones_per_sub16_mask;
+                let hint_pos = inventory_rank
+                    + *subinventory.get_unchecked(subrank >> self.log2_ones_per_sub16) as usize;
+                let residual = subrank & self.ones_per_sub16_mask;
 
-            return self
-                .bits
-                .select_zero_hinted(rank, hint_pos, rank - residual);
-        }
+                return self
+                    .bits
+                    .select_zero_hinted(rank, hint_pos, rank - residual);
+            }
 
-        let u64_per_subinventory = 1 << self.log2_u64_per_subinventory;
+            let u64_per_subinventory = 1 << self.log2_u64_per_subinventory;
 
-        if inventory_rank.is_u32_span() {
+            if inventory_rank.is_u32_span() {
+                let inventory_rank = inventory_rank.get();
+
+                let span = (*inventory
+                    .get_unchecked(inventory_start_pos + u64_per_subinventory + 1))
+                .get()
+                    - inventory_rank;
+                let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span, self.log2_ones_per_sub16);
+                let hint_pos = if subrank >> log2_ones_per_sub32 < (u64_per_subinventory - 1) * 2 {
+                    let u32s = inventory
+                        .get_unchecked(inventory_start_pos + 2..)
+                        .align_to::<u32>()
+                        .1;
+
+                    inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize
+                } else {
+                    let start_spill_idx = *inventory.get_unchecked(inventory_start_pos + 1);
+
+                    let spilled_u32s = self
+                        .spill
+                        .as_ref()
+                        .get_unchecked(start_spill_idx..)
+                        .align_to::<u32>()
+                        .1;
+
+                    inventory_rank
+                        + *spilled_u32s.get_unchecked(
+                            (subrank >> log2_ones_per_sub32) - (u64_per_subinventory - 1) * 2,
+                        ) as usize
+                };
+                let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
+                return self
+                    .bits
+                    .select_zero_hinted(rank, hint_pos, rank - residual);
+            }
+
+            debug_assert!(inventory_rank.is_u64_span());
             let inventory_rank = inventory_rank.get();
 
-            let span = (*inventory.get_unchecked(inventory_start_pos + u64_per_subinventory + 1))
-                .get()
-                - inventory_rank;
-            let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span, self.log2_ones_per_sub16);
-            let hint_pos = if subrank >> log2_ones_per_sub32 < (u64_per_subinventory - 1) * 2 {
-                let u32s = inventory
-                    .get_unchecked(inventory_start_pos + 2..)
-                    .align_to::<u32>()
-                    .1;
-
-                inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize
-            } else {
-                let start_spill_idx = *inventory.get_unchecked(inventory_start_pos + 1);
-
-                let spilled_u32s = self
-                    .spill
-                    .as_ref()
-                    .get_unchecked(start_spill_idx..)
-                    .align_to::<u32>()
-                    .1;
-
-                inventory_rank
-                    + *spilled_u32s.get_unchecked(
-                        (subrank >> log2_ones_per_sub32) - (u64_per_subinventory - 1) * 2,
-                    ) as usize
-            };
-            let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
-            return self
-                .bits
-                .select_zero_hinted(rank, hint_pos, rank - residual);
-        }
-
-        debug_assert!(inventory_rank.is_u64_span());
-        let inventory_rank = inventory_rank.get();
-
-        if subrank < u64_per_subinventory {
-            if subrank == 0 {
-                return inventory_rank;
+            if subrank < u64_per_subinventory {
+                if subrank == 0 {
+                    return inventory_rank;
+                }
+                return *inventory.get_unchecked(inventory_start_pos + 1 + subrank);
             }
-            return *inventory.get_unchecked(inventory_start_pos + 1 + subrank);
+            let spill_idx = { *inventory.get_unchecked(inventory_start_pos + 1) } + subrank
+                - u64_per_subinventory;
+            debug_assert!(spill_idx < self.spill.as_ref().len());
+            *self.spill.as_ref().get_unchecked(spill_idx)
         }
-        let spill_idx =
-            { *inventory.get_unchecked(inventory_start_pos + 1) } + subrank - u64_per_subinventory;
-        debug_assert!(spill_idx < self.spill.as_ref().len());
-        *self.spill.as_ref().get_unchecked(spill_idx)
     }
 }
 
@@ -679,9 +682,9 @@ mod tests {
     use super::*;
     use crate::bits::BitVec;
     use crate::traits::AddNumBits;
-    use rand::rngs::SmallRng;
     use rand::Rng;
     use rand::SeedableRng;
+    use rand::rngs::SmallRng;
 
     #[test]
     fn test_sub64s() {

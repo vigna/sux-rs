@@ -287,9 +287,10 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), ()> {
     /// # use sux::prelude::*;
     /// # use bit_field_slice::*;
+    /// # fn main() -> Result<(), ()> {
+
     /// let mut b = bit_field_vec![32; 4, 500, 2, 3, 1];
     /// for mut c in b.try_chunks_mut(2)? {
     ///     c.set(0, 5);
@@ -484,7 +485,7 @@ macro_rules! impl_delegation {
             #[inline(always)]
             unsafe fn get_unchecked(&self, index: usize) -> W {
                 debug_assert_bounds!(index, self.len());
-                T::get_unchecked(self, index)
+                unsafe { T::get_unchecked(self, index) }
             }
         }
 )*}}
@@ -501,7 +502,7 @@ macro_rules! impl_slice {
 
             unsafe fn get_unchecked(&self, index: usize) -> $ty {
                 debug_assert_bounds!(index, self.len());
-                *self.get_unchecked(index)
+                unsafe { *self.get_unchecked(index) }
             }
         }
 
@@ -515,7 +516,7 @@ macro_rules! impl_slice {
             unsafe fn get_unchecked(&self, index: usize) -> $ty {
                 debug_assert_bounds!(index, self.len());
                 use std::ops::Deref;
-                *self.deref().get_unchecked(index)
+                unsafe { *self.deref().get_unchecked(index) }
             }
         }
 
@@ -529,7 +530,7 @@ macro_rules! impl_slice {
             unsafe fn get_unchecked(&self, index: usize) -> $ty {
                 let as_slice = self.as_slice();
                 debug_assert_bounds!(index, as_slice.len());
-                *as_slice.get_unchecked(index)
+                unsafe { *as_slice.get_unchecked(index) }
             }
         }
     )*};
@@ -547,7 +548,7 @@ macro_rules! impl_mut_delegation {
             #[inline(always)]
             unsafe fn set_unchecked(&mut self, index: usize, value: W) {
                 debug_assert_bounds!(index, self.len());
-                T::set_unchecked(self, index, value);
+                unsafe { T::set_unchecked(self, index, value); }
             }
             #[inline(always)]
             fn set(&mut self, index: usize, value: W) {
@@ -573,7 +574,7 @@ macro_rules! impl_mut_delegation {
                 F: FnMut(W) -> W,
                 Self: BitFieldSlice<W>,
             {
-                T::apply_in_place_unchecked(self, f);
+                unsafe { T::apply_in_place_unchecked(self, f); }
             }
             #[inline(always)]
             fn apply_in_place<F>(&mut self, f: F)
@@ -606,7 +607,7 @@ macro_rules! impl_slice_mut {
             #[inline(always)]
             unsafe fn set_unchecked(&mut self, index: usize, value: $ty) {
                 debug_assert_bounds!(index, <[$ty]>::len(self));
-                *self.get_unchecked_mut(index) = value;
+                *unsafe { self.get_unchecked_mut(index) } = value;
             }
 
             fn reset(&mut self) {
@@ -642,7 +643,7 @@ macro_rules! impl_slice_mut {
             #[inline(always)]
             unsafe fn set_unchecked(&mut self, index: usize, value: $ty) {
                 debug_assert_bounds!(index, <Vec<$ty>>::len(self));
-                *self.get_unchecked_mut(index) = value;
+                *unsafe { self.get_unchecked_mut(index) } = value;
             }
 
             fn reset(&mut self) {
@@ -679,7 +680,7 @@ macro_rules! impl_slice_mut {
             #[inline(always)]
             unsafe fn set_unchecked(&mut self, index: usize, value: $ty) {
                 debug_assert_bounds!(index, self.as_slice().len());
-                *self.get_unchecked_mut(index) = value;
+                *unsafe { self.get_unchecked_mut(index) } = value;
             }
 
             fn reset(&mut self) {
@@ -764,12 +765,14 @@ macro_rules! impl_atomic {
             #[inline(always)]
             unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> $std {
                 debug_assert_bounds!(index, self.len());
-                self.as_ref().get_unchecked(index).load(order)
+                unsafe { self.as_ref().get_unchecked(index).load(order) }
             }
             #[inline(always)]
             unsafe fn set_atomic_unchecked(&self, index: usize, value: $std, order: Ordering) {
                 debug_assert_bounds!(index, self.len());
-                self.as_ref().get_unchecked(index).store(value, order);
+                unsafe {
+                    self.as_ref().get_unchecked(index).store(value, order);
+                }
             }
 
             fn reset_atomic(&mut self, order: Ordering) {
@@ -791,12 +794,14 @@ macro_rules! impl_atomic {
             #[inline(always)]
             unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> $std {
                 debug_assert_bounds!(index, self.len());
-                self.as_slice().get_unchecked(index).load(order)
+                unsafe { self.as_slice().get_unchecked(index).load(order) }
             }
             #[inline(always)]
             unsafe fn set_atomic_unchecked(&self, index: usize, value: $std, order: Ordering) {
                 debug_assert_bounds!(index, self.len());
-                self.as_slice().get_unchecked(index).store(value, order);
+                unsafe {
+                    self.as_slice().get_unchecked(index).store(value, order);
+                }
             }
 
             fn reset_atomic(&mut self, order: Ordering) {
@@ -817,12 +822,14 @@ macro_rules! impl_atomic {
             #[inline(always)]
             unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> $std {
                 debug_assert_bounds!(index, self.len());
-                self.as_slice().get_unchecked(index).load(order)
+                unsafe { self.as_slice().get_unchecked(index).load(order) }
             }
             #[inline(always)]
             unsafe fn set_atomic_unchecked(&self, index: usize, value: $std, order: Ordering) {
                 debug_assert_bounds!(index, self.len());
-                self.as_slice().get_unchecked(index).store(value, order);
+                unsafe {
+                    self.as_slice().get_unchecked(index).store(value, order);
+                }
             }
 
             fn reset_atomic(&mut self, order: Ordering) {
@@ -855,7 +862,7 @@ macro_rules! impl_atomic_delegation {
         {
             #[inline(always)]
             unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> W {
-                T::get_atomic_unchecked(self, index, order)
+                unsafe { T::get_atomic_unchecked(self, index, order) }
             }
             #[inline(always)]
             fn get_atomic(&self, index: usize, order: Ordering) -> W {
@@ -863,7 +870,7 @@ macro_rules! impl_atomic_delegation {
             }
             #[inline(always)]
             unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering) {
-                T::set_atomic_unchecked(self, index, value, order)
+                unsafe { T::set_atomic_unchecked(self, index, value, order) }
             }
             #[inline(always)]
             fn set_atomic(&self, index: usize, value: W, order: Ordering) {
@@ -898,7 +905,7 @@ where
     /// See [`AtomicBitFieldSlice::get_atomic_unchecked`]
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize, order: Ordering) -> W {
-        self.get_atomic_unchecked(index, order)
+        unsafe { self.get_atomic_unchecked(index, order) }
     }
 
     /// Delegates to [`AtomicBitFieldSlice::set_atomic`]
@@ -912,7 +919,7 @@ where
     /// See [`AtomicBitFieldSlice::get_atomic_unchecked`]
     #[inline(always)]
     unsafe fn set_unchecked(&self, index: usize, value: W, order: Ordering) {
-        self.set_atomic_unchecked(index, value, order)
+        unsafe { self.set_atomic_unchecked(index, value, order) }
     }
 
     /// Delegates to [`AtomicBitFieldSlice::set_atomic`]

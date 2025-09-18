@@ -163,12 +163,12 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
 macro_rules! impl_rank_small_sel {
     ($NUM_U32S: tt; $COUNTER_WIDTH: literal) => {
         impl<
-                C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                    + AsRef<[usize]>
-                    + BitLength
-                    + NumBits
-                    + SelectHinted,
-            > SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+            C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
+                + AsRef<[usize]>
+                + BitLength
+                + NumBits
+                + SelectHinted,
+        > SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             /// Creates a new selection structure with eight [`RankSmall`]
             /// blocks per inventory an average.
@@ -249,112 +249,115 @@ macro_rules! impl_rank_small_sel {
         }
 
         impl<
-                C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                    + AsRef<[usize]>
-                    + BitLength
-                    + NumBits
-                    + SelectHinted,
-            > SelectUnchecked for SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+            C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
+                + AsRef<[usize]>
+                + BitLength
+                + NumBits
+                + SelectHinted,
+        > SelectUnchecked for SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
-                let upper_counts = self.small_counters.upper_counts();
-                let counts = self.small_counters.counts();
+                unsafe {
+                    let upper_counts = self.small_counters.upper_counts();
+                    let counts = self.small_counters.counts();
 
-                let upper_block_idx = upper_counts.linear_partition_point(|&x| x <= rank) - 1;
-                let upper_rank = *upper_counts.get_unchecked(upper_block_idx) as usize;
-                let local_rank = rank - upper_rank;
+                    let upper_block_idx = upper_counts.linear_partition_point(|&x| x <= rank) - 1;
+                    let upper_rank = *upper_counts.get_unchecked(upper_block_idx) as usize;
+                    let local_rank = rank - upper_rank;
 
-                let inventory = self.inventory.as_ref();
-                let inventory_begin = self.inventory_begin.as_ref();
+                    let inventory = self.inventory.as_ref();
+                    let inventory_begin = self.inventory_begin.as_ref();
 
-                // we find the two inventory entries containing the rank and from that
-                // the blocks containing the rank.
-                // if the span of the two entries is not contained in the same upper block
-                // we clip the span to the upper block boundaries since we know that
-                // the rank is in the upper block with index upper_block_idx.
+                    // we find the two inventory entries containing the rank and from that
+                    // the blocks containing the rank.
+                    // if the span of the two entries is not contained in the same upper block
+                    // we clip the span to the upper block boundaries since we know that
+                    // the rank is in the upper block with index upper_block_idx.
 
-                let inv_idx = rank >> self.log2_ones_per_inventory;
-                let inv_upper_block_idx =
-                    inventory_begin.linear_partition_point(|&x| x <= inv_idx) - 1;
-                let opt;
-                let inv_pos = if inv_upper_block_idx == upper_block_idx {
-                    opt = (inv_idx << self.log2_ones_per_inventory) - upper_rank;
-                    *inventory.get_unchecked(inv_idx) as usize
-                        + upper_block_idx * Self::SUPERBLOCK_BIT_SIZE
-                } else {
-                    // For extremely sparse and large bit vectors, the inventory entry containing
-                    // the rank could fall in previous upper blocks.
-                    // For this reason, inv_upper_block_idx is not necessarily equal to upper_block_idx.
-                    // Since we know for sure that the rank is in the upper block with index upper_block_idx,
-                    // we can safely use that value to compute inv_pos.
-                    opt = 0;
-                    upper_block_idx * Self::SUPERBLOCK_BIT_SIZE
-                };
-                let mut block_idx = inv_pos / Self::BLOCK_BIT_SIZE;
-                // cs-poppy micro-optimization: each block can contain at most
-                // Self::BLOCK_BIT_SIZE ones, so we can skip blocks to which the bit
-                // we are looking for cannot possibly belong.
-                //
-                // It would be more precise by using the absolute counter at
-                // block_idx, but in benchmarks the additional memory accesses
-                // slow down the search, except in the very dense case. We thus
-                // approximate the value with opt: this works because
-                //
-                // inv_idx * ones_per_inventory - upper_rank =
-                // local_rank - local_rank % ones_per_inventory
-                // >= counts.get(block_idx).absolute.
-                block_idx += (local_rank - opt) / Self::BLOCK_BIT_SIZE;
-
-                let last_block_idx;
-                if inv_idx + 1 < inventory.len() {
-                    let next_inv_upper_block_idx =
-                        inventory_begin.linear_partition_point(|&x| x <= inv_idx + 1) - 1; // TODO: +1?
-                    last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
-                        let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize
-                            + upper_block_idx * Self::SUPERBLOCK_BIT_SIZE;
-                        next_inv_pos.div_ceil(Self::BLOCK_BIT_SIZE)
+                    let inv_idx = rank >> self.log2_ones_per_inventory;
+                    let inv_upper_block_idx =
+                        inventory_begin.linear_partition_point(|&x| x <= inv_idx) - 1;
+                    let opt;
+                    let inv_pos = if inv_upper_block_idx == upper_block_idx {
+                        opt = (inv_idx << self.log2_ones_per_inventory) - upper_rank;
+                        *inventory.get_unchecked(inv_idx) as usize
+                            + upper_block_idx * Self::SUPERBLOCK_BIT_SIZE
                     } else {
-                        (upper_block_idx + 1) * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
+                        // For extremely sparse and large bit vectors, the inventory entry containing
+                        // the rank could fall in previous upper blocks.
+                        // For this reason, inv_upper_block_idx is not necessarily equal to upper_block_idx.
+                        // Since we know for sure that the rank is in the upper block with index upper_block_idx,
+                        // we can safely use that value to compute inv_pos.
+                        opt = 0;
+                        upper_block_idx * Self::SUPERBLOCK_BIT_SIZE
                     };
-                } else {
-                    // TODO
-                    // Since we use 32-bit entries, we cannot add a sentinel
-                    // with value given by the number of bits. Thus, we must
-                    // handle the case in which inv_idx is the the last
-                    // inventory entry as a special case.
-                    last_block_idx = self.len().div_ceil(Self::BLOCK_BIT_SIZE);
+                    let mut block_idx = inv_pos / Self::BLOCK_BIT_SIZE;
+                    // cs-poppy micro-optimization: each block can contain at most
+                    // Self::BLOCK_BIT_SIZE ones, so we can skip blocks to which the bit
+                    // we are looking for cannot possibly belong.
+                    //
+                    // It would be more precise by using the absolute counter at
+                    // block_idx, but in benchmarks the additional memory accesses
+                    // slow down the search, except in the very dense case. We thus
+                    // approximate the value with opt: this works because
+                    //
+                    // inv_idx * ones_per_inventory - upper_rank =
+                    // local_rank - local_rank % ones_per_inventory
+                    // >= counts.get(block_idx).absolute.
+                    block_idx += (local_rank - opt) / Self::BLOCK_BIT_SIZE;
+
+                    let last_block_idx;
+                    if inv_idx + 1 < inventory.len() {
+                        let next_inv_upper_block_idx =
+                            inventory_begin.linear_partition_point(|&x| x <= inv_idx + 1) - 1; // TODO: +1?
+                        last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
+                            let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize
+                                + upper_block_idx * Self::SUPERBLOCK_BIT_SIZE;
+                            next_inv_pos.div_ceil(Self::BLOCK_BIT_SIZE)
+                        } else {
+                            (upper_block_idx + 1)
+                                * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
+                        };
+                    } else {
+                        // TODO
+                        // Since we use 32-bit entries, we cannot add a sentinel
+                        // with value given by the number of bits. Thus, we must
+                        // handle the case in which inv_idx is the the last
+                        // inventory entry as a special case.
+                        last_block_idx = self.len().div_ceil(Self::BLOCK_BIT_SIZE);
+                    }
+
+                    debug_assert!(block_idx < counts.len());
+
+                    debug_assert!(
+                        block_idx <= last_block_idx,
+                        "{} > {}",
+                        block_idx,
+                        last_block_idx
+                    );
+
+                    debug_assert!(block_idx < last_block_idx);
+
+                    block_idx += counts[block_idx..last_block_idx]
+                        .partition_point(|x| x.absolute as usize <= local_rank)
+                        - 1;
+
+                    let block_count = counts.get_unchecked(block_idx);
+                    let hint_rank = upper_rank + block_count.absolute as usize;
+                    let hint_pos = block_idx * Self::BLOCK_BIT_SIZE;
+
+                    self.complete_select(block_count, hint_pos, rank, hint_rank)
                 }
-
-                debug_assert!(block_idx < counts.len());
-
-                debug_assert!(
-                    block_idx <= last_block_idx,
-                    "{} > {}",
-                    block_idx,
-                    last_block_idx
-                );
-
-                debug_assert!(block_idx < last_block_idx);
-
-                block_idx += counts[block_idx..last_block_idx]
-                    .partition_point(|x| x.absolute as usize <= local_rank)
-                    - 1;
-
-                let block_count = counts.get_unchecked(block_idx);
-                let hint_rank = upper_rank + block_count.absolute as usize;
-                let hint_pos = block_idx * Self::BLOCK_BIT_SIZE;
-
-                self.complete_select(block_count, hint_pos, rank, hint_rank)
             }
         }
 
         impl<
-                C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                    + AsRef<[usize]>
-                    + BitLength
-                    + NumBits
-                    + SelectHinted,
-            > Select for SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+            C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
+                + AsRef<[usize]>
+                + BitLength
+                + NumBits
+                + SelectHinted,
+        > Select for SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
         }
     };
@@ -393,10 +396,11 @@ impl<C: SmallCounters<2, 9> + AsRef<[usize]> + BitLength + NumBits> SelectSmall<
         hint_pos += offset_in_block * Self::SUBBLOCK_BIT_SIZE;
 
         hint_pos
-            + self
-                .as_ref()
-                .get_unchecked(hint_pos / usize::BITS as usize)
-                .select_in_word(rank_in_word)
+            + unsafe {
+                self.as_ref()
+                    .get_unchecked(hint_pos / usize::BITS as usize)
+                    .select_in_word(rank_in_word)
+            }
     }
 }
 
@@ -427,11 +431,13 @@ impl<C: SmallCounters<1, 9> + AsRef<[usize]> + BitLength + NumBits + SelectHinte
 
         let offset_in_block = ULEQ_STEP_9!(relative, rank_in_block_step_9).count_ones() as usize;
 
-        self.select_hinted(
-            rank,
-            hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
-            hint_rank + block_count.rel(offset_in_block),
-        )
+        unsafe {
+            self.select_hinted(
+                rank,
+                hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
+                hint_rank + block_count.rel(offset_in_block),
+            )
+        }
     }
 }
 
@@ -462,11 +468,13 @@ impl<C: SmallCounters<1, 10> + AsRef<[usize]> + BitLength + NumBits + SelectHint
 
         let offset_in_block = ULEQ_STEP_10!(relative, rank_in_block_step_10).count_ones() as usize;
 
-        self.select_hinted(
-            rank,
-            hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
-            hint_rank + block_count.rel(offset_in_block),
-        )
+        unsafe {
+            self.select_hinted(
+                rank,
+                hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
+                hint_rank + block_count.rel(offset_in_block),
+            )
+        }
     }
 }
 
@@ -497,11 +505,13 @@ impl<C: SmallCounters<1, 11> + AsRef<[usize]> + BitLength + NumBits + SelectHint
 
         let offset_in_block = ULEQ_STEP_11!(relative, rank_in_block_step_11).count_ones() as usize;
 
-        self.select_hinted(
-            rank,
-            hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
-            hint_rank + block_count.rel(offset_in_block),
-        )
+        unsafe {
+            self.select_hinted(
+                rank,
+                hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
+                hint_rank + block_count.rel(offset_in_block),
+            )
+        }
     }
 }
 
@@ -537,11 +547,13 @@ impl<C: SmallCounters<3, 13> + AsRef<[usize]> + BitLength + NumBits + SelectHint
 
         let offset_in_block = ULEQ_STEP_13!(relative, rank_in_block_step_13).count_ones() as usize;
 
-        self.select_hinted(
-            rank,
-            hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
-            hint_rank + block_count.rel(offset_in_block),
-        )
+        unsafe {
+            self.select_hinted(
+                rank,
+                hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
+                hint_rank + block_count.rel(offset_in_block),
+            )
+        }
     }
 }
 

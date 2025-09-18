@@ -20,8 +20,8 @@ use derive_setters::*;
 use dsi_progress_logger::*;
 use epserde::prelude::*;
 use log::info;
-use rand::rngs::SmallRng;
 use rand::SeedableRng;
+use rand::rngs::SmallRng;
 use rand::{Rng, RngCore};
 use rayon::iter::ParallelIterator;
 use rayon::slice::ParallelSlice;
@@ -33,8 +33,8 @@ use std::marker::PhantomData;
 use std::mem::transmute;
 use std::ops::{BitXor, BitXorAssign};
 use std::slice::Iter;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use thread_priority::ThreadPriority;
 
@@ -90,11 +90,10 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// the second type parameter):
 ///
 /// ```rust
+/// # use sux::func::VBuilder;
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::utils::FromIntoIterator;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use sux::func::VBuilder;
-/// use dsi_progress_logger::no_logging;
-/// use sux::utils::FromIntoIterator;
-///
 /// let builder = VBuilder::<_, Box<[usize]>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_func(
@@ -114,12 +113,11 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// ⌈log₂(99)⌉ bits per backend element:
 ///
 /// ```rust
+/// # use sux::func::VBuilder;
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::utils::FromIntoIterator;
+/// # use sux::bits::BitFieldVec;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use sux::func::VBuilder;
-/// use dsi_progress_logger::no_logging;
-/// use sux::utils::FromIntoIterator;
-/// use sux::bits::BitFieldVec;
-///
 /// let builder = VBuilder::<_, BitFieldVec<usize>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_func(
@@ -141,12 +139,11 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// from the type of the items returned by the first [`RewindableIoLender`]:
 ///
 /// ```rust
+/// # use sux::func::VBuilder;
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::utils::FromIntoIterator;
+/// # use sux::bits::BitFieldVec;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use sux::func::VBuilder;
-/// use dsi_progress_logger::no_logging;
-/// use sux::utils::FromIntoIterator;
-/// use sux::bits::BitFieldVec;
-///
 /// let builder = VBuilder::<_, Box<[u8]>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_func(
@@ -168,11 +165,10 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// hashes):
 ///
 /// ```rust
+/// # use sux::func::VBuilder;
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::utils::FromIntoIterator;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use sux::func::VBuilder;
-/// use dsi_progress_logger::no_logging;
-/// use sux::utils::FromIntoIterator;
-///
 /// let builder = VBuilder::<_, Box<[u8]>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_filter(
@@ -191,12 +187,11 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// shards, which will yield faster queries:
 ///
 /// ```rust
+/// # use sux::func::VBuilder;
+/// # use sux::func::shard_edge::FuseLge3NoShards;
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::utils::FromIntoIterator;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use sux::func::VBuilder;
-/// use sux::func::shard_edge::FuseLge3NoShards;
-/// use dsi_progress_logger::no_logging;
-/// use sux::utils::FromIntoIterator;
-///
 /// let builder = VBuilder::<_, Box<[u8]>, [u64; 1], FuseLge3NoShards>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_filter(
@@ -683,11 +678,11 @@ where
 }
 
 impl<
-        W: ZeroCopy + Word,
-        D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
-        S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
-    > VBuilder<W, D, S, E>
+    W: ZeroCopy + Word,
+    D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+> VBuilder<W, D, S, E>
 {
     /// Builds and returns a new function with given keys and values.
     ///
@@ -822,11 +817,11 @@ impl<
 }
 
 impl<
-        W: ZeroCopy + Word,
-        D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
-        S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
-    > VBuilder<W, D, S, E>
+    W: ZeroCopy + Word,
+    D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+> VBuilder<W, D, S, E>
 {
     /// Tries to build a function using specific seed. See the comments in the
     /// [`VBuilder::build_loop`] method for more details.
@@ -1099,11 +1094,11 @@ macro_rules! remove_edge {
 }
 
 impl<
-        W: ZeroCopy + Word + Send + Sync,
-        D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
-        S: Sig + ZeroCopy + Send + Sync,
-        E: ShardEdge<S, 3>,
-    > VBuilder<W, D, S, E>
+    W: ZeroCopy + Word + Send + Sync,
+    D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
+    S: Sig + ZeroCopy + Send + Sync,
+    E: ShardEdge<S, 3>,
+> VBuilder<W, D, S, E>
 {
     fn count_sort<V: ZeroCopy>(&self, data: &mut [SigVal<S, V>]) {
         let num_sort_keys = self.shard_edge.num_sort_keys();

@@ -236,17 +236,21 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for
     /// assert_eq!(unsafe { rank9.rank_unchecked(8) }, rank9.num_ones());
     #[inline(always)]
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-        let word_pos = pos / usize::BITS as usize;
-        let bit_pos = pos % usize::BITS as usize;
-        let block = word_pos / Self::WORDS_PER_BLOCK;
-        let offset = word_pos % Self::WORDS_PER_BLOCK;
-        // When pos is equal to the length of the underlying bit vector and
-        // there is at least one unused bit, this access is safe as there
-        // is a word of index word_pos.
-        let word = self.bits.as_ref().get_unchecked(word_pos);
-        let counts = self.counts.as_ref().get_unchecked(block);
+        unsafe {
+            let word_pos = pos / usize::BITS as usize;
+            let bit_pos = pos % usize::BITS as usize;
+            let block = word_pos / Self::WORDS_PER_BLOCK;
+            let offset = word_pos % Self::WORDS_PER_BLOCK;
+            // When pos is equal to the length of the underlying bit vector and
+            // there is at least one unused bit, this access is safe as there
+            // is a word of index word_pos.
+            let word = self.bits.as_ref().get_unchecked(word_pos);
+            let counts = self.counts.as_ref().get_unchecked(block);
 
-        counts.absolute + counts.rel(offset) + (word & ((1 << bit_pos) - 1)).count_ones() as usize
+            counts.absolute
+                + counts.rel(offset)
+                + (word & ((1 << bit_pos) - 1)).count_ones() as usize
+        }
     }
 }
 

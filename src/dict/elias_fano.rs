@@ -289,9 +289,11 @@ impl<H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>> IndexedSeq fo
 
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> usize {
-        let high_bits = self.high_bits.select_unchecked(index) - index;
-        let low_bits = self.low_bits.get_unchecked(index);
-        (high_bits << self.l) | low_bits
+        unsafe {
+            let high_bits = self.high_bits.select_unchecked(index) - index;
+            let low_bits = self.low_bits.get_unchecked(index);
+            (high_bits << self.l) | low_bits
+        }
     }
 }
 
@@ -366,7 +368,7 @@ where
         let bit_pos = if zeros_to_skip == 0 {
             0
         } else {
-            self.high_bits.select_zero_unchecked(zeros_to_skip - 1) + 1
+            unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip - 1) + 1 }
         };
 
         let mut rank = bit_pos - zeros_to_skip;
@@ -429,7 +431,7 @@ where
     ) -> (usize, Self::Output<'_>) {
         let value = *value.borrow();
         let zeros_to_skip = value >> self.l;
-        let mut bit_pos = self.high_bits.select_zero_unchecked(zeros_to_skip) - 1;
+        let mut bit_pos = unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip) } - 1;
 
         let mut rank = bit_pos - zeros_to_skip;
         let mut iter = self.low_bits.into_rev_unchecked_iter_from(rank + 1);
@@ -441,7 +443,9 @@ where
             let lower_bits = unsafe { iter.next_unchecked() };
             let mut word_idx = bit_pos / (usize::BITS as usize);
             let bit_idx = bit_pos % (usize::BITS as usize);
-            if self.high_bits.as_ref().get_unchecked(word_idx) & (1_usize << bit_idx) == 0 {
+            if unsafe { self.high_bits.as_ref().get_unchecked(word_idx) } & (1_usize << bit_idx)
+                == 0
+            {
                 let mut zeros = bit_idx;
                 let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) }
                     & !(usize::MAX << bit_idx);
@@ -547,7 +551,7 @@ impl<H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>>
     value_traits::slices::SliceByValueGet for EliasFano<H, L>
 {
     unsafe fn get_value_unchecked(&self, index: usize) -> Self::Value {
-        <Self as IndexedSeq>::get_unchecked(self, index)
+        unsafe { <Self as IndexedSeq>::get_unchecked(self, index) }
     }
 }
 
