@@ -438,45 +438,44 @@ where
 
         // SAFETY: we are certainly iterating within the length of the arrays
         // and within the range of the iterator because there is a predecessor for sure.
-
-        loop {
-            let lower_bits = unsafe { iter.next_unchecked() };
-            let mut word_idx = bit_pos / (usize::BITS as usize);
-            let bit_idx = bit_pos % (usize::BITS as usize);
-            if unsafe { self.high_bits.as_ref().get_unchecked(word_idx) } & (1_usize << bit_idx)
-                == 0
-            {
-                let mut zeros = bit_idx;
-                let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) }
-                    & !(usize::MAX << bit_idx);
-                while window == 0 {
-                    word_idx -= 1;
-                    window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
-                    zeros += usize::BITS as usize;
+        unsafe {
+            loop {
+                let lower_bits = iter.next_unchecked();
+                let mut word_idx = bit_pos / (usize::BITS as usize);
+                let bit_idx = bit_pos % (usize::BITS as usize);
+                if self.high_bits.as_ref().get_unchecked(word_idx) & (1_usize << bit_idx) == 0 {
+                    let mut zeros = bit_idx;
+                    let mut window =
+                        *self.high_bits.as_ref().get_unchecked(word_idx) & !(usize::MAX << bit_idx);
+                    while window == 0 {
+                        word_idx -= 1;
+                        window = *self.high_bits.as_ref().get_unchecked(word_idx);
+                        zeros += usize::BITS as usize;
+                    }
+                    return (
+                        rank,
+                        (((usize::BITS as usize) - 1 + bit_pos
+                            - zeros
+                            - window.leading_zeros() as usize
+                            - rank)
+                            << self.l)
+                            | lower_bits,
+                    );
                 }
-                return (
-                    rank,
-                    (((usize::BITS as usize) - 1 + bit_pos
-                        - zeros
-                        - window.leading_zeros() as usize
-                        - rank)
-                        << self.l)
-                        | lower_bits,
-                );
+
+                if STRICT {
+                    if lower_bits < value & ((1 << self.l) - 1) {
+                        return (rank, ((bit_pos - rank) << self.l) | lower_bits);
+                    }
+                } else {
+                    if lower_bits <= value & ((1 << self.l) - 1) {
+                        return (rank, ((bit_pos - rank) << self.l) | lower_bits);
+                    }
+                }
+
+                bit_pos -= 1;
+                rank -= 1;
             }
-
-            if STRICT {
-                if lower_bits < value & ((1 << self.l) - 1) {
-                    return (rank, ((bit_pos - rank) << self.l) | lower_bits);
-                }
-            } else {
-                if lower_bits <= value & ((1 << self.l) - 1) {
-                    return (rank, ((bit_pos - rank) << self.l) | lower_bits);
-                }
-            }
-
-            bit_pos -= 1;
-            rank -= 1;
         }
     }
 }
@@ -1012,8 +1011,10 @@ impl EliasFanoConcurrentBuilder {
         let low = value & ((1 << self.l) - 1);
         // Note that the concurrency guarantees of BitFieldVec
         // are sufficient for us.
-        self.low_bits
-            .set_atomic_unchecked(index, low, Ordering::Relaxed);
+        unsafe {
+            self.low_bits
+                .set_atomic_unchecked(index, low, Ordering::Relaxed)
+        };
 
         let high = (value >> self.l) + index;
         self.high_bits.set(high, true, Ordering::Relaxed);
@@ -1022,7 +1023,7 @@ impl EliasFanoConcurrentBuilder {
     /// Builds an Elias-Fano structure.
     ///
     /// The resulting structure has no selection structure attached. To use it
-    /// propertly, you need to call [`EliasFano::map_high_bits`] to add to the
+    /// properly, you need to call [`EliasFano::map_high_bits`] to add to the
     /// high bits a selection structure.
     ///
     /// Usually, however, the default implementations returned by the
