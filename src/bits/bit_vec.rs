@@ -156,7 +156,7 @@ macro_rules! bit_vec {
     ($($x:expr),+ $(,)?) => {
         {
             let mut b = $crate::bits::BitVec::with_capacity([$($x),+].len());
-            $( $crate::bits::BitVec::push(&mut b, $x != 0); )*
+            $( b.push($x != 0); )*
             b
         }
     };

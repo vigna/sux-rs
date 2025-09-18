@@ -5,11 +5,10 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::ops::{BitXor, BitXorAssign};
-
 use anyhow::Result;
 use dsi_progress_logger::*;
 use rdst::RadixKey;
+use std::ops::{BitXor, BitXorAssign};
 use sux::{
     bits::BitFieldVec,
     func::shard_edge::{FuseLge3FullSigs, FuseLge3NoShards, FuseLge3Shards, ShardEdge},
@@ -160,14 +159,16 @@ fn test_dup_key() -> Result<()> {
         .filter_level(log::LevelFilter::Info)
         .try_init();
 
-    assert!(VBuilder::<usize, BitFieldVec<usize>>::default()
-        .check_dups(true)
-        .try_build_func(
-            FromIntoIterator::from(std::iter::repeat_n(0, 10)),
-            FromIntoIterator::from(0..),
-            &mut ProgressLogger::default(),
-        )
-        .is_err());
+    assert!(
+        VBuilder::<usize, BitFieldVec<usize>>::default()
+            .check_dups(true)
+            .try_build_func(
+                FromIntoIterator::from(std::iter::repeat_n(0, 10)),
+                FromIntoIterator::from(0..),
+                &mut ProgressLogger::default(),
+            )
+            .is_err()
+    );
 
     Ok(())
 }

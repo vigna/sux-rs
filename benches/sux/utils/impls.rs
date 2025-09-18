@@ -34,7 +34,7 @@ macro_rules! impl_select_adapt {
         }
         impl SelectUnchecked for $name<AddNumBits<BitVec>> {
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
-                self.inner.select_unchecked(rank)
+                unsafe { self.inner.select_unchecked(rank) }
             }
         }
         impl Select for $name<AddNumBits<BitVec>> {
@@ -80,7 +80,7 @@ macro_rules! impl_select_adapt_const {
         }
         impl SelectUnchecked for $name<AddNumBits<BitVec>> {
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
-                self.inner.select_unchecked(rank)
+                unsafe { self.inner.select_unchecked(rank) }
             }
         }
         impl Select for $name<AddNumBits<BitVec>> {
