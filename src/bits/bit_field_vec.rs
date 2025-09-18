@@ -1204,9 +1204,8 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 /// ever write to the same boundary-crossing value, then no race condition can
 /// happen.
 ///
-/// Note that the trait
-/// [`AtomicHelper`](crate::traits::bit_field_slice::AtomicHelper) can be used
-/// to provide a more convenient naming for some methods.
+/// Note that the trait [`AtomicHelper`] can be used to provide a more
+/// convenient naming for some methods.
 
 #[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
 pub struct AtomicBitFieldVec<W: Word + IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
