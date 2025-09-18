@@ -206,7 +206,7 @@ use std::borrow::Borrow;
 /// assert_eq!(ef.get(1), 2);
 /// ```
 
-#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize, value_traits::Subslices)]
+#[derive(Epserde, Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
 #[value_traits_subslices(bound = "H: AsRef<[usize]> + SelectUnchecked")]
 #[value_traits_subslices(bound = "L: BitFieldSlice<usize>")]
 pub struct EliasFano<H = BitVec<Box<[usize]>>, L = BitFieldVec<usize, Box<[usize]>>> {
