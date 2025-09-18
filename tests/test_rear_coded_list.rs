@@ -24,10 +24,10 @@ fn test_rear_coded_list_100() -> Result<()> {
 }
 
 fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
-    let words = BufReader::new(std::fs::File::open(path.as_ref()).unwrap())
+    let words = BufReader::new(std::fs::File::open(path.as_ref())?)
         .lines()
-        .map(|line| line.unwrap())
-        .collect::<Vec<_>>();
+        .map(|line| line.map_err(anyhow::Error::from))
+        .collect::<Result<Vec<_>>>()?;
 
     // test sorted RCL
 

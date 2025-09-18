@@ -254,7 +254,7 @@ fn test_bit_width_zero() {
 }
 
 #[test]
-fn test_from_slice() {
+fn test_from_slice() -> anyhow::Result<()> {
     use sux::traits::bit_field_slice::BitFieldSlice;
     use sux::traits::bit_field_slice::BitFieldSliceMut;
 
@@ -263,15 +263,16 @@ fn test_from_slice() {
         c.set(i, i)
     }
 
-    let s = BitFieldVec::<usize>::from_slice(&c).unwrap();
+    let s = BitFieldVec::<usize>::from_slice(&c)?;
     for i in 0..c.len() {
         assert_eq!({ s.get(i) }, c.get(i));
     }
-    let s = BitFieldVec::<u16>::from_slice(&c).unwrap();
+    let s = BitFieldVec::<u16>::from_slice(&c)?;
     for i in 0..c.len() {
         assert_eq!(s.get(i) as usize, c.get(i));
     }
-    assert!(BitFieldVec::<u8>::from_slice(&c).is_err())
+    assert!(BitFieldVec::<u8>::from_slice(&c).is_err());
+    Ok(())
 }
 
 #[test]
@@ -639,25 +640,44 @@ fn test_slice_atomic() {
 }
 
 #[test]
-fn test_try_chunks_mut() {
+fn test_try_chunks_mut() -> anyhow::Result<()> {
+    use anyhow::Context;
     let mut b = bit_field_vec![7 => 1; 10];
     assert!(b.try_chunks_mut(9).is_err());
     assert_eq!(
-        b.try_chunks_mut(10).unwrap().next().unwrap(),
+        b.try_chunks_mut(10)
+            .map_err(|_| anyhow::anyhow!("incompatible chunk size"))?
+            .next()
+            .context("no chunk")?,
         bit_field_vec![7 => 1; 10]
     );
     assert_eq!(
-        b.try_chunks_mut(11).unwrap().next().unwrap(),
+        b.try_chunks_mut(11)
+            .map_err(|_| anyhow::anyhow!("incompatible chunk size"))?
+            .next()
+            .context("no chunk")?,
         bit_field_vec![7 => 1; 10]
     );
 
     let mut b = bit_field_vec![16 => 1; 10];
     assert!(b.try_chunks_mut(3).is_err());
-    let mut iter = b.try_chunks_mut(4).unwrap();
-    assert_eq!(iter.next().unwrap(), bit_field_vec![16 => 1; 4]);
-    assert_eq!(iter.next().unwrap(), bit_field_vec![16 => 1; 4]);
-    assert_eq!(iter.next().unwrap(), bit_field_vec![16 => 1; 2]);
+    let mut iter = b
+        .try_chunks_mut(4)
+        .map_err(|_| anyhow::anyhow!("incompatible chunk size"))?;
+    assert_eq!(
+        iter.next().context("no chunk")?,
+        bit_field_vec![16 => 1; 4]
+    );
+    assert_eq!(
+        iter.next().context("no chunk")?,
+        bit_field_vec![16 => 1; 4]
+    );
+    assert_eq!(
+        iter.next().context("no chunk")?,
+        bit_field_vec![16 => 1; 2]
+    );
     assert!(iter.next().is_none());
+    Ok(())
 }
 
 #[test]
