@@ -287,7 +287,9 @@ macro_rules! to_sig_prim {
     )*};
 }
 
-to_sig_prim!(isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
+to_sig_prim!(
+    isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128
+);
 
 macro_rules! to_sig_slice {
     ($($ty:ty),*) => {$(
@@ -320,7 +322,9 @@ macro_rules! to_sig_slice {
     )*};
 }
 
-to_sig_slice!(isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
+to_sig_slice!(
+    isize, usize, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128
+);
 
 /// A signature store.
 ///
@@ -708,10 +712,10 @@ pub struct ShardIterator<S: ZeroCopy + Sig, V: ZeroCopy, B, T: BorrowMut<ShardSt
 }
 
 impl<
-        S: ZeroCopy + Sig + Send + Sync,
-        V: ZeroCopy + Send + Sync,
-        T: BorrowMut<ShardStoreImpl<S, V, BufReader<File>>>,
-    > Iterator for ShardIterator<S, V, BufReader<File>, T>
+    S: ZeroCopy + Sig + Send + Sync,
+    V: ZeroCopy + Send + Sync,
+    T: BorrowMut<ShardStoreImpl<S, V, BufReader<File>>>,
+> Iterator for ShardIterator<S, V, BufReader<File>, T>
 {
     type Item = Arc<Vec<SigVal<S, V>>>;
     fn next(&mut self) -> Option<Self::Item> {
@@ -817,10 +821,10 @@ impl<
 }
 
 impl<
-        S: ZeroCopy + Sig + Send + Sync,
-        V: ZeroCopy + Send + Sync,
-        T: BorrowMut<ShardStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>>,
-    > Iterator for ShardIterator<S, V, Arc<Vec<SigVal<S, V>>>, T>
+    S: ZeroCopy + Sig + Send + Sync,
+    V: ZeroCopy + Send + Sync,
+    T: BorrowMut<ShardStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>>,
+> Iterator for ShardIterator<S, V, Arc<Vec<SigVal<S, V>>>, T>
 {
     type Item = Arc<Vec<SigVal<S, V>>>;
 
@@ -905,11 +909,11 @@ impl<
 }
 
 impl<
-        S: ZeroCopy + Sig + Send + Sync,
-        V: ZeroCopy + Send + Sync,
-        B: Send + Sync,
-        T: BorrowMut<ShardStoreImpl<S, V, B>>,
-    > ExactSizeIterator for ShardIterator<S, V, B, T>
+    S: ZeroCopy + Sig + Send + Sync,
+    V: ZeroCopy + Send + Sync,
+    B: Send + Sync,
+    T: BorrowMut<ShardStoreImpl<S, V, B>>,
+> ExactSizeIterator for ShardIterator<S, V, B, T>
 where
     for<'a> ShardIterator<S, V, B, T>: Iterator,
 {
@@ -932,7 +936,7 @@ fn write_binary<S: ZeroCopy + Sig, V: ZeroCopy>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{rngs::SmallRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::SmallRng};
 
     fn _test_sig_store<S: ZeroCopy + Sig + Send + Sync>(
         mut sig_store: impl SigStore<S, u64>,

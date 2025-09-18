@@ -283,22 +283,22 @@ pub struct FromLenderFactory<
 }
 
 impl<
-        'lend,
-        T: Send + Sync,
-        L: Lender,
-        E: std::error::Error + Send + Sync + 'static,
-        F: FnMut() -> Result<L, E>,
-    > Lending<'lend> for FromLenderFactory<T, L, E, F>
+    'lend,
+    T: Send + Sync,
+    L: Lender,
+    E: std::error::Error + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> Lending<'lend> for FromLenderFactory<T, L, E, F>
 {
     type Lend = Result<&'lend T, E>;
 }
 
 impl<
-        T: Send + Sync,
-        L: Lender<Lend = T>,
-        E: std::error::Error + Send + Sync + 'static,
-        F: FnMut() -> Result<L, E>,
-    > Lender for FromLenderFactory<T, L, E, F>
+    T: Send + Sync,
+    L: Lender<Lend = T>,
+    E: std::error::Error + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> Lender for FromLenderFactory<T, L, E, F>
 {
     fn next(&mut self) -> Option<Lend<'_, Self>> {
         self.item = self.lender.next();
@@ -307,11 +307,11 @@ impl<
 }
 
 impl<
-        T: Send + Sync,
-        L: Lender<Lend = T>,
-        E: std::error::Error + Send + Sync + 'static,
-        F: FnMut() -> Result<L, E>,
-    > RewindableIoLender<T> for FromLenderFactory<T, L, E, F>
+    T: Send + Sync,
+    L: Lender<Lend = T>,
+    E: std::error::Error + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> RewindableIoLender<T> for FromLenderFactory<T, L, E, F>
 {
     type Error = E;
     fn rewind(mut self) -> Result<Self, Self::Error> {
@@ -321,11 +321,11 @@ impl<
 }
 
 impl<
-        T: Send + Sync,
-        L: Lender,
-        E: std::error::Error + Send + Sync + 'static,
-        F: FnMut() -> Result<L, E>,
-    > FromLenderFactory<T, L, E, F>
+    T: Send + Sync,
+    L: Lender,
+    E: std::error::Error + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> FromLenderFactory<T, L, E, F>
 {
     pub fn new(mut f: F) -> Result<Self, E> {
         f().map(|lender| FromLenderFactory {
