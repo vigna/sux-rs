@@ -120,8 +120,7 @@ where
     &'a DeserType<'a, S>: IntoUncheckedIterator,
 {
     type Item = <&'a DeserType<'a, S> as IntoUncheckedIterator>::Item;
-    type IntoUncheckedIter =
-        <&'a DeserType<'a, S> as IntoUncheckedIterator>::IntoUncheckedIter;
+    type IntoUncheckedIter = <&'a DeserType<'a, S> as IntoUncheckedIterator>::IntoUncheckedIter;
 
     fn into_unchecked_iter(self) -> Self::IntoUncheckedIter {
         self.uncase().into_unchecked_iter()

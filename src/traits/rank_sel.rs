@@ -14,7 +14,7 @@
 
 use crate::ambassador_impl_AsRef;
 use crate::ambassador_impl_Index;
-use ambassador::{delegatable_trait, Delegate};
+use ambassador::{Delegate, delegatable_trait};
 use epserde::Epserde;
 use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
@@ -118,7 +118,7 @@ pub trait RankUnchecked {
 #[delegatable_trait]
 pub trait RankZero: Rank {
     /// Returns the number of zeros preceding the specified position.
-    ///   
+    ///
     /// The bit vector is virtually zero-extended. If `pos` is greater than or
     /// equal to the [length of the underlying bit vector](`BitLength::len`),
     /// the `pos` minus the number of ones in the underlying bit vector is
@@ -135,7 +135,7 @@ pub trait RankZero: Rank {
     ///
     /// Some implementation might consider the the length as a valid argument.
     unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
-        pos - self.rank_unchecked(pos)
+        pos - unsafe { self.rank_unchecked(pos) }
     }
 }
 

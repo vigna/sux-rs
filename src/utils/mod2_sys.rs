@@ -11,7 +11,7 @@
 use std::ptr;
 
 use crate::{bit_vec, traits::Word};
-use anyhow::{bail, ensure, Result};
+use anyhow::{Result, bail, ensure};
 use arbitrary_chunks::ArbitraryChunks;
 
 /// An equation on `W::BITS`-dimensional vectors with coefficients in **F**₂.
@@ -51,25 +51,27 @@ impl<W: Word> Modulo2Equation<W> {
         right_end: *const u32,
         mut dst: *mut u32,
     ) -> *mut u32 {
-        while left != left_end && right != right_end {
-            let less = *left <= *right;
-            let more = *left >= *right;
+        unsafe {
+            while left != left_end && right != right_end {
+                let less = *left <= *right;
+                let more = *left >= *right;
 
-            let src = if less { left } else { right };
-            *dst = *src;
+                let src = if less { left } else { right };
+                *dst = *src;
 
-            left = left.add(less as usize);
-            right = right.add(more as usize);
-            dst = dst.add((less ^ more) as usize);
+                left = left.add(less as usize);
+                right = right.add(more as usize);
+                dst = dst.add((less ^ more) as usize);
+            }
+
+            let rem_left = left_end.offset_from(left) as usize;
+            ptr::copy_nonoverlapping(left, dst, rem_left);
+            dst = dst.add(rem_left);
+            let rem_right = right_end.offset_from(right) as usize;
+            ptr::copy_nonoverlapping(right, dst, rem_right);
+            dst = dst.add(rem_right);
+            dst
         }
-
-        let rem_left = left_end.offset_from(left) as usize;
-        ptr::copy_nonoverlapping(left, dst, rem_left);
-        dst = dst.add(rem_left);
-        let rem_right = right_end.offset_from(right) as usize;
-        ptr::copy_nonoverlapping(right, dst, rem_right);
-        dst = dst.add(rem_right);
-        dst
     }
 
     pub fn add(&mut self, other: &Modulo2Equation<W>) {
@@ -148,7 +150,13 @@ impl<W: Word> Modulo2System<W> {
 
     /// Checks if a given solution satisfies the system of equations.
     pub fn check(&self, solution: &[W]) -> bool {
-        assert_eq!(solution.len(), self.num_vars, "The number of variables in the solution ({}) does not match the number of variables in the system ({})", solution.len(), self.num_vars);
+        assert_eq!(
+            solution.len(),
+            self.num_vars,
+            "The number of variables in the solution ({}) does not match the number of variables in the system ({})",
+            solution.len(),
+            self.num_vars
+        );
         self.equations
             .iter()
             .all(|eq| eq.c == Modulo2Equation::<W>::eval_vars(&eq.vars, solution))

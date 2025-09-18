@@ -30,7 +30,7 @@ rdst = "0.20.12"
 mem_dbg = "0.3.0"
 rayon = { version = "1.8.1", optional = true }
 env_logger = { version = "0.11.0" }
-ambassador = "0.4.0"
+ambassador = { git = "https://github.com/hobofan/ambassador" }
 impl-tools = "0.11.2"
 clap = { version = "4.4.18", features = ["derive"] }
 crossbeam-channel = "0.5.14"

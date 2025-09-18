@@ -126,12 +126,12 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
 macro_rules! impl_select_zero_small {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         impl<
-                C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                    + AsRef<[usize]>
-                    + BitLength
-                    + NumBits
-                    + SelectZeroHinted,
-            > SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+            C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
+                + AsRef<[usize]>
+                + BitLength
+                + NumBits
+                + SelectZeroHinted,
+        > SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             /// Creates a new selection structure with eight [`RankSmall`]
             /// blocks per inventory an average.
@@ -214,12 +214,12 @@ macro_rules! impl_select_zero_small {
         }
 
         impl<
-                C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                    + AsRef<[usize]>
-                    + BitLength
-                    + NumBits
-                    + SelectZeroHinted,
-            > SelectZeroUnchecked for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+            C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
+                + AsRef<[usize]>
+                + BitLength
+                + NumBits
+                + SelectZeroHinted,
+        > SelectZeroUnchecked for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
                 let upper_counts = self.small_counters.upper_counts();
@@ -227,7 +227,8 @@ macro_rules! impl_select_zero_small {
 
                 let upper_block_idx =
                     upper_counts.linear_partition_point(|i, &x| (i << 32) - x <= rank) - 1;
-                let upper_rank_ones = *upper_counts.get_unchecked(upper_block_idx) as usize;
+                let upper_rank_ones =
+                    *unsafe { upper_counts.get_unchecked(upper_block_idx) } as usize;
                 let upper_rank = (upper_block_idx << 32) - upper_rank_ones;
                 let local_rank = rank - upper_rank;
 
@@ -246,7 +247,7 @@ macro_rules! impl_select_zero_small {
                 let opt;
                 let inv_pos = if inv_upper_block_idx == upper_block_idx {
                     opt = (inv_idx << self.log2_ones_per_inventory) - upper_rank;
-                    *inventory.get_unchecked(inv_idx) as usize
+                    *unsafe { inventory.get_unchecked(inv_idx) } as usize
                         + upper_block_idx * Self::SUPERBLOCK_BIT_SIZE
                 } else {
                     // For extremely sparse and large bit vectors, the inventory entry containing
@@ -277,7 +278,8 @@ macro_rules! impl_select_zero_small {
                     let next_inv_upper_block_idx =
                         inventory_begin.linear_partition_point(|_, &x| x <= inv_idx + 1) - 1; // TODO: +1?
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
-                        let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize
+                        let next_inv_pos = *unsafe { inventory.get_unchecked(inv_idx + 1) }
+                            as usize
                             + upper_block_idx * Self::SUPERBLOCK_BIT_SIZE;
                         next_inv_pos.div_ceil(Self::BLOCK_BIT_SIZE)
                     } else {
@@ -309,21 +311,21 @@ macro_rules! impl_select_zero_small {
                         <= rank
                 }) - 1;
 
-                let block_count = counts.get_unchecked(block_idx);
+                let block_count = unsafe { counts.get_unchecked(block_idx) };
                 let hint_pos = block_idx * Self::BLOCK_BIT_SIZE;
                 let hint_rank = hint_pos - (upper_rank_ones + block_count.absolute as usize);
 
-                self.complete_select(block_count, hint_pos, rank, hint_rank)
+                unsafe { self.complete_select(block_count, hint_pos, rank, hint_rank) }
             }
         }
 
         impl<
-                C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                    + AsRef<[usize]>
-                    + BitLength
-                    + NumBits
-                    + SelectZeroHinted,
-            > SelectZero for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+            C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
+                + AsRef<[usize]>
+                + BitLength
+                + NumBits
+                + SelectZeroHinted,
+        > SelectZero for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
         }
     };
@@ -347,7 +349,7 @@ impl<C: SmallCounters<2, 9> + AsRef<[usize]> + BitLength + NumBits> SelectZeroSm
             | (1_u64 << 54);
         const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
         // We cannot put this const together with the rest because we need
-        // to use it for definining POS_STEP_9.
+        // to use it for defining POS_STEP_9.
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<2, 9>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_9: u64 = (SUBBLOCK_BIT_SIZE << (6 * 9))
@@ -375,10 +377,11 @@ impl<C: SmallCounters<2, 9> + AsRef<[usize]> + BitLength + NumBits> SelectZeroSm
         hint_pos += offset_in_block * (SUBBLOCK_BIT_SIZE as usize);
 
         hint_pos
-            + (!self
-                .small_counters
-                .as_ref()
-                .get_unchecked(hint_pos / usize::BITS as usize))
+            + (!unsafe {
+                self.small_counters
+                    .as_ref()
+                    .get_unchecked(hint_pos / usize::BITS as usize)
+            })
             .select_in_word(rank_in_word)
     }
 }
@@ -399,7 +402,7 @@ impl<C: SmallCounters<1, 9> + AsRef<[usize]> + BitLength + NumBits + SelectZeroH
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<1, 9>::WORDS_PER_SUBBLOCK as u64;
         // We cannot put this const together with the rest because we need
-        // to use it for definining POS_STEP_9.
+        // to use it for defining POS_STEP_9.
         const POS_STEP_9: u64 =
             (SUBBLOCK_BIT_SIZE << 18) | ((2 * SUBBLOCK_BIT_SIZE) << 9) | (3 * SUBBLOCK_BIT_SIZE);
 
@@ -420,7 +423,7 @@ impl<C: SmallCounters<1, 9> + AsRef<[usize]> + BitLength + NumBits + SelectZeroH
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        self.select_zero_hinted(rank, hint_pos, hint_rank)
+        unsafe { self.select_zero_hinted(rank, hint_pos, hint_rank) }
     }
 }
 
@@ -438,7 +441,7 @@ impl<C: SmallCounters<1, 10> + AsRef<[usize]> + BitLength + NumBits + SelectZero
         const ONES_STEP_10: u64 = (1_u64 << 0) | (1_u64 << 10) | (1_u64 << 20);
         const MSBS_STEP_10: u64 = 0x200_u64 * ONES_STEP_10;
         // We cannot put this const together with the rest because we need
-        // to use it for definining POS_STEP_10.
+        // to use it for defining POS_STEP_10.
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<1, 10>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_10: u64 =
@@ -461,7 +464,7 @@ impl<C: SmallCounters<1, 10> + AsRef<[usize]> + BitLength + NumBits + SelectZero
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        self.select_zero_hinted(rank, hint_pos, hint_rank)
+        unsafe { self.select_zero_hinted(rank, hint_pos, hint_rank) }
     }
 }
 
@@ -479,7 +482,7 @@ impl<C: SmallCounters<1, 11> + AsRef<[usize]> + BitLength + NumBits + SelectZero
         const ONES_STEP_11: u64 = (1_u64 << 0) | (1_u64 << 11) | (1_u64 << 22);
         const MSBS_STEP_11: u64 = 0x400_u64 * ONES_STEP_11;
         // We cannot put this const together with the rest because we need
-        // to use it for definining POS_STEP_11.
+        // to use it for defining POS_STEP_11.
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<1, 11>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_11: u64 =
@@ -502,7 +505,7 @@ impl<C: SmallCounters<1, 11> + AsRef<[usize]> + BitLength + NumBits + SelectZero
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        self.select_zero_hinted(rank, hint_pos, hint_rank)
+        unsafe { self.select_zero_hinted(rank, hint_pos, hint_rank) }
     }
 }
 
@@ -525,7 +528,7 @@ impl<C: SmallCounters<3, 13> + AsRef<[usize]> + BitLength + NumBits + SelectZero
             | (1_u128 << 78);
         const MSBS_STEP_13: u128 = 0x1000_u128 * ONES_STEP_13;
         // We cannot put this const together with the rest because we need
-        // to use it for definining POS_STEP_13.
+        // to use it for defining POS_STEP_13.
         const SUBBLOCK_BIT_SIZE: u64 =
             (usize::BITS as u64) * RankSmall::<3, 13>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_13: u128 = ((SUBBLOCK_BIT_SIZE as u128) << 78)
@@ -553,7 +556,7 @@ impl<C: SmallCounters<3, 13> + AsRef<[usize]> + BitLength + NumBits + SelectZero
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        self.select_zero_hinted(rank, hint_pos, hint_rank)
+        unsafe { self.select_zero_hinted(rank, hint_pos, hint_rank) }
     }
 }
 

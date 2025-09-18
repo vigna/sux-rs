@@ -162,7 +162,7 @@ where
         &self,
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output<'_>) {
-        (*self).succ_unchecked::<STRICT>(value)
+        unsafe { (*self).succ_unchecked::<STRICT>(value) }
     }
 }
 
@@ -259,7 +259,7 @@ where
         &self,
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output<'_>) {
-        (*self).pred_unchecked::<STRICT>(value)
+        unsafe { (*self).pred_unchecked::<STRICT>(value) }
     }
 }
 
@@ -521,7 +521,7 @@ macro_rules! impl_indexed_seq {
 
             unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
                 debug_assert_bounds!(index, self.len());
-                *self.get_unchecked(index)
+                unsafe { *self.get_unchecked(index) }
             }
 
             fn len(&self) -> usize {
@@ -541,7 +541,7 @@ macro_rules! impl_indexed_seq {
             unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
                 use std::ops::Deref;
                 debug_assert_bounds!(index, self.len());
-                *self.deref().get_unchecked(index)
+                unsafe { *self.deref().get_unchecked(index) }
             }
 
             fn len(&self) -> usize {
@@ -560,9 +560,7 @@ macro_rules! impl_indexed_seq {
 
             unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
                 debug_assert_bounds!(index, self.len());
-                self.as_slice()
-                    .get_unchecked(index)
-                    .clone()
+                unsafe { self.as_slice().get_unchecked(index).clone() }
             }
 
             fn len(&self) -> usize {
