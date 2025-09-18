@@ -152,7 +152,7 @@ where
 
     let n = args.n;
 
-    if let Some(ref filename) = &args.filename {
+    if let Some(filename) = &args.filename {
         let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
         let func = if args.zstd {
             builder.try_build_func(

@@ -187,7 +187,7 @@ where
     let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
     let n = args.n;
 
-    if let Some(ref filename) = &args.filename {
+    if let Some(filename) = &args.filename {
         let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
         let filter = if args.zstd {
             builder.try_build_filter(ZstdLineLender::from_path(filename)?.take(n), &mut pl)?
@@ -233,7 +233,7 @@ where
     let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
     let n = args.n;
 
-    if let Some(ref filename) = &args.filename {
+    if let Some(filename) = &args.filename {
         let builder = set_builder(VBuilder::<W, BitFieldVec<W>, S, E>::default(), &args);
         let filter = if args.zstd {
             builder.try_build_filter(

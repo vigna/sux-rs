@@ -40,32 +40,36 @@ fn test_lender<T: ?Sized + AsRef<str>, L: RewindableIoLender<T>>(mut lender: L) 
 
 #[test]
 fn test_line_lender() -> Result<()> {
-    let buf = Cursor::new(b"foo\nbar\nbaz\n");
-    test_lender(LineLender::new(buf))?;
+    let mut buf = Cursor::new(b"foo\nbar\nbaz\n");
+    test_lender(LineLender::new(&mut buf))?;
 
     #[cfg(feature = "deko")]
     {
+        use std::io::BufReader;
+
         buf.set_position(0);
-        test_lender(DekoLineLender::new(&mut buf))?;
+        test_lender(DekoLineLender::new(&mut buf)?)?;
         buf.set_position(0);
-        test_lender(DekoBufLineLender::new(BufReader::new(&mut buf)))?;
+        test_lender(DekoBufLineLender::new(BufReader::new(&mut buf))?)?;
     }
     Ok(())
 }
 
 #[test]
 fn test_zstd_line_lender() -> Result<()> {
-    let buf = Cursor::new(
+    let mut buf = Cursor::new(
         zstd::stream::encode_all(Cursor::new(b"foo\nbar\nbaz\n"), 1).context("Could not encode")?,
     );
-    test_lender(ZstdLineLender::new(buf).context("Could not initialize lender")?)?;
+    test_lender(ZstdLineLender::new(&mut buf).context("Could not initialize lender")?)?;
 
     #[cfg(feature = "deko")]
     {
+        use std::io::BufReader;
+
         buf.set_position(0);
-        test_lender(DekoLineLender::new(&mut buf))?;
+        test_lender(DekoLineLender::new(&mut buf)?)?;
         buf.set_position(0);
-        test_lender(DekoBufLineLender::new(BufReader::new(&mut buf)))?;
+        test_lender(DekoBufLineLender::new(BufReader::new(&mut buf))?)?;
     }
     Ok(())
 }
@@ -74,16 +78,18 @@ fn test_zstd_line_lender() -> Result<()> {
 fn test_gziplinelender() -> Result<()> {
     let mut encoder = GzEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(b"foo\nbar\nbaz\n")?;
-    let buf = Cursor::new(encoder.finish().context("Could not encode")?);
+    let mut buf = Cursor::new(encoder.finish().context("Could not encode")?);
 
-    test_lender(GzipLineLender::new(buf).context("Could not initialize lender")?)?;
+    test_lender(GzipLineLender::new(&mut buf).context("Could not initialize lender")?)?;
 
     #[cfg(feature = "deko")]
     {
+        use std::io::BufReader;
+
         buf.set_position(0);
-        test_lender(DekoLineLender::new(&mut buf))?;
+        test_lender(DekoLineLender::new(&mut buf)?)?;
         buf.set_position(0);
-        test_lender(DekoBufLineLender::new(BufReader::new(&mut buf)))?;
+        test_lender(DekoBufLineLender::new(BufReader::new(&mut buf))?)?;
     }
     Ok(())
 }
