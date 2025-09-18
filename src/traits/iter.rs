@@ -135,8 +135,10 @@ where
 /// Differently from [`IntoIterator`], this trait provides a way
 /// to obtain an iterator starting from a given position.
 ///
-/// Note that [`into_rev_unchecked_iter`](IntoReverseUncheckedIterator::into_rev_unchecked_iter_from)
-/// cannot be implemented in terms of [`into_rev_unchecked_iter_from`](IntoReverseUncheckedIterator::into_rev_unchecked_iter_from)
+/// Note that
+/// [`into_rev_unchecked_iter`](IntoReverseUncheckedIterator::into_rev_unchecked_iter_from)
+/// cannot be implemented in terms of
+/// [`into_rev_unchecked_iter_from`](IntoReverseUncheckedIterator::into_rev_unchecked_iter_from)
 /// because we cannot know which is the last position.
 pub trait IntoReverseUncheckedIterator: Sized {
     type Item;
@@ -146,4 +148,21 @@ pub trait IntoReverseUncheckedIterator: Sized {
     fn into_rev_unchecked_iter(self) -> Self::IntoRevUncheckedIter;
     /// Creates a reverse unchecked iterator starting from the given position.
     fn into_rev_unchecked_iter_from(self, from: usize) -> Self::IntoRevUncheckedIter;
+}
+
+impl<'a, S: DeserializeInner> IntoReverseUncheckedIterator for &'a MemCase<S>
+where
+    for<'b> &'b DeserType<'b, S>: IntoReverseUncheckedIterator,
+{
+    type Item = <&'a DeserType<'a, S> as IntoReverseUncheckedIterator>::Item;
+    type IntoRevUncheckedIter =
+        <&'a DeserType<'a, S> as IntoReverseUncheckedIterator>::IntoRevUncheckedIter;
+
+    fn into_rev_unchecked_iter(self) -> Self::IntoRevUncheckedIter {
+        self.uncase().into_rev_unchecked_iter()
+    }
+
+    fn into_rev_unchecked_iter_from(self, from: usize) -> Self::IntoRevUncheckedIter {
+        self.uncase().into_rev_unchecked_iter_from(from)
+    }
 }
