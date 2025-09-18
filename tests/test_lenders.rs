@@ -39,17 +39,35 @@ fn test_lender<T: ?Sized + AsRef<str>, L: RewindableIoLender<T>>(mut lender: L) 
 }
 
 #[test]
-fn test_linelender() -> Result<()> {
+fn test_line_lender() -> Result<()> {
     let buf = Cursor::new(b"foo\nbar\nbaz\n");
-    test_lender(LineLender::new(buf))
+    test_lender(LineLender::new(buf))?;
+
+    #[cfg(feature = "deko")]
+    {
+        buf.set_position(0);
+        test_lender(DekoLineLender::new(&mut buf))?;
+        buf.set_position(0);
+        test_lender(DekoBufLineLender::new(BufReader::new(&mut buf)))?;
+    }
+    Ok(())
 }
 
 #[test]
-fn test_zstdlinelender() -> Result<()> {
+fn test_zstd_line_lender() -> Result<()> {
     let buf = Cursor::new(
         zstd::stream::encode_all(Cursor::new(b"foo\nbar\nbaz\n"), 1).context("Could not encode")?,
     );
-    test_lender(ZstdLineLender::new(buf).context("Could not initialize lender")?)
+    test_lender(ZstdLineLender::new(buf).context("Could not initialize lender")?)?;
+
+    #[cfg(feature = "deko")]
+    {
+        buf.set_position(0);
+        test_lender(DekoLineLender::new(&mut buf))?;
+        buf.set_position(0);
+        test_lender(DekoBufLineLender::new(BufReader::new(&mut buf)))?;
+    }
+    Ok(())
 }
 
 #[test]
@@ -58,7 +76,16 @@ fn test_gziplinelender() -> Result<()> {
     encoder.write_all(b"foo\nbar\nbaz\n")?;
     let buf = Cursor::new(encoder.finish().context("Could not encode")?);
 
-    test_lender(GzipLineLender::new(buf).context("Could not initialize lender")?)
+    test_lender(GzipLineLender::new(buf).context("Could not initialize lender")?)?;
+
+    #[cfg(feature = "deko")]
+    {
+        buf.set_position(0);
+        test_lender(DekoLineLender::new(&mut buf))?;
+        buf.set_position(0);
+        test_lender(DekoBufLineLender::new(BufReader::new(&mut buf)))?;
+    }
+    Ok(())
 }
 
 #[test]

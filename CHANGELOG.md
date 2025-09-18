@@ -18,11 +18,15 @@
 * `IntoIteratorFrom` has now implementations for (references of) slices, vectors,
   and boxed slices.
 
-### Changed
+* `EliasFano` and `BitFieldVec` implement the relevant traits from
+  the [`value-traits`](https://crates.io/crates/value-traits) crate.
+  In particular, you can apply subslicing to the sequences undefined
+  by those structures,
 
-* The type hash for tuples has changed, as the previous one was ambiguous.
-  If you serialized a structure using tuples, it will be no longer
-  deserializable.
+* New compressed, rewindable IO lenders based on the
+  [`deko`](https://crates.io/crates/deko) crate.
+
+### Changed
 
 * The associated output value for `Types` (and thus `IndexedSeq`, etc.) has now
   a lifetime to make it possible to return references (e.g., for sequences of
@@ -39,7 +43,7 @@
   write delegations of `BitFieldSlice` for `MemCase`.
 
 * The unsafe `transmute_vec` and `transmute_boxed_slice` functions have
-  been replace by four specific, safe functions
+  been replaced by four specific, safe functions
   `transmute_(vec|boxed_slice)_(from|into)_atomic` that take care of the case of
   a transmute from a non-atomic type into an atomic type with strictly greater
   alignment requirements. In this case, we create a correctly aligned copy. We

@@ -29,6 +29,11 @@
 //! that lends lines from a zstd-compressed [`Read`], and [`GzipLineLender`],
 //! which lends lines from a gzip-compressed [`Read`].
 //!
+//! Finally, under the `deko` feature, we provide `DekoLineLender` and
+//! `DekoBufLineLender`, which work like the previous two implementations, but
+//! detect dynamically the compression format using the
+//! [`deko`](https://crates.io/crates/deko) crate.
+//!
 //! If you have a clonable [`IntoIterator`], you can use [`FromIntoIterator`] to
 //! lend its items; rewinding is implemented by cloning the iterator. Note that
 //! [`FromIntoIterator`] implements the [`From`] trait, but at this time due to
@@ -233,6 +238,112 @@ impl<R: Read + Seek> RewindableIoLender<str> for GzipLineLender<R> {
         Ok(self)
     }
 }
+
+#[cfg(feature = "deko")]
+mod deko {
+    use super::*;
+    use std::{
+        fs::File,
+        io::{self, BufRead, BufReader, Read, Seek},
+        path::Path,
+    };
+
+    /// A structure lending the lines coming from a compressed [`Read`] as
+    /// `&str`.
+    ///
+    /// The compression format will be detected dynamically by the
+    /// [`deko`](https://crates.io/crates/deko) crate.
+    ///
+    /// The lines are read into a reusable internal string buffer that
+    /// grows as needed.
+    pub struct DekoLineLender<R: Read> {
+        buf: BufReader<::deko::read::AnyDecoder<R>>,
+        line: String,
+    }
+
+    /// A structure lending the lines coming from a compressed [`BufRead`] as
+    /// `&str`.
+    ///
+    /// The compression format will be detected dynamically by the
+    /// [`deko`](https://crates.io/crates/deko) crate.
+    ///
+    /// The lines are read into a reusable internal string buffer that
+    /// grows as needed.
+    pub struct DekoBufLineLender<R: BufRead> {
+        buf: BufReader<::deko::bufread::AnyDecoder<R>>,
+        line: String,
+    }
+
+    impl<R: Read> DekoLineLender<R> {
+        pub fn new(read: R) -> io::Result<Self> {
+            Ok(DekoLineLender {
+                buf: BufReader::new(::deko::read::AnyDecoder::new(read)),
+                line: String::with_capacity(128),
+            })
+        }
+    }
+
+    impl<R: BufRead> DekoBufLineLender<R> {
+        pub fn new(read: R) -> io::Result<Self> {
+            Ok(DekoBufLineLender {
+                buf: BufReader::new(::deko::bufread::AnyDecoder::new(read)),
+                line: String::with_capacity(128),
+            })
+        }
+    }
+
+    impl DekoBufLineLender<BufReader<File>> {
+        pub fn from_path(path: impl AsRef<Path>) -> io::Result<DekoBufLineLender<BufReader<File>>> {
+            Self::from_file(File::open(path)?)
+        }
+        pub fn from_file(file: File) -> io::Result<DekoBufLineLender<BufReader<File>>> {
+            DekoBufLineLender::new(BufReader::new(file))
+        }
+    }
+
+    impl<'lend, R: Read> Lending<'lend> for DekoLineLender<R> {
+        type Lend = io::Result<&'lend str>;
+    }
+
+    impl<'lend, R: BufRead> Lending<'lend> for DekoBufLineLender<R> {
+        type Lend = io::Result<&'lend str>;
+    }
+
+    impl<R: Read> Lender for DekoLineLender<R> {
+        fn next(&mut self) -> Option<<Self as Lending<'_>>::Lend> {
+            next(&mut self.buf, &mut self.line)
+        }
+    }
+
+    impl<R: BufRead> Lender for DekoBufLineLender<R> {
+        fn next(&mut self) -> Option<<Self as Lending<'_>>::Lend> {
+            next(&mut self.buf, &mut self.line)
+        }
+    }
+
+    impl<R: Read + Seek> RewindableIoLender<str> for DekoLineLender<R> {
+        type Error = io::Error;
+        fn rewind(mut self) -> io::Result<Self> {
+            let mut read = self.buf.into_inner().into_inner();
+            read.rewind()?;
+            self.buf = BufReader::new(::deko::read::AnyDecoder::new(read));
+            Ok(self)
+        }
+    }
+
+    impl<R: BufRead + Seek> RewindableIoLender<str> for DekoBufLineLender<R> {
+        type Error = io::Error;
+        fn rewind(mut self) -> io::Result<Self> {
+            let mut read = self.buf.into_inner().into_inner();
+            read.rewind()?;
+            self.buf = BufReader::new(::deko::bufread::AnyDecoder::new(read));
+            Ok(self)
+        }
+    }
+}
+
+#[cfg(feature = "deko")]
+pub use deko::*;
 
 /// An adapter lending the items of a clonable [`IntoIterator`].
 pub struct FromIntoIterator<I: IntoIterator + Clone> {
