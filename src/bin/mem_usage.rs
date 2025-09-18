@@ -1,8 +1,8 @@
 #![cfg(target_pointer_width = "64")]
 
-use clap::{arg, Parser, ValueEnum};
+use clap::{Parser, ValueEnum, arg};
 use mem_dbg::*;
-use rand::{rngs::SmallRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::SmallRng};
 use sux::{
     bits::BitVec,
     rank_sel::{Rank9, RankSmall, Select9, SelectAdapt},

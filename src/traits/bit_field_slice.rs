@@ -290,7 +290,6 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> {
     /// # use sux::prelude::*;
     /// # use bit_field_slice::*;
     /// # fn main() -> Result<(), ()> {
-
     /// let mut b = bit_field_vec![32; 4, 500, 2, 3, 1];
     /// for mut c in b.try_chunks_mut(2)? {
     ///     c.set(0, 5);

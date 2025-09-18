@@ -9,9 +9,9 @@ use anyhow::Result;
 use bit_field_slice::*;
 use clap::Parser;
 use dsi_progress_logger::*;
-use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
+use rand::rngs::SmallRng;
 use std::hint::black_box;
 use sux::prelude::*;
 

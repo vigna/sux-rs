@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use anyhow::Ok;
+use anyhow::Result;
 use bit_field_slice::*;
 use common_traits::AsBytes;
 use common_traits::Atomic;
@@ -13,10 +15,10 @@ use common_traits::CastableFrom;
 use common_traits::CastableInto;
 use common_traits::IntoAtomic;
 use core::sync::atomic::Ordering;
-use rand::rngs::SmallRng;
-use rand::seq::SliceRandom;
 use rand::Rng;
 use rand::SeedableRng;
+use rand::rngs::SmallRng;
+use rand::seq::SliceRandom;
 use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
 
@@ -254,7 +256,7 @@ fn test_bit_width_zero() {
 }
 
 #[test]
-fn test_from_slice() {
+fn test_from_slice() -> Result<()> {
     use sux::traits::bit_field_slice::BitFieldSlice;
     use sux::traits::bit_field_slice::BitFieldSliceMut;
 
@@ -263,15 +265,16 @@ fn test_from_slice() {
         c.set(i, i)
     }
 
-    let s = BitFieldVec::<usize>::from_slice(&c).unwrap();
+    let s = BitFieldVec::<usize>::from_slice(&c)?;
     for i in 0..c.len() {
         assert_eq!({ s.get(i) }, c.get(i));
     }
-    let s = BitFieldVec::<u16>::from_slice(&c).unwrap();
+    let s = BitFieldVec::<u16>::from_slice(&c)?;
     for i in 0..c.len() {
         assert_eq!(s.get(i) as usize, c.get(i));
     }
-    assert!(BitFieldVec::<u8>::from_slice(&c).is_err())
+    assert!(BitFieldVec::<u8>::from_slice(&c).is_err());
+    Ok(())
 }
 
 #[test]

@@ -3,7 +3,7 @@ mod utils;
 use std::fmt;
 
 use bench_select::*;
-use clap::{arg, Parser, ValueEnum};
+use clap::{Parser, ValueEnum, arg};
 use criterion::Criterion;
 use sux::rank_sel::*;
 use utils::*;

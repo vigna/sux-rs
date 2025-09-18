@@ -5,8 +5,10 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use anyhow::Result;
 use core::sync::atomic::Ordering;
 use epserde::prelude::*;
+use maligned::A16;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngCore, SeedableRng};
@@ -437,24 +439,24 @@ fn test_eq() {
 }
 
 #[test]
-fn test_epserde() {
+fn test_epserde() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
     let mut b = BitVec::new(200);
     for i in 0..200 {
         b.set(i, rng.next_u64() % 2 != 0);
     }
 
-    let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
-    let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file).unwrap());
-    unsafe { b.serialize(&mut file) }.unwrap();
-    drop(file);
+    let mut cursor = <AlignedCursor<A16>>::new();
+    unsafe { b.serialize(&mut cursor)? };
 
-    let c =
-        unsafe { <BitVec<Vec<usize>>>::mmap(&tmp_file, epserde::deser::Flags::empty()).unwrap() };
+    let len = cursor.len();
+    cursor.set_position(0);
+    let c = unsafe { <BitVec<Vec<usize>>>::read_mem(&mut cursor, len)? };
 
     for i in 0..200 {
         assert_eq!(b.get(i), c.uncase().get(i));
     }
+    Ok(())
 }
 
 #[test]

@@ -11,9 +11,10 @@ use std::iter::zip;
 use anyhow::Result;
 use epserde::prelude::*;
 use indexed_dict::*;
-use rand::rngs::SmallRng;
+use maligned::A16;
 use rand::Rng;
 use rand::SeedableRng;
+use rand::rngs::SmallRng;
 use sux::prelude::*;
 
 #[test]
@@ -242,17 +243,17 @@ fn test_epserde() -> Result<()> {
         // Finish the creation of elias-fano
         let ef = unsafe { efb.build().map_high_bits(SelectAdaptConst::<_, _>::new) };
 
-        let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
-        let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);
-        let schema = unsafe { ef.serialize_with_schema(&mut file) }?;
-        drop(file);
+        let mut cursor = <AlignedCursor<A16>>::new();
+        let schema = unsafe { ef.serialize_with_schema(&mut cursor) }?;
         println!("{}", schema.to_csv());
 
+        let len = cursor.len();
+        cursor.set_position(0);
         let c = unsafe {
             <EliasFano<
                 SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>>,
                 BitFieldVec<usize, Box<[usize]>>,
-            >>::mmap(&tmp_file, epserde::deser::Flags::empty())
+            >>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())
         }?;
 
         for i in 0..n {

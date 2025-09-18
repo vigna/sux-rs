@@ -6,7 +6,7 @@
 
 use std::io::{Cursor, Write};
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use flate2::write::GzEncoder;
 use lender::IteratorExt;
 

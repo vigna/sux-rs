@@ -7,7 +7,7 @@
 
 use crate::bits::BitFieldVec;
 use crate::func::mix64;
-use crate::func::{shard_edge::ShardEdge, VFunc};
+use crate::func::{VFunc, shard_edge::ShardEdge};
 use crate::traits::bit_field_slice::*;
 use crate::utils::{Sig, ToSig};
 use common_traits::CastableInto;
@@ -171,13 +171,13 @@ where
 }
 
 impl<
-        T: ?Sized + ToSig<S>,
-        W: ZeroCopy + Word,
-        D: BitFieldSlice<W>,
-        S: Sig,
-        E: ShardEdge<S, 3>,
-        B: Borrow<T>,
-    > Index<B> for VFilter<W, VFunc<T, W, D, S, E>>
+    T: ?Sized + ToSig<S>,
+    W: ZeroCopy + Word,
+    D: BitFieldSlice<W>,
+    S: Sig,
+    E: ShardEdge<S, 3>,
+    B: Borrow<T>,
+> Index<B> for VFilter<W, VFunc<T, W, D, S, E>>
 where
     u64: CastableInto<W>,
 {
@@ -185,11 +185,7 @@ where
 
     #[inline(always)]
     fn index(&self, key: B) -> &Self::Output {
-        if self.contains(key) {
-            &true
-        } else {
-            &false
-        }
+        if self.contains(key) { &true } else { &false }
     }
 }
 
@@ -203,9 +199,8 @@ mod tests {
 
     use crate::{
         func::{
-            mix64,
+            VBuilder, mix64,
             shard_edge::{FuseLge3NoShards, FuseLge3Shards},
-            VBuilder,
         },
         utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
     };
@@ -219,8 +214,8 @@ mod tests {
         Ok(())
     }
 
-    fn _test_filter_func<S: Sig + Send + Sync, E: ShardEdge<S, 3, LocalSig = [u64; 1]>>(
-    ) -> anyhow::Result<()>
+    fn _test_filter_func<S: Sig + Send + Sync, E: ShardEdge<S, 3, LocalSig = [u64; 1]>>()
+    -> anyhow::Result<()>
     where
         usize: ToSig<S>,
         u128: UpcastableFrom<usize>,
