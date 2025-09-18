@@ -40,6 +40,7 @@ derive_setters = "0.1.6"
 thiserror = "2.0.11"
 itertools = "0.14.0"
 lambert_w = { version = "1.0.17", default-features = false, features = ["std"] }
+deko = { version = "0.5.0", optional = true }
 
 # Fuzz
 arbitrary = { version = "1.3.2", features = ["derive"], optional = true }
@@ -64,6 +65,7 @@ mwhc = [] # Compile MWHC data structures (mainly for benchmarking)
 no_logging = [
 ] # Disable logging for binaries that build functions and filters (for benchmarking)
 rayon = ["dep:rayon"]
+deko = ["dep:deko"]
 mmap = ["epserde/mmap"]
 
 [profile.release]
