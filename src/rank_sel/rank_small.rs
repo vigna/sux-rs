@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use ambassador::{delegatable_trait, Delegate};
+use ambassador::{Delegate, delegatable_trait};
 use epserde::*;
 use mem_dbg::*;
 use std::ptr::{addr_of, addr_of_mut, read_unaligned, write_unaligned};
@@ -383,34 +383,36 @@ macro_rules! impl_rank_small {
             }
         }
         impl<
-                B: AsRef<[usize]> + BitLength + RankHinted<64>,
-                C1: AsRef<[usize]>,
-                C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
-            > RankUnchecked for RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
+            B: AsRef<[usize]> + BitLength + RankHinted<64>,
+            C1: AsRef<[usize]>,
+            C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
+        > RankUnchecked for RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
         {
             #[inline(always)]
             unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-                let word_pos = pos / 64 as usize;
-                let block = word_pos / Self::WORDS_PER_BLOCK;
-                let offset = (word_pos % Self::WORDS_PER_BLOCK) / Self::WORDS_PER_SUBBLOCK;
-                let counts = self.counts.as_ref().get_unchecked(block);
-                let upper_count = self
-                    .upper_counts
-                    .as_ref()
-                    .get_unchecked(word_pos / (1usize << 26));
+                unsafe {
+                    let word_pos = pos / 64 as usize;
+                    let block = word_pos / Self::WORDS_PER_BLOCK;
+                    let offset = (word_pos % Self::WORDS_PER_BLOCK) / Self::WORDS_PER_SUBBLOCK;
+                    let counts = self.counts.as_ref().get_unchecked(block);
+                    let upper_count = self
+                        .upper_counts
+                        .as_ref()
+                        .get_unchecked(word_pos / (1usize << 26));
 
-                let hint_rank = upper_count + counts.absolute as usize + counts.rel(offset);
-                if Self::WORDS_PER_SUBBLOCK == 1 {
-                    // Rank<2, 9> works like Rank9.
-                    let word = self.bits.as_ref().get_unchecked(word_pos);
-                    hint_rank + (word & ((1 << (pos % 64 as usize)) - 1)).count_ones() as usize
-                } else {
-                    // For the other cases we need a bit more work.
-                    #[allow(clippy::modulo_one)]
-                    let hint_pos =
-                        word_pos - ((word_pos % Self::WORDS_PER_BLOCK) % Self::WORDS_PER_SUBBLOCK);
+                    let hint_rank = upper_count + counts.absolute as usize + counts.rel(offset);
+                    if Self::WORDS_PER_SUBBLOCK == 1 {
+                        // Rank<2, 9> works like Rank9.
+                        let word = self.bits.as_ref().get_unchecked(word_pos);
+                        hint_rank + (word & ((1 << (pos % 64 as usize)) - 1)).count_ones() as usize
+                    } else {
+                        // For the other cases we need a bit more work.
+                        #[allow(clippy::modulo_one)]
+                        let hint_pos = word_pos
+                            - ((word_pos % Self::WORDS_PER_BLOCK) % Self::WORDS_PER_SUBBLOCK);
 
-                    RankHinted::<64>::rank_hinted(&self.bits, pos, hint_pos, hint_rank)
+                        RankHinted::<64>::rank_hinted(&self.bits, pos, hint_pos, hint_rank)
+                    }
                 }
             }
         }
@@ -498,12 +500,12 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> Bi
 }
 
 impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        B,
-        C1: AsRef<[usize]>,
-        C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-    > SmallCounters<NUM_U32S, COUNTER_WIDTH> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+    const NUM_U32S: usize,
+    const COUNTER_WIDTH: usize,
+    B,
+    C1: AsRef<[usize]>,
+    C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
+> SmallCounters<NUM_U32S, COUNTER_WIDTH> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn upper_counts(&self) -> &[usize] {

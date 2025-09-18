@@ -236,7 +236,7 @@ impl<B: AsRef<[usize]>> BitVec<B> {
     #[inline(always)]
     pub unsafe fn get_unchecked(&self, index: usize) -> bool {
         let word_index = index / BITS;
-        let word = self.bits.as_ref().get_unchecked(word_index);
+        let word = unsafe { self.bits.as_ref().get_unchecked(word_index) };
         (word >> (index % BITS)) & 1 != 0
     }
 }
@@ -258,10 +258,12 @@ impl<B: AsRef<[usize]> + AsMut<[usize]>> BitVec<B> {
         let bits = self.bits.as_mut();
         // TODO: no test?
         // For constant values, this should be inlined with no test.
-        if value {
-            *bits.get_unchecked_mut(word_index) |= 1 << bit_index;
-        } else {
-            *bits.get_unchecked_mut(word_index) &= !(1 << bit_index);
+        unsafe {
+            if value {
+                *bits.get_unchecked_mut(word_index) |= 1 << bit_index;
+            } else {
+                *bits.get_unchecked_mut(word_index) &= !(1 << bit_index);
+            }
         }
     }
 
@@ -496,11 +498,12 @@ impl<B: AsRef<[usize]>> RankHinted<64> for BitVec<B> {
         );
 
         while (hint_pos + 1) * 64 <= pos {
-            rank += bits.get_unchecked(hint_pos).count_ones() as usize;
+            rank += unsafe { bits.get_unchecked(hint_pos).count_ones() } as usize;
             hint_pos += 1;
         }
 
-        rank + (bits.get_unchecked(hint_pos) & ((1 << (pos % 64)) - 1)).count_ones() as usize
+        rank + (unsafe { bits.get_unchecked(hint_pos) } & ((1 << (pos % 64)) - 1)).count_ones()
+            as usize
     }
 }
 
@@ -509,14 +512,15 @@ impl<B: AsRef<[usize]>> SelectHinted for BitVec<B> {
         let mut word_index = hint_pos / BITS;
         let bit_index = hint_pos % BITS;
         let mut residual = rank - hint_rank;
-        let mut word = (self.as_ref().get_unchecked(word_index) >> bit_index) << bit_index;
+        let mut word =
+            (unsafe { self.as_ref().get_unchecked(word_index) } >> bit_index) << bit_index;
         loop {
             let bit_count = word.count_ones() as usize;
             if residual < bit_count {
                 return word_index * BITS + word.select_in_word(residual);
             }
             word_index += 1;
-            word = *self.as_ref().get_unchecked(word_index);
+            word = *unsafe { self.as_ref().get_unchecked(word_index) };
             residual -= bit_count;
         }
     }
@@ -527,14 +531,15 @@ impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
         let mut word_index = hint_pos / BITS;
         let bit_index = hint_pos % BITS;
         let mut residual = rank - hint_rank;
-        let mut word = (!*self.as_ref().get_unchecked(word_index) >> bit_index) << bit_index;
+        let mut word =
+            (!*unsafe { self.as_ref().get_unchecked(word_index) } >> bit_index) << bit_index;
         loop {
             let bit_count = word.count_ones() as usize;
             if residual < bit_count {
                 return word_index * BITS + word.select_in_word(residual);
             }
             word_index += 1;
-            word = !self.as_ref().get_unchecked(word_index);
+            word = unsafe { !self.as_ref().get_unchecked(word_index) };
             residual -= bit_count;
         }
     }
@@ -779,7 +784,7 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
     unsafe fn get_unchecked(&self, index: usize, ordering: Ordering) -> bool {
         let word_index = index / BITS;
         let bits = self.bits.as_ref();
-        let word = bits.get_unchecked(word_index).load(ordering);
+        let word = unsafe { bits.get_unchecked(word_index).load(ordering) };
         (word >> (index % BITS)) & 1 != 0
     }
     #[inline(always)]
@@ -789,12 +794,14 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
         let bits = self.bits.as_ref();
 
         // For constant values, this should be inlined with no test.
-        if value {
-            bits.get_unchecked(word_index)
-                .fetch_or(1 << bit_index, ordering);
-        } else {
-            bits.get_unchecked(word_index)
-                .fetch_and(!(1 << bit_index), ordering);
+        unsafe {
+            if value {
+                bits.get_unchecked(word_index)
+                    .fetch_or(1 << bit_index, ordering);
+            } else {
+                bits.get_unchecked(word_index)
+                    .fetch_and(!(1 << bit_index), ordering);
+            }
         }
     }
 
@@ -804,12 +811,14 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
         let bit_index = index % BITS;
         let bits = self.bits.as_ref();
 
-        let old_word = if value {
-            bits.get_unchecked(word_index)
-                .fetch_or(1 << bit_index, ordering)
-        } else {
-            bits.get_unchecked(word_index)
-                .fetch_and(!(1 << bit_index), ordering)
+        let old_word = unsafe {
+            if value {
+                bits.get_unchecked(word_index)
+                    .fetch_or(1 << bit_index, ordering)
+            } else {
+                bits.get_unchecked(word_index)
+                    .fetch_and(!(1 << bit_index), ordering)
+            }
         };
 
         (old_word >> (bit_index)) & 1 != 0
