@@ -114,10 +114,9 @@ pub trait IntoUncheckedIterator: Sized {
     fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter;
 }
 
-/*
 impl<'a, S: DeserializeInner> IntoUncheckedIterator for &'a MemCase<S>
 where
-    &'a DeserType<'a, S>: IntoUncheckedIterator,
+    for<'b> &'b DeserType<'b, S>: IntoUncheckedIterator,
 {
     type Item = <&'a DeserType<'a, S> as IntoUncheckedIterator>::Item;
     type IntoUncheckedIter = <&'a DeserType<'a, S> as IntoUncheckedIterator>::IntoUncheckedIter;
@@ -130,7 +129,6 @@ where
         self.uncase().into_unchecked_iter_from(from)
     }
 }
-*/
 
 /// A trait for types that can turn into an [`UncheckedIterator`] moving backwards.
 ///
