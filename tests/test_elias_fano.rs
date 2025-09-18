@@ -8,7 +8,7 @@
 #![allow(clippy::type_complexity)]
 use std::iter::zip;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use epserde::prelude::*;
 use indexed_dict::*;
 use rand::rngs::SmallRng;
@@ -70,7 +70,7 @@ fn test_elias_fano() -> Result<()> {
             if contains {
                 let i = res.unwrap();
                 assert_eq!(ef.get(i), v);
-                assert_eq!(ef.get(ef.index_of(v).unwrap()), v);
+                assert_eq!(ef.get(ef.index_of(v).context("index_of failed")?), v);
             } else {
                 assert_eq!(ef.index_of(v), None);
             }
@@ -95,14 +95,14 @@ fn test_elias_fano() -> Result<()> {
             }
         }
 
-        let last = values.last().unwrap();
+        let last = values.last().context("last failed")?;
         let mut lower_bound = 0;
         for (i, v) in values.iter().enumerate() {
             if lower_bound > *v {
                 continue;
             }
             loop {
-                assert!(ef.succ(lower_bound).unwrap() == (i, *v));
+                assert!(ef.succ(lower_bound).context("succ failed")? == (i, *v));
                 lower_bound += 1;
                 if lower_bound > values[i] {
                     break;
@@ -118,7 +118,11 @@ fn test_elias_fano() -> Result<()> {
                 continue;
             }
             loop {
-                assert!(ef.succ_strict(lower_bound).unwrap() == (i, *v));
+                assert!(
+                    ef.succ_strict(lower_bound)
+                        .context("succ_strict failed")?
+                        == (i, *v)
+                );
                 lower_bound += 1;
                 if lower_bound >= values[i] {
                     break;
@@ -126,9 +130,9 @@ fn test_elias_fano() -> Result<()> {
             }
         }
 
-        assert_eq!(None, ef.succ_strict(last));
+        assert_eq!(None, ef.succ_strict(*last));
 
-        let first = *values.first().unwrap();
+        let first = *values.first().context("first failed")?;
         let mut upper_bound = first + 1;
         for (i, v) in values.iter().enumerate() {
             if upper_bound <= *v {
@@ -139,7 +143,11 @@ fn test_elias_fano() -> Result<()> {
                 continue;
             }
             loop {
-                assert!(ef.pred_strict(upper_bound).unwrap() == (i, *v));
+                assert!(
+                    ef.pred_strict(upper_bound)
+                        .context("pred_strict failed")?
+                        == (i, *v)
+                );
                 upper_bound += 1;
                 if i + 1 == values.len() || upper_bound > values[i + 1] {
                     break;
@@ -151,7 +159,7 @@ fn test_elias_fano() -> Result<()> {
             assert_eq!(None, ef.pred_strict(upper_bound));
         }
 
-        let first = *values.first().unwrap();
+        let first = *values.first().context("first failed")?;
         let mut upper_bound = first;
         for (i, v) in values.iter().enumerate() {
             if upper_bound < *v {
@@ -162,7 +170,7 @@ fn test_elias_fano() -> Result<()> {
                 continue;
             }
             loop {
-                assert!(ef.pred(upper_bound).unwrap() == (i, *v));
+                assert!(ef.pred(upper_bound).context("pred failed")? == (i, *v));
                 upper_bound += 1;
                 if i + 1 == values.len() || upper_bound >= values[i + 1] {
                     break;
@@ -263,7 +271,7 @@ fn test_epserde() -> Result<()> {
 }
 
 #[test]
-fn test_convenience_methods() {
+fn test_convenience_methods() -> Result<()> {
     let mut efb = EliasFanoBuilder::new(10, 100);
     for i in 0..10 {
         efb.push(i * 10);
@@ -289,6 +297,10 @@ fn test_convenience_methods() {
     let ef = efb.build_with_seq_and_dict();
     for i in 0..10 {
         assert_eq!(ef.get(i), i * 10);
-        assert_eq!(ef.succ(i * 10).unwrap(), (i, i * 10));
+        assert_eq!(
+            ef.succ(i * 10).context("succ failed")?,
+            (i, i * 10)
+        );
     }
+    Ok(())
 }

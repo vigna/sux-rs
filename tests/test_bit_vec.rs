@@ -437,7 +437,7 @@ fn test_eq() {
 }
 
 #[test]
-fn test_epserde() {
+fn test_epserde() -> anyhow::Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
     let mut b = BitVec::new(200);
     for i in 0..200 {
@@ -445,16 +445,16 @@ fn test_epserde() {
     }
 
     let tmp_file = std::env::temp_dir().join("test_serdes_ef.bin");
-    let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file).unwrap());
-    unsafe { b.serialize(&mut file) }.unwrap();
+    let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp_file)?);
+    unsafe { b.serialize(&mut file) }?;
     drop(file);
 
-    let c =
-        unsafe { <BitVec<Vec<usize>>>::mmap(&tmp_file, epserde::deser::Flags::empty()).unwrap() };
+    let c = unsafe { <BitVec<Vec<usize>>>::mmap(&tmp_file, epserde::deser::Flags::empty())? };
 
     for i in 0..200 {
         assert_eq!(b.get(i), c.uncase().get(i));
     }
+    Ok(())
 }
 
 #[test]
