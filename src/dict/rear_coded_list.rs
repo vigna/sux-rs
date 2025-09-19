@@ -9,6 +9,7 @@
 
 use std::borrow::Borrow;
 
+use crate::dict::elias_fano::{EfSeq, EliasFanoBuilder};
 use crate::traits::{IndexedDict, IndexedSeq, IntoIteratorFrom, Types};
 use lender::for_;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
@@ -83,7 +84,7 @@ struct Stats {
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct RearCodedList<D: AsRef<[u8]> = Box<[u8]>, P: AsRef<[usize]> = Box<[usize]>> {
+pub struct RearCodedList<D: AsRef<[u8]> = Box<[u8]>, P: IndexedSeq = Box<[usize]>> {
     /// The number of strings in a block; this value trades off compression for speed.
     k: usize,
     /// Number of encoded strings.
@@ -96,7 +97,10 @@ pub struct RearCodedList<D: AsRef<[u8]> = Box<[u8]>, P: AsRef<[usize]> = Box<[us
     pointers: P,
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
+impl<D: AsRef<[u8]>, P: IndexedSeq> RearCodedList<D, P>
+where
+    for<'a> P: IndexedSeq<Output<'a> = usize>,
+{
     /// Returns the number of strings.
     ///
     /// This method is equivalent to [`IndexedSeq::len`], but it is provided to
@@ -141,7 +145,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         let block = index / self.k;
         let offset = index % self.k;
 
-        let start = self.pointers.as_ref()[block];
+        let start = self.pointers.get(block);
         let data = &self.data.as_ref()[start..];
 
         // decode the first string in the block
@@ -175,8 +179,8 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
     fn index_of_sorted(&self, value: impl Borrow<<Self as Types>::Input>) -> Option<usize> {
         let string = value.borrow().as_bytes();
         // first to a binary search on the blocks to find the block
-        let block_idx = self.pointers.as_ref().binary_search_by(|block_ptr| {
-            strcmp(string, &self.data.as_ref()[*block_ptr..]).reverse()
+        let block_idx = self.pointers.binary_search_by(|block_ptr| {
+            strcmp(string, &self.data.as_ref()[block_ptr..]).reverse()
         });
 
         if let Ok(block_idx) = block_idx {
@@ -184,14 +188,14 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
         }
 
         let mut block_idx = block_idx.unwrap_err();
-        if block_idx == 0 || block_idx > self.pointers.as_ref().len() {
+        if block_idx == 0 || block_idx > self.pointers.len() {
             // the string is before the first block
             return None;
         }
         block_idx -= 1;
         // finish by a linear search on the block
         let mut result = Vec::with_capacity(128);
-        let start = self.pointers.as_ref()[block_idx];
+        let start = self.pointers.get(block_idx);
         let data = &self.data.as_ref()[start..];
 
         // decode the first string in the block
@@ -218,12 +222,18 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> Types for RearCodedList<D, P> {
+impl<D: AsRef<[u8]>, P: IndexedSeq> Types for RearCodedList<D, P>
+where
+    for<'a> P: IndexedSeq<Output<'a> = usize>,
+{
     type Output<'a> = String;
     type Input = str;
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedSeq for RearCodedList<D, P> {
+impl<D: AsRef<[u8]>, P: IndexedSeq> IndexedSeq for RearCodedList<D, P>
+where
+    for<'a> P: IndexedSeq<Output<'a> = usize>,
+{
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
         let mut result = Vec::with_capacity(128);
@@ -237,7 +247,10 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedSeq for RearCodedList<D, P> {
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
+impl<D: AsRef<[u8]>, P: IndexedSeq> IndexedDict for RearCodedList<D, P>
+where
+    for<'a> P: IndexedSeq<Output<'a> = usize>,
+{
     /// If the strings in the list are sorted this is done with a binary search,
     /// otherwise it is done with a linear search.
     #[inline(always)]
@@ -254,7 +267,10 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLender for &'a RearCodedList<D, P> {
+impl<'a, D: AsRef<[u8]>, P: IndexedSeq> IntoLender for &'a RearCodedList<D, P>
+where
+    for<'b> P: IndexedSeq<Output<'b> = usize>,
+{
     type Lender = Lend<'a, D, P>;
     #[inline(always)]
     fn into_lender(self) -> Lend<'a, D, P> {
@@ -264,18 +280,27 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLender for &'a RearCodedList<D, 
 
 /// Sequential [`Iterator`] over the strings.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct Iter<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
+pub struct Iter<'a, D: AsRef<[u8]>, P: IndexedSeq>
+where
+    for<'b> P: IndexedSeq<Output<'b> = usize>,
+{
     iter: Lend<'a, D, P>,
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::ExactSizeIterator for Iter<'_, D, P> {
+impl<D: AsRef<[u8]>, P: IndexedSeq> std::iter::ExactSizeIterator for Iter<'_, D, P>
+where
+    for<'a> P: IndexedSeq<Output<'a> = usize>,
+{
     #[inline(always)]
     fn len(&self) -> usize {
         self.iter.len()
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iter<'_, D, P> {
+impl<D: AsRef<[u8]>, P: IndexedSeq> std::iter::Iterator for Iter<'_, D, P>
+where
+    for<'a> P: IndexedSeq<Output<'a> = usize>,
+{
     type Item = String;
 
     #[inline(always)]
@@ -291,7 +316,10 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iter<'_, D, P> {
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D, P> {
+impl<'a, D: AsRef<[u8]>, P: IndexedSeq> IntoIterator for &'a RearCodedList<D, P>
+where
+    for<'b> P: IndexedSeq<Output<'b> = usize>,
+{
     type Item = String;
     type IntoIter = Iter<'a, D, P>;
     #[inline(always)]
@@ -300,7 +328,10 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIteratorFrom for &'a RearCodedList<D, P> {
+impl<'a, D: AsRef<[u8]>, P: IndexedSeq> IntoIteratorFrom for &'a RearCodedList<D, P>
+where
+    for<'b> P: IndexedSeq<Output<'b> = usize>,
+{
     type IntoIterFrom = Iter<'a, D, P>;
     #[inline(always)]
     fn into_iter_from(self, from: usize) -> Self::IntoIter {
@@ -310,14 +341,20 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIteratorFrom for &'a RearCodedLi
 
 /// Sequential [`Lender`] over the strings.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct Lend<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
+pub struct Lend<'a, D: AsRef<[u8]>, P: IndexedSeq>
+where
+    for<'b> P: IndexedSeq<Output<'b> = usize>,
+{
     rca: &'a RearCodedList<D, P>,
     buffer: Vec<u8>,
     data: &'a [u8],
     index: usize,
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lend<'a, D, P> {
+impl<'a, D: AsRef<[u8]>, P: IndexedSeq> Lend<'a, D, P>
+where
+    for<'b> P: IndexedSeq<Output<'b> = usize>,
+{
     pub fn new(rca: &'a RearCodedList<D, P>) -> Self {
         Self {
             rca,
@@ -331,7 +368,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lend<'a, D, P> {
         let block = from / rca.k;
         let offset = from % rca.k;
 
-        let start = rca.pointers.as_ref()[block];
+        let start = rca.pointers.get(block);
         let mut res = Lend {
             rca,
             index: block * rca.k,
@@ -345,11 +382,17 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lend<'a, D, P> {
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lending<'a> for Lend<'_, D, P> {
+impl<'a, D: AsRef<[u8]>, P: IndexedSeq> Lending<'a> for Lend<'_, D, P>
+where
+    for<'b> P: IndexedSeq<Output<'b> = usize>,
+{
     type Lend = &'a str;
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Lend<'_, D, P> {
+impl<D: AsRef<[u8]>, P: IndexedSeq> Lender for Lend<'_, D, P>
+where
+    for<'b> P: IndexedSeq<Output<'b> = usize>,
+{
     #[inline]
     /// A next that returns a reference to the inner buffer containing the string.
     /// This is useful to avoid allocating a new string for every query if you
@@ -379,16 +422,57 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Lend<'_, D, P> {
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeLender for Lend<'_, D, P> {
+impl<D: AsRef<[u8]>, P: IndexedSeq> ExactSizeLender for Lend<'_, D, P>
+where
+    for<'b> P: IndexedSeq<Output<'b> = usize>,
+{
     #[inline(always)]
     fn len(&self) -> usize {
         self.rca.len() - self.index
     }
 }
 
+/// Structure that can append `usize` and yield a [`IndexedSeq`]
+///
+/// # Safety
+///
+/// Values in the built `IndexedSeq` must match the input in the same order.
+pub unsafe trait PointersBuilder {
+    type Built
+    where
+        for<'a> Self::Built: IndexedSeq<Output<'a> = usize>;
+
+    fn push(&mut self, pointer: usize);
+    fn build(self) -> Self::Built;
+}
+
+unsafe impl PointersBuilder for Vec<usize> {
+    type Built = Box<[usize]>;
+
+    fn push(&mut self, pointer: usize) {
+        Vec::push(self, pointer)
+    }
+
+    fn build(self) -> Self::Built {
+        self.into()
+    }
+}
+
+unsafe impl PointersBuilder for EliasFanoBuilder {
+    type Built = EfSeq;
+
+    fn push(&mut self, pointer: usize) {
+        EliasFanoBuilder::push(self, pointer)
+    }
+
+    fn build(self) -> Self::Built {
+        EliasFanoBuilder::build(self)
+    }
+}
+
 /// Builder for a rear-coded list.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct RearCodedListBuilder {
+pub struct RearCodedListBuilder<P: PointersBuilder = Vec<usize>> {
     /// The number of strings in a block; this value trades compression for speed.
     k: usize,
     /// Number of encoded strings.
@@ -398,7 +482,7 @@ pub struct RearCodedListBuilder {
     /// The encoded strings, `\0`-terminated.
     data: Vec<u8>,
     /// The pointer to the starting string of each block.
-    pointers: Vec<usize>,
+    pointers: P,
     /// Statistics of the encoded data.
     stats: Stats,
     /// Cache of the last encoded string for incremental encoding.
@@ -450,13 +534,21 @@ fn strcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
     other.len().cmp(&string.len())
 }
 
-impl RearCodedListBuilder {
+impl RearCodedListBuilder<Vec<usize>> {
     /// Creates a builder for a rear-coded list with a block size of `k`.
     pub fn new(k: usize) -> Self {
+        Self::with_pointer_builder(k, Vec::new())
+    }
+}
+
+impl<P: PointersBuilder> RearCodedListBuilder<P> {
+    /// Creates a builder for a rear-coded list with a block size of `k`
+    /// using a custom structure to store pointers, such as [`EfSeq`].
+    pub fn with_pointer_builder(k: usize, pointers_builder: P) -> Self {
         Self {
             data: Vec::with_capacity(1024),
             last_str: Vec::with_capacity(1024),
-            pointers: Vec::new(),
+            pointers: pointers_builder,
             len: 0,
             is_sorted: true,
             k,
@@ -465,10 +557,10 @@ impl RearCodedListBuilder {
     }
 
     /// Builds the rear-coded list.
-    pub fn build(self) -> RearCodedList<Box<[u8]>, Box<[usize]>> {
+    pub fn build(self) -> RearCodedList<Box<[u8]>, P::Built> {
         RearCodedList {
             data: self.data.into(),
-            pointers: self.pointers.into(),
+            pointers: self.pointers.build(),
             len: self.len,
             is_sorted: self.is_sorted,
             k: self.k,
