@@ -92,15 +92,15 @@ bench = false
 
 [[bin]]
 name = "rcl"
-required-features = ["cli"]
+required-features = ["cli", "epserde"]
 
 [[bin]]
 name = "vfunc"
-required-features = ["cli", "rayon"]
+required-features = ["cli", "epserde", "rayon"]
 
 [[bin]]
 name = "vfilter"
-required-features = ["cli", "rayon"]
+required-features = ["cli", "epserde", "rayon"]
 
 [[bin]]
 name = "mem_usage"
