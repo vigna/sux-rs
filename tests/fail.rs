@@ -6,6 +6,8 @@
 
 #[test]
 fn fail() {
-    let t = trybuild::TestCases::new();
-    t.compile_fail("tests/fail/*.rs");
+    // Tests must be specifying one-by-one as we need to feature gate them.
+    let _t = trybuild::TestCases::new();
+    #[cfg(feature = "epserde")]
+    _t.compile_fail("tests/fail/drop_memcase_and_get.rs");
 }

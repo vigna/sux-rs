@@ -140,6 +140,17 @@ mod mem_case {
         }
     }
 
+    impl<'a, S: DeserializeInner> UncheckedIterator for &'a MemCase<S>
+    where
+        for<'b> &'b DeserType<'b, S>: UncheckedIterator,
+    {
+        type Item = <&'a DeserType<'a, S> as UncheckedIterator>::Item;
+
+        unsafe fn next_unchecked(&mut self) -> Self::Item {
+            self.uncase().next_unchecked()
+        }
+    }
+
     impl<'a, S: DeserializeInner> IntoUncheckedIterator for &'a MemCase<S>
     where
         for<'b> &'b DeserType<'b, S>: IntoUncheckedIterator,

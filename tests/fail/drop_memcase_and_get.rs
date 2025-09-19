@@ -8,9 +8,7 @@ use epserde::{Epserde, deser::Deserialize, ser::Serialize};
 use std::io::Cursor;
 use sux::traits::{IndexedSeq, Types};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Epserde, Debug, Clone, PartialEq, Eq)]
 struct Wrapper<A>(A);
 
 // A newtype for Vec<String> returning an &str on a get

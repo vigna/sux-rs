@@ -12,6 +12,7 @@ license = "Apache-2.0 OR LGPL-2.1-or-later"
 readme = "README.md"
 categories = ["compression", "data-structures"]
 keywords = ["succinct", "rank", "select"]
+resolver = "2"
 
 [dependencies]
 anyhow = "1.0.79"

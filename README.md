@@ -7,7 +7,7 @@
 [![Line count](https://tokei.rs/b1/github/vigna/sux-rs?type=Rust,Python)](https://github.com/vigna/sux-rs)
 [![Latest version](https://img.shields.io/crates/v/sux.svg)](https://crates.io/crates/sux)
 [![Documentation](https://docs.rs/sux/badge.svg)](https://docs.rs/sux)
-[![Coverage Status](https://coveralls.io/repos/github/vigna/sux-rs/badge.svg?branch=main)](https://coveralls.io/github/vigna/sux-rs?branch=main)  
+[![Coverage Status](https://coveralls.io/repos/github/vigna/sux-rs/badge.svg?branch=main)](https://coveralls.io/github/vigna/sux-rs?branch=main)
 
 A pure Rust implementation of succinct and compressed data structures.
 
@@ -34,6 +34,14 @@ zeros or ones).
 All structures in this crate are designed to work well with [ε-serde]: in
 particular, once you have created and serialized them, you can easily map them
 into memory or load them in memory regions with specific `mmap()` attributes.
+Support for ε-serde is provided by the feature `epserde`, and support for
+memory mapping in ε-serde is provided by the `mmap` feature, which is on by
+default.
+
+## [serde](https://crates.io/crates/serde) support
+
+All structures in this crate support serde. The support is provided by the
+feature gate `serde`.
 
 ## `MemDbg`/`MemSize` support
 
@@ -117,7 +125,7 @@ plots for multiple runs.
 
 By specifying multiple structures (using also substring matching), you can
 compare the behavior of different structures. For example,
-  
+
 ```bash
 cargo bench --bench sux -- SelectSmall SelectAdapt0 -d 0.5 -r 1 -l 100000,1000000,10000000
 ```
