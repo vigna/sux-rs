@@ -272,7 +272,7 @@ mod mwhc {
     /// queries due to the simpler edge-generation logic, albeit construction is
     /// slower due to cache-unfriendly accesses.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
-    #[cfg_attr(feature = "epserde", derive(epserde::Epserde, epserde::deep_copy))]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
     pub struct Mwhc3Shards {
         // One third of the number of vertices in a shard
         seg_size: usize,
@@ -398,7 +398,7 @@ mod mwhc {
     /// This construction uses random peelable 3-hypergraphs, giving a 23% space
     /// overhead. See [`Mwhc3Shards`] for more information.
     #[derive(Default, Debug, MemDbg, MemSize, Clone, Copy)]
-    #[cfg_attr(feature = "epserde", derive(epserde::Epserde, deep_copy))]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
     pub struct Mwhc3NoShards {
         // One third of the number of vertices in a shard
         seg_size: usize,

@@ -11,14 +11,15 @@ use clap::{ArgGroup, Parser};
 use common_traits::UpcastableFrom;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
-use epserde::traits::BinSafe;
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::func::{shard_edge::*, *};
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
-use sux::utils::{EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
+use sux::utils::{
+    BinSafe, EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender,
+};
 
 #[derive(Parser, Debug)]
 #[command(about = "Creates a VFunc mapping each input to its rank and serializes it with ε-serde", long_about = None)]
