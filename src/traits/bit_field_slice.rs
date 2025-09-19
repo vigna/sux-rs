@@ -69,7 +69,6 @@
 use common_traits::*;
 use core::sync::atomic::*;
 use core::{marker::PhantomData, ops::Deref};
-use epserde::deser::{DeserializeInner, MemCase};
 use mem_dbg::{MemDbg, MemSize};
 #[cfg(feature = "rayon")]
 use rayon::iter::{
@@ -943,34 +942,40 @@ where
 
 // MemCase delegations
 
-impl<S: DeserializeInner, W> BitFieldSliceCore<W> for MemCase<S>
-where
-    for<'a> S::DeserType<'a>: BitFieldSliceCore<W>,
-{
-    fn bit_width(&self) -> usize {
-        unsafe { self.uncase_static().bit_width() }
+#[cfg(feature = "epserde")]
+mod mem_case {
+    use super::*;
+    use ::epserde::deser::{DeserializeInner, MemCase};
+
+    impl<S: DeserializeInner, W> BitFieldSliceCore<W> for MemCase<S>
+    where
+        for<'a> S::DeserType<'a>: BitFieldSliceCore<W>,
+    {
+        fn bit_width(&self) -> usize {
+            unsafe { self.uncase_static().bit_width() }
+        }
+
+        fn len(&self) -> usize {
+            unsafe { self.uncase_static().len() }
+        }
+
+        fn is_empty(&self) -> bool {
+            unsafe { self.uncase_static().is_empty() }
+        }
     }
 
-    fn len(&self) -> usize {
-        unsafe { self.uncase_static().len() }
-    }
+    impl<S: DeserializeInner, W: Word> BitFieldSlice<W> for MemCase<S>
+    where
+        for<'a> S::DeserType<'a>: BitFieldSlice<W>,
+    {
+        unsafe fn get_unchecked(&self, index: usize) -> W {
+            // SAFETY: We are just using the reference to invoke the method
+            unsafe { self.uncase_static().get_unchecked(index) }
+        }
 
-    fn is_empty(&self) -> bool {
-        unsafe { self.uncase_static().is_empty() }
-    }
-}
-
-impl<S: DeserializeInner, W: Word> BitFieldSlice<W> for MemCase<S>
-where
-    for<'a> S::DeserType<'a>: BitFieldSlice<W>,
-{
-    unsafe fn get_unchecked(&self, index: usize) -> W {
-        // SAFETY: We are just using the reference to invoke the method
-        unsafe { self.uncase_static().get_unchecked(index) }
-    }
-
-    fn get(&self, index: usize) -> W {
-        // SAFETY: We are just using the reference to invoke the method
-        unsafe { self.uncase_static().get(index) }
+        fn get(&self, index: usize) -> W {
+            // SAFETY: We are just using the reference to invoke the method
+            unsafe { self.uncase_static().get(index) }
+        }
     }
 }

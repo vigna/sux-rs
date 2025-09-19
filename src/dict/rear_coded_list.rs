@@ -10,7 +10,6 @@
 use std::borrow::Borrow;
 
 use crate::traits::{IndexedDict, IndexedSeq, IntoIteratorFrom, Types};
-use epserde::*;
 use lender::for_;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
 use mem_dbg::*;
@@ -81,7 +80,8 @@ struct Stats {
 /// assert_eq!(rcl.get(2), "abc");
 /// ```
 
-#[derive(Debug, Clone, Epserde, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemDbg, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 pub struct RearCodedList<D: AsRef<[u8]> = Box<[u8]>, P: AsRef<[usize]> = Box<[usize]>> {
     /// The number of strings in a block; this value trades off compression for speed.
     k: usize,
@@ -350,7 +350,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lending<'a> for Lend<'_, D, P> {
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Lend<'_, D, P> {
     #[inline]
-    /// A next that returns a reference to the inner buffer containg the string.
+    /// A next that returns a reference to the inner buffer containing the string.
     /// This is useful to avoid allocating a new string for every query if you
     /// don't need to keep the string around.
     fn next(&mut self) -> Option<&'_ str> {

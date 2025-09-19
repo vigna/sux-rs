@@ -8,7 +8,6 @@
 
 use crate::prelude::*;
 use ambassador::Delegate;
-use epserde::*;
 use mem_dbg::*;
 
 use crate::ambassador_impl_AsRef;
@@ -68,7 +67,8 @@ use std::ops::Index;
 /// assert_eq!(rank9[7], true);
 /// ```
 
-#[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[delegate(AsRef<[usize]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
@@ -93,9 +93,8 @@ pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
 }
 
 #[doc(hidden)]
-#[derive(Epserde, Copy, Debug, Clone, MemDbg, MemSize, Default)]
-#[repr(C)]
-#[zero_copy]
+#[derive(Copy, Debug, Clone, MemDbg, MemSize, Default)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde), repr(C), zero_copy)]
 pub struct BlockCounters {
     pub(super) absolute: usize,
     pub(super) relative: usize,

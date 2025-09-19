@@ -15,7 +15,7 @@ use sux::{
     dict::VFilter,
     func::{shard_edge::*, *},
     traits::{BitFieldSlice, Word},
-    utils::{LineLender, Sig, ToSig, ZstdLineLender},
+    utils::{BinSafe, LineLender, Sig, ToSig, ZstdLineLender},
 };
 
 fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
@@ -131,7 +131,7 @@ fn main() -> Result<()> {
 }
 
 fn main_with_types_boxed_slice<
-    W: ZeroCopy + Word + CastableFrom<u64> + DowncastableInto<u8> + TypeHash + AlignHash,
+    W: Word + BinSafe + CastableFrom<u64> + DowncastableInto<u8> + TypeHash + AlignHash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 >(
@@ -185,7 +185,7 @@ where
 }
 
 fn main_with_types_bit_field_vec<
-    W: ZeroCopy + Word + CastableFrom<u64> + DowncastableInto<u8> + TypeHash + AlignHash,
+    W: Word + BinSafe + CastableFrom<u64> + DowncastableInto<u8> + TypeHash + AlignHash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 >(

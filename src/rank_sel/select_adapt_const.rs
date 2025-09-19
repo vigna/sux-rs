@@ -9,7 +9,6 @@
 use super::{Inventory, SpanType};
 use ambassador::Delegate;
 use common_traits::SelectInWord;
-use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 use std::cmp::{max, min};
 
@@ -141,7 +140,8 @@ use std::ops::Index;
 /// assert_eq!(rank9_sel[7], true);
 /// ```
 
-#[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[delegate(AsRef<[usize]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "bits")]

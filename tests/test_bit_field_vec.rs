@@ -465,9 +465,12 @@ fn test_reset() {
     for i in 0..10 {
         b.set(i, i);
     }
-    b.par_reset();
-    for w in &b {
-        assert_eq!(w, 0);
+    #[cfg(feature = "rayon")]
+    {
+        b.par_reset();
+        for w in &b {
+            assert_eq!(w, 0);
+        }
     }
 }
 
@@ -484,9 +487,12 @@ fn test_atomic_reset() {
     for i in 0..10 {
         b.set_atomic(i, 1, Ordering::Relaxed);
     }
-    b.par_reset_atomic(Ordering::Relaxed);
-    for i in 0..10 {
-        assert_eq!(b.get_atomic(i, Ordering::Relaxed), 0);
+    #[cfg(feature = "rayon")]
+    {
+        b.par_reset_atomic(Ordering::Relaxed);
+        for i in 0..10 {
+            assert_eq!(b.get_atomic(i, Ordering::Relaxed), 0);
+        }
     }
 }
 

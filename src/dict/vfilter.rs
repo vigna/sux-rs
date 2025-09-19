@@ -9,9 +9,8 @@ use crate::bits::BitFieldVec;
 use crate::func::mix64;
 use crate::func::{VFunc, shard_edge::ShardEdge};
 use crate::traits::bit_field_slice::*;
-use crate::utils::{Sig, ToSig};
+use crate::utils::{BinSafe, Sig, ToSig};
 use common_traits::CastableInto;
-use epserde::prelude::*;
 use mem_dbg::*;
 use std::borrow::Borrow;
 use std::ops::Index;
@@ -43,14 +42,15 @@ use std::ops::Index;
 ///   the generic `D` of [`VFunc`].
 /// * `F`: The type of [`VFunc`] used to store the mapping from keys to hashes.
 ///   This type will also imply the type of the keys.
-#[derive(Epserde, Debug, MemDbg, MemSize)]
-pub struct VFilter<W: ZeroCopy + Word, F> {
+#[derive(Debug, MemDbg, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+pub struct VFilter<W: BinSafe + Word, F> {
     pub(crate) func: F,
     pub(crate) filter_mask: W,
     pub(crate) hash_bits: u32,
 }
 
-impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
+impl<T: ?Sized + ToSig<S>, W: BinSafe + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
     VFilter<W, VFunc<T, W, D, S, E>>
 where
     u64: CastableInto<W>,
@@ -111,7 +111,7 @@ where
     }
 }
 
-impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, S: Sig, E: ShardEdge<S, 3>>
+impl<T: ?Sized + ToSig<S>, W: BinSafe + Word, S: Sig, E: ShardEdge<S, 3>>
     VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>
 where
     u64: CastableInto<W>,
@@ -172,7 +172,7 @@ where
 
 impl<
     T: ?Sized + ToSig<S>,
-    W: ZeroCopy + Word,
+    W: BinSafe + Word,
     D: BitFieldSlice<W>,
     S: Sig,
     E: ShardEdge<S, 3>,

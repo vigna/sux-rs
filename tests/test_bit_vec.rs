@@ -7,11 +7,9 @@
 
 use anyhow::Result;
 use core::sync::atomic::Ordering;
-use epserde::prelude::*;
-use maligned::A16;
+use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
-use rand::{RngCore, SeedableRng};
 use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
 
@@ -438,8 +436,12 @@ fn test_eq() {
     assert_eq!(b, d);
 }
 
+#[cfg(feature = "epserde")]
 #[test]
 fn test_epserde() -> Result<()> {
+    use epserde::utils::AlignedCursor;
+    use maligned::A16;
+    use rand::RngCore;
     let mut rng = SmallRng::seed_from_u64(0);
     let mut b = BitVec::new(200);
     for i in 0..200 {
@@ -447,11 +449,17 @@ fn test_epserde() -> Result<()> {
     }
 
     let mut cursor = <AlignedCursor<A16>>::new();
-    unsafe { b.serialize(&mut cursor)? };
+    unsafe {
+        use epserde::ser::Serialize;
+        b.serialize(&mut cursor)?
+    };
 
     let len = cursor.len();
     cursor.set_position(0);
-    let c = unsafe { <BitVec<Vec<usize>>>::read_mem(&mut cursor, len)? };
+    let c = unsafe {
+        use epserde::deser::Deserialize;
+        <BitVec<Vec<usize>>>::read_mem(&mut cursor, len)?
+    };
 
     for i in 0..200 {
         assert_eq!(b.get(i), c.uncase().get(i));
@@ -529,7 +537,7 @@ fn test_from() {
 
 #[test]
 fn test_iter_ones_zeros() {
-    // Exit on bit found beyond bit length (diry vector)
+    // Exit on bit found beyond bit length (dirty vector)
     let v = unsafe { BitVec::from_raw_parts(vec![1 << 63], 10) };
     assert_eq!(v.iter_ones().next(), None);
 

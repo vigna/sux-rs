@@ -5,14 +5,15 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+#![cfg(feature = "rayon")]
 use anyhow::Result;
 use dsi_progress_logger::*;
 use rdst::RadixKey;
 use std::ops::{BitXor, BitXorAssign};
 use sux::{
     bits::BitFieldVec,
+    func::VBuilder,
     func::shard_edge::{FuseLge3FullSigs, FuseLge3NoShards, FuseLge3Shards, ShardEdge},
-    prelude::VBuilder,
     utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
 };
 

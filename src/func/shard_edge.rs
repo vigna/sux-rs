@@ -61,18 +61,11 @@
 //!   very small sizes, providing the fastest parallel construction. Query speed
 //!   is similar to [`FuseLge3Shards`].
 
-use crate::utils::Sig;
+use crate::utils::{BinSafe, Sig};
 use common_traits::{CastableFrom, UnsignedInt, UpcastableInto};
-use epserde::prelude::*;
 use mem_dbg::*;
 use rdst::RadixKey;
 use std::fmt::Display;
-
-use epserde::{
-    deser::DeserializeInner,
-    ser::SerializeInner,
-    traits::{AlignHash, TypeHash},
-};
 
 /// Shard and edge logic.
 ///
@@ -102,18 +95,7 @@ use epserde::{
 /// [`num_sort_keys`](ShardEdge::num_sort_keys) should return the number of keys
 /// used for sorting, and [`sort_key`](ShardEdge::sort_key) should return the
 /// key to be used for sorting.
-pub trait ShardEdge<S, const K: usize>:
-    Default
-    + Display
-    + Clone
-    + Copy
-    + Send
-    + Sync
-    + SerializeInner
-    + DeserializeInner
-    + TypeHash
-    + AlignHash
-{
+pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send + Sync {
     /// The type to use for sorting signature when looking for duplicate edges.
     ///
     /// This type must be [transmutable](std::mem::transmute) with `SigVal<S,
@@ -127,7 +109,7 @@ pub trait ShardEdge<S, const K: usize>:
     /// sorting the signatures by this type gives an order very similar to that
     /// obtained sorting by the key returned by
     /// [`sort_key`](ShardEdge::sort_key).
-    type SortSigVal<V: ZeroCopy + Send + Sync>: RadixKey + Send + Sync + Copy + PartialEq;
+    type SortSigVal<V: BinSafe>: RadixKey + Send + Sync + Copy + PartialEq;
 
     /// The type of local signatures used to generate local edges.
     ///
@@ -270,7 +252,6 @@ fn sharding_high_bits(n: usize, eps: f64) -> u32 {
 #[cfg(feature = "mwhc")]
 mod mwhc {
     use crate::utils::SigVal;
-    use epserde::Epserde;
 
     use super::*;
 
@@ -290,8 +271,8 @@ mod mwhc {
     /// for benchmarking and comparison. It also provides slightly faster
     /// queries due to the simpler edge-generation logic, albeit construction is
     /// slower due to cache-unfriendly accesses.
-    #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
-    #[deep_copy]
+    #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde, epserde::deep_copy))]
     pub struct Mwhc3Shards {
         // One third of the number of vertices in a shard
         seg_size: usize,
@@ -347,7 +328,7 @@ mod mwhc {
     }
 
     impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
-        type SortSigVal<V: ZeroCopy + Send + Sync> = SigVal<[u64; 2], V>;
+        type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u32;
 
@@ -416,8 +397,8 @@ mod mwhc {
     ///
     /// This construction uses random peelable 3-hypergraphs, giving a 23% space
     /// overhead. See [`Mwhc3Shards`] for more information.
-    #[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
-    #[deep_copy]
+    #[derive(Default, Debug, MemDbg, MemSize, Clone, Copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde, deep_copy))]
     pub struct Mwhc3NoShards {
         // One third of the number of vertices in a shard
         seg_size: usize,
@@ -434,7 +415,7 @@ mod mwhc {
     }
 
     impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
-        type SortSigVal<V: ZeroCopy + Send + Sync> = SigVal<[u64; 2], V>;
+        type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = usize;
 
@@ -502,7 +483,7 @@ mod mwhc {
 pub use mwhc::*;
 
 mod fuse {
-    use crate::utils::SigVal;
+    use crate::utils::{BinSafe, SigVal};
 
     use super::*;
     use lambert_w::lambert_w0;
@@ -540,8 +521,8 @@ mod fuse {
     /// [`FuseLge3FullSigs`]. It uses full signatures as local signatures,
     /// making the probability of a duplicate local signature negligible. As a
     /// result, it is slightly slower and uses more space at construction time.
-    #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
-    #[deep_copy]
+    #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
     pub struct FuseLge3Shards {
         shard_bits_shift: u32,
         log2_seg_size: u32,
@@ -699,11 +680,12 @@ mod fuse {
     }
 
     /// A newtype for sorting by the second value of a `[u64; 2]` signature.
-    #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
+    #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
     #[repr(transparent)]
-    pub struct LowSortSigVal<V: ZeroCopy + Send + Sync>(SigVal<[u64; 2], V>);
+    pub struct LowSortSigVal<V: BinSafe>(SigVal<[u64; 2], V>);
 
-    impl<V: ZeroCopy + Send + Sync> RadixKey for LowSortSigVal<V> {
+    impl<V: BinSafe> RadixKey for LowSortSigVal<V> {
         const LEVELS: usize = 8;
 
         fn get_level(&self, level: usize) -> u8 {
@@ -711,14 +693,14 @@ mod fuse {
         }
     }
 
-    impl<V: ZeroCopy + Send + Sync> PartialEq for LowSortSigVal<V> {
+    impl<V: BinSafe> PartialEq for LowSortSigVal<V> {
         fn eq(&self, other: &Self) -> bool {
             self.0.sig[1] == other.0.sig[1]
         }
     }
 
     impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
-        type SortSigVal<V: ZeroCopy + Send + Sync> = LowSortSigVal<V>;
+        type SortSigVal<V: BinSafe> = LowSortSigVal<V>;
         type LocalSig = [u64; 1];
         type Vertex = u32;
 
@@ -820,8 +802,8 @@ mod fuse {
     /// small sets of keys, but it works only up to 3.8 billion keys. It is
     /// mostly equivalent to that described in [“Binary Fuse Filters: Fast and
     /// Smaller Than Xor Filters”](https://doi.org/10.1145/3510449).
-    #[derive(Epserde, Default, Debug, MemDbg, MemSize, Clone, Copy)]
-    #[deep_copy]
+    #[derive(Default, Debug, MemDbg, MemSize, Clone, Copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
     pub struct FuseLge3NoShards {
         log2_seg_size: u32,
         l: u32,
@@ -910,7 +892,7 @@ mod fuse {
     }
 
     impl ShardEdge<[u64; 2], 3> for FuseLge3NoShards {
-        type SortSigVal<V: ZeroCopy + Send + Sync> = SigVal<[u64; 2], V>;
+        type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = usize;
 
@@ -966,7 +948,7 @@ mod fuse {
     }
 
     impl ShardEdge<[u64; 1], 3> for FuseLge3NoShards {
-        type SortSigVal<V: ZeroCopy + Send + Sync> = SigVal<[u64; 1], V>;
+        type SortSigVal<V: BinSafe> = SigVal<[u64; 1], V>;
         type LocalSig = [u64; 1];
         type Vertex = u32;
 
@@ -1035,8 +1017,8 @@ mod fuse {
     /// construction time.
     ///
     /// The rest of the logic is identical.
-    #[derive(Epserde, Debug, MemDbg, MemSize, Clone, Copy)]
-    #[deep_copy]
+    #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
     #[derive(Default)]
     pub struct FuseLge3FullSigs(FuseLge3Shards);
 
@@ -1072,7 +1054,7 @@ mod fuse {
     }
 
     impl ShardEdge<[u64; 2], 3> for FuseLge3FullSigs {
-        type SortSigVal<V: ZeroCopy + Send + Sync> = SigVal<[u64; 2], V>;
+        type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u32;
 
