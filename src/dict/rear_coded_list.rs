@@ -451,6 +451,7 @@ pub unsafe trait PointersBuilder {
     type Built: BuiltPointers;
 
     fn push(&mut self, pointer: usize);
+    fn len(&self) -> usize;
     fn build(self) -> Self::Built;
 }
 
@@ -459,6 +460,10 @@ unsafe impl PointersBuilder for Vec<usize> {
 
     fn push(&mut self, pointer: usize) {
         Vec::push(self, pointer)
+    }
+
+    fn len(&self) -> usize {
+        Vec::len(self)
     }
 
     fn build(self) -> Self::Built {
@@ -473,8 +478,12 @@ unsafe impl PointersBuilder for EliasFanoBuilder {
         EliasFanoBuilder::push(self, pointer)
     }
 
+    fn len(&self) -> usize {
+        self.count
+    }
+
     fn build(self) -> Self::Built {
-        EliasFanoBuilder::build(self)
+        EliasFanoBuilder::build_with_seq(self)
     }
 }
 
@@ -491,6 +500,7 @@ pub struct RearCodedListBuilder<P: PointersBuilder = Vec<usize>> {
     data: Vec<u8>,
     /// The pointer to the starting string of each block.
     pointers: P,
+    last_pointer: Option<usize>,
     /// Statistics of the encoded data.
     stats: Stats,
     /// Cache of the last encoded string for incremental encoding.
@@ -557,6 +567,7 @@ impl<P: PointersBuilder> RearCodedListBuilder<P> {
             data: Vec::with_capacity(1024),
             last_str: Vec::with_capacity(1024),
             pointers: pointers_builder,
+            last_pointer: None,
             len: 0,
             is_sorted: true,
             k,
@@ -596,13 +607,14 @@ impl<P: PointersBuilder> RearCodedListBuilder<P> {
         // at every multiple of k we just encode the string as is
         let to_encode = if self.len % self.k == 0 {
             // compute the size in bytes of the previous block
-            let last_ptr = self.pointers.last().copied().unwrap_or(0);
-            let block_bytes = self.data.len() - last_ptr;
+            let last_pointer = self.last_pointer.unwrap_or(0);
+            let block_bytes = self.data.len() - last_pointer;
             // update stats
             self.stats.max_block_bytes = self.stats.max_block_bytes.max(block_bytes);
             self.stats.sum_block_bytes += block_bytes;
             // save a pointer to the start of the string
             self.pointers.push(self.data.len());
+            self.last_pointer = Some(self.data.len());
 
             // compute the redundancy
             let rear_length = self.last_str.len() - lcp;
