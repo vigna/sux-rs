@@ -812,7 +812,7 @@ pub struct EliasFanoBuilder {
     low_bits: BitFieldVec,
     high_bits: BitVec,
     last_value: usize,
-    count: usize,
+    pub(crate) count: usize,
 }
 
 impl EliasFanoBuilder {
