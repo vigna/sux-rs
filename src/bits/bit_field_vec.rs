@@ -168,6 +168,7 @@ macro_rules! bit_field_vec {
 /// A vector of bit fields of fixed width.
 #[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[value_traits_subslices(bound = "B: AsRef<[W]>")]
 #[derive(value_traits::SubslicesMut)]
 #[value_traits_subslices_mut(bound = "B: AsRef<[W]> + AsMut<[W]>")]
@@ -1208,7 +1209,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 /// convenient naming for some methods.
 
 #[derive(Debug, Clone, Hash, MemDbg, MemSize)]
-#[cfg_attr(feature = "serde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 pub struct AtomicBitFieldVec<W: Word + IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
     /// The underlying storage.
     bits: B,

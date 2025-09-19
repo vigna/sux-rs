@@ -67,6 +67,7 @@ use mem_dbg::*;
 ///   [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VFunc<
     T: ?Sized + ToSig<S>,
     W: BinSafe + Word = usize,

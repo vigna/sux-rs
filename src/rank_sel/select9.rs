@@ -115,6 +115,7 @@ use std::ops::Index;
 
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[usize]>, target = "rank9")]
 #[delegate(Index<usize>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "rank9")]

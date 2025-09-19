@@ -10,6 +10,7 @@ use sux::traits::{IndexedSeq, Types};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct Wrapper<A>(A);
 
 // A newtype for Vec<String> returning an &str on a get
