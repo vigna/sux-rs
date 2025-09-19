@@ -10,6 +10,7 @@ macro_rules! impl_select_adapt {
     ($name:ident, $subinv: literal) => {
         #[derive(Debug, Clone, MemDbg, MemSize)]
         #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub struct $name<B> {
             inner: SelectAdapt<B>,
         }
@@ -57,6 +58,7 @@ macro_rules! impl_select_adapt_const {
     ($name:ident, $subinv: literal) => {
         #[derive(Debug, Clone, MemDbg, MemSize)]
         #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub struct $name<B> {
             inner: SelectAdaptConst<B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, $subinv>,
         }

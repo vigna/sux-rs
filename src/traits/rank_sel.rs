@@ -270,6 +270,7 @@ pub trait SelectZeroHinted {
 /// for example, [`SelectAdapt`](crate::rank_sel::SelectAdapt).
 #[derive(Debug, Clone, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[usize]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
