@@ -432,15 +432,23 @@ where
     }
 }
 
+/// Workaround for [a compiler
+/// bug](https://github.com/rust-lang/rust/issues/87755#issuecomment-2564811303)
+pub trait BuiltPointers
+where
+    for<'a> Self: IndexedSeq<Output<'a> = usize, Input = usize>,
+{
+}
+
+impl<P> BuiltPointers for P where for<'a> P: IndexedSeq<Output<'a> = usize, Input = usize> {}
+
 /// Structure that can append `usize` and yield a [`IndexedSeq`]
 ///
 /// # Safety
 ///
 /// Values in the built `IndexedSeq` must match the input in the same order.
 pub unsafe trait PointersBuilder {
-    type Built
-    where
-        for<'a> Self::Built: IndexedSeq<Output<'a> = usize>;
+    type Built: BuiltPointers;
 
     fn push(&mut self, pointer: usize);
     fn build(self) -> Self::Built;
