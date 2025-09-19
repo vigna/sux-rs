@@ -16,6 +16,9 @@ use crate::ambassador_impl_AsRef;
 use crate::ambassador_impl_Index;
 use ambassador::{Delegate, delegatable_trait};
 use epserde::Epserde;
+use epserde::deser::DeserType;
+use epserde::deser::DeserializeInner;
+use epserde::deser::MemCase;
 use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
 use std::ops::Index;
@@ -149,7 +152,13 @@ pub trait RankHinted<const HINT_BIT_SIZE: usize> {
     /// Returns the number of ones preceding the specified position,
     /// provided a preceding position and its associated rank.
     ///
+    /// The hinted position, `hint_pos`, is expressed as a multiple of
+    /// `HINT_BIT_SIZE`. This parameter is necessary as some rank implementation
+    /// can accept only hints at specific positions (usually, multiples of the
+    /// word size, to which `HINT_BIT_SIZE` should be set, in that case).
+    ///
     /// # Safety
+    ///
     /// `pos` must be between 0 (included) and
     /// the [length of the underlying bit vector](`BitLength::len`) (excluded).
     /// `hint_pos` * `HINT_BIT_SIZE` must be between 0 (included) and
@@ -226,13 +235,13 @@ pub trait SelectHinted {
     /// Selection the one of given rank, provided the position of a preceding one
     /// and its rank.
     ///
-    /// # Safety
-    /// `rank` must be between zero (included) and the number of ones in the
-    /// underlying bit vector (excluded). `hint_pos` must be between 0 (included) and
-    /// the [length of the underlying bit vector](`BitLength::len`) (included),
-    /// and must be the position of a one in the underlying bit vector.
-    /// `hint_rank` must be the number of ones in the underlying bit vector
-    /// before `hint_pos`, and must be less than or equal to `rank`.
+    /// # Safety `rank` must be between zero (included) and the number of ones
+    /// in the underlying bit vector (excluded). `hint_pos` must be between 0
+    /// (included) and the [length of the underlying bit
+    /// vector](`BitLength::len`) (included), and must be the position of a one
+    /// in the underlying bit vector. `hint_rank` must be the number of ones in
+    /// the underlying bit vector before `hint_pos`, and must be less than or
+    /// equal to `rank`.
     unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize;
 }
 
@@ -336,5 +345,129 @@ impl<B: BitCount> From<B> for AddNumBits<B> {
             bits,
             number_of_ones,
         }
+    }
+}
+
+// Delegations for MemCase
+
+impl<'a, B: DeserializeInner + BitLength> BitLength for &'a MemCase<B>
+where
+    for<'b> &'b DeserType<'b, B>: BitLength,
+{
+    fn len(&self) -> usize {
+        self.uncase().len()
+    }
+}
+
+impl<'a, B: DeserializeInner + BitCount> BitCount for &'a MemCase<B>
+where
+    for<'b> &'b DeserType<'b, B>: BitCount,
+{
+    fn count_ones(&self) -> usize {
+        self.uncase().count_ones()
+    }
+}
+
+impl<'a, B: DeserializeInner + NumBits> NumBits for &'a MemCase<B>
+where
+    for<'b> &'b DeserType<'b, B>: NumBits,
+{
+    fn num_ones(&self) -> usize {
+        self.uncase().num_ones()
+    }
+}
+
+impl<'a, B: DeserializeInner + Rank> Rank for &'a MemCase<B>
+where
+    for<'b> &'b DeserType<'b, B>: Rank,
+{
+    fn rank(&self, pos: usize) -> usize {
+        self.uncase().rank(pos)
+    }
+}
+
+impl<'a, B: DeserializeInner + RankUnchecked> RankUnchecked for &'a MemCase<B>
+where
+    for<'b> &'b DeserType<'b, B>: RankUnchecked,
+{
+    unsafe fn rank_unchecked(&self, pos: usize) -> usize {
+        self.uncase().rank_unchecked(pos)
+    }
+}
+
+impl<'a, B: DeserializeInner + RankZero> RankZero for &'a MemCase<B>
+where
+    for<'b> &'b DeserType<'b, B>: RankZero,
+{
+    fn rank_zero(&self, pos: usize) -> usize {
+        self.uncase().rank_zero(pos)
+    }
+
+    unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
+        self.uncase().rank_zero_unchecked(pos)
+    }
+}
+
+impl<'a, B: DeserializeInner + RankHinted<HINT_BIT_SIZE>, const HINT_BIT_SIZE: usize>
+    RankHinted<HINT_BIT_SIZE> for &'a MemCase<B>
+where
+    for<'b> &'b DeserType<'b, B>: RankHinted<HINT_BIT_SIZE>,
+{
+    unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
+        self.uncase().rank_hinted(pos, hint_pos, hint_rank)
+    }
+}
+
+impl<'a, B: DeserializeInner + SelectUnchecked> SelectUnchecked for &'a MemCase<B>
+where
+    for<'b> &'b DeserType<'b, B>: SelectUnchecked,
+{
+    unsafe fn select_unchecked(&self, rank: usize) -> usize {
+        self.uncase().select_unchecked(rank)
+    }
+}
+
+impl<'a, B: DeserializeInner + Select> Select for &'a MemCase<B>
+where
+    for<'b> &'b DeserType<'b, B>: Select,
+{
+    fn select(&self, rank: usize) -> Option<usize> {
+        self.uncase().select(rank)
+    }
+}
+
+impl<'a, B: DeserializeInner + SelectZeroUnchecked> SelectZeroUnchecked for &'a MemCase<B>
+where
+    for<'b> &'b DeserType<'b, B>: SelectZeroUnchecked,
+{
+    unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
+        self.uncase().select_zero_unchecked(rank)
+    }
+}
+
+impl<'a, B: DeserializeInner + SelectZero> SelectZero for &'a MemCase<B>
+where
+    for<'b> &'b DeserType<'b, B>: SelectZero,
+{
+    fn select_zero(&self, rank: usize) -> Option<usize> {
+        self.uncase().select_zero(rank)
+    }
+}
+
+impl<'a, B: DeserializeInner + SelectHinted> SelectHinted for &'a MemCase<B>
+where
+    for<'b> &'b DeserType<'b, B>: SelectHinted,
+{
+    unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
+        self.uncase().select_hinted(rank, hint_pos, hint_rank)
+    }
+}
+
+impl<'a, B: DeserializeInner + SelectZeroHinted> SelectZeroHinted for &'a MemCase<B>
+where
+    for<'b> &'b DeserType<'b, B>: SelectZeroHinted,
+{
+    unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
+        self.uncase().select_zero_hinted(rank, hint_pos, hint_rank)
     }
 }
