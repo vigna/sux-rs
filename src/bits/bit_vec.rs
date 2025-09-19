@@ -72,7 +72,6 @@ use common_traits::{IntoAtomic, SelectInWord};
 #[allow(unused_imports)] // this is in the std prelude but not in no_std!
 use core::borrow::BorrowMut;
 use core::fmt;
-use epserde::*;
 use mem_dbg::*;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -170,7 +169,8 @@ macro_rules! panic_if_out_of_bounds {
     };
 }
 
-#[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize)]
+#[derive(Debug, Clone, Copy, MemDbg, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 /// A bit vector.
 pub struct BitVec<B = Vec<usize>> {
     bits: B,

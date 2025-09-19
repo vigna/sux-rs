@@ -11,7 +11,7 @@ use clap::{ArgGroup, Parser};
 use common_traits::UpcastableFrom;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
-use epserde::traits::ZeroCopy;
+use epserde::traits::BinSafe;
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
@@ -107,7 +107,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: ShardEdge<S, 3>>(
+fn set_builder<W: BinSafe + Word, D: BitFieldSlice<W> + Send + Sync, S, E: ShardEdge<S, 3>>(
     builder: VBuilder<W, D, S, E>,
     args: &Args,
 ) -> VBuilder<W, D, S, E> {

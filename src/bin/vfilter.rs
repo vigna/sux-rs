@@ -11,7 +11,7 @@ use clap::Parser;
 use common_traits::{DowncastableFrom, UpcastableFrom};
 use dsi_progress_logger::*;
 use epserde::ser::{Serialize, SerializeInner};
-use epserde::traits::{AlignHash, TypeHash, ZeroCopy};
+use epserde::traits::{AlignHash, TypeHash};
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
@@ -131,7 +131,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: ShardEdge<S, 3>>(
+fn set_builder<W: BinSafe + Word, D: BitFieldSlice<W> + Send + Sync, S, E: ShardEdge<S, 3>>(
     builder: VBuilder<W, D, S, E>,
     args: &Args,
 ) -> VBuilder<W, D, S, E> {
@@ -156,14 +156,14 @@ fn set_builder<W: ZeroCopy + Word, D: BitFieldSlice<W> + Send + Sync, S, E: Shar
 }
 
 fn main_with_types_boxed_slice<
-    W: Word + ZeroCopy + Send + Sync + DowncastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
+    W: Word + BinSafe + DowncastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 >(
     args: Args,
 ) -> Result<()>
 where
-    <W as SerializeInner>::SerType: Word + ZeroCopy,
+    <W as SerializeInner>::SerType: Word + BinSafe,
     str: ToSig<S>,
     usize: ToSig<S>,
     u128: UpcastableFrom<W>,
@@ -210,7 +210,7 @@ where
 }
 
 fn main_with_types_bit_field_vec<
-    W: Word + ZeroCopy + Send + Sync + DowncastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
+    W: Word + BinSafe + DowncastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 >(

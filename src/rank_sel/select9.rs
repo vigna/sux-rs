@@ -14,7 +14,6 @@ use crate::{
 };
 use ambassador::Delegate;
 use common_traits::SelectInWord;
-use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
 const ONES_STEP_9: usize = (1usize << 0)
@@ -114,7 +113,8 @@ use std::ops::Index;
 /// assert_eq!(select9[7], true);
 /// ```
 
-#[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[delegate(AsRef<[usize]>, target = "rank9")]
 #[delegate(Index<usize>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "rank9")]

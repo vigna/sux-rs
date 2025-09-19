@@ -11,7 +11,6 @@ use crate::bits::BitFieldVec;
 use crate::func::shard_edge::ShardEdge;
 use crate::traits::bit_field_slice::*;
 use crate::utils::*;
-use epserde::prelude::*;
 use mem_dbg::*;
 
 /// Static functions with low space overhead, fast parallel construction, and
@@ -66,10 +65,11 @@ use mem_dbg::*;
 ///   coupled with `[u64; 1]` signatures. For functions with more than a few
 ///   dozen billion keys, you might try
 ///   [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
-#[derive(Epserde, Debug, MemDbg, MemSize)]
+#[derive(Debug, MemDbg, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 pub struct VFunc<
     T: ?Sized + ToSig<S>,
-    W: ZeroCopy + Word = usize,
+    W: BinSafe + Word = usize,
     D: BitFieldSlice<W> = Box<[W]>,
     S: Sig = [u64; 2],
     E: ShardEdge<S, 3> = FuseLge3Shards,
@@ -83,7 +83,7 @@ pub struct VFunc<
     pub(crate) _marker_s: std::marker::PhantomData<S>,
 }
 
-impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
+impl<T: ?Sized + ToSig<S>, W: BinSafe + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
     VFunc<T, W, D, S, E>
 {
     /// Returns the value associated with the given signature, or a random value
@@ -118,7 +118,7 @@ impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, D: BitFieldSlice<W>, S: Sig, E: S
     }
 }
 
-impl<T: ?Sized + ToSig<S>, W: ZeroCopy + Word, S: Sig, E: ShardEdge<S, 3>>
+impl<T: ?Sized + ToSig<S>, W: BinSafe + Word, S: Sig, E: ShardEdge<S, 3>>
     VFunc<T, W, BitFieldVec<W>, S, E>
 {
     /// Returns the value associated with the given signature, or a random value

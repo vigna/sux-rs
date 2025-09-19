@@ -7,7 +7,6 @@
  */
 
 use ambassador::{Delegate, delegatable_trait};
-use epserde::*;
 use mem_dbg::*;
 use std::ptr::{addr_of, addr_of_mut, read_unaligned, write_unaligned};
 
@@ -115,7 +114,8 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// assert_eq!(rank_small[5], true);
 /// assert_eq!(rank_small[6], false);
 /// assert_eq!(rank_small[7], true);
-#[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[delegate(AsRef<[usize]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
@@ -180,9 +180,8 @@ macro_rules! rank_small {
 }
 
 #[doc(hidden)]
-#[derive(Epserde, Copy, Debug, Clone, MemDbg, MemSize)]
-#[repr(C)]
-#[zero_copy]
+#[derive(Copy, Debug, Clone, MemDbg, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde), repr(C), zero_copy)]
 pub struct Block32Counters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     pub(super) absolute: u32,
     pub(super) relative: [u32; NUM_U32S],

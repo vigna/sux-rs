@@ -10,7 +10,6 @@ use super::SmallCounters;
 use crate::prelude::*;
 use ambassador::Delegate;
 use common_traits::SelectInWord;
-use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 
 use crate::ambassador_impl_AsRef;
@@ -70,7 +69,8 @@ use std::ops::Index;
 /// assert_eq!(sel.select(2), Some(6));
 /// assert_eq!(sel.select(3), None);
 /// ```
-#[derive(Epserde, Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[delegate(AsRef<[usize]>, target = "small_counters")]
 #[delegate(Index<usize>, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "small_counters")]
