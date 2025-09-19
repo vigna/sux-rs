@@ -19,7 +19,9 @@ use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, BitFieldSliceMut, Word};
-use sux::utils::{EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender};
+use sux::utils::{
+    BinSafe, EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender,
+};
 
 #[derive(Parser, Debug)]
 #[command(about = "Creates a VFilter and serializes it with ε-serde", long_about = None)]
