@@ -6,11 +6,10 @@
 
 * This crate has been aligned with the new `MemCase` implementation from
   ε-serde, which does not implements `Deref` and `AsRef` anymore, as those
-  implementations were unsound. In particular, we are starting to introduce
-  delegation of the main traits of the crate to `MemCase`'d structures.
-  Delegation makes it possible to use a standard or `MemCase`'d structure
-  interchangeably. Due to the orphan rule, such delegations must happen
-  in the crate defining the traits.
+  implementations were unsound. In particular, we delegate all traits of the
+  crate to `MemCase`'d structures. Delegation makes it possible to use a
+  standard or `MemCase`'d structure interchangeably. Due to the orphan rule,
+  such delegations must happen in the crate defining the traits.
 
 * `IndexedSeq` has now implementations for slices, vectors,
   and arrays. This should make `SliceSeq` unnecessary in most cases.
@@ -23,8 +22,14 @@
   In particular, you can apply subslicing to the sequences undefined
   by those structures,
 
+* Support for ε-serde depends now on the feature `epserde`. Support for memory
+  mapping in ε-serde is provided by the `mmap` feature, which is on by default.
+
+* serde support for all structures (with feature `serde`).
+
 * New compressed, rewindable IO lenders based on the
-  [`deko`](https://crates.io/crates/deko) crate.
+  [`deko`](https://crates.io/crates/deko) crate. They are available with the
+  `deko` feature.
 
 ### Changed
 
