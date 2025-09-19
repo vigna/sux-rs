@@ -44,6 +44,7 @@ use std::ops::Index;
 ///   This type will also imply the type of the keys.
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VFilter<W: BinSafe + Word, F> {
     pub(crate) func: F,
     pub(crate) filter_mask: W,

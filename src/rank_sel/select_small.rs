@@ -103,6 +103,7 @@ use std::ops::Index;
 /// ```
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[usize]>, target = "small_counters")]
 #[delegate(Index<usize>, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "small_counters")]

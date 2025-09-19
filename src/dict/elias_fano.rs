@@ -207,6 +207,7 @@ use std::borrow::Borrow;
 
 #[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[value_traits_subslices(bound = "H: AsRef<[usize]> + SelectUnchecked")]
 #[value_traits_subslices(bound = "L: BitFieldSlice<usize>")]
 pub struct EliasFano<H = BitVec<Box<[usize]>>, L = BitFieldVec<usize, Box<[usize]>>> {

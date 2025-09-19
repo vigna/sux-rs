@@ -82,6 +82,7 @@ struct Stats {
 
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RearCodedList<D: AsRef<[u8]> = Box<[u8]>, P: AsRef<[usize]> = Box<[usize]>> {
     /// The number of strings in a block; this value trades off compression for speed.
     k: usize,

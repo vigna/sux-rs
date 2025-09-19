@@ -523,6 +523,7 @@ mod fuse {
     /// result, it is slightly slower and uses more space at construction time.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct FuseLge3Shards {
         shard_bits_shift: u32,
         log2_seg_size: u32,
@@ -681,7 +682,6 @@ mod fuse {
 
     /// A newtype for sorting by the second value of a `[u64; 2]` signature.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
-    #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
     #[repr(transparent)]
     pub struct LowSortSigVal<V: BinSafe>(SigVal<[u64; 2], V>);
 
@@ -804,6 +804,7 @@ mod fuse {
     /// Smaller Than Xor Filters”](https://doi.org/10.1145/3510449).
     #[derive(Default, Debug, MemDbg, MemSize, Clone, Copy)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct FuseLge3NoShards {
         log2_seg_size: u32,
         l: u32,
@@ -1019,6 +1020,7 @@ mod fuse {
     /// The rest of the logic is identical.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[derive(Default)]
     pub struct FuseLge3FullSigs(FuseLge3Shards);
 

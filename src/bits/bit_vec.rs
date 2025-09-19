@@ -171,6 +171,7 @@ macro_rules! panic_if_out_of_bounds {
 
 #[derive(Debug, Clone, Copy, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// A bit vector.
 pub struct BitVec<B = Vec<usize>> {
     bits: B,
