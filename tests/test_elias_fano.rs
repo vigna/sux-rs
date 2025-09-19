@@ -9,9 +9,7 @@
 use std::iter::zip;
 
 use anyhow::Result;
-use epserde::prelude::*;
 use indexed_dict::*;
-use maligned::A16;
 use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
@@ -226,10 +224,16 @@ fn test_extend() {
     zip(ef.iter(), v.iter()).for_each(|(a, b)| assert_eq!(a, *b));
 }
 
+#[cfg(feature = "epserde")]
 #[test]
 fn test_epserde() -> Result<()> {
+    use epserde::ser::Serialize;
+    use maligned::A16;
+
     let mut rng = SmallRng::seed_from_u64(0);
     for (n, u) in [(100, 1000), (100, 100), (1000, 100)] {
+        use epserde::utils::AlignedCursor;
+
         let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
 
         values.sort();
@@ -250,6 +254,8 @@ fn test_epserde() -> Result<()> {
         let len = cursor.len();
         cursor.set_position(0);
         let c = unsafe {
+            use epserde::deser::Deserialize;
+
             <EliasFano<
                 SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>>,
                 BitFieldVec<usize, Box<[usize]>>,

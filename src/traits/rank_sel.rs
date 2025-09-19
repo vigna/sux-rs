@@ -15,10 +15,6 @@
 use crate::ambassador_impl_AsRef;
 use crate::ambassador_impl_Index;
 use ambassador::{Delegate, delegatable_trait};
-use epserde::Epserde;
-use epserde::deser::DeserType;
-use epserde::deser::DeserializeInner;
-use epserde::deser::MemCase;
 use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
 use std::ops::Index;
@@ -272,7 +268,8 @@ pub trait SelectZeroHinted {
 /// module](crate::rank_sel) except for [`NumBits`] and [`BitCount`]. It is typically
 /// used to provide [`NumBits`] to [`Select`]/[`SelectZero`] implementations; see,
 /// for example, [`SelectAdapt`](crate::rank_sel::SelectAdapt).
-#[derive(Epserde, Debug, Clone, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, MemDbg, MemSize, Delegate)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[delegate(AsRef<[usize]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
@@ -348,126 +345,137 @@ impl<B: BitCount> From<B> for AddNumBits<B> {
     }
 }
 
-// Delegations for MemCase
+// MemCase delegations
 
-impl<'a, B: DeserializeInner + BitLength> BitLength for &'a MemCase<B>
-where
-    for<'b> &'b DeserType<'b, B>: BitLength,
-{
-    fn len(&self) -> usize {
-        self.uncase().len()
-    }
-}
+#[cfg(feature = "epserde")]
+mod mem_case {
+    use super::*;
+    use ::epserde::deser::{DeserType, DeserializeInner, MemCase};
 
-impl<'a, B: DeserializeInner + BitCount> BitCount for &'a MemCase<B>
-where
-    for<'b> &'b DeserType<'b, B>: BitCount,
-{
-    fn count_ones(&self) -> usize {
-        self.uncase().count_ones()
-    }
-}
-
-impl<'a, B: DeserializeInner + NumBits> NumBits for &'a MemCase<B>
-where
-    for<'b> &'b DeserType<'b, B>: NumBits,
-{
-    fn num_ones(&self) -> usize {
-        self.uncase().num_ones()
-    }
-}
-
-impl<'a, B: DeserializeInner + Rank> Rank for &'a MemCase<B>
-where
-    for<'b> &'b DeserType<'b, B>: Rank,
-{
-    fn rank(&self, pos: usize) -> usize {
-        self.uncase().rank(pos)
-    }
-}
-
-impl<'a, B: DeserializeInner + RankUnchecked> RankUnchecked for &'a MemCase<B>
-where
-    for<'b> &'b DeserType<'b, B>: RankUnchecked,
-{
-    unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-        self.uncase().rank_unchecked(pos)
-    }
-}
-
-impl<'a, B: DeserializeInner + RankZero> RankZero for &'a MemCase<B>
-where
-    for<'b> &'b DeserType<'b, B>: RankZero,
-{
-    fn rank_zero(&self, pos: usize) -> usize {
-        self.uncase().rank_zero(pos)
+    impl<'a, B: DeserializeInner + BitLength> BitLength for &'a MemCase<B>
+    where
+        for<'b> &'b DeserType<'b, B>: BitLength,
+    {
+        fn len(&self) -> usize {
+            self.uncase().len()
+        }
     }
 
-    unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
-        self.uncase().rank_zero_unchecked(pos)
+    impl<'a, B: DeserializeInner + BitCount> BitCount for &'a MemCase<B>
+    where
+        for<'b> &'b DeserType<'b, B>: BitCount,
+    {
+        fn count_ones(&self) -> usize {
+            self.uncase().count_ones()
+        }
     }
-}
 
-impl<'a, B: DeserializeInner + RankHinted<HINT_BIT_SIZE>, const HINT_BIT_SIZE: usize>
-    RankHinted<HINT_BIT_SIZE> for &'a MemCase<B>
-where
-    for<'b> &'b DeserType<'b, B>: RankHinted<HINT_BIT_SIZE>,
-{
-    unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        self.uncase().rank_hinted(pos, hint_pos, hint_rank)
+    impl<'a, B: DeserializeInner + NumBits> NumBits for &'a MemCase<B>
+    where
+        for<'b> &'b DeserType<'b, B>: NumBits,
+    {
+        fn num_ones(&self) -> usize {
+            self.uncase().num_ones()
+        }
     }
-}
 
-impl<'a, B: DeserializeInner + SelectUnchecked> SelectUnchecked for &'a MemCase<B>
-where
-    for<'b> &'b DeserType<'b, B>: SelectUnchecked,
-{
-    unsafe fn select_unchecked(&self, rank: usize) -> usize {
-        self.uncase().select_unchecked(rank)
+    impl<'a, B: DeserializeInner + Rank> Rank for &'a MemCase<B>
+    where
+        for<'b> &'b DeserType<'b, B>: Rank,
+    {
+        fn rank(&self, pos: usize) -> usize {
+            self.uncase().rank(pos)
+        }
     }
-}
 
-impl<'a, B: DeserializeInner + Select> Select for &'a MemCase<B>
-where
-    for<'b> &'b DeserType<'b, B>: Select,
-{
-    fn select(&self, rank: usize) -> Option<usize> {
-        self.uncase().select(rank)
+    impl<'a, B: DeserializeInner + RankUnchecked> RankUnchecked for &'a MemCase<B>
+    where
+        for<'b> &'b DeserType<'b, B>: RankUnchecked,
+    {
+        unsafe fn rank_unchecked(&self, pos: usize) -> usize {
+            self.uncase().rank_unchecked(pos)
+        }
     }
-}
 
-impl<'a, B: DeserializeInner + SelectZeroUnchecked> SelectZeroUnchecked for &'a MemCase<B>
-where
-    for<'b> &'b DeserType<'b, B>: SelectZeroUnchecked,
-{
-    unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
-        self.uncase().select_zero_unchecked(rank)
+    impl<'a, B: DeserializeInner + RankZero> RankZero for &'a MemCase<B>
+    where
+        for<'b> &'b DeserType<'b, B>: RankZero,
+    {
+        fn rank_zero(&self, pos: usize) -> usize {
+            self.uncase().rank_zero(pos)
+        }
+
+        unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
+            self.uncase().rank_zero_unchecked(pos)
+        }
     }
-}
 
-impl<'a, B: DeserializeInner + SelectZero> SelectZero for &'a MemCase<B>
-where
-    for<'b> &'b DeserType<'b, B>: SelectZero,
-{
-    fn select_zero(&self, rank: usize) -> Option<usize> {
-        self.uncase().select_zero(rank)
+    impl<'a, B: DeserializeInner + RankHinted<HINT_BIT_SIZE>, const HINT_BIT_SIZE: usize>
+        RankHinted<HINT_BIT_SIZE> for &'a MemCase<B>
+    where
+        for<'b> &'b DeserType<'b, B>: RankHinted<HINT_BIT_SIZE>,
+    {
+        unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
+            self.uncase().rank_hinted(pos, hint_pos, hint_rank)
+        }
     }
-}
 
-impl<'a, B: DeserializeInner + SelectHinted> SelectHinted for &'a MemCase<B>
-where
-    for<'b> &'b DeserType<'b, B>: SelectHinted,
-{
-    unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        self.uncase().select_hinted(rank, hint_pos, hint_rank)
+    impl<'a, B: DeserializeInner + SelectUnchecked> SelectUnchecked for &'a MemCase<B>
+    where
+        for<'b> &'b DeserType<'b, B>: SelectUnchecked,
+    {
+        unsafe fn select_unchecked(&self, rank: usize) -> usize {
+            self.uncase().select_unchecked(rank)
+        }
     }
-}
 
-impl<'a, B: DeserializeInner + SelectZeroHinted> SelectZeroHinted for &'a MemCase<B>
-where
-    for<'b> &'b DeserType<'b, B>: SelectZeroHinted,
-{
-    unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        self.uncase().select_zero_hinted(rank, hint_pos, hint_rank)
+    impl<'a, B: DeserializeInner + Select> Select for &'a MemCase<B>
+    where
+        for<'b> &'b DeserType<'b, B>: Select,
+    {
+        fn select(&self, rank: usize) -> Option<usize> {
+            self.uncase().select(rank)
+        }
+    }
+
+    impl<'a, B: DeserializeInner + SelectZeroUnchecked> SelectZeroUnchecked for &'a MemCase<B>
+    where
+        for<'b> &'b DeserType<'b, B>: SelectZeroUnchecked,
+    {
+        unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
+            self.uncase().select_zero_unchecked(rank)
+        }
+    }
+
+    impl<'a, B: DeserializeInner + SelectZero> SelectZero for &'a MemCase<B>
+    where
+        for<'b> &'b DeserType<'b, B>: SelectZero,
+    {
+        fn select_zero(&self, rank: usize) -> Option<usize> {
+            self.uncase().select_zero(rank)
+        }
+    }
+
+    impl<'a, B: DeserializeInner + SelectHinted> SelectHinted for &'a MemCase<B>
+    where
+        for<'b> &'b DeserType<'b, B>: SelectHinted,
+    {
+        unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
+            self.uncase().select_hinted(rank, hint_pos, hint_rank)
+        }
+    }
+
+    impl<'a, B: DeserializeInner + SelectZeroHinted> SelectZeroHinted for &'a MemCase<B>
+    where
+        for<'b> &'b DeserType<'b, B>: SelectZeroHinted,
+    {
+        unsafe fn select_zero_hinted(
+            &self,
+            rank: usize,
+            hint_pos: usize,
+            hint_rank: usize,
+        ) -> usize {
+            self.uncase().select_zero_hinted(rank, hint_pos, hint_rank)
+        }
     }
 }

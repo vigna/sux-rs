@@ -91,7 +91,6 @@ use anyhow::{Result, bail};
 use common_traits::{
     AsBytes, Atomic, AtomicInteger, AtomicUnsignedInt, CastableInto, IntoAtomic, invariant_eq,
 };
-use epserde::*;
 use mem_dbg::*;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -167,7 +166,8 @@ macro_rules! bit_field_vec {
 }
 
 /// A vector of bit fields of fixed width.
-#[derive(Epserde, Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
+#[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[value_traits_subslices(bound = "B: AsRef<[W]>")]
 #[derive(value_traits::SubslicesMut)]
 #[value_traits_subslices_mut(bound = "B: AsRef<[W]> + AsMut<[W]>")]
@@ -1207,7 +1207,8 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 /// Note that the trait [`AtomicHelper`] can be used to provide a more
 /// convenient naming for some methods.
 
-#[derive(Epserde, Debug, Clone, Hash, MemDbg, MemSize)]
+#[derive(Debug, Clone, Hash, MemDbg, MemSize)]
+#[cfg_attr(feature = "serde", derive(epserde::Epserde))]
 pub struct AtomicBitFieldVec<W: Word + IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
     /// The underlying storage.
     bits: B,

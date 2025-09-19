@@ -18,7 +18,6 @@ use common_traits::{
 use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
-use epserde::prelude::*;
 use log::info;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
@@ -210,7 +209,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 #[derivative(Default)]
 #[setters(generate = false)]
 pub struct VBuilder<
-    W: ZeroCopy + Word,
+    W: BinSafe + Word,
     D: BitFieldSlice<W> + Send + Sync = Box<[W]>,
     S = [u64; 2],
     E: ShardEdge<S, 3> = FuseLge3Shards,
@@ -330,11 +329,11 @@ pub enum SolveError {
 /// The result of a peeling procedure.
 enum PeelResult<
     'a,
-    W: ZeroCopy + Word + Send + Sync,
+    W: BinSafe + Word + Send + Sync,
     D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync + 'a,
-    S: Sig + ZeroCopy + Send + Sync,
+    S: Sig + BinSafe,
     E: ShardEdge<S, 3>,
-    V: ZeroCopy,
+    V: BinSafe,
 > {
     Complete(),
     Partial {
@@ -540,7 +539,7 @@ type ShardData<'a, W, D> = <ShardDataIter<'a, W, D> as Iterator>::Item;
 /// Since values are stored in a boxed slice access is particularly fast, but
 /// the bit width of the output of the function will be exactly the bit width of
 /// the unsigned type `W`.
-impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
+impl<W: BinSafe + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
     u128: UpcastableFrom<W>,
     SigVal<S, W>: RadixKey,
@@ -568,7 +567,7 @@ where
 /// Since values are stored in a boxed slice access is particularly fast, but
 /// the number of bits of the hashes will be  exactly the bit width of the
 /// unsigned type `W`.
-impl<W: ZeroCopy + Word + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+impl<W: BinSafe + Word + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
     VBuilder<W, Box<[W]>, S, E>
 where
     u128: UpcastableFrom<W>,
@@ -614,7 +613,7 @@ where
 /// minimum necessary. It must be in any case at most the bit width of `W`.
 ///
 /// Typically `W` will be `usize` or `u64`.
-impl<W: ZeroCopy + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
+impl<W: BinSafe + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
     u128: UpcastableFrom<W>,
     SigVal<S, W>: RadixKey,
@@ -640,7 +639,7 @@ where
 /// will. It must be in any case at most the bit width of `W`.
 ///
 /// Typically `W` will be `usize` or `u64`.
-impl<W: ZeroCopy + Word + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+impl<W: BinSafe + Word + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
     VBuilder<W, BitFieldVec<W>, S, E>
 where
     u128: UpcastableFrom<W>,
@@ -678,7 +677,7 @@ where
 }
 
 impl<
-    W: ZeroCopy + Word,
+    W: BinSafe + Word,
     D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
@@ -701,7 +700,7 @@ impl<
     fn build_loop<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
-        V: ZeroCopy + Default + Send + Sync + Ord + UpcastableInto<u128>,
+        V: BinSafe + Default + Send + Sync + Ord + UpcastableInto<u128>,
     >(
         &mut self,
         mut keys: impl RewindableIoLender<B>,
@@ -817,7 +816,7 @@ impl<
 }
 
 impl<
-    W: ZeroCopy + Word,
+    W: BinSafe + Word,
     D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
@@ -832,7 +831,7 @@ impl<
     fn try_seed<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
-        V: ZeroCopy + Default + Send + Sync + Ord + UpcastableInto<u128>,
+        V: BinSafe + Default + Send + Sync + Ord + UpcastableInto<u128>,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &mut self,
@@ -969,7 +968,7 @@ impl<
         T: ?Sized + ToSig<S>,
         I,
         P,
-        V: ZeroCopy + Default + Send + Sync,
+        V: BinSafe + Default + Send + Sync,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
     >(
         &mut self,
@@ -1094,13 +1093,13 @@ macro_rules! remove_edge {
 }
 
 impl<
-    W: ZeroCopy + Word + Send + Sync,
+    W: BinSafe + Word + Send + Sync,
     D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
-    S: Sig + ZeroCopy + Send + Sync,
+    S: Sig + BinSafe,
     E: ShardEdge<S, 3>,
 > VBuilder<W, D, S, E>
 {
-    fn count_sort<V: ZeroCopy>(&self, data: &mut [SigVal<S, V>]) {
+    fn count_sort<V: BinSafe>(&self, data: &mut [SigVal<S, V>]) {
         let num_sort_keys = self.shard_edge.num_sort_keys();
         let mut count = vec![0; num_sort_keys];
 
@@ -1152,7 +1151,7 @@ impl<
     /// if duplicates are detected.
     fn par_solve<
         'b,
-        V: ZeroCopy + Send + Sync,
+        V: BinSafe,
         I: IntoIterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
         SS: Fn(&Self, usize, Arc<Vec<SigVal<S, V>>>, ShardData<'b, W, D>, &mut P) -> Result<(), ()>
             + Send
@@ -1390,11 +1389,7 @@ impl<
     ///  but this would be less cache friendly. This peeler is only used for
     /// very small instances, and since we are going to pass through lazy
     /// Gaussian elimination some additional speed is a good idea.
-    fn peel_by_index<
-        'a,
-        V: ZeroCopy + Send + Sync,
-        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
-    >(
+    fn peel_by_index<'a, V: BinSafe, G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync>(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
@@ -1536,10 +1531,7 @@ impl<
     /// elimination](https://doi.org/10.1016/j.ic.2020.104517) as after a failed
     /// peeling it is not possible to retrieve information about the
     /// signature/value pairs in the shard.
-    fn peel_by_sig_vals_high_mem<
-        V: ZeroCopy + Send + Sync,
-        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
-    >(
+    fn peel_by_sig_vals_high_mem<V: BinSafe, G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync>(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
@@ -1671,10 +1663,7 @@ impl<
     /// elimination](https://doi.org/10.1016/j.ic.2020.104517) as after a
     /// failed peeling it is not possible to retrieve information about the
     /// signature/value pairs in the shard.
-    fn peel_by_sig_vals_low_mem<
-        V: ZeroCopy + Send + Sync,
-        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
-    >(
+    fn peel_by_sig_vals_low_mem<V: BinSafe, G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync>(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
@@ -1792,10 +1781,7 @@ impl<
     /// This method will scan the double stack, without emptying it, to check
     /// which edges have been peeled. The information will be then passed to
     /// [`VBuilder::assign`] to complete the assignment of values.
-    fn lge_shard<
-        V: ZeroCopy + Send + Sync,
-        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
-    >(
+    fn lge_shard<V: BinSafe, G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync>(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,

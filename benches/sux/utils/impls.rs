@@ -1,4 +1,3 @@
-use epserde::Epserde;
 use mem_dbg::{MemDbg, MemSize};
 use sux::bits::BitVec;
 use sux::rank_sel::{Rank9, RankSmall};
@@ -9,7 +8,8 @@ use super::Build;
 
 macro_rules! impl_select_adapt {
     ($name:ident, $subinv: literal) => {
-        #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
+        #[derive(Debug, Clone, MemDbg, MemSize)]
+        #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
         pub struct $name<B> {
             inner: SelectAdapt<B>,
         }
@@ -55,7 +55,8 @@ const LOG2_ONES_PER_INVENTORY: usize = 12;
 
 macro_rules! impl_select_adapt_const {
     ($name:ident, $subinv: literal) => {
-        #[derive(Epserde, Debug, Clone, MemDbg, MemSize)]
+        #[derive(Debug, Clone, MemDbg, MemSize)]
+        #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
         pub struct $name<B> {
             inner: SelectAdaptConst<B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, $subinv>,
         }

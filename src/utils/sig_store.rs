@@ -46,7 +46,7 @@
 //! to find duplicate signatures. In both cases, shards are defined by the
 //! highest bits of the (first) signature.
 //!
-//! Both signatures and values must be [`ZeroCopy`] so that they might be
+//! Both signatures and values must be [`BinSafe`] so that they might be
 //! serialized and deserialized efficiently in the offline case, and they must
 //! be [`Send`] and [`Sync`].
 
@@ -54,7 +54,6 @@
 #![allow(clippy::type_complexity)]
 use anyhow::Result;
 use common_traits::UpcastableInto;
-use epserde::prelude::*;
 use mem_dbg::{MemDbg, MemSize};
 
 use rdst::RadixKey;
@@ -68,9 +67,14 @@ use std::{
     sync::Arc,
 };
 use xxhash_rust::xxh3;
+use zerocopy::{FromBytes, IntoBytes};
+
+/// Convenience trait for signatures and values of a [`SigStore`].
+pub trait BinSafe: FromBytes + IntoBytes + Copy + Send + Sync + 'static {}
+impl<T: FromBytes + IntoBytes + Copy + Send + Sync + 'static> BinSafe for T {}
 
 /// A trait for types that can be used as signatures.
-pub trait Sig: ZeroCopy + Default + PartialEq + Eq + std::fmt::Debug {
+pub trait Sig: BinSafe + Default + PartialEq + Eq + std::fmt::Debug {
     /// Extracts high bits from  the signature.
     ///
     /// These bits are used to shard elements. Note that `high_bits` can be 0,
@@ -100,15 +104,13 @@ impl Sig for [u64; 1] {
 }
 
 /// A signature and a value.
-#[derive(Epserde, Debug, Clone, Copy, Default, MemDbg, MemSize)]
-#[repr(C)]
-#[zero_copy]
-pub struct SigVal<S: ZeroCopy + Sig, V: ZeroCopy> {
+#[derive(Debug, Clone, Copy, Default, MemDbg, MemSize)]
+pub struct SigVal<S: BinSafe + Sig, V: BinSafe> {
     pub sig: S,
     pub val: V,
 }
 
-impl<V: ZeroCopy> RadixKey for SigVal<[u64; 2], V> {
+impl<V: BinSafe> RadixKey for SigVal<[u64; 2], V> {
     const LEVELS: usize = 16;
 
     fn get_level(&self, level: usize) -> u8 {
@@ -116,7 +118,7 @@ impl<V: ZeroCopy> RadixKey for SigVal<[u64; 2], V> {
     }
 }
 
-impl<V: ZeroCopy> RadixKey for SigVal<[u64; 1], V> {
+impl<V: BinSafe> RadixKey for SigVal<[u64; 1], V> {
     const LEVELS: usize = 8;
 
     fn get_level(&self, level: usize) -> u8 {
@@ -124,15 +126,27 @@ impl<V: ZeroCopy> RadixKey for SigVal<[u64; 1], V> {
     }
 }
 
-impl<S: Sig + PartialEq, V: ZeroCopy> PartialEq for SigVal<S, V> {
+impl<S: Sig + PartialEq, V: BinSafe> PartialEq for SigVal<S, V> {
     fn eq(&self, other: &Self) -> bool {
         self.sig == other.sig
     }
 }
 
-#[derive(Epserde, Debug, Clone, Copy, Default, MemDbg, MemSize, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(C)]
-#[zero_copy]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    MemDbg,
+    MemSize,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromBytes,
+    IntoBytes,
+)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde), repr(C), zero_copy)]
 /// A newtype around `()` that is used to implement [`BitXor`] and
 /// [`BitXorAssign`] as no-ops.
 pub struct EmptyVal(());
@@ -149,9 +163,9 @@ impl BitXorAssign for EmptyVal {
     fn bitxor_assign(&mut self, _: EmptyVal) {}
 }
 
-impl<V: ZeroCopy + BitXor> BitXor<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V>
+impl<V: BinSafe + BitXor> BitXor<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V>
 where
-    V::Output: ZeroCopy,
+    V::Output: BinSafe,
 {
     type Output = SigVal<[u64; 1], V::Output>;
 
@@ -163,9 +177,9 @@ where
     }
 }
 
-impl<V: ZeroCopy + BitXor> BitXor<SigVal<[u64; 2], V>> for SigVal<[u64; 2], V>
+impl<V: BinSafe + BitXor> BitXor<SigVal<[u64; 2], V>> for SigVal<[u64; 2], V>
 where
-    V::Output: ZeroCopy,
+    V::Output: BinSafe,
 {
     type Output = SigVal<[u64; 2], V::Output>;
 
@@ -187,14 +201,14 @@ impl UpcastableInto<u128> for EmptyVal {
     }
 }
 
-impl<V: ZeroCopy + BitXorAssign> BitXorAssign<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V> {
+impl<V: BinSafe + BitXorAssign> BitXorAssign<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V> {
     fn bitxor_assign(&mut self, rhs: SigVal<[u64; 1], V>) {
         self.sig[0] ^= rhs.sig[0];
         self.val ^= rhs.val;
     }
 }
 
-impl<V: ZeroCopy + BitXorAssign> BitXorAssign<SigVal<[u64; 2], V>> for SigVal<[u64; 2], V> {
+impl<V: BinSafe + BitXorAssign> BitXorAssign<SigVal<[u64; 2], V>> for SigVal<[u64; 2], V> {
     fn bitxor_assign(&mut self, rhs: SigVal<[u64; 2], V>) {
         self.sig[0] ^= rhs.sig[0];
         self.sig[1] ^= rhs.sig[1];
@@ -332,7 +346,7 @@ to_sig_slice!(
 /// passing around a signature store. There is only one implementation,
 /// [`SigStoreImpl`], but it is implemented only for certain combinations of
 /// type parameters. Having this trait greatly simplifies the type signatures.
-pub trait SigStore<S: Sig + ZeroCopy, V: ZeroCopy> {
+pub trait SigStore<S: Sig + BinSafe, V: BinSafe> {
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Tries to add a new signature/value pair to the store.
@@ -404,7 +418,7 @@ pub struct SigStoreImpl<S, V, B> {
 /// 2]`), while `V` is the type of the values. The store will be written to a
 /// [temporary directory](https://doc.rust-lang.org/std/env/fn.temp_dir.html),
 /// and the files will be deleted when the store is dropped.
-pub fn new_offline<S: ZeroCopy + Sig, V: ZeroCopy>(
+pub fn new_offline<S: BinSafe + Sig, V: BinSafe>(
     buckets_high_bits: u32,
     max_shard_high_bits: u32,
     _expected_num_keys: Option<usize>,
@@ -444,7 +458,7 @@ pub fn new_offline<S: ZeroCopy + Sig, V: ZeroCopy>(
 ///
 /// If `expected_num_keys` is `Some(n)`, the store will be preallocated to
 /// contain 1.05 * `n` keys.
-pub fn new_online<S: ZeroCopy + Sig, V: ZeroCopy>(
+pub fn new_online<S: BinSafe + Sig, V: BinSafe>(
     buckets_high_bits: u32,
     max_shard_high_bits: u32,
     expected_num_keys: Option<usize>,
@@ -471,7 +485,7 @@ pub fn new_online<S: ZeroCopy + Sig, V: ZeroCopy>(
     })
 }
 
-impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
+impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
     for SigStoreImpl<S, V, BufWriter<File>>
 {
     type Error = std::io::Error;
@@ -536,7 +550,7 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
     }
 }
 
-impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
+impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
     for SigStoreImpl<S, V, Vec<SigVal<S, V>>>
 {
     type Error = std::convert::Infallible;
@@ -607,7 +621,7 @@ impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync> SigStore<S, V>
 /// implementation, [`ShardStoreImpl`], but it is implemented only for certain
 /// combinations of type parameters. Having this trait greatly simplifies the
 /// type signatures.
-pub trait ShardStore<S: Sig, V: ZeroCopy> {
+pub trait ShardStore<S: Sig, V: BinSafe> {
     type ShardIterator<'a>: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync
     where
         Self: 'a;
@@ -652,7 +666,7 @@ pub struct ShardStoreImpl<S, V, B> {
     _marker: PhantomData<(S, V)>,
 }
 
-impl<S: ZeroCopy + Sig + Send + Sync, V: ZeroCopy + Send + Sync, B: Send + Sync> ShardStore<S, V>
+impl<S: BinSafe + Sig + Send + Sync, V: BinSafe, B: Send + Sync> ShardStore<S, V>
     for ShardStoreImpl<S, V, B>
 where
     for<'a> ShardIterator<S, V, B, Self>: Iterator<Item = Arc<Vec<SigVal<S, V>>>>,
@@ -698,7 +712,7 @@ where
 /// shard is made by one or more buckets, it will aggregate them as necessary;
 /// if a bucket contains several shards, it will split the bucket into shards.
 #[derive(Debug)]
-pub struct ShardIterator<S: ZeroCopy + Sig, V: ZeroCopy, B, T: BorrowMut<ShardStoreImpl<S, V, B>>> {
+pub struct ShardIterator<S: BinSafe + Sig, V: BinSafe, B, T: BorrowMut<ShardStoreImpl<S, V, B>>> {
     store: T,
     /// Whether the store is borrowed.
     borrowed: bool,
@@ -712,8 +726,8 @@ pub struct ShardIterator<S: ZeroCopy + Sig, V: ZeroCopy, B, T: BorrowMut<ShardSt
 }
 
 impl<
-    S: ZeroCopy + Sig + Send + Sync,
-    V: ZeroCopy + Send + Sync,
+    S: BinSafe + Sig + Send + Sync,
+    V: BinSafe,
     T: BorrowMut<ShardStoreImpl<S, V, BufReader<File>>>,
 > Iterator for ShardIterator<S, V, BufReader<File>, T>
 {
@@ -821,8 +835,8 @@ impl<
 }
 
 impl<
-    S: ZeroCopy + Sig + Send + Sync,
-    V: ZeroCopy + Send + Sync,
+    S: BinSafe + Sig + Send + Sync,
+    V: BinSafe,
     T: BorrowMut<ShardStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>>,
 > Iterator for ShardIterator<S, V, Arc<Vec<SigVal<S, V>>>, T>
 {
@@ -909,8 +923,8 @@ impl<
 }
 
 impl<
-    S: ZeroCopy + Sig + Send + Sync,
-    V: ZeroCopy + Send + Sync,
+    S: BinSafe + Sig + Send + Sync,
+    V: BinSafe,
     B: Send + Sync,
     T: BorrowMut<ShardStoreImpl<S, V, B>>,
 > ExactSizeIterator for ShardIterator<S, V, B, T>
@@ -923,7 +937,7 @@ where
     }
 }
 
-fn write_binary<S: ZeroCopy + Sig, V: ZeroCopy>(
+fn write_binary<S: BinSafe + Sig, V: BinSafe>(
     writer: &mut impl Write,
     tuples: &[SigVal<S, V>],
 ) -> std::io::Result<()> {
@@ -938,7 +952,7 @@ mod tests {
     use super::*;
     use rand::{Rng, SeedableRng, rngs::SmallRng};
 
-    fn _test_sig_store<S: ZeroCopy + Sig + Send + Sync>(
+    fn _test_sig_store<S: BinSafe + Sig + Send + Sync>(
         mut sig_store: impl SigStore<S, u64>,
         get_rand_sig: fn(&mut SmallRng) -> S,
     ) -> anyhow::Result<()> {
@@ -1005,7 +1019,7 @@ mod tests {
         Ok(())
     }
 
-    fn _test_u8<S: ZeroCopy + Sig>(
+    fn _test_u8<S: BinSafe + Sig>(
         mut sig_store: impl SigStore<S, u8>,
         get_rand_sig: fn(&mut SmallRng) -> S,
     ) -> anyhow::Result<()> {

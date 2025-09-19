@@ -82,7 +82,6 @@ pub type EfSeqDict = EliasFano<
 use crate::prelude::{indexed_dict::*, *};
 use crate::traits::bit_field_slice::*;
 use core::sync::atomic::Ordering;
-use epserde::*;
 use mem_dbg::*;
 use std::borrow::Borrow;
 
@@ -206,7 +205,8 @@ use std::borrow::Borrow;
 /// assert_eq!(ef.get(1), 2);
 /// ```
 
-#[derive(Epserde, Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
+#[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[value_traits_subslices(bound = "H: AsRef<[usize]> + SelectUnchecked")]
 #[value_traits_subslices(bound = "L: BitFieldSlice<usize>")]
 pub struct EliasFano<H = BitVec<Box<[usize]>>, L = BitFieldVec<usize, Box<[usize]>>> {
