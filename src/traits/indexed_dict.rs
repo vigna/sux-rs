@@ -319,6 +319,97 @@ where
     }
 }
 
+// Delegations for slices, vectors, and boxed slices
+
+macro_rules! impl_types {
+    ($($ty:ty),*) => {$(
+        impl Types for [$ty] {
+            type Input = $ty;
+            type Output<'a> = $ty;
+        }
+
+        impl Types for Vec<$ty> {
+            type Input = $ty;
+            type Output<'a> = $ty;
+        }
+
+        impl<const N: usize> Types for [$ty; N] {
+            type Input = $ty;
+            type Output<'a> = $ty;
+        }
+    )*};
+}
+
+impl_types!(u8, u16, u32, u64, u128, usize);
+impl_types!(i8, i16, i32, i64, i128, isize);
+
+macro_rules! impl_indexed_seq {
+    ($($ty:ty),*) => {$(
+        impl IndexedSeq for [$ty] {
+            fn get(&self, index: usize) -> Self::Output<'_> {
+                self[index]
+            }
+
+            unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
+                debug_assert_bounds!(index, self.len());
+                unsafe { *self.get_unchecked(index) }
+            }
+
+            fn len(&self) -> usize {
+                self.len()
+            }
+
+            fn is_empty(&self) -> bool {
+                self.is_empty()
+            }
+        }
+
+        impl IndexedSeq for Vec<$ty> {
+            fn get(&self, index: usize) -> Self::Output<'_> {
+                self[index]
+            }
+
+            unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
+                use std::ops::Deref;
+                debug_assert_bounds!(index, self.len());
+                unsafe { *self.deref().get_unchecked(index) }
+            }
+
+            fn len(&self) -> usize {
+                self.len()
+            }
+
+            fn is_empty(&self) -> bool {
+                self.is_empty()
+            }
+        }
+
+        impl<const N: usize> IndexedSeq for [$ty; N] {
+            fn get(&self, index: usize) -> Self::Output<'_> {
+                self[index]
+            }
+
+            unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
+                debug_assert_bounds!(index, self.len());
+                unsafe { self.as_slice().get_unchecked(index).clone() }
+            }
+
+            fn len(&self) -> usize {
+                self.as_slice().len()
+            }
+
+            fn is_empty(&self) -> bool {
+                self.as_slice().is_empty()
+            }
+        }
+    )*};
+}
+
+impl_indexed_seq!(u8, u16, u32, u64, u128, usize);
+impl_indexed_seq!(i8, i16, i32, i64, i128, isize);
+
+// Delegations for MemCase
+
 impl<S: DeserializeInner> Types for MemCase<S>
 where
     for<'a> S::DeserType<'a>: Types,
@@ -487,92 +578,3 @@ where
         ))
     }
 }
-
-// Delegations for slices, vectors, and boxed slices
-
-macro_rules! impl_types {
-    ($($ty:ty),*) => {$(
-        impl Types for [$ty] {
-            type Input = $ty;
-            type Output<'a> = $ty;
-        }
-
-        impl Types for Vec<$ty> {
-            type Input = $ty;
-            type Output<'a> = $ty;
-        }
-
-        impl<const N: usize> Types for [$ty; N] {
-            type Input = $ty;
-            type Output<'a> = $ty;
-        }
-    )*};
-}
-
-impl_types!(u8, u16, u32, u64, u128, usize);
-impl_types!(i8, i16, i32, i64, i128, isize);
-
-macro_rules! impl_indexed_seq {
-    ($($ty:ty),*) => {$(
-        impl IndexedSeq for [$ty] {
-            fn get(&self, index: usize) -> Self::Output<'_> {
-                self[index]
-            }
-
-            unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-                debug_assert_bounds!(index, self.len());
-                unsafe { *self.get_unchecked(index) }
-            }
-
-            fn len(&self) -> usize {
-                self.len()
-            }
-
-            fn is_empty(&self) -> bool {
-                self.is_empty()
-            }
-        }
-
-        impl IndexedSeq for Vec<$ty> {
-            fn get(&self, index: usize) -> Self::Output<'_> {
-                self[index]
-            }
-
-            unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-                use std::ops::Deref;
-                debug_assert_bounds!(index, self.len());
-                unsafe { *self.deref().get_unchecked(index) }
-            }
-
-            fn len(&self) -> usize {
-                self.len()
-            }
-
-            fn is_empty(&self) -> bool {
-                self.is_empty()
-            }
-        }
-
-        impl<const N: usize> IndexedSeq for [$ty; N] {
-            fn get(&self, index: usize) -> Self::Output<'_> {
-                self[index]
-            }
-
-            unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-                debug_assert_bounds!(index, self.len());
-                unsafe { self.as_slice().get_unchecked(index).clone() }
-            }
-
-            fn len(&self) -> usize {
-                self.as_slice().len()
-            }
-
-            fn is_empty(&self) -> bool {
-                self.as_slice().is_empty()
-            }
-        }
-    )*};
-}
-
-impl_indexed_seq!(u8, u16, u32, u64, u128, usize);
-impl_indexed_seq!(i8, i16, i32, i64, i128, isize);
