@@ -292,7 +292,7 @@ macro_rules! to_sig_prim {
                 [(hash128 >> 64) as u64, hash128 as u64]
                 }
         }
-        impl ToSig<[u64;1]> for $ty {
+        impl ToSig<[u64; 1]> for $ty {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
                 let bytes = key.borrow().to_ne_bytes();
                 [xxh3::xxh3_64_with_seed(bytes.as_slice(), seed)]
@@ -315,7 +315,7 @@ macro_rules! to_sig_slice {
                 [(hash128 >> 64) as u64, hash128 as u64]
             }
         }
-        impl ToSig<[u64;1]> for &[$ty] {
+        impl ToSig<[u64; 1]> for &[$ty] {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
                 // Alignment to u8 never fails or leave trailing/leading bytes
                 let bytes = unsafe {key.borrow().align_to::<u8>().1 };
@@ -328,9 +328,20 @@ macro_rules! to_sig_slice {
                 <&[$ty]>::to_sig(key.borrow(), seed)
             }
         }
-        impl ToSig<[u64;1]> for [$ty] {
+        impl ToSig<[u64; 1]> for [$ty] {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
                 <&[$ty]>::to_sig(key.borrow(), seed)
+            }
+        }
+
+        impl ToSig<[u64; 2]> for Box<[$ty]> {
+            fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
+                <&[$ty]>::to_sig(key.borrow().as_ref(), seed)
+            }
+        }
+        impl ToSig<[u64; 1]> for Box<[$ty]> {
+            fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
+                <&[$ty]>::to_sig(key.borrow().as_ref(), seed)
             }
         }
     )*};
