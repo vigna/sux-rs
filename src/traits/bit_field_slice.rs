@@ -939,34 +939,3 @@ where
     W::AtomicType: AtomicUnsignedInt + AsBytes,
 {
 }
-
-// MemCase delegations
-
-#[cfg(feature = "epserde")]
-mod mem_case {
-    use super::*;
-    use epserde::deser::EncaseWrapper;
-
-    impl<W, T: BitFieldSliceCore<W>> BitFieldSliceCore<W> for EncaseWrapper<T> {
-        fn bit_width(&self) -> usize {
-            self.deref().bit_width()
-        }
-
-        fn len(&self) -> usize {
-            self.deref().len()
-        }
-    }
-
-    impl<W: Word, T: BitFieldSlice<W>> BitFieldSlice<W> for EncaseWrapper<T>
-    where
-        T:,
-    {
-        unsafe fn get_unchecked(&self, index: usize) -> W {
-            unsafe { self.deref().get_unchecked(index) }
-        }
-
-        fn get(&self, index: usize) -> W {
-            self.deref().get(index)
-        }
-    }
-}

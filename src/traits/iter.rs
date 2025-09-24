@@ -126,10 +126,8 @@ pub trait IntoReverseUncheckedIterator: Sized {
 
 #[cfg(feature = "epserde")]
 mod mem_case {
-    use std::ops::Deref;
-
     use super::*;
-    use ::epserde::deser::{DeserType, DeserializeInner, EncaseWrapper, MemCase};
+    use ::epserde::deser::{DeserType, DeserializeInner, MemCase};
 
     // We usually don't delegate to MemCase, but since epserde
     // delegates IntoIterator, this seems legit.
@@ -141,49 +139,6 @@ mod mem_case {
 
         fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
             self.uncase().into_iter_from(from)
-        }
-    }
-
-    impl<'a, T> IntoIteratorFrom for &'a EncaseWrapper<T>
-    where
-        for<'b> &'b T: IntoIteratorFrom,
-    {
-        type IntoIterFrom = <&'a T as IntoIteratorFrom>::IntoIterFrom;
-
-        fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
-            self.deref().into_iter_from(from)
-        }
-    }
-    /* TODO: overflow
-        impl<'a, T> IntoUncheckedIterator for &'a EncaseWrapper<T>
-        where
-            for<'b> &'b T: IntoUncheckedIterator,
-        {
-            type Item = <&'a T as IntoUncheckedIterator>::Item;
-            type IntoUncheckedIter = <&'a T as IntoUncheckedIterator>::IntoUncheckedIter;
-
-            fn into_unchecked_iter(self) -> Self::IntoUncheckedIter {
-                self.deref().into_unchecked_iter()
-            }
-
-            fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter {
-                self.deref().into_unchecked_iter_from(from)
-            }
-        }
-    */
-    impl<'a, T> IntoReverseUncheckedIterator for &'a EncaseWrapper<T>
-    where
-        for<'b> &'b T: IntoReverseUncheckedIterator,
-    {
-        type Item = <&'a T as IntoReverseUncheckedIterator>::Item;
-        type IntoRevUncheckedIter = <&'a T as IntoReverseUncheckedIterator>::IntoRevUncheckedIter;
-
-        fn into_rev_unchecked_iter(self) -> Self::IntoRevUncheckedIter {
-            self.deref().into_rev_unchecked_iter()
-        }
-
-        fn into_rev_unchecked_iter_from(self, from: usize) -> Self::IntoRevUncheckedIter {
-            self.deref().into_rev_unchecked_iter_from(from)
         }
     }
 }
