@@ -945,37 +945,28 @@ where
 #[cfg(feature = "epserde")]
 mod mem_case {
     use super::*;
-    use ::epserde::deser::{DeserializeInner, MemCase};
+    use epserde::deser::EncaseWrapper;
 
-    impl<S: DeserializeInner, W> BitFieldSliceCore<W> for MemCase<S>
-    where
-        for<'a> S::DeserType<'a>: BitFieldSliceCore<W>,
-    {
+    impl<W, T: BitFieldSliceCore<W>> BitFieldSliceCore<W> for EncaseWrapper<T> {
         fn bit_width(&self) -> usize {
-            unsafe { self.uncase_static().bit_width() }
+            self.deref().bit_width()
         }
 
         fn len(&self) -> usize {
-            unsafe { self.uncase_static().len() }
-        }
-
-        fn is_empty(&self) -> bool {
-            unsafe { self.uncase_static().is_empty() }
+            self.deref().len()
         }
     }
 
-    impl<S: DeserializeInner, W: Word> BitFieldSlice<W> for MemCase<S>
+    impl<W: Word, T: BitFieldSlice<W>> BitFieldSlice<W> for EncaseWrapper<T>
     where
-        for<'a> S::DeserType<'a>: BitFieldSlice<W>,
+        T:,
     {
         unsafe fn get_unchecked(&self, index: usize) -> W {
-            // SAFETY: We are just using the reference to invoke the method
-            unsafe { self.uncase_static().get_unchecked(index) }
+            unsafe { self.deref().get_unchecked(index) }
         }
 
         fn get(&self, index: usize) -> W {
-            // SAFETY: We are just using the reference to invoke the method
-            unsafe { self.uncase_static().get(index) }
+            self.deref().get(index)
         }
     }
 }

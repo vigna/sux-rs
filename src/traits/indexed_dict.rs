@@ -411,181 +411,97 @@ impl_indexed_seq!(i8, i16, i32, i64, i128, isize);
 
 #[cfg(feature = "epserde")]
 mod mem_case {
-    use super::*;
-    use epserde::deser::{DeserType, DeserializeInner, MemCase};
+    use std::ops::Deref;
 
-    impl<S: DeserializeInner> Types for MemCase<S>
-    where
-        for<'a> S::DeserType<'a>: Types,
-    {
-        type Input = <S::DeserType<'static> as Types>::Input;
-        type Output<'a> = <S::DeserType<'static> as Types>::Output<'a>;
+    use super::*;
+    use epserde::deser::EncaseWrapper;
+
+    impl<T: Types> Types for EncaseWrapper<T> {
+        type Input = T::Input;
+        type Output<'a> = T::Output<'a>;
     }
 
-    impl<S: DeserializeInner> IndexedSeq for MemCase<S>
-    where
-        for<'a> S::DeserType<'a>: IndexedSeq,
-    {
+    impl<T: IndexedSeq> IndexedSeq for EncaseWrapper<T> {
+        fn get(&self, index: usize) -> Self::Output<'_> {
+            self.deref().get(index)
+        }
+
         unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-            // SAFETY: The output has the lifetime of self
-            unsafe { self.uncase_static().get_unchecked(index) }
+            unsafe { self.deref().get_unchecked(index) }
         }
 
         fn len(&self) -> usize {
-            self.uncase().len()
+            self.deref().len()
         }
     }
 
-    impl<S: DeserializeInner> IndexedDict for MemCase<S>
-    where
-        for<'a> S::DeserType<'a>: IndexedDict,
-    {
+    impl<T: IndexedDict> IndexedDict for EncaseWrapper<T> {
         fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
-            // SAFETY: We are just using the reference to invoke the method
-            unsafe { self.uncase_static().index_of(value) }
+            self.deref().index_of(value)
         }
 
         fn contains(&self, value: impl Borrow<Self::Input>) -> bool {
-            // SAFETY: We are just using the reference to invoke the method
-            unsafe { self.uncase_static().contains(value) }
+            self.deref().contains(value)
         }
     }
 
-    impl<S: DeserializeInner> SuccUnchecked for MemCase<S>
+    impl<T: SuccUnchecked> SuccUnchecked for EncaseWrapper<T>
     where
-        for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Input:
-            PartialOrd<<S::DeserType<'b> as Types>::Output<'c>> + PartialOrd,
-        for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Output<'c>:
-            PartialOrd<<S::DeserType<'b> as Types>::Input> + PartialOrd,
-        for<'a> S::DeserType<'a>: SuccUnchecked,
+        T::Input: for<'a> PartialOrd<T::Output<'a>> + PartialOrd,
+        for<'a> T::Output<'a>: PartialOrd<T::Input> + PartialOrd,
     {
         unsafe fn succ_unchecked<const STRICT: bool>(
             &self,
             value: impl Borrow<Self::Input>,
         ) -> (usize, Self::Output<'_>) {
-            // SAFETY: We are just using the reference to invoke the method
-            let result = unsafe { self.uncase_static().succ_unchecked::<STRICT>(value) };
-            (
-                result.0,
-                // SAFETY:the output will have the lifetime of self
-                unsafe {
-                    std::mem::transmute::<
-                        <DeserType<'_, S> as Types>::Output<'_>,
-                        <DeserType<'static, S> as Types>::Output<'_>,
-                    >(result.1)
-                },
-            )
+            self.deref().succ_unchecked::<STRICT>(value)
         }
     }
 
-    impl<S: DeserializeInner> Succ for MemCase<S>
+    impl<T: Succ> Succ for EncaseWrapper<T>
     where
-        for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Input:
-            PartialOrd<<S::DeserType<'b> as Types>::Output<'c>> + PartialOrd,
-        for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Output<'c>:
-            PartialOrd<<S::DeserType<'b> as Types>::Input> + PartialOrd,
-        for<'a> S::DeserType<'a>: Succ,
+        T::Input: for<'a> PartialOrd<T::Output<'a>> + PartialOrd,
+        for<'a> T::Output<'a>: PartialOrd<T::Input> + PartialOrd,
     {
         fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
-            // SAFETY: We are just using the reference to invoke the method
-            let result = unsafe { self.uncase_static().succ(value)? };
-            Some((
-                result.0,
-                // SAFETY:the output will have the lifetime of self
-                unsafe {
-                    std::mem::transmute::<
-                        <DeserType<'_, S> as Types>::Output<'_>,
-                        <DeserType<'static, S> as Types>::Output<'_>,
-                    >(result.1)
-                },
-            ))
+            self.deref().succ(value)
         }
 
         fn succ_strict(
             &self,
             value: impl Borrow<Self::Input>,
         ) -> Option<(usize, Self::Output<'_>)> {
-            // SAFETY: We are just using the reference to invoke the method
-            let result = unsafe { self.uncase_static().succ_strict(value)? };
-            Some((
-                result.0,
-                // SAFETY:the output will have the lifetime of self
-                unsafe {
-                    std::mem::transmute::<
-                        <DeserType<'_, S> as Types>::Output<'_>,
-                        <DeserType<'static, S> as Types>::Output<'_>,
-                    >(result.1)
-                },
-            ))
+            self.deref().succ_strict(value)
         }
     }
 
-    impl<S: DeserializeInner> PredUnchecked for MemCase<S>
+    impl<T: PredUnchecked> PredUnchecked for EncaseWrapper<T>
     where
-        for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Input:
-            PartialOrd<<S::DeserType<'b> as Types>::Output<'c>> + PartialOrd,
-        for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Output<'c>:
-            PartialOrd<<S::DeserType<'b> as Types>::Input> + PartialOrd,
-        for<'a> S::DeserType<'a>: PredUnchecked,
+        T::Input: for<'a> PartialOrd<T::Output<'a>> + PartialOrd,
+        for<'a> T::Output<'a>: PartialOrd<T::Input> + PartialOrd,
     {
         unsafe fn pred_unchecked<const STRICT: bool>(
             &self,
             value: impl Borrow<Self::Input>,
         ) -> (usize, Self::Output<'_>) {
-            // SAFETY: We are just using the reference to invoke the method
-            let result = unsafe { self.uncase_static().pred_unchecked::<STRICT>(value) };
-            (
-                result.0,
-                // SAFETY:the output will have the lifetime of self
-                unsafe {
-                    std::mem::transmute::<
-                        <DeserType<'_, S> as Types>::Output<'_>,
-                        <DeserType<'static, S> as Types>::Output<'_>,
-                    >(result.1)
-                },
-            )
+            self.deref().pred_unchecked::<STRICT>(value)
         }
     }
 
-    impl<S: DeserializeInner> Pred for MemCase<S>
+    impl<T: Pred> Pred for EncaseWrapper<T>
     where
-        for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Input:
-            PartialOrd<<S::DeserType<'b> as Types>::Output<'c>> + PartialOrd,
-        for<'a, 'b, 'c> <S::DeserType<'a> as Types>::Output<'c>:
-            PartialOrd<<S::DeserType<'b> as Types>::Input> + PartialOrd,
-        for<'a> S::DeserType<'a>: Pred,
+        T::Input: for<'a> PartialOrd<T::Output<'a>> + PartialOrd,
+        for<'a> T::Output<'a>: PartialOrd<T::Input> + PartialOrd,
     {
         fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
-            // SAFETY: We are just using the reference to invoke the method
-            let result = unsafe { self.uncase_static().pred(value)? };
-            Some((
-                result.0,
-                // SAFETY:the output will have the lifetime of self
-                unsafe {
-                    std::mem::transmute::<
-                        <DeserType<'_, S> as Types>::Output<'_>,
-                        <DeserType<'static, S> as Types>::Output<'_>,
-                    >(result.1)
-                },
-            ))
+            self.deref().pred(value)
         }
 
         fn pred_strict(
             &self,
             value: impl Borrow<Self::Input>,
         ) -> Option<(usize, Self::Output<'_>)> {
-            // SAFETY: We are just using the reference to invoke the method
-            let result = unsafe { self.uncase_static().pred_strict(value)? };
-            Some((
-                result.0,
-                // SAFETY:the output will have the lifetime of self
-                unsafe {
-                    std::mem::transmute::<
-                        <DeserType<'_, S> as Types>::Output<'_>,
-                        <DeserType<'static, S> as Types>::Output<'_>,
-                    >(result.1)
-                },
-            ))
+            self.deref().pred_strict(value)
         }
     }
 }
