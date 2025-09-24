@@ -809,8 +809,8 @@ impl<
                 }
             }
 
-            values = values.rewind()?;
-            keys = keys.rewind()?;
+            values = values.rewind().map_err(Into::into)?;
+            keys = keys.rewind().map_err(Into::into)?;
         }
     }
 }
@@ -874,7 +874,10 @@ impl<
                     pl.light_update();
                     // This might be an actual value, if we are building a
                     // function, or EmptyVal, if we are building a filter.
-                    let &maybe_val = values.next().expect("Not enough values")?;
+                    let &maybe_val = values
+                        .next()
+                        .expect("Not enough values")
+                        .map_err(Into::into)?;
                     let sig_val = SigVal {
                         sig: T::to_sig(key.borrow(), seed),
                         val: maybe_val,
