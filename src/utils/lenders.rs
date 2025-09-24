@@ -72,7 +72,7 @@ use zstd::Decoder;
 pub trait RewindableIoLender<T: ?Sized>:
     Sized + Lender + for<'lend> Lending<'lend, Lend = Result<&'lend T, Self::Error>>
 {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Into<anyhow::Error> + Send + Sync + 'static;
     /// Rewind the lender to the beginning.
     ///
     /// This method consumes `self` and returns it. This is necessary to handle
@@ -389,7 +389,7 @@ impl<T: 'static, I: IntoIterator<Item = T> + Clone> From<I> for FromIntoIterator
 pub struct FromLenderFactory<
     T: Send + Sync,
     L: Lender,
-    E: std::error::Error + Send + Sync + 'static,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
 > {
     f: F,
@@ -401,7 +401,7 @@ impl<
     'lend,
     T: Send + Sync,
     L: Lender,
-    E: std::error::Error + Send + Sync + 'static,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
 > Lending<'lend> for FromLenderFactory<T, L, E, F>
 {
@@ -411,7 +411,7 @@ impl<
 impl<
     T: Send + Sync,
     L: Lender<Lend = T>,
-    E: std::error::Error + Send + Sync + 'static,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
 > Lender for FromLenderFactory<T, L, E, F>
 {
@@ -424,7 +424,7 @@ impl<
 impl<
     T: Send + Sync,
     L: Lender<Lend = T>,
-    E: std::error::Error + Send + Sync + 'static,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
 > RewindableIoLender<T> for FromLenderFactory<T, L, E, F>
 {
@@ -438,7 +438,7 @@ impl<
 impl<
     T: Send + Sync,
     L: Lender,
-    E: std::error::Error + Send + Sync + 'static,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
 > FromLenderFactory<T, L, E, F>
 {
@@ -455,7 +455,7 @@ impl<
 pub struct FromResultLenderFactory<
     T: Send + Sync,
     L: Lender,
-    E: std::error::Error + Send + Sync + 'static,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
 > {
     f: F,
@@ -467,7 +467,7 @@ impl<
     'lend,
     T: Send + Sync,
     L: Lender,
-    E: std::error::Error + Send + Sync + 'static,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
 > Lending<'lend> for FromResultLenderFactory<T, L, E, F>
 {
@@ -477,7 +477,7 @@ impl<
 impl<
     T: Send + Sync,
     L: Lender,
-    E: std::error::Error + Send + Sync + 'static,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
 > Lender for FromResultLenderFactory<T, L, E, F>
 where
@@ -501,7 +501,7 @@ where
 impl<
     T: Send + Sync,
     L: Lender,
-    E: std::error::Error + Send + Sync + 'static,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
 > RewindableIoLender<T> for FromResultLenderFactory<T, L, E, F>
 where
@@ -517,7 +517,7 @@ where
 impl<
     T: Send + Sync,
     L: Lender,
-    E: std::error::Error + Send + Sync + 'static,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
 > FromResultLenderFactory<T, L, E, F>
 {
@@ -539,7 +539,7 @@ impl<
 impl<
         T: Send + Sync,
         L: Lender,
-        E: std::error::Error + Send + Sync + 'static,
+        E: Into<anyhow::Error> + Send + Sync + 'static,
         F: FnMut() -> Result<L, E>,
     > TryFrom<F> for FromLenderFactory<T, L, E, F>
 {
