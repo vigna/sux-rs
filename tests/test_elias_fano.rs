@@ -263,7 +263,7 @@ fn test_epserde() -> Result<()> {
         }?;
 
         for i in 0..n {
-            assert_eq!(ef.get(i), c.get(i));
+            assert_eq!(ef.get(i), c.uncase().get(i));
         }
     }
     Ok(())
