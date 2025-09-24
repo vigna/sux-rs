@@ -41,6 +41,10 @@
 //! need to call [`FromIntoIterator::from`] explicitly. The error of the resulting
 //! [`RewindableIoLender`] is `core::convert::Infallible`.
 //!
+//! If you have a function that returns a [`Lender`] (or an [`IntoIterator`], via
+//! [`lender::IteratorExt::into_lender`], you can use [`FromLenderFactory`] or
+//! [`FromResultLenderFactory`] to make get a [`RewindableIoLender`], which will
+//! call that function every time it is rewinded.
 use flate2::read::GzDecoder;
 use io::{BufRead, BufReader};
 use lender::*;
@@ -440,6 +444,85 @@ impl<
 {
     pub fn new(mut f: F) -> Result<Self, E> {
         f().map(|lender| FromLenderFactory {
+            lender,
+            f,
+            item: None,
+        })
+    }
+}
+
+/// An adapter lending the items of a function returning lenders of results.
+pub struct FromResultLenderFactory<
+    T: Send + Sync,
+    L: Lender,
+    E: std::error::Error + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> {
+    f: F,
+    lender: L,
+    item: Option<Result<T, E>>,
+}
+
+impl<
+    'lend,
+    T: Send + Sync,
+    L: Lender,
+    E: std::error::Error + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> Lending<'lend> for FromResultLenderFactory<T, L, E, F>
+{
+    type Lend = Result<&'lend T, E>;
+}
+
+impl<
+    T: Send + Sync,
+    L: Lender,
+    E: std::error::Error + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> Lender for FromResultLenderFactory<T, L, E, F>
+where
+    for<'lend> L: Lending<'lend, Lend = Result<T, E>>,
+{
+    fn next(&mut self) -> Option<Lend<'_, Self>> {
+        self.item = self.lender.next();
+        match self.item {
+            Some(Ok(ref item)) => Some(Ok(item)),
+            Some(Err(_)) => Some(
+                self.item
+                    .take()
+                    .unwrap()
+                    .map(|_| unreachable!("self.item was Err, but now it's Ok")),
+            ),
+            None => None,
+        }
+    }
+}
+
+impl<
+    T: Send + Sync,
+    L: Lender,
+    E: std::error::Error + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> RewindableIoLender<T> for FromResultLenderFactory<T, L, E, F>
+where
+    for<'lend> L: Lending<'lend, Lend = Result<T, E>>,
+{
+    type Error = E;
+    fn rewind(mut self) -> Result<Self, Self::Error> {
+        self.lender = (self.f)()?;
+        Ok(self)
+    }
+}
+
+impl<
+    T: Send + Sync,
+    L: Lender,
+    E: std::error::Error + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> FromResultLenderFactory<T, L, E, F>
+{
+    pub fn new(mut f: F) -> Result<Self, E> {
+        f().map(|lender| FromResultLenderFactory {
             lender,
             f,
             item: None,
