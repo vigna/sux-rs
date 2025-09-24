@@ -468,6 +468,132 @@ impl<
 }
 */
 
+impl<
+    T: ?Sized,
+    E: std::error::Error + Send + Sync + 'static,
+    A: RewindableIoLender<T, Error = E>,
+    B: RewindableIoLender<T, Error = E>,
+> RewindableIoLender<T> for lender::Chain<A, B>
+{
+    type Error = E;
+
+    fn rewind(self) -> Result<Self, E> {
+        let (a, b) = self.into_inner();
+        let b = b.rewind()?;
+        let a = a.rewind()?;
+        Ok(a.chain(b))
+    }
+}
+
+/* can't be implemented because Cloned<L> is an iterator, not a lender
+impl<T: Clone, L: RewindableIoLender<T>> RewindableIoLender<T> for lender::Cloned<L> {
+    type Error = L::Error;
+
+    fn rewind(self) -> Result<Self, Self::Error> {
+        let lender = self.into_inner();
+        lender.rewind().map(|lender| lender.cloned())
+    }
+}
+
+impl<T: Copy, L: RewindableIoLender<T>> RewindableIoLender<T> for lender::Copied<L> {
+    type Error = L::Error;
+
+    fn rewind(self) -> Result<Self, Self::Error> {
+        let lender = self.into_inner();
+        lender.rewind().map(|lender| lender.copied())
+    }
+}
+*/
+
+impl<T: ?Sized, L: RewindableIoLender<T> + Clone> RewindableIoLender<T> for lender::Cycle<L> {
+    type Error = L::Error;
+
+    fn rewind(self) -> Result<Self, Self::Error> {
+        let (original, _current) = self.into_inner();
+        original.rewind().map(|lender| lender.cycle())
+    }
+}
+
+/* doesn't type-check
+impl<T: ?Sized, E> RewindableIoLender<T> for lender::Empty<Result<T, E>> where for<'all> Result<T, E>: lender::Lending<'all>{
+    type Error = E;
+
+    fn rewind(self) -> Result<Self, Self::Error> {
+        Ok(self)
+    }
+}
+*/
+
+/* would need to yield (usize, Result<T>) instead of Result<(usize, T)>
+impl<T: ?Sized, L: RewindableIoLender<T>> RewindableIoLender<(usize, T)> for lender::Enumerate<L> {
+    type Error = L::Error;
+
+    fn rewind(self) -> Result<Self, Self::Error> {
+        let lender = self.into_inner();
+        lender.rewind().map(|lender| lender.enumerate())
+    }
+}
+*/
+
+impl<T: ?Sized, L: RewindableIoLender<T>> RewindableIoLender<T> for lender::Fuse<L> {
+    type Error = L::Error;
+
+    fn rewind(self) -> Result<Self, Self::Error> {
+        let lender = self.into_inner();
+        lender.rewind().map(|lender| lender.fuse())
+    }
+}
+
+impl<'this, T: Clone + ?Sized + 'this, L: RewindableIoLender<T, Error: Clone>> RewindableIoLender<T>
+    for lender::Intersperse<'this, L>
+{
+    type Error = L::Error;
+
+    fn rewind(self) -> Result<Self, Self::Error> {
+        let (lender, separator) = self.into_parts();
+        lender.rewind().map(|lender| lender.intersperse(separator))
+    }
+}
+
+impl<'this, T: ?Sized, L: RewindableIoLender<T>> RewindableIoLender<T>
+    for lender::Peekable<'this, L>
+{
+    type Error = L::Error;
+
+    fn rewind(self) -> Result<Self, Self::Error> {
+        let lender = self.into_inner();
+        lender.rewind().map(|lender| lender.peekable())
+    }
+}
+
+impl<'this, T: ?Sized, L: RewindableIoLender<T, Error: Clone>> RewindableIoLender<T>
+    for lender::Repeat<'this, L>
+{
+    type Error = L::Error;
+
+    fn rewind(self) -> Result<Self, Self::Error> {
+        Ok(self)
+    }
+}
+
+impl<T: ?Sized, L: RewindableIoLender<T>> RewindableIoLender<T> for lender::Skip<L> {
+    type Error = L::Error;
+
+    fn rewind(self) -> Result<Self, Self::Error> {
+        let (lender, n) = self.into_parts();
+        lender.rewind().map(|lender| lender.skip(n))
+    }
+}
+
+impl<T: ?Sized, L: RewindableIoLender<T>> RewindableIoLender<T> for lender::StepBy<L> {
+    type Error = L::Error;
+
+    fn rewind(self) -> Result<Self, Self::Error> {
+        let (lender, step) = self.into_parts();
+        lender.rewind().map(|lender| lender.step_by(step))
+    }
+}
+
 impl<T: ?Sized, L: RewindableIoLender<T>> RewindableIoLender<T> for lender::Take<L> {
     type Error = L::Error;
 
