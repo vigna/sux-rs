@@ -8,7 +8,7 @@ use std::io::{Cursor, Write};
 
 use anyhow::{Context, Result, bail, ensure};
 use flate2::write::GzEncoder;
-use lender::IteratorExt;
+use lender::{IteratorExt, Lender};
 
 use sux::utils::lenders::*;
 
@@ -107,4 +107,51 @@ fn test_fromlenderfactory() -> Result<()> {
         })
         .context("Could not initialize lender")?,
     )
+}
+
+#[test]
+fn test_fromresultlenderfactory() -> Result<()> {
+    let items = || {
+        [
+            Ok("foo"),
+            Ok("bar"),
+            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "error!")),
+            Ok("baz"),
+        ]
+    };
+    let mut lender = FromResultLenderFactory::new(|| -> Result<_, std::io::Error> {
+        Ok(items().into_iter().into_lender())
+    })
+    .context("Could not initialize lender")?;
+
+    let items = items();
+
+    for pass in 0..5 {
+        for i in 0..4 {
+            match lender.next() {
+                Some(got) => {
+                    let got = got;
+                    let expected = &items[i];
+                    ensure!(
+                        got.is_ok() == expected.is_ok(),
+                        "Mismatch of item {i} of pass {pass}: expected {expected:?}, got {got:?}"
+                    );
+                    if got.is_ok() {
+                        ensure!(
+                            *got.as_ref().unwrap() == expected.as_ref().unwrap(),
+                            "Mismatch of item {i} of pass {pass}: expected {expected:?}, got {got:?}"
+                        );
+                    }
+                }
+                None => bail!("Found only {i} items at pass {pass}"),
+            }
+        }
+        if let Some(extra) = lender.next().map(Result::unwrap) {
+            bail!("Found extra item after pass {pass}: {}", extra);
+        }
+
+        lender = lender.rewind().context("Could not rewind")?;
+    }
+
+    Ok(())
 }
