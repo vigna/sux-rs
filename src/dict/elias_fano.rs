@@ -818,6 +818,10 @@ pub struct EliasFanoBuilder {
 impl EliasFanoBuilder {
     /// Creates a builder for an [`EliasFano`] containing
     /// `n` numbers smaller than or equal to `u`.
+    ///
+    /// # Panic
+    ///
+    /// When any of the underlying structures would exceed `usize` in length.
     pub fn new(n: usize, u: usize) -> Self {
         let l = if u >= n {
             (u as f64 / n as f64).log2().floor() as usize
@@ -825,17 +829,21 @@ impl EliasFanoBuilder {
             0
         };
 
+        let num_high_bits = n
+            .checked_add(1)
+            .expect(&format!("n ({n}) is too large"))
+            .checked_add(u >> l)
+            .expect(&format!("n ({n}) and/or u ({u}) is too large"));
         Self {
             n,
             u,
             l,
             low_bits: BitFieldVec::new(l, n),
-            high_bits: BitVec::new(n + (u >> l) + 1),
+            high_bits: BitVec::new(num_high_bits),
             last_value: 0,
             count: 0,
         }
     }
-
     /// Adds a new value to the builder.
     ///
     /// # Panic
