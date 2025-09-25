@@ -39,7 +39,7 @@ fn main() {
     let cursor = Cursor::new(&buffer);
     let mem_case = unsafe { <Wrapper<Vec<String>>>::read_mem(cursor, buffer.len()).unwrap() };
 
-    let s = mem_case.get(0);
+    let s = mem_case.uncase().get(0);
     drop(mem_case);
     assert_eq!(s, "foo");
 }
