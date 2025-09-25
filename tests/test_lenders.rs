@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use std::fmt::Debug;
 use std::io::{Cursor, Write};
 
 use anyhow::{Context, Result, bail, ensure};
@@ -12,7 +13,9 @@ use lender::{IteratorExt, Lender};
 
 use sux::utils::lenders::*;
 
-fn test_lender<T: ?Sized + AsRef<str>, L: RewindableIoLender<T>>(mut lender: L) -> Result<()> {
+fn test_lender<T: ?Sized + AsRef<str>, L: RewindableIoLender<T, Error: Debug>>(
+    mut lender: L,
+) -> Result<()> {
     for pass in 0..5 {
         for i in 0..3 {
             match lender.next() {
@@ -32,7 +35,10 @@ fn test_lender<T: ?Sized + AsRef<str>, L: RewindableIoLender<T>>(mut lender: L) 
             bail!("Found extra item after pass {pass}: {}", extra.as_ref());
         }
 
-        lender = lender.rewind().context("Could not rewind")?;
+        lender = lender
+            .rewind()
+            .map_err(Into::into)
+            .context("Could not rewind")?;
     }
 
     Ok(())
