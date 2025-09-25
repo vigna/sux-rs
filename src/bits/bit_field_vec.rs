@@ -187,7 +187,7 @@ fn mask<W: Word>(bit_width: usize) -> W {
     if bit_width == 0 {
         W::ZERO
     } else {
-        W::MAX >> (W::BITS - bit_width)
+        W::MAX >> W::BITS.checked_sub(bit_width).expect("bit_width > W::BITS")
     }
 }
 
