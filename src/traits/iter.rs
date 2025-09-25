@@ -19,7 +19,7 @@ use impl_tools::autoimpl;
 /// setup is usually required again after a skip.
 ///
 /// We provide implementations for (references to) slices, vectors, and boxed
-/// slices, and delegations for [`MemCase`].
+/// slices.
 pub trait IntoIteratorFrom: IntoIterator {
     /// Which kind of iterator are we turning this into?
     type IntoIterFrom: Iterator<Item = <Self as IntoIterator>::Item>;

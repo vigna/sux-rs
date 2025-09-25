@@ -42,9 +42,9 @@
 //! [`RewindableIoLender`] is `core::convert::Infallible`.
 //!
 //! If you have a function that returns a [`Lender`] (or an [`IntoIterator`], via
-//! [`lender::IteratorExt::into_lender`], you can use [`FromLenderFactory`] or
+//! [`lender::IteratorExt::into_lender`]) you can use [`FromLenderFactory`] or
 //! [`FromResultLenderFactory`] to make get a [`RewindableIoLender`], which will
-//! call that function every time it is rewinded.
+//! call that function every time it is rewound.
 use flate2::read::GzDecoder;
 use io::{BufRead, BufReader};
 use lender::*;
