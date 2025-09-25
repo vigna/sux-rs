@@ -10,8 +10,7 @@ use anyhow::Result;
 use clap::Parser;
 use common_traits::{DowncastableFrom, UpcastableFrom};
 use dsi_progress_logger::*;
-use epserde::ser::{Serialize, SerializeInner};
-use epserde::traits::{AlignHash, TypeHash};
+use epserde::ser::Serialize;
 use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
@@ -158,14 +157,14 @@ fn set_builder<W: BinSafe + Word, D: BitFieldSlice<W> + Send + Sync, S, E: Shard
 }
 
 fn main_with_types_boxed_slice<
-    W: Word + BinSafe + DowncastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
+    W: Word + BinSafe + DowncastableFrom<u64>,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 >(
     args: Args,
 ) -> Result<()>
 where
-    <W as SerializeInner>::SerType: Word + BinSafe,
+    W: Word + BinSafe,
     str: ToSig<S>,
     usize: ToSig<S>,
     u128: UpcastableFrom<W>,
@@ -212,7 +211,7 @@ where
 }
 
 fn main_with_types_bit_field_vec<
-    W: Word + BinSafe + DowncastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
+    W: Word + BinSafe + DowncastableFrom<u64>,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 >(
