@@ -823,7 +823,7 @@ impl EliasFanoBuilder {
     ///
     /// When any of the underlying structures would exceed `usize` in length.
     pub fn new(n: usize, u: usize) -> Self {
-        let l = if u >= n {
+        let l = if n > 0 && u >= n {
             (u as f64 / n as f64).log2().floor() as usize
         } else {
             0
