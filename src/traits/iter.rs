@@ -121,24 +121,3 @@ pub trait IntoReverseUncheckedIterator: Sized {
     /// Creates a reverse unchecked iterator starting from the given position.
     fn into_rev_unchecked_iter_from(self, from: usize) -> Self::IntoRevUncheckedIter;
 }
-
-// MemCase delegations
-
-#[cfg(feature = "epserde")]
-mod mem_case {
-    use super::*;
-    use ::epserde::deser::{DeserType, DeserializeInner, MemCase};
-
-    // We usually don't delegate to MemCase, but since epserde
-    // delegates IntoIterator, this seems legit.
-    impl<'a, S: DeserializeInner> IntoIteratorFrom for &'a MemCase<S>
-    where
-        for<'b> &'b DeserType<'b, S>: IntoIteratorFrom,
-    {
-        type IntoIterFrom = <&'a DeserType<'a, S> as IntoIteratorFrom>::IntoIterFrom;
-
-        fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
-            self.uncase().into_iter_from(from)
-        }
-    }
-}

@@ -92,6 +92,7 @@ mod test {
         let c = unsafe {
             <RearCodedList>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())?
         };
+        let c = c.uncase();
 
         for (i, word) in words.iter().enumerate() {
             assert_eq!(&c.get(i), word);
@@ -139,7 +140,7 @@ mod test {
             assert!(rca.contains(*word));
             assert_eq!(rca.index_of(*word), Some(i));
             let mut word = word.to_string();
-            word.push_str("IT'S HIGHLY IMPROBABLE THAT THIS STRING IS IN THE WORDLIST");
+            word.push_str("IT'S HIGHLY IMPROBABLE THAT THIS STRING IS IN THE WORD LIST");
             assert!(!rca.contains(word.as_str()));
             assert!(rca.index_of(word.as_str()).is_none());
         }
@@ -153,6 +154,7 @@ mod test {
         let c = unsafe {
             <RearCodedList>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())?
         };
+        let c = c.uncase();
 
         for (i, word) in shuffled_words.iter().enumerate() {
             assert_eq!(&c.get(i), word);

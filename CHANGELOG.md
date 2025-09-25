@@ -31,6 +31,8 @@
   [`deko`](https://crates.io/crates/deko) crate. They are available with the
   `deko` feature.
 
+* Many more implementations for `RewindableIoLender`.
+
 ### Changed
 
 * The associated output value for `Types` (and thus `IndexedSeq`, etc.) has now
