@@ -33,6 +33,9 @@
 
 * Many more implementations for `RewindableIoLender`.
 
+* The structure `PartialArray` provides partial arrays (AKA “arrays with holes”)
+  using ranking.
+
 ### Changed
 
 * The associated output value for `Types` (and thus `IndexedSeq`, etc.) has now

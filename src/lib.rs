@@ -15,6 +15,7 @@
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!("`target_pointer_width` must be 64");
 
+pub mod array;
 pub mod bits;
 pub mod dict;
 pub mod func;
@@ -30,6 +31,7 @@ pub mod fuzz;
 /// [`indexed_dict`](crate::traits::indexed_dict) are not included in the
 /// prelude, as they may cause ambiguities in some contexts.
 pub mod prelude {
+    pub use crate::array::*;
     pub use crate::bit_field_vec;
     pub use crate::bit_vec;
     pub use crate::bits::*;
