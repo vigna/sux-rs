@@ -272,7 +272,7 @@ mod mwhc {
     /// queries due to the simpler edge-generation logic, albeit construction is
     /// slower due to cache-unfriendly accesses.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
-    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde_deep_copy)]
     pub struct Mwhc3Shards {
         // One third of the number of vertices in a shard
         seg_size: usize,
@@ -398,7 +398,7 @@ mod mwhc {
     /// This construction uses random peelable 3-hypergraphs, giving a 23% space
     /// overhead. See [`Mwhc3Shards`] for more information.
     #[derive(Default, Debug, MemDbg, MemSize, Clone, Copy)]
-    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde_deep_copy)]
     pub struct Mwhc3NoShards {
         // One third of the number of vertices in a shard
         seg_size: usize,
@@ -522,7 +522,7 @@ mod fuse {
     /// making the probability of a duplicate local signature negligible. As a
     /// result, it is slightly slower and uses more space at construction time.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
-    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde_deep_copy)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct FuseLge3Shards {
         shard_bits_shift: u32,
@@ -803,7 +803,7 @@ mod fuse {
     /// mostly equivalent to that described in [“Binary Fuse Filters: Fast and
     /// Smaller Than Xor Filters”](https://doi.org/10.1145/3510449).
     #[derive(Default, Debug, MemDbg, MemSize, Clone, Copy)]
-    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde_deep_copy)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct FuseLge3NoShards {
         log2_seg_size: u32,
@@ -1019,7 +1019,7 @@ mod fuse {
     ///
     /// The rest of the logic is identical.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
-    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde_deep_copy)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[derive(Default)]
     pub struct FuseLge3FullSigs(FuseLge3Shards);

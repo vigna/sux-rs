@@ -19,7 +19,8 @@ use mem_dbg::*;
 /// Builder for creating an immutable partial array.
 ///
 /// The builder allows you to specify the array size and then add
-/// (position, value) pairs.
+/// (position, value) pairs. Positions must be added in strictly
+/// increasing order.
 ///
 /// # Examples
 ///
