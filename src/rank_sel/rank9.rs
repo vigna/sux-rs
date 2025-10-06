@@ -95,7 +95,13 @@ pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
 
 #[doc(hidden)]
 #[derive(Copy, Debug, Clone, MemDbg, MemSize, Default)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde), repr(C), zero_copy)]
+#[cfg_attr(
+    feature = "epserde",
+    derive(epserde::Epserde),
+    repr(C),
+    epserde_zero_copy
+)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlockCounters {
     pub(super) absolute: usize,
     pub(super) relative: usize,

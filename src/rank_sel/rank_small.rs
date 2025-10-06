@@ -182,7 +182,12 @@ macro_rules! rank_small {
 
 #[doc(hidden)]
 #[derive(Copy, Debug, Clone, MemDbg, MemSize)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde), repr(C), zero_copy)]
+#[cfg_attr(
+    feature = "epserde",
+    derive(epserde::Epserde),
+    repr(C),
+    epserde_zero_copy
+)]
 pub struct Block32Counters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     pub(super) absolute: u32,
     pub(super) relative: [u32; NUM_U32S],
