@@ -11,6 +11,12 @@
   standard or `MemCase`'d structure interchangeably. Due to the orphan rule,
   such delegations must happen in the crate defining the traits.
 
+* New traits `BitVecOps`, `BitVecOpsMut`, as `AtomicBitVecOps` that
+  provide bit-vector operations for types implementing `AsRef<[usize]>` and
+  `BitLength`. Since all rank/select structures delegate `AsRef<[usize]>` and
+  `BitLength`, by pulling in scope such traits you can use bit-vector
+  operations on the underlying bit vector.
+
 * `IndexedSeq` has now implementations for slices, vectors,
   and arrays. This should make `SliceSeq` unnecessary in most cases.
 
