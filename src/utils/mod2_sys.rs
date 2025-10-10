@@ -10,7 +10,11 @@
 #![allow(clippy::comparison_chain)]
 use std::ptr;
 
-use crate::{bit_vec, traits::Word};
+use crate::{
+    bit_vec,
+    bits::{BitVecOps, BitVecOpsMut},
+    traits::Word,
+};
 use anyhow::{Result, bail, ensure};
 use arbitrary_chunks::ArbitraryChunks;
 
