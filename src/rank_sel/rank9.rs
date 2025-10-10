@@ -20,6 +20,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use std::ops::Deref;
 use std::ops::Index;
 
 /// A ranking structure using 25% of additional space and providing the fastest
@@ -116,6 +117,14 @@ impl BlockCounters {
     #[inline(always)]
     pub fn set_rel(&mut self, word: usize, counter: usize) {
         self.relative |= counter << (9 * (word ^ 7));
+    }
+}
+
+impl<B, C> Deref for Rank9<B, C> {
+    type Target = B;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bits
     }
 }
 

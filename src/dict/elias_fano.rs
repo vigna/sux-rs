@@ -831,9 +831,9 @@ impl EliasFanoBuilder {
 
         let num_high_bits = n
             .checked_add(1)
-            .expect(&format!("n ({n}) is too large"))
+            .unwrap_or_else(|| panic!("n ({n}) is too large"))
             .checked_add(u >> l)
-            .expect(&format!("n ({n}) and/or u ({u}) is too large"));
+            .unwrap_or_else(|| panic!("n ({n}) and/or u ({u}) is too large"));
         Self {
             n,
             u,

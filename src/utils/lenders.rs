@@ -627,7 +627,7 @@ impl<T: ?Sized, L: RewindableIoLender<T>> RewindableIoLender<T> for lender::Fuse
     }
 }
 
-impl<'this, T: Clone + ?Sized + 'this, L: RewindableIoLender<T, Error: Clone>> RewindableIoLender<T>
+impl<'this, T: ?Sized + 'this, L: RewindableIoLender<T, Error: Clone>> RewindableIoLender<T>
     for lender::Intersperse<'this, L>
 {
     type Error = L::Error;

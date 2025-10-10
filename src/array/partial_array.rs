@@ -11,7 +11,7 @@
 //! and stores the actual values in a contiguous array. Queries use ranking
 //! on the bit vector to efficiently map positions to value indices.
 
-use crate::bits::BitVec;
+use crate::bits::{BitVec, BitVecOpsMut};
 use crate::rank_sel::Rank9;
 use crate::traits::Rank;
 use mem_dbg::*;
