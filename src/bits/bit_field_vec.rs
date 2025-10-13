@@ -125,6 +125,16 @@ use std::sync::atomic::{Ordering, compiler_fence, fence};
 /// Convenient, [`vec!`]-like macro to initialize `usize`-based bit-field
 /// vectors.
 ///
+/// - `bit_field_vec![width]`: creates an empty bit-field vector of given bit
+///   width.
+///
+/// - `bit_field_vec![width => value; length]`: creates a bit-field vector of
+/// given bit width and length, with all entries set to `value`.
+///
+/// - `bit_field_vec![width; v₀, v₁, … ]`: creates a bit-field vector of
+/// given bit width with entries set to `v₀`, `v₁`, ….
+///
+///
 /// Note that the syntax `bit_field_vec![width; length; value]` that has been
 /// deprecated in favor of `bit_field_vec![width => value; length]`, so that
 /// value and length are in the same order as in [`vec!`].

@@ -10,6 +10,12 @@
 //! There are two flavors: [`BitVec`], a mutable bit vector, and
 //! [`AtomicBitVec`], a mutable, thread-safe bit vector.
 //!
+//! Operations on these structures is provided by the extension traits
+//! [`BitVecOps`], [`BitVecOpsMut`], and [`AtomicBitVecOps`],
+//! which must be pulled in scope as needed. There are also
+//! operations that are specific to certain implementations, such as
+//! [`push`](BitVec::push).
+//!
 //! These flavors depends on a backend, and presently we provide:
 //!
 //! - `BitVec<Vec<usize>>`: a mutable, growable and resizable bit vector;
@@ -24,7 +30,9 @@
 //! bits of the bit vector. Moreover, the content of the backend outside of
 //! the bit vector is never modified by the methods of this structure.
 //!
-//! It is possible to juggle between the three flavors using [`From`]/[`Into`].
+//! It is possible to juggle between the three flavors using [`From`]/[`Into`],
+//! and with [`TryFrom`]/[`TryInto`] when going [from a non-atomic to an atomic
+//! bit vector](BitVec#impl-TryFrom%3CBitVec%3C%26%5BW%5D%3E%3E-for-AtomicBitVec%3C%26%5B%3CW+as+IntoAtomic%3E::AtomicType%5D%3E).
 //!
 //! # Examples
 //!
@@ -68,7 +76,7 @@
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones, 1) }.count_ones(), 1);
 //! ```
 
-use crate::traits::{AtomicBitVecOps, BitIterator, BitVecOps, BitVecOpsMut};
+use crate::traits::{AtomicBitIterator, AtomicBitVecOps, BitIterator, BitVecOps, BitVecOpsMut};
 use common_traits::{IntoAtomic, SelectInWord};
 #[allow(unused_imports)] // this is in the std prelude but not in no_std!
 use core::borrow::BorrowMut;
@@ -88,6 +96,19 @@ use crate::{
 };
 
 /// Convenient, [`vec!`](vec!)-like macro to initialize bit vectors.
+///
+/// - `bit_vec![]` creates an empty bit vector.
+///
+/// - `bit_vec![false; n]` or `bit_vec![0; n]` creates a bit vector of length
+///   `n` with all bits set to `false`.
+///
+/// - `bit_vec![true; n]` or `bit_vec![1; n]` creates a bit vector of length `n`
+///    with all bits set to `true`.
+///
+/// - `bit_vec![b₀, b₁, b₂, …]` creates a bit vector with the specified bits,
+///    where each `bᵢ` can be any expression that evaluates to a boolean or integer
+///    (0 for `false`, non-zero for `true`).
+///
 ///
 /// # Examples
 ///
@@ -160,9 +181,33 @@ macro_rules! bit_vec {
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// A bit vector.
+///
+/// Instances can be created using [`new`](BitVec::new),
+/// [`with_value`](BitVec::with_value), with the convenience macro
+/// [`bit_vec!`](macro@crate::bits::bit_vec), or with a [`FromIterator`
+/// implementation](#impl-FromIterator<bool>-for-BitVec).
+///
+/// See the [module documentation](mod@crate::bits::bit_vec) for more details.
 pub struct BitVec<B = Vec<usize>> {
     bits: B,
     len: usize,
+}
+
+impl<B> BitLength for BitVec<B> {
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
+impl<B: AsRef<[usize]>> BitVec<B> {
+    /// Returns an owned copy of the bit vector.
+    pub fn to_owned(&self) -> BitVec {
+        BitVec {
+            bits: self.bits.as_ref().to_owned(),
+            len: self.len,
+        }
+    }
 }
 
 impl<B> BitVec<B> {
@@ -190,22 +235,14 @@ impl<B> BitVec<B> {
 
     #[inline(always)]
     /// Modify the bit vector in place.
+    ///
+    ///
     /// # Safety
     /// This is unsafe because it's the caller's responsibility to ensure that
     /// that the length is compatible with the modified bits.
     pub unsafe fn map<B2>(self, f: impl FnOnce(B) -> B2) -> BitVec<B2> {
         BitVec {
             bits: f(self.bits),
-            len: self.len,
-        }
-    }
-}
-
-impl<B: AsRef<[usize]>> BitVec<B> {
-    /// Returns an owned copy of the bit vector.
-    pub fn to_owned(&self) -> BitVec {
-        BitVec {
-            bits: self.bits.as_ref().to_owned(),
             len: self.len,
         }
     }
@@ -242,10 +279,12 @@ impl BitVec<Vec<usize>> {
         }
     }
 
+    /// Returns the currency capacity of this bit vector.
     pub fn capacity(&self) -> usize {
         self.bits.capacity() * BITS
     }
 
+    /// Appends a bit to the end of this bit vector.
     pub fn push(&mut self, b: bool) {
         if self.bits.len() * BITS == self.len {
             self.bits.push(0);
@@ -259,16 +298,20 @@ impl BitVec<Vec<usize>> {
         self.len += 1;
     }
 
+    /// Removes the last bit from the bit vector and returns it, or `None` if it
+    /// is empty.
     pub fn pop(&mut self) -> Option<bool> {
         if self.len == 0 {
             return None;
         }
-        self.len -= 1;
-        let word_index = self.len / BITS;
-        let bit_index = self.len % BITS;
-        Some((self.bits[word_index] >> bit_index) & 1 != 0)
+        let last_pos = self.len - 1;
+        let result = unsafe { self.get_unchecked(last_pos) };
+        self.len = last_pos;
+        Some(result)
     }
 
+    /// Resizes the bit vector in place, extending it with `value` if it is
+    /// necessary.
     pub fn resize(&mut self, new_len: usize, value: bool) {
         // TODO: rewrite by word
         if new_len > self.len {
@@ -282,13 +325,6 @@ impl BitVec<Vec<usize>> {
             }
         }
         self.len = new_len;
-    }
-}
-
-impl<B> BitLength for BitVec<B> {
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.len
     }
 }
 
@@ -362,6 +398,8 @@ impl<B: AsRef<[usize]>> fmt::Display for BitVec<B> {
 
 #[derive(Debug, Clone, MemDbg, MemSize)]
 /// A thread-safe bit vector.
+///
+/// See the [module documentation](mod@crate::bits::bit_vec) for details.
 pub struct AtomicBitVec<B = Vec<AtomicUsize>> {
     bits: B,
     len: usize,
@@ -463,6 +501,8 @@ impl<W: IntoAtomic> From<BitVec<Vec<W>>> for AtomicBitVec<Vec<W::AtomicType>> {
     }
 }
 
+/// This conversion may fail if the alignment of `W` is not the same as
+/// that of `W::AtomicType`.
 impl<'a, W: IntoAtomic> TryFrom<BitVec<&'a [W]>> for AtomicBitVec<&'a [W::AtomicType]> {
     type Error = CannotCastToAtomicError<W>;
     fn try_from(value: BitVec<&'a [W]>) -> Result<Self, Self::Error> {
@@ -476,6 +516,8 @@ impl<'a, W: IntoAtomic> TryFrom<BitVec<&'a [W]>> for AtomicBitVec<&'a [W::Atomic
     }
 }
 
+/// This conversion may fail if the alignment of `W` is not the same as
+/// that of `W::AtomicType`.
 impl<'a, W: IntoAtomic> TryFrom<BitVec<&'a mut [W]>> for AtomicBitVec<&'a mut [W::AtomicType]> {
     type Error = CannotCastToAtomicError<W>;
     fn try_from(value: BitVec<&'a mut [W]>) -> Result<Self, Self::Error> {
@@ -576,57 +618,15 @@ impl<W, B: AsRef<[W]>> AsRef<[W]> for AtomicBitVec<B> {
         self.bits.as_ref()
     }
 }
-// An iterator over the bits of this atomic bit vector as booleans.
-#[derive(Debug, MemDbg, MemSize)]
-pub struct AtomicBitIterator<'a, B> {
-    bits: &'a mut B,
-    len: usize,
-    next_bit_pos: usize,
-}
 
 // We implement [`IntoIterator`] for a mutable reference so no
 // outstanding references are allowed while iterating.
-impl<'a, B: AsRef<[AtomicUsize]>> IntoIterator for &'a mut AtomicBitVec<B> {
+impl<'a, B: AsRef<[AtomicUsize]>> IntoIterator for &'a AtomicBitVec<B> {
     type IntoIter = AtomicBitIterator<'a, B>;
     type Item = bool;
 
     fn into_iter(self) -> Self::IntoIter {
-        AtomicBitIterator {
-            bits: &mut self.bits,
-            len: self.len,
-            next_bit_pos: 0,
-        }
-    }
-}
-
-impl<B: AsRef<[AtomicUsize]>> Iterator for AtomicBitIterator<'_, B> {
-    type Item = bool;
-    fn next(&mut self) -> Option<bool> {
-        if self.next_bit_pos == self.len {
-            return None;
-        }
-        let word_idx = self.next_bit_pos / BITS;
-        let bit_idx = self.next_bit_pos % BITS;
-        let word = unsafe {
-            self.bits
-                .as_ref()
-                .get_unchecked(word_idx)
-                .load(Ordering::Relaxed)
-        };
-        let bit = (word >> bit_idx) & 1;
-        self.next_bit_pos += 1;
-        Some(bit != 0)
-    }
-}
-
-impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
-    // Returns an iterator over the bits of the bit vector.
-    //
-    // Note that this method takes a mutable reference to the bit vector,
-    // so no outstanding references are allowed while iterating.
-    #[inline(always)]
-    pub fn iter(&mut self) -> AtomicBitIterator<'_, B> {
-        self.into_iter()
+        AtomicBitIterator::new(&self.bits, self.len())
     }
 }
 
