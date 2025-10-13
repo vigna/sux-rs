@@ -9,7 +9,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use sux::prelude::*;
-use sux::traits::bit_vec::*;
+use sux::traits::bit_vec_ops::*;
 
 const INV: usize = 13;
 const SUB: usize = 0;
