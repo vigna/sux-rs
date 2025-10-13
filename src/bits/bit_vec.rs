@@ -14,7 +14,7 @@
 //!
 //! - `BitVec<Vec<usize>>`: a mutable, growable and resizable bit vector;
 //! - `BitVec<AsRef<[usize]>>`: an immutable bit vector, useful for
-//!   [ε-serde](epserde) support;
+//!   [ε-serde](https://crates.io/crates/epserde) support;
 //! - `BitVec<AsRef<[usize]> + AsMut<[usize]>>`: a mutable (but not resizable)
 //!   bit vector;
 //! - `AtomicBitVec<AsRef<[AtomicUsize]>>`: a thread-safe, mutable (but not
@@ -998,7 +998,7 @@ impl<B> BitLength for AtomicBitVec<B> {
 impl<B: AsRef<[AtomicUsize]>> Index<usize> for AtomicBitVec<B> {
     type Output = bool;
 
-    /// Shorthand for [`Self::get`] using [`Ordering::Relaxed`].
+    /// Shorthand for `get` using [`Ordering::Relaxed`].
     fn index(&self, index: usize) -> &Self::Output {
         match self.get(index, Ordering::Relaxed) {
             false => &false,
