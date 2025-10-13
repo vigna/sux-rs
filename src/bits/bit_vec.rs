@@ -30,8 +30,8 @@
 //!
 //! ```rust
 //! use sux::bit_vec;
+//! use sux::bits::bit_vec::{BitVec, AtomicBitVec, BitVecOps, BitVecOpsMut, AtomicBitVecOps};
 //! use sux::traits::{BitCount, BitLength, NumBits, AddNumBits};
-//! use sux::bits::{BitVec, AtomicBitVec};
 //! use core::sync::atomic::Ordering;
 //!
 //! // Convenience macro
@@ -99,6 +99,7 @@ const BITS: usize = usize::BITS as usize;
 ///
 /// ```rust
 /// use sux::bit_vec;
+/// use sux::bits::bit_vec::{BitVecOps, BitVecOpsMut};
 /// use sux::traits::BitLength;
 ///
 /// // Empty bit vector
