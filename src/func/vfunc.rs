@@ -36,9 +36,9 @@ use mem_dbg::*;
 /// sets. Details on other possible [`ShardEdge`] implementations can be found
 /// in the [`shard_edge`](crate::func::shard_edge) module documentation.
 ///
-/// Instances of this structure are immutable; they are built using a
-/// [`VBuilder`](crate::func::VBuilder) and can be serialized using
-/// [ε-serde](`epserde`). Please see the documentation of
+/// Instances of this structure are immutable; they are built
+/// using a [`VBuilder`](crate::func::VBuilder) and can be serialized using
+/// [ε-serde](https://crates.io/crates/epserde). Please see the documentation of
 /// [`VBuilder`](crate::func::VBuilder) for examples.
 ///
 /// # Generics

@@ -20,9 +20,10 @@ use std::ops::Index;
 ///
 /// Instances of this structure are immutable; they are built using a
 /// [`VBuilder`](crate::func::VBuilder) and can be serialized using
-/// [ε-serde](`epserde`). They contain a mapping from keys to hashes stored in a
-/// [`VFunc`]; [`contains`](VFilter::contains) checks that the hash of a key is
-/// equal of the hash stored by the function for the same key. On some
+/// [ε-serde](https://crates.io/crates/epserde). They contain a mapping from
+/// keys to hashes stored in a [`VFunc`]; [`contains`](VFilter::contains) checks
+/// that the hash of a key is equal of the hash stored by the function for the
+/// same key. On some
 /// architectures, and with some constraints,
 /// [`contains_unaligned`](VFilter::contains_unaligned) might be faster.
 ///

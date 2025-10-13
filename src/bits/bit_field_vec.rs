@@ -19,7 +19,7 @@
 //!
 //! - `BitFieldVec<Vec<T>>`: a mutable, growable and resizable bit-field vector;
 //! - `BitFieldVec<AsRef<[W]>>`: an immutable bit-field vector, useful for
-//!   [ε-serde](epserde) support;
+//!   [ε-serde](https://crates.io/crates/epserde) support;
 //! - `BitFieldVec<AsRef<[W]> + AsMut<[W]>>`: a mutable (but not resizable) bit
 //!   vector;
 //! - `AtomicBitFieldVec<AsRef<[A]>>`: a partially thread-safe, mutable (but not
