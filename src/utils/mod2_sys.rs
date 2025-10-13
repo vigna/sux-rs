@@ -12,8 +12,8 @@ use std::ptr;
 
 use crate::{
     bit_vec,
-    bits::{BitVecOps, BitVecOpsMut},
     traits::Word,
+    traits::{BitVecOps, BitVecOpsMut},
 };
 use anyhow::{Result, bail, ensure};
 use arbitrary_chunks::ArbitraryChunks;

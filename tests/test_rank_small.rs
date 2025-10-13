@@ -102,6 +102,8 @@ fn test_rank_small_empty() {
 #[cfg(feature = "slow_tests")]
 #[test]
 fn test_rank_small_large() {
+    use sux::traits::BitVecOpsMut;
+
     let mut bits = BitVec::new(3 * (1 << 32) + 100000);
     for i in 0..bits.len() {
         if i % 5 == 0 {

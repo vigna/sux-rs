@@ -6,10 +6,11 @@
 
 //! Immutable partial array implementations.
 
-use crate::bits::{BitVec, BitVecOps, BitVecOpsMut};
+use crate::bits::BitVec;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EfDict;
 use crate::rank_sel::Rank9;
+use crate::traits::{BitVecOps, BitVecOpsMut};
 use crate::traits::{RankUnchecked, SuccUnchecked};
 use mem_dbg::*;
 

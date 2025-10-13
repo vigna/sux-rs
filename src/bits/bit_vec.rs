@@ -68,30 +68,24 @@
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones, 1) }.count_ones(), 1);
 //! ```
 
+use crate::traits::{AtomicBitVecOps, BitIterator, BitVecOps, BitVecOpsMut};
 use common_traits::{IntoAtomic, SelectInWord};
 #[allow(unused_imports)] // this is in the std prelude but not in no_std!
 use core::borrow::BorrowMut;
 use core::fmt;
 use mem_dbg::*;
-#[cfg(feature = "rayon")]
-use rayon::prelude::*;
 use std::{
     ops::Index,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
 use crate::{
-    traits::rank_sel::*,
+    traits::{BITS, rank_sel::*},
     utils::{
         CannotCastToAtomicError, transmute_boxed_slice_from_atomic,
         transmute_boxed_slice_into_atomic, transmute_vec_from_atomic, transmute_vec_into_atomic,
     },
 };
-
-#[cfg(feature = "rayon")]
-use crate::RAYON_MIN_LEN;
-
-const BITS: usize = usize::BITS as usize;
 
 /// Convenient, [`vec!`](vec!)-like macro to initialize bit vectors.
 ///
@@ -162,14 +156,6 @@ macro_rules! bit_vec {
     };
 }
 
-macro_rules! panic_if_out_of_bounds {
-    ($index: expr, $len: expr) => {
-        if $index >= $len {
-            panic!("Bit index out of bounds: {} >= {}", $index, $len)
-        }
-    };
-}
-
 #[derive(Debug, Clone, Copy, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -215,50 +201,6 @@ impl<B> BitVec<B> {
     }
 }
 
-impl<T: ?Sized + AsRef<[usize]> + BitLength> BitVecOps for T {}
-
-pub trait BitVecOps: AsRef<[usize]> + BitLength {
-    /// Returns true if the bit of given index is set.
-    #[inline]
-    fn get(&self, index: usize) -> bool {
-        panic_if_out_of_bounds!(index, self.len());
-        unsafe { self.get_unchecked(index) }
-    }
-
-    /// Returns true if the bit of given index is set, without
-    /// bound checks.
-    ///
-    /// # Safety
-    ///
-    /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> bool {
-        let word_index = index / BITS;
-        let word = unsafe { self.as_ref().get_unchecked(word_index) };
-        (word >> (index % BITS)) & 1 != 0
-    }
-
-    // Returns an iterator over the bits of the bit vector.
-    #[inline(always)]
-    fn iter(&self) -> BitIterator<'_, [usize]> {
-        BitIterator {
-            bits: self.as_ref(),
-            len: self.len(),
-            next_bit_pos: 0,
-        }
-    }
-
-    // Returns an iterator over the positions of the ones in this bit vector.
-    fn iter_ones(&self) -> OnesIterator<'_, [usize]> {
-        OnesIterator::new(self.as_ref(), self.len())
-    }
-
-    // Returns an iterator over the positions of the zeros in this bit vector.
-    fn iter_zeros(&self) -> ZerosIterator<'_, [usize]> {
-        ZerosIterator::new(self.as_ref(), self.len())
-    }
-}
-
 impl<B: AsRef<[usize]>> BitVec<B> {
     /// Returns an owned copy of the bit vector.
     pub fn to_owned(&self) -> BitVec {
@@ -266,123 +208,6 @@ impl<B: AsRef<[usize]>> BitVec<B> {
             bits: self.bits.as_ref().to_owned(),
             len: self.len,
         }
-    }
-}
-
-impl<T: AsRef<[usize]> + AsMut<[usize]> + BitLength> BitVecOpsMut for T {}
-
-pub trait BitVecOpsMut: AsRef<[usize]> + AsMut<[usize]> + BitLength {
-    #[inline]
-    fn set(&mut self, index: usize, value: bool) {
-        panic_if_out_of_bounds!(index, self.len());
-        unsafe { self.set_unchecked(index, value) }
-    }
-
-    /// # Safety
-    ///
-    /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
-    #[inline(always)]
-    unsafe fn set_unchecked(&mut self, index: usize, value: bool) {
-        let word_index = index / BITS;
-        let bit_index = index % BITS;
-        let bits = self.as_mut();
-        // TODO: no test?
-        // For constant values, this should be inlined with no test.
-        unsafe {
-            if value {
-                *bits.get_unchecked_mut(word_index) |= 1 << bit_index;
-            } else {
-                *bits.get_unchecked_mut(word_index) &= !(1 << bit_index);
-            }
-        }
-    }
-
-    /// Sets all bits to the given value.
-    fn fill(&mut self, value: bool) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.as_mut();
-        let word_value = if value { !0 } else { 0 };
-        bits[..full_words].iter_mut().for_each(|x| *x = word_value);
-        if residual != 0 {
-            let mask = (1 << residual) - 1;
-            bits[full_words] = (bits[full_words] & !mask) | (word_value & mask);
-        }
-    }
-
-    /// Sets all bits to the given value using a parallel implementation.
-    #[cfg(feature = "rayon")]
-    fn par_fill(&mut self, value: bool) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.as_mut();
-        let word_value = if value { !0 } else { 0 };
-        bits[..full_words]
-            .par_iter_mut()
-            .with_min_len(RAYON_MIN_LEN)
-            .for_each(|x| *x = word_value);
-        if residual != 0 {
-            let mask = (1 << residual) - 1;
-            bits[full_words] = (bits[full_words] & !mask) | (word_value & mask);
-        }
-    }
-
-    /// Sets all bits to zero.
-    fn reset(&mut self) {
-        self.fill(false);
-    }
-
-    /// Sets all bits to zero using a parallel implementation.
-    #[cfg(feature = "rayon")]
-    fn par_reset(&mut self) {
-        self.par_fill(false);
-    }
-
-    /// Flip all bits.
-    fn flip(&mut self) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.as_mut();
-        bits[..full_words].iter_mut().for_each(|x| *x = !*x);
-        if residual != 0 {
-            let mask = (1 << residual) - 1;
-            bits[full_words] = (bits[full_words] & !mask) | (!bits[full_words] & mask);
-        }
-    }
-
-    /// Flip all bits using a parallel implementation.
-    #[cfg(feature = "rayon")]
-    fn par_flip(&mut self) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.as_mut();
-        bits[..full_words]
-            .par_iter_mut()
-            .with_min_len(RAYON_MIN_LEN)
-            .for_each(|x| *x = !*x);
-        if residual != 0 {
-            let mask = (1 << residual) - 1;
-            bits[full_words] = (bits[full_words] & !mask) | (!bits[full_words] & mask);
-        }
-    }
-
-    /// A parallel version of [`BitVec::count_ones`].
-    #[cfg(feature = "rayon")]
-    fn par_count_ones(&self) -> usize {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.as_ref();
-        let mut num_ones;
-        num_ones = bits[..full_words]
-            .par_iter()
-            .with_min_len(RAYON_MIN_LEN)
-            .map(|x| x.count_ones() as usize)
-            .sum();
-        if residual != 0 {
-            num_ones += (self.as_ref()[full_words] << (BITS - residual)).count_ones() as usize
-        }
-
-        num_ones
     }
 }
 
@@ -513,84 +338,12 @@ impl FromIterator<bool> for BitVec<Vec<usize>> {
     }
 }
 
-impl<B: AsRef<[usize]>> RankHinted<64> for BitVec<B> {
-    #[inline(always)]
-    unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        let bits = self.as_ref();
-        let mut rank = hint_rank;
-        let mut hint_pos = hint_pos;
+impl<'a, B: AsRef<[usize]>> IntoIterator for &'a BitVec<B> {
+    type IntoIter = BitIterator<'a, B>;
+    type Item = bool;
 
-        debug_assert!(
-            hint_pos < bits.len(),
-            "hint_pos: {}, len: {}",
-            hint_pos,
-            bits.len()
-        );
-
-        while (hint_pos + 1) * 64 <= pos {
-            rank += unsafe { bits.get_unchecked(hint_pos).count_ones() } as usize;
-            hint_pos += 1;
-        }
-
-        rank + (unsafe { bits.get_unchecked(hint_pos) } & ((1 << (pos % 64)) - 1)).count_ones()
-            as usize
-    }
-}
-
-impl<B: AsRef<[usize]>> SelectHinted for BitVec<B> {
-    unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        let mut word_index = hint_pos / BITS;
-        let bit_index = hint_pos % BITS;
-        let mut residual = rank - hint_rank;
-        let mut word =
-            (unsafe { self.as_ref().get_unchecked(word_index) } >> bit_index) << bit_index;
-        loop {
-            let bit_count = word.count_ones() as usize;
-            if residual < bit_count {
-                return word_index * BITS + word.select_in_word(residual);
-            }
-            word_index += 1;
-            word = *unsafe { self.as_ref().get_unchecked(word_index) };
-            residual -= bit_count;
-        }
-    }
-}
-
-impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
-    unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        let mut word_index = hint_pos / BITS;
-        let bit_index = hint_pos % BITS;
-        let mut residual = rank - hint_rank;
-        let mut word =
-            (!*unsafe { self.as_ref().get_unchecked(word_index) } >> bit_index) << bit_index;
-        loop {
-            let bit_count = word.count_ones() as usize;
-            if residual < bit_count {
-                return word_index * BITS + word.select_in_word(residual);
-            }
-            word_index += 1;
-            word = unsafe { !self.as_ref().get_unchecked(word_index) };
-            residual -= bit_count;
-        }
-    }
-}
-
-impl<B: AsRef<[usize]>, C: AsRef<[usize]>> PartialEq<BitVec<C>> for BitVec<B> {
-    fn eq(&self, other: &BitVec<C>) -> bool {
-        let len = self.len();
-        if len != other.len() {
-            return false;
-        }
-
-        let full_words = len / BITS;
-        if self.as_ref()[..full_words] != other.as_ref()[..full_words] {
-            return false;
-        }
-
-        let residual = len % BITS;
-
-        residual == 0
-            || (self.as_ref()[full_words] ^ other.as_ref()[full_words]) << (BITS - residual) == 0
+    fn into_iter(self) -> Self::IntoIter {
+        BitIterator::new(&self.bits, self.len())
     }
 }
 
@@ -604,146 +357,6 @@ impl<B: AsRef<[usize]>> fmt::Display for BitVec<B> {
         }
         write!(f, "]")?;
         Ok(())
-    }
-}
-
-// An iterator over the bits of the bit vector as booleans.
-#[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct BitIterator<'a, B: ?Sized> {
-    bits: &'a B,
-    len: usize,
-    next_bit_pos: usize,
-}
-
-impl<'a, B: AsRef<[usize]>> IntoIterator for &'a BitVec<B> {
-    type IntoIter = BitIterator<'a, B>;
-    type Item = bool;
-
-    fn into_iter(self) -> Self::IntoIter {
-        BitIterator {
-            bits: &self.bits,
-            len: self.len,
-            next_bit_pos: 0,
-        }
-    }
-}
-
-impl<B: ?Sized + AsRef<[usize]>> Iterator for BitIterator<'_, B> {
-    type Item = bool;
-    fn next(&mut self) -> Option<bool> {
-        if self.next_bit_pos == self.len {
-            return None;
-        }
-        let word_idx = self.next_bit_pos / BITS;
-        let bit_idx = self.next_bit_pos % BITS;
-        let word = unsafe { *self.bits.as_ref().get_unchecked(word_idx) };
-        let bit = (word >> bit_idx) & 1;
-        self.next_bit_pos += 1;
-        Some(bit != 0)
-    }
-}
-
-/// An iterator over the positions of the ones in a bit vector.
-#[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct OnesIterator<'a, B: ?Sized> {
-    bits: &'a B,
-    len: usize,
-    word_idx: usize,
-    /// This is a usize because BitVec is currently implemented only for `Vec<usize>` and `&[usize]`.
-    word: usize,
-}
-
-impl<'a, B: ?Sized + AsRef<[usize]>> OnesIterator<'a, B> {
-    pub fn new(bits: &'a B, len: usize) -> Self {
-        let word = if bits.as_ref().is_empty() {
-            0
-        } else {
-            unsafe { *bits.as_ref().get_unchecked(0) }
-        };
-        Self {
-            bits,
-            len,
-            word_idx: 0,
-            word,
-        }
-    }
-}
-
-impl<B: ?Sized + AsRef<[usize]>> Iterator for OnesIterator<'_, B> {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // find the next word with ones
-        while self.word == 0 {
-            self.word_idx += 1;
-            if self.word_idx == self.bits.as_ref().len() {
-                return None;
-            }
-            self.word = unsafe { *self.bits.as_ref().get_unchecked(self.word_idx) };
-        }
-        // find the lowest bit set index in the word
-        let bit_idx = self.word.trailing_zeros() as usize;
-        // compute the global bit index
-        let res = (self.word_idx * BITS) + bit_idx;
-        if res >= self.len {
-            None
-        } else {
-            // clear the lowest bit set
-            self.word &= self.word - 1;
-            Some(res)
-        }
-    }
-}
-
-/// An iterator over the positions of the zeros in a bit vector.
-#[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct ZerosIterator<'a, B: ?Sized> {
-    bits: &'a B,
-    len: usize,
-    word_idx: usize,
-    /// This is a usize because BitVec is currently implemented only for `Vec<usize>` and `&[usize]`.
-    word: usize,
-}
-
-impl<'a, B: ?Sized + AsRef<[usize]>> ZerosIterator<'a, B> {
-    pub fn new(bits: &'a B, len: usize) -> Self {
-        let word = if bits.as_ref().is_empty() {
-            0
-        } else {
-            unsafe { !*bits.as_ref().get_unchecked(0) }
-        };
-        Self {
-            bits,
-            len,
-            word_idx: 0,
-            word,
-        }
-    }
-}
-
-impl<B: ?Sized + AsRef<[usize]>> Iterator for ZerosIterator<'_, B> {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // find the next flipped word with zeros
-        while self.word == 0 {
-            self.word_idx += 1;
-            if self.word_idx == self.bits.as_ref().len() {
-                return None;
-            }
-            self.word = unsafe { !*self.bits.as_ref().get_unchecked(self.word_idx) };
-        }
-        // find the lowest zero bit index in the word
-        let bit_idx = self.word.trailing_zeros() as usize;
-        // compute the global bit index
-        let res = (self.word_idx * BITS) + bit_idx;
-        if res >= self.len {
-            None
-        } else {
-            // clear the lowest bit set
-            self.word &= self.word - 1;
-            Some(res)
-        }
     }
 }
 
@@ -774,195 +387,6 @@ impl<B> AtomicBitVec<B> {
     #[inline(always)]
     pub fn into_raw_parts(self) -> (B, usize) {
         (self.bits, self.len)
-    }
-}
-
-impl<T: ?Sized + AsRef<[AtomicUsize]> + BitLength> AtomicBitVecOps for T {}
-
-pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
-    fn get(&self, index: usize, ordering: Ordering) -> bool {
-        panic_if_out_of_bounds!(index, self.len());
-        unsafe { self.get_unchecked(index, ordering) }
-    }
-
-    fn set(&self, index: usize, value: bool, ordering: Ordering) {
-        panic_if_out_of_bounds!(index, self.len());
-        unsafe { self.set_unchecked(index, value, ordering) }
-    }
-
-    fn swap(&self, index: usize, value: bool, ordering: Ordering) -> bool {
-        panic_if_out_of_bounds!(index, self.len());
-        unsafe { self.swap_unchecked(index, value, ordering) }
-    }
-
-    /// # Safety
-    ///
-    /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
-    #[inline]
-    unsafe fn get_unchecked(&self, index: usize, ordering: Ordering) -> bool {
-        let word_index = index / BITS;
-        let bits = self.as_ref();
-        let word = unsafe { bits.get_unchecked(word_index).load(ordering) };
-        (word >> (index % BITS)) & 1 != 0
-    }
-
-    /// # Safety
-    ///
-    /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
-    #[inline]
-    unsafe fn set_unchecked(&self, index: usize, value: bool, ordering: Ordering) {
-        let word_index = index / BITS;
-        let bit_index = index % BITS;
-        let bits = self.as_ref();
-
-        // For constant values, this should be inlined with no test.
-        unsafe {
-            if value {
-                bits.get_unchecked(word_index)
-                    .fetch_or(1 << bit_index, ordering);
-            } else {
-                bits.get_unchecked(word_index)
-                    .fetch_and(!(1 << bit_index), ordering);
-            }
-        }
-    }
-
-    /// # Safety
-    ///
-    /// `index` must be between 0 (included) and [`BitVec::len`] (excluded).
-    #[inline]
-    unsafe fn swap_unchecked(&self, index: usize, value: bool, ordering: Ordering) -> bool {
-        let word_index = index / BITS;
-        let bit_index = index % BITS;
-        let bits = self.as_ref();
-
-        let old_word = unsafe {
-            if value {
-                bits.get_unchecked(word_index)
-                    .fetch_or(1 << bit_index, ordering)
-            } else {
-                bits.get_unchecked(word_index)
-                    .fetch_and(!(1 << bit_index), ordering)
-            }
-        };
-
-        (old_word >> (bit_index)) & 1 != 0
-    }
-
-    /// Sets all bits to the given value.
-    fn fill(&mut self, value: bool, ordering: Ordering) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.as_ref();
-        let word_value = if value { !0 } else { 0 };
-        // Just to be sure, add a fence to ensure that we will see all the final
-        // values
-        core::sync::atomic::fence(Ordering::SeqCst);
-        bits[..full_words]
-            .iter()
-            .for_each(|x| x.store(word_value, ordering));
-        if residual != 0 {
-            let mask = (1 << residual) - 1;
-            bits[full_words].store(
-                (bits[full_words].load(ordering) & !mask) | (word_value & mask),
-                ordering,
-            );
-        }
-    }
-
-    /// Sets all bits to the given value using a parallel implementation.
-    #[cfg(feature = "rayon")]
-    fn par_fill(&mut self, value: bool, ordering: Ordering) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.as_ref();
-        let word_value = if value { !0 } else { 0 };
-
-        // Just to be sure, add a fence to ensure that we will see all the final
-        // values
-        core::sync::atomic::fence(Ordering::SeqCst);
-        bits[..full_words]
-            .par_iter()
-            .with_min_len(RAYON_MIN_LEN)
-            .for_each(|x| x.store(word_value, ordering));
-        if residual != 0 {
-            let mask = (1 << residual) - 1;
-            bits[full_words].store(
-                (bits[full_words].load(ordering) & !mask) | (word_value & mask),
-                ordering,
-            );
-        }
-    }
-
-    /// Sets all bits to zero.
-    fn reset(&mut self, ordering: Ordering) {
-        self.fill(false, ordering);
-    }
-
-    /// Sets all bits to zero using a parallel implementation.
-    #[cfg(feature = "rayon")]
-    fn par_reset(&mut self, ordering: Ordering) {
-        self.par_fill(false, ordering);
-    }
-
-    /// Flip all bits.
-    fn flip(&mut self, ordering: Ordering) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.as_ref();
-        // Just to be sure, add a fence to ensure that we will see all the final
-        // values
-        core::sync::atomic::fence(Ordering::SeqCst);
-        bits[..full_words]
-            .iter()
-            .for_each(|x| _ = x.fetch_xor(!0, ordering));
-        if residual != 0 {
-            let mask = (1 << residual) - 1;
-            let last_word = bits[full_words].load(ordering);
-            bits[full_words].store((last_word & !mask) | (!last_word & mask), ordering);
-        }
-    }
-
-    /// Flip all bits using a parallel implementation.
-    #[cfg(feature = "rayon")]
-    fn par_flip(&mut self, ordering: Ordering) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.as_ref();
-        // Just to be sure, add a fence to ensure that we will see all the final
-        // values
-        core::sync::atomic::fence(Ordering::SeqCst);
-        bits[..full_words]
-            .par_iter()
-            .with_min_len(RAYON_MIN_LEN)
-            .for_each(|x| _ = x.fetch_xor(!0, ordering));
-        if residual != 0 {
-            let mask = (1 << residual) - 1;
-            let last_word = bits[full_words].load(ordering);
-            bits[full_words].store((last_word & !mask) | (!last_word & mask), ordering);
-        }
-    }
-
-    /// A parallel version of [`BitVec::count_ones`].
-    #[cfg(feature = "rayon")]
-    fn par_count_ones(&self) -> usize {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.as_ref();
-        let mut num_ones;
-        // Just to be sure, add a fence to ensure that we will see all the final
-        // values
-        core::sync::atomic::fence(Ordering::SeqCst);
-        num_ones = bits[..full_words]
-            .par_iter()
-            .with_min_len(RAYON_MIN_LEN)
-            .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
-            .sum();
-        if residual != 0 {
-            num_ones += (bits[full_words].load(Ordering::Relaxed) << (BITS - residual)).count_ones()
-                as usize
-        }
-        num_ones
     }
 }
 
@@ -1203,5 +627,86 @@ impl<B: AsRef<[AtomicUsize]>> AtomicBitVec<B> {
     #[inline(always)]
     pub fn iter(&mut self) -> AtomicBitIterator<'_, B> {
         self.into_iter()
+    }
+}
+
+impl<B: AsRef<[usize]>, C: AsRef<[usize]>> PartialEq<BitVec<C>> for BitVec<B> {
+    fn eq(&self, other: &BitVec<C>) -> bool {
+        let len = self.len();
+        if len != other.len() {
+            return false;
+        }
+
+        let full_words = len / BITS;
+        if self.as_ref()[..full_words] != other.as_ref()[..full_words] {
+            return false;
+        }
+
+        let residual = len % BITS;
+
+        residual == 0
+            || (self.as_ref()[full_words] ^ other.as_ref()[full_words]) << (BITS - residual) == 0
+    }
+}
+
+impl<B: AsRef<[usize]>> RankHinted<64> for BitVec<B> {
+    #[inline(always)]
+    unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
+        let bits = self.as_ref();
+        let mut rank = hint_rank;
+        let mut hint_pos = hint_pos;
+
+        debug_assert!(
+            hint_pos < bits.len(),
+            "hint_pos: {}, len: {}",
+            hint_pos,
+            bits.len()
+        );
+
+        while (hint_pos + 1) * 64 <= pos {
+            rank += unsafe { bits.get_unchecked(hint_pos).count_ones() } as usize;
+            hint_pos += 1;
+        }
+
+        rank + (unsafe { bits.get_unchecked(hint_pos) } & ((1 << (pos % 64)) - 1)).count_ones()
+            as usize
+    }
+}
+
+impl<B: AsRef<[usize]>> SelectHinted for BitVec<B> {
+    unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
+        let mut word_index = hint_pos / BITS;
+        let bit_index = hint_pos % BITS;
+        let mut residual = rank - hint_rank;
+        let mut word =
+            (unsafe { self.as_ref().get_unchecked(word_index) } >> bit_index) << bit_index;
+        loop {
+            let bit_count = word.count_ones() as usize;
+            if residual < bit_count {
+                return word_index * BITS + word.select_in_word(residual);
+            }
+            word_index += 1;
+            word = *unsafe { self.as_ref().get_unchecked(word_index) };
+            residual -= bit_count;
+        }
+    }
+}
+
+impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
+    unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
+        let mut word_index = hint_pos / BITS;
+        let bit_index = hint_pos % BITS;
+        let mut residual = rank - hint_rank;
+        let mut word =
+            (!*unsafe { self.as_ref().get_unchecked(word_index) } >> bit_index) << bit_index;
+        loop {
+            let bit_count = word.count_ones() as usize;
+            if residual < bit_count {
+                return word_index * BITS + word.select_in_word(residual);
+            }
+            word_index += 1;
+            word = unsafe { !self.as_ref().get_unchecked(word_index) };
+            residual -= bit_count;
+        }
     }
 }

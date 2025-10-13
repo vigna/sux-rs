@@ -41,6 +41,32 @@
 //! [successor](crate::traits::indexed_dict::Succ) primitives for
 //! [`EliasFano`].
 //!
+//! # Implemented Traits
+//!
+//! For maximum flexibility, the structures in module implements two classes
+//! of traits:
+//!
+//! - The traits [`BitFieldSliceCore`], [`BitFieldSlice`], and
+//!   [`BitFieldSliceMut`] provide a uniform interface to access to the content of
+//!   (a reference to) the bit-field vector. There is also a
+//!   [`AtomicBitFieldSlice`] trait for atomic bit-field vectors.
+//!   Since they are also implemented for slices of words, they make it easy
+//!   to write generic code that works both on bit-field vectors and on slices of
+//!   words when you need to consider the bit width of each element.
+//!
+//! - The value-based traits [`SliceByValue`](value_traits::slices::SliceByValue),
+//!   [`SliceByValueGet`](value_traits::slices::SliceByValueGet),
+//!   [`SliceByValueSet`](value_traits::slices::SliceByValueSet)
+//!   and [`SliceByValueReplace`](value_traits::slices::SliceByValueRepl)
+//!   provide a uniform access to the content of the bit-field vector as a list of values.
+//!   They are useful in all those context in which you need to want to
+//!   be able to use either a slice or a bit vector but the bit width
+//!   is irrelevant, and you do not need atomics. They also provide
+//!   subslicing facilities.
+//!
+//! Note that some of these traits define methods with the same name (e.g., `len`)
+//! and the same semantics, but sometimes this might lead to ambiguity.
+//!
 //! # Low-level support
 //!
 //! The methods [`address_of`](BitFieldVec::addr_of) and

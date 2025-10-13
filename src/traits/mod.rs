@@ -26,3 +26,6 @@ pub use iter::*;
 
 pub mod rank_sel;
 pub use rank_sel::*;
+
+pub mod bit_vec_ops;
+pub use bit_vec_ops::*;

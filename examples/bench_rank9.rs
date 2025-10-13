@@ -13,6 +13,7 @@ use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use std::hint::black_box;
 use sux::prelude::*;
+use sux::traits::bit_vec::*;
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks Rank9", long_about = None)]
