@@ -131,7 +131,7 @@ pub fn new_sparse<T>(len: usize, num_values: usize) -> PartialArrayBuilder<T, El
     dbg!(len, num_values);
 
     PartialArrayBuilder {
-        builder: EliasFanoBuilder::new(num_values, len).into(),
+        builder: EliasFanoBuilder::new(num_values, len),
         values: vec![],
         len,
         min_next_pos: 0,
@@ -328,11 +328,11 @@ impl<T> PartialArray<T, (EfDict, usize)> {
         // SAFETY: position <= last set position
         let (index, pos) = unsafe { self.index.0.succ_unchecked::<false>(position) };
 
-        return if pos != position {
+        if pos != position {
             None
         } else {
             // SAFETY: necessarily value_index < num values.
             Some(unsafe { self.values.get_unchecked(index) })
-        };
+        }
     }
 }
