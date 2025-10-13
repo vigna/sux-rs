@@ -238,6 +238,12 @@ impl<H, L> EliasFano<H, L> {
         self.n
     }
 
+    /// Returns the upper bound used to build the structure.
+    #[inline]
+    pub fn upper_bound(&self) -> usize {
+        self.u
+    }
+
     /// Replaces the high bits.
     ///
     /// # Safety
@@ -880,6 +886,11 @@ impl EliasFanoBuilder {
 
         self.count += 1;
         self.last_value = value;
+    }
+
+    /// Returns the numbers of values added so far.
+    pub fn count(&self) -> usize {
+        self.count
     }
 
     /// Builds an Elias-Fano structure.

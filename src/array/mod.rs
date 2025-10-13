@@ -10,4 +10,4 @@
 //! characteristics for succinct data structure applications.
 
 pub mod partial_array;
-pub use partial_array::{PartialArray, PartialArrayBuilder, PartialArrayIter};
+pub use partial_array::{PartialArray, PartialArrayBuilder, new_dense, new_sparse};

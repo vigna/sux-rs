@@ -40,7 +40,7 @@
 * Many more implementations for `RewindableIoLender`.
 
 * The structure `PartialArray` provides partial arrays (AKA “arrays with holes”)
-  using ranking.
+  using ranking or Elias–Fano.
 
 ### Changed
 
