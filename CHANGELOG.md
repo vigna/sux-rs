@@ -66,6 +66,8 @@
   cannot do the same for references, so in that case what was previously a
   `From` implementation has been replaced by a `TryFrom` implementation.
 
+* The iterator on atomic bit vectors no longer takes an exclusive reference.
+
 ### Fixed
 
 * Adding too few values to Elias-Fano structures was causing undefined

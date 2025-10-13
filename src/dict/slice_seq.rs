@@ -16,7 +16,8 @@ use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
 /// [`From`] implementation.
 ///
 /// While a blanket implementation of [`IndexedSeq`] could be more convenient,
-/// it would cause significant ambiguity problems.
+/// it would cause significant ambiguity problems. Note, however, that we
+/// provide [`IndexedSeq`] implementations for vectors, slices, and arrays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SliceSeq<O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>>(
     A,

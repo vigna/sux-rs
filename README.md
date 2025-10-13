@@ -23,6 +23,8 @@ Presently, it provides:
   prefix omission].
 - New state-of-the-art structures for [static functions] and [static filters],
   scaling to trillions of keys, and providing very fast queries.
+- [Partial arrays], that is, “arrays with holes”, implemented using ranking or
+  Elias–Fano.
 
 The focus is on efficiency (in particular, there are unchecked versions of all
 methods) and on flexible composability (e.g., you can fine-tune your Elias–Fano
@@ -40,13 +42,13 @@ default.
 
 ## [serde](https://crates.io/crates/serde) support
 
-All structures in this crate support serde. The support is provided by the
-feature gate `serde`.
+All structures in this crate support serde. Support is gated by the feature
+`serde`.
 
 ## `MemDbg`/`MemSize` support
 
 All structures in this crate support the [`MemDbg`] and [`MemSize`] traits from
-the [`mem_dbg` crate], which provide convenient facilities for inspecting memory
+the [`mem_dbg`] crate, which provide convenient facilities for inspecting memory
 usage and debugging memory-related issues. For example, this is the output of
 `mem_dbg()` on a large [`EliasFano`] instance:
 
@@ -79,15 +81,16 @@ The design of this crate tries to satisfy the following principles:
 - Composability: all structures are designed to be easily composed with each
   other; structures are built on top of other structures, which
   can be extracted with the usual `into_inner` idiom.
-- Zero-cost abstraction: all structures forward conditionally all
-  ranking/selection non-implemented methods on the underlying structures.
+- Zero-cost abstraction: all structures forward conditionally
+  `AsRef<[usize]>`, [`BitLength`], and all ranking/selection non-implemented
+  methods on the underlying structures.
 - Functoriality: whenever possible, there are mapping methods that replace an
   underlying structure with another one, provided it is compatible.
 
 What this crate does not provide:
 
-- High genericity: all bit vectors are based on the rather concrete trait combination
-  `AsRef<[usize]>` + [`BitLength`].
+- High genericity: [bit vectors operations] are based on the rather concrete
+  trait combination `AsRef<[usize]>` + [`BitLength`].
 
 ## Binaries
 
@@ -153,7 +156,7 @@ Union nor the Italian MUR can be held responsible for them
 [ε-serde]: <https://crates.io/crates/epserde>
 [`MemDbg`]: <https://docs.rs/mem_dbg/latest/mem_dbg/trait.MemDbg.html>
 [`MemSize`]: <https://docs.rs/mem_dbg/latest/mem_dbg/trait.MemSize.html>
-[`mem_dbg` crate]: <https://crates.io/crates/mem_dbg>
+[`mem_dbg`]: <https://crates.io/crates/mem_dbg>
 [Elias–Fano representation of monotone sequences]: <https://docs.rs/sux/latest/sux/dict/elias_fano/struct.EliasFano.html>
 [lists of strings compressed by prefix omission]: <https://docs.rs/sux/latest/sux/dict/rear_coded_list/struct.RearCodedList.html>
 [Sux]: <https://sux.di.unimi.it/>
@@ -164,3 +167,5 @@ Union nor the Italian MUR can be held responsible for them
 [`SelectAdapt`]: <https://docs.rs/sux/latest/sux/rank_sel/struct.SelectAdapt.html>
 [static functions]: <https://docs.rs/sux/latest/sux/func/vfunc/struct.VFunc.html>
 [static filters]: <https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html>
+[Partial arrays]: <https://docs.rs/sux/latest/sux/array/struct.PartialArray.html>
+[bit vectors operations]: <https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html>
