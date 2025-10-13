@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 use crate::prelude::*;
+use crate::traits::BitVecOpsMut;
 use arbitrary::Arbitrary;
 use std::collections::BTreeSet;
 

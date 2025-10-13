@@ -682,8 +682,8 @@ mod tests {
 
     use super::*;
     use crate::bits::BitVec;
-    use crate::bits::BitVecOpsMut;
     use crate::traits::AddNumBits;
+    use crate::traits::BitVecOpsMut;
     use rand::Rng;
     use rand::SeedableRng;
     use rand::rngs::SmallRng;

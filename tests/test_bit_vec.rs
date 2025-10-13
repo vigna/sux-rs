@@ -12,6 +12,7 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
+use sux::traits::bit_vec::*;
 
 #[test]
 fn test() {

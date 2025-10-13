@@ -52,6 +52,12 @@
 //!
 //!
 
+use crate::prelude::{indexed_dict::*, *};
+use crate::traits::{AtomicBitVecOps, BitVecOpsMut, bit_field_slice::*};
+use core::sync::atomic::Ordering;
+use mem_dbg::*;
+use std::borrow::Borrow;
+
 /// The default type for an Elias–Fano structure implementing an [`IndexedSeq`].
 ///
 /// You can start from this type to customize your Elias–Fano structure using
@@ -78,12 +84,6 @@ pub type EfSeqDict = EliasFano<
         3,
     >,
 >;
-
-use crate::prelude::{indexed_dict::*, *};
-use crate::traits::bit_field_slice::*;
-use core::sync::atomic::Ordering;
-use mem_dbg::*;
-use std::borrow::Borrow;
 
 /// An [`IndexedDict`] that stores a monotone sequence of integers using the
 /// Elias–Fano representation.
