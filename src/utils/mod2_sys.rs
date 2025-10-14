@@ -416,13 +416,13 @@ mod tests {
     }
 
     #[test]
-    fn test_system_one_equation() {
+    fn test_system_one_equation() -> anyhow::Result<()> {
         let mut system = Modulo2System::<usize>::new(2);
         let eq = unsafe { Modulo2Equation::from_parts(vec![0], 3_usize) };
         system.push(eq);
-        let solution = system.lazy_gaussian_elimination();
-        assert!(solution.is_ok());
-        assert!(system.check(&solution.unwrap()));
+        let solution = system.lazy_gaussian_elimination()?;
+        assert!(system.check(&solution));
+        Ok(())
     }
 
     #[test]
@@ -437,19 +437,19 @@ mod tests {
     }
 
     #[test]
-    fn test_redundant_system() {
+    fn test_redundant_system() -> anyhow::Result<()> {
         let mut system = Modulo2System::<usize>::new(1);
         let eq0 = unsafe { Modulo2Equation::from_parts(vec![0], 0_usize) };
         system.push(eq0);
         let eq1 = unsafe { Modulo2Equation::from_parts(vec![0], 0_usize) };
         system.push(eq1);
-        let solution = system.lazy_gaussian_elimination();
-        assert!(solution.is_ok());
-        assert!(system.check(&solution.unwrap()));
+        let solution = system.lazy_gaussian_elimination()?;
+        assert!(system.check(&solution));
+        Ok(())
     }
 
     #[test]
-    fn test_small_system() {
+    fn test_small_system() -> anyhow::Result<()> {
         let mut system = Modulo2System::<usize>::new(11);
         let mut eq = unsafe { Modulo2Equation::from_parts(vec![1, 4, 10], 0) };
         system.push(eq);
@@ -464,9 +464,9 @@ mod tests {
         eq = unsafe { Modulo2Equation::from_parts(vec![2, 6, 10], 0) };
         system.push(eq);
 
-        let solution = system.lazy_gaussian_elimination();
-        assert!(solution.is_ok());
-        assert!(system.check(&solution.unwrap()));
+        let solution = system.lazy_gaussian_elimination()?;
+        assert!(system.check(&solution));
+        Ok(())
     }
 
     #[test]

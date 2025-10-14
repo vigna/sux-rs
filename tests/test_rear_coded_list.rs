@@ -31,8 +31,7 @@ mod test {
         use maligned::A16;
         let words = BufReader::new(std::fs::File::open(path.as_ref())?)
             .lines()
-            .map(|line| line.unwrap())
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
 
         // test sorted RCL
 
