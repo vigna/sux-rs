@@ -475,7 +475,7 @@ fn test_from() {
     for i in 0..10 {
         b.set(i, i % 2 == 0);
     }
-    let b: AtomicBitVec<Vec<AtomicUsize>> = b.into();
+    let b: AtomicBitVec<Box<[AtomicUsize]>> = b.into();
     let b: BitVec<Vec<usize>> = b.into();
     for i in 0..10 {
         assert_eq!(b.get(i), i % 2 == 0);

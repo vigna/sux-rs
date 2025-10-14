@@ -133,7 +133,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn set_builder<W: BinSafe + Word, D: BitFieldSlice<W> + Send + Sync, S, E: ShardEdge<S, 3>>(
+fn set_builder<W: Word + BinSafe, D: BitFieldSlice<W> + Send + Sync, S, E: ShardEdge<S, 3>>(
     builder: VBuilder<W, D, S, E>,
     args: &Args,
 ) -> VBuilder<W, D, S, E> {
@@ -165,7 +165,6 @@ fn main_with_types_boxed_slice<
     args: Args,
 ) -> Result<()>
 where
-    W: Word + BinSafe,
     str: ToSig<S>,
     usize: ToSig<S>,
     u128: UpcastableFrom<W>,

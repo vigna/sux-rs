@@ -4,13 +4,6 @@
 
 ### New
 
-* This crate has been aligned with the new `MemCase` implementation from
-  ε-serde, which does not implements `Deref` and `AsRef` anymore, as those
-  implementations were unsound. In particular, we delegate all traits of the
-  crate to `MemCase`'d structures. Delegation makes it possible to use a
-  standard or `MemCase`'d structure interchangeably. Due to the orphan rule,
-  such delegations must happen in the crate defining the traits.
-
 * New traits `BitVecOps`, `BitVecOpsMut`, as `AtomicBitVecOps` that
   provide bit-vector operations for types implementing `AsRef<[usize]>` and
   `BitLength`. Since all rank/select structures delegate `AsRef<[usize]>` and
@@ -20,8 +13,8 @@
 * `IndexedSeq` has now implementations for slices, vectors,
   and arrays. This should make `SliceSeq` unnecessary in most cases.
 
-* `IntoIteratorFrom` has now implementations for (references of) slices, vectors,
-  and boxed slices.
+* `IntoIteratorFrom` has now implementations for (references of) slices,
+  vectors, and boxed slices.
 
 * `EliasFano` and `BitFieldVec` implement the relevant traits from
   the [`value-traits`](https://crates.io/crates/value-traits) crate.
@@ -55,8 +48,7 @@
   `BitFieldSlice` results in `len` and `get` becoming ambiguous. Thus, now the
   prelude imports the modules `indexed_dict` and `bit_field_slice`, but not the
   traits therein. You have to manually `use indexed_dict::*` or `use
-  bit_field_slice::*` to use the traits. This change made it possible to
-  write delegations of `BitFieldSlice` for `MemCase`.
+  bit_field_slice::*` to use the traits.
 
 * The unsafe `transmute_vec` and `transmute_boxed_slice` functions have
   been replaced by four specific, safe functions
@@ -67,6 +59,14 @@
   `From` implementation has been replaced by a `TryFrom` implementation.
 
 * The iterator on atomic bit vectors no longer takes an exclusive reference.
+
+* The inner structure supporting the high bits of Elias–Fano is now
+  a boxed slice instead of a vector, saving a word. This might cause problems
+  with structures serialized before ε-serde 0.10.
+
+* The owned inner type of an `AtomicBitVec` is now a `Box<[AtomicUsize]>`
+  instead of a `Vec<AtomicUsize>`, which might require some adaptation
+  in user code.
 
 ### Fixed
 
