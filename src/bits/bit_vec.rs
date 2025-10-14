@@ -95,6 +95,43 @@ use crate::{
     },
 };
 
+/// A bit vector.
+///
+/// Instances can be created using [`new`](BitVec::new),
+/// [`with_value`](BitVec::with_value), with the convenience macro
+/// [`bit_vec!`](macro@crate::bits::bit_vec), or with a [`FromIterator`
+/// implementation](#impl-FromIterator<bool>-for-BitVec).
+///
+/// See the [module documentation](mod@crate::bits::bit_vec) for more details.
+#[derive(Debug, Clone, Copy, MemDbg, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct BitVec<B = Vec<usize>> {
+    bits: B,
+    len: usize,
+}
+
+impl<B: AsRef<[usize]>, C: AsRef<[usize]>> PartialEq<BitVec<C>> for BitVec<B> {
+    fn eq(&self, other: &BitVec<C>) -> bool {
+        let len = self.len();
+        if len != other.len() {
+            return false;
+        }
+
+        let full_words = len / BITS;
+        if self.as_ref()[..full_words] != other.as_ref()[..full_words] {
+            return false;
+        }
+
+        let residual = len % BITS;
+
+        residual == 0
+            || (self.as_ref()[full_words] ^ other.as_ref()[full_words]) << (BITS - residual) == 0
+    }
+}
+
+impl<B: AsRef<[usize]>> Eq for BitVec<B> {}
+
 /// Convenient, [`vec!`](vec!)-like macro to initialize bit vectors.
 ///
 /// - `bit_vec![]` creates an empty bit vector.
@@ -175,39 +212,6 @@ macro_rules! bit_vec {
             b
         }
     };
-}
-
-#[derive(Debug, Clone, Copy, MemDbg, MemSize)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-/// A bit vector.
-///
-/// Instances can be created using [`new`](BitVec::new),
-/// [`with_value`](BitVec::with_value), with the convenience macro
-/// [`bit_vec!`](macro@crate::bits::bit_vec), or with a [`FromIterator`
-/// implementation](#impl-FromIterator<bool>-for-BitVec).
-///
-/// See the [module documentation](mod@crate::bits::bit_vec) for more details.
-pub struct BitVec<B = Vec<usize>> {
-    bits: B,
-    len: usize,
-}
-
-impl<B> BitLength for BitVec<B> {
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.len
-    }
-}
-
-impl<B: AsRef<[usize]>> BitVec<B> {
-    /// Returns an owned copy of the bit vector.
-    pub fn to_owned(&self) -> BitVec {
-        BitVec {
-            bits: self.bits.as_ref().to_owned(),
-            len: self.len,
-        }
-    }
 }
 
 impl<B> BitVec<B> {
@@ -328,6 +332,13 @@ impl BitVec<Vec<usize>> {
     }
 }
 
+impl<B> BitLength for BitVec<B> {
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
 impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
     fn count_ones(&self) -> usize {
         let full_words = self.len() / BITS;
@@ -341,6 +352,16 @@ impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
             num_ones += (self.as_ref()[full_words] << (BITS - residual)).count_ones() as usize
         }
         num_ones
+    }
+}
+
+impl<B: AsRef<[usize]>> BitVec<B> {
+    /// Returns an owned copy of the bit vector.
+    pub fn to_owned(&self) -> BitVec {
+        BitVec {
+            bits: self.bits.as_ref().to_owned(),
+            len: self.len,
+        }
     }
 }
 
@@ -382,8 +403,6 @@ impl<'a, B: AsRef<[usize]>> IntoIterator for &'a BitVec<B> {
         BitIterator::new(&self.bits, self.len())
     }
 }
-
-impl Eq for BitVec<Vec<usize>> {}
 
 impl<B: AsRef<[usize]>> fmt::Display for BitVec<B> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -428,7 +447,7 @@ impl<B> AtomicBitVec<B> {
     }
 }
 
-impl AtomicBitVec<Vec<AtomicUsize>> {
+impl AtomicBitVec<Box<[AtomicUsize]>> {
     /// Creates a new atomic bit vector of length `len` initialized to `false`.
     pub fn new(len: usize) -> Self {
         Self::with_value(len, false)
@@ -441,7 +460,8 @@ impl AtomicBitVec<Vec<AtomicUsize>> {
         let word_value = if value { !0 } else { 0 };
         let mut bits = (0..n_of_words)
             .map(|_| AtomicUsize::new(word_value))
-            .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
         if extra_bits > 0 {
             let last_word_value = word_value >> extra_bits;
             bits[n_of_words - 1] = AtomicUsize::new(last_word_value);
@@ -487,6 +507,15 @@ impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
                 as usize
         }
         num_ones
+    }
+}
+
+impl<'a, B: AsRef<[AtomicUsize]>> IntoIterator for &'a AtomicBitVec<B> {
+    type IntoIter = AtomicBitIterator<'a, B>;
+    type Item = bool;
+
+    fn into_iter(self) -> Self::IntoIter {
+        AtomicBitIterator::new(&self.bits, self.len())
     }
 }
 
@@ -616,36 +645,6 @@ impl<W, B: AsRef<[W]>> AsRef<[W]> for AtomicBitVec<B> {
     #[inline(always)]
     fn as_ref(&self) -> &[W] {
         self.bits.as_ref()
-    }
-}
-
-// We implement [`IntoIterator`] for a mutable reference so no
-// outstanding references are allowed while iterating.
-impl<'a, B: AsRef<[AtomicUsize]>> IntoIterator for &'a AtomicBitVec<B> {
-    type IntoIter = AtomicBitIterator<'a, B>;
-    type Item = bool;
-
-    fn into_iter(self) -> Self::IntoIter {
-        AtomicBitIterator::new(&self.bits, self.len())
-    }
-}
-
-impl<B: AsRef<[usize]>, C: AsRef<[usize]>> PartialEq<BitVec<C>> for BitVec<B> {
-    fn eq(&self, other: &BitVec<C>) -> bool {
-        let len = self.len();
-        if len != other.len() {
-            return false;
-        }
-
-        let full_words = len / BITS;
-        if self.as_ref()[..full_words] != other.as_ref()[..full_words] {
-            return false;
-        }
-
-        let residual = len % BITS;
-
-        residual == 0
-            || (self.as_ref()[full_words] ^ other.as_ref()[full_words]) << (BITS - residual) == 0
     }
 }
 

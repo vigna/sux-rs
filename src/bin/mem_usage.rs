@@ -1,3 +1,10 @@
+/*
+ *
+ * SPDX-FileCopyrightText: 2024 Sebastiano Vigna
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ */
+
 #![cfg(target_pointer_width = "64")]
 
 use clap::{Parser, ValueEnum, arg};
@@ -8,6 +15,17 @@ use sux::{
     rank_sel::{Rank9, RankSmall, Select9, SelectAdapt},
     traits::*,
 };
+
+#[derive(Parser)]
+#[command(about = "Prints the memory layout of rank and select structures.", long_about = None)]
+struct Args {
+    len: usize,
+    density: f64,
+    #[arg(short, long)]
+    non_uniform: bool,
+    #[arg(value_enum)]
+    sel_type: StructType,
+}
 
 trait Struct {
     fn build(bits: BitVec) -> Self;
@@ -71,16 +89,6 @@ enum StructType {
     Select9,
 }
 
-#[derive(Parser)]
-struct Cli {
-    len: usize,
-    density: f64,
-    #[arg(short, long)]
-    non_uniform: bool,
-    #[arg(value_enum)]
-    sel_type: StructType,
-}
-
 fn mem_usage<S: Struct + MemSize + MemDbg + BitLength>(
     len: usize,
     density: f64,
@@ -127,34 +135,34 @@ fn mem_cost<S: Struct + MemSize + MemDbg + BitLength>(s: &S) -> f64 {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    let args = Args::parse();
 
-    let uniform = !cli.non_uniform;
+    let uniform = !args.non_uniform;
 
-    match cli.sel_type {
+    match args.sel_type {
         StructType::SelectAdapt => {
-            mem_usage::<SelectAdapt<_>>(cli.len, cli.density, uniform, "SelectAdapt");
+            mem_usage::<SelectAdapt<_>>(args.len, args.density, uniform, "SelectAdapt");
         }
         StructType::Select9 => {
-            mem_usage::<Select9>(cli.len, cli.density, uniform, "Select9");
+            mem_usage::<Select9>(args.len, args.density, uniform, "Select9");
         }
         StructType::Rank9 => {
-            mem_usage::<Rank9>(cli.len, cli.density, uniform, "Rank9");
+            mem_usage::<Rank9>(args.len, args.density, uniform, "Rank9");
         }
         StructType::RankSmall0 => {
-            mem_usage::<RankSmall<2, 9>>(cli.len, cli.density, uniform, "RankSmall0");
+            mem_usage::<RankSmall<2, 9>>(args.len, args.density, uniform, "RankSmall0");
         }
         StructType::RankSmall1 => {
-            mem_usage::<RankSmall<1, 9>>(cli.len, cli.density, uniform, "RankSmall1");
+            mem_usage::<RankSmall<1, 9>>(args.len, args.density, uniform, "RankSmall1");
         }
         StructType::RankSmall2 => {
-            mem_usage::<RankSmall<1, 10>>(cli.len, cli.density, uniform, "RankSmall2");
+            mem_usage::<RankSmall<1, 10>>(args.len, args.density, uniform, "RankSmall2");
         }
         StructType::RankSmall3 => {
-            mem_usage::<RankSmall<1, 11>>(cli.len, cli.density, uniform, "RankSmall3");
+            mem_usage::<RankSmall<1, 11>>(args.len, args.density, uniform, "RankSmall3");
         }
         StructType::RankSmall4 => {
-            mem_usage::<RankSmall<3, 13>>(cli.len, cli.density, uniform, "RankSmall4");
+            mem_usage::<RankSmall<3, 13>>(args.len, args.density, uniform, "RankSmall4");
         }
     }
 }

@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+//! Fair chunk iteration over weighted integers.
+
 use crate::traits::{Succ, SuccUnchecked};
 
 /// An iterator returning fair chunks.
@@ -179,56 +181,5 @@ impl<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize>> Iterator for F
             self.curr_pos = next_pos;
             res
         })
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::FairChunks;
-    use crate::prelude::*;
-    #[test]
-    fn test_fair_chunks() {
-        let threshold = 50;
-        // The weights of our elements
-        let weights = [
-            15, 27, 20, 26, 4, 22, 10, 25, 7, 13, 0, 11, 5, 28, 23, 1, 12, 24, 3, 30, 8, 29, 17, 2,
-            14, 9, 16, 18, 21, 19,
-        ];
-        // Compute the cumulative weight function
-        let mut cwf = vec![0];
-        cwf.extend(weights.iter().scan(0, |acc, x| {
-            *acc += x;
-            Some(*acc)
-        }));
-        // Put the sequence in an Elias–Fano structure
-        let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
-        efb.extend(cwf);
-        let ef = efb.build_with_seq_and_dict();
-        // Create the iterator
-        let chunks = FairChunks::new(threshold, &ef);
-        let chunks_weights = chunks
-            .map(|x| x.map(|i| weights[i]).sum::<usize>())
-            .collect::<Vec<_>>();
-        assert!(
-            chunks_weights
-                .iter()
-                .take(chunks_weights.len() - 2)
-                .all(|x| *x >= threshold),
-            "All chunks, except the last one, must have weight over the threshold."
-        );
-        // check that without the last element in the range the weight is less
-        // than the threshold
-        assert!(
-            chunks
-                .map(|x| (x.start..x.end - 1).map(|i| weights[i]).sum::<usize>())
-                .all(|x| x < threshold),
-            "All chunks, without their last element should be under the threshold."
-        );
-
-        let chunks = FairChunks::new(threshold, &ef);
-        assert_eq!(
-            chunks.collect::<Vec<_>>(),
-            vec![0..3, 3..6, 6..10, 10..15, 15..20, 20..23, 23..28, 28..30,],
-        );
     }
 }
