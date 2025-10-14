@@ -70,7 +70,7 @@ use mem_dbg::*;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VFunc<
     T: ?Sized + ToSig<S>,
-    W: BinSafe + Word = usize,
+    W: Word + BinSafe = usize,
     D: BitFieldSlice<W> = Box<[W]>,
     S: Sig = [u64; 2],
     E: ShardEdge<S, 3> = FuseLge3Shards,
@@ -84,7 +84,7 @@ pub struct VFunc<
     pub(crate) _marker_s: std::marker::PhantomData<S>,
 }
 
-impl<T: ?Sized + ToSig<S>, W: BinSafe + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
+impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
     VFunc<T, W, D, S, E>
 {
     /// Returns the value associated with the given signature, or a random value
@@ -119,7 +119,7 @@ impl<T: ?Sized + ToSig<S>, W: BinSafe + Word, D: BitFieldSlice<W>, S: Sig, E: Sh
     }
 }
 
-impl<T: ?Sized + ToSig<S>, W: BinSafe + Word, S: Sig, E: ShardEdge<S, 3>>
+impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
     VFunc<T, W, BitFieldVec<W>, S, E>
 {
     /// Returns the value associated with the given signature, or a random value

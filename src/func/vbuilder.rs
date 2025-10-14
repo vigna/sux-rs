@@ -210,7 +210,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 #[derivative(Default)]
 #[setters(generate = false)]
 pub struct VBuilder<
-    W: BinSafe + Word,
+    W: Word + BinSafe,
     D: BitFieldSlice<W> + Send + Sync = Box<[W]>,
     S = [u64; 2],
     E: ShardEdge<S, 3> = FuseLge3Shards,
@@ -330,7 +330,7 @@ pub enum SolveError {
 /// The result of a peeling procedure.
 enum PeelResult<
     'a,
-    W: BinSafe + Word + Send + Sync,
+    W: Word + BinSafe + Send + Sync,
     D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync + 'a,
     S: Sig + BinSafe,
     E: ShardEdge<S, 3>,
@@ -540,7 +540,7 @@ type ShardData<'a, W, D> = <ShardDataIter<'a, W, D> as Iterator>::Item;
 /// Since values are stored in a boxed slice access is particularly fast, but
 /// the bit width of the output of the function will be exactly the bit width of
 /// the unsigned type `W`.
-impl<W: BinSafe + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
+impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
     u128: UpcastableFrom<W>,
     SigVal<S, W>: RadixKey,
@@ -568,7 +568,7 @@ where
 /// Since values are stored in a boxed slice access is particularly fast, but
 /// the number of bits of the hashes will be  exactly the bit width of the
 /// unsigned type `W`.
-impl<W: BinSafe + Word + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+impl<W: Word + BinSafe + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
     VBuilder<W, Box<[W]>, S, E>
 where
     u128: UpcastableFrom<W>,
@@ -614,7 +614,7 @@ where
 /// minimum necessary. It must be in any case at most the bit width of `W`.
 ///
 /// Typically `W` will be `usize` or `u64`.
-impl<W: BinSafe + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
+impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
     u128: UpcastableFrom<W>,
     SigVal<S, W>: RadixKey,
@@ -640,7 +640,7 @@ where
 /// will. It must be in any case at most the bit width of `W`.
 ///
 /// Typically `W` will be `usize` or `u64`.
-impl<W: BinSafe + Word + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+impl<W: Word + BinSafe + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
     VBuilder<W, BitFieldVec<W>, S, E>
 where
     u128: UpcastableFrom<W>,
@@ -678,7 +678,7 @@ where
 }
 
 impl<
-    W: BinSafe + Word,
+    W: Word + BinSafe,
     D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
@@ -817,7 +817,7 @@ impl<
 }
 
 impl<
-    W: BinSafe + Word,
+    W: Word + BinSafe,
     D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
@@ -1097,7 +1097,7 @@ macro_rules! remove_edge {
 }
 
 impl<
-    W: BinSafe + Word + Send + Sync,
+    W: Word + BinSafe + Send + Sync,
     D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
     S: Sig + BinSafe,
     E: ShardEdge<S, 3>,

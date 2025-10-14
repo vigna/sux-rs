@@ -46,13 +46,13 @@ use std::ops::Index;
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct VFilter<W: BinSafe + Word, F> {
+pub struct VFilter<W: Word + BinSafe, F> {
     pub(crate) func: F,
     pub(crate) filter_mask: W,
     pub(crate) hash_bits: u32,
 }
 
-impl<T: ?Sized + ToSig<S>, W: BinSafe + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
+impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
     VFilter<W, VFunc<T, W, D, S, E>>
 where
     u64: CastableInto<W>,
@@ -113,7 +113,7 @@ where
     }
 }
 
-impl<T: ?Sized + ToSig<S>, W: BinSafe + Word, S: Sig, E: ShardEdge<S, 3>>
+impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
     VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>
 where
     u64: CastableInto<W>,
@@ -174,7 +174,7 @@ where
 
 impl<
     T: ?Sized + ToSig<S>,
-    W: BinSafe + Word,
+    W: Word + BinSafe,
     D: BitFieldSlice<W>,
     S: Sig,
     E: ShardEdge<S, 3>,

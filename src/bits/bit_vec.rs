@@ -30,9 +30,9 @@
 //! bits of the bit vector. Moreover, the content of the backend outside of
 //! the bit vector is never modified by the methods of this structure.
 //!
-//! It is possible to juggle between the three flavors using [`From`]/[`Into`],
-//! and with [`TryFrom`]/[`TryInto`] when going [from a non-atomic to an atomic
-//! bit vector](BitVec#impl-TryFrom%3CBitVec%3C%26%5BW%5D%3E%3E-for-AtomicBitVec%3C%26%5B%3CW+as+IntoAtomic%3E::AtomicType%5D%3E).
+//! It is possible to juggle between all flavors using [`From`]/[`Into`], and
+//! with [`TryFrom`]/[`TryInto`] when going [from a non-atomic to an atomic bit
+//! vector](BitVec#impl-TryFrom%3CBitVec%3C%26%5BW%5D%3E%3E-for-AtomicBitVec%3C%26%5B%3CW+as+IntoAtomic%3E::AtomicType%5D%3E).
 //!
 //! # Examples
 //!
@@ -140,12 +140,11 @@ impl<B: AsRef<[usize]>> Eq for BitVec<B> {}
 ///   `n` with all bits set to `false`.
 ///
 /// - `bit_vec![true; n]` or `bit_vec![1; n]` creates a bit vector of length `n`
-///    with all bits set to `true`.
+///   with all bits set to `true`.
 ///
 /// - `bit_vec![b₀, b₁, b₂, …]` creates a bit vector with the specified bits,
-///    where each `bᵢ` can be any expression that evaluates to a boolean or integer
-///    (0 for `false`, non-zero for `true`).
-///
+///   where each `bᵢ` can be any expression that evaluates to a boolean or integer
+///   (0 for `false`, non-zero for `true`).
 ///
 /// # Examples
 ///
@@ -419,7 +418,7 @@ impl<B: AsRef<[usize]>> fmt::Display for BitVec<B> {
 /// A thread-safe bit vector.
 ///
 /// See the [module documentation](mod@crate::bits::bit_vec) for details.
-pub struct AtomicBitVec<B = Vec<AtomicUsize>> {
+pub struct AtomicBitVec<B = Box<[AtomicUsize]>> {
     bits: B,
     len: usize,
 }
@@ -521,15 +520,6 @@ impl<'a, B: AsRef<[AtomicUsize]>> IntoIterator for &'a AtomicBitVec<B> {
 
 // Conversions
 
-impl<W: IntoAtomic> From<BitVec<Vec<W>>> for AtomicBitVec<Vec<W::AtomicType>> {
-    fn from(value: BitVec<Vec<W>>) -> Self {
-        AtomicBitVec {
-            bits: transmute_vec_into_atomic(value.bits),
-            len: value.len,
-        }
-    }
-}
-
 /// This conversion may fail if the alignment of `W` is not the same as
 /// that of `W::AtomicType`.
 impl<'a, W: IntoAtomic> TryFrom<BitVec<&'a [W]>> for AtomicBitVec<&'a [W::AtomicType]> {
@@ -562,10 +552,19 @@ impl<'a, W: IntoAtomic> TryFrom<BitVec<&'a mut [W]>> for AtomicBitVec<&'a mut [W
     }
 }
 
-impl<W: IntoAtomic> From<AtomicBitVec<Vec<W::AtomicType>>> for BitVec<Vec<W>> {
-    fn from(value: AtomicBitVec<Vec<W::AtomicType>>) -> Self {
+impl<W: IntoAtomic> From<AtomicBitVec<Box<[W::AtomicType]>>> for BitVec<Vec<W>> {
+    fn from(value: AtomicBitVec<Box<[W::AtomicType]>>) -> Self {
         BitVec {
-            bits: transmute_vec_from_atomic::<W::AtomicType>(value.bits),
+            bits: transmute_vec_from_atomic::<W::AtomicType>(value.bits.into_vec()),
+            len: value.len,
+        }
+    }
+}
+
+impl<W: IntoAtomic> From<BitVec<Vec<W>>> for AtomicBitVec<Box<[W::AtomicType]>> {
+    fn from(value: BitVec<Vec<W>>) -> Self {
+        AtomicBitVec {
+            bits: transmute_vec_into_atomic(value.bits).into_boxed_slice(),
             len: value.len,
         }
     }
