@@ -227,6 +227,31 @@ fn mask<W: Word>(bit_width: usize) -> W {
     }
 }
 
+/// Equality between bit-field vectors requires that the word is the same, the
+/// bit width is the same, and the content is the same.
+impl<W: Word, B: AsRef<[W]>, C: AsRef<[W]>> PartialEq<BitFieldVec<W, C>> for BitFieldVec<W, B> {
+    fn eq(&self, other: &BitFieldVec<W, C>) -> bool {
+        if self.bit_width() != other.bit_width() {
+            return false;
+        }
+        if self.len() != other.len() {
+            return false;
+        }
+        let bit_len = self.len() * self.bit_width();
+        if self.bits.as_ref()[..bit_len / W::BITS] != other.bits.as_ref()[..bit_len / W::BITS] {
+            return false;
+        }
+
+        let residual = bit_len % W::BITS;
+        residual == 0
+            || (self.bits.as_ref()[bit_len / W::BITS] ^ other.bits.as_ref()[bit_len / W::BITS])
+                << (W::BITS - residual)
+                == W::ZERO
+    }
+}
+
+impl<W: Word, B: AsRef<[W]>> Eq for BitFieldVec<W, B> {}
+
 impl<W: Word, B> BitFieldVec<W, B> {
     /// # Safety
     /// `len` * `bit_width` must be between 0 (included) the number of
@@ -946,40 +971,6 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W,
     }
 }
 
-impl<W: Word> core::iter::Extend<W> for BitFieldVec<W, Vec<W>> {
-    /// Add values from
-    fn extend<T: IntoIterator<Item = W>>(&mut self, iter: T) {
-        for value in iter {
-            self.push(value);
-        }
-    }
-}
-
-/// Equality between bit-field vectors requires that the word is the same, the
-/// bit width is the same, and the content is the same.
-impl<W: Word, B: AsRef<[W]>, C: AsRef<[W]>> PartialEq<BitFieldVec<W, C>> for BitFieldVec<W, B> {
-    fn eq(&self, other: &BitFieldVec<W, C>) -> bool {
-        if self.bit_width() != other.bit_width() {
-            return false;
-        }
-        if self.len() != other.len() {
-            return false;
-        }
-        let bit_len = self.len() * self.bit_width();
-        if self.bits.as_ref()[..bit_len / W::BITS] != other.bits.as_ref()[..bit_len / W::BITS] {
-            return false;
-        }
-
-        let residual = bit_len % W::BITS;
-        residual == 0
-            || (self.bits.as_ref()[bit_len / W::BITS] ^ other.bits.as_ref()[bit_len / W::BITS])
-                << (W::BITS - residual)
-                == W::ZERO
-    }
-}
-
-impl<W: Word, B: AsRef<[W]>> Eq for BitFieldVec<W, B> {}
-
 // Support for unchecked iterators
 
 /// An [`UncheckedIterator`] over the values of a [`BitFieldVec`].
@@ -1219,6 +1210,14 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoIteratorFrom for &'a BitFieldVec<W, B> {
 
     fn into_iter_from(self, from: usize) -> Self::IntoIter {
         BitFieldVecIterator::new(self, from)
+    }
+}
+
+impl<W: Word> core::iter::Extend<W> for BitFieldVec<W, Vec<W>> {
+    fn extend<T: IntoIterator<Item = W>>(&mut self, iter: T) {
+        for value in iter {
+            self.push(value);
+        }
     }
 }
 

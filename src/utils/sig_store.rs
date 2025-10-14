@@ -168,6 +168,13 @@ impl BitXorAssign for EmptyVal {
     fn bitxor_assign(&mut self, _: EmptyVal) {}
 }
 
+// Fake implementation to treat EmptyVal like a value.
+impl UpcastableInto<u128> for EmptyVal {
+    fn upcast(self) -> u128 {
+        0
+    }
+}
+
 impl<V: BinSafe + BitXor> BitXor<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V>
 where
     V::Output: BinSafe,
@@ -196,13 +203,6 @@ where
             ],
             val: self.val.bitxor(rhs.val),
         }
-    }
-}
-
-// Fake implementation to treat EmptyVal like a value.
-impl UpcastableInto<u128> for EmptyVal {
-    fn upcast(self) -> u128 {
-        0
     }
 }
 
