@@ -476,18 +476,6 @@ impl<B> BitLength for AtomicBitVec<B> {
     }
 }
 
-impl<B: AsRef<[AtomicUsize]>> Index<usize> for AtomicBitVec<B> {
-    type Output = bool;
-
-    /// Shorthand for `get` using [`Ordering::Relaxed`].
-    fn index(&self, index: usize) -> &Self::Output {
-        match self.get(index, Ordering::Relaxed) {
-            false => &false,
-            true => &true,
-        }
-    }
-}
-
 impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
     fn count_ones(&self) -> usize {
         let full_words = self.len() / BITS;
@@ -506,6 +494,18 @@ impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
                 as usize
         }
         num_ones
+    }
+}
+
+impl<B: AsRef<[AtomicUsize]>> Index<usize> for AtomicBitVec<B> {
+    type Output = bool;
+
+    /// Shorthand for `get` using [`Ordering::Relaxed`].
+    fn index(&self, index: usize) -> &Self::Output {
+        match self.get(index, Ordering::Relaxed) {
+            false => &false,
+            true => &true,
+        }
     }
 }
 
