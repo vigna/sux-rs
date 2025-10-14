@@ -53,23 +53,24 @@ usage and debugging memory-related issues. For example, this is the output of
 `mem_dbg()` on a large [`EliasFano`] instance:
 
 ```text
-  117_041_232 B 100.00% ⏺: sux::dict::elias_fano::EliasFano<sux::rank_sel::select_zero_adapt_const::SelectZeroAdaptConst<sux::rank_sel::select_adapt_const::SelectAdaptConst>>
-           8 B   0.00% ├╴u: usize
-           8 B   0.00% ├╴n: usize
-           8 B   0.00% ├╴l: usize
-  75_000_048 B  64.08% ├╴low_bits: sux::bits::bit_field_vec::BitFieldVec
-  75_000_024 B  64.08% │ ├╴data: alloc::vec::Vec<usize>
-           8 B   0.00% │ ├╴bit_width: usize
-           8 B   0.00% │ ├╴mask: usize
-           8 B   0.00% │ ╰╴len: usize
-  42_041_160 B  35.92% ╰╴high_bits: sux::rank_sel::select_zero_adapt_const::SelectZeroAdaptConst<sux::rank_sel::select_adapt_const::SelectAdaptConst>
-  35_937_608 B  30.71%   ├╴bits: sux::rank_sel::select_adapt_const::SelectAdaptConst
-  32_031_296 B  27.37%   │ ├╴bits: sux::bits::bit_vec::CountBitVec
-  32_031_280 B  27.37%   │ │ ├╴data: alloc::vec::Vec<usize>
-           8 B   0.00%   │ │ ├╴len: usize
-           8 B   0.00%   │ │ ╰╴number_of_ones: usize
-   3_906_312 B   3.34%   │ ╰╴inventory: alloc::vec::Vec<u64>
-   6_103_552 B   5.21%   ╰╴inventory: alloc::vec::Vec<u64>
+11.15 MB 100.00% ⏺: sux::dict::elias_fano::EliasFano<sux::rank_sel::select_zero_adapt_const::SelectZeroAdaptConst<sux::rank_sel::select_adapt_const::SelectAdaptConst<sux::bits::bit_vec::BitVec<alloc::boxed::Box<[usize]>>>>>
+7.500 MB  67.24% ├╴low_bits: sux::bits::bit_field_vec::BitFieldVec<usize, alloc::boxed::Box<[usize]>>
+7.500 MB  67.24% │ ├╴bits: alloc::boxed::Box<[usize]>
+    8  B   0.00% │ ├╴bit_width: usize
+    8  B   0.00% │ ├╴mask: usize
+    8  B   0.00% │ ╰╴len: usize
+3.654 MB  32.76% ├╴high_bits: sux::rank_sel::select_zero_adapt_const::SelectZeroAdaptConst<sux::rank_sel::select_adapt_const::SelectAdaptConst<sux::bits::bit_vec::BitVec<alloc::boxed::Box<[usize]>>>>
+3.379 MB  30.29% │ ├╴bits: sux::rank_sel::select_adapt_const::SelectAdaptConst<sux::bits::bit_vec::BitVec<alloc::boxed::Box<[usize]>>>
+3.203 MB  28.72% │ │ ├╴bits: sux::bits::bit_vec::BitVec<alloc::boxed::Box<[usize]>>
+3.203 MB  28.72% │ │ │ ├╴bits: alloc::boxed::Box<[usize]>
+    8  B   0.00% │ │ │ ╰╴len: usize
+175.8 kB   1.58% │ │ ├╴inventory: alloc::boxed::Box<[usize]>
+   16  B   0.00% │ │ ╰╴spill: alloc::boxed::Box<[usize]>
+274.7 kB   2.46% │ ├╴inventory: alloc::boxed::Box<[usize]>
+   16  B   0.00% │ ╰╴spill: alloc::boxed::Box<[usize]>
+    8  B   0.00% ├╴n: usize
+    8  B   0.00% ├╴u: usize
+    8  B   0.00% ╰╴l: usize
 ```
 
 ## Composability, functoriality, and performance
