@@ -26,8 +26,9 @@ pub mod utils;
 #[cfg(feature = "fuzz")]
 pub mod fuzz;
 
-/// Imports the most common items. Note that
-/// [`bit_field_slice`](crate::traits::bit_field_slice) and
+/// Imports the most common items.
+///
+/// Note that [`bit_field_slice`](crate::traits::bit_field_slice) and
 /// [`indexed_dict`](crate::traits::indexed_dict) are not included in the
 /// prelude, as they may cause ambiguities in some contexts.
 pub mod prelude {
@@ -56,7 +57,8 @@ pub(crate) trait Index<Idx> {
 }
 
 /// Parallel iterators performing very fast operations, such as [zeroing a
-/// bit](crate::traits::BitVecOpsMut::reset) vector, should pass this argument to
+/// bit](crate::traits::BitVecOpsMut::reset) vector, should pass this argument
+/// to
 /// [IndexedParallelIterator::with_min_len](`rayon::iter::IndexedParallelIterator::with_min_len`).
 pub const RAYON_MIN_LEN: usize = 100_000;
 

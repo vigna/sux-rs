@@ -62,7 +62,7 @@
 //!   They are useful in all those context in which you need to want to
 //!   be able to use either a slice or a bit vector but the bit width
 //!   is irrelevant, and you do not need atomics. They also provide
-//!   subslicing facilities.
+//!   [subslicing facilities](value_traits::slices::SliceByValueSubslice).
 //!
 //! Note that some of these traits define methods with the same name (e.g., `len`)
 //! and the same semantics, but sometimes this might lead to ambiguity.

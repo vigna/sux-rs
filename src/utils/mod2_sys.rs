@@ -6,6 +6,9 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+//! Fast solution of random systems of linear equations with coefficients in
+//! **F**₂.
+
 #![allow(unexpected_cfgs)]
 #![allow(clippy::comparison_chain)]
 use std::ptr;
