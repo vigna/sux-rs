@@ -129,10 +129,10 @@ use std::sync::atomic::{Ordering, compiler_fence, fence};
 ///   width.
 ///
 /// - `bit_field_vec![width => value; length]`: creates a bit-field vector of
-/// given bit width and length, with all entries set to `value`.
+///   given bit width and length, with all entries set to `value`.
 ///
 /// - `bit_field_vec![width; v₀, v₁, … ]`: creates a bit-field vector of
-/// given bit width with entries set to `v₀`, `v₁`, ….
+///   given bit width with entries set to `v₀`, `v₁`, ….
 ///
 ///
 /// Note that the syntax `bit_field_vec![width; length; value]` that has been
@@ -978,7 +978,7 @@ impl<W: Word, B: AsRef<[W]>, C: AsRef<[W]>> PartialEq<BitFieldVec<W, C>> for Bit
     }
 }
 
-impl Eq for BitFieldVec {}
+impl<W: Word, B: AsRef<[W]>> Eq for BitFieldVec<W, B> {}
 
 // Support for unchecked iterators
 
