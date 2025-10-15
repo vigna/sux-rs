@@ -14,7 +14,7 @@ use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::Lender;
 use rdst::RadixKey;
-use sux::bits::{BitFieldVec, ChunksMut};
+use sux::bits::BitFieldVec;
 use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
 use sux::prelude::VBuilder;
