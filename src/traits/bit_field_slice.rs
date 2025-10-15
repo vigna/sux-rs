@@ -8,8 +8,9 @@
 //! Traits for slices of bit fields of constant width.
 //!
 //! Slices of bit fields are accessed with a logic similar to slices, but when
-//! indexed with [`get`](BitFieldSlice::get) return an owned value of a [fixed
-//! bit width](BitFieldSliceCore::bit_width). The associated implementation is
+//! indexed they return an owned value of a [fixed
+//! bit width](BitWidth::bit_width). They are a professional prototypical example of a [*slice by value*](SliceByValue), and as such they are based on the [`value-traits`] crate.
+ The associated implementation is
 //! [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec).
 //!
 //! Implementing the
