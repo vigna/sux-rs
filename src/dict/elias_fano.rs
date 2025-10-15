@@ -57,6 +57,7 @@ use crate::traits::{AtomicBitVecOps, BitVecOpsMut, bit_field_slice::*};
 use core::sync::atomic::Ordering;
 use mem_dbg::*;
 use std::borrow::Borrow;
+use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 /// The default type for an Elias–Fano structure implementing an [`IndexedSeq`].
 ///
@@ -209,7 +210,7 @@ pub type EfSeqDict = EliasFano<
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[value_traits_subslices(bound = "H: AsRef<[usize]> + SelectUnchecked")]
-#[value_traits_subslices(bound = "L: BitFieldSlice<usize>")]
+#[value_traits_subslices(bound = "L: SliceByValue<Value = usize>")]
 pub struct EliasFano<H = BitVec<Box<[usize]>>, L = BitFieldVec<usize, Box<[usize]>>> {
     /// The number of values.
     n: usize,
@@ -283,12 +284,14 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<H: AsRef<[usize]>, L: BitFieldSlice<usize>> Types for EliasFano<H, L> {
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Types for EliasFano<H, L> {
     type Output<'a> = usize;
     type Input = usize;
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>> IndexedSeq for EliasFano<H, L> {
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IndexedSeq
+    for EliasFano<H, L>
+{
     #[inline]
     fn len(&self) -> usize {
         self.n
@@ -298,13 +301,13 @@ impl<H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>> IndexedSeq fo
     unsafe fn get_unchecked(&self, index: usize) -> usize {
         unsafe {
             let high_bits = self.high_bits.select_unchecked(index) - index;
-            let low_bits = self.low_bits.get_unchecked(index);
+            let low_bits = self.low_bits.get_value_unchecked(index);
             (high_bits << self.l) | low_bits
         }
     }
 }
 
-impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: BitFieldSlice<usize>> IndexedDict
+impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> IndexedDict
     for EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
@@ -361,7 +364,7 @@ where
 }
 
 #[allow(clippy::collapsible_else_if)]
-impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: BitFieldSlice<usize>> SuccUnchecked
+impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> SuccUnchecked
     for EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
@@ -419,7 +422,7 @@ where
     }
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: BitFieldSlice<usize>> Succ
+impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = usize>> Succ
     for EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
@@ -427,7 +430,7 @@ where
 }
 
 #[allow(clippy::collapsible_else_if)]
-impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: BitFieldSlice<usize>> PredUnchecked
+impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> PredUnchecked
     for EliasFano<H, L>
 where
     for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
@@ -487,14 +490,14 @@ where
     }
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: BitFieldSlice<usize>> Pred
+impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = usize>> Pred
     for EliasFano<H, L>
 where
     for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
 {
 }
 
-impl<H: AsRef<[usize]>, L: BitFieldSlice<usize>> EliasFano<H, L>
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -504,7 +507,7 @@ where
     }
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>> EliasFano<H, L>
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -514,7 +517,7 @@ where
     }
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>> IntoIteratorFrom
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IntoIteratorFrom
     for &'a EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
@@ -530,7 +533,7 @@ where
 // -----------------------------------------------------------------------------
 // Value traits
 
-impl<H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>>
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
     value_traits::slices::SliceByValue for EliasFano<H, L>
 {
     type Value = usize;
@@ -538,17 +541,12 @@ impl<H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>>
     fn len(&self) -> usize {
         self.n
     }
-}
-
-impl<H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>>
-    value_traits::slices::SliceByValueGet for EliasFano<H, L>
-{
     unsafe fn get_value_unchecked(&self, index: usize) -> Self::Value {
         unsafe { <Self as IndexedSeq>::get_unchecked(self, index) }
     }
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>>
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
     value_traits::iter::IterateByValueGat<'a> for EliasFano<H, L>
 where
     for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
@@ -557,7 +555,7 @@ where
     type Iter = EliasFanoIterator<'a, H, L>;
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>>
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
     value_traits::iter::IterateByValue for EliasFano<H, L>
 where
     for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
@@ -567,7 +565,7 @@ where
     }
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>>
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
     value_traits::iter::IterateByValueFromGat<'a> for EliasFano<H, L>
 where
     for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
@@ -576,7 +574,7 @@ where
     type IterFrom = EliasFanoIterator<'a, H, L>;
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>>
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
     value_traits::iter::IterateByValueFrom for EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
@@ -589,7 +587,7 @@ where
     }
 }
 
-impl<'a, 'b, H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>>
+impl<'a, 'b, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
     value_traits::iter::IterateByValueGat<'a> for EliasFanoSubsliceImpl<'b, H, L>
 where
     for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
@@ -598,7 +596,7 @@ where
     type Iter = EliasFanoIterator<'a, H, L>;
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>>
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
     value_traits::iter::IterateByValue for EliasFanoSubsliceImpl<'a, H, L>
 where
     for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
@@ -608,7 +606,7 @@ where
     }
 }
 
-impl<'a, 'b, H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>>
+impl<'a, 'b, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
     value_traits::iter::IterateByValueFromGat<'a> for EliasFanoSubsliceImpl<'b, H, L>
 where
     for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
@@ -617,7 +615,7 @@ where
     type IterFrom = EliasFanoIterator<'a, H, L>;
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>>
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
     value_traits::iter::IterateByValueFrom for EliasFanoSubsliceImpl<'a, H, L>
 where
     for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
@@ -632,7 +630,7 @@ where
 
 /// An iterator for [`EliasFano`].
 #[derive(MemDbg, MemSize)]
-pub struct EliasFanoIterator<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize>>
+pub struct EliasFanoIterator<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -647,7 +645,7 @@ where
     low_bits: <&'a L as IntoUncheckedIterator>::IntoUncheckedIter,
 }
 
-impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize>> EliasFanoIterator<'a, H, L>
+impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFanoIterator<'a, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -667,7 +665,8 @@ where
     }
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: BitFieldSlice<usize>> EliasFanoIterator<'a, H, L>
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
+    EliasFanoIterator<'a, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -698,7 +697,7 @@ where
     }
 }
 
-impl<H: AsRef<[usize]>, L: BitFieldSlice<usize>> Iterator for EliasFanoIterator<'_, H, L>
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator for EliasFanoIterator<'_, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -733,7 +732,8 @@ where
     }
 }
 
-impl<H: AsRef<[usize]>, L: BitFieldSlice<usize>> ExactSizeIterator for EliasFanoIterator<'_, H, L>
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeIterator
+    for EliasFanoIterator<'_, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -743,7 +743,7 @@ where
     }
 }
 
-impl<'a, H: AsRef<[usize]>, L: BitFieldSlice<usize>> IntoIterator for &'a EliasFano<H, L>
+impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> IntoIterator for &'a EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -879,7 +879,7 @@ impl EliasFanoBuilder {
     /// Moreover, the function should not be called more than `n` times.
     pub unsafe fn push_unchecked(&mut self, value: usize) {
         let low = value & ((1 << self.l) - 1);
-        self.low_bits.set(self.count, low);
+        self.low_bits.set_value(self.count, low);
 
         let high = (value >> self.l) + self.count;
         self.high_bits.set(high, true);

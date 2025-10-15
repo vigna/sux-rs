@@ -21,6 +21,7 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
+use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 #[test]
 fn test() {
@@ -65,7 +66,7 @@ fn test_bit_field_vec_apply_param<W: Word + CastableInto<u64> + CastableFrom<u64
             indices.shuffle(&mut rng);
 
             for i in indices {
-                cp.set(i, values[i]);
+                cp.set_value(i, values[i]);
             }
 
             let new_values = (0..n)
@@ -113,18 +114,18 @@ fn test_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
             indices.shuffle(&mut rng);
 
             for i in indices {
-                v.set(i, values[i]);
+                v.set_value(i, values[i]);
             }
 
             for (i, value) in values.iter().enumerate() {
-                assert_eq!(v.get(i), *value);
+                assert_eq!(v.index_value(i), *value);
             }
 
             let mut indices = (0..n).collect::<Vec<_>>();
             indices.shuffle(&mut rng);
 
             for i in indices {
-                assert_eq!(v.get(i), values[i]);
+                assert_eq!(v.index_value(i), values[i]);
             }
 
             for from in 0..v.len() {
@@ -222,7 +223,7 @@ where
 fn test_clear() {
     let mut b = BitFieldVec::<usize, _>::new(50, 10);
     for i in 0..10 {
-        b.set(i, i);
+        b.set_value(i, i);
     }
     b.clear();
     assert_eq!(b.len(), 0);
@@ -230,48 +231,40 @@ fn test_clear() {
 
 #[test]
 fn test_usize() {
-    use sux::traits::bit_field_slice::BitFieldSlice;
-    use sux::traits::bit_field_slice::BitFieldSliceMut;
-
     const BITS: usize = core::mem::size_of::<usize>() * 8;
     let mut c = BitFieldVec::<usize>::new(BITS, 4);
-    c.set(0, -1_isize as usize);
-    c.set(1, 1234567);
-    c.set(2, 0);
-    c.set(3, -1_isize as usize);
-    assert_eq!(c.get(0), -1_isize as usize);
-    assert_eq!(c.get(1), 1234567);
-    assert_eq!(c.get(2), 0);
-    assert_eq!(c.get(3), -1_isize as usize);
+    c.set_value(0, -1_isize as usize);
+    c.set_value(1, 1234567);
+    c.set_value(2, 0);
+    c.set_value(3, -1_isize as usize);
+    assert_eq!(c.index_value(0), -1_isize as usize);
+    assert_eq!(c.index_value(1), 1234567);
+    assert_eq!(c.index_value(2), 0);
+    assert_eq!(c.index_value(3), -1_isize as usize);
 }
 
 #[test]
 fn test_bit_width_zero() {
-    use sux::traits::bit_field_slice::BitFieldSlice;
-
     let c = BitFieldVec::<usize>::new(0, 1000);
     for i in 0..c.len() {
-        assert_eq!(c.get(i), 0);
+        assert_eq!(c.index_value(i), 0);
     }
 }
 
 #[test]
 fn test_from_slice() -> Result<()> {
-    use sux::traits::bit_field_slice::BitFieldSlice;
-    use sux::traits::bit_field_slice::BitFieldSliceMut;
-
     let mut c = BitFieldVec::new(12, 1000);
     for i in 0..c.len() {
-        c.set(i, i)
+        c.set_value(i, i)
     }
 
     let s = BitFieldVec::<usize>::from_slice(&c)?;
     for i in 0..c.len() {
-        assert_eq!({ s.get(i) }, c.get(i));
+        assert_eq!({ s.index_value(i) }, c.index_value(i));
     }
     let s = BitFieldVec::<u16>::from_slice(&c)?;
     for i in 0..c.len() {
-        assert_eq!(s.get(i) as usize, c.get(i));
+        assert_eq!(s.index_value(i) as usize, c.index_value(i));
     }
     assert!(BitFieldVec::<u8>::from_slice(&c).is_err());
     Ok(())
@@ -279,37 +272,31 @@ fn test_from_slice() -> Result<()> {
 
 #[test]
 fn test_push() {
-    use sux::traits::bit_field_slice::BitFieldSlice;
-
     let mut c = BitFieldVec::new(12, 0);
     for i in 0..1000 {
         c.push(i);
     }
     for i in 0..1000 {
-        assert_eq!(c.get(i), i);
+        assert_eq!(c.index_value(i), i);
     }
 }
 
 #[test]
 fn test_resize() {
-    use sux::traits::bit_field_slice::BitFieldSlice;
-
     let mut c = BitFieldVec::new(12, 0);
     c.resize(100, 2_usize);
     for i in 0..100 {
-        assert_eq!(c.get(i), 2);
+        assert_eq!(c.index_value(i), 2);
     }
     c.resize(50, 0);
     for i in 0..50 {
-        assert_eq!(c.get(i), 2);
+        assert_eq!(c.index_value(i), 2);
     }
     assert_eq!(c.len(), 50);
 }
 
 #[test]
 fn test_pop() {
-    use sux::traits::bit_field_slice::BitFieldSlice;
-
     let mut c = BitFieldVec::new(12, 0);
     for i in 0..1000 {
         c.push(i);
@@ -318,7 +305,7 @@ fn test_pop() {
         assert_eq!(c.pop(), Some(i));
     }
     for i in 0..500 {
-        assert_eq!(c.get(i), i);
+        assert_eq!(c.index_value(i), i);
     }
     for i in (0..500).rev() {
         assert_eq!(c.pop(), Some(i));
@@ -332,7 +319,7 @@ fn test_unaligned() {
     for bit_width in [50, 56, 57, 58, 60, 64] {
         let mut c = BitFieldVec::new_unaligned(bit_width, 100);
         for i in 0..10 {
-            c.set(i, i);
+            c.set_value(i, i);
         }
         for i in 0_usize..10 {
             assert_eq!(c.get_unaligned(i), i);
@@ -456,14 +443,14 @@ fn test_eq() {
 fn test_reset() {
     let mut b = BitFieldVec::<usize, _>::new(50, 10);
     for i in 0..10 {
-        b.set(i, i);
+        b.set_value(i, i);
     }
     b.reset();
     for w in &b {
         assert_eq!(w, 0);
     }
     for i in 0..10 {
-        b.set(i, i);
+        b.set_value(i, i);
     }
     #[cfg(feature = "rayon")]
     {
@@ -510,38 +497,38 @@ fn test_from() {
     // Vec to atomic vec
     let mut b = BitFieldVec::<usize, Vec<usize>>::new(50, 10);
     for i in 0..10 {
-        b.set(i, i);
+        b.set_value(i, i);
     }
     let b: AtomicBitFieldVec<usize, Vec<AtomicUsize>> = b.into();
     let b: BitFieldVec<usize, Vec<usize>> = b.into();
     for i in 0..10 {
-        assert_eq!(b.get(i), i);
+        assert_eq!(b.index_value(i), i);
     }
 
     // Boxed slice to atomic boxed slice
     let bits = vec![0; 10].into_boxed_slice();
     let mut b = unsafe { BitFieldVec::<usize, Box<[usize]>>::from_raw_parts(bits, 50, 10) };
     for i in 0..10 {
-        b.set(i, i);
+        b.set_value(i, i);
     }
     let b: AtomicBitFieldVec<usize, Box<[AtomicUsize]>> = b.into();
     let b: BitFieldVec<usize, Box<[usize]>> = b.into();
     for i in 0..10 {
-        assert_eq!(b.get(i), i);
+        assert_eq!(b.index_value(i), i);
     }
 
     // Reference to atomic reference
     let bits = vec![0; 10].into_boxed_slice();
     let mut b = unsafe { BitFieldVec::<usize, Box<[usize]>>::from_raw_parts(bits, 50, 10) };
     for i in 0..10 {
-        b.set(i, i);
+        b.set_value(i, i);
     }
     let (bits, w, l) = b.into_raw_parts();
     let b = unsafe { BitFieldVec::<usize, &[usize]>::from_raw_parts(bits.as_ref(), w, l) };
     if let Result::<AtomicBitFieldVec<usize, &[AtomicUsize]>, _>::Ok(b) = b.try_into() {
         let b: BitFieldVec<usize, &[usize]> = b.into();
         for i in 0..10 {
-            assert_eq!(b.get(i), i);
+            assert_eq!(b.index_value(i), i);
         }
     }
 
@@ -550,24 +537,24 @@ fn test_from() {
     let mut b =
         unsafe { BitFieldVec::<usize, &mut [usize]>::from_raw_parts(bits.as_mut(), 50, 10) };
     for i in 0..10 {
-        b.set(i, i);
+        b.set_value(i, i);
     }
     if let Result::<AtomicBitFieldVec<usize, &mut [AtomicUsize]>, _>::Ok(b) = b.try_into() {
         let b: BitFieldVec<usize, &mut [usize]> = b.into();
         for i in 0..10 {
-            assert_eq!(b.get(i), i);
+            assert_eq!(b.index_value(i), i);
         }
     }
 
     // Vec to boxed slice
     let mut b = BitFieldVec::<usize, Vec<usize>>::new(50, 10);
     for i in 0..10 {
-        b.set(i, i);
+        b.set_value(i, i);
     }
     let b: BitFieldVec<usize, Box<[usize]>> = b.into();
     let b: BitFieldVec<usize, Vec<usize>> = b.into();
     for i in 0..10 {
-        assert_eq!(b.get(i), i);
+        assert_eq!(b.index_value(i), i);
     }
 }
 
@@ -587,11 +574,11 @@ fn test_macro() {
     let b = bit_field_vec![10; 4, 500, 2, 0, 1];
     assert_eq!(b.len(), 5);
     assert_eq!(b.bit_width(), 10);
-    assert_eq!(b.get(0), 4);
-    assert_eq!(b.get(1), 500);
-    assert_eq!(b.get(2), 2);
-    assert_eq!(b.get(3), 0);
-    assert_eq!(b.get(4), 1);
+    assert_eq!(b.index_value(0), 4);
+    assert_eq!(b.index_value(1), 500);
+    assert_eq!(b.index_value(2), 2);
+    assert_eq!(b.index_value(3), 0);
+    assert_eq!(b.index_value(4), 1);
 }
 
 #[test]
@@ -600,7 +587,7 @@ fn test_slice() {
 
     assert_eq!(b.as_slice(), vec![0; 5]);
 
-    b.set(2, 1);
+    b.set_value(2, 1);
 
     assert_eq!(b.as_slice(), vec![4096, 0, 0, 0, 0]);
 
@@ -608,7 +595,7 @@ fn test_slice() {
     mut_slice[2] = 1;
 
     assert_eq!(b.as_slice(), vec![4096, 0, 1, 0, 0]);
-    assert_eq!(b.get(21), 4);
+    assert_eq!(b.index_value(21), 4);
 }
 
 fn atomic_slice_eq<T: Atomic>(actual: &[T], expected: &[T])

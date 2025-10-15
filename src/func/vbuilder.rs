@@ -37,6 +37,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use thread_priority::ThreadPriority;
+use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 use super::shard_edge::FuseLge3Shards;
 
@@ -343,13 +344,14 @@ enum PeelResult<
         /// The shard.
         shard: Arc<Vec<SigVal<S, V>>>,
         /// The data.
-        data: ShardData<'a, W, D>,
+        data: ShardData<'a, D>,
         /// The double stack whose upper stack contains the peeled edges
         /// (possibly represented by the vertex from which they have been
         /// peeled).
         double_stack: DoubleStack<E::Vertex>,
         /// The sides stack.
         sides_stack: Vec<u8>,
+        _marker: PhantomData<W>,
     },
 }
 
@@ -531,9 +533,9 @@ impl<V: Copy> DoubleStack<V> {
 }
 
 /// An iterator over segments of data associated with each shard.
-type ShardDataIter<'a, W, D> = <D as BitFieldSliceMut<W>>::ChunksMut<'a>;
+type ShardDataIter<'a, D> = <D as SliceByValueMut>::ChunksMut<'a>;
 /// A segment of data associated with a specific shard.
-type ShardData<'a, W, D> = <ShardDataIter<'a, W, D> as Iterator>::Item;
+type ShardData<'a, D> = <ShardDataIter<'a, D> as Iterator>::Item;
 
 /// Builds a new function using a `Box<[W]>` to store values.
 ///
@@ -554,8 +556,10 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, Box<[W]>, S, E>>
     where
-        for<'a> ShardDataIter<'a, W, Box<[W]>>: Send,
-        for<'a> ShardData<'a, W, Box<[W]>>: Send,
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
+            BitFieldSliceMut<W>,
+        for<'a> ShardDataIter<'a, Box<[W]>>: Send,
+        for<'a> ShardData<'a, Box<[W]>>: Send,
     {
         let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
@@ -582,8 +586,10 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>>
     where
-        for<'a> ShardDataIter<'a, W, Box<[W]>>: Send,
-        for<'a> ShardData<'a, W, Box<[W]>>: Send,
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
+            BitFieldSliceMut<W>,
+        for<'a> ShardDataIter<'a, Box<[W]>>: Send,
+        for<'a> ShardData<'a, Box<[W]>>: Send,
     {
         let filter_mask = W::MAX;
         let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
@@ -715,8 +721,9 @@ impl<
         u128: UpcastableFrom<W>,
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
-        for<'a> ShardDataIter<'a, W, D>: Send,
-        for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
+        for<'a> <<D as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut<W>,
+        for<'a> ShardDataIter<'a, D>: Send,
+        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
         let mut dup_count = 0;
         let mut local_dup_count = 0;
@@ -848,8 +855,9 @@ impl<
     where
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
-        for<'a> ShardDataIter<'a, W, D>: Send,
-        for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
+        for<'a> <<D as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut<W>,
+        for<'a> ShardDataIter<'a, D>: Send,
+        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
         let shard_edge = &mut self.shard_edge;
 
@@ -987,8 +995,9 @@ impl<
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
         P: ProgressLog + Clone + Send + Sync,
         I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
-        for<'a> ShardDataIter<'a, W, D>: Send,
-        for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
+        for<'a> <<D as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut<W>,
+        for<'a> ShardDataIter<'a, D>: Send,
+        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
         let shard_edge = &self.shard_edge;
         self.num_threads = shard_edge.num_shards().min(self.max_num_threads);
@@ -1157,7 +1166,7 @@ impl<
         'b,
         V: BinSafe,
         I: IntoIterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
-        SS: Fn(&Self, usize, Arc<Vec<SigVal<S, V>>>, ShardData<'b, W, D>, &mut P) -> Result<(), ()>
+        SS: Fn(&Self, usize, Arc<Vec<SigVal<S, V>>>, ShardData<'b, D>, &mut P) -> Result<(), ()>
             + Send
             + Sync
             + Copy,
@@ -1174,8 +1183,9 @@ impl<
     where
         I::IntoIter: Send,
         SigVal<S, V>: RadixKey,
-        for<'a> ShardDataIter<'a, W, D>: Send,
-        for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
+        for<'a> <<D as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut<W>,
+        for<'a> ShardDataIter<'a, D>: Send,
+        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
         main_pl
             .item_name("shard")
@@ -1190,7 +1200,7 @@ impl<
         let (err_send, err_recv) = crossbeam_channel::bounded::<_>(self.num_threads);
         let (data_send, data_recv) = crossbeam_channel::bounded::<(
             usize,
-            (Arc<Vec<SigVal<S, V>>>, ShardData<'_, W, D>),
+            (Arc<Vec<SigVal<S, V>>>, ShardData<'_, D>),
         )>(buffer_size);
 
         let result = std::thread::scope(|scope| {
@@ -1397,7 +1407,7 @@ impl<
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
-        data: ShardData<'a, W, D>,
+        data: ShardData<'a, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<PeelResult<'a, W, D, S, E, V>, ()> {
@@ -1483,6 +1493,7 @@ impl<
                 data,
                 double_stack,
                 sides_stack,
+                _marker: std::marker::PhantomData,
             });
         }
 
@@ -1539,7 +1550,7 @@ impl<
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
-        data: ShardData<'_, W, D>,
+        data: ShardData<'_, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()>
@@ -1671,7 +1682,7 @@ impl<
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
-        data: ShardData<'_, W, D>,
+        data: ShardData<'_, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()>
@@ -1789,7 +1800,7 @@ impl<
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
-        data: ShardData<'_, W, D>,
+        data: ShardData<'_, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()> {
@@ -1804,6 +1815,7 @@ impl<
                 mut data,
                 double_stack,
                 sides_stack,
+                _marker: PhantomData,
             }) => {
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
                 // Likely result--we have solve the rest
@@ -1868,7 +1880,7 @@ impl<
                 pl.done_with_count(system.num_equations());
 
                 for (v, &value) in result.iter().enumerate().filter(|(v, _)| used_vars[*v]) {
-                    data.set(v, value);
+                    data.set_value(v, value);
                 }
 
                 self.assign(
@@ -1908,10 +1920,12 @@ impl<
     fn assign(
         &self,
         shard_index: usize,
-        mut data: ShardData<'_, W, D>,
+        mut data: ShardData<'_, D>,
         sigs_vals_sides: impl Iterator<Item = ((E::LocalSig, W), u8)>,
         pl: &mut impl ProgressLog,
-    ) {
+    ) where
+        for<'a> ShardData<'a, D>: SliceByValueMut<Value = W>,
+    {
         if self.failed.load(Ordering::Relaxed) {
             return;
         }
@@ -1927,13 +1941,13 @@ impl<
             let side = side as usize;
             unsafe {
                 let xor = match side {
-                    0 => data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2]),
-                    1 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[2]),
-                    2 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[1]),
+                    0 => data.get_value_unchecked(edge[1]) ^ data.get_value_unchecked(edge[2]),
+                    1 => data.get_value_unchecked(edge[0]) ^ data.get_value_unchecked(edge[2]),
+                    2 => data.get_value_unchecked(edge[0]) ^ data.get_value_unchecked(edge[1]),
                     _ => core::hint::unreachable_unchecked(),
                 };
 
-                data.set_unchecked(edge[side], val ^ xor);
+                data.set_value_unchecked(edge[side], val ^ xor);
             }
         }
         pl.done();

@@ -14,7 +14,7 @@ use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::Lender;
 use rdst::RadixKey;
-use sux::bits::BitFieldVec;
+use sux::bits::{BitFieldVec, ChunksMut};
 use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
 use sux::prelude::VBuilder;
@@ -22,6 +22,7 @@ use sux::traits::{BitFieldSlice, BitFieldSliceMut, Word};
 use sux::utils::{
     BinSafe, EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender,
 };
+use value_traits::slices::SliceByValueMut;
 
 #[derive(Parser, Debug)]
 #[command(about = "Creates a VFilter and serializes it with ε-serde", long_about = None)]
@@ -172,9 +173,10 @@ where
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    Box<[W]>: BitFieldSlice<W> + BitFieldSliceMut<W>,
-    for<'a> <Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a>: Send,
-    for<'a> <<Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a> as Iterator>::Item: Send,
+    Box<[W]>: BitFieldSliceMut<W>,
+    for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
+    for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
+        Send + BitFieldSliceMut<W>,
     VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
     VFunc<usize, W, Box<[W]>, S, E>: Serialize,
