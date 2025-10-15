@@ -12,6 +12,7 @@ use crate::func::shard_edge::ShardEdge;
 use crate::traits::bit_field_slice::*;
 use crate::utils::*;
 use mem_dbg::*;
+use value_traits::slices::SliceByValue;
 
 /// Static functions with low space overhead, fast parallel construction, and
 /// fast queries.
@@ -71,7 +72,7 @@ use mem_dbg::*;
 pub struct VFunc<
     T: ?Sized + ToSig<S>,
     W: Word + BinSafe = usize,
-    D: BitFieldSlice<W> = Box<[W]>,
+    D: SliceByValue<Value = W> = Box<[W]>,
     S: Sig = [u64; 2],
     E: ShardEdge<S, 3> = FuseLge3Shards,
 > {
@@ -84,8 +85,13 @@ pub struct VFunc<
     pub(crate) _marker_s: std::marker::PhantomData<S>,
 }
 
-impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
-    VFunc<T, W, D, S, E>
+impl<
+    T: ?Sized + ToSig<S>,
+    W: Word + BinSafe,
+    D: SliceByValue<Value = W>,
+    S: Sig,
+    E: ShardEdge<S, 3>,
+> VFunc<T, W, D, S, E>
 {
     /// Returns the value associated with the given signature, or a random value
     /// if the signature is not the signature of a key.
@@ -95,9 +101,9 @@ impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, D: BitFieldSlice<W>, S: Sig, E: Sh
     pub fn get_by_sig(&self, sig: S) -> W {
         let edge = self.shard_edge.edge(sig);
         unsafe {
-            self.data.get_unchecked(edge[0])
-                ^ self.data.get_unchecked(edge[1])
-                ^ self.data.get_unchecked(edge[2])
+            self.data.get_value_unchecked(edge[0])
+                ^ self.data.get_value_unchecked(edge[1])
+                ^ self.data.get_value_unchecked(edge[2])
         }
     }
 
