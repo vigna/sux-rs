@@ -68,6 +68,8 @@
   instead of a `Vec<AtomicUsize>`, which might require some adaptation
   in user code.
 
+* `AtomicHelper` has been removed.
+
 ### Fixed
 
 * Adding too few values to Elias-Fano structures was causing undefined

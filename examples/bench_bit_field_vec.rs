@@ -6,7 +6,6 @@
  */
 
 use anyhow::Result;
-use bit_field_slice::*;
 use clap::Parser;
 use dsi_progress_logger::*;
 use rand::Rng;
@@ -14,13 +13,14 @@ use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use std::hint::black_box;
 use sux::prelude::*;
+use value_traits::slices::*;
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmarks compact arrays", long_about = None)]
+#[command(about = "Benchmarks bit-field vectors", long_about = None)]
 struct Args {
-    /// The width of the elements of the array.
+    /// The width of the elements of the vector.
     width: usize,
-    /// The base-2 logarithm of the length of the array.
+    /// The base-2 logarithm of the length of the vector.
     log2_size: usize,
 
     /// The number of test repetitions.
@@ -50,7 +50,7 @@ pub fn main() -> Result<()> {
         pl.start("Writing...");
         for _ in 0..args.n {
             let x = rand.random::<u64>() as usize & mask;
-            unsafe { a.set_unchecked(x, 1) };
+            unsafe { a.set_value_unchecked(x, 1) };
             black_box(());
         }
         pl.done_with_count(args.n);
@@ -59,14 +59,14 @@ pub fn main() -> Result<()> {
         pl.start("Reading (random)...");
         for _ in 0..args.n {
             unsafe {
-                black_box(a.get_unchecked(rand.random::<u64>() as usize & mask));
+                black_box(a.get_value_unchecked(rand.random::<u64>() as usize & mask));
             }
         }
         pl.done_with_count(args.n);
 
         pl.start("Reading (sequential)...");
         for i in 0..args.n {
-            black_box(unsafe { a.get_unchecked(i) });
+            black_box(unsafe { a.get_value_unchecked(i) });
         }
         pl.done_with_count(args.n);
 
