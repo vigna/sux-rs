@@ -14,24 +14,24 @@ A pure Rust implementation of succinct and compressed data structures.
 This crate started is part of the [Sux] project; it contains also code ported
 from [the DSI Utilities] and new structures.
 
-Presently, it provides:
+## Highlights
 
 - [bit vectors and bit-field vectors];
 - several structures for [rank and selection] with different tradeoffs;
-- [indexed dictionaries], including an implementation of the [Elias–Fano
-  representation of monotone sequences] and [lists of strings compressed by
+- [indexed dictionaries], including an implementation of the popular [Elias–Fano
+  representation of monotone sequences], and [lists of strings compressed by
   prefix omission].
-- New state-of-the-art structures for [static functions] and [static filters],
-  scaling to trillions of keys, and providing very fast queries.
-- [Partial arrays], that is, “arrays with holes”, implemented using ranking or
+- new state-of-the-art structures for [static functions] and [static filters],
+  scaling to trillions of keys, and providing very fast queries;
+- [partial arrays], that is, “arrays with holes”, implemented using ranking or
   Elias–Fano.
 
-The focus is on efficiency (in particular, there are unchecked versions of all
-methods) and on flexible composability (e.g., you can fine-tune your Elias–Fano
-instance by choosing different types of internal indices, and whether to index
-zeros or ones).
+The focus is on performance (e.g., there are unchecked versions of all methods
+and support for [unaligned access]) and on flexible composability (e.g., you can
+fine-tune your Elias–Fano instance by choosing different types of internal
+indices, and whether to index zeros or ones).
 
-## ε-serde support
+## ε-serde Support
 
 All structures in this crate are designed to work well with [ε-serde]: in
 particular, once you have created and serialized them, you can easily map them
@@ -40,17 +40,22 @@ Support for ε-serde is provided by the feature `epserde`, and support for
 memory mapping in ε-serde is provided by the `mmap` feature, which is on by
 default.
 
-## [serde](https://crates.io/crates/serde) support
+## serde Support
 
-All structures in this crate support serde. Support is gated by the feature
-`serde`.
+All structures in this crate support. Support is gated by the feature `serde`.
 
-## `MemDbg`/`MemSize` support
+## Slice by Value Support
+
+Wherever possible, we support the “slice by value” traits from the
+[`value-traits`] crate, which make it possible to treat in a manner similar to
+slices structures such as bit-field vectors or succinct representations.
+
+## `MemDbg`/`MemSize` Support
 
 All structures in this crate support the [`MemDbg`] and [`MemSize`] traits from
 the [`mem_dbg`] crate, which provide convenient facilities for inspecting memory
 usage and debugging memory-related issues. For example, this is the output of
-`mem_dbg()` on a large [`EliasFano`] instance:
+`mem_dbg()` on an [`EliasFano`] instance:
 
 ```text
 11.15 MB 100.00% ⏺: sux::dict::elias_fano::EliasFano<sux::rank_sel::select_zero_adapt_const::SelectZeroAdaptConst<sux::rank_sel::select_adapt_const::SelectAdaptConst<sux::bits::bit_vec::BitVec<alloc::boxed::Box<[usize]>>>>>
@@ -90,8 +95,8 @@ The design of this crate tries to satisfy the following principles:
 
 What this crate does not provide:
 
-- High genericity: [bit vectors operations] are based on the rather concrete
-  trait combination `AsRef<[usize]>` + [`BitLength`].
+- High genericity on bit vectors: [bit vectors operations] are based on the
+  rather concrete trait combination `AsRef<[usize]>` + [`BitLength`].
 
 ## Binaries
 
@@ -99,6 +104,20 @@ A few binaries make it possible to build and serialize structures with ε-serde
 (e.g., `rcl`, `vfunc`, and `vfilter`). Moreover, there are examples benchmarking
 the structures (e.g., `bench_rear_coded_list`, `bench_vfunc`, and
 `bench_vfilter`). You have to use the feature `cli` to build them.
+
+## Features
+
+The crate has the following features:
+
+- `rayon`: enables support for parallel iterators using the `rayon` crate (this
+  is the only default feature);
+- `epserde`: enables support for [ε-serde];
+- `serde`: enables support for [serde];
+- `cli`: builds the binaries;
+- `mmap`: enables support for memory mapping in ε-serde (implies `epserde`);
+- `mem_dbg`: enables support for the [`MemDbg`] and [`MemSize`] traits;
+- `deko`: enables support for the [`deko`] crate, which provides dynamic
+  detection of compressed files for the [`lenders`] module.
 
 ## Benchmarks
 
@@ -170,3 +189,8 @@ Union nor the Italian MUR can be held responsible for them
 [static filters]: <https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html>
 [Partial arrays]: <https://docs.rs/sux/latest/sux/array/struct.PartialArray.html>
 [bit vectors operations]: <https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html>
+[unaligned access]: <https://docs.rs/sux/latest/sux/bits/bit_field_vec/struct.BitFieldVec.html#method.get_unaligned>
+[value-traits]: <https://crates.io/crates/value-traits>
+[serde]: <https://crates.io/crates/serde>
+[`deko`]: <https://crates.io/crates/deko>
+[`lenders`]: <https://docs.rs/sux/latest/sux/utils/lenders/>
