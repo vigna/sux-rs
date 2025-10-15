@@ -685,7 +685,10 @@ where
 
 impl<
     W: Word + BinSafe,
-    D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
+    D: BitFieldSlice<W>
+        + for<'a> BitFieldSliceMut<W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut<W>>>
+        + Send
+        + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 > VBuilder<W, D, S, E>
@@ -721,7 +724,6 @@ impl<
         u128: UpcastableFrom<W>,
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
-        for<'a> <<D as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut<W>,
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
@@ -825,7 +827,10 @@ impl<
 
 impl<
     W: Word + BinSafe,
-    D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
+    D: BitFieldSlice<W>
+        + for<'a> BitFieldSliceMut<W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut<W>>>
+        + Send
+        + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 > VBuilder<W, D, S, E>
@@ -855,7 +860,6 @@ impl<
     where
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
-        for<'a> <<D as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut<W>,
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
@@ -995,7 +999,6 @@ impl<
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
         P: ProgressLog + Clone + Send + Sync,
         I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
-        for<'a> <<D as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut<W>,
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
@@ -1107,7 +1110,10 @@ macro_rules! remove_edge {
 
 impl<
     W: Word + BinSafe + Send + Sync,
-    D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
+    D: BitFieldSlice<W>
+        + for<'a> BitFieldSliceMut<W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut<W>>>
+        + Send
+        + Sync,
     S: Sig + BinSafe,
     E: ShardEdge<S, 3>,
 > VBuilder<W, D, S, E>
@@ -1183,7 +1189,6 @@ impl<
     where
         I::IntoIter: Send,
         SigVal<S, V>: RadixKey,
-        for<'a> <<D as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut<W>,
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {

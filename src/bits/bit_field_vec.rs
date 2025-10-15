@@ -30,7 +30,23 @@
 //! A blanket implementation exposes slices of elements of type `W` as bit-field
 //! vectors of width `W::BITS`, analogously for atomic types `A`.
 //!
-//! Note that nothing is assumed about the content of the backend outside the
+//! The traits [`BitFieldSlice`], and [`BitFieldSliceMut`] provide a uniform
+//! interface to access to the content of (a reference to) the bit-field vector.
+//! There is also a [`AtomicBitFieldSlice`] trait for atomic bit-field vectors.
+//! Since they are also implemented for slices of words, they make it easy to
+//! write generic code that works both on bit-field vectors and on slices of
+//! words when you need to consider the bit width of each element.
+//!
+//! Note that the [`try_chunks_mut`](BitFieldSliceMut::try_chunks_mut) method
+//! is implemented on the [`BitFieldSliceMut`] trait, and thus returns an
+//! iterator over elements implementing [`SliceByValueMut`]; the elements,
+//! however, implement also [`BitFieldSliceMut`], and you can use this
+//! property by adding the bound
+//! ```ignore
+//!    for<'a> BitFieldSliceMut<W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut<W>>>
+//! ```
+//!
+//! Nothing is assumed about the content of the backend outside the
 //! bits of the vector. Moreover, the content of the backend outside of the
 //! vector is never modified by the methods of this structure.
 //!
@@ -40,32 +56,6 @@
 //! [predecessor](crate::traits::indexed_dict::Pred) and
 //! [successor](crate::traits::indexed_dict::Succ) primitives for
 //! [`EliasFano`].
-//!
-//! # Implemented Traits
-//!
-//! For maximum flexibility, the structures in module implements two classes
-//! of traits:
-//!
-//! - The traits [`BitFieldSliceCore`], [`BitFieldSlice`], and
-//!   [`BitFieldSliceMut`] provide a uniform interface to access to the content of
-//!   (a reference to) the bit-field vector. There is also a
-//!   [`AtomicBitFieldSlice`] trait for atomic bit-field vectors.
-//!   Since they are also implemented for slices of words, they make it easy
-//!   to write generic code that works both on bit-field vectors and on slices of
-//!   words when you need to consider the bit width of each element.
-//!
-//! - The value-based traits [`SliceByValue`](value_traits::slices::SliceByValue),
-//!   [`SliceByValueGet`](value_traits::slices::SliceByValueGet),
-//!   [`SliceByValueSet`](value_traits::slices::SliceByValueSet)
-//!   and [`SliceByValueReplace`](value_traits::slices::SliceByValueRepl)
-//!   provide a uniform access to the content of the bit-field vector as a list of values.
-//!   They are useful in all those context in which you need to want to
-//!   be able to use either a slice or a bit vector but the bit width
-//!   is irrelevant, and you do not need atomics. They also provide
-//!   [subslicing facilities](value_traits::slices::SliceByValueSubslice).
-//!
-//! Note that some of these traits define methods with the same name (e.g., `len`)
-//! and the same semantics, but sometimes this might lead to ambiguity.
 //!
 //! # Low-level support
 //!
@@ -203,6 +193,8 @@ macro_rules! bit_field_vec {
 }
 
 /// A vector of bit fields of fixed width.
+///
+/// See the [module documentation](crate::bits) for more details.
 #[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -220,7 +212,7 @@ pub struct BitFieldVec<W: Word = usize, B = Vec<W>> {
     len: usize,
 }
 
-// TODO: why here?
+/// Robust, heavily checked mask function for constructors and similar methods.
 fn mask<W: Word>(bit_width: usize) -> W {
     if bit_width == 0 {
         W::ZERO
@@ -989,7 +981,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
     /// # Errors
     ///
     /// This method will return an error if the chunk size multiplied by the by
-    /// the [bit width](BitFieldSliceCore::bit_width) is not a multiple of
+    /// the [bit width](BitWidth::bit_width) is not a multiple of
     /// `W::BITS` and more than one chunk must be returned.
     fn try_chunks_mut(
         &mut self,
@@ -1284,9 +1276,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 /// ever write to the same boundary-crossing value, then no race condition can
 /// happen.
 ///
-/// Note that the trait [`AtomicHelper`] can be used to provide a more
-/// convenient naming for some methods.
-
+/// See the [module documentation](crate::bits) for more details.
 #[derive(Debug, Clone, Hash, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 pub struct AtomicBitFieldVec<W: Word + IntoAtomic = usize, B = Vec<<W as IntoAtomic>::AtomicType>> {
@@ -1420,8 +1410,8 @@ where
 
     /// Sets the element of the slice at the specified index.
     ///
-    /// May panic if the index is not in in [0..[len](`BitFieldSliceCore::len`))
-    /// or the value does not fit in [`BitFieldSliceCore::bit_width`] bits.
+    /// May panic if the index is not in in [0..[len](SliceByValue::len))
+    /// or the value does not fit in [`BitWidth::bit_width`] bits.
     #[inline(always)]
     fn set_atomic(&self, index: usize, value: W, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len);

@@ -41,6 +41,7 @@ pub mod prelude {
     pub use crate::rank_sel::*;
     pub use crate::rank_small;
     pub use crate::traits::bit_field_slice;
+    pub use crate::traits::bit_vec_ops;
     pub use crate::traits::indexed_dict;
     pub use crate::traits::{iter::*, rank_sel::*};
 }
