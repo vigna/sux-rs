@@ -41,8 +41,8 @@
 //! part of the [`SliceByValueMut`] trait, and thus returns an iterator over
 //! elements implementing [`SliceByValueMut`]; the elements, however, implement
 //! also [`BitFieldSliceMut`], and you can use this property by adding the bound
-//! ```ignore for<'a> BitFieldSliceMut<W, ChunksMut<'a>: Iterator<Item:
-//! BitFieldSliceMut<W>>> ```
+//! `for<'a> BitFieldSliceMut<W, ChunksMut<'a>: Iterator<Item:
+//! BitFieldSliceMut<W>>>`.
 //!
 //! Nothing is assumed about the content of the backend outside the
 //! bits of the vector. Moreover, the content of the backend outside of the
@@ -63,6 +63,7 @@
 //! when the bit width makes it possible.
 //!
 //! # Examples
+//!
 //! ```
 //! # use sux::prelude::*;
 //! # use bit_field_slice::*;
@@ -190,15 +191,16 @@ macro_rules! bit_field_vec {
     };
 }
 
-/// A vector of bit fields of fixed width.
+/// A vector of bit fields of fixed width (AKA “compact array“, “bit array“,
+/// etc.).
 ///
 /// See the [module documentation](crate::bits) for more details.
 #[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[value_traits_subslices(bound = "B: AsRef<[W]>")]
 #[derive(value_traits::SubslicesMut)]
 #[value_traits_subslices_mut(bound = "B: AsRef<[W]> + AsMut<[W]>")]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BitFieldVec<W: Word = usize, B = Vec<W>> {
     /// The underlying storage.
     bits: B,
@@ -665,11 +667,6 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
         unsafe { self.replace_value_unchecked(index, value) }
     }
 
-    /// A version of [`BitFieldSliceMut::set_unchecked`] that returns the previous value,
-    /// that doesn't check for out-of-bounds access or value validity.
-    ///
-    /// # Safety
-    /// This method is unsafe because it does not check that `index` is within bounds
     unsafe fn replace_value_unchecked(&mut self, index: usize, value: W) -> W {
         let pos = index * self.bit_width;
         let word_index = pos / W::BITS;
