@@ -28,16 +28,14 @@
 //! implement [`AtomicBitFieldSlice`], `W` must implement [`IntoAtomic`]. The
 //! methods of all traits accept and return values of type `W`.
 //!
-//! If you need to iterate over a [`BitFieldSlice`], you can use
-//! [`BitFieldSliceIterator`].
+//! Implementations must return always zero upon a read operation when the bit
+//! width is zero. The behavior of write operations in the same context is not
+//! defined.
 //!
-//! Implementations must return always zero on a [`BitFieldSlice::get`] when the
-//! bit width is zero. The behavior of a [`BitFieldSliceMut::set`] in the same
-//! context is not defined.
-//!
-//! It is suggested that types implementing [`BitFieldSlice`] implement on a
-//! reference [`IntoIterator`] with item `W` using [`BitFieldSliceIterator`] as
-//! helper.
+//! The derive macros from the
+//! [`value-traits`](https://crates.io/crates/value-traits) crate can be used to
+//! derive implementations of iterator and subslices for types that
+//! implement [`BitFieldSlice`] and [`BitFieldSliceMut`].
 //!
 //! We provide implementations for vectors and slices of all primitive atomic
 //! and non-atomic unsigned integer types that view their elements as values
