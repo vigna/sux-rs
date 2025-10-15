@@ -37,10 +37,9 @@
 //! # Examples
 //!
 //! ```rust
-//! use sux::bit_vec;
-//! use sux::bits::bit_vec::{BitVec, AtomicBitVec, BitVecOps, BitVecOpsMut, AtomicBitVecOps};
-//! use sux::traits::{BitCount, BitLength, NumBits, AddNumBits};
-//! use core::sync::atomic::Ordering;
+//! use sux::prelude::*;
+//! use sux::traits::bit_vec_ops::*;
+//! use std::sync::atomic::Ordering;
 //!
 //! // Convenience macro
 //! let b = bit_vec![0, 1, 0, 1, 1, 0, 1, 0];
@@ -149,9 +148,8 @@ impl<B: AsRef<[usize]>> Eq for BitVec<B> {}
 /// # Examples
 ///
 /// ```rust
-/// use sux::bit_vec;
-/// use sux::bits::bit_vec::{BitVecOps, BitVecOpsMut};
-/// use sux::traits::BitLength;
+/// use sux::prelude::*;
+/// use sux::traits::BitVecOps;
 ///
 /// // Empty bit vector
 /// let b = bit_vec![];

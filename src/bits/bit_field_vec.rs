@@ -30,21 +30,19 @@
 //! A blanket implementation exposes slices of elements of type `W` as bit-field
 //! vectors of width `W::BITS`, analogously for atomic types `A`.
 //!
-//! The traits [`BitFieldSlice`], and [`BitFieldSliceMut`] provide a uniform
+//! The traits [`BitFieldSlice`] and [`BitFieldSliceMut`] provide a uniform
 //! interface to access to the content of (a reference to) the bit-field vector.
 //! There is also a [`AtomicBitFieldSlice`] trait for atomic bit-field vectors.
 //! Since they are also implemented for slices of words, they make it easy to
 //! write generic code that works both on bit-field vectors and on slices of
 //! words when you need to consider the bit width of each element.
 //!
-//! Note that the [`try_chunks_mut`](BitFieldSliceMut::try_chunks_mut) method
-//! is implemented on the [`BitFieldSliceMut`] trait, and thus returns an
-//! iterator over elements implementing [`SliceByValueMut`]; the elements,
-//! however, implement also [`BitFieldSliceMut`], and you can use this
-//! property by adding the bound
-//! ```ignore
-//!    for<'a> BitFieldSliceMut<W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut<W>>>
-//! ```
+//! Note that the [`try_chunks_mut`](SliceByValueMut::try_chunks_mut) method is
+//! part of the [`SliceByValueMut`] trait, and thus returns an iterator over
+//! elements implementing [`SliceByValueMut`]; the elements, however, implement
+//! also [`BitFieldSliceMut`], and you can use this property by adding the bound
+//! ```ignore for<'a> BitFieldSliceMut<W, ChunksMut<'a>: Iterator<Item:
+//! BitFieldSliceMut<W>>> ```
 //!
 //! Nothing is assumed about the content of the backend outside the
 //! bits of the vector. Moreover, the content of the backend outside of the
@@ -73,7 +71,7 @@
 //! assert_eq!(b.len(), 10);
 //! assert_eq!(b.bit_width(), 5);
 //! b.set(0, 3);
-//! assert_eq!(b.get(0), 3);
+//! assert_eq!(b.index_value(0), 3);
 //!
 //! // Empty bit field vector of bit width 20 with capacity 10
 //! let mut b = <BitFieldVec<usize>>::with_capacity(20, 10);
@@ -81,20 +79,19 @@
 //! assert_eq!(b.bit_width(), 20);
 //! b.push(20);
 //! assert_eq!(b.len(), 1);
-//! assert_eq!(b.get(0), 20);
+//! assert_eq!(b.index_value(0), 20);
 //! assert_eq!(b.pop(), Some(20));
 //!
 //! // Convenience macro
 //! let b = bit_field_vec![10; 4, 500, 2, 0, 1];
 //! assert_eq!(b.len(), 5);
 //! assert_eq!(b.bit_width(), 10);
-//! assert_eq!(b.get(0), 4);
-//! assert_eq!(b.get(1), 500);
-//! assert_eq!(b.get(2), 2);
-//! assert_eq!(b.get(3), 0);
-//! assert_eq!(b.get(4), 1);
+//! assert_eq!(b.index_value(0), 4);
+//! assert_eq!(b.index_value(1), 500);
+//! assert_eq!(b.index_value(2), 2);
+//! assert_eq!(b.index_value(3), 0);
+//! assert_eq!(b.index_value(4), 1);
 //! ```
-
 #[cfg(feature = "rayon")]
 use crate::RAYON_MIN_LEN;
 use crate::prelude::{bit_field_slice::*, *};
@@ -133,8 +130,9 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 /// # Examples
 ///
 /// ```
-/// # use sux::prelude::*;
-/// # use bit_field_slice::*;
+/// use sux::prelude::*;
+/// use bit_field_slice::*;
+/// use value_traits::slices::*;
 /// // Empty bit field vector of bit width 5
 /// let b = bit_field_vec![5];
 /// assert_eq!(b.len(), 0);
@@ -150,11 +148,11 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 /// let b = bit_field_vec![10; 4, 500, 2, 0, 1];
 /// assert_eq!(b.len(), 5);
 /// assert_eq!(b.bit_width(), 10);
-/// assert_eq!(b.get(0), 4);
-/// assert_eq!(b.get(1), 500);
-/// assert_eq!(b.get(2), 2);
-/// assert_eq!(b.get(3), 0);
-/// assert_eq!(b.get(4), 1);
+/// assert_eq!(b.index_value(0), 4);
+/// assert_eq!(b.index_value(1), 500);
+/// assert_eq!(b.index_value(2), 2);
+/// assert_eq!(b.index_value(3), 0);
+/// assert_eq!(b.index_value(4), 1);
 /// ```
 #[macro_export]
 macro_rules! bit_field_vec {
@@ -244,8 +242,6 @@ impl<W: Word, B: AsRef<[W]>, C: AsRef<[W]>> PartialEq<BitFieldVec<W, C>> for Bit
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> Eq for BitFieldVec<W, B> {}
-
 impl<W: Word, B> BitFieldVec<W, B> {
     /// # Safety
     /// `len` * `bit_width` must be between 0 (included) the number of
@@ -293,7 +289,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
         (&self.bits.as_ref()[word_index]) as *const _
     }
 
-    /// Like [`BitFieldSlice::get`], but using unaligned reads.
+    /// Like [`SliceByValue::index_value`], but using unaligned reads.
     ///
     /// This method can be used only for bit width smaller than or equal to
     /// `W::BITS - 8 + 2` or equal to `W::BITS - 8 + 4` or `W::BITS`. Moreover,
@@ -320,7 +316,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
         unsafe { self.get_unaligned_unchecked(index) }
     }
 
-    /// Like [`BitFieldSlice::get_unchecked`], but using unaligned reads.
+    /// Like [`SliceByValue::get_value_unchecked`], but using unaligned reads.
     ///
     /// # Safety
     ///
@@ -527,54 +523,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldVec<W, B> {
-    /// A version of [`BitFieldSliceMut::set`] that returns the previous value.
-    ///
-    /// # Panics
-    /// - If `index` is out of bounds.
-    /// - If `value` is not a valid value for the bit width of the vector.
-    pub fn replace(&mut self, index: usize, value: W) -> Result<W> {
-        panic_if_out_of_bounds!(index, self.len);
-        panic_if_value!(value, self.mask, self.bit_width);
-        Ok(unsafe { self.replace_unchecked(index, value) })
-    }
-
-    /// A version of [`BitFieldSliceMut::set_unchecked`] that returns the previous value,
-    /// that doesn't check for out-of-bounds access or value validity.
-    ///
-    /// # Safety
-    /// This method is unsafe because it does not check that `index` is within bounds
-    pub unsafe fn replace_unchecked(&mut self, index: usize, value: W) -> W {
-        let pos = index * self.bit_width;
-        let word_index = pos / W::BITS;
-        let bit_index = pos % W::BITS;
-        let bits = self.bits.as_mut();
-
-        unsafe {
-            if bit_index + self.bit_width <= W::BITS {
-                let mut word = *bits.get_unchecked_mut(word_index);
-                let old_value = (word >> bit_index) & self.mask;
-                word &= !(self.mask << bit_index);
-                word |= value << bit_index;
-                *bits.get_unchecked_mut(word_index) = word;
-                old_value
-            } else {
-                let mut word = *bits.get_unchecked_mut(word_index);
-                let mut old_value = word >> bit_index;
-                word &= (W::ONE << bit_index) - W::ONE;
-                word |= value << bit_index;
-                *bits.get_unchecked_mut(word_index) = word;
-
-                let mut word = *bits.get_unchecked_mut(word_index + 1);
-                old_value |= word << (W::BITS - bit_index);
-                word &= !(self.mask >> (W::BITS - bit_index));
-                word |= value >> (W::BITS - bit_index);
-                *bits.get_unchecked_mut(word_index + 1) = word;
-                old_value & self.mask
-            }
-        }
-    }
-}
+impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldVec<W, B> {}
 
 impl<W: Word, T> BitWidth<W> for BitFieldVec<W, T> {
     #[inline(always)]
@@ -706,6 +655,48 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
                 word &= !(self.mask >> (W::BITS - bit_index));
                 word |= value >> (W::BITS - bit_index);
                 *bits.get_unchecked_mut(word_index + 1) = word;
+            }
+        }
+    }
+
+    fn replace_value(&mut self, index: usize, value: W) -> W {
+        panic_if_out_of_bounds!(index, self.len);
+        panic_if_value!(value, self.mask, self.bit_width);
+        unsafe { self.replace_value_unchecked(index, value) }
+    }
+
+    /// A version of [`BitFieldSliceMut::set_unchecked`] that returns the previous value,
+    /// that doesn't check for out-of-bounds access or value validity.
+    ///
+    /// # Safety
+    /// This method is unsafe because it does not check that `index` is within bounds
+    unsafe fn replace_value_unchecked(&mut self, index: usize, value: W) -> W {
+        let pos = index * self.bit_width;
+        let word_index = pos / W::BITS;
+        let bit_index = pos % W::BITS;
+        let bits = self.bits.as_mut();
+
+        unsafe {
+            if bit_index + self.bit_width <= W::BITS {
+                let mut word = *bits.get_unchecked_mut(word_index);
+                let old_value = (word >> bit_index) & self.mask;
+                word &= !(self.mask << bit_index);
+                word |= value << bit_index;
+                *bits.get_unchecked_mut(word_index) = word;
+                old_value
+            } else {
+                let mut word = *bits.get_unchecked_mut(word_index);
+                let mut old_value = word >> bit_index;
+                word &= (W::ONE << bit_index) - W::ONE;
+                word |= value << bit_index;
+                *bits.get_unchecked_mut(word_index) = word;
+
+                let mut word = *bits.get_unchecked_mut(word_index + 1);
+                old_value |= word << (W::BITS - bit_index);
+                word &= !(self.mask >> (W::BITS - bit_index));
+                word |= value >> (W::BITS - bit_index);
+                *bits.get_unchecked_mut(word_index + 1) = word;
+                old_value & self.mask
             }
         }
     }
