@@ -40,6 +40,8 @@ use std::ops::Index;
 /// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
 /// Springer, 2008.
 ///
+/// This structure forwards several traits and [`Deref`]'s to its backend.
+///
 /// # Examples
 ///
 /// ```rust

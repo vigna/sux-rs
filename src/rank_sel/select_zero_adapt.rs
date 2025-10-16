@@ -10,7 +10,10 @@ use super::{Inventory, SpanType};
 use ambassador::Delegate;
 use common_traits::SelectInWord;
 use mem_dbg::{MemDbg, MemSize};
-use std::cmp::{max, min};
+use std::{
+    cmp::{max, min},
+    ops::Deref,
+};
 
 use crate::{
     prelude::{BitCount, BitLength, SelectZeroHinted},
@@ -150,6 +153,14 @@ pub struct SelectZeroAdapt<B, I = Box<[usize]>> {
     log2_u64_per_subinventory: usize,
     ones_per_inventory_mask: usize,
     ones_per_sub16_mask: usize,
+}
+
+impl<B: SelectZeroHinted, I> Deref for SelectZeroAdapt<B, I> {
+    type Target = B;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bits
+    }
 }
 
 impl<B, I> SelectZeroAdapt<B, I> {
