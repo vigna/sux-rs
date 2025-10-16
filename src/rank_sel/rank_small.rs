@@ -8,7 +8,10 @@
 
 use ambassador::{Delegate, delegatable_trait};
 use mem_dbg::*;
-use std::ptr::{addr_of, addr_of_mut, read_unaligned, write_unaligned};
+use std::{
+    ops::Deref,
+    ptr::{addr_of, addr_of_mut, read_unaligned, write_unaligned},
+};
 
 use crate::{
     prelude::{BitLength, BitVec, Rank, RankHinted, RankUnchecked, RankZero},
@@ -84,6 +87,8 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// fly it stores the cumulative counters directly using implicit zero
 /// extension, as in [`Rank9`](super::Rank9).
 ///
+/// This structure forwards several traits and [`Deref`]'s to its backend.
+///
 /// # Examples
 ///
 /// ```rust
@@ -138,6 +143,16 @@ pub struct RankSmall<
     pub(super) upper_counts: C1,
     pub(super) counts: C2,
     pub(super) num_ones: usize,
+}
+
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B> Deref
+    for RankSmall<NUM_U32S, COUNTER_WIDTH, B>
+{
+    type Target = B;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bits
+    }
 }
 
 /// A convenient macro to build a [`RankSmall`] structure with the correct

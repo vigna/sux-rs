@@ -55,7 +55,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
-use std::ops::Index;
+use std::ops::{Deref, Index};
 
 /// A selection structure over [`Rank9`] using 25%–37.5% additional space and
 /// providing constant-time selection.
@@ -75,6 +75,9 @@ use std::ops::Index;
 /// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
 /// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
 /// Springer, 2008.
+///
+/// This structure forwards several traits and [`Deref`]'s to its inner
+/// [`Rank9`].
 ///
 /// # Examples
 ///
@@ -155,6 +158,15 @@ impl<R: BitLength, I> Select9<R, I> {
     #[inline(always)]
     pub fn len(&self) -> usize {
         BitLength::len(self)
+    }
+}
+
+impl<R: BitLength, I> Deref for Select9<R, I> {
+    type Target = R;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.rank9
     }
 }
 
