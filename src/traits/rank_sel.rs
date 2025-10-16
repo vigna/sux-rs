@@ -17,6 +17,7 @@ use crate::ambassador_impl_Index;
 use ambassador::{Delegate, delegatable_trait};
 use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
+use std::ops::Deref;
 use std::ops::Index;
 
 /// A trait expressing a length in bits.
@@ -333,6 +334,13 @@ impl<B: BitLength> BitCount for AddNumBits<B> {
     #[inline(always)]
     fn count_ones(&self) -> usize {
         self.number_of_ones
+    }
+}
+
+impl<B> Deref for AddNumBits<B> {
+    type Target = B;
+    fn deref(&self) -> &Self::Target {
+        &self.bits
     }
 }
 

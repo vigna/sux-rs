@@ -161,15 +161,6 @@ impl<R: BitLength, I> Select9<R, I> {
     }
 }
 
-impl<R: BitLength, I> Deref for Select9<R, I> {
-    type Target = R;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        &self.rank9
-    }
-}
-
 impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>, Box<[usize]>> {
     pub fn new(rank9: Rank9<B, C>) -> Self {
         let num_bits = rank9.len();
@@ -327,6 +318,15 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
             inventory_size,
             subinventory_size,
         }
+    }
+}
+
+impl<R: BitLength, I> Deref for Select9<R, I> {
+    type Target = R;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.rank9
     }
 }
 

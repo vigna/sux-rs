@@ -34,10 +34,7 @@
 //! Borrow<Self::Input>`. This makes it possible to pass a value both by
 //! reference and by value, which is particularly convenient in the case of
 //! primitive types (see, e.g.,
-//! [`EliasFano`](crate::dict::elias_fano::EliasFano)). Note that this goal
-//! cannot be achieved using [`AsRef`] because there is no blanket
-//! implementation of `AsRef<T>` for `T`, as it happens in the case of
-//! [`Borrow`].
+//! [`EliasFano`](crate::dict::elias_fano::EliasFano)).
 //!
 //! We suggest that every implementation of [`IndexedSeq`] also implements
 //! [`IntoIterator`]/[`IntoIteratorFrom`](crate::traits::iter::IntoIteratorFrom)

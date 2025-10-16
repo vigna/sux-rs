@@ -5,7 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Vectors of values of fixed bit width.
+//! Vectors of bit fields of fixed width (AKA “compact arrays“, “bit array“,
+//! etc.)
 //!
 //! Elements are stored contiguously, with no padding bits (in particular,
 //! unless the bit width is a power of two some elements will be stored across
@@ -67,11 +68,12 @@
 //! ```
 //! # use sux::prelude::*;
 //! # use bit_field_slice::*;
+//! # use value_traits::slices::*;
 //! // Bit field vector of bit width 5 and length 10, all entries set to zero
 //! let mut b = <BitFieldVec<usize>>::new(5, 10);
 //! assert_eq!(b.len(), 10);
 //! assert_eq!(b.bit_width(), 5);
-//! b.set(0, 3);
+//! b.set_value(0, 3);
 //! assert_eq!(b.index_value(0), 3);
 //!
 //! // Empty bit field vector of bit width 20 with capacity 10
@@ -218,29 +220,6 @@ fn mask<W: Word>(bit_width: usize) -> W {
         W::ZERO
     } else {
         W::MAX >> W::BITS.checked_sub(bit_width).expect("bit_width > W::BITS")
-    }
-}
-
-/// Equality between bit-field vectors requires that the word is the same, the
-/// bit width is the same, and the content is the same.
-impl<W: Word, B: AsRef<[W]>, C: AsRef<[W]>> PartialEq<BitFieldVec<W, C>> for BitFieldVec<W, B> {
-    fn eq(&self, other: &BitFieldVec<W, C>) -> bool {
-        if self.bit_width() != other.bit_width() {
-            return false;
-        }
-        if self.len() != other.len() {
-            return false;
-        }
-        let bit_len = self.len() * self.bit_width();
-        if self.bits.as_ref()[..bit_len / W::BITS] != other.bits.as_ref()[..bit_len / W::BITS] {
-            return false;
-        }
-
-        let residual = bit_len % W::BITS;
-        residual == 0
-            || (self.bits.as_ref()[bit_len / W::BITS] ^ other.bits.as_ref()[bit_len / W::BITS])
-                << (W::BITS - residual)
-                == W::ZERO
     }
 }
 
@@ -1220,6 +1199,29 @@ impl<W: Word, B: AsRef<[W]>> DoubleEndedIterator for BitFieldVecIterator<'_, W, 
     }
 }
 
+/// Equality between bit-field vectors requires that the word is the same, the
+/// bit width is the same, and the content is the same.
+impl<W: Word, B: AsRef<[W]>, C: AsRef<[W]>> PartialEq<BitFieldVec<W, C>> for BitFieldVec<W, B> {
+    fn eq(&self, other: &BitFieldVec<W, C>) -> bool {
+        if self.bit_width() != other.bit_width() {
+            return false;
+        }
+        if self.len() != other.len() {
+            return false;
+        }
+        let bit_len = self.len() * self.bit_width();
+        if self.bits.as_ref()[..bit_len / W::BITS] != other.bits.as_ref()[..bit_len / W::BITS] {
+            return false;
+        }
+
+        let residual = bit_len % W::BITS;
+        residual == 0
+            || (self.bits.as_ref()[bit_len / W::BITS] ^ other.bits.as_ref()[bit_len / W::BITS])
+                << (W::BITS - residual)
+                == W::ZERO
+    }
+}
+
 impl<'a, W: Word, B: AsRef<[W]>> IntoIterator for &'a BitFieldVec<W, B> {
     type Item = W;
     type IntoIter = BitFieldVecIterator<'a, W, B>;
@@ -1254,7 +1256,8 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
         self.iter_from(0)
     }
 }
-/// A tentatively thread-safe vector of bit fields of fixed width.
+/// A tentatively thread-safe vector of bit fields of fixed width (AKA “compact arrays“,
+/// “bit array“, etc.)
 ///
 /// This implementation provides some concurrency guarantees, albeit not
 /// full-fledged thread safety: more precisely, we can guarantee thread-safety

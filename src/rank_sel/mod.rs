@@ -12,9 +12,10 @@
 //! Rank and selection structures can be combined arbitrarily with a
 //! mix-and-match approach. There is a base class, usually
 //! [`BitVec`](crate::bits::bit_vec::BitVec), over which different structures
-//! can be layered. Each structure forwards the methods it does not implement to
-//! the next structure in the chain.
-//!
+//! can be layered. Each structure forwards traits it does not implement to the
+//! next structure in the chain, and also implement [`Deref`](core::ops::Deref)
+//! with the next structure as target.
+
 //! A few of the structures in module are based on _broadword programming_ and
 //! have been described by Sebastiano Vigna in “[Broadword Implementation of
 //! Rank/Select

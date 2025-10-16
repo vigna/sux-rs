@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Traits for slices of bit fields of constant width (AKA “compact arrays“,
+//! Traits for slices of bit fields of fixed width (AKA “compact arrays“,
 //! “bit array“, etc.).
 //!
 //! Slices of bit fields are accessed with a logic similar to slices, but when
