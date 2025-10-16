@@ -26,6 +26,7 @@ use crate::traits::rank_sel::ambassador_impl_Select;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
+use std::ops::Deref;
 use std::ops::Index;
 
 // NOTE: to make parallel modifications with SelectSmall as easy as possible,
@@ -97,6 +98,16 @@ pub struct SelectZeroSmall<
     inventory: I,
     inventory_begin: O,
     log2_ones_per_inventory: usize,
+}
+
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O> Deref
+    for SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, C, I, O>
+{
+    type Target = C;
+
+    fn deref(&self) -> &Self::Target {
+        &self.small_counters
+    }
 }
 
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>

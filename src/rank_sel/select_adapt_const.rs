@@ -10,7 +10,10 @@ use super::{Inventory, SpanType};
 use ambassador::Delegate;
 use common_traits::SelectInWord;
 use mem_dbg::{MemDbg, MemSize};
-use std::cmp::{max, min};
+use std::{
+    cmp::{max, min},
+    ops::Deref,
+};
 
 use crate::{
     prelude::{BitCount, BitLength, Select, SelectHinted},
@@ -52,6 +55,8 @@ use std::ops::Index;
 ///
 /// [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst) is a variant of this
 /// structure that provides the same functionality for zero bits.
+///
+/// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
 /// # Examples
 /// ```rust
@@ -165,6 +170,16 @@ pub struct SelectAdaptConst<
     bits: B,
     inventory: I,
     spill: I,
+}
+
+impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY: usize> Deref
+    for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+{
+    type Target = B;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bits
+    }
 }
 
 impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY: usize>

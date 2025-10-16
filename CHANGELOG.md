@@ -70,6 +70,9 @@
 
 * `AtomicHelper` has been removed.
 
+* All rank/selection structures now `Deref` to their backend (only
+  `Rank9` used to do so).
+
 ### Fixed
 
 * Adding too few values to Elias-Fano structures was causing undefined
