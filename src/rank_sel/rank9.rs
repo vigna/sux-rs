@@ -122,14 +122,6 @@ impl BlockCounters {
     }
 }
 
-impl<B, C> Deref for Rank9<B, C> {
-    type Target = B;
-
-    fn deref(&self) -> &Self::Target {
-        &self.bits
-    }
-}
-
 impl<B, C> Rank9<B, C> {
     pub(super) const WORDS_PER_BLOCK: usize = 8;
 
@@ -204,6 +196,14 @@ impl<B: AsRef<[usize]> + BitLength> Rank9<B, Box<[BlockCounters]>> {
             bits,
             counts: counts.into(),
         }
+    }
+}
+
+impl<B, C> Deref for Rank9<B, C> {
+    type Target = B;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bits
     }
 }
 

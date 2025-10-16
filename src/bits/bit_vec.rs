@@ -110,27 +110,6 @@ pub struct BitVec<B = Vec<usize>> {
     len: usize,
 }
 
-impl<B: AsRef<[usize]>, C: AsRef<[usize]>> PartialEq<BitVec<C>> for BitVec<B> {
-    fn eq(&self, other: &BitVec<C>) -> bool {
-        let len = self.len();
-        if len != other.len() {
-            return false;
-        }
-
-        let full_words = len / BITS;
-        if self.as_ref()[..full_words] != other.as_ref()[..full_words] {
-            return false;
-        }
-
-        let residual = len % BITS;
-
-        residual == 0
-            || (self.as_ref()[full_words] ^ other.as_ref()[full_words]) << (BITS - residual) == 0
-    }
-}
-
-impl<B: AsRef<[usize]>> Eq for BitVec<B> {}
-
 /// Convenient, [`vec!`](vec!)-like macro to initialize bit vectors.
 ///
 /// - `bit_vec![]` creates an empty bit vector.
@@ -329,6 +308,16 @@ impl BitVec<Vec<usize>> {
     }
 }
 
+impl<B: AsRef<[usize]>> BitVec<B> {
+    /// Returns an owned copy of the bit vector.
+    pub fn to_owned(&self) -> BitVec {
+        BitVec {
+            bits: self.bits.as_ref().to_owned(),
+            len: self.len,
+        }
+    }
+}
+
 impl<B> BitLength for BitVec<B> {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -352,15 +341,26 @@ impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
     }
 }
 
-impl<B: AsRef<[usize]>> BitVec<B> {
-    /// Returns an owned copy of the bit vector.
-    pub fn to_owned(&self) -> BitVec {
-        BitVec {
-            bits: self.bits.as_ref().to_owned(),
-            len: self.len,
+impl<B: AsRef<[usize]>, C: AsRef<[usize]>> PartialEq<BitVec<C>> for BitVec<B> {
+    fn eq(&self, other: &BitVec<C>) -> bool {
+        let len = self.len();
+        if len != other.len() {
+            return false;
         }
+
+        let full_words = len / BITS;
+        if self.as_ref()[..full_words] != other.as_ref()[..full_words] {
+            return false;
+        }
+
+        let residual = len % BITS;
+
+        residual == 0
+            || (self.as_ref()[full_words] ^ other.as_ref()[full_words]) << (BITS - residual) == 0
     }
 }
+
+impl<B: AsRef<[usize]>> Eq for BitVec<B> {}
 
 impl<B: AsRef<[usize]>> Index<usize> for BitVec<B> {
     type Output = bool;
