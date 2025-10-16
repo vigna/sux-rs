@@ -145,7 +145,7 @@ where
     ///
     /// # Safety
     /// - `index` must be in [0..[len](SliceByValue::len));
-    /// - `value` must fit withing [`BitWidth::bit_width`] bits.
+    /// - `value` must fit within [`BitWidth::bit_width`] bits.
     ///
     /// No bound or bit-width check is performed.
     unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering);
