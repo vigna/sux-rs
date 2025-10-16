@@ -1,6 +1,10 @@
 # Change Log
 
-## [0.9.0]
+## [0.9.1] - 2025-10-16
+
+* Updated to the last version of `Lender`.
+
+## [0.9.0] -2025-10-16
 
 ### New
 
