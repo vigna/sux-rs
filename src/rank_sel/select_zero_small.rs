@@ -301,7 +301,7 @@ macro_rules! impl_select_zero_small {
                     // TODO
                     // Since we use 32-bit entries, we cannot add a sentinel
                     // with value given by the number of bits. Thus, we must
-                    // handle the case in which inv_idx is the the last
+                    // handle the case in which inv_idx is the last
                     // inventory entry as a special case.
                     last_block_idx = self.len().div_ceil(Self::BLOCK_BIT_SIZE);
                 }

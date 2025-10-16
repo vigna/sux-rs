@@ -107,7 +107,7 @@ pub trait RankUnchecked {
     /// `pos` must be between 0 (included) and the [length of the underlying bit
     /// vector](`BitLength::len`) (excluded).
     ///
-    /// Some implementation might accept the the length as a valid argument.
+    /// Some implementation might accept the length as a valid argument.
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
 }
 
@@ -133,7 +133,7 @@ pub trait RankZero: Rank {
     /// `pos` must be between 0 and the [length of the underlying bit
     /// vector](`BitLength::len`) (excluded).
     ///
-    /// Some implementation might consider the the length as a valid argument.
+    /// Some implementation might consider the length as a valid argument.
     unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
         pos - unsafe { self.rank_unchecked(pos) }
     }
@@ -163,7 +163,7 @@ pub trait RankHinted<const HINT_BIT_SIZE: usize> {
     /// `hint_rank` must be the number of ones in the underlying bit vector
     /// before `hint_pos` * `HINT_BIT_SIZE`.
     ///
-    /// Some implementation might consider the the length as a valid argument.
+    /// Some implementation might consider the length as a valid argument.
     unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize;
 }
 

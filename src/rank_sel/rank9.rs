@@ -227,7 +227,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for
     ///
     /// The implementation of [`RankUnchecked`] for [`Rank9`] has an weakened
     /// safety requirement: it is possible to call this method with `pos` equal
-    /// to [the length of te underlying bit
+    /// to [the length of the underlying bit
     /// vector](crate::traits::BitLength::len) provided there is at least one
     /// unused bit. This is always true if the length is not a multiple of the
     /// number of bits in a word, but requires allocating an extra word

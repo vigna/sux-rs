@@ -259,7 +259,7 @@ impl BitVec<Vec<usize>> {
         }
     }
 
-    /// Returns the currency capacity of this bit vector.
+    /// Returns the current capacity of this bit vector.
     pub fn capacity(&self) -> usize {
         self.bits.capacity() * BITS
     }
