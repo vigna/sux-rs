@@ -16,7 +16,7 @@
 * `IntoIteratorFrom` has now implementations for (references of) slices,
   vectors, and boxed slices.
 
-* `EliasFano` implements [`SliceByValue`] from the
+* `EliasFano` implements `SliceByValue` from the
   [`value-traits`](https://crates.io/crates/value-traits) crate. In particular,
   you can apply subslicing.
 
