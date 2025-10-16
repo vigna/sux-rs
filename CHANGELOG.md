@@ -16,10 +16,9 @@
 * `IntoIteratorFrom` has now implementations for (references of) slices,
   vectors, and boxed slices.
 
-* `EliasFano` and `BitFieldVec` implement the relevant traits from
-  the [`value-traits`](https://crates.io/crates/value-traits) crate.
-  In particular, you can apply subslicing to the sequences undefined
-  by those structures,
+* `EliasFano` implements [`SliceByValue`] from the
+  [`value-traits`](https://crates.io/crates/value-traits) crate. In particular,
+  you can apply subslicing.
 
 * Support for ε-serde depends now on the feature `epserde`. Support for memory
   mapping in ε-serde is provided by the `mmap` feature, which is on by default.
@@ -42,6 +41,15 @@
   strings). Bounds of the form `IndexedSeq<Input = I, Output = O>` will have to
   be rewritten as `for<'a> IndexedSeq<Input = I, Output<'a> = O>`.
 
+* `BitFieldSlice` and `BitFieldSliceMut` have been refactored to be based
+  on `SliceByValue` and `SliceByValueMut` from the
+  [`value-traits`](https://crates.io/crates/value-traits) crate. This avoids
+  significant duplication of intent. Unfortunately this also means that the
+  previous `get` method is now called `index_value`, and `get_unchecked` is
+  now called `get_value_unchecked`. Similarly, `set` is now called
+  `set_value`, and `set_unchecked` is now called `set_value_unchecked`.
+  As a bonus, we have now subslicing for free.
+
 * `BitFieldSlice` has no longer blanket implementations for `AsRef<[W]>`.
   Rather, we provide implementations for slices, vectors and arrays.
   Because of this change however, now importing both `IndexedSeq` and
@@ -49,6 +57,10 @@
   prelude imports the modules `indexed_dict` and `bit_field_slice`, but not the
   traits therein. You have to manually `use indexed_dict::*` or `use
   bit_field_slice::*` to use the traits.
+
+* Most previous occurrences of `BitFieldSlice` as a trait bound (e.g., for the
+  lower bits of Elias–Fano) have been replaced by `SliceByValue`, which is
+  a weaker trait but provide all necessary functionality.
 
 * The unsafe `transmute_vec` and `transmute_boxed_slice` functions have
   been replaced by four specific, safe functions
