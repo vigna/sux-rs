@@ -52,19 +52,34 @@ struct Stats {
 /// string is encoded without compression, wheres the other strings are encoded
 /// with the common prefix removed.
 ///
+/// Besides the standard access by means of the [`IndexedSeq`] trait, this
+/// structure also implements the [`get_in_place`](RearCodedList::get_in_place)
+/// method, which allows to write the string directly into a user-provided
+/// buffer, avoiding allocations and UTF-8 validity checks.
+///
 /// Rear-coded lists can be iterated upon using either an
 /// [`Iterator`](RearCodedList::iter) or a [`Lender`](RearCodedList::lend).
 /// In the first case there will be an allocation at each iteration, whereas in
 /// second case a single buffer will be reused.
 ///
-/// To build a [`RearCodedList`] you use a [`RearCodedListBuilder`].
+/// There are two versions of the structure, depending on a const boolean
+/// parameter `SORTED`: if it is true, the strings must be sorted in ascending
+/// order (this is the usual case for obtaining good compression), and an
+/// implementation of [`IndexedDict`] will be available that finds the position
+/// of strings in the list by binary search; if false, the strings can be in
+/// arbitrary order, but no dictionary operations will be available (this
+/// configuration is mainly useful for storing large lists of strings with quick
+/// deserialization).
+///
+/// To build a [`RearCodedList`] you use a [`RearCodedListBuilder`], which
+/// has a `SORTED` boolean parameter.
 ///
 /// # Examples
 ///
 /// ```rust
-/// use sux::traits::IndexedSeq;
+/// use sux::traits::{IndexedSeq, IndexedDict};
 /// use sux::dict::RearCodedListBuilder;
-/// let mut rclb = RearCodedListBuilder::new(4);
+/// let mut rclb = RearCodedListBuilder::<true>::new(4);
 ///
 /// rclb.push("aa");
 /// rclb.push("aab");
@@ -78,25 +93,29 @@ struct Stats {
 /// assert_eq!(rcl.get(0), "aa");
 /// assert_eq!(rcl.get(1), "aab");
 /// assert_eq!(rcl.get(2), "abc");
+/// assert_eq!(rcl.index_of("abde"), Some(4));
+/// assert_eq!(rcl.index_of("foo"), None);
 /// ```
 
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct RearCodedList<D: AsRef<[u8]> = Box<[u8]>, P: AsRef<[usize]> = Box<[usize]>> {
+pub struct RearCodedList<
+    D: AsRef<[u8]> = Box<[u8]>,
+    P: AsRef<[usize]> = Box<[usize]>,
+    const SORTED: bool = true,
+> {
     /// The number of strings in a block; this value trades off compression for speed.
     k: usize,
     /// Number of encoded strings.
     len: usize,
-    /// Whether the strings are sorted.
-    is_sorted: bool,
     /// The encoded strings, `\0`-terminated.
     data: D,
     /// The pointer to the starting string of each block.
     pointers: P,
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> RearCodedList<D, P, SORTED> {
     /// Returns the number of strings.
     ///
     /// This method is equivalent to [`IndexedSeq::len`], but it is provided to
@@ -108,7 +127,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
 
     /// Returns an [`Iterator`] over the strings starting from the given position.
     #[inline(always)]
-    pub fn iter_from(&self, from: usize) -> Iter<'_, D, P> {
+    pub fn iter_from(&self, from: usize) -> Iter<'_, D, P, SORTED> {
         Iter {
             iter: Lend::new_from(self, from),
         }
@@ -116,19 +135,19 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
 
     /// Returns an [`Iterator`] over the strings.
     #[inline(always)]
-    pub fn iter(&self) -> Iter<'_, D, P> {
+    pub fn iter(&self) -> Iter<'_, D, P, SORTED> {
         self.iter_from(0)
     }
 
     /// Returns a [`Lender`] over the strings starting from the given position.
     #[inline(always)]
-    pub fn lend_from(&self, from: usize) -> Lend<'_, D, P> {
+    pub fn lend_from(&self, from: usize) -> Lend<'_, D, P, SORTED> {
         Lend::new_from(self, from)
     }
 
     /// Returns a [`Lender`] over the strings.
     #[inline(always)]
-    pub fn lend(&self) -> Lend<'_, D, P> {
+    pub fn lend(&self) -> Lend<'_, D, P, SORTED> {
         self.lend_from(0)
     }
 
@@ -157,22 +176,37 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
             data = tmp;
         }
     }
+}
 
-    fn index_of_unsorted(&self, value: impl Borrow<<Self as Types>::Input>) -> Option<usize> {
-        let key = value.borrow().as_bytes();
-        let mut iter = self.into_lender().enumerate();
-        while let Some((idx, string)) = iter.next() {
-            if matches!(
-                strcmp_rust(key, string.as_bytes()),
-                core::cmp::Ordering::Equal
-            ) {
-                return Some(idx);
-            }
-        }
-        None
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> Types for RearCodedList<D, P, SORTED> {
+    type Output<'a> = String;
+    type Input = str;
+}
+
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IndexedSeq
+    for RearCodedList<D, P, SORTED>
+{
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
+        let mut result = Vec::with_capacity(128);
+        self.get_in_place(index, &mut result);
+        String::from_utf8(result).unwrap()
     }
 
-    fn index_of_sorted(&self, value: impl Borrow<<Self as Types>::Input>) -> Option<usize> {
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P, true> {
+    /// Uses a binary search on the blocks followed by a linear search within the block.
+    #[inline(always)]
+    fn contains(&self, value: impl Borrow<Self::Input>) -> bool {
+        self.index_of(value).is_some()
+    }
+
+    fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
         let string = value.borrow().as_bytes();
         // first to a binary search on the blocks to find the block
         let block_idx = self.pointers.as_ref().binary_search_by(|block_ptr| {
@@ -218,64 +252,34 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<D, P> {
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> Types for RearCodedList<D, P> {
-    type Output<'a> = String;
-    type Input = str;
-}
-
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedSeq for RearCodedList<D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IntoLender
+    for &'a RearCodedList<D, P, SORTED>
+{
+    type Lender = Lend<'a, D, P, SORTED>;
     #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-        let mut result = Vec::with_capacity(128);
-        self.get_in_place(index, &mut result);
-        String::from_utf8(result).unwrap()
-    }
-
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.len
-    }
-}
-
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P> {
-    /// If the strings in the list are sorted this is done with a binary search,
-    /// otherwise it is done with a linear search.
-    #[inline(always)]
-    fn contains(&self, value: impl Borrow<Self::Input>) -> bool {
-        self.index_of(value).is_some()
-    }
-
-    fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
-        if self.is_sorted {
-            self.index_of_sorted(value)
-        } else {
-            self.index_of_unsorted(value)
-        }
-    }
-}
-
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoLender for &'a RearCodedList<D, P> {
-    type Lender = Lend<'a, D, P>;
-    #[inline(always)]
-    fn into_lender(self) -> Lend<'a, D, P> {
+    fn into_lender(self) -> Lend<'a, D, P, SORTED> {
         Lend::new(self)
     }
 }
 
 /// Sequential [`Iterator`] over the strings.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct Iter<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
-    iter: Lend<'a, D, P>,
+pub struct Iter<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> {
+    iter: Lend<'a, D, P, SORTED>,
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::ExactSizeIterator for Iter<'_, D, P> {
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> std::iter::ExactSizeIterator
+    for Iter<'_, D, P, SORTED>
+{
     #[inline(always)]
     fn len(&self) -> usize {
         self.iter.len()
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iter<'_, D, P> {
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> std::iter::Iterator
+    for Iter<'_, D, P, SORTED>
+{
     type Item = String;
 
     #[inline(always)]
@@ -291,17 +295,21 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> std::iter::Iterator for Iter<'_, D, P> {
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIterator for &'a RearCodedList<D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IntoIterator
+    for &'a RearCodedList<D, P, SORTED>
+{
     type Item = String;
-    type IntoIter = Iter<'a, D, P>;
+    type IntoIter = Iter<'a, D, P, SORTED>;
     #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIteratorFrom for &'a RearCodedList<D, P> {
-    type IntoIterFrom = Iter<'a, D, P>;
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IntoIteratorFrom
+    for &'a RearCodedList<D, P, SORTED>
+{
+    type IntoIterFrom = Iter<'a, D, P, SORTED>;
     #[inline(always)]
     fn into_iter_from(self, from: usize) -> Self::IntoIter {
         self.iter_from(from)
@@ -310,15 +318,15 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> IntoIteratorFrom for &'a RearCodedLi
 
 /// Sequential [`Lender`] over the strings.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct Lend<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> {
-    rca: &'a RearCodedList<D, P>,
+pub struct Lend<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> {
+    rca: &'a RearCodedList<D, P, SORTED>,
     buffer: Vec<u8>,
     data: &'a [u8],
     index: usize,
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lend<'a, D, P> {
-    pub fn new(rca: &'a RearCodedList<D, P>) -> Self {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> Lend<'a, D, P, SORTED> {
+    pub fn new(rca: &'a RearCodedList<D, P, SORTED>) -> Self {
         Self {
             rca,
             buffer: Vec::with_capacity(128),
@@ -327,7 +335,7 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lend<'a, D, P> {
         }
     }
 
-    pub fn new_from(rca: &'a RearCodedList<D, P>, from: usize) -> Self {
+    pub fn new_from(rca: &'a RearCodedList<D, P, SORTED>, from: usize) -> Self {
         let block = from / rca.k;
         let offset = from % rca.k;
 
@@ -345,11 +353,13 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lend<'a, D, P> {
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>> Lending<'a> for Lend<'_, D, P> {
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> Lending<'a>
+    for Lend<'_, D, P, SORTED>
+{
     type Lend = &'a str;
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Lend<'_, D, P> {
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> Lender for Lend<'_, D, P, SORTED> {
     #[inline]
     /// A next that returns a reference to the inner buffer containing the string.
     /// This is useful to avoid allocating a new string for every query if you
@@ -379,7 +389,9 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> Lender for Lend<'_, D, P> {
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeLender for Lend<'_, D, P> {
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> ExactSizeLender
+    for Lend<'_, D, P, SORTED>
+{
     #[inline(always)]
     fn len(&self) -> usize {
         self.rca.len() - self.index
@@ -388,13 +400,11 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> ExactSizeLender for Lend<'_, D, P> {
 
 /// Builder for a rear-coded list.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct RearCodedListBuilder {
+pub struct RearCodedListBuilder<const SORTED: bool = true> {
     /// The number of strings in a block; this value trades compression for speed.
     k: usize,
     /// Number of encoded strings.
     len: usize,
-    /// Whether the strings are sorted.
-    is_sorted: bool,
     /// The encoded strings, `\0`-terminated.
     data: Vec<u8>,
     /// The pointer to the starting string of each block.
@@ -450,7 +460,7 @@ fn strcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
     other.len().cmp(&string.len())
 }
 
-impl RearCodedListBuilder {
+impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
     /// Creates a builder for a rear-coded list with a block size of `k`.
     pub fn new(k: usize) -> Self {
         Self {
@@ -458,19 +468,17 @@ impl RearCodedListBuilder {
             last_str: Vec::with_capacity(1024),
             pointers: Vec::new(),
             len: 0,
-            is_sorted: true,
             k,
             stats: Stats::default(),
         }
     }
 
     /// Builds the rear-coded list.
-    pub fn build(self) -> RearCodedList<Box<[u8]>, Box<[usize]>> {
+    pub fn build(self) -> RearCodedList<Box<[u8]>, Box<[usize]>, SORTED> {
         RearCodedList {
             data: self.data.into(),
             pointers: self.pointers.into(),
             len: self.len,
-            is_sorted: self.is_sorted,
             k: self.k,
         }
     }
@@ -480,96 +488,9 @@ impl RearCodedListBuilder {
         self.len
     }
 
-    /// Appends a string to the end of the list.
-    pub fn push(&mut self, string: impl AsRef<str>) {
-        let string = string.as_ref();
-        // update stats
-        self.stats.max_str_len = self.stats.max_str_len.max(string.len());
-        self.stats.sum_str_len += string.len();
-
-        let (lcp, order) = longest_common_prefix(&self.last_str, string.as_bytes());
-
-        if order == core::cmp::Ordering::Greater {
-            self.is_sorted = false;
-        }
-
-        // at every multiple of k we just encode the string as is
-        let to_encode = if self.len % self.k == 0 {
-            // compute the size in bytes of the previous block
-            let last_ptr = self.pointers.last().copied().unwrap_or(0);
-            let block_bytes = self.data.len() - last_ptr;
-            // update stats
-            self.stats.max_block_bytes = self.stats.max_block_bytes.max(block_bytes);
-            self.stats.sum_block_bytes += block_bytes;
-            // save a pointer to the start of the string
-            self.pointers.push(self.data.len());
-
-            // compute the redundancy
-            let rear_length = self.last_str.len() - lcp;
-            if self.len != 0 {
-                self.stats.redundancy += lcp as isize;
-                self.stats.redundancy -= encode_int_len(rear_length) as isize;
-            }
-            // just encode the whole string
-            string.as_bytes()
-        } else {
-            // update the stats
-            self.stats.max_lcp = self.stats.max_lcp.max(lcp);
-            self.stats.sum_lcp += lcp;
-            // encode the len of the bytes in data
-            let rear_length = self.last_str.len() - lcp;
-            let prev_len = self.data.len();
-            encode_int(rear_length, &mut self.data);
-            // update stats
-            self.stats.code_bytes += self.data.len() - prev_len;
-            // return the delta suffix
-            &string.as_bytes()[lcp..]
-        };
-        // Write the data to the buffer
-        self.data.extend_from_slice(to_encode);
-        // push the \0 terminator
-        self.data.push(0);
-        self.stats.suffixes_bytes += to_encode.len() + 1;
-
-        // put the string as last_str for the next iteration
-        self.last_str.clear();
-        self.last_str.extend_from_slice(string.as_bytes());
-        self.len += 1;
-    }
-
-    /// Appends all the strings from a [`Lender`] to the end of the list.
-    ///
-    /// We prefer to implement extension via a [`Lender`] instead of an
-    /// [`Iterator`] to avoid the need to allocate a new string for every string
-    /// in the list. This is particularly useful when building large lists
-    /// from files using, for example, a
-    /// [`RewindableIoLender`](crate::utils::lenders::RewindableIoLender).
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use lender::*;
-    /// use sux::dict::RearCodedListBuilder;
-    /// let mut rclb = RearCodedListBuilder::new(4);
-    /// let words = vec!["aa", "aab", "abc", "abdd", "abde", "abdf"];
-    /// // We need the map because s has type &&str
-    /// rclb.extend(words.iter().map(|s| *s).into_lender());
-    /// let rcl = rclb.build();
-    ///
-    /// let mut rclb = RearCodedListBuilder::new(4);
-    /// let words = vec!["aa".to_string(), "aab".to_string(), "abc".to_string(),
-    ///     "abdd".to_string(), "abde".to_string(), "abdf".to_string()];
-    /// // We need the map to turn String into &str
-    /// rclb.extend(words.iter().map(|s| s.as_str()).into_lender());
-    /// let rcl = rclb.build();
-    /// ```
-    pub fn extend<S: Borrow<str>, L: IntoLender>(&mut self, into_lender: L)
-    where
-        L::Lender: for<'lend> Lending<'lend, Lend = S>,
-    {
-        for_!(string in into_lender {
-            self.push(string.borrow());
-        });
+    /// Returns whether the builder is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
     /// Prints in a human-readable format the statistics of the
@@ -640,6 +561,116 @@ impl RearCodedListBuilder {
             "compression_ratio: {:.3}",
             (ptr_size + self.data.len()) as f64 / self.stats.sum_str_len as f64
         );
+    }
+
+    fn push_impl(&mut self, string: &str, lcp: usize) {
+        // at every multiple of k we just encode the string as is
+        let to_encode = if self.len % self.k == 0 {
+            // compute the size in bytes of the previous block
+            let last_ptr = self.pointers.last().copied().unwrap_or(0);
+            let block_bytes = self.data.len() - last_ptr;
+            // update stats
+            self.stats.max_block_bytes = self.stats.max_block_bytes.max(block_bytes);
+            self.stats.sum_block_bytes += block_bytes;
+            // save a pointer to the start of the string
+            self.pointers.push(self.data.len());
+
+            // compute the redundancy
+            let rear_length = self.last_str.len() - lcp;
+            if self.len != 0 {
+                self.stats.redundancy += lcp as isize;
+                self.stats.redundancy -= encode_int_len(rear_length) as isize;
+            }
+            // just encode the whole string
+            string.as_bytes()
+        } else {
+            // update the stats
+            self.stats.max_lcp = self.stats.max_lcp.max(lcp);
+            self.stats.sum_lcp += lcp;
+            // encode the len of the bytes in data
+            let rear_length = self.last_str.len() - lcp;
+            let prev_len = self.data.len();
+            encode_int(rear_length, &mut self.data);
+            // update stats
+            self.stats.code_bytes += self.data.len() - prev_len;
+            // return the delta suffix
+            &string.as_bytes()[lcp..]
+        };
+        // Write the data to the buffer
+        self.data.extend_from_slice(to_encode);
+        // push the \0 terminator
+        self.data.push(0);
+        self.stats.suffixes_bytes += to_encode.len() + 1;
+
+        // put the string as last_str for the next iteration
+        self.last_str.clear();
+        self.last_str.extend_from_slice(string.as_bytes());
+        self.len += 1;
+    }
+}
+
+impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
+    /// Appends a string to the end of the list.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `SORTED` is `true` and the string is not greater than or equal to the last string added.
+    pub fn push(&mut self, string: impl AsRef<str>) {
+        let string = string.as_ref();
+        // update stats
+        self.stats.max_str_len = self.stats.max_str_len.max(string.len());
+        self.stats.sum_str_len += string.len();
+
+        let (lcp, order) = longest_common_prefix(&self.last_str, string.as_bytes());
+
+        if SORTED && order == core::cmp::Ordering::Greater {
+            panic!(
+                "Strings must be sorted in ascending order when building a sorted RearCodedList. Got '{}' after '{}'",
+                string,
+                String::from_utf8_lossy(&self.last_str)
+            );
+        }
+
+        self.push_impl(string, lcp);
+    }
+
+    /// Appends all the strings from a [`Lender`] to the end of the list.
+    ///
+    /// We prefer to implement extension via a [`Lender`] instead of an
+    /// [`Iterator`] to avoid the need to allocate a new string for every string
+    /// in the list. This is particularly useful when building large lists
+    /// from files using, for example, a
+    /// [`RewindableIoLender`](crate::utils::lenders::RewindableIoLender).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `SORTED` is `true` and any string is not greater than or equal to the previous string.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use lender::*;
+    /// use sux::dict::RearCodedListBuilder;
+    /// let mut rclb = RearCodedListBuilder::<true>::new(4);
+    /// let words = vec!["aa", "aab", "abc", "abdd", "abde", "abdf"];
+    /// // We need the map because s has type &&str
+    /// rclb.extend(words.iter().map(|s| *s).into_lender());
+    /// let rcl = rclb.build();
+    ///
+    /// let mut rclb = RearCodedListBuilder::<false>::new(4);
+    /// let words = vec!["aa".to_string(), "aab".to_string(), "abc".to_string(),
+    ///     "abdd".to_string(), "abde".to_string(), "abdf".to_string()];
+    /// // We need the map to turn String into &str
+    /// rclb.extend(words.iter().map(|s| s.as_str()).into_lender());
+    /// let rcl = rclb.build();
+    /// ```
+    pub fn extend<S: Borrow<str>, L: IntoLender>(&mut self, into_lender: L)
+    where
+        L::Lender: for<'lend> Lending<'lend, Lend = S>,
+    {
+        for_!(string in into_lender {
+            self.push(string.borrow());
+        });
     }
 }
 
@@ -955,12 +986,12 @@ mod tests {
 
     #[test]
     fn test_into_lend() {
-        let mut builder = RearCodedListBuilder::new(4);
+        let mut builder = RearCodedListBuilder::<true>::new(4);
         builder.push("a");
         builder.push("b");
         builder.push("c");
         builder.push("d");
         let rcl = builder.build();
-        read_into_lender::<&RearCodedList>(&rcl);
+        read_into_lender::<&RearCodedList<Box<[u8]>, Box<[usize]>, true>>(&rcl);
     }
 }
