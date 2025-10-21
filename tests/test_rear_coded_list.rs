@@ -6,8 +6,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use maligned::A16;
-
 #[cfg(feature = "epserde")]
 mod test {
     use anyhow::Result;
@@ -21,8 +19,6 @@ mod test {
     use rand::prelude::*;
     use std::io::BufReader;
     use std::io::prelude::*;
-    use std::mem::MaybeUninit;
-    use std::ptr::addr_of_mut;
     use sux::prelude::*;
 
     #[test]
@@ -105,7 +101,7 @@ mod test {
 
         // test unsorted RCL
 
-        let mut rcl_builder = <RearCodedListBuilder>::new(4);
+        let mut rcl_builder = <RearCodedListBuilder<false>>::new(4);
         let mut shuffled_words = words.iter().map(|s| s.as_str()).collect::<Vec<_>>();
         shuffled_words.shuffle(&mut rand::rng());
 
@@ -139,16 +135,7 @@ mod test {
             }
         }
 
-        assert!(!rca.contains(""));
-
-        for (i, word) in shuffled_words.iter().enumerate() {
-            assert!(rca.contains(*word));
-            assert_eq!(rca.index_of(*word), Some(i));
-            let mut word = word.to_string();
-            word.push_str("IT'S HIGHLY IMPROBABLE THAT THIS STRING IS IN THE WORD LIST");
-            assert!(!rca.contains(word.as_str()));
-            assert!(rca.index_of(word.as_str()).is_none());
-        }
+        // Note: unsorted RCL does not support contains/index_of (IndexedDict trait is only for SORTED=true)
 
         let mut cursor = <AlignedCursor<A16>>::new();
         let schema = unsafe { rca.serialize_with_schema(&mut cursor)? };
@@ -157,7 +144,11 @@ mod test {
         let len = cursor.len();
         cursor.set_position(0);
         let c = unsafe {
-            <RearCodedList>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())?
+            <RearCodedList<Box<[u8]>, Box<[usize]>, false>>::read_mmap(
+                &mut cursor,
+                len,
+                epserde::deser::Flags::empty(),
+            )?
         };
         let c = c.uncase();
 
@@ -166,6 +157,17 @@ mod test {
         }
 
         Ok(())
+    }
+
+    #[test]
+    #[should_panic(expected = "Strings must be sorted in ascending order")]
+    fn test_panics_on_out_of_order() {
+        let mut rcab = <RearCodedListBuilder>::new(4);
+        rcab.push("apple");
+        rcab.push("banana");
+        rcab.push("cherry");
+        // This should panic because "apricot" < "cherry"
+        rcab.push("apricot");
     }
 
     #[test]

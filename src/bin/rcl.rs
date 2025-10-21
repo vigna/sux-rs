@@ -27,7 +27,7 @@ struct Args {
 }
 
 fn compress<BR: BufRead>(buf_read: BR, dest: impl Borrow<str>, k: usize) -> Result<()> {
-    let mut rclb = RearCodedListBuilder::new(k);
+    let mut rclb = RearCodedListBuilder::<true>::new(k);
 
     let mut pl = ProgressLogger::default();
     pl.display_memory(true);

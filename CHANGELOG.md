@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.10.0]
+
+### Changed
+
+* `RearCodedList` has now a `SORTED` parameter to indicate whether the list
+  is sorted. `IndexedDict` is now implemented only for the sorted version.
+
 ## [0.9.1] - 2025-10-16
 
 * Updated to the last version of `Lender`.
