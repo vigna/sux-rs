@@ -6,10 +6,14 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use maligned::A16;
+
 #[cfg(feature = "epserde")]
 mod test {
     use anyhow::Result;
+    use epserde::Epserde;
     use epserde::deser::Deserialize;
+    use epserde::prelude::SerIter;
     use epserde::ser::Serialize;
     use epserde::utils::AlignedCursor;
     use indexed_dict::*;
@@ -17,6 +21,8 @@ mod test {
     use rand::prelude::*;
     use std::io::BufReader;
     use std::io::prelude::*;
+    use std::mem::MaybeUninit;
+    use std::ptr::addr_of_mut;
     use sux::prelude::*;
 
     #[test]
@@ -160,5 +166,64 @@ mod test {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_concept() {
+        use epserde::utils::AlignedCursor;
+        use maligned::A16;
+        #[derive(Epserde, Debug)]
+        struct Struct<S, L> {
+            strings: S,
+            lengths: L,
+        }
+
+        let strings = ["a", "cb", "ccc"];
+        let iter = strings.iter();
+        let mut cursor = <AlignedCursor<A16>>::new();
+
+        struct WritingIter<'a, I: Iterator<Item = &'a &'static str> + ExactSizeIterator> {
+            strings: I,
+            lengths: *mut Vec<usize>,
+        }
+
+        impl<'a, I: Iterator<Item = &'a &'static str> + ExactSizeIterator> Iterator for WritingIter<'a, I> {
+            type Item = &'a &'static str;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if let Some(s) = self.strings.next() {
+                    unsafe { self.lengths.as_mut().unwrap().push(s.len()) };
+                    Some(s)
+                } else {
+                    None
+                }
+            }
+        }
+
+        impl<'a, I: Iterator<Item = &'a &'static str> + ExactSizeIterator> ExactSizeIterator
+            for WritingIter<'a, I>
+        {
+            fn len(&self) -> usize {
+                self.strings.len()
+            }
+        }
+
+        let mut offsets = Box::new(Vec::with_capacity(strings.len()));
+        let ptr = &mut (*offsets);
+        let writing_iter = WritingIter {
+            strings: iter,
+            lengths: ptr,
+        };
+
+        let s = Struct {
+            strings: SerIter::new(writing_iter),
+            lengths: offsets,
+        };
+
+        unsafe { s.serialize(&mut cursor).unwrap() };
+        cursor.set_position(0);
+        let t = unsafe { Struct::<Box<[String]>, Box<[usize]>>::deserialize_full(&mut cursor) }
+            .unwrap();
+        dbg!(t);
     }
 }
