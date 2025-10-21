@@ -326,6 +326,7 @@ pub struct Lend<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> {
 }
 
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> Lend<'a, D, P, SORTED> {
+    /// Creates a new lender over the rear-coded list.
     pub fn new(rca: &'a RearCodedList<D, P, SORTED>) -> Self {
         Self {
             rca,
@@ -335,6 +336,8 @@ impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> Lend<'a, D, P, S
         }
     }
 
+    /// Creates a new lender over the rear-coded list starting from the given
+    /// position.
     pub fn new_from(rca: &'a RearCodedList<D, P, SORTED>, from: usize) -> Self {
         let block = from / rca.k;
         let offset = from % rca.k;
