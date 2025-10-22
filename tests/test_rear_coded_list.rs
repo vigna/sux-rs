@@ -19,6 +19,7 @@ mod test {
     use rand::prelude::*;
     use std::io::BufReader;
     use std::io::prelude::*;
+    use std::sync::Mutex;
     use sux::prelude::*;
 
     #[test]
@@ -186,7 +187,8 @@ mod test {
 
         struct WritingIter<'a, I: Iterator<Item = &'a &'static str> + ExactSizeIterator> {
             strings: I,
-            lengths: *mut Vec<usize>,
+            lengths: Vec<usize>,
+            resulting_lengths: &'a Mutex<Option<Vec<usize>>>,
         }
 
         impl<'a, I: Iterator<Item = &'a &'static str> + ExactSizeIterator> Iterator for WritingIter<'a, I> {
@@ -194,9 +196,12 @@ mod test {
 
             fn next(&mut self) -> Option<Self::Item> {
                 if let Some(s) = self.strings.next() {
-                    unsafe { self.lengths.as_mut().unwrap().push(s.len()) };
+                    self.lengths.push(s.len());
                     Some(s)
                 } else {
+                    let mut lengths = Vec::new();
+                    std::mem::swap(&mut lengths, &mut self.lengths);
+                    *self.resulting_lengths.lock().unwrap() = Some(lengths);
                     None
                 }
             }
@@ -210,16 +215,15 @@ mod test {
             }
         }
 
-        let mut offsets = Box::new(Vec::with_capacity(strings.len()));
-        let ptr = &mut (*offsets);
+        let lengths = Mutex::new(None);
         let writing_iter = WritingIter {
             strings: iter,
-            lengths: ptr,
+            lengths: Vec::new(),
+            resulting_lengths: &lengths,
         };
-
         let s = Struct {
-            strings: SerIter::new(writing_iter),
-            lengths: offsets,
+            strings: SerIter::<&'static str, _>::new(writing_iter),
+            lengths: SerIter::new(IterFromDelayedMutex::new(&lengths)),
         };
 
         unsafe { s.serialize(&mut cursor).unwrap() };
@@ -227,5 +231,72 @@ mod test {
         let t = unsafe { Struct::<Box<[String]>, Box<[usize]>>::deserialize_full(&mut cursor) }
             .unwrap();
         dbg!(t);
+    }
+
+    pub struct IterFromDelayedMutex<'a, T: IntoIterator> {
+        /// store the IntoIterator before we start using it
+        from_lock: &'a Mutex<Option<T>>,
+        /// store the iterator between a call to .len() (which can't mutate self.iter) and a call
+        /// to .next() (which moves it from self.iter_mutex to self.iter to avoid unnecessary
+        /// synchronization)
+        iter_mutex: Mutex<Option<T::IntoIter>>,
+        /// store the iterator after we called .next() on it
+        iter: Option<T::IntoIter>,
+    }
+    impl<'a, T: IntoIterator> IterFromDelayedMutex<'a, T> {
+        fn new(from_lock: &'a Mutex<Option<T>>) -> Self {
+            Self {
+                from_lock: from_lock,
+                iter_mutex: Mutex::new(None),
+                iter: None,
+            }
+        }
+    }
+
+    impl<'a, T: IntoIterator> Iterator for IterFromDelayedMutex<'a, T> {
+        type Item = <T::IntoIter as Iterator>::Item;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            // if self.iter is not set yet, get it from self.from_lock or self.iter_mutex,
+            // and set self.iter
+            self.iter
+                .get_or_insert_with(|| {
+                    self.iter_mutex.lock().unwrap().take().unwrap_or_else(|| {
+                        self.from_lock
+                            .lock()
+                            .unwrap()
+                            .take()
+                            .expect("from_lock is empty")
+                            .into_iter()
+                    })
+                })
+                .next()
+        }
+    }
+
+    impl<'a, T: IntoIterator<IntoIter: ExactSizeIterator>> ExactSizeIterator
+        for IterFromDelayedMutex<'a, T>
+    {
+        fn len(&self) -> usize {
+            // if self.iter is not set yet, look at self.iter_mutex. if neither is set, then set
+            // the latter from self.from_lock
+            self.iter
+                .as_ref()
+                .map(|iter| iter.len())
+                .unwrap_or_else(|| {
+                    self.iter_mutex
+                        .lock()
+                        .unwrap()
+                        .get_or_insert_with(|| {
+                            self.from_lock
+                                .lock()
+                                .unwrap()
+                                .take()
+                                .expect("from_lock is empty")
+                                .into_iter()
+                        })
+                        .len()
+                })
+        }
     }
 }
