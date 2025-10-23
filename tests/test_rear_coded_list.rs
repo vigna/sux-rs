@@ -6,6 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use sux::dict::RearCodedListBuilder;
+
 #[cfg(feature = "epserde")]
 mod test {
     use anyhow::Result;
@@ -109,7 +111,7 @@ mod test {
         shuffled_words.shuffle(&mut rand::rng());
 
         for string in shuffled_words.iter() {
-            rcl_builder.push(string);
+            rcl_builder.push(*string);
         }
         let rca = rcl_builder.build();
 
@@ -282,4 +284,14 @@ mod test {
             }
         }
     }
+}
+
+#[test]
+fn test_abc() {
+    let v = ["a", "b", "c"];
+    let mut rcab = RearCodedListBuilder::<true>::new(2);
+    rcab.push("a");
+    rcab.push("b");
+    rcab.push("c");
+    let rca = rcab.build();
 }
