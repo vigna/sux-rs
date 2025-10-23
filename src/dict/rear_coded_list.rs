@@ -332,12 +332,11 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P, true
             // copy the new suffix
             result.extend_from_slice(&data[..to_copy]);
             data = &data[to_copy..];
-
             // TODO!: this can be optimized to avoid the copy
             match memcmp_rust(string, &result) {
-                core::cmp::Ordering::Less => {}
+                core::cmp::Ordering::Greater => {}
                 core::cmp::Ordering::Equal => return Some(block_idx * self.k + idx + 1),
-                core::cmp::Ordering::Greater => return None,
+                core::cmp::Ordering::Less => return None,
             }
         }
         None
@@ -523,27 +522,25 @@ pub struct RearCodedListBuilder<const SORTED: bool = true> {
 #[inline(always)]
 /// Like memcmp
 fn memcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
-    for (i, c) in string.iter().enumerate() {
-        let ord = c.cmp(&data[i]);
+    for (a, b) in string.iter().zip(data.iter()) {
+        let ord = a.cmp(b);
         if ord != core::cmp::Ordering::Equal {
             return ord;
         }
     }
-
     string.len().cmp(&data.len())
 }
 
 #[inline(always)]
 /// Like memcmp, but both string are Rust strings.
 fn memcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
-    while let Some((a, b)) = string.iter().zip(other.iter()).next() {
+    for (a, b) in string.iter().zip(other.iter()) {
         let ord = a.cmp(b);
         if ord != core::cmp::Ordering::Equal {
             return ord;
         }
     }
-    // string has an implicit final \0
-    other.len().cmp(&string.len())
+    string.len().cmp(&other.len())
 }
 
 impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
