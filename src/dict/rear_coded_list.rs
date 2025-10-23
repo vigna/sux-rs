@@ -655,6 +655,7 @@ impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
         let rear_length = self.last_str.len() - lcp;
         // and how long is this string without the lcp
         let suffix_len = string.len() - lcp;
+        let length_before = self.data.len();
 
         // at every multiple of k we just encode the string as is
         let to_encode = if self.len % self.k == 0 {
@@ -665,6 +666,7 @@ impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
             self.stats.max_block_bytes = self.stats.max_block_bytes.max(block_bytes);
             self.stats.sum_block_bytes += block_bytes;
             // save a pointer to the start of the string
+            assert_eq!(self.written_bytes, self.data.len());
             self.pointers.push(self.written_bytes);
 
             let prev_len = self.data.len();
@@ -696,8 +698,9 @@ impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
             &string.as_bytes()[lcp..]
         };
         // Write the data to the buffer
-        self.written_bytes += to_encode.len();
         self.data.extend_from_slice(to_encode);
+        self.written_bytes += self.data.len() - length_before;
+        assert!(self.written_bytes == self.data.len());
         self.stats.suffixes_bytes += to_encode.len();
 
         // put the string as last_str for the next iteration
