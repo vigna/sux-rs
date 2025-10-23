@@ -724,186 +724,46 @@ fn longest_common_prefix(a: &[u8], b: &[u8]) -> (usize, core::cmp::Ordering) {
 #[inline(always)]
 fn encode_int_len(mut value: usize) -> usize {
     let mut len = 1;
-    let mut max = 1 << 7;
-    while value >= max {
+    loop {
+        value >>= 7;
+        if value == 0 {
+            return len;
+        }
+        value -= 1;
         len += 1;
-        value -= max;
-        max <<= 7;
     }
-    len
 }
-
-const UPPER_BOUND_1: usize = 128;
-const UPPER_BOUND_2: usize = 128_usize.pow(2) + UPPER_BOUND_1;
-const UPPER_BOUND_3: usize = 128_usize.pow(3) + UPPER_BOUND_2;
-const UPPER_BOUND_4: usize = 128_usize.pow(4) + UPPER_BOUND_3;
-const UPPER_BOUND_5: usize = 128_usize.pow(5) + UPPER_BOUND_4;
-const UPPER_BOUND_6: usize = 128_usize.pow(6) + UPPER_BOUND_5;
-const UPPER_BOUND_7: usize = 128_usize.pow(7) + UPPER_BOUND_6;
-const UPPER_BOUND_8: usize = 128_usize.pow(8) + UPPER_BOUND_7;
 
 /// VByte encode an integer
 #[inline(always)]
 fn encode_int(mut value: usize, data: &mut Vec<u8>) {
-    if value < UPPER_BOUND_1 {
-        data.push(value as u8);
-        return;
+    let mut buf = [0u8; 10];
+    let mut pos = buf.len() - 1;
+    buf[pos] = (value & 0x7F) as u8;
+    value >>= 7;
+    while value != 0 {
+        value -= 1;
+        pos -= 1;
+        buf[pos] = 0x80 | (value & 0x7F) as u8;
+        value >>= 7;
     }
-    if value < UPPER_BOUND_2 {
-        value -= UPPER_BOUND_1;
-        debug_assert!((value >> 8) < (1 << 6));
-        data.push(0x80 | (value >> 8) as u8);
-        data.push(value as u8);
-        return;
+    for &byte in &buf[pos..] {
+        data.push(byte);
     }
-    if value < UPPER_BOUND_3 {
-        value -= UPPER_BOUND_2;
-        debug_assert!((value >> 16) < (1 << 5));
-        data.push(0xC0 | (value >> 16) as u8);
-        data.push((value >> 8) as u8);
-        data.push(value as u8);
-        return;
-    }
-    if value < UPPER_BOUND_4 {
-        value -= UPPER_BOUND_3;
-        debug_assert!((value >> 24) < (1 << 4));
-        data.push(0xE0 | (value >> 24) as u8);
-        data.push((value >> 16) as u8);
-        data.push((value >> 8) as u8);
-        data.push(value as u8);
-        return;
-    }
-    if value < UPPER_BOUND_5 {
-        value -= UPPER_BOUND_4;
-        debug_assert!((value >> 32) < (1 << 3));
-        data.push(0xF0 | (value >> 32) as u8);
-        data.push((value >> 24) as u8);
-        data.push((value >> 16) as u8);
-        data.push((value >> 8) as u8);
-        data.push(value as u8);
-        return;
-    }
-    if value < UPPER_BOUND_6 {
-        value -= UPPER_BOUND_5;
-        debug_assert!((value >> 40) < (1 << 2));
-        data.push(0xF8 | (value >> 40) as u8);
-        data.push((value >> 32) as u8);
-        data.push((value >> 24) as u8);
-        data.push((value >> 16) as u8);
-        data.push((value >> 8) as u8);
-        data.push(value as u8);
-        return;
-    }
-    if value < UPPER_BOUND_7 {
-        value -= UPPER_BOUND_6;
-        debug_assert!((value >> 48) < (1 << 1));
-        data.push(0xFC | (value >> 48) as u8);
-        data.push((value >> 40) as u8);
-        data.push((value >> 32) as u8);
-        data.push((value >> 24) as u8);
-        data.push((value >> 16) as u8);
-        data.push((value >> 8) as u8);
-        data.push(value as u8);
-        return;
-    }
-    if value < UPPER_BOUND_8 {
-        value -= UPPER_BOUND_7;
-        data.push(0xFE);
-        data.push((value >> 48) as u8);
-        data.push((value >> 40) as u8);
-        data.push((value >> 32) as u8);
-        data.push((value >> 24) as u8);
-        data.push((value >> 16) as u8);
-        data.push((value >> 8) as u8);
-        data.push(value as u8);
-        return;
-    }
-
-    data.push(0xFF);
-    data.push((value >> 56) as u8);
-    data.push((value >> 48) as u8);
-    data.push((value >> 40) as u8);
-    data.push((value >> 32) as u8);
-    data.push((value >> 24) as u8);
-    data.push((value >> 16) as u8);
-    data.push((value >> 8) as u8);
-    data.push(value as u8);
 }
 
 #[inline(always)]
-fn decode_int(data: &[u8]) -> (usize, &[u8]) {
-    let x = data[0];
-    if x < 0x80 {
-        return (x as usize, &data[1..]);
+fn decode_int(mut data: &[u8]) -> (usize, &[u8]) {
+    let mut byte = data[0];
+    data = &data[1..];
+    let mut value = (byte & 0x7F) as usize;
+    while (byte >> 7) != 0 {
+        value += 1;
+        byte = data[0];
+        data = &data[1..];
+        value = (value << 7) | (byte & 0x7F) as usize;
     }
-    if x < 0xC0 {
-        let x = ((((x & !0xC0) as usize) << 8) | data[1] as usize) + UPPER_BOUND_1;
-        return (x, &data[2..]);
-    }
-    if x < 0xE0 {
-        let x = ((((x & !0xE0) as usize) << 16) | ((data[1] as usize) << 8) | data[2] as usize)
-            + UPPER_BOUND_2;
-        return (x, &data[3..]);
-    }
-    if x < 0xF0 {
-        let x = ((((x & !0xF0) as usize) << 24)
-            | ((data[1] as usize) << 16)
-            | ((data[2] as usize) << 8)
-            | data[3] as usize)
-            + UPPER_BOUND_3;
-        return (x, &data[4..]);
-    }
-    if x < 0xF8 {
-        let x = ((((x & !0xF8) as usize) << 32)
-            | ((data[1] as usize) << 24)
-            | ((data[2] as usize) << 16)
-            | ((data[3] as usize) << 8)
-            | data[4] as usize)
-            + UPPER_BOUND_4;
-        return (x, &data[5..]);
-    }
-    if x < 0xFC {
-        let x = ((((x & !0xFC) as usize) << 40)
-            | ((data[1] as usize) << 32)
-            | ((data[2] as usize) << 24)
-            | ((data[3] as usize) << 16)
-            | ((data[4] as usize) << 8)
-            | data[5] as usize)
-            + UPPER_BOUND_5;
-        return (x, &data[6..]);
-    }
-    if x < 0xFE {
-        let x = ((((x & !0xFE) as usize) << 48)
-            | ((data[1] as usize) << 40)
-            | ((data[2] as usize) << 32)
-            | ((data[3] as usize) << 24)
-            | ((data[4] as usize) << 16)
-            | ((data[5] as usize) << 8)
-            | data[6] as usize)
-            + UPPER_BOUND_6;
-        return (x, &data[7..]);
-    }
-    if x < 0xFF {
-        let x = (((data[1] as usize) << 48)
-            | ((data[2] as usize) << 40)
-            | ((data[3] as usize) << 32)
-            | ((data[4] as usize) << 24)
-            | ((data[5] as usize) << 16)
-            | ((data[6] as usize) << 8)
-            | data[7] as usize)
-            + UPPER_BOUND_7;
-        return (x, &data[8..]);
-    }
-
-    let x = ((data[1] as usize) << 56)
-        | ((data[2] as usize) << 48)
-        | ((data[3] as usize) << 40)
-        | ((data[4] as usize) << 32)
-        | ((data[5] as usize) << 24)
-        | ((data[6] as usize) << 16)
-        | ((data[7] as usize) << 8)
-        | data[8] as usize;
-    (x, &data[9..])
+    (value, data)
 }
 
 #[cfg(test)]
@@ -922,6 +782,15 @@ mod tests {
         assert_eq!(memcmp(b"abc", b"ab\0"), core::cmp::Ordering::Greater);
         assert_eq!(memcmp(b"ab\0", b"abc"), core::cmp::Ordering::Less);
     }
+
+    const UPPER_BOUND_1: usize = 128;
+    const UPPER_BOUND_2: usize = 128_usize.pow(2) + UPPER_BOUND_1;
+    const UPPER_BOUND_3: usize = 128_usize.pow(3) + UPPER_BOUND_2;
+    const UPPER_BOUND_4: usize = 128_usize.pow(4) + UPPER_BOUND_3;
+    const UPPER_BOUND_5: usize = 128_usize.pow(5) + UPPER_BOUND_4;
+    const UPPER_BOUND_6: usize = 128_usize.pow(6) + UPPER_BOUND_5;
+    const UPPER_BOUND_7: usize = 128_usize.pow(7) + UPPER_BOUND_6;
+    const UPPER_BOUND_8: usize = 128_usize.pow(8) + UPPER_BOUND_7;
 
     #[test]
     fn test_encode_decode_int() {
