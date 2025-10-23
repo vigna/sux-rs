@@ -46,10 +46,11 @@ struct Stats {
 /// Prefix omission compresses a list of strings omitting the common prefixes of
 /// consecutive strings. To do so, it stores the length of what remains after
 /// the common prefix (hence, rear coding). It is usually applied to lists
-/// of strings sorted in ascending order.
+/// of strings sorted in ascending order. The strings can contain arbitrary data,
+/// including `\0` bytes.
 ///
 /// The encoding is done in blocks of `k` strings: in each block the first
-/// string is encoded without compression, wheres the other strings are encoded
+/// string is encoded without compression, whereas the other strings are encoded
 /// with the common prefix removed.
 ///
 /// Besides the standard access by means of the [`IndexedSeq`] trait, this
@@ -85,7 +86,7 @@ struct Stats {
 /// rclb.push("aab");
 /// rclb.push("abc");
 /// rclb.push("abdd");
-/// rclb.push("abde");
+/// rclb.push("abde\0f");
 /// rclb.push("abdf");
 ///
 /// let rcl = rclb.build();
@@ -93,10 +94,23 @@ struct Stats {
 /// assert_eq!(rcl.get(0), "aa");
 /// assert_eq!(rcl.get(1), "aab");
 /// assert_eq!(rcl.get(2), "abc");
-/// assert_eq!(rcl.index_of("abde"), Some(4));
+/// assert_eq!(rcl.index_of("abde\0f"), Some(4));
 /// assert_eq!(rcl.index_of("foo"), None);
 /// ```
-
+///
+/// # Format
+///
+/// The rear-coded list keeps an array of pointers to the beginning of each block
+/// in data. Due do the omission of prefixes, we can only start decoding from
+/// the beginning of a block as we write the full string there.
+///
+/// The `data` portion contains strings in the following format:
+/// - if the index of the string is a multiple of `k`, we write: `<len><bytes>`
+/// - otherwise, we write: `<suffix_len><rear_len><suffix_bytes>`
+///
+/// where `<len>`, `<suffix_len>`, and `<rear_len>` are VByte-encoded integers
+/// and `<bytes>` and `<suffix_bytes>` are the actual bytes of the string or suffix.
+///
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -161,19 +175,25 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> RearCodedList<D, P, 
         let offset = index % self.k;
 
         let start = self.pointers.as_ref()[block];
-        let data = &self.data.as_ref()[start..];
+        let mut data = &self.data.as_ref()[start..];
 
+        // declare these vars so the decoding looks cleaner
+        let (mut rear_length, mut len);
         // decode the first string in the block
-        let mut data = strcpy(data, result);
+        (len, data) = decode_int(data);
+        result.extend_from_slice(&data[..len]);
+        data = &data[len..];
 
         for _ in 0..offset {
             // get how much data to throw away
-            let (len, tmp) = decode_int(data);
+            (len, data) = decode_int(data);
+            (rear_length, data) = decode_int(data);
             // throw away the data
-            result.resize(result.len() - len, 0);
+            let lcp = result.len() - rear_length;
+            result.truncate(lcp);
             // copy the new suffix
-            let tmp = strcpy(tmp, result);
-            data = tmp;
+            result.extend_from_slice(&data[..len]);
+            data = &data[len..];
         }
     }
 }
@@ -210,7 +230,10 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P, true
         let string = value.borrow().as_bytes();
         // first to a binary search on the blocks to find the block
         let block_idx = self.pointers.as_ref().binary_search_by(|block_ptr| {
-            strcmp(string, &self.data.as_ref()[*block_ptr..]).reverse()
+            // do a quick in-place decode of the explicit string at the beginning of the block
+            let data = &self.data.as_ref()[*block_ptr..];
+            let (len, tmp) = decode_int(data);
+            memcmp(string, &tmp[..len]).reverse()
         });
 
         if let Ok(block_idx) = block_idx {
@@ -226,23 +249,28 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>> IndexedDict for RearCodedList<D, P, true
         // finish by a linear search on the block
         let mut result = Vec::with_capacity(128);
         let start = self.pointers.as_ref()[block_idx];
-        let data = &self.data.as_ref()[start..];
+        let mut data = &self.data.as_ref()[start..];
 
+        let (mut to_copy, mut rear_length);
         // decode the first string in the block
-        let mut data = strcpy(data, &mut result);
+        (to_copy, data) = decode_int(data);
+        result.extend_from_slice(&data[..to_copy]);
+        data = &data[to_copy..];
+
         let in_block = (self.k - 1).min(self.len - block_idx * self.k - 1);
         for idx in 0..in_block {
             // get how much data to throw away
-            let (len, tmp) = decode_int(data);
-            let lcp = result.len() - len;
+            (to_copy, data) = decode_int(data);
+            (rear_length, data) = decode_int(data);
+            let lcp = result.len() - rear_length;
             // throw away the data
-            result.resize(lcp, 0);
+            result.truncate(lcp);
             // copy the new suffix
-            let tmp = strcpy(tmp, &mut result);
-            data = tmp;
+            result.extend_from_slice(&data[..to_copy]);
+            data = &data[to_copy..];
 
             // TODO!: this can be optimized to avoid the copy
-            match strcmp_rust(string, &result) {
+            match memcmp_rust(string, &result) {
                 core::cmp::Ordering::Less => {}
                 core::cmp::Ordering::Equal => return Some(block_idx * self.k + idx + 1),
                 core::cmp::Ordering::Greater => return None,
@@ -372,15 +400,21 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> Lender for Lend<'_, 
             return None;
         }
 
-        if self.index % self.rca.k == 0 {
-            // just copy the data
-            self.buffer.clear();
-            self.data = strcpy(self.data, &mut self.buffer);
+        // figure out how much of the suffix we have to read
+        let (to_copy, mut tmp) = decode_int(self.data);
+        // figure out how much of the buffer we have to keep
+        let lcp = if self.index % self.rca.k == 0 {
+            0
         } else {
-            let (len, tmp) = decode_int(self.data);
-            self.buffer.resize(self.buffer.len() - len, 0);
-            self.data = strcpy(tmp, &mut self.buffer);
-        }
+            let rear_length;
+            (rear_length, tmp) = decode_int(tmp);
+            self.buffer.len() - rear_length
+        };
+        // truncate the buffer to keep only the relevant part
+        self.buffer.truncate(lcp);
+        // copy the new suffix
+        self.buffer.extend_from_slice(&tmp[..to_copy]);
+        self.data = &tmp[to_copy..];
         self.index += 1;
 
         Some(unsafe { std::str::from_utf8_unchecked(&self.buffer) })
@@ -418,24 +452,9 @@ pub struct RearCodedListBuilder<const SORTED: bool = true> {
     last_str: Vec<u8>,
 }
 
-/// Copies a string until the first `\0` from `data` to `result` and return the
-/// remaining data.
 #[inline(always)]
-fn strcpy<'a>(mut data: &'a [u8], result: &mut Vec<u8>) -> &'a [u8] {
-    loop {
-        let c = data[0];
-        data = &data[1..];
-        if c == 0 {
-            break;
-        }
-        result.push(c);
-    }
-    data
-}
-
-#[inline(always)]
-/// Like strcmp, but `string` is a Rust string and data is a `\0`-terminated string.
-fn strcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
+/// Like memcmp
+fn memcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
     for (i, c) in string.iter().enumerate() {
         let ord = c.cmp(&data[i]);
         if ord != core::cmp::Ordering::Equal {
@@ -443,20 +462,16 @@ fn strcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
         }
     }
 
-    if data[string.len()] == 0 {
-        core::cmp::Ordering::Equal
-    } else {
-        core::cmp::Ordering::Less
-    }
+    string.len().cmp(&data.len())
 }
 
 #[inline(always)]
-/// Like strcmp, but both string are Rust strings.
-fn strcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
-    for (i, c) in string.iter().enumerate() {
-        match other.get(i).unwrap_or(&0).cmp(c) {
-            core::cmp::Ordering::Equal => {}
-            ord => return ord,
+/// Like memcmp, but both string are Rust strings.
+fn memcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
+    while let Some((a, b)) = string.iter().zip(other.iter()).next() {
+        let ord = a.cmp(b);
+        if ord != core::cmp::Ordering::Equal {
+            return ord;
         }
     }
     // string has an implicit final \0
@@ -567,6 +582,11 @@ impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
     }
 
     fn push_impl(&mut self, string: &str, lcp: usize) {
+        // compute how much to remove from the previous string
+        let rear_length = self.last_str.len() - lcp;
+        // and how long is this string without the lcp
+        let suffix_len = string.len() - lcp;
+
         // at every multiple of k we just encode the string as is
         let to_encode = if self.len % self.k == 0 {
             // compute the size in bytes of the previous block
@@ -578,11 +598,18 @@ impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
             // save a pointer to the start of the string
             self.pointers.push(self.data.len());
 
+            let prev_len = self.data.len();
+            // encode the length of the string
+            encode_int(string.len(), &mut self.data);
+            // update stats
+            self.stats.code_bytes += self.data.len() - prev_len;
+
             // compute the redundancy
-            let rear_length = self.last_str.len() - lcp;
             if self.len != 0 {
                 self.stats.redundancy += lcp as isize;
+                self.stats.redundancy += encode_int_len(string.len()) as isize;
                 self.stats.redundancy -= encode_int_len(rear_length) as isize;
+                self.stats.redundancy -= encode_int_len(suffix_len) as isize;
             }
             // just encode the whole string
             string.as_bytes()
@@ -591,8 +618,8 @@ impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
             self.stats.max_lcp = self.stats.max_lcp.max(lcp);
             self.stats.sum_lcp += lcp;
             // encode the len of the bytes in data
-            let rear_length = self.last_str.len() - lcp;
             let prev_len = self.data.len();
+            encode_int(suffix_len, &mut self.data);
             encode_int(rear_length, &mut self.data);
             // update stats
             self.stats.code_bytes += self.data.len() - prev_len;
@@ -601,13 +628,11 @@ impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
         };
         // Write the data to the buffer
         self.data.extend_from_slice(to_encode);
-        // push the \0 terminator
-        self.data.push(0);
-        self.stats.suffixes_bytes += to_encode.len() + 1;
+        self.stats.suffixes_bytes += to_encode.len();
 
         // put the string as last_str for the next iteration
-        self.last_str.clear();
-        self.last_str.extend_from_slice(string.as_bytes());
+        self.last_str.truncate(lcp);
+        self.last_str.extend_from_slice(&string.as_bytes()[lcp..]);
         self.len += 1;
     }
 }
@@ -683,6 +708,7 @@ fn longest_common_prefix(a: &[u8], b: &[u8]) -> (usize, core::cmp::Ordering) {
     let min_len = a.len().min(b.len());
     // normal lcp computation
     let mut i = 0;
+    // we purposely don't do early stopping so it can be vectorized
     while i < min_len && a[i] == b[i] {
         i += 1;
     }
@@ -885,22 +911,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_strcmp() {
-        assert_eq!(strcmp(b"abcd", b"abcd\0"), core::cmp::Ordering::Equal);
-        assert_eq!(strcmp(b"abcd", b"abbd\0"), core::cmp::Ordering::Greater);
-        assert_eq!(strcmp(b"abcd", b"abdd\0"), core::cmp::Ordering::Less);
+    fn test_memcmp() {
+        assert_eq!(memcmp(b"abcd", b"abcd"), core::cmp::Ordering::Equal);
+        assert_eq!(memcmp(b"abcd", b"abbd"), core::cmp::Ordering::Greater);
+        assert_eq!(memcmp(b"abcd", b"abdd"), core::cmp::Ordering::Less);
 
-        assert_eq!(strcmp(b"a", b"b\0"), core::cmp::Ordering::Less);
-        assert_eq!(strcmp(b"b", b"a\0"), core::cmp::Ordering::Greater);
-        assert_eq!(strcmp(b"abc", b"abc\0"), core::cmp::Ordering::Equal);
-        assert_eq!(strcmp(b"abc", b"abc\0abc"), core::cmp::Ordering::Equal);
-        assert_eq!(strcmp(b"abc", b"abc\0ab"), core::cmp::Ordering::Equal);
-        assert_eq!(strcmp(b"abc", b"ab\0"), core::cmp::Ordering::Greater);
-        assert_eq!(strcmp(b"abc", b"ab\0abc"), core::cmp::Ordering::Greater);
-        assert_eq!(strcmp(b"abc", b"ab\0ab"), core::cmp::Ordering::Greater);
-        assert_eq!(strcmp(b"abc", b"ab\0"), core::cmp::Ordering::Greater);
-        assert_eq!(strcmp(b"a", b"ab\0"), core::cmp::Ordering::Less);
-        assert_eq!(strcmp(b"ab", b"ab\0"), core::cmp::Ordering::Equal);
+        assert_eq!(memcmp(b"a", b"b\0"), core::cmp::Ordering::Less);
+        assert_eq!(memcmp(b"b", b"a\0"), core::cmp::Ordering::Greater);
+        assert_eq!(memcmp(b"abc", b"abc\0"), core::cmp::Ordering::Less);
+        assert_eq!(memcmp(b"abc", b"ab\0"), core::cmp::Ordering::Greater);
+        assert_eq!(memcmp(b"ab\0", b"abc"), core::cmp::Ordering::Less);
     }
 
     #[test]
@@ -996,5 +1016,28 @@ mod tests {
         builder.push("d");
         let rcl = builder.build();
         read_into_lender::<&RearCodedList<Box<[u8]>, Box<[usize]>, true>>(&rcl);
+    }
+
+    #[test]
+    fn test_zero_bytes() {
+        let strings = vec![
+            "\0\0\0\0a",
+            "\0\0\0b",
+            "\0\0c",
+            "\0d",
+            "e",
+            "f\0",
+            "g\0\0",
+            "h\0\0\0",
+        ];
+        let mut builder = RearCodedListBuilder::<true>::new(4);
+        for s in &strings {
+            builder.push(s);
+        }
+        let rcl = builder.build();
+        for i in 0..rcl.len() {
+            let s = rcl.get(i);
+            assert_eq!(s, strings[i]);
+        }
     }
 }
