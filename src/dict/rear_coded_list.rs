@@ -8,8 +8,13 @@
 //! Compressed string storage by rear-coded prefix omission.
 
 use std::borrow::Borrow;
+use std::cell::{RefCell, RefMut};
+use std::marker::PhantomData;
 
 use crate::traits::{IndexedDict, IndexedSeq, IntoIteratorFrom, Types};
+use crate::utils::RewindableIoLender;
+use epserde::prelude::SerIter;
+use epserde::ser::{Serialize, WriteNoStd};
 use lender::for_;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
 use mem_dbg::*;
@@ -114,11 +119,7 @@ struct Stats {
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct RearCodedList<
-    D: AsRef<[u8]> = Box<[u8]>,
-    P: AsRef<[usize]> = Box<[usize]>,
-    const SORTED: bool = true,
-> {
+pub struct RearCodedList<D = Box<[u8]>, P = Box<[usize]>, const SORTED: bool = true> {
     /// The number of strings in a block; this value trades off compression for speed.
     k: usize,
     /// Number of encoded strings.
@@ -127,6 +128,62 @@ pub struct RearCodedList<
     data: D,
     /// The pointer to the starting string of each block.
     pointers: P,
+}
+
+pub fn serialize<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bool>(
+    k: usize,
+    mut lender: L,
+    mut writer: impl WriteNoStd,
+) -> anyhow::Result<usize> {
+    let mut len = 0;
+    let mut byte_len = 0;
+    let mut builder = RearCodedListBuilder::<SORTED>::new(k);
+    while let Some(s) = lender.next() {
+        match s {
+            Err(e) => return Err(e.into()),
+            Ok(s) => {
+                builder.push(s.borrow());
+                len += 1;
+                byte_len += builder.data.len();
+                builder.data.truncate(0);
+            }
+        }
+    }
+
+    lender = lender.rewind().map_err(Into::into)?;
+
+    let iter_state = RefCell::new(IterState::<_, _, SORTED> {
+        builder: RearCodedListBuilder::<SORTED>::new(k),
+        iter: lender,
+        _marker: PhantomData,
+    });
+
+    let rear_coded_list = RearCodedList::<_, _, SORTED> {
+        k,
+        len,
+        data: SerIter::new(BytesIter {
+            iter_state: &iter_state,
+            byte_len,
+            pos: 0,
+        }),
+        pointers: SerIter::new(PointersIter {
+            iter_state: &iter_state,
+            pos: 0,
+        }),
+    };
+
+    unsafe { rear_coded_list.serialize(&mut writer).map_err(Into::into) }
+}
+
+pub fn store<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bool>(
+    k: usize,
+    lender: L,
+    filename: impl AsRef<std::path::Path>,
+) -> anyhow::Result<usize> {
+    let dst_file =
+        std::fs::File::create(filename.as_ref()).expect("Cannot create destination file");
+    let mut buf_writer = std::io::BufWriter::new(dst_file);
+    serialize::<B, L, SORTED>(k, lender, &mut buf_writer)
 }
 
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> RearCodedList<D, P, SORTED> {
@@ -643,8 +700,8 @@ impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
     /// # Panics
     ///
     /// Panics if `SORTED` is `true` and the string is not greater than or equal to the last string added.
-    pub fn push(&mut self, string: impl AsRef<str>) {
-        let string = string.as_ref();
+    pub fn push(&mut self, string: impl Borrow<str>) {
+        let string = string.borrow();
         // update stats
         self.stats.max_str_len = self.stats.max_str_len.max(string.len());
         self.stats.sum_str_len += string.len();
@@ -766,8 +823,97 @@ fn decode_int(mut data: &[u8]) -> (usize, &[u8]) {
     (value, data)
 }
 
+struct IterState<B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bool> {
+    builder: RearCodedListBuilder<SORTED>,
+    iter: L,
+    _marker: PhantomData<B>,
+}
+
+struct BytesIter<'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bool> {
+    iter_state: &'b RefCell<IterState<B, L, SORTED>>,
+    byte_len: usize,
+    pos: usize,
+}
+
+impl<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bool> Iterator
+    for BytesIter<'b, B, L, SORTED>
+{
+    type Item = u8;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let state = self.iter_state.borrow_mut();
+        if self.pos < state.builder.data.len() {
+            let byte = state.builder.data[self.pos];
+            self.pos += 1;
+            self.byte_len -= 1;
+            Some(byte)
+        } else {
+            // We need separate mutable borrows for iter and builder,
+            // but we just have a RefMut to the whole state. So we use
+            // RefMut::map_split to split the borrow.
+            let (mut iter, mut builder) =
+                RefMut::map_split(state, |state| (&mut state.iter, &mut state.builder));
+            iter.next().and_then(|item| match item {
+                Ok(s) => {
+                    // Empty the builder data and refill it
+                    builder.data.truncate(0);
+                    builder.push(s.borrow());
+                    let byte = builder.data[0];
+                    self.pos = 1;
+                    self.byte_len -= 1;
+                    Some(byte)
+                }
+                Err(_e) => {
+                    panic!("Error while serializing RearCodedList")
+                }
+            })
+        }
+    }
+}
+
+impl<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bool>
+    ExactSizeIterator for BytesIter<'b, B, L, SORTED>
+{
+    fn len(&self) -> usize {
+        self.byte_len
+    }
+}
+
+struct PointersIter<'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bool> {
+    iter_state: &'b RefCell<IterState<B, L, SORTED>>,
+    pos: usize,
+}
+
+impl<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bool> Iterator
+    for PointersIter<'b, B, L, SORTED>
+{
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let state = self.iter_state.borrow();
+        if self.pos == state.builder.pointers.len() {
+            None
+        } else {
+            let ptr = state.builder.pointers[self.pos];
+            self.pos += 1;
+            Some(ptr)
+        }
+    }
+}
+
+impl<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bool>
+    ExactSizeIterator for PointersIter<'b, B, L, SORTED>
+{
+    fn len(&self) -> usize {
+        let state = self.iter_state.borrow();
+        state.builder.pointers.len() - self.pos
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use epserde::utils::AlignedCursor;
+
     use super::*;
 
     #[test]
@@ -901,12 +1047,35 @@ mod tests {
         ];
         let mut builder = RearCodedListBuilder::<true>::new(4);
         for s in &strings {
-            builder.push(s);
+            builder.push(s.borrow());
         }
         let rcl = builder.build();
         for i in 0..rcl.len() {
             let s = rcl.get(i);
             assert_eq!(s, strings[i]);
         }
+    }
+
+    #[cfg(feature = "epserde")]
+    #[test]
+    fn test_ser() -> anyhow::Result<()> {
+        use epserde::deser::Deserialize;
+
+        use crate::utils::FromIntoIterator;
+
+        let v = ["a", "ab", "ab", "abc", "b", "bb"];
+        let mut cursor = AlignedCursor::<maligned::A16>::new();
+        serialize::<_, _, true>(4, FromIntoIterator::from(v), &mut cursor)?;
+
+        cursor.set_position(0);
+        let deser = unsafe {
+            RearCodedList::<Box<[u8]>, Box<[usize]>, true>::deserialize_full(&mut cursor)?
+        };
+        assert_eq!(deser.len(), 6);
+        for (i, s) in deser.iter().enumerate() {
+            assert_eq!(s, v[i]);
+        }
+
+        Ok(())
     }
 }
