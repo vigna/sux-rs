@@ -508,6 +508,10 @@ pub struct RearCodedListBuilder<const SORTED: bool = true> {
     len: usize,
     /// The encoded strings, `\0`-terminated.
     data: Vec<u8>,
+    /// The total number of bytes written; this can be difference
+    /// than the length of data in the low-memory construction,
+    /// as we truncate data after each push
+    written_bytes: usize,
     /// The pointer to the starting string of each block.
     pointers: Vec<usize>,
     /// Statistics of the encoded data.
@@ -550,6 +554,7 @@ impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
             last_str: Vec::with_capacity(1024),
             pointers: Vec::new(),
             len: 0,
+            written_bytes: 0,
             k,
             stats: Stats::default(),
         }
@@ -660,7 +665,7 @@ impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
             self.stats.max_block_bytes = self.stats.max_block_bytes.max(block_bytes);
             self.stats.sum_block_bytes += block_bytes;
             // save a pointer to the start of the string
-            self.pointers.push(self.data.len());
+            self.pointers.push(self.written_bytes);
 
             let prev_len = self.data.len();
             // encode the length of the string
@@ -691,6 +696,7 @@ impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
             &string.as_bytes()[lcp..]
         };
         // Write the data to the buffer
+        self.written_bytes += to_encode.len();
         self.data.extend_from_slice(to_encode);
         self.stats.suffixes_bytes += to_encode.len();
 
@@ -1083,6 +1089,12 @@ mod tests {
         for (i, s) in deser.iter().enumerate() {
             assert_eq!(s, v[i]);
         }
+        assert_eq!(deser.get(0), "a");
+        assert_eq!(deser.get(1), "ab");
+        assert_eq!(deser.get(2), "ab");
+        assert_eq!(deser.get(3), "abc");
+        assert_eq!(deser.get(4), "b");
+        assert_eq!(deser.get(5), "bb");
 
         Ok(())
     }

@@ -11,29 +11,29 @@ use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::for_;
-use sux::{init_env_logger, prelude::*, utils::LineLender};
+use sux::{init_env_logger, prelude::*, utils::DekoBufLineLender};
 
 #[derive(Parser, Debug)]
 #[command(about = "Builds a rear-coded list starting from a list of UTF-8 encoded strings.", long_about = None)]
 struct Args {
-    /// A file containing UTF-8 strings, one per line, or - for standard input.
+    /// A file containing UTF-8 strings, one per line, or - for standard input; it can be compressed with any format supported by the deko crate.
     source: String,
     /// A name for the ε-serde serialized rear-coded list.
     dest: String,
     /// The list of strings is not sorted (no checks, no indexing).
     #[arg(long, default_value_t = false)]
     unsorted: bool,
-    /// The number of strings in a block. Higher values provide more compression
+    /// The number of strings in a block: higher values provide more compression
     /// at the expense of slower access.
     #[arg(short = 'k', long, default_value_t = 8)]
     k: usize,
-    /// Use the slower direct-to-disk construction algorithm, which uses very little memory.
+    /// Use the slower direct-to-disk construction algorithm, which uses very little memory (cannot be used with stdin input).
     #[arg(long, default_value_t = false)]
     low_mem: bool,
 }
 
-fn compress<BR: BufRead, const SORTED: bool>(
-    buf_read: BR,
+fn compress<R: BufRead, const SORTED: bool>(
+    lender: DekoBufLineLender<R>,
     dest: impl Borrow<str>,
     k: usize,
 ) -> Result<()> {
@@ -43,7 +43,7 @@ fn compress<BR: BufRead, const SORTED: bool>(
     pl.display_memory(true);
     pl.start("Reading the input file...");
 
-    for_![result in LineLender::new(buf_read) {
+    for_![result in lender {
         match result {
             Ok(line) => {
                 rclb.push(line);
@@ -79,7 +79,7 @@ fn main() -> Result<()> {
         if args.source == "-" {
             panic!("Low-memory mode cannot read from standard input");
         }
-        let lender = LineLender::from_path(&args.source)?;
+        let lender = DekoBufLineLender::from_path(&args.source)?;
         if args.unsorted {
             rear_coded_list::store::<_, _, false>(args.k, lender, args.dest)?;
         } else {
@@ -87,20 +87,18 @@ fn main() -> Result<()> {
         }
     } else {
         if args.source == "-" {
-            let stdin = std::io::stdin();
-            let stdin = stdin.lock();
+            let stdin = DekoBufLineLender::new(std::io::BufReader::new(std::io::stdin().lock()))?;
             if args.unsorted {
                 compress::<_, false>(stdin, args.dest, args.k)?;
             } else {
                 compress::<_, true>(stdin, args.dest, args.k)?;
             }
         } else {
-            let file = std::fs::File::open(&args.source).expect("Cannot open source file");
-            let buf_ref = std::io::BufReader::new(file);
+            let lender = DekoBufLineLender::from_path(&args.source)?;
             if args.unsorted {
-                compress::<_, false>(buf_ref, args.dest, args.k)?;
+                compress::<_, false>(lender, args.dest, args.k)?;
             } else {
-                compress::<_, true>(buf_ref, args.dest, args.k)?;
+                compress::<_, true>(lender, args.dest, args.k)?;
             }
         }
     }
