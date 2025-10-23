@@ -20,14 +20,24 @@ struct Args {
     source: String,
     /// A name for the ε-serde serialized rear-coded list.
     dest: String,
+    /// The list of strings is not sorted (no checks, no indexing).
+    #[arg(long, default_value_t = false)]
+    unsorted: bool,
     /// The number of strings in a block. Higher values provide more compression
     /// at the expense of slower access.
     #[arg(short = 'k', long, default_value_t = 8)]
     k: usize,
+    /// Use the slower direct-to-disk construction algorithm, which uses very little memory.
+    #[arg(long, default_value_t = false)]
+    low_mem: bool,
 }
 
-fn compress<BR: BufRead>(buf_read: BR, dest: impl Borrow<str>, k: usize) -> Result<()> {
-    let mut rclb = RearCodedListBuilder::<true>::new(k);
+fn compress<BR: BufRead, const SORTED: bool>(
+    buf_read: BR,
+    dest: impl Borrow<str>,
+    k: usize,
+) -> Result<()> {
+    let mut rclb = RearCodedListBuilder::<SORTED>::new(k);
 
     let mut pl = ProgressLogger::default();
     pl.display_memory(true);
@@ -67,14 +77,34 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    if args.source == "-" {
-        let stdin = std::io::stdin();
-        let stdin = stdin.lock();
-        compress(stdin, args.dest, args.k)?;
+    if args.low_mem {
+        if args.source == "-" {
+            panic!("Low-memory mode cannot read from standard input");
+        }
+        let lender = LineLender::from_path(&args.source)?;
+        if args.unsorted {
+            rear_coded_list::store::<_, _, false>(args.k, lender, args.dest)?;
+        } else {
+            rear_coded_list::store::<_, _, true>(args.k, lender, args.dest)?;
+        }
     } else {
-        let file = std::fs::File::open(&args.source).expect("Cannot open source file");
-        let buf_ref = std::io::BufReader::new(file);
-        compress(buf_ref, args.dest, args.k)?;
+        if args.source == "-" {
+            let stdin = std::io::stdin();
+            let stdin = stdin.lock();
+            if args.unsorted {
+                compress::<_, false>(stdin, args.dest, args.k)?;
+            } else {
+                compress::<_, true>(stdin, args.dest, args.k)?;
+            }
+        } else {
+            let file = std::fs::File::open(&args.source).expect("Cannot open source file");
+            let buf_ref = std::io::BufReader::new(file);
+            if args.unsorted {
+                compress::<_, false>(buf_ref, args.dest, args.k)?;
+            } else {
+                compress::<_, true>(buf_ref, args.dest, args.k)?;
+            }
+        }
     }
 
     Ok(())
