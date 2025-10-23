@@ -95,7 +95,7 @@ bench = false
 
 [[bin]]
 name = "rcl"
-required-features = ["cli", "epserde"]
+required-features = ["cli", "epserde", "deko"]
 
 [[bin]]
 name = "vfunc"
