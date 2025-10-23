@@ -11,7 +11,7 @@ use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::for_;
-use sux::{prelude::*, utils::LineLender};
+use sux::{init_env_logger, prelude::*, utils::LineLender};
 
 #[derive(Parser, Debug)]
 #[command(about = "Builds a rear-coded list starting from a list of UTF-8 encoded strings.", long_about = None)]
@@ -71,9 +71,7 @@ fn compress<BR: BufRead, const SORTED: bool>(
 }
 
 fn main() -> Result<()> {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .try_init()?;
+    init_env_logger()?;
 
     let args = Args::parse();
 

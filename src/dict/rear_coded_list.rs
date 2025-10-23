@@ -17,6 +17,7 @@ use epserde::prelude::SerIter;
 use epserde::ser::{Serialize, WriteNoStd};
 use lender::for_;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
+use log::info;
 use mem_dbg::*;
 
 #[derive(Debug, Clone, MemDbg, MemSize, Default)]
@@ -137,7 +138,9 @@ pub fn serialize<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, cons
 ) -> anyhow::Result<usize> {
     let mut len = 0;
     let mut byte_len = 0;
+    // First pass: count the number of strings and the byte length
     let mut builder = RearCodedListBuilder::<SORTED>::new(k);
+    info!("Counting strings...");
     while let Some(s) = lender.next() {
         match s {
             Err(e) => return Err(e.into()),
@@ -149,6 +152,7 @@ pub fn serialize<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, cons
             }
         }
     }
+    info!("Counted {} strings, compressed in {} bytes", len, byte_len);
 
     lender = lender.rewind().map_err(Into::into)?;
 
@@ -172,7 +176,10 @@ pub fn serialize<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, cons
         }),
     };
 
-    unsafe { rear_coded_list.serialize(&mut writer).map_err(Into::into) }
+    info!("Serializing...");
+    let written = unsafe { rear_coded_list.serialize(&mut writer)? };
+    info!("Completed.");
+    Ok(written)
 }
 
 pub fn store<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bool>(
@@ -840,6 +847,7 @@ impl<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bo
 {
     type Item = u8;
 
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let state = self.iter_state.borrow_mut();
         if self.pos < state.builder.data.len() {
