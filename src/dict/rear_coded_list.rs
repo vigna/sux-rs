@@ -13,7 +13,9 @@ use std::marker::PhantomData;
 
 use crate::traits::{IndexedDict, IndexedSeq, IntoIteratorFrom, Types};
 use crate::utils::RewindableIoLender;
+#[cfg(feature = "epserde")]
 use epserde::prelude::SerIter;
+#[cfg(feature = "epserde")]
 use epserde::ser::{Serialize, WriteNoStd};
 use lender::for_;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
@@ -131,6 +133,7 @@ pub struct RearCodedList<D = Box<[u8]>, P = Box<[usize]>, const SORTED: bool = t
     pointers: P,
 }
 
+#[cfg(feature = "epserde")]
 pub fn serialize<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bool>(
     k: usize,
     mut lender: L,
@@ -182,6 +185,7 @@ pub fn serialize<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, cons
     Ok(written)
 }
 
+#[cfg(feature = "epserde")]
 pub fn store<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bool>(
     k: usize,
     lender: L,
@@ -606,30 +610,37 @@ impl<const SORTED: bool> RearCodedListBuilder<SORTED> {
 
         let ptr_size: usize = self.pointers.len() * core::mem::size_of::<usize>();
 
-        fn human(key: &str, x: usize) {
+        fn human(key: &str, x: isize) {
             const UOM: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-            let mut y = x as f64;
+            let sign = x.signum();
+            let mut y = x.abs() as f64;
             let mut uom_idx = 0;
             while y > 1000.0 {
                 uom_idx += 1;
                 y /= 1000.0;
             }
-            println!("{:>20}:{:>10.3}{}{:>20} ", key, y, UOM[uom_idx], x);
+            println!(
+                "{:>20}:{:>10.3}{}{:>20} ",
+                key,
+                sign as f64 * y,
+                UOM[uom_idx],
+                x
+            );
         }
 
         let total_size = ptr_size + self.data.len() + core::mem::size_of::<Self>();
-        human("data_bytes", self.data.len());
-        human("codes_bytes", self.stats.code_bytes);
-        human("suffixes_bytes", self.stats.suffixes_bytes);
-        human("ptrs_bytes", ptr_size);
-        human("uncompressed_size", self.stats.sum_str_len);
-        human("total_size", total_size);
+        human("data_bytes", self.data.len() as isize);
+        human("codes_bytes", self.stats.code_bytes as isize);
+        human("suffixes_bytes", self.stats.suffixes_bytes as isize);
+        human("ptrs_bytes", ptr_size as isize);
+        human("uncompressed_size", self.stats.sum_str_len as isize);
+        human("total_size", total_size as isize);
 
         human(
             "optimal_size",
-            (self.data.len() as isize - self.stats.redundancy) as usize,
+            self.data.len() as isize - self.stats.redundancy,
         );
-        human("redundancy", self.stats.redundancy as usize);
+        human("redundancy", self.stats.redundancy);
         let overhead = self.stats.redundancy + ptr_size as isize;
         println!(
             "overhead_ratio: {:>10}",
@@ -926,6 +937,7 @@ impl<'a, 'b, B: ?Sized + Borrow<str>, L: RewindableIoLender<B>, const SORTED: bo
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "epserde")]
     use epserde::utils::AlignedCursor;
 
     use super::*;
