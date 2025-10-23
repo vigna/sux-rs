@@ -17,6 +17,7 @@ use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
+use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, BitFieldSliceMut, Word};
 use sux::utils::{
@@ -108,9 +109,7 @@ macro_rules! mwhc {
 }
 
 fn main() -> Result<()> {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .try_init()?;
+    init_env_logger()?;
 
     let args = Args::parse();
 
