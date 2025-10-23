@@ -57,6 +57,7 @@ pthash = { version = "0.4.0", features = ["rayon"] }
 thread-priority = "2.1.0"
 value-traits = { version = "0.2.1" }
 zerocopy = { version = "0.8.27", features = ["derive"] }
+jiff = "0.2.15"
 
 [dev-dependencies]
 maligned = "0.2.1"

@@ -16,6 +16,7 @@ use lender::Lender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::func::{shard_edge::*, *};
+use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{
@@ -79,9 +80,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .try_init()?;
+    init_env_logger()?;
 
     let args = Args::parse();
 
