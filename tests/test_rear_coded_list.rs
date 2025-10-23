@@ -6,24 +6,16 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use sux::dict::RearCodedListBuilder;
-
 #[cfg(feature = "epserde")]
 mod test {
     use anyhow::Result;
-    use epserde::Epserde;
     use epserde::deser::Deserialize;
-    use epserde::prelude::SerIter;
     use epserde::ser::Serialize;
     use epserde::utils::AlignedCursor;
     use indexed_dict::*;
     use lender::*;
     use rand::prelude::*;
-    use std::cell::Cell;
-    use std::cell::RefCell;
-    use std::io::BufReader;
-    use std::io::prelude::*;
-    use std::sync::Mutex;
+    use std::io::{BufRead, BufReader};
     use sux::prelude::*;
 
     #[test]
@@ -174,124 +166,4 @@ mod test {
         // This should panic because "apricot" < "cherry"
         rcab.push("apricot");
     }
-
-    #[test]
-    fn test_concept() {
-        use epserde::utils::AlignedCursor;
-        use maligned::A16;
-        #[derive(Epserde, Debug)]
-        struct Struct<S, L> {
-            strings: S,
-            lengths: L,
-        }
-
-        let strings = ["a", "cb", "ccc"];
-        let iter = strings.iter();
-        let mut cursor = <AlignedCursor<A16>>::new();
-
-        struct IterState<'a, I: Iterator<Item = &'a &'static str> + ExactSizeIterator> {
-            iter: I,
-            lengths: Vec<usize>,
-            pos: usize,
-        }
-
-        let state = RefCell::new(IterState {
-            iter,
-            lengths: Vec::new(),
-            pos: 0,
-        });
-
-        struct WritingIter<'a, 'b, I: Iterator<Item = &'a &'static str> + ExactSizeIterator> {
-            state: &'b RefCell<IterState<'a, I>>,
-        }
-
-        impl<'a, 'b, I: Iterator<Item = &'a &'static str> + ExactSizeIterator> Iterator
-            for WritingIter<'a, 'b, I>
-        {
-            type Item = &'a &'static str;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                let mut state = self.state.borrow_mut();
-                if let Some(s) = state.iter.next() {
-                    state.lengths.push(s.len());
-                    Some(s)
-                } else {
-                    None
-                }
-            }
-        }
-
-        impl<'a, 'b, I: Iterator<Item = &'a &'static str> + ExactSizeIterator> ExactSizeIterator
-            for WritingIter<'a, 'b, I>
-        {
-            fn len(&self) -> usize {
-                self.state.borrow().iter.len()
-            }
-        }
-
-        let writing_iter = WritingIter { state: &state };
-
-        let s = Struct {
-            strings: SerIter::<&'static str, _>::new(writing_iter),
-            lengths: SerIter::new(IterFromDelayedMutex::new(&state)),
-        };
-
-        unsafe { s.serialize(&mut cursor).unwrap() };
-        cursor.set_position(0);
-        let t = unsafe { Struct::<Box<[String]>, Box<[usize]>>::deserialize_full(&mut cursor) }
-            .unwrap();
-        dbg!(t);
-
-        pub struct IterFromDelayedMutex<
-            'a,
-            'b,
-            I: Iterator<Item = &'a &'static str> + ExactSizeIterator,
-        > {
-            state: &'b RefCell<IterState<'a, I>>,
-        }
-
-        impl<'a, 'b, I: Iterator<Item = &'a &'static str> + ExactSizeIterator>
-            IterFromDelayedMutex<'a, 'b, I>
-        {
-            pub fn new(state: &'b RefCell<IterState<'a, I>>) -> Self {
-                Self { state }
-            }
-        }
-
-        impl<'a, 'b, I: Iterator<Item = &'a &'static str> + ExactSizeIterator> Iterator
-            for IterFromDelayedMutex<'a, 'b, I>
-        {
-            type Item = usize;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                let mut borrow = self.state.borrow_mut();
-                if borrow.lengths.len() == borrow.pos {
-                    None
-                } else {
-                    let item = borrow.lengths[borrow.pos];
-                    borrow.pos += 1;
-                    Some(item)
-                }
-            }
-        }
-
-        impl<'a, 'b, I: Iterator<Item = &'a &'static str> + ExactSizeIterator> ExactSizeIterator
-            for IterFromDelayedMutex<'a, 'b, I>
-        {
-            fn len(&self) -> usize {
-                let borrow = self.state.borrow();
-                borrow.lengths.len() - borrow.pos
-            }
-        }
-    }
-}
-
-#[test]
-fn test_abc() {
-    let v = ["a", "b", "c"];
-    let mut rcab = RearCodedListBuilder::<true>::new(2);
-    rcab.push("a");
-    rcab.push("b");
-    rcab.push("c");
-    let rca = rcab.build();
 }
