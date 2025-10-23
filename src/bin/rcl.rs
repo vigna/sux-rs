@@ -1,5 +1,4 @@
 /*
- *
  * SPDX-FileCopyrightText: 2024 Sebastiano Vigna
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
@@ -85,21 +84,19 @@ fn main() -> Result<()> {
         } else {
             rear_coded_list::store::<_, _, true>(args.k, lender, args.dest)?;
         }
-    } else {
-        if args.source == "-" {
-            let stdin = DekoBufLineLender::new(std::io::BufReader::new(std::io::stdin().lock()))?;
-            if args.unsorted {
-                compress::<_, false>(stdin, args.dest, args.k)?;
-            } else {
-                compress::<_, true>(stdin, args.dest, args.k)?;
-            }
+    } else if args.source == "-" {
+        let stdin = DekoBufLineLender::new(std::io::BufReader::new(std::io::stdin().lock()))?;
+        if args.unsorted {
+            compress::<_, false>(stdin, args.dest, args.k)?;
         } else {
-            let lender = DekoBufLineLender::from_path(&args.source)?;
-            if args.unsorted {
-                compress::<_, false>(lender, args.dest, args.k)?;
-            } else {
-                compress::<_, true>(lender, args.dest, args.k)?;
-            }
+            compress::<_, true>(stdin, args.dest, args.k)?;
+        }
+    } else {
+        let lender = DekoBufLineLender::from_path(&args.source)?;
+        if args.unsorted {
+            compress::<_, false>(lender, args.dest, args.k)?;
+        } else {
+            compress::<_, true>(lender, args.dest, args.k)?;
         }
     }
 

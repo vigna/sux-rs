@@ -66,8 +66,7 @@ trybuild = "1.0.110"
 
 [features]
 default = ["rayon"]
-cli = [
-] # Build the binary utils (it's here so that cargo bench doesn't build them)
+cli = [dep:epserde, dep:deko] # Build the binary utils (it's here so that cargo bench doesn't build them)
 fuzz = ["dep:arbitrary"]
 slow_tests = [] # Run slow tests (use --release)
 mwhc = [] # Compile MWHC data structures (mainly for benchmarking)
