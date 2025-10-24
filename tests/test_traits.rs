@@ -35,11 +35,9 @@ fn test_into_iter_from() {
         .for_each(|(a, b)| {
             assert_eq!(a, b);
         });
-    v.into_iter_from(2)
-        .zip(vec![3, 4, 5])
-        .for_each(|(a, b)| {
-            assert_eq!(a, b);
-        });
+    v.into_iter_from(2).zip(vec![3, 4, 5]).for_each(|(a, b)| {
+        assert_eq!(a, b);
+    });
 
     let v = vec![1, 2, 3, 4, 5].into_boxed_slice();
     (&v).into_iter_from(2)
@@ -47,9 +45,7 @@ fn test_into_iter_from() {
         .for_each(|(a, b)| {
             assert_eq!(a, b);
         });
-    v.into_iter_from(2)
-        .zip(vec![3, 4, 5])
-        .for_each(|(a, b)| {
-            assert_eq!(a, b);
-        });
+    v.into_iter_from(2).zip(vec![3, 4, 5]).for_each(|(a, b)| {
+        assert_eq!(a, b);
+    });
 }
