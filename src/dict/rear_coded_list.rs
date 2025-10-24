@@ -67,6 +67,11 @@
 //! Finally, the `rcl` command-line tool can be use to create
 //! a serialized rear-coded list from a file containing strings.
 //!
+//! # Panics
+//!
+//! [`RearCodedListStr`] methods may panic if the stored data is not valid UTF-8.
+//! That can happen only in case of data corruption (e.g., on serialized data).
+//!
 //! # Examples
 //!
 //! Here we use a [`RearCodedListBuilder`] to build a sorted rear-coded list:
@@ -409,7 +414,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IndexedSeq
         self.get_in_place_impl(index, &mut result);
         // SAFETY: we encoded valid UTF-8 strings
         debug_assert!(std::str::from_utf8(&result).is_ok());
-        unsafe { String::from_utf8_unchecked(result) }
+        String::from_utf8(result).unwrap()
     }
 
     #[inline(always)]
@@ -426,10 +431,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
         self.get_in_place_impl(index, &mut buffer);
         result.clear();
         debug_assert!(std::str::from_utf8(&buffer).is_ok());
-        // SAFETY: we encoded valid UTF-8 strings
-        unsafe {
-            result.push_str(std::str::from_utf8_unchecked(&buffer));
-        }
+        result.push_str(std::str::from_utf8(&buffer).unwrap());
     }
 }
 
@@ -547,10 +549,7 @@ where
     str: PartialEq<O> + PartialEq,
 {
     fn next(&mut self) -> Option<&'_ str> {
-        // TODO: replace with str::from_utf8_unchecked as soon as we increase the MSRV
-        // SAFETY: We encoded valid UTF-8 strings
-        #[allow(clippy::transmute_bytes_to_str)]
-        self.next_impl().map(|s| unsafe { std::mem::transmute(s) })
+        self.next_impl().map(|s| std::str::from_utf8(s).unwrap())
     }
 
     #[inline(always)]
@@ -634,7 +633,7 @@ where
         // SAFETY: We encoded valid UTF-8 strings
         self.0
             .next_impl()
-            .map(|v| unsafe { String::from_utf8_unchecked(Vec::from(v)) })
+            .map(|v| String::from_utf8(Vec::from(v)).unwrap())
     }
 
     #[inline(always)]
