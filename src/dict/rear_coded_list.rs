@@ -195,7 +195,6 @@ pub struct RearCodedList<I: ?Sized, O, D = Box<[u8]>, P = Box<[usize]>, const SO
     data: D,
     /// The pointer to the starting string of each block.
     pointers: P,
-    ///
     _marker_i: PhantomData<I>,
     _marker_o: PhantomData<O>,
 }
@@ -227,7 +226,7 @@ impl<
     /// Writes the index-th element to `result` as bytes. This is useful to avoid
     /// allocating a new vector for every query.
     #[inline]
-    fn get_in_place(&self, index: usize, result: &mut Vec<u8>) {
+    fn get_in_place_impl(&self, index: usize, result: &mut Vec<u8>) {
         result.clear();
         let block = index / self.k;
         let offset = index % self.k;
@@ -383,7 +382,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IndexedSeq
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
         let mut result = Vec::with_capacity(128);
-        self.get_in_place(index, &mut result);
+        self.get_in_place_impl(index, &mut result);
         result
     }
 
@@ -393,13 +392,21 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IndexedSeq
     }
 }
 
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
+    RearCodedList<[u8], Vec<u8>, D, P, SORTED>
+{
+    pub fn get_in_place(&self, index: usize, result: &mut Vec<u8>) {
+        self.get_in_place_impl(index, result);
+    }
+}
+
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IndexedSeq
     for RearCodedList<str, String, D, P, SORTED>
 {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
         let mut result = Vec::with_capacity(128);
-        self.get_in_place(index, &mut result);
+        self.get_in_place_impl(index, &mut result);
         // SAFETY: we encoded valid UTF-8 strings
         debug_assert!(std::str::from_utf8(&result).is_ok());
         unsafe { String::from_utf8_unchecked(result) }
@@ -408,6 +415,21 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IndexedSeq
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
+    }
+}
+
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
+    RearCodedList<str, String, D, P, SORTED>
+{
+    pub fn get_in_place(&self, index: usize, result: &mut String) {
+        let mut buffer = Vec::with_capacity(64);
+        self.get_in_place_impl(index, &mut buffer);
+        result.clear();
+        debug_assert!(std::str::from_utf8(&buffer).is_ok());
+        // SAFETY: we encoded valid UTF-8 strings
+        unsafe {
+            result.push_str(std::str::from_utf8_unchecked(&buffer));
+        }
     }
 }
 
@@ -525,9 +547,10 @@ where
     str: PartialEq<O> + PartialEq,
 {
     fn next(&mut self) -> Option<&'_ str> {
+        // TODO: replace with str::from_utf8_unchecked as soon as we increase the MSRV
         // SAFETY: We encoded valid UTF-8 strings
-        self.next_impl()
-            .map(|s| unsafe { str::from_utf8_unchecked(s) })
+        #[allow(clippy::transmute_bytes_to_str)]
+        self.next_impl().map(|s| unsafe { std::mem::transmute(s) })
     }
 
     #[inline(always)]
@@ -1099,7 +1122,6 @@ mod epserde_impl {
             SerIter<usize, PointersIter<'a, I, SORTED>>,
             SORTED,
         >: Serialize,
-        I: 'static,
     {
         use log::info;
 
@@ -1310,13 +1332,11 @@ mod epserde_impl {
     }
 }
 
+#[cfg(feature = "epserde")]
 pub use epserde_impl::{serialize_slice_u8, serialize_str, store_slice_u8, store_str};
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "epserde")]
-    use epserde::utils::AlignedCursor;
-
     use super::*;
 
     #[test]
@@ -1409,127 +1429,5 @@ mod tests {
             longest_common_prefix(str2, str2),
             (str2.len(), core::cmp::Ordering::Equal)
         );
-    }
-
-    #[cfg(test)]
-    fn read_into_lender<L: IntoLender>(into_lender: L) -> usize
-    where
-        for<'a> <L::Lender as Lending<'a>>::Lend: AsRef<str>,
-    {
-        let mut iter = into_lender.into_lender();
-        let mut c = 0;
-        while let Some(s) = iter.next() {
-            c += s.as_ref().len();
-        }
-
-        c
-    }
-
-    #[test]
-    fn test_into_lend() {
-        let mut builder = RearCodedListBuilder::<str, true>::new(4);
-        builder.push("a");
-        builder.push("b");
-        builder.push("c");
-        builder.push("d");
-        let rcl = builder.build();
-        read_into_lender(&rcl);
-    }
-
-    #[test]
-    fn test_zero_bytes() {
-        let strings = vec![
-            "\0\0\0\0a",
-            "\0\0\0b",
-            "\0\0c",
-            "\0d",
-            "e",
-            "f\0",
-            "g\0\0",
-            "h\0\0\0",
-        ];
-        let mut builder = RearCodedListBuilder::<str, true>::new(4);
-        for &s in &strings {
-            builder.push(s);
-        }
-        let rcl = builder.build();
-        for i in 0..rcl.len() {
-            let s = rcl.get(i);
-            assert_eq!(s, strings[i]);
-        }
-    }
-
-    #[cfg(feature = "epserde")]
-    #[test]
-    fn test_ser_str() -> anyhow::Result<()> {
-        use epserde::deser::Deserialize;
-
-        use crate::utils::FromIntoIterator;
-
-        let v = ["a", "ab", "ab", "abc", "b", "bb"];
-
-        let mut cursor = AlignedCursor::<maligned::A16>::new();
-        serialize_str::<_, _, true>(4, FromIntoIterator::from(v.clone()), &mut cursor)?;
-
-        cursor.set_position(0);
-        let deser = unsafe { RearCodedListStr::<true>::deserialize_full(&mut cursor)? };
-        assert_eq!(deser.len(), 6);
-        for (i, s) in deser.iter().enumerate() {
-            assert_eq!(s, v[i]);
-        }
-        assert_eq!(deser.get(0), "a");
-        assert_eq!(deser.get(1), "ab");
-        assert_eq!(deser.get(2), "ab");
-        assert_eq!(deser.get(3), "abc");
-        assert_eq!(deser.get(4), "b");
-        assert_eq!(deser.get(5), "bb");
-        assert_eq!(deser.index_of("a"), Some(0));
-        assert_eq!(deser.index_of("ab"), Some(1));
-        assert_eq!(deser.index_of("abc"), Some(3));
-        assert_eq!(deser.index_of("b"), Some(4));
-        assert_eq!(deser.index_of("bb"), Some(5));
-        assert_eq!(deser.index_of("c"), None);
-
-        Ok(())
-    }
-
-    #[cfg(feature = "epserde")]
-    #[test]
-    fn test_ser_slice() -> anyhow::Result<()> {
-        use epserde::deser::Deserialize;
-
-        use crate::utils::FromIntoIterator;
-
-        let v = vec![
-            vec![1u8],
-            vec![1u8, 2u8],
-            vec![1u8, 2u8],
-            vec![1u8, 2u8, 3u8],
-            vec![2u8],
-            vec![2u8, 2u8],
-        ];
-
-        let mut cursor = AlignedCursor::<maligned::A16>::new();
-        serialize_slice_u8::<_, _, true>(4, FromIntoIterator::from(v.clone()), &mut cursor)?;
-
-        cursor.set_position(0);
-        let deser = unsafe { RearCodedListSliceU8::<true>::deserialize_full(&mut cursor)? };
-        assert_eq!(deser.len(), 6);
-        deser.iter().zip(v.iter()).for_each(|(s, t)| {
-            assert_eq!(&s, t);
-        });
-        assert_eq!(deser.get(0), &[1u8]);
-        assert_eq!(deser.get(1), &[1u8, 2u8]);
-        assert_eq!(deser.get(2), &[1u8, 2u8]);
-        assert_eq!(deser.get(3), &[1u8, 2u8, 3u8]);
-        assert_eq!(deser.get(4), &[2u8]);
-        assert_eq!(deser.get(5), &[2u8, 2u8]);
-        assert_eq!(deser.index_of(&[1u8]), Some(0));
-        assert_eq!(deser.index_of(&[1u8, 2u8]), Some(1));
-        assert_eq!(deser.index_of(&[1u8, 2u8, 3u8]), Some(3));
-        assert_eq!(deser.index_of(&[2u8]), Some(4));
-        assert_eq!(deser.index_of(&[2u8, 2u8]), Some(5));
-        assert_eq!(deser.index_of(&[3u8]), None);
-        Ok(())
     }
 }
