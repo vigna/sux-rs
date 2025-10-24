@@ -24,7 +24,7 @@ pub trait IntoIteratorFrom: IntoIterator {
     /// Which kind of iterator are we turning this into?
     type IntoIterFrom: Iterator<Item = <Self as IntoIterator>::Item>;
 
-    /// Creates an iterator from a value and a starting position.
+    /// Creates an iterator from a starting position.
     fn into_iter_from(self, from: usize) -> Self::IntoIterFrom;
 }
 
