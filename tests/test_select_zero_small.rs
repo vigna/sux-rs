@@ -218,10 +218,10 @@ fn test_extremely_sparse_and_large() {
     }
     data.push(!(1 << 63));
     for _ in 0..(1 << 26) {
-        data.push(usize::MAX as usize);
+        data.push(usize::MAX);
     }
     for _ in 0..(1 << 26) {
-        data.push(usize::MAX as usize);
+        data.push(usize::MAX);
     }
     data.push(!(1_usize));
 

@@ -110,6 +110,7 @@ use common_traits::{
 use mem_dbg::*;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
+use std::iter::FusedIterator;
 use std::sync::atomic::{Ordering, compiler_fence, fence};
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
@@ -356,6 +357,16 @@ impl<'a, W: Word> Iterator for ChunksMut<'a, W> {
             next
         })
     }
+}
+
+impl<'a, W: Word> ExactSizeIterator for ChunksMut<'a, W> where
+    std::slice::ChunksMut<'a, W>: ExactSizeIterator
+{
+}
+
+impl<'a, W: Word> FusedIterator for ChunksMut<'a, W> where
+    std::slice::ChunksMut<'a, W>: FusedIterator
+{
 }
 
 impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {}
@@ -1180,6 +1191,8 @@ impl<W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'_, W, B>
         self.range.len()
     }
 }
+
+impl<W: Word, B: AsRef<[W]>> FusedIterator for BitFieldVecIterator<'_, W, B> {}
 
 /// This implements iteration from the end, but its slower than the forward iteration
 /// as here we do a random access, while in the forward iterator we do a sequential access

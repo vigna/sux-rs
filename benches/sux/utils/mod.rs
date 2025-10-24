@@ -66,7 +66,7 @@ pub fn create_bitvec(
 
     let bits = first_half
         .into_iter()
-        .chain(second_half.into_iter())
+        .chain(&second_half)
         .collect::<BitVec>();
 
     (num_ones_first_half, num_ones_second_half, bits)
