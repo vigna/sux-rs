@@ -35,8 +35,8 @@ mod test {
         // test sorted RCL
 
         // create a new rca with u16 as pointers (this limit data to u16::MAX bytes max size)
-        let mut rcab = <RearCodedListBuilder>::new(4);
-        rcab.extend(words.iter().map(|s| s.as_str()).into_lender());
+        let mut rcab = <RearCodedListBuilder<str, true>>::new(4);
+        rcab.extend(words.iter().into_lender());
 
         rcab.print_stats();
         let rca = rcab.build();
@@ -60,12 +60,12 @@ mod test {
         }
 
         // test that the lend is correct
-        for_![(i, word) in rca.lend().enumerate() {
+        for_![(i, word) in rca.lender().enumerate() {
             assert_eq!(word, words[i]);
         }];
 
         for from in 0..rca.len() {
-            for_![(i, word) in rca.lend_from(from).enumerate() {
+            for_![(i, word) in rca.lender_from(from).enumerate() {
                 assert_eq!(word, words[i + from]);
             }]
         }
@@ -88,7 +88,7 @@ mod test {
         let len = cursor.len();
         cursor.set_position(0);
         let c = unsafe {
-            <RearCodedList>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())?
+            <RearCodedListStr<true>>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())?
         };
         let c = c.uncase();
 
@@ -98,7 +98,7 @@ mod test {
 
         // test unsorted RCL
 
-        let mut rcl_builder = <RearCodedListBuilder<false>>::new(4);
+        let mut rcl_builder = <RearCodedListBuilder<str, false>>::new(4);
         let mut shuffled_words = words.iter().map(|s| s.as_str()).collect::<Vec<_>>();
         shuffled_words.shuffle(&mut rand::rng());
 
@@ -141,11 +141,7 @@ mod test {
         let len = cursor.len();
         cursor.set_position(0);
         let c = unsafe {
-            <RearCodedList<Box<[u8]>, Box<[usize]>, false>>::read_mmap(
-                &mut cursor,
-                len,
-                epserde::deser::Flags::empty(),
-            )?
+            <RearCodedListStr<false>>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())?
         };
         let c = c.uncase();
 
@@ -159,7 +155,7 @@ mod test {
     #[test]
     #[should_panic(expected = "Strings must be sorted in ascending order")]
     fn test_panics_on_out_of_order() {
-        let mut rcab = <RearCodedListBuilder>::new(4);
+        let mut rcab = <RearCodedListBuilder<str, true>>::new(4);
         rcab.push("apple");
         rcab.push("banana");
         rcab.push("cherry");
