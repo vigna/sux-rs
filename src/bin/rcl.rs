@@ -12,6 +12,29 @@ use epserde::ser::Serialize;
 use lender::for_;
 use sux::{init_env_logger, prelude::*, utils::DekoBufLineLender};
 
+/// Macro to handle the repeated pattern of checking args.unsorted
+/// and calling a function with the appropriate const generic parameter.
+/// When args.unsorted is true, we pass false for SORTED (meaning not sorted).
+/// When args.unsorted is false, we pass true for SORTED.
+macro_rules! call_with_sorted {
+    // For compress function with single type parameter
+    ($unsorted:expr, compress, $($args:expr),*) => {
+        if $unsorted {
+            compress::<_, false>($($args),*)
+        } else {
+            compress::<_, true>($($args),*)
+        }
+    };
+    // For rear_coded_list::store with one type parameter and one const generic
+    ($unsorted:expr, rear_coded_list::store_str, $($args:expr),*) => {
+        if $unsorted {
+            rear_coded_list::store_str::<_,_, false>($($args),*)
+        } else {
+            rear_coded_list::store_str::<_,_,  true>($($args),*)
+        }
+    };
+}
+
 #[derive(Parser, Debug)]
 #[command(about = "Builds a rear-coded list starting from a list of UTF-8 encoded strings.", long_about = None)]
 struct Args {
@@ -36,7 +59,7 @@ fn compress<R: BufRead, const SORTED: bool>(
     dest: impl Borrow<str>,
     k: usize,
 ) -> Result<()> {
-    let mut rclb = RearCodedListBuilder::<SORTED>::new(k);
+    let mut rclb = RearCodedListBuilder::<str, SORTED>::new(k);
 
     let mut pl = ProgressLogger::default();
     pl.display_memory(true);
@@ -79,25 +102,19 @@ fn main() -> Result<()> {
             panic!("Low-memory mode cannot read from standard input");
         }
         let lender = DekoBufLineLender::from_path(&args.source)?;
-        if args.unsorted {
-            rear_coded_list::store::<_, _, false>(args.k, lender, args.dest)?;
-        } else {
-            rear_coded_list::store::<_, _, true>(args.k, lender, args.dest)?;
-        }
+        call_with_sorted!(
+            args.unsorted,
+            rear_coded_list::store_str,
+            args.k,
+            lender,
+            args.dest
+        )?;
     } else if args.source == "-" {
         let stdin = DekoBufLineLender::new(std::io::BufReader::new(std::io::stdin().lock()))?;
-        if args.unsorted {
-            compress::<_, false>(stdin, args.dest, args.k)?;
-        } else {
-            compress::<_, true>(stdin, args.dest, args.k)?;
-        }
+        call_with_sorted!(args.unsorted, compress, stdin, args.dest, args.k)?;
     } else {
         let lender = DekoBufLineLender::from_path(&args.source)?;
-        if args.unsorted {
-            compress::<_, false>(lender, args.dest, args.k)?;
-        } else {
-            compress::<_, true>(lender, args.dest, args.k)?;
-        }
+        call_with_sorted!(args.unsorted, compress, lender, args.dest, args.k)?;
     }
 
     Ok(())

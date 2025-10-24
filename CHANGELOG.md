@@ -4,8 +4,11 @@
 
 ### Changed
 
-* `RearCodedList` has now a `SORTED` parameter to indicate whether the list
-  is sorted. `IndexedDict` is now implemented only for the sorted version.
+* `RearCodedList` has been significantly extended and modified. It supports now
+  both slices of bytes and strings, and it has a `SORTED` parameter to indicate
+  whether the list is sorted. `IndexedDict` is now implemented only for the
+  sorted version. Users of the previous version should adapt their code to use
+  `RearCodedListStr`.
 
 ## [0.9.1] - 2025-10-16
 
