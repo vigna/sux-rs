@@ -8,7 +8,7 @@ use sux::traits::{IndexedSeq, IntoIteratorFrom};
 
 #[test]
 fn test_slice_delegations() {
-    let v = vec![1, 2, 3, 4, 5];
+    let v = [1, 2, 3, 4, 5];
     let s = &v[..];
     // Check that IndexedSeq is implemented for slices
     assert_eq!(IndexedSeq::len(s), v.len());
@@ -31,24 +31,24 @@ fn test_slice_delegations() {
 fn test_into_iter_from() {
     let v = vec![1, 2, 3, 4, 5];
     (&v).into_iter_from(2)
-        .zip(vec![3, 4, 5].iter())
+        .zip([3, 4, 5].iter())
         .for_each(|(a, b)| {
             assert_eq!(a, b);
         });
     v.into_iter_from(2)
-        .zip(vec![3, 4, 5].into_iter())
+        .zip(vec![3, 4, 5])
         .for_each(|(a, b)| {
             assert_eq!(a, b);
         });
 
     let v = vec![1, 2, 3, 4, 5].into_boxed_slice();
     (&v).into_iter_from(2)
-        .zip(vec![3, 4, 5].iter())
+        .zip([3, 4, 5].iter())
         .for_each(|(a, b)| {
             assert_eq!(a, b);
         });
     v.into_iter_from(2)
-        .zip(vec![3, 4, 5].into_iter())
+        .zip(vec![3, 4, 5])
         .for_each(|(a, b)| {
             assert_eq!(a, b);
         });

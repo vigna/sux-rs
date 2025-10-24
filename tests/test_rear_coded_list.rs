@@ -228,7 +228,7 @@ fn test_ser_str() -> anyhow::Result<()> {
     let v = ["a", "ab", "ab", "abc", "b", "bb"];
 
     let mut cursor = AlignedCursor::<maligned::A16>::new();
-    serialize_str::<_, _, true>(4, FromIntoIterator::from(v.clone()), &mut cursor)?;
+    serialize_str::<_, _, true>(4, FromIntoIterator::from(v), &mut cursor)?;
 
     cursor.set_position(0);
     let deser = unsafe {

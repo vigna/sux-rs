@@ -7,6 +7,8 @@
 
 //! Fair chunk iteration over weighted integers.
 
+use std::iter::FusedIterator;
+
 use crate::traits::{Succ, SuccUnchecked};
 
 /// An iterator returning fair chunks.
@@ -183,3 +185,5 @@ impl<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize>> Iterator for F
         })
     }
 }
+
+impl<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize>> FusedIterator for FairChunks<I> {}

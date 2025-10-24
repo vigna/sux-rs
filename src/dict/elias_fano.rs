@@ -57,6 +57,7 @@ use crate::traits::{AtomicBitVecOps, BitVecOpsMut, bit_field_slice::*};
 use core::sync::atomic::Ordering;
 use mem_dbg::*;
 use std::borrow::Borrow;
+use std::iter::FusedIterator;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 /// The default type for an Elias–Fano structure implementing an [`IndexedSeq`].
@@ -741,6 +742,13 @@ where
     fn len(&self) -> usize {
         self.ef.len() - self.index
     }
+}
+
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> FusedIterator
+    for EliasFanoIterator<'_, H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+{
 }
 
 impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> IntoIterator for &'a EliasFano<H, L>

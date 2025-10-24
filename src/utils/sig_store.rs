@@ -62,6 +62,7 @@ use std::{
     collections::VecDeque,
     fs::File,
     io::*,
+    iter::FusedIterator,
     marker::PhantomData,
     ops::{BitXor, BitXorAssign},
     sync::Arc,
@@ -940,6 +941,17 @@ where
     fn len(&self) -> usize {
         self.store.borrow().shard_sizes.len() - self.next_shard
     }
+}
+
+impl<
+    S: BinSafe + Sig + Send + Sync,
+    V: BinSafe,
+    B: Send + Sync,
+    T: BorrowMut<ShardStoreImpl<S, V, B>>,
+> FusedIterator for ShardIterator<S, V, B, T>
+where
+    for<'a> ShardIterator<S, V, B, T>: Iterator,
+{
 }
 
 fn write_binary<S: BinSafe + Sig, V: BinSafe>(
