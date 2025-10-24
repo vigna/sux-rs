@@ -6,6 +6,10 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+#[cfg(test)]
+use lender::{IntoLender, Lending};
+use sux::{dict::RearCodedListBuilder, traits::IndexedSeq};
+
 #[cfg(feature = "epserde")]
 mod test {
     use anyhow::Result;
@@ -162,4 +166,164 @@ mod test {
         // This should panic because "apricot" < "cherry"
         rcab.push("apricot");
     }
+}
+
+#[cfg(test)]
+fn read_into_lender<L: IntoLender>(into_lender: L) -> usize
+where
+    for<'a> <L::Lender as Lending<'a>>::Lend: AsRef<str>,
+{
+    use lender::Lender;
+
+    let mut iter = into_lender.into_lender();
+    let mut c = 0;
+    while let Some(s) = iter.next() {
+        c += s.as_ref().len();
+    }
+
+    c
+}
+
+#[test]
+fn test_into_lend() {
+    let mut builder = RearCodedListBuilder::<str, true>::new(4);
+    builder.push("a");
+    builder.push("b");
+    builder.push("c");
+    builder.push("d");
+    let rcl = builder.build();
+    read_into_lender(&rcl);
+}
+
+#[test]
+fn test_zero_bytes() {
+    let strings = vec![
+        "\0\0\0\0a",
+        "\0\0\0b",
+        "\0\0c",
+        "\0d",
+        "e",
+        "f\0",
+        "g\0\0",
+        "h\0\0\0",
+    ];
+    let mut builder = RearCodedListBuilder::<str, true>::new(4);
+    for &s in &strings {
+        builder.push(s);
+    }
+    let rcl = builder.build();
+    for i in 0..rcl.len() {
+        let s = rcl.get(i);
+        assert_eq!(s, strings[i]);
+    }
+}
+
+#[cfg(feature = "epserde")]
+#[test]
+fn test_ser_str() -> anyhow::Result<()> {
+    use epserde::utils::AlignedCursor;
+    use sux::traits::{IndexedDict, IndexedSeq};
+    use sux::{dict::rear_coded_list::serialize_str, utils::FromIntoIterator};
+
+    let v = ["a", "ab", "ab", "abc", "b", "bb"];
+
+    let mut cursor = AlignedCursor::<maligned::A16>::new();
+    serialize_str::<_, _, true>(4, FromIntoIterator::from(v.clone()), &mut cursor)?;
+
+    cursor.set_position(0);
+    let deser = unsafe {
+        use epserde::deser::Deserialize;
+        use sux::dict::RearCodedListStr;
+        RearCodedListStr::<true>::deserialize_full(&mut cursor)?
+    };
+    assert_eq!(deser.len(), 6);
+    for (i, s) in deser.iter().enumerate() {
+        assert_eq!(s, v[i]);
+    }
+    assert_eq!(deser.get(0), "a");
+    assert_eq!(deser.get(1), "ab");
+    assert_eq!(deser.get(2), "ab");
+    assert_eq!(deser.get(3), "abc");
+    assert_eq!(deser.get(4), "b");
+    assert_eq!(deser.get(5), "bb");
+    assert_eq!(deser.index_of("a"), Some(0));
+    assert_eq!(deser.index_of("ab"), Some(1));
+    assert_eq!(deser.index_of("abc"), Some(3));
+    assert_eq!(deser.index_of("b"), Some(4));
+    assert_eq!(deser.index_of("bb"), Some(5));
+    assert_eq!(deser.index_of("c"), None);
+
+    let mut buf = String::new();
+    deser.get_in_place(0, &mut buf);
+    assert_eq!(&buf, "a");
+    deser.get_in_place(1, &mut buf);
+    assert_eq!(&buf, "ab");
+    deser.get_in_place(2, &mut buf);
+    assert_eq!(&buf, "ab");
+    deser.get_in_place(3, &mut buf);
+    assert_eq!(&buf, "abc");
+    deser.get_in_place(4, &mut buf);
+    assert_eq!(&buf, "b");
+    deser.get_in_place(5, &mut buf);
+    assert_eq!(&buf, "bb");
+
+    Ok(())
+}
+
+#[cfg(feature = "epserde")]
+#[test]
+fn test_ser_slice() -> anyhow::Result<()> {
+    use epserde::{deser::Deserialize, utils::AlignedCursor};
+    use sux::dict::rear_coded_list::serialize_slice_u8;
+    use sux::traits::{IndexedDict, IndexedSeq};
+    use sux::utils::FromIntoIterator;
+
+    let v = vec![
+        vec![1u8],
+        vec![1u8, 2u8],
+        vec![1u8, 2u8],
+        vec![1u8, 2u8, 3u8],
+        vec![2u8],
+        vec![2u8, 2u8],
+    ];
+
+    let mut cursor = AlignedCursor::<maligned::A16>::new();
+    serialize_slice_u8::<_, _, true>(4, FromIntoIterator::from(v.clone()), &mut cursor)?;
+
+    cursor.set_position(0);
+    let deser = unsafe {
+        use sux::dict::RearCodedListSliceU8;
+        RearCodedListSliceU8::<true>::deserialize_full(&mut cursor)?
+    };
+    assert_eq!(deser.len(), 6);
+    deser.iter().zip(v.iter()).for_each(|(s, t)| {
+        assert_eq!(&s, t);
+    });
+    assert_eq!(deser.get(0), &[1u8]);
+    assert_eq!(deser.get(1), &[1u8, 2u8]);
+    assert_eq!(deser.get(2), &[1u8, 2u8]);
+    assert_eq!(deser.get(3), &[1u8, 2u8, 3u8]);
+    assert_eq!(deser.get(4), &[2u8]);
+    assert_eq!(deser.get(5), &[2u8, 2u8]);
+    assert_eq!(deser.index_of(vec![1u8]), Some(0));
+    assert_eq!(deser.index_of(vec![1u8, 2u8]), Some(1));
+    assert_eq!(deser.index_of(vec![1u8, 2u8, 3u8]), Some(3));
+    assert_eq!(deser.index_of(vec![2u8]), Some(4));
+    assert_eq!(deser.index_of(vec![2u8, 2u8]), Some(5));
+    assert_eq!(deser.index_of(vec![3u8]), None);
+
+    let mut buf = vec![];
+    deser.get_in_place(0, &mut buf);
+    assert_eq!(&buf, &[1u8]);
+    deser.get_in_place(1, &mut buf);
+    assert_eq!(&buf, &[1u8, 2u8]);
+    deser.get_in_place(2, &mut buf);
+    assert_eq!(&buf, &[1u8, 2u8]);
+    deser.get_in_place(3, &mut buf);
+    assert_eq!(&buf, &[1u8, 2u8, 3u8]);
+    deser.get_in_place(4, &mut buf);
+    assert_eq!(&buf, &[2u8]);
+    deser.get_in_place(5, &mut buf);
+    assert_eq!(&buf, &[2u8, 2u8]);
+    Ok(())
 }
