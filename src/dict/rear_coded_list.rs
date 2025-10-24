@@ -147,8 +147,8 @@
 
 use crate::traits::{IndexedDict, IndexedSeq, IntoIteratorFrom, Types};
 use core::marker::PhantomData;
-use lender::for_;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
+use lender::{FusedLender, for_};
 use mem_dbg::*;
 use std::borrow::Borrow;
 
@@ -590,6 +590,19 @@ where
     }
 }
 
+impl<
+    'a,
+    I: PartialEq<O> + PartialEq + ?Sized,
+    O: PartialEq<I> + PartialEq,
+    D: AsRef<[u8]>,
+    P: AsRef<[usize]>,
+    const SORTED: bool,
+> FusedLender for Lend<'a, I, O, D, P, SORTED>
+where
+    Lend<'a, I, O, D, P, SORTED>: Lender,
+{
+}
+
 // Iterators
 
 /// Sequential [`Iterator`] over the the contents of the list.
@@ -612,8 +625,8 @@ impl<
     const SORTED: bool,
 > std::iter::ExactSizeIterator for Iter<'a, I, O, D, P, SORTED>
 where
-    Lend<'a, I, O, D, P, SORTED>: ExactSizeLender,
     Iter<'a, I, O, D, P, SORTED>: std::iter::Iterator,
+    Lend<'a, I, O, D, P, SORTED>: ExactSizeLender,
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -621,10 +634,24 @@ where
     }
 }
 
+impl<
+    'a,
+    I: PartialEq<O> + PartialEq + ?Sized,
+    O: PartialEq<I> + PartialEq,
+    D: AsRef<[u8]>,
+    P: AsRef<[usize]>,
+    const SORTED: bool,
+> std::iter::FusedIterator for Iter<'a, I, O, D, P, SORTED>
+where
+    Iter<'a, I, O, D, P, SORTED>: std::iter::Iterator,
+    Lend<'a, str, String, D, P, SORTED>: FusedLender,
+{
+}
+
 impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> std::iter::Iterator
     for Iter<'a, str, String, D, P, SORTED>
 where
-    Lend<'a, str, String, D, P, SORTED>: ExactSizeLender,
+    Lend<'a, str, String, D, P, SORTED>: Lender,
 {
     type Item = String;
 

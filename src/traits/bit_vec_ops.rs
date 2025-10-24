@@ -39,7 +39,10 @@
 
 use crate::traits::BitLength;
 use mem_dbg::{MemDbg, MemSize};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    iter::FusedIterator,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 #[cfg(feature = "rayon")]
 use crate::RAYON_MIN_LEN;
@@ -252,6 +255,14 @@ impl<B: ?Sized + AsRef<[usize]>> Iterator for BitIterator<'_, B> {
         Some(bit != 0)
     }
 }
+
+impl<B: ?Sized + AsRef<[usize]>> ExactSizeIterator for BitIterator<'_, B> {
+    fn len(&self) -> usize {
+        self.len - self.next_bit_pos
+    }
+}
+
+impl<B: ?Sized + AsRef<[usize]>> FusedIterator for BitIterator<'_, B> {}
 
 /// An iterator over the positions of the ones in a bit vector.
 #[derive(Debug, Clone, MemDbg, MemSize)]
@@ -633,3 +644,11 @@ impl<B: ?Sized + AsRef<[AtomicUsize]>> Iterator for AtomicBitIterator<'_, B> {
         Some(bit != 0)
     }
 }
+
+impl<B: ?Sized + AsRef<[AtomicUsize]>> ExactSizeIterator for AtomicBitIterator<'_, B> {
+    fn len(&self) -> usize {
+        self.len - self.next_bit_pos
+    }
+}
+
+impl<B: ?Sized + AsRef<[AtomicUsize]>> FusedIterator for AtomicBitIterator<'_, B> {}
