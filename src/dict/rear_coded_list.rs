@@ -31,7 +31,10 @@
 //!
 //! Besides the standard access by means of the [`IndexedSeq`] trait, this
 //! structure also implements the `get_in_place` method, which allows to write
-//! the string directly into a user-provided buffer, avoiding allocations.
+//! the element directly into a user-provided buffer (a string or a vector of
+//! bytes), avoiding allocations. [`RearCodedListStr`] has an additional
+//! [`get_bytes_in_place`](RearCodedListStr::get_bytes_in_place) method that
+//! writes the bytes of the string into a user-provided `Vec<u8>`.
 //!
 //! Rear-coded lists can be iterated upon using either an
 //! [`Iterator`](RearCodedList::iter) or a [`Lender`](RearCodedList::lender).
@@ -47,7 +50,7 @@
 //! of elements in the list by binary search; if false, the elements can be in
 //! arbitrary order, but no dictionary operations will be available (this
 //! configuration is mainly useful for storing large lists of elements with quick
-//! deserialization).
+//! deserialization or easy memory mapping).
 //!
 //! To build a [`RearCodedList`] you use a [`RearCodedListBuilder`], which has a
 //! first parameter, `str` or `[u8]`, that specifies the type of elements, and a
@@ -313,6 +316,9 @@ impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, 
     /// Internal method that finds the index of a slice of bytes using a binary
     /// search on the blocks followed by a linear search within the block.
     ///
+    /// Note that we use Rust built-in binary search: thus, in case of multiple
+    /// occurrences of the same string, we may return any of them.
+    ///
     /// Use by the implementation of [`IndexedDict::index_of`].
     fn index_of(&self, value: impl AsRef<[u8]>) -> Option<usize> {
         let string = value.as_ref();
@@ -400,6 +406,8 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IndexedSeq
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
     RearCodedList<[u8], Vec<u8>, D, P, SORTED>
 {
+    /// Returns in place the byte sequence of given index by writing
+    /// its bytes into the provided vector.
     pub fn get_in_place(&self, index: usize, result: &mut Vec<u8>) {
         self.get_in_place_impl(index, result);
     }
@@ -426,6 +434,8 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IndexedSeq
 impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
     RearCodedList<str, String, D, P, SORTED>
 {
+    /// Returns in place the string of given index by writing
+    /// its bytes into the provided string.
     pub fn get_in_place(&self, index: usize, result: &mut String) {
         let mut buffer = Vec::with_capacity(64);
         self.get_in_place_impl(index, &mut buffer);
@@ -433,8 +443,18 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
         debug_assert!(std::str::from_utf8(&buffer).is_ok());
         result.push_str(std::str::from_utf8(&buffer).unwrap());
     }
+
+    /// Returns in place the string of given index by writing
+    /// its bytes into the provided vector.
+    pub fn get_bytes_in_place(&self, index: usize, result: &mut Vec<u8>) {
+        self.get_in_place_impl(index, result);
+    }
 }
 
+/// Implementation of [`IndexedDict`] for sorted rear-coded lists.
+///
+/// Note that we use Rust built-in binary search: thus, in case of multiple
+/// occurrences of the same element, we may return any of them.
 impl<
     I: PartialEq<O> + PartialEq + ?Sized + AsRef<[u8]>,
     O: PartialEq<I> + PartialEq,
