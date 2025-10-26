@@ -10,6 +10,8 @@
   sorted version. Users of the previous version should adapt their code to use
   `RearCodedListStr`.
 
+* The crate now sets native CPU code generation in `.cargo/config.toml`.
+
 ## [0.9.1] - 2025-10-16
 
 * Updated to the last version of `Lender`.
