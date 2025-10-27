@@ -101,8 +101,9 @@ fn test_gziplinelender() -> Result<()> {
 }
 
 #[test]
-fn test_fromintoiterator() -> Result<()> {
-    test_lender(FromIntoIterator::from(["foo", "bar", "baz"]))
+fn test_from() -> Result<()> {
+    test_lender(FromIntoIterator::from(["foo", "bar", "baz"]))?;
+    test_lender(FromSlice::new(["foo", "bar", "baz"].as_slice()))
 }
 
 #[test]

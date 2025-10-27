@@ -222,13 +222,14 @@ fn test_zero_bytes() {
 #[test]
 fn test_ser_str() -> anyhow::Result<()> {
     use epserde::utils::AlignedCursor;
+    use sux::dict::rear_coded_list::serialize_str;
     use sux::traits::{IndexedDict, IndexedSeq};
-    use sux::{dict::rear_coded_list::serialize_str, utils::FromIntoIterator};
+    use sux::utils::FromSlice;
 
-    let v = ["a", "ab", "ab", "abc", "b", "bb"];
+    let v = vec!["a", "ab", "ab", "abc", "b", "bb"];
 
     let mut cursor = AlignedCursor::<maligned::A16>::new();
-    serialize_str::<_, _, true>(4, FromIntoIterator::from(v), &mut cursor)?;
+    serialize_str::<_, _, true>(4, FromSlice::new(v.as_slice()), &mut cursor)?;
 
     cursor.set_position(0);
     let deser = unsafe {
@@ -276,7 +277,7 @@ fn test_ser_slice() -> anyhow::Result<()> {
     use epserde::{deser::Deserialize, utils::AlignedCursor};
     use sux::dict::rear_coded_list::serialize_slice_u8;
     use sux::traits::{IndexedDict, IndexedSeq};
-    use sux::utils::FromIntoIterator;
+    use sux::utils::FromSlice;
 
     let v = vec![
         vec![1u8],
@@ -288,7 +289,7 @@ fn test_ser_slice() -> anyhow::Result<()> {
     ];
 
     let mut cursor = AlignedCursor::<maligned::A16>::new();
-    serialize_slice_u8::<_, _, true>(4, FromIntoIterator::from(v.clone()), &mut cursor)?;
+    serialize_slice_u8::<_, _, true>(4, FromSlice::new(v.as_slice()), &mut cursor)?;
 
     cursor.set_position(0);
     let deser = unsafe {
