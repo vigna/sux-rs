@@ -178,7 +178,7 @@ Union nor the Italian MUR can be held responsible for them
 [`MemSize`]: <https://docs.rs/mem_dbg/latest/mem_dbg/trait.MemSize.html>
 [`mem_dbg`]: <https://crates.io/crates/mem_dbg>
 [Elias–Fano representation of monotone sequences]: <https://docs.rs/sux/latest/sux/dict/elias_fano/struct.EliasFano.html>
-[lists of strings compressed by prefix omission]: <https://docs.rs/sux/latest/sux/dict/rear_coded_list/struct.RearCodedList.html>
+[lists of strings compressed by prefix omission]: <https://docs.rs/sux/latest/sux/dict/rear_coded_list/>
 [Sux]: <https://sux.di.unimi.it/>
 [the DSI Utilities]: <https://dsiutils.di.unimi.it/>
 [`BitLength`]: <https://docs.rs/sux/latest/sux/traits/rank_sel/trait.BitLength.html>
