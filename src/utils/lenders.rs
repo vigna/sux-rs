@@ -34,22 +34,30 @@
 //! detect dynamically the compression format using the
 //! [`deko`](https://crates.io/crates/deko) crate.
 //!
-//! If you have a clonable [`IntoIterator`], you can use [`FromIntoIterator`] to
-//! lend its items; rewinding is implemented by cloning the iterator. Note that
-//! [`FromIntoIterator`] implements the [`From`] trait, but at this time due to
-//! the complex trait bounds of [`Lender`] type inference rarely works; you'll
-//! need to call [`FromIntoIterator::from`] explicitly. The error of the resulting
-//! [`RewindableIoLender`] is `core::convert::Infallible`.
+//! There are a few useful adapters available; they often simplify the
+//! construction of tests or benchmarks:
 //!
-//! If you have value that implements [`IntoIterator`] on a reference (e.g., [`Vec`]),
-//! you can use [`FromIntoIteratorRef`] to lend its items; rewinding is implemented
-//! by recreating the iterator from the reference. The same considerations of
-//! [`FromIntoIterator`] apply.
+//! - If you have a slice, [`FromSlice`] is a [`RewindableIoLender`] lending its
+//!   items. The error of the resulting [`RewindableIoLender`] is
+//!   [`core::convert::Infallible`](core::convert::Infallible).
 //!
-//! If you have a function that returns a [`Lender`] (or an [`IntoIterator`], via
-//! [`lender::IteratorExt::into_lender`]) you can use [`FromLenderFactory`] or
-//! [`FromResultLenderFactory`] to make get a [`RewindableIoLender`], which will
-//! call that function every time it is rewound.
+//! - If you have a clonable [`IntoIterator`], you can use [`FromIntoIterator`]
+//!   to lend its items; rewinding is implemented by cloning the [`IntoIterator`].
+//!   Note that [`FromIntoIterator`] implements the [`From`] trait, but at this
+//!   time due to the complex trait bounds of [`Lender`] type inference rarely
+//!   works; you'll need to call [`FromIntoIterator::from`] explicitly. The error
+//!   of the resulting [`RewindableIoLender`] is
+//!   [`core::convert::Infallible`](core::convert::Infallible).
+//!
+//! - If you have a value that implements [`IntoLender`] on a reference,
+//!   you can use [`FromLender`] to lend its items; rewinding is implemented
+//!   by recreating the lender from the reference. The same considerations of
+//!   [`FromLender`] apply.
+//!
+//! - If you have a function that returns a [`Lender`] (or an [`IntoIterator`], via
+//!   [`lender::IteratorExt::into_lender`]) you can use [`FromLenderFactory`] or
+//!   [`FromResultLenderFactory`] to make get a [`RewindableIoLender`], which will
+//!   call that function every time it is rewound. Again, the consideration above apply.
 use flate2::read::GzDecoder;
 use io::{BufRead, BufReader};
 use lender::*;
@@ -354,14 +362,59 @@ mod deko {
 #[cfg(feature = "deko")]
 pub use deko::*;
 
+/// An infallible adapter lending the items of an `AsRef<[T]>`.
+///
+/// Useful for vectors, slices, etc.
+pub struct FromSlice<'a, T> {
+    slice: &'a [T],
+    iter: std::slice::Iter<'a, T>,
+}
+
+impl<'a, T> FromSlice<'a, T> {
+    pub fn new(slice: &'a [T]) -> Self {
+        FromSlice {
+            slice,
+            iter: slice.iter(),
+        }
+    }
+}
+
+impl<'a, 'lend, T> Lending<'lend> for FromSlice<'a, T> {
+    type Lend = Result<&'lend T, core::convert::Infallible>;
+}
+
+impl<'a, 'lend, T> Lender for FromSlice<'a, T> {
+    fn next(&mut self) -> Option<Lend<'_, Self>> {
+        self.iter.next().map(Ok)
+    }
+}
+
+impl<'a, T> RewindableIoLender<T> for FromSlice<'a, T> {
+    type Error = core::convert::Infallible;
+    fn rewind(mut self) -> Result<Self, Self::Error> {
+        self.iter = self.slice.as_ref().iter();
+        Ok(self)
+    }
+}
+
 /// An adapter lending the items of a clonable [`IntoIterator`].
 ///
 /// Mainly useful for ranges and similar small-footprint types, as rewinding is
 /// implemented by cloning the iterator.
-pub struct FromIntoIterator<I: IntoIterator + Clone> {
+pub struct FromIntoIterator<I: IntoIterator> {
     into_iter: I,
     iter: I::IntoIter,
     item: Option<I::Item>,
+}
+
+impl<I: IntoIterator + Clone> FromIntoIterator<I> {
+    pub fn new(into_iter: I) -> Self {
+        FromIntoIterator {
+            into_iter: into_iter.clone(),
+            iter: into_iter.into_iter(),
+            item: None,
+        }
+    }
 }
 
 impl<'lend, T: 'lend, I: IntoIterator<Item = T> + Clone> Lending<'lend> for FromIntoIterator<I> {
@@ -385,66 +438,68 @@ impl<T: 'static, I: IntoIterator<Item = T> + Clone> RewindableIoLender<T> for Fr
 
 impl<T: 'static, I: IntoIterator<Item = T> + Clone> From<I> for FromIntoIterator<I> {
     fn from(into_iter: I) -> Self {
-        FromIntoIterator {
-            into_iter: into_iter.clone(),
-            iter: into_iter.into_iter(),
-            item: None,
+        FromIntoIterator::new(into_iter)
+    }
+}
+
+/// An adapter lending the items of lenders returned by a reference
+/// implementing [`IntoLender`].
+pub struct FromIntoLender<'a, I>
+where
+    &'a I: IntoLender,
+{
+    into_lender: &'a I,
+    lender: <&'a I as IntoLender>::Lender,
+}
+
+impl<'a, I> FromIntoLender<'a, I>
+where
+    &'a I: IntoLender,
+{
+    pub fn new(into_lender: &'a I) -> Self {
+        FromIntoLender {
+            into_lender,
+            lender: into_lender.into_lender(),
         }
     }
 }
 
-/*
- *
-/// An adapter lending the items of iterators returned by a reference
-/// implementing [`IntoIterator`].
-pub struct FromIntoIteratorRef<'a, I>
+impl<'a, 'lend, I> Lending<'lend> for FromIntoLender<'a, I>
 where
-    &'a I: IntoIterator,
+    &'a I: IntoLender,
 {
-    into_iter: &'a I,
-    iter: <&'a I as IntoIterator>::IntoIter,
+    type Lend = Result<Lend<'lend, <&'a I as IntoLender>::Lender>, core::convert::Infallible>;
 }
 
-impl<'a, 'lend: 'a, T: 'lend, I> Lending<'lend> for FromIntoIteratorRef<'a, I>
+impl<'a, I> Lender for FromIntoLender<'a, I>
 where
-    &'a I: IntoIterator<Item = &'a T>,
-{
-    type Lend = Result<&'lend T, core::convert::Infallible>;
-}
-
-impl<'a, T, I> Lender for FromIntoIteratorRef<'a, I>
-where
-    &'a I: IntoIterator<Item = &'a T>,
+    &'a I: IntoLender,
 {
     fn next(&mut self) -> Option<Lend<'_, Self>> {
-        self.iter.next().map(Ok)
+        self.lender.next().map(Ok)
     }
 }
 
-impl<'a, T, I> RewindableIoLender<T> for FromIntoIteratorRef<'a, I>
+impl<'a, T, I> RewindableIoLender<T> for FromIntoLender<'a, I>
 where
-    &'a I: IntoIterator<Item = T>,
+    &'a I: IntoLender,
+    for<'all> <&'a I as IntoLender>::Lender: Lending<'all, Lend = &'all T>,
 {
     type Error = core::convert::Infallible;
     fn rewind(mut self) -> Result<Self, Self::Error> {
-        self.iter = IntoIterator::into_iter(self.into_iter);
+        self.lender = self.into_lender.into_lender();
         Ok(self)
     }
 }
 
-impl<'a, T, I> From<&'a I> for FromIntoIteratorRef<'a, I>
+impl<'a, I> From<&'a I> for FromIntoLender<'a, I>
 where
-    &'a I: IntoIterator<Item = T>,
+    &'a I: IntoLender,
 {
-    fn from(into_iter: &'a I) -> Self {
-        FromIntoIteratorRef {
-            into_iter,
-            iter: into_iter.into_iter(),
-            item: None,
-        }
+    fn from(into_lender: &'a I) -> Self {
+        FromIntoLender::new(into_lender)
     }
 }
-*/
 
 /// An adapter lending the items of a function returning lenders.
 pub struct FromLenderFactory<
@@ -456,6 +511,22 @@ pub struct FromLenderFactory<
     f: F,
     lender: L,
     item: Option<T>,
+}
+
+impl<
+    T: Send + Sync,
+    L: Lender,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> FromLenderFactory<T, L, E, F>
+{
+    pub fn new(mut f: F) -> Result<Self, E> {
+        f().map(|lender| FromLenderFactory {
+            lender,
+            f,
+            item: None,
+        })
+    }
 }
 
 impl<
@@ -496,22 +567,6 @@ impl<
     }
 }
 
-impl<
-    T: Send + Sync,
-    L: Lender,
-    E: Into<anyhow::Error> + Send + Sync + 'static,
-    F: FnMut() -> Result<L, E>,
-> FromLenderFactory<T, L, E, F>
-{
-    pub fn new(mut f: F) -> Result<Self, E> {
-        f().map(|lender| FromLenderFactory {
-            lender,
-            f,
-            item: None,
-        })
-    }
-}
-
 /// An adapter lending the items of a function returning lenders of results.
 pub struct FromResultLenderFactory<
     T: Send + Sync,
@@ -522,6 +577,22 @@ pub struct FromResultLenderFactory<
     f: F,
     lender: L,
     item: Option<Result<T, E>>,
+}
+
+impl<
+    T: Send + Sync,
+    L: Lender,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> FromResultLenderFactory<T, L, E, F>
+{
+    pub fn new(mut f: F) -> Result<Self, E> {
+        f().map(|lender| FromResultLenderFactory {
+            lender,
+            f,
+            item: None,
+        })
+    }
 }
 
 impl<
@@ -572,22 +643,6 @@ where
     fn rewind(mut self) -> Result<Self, Self::Error> {
         self.lender = (self.f)()?;
         Ok(self)
-    }
-}
-
-impl<
-    T: Send + Sync,
-    L: Lender,
-    E: Into<anyhow::Error> + Send + Sync + 'static,
-    F: FnMut() -> Result<L, E>,
-> FromResultLenderFactory<T, L, E, F>
-{
-    pub fn new(mut f: F) -> Result<Self, E> {
-        f().map(|lender| FromResultLenderFactory {
-            lender,
-            f,
-            item: None,
-        })
     }
 }
 

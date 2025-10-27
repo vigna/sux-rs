@@ -126,13 +126,13 @@
 //! use sux::dict::RearCodedListStr;
 //! use sux::dict::rear_coded_list;
 //! use sux::utils::LineLender;
-//! use sux::utils::FromIntoIterator;
+//! use sux::utils::FromSlice;
 //! use maligned::A16;
 //! use epserde::prelude::*;
 //!
 //! let strings = vec!["aa", "aab", "abc", "abdd", "abde\0f", "abdf"];
 //! let mut cursor = <AlignedCursor<A16>>::new();
-//! rear_coded_list::serialize_str::<_, _, true>(4, FromIntoIterator::from(strings), &mut cursor)?;
+//! rear_coded_list::serialize_str::<_, _, true>(4, FromSlice::new(&strings), &mut cursor)?;
 //! cursor.set_position(0);
 //! let rcl = unsafe {
 //!    <RearCodedListStr<true>>::deserialize_full(&mut cursor)?
