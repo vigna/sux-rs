@@ -70,10 +70,19 @@
 //! Finally, the `rcl` command-line tool can be use to create
 //! a serialized rear-coded list from a file containing strings.
 //!
-//! # Panics
+//! # UTF-8 Encoding and Panics
 //!
 //! [`RearCodedListStr`] methods may panic if the stored data is not valid UTF-8.
-//! That can happen only in case of data corruption (e.g., on serialized data).
+//! That can happen only in case of data corruption (e.g., on serialized data)
+//! or bugs in the construction code.
+//!
+//! The check for UTF-8 validity poses a significant performance penalty on the
+//! accessors. If you are sure that the data is valid UTF-8 (e.g., you built the
+//! serialized structure yourself), you can use
+//! [`get_bytes`](RearCodedListStr::get_bytes) or
+//! [`get_bytes_in_place`](RearCodedListStr::get_bytes_in_place) and then unsafe
+//! methods such as [`String::from_utf8_unchecked`] or
+//! [`str::from_utf8_unchecked`].
 //!
 //! # Examples
 //!
@@ -102,9 +111,11 @@
 //! ```
 //!
 //! Here instead we serialize directly the list in an aligned cursor. Note that
-//! the methods accepts a [`RewindableIoLender`], so we create it from a buffer
-//! using the [`FromIntoIterator`](crate::utils::FromIntoIterator) adapter (note
-//! that the adapter is not very efficient, as it clones its argument; see the
+//! the methods accepts a
+//! [`RewindableIoLender`](crate::utils::lenders::RewindableIoLender), so we
+//! create it from a buffer using the
+//! [`FromIntoIterator`](crate::utils::FromIntoIterator) adapter (note that the
+//! adapter is not very efficient, as it clones its argument; see the
 //! documentation of the [`lenders`](crate::utils::lenders) module for more
 //! efficient alternatives). Using the [`store_str`] function you could write
 //! directly to a file.
@@ -444,8 +455,27 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
         result.push_str(std::str::from_utf8(&buffer).unwrap());
     }
 
+    /// Returns the bytes of the string of given index.
+    ///
+    /// This method can be used to avoid UTF-8 checks when you just need the raw
+    /// bytes, or to use methods such as [`String::from_utf8_unchecked`] and
+    /// [`str::from_utf8_unchecked`] to avoid the cost UTF-8 checks. Be aware,
+    /// however, that using invalid UTF-8 data may lead to undefined behavior.
+    #[inline]
+    pub fn get_bytes(&self, index: usize) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(64);
+        self.get_in_place_impl(index, &mut buf);
+        buf
+    }
+
     /// Returns in place the string of given index by writing
     /// its bytes into the provided vector.
+    ///
+    /// This method can be used to avoid UTF-8 checks when you just need the raw
+    /// bytes, or to use methods such as [`String::from_utf8_unchecked`] and
+    /// [`str::from_utf8_unchecked`] to avoid the cost UTF-8 checks. Be aware,
+    /// however, that using invalid UTF-8 data may lead to undefined behavior.
+    #[inline(always)]
     pub fn get_bytes_in_place(&self, index: usize, result: &mut Vec<u8>) {
         self.get_in_place_impl(index, result);
     }
@@ -1037,7 +1067,8 @@ impl<I: ?Sized + AsRef<[u8]>, const SORTED: bool> RearCodedListBuilder<I, SORTED
     /// We prefer to implement extension via a [`Lender`] instead of an
     /// [`Iterator`] to avoid the need to allocate a new string for every string
     /// in the list. This is particularly useful when building large lists from
-    /// files using, for example, a [`RewindableIoLender`].
+    /// files using, for example, a
+    /// [`RewindableIoLender`](crate::utils::RewindableIoLender).
     ///
     /// # Panics
     ///
