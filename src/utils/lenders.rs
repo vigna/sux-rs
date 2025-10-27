@@ -41,6 +41,11 @@
 //! need to call [`FromIntoIterator::from`] explicitly. The error of the resulting
 //! [`RewindableIoLender`] is `core::convert::Infallible`.
 //!
+//! If you have value that implements [`IntoIterator`] on a reference (e.g., [`Vec`]),
+//! you can use [`FromIntoIteratorRef`] to lend its items; rewinding is implemented
+//! by recreating the iterator from the reference. The same considerations of
+//! [`FromIntoIterator`] apply.
+//!
 //! If you have a function that returns a [`Lender`] (or an [`IntoIterator`], via
 //! [`lender::IteratorExt::into_lender`]) you can use [`FromLenderFactory`] or
 //! [`FromResultLenderFactory`] to make get a [`RewindableIoLender`], which will
@@ -350,6 +355,9 @@ mod deko {
 pub use deko::*;
 
 /// An adapter lending the items of a clonable [`IntoIterator`].
+///
+/// Mainly useful for ranges and similar small-footprint types, as rewinding is
+/// implemented by cloning the iterator.
 pub struct FromIntoIterator<I: IntoIterator + Clone> {
     into_iter: I,
     iter: I::IntoIter,
@@ -384,6 +392,59 @@ impl<T: 'static, I: IntoIterator<Item = T> + Clone> From<I> for FromIntoIterator
         }
     }
 }
+
+/*
+ *
+/// An adapter lending the items of iterators returned by a reference
+/// implementing [`IntoIterator`].
+pub struct FromIntoIteratorRef<'a, I>
+where
+    &'a I: IntoIterator,
+{
+    into_iter: &'a I,
+    iter: <&'a I as IntoIterator>::IntoIter,
+}
+
+impl<'a, 'lend: 'a, T: 'lend, I> Lending<'lend> for FromIntoIteratorRef<'a, I>
+where
+    &'a I: IntoIterator<Item = &'a T>,
+{
+    type Lend = Result<&'lend T, core::convert::Infallible>;
+}
+
+impl<'a, T, I> Lender for FromIntoIteratorRef<'a, I>
+where
+    &'a I: IntoIterator<Item = &'a T>,
+{
+    fn next(&mut self) -> Option<Lend<'_, Self>> {
+        self.iter.next().map(Ok)
+    }
+}
+
+impl<'a, T, I> RewindableIoLender<T> for FromIntoIteratorRef<'a, I>
+where
+    &'a I: IntoIterator<Item = T>,
+{
+    type Error = core::convert::Infallible;
+    fn rewind(mut self) -> Result<Self, Self::Error> {
+        self.iter = IntoIterator::into_iter(self.into_iter);
+        Ok(self)
+    }
+}
+
+impl<'a, T, I> From<&'a I> for FromIntoIteratorRef<'a, I>
+where
+    &'a I: IntoIterator<Item = T>,
+{
+    fn from(into_iter: &'a I) -> Self {
+        FromIntoIteratorRef {
+            into_iter,
+            iter: into_iter.into_iter(),
+            item: None,
+        }
+    }
+}
+*/
 
 /// An adapter lending the items of a function returning lenders.
 pub struct FromLenderFactory<
