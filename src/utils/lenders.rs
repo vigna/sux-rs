@@ -56,7 +56,7 @@
 //!
 //! - If you have a function that returns a [`Lender`] (or an [`IntoIterator`], via
 //!   [`lender::IteratorExt::into_lender`]) you can use [`FromLenderFactory`] or
-//!   [`FromResultLenderFactory`] to make get a [`RewindableFallibleLender`], which will
+//!   [`FromFallibleLenderFactory`] to make get a [`RewindableFallibleLender`], which will
 //!   call that function every time it is rewound. Again, the consideration above apply.
 use flate2::read::GzDecoder;
 use io::{BufRead, BufReader};
@@ -507,89 +507,23 @@ where
     }
 }
 
-/*
 /// An adapter lending the items of a function returning lenders.
 pub struct FromLenderFactory<
-    'a,
     L: Lender,
     E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
 > {
     f: F,
     lender: L,
-    item: Option<Lend<'a, L>>,
 }
 
-impl<'a, L: Lender, E: Into<anyhow::Error> + Send + Sync + 'static, F: FnMut() -> Result<L, E>>
-    FromLenderFactory<'a, L, E, F>
+impl<L: Lender, E: Into<anyhow::Error> + Send + Sync + 'static, F: FnMut() -> Result<L, E>>
+    FromLenderFactory<L, E, F>
 {
     pub fn new(mut f: F) -> Result<Self, E> {
         f().map(|lender| FromLenderFactory {
             lender,
             f,
-            item: None,
-        })
-    }
-}
-
-impl<
-    'a,
-    'lend,
-    L: Lender,
-    E: Into<anyhow::Error> + Send + Sync + 'static,
-    F: FnMut() -> Result<L, E>,
-> FallibleLending<'lend> for FromLenderFactory<'a, L, E, F>
-{
-    type Lend = Lend<'lend, L>;
-}
-
-impl<'a, L: Lender, E: Into<anyhow::Error> + Send + Sync + 'static, F: FnMut() -> Result<L, E>>
-    FallibleLender for FromLenderFactory<'a, L, E, F>
-where
-    for<'lend> Lend<'lend, L>: Clone,
-{
-    type Error = E;
-    fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
-        self.item = self.lender.next().clone();
-        Ok(&self.item)
-    }
-}
-
-impl<'a, L: Lender, E: Into<anyhow::Error> + Send + Sync + 'static, F: FnMut() -> Result<L, E>>
-    RewindableFallibleLender for FromLenderFactory<'a, L, E, F>
-where
-    for<'lend> Lend<'lend, L>: Clone,
-{
-    fn rewind(mut self) -> Result<Self, Self::Error> {
-        self.lender = (self.f)()?;
-        Ok(self)
-    }
-}
-*/
-/*
-/// An adapter lending the items of a function returning lenders of results.
-pub struct FromFallibleLenderFactory<
-    'a,
-    L: FallibleLender<Error = E>,
-    E: Into<anyhow::Error> + Send + Sync + 'static,
-    F: FnMut() -> Result<L, E>,
-> {
-    f: F,
-    lender: L,
-    item: Option<Result<&Lend<L, E>>,
-}
-
-impl<
-    L: Lender,
-    E: Into<anyhow::Error> + Send + Sync + 'static,
-    F: FnMut() -> Result<L, E>,
-> FromResultLenderFactory<L, E, F>
-{
-    pub fn new(mut f: F) -> Result<Self, E> {
-        f().map(|lender| FromResultLenderFactory {
-            lender,
-            f,
-            item: None,
         })
     }
 }
@@ -599,50 +533,32 @@ impl<
     L: Lender,
     E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
-> FallibleLending<'lend> for FromResultLenderFactory<L, E, F>
+> FallibleLending<'lend> for FromLenderFactory<L, E, F>
 {
-    type Lend = Lend<'lend, L>;
+    type Lend = <L as Lending<'lend>>::Lend;
 }
 
-impl<
-    L: Lender,
-    E: Into<anyhow::Error> + Send + Sync + 'static,
-    F: FnMut() -> Result<L, E>,
-> FallibleLender for FromResultLenderFactory<L, E, F>
-where
-    for<'lend> L: Lending<'lend, Lend = Result<T, E>>,
+impl<L: Lender, E: Into<anyhow::Error> + Send + Sync + 'static, F: FnMut() -> Result<L, E>>
+    FallibleLender for FromLenderFactory<L, E, F>
 {
-    fn next(&mut self) -> Option<Lend<'_, Self>> {
-        self.item = self.lender.next();
-        match self.item {
-            Some(Ok(ref item)) => Some(Ok(item)),
-            Some(Err(_)) => Some(
-                self.item
-                    .take()
-                    .unwrap()
-                    .map(|_| unreachable!("self.item was Err, but now it's Ok")),
-            ),
-            None => None,
-        }
+    type Error = std::convert::Infallible;
+
+    fn next(&mut self) -> Result<Option<Lend<'_, L>>, Self::Error> {
+        Ok(self.lender.next())
     }
 }
 
-impl<
-    T: Send + Sync,
-    L: Lender,
-    E: Into<anyhow::Error> + Send + Sync + 'static,
-    F: FnMut() -> Result<L, E>,
-> RewindableFallibleLender for FromResultLenderFactory<T, L, E, F>
-where
-    for<'lend> L: Lending<'lend, Lend = Result<T, E>>,
+impl< L: Lender, E: Into<anyhow::Error> + Send + Sync + 'static, F: FnMut() -> Result<L, E>>
+    RewindableFallibleLender for FromLenderFactory<L, E, F>
 {
-    type Error = E;
-    fn rewind(mut self) -> Result<Self, Self::Error> {
+    type RewindError = E;
+
+    fn rewind(mut self) -> Result<Self, Self::RewindError> {
         self.lender = (self.f)()?;
         Ok(self)
     }
 }
-*/
+
 /* Errors with:
  *  error[E0119]: conflicting implementations of trait `std::convert::TryFrom<_>` for type `utils::lenders::FromLenderFactory<_, _, _, _>`
 
@@ -650,11 +566,10 @@ where
  *          - impl<T, U> std::convert::TryFrom<U> for T
  *            where U: std::convert::Into<T>;
 impl<
-        T: Send + Sync,
         L: Lender,
         E: Into<anyhow::Error> + Send + Sync + 'static,
         F: FnMut() -> Result<L, E>,
-    > TryFrom<F> for FromLenderFactory<T, L, E, F>
+    > TryFrom<F> for FromLenderFactory<L, E, F>
 {
     type Error = E;
 
@@ -664,6 +579,67 @@ impl<
 }
 */
 
+
+/// An adapter lending the items of a function returning a lender of results.
+pub struct FromFallibleLenderFactory<
+    L: FallibleLender,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> {
+    f: F,
+    lender: L,
+}
+
+impl<
+    L: FallibleLender,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> FromFallibleLenderFactory<L, E, F>
+{
+    pub fn new(mut f: F) -> Result<Self, E> {
+        f().map(|lender| FromFallibleLenderFactory {
+            lender,
+            f,
+        })
+    }
+}
+
+impl<
+    'lend,
+    L: FallibleLender,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> FallibleLending<'lend> for FromFallibleLenderFactory<L, E, F>
+{
+    type Lend = <L as FallibleLending<'lend>>::Lend;
+}
+
+impl<
+    L: FallibleLender,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> FallibleLender for FromFallibleLenderFactory<L, E, F>
+{
+    type Error = <L as FallibleLender>::Error;
+
+    fn next(&mut self) -> Result<Option<FallibleLend<'_, L>>, Self::Error> {
+        self.lender.next()
+    }
+}
+
+impl<
+    L: FallibleLender,
+    E: Into<anyhow::Error> + Send + Sync + 'static,
+    F: FnMut() -> Result<L, E>,
+> RewindableFallibleLender for FromFallibleLenderFactory<L, E, F>
+{
+    type RewindError = E;
+
+    fn rewind(mut self) -> Result<Self, E> {
+        self.lender = (self.f)()?;
+        Ok(self)
+    }
+}
 impl<
     A: FallibleLender + for<'lend> FallibleLending<'lend> + RewindableFallibleLender,
     B: RewindableFallibleLender<RewindError = A::RewindError, Error = A::Error>
