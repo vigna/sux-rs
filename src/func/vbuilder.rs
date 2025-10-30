@@ -552,10 +552,14 @@ where
 {
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-        + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        values: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-        + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
+        keys: impl RewindableFallibleLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl RewindableFallibleLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, Box<[W]>, S, E>>
     where
@@ -585,8 +589,10 @@ where
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-        + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        keys: impl RewindableFallibleLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>>
     where
@@ -632,10 +638,14 @@ where
 {
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-        + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        values: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-        + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
+        keys: impl RewindableFallibleLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl RewindableFallibleLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
         let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
@@ -661,8 +671,10 @@ where
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-        + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        keys: impl RewindableFallibleLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         filter_bits: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>> {
@@ -720,10 +732,14 @@ impl<
         V: BinSafe + Default + Send + Sync + Ord + UpcastableInto<u128>,
     >(
         &mut self,
-        mut keys: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-        + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        mut values: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-        + for<'lend> FallibleLending<'lend, Lend = &'lend V>,
+        mut keys: impl RewindableFallibleLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        mut values: impl RewindableFallibleLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend V>,
         bit_width: Option<usize>,
         get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
         new_data: fn(usize, usize) -> D,
@@ -860,12 +876,16 @@ impl<
         seed: u64,
         mut sig_store: impl SigStore<S, V>,
         keys: &mut (
-                 impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-                 + for<'lend> FallibleLending<'lend, Lend = &'lend B>
+                 impl RewindableFallibleLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
              ),
         values: &mut (
-                 impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-                 + for<'lend> FallibleLending<'lend, Lend = &'lend V>
+                 impl RewindableFallibleLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend V>
              ),
         bit_width: Option<usize>,
         get_val: &G,

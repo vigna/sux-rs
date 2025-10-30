@@ -1186,8 +1186,10 @@ mod epserde_impl {
         T: ?Sized + Borrow<I>,
         I: PartialEq<O> + PartialEq + ?Sized + AsRef<[u8]>,
         O: PartialEq<I> + PartialEq,
-        L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        L: RewindableFallibleLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
         k: usize,
@@ -1255,8 +1257,10 @@ mod epserde_impl {
     #[cfg(feature = "epserde")]
     pub fn serialize_str<
         T: ?Sized + Borrow<str>,
-        L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        L: RewindableFallibleLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
         k: usize,
@@ -1270,8 +1274,10 @@ mod epserde_impl {
     #[cfg(feature = "epserde")]
     pub fn serialize_slice_u8<
         T: ?Sized + Borrow<[u8]>,
-        L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        L: RewindableFallibleLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
         k: usize,
@@ -1286,8 +1292,10 @@ mod epserde_impl {
     #[cfg(feature = "epserde")]
     pub fn store_str<
         T: ?Sized + Borrow<str>,
-        L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        L: RewindableFallibleLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
         k: usize,
@@ -1305,8 +1313,10 @@ mod epserde_impl {
     #[cfg(feature = "epserde")]
     pub fn store_slice_u8<
         T: ?Sized + Borrow<[u8]>,
-        L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        L: RewindableFallibleLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
         k: usize,
@@ -1329,8 +1339,10 @@ mod epserde_impl {
         'a,
         T: ?Sized + Borrow<I>,
         I: ?Sized + AsRef<[u8]>,
-        L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        L: RewindableFallibleLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     > {
         builder: &'a RefCell<RearCodedListBuilder<I, SORTED>>,
@@ -1344,8 +1356,10 @@ mod epserde_impl {
         'a,
         T: ?Sized + Borrow<I>,
         I: ?Sized + AsRef<[u8]>,
-        L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        L: RewindableFallibleLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     > Iterator for BytesIter<'a, T, I, L, SORTED>
     {
@@ -1385,8 +1399,10 @@ mod epserde_impl {
         'a,
         T: ?Sized + Borrow<I>,
         I: ?Sized + AsRef<[u8]>,
-        L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        L: RewindableFallibleLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     > ExactSizeIterator for BytesIter<'a, T, I, L, SORTED>
     {
