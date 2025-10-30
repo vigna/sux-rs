@@ -498,6 +498,7 @@ where
     }
 }
 
+/*
 /// An adapter lending the items of a function returning lenders.
 pub struct FromLenderFactory<
     'a,
@@ -509,7 +510,7 @@ pub struct FromLenderFactory<
     lender: L,
     item: Option<Lend<'a, L>>,
 }
-/*
+
 impl<'a, L: Lender, E: Into<anyhow::Error> + Send + Sync + 'static, F: FnMut() -> Result<L, E>>
     FromLenderFactory<'a, L, E, F>
 {
