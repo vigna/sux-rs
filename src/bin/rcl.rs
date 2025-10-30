@@ -9,7 +9,7 @@ use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
-use lender::for_;
+use lender::FallibleLender;
 use sux::{init_env_logger, prelude::*, utils::DekoBufLineLender};
 
 /// Macro to handle the repeated pattern of checking args.unsorted
@@ -55,7 +55,7 @@ struct Args {
 }
 
 fn compress<R: BufRead, const SORTED: bool>(
-    lender: DekoBufLineLender<R>,
+    mut lender: DekoBufLineLender<R>,
     dest: impl Borrow<str>,
     k: usize,
 ) -> Result<()> {
@@ -65,9 +65,10 @@ fn compress<R: BufRead, const SORTED: bool>(
     pl.display_memory(true);
     pl.start("Reading the input file...");
 
-    for_![result in lender {
-        match result {
-            Ok(line) => {
+    loop {
+        match lender.next() {
+            Ok(None) => break,
+            Ok(Some(line)) => {
                 rclb.push(line);
             }
             Err(e) => {
@@ -76,8 +77,8 @@ fn compress<R: BufRead, const SORTED: bool>(
             }
         }
         pl.light_update();
-    }];
-
+    }
+    
     pl.done();
 
     rclb.print_stats();

@@ -47,17 +47,11 @@ pub fn main() -> Result<()> {
 
     pl.start("Inserting...");
 
-    for_!(result in  LineLender::new(lines) {
-        match result {
-            Ok(line) => {
-                rcab.push(line);
-                pl.light_update();
-            }
-            Err(e) => {
-                panic!("Error reading input: {}", e);
-            }
-        }
-    });
+    let mut lender = LineLender::new(lines);
+    while let Some(line) = lender.next()? {
+        rcab.push(line);
+        pl.light_update();
+    }
 
     pl.done();
 

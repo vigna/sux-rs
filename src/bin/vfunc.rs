@@ -12,7 +12,7 @@ use clap::{ArgGroup, Parser};
 use common_traits::UpcastableFrom;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
-use lender::Lender;
+use lender::FallibleLender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::func::{shard_edge::*, *};
