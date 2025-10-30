@@ -559,6 +559,27 @@ impl< L: Lender, E: Into<anyhow::Error> + Send + Sync + 'static, F: FnMut() -> R
     }
 }
 
+/* Errors with:
+ *  error[E0119]: conflicting implementations of trait `std::convert::TryFrom<_>` for type `utils::lenders::FromLenderFactory<_, _, _, _>`
+
+ *  = note: conflicting implementation in crate `core`:
+ *          - impl<T, U> std::convert::TryFrom<U> for T
+ *            where U: std::convert::Into<T>;
+impl<
+        L: Lender,
+        E: Into<anyhow::Error> + Send + Sync + 'static,
+        F: FnMut() -> Result<L, E>,
+    > TryFrom<F> for FromLenderFactory<L, E, F>
+{
+    type Error = E;
+
+    fn try_from(f: F) -> Result<Self, Self::Error> {
+        Self::new(f)
+    }
+}
+*/
+
+
 /// An adapter lending the items of a function returning a lender of results.
 pub struct FromFallibleLenderFactory<
     L: FallibleLender,
@@ -619,28 +640,6 @@ impl<
         Ok(self)
     }
 }
-
-/* Errors with:
- *  error[E0119]: conflicting implementations of trait `std::convert::TryFrom<_>` for type `utils::lenders::FromLenderFactory<_, _, _, _>`
-
- *  = note: conflicting implementation in crate `core`:
- *          - impl<T, U> std::convert::TryFrom<U> for T
- *            where U: std::convert::Into<T>;
-impl<
-        T: Send + Sync,
-        L: Lender,
-        E: Into<anyhow::Error> + Send + Sync + 'static,
-        F: FnMut() -> Result<L, E>,
-    > TryFrom<F> for FromLenderFactory<T, L, E, F>
-{
-    type Error = E;
-
-    fn try_from(f: F) -> Result<Self, Self::Error> {
-        Self::new(f)
-    }
-}
-*/
-
 impl<
     A: FallibleLender + for<'lend> FallibleLending<'lend> + RewindableFallibleLender,
     B: RewindableFallibleLender<RewindError = A::RewindError, Error = A::Error>
