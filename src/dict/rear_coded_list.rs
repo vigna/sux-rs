@@ -1177,17 +1177,17 @@ mod epserde_impl {
     use super::{RearCodedList, RearCodedListBuilder};
     use crate::utils::RewindableFallibleLender;
     #[cfg(feature = "epserde")]
-    use epserde::traits::TypeHash;
     use epserde::{prelude::SerIter, ser::Serialize};
     use lender::FallibleLending;
-    use std::{cell::RefCell, marker::PhantomData};
+    use std::{borrow::Borrow, cell::RefCell, marker::PhantomData};
 
     /// Serializes to a stream a rear-coded list directly from a lender of `AsRef<[u8]>`.
     fn serialize_impl<
+        T: ?Sized + Borrow<I>,
         I: PartialEq<O> + PartialEq + ?Sized + AsRef<[u8]>,
         O: PartialEq<I> + PartialEq,
         L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend I>,
+            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
         k: usize,
@@ -1198,7 +1198,7 @@ mod epserde_impl {
         for<'a> super::RearCodedList<
             I,
             O,
-            SerIter<u8, BytesIter<'a, I, L, SORTED>>,
+            SerIter<u8, BytesIter<'a, T, I, L, SORTED>>,
             SerIter<usize, PointersIter<'a, I, SORTED>>,
             SORTED,
         >: Serialize,
@@ -1211,7 +1211,7 @@ mod epserde_impl {
         let mut builder = RearCodedListBuilder::<I, SORTED>::new(k);
         info!("Counting strings...");
         while let Some(s) = lender.next()? {
-            builder.push(s);
+            builder.push(s.borrow());
             len += 1;
             byte_len += builder.data.len();
             builder.data.truncate(0);
@@ -1229,7 +1229,7 @@ mod epserde_impl {
         let rear_coded_list = RearCodedList::<I, O, _, _, SORTED> {
             k,
             len,
-            data: SerIter::new(BytesIter::<I, L, SORTED> {
+            data: SerIter::new(BytesIter::<T, I, L, SORTED> {
                 builder: &builder,
                 lender,
                 byte_len,
@@ -1254,81 +1254,69 @@ mod epserde_impl {
     /// Serializes strings to a stream a rear-coded list directly from a lender of `AsRef<str>`.
     #[cfg(feature = "epserde")]
     pub fn serialize_str<
-        I: ?Sized + AsRef<[u8]> + PartialEq<String> + PartialEq + TypeHash,
+        T: ?Sized + Borrow<str>,
         L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend I>,
+            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
         k: usize,
         lender: L,
         writer: impl std::io::Write,
-    ) -> anyhow::Result<usize>
-    where
-        String: PartialEq<I> + PartialEq,
-    {
-        serialize_impl::<I, String, L, SORTED>(k, lender, writer)
+    ) -> anyhow::Result<usize> {
+        serialize_impl::<T, str, String, L, SORTED>(k, lender, writer)
     }
 
     /// Serializes strings to a stream a rear-coded list directly from a lender of `AsRef<[u8]>`.
     #[cfg(feature = "epserde")]
     pub fn serialize_slice_u8<
-        I: ?Sized + AsRef<[u8]> + PartialEq<Vec<u8>> + PartialEq + TypeHash,
+        T: ?Sized + Borrow<[u8]>,
         L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend I>,
+            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
         k: usize,
         lender: L,
         writer: impl std::io::Write,
-    ) -> anyhow::Result<usize>
-    where
-        Vec<u8>: PartialEq<I> + PartialEq,
-    {
-        serialize_impl::<I, Vec<u8>, L, SORTED>(k, lender, writer)
+    ) -> anyhow::Result<usize> {
+        serialize_impl::<T, [u8], Vec<u8>, L, SORTED>(k, lender, writer)
     }
 
     /// Stores into a file a rear-coded list of strings built directly from a lender of
     /// `AsRef<str]>`.
     #[cfg(feature = "epserde")]
     pub fn store_str<
-        I: ?Sized + AsRef<[u8]> + PartialEq<String> + PartialEq + TypeHash,
+        T: ?Sized + Borrow<str>,
         L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend I>,
+            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
         k: usize,
         lender: L,
         filename: impl AsRef<std::path::Path>,
-    ) -> anyhow::Result<usize>
-    where
-        String: PartialEq<I> + PartialEq,
-    {
+    ) -> anyhow::Result<usize> {
         let dst_file =
             std::fs::File::create(filename.as_ref()).expect("Cannot create destination file");
         let mut buf_writer = std::io::BufWriter::new(dst_file);
-        serialize_impl::<I, String, L, SORTED>(k, lender, &mut buf_writer)
+        serialize_impl::<T, str, String, L, SORTED>(k, lender, &mut buf_writer)
     }
 
     /// Stores into a file a rear-coded list of strings built directly from a lender of
     /// `AsRef<[u8]>`.
     #[cfg(feature = "epserde")]
     pub fn store_slice_u8<
-        I: ?Sized + AsRef<[u8]> + PartialEq<Vec<u8>> + PartialEq + TypeHash,
+        T: ?Sized + Borrow<[u8]>,
         L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend I>,
+            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
         k: usize,
         lender: L,
         filename: impl AsRef<std::path::Path>,
-    ) -> anyhow::Result<usize>
-    where
-        Vec<u8>: PartialEq<I> + PartialEq,
-    {
+    ) -> anyhow::Result<usize> {
         let dst_file =
             std::fs::File::create(filename.as_ref()).expect("Cannot create destination file");
         let mut buf_writer = std::io::BufWriter::new(dst_file);
-        serialize_impl::<I, Vec<u8>, L, SORTED>(k, lender, &mut buf_writer)
+        serialize_impl::<T, [u8], Vec<u8>, L, SORTED>(k, lender, &mut buf_writer)
     }
 
     /// An iterator that will be wrapped in a [`SerIter`] to serialize directly the
@@ -1339,9 +1327,10 @@ mod epserde_impl {
     /// needed for a string.
     struct BytesIter<
         'a,
+        T: ?Sized + Borrow<I>,
         I: ?Sized + AsRef<[u8]>,
         L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend I>,
+            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     > {
         builder: &'a RefCell<RearCodedListBuilder<I, SORTED>>,
@@ -1353,11 +1342,12 @@ mod epserde_impl {
 
     impl<
         'a,
+        T: ?Sized + Borrow<I>,
         I: ?Sized + AsRef<[u8]>,
         L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend I>,
+            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
-    > Iterator for BytesIter<'a, I, L, SORTED>
+    > Iterator for BytesIter<'a, T, I, L, SORTED>
     {
         type Item = u8;
 
@@ -1376,7 +1366,7 @@ mod epserde_impl {
                     Ok(Some(s)) => {
                         // Empty the builder data and refill it
                         builder.data.truncate(0);
-                        builder.push(s);
+                        builder.push(s.borrow());
                         let byte = builder.data[0];
                         self.pos = 1;
                         self.byte_len -= 1;
@@ -1393,11 +1383,12 @@ mod epserde_impl {
 
     impl<
         'a,
+        T: ?Sized + Borrow<I>,
         I: ?Sized + AsRef<[u8]>,
         L: RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
-            + for<'lend> FallibleLending<'lend, Lend = &'lend I>,
+            + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
-    > ExactSizeIterator for BytesIter<'a, I, L, SORTED>
+    > ExactSizeIterator for BytesIter<'a, T, I, L, SORTED>
     {
         fn len(&self) -> usize {
             self.byte_len
