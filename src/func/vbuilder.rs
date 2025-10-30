@@ -19,6 +19,7 @@ use common_traits::{
 use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
+use lender::FallibleLending;
 use log::info;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
@@ -551,8 +552,10 @@ where
 {
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableIoLender<B>,
-        values: impl RewindableIoLender<W>,
+        keys: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
+        + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
+        + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, Box<[W]>, S, E>>
     where
@@ -582,7 +585,8 @@ where
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableIoLender<B>,
+        keys: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
+        + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>>
     where
@@ -628,8 +632,10 @@ where
 {
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableIoLender<B>,
-        values: impl RewindableIoLender<W>,
+        keys: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
+        + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
+        + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
         let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
@@ -655,7 +661,8 @@ where
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableIoLender<B>,
+        keys: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
+        + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         filter_bits: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>> {
@@ -713,8 +720,10 @@ impl<
         V: BinSafe + Default + Send + Sync + Ord + UpcastableInto<u128>,
     >(
         &mut self,
-        mut keys: impl RewindableIoLender<B>,
-        mut values: impl RewindableIoLender<V>,
+        mut keys: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
+        + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        mut values: impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
+        + for<'lend> FallibleLending<'lend, Lend = &'lend V>,
         bit_width: Option<usize>,
         get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
         new_data: fn(usize, usize) -> D,
@@ -819,8 +828,8 @@ impl<
                 }
             }
 
-            values = values.rewind().map_err(Into::into)?;
-            keys = keys.rewind().map_err(Into::into)?;
+            values = values.rewind()?;
+            keys = keys.rewind()?;
         }
     }
 }
@@ -850,8 +859,14 @@ impl<
         &mut self,
         seed: u64,
         mut sig_store: impl SigStore<S, V>,
-        keys: &mut impl RewindableIoLender<B>,
-        values: &mut impl RewindableIoLender<V>,
+        keys: &mut (
+                 impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
+                 + for<'lend> FallibleLending<'lend, Lend = &'lend B>
+             ),
+        values: &mut (
+                 impl RewindableFallibleLender<Error: std::error::Error + Send + Sync + 'static>
+                 + for<'lend> FallibleLending<'lend, Lend = &'lend V>
+             ),
         bit_width: Option<usize>,
         get_val: &G,
         new_data: fn(usize, usize) -> D,
@@ -881,25 +896,17 @@ impl<
         let mut maybe_max_value = V::default();
         let start = Instant::now();
 
-        while let Some(result) = keys.next() {
-            match result {
-                Ok(key) => {
-                    pl.light_update();
-                    // This might be an actual value, if we are building a
-                    // function, or EmptyVal, if we are building a filter.
-                    let &maybe_val = values
-                        .next()
-                        .expect("Not enough values")
-                        .map_err(Into::into)?;
-                    let sig_val = SigVal {
-                        sig: T::to_sig(key.borrow(), seed),
-                        val: maybe_val,
-                    };
-                    maybe_max_value = Ord::max(maybe_max_value, maybe_val);
-                    sig_store.try_push(sig_val)?;
-                }
-                Err(e) => return Err(e.into()),
-            }
+        while let Some(key) = keys.next()? {
+            pl.light_update();
+            // This might be an actual value, if we are building a
+            // function, or EmptyVal, if we are building a filter.
+            let &maybe_val = values.next()?.expect("Not enough values");
+            let sig_val = SigVal {
+                sig: T::to_sig(key.borrow(), seed),
+                val: maybe_val,
+            };
+            maybe_max_value = Ord::max(maybe_max_value, maybe_val);
+            sig_store.try_push(sig_val)?;
         }
         pl.done();
 
