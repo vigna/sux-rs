@@ -56,7 +56,7 @@
 //!
 //! - If you have a function that returns a [`Lender`] (or an [`IntoIterator`], via
 //!   [`lender::IteratorExt::into_lender`]) you can use [`FromLenderFactory`] or
-//!   [`FromResultLenderFactory`] to make get a [`RewindableFallibleLender`], which will
+//!   [`FromFallibleLenderFactory`] to make get a [`RewindableFallibleLender`], which will
 //!   call that function every time it is rewound. Again, the consideration above apply.
 use flate2::read::GzDecoder;
 use io::{BufRead, BufReader};
@@ -567,7 +567,7 @@ where
 }
 */
 /// An adapter lending the items of a function returning a lender of results.
-pub struct FromResultLenderFactory<
+pub struct FromFallibleLenderFactory<
     //'a,
     L: FallibleLender,
     E: Into<anyhow::Error> + Send + Sync + 'static,
@@ -581,10 +581,10 @@ impl<
     L: FallibleLender,
     E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
-> FromResultLenderFactory<L, E, F>
+> FromFallibleLenderFactory<L, E, F>
 {
     pub fn new(mut f: F) -> Result<Self, E> {
-        f().map(|lender| FromResultLenderFactory {
+        f().map(|lender| FromFallibleLenderFactory {
             lender,
             f,
         })
@@ -596,7 +596,7 @@ impl<
     L: FallibleLender,
     E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
-> FallibleLending<'lend> for FromResultLenderFactory<L, E, F>
+> FallibleLending<'lend> for FromFallibleLenderFactory<L, E, F>
 {
     type Lend = <L as FallibleLending<'lend>>::Lend;
 }
@@ -605,7 +605,7 @@ impl<
     L: FallibleLender,
     E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
-> FallibleLender for FromResultLenderFactory<L, E, F>
+> FallibleLender for FromFallibleLenderFactory<L, E, F>
 {
     type Error = <L as FallibleLender>::Error;
 
@@ -618,7 +618,7 @@ impl<
     L: FallibleLender,
     E: Into<anyhow::Error> + Send + Sync + 'static,
     F: FnMut() -> Result<L, E>,
-> RewindableFallibleLender for FromResultLenderFactory<L, E, F>
+> RewindableFallibleLender for FromFallibleLenderFactory<L, E, F>
 {
     type RewindError = E;
 
