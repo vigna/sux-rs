@@ -14,8 +14,10 @@ use lender::FallibleLending;
 use sux::utils::lenders::*;
 
 fn test_lender<
-    L: RewindableFallibleLender<Error: Debug + std::error::Error + Send + Sync + 'static>
-        + for<'lend> FallibleLending<'lend, Lend = &'lend (impl ?Sized + AsRef<str>)>,
+    L: RewindableFallibleLender<
+            RewindError: Debug + std::error::Error + Send + Sync + 'static,
+            Error: Debug + std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend (impl ?Sized + AsRef<str>)>,
 >(
     mut lender: L,
 ) -> Result<()> {
@@ -106,8 +108,7 @@ fn test_from() -> Result<()> {
     test_lender(FromSlice::new(["foo", "bar", "baz"].as_slice()))
 }
 
-/*
-#[test]
+/*#[test]
 fn test_fromlenderfactory() -> Result<()> {
     test_lender(
         FromLenderFactory::new(|| -> Result<_, std::io::Error> {
@@ -116,7 +117,8 @@ fn test_fromlenderfactory() -> Result<()> {
         .context("Could not initialize lender")?,
     )
 }
-
+*/
+/*
 #[test]
 fn test_fromresultlenderfactory() -> Result<()> {
     let items = || {

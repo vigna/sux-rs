@@ -84,12 +84,13 @@ use zstd::Decoder;
 /// [`ZstdLineLender`] and [`GzipLineLender`].
 
 pub trait RewindableFallibleLender: Sized + FallibleLender {
+    type RewindError;
     /// Rewind the lender to the beginning.
     ///
     /// This method consumes `self` and returns it. This is necessary to handle
     /// cleanly all implementations, and in particular those involving
     /// compression.
-    fn rewind(self) -> Result<Self, Self::Error>;
+    fn rewind(self) -> Result<Self, <Self as RewindableFallibleLender>::RewindError>;
 }
 
 // Common next function for all lenders
@@ -150,6 +151,7 @@ impl<B: BufRead> FallibleLender for LineLender<B> {
 }
 
 impl<B: BufRead + Seek> RewindableFallibleLender for LineLender<B> {
+    type RewindError = io::Error;
     fn rewind(mut self) -> io::Result<Self> {
         self.buf.rewind()?;
         Ok(self)
@@ -197,6 +199,7 @@ impl<R: Read> FallibleLender for ZstdLineLender<R> {
 }
 
 impl<R: Read + Seek> RewindableFallibleLender for ZstdLineLender<R> {
+    type RewindError = io::Error;
     fn rewind(mut self) -> io::Result<Self> {
         let mut read = self.buf.into_inner().finish();
         read.rewind()?;
@@ -246,6 +249,7 @@ impl<R: Read> FallibleLender for GzipLineLender<R> {
 }
 
 impl<R: Read + Seek> RewindableFallibleLender for GzipLineLender<R> {
+    type RewindError = io::Error;
     fn rewind(mut self) -> io::Result<Self> {
         let mut read = self.buf.into_inner().into_inner();
         read.rewind()?;
@@ -339,6 +343,7 @@ mod deko {
     }
 
     impl<R: Read + Seek> RewindableFallibleLender for DekoLineLender<R> {
+        type RewindError = io::Error;
         fn rewind(mut self) -> io::Result<Self> {
             let mut read = self.buf.into_inner().into_inner();
             read.rewind()?;
@@ -348,6 +353,7 @@ mod deko {
     }
 
     impl<R: BufRead + Seek> RewindableFallibleLender for DekoBufLineLender<R> {
+        type RewindError = io::Error;
         fn rewind(mut self) -> io::Result<Self> {
             let mut read = self.buf.into_inner().into_inner();
             read.rewind()?;
@@ -389,7 +395,8 @@ impl<'a, 'lend, T> FallibleLender for FromSlice<'a, T> {
 }
 
 impl<'a, T> RewindableFallibleLender for FromSlice<'a, T> {
-    fn rewind(mut self) -> Result<Self, Self::Error> {
+    type RewindError = core::convert::Infallible;
+    fn rewind(mut self) -> Result<Self, core::convert::Infallible> {
         self.iter = self.slice.as_ref().iter();
         Ok(self)
     }
@@ -428,7 +435,8 @@ impl<I: IntoIterator + Clone> FallibleLender for FromIntoIterator<I> {
 }
 
 impl<I: IntoIterator + Clone> RewindableFallibleLender for FromIntoIterator<I> {
-    fn rewind(mut self) -> Result<Self, Self::Error> {
+    type RewindError = core::convert::Infallible;
+    fn rewind(mut self) -> Result<Self, Self::RewindError> {
         self.iter = self.into_iter.clone().into_iter();
         Ok(self)
     }
@@ -483,7 +491,8 @@ impl<'a, I> RewindableFallibleLender for FromIntoLender<'a, I>
 where
     &'a I: IntoLender,
 {
-    fn rewind(mut self) -> Result<Self, Self::Error> {
+    type RewindError = core::convert::Infallible;
+    fn rewind(mut self) -> Result<Self, Self::RewindError> {
         self.lender = self.into_lender.into_lender();
         Ok(self)
     }
@@ -536,23 +545,26 @@ impl<
 
 impl<'a, L: Lender, E: Into<anyhow::Error> + Send + Sync + 'static, F: FnMut() -> Result<L, E>>
     FallibleLender for FromLenderFactory<'a, L, E, F>
+where
+    for<'lend> Lend<'lend, L>: Clone,
 {
     type Error = E;
     fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
-        self.item = self.lender.next();
-        Ok(self.item.as_ref())
+        self.item = self.lender.next().clone();
+        Ok(&self.item)
     }
 }
 
 impl<'a, L: Lender, E: Into<anyhow::Error> + Send + Sync + 'static, F: FnMut() -> Result<L, E>>
     RewindableFallibleLender for FromLenderFactory<'a, L, E, F>
+where
+    for<'lend> Lend<'lend, L>: Clone,
 {
     fn rewind(mut self) -> Result<Self, Self::Error> {
         self.lender = (self.f)()?;
         Ok(self)
     }
 }
-
 */
 /*
 /// An adapter lending the items of a function returning lenders of results.
@@ -654,11 +666,12 @@ impl<
 
 impl<
     A: FallibleLender + for<'lend> FallibleLending<'lend> + RewindableFallibleLender,
-    B: RewindableFallibleLender<Error = A::Error>
+    B: RewindableFallibleLender<RewindError = A::RewindError, Error = A::Error>
         + for<'lend> FallibleLending<'lend, Lend = FallibleLend<'lend, A>>,
 > RewindableFallibleLender for Chain<A, B>
 {
-    fn rewind(self) -> Result<Self, A::Error> {
+    type RewindError = A::RewindError;
+    fn rewind(self) -> Result<Self, Self::RewindError> {
         let (a, b) = self.into_inner();
         let b = b.rewind()?;
         let a = a.rewind()?;
@@ -687,33 +700,31 @@ impl<T: Copy, L: RewindableFallibleLender> RewindableFallibleLender for lender::
 */
 
 impl<L: RewindableFallibleLender + Clone> RewindableFallibleLender for lender::Cycle<L> {
-    fn rewind(self) -> Result<Self, Self::Error> {
+    type RewindError = L::RewindError;
+    fn rewind(self) -> Result<Self, Self::RewindError> {
         let (original, _current) = self.into_inner();
         original.rewind().map(|lender| lender.cycle())
     }
 }
 
-/* doesn't type-check
-impl<E> RewindableFallibleLender for lender::Empty<Result<T, E>> where for<'all> Result<T, E>: lender::Lending<'all>{
-    type Error = E;
-
-    fn rewind(self) -> Result<Self, Self::Error> {
+impl<E, L: ?Sized + for<'all> FallibleLending<'all>> RewindableFallibleLender for lender::EmptyFallible<E, L> {
+    type RewindError = std::convert::Infallible;
+    fn rewind(self) -> Result<Self, Self::RewindError> {
         Ok(self)
     }
 }
-*/
 
-/* would need to yield (usize, Result<T>) instead of Result<(usize, T)>
-impl<L: RewindableFallibleLender> RewindableFallibleLender<(usize, T)> for lender::Enumerate<L> {
-    fn rewind(self) -> Result<Self, Self::Error> {
+impl<L: RewindableFallibleLender> RewindableFallibleLender for lender::Enumerate<L> {
+    type RewindError = L::RewindError;
+    fn rewind(self) -> Result<Self, Self::RewindError> {
         let lender = self.into_inner();
         lender.rewind().map(|lender| lender.enumerate())
     }
 }
-*/
 
 impl<L: RewindableFallibleLender> RewindableFallibleLender for lender::Fuse<L> {
-    fn rewind(self) -> Result<Self, Self::Error> {
+    type RewindError = L::RewindError;
+    fn rewind(self) -> Result<Self, Self::RewindError> {
         let lender = self.into_inner();
         lender.rewind().map(|lender| lender.fuse())
     }
@@ -724,7 +735,8 @@ impl<'this, L: RewindableFallibleLender> RewindableFallibleLender
 where
     for<'lend> <L as FallibleLending<'lend>>::Lend: Clone,
 {
-    fn rewind(self) -> Result<Self, Self::Error> {
+    type RewindError = L::RewindError;
+    fn rewind(self) -> Result<Self, Self::RewindError> {
         let (lender, separator) = self.into_parts();
         lender.rewind().map(|lender| lender.intersperse(separator))
     }
@@ -733,7 +745,8 @@ where
 impl<'this, L: RewindableFallibleLender> RewindableFallibleLender
     for lender::FalliblePeekable<'this, L>
 {
-    fn rewind(self) -> Result<Self, Self::Error> {
+    type RewindError = L::RewindError;
+    fn rewind(self) -> Result<Self, Self::RewindError> {
         let lender = self.into_inner();
         lender.rewind().map(|lender| lender.peekable())
     }
@@ -745,27 +758,31 @@ where
     <L as FallibleLender>::Error: Clone,
     for<'lend> <L as FallibleLending<'lend>>::Lend: Clone,
 {
-    fn rewind(self) -> Result<Self, Self::Error> {
+    type RewindError = L::RewindError;
+    fn rewind(self) -> Result<Self, Self::RewindError> {
         Ok(self)
     }
 }
 
 impl<L: RewindableFallibleLender> RewindableFallibleLender for lender::Skip<L> {
-    fn rewind(self) -> Result<Self, Self::Error> {
+    type RewindError = L::RewindError;
+    fn rewind(self) -> Result<Self, Self::RewindError> {
         let (lender, n) = self.into_parts();
         lender.rewind().map(|lender| lender.skip(n))
     }
 }
 
 impl<L: RewindableFallibleLender> RewindableFallibleLender for lender::StepBy<L> {
-    fn rewind(self) -> Result<Self, Self::Error> {
+    type RewindError = L::RewindError;
+    fn rewind(self) -> Result<Self, Self::RewindError> {
         let (lender, step) = self.into_parts();
         lender.rewind().map(|lender| lender.step_by(step))
     }
 }
 
 impl<L: RewindableFallibleLender> RewindableFallibleLender for lender::Take<L> {
-    fn rewind(self) -> Result<Self, Self::Error> {
+    type RewindError = L::RewindError;
+    fn rewind(self) -> Result<Self, Self::RewindError> {
         let (lender, n) = self.into_parts();
         lender.rewind().map(|lender| lender.take(n))
     }
