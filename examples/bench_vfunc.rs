@@ -8,8 +8,8 @@
 use anyhow::Result;
 use clap::Parser;
 use epserde::prelude::*;
-use lender::*;
 use fallible_iterator::FallibleIterator;
+use lender::*;
 use sux::{
     bits::BitFieldVec,
     func::{shard_edge::*, *},

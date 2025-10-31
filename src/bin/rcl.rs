@@ -78,7 +78,7 @@ fn compress<R: BufRead, const SORTED: bool>(
         }
         pl.light_update();
     }
-    
+
     pl.done();
 
     rclb.print_stats();

@@ -20,7 +20,7 @@ use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{
-    BinSafe, EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender,
+    BinSafe, EmptyVal, FromCloneableIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender,
 };
 
 #[derive(Parser, Debug)]
@@ -158,13 +158,13 @@ where
         let func = if args.zstd {
             builder.try_build_func(
                 ZstdLineLender::from_path(filename)?.take(n),
-                FromIntoIterator::from(0_usize..),
+                FromCloneableIntoIterator::from(0_usize..),
                 &mut pl,
             )?
         } else {
             builder.try_build_func(
                 LineLender::from_path(filename)?.take(n),
-                FromIntoIterator::from(0_usize..),
+                FromCloneableIntoIterator::from(0_usize..),
                 &mut pl,
             )?
         };
@@ -174,8 +174,8 @@ where
     } else {
         let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
         let func = builder.try_build_func(
-            FromIntoIterator::from(0_usize..n),
-            FromIntoIterator::from(0_usize..),
+            FromCloneableIntoIterator::from(0_usize..n),
+            FromCloneableIntoIterator::from(0_usize..),
             &mut pl,
         )?;
         if let Some(filename) = args.func {

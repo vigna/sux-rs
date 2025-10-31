@@ -112,7 +112,7 @@
 //!
 //! Here instead we serialize directly the list in an aligned cursor. Note that
 //! the methods accepts a
-//! [`RewindableIoLender`](crate::utils::lenders::RewindableIoLender), so we
+//! [`RewindableFallibleLender`](crate::utils::lenders::RewindableFallibleLender), so we
 //! create it from a buffer using the
 //! [`FromIntoIterator`](crate::utils::FromIntoIterator) adapter (note that the
 //! adapter is not very efficient, as it clones its argument; see the
@@ -1068,7 +1068,7 @@ impl<I: ?Sized + AsRef<[u8]>, const SORTED: bool> RearCodedListBuilder<I, SORTED
     /// [`Iterator`] to avoid the need to allocate a new string for every string
     /// in the list. This is particularly useful when building large lists from
     /// files using, for example, a
-    /// [`RewindableIoLender`](crate::utils::RewindableIoLender).
+    /// [`RewindableFallibleLender`](crate::utils::RewindableFallibleLender).
     ///
     /// # Panics
     ///

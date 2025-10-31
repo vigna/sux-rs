@@ -204,7 +204,7 @@ mod tests {
             VBuilder, mix64,
             shard_edge::{FuseLge3NoShards, FuseLge3Shards},
         },
-        utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
+        utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
     };
 
     use super::ShardEdge;
@@ -228,7 +228,7 @@ mod tests {
             let filter = VBuilder::<u8, Box<[_]>, S, E>::default()
                 .log2_buckets(4)
                 .offline(false)
-                .try_build_filter(FromIntoIterator::from(0..n), no_logging![])?;
+                .try_build_filter(FromCloneableIntoIterator::from(0..n), no_logging![])?;
             let shard_edge = &filter.func.shard_edge;
             for i in 0..n {
                 let sig = ToSig::<S>::to_sig(i, filter.func.seed);

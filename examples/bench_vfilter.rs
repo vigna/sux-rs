@@ -9,8 +9,8 @@ use anyhow::Result;
 use clap::Parser;
 use common_traits::{CastableFrom, DowncastableInto};
 use epserde::prelude::*;
-use lender::*;
 use fallible_iterator::FallibleIterator;
+use lender::*;
 use sux::{
     bits::BitFieldVec,
     dict::VFilter,
