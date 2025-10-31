@@ -859,10 +859,10 @@ impl<
 /// # use lender::FromFallibleIter;
 /// # use fallible_iterator::{IntoFallible, IteratorExt};
 /// # use sux::utils::lenders::RewindableFallibleLender;
-/// # use sux::utils::lenders::FromFallibleIntoLenderFactory;
+/// # use sux::utils::lenders::FromIntoFallibleLenderFactory;
 /// # use sux::utils::lenders::FromCloneableIntoIterator;
 /// let mut count = 0;
-/// let mut lender = FromFallibleIntoLenderFactory::new(|| {
+/// let mut lender = FromIntoFallibleLenderFactory::new(|| {
 ///   count += 1;
 ///   Ok::<FromFallibleIter<IntoFallible<Range<i32>>>, core::convert::Infallible>((0..count).into_iter().into_fallible().into_fallible_lender())
 /// })?;
