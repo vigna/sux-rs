@@ -12,7 +12,9 @@
 
 * The crate now sets native CPU code generation in `.cargo/config.toml`.
 
-* New `FromSlice` and `FromIntoLender` adapters for `RewindableFallibleLender`.
+* `RewindableIoLender` became `RewindableFallibleLender` and it is now based
+  on the `FallibleLender` trait from the `lender` crate. Several new adapters
+  are available.
 
 ## [0.9.1] - 2025-10-16
 

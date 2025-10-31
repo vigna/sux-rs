@@ -112,13 +112,10 @@
 //!
 //! Here instead we serialize directly the list in an aligned cursor. Note that
 //! the methods accepts a
-//! [`RewindableFallibleLender`](crate::utils::lenders::RewindableFallibleLender), so we
-//! create it from a buffer using the
-//! [`FromIntoIterator`](crate::utils::FromIntoIterator) adapter (note that the
-//! adapter is not very efficient, as it clones its argument; see the
-//! documentation of the [`lenders`](crate::utils::lenders) module for more
-//! efficient alternatives). Using the [`store_str`] function you could write
-//! directly to a file.
+//! [`RewindableFallibleLender`](crate::utils::lenders::RewindableFallibleLender),
+//! so we create it from a buffer using the
+//! [`FromSlice`](crate::utils::FromSlice) adapter. Using the [`store_str`]
+//! function you could write directly to a file.
 //!
 //! ```
 //! use std::io::{Cursor, Write};

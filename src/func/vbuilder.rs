@@ -82,7 +82,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// In this example, we build a function that maps each key to itself using a
 /// boxed slice of `usize` as a backend (note that this is really wasteful). The
 /// setter for the expected number of keys is used to optimize the construction.
-/// We use the [`FromIntoIterator`] adapter to turn a clonable [`IntoIterator`]
+/// We use the [`FromCloneableIntoIterator`] adapter to turn a clonable [`IntoIterator`]
 /// into a [`RewindableFallibleLender`]. Note that you need the
 /// [`dsi-progress-logger`](https://crates.io/crates/dsi-progress-logger) crate.
 ///

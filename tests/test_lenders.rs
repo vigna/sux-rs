@@ -10,7 +10,7 @@ use std::io::{Cursor, Write};
 use anyhow::{Context, Result, bail, ensure};
 use fallible_iterator::{FallibleIterator, IntoFallibleIterator};
 use flate2::write::GzEncoder;
-use lender::{FallibleLender, FallibleLending, IntoFallibleLender};
+use lender::{FallibleLender, FallibleLending, IntoFallibleLender, IteratorExt, Lender, hrc_mut};
 
 use sux::utils::lenders::*;
 
@@ -111,16 +111,16 @@ fn test_from() -> Result<()> {
     // Test From trait implementation for FromSlice
     test_lender(FromSlice::from(["foo", "bar", "baz"].as_slice()))?;
 
-    // Test FromIterableRef with a Vec (where &Vec implements IntoIterator)
+    // Test FromIntoIterator with a Vec (where &Vec implements IntoIterator)
     let vec = vec!["foo", "bar", "baz"];
     test_lender(FromIntoIterator::new(&vec))?;
-    // Test From trait for FromIterableRef
+    // Test From trait for FromIntoIterator
     test_lender(FromIntoIterator::from(&vec))?;
 
-    // Test FromIterableRef with an array (where &[T] implements IntoIterator)
+    // Test FromIntoIterator with an array (where &[T] implements IntoIterator)
     let array = ["foo", "bar", "baz"];
     test_lender(FromIntoIterator::new(&array))?;
-    // Test From trait for FromIterableRef
+    // Test From trait for FromIntoIterator
     test_lender(FromIntoIterator::from(&array))?;
 
     Ok(())
@@ -284,3 +284,40 @@ fn test_from_result_lender_factory() -> Result<()> {
     Ok(())
 }
 */
+
+#[test]
+fn test_map() {
+    let data = vec![1, 2, 3];
+
+    let mut iter = FromSlice::new(&data).map(hrc_mut!(for<'lend> |x: &'lend i32| -> Result<
+        i32,
+        std::convert::Infallible,
+    > { Ok(x * 2) }));
+
+    assert_eq!(iter.next().unwrap(), Some(2));
+    assert_eq!(iter.next().unwrap(), Some(4));
+    assert_eq!(iter.next().unwrap(), Some(6));
+    assert_eq!(iter.next().unwrap(), None);
+}
+
+#[test]
+fn test_flatten() {
+    let data = vec![
+        vec![1, 2, 3].into_iter().into_lender().into_fallible::<std::convert::Infallible>(),
+        vec![1, 2, 3].into_iter().into_lender().into_fallible::<std::convert::Infallible>(),
+        vec![1, 2, 3].into_iter().into_lender().into_fallible::<std::convert::Infallible>(),
+    ];
+
+    let mut lender = data.into_iter().into_lender().into_fallible().flatten();
+
+    assert_eq!(lender.next().unwrap(), Some(1));
+    assert_eq!(lender.next().unwrap(), Some(2));
+    assert_eq!(lender.next().unwrap(), Some(3));
+    assert_eq!(lender.next().unwrap(), Some(1));
+    assert_eq!(lender.next().unwrap(), Some(2));
+    assert_eq!(lender.next().unwrap(), Some(3));
+    assert_eq!(lender.next().unwrap(), Some(1));
+    assert_eq!(lender.next().unwrap(), Some(2));
+    assert_eq!(lender.next().unwrap(), Some(3));
+    assert_eq!(lender.next().unwrap(), None);
+}
