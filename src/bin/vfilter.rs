@@ -21,7 +21,7 @@ use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, BitFieldSliceMut, Word};
 use sux::utils::{
-    BinSafe, EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender,
+    BinSafe, EmptyVal, FromCloneableIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender,
 };
 use value_traits::slices::SliceByValueMut;
 
@@ -202,7 +202,8 @@ where
         }
     } else {
         let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
-        let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
+        let filter =
+            builder.try_build_filter(FromCloneableIntoIterator::from(0_usize..n), &mut pl)?;
         if let Some(filename) = args.filter {
             unsafe { filter.store(filename) }?;
         }
@@ -252,8 +253,11 @@ where
         }
     } else {
         let builder = set_builder(VBuilder::<W, BitFieldVec<W>, S, E>::default(), &args);
-        let filter =
-            builder.try_build_filter(FromIntoIterator::from(0_usize..n), args.bits, &mut pl)?;
+        let filter = builder.try_build_filter(
+            FromCloneableIntoIterator::from(0_usize..n),
+            args.bits,
+            &mut pl,
+        )?;
         if let Some(filename) = args.filter {
             unsafe { filter.store(filename)? };
         }

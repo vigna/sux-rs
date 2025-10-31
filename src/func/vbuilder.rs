@@ -70,12 +70,12 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// [`VFunc`]/[`VFilter`], and some elaboration about them can be found in their
 /// documentation.
 ///
-/// All construction methods require to pass one or two [`RewindableIoLender`]s
+/// All construction methods require to pass one or two [`RewindableFallibleLender`]s
 /// (keys and possibly values), and the construction might fail and keys might
 /// be scanned again. The structures in the [`lenders`] module provide easy ways
 /// to build such lenders, even starting from compressed files of UTF-8 strings.
 /// The type of the keys of the resulting filter or function will be the type of
-/// the elements of the [`RewindableIoLender`].
+/// the elements of the [`RewindableFallibleLender`].
 ///
 /// # Examples
 ///
@@ -83,32 +83,30 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// boxed slice of `usize` as a backend (note that this is really wasteful). The
 /// setter for the expected number of keys is used to optimize the construction.
 /// We use the [`FromIntoIterator`] adapter to turn a clonable [`IntoIterator`]
-/// into a [`RewindableIoLender`]. Note that you need the
+/// into a [`RewindableFallibleLender`]. Note that you need the
 /// [`dsi-progress-logger`](https://crates.io/crates/dsi-progress-logger) crate.
 ///
 /// Type inference derives the input type (`usize`) from the type of the items
-/// returned by the first [`RewindableIoLender`], and the output type (again,
+/// returned by the first [`RewindableFallibleLender`], and the output type (again,
 /// `usize`, the first type parameter), from the backend type (`Box<[usize]>`,
 /// the second type parameter):
 ///
 /// ```rust
 /// # use sux::func::VBuilder;
 /// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromIntoIterator;
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use sux::utils::FromCloneableIntoIterator;
 /// let builder = VBuilder::<_, Box<[usize]>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_func(
-///    FromIntoIterator::from(0..100),
-///    FromIntoIterator::from(0..100),
+///    FromCloneableIntoIterator::new(0..100),
+///    FromCloneableIntoIterator::new(0..100),
 ///    no_logging![]
 /// )?;
 ///
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
 /// }
-/// #     Ok(())
-/// # }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// Alternatively we can use the bit-field vector backend, that will use
@@ -117,48 +115,44 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// ```rust
 /// # use sux::func::VBuilder;
 /// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromIntoIterator;
+/// # use sux::utils::FromCloneableIntoIterator;
 /// # use sux::bits::BitFieldVec;
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let builder = VBuilder::<_, BitFieldVec<usize>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_func(
-///    FromIntoIterator::from(0..100),
-///    FromIntoIterator::from(0..100),
+///    FromCloneableIntoIterator::new(0..100),
+///    FromCloneableIntoIterator::new(0..100),
 ///    no_logging![]
 /// )?;
 ///
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
 /// }
-/// #     Ok(())
-/// # }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// Since the numbers are small, we can also try to use a fixed-size output:
 /// type inference takes care of making the second range `0..100` a range of
 /// `u8`. Note that the type of keys is always `usize`, as it is still inferred
-/// from the type of the items returned by the first [`RewindableIoLender`]:
+/// from the type of the items returned by the first [`RewindableFallibleLender`]:
 ///
 /// ```rust
 /// # use sux::func::VBuilder;
 /// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromIntoIterator;
+/// # use sux::utils::FromCloneableIntoIterator;
 /// # use sux::bits::BitFieldVec;
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let builder = VBuilder::<_, Box<[u8]>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_func(
-///    FromIntoIterator::from(0..100),
-///    FromIntoIterator::from(0..100),
+///    FromCloneableIntoIterator::new(0..100),
+///    FromCloneableIntoIterator::new(0..100),
 ///    no_logging![]
 /// )?;
 ///
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
 /// }
-/// #     Ok(())
-/// # }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 ///
@@ -169,20 +163,18 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// ```rust
 /// # use sux::func::VBuilder;
 /// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromIntoIterator;
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use sux::utils::FromCloneableIntoIterator;
 /// let builder = VBuilder::<_, Box<[u8]>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_filter(
-///    FromIntoIterator::from(0..100),
+///    FromCloneableIntoIterator::new(0..100),
 ///    no_logging![]
 /// )?;
 ///
 /// for i in 0..100 {
 ///    assert!(func[i]);
 /// }
-/// #     Ok(())
-/// # }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// Since the keys are very few, we can switch to 64-bit signatures, and no
@@ -192,20 +184,18 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// # use sux::func::VBuilder;
 /// # use sux::func::shard_edge::FuseLge3NoShards;
 /// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromIntoIterator;
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use sux::utils::FromCloneableIntoIterator;
 /// let builder = VBuilder::<_, Box<[u8]>, [u64; 1], FuseLge3NoShards>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_filter(
-///    FromIntoIterator::from(0..100),
+///    FromCloneableIntoIterator::new(0..100),
 ///    no_logging![]
 /// )?;
 ///
 /// for i in 0..100 {
 ///    assert!(func[i]);
 /// }
-/// #     Ok(())
-/// # }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 
 #[derive(Setters, Debug, Derivative)]
@@ -610,7 +600,10 @@ where
         Ok(VFilter {
             func: self.build_loop(
                 keys,
-                FromIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
+                FromCloneableIntoIterator::from(itertools::repeat_n(
+                    EmptyVal::default(),
+                    usize::MAX,
+                )),
                 Some(W::BITS),
                 &get_val,
                 new_data,
@@ -690,7 +683,10 @@ where
         Ok(VFilter {
             func: self.build_loop(
                 keys,
-                FromIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
+                FromCloneableIntoIterator::from(itertools::repeat_n(
+                    EmptyVal::default(),
+                    usize::MAX,
+                )),
                 Some(filter_bits),
                 &get_val,
                 new_data,

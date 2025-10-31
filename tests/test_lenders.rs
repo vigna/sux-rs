@@ -8,8 +8,9 @@ use std::fmt::Debug;
 use std::io::{Cursor, Write};
 
 use anyhow::{Context, Result, bail, ensure};
+use fallible_iterator::{FallibleIterator, IntoFallibleIterator};
 use flate2::write::GzEncoder;
-use lender::FallibleLending;
+use lender::{FallibleLender, FallibleLending, IntoFallibleLender};
 
 use sux::utils::lenders::*;
 
@@ -83,7 +84,7 @@ fn test_zstd_line_lender() -> Result<()> {
 }
 
 #[test]
-fn test_gziplinelender() -> Result<()> {
+fn test_gzip_line_lender() -> Result<()> {
     let mut encoder = GzEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(b"foo\nbar\nbaz\n")?;
     let mut buf = Cursor::new(encoder.finish().context("Could not encode")?);
@@ -104,23 +105,140 @@ fn test_gziplinelender() -> Result<()> {
 
 #[test]
 fn test_from() -> Result<()> {
-    test_lender(FromIntoIterator::from(["foo", "bar", "baz"]))?;
-    test_lender(FromSlice::new(["foo", "bar", "baz"].as_slice()))
+    test_lender(FromCloneableIntoIterator::from(["foo", "bar", "baz"]))?;
+    test_lender(FromSlice::new(["foo", "bar", "baz"].as_slice()))?;
+
+    // Test From trait implementation for FromSlice
+    test_lender(FromSlice::from(["foo", "bar", "baz"].as_slice()))?;
+
+    // Test FromIterableRef with a Vec (where &Vec implements IntoIterator)
+    let vec = vec!["foo", "bar", "baz"];
+    test_lender(FromIntoIterator::new(&vec))?;
+    // Test From trait for FromIterableRef
+    test_lender(FromIntoIterator::from(&vec))?;
+
+    // Test FromIterableRef with an array (where &[T] implements IntoIterator)
+    let array = ["foo", "bar", "baz"];
+    test_lender(FromIntoIterator::new(&array))?;
+    // Test From trait for FromIterableRef
+    test_lender(FromIntoIterator::from(&array))?;
+
+    Ok(())
 }
 
-/*#[test]
-fn test_fromlenderfactory() -> Result<()> {
+// Test support for FromIntoFallibleLender
+struct FallibleVecLender<T> {
+    vec: Vec<T>,
+    index: usize,
+}
+
+impl<'lend, T> FallibleLending<'lend> for FallibleVecLender<T> {
+    type Lend = &'lend T;
+}
+
+impl<T> FallibleLender for FallibleVecLender<T> {
+    type Error = std::io::Error;
+    fn next(&mut self) -> Result<Option<&T>, std::io::Error> {
+        if self.index < self.vec.len() {
+            let item = &self.vec[self.index];
+            self.index += 1;
+            Ok(Some(item))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+struct VecWrapper {
+    vec: Vec<&'static str>,
+}
+
+impl<'a> IntoFallibleLender for &'a VecWrapper {
+    type Error = std::io::Error;
+    type FallibleLender = FallibleVecLender<&'static str>;
+    fn into_fallible_lender(self) -> Self::FallibleLender {
+        FallibleVecLender {
+            vec: self.vec.clone(),
+            index: 0,
+        }
+    }
+}
+
+#[test]
+fn test_from_into_fallible_lender() -> Result<()> {
+    let wrapper = VecWrapper {
+        vec: vec!["foo", "bar", "baz"],
+    };
+    test_lender(FromIntoFallibleLender::new(&wrapper))?;
+    // Test From trait for FromIntoFallibleLender
+    test_lender(FromIntoFallibleLender::from(&wrapper))?;
+    Ok(())
+}
+
+// Test support for FromIntoFallibleIterator
+struct FallibleVecIter {
+    items: Vec<&'static str>,
+    index: usize,
+}
+
+impl FallibleIterator for FallibleVecIter {
+    type Item = &'static str;
+    type Error = std::io::Error;
+
+    fn next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
+        if self.index < self.items.len() {
+            let item = self.items[self.index];
+            self.index += 1;
+            Ok(Some(item))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+struct FallibleVec {
+    items: Vec<&'static str>,
+}
+
+impl<'a> IntoFallibleIterator for &'a FallibleVec {
+    type Item = &'static str;
+    type Error = std::io::Error;
+    type IntoFallibleIter = FallibleVecIter;
+
+    fn into_fallible_iter(self) -> Self::IntoFallibleIter {
+        FallibleVecIter {
+            items: self.items.clone(),
+            index: 0,
+        }
+    }
+}
+
+#[test]
+fn test_from_into_fallible_iterator() -> Result<()> {
+    let fallible_vec = FallibleVec {
+        items: vec!["foo", "bar", "baz"],
+    };
+    test_lender(FromIntoFallibleIterator::new(&fallible_vec))?;
+    // Test From trait for FromIntoFallibleIterator
+    test_lender(FromIntoFallibleIterator::from(&fallible_vec))?;
+    Ok(())
+}
+
+/*
+#[test]
+fn test_from_into_lender_factory() -> Result<()> {
     test_lender(
-        FromLenderFactory::new(|| -> Result<_, std::io::Error> {
-            Ok(["foo", "bar", "baz"].into_iter().into_lender())
+        FromIntoLenderFactory::new(|| -> Result<_, std::io::Error> {
+            Ok(["foo", "bar", "baz"].into_into_lender())
         })
         .context("Could not initialize lender")?,
     )
 }
 */
+
 /*
 #[test]
-fn test_fromresultlenderfactory() -> Result<()> {
+fn test_from_result_lender_factory() -> Result<()> {
     let items = || {
         [
             Ok("foo"),
