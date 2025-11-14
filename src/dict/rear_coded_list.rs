@@ -58,14 +58,15 @@
 //! the elements, and then call the [`build`](RearCodedListBuilder::build)
 //! method to obtain the final structure.
 //!
-//! You can also directly serialize a rear-coded list, without building it in
-//! memory, using the functions [`serialize_str`] / [`serialize_slice_u8`] /
-//! [`store_str`] / [`store_slice_u8`]. They use an advanced feature of ε-serde
-//! that makes it possible to serialize iterators and deserialize vectors or
-//! boxed slices. The method is about three times slower than using a
-//! [`RearCodedListBuilder`], but it uses very little memory. Since you can
-//! memory map an instance of this class with ε-serde, this allows to create and
-//! use lists that would not fit into memory.
+//! If the feature `epserde` is active, you can also directly serialize a
+//! rear-coded list without building it in memory using the functions
+//! [`serialize_str`] / [`serialize_slice_u8`] / [`store_str`] /
+//! [`store_slice_u8`]. They use an advanced feature of ε-serde that makes it
+//! possible to serialize iterators and deserialize vectors or boxed slices. The
+//! method is about three times slower than using a [`RearCodedListBuilder`],
+//! but it uses very little memory. Since you can memory map an instance of this
+//! class with ε-serde, this allows to create and use lists that would not fit
+//! into memory.
 //!
 //! Finally, the `rcl` command-line tool can be use to create
 //! a serialized rear-coded list from a file containing strings.

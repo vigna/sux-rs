@@ -242,7 +242,7 @@ macro_rules! fixed_point_inv_128 {
 /// shard size is with high probability `eps`.
 ///
 /// From “[ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and
-/// Filters to Trillions of Keys]https://arxiv.org/abs/2503.18397)”.
+/// Filters to Trillions of Keys](https://arxiv.org/abs/2503.18397)”.
 fn sharding_high_bits(n: usize, eps: f64) -> u32 {
     // Bound from balls and bins problem
     let t = (n as f64 * eps * eps / 2.0).max(1.);
