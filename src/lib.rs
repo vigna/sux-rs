@@ -96,6 +96,8 @@ macro_rules! debug_assert_bounds {
 
 pub(crate) use debug_assert_bounds;
 
+/// Initializes the `env_logger` logger with a custom format including
+/// timestamps with elapsed time since initialization.
 pub fn init_env_logger() -> anyhow::Result<()> {
     use jiff::{
         SpanRound,

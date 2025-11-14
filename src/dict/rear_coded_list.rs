@@ -118,6 +118,7 @@
 //! function you could write directly to a file.
 //!
 //! ```
+//! # #[cfg(feature = "epserde")] {
 //! use std::io::{Cursor, Write};
 //! use sux::traits::{IndexedSeq, IndexedDict};
 //! use sux::dict::RearCodedListStr;
@@ -140,6 +141,7 @@
 //! assert_eq!(rcl.get(2), "abc");
 //! assert_eq!(rcl.index_of("abde\0f"), Some(4));
 //! assert_eq!(rcl.index_of("foo"), None);
+//! # }
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
