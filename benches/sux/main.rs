@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 mod bench_select;
 mod utils;
 use std::fmt;
@@ -187,20 +189,17 @@ fn main() {
     let repeats = args.repeats;
     let uniform = !args.non_uniform;
 
-    let rank_sel_struct: Vec<RankSel>;
-    if args.exact {
-        rank_sel_struct = args
-            .rank_sel_struct
+    let rank_sel_struct: Vec<RankSel> = if args.exact {
+        args.rank_sel_struct
             .iter()
             .filter_map(|s| RankSel::from_str_exact(s))
-            .collect();
+            .collect()
     } else {
-        rank_sel_struct = args
-            .rank_sel_struct
+        args.rank_sel_struct
             .iter()
             .flat_map(|s| RankSel::from_str(s))
-            .collect();
-    }
+            .collect()
+    };
 
     for rank_sel in rank_sel_struct {
         rank_sel.benchmark(&mut criterion, &lengths, &densities, repeats, uniform);
