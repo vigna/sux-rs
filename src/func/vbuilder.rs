@@ -70,12 +70,12 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// [`VFunc`]/[`VFilter`], and some elaboration about them can be found in their
 /// documentation.
 ///
-/// All construction methods require to pass one or two [`RewindableFallibleLender`]s
+/// All construction methods require to pass one or two [`FallibleRewindableLender`]s
 /// (keys and possibly values), and the construction might fail and keys might
 /// be scanned again. The structures in the [`lenders`] module provide easy ways
 /// to build such lenders, even starting from compressed files of UTF-8 strings.
 /// The type of the keys of the resulting filter or function will be the type of
-/// the elements of the [`RewindableFallibleLender`].
+/// the elements of the [`FallibleRewindableLender`].
 ///
 /// # Examples
 ///
@@ -83,11 +83,11 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// boxed slice of `usize` as a backend (note that this is really wasteful). The
 /// setter for the expected number of keys is used to optimize the construction.
 /// We use the [`FromCloneableIntoIterator`] adapter to turn a clonable [`IntoIterator`]
-/// into a [`RewindableFallibleLender`]. Note that you need the
+/// into a [`FallibleRewindableLender`]. Note that you need the
 /// [`dsi-progress-logger`](https://crates.io/crates/dsi-progress-logger) crate.
 ///
 /// Type inference derives the input type (`usize`) from the type of the items
-/// returned by the first [`RewindableFallibleLender`], and the output type (again,
+/// returned by the first [`FallibleRewindableLender`], and the output type (again,
 /// `usize`, the first type parameter), from the backend type (`Box<[usize]>`,
 /// the second type parameter):
 ///
@@ -134,7 +134,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// Since the numbers are small, we can also try to use a fixed-size output:
 /// type inference takes care of making the second range `0..100` a range of
 /// `u8`. Note that the type of keys is always `usize`, as it is still inferred
-/// from the type of the items returned by the first [`RewindableFallibleLender`]:
+/// from the type of the items returned by the first [`FallibleRewindableLender`]:
 ///
 /// ```rust
 /// # use sux::func::VBuilder;
@@ -542,11 +542,11 @@ where
 {
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableFallibleLender<
+        keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        values: impl RewindableFallibleLender<
+        values: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
@@ -579,7 +579,7 @@ where
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableFallibleLender<
+        keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
@@ -631,11 +631,11 @@ where
 {
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableFallibleLender<
+        keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        values: impl RewindableFallibleLender<
+        values: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
@@ -664,7 +664,7 @@ where
 {
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableFallibleLender<
+        keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
@@ -728,11 +728,11 @@ impl<
         V: BinSafe + Default + Send + Sync + Ord + UpcastableInto<u128>,
     >(
         &mut self,
-        mut keys: impl RewindableFallibleLender<
+        mut keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        mut values: impl RewindableFallibleLender<
+        mut values: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend V>,
@@ -872,13 +872,13 @@ impl<
         seed: u64,
         mut sig_store: impl SigStore<S, V>,
         keys: &mut (
-                 impl RewindableFallibleLender<
+                 impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
              ),
         values: &mut (
-                 impl RewindableFallibleLender<
+                 impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend V>

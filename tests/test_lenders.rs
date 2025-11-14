@@ -15,7 +15,7 @@ use lender::{FallibleLender, FallibleLending, IntoFallibleLender, IteratorExt, L
 use sux::utils::lenders::*;
 
 fn test_lender<
-    L: RewindableFallibleLender<
+    L: FallibleRewindableLender<
             RewindError: Debug + std::error::Error + Send + Sync + 'static,
             Error: Debug + std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend (impl ?Sized + AsRef<str>)>,
@@ -37,7 +37,7 @@ fn test_lender<
                 Ok(None) => bail!("Found only {i} items at pass {pass}"),
             }
         }
-        if let Some(_) = lender.next()? {
+        if lender.next()?.is_some() {
             bail!("Found extra item after pass {pass}");
         }
 
@@ -153,7 +153,7 @@ struct VecWrapper {
     vec: Vec<&'static str>,
 }
 
-impl<'a> IntoFallibleLender for &'a VecWrapper {
+impl IntoFallibleLender for &VecWrapper {
     type Error = std::io::Error;
     type FallibleLender = FallibleVecLender<&'static str>;
     fn into_fallible_lender(self) -> Self::FallibleLender {
@@ -200,7 +200,7 @@ struct FallibleVec {
     items: Vec<&'static str>,
 }
 
-impl<'a> IntoFallibleIterator for &'a FallibleVec {
+impl IntoFallibleIterator for &FallibleVec {
     type Item = &'static str;
     type Error = std::io::Error;
     type IntoFallibleIter = FallibleVecIter;

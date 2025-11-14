@@ -1,6 +1,6 @@
 # Change Log
 
-## [0.10.0]
+## [0.10.0] - 2025-11-15
 
 ### Changed
 
@@ -13,9 +13,9 @@
 
 * The crate now sets native CPU code generation in `.cargo/config.toml`.
 
-* `RewindableIoLender` became `RewindableFallibleLender` and it is now based
+* `RewindableIoLender` became `FallibleRewindableLender` and it is now based
   on the `FallibleLender` trait from the `lender` crate. Several new adapters
-  are available.
+  are available (in particular, you can `enumerate`).
 
 ## [0.9.1] - 2025-10-16
 
@@ -50,7 +50,7 @@
   [`deko`](https://crates.io/crates/deko) crate. They are available with the
   `deko` feature.
 
-* Many more implementations for `RewindableFallibleLender`.
+* Many more implementations for `FallibleRewindableLender`.
 
 * The structure `PartialArray` provides partial arrays (AKA “arrays with holes”)
   using ranking or Elias–Fano.
@@ -126,7 +126,7 @@
 
 ### Improved
 
-* All build methods of `VBuilder` now take a `RewindableFallibleLender`
+* All build methods of `VBuilder` now take a `FallibleRewindableLender`
   of `Borrow<T>` instead of `T`, which should make construction
   more flexible.
 

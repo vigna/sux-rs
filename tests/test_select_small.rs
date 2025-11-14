@@ -218,16 +218,9 @@ fn test_extremely_sparse_and_large() {
     let len = num_words * 64;
     let mut data: Vec<usize> = Vec::with_capacity(num_words);
     data.push(1);
-    for _ in 0..((1 << 26) - 2) {
-        data.push(0);
-    }
+    data.extend(std::iter::repeat_n(0, (1 << 26) - 2));
     data.push(1 << 63);
-    for _ in 0..(1 << 26) {
-        data.push(0);
-    }
-    for _ in 0..(1 << 26) {
-        data.push(0);
-    }
+    data.extend(std::iter::repeat_n(0, 1 << 27));
     data.push(1);
 
     assert_eq!(data.len(), num_words);

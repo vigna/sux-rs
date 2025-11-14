@@ -8,7 +8,7 @@
 
 #[cfg(test)]
 use lender::{IntoLender, Lending};
-use sux::{dict::RearCodedListBuilder, traits::IndexedSeq};
+use sux::dict::RearCodedListBuilder;
 
 #[cfg(feature = "epserde")]
 mod test {
@@ -212,8 +212,7 @@ fn test_zero_bytes() {
         builder.push(s);
     }
     let rcl = builder.build();
-    for i in 0..rcl.len() {
-        let s = rcl.get(i);
+    for (i, s) in rcl.iter().enumerate() {
         assert_eq!(s, strings[i]);
     }
 }

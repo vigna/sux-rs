@@ -112,7 +112,7 @@
 //!
 //! Here instead we serialize directly the list in an aligned cursor. Note that
 //! the methods accepts a
-//! [`RewindableFallibleLender`](crate::utils::lenders::RewindableFallibleLender),
+//! [`FallibleRewindableLender`](crate::utils::lenders::FallibleRewindableLender),
 //! so we create it from a buffer using the
 //! [`FromSlice`](crate::utils::FromSlice) adapter. Using the [`store_str`]
 //! function you could write directly to a file.
@@ -1067,7 +1067,7 @@ impl<I: ?Sized + AsRef<[u8]>, const SORTED: bool> RearCodedListBuilder<I, SORTED
     /// [`Iterator`] to avoid the need to allocate a new string for every string
     /// in the list. This is particularly useful when building large lists from
     /// files using, for example, a
-    /// [`RewindableFallibleLender`](crate::utils::RewindableFallibleLender).
+    /// [`FallibleRewindableLender`](crate::utils::FallibleRewindableLender).
     ///
     /// # Panics
     ///
@@ -1174,7 +1174,7 @@ fn decode_int(mut data: &[u8]) -> (usize, &[u8]) {
 #[cfg(feature = "epserde")]
 mod epserde_impl {
     use super::{RearCodedList, RearCodedListBuilder};
-    use crate::utils::RewindableFallibleLender;
+    use crate::utils::FallibleRewindableLender;
     #[cfg(feature = "epserde")]
     use epserde::{prelude::SerIter, ser::Serialize};
     use lender::FallibleLending;
@@ -1185,7 +1185,7 @@ mod epserde_impl {
         T: ?Sized + Borrow<I>,
         I: PartialEq<O> + PartialEq + ?Sized + AsRef<[u8]>,
         O: PartialEq<I> + PartialEq,
-        L: RewindableFallibleLender<
+        L: FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
                 Error: std::error::Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
@@ -1256,7 +1256,7 @@ mod epserde_impl {
     #[cfg(feature = "epserde")]
     pub fn serialize_str<
         T: ?Sized + Borrow<str>,
-        L: RewindableFallibleLender<
+        L: FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
                 Error: std::error::Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
@@ -1273,7 +1273,7 @@ mod epserde_impl {
     #[cfg(feature = "epserde")]
     pub fn serialize_slice_u8<
         T: ?Sized + Borrow<[u8]>,
-        L: RewindableFallibleLender<
+        L: FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
                 Error: std::error::Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
@@ -1291,7 +1291,7 @@ mod epserde_impl {
     #[cfg(feature = "epserde")]
     pub fn store_str<
         T: ?Sized + Borrow<str>,
-        L: RewindableFallibleLender<
+        L: FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
                 Error: std::error::Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
@@ -1312,7 +1312,7 @@ mod epserde_impl {
     #[cfg(feature = "epserde")]
     pub fn store_slice_u8<
         T: ?Sized + Borrow<[u8]>,
-        L: RewindableFallibleLender<
+        L: FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
                 Error: std::error::Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
@@ -1338,7 +1338,7 @@ mod epserde_impl {
         'a,
         T: ?Sized + Borrow<I>,
         I: ?Sized + AsRef<[u8]>,
-        L: RewindableFallibleLender<
+        L: FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
                 Error: std::error::Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
@@ -1355,7 +1355,7 @@ mod epserde_impl {
         'a,
         T: ?Sized + Borrow<I>,
         I: ?Sized + AsRef<[u8]>,
-        L: RewindableFallibleLender<
+        L: FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
                 Error: std::error::Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
@@ -1398,7 +1398,7 @@ mod epserde_impl {
         'a,
         T: ?Sized + Borrow<I>,
         I: ?Sized + AsRef<[u8]>,
-        L: RewindableFallibleLender<
+        L: FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
                 Error: std::error::Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
