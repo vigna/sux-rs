@@ -303,9 +303,18 @@ fn test_map() {
 #[test]
 fn test_flatten() {
     let data = vec![
-        vec![1, 2, 3].into_iter().into_lender().into_fallible::<std::convert::Infallible>(),
-        vec![1, 2, 3].into_iter().into_lender().into_fallible::<std::convert::Infallible>(),
-        vec![1, 2, 3].into_iter().into_lender().into_fallible::<std::convert::Infallible>(),
+        vec![1, 2, 3]
+            .into_iter()
+            .into_lender()
+            .into_fallible::<std::convert::Infallible>(),
+        vec![1, 2, 3]
+            .into_iter()
+            .into_lender()
+            .into_fallible::<std::convert::Infallible>(),
+        vec![1, 2, 3]
+            .into_iter()
+            .into_lender()
+            .into_fallible::<std::convert::Infallible>(),
     ];
 
     let mut lender = data.into_iter().into_lender().into_fallible().flatten();

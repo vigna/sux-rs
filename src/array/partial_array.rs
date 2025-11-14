@@ -129,8 +129,6 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
 ///
 /// Note that you must specify the number of values in advance.
 pub fn new_sparse<T>(len: usize, num_values: usize) -> PartialArrayBuilder<T, EliasFanoBuilder> {
-    dbg!(len, num_values);
-
     PartialArrayBuilder {
         builder: EliasFanoBuilder::new(num_values, len),
         values: vec![],
@@ -145,7 +143,6 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
     /// The provided position must be greater than the last position
     /// set.
     pub fn set(&mut self, position: usize, value: T) {
-        dbg!(position);
         if position < self.min_next_pos {
             panic!(
                 "Positions must be set in increasing order: got {} after {}",

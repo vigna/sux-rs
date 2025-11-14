@@ -12,7 +12,10 @@ use rdst::RadixKey;
 use std::ops::{BitXor, BitXorAssign};
 use sux::{
     bits::BitFieldVec,
-    func::{VBuilder, shard_edge::{FuseLge3FullSigs, FuseLge3NoShards, FuseLge3Shards, ShardEdge}},
+    func::{
+        VBuilder,
+        shard_edge::{FuseLge3FullSigs, FuseLge3NoShards, FuseLge3Shards, ShardEdge},
+    },
     utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
 };
 

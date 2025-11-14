@@ -32,15 +32,15 @@
 //! `DekoBufLineLender`, which work like the previous two implementations, but
 //! detect dynamically the compression format using the
 //! [`deko`](https://crates.io/crates/deko) crate.
-//! 
+//!
 //! # Methods
-//! 
+//!
 //! We implement [`RewindableFallibleLender`] on top of most of the adapters
 //! returned by methods available for fallible lenders, such as
 //! [`map`](lender::FallibleLender::map),
 //! [`take`](lender::FallibleLender::take), etc., so when you use these
 //! methods you will actually obtain a [`RewindableFallibleLender`].
-//! 
+//!
 //! # Adapters
 //!
 //! There are several useful adapters available; they often simplify the
