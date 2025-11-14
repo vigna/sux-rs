@@ -935,7 +935,7 @@ impl<L: FallibleRewindableLender + Clone> FallibleRewindableLender for lender::C
 }
 
 impl<E, L: ?Sized + for<'all> FallibleLending<'all>> FallibleRewindableLender
-    for lender::EmptyFallible<E, L>
+    for lender::FallibleEmpty<E, L>
 {
     type RewindError = core::convert::Infallible;
     fn rewind(self) -> Result<Self, Self::RewindError> {
