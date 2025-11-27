@@ -9,11 +9,13 @@
 //! Compressed strings (`str`) and byte sequences (`[u8]`) immutable storage by
 //! rear-coded prefix omission.
 //!
-//! Prefix omission compresses a list of sequences omitting the common prefixes of
-//! consecutive sequences. To do so, it stores the length of what remains after
-//! the common prefix (hence, rear coding). It is usually applied to lists
-//! of elements sorted in ascending order. The elements can contain arbitrary data,
-//! including `\0` bytes.
+//! Prefix omission compresses a list of sequences omitting the common prefixes
+//! of consecutive sequences. To do so, it stores the length of what remains
+//! after the common prefix (hence, rear coding). It is usually applied to lists
+//! of elements sorted in ascending order. The elements can contain arbitrary
+//! data, including `\0` bytes. Note that if your list is not sorted and you
+//! want to achieve significant compression you can try to use a
+//! [`MappedRearCodedList`](crate::dict::mapped_rear_coded_list) instead.
 //!
 //! The encoding is done in blocks of `k` elements: in each block the first
 //! string is encoded without compression, whereas the other elements are encoded
@@ -245,7 +247,7 @@ impl<
     /// Writes the index-th element to `result` as bytes. This is useful to avoid
     /// allocating a new vector for every query.
     #[inline]
-    fn get_in_place_impl(&self, index: usize, result: &mut Vec<u8>) {
+    pub(super) fn get_in_place_impl(&self, index: usize, result: &mut Vec<u8>) {
         result.clear();
         let block = index / self.k;
         let offset = index % self.k;
@@ -509,7 +511,7 @@ pub struct Lend<
     P: AsRef<[usize]>,
     const SORTED: bool,
 > {
-    rca: &'a RearCodedList<I, O, D, P, SORTED>,
+    rcl: &'a RearCodedList<I, O, D, P, SORTED>,
     data: &'a [u8],
     buffer: Vec<u8>,
     index: usize,
@@ -527,10 +529,10 @@ where
     Self: Lender,
 {
     /// Creates a new lender over the rear-coded list.
-    pub fn new(rca: &'a RearCodedList<I, O, D, P, SORTED>) -> Self {
+    pub fn new(rcl: &'a RearCodedList<I, O, D, P, SORTED>) -> Self {
         Self {
-            rca,
-            data: rca.data.as_ref(),
+            rcl,
+            data: rcl.data.as_ref(),
             buffer: Vec::with_capacity(128),
             index: 0,
         }
@@ -538,14 +540,14 @@ where
 
     /// Creates a new lender over the rear-coded list starting from the given
     /// position.
-    pub fn new_from(rca: &'a RearCodedList<I, O, D, P, SORTED>, from: usize) -> Self {
-        let block = from / rca.k;
-        let offset = from % rca.k;
-        let start = rca.pointers.as_ref()[block];
+    pub fn new_from(rcl: &'a RearCodedList<I, O, D, P, SORTED>, from: usize) -> Self {
+        let block = from / rcl.k;
+        let offset = from % rcl.k;
+        let start = rcl.pointers.as_ref()[block];
         let mut res = Lend {
-            rca,
-            index: block * rca.k,
-            data: &rca.data.as_ref()[start..],
+            rcl,
+            index: block * rcl.k,
+            data: &rcl.data.as_ref()[start..],
             buffer: Vec::with_capacity(128),
         };
         for _ in 0..offset {
@@ -556,14 +558,14 @@ where
 
     /// Internal next method that returns a reference to the inner buffer.
     fn next_impl(&mut self) -> Option<&[u8]> {
-        if self.index >= self.rca.len() {
+        if self.index >= self.rcl.len() {
             return None;
         }
 
         // figure out how much of the suffix we have to read
         let (to_copy, mut tmp) = decode_int(self.data);
         // figure out how much of the buffer we have to keep
-        let lcp = if self.index % self.rca.k == 0 {
+        let lcp = if self.index % self.rcl.k == 0 {
             0
         } else {
             let rear_length;
@@ -636,7 +638,7 @@ where
 {
     #[inline(always)]
     fn len(&self) -> usize {
-        self.rca.len() - self.index
+        self.rcl.len() - self.index
     }
 }
 

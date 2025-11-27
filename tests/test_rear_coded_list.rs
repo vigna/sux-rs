@@ -37,56 +37,54 @@ mod test {
             .collect::<Result<Vec<_>, _>>()?;
 
         // test sorted RCL
+        let mut rclb = <RearCodedListBuilder<str, true>>::new(4);
+        rclb.extend(words.iter().into_lender());
 
-        // create a new rca with u16 as pointers (this limit data to u16::MAX bytes max size)
-        let mut rcab = <RearCodedListBuilder<str, true>>::new(4);
-        rcab.extend(words.iter().into_lender());
+        rclb.print_stats();
+        let rcl = rclb.build();
 
-        rcab.print_stats();
-        let rca = rcab.build();
-
-        assert_eq!(rca.len(), words.len());
+        assert_eq!(rcl.len(), words.len());
 
         // test that we can decode every string
         for (i, word) in words.iter().enumerate() {
-            assert_eq!(&rca.get(i), word);
+            assert_eq!(&rcl.get(i), word);
         }
 
         // test that the iter is correct
-        for (i, word) in rca.iter().enumerate() {
+        for (i, word) in rcl.iter().enumerate() {
             assert_eq!(word, words[i]);
         }
 
-        for from in 0..rca.len() {
-            for (i, word) in rca.iter_from(from).enumerate() {
+        for from in 0..rcl.len() {
+            for (i, word) in rcl.iter_from(from).enumerate() {
                 assert_eq!(word, words[i + from]);
             }
         }
 
         // test that the lend is correct
-        for_![(i, word) in rca.lender().enumerate() {
+        for_![(i, word) in rcl.lender().enumerate() {
             assert_eq!(word, words[i]);
         }];
 
-        for from in 0..rca.len() {
-            for_![(i, word) in rca.lender_from(from).enumerate() {
+        for from in 0..rcl.len() {
+            for_![(i, word) in rcl.lender_from(from).enumerate() {
                 assert_eq!(word, words[i + from]);
             }]
         }
 
-        assert!(!rca.contains(""));
+        assert!(!rcl.contains(""));
 
         for (i, word) in words.iter().enumerate() {
-            assert!(rca.contains(word.as_str()));
-            assert_eq!(rca.index_of(word.as_str()), Some(i));
+            assert!(rcl.contains(word.as_str()));
+            assert_eq!(rcl.index_of(word.as_str()), Some(i));
             let mut word = word.clone();
             word.push_str("IT'S HIGHLY IMPROBABLE THAT THIS STRING IS IN THE WORD LIST");
-            assert!(!rca.contains(word.as_str()));
-            assert!(rca.index_of(word.as_str()).is_none());
+            assert!(!rcl.contains(word.as_str()));
+            assert!(rcl.index_of(word.as_str()).is_none());
         }
 
         let mut cursor = <AlignedCursor<A16>>::new();
-        let schema = unsafe { rca.serialize_with_schema(&mut cursor)? };
+        let schema = unsafe { rcl.serialize_with_schema(&mut cursor)? };
         println!("{}", schema.to_csv());
 
         let len = cursor.len();
@@ -101,7 +99,6 @@ mod test {
         }
 
         // test unsorted RCL
-
         let mut rcl_builder = <RearCodedListBuilder<str, false>>::new(4);
         let mut shuffled_words = words.iter().map(|s| s.as_str()).collect::<Vec<_>>();
         shuffled_words.shuffle(&mut rand::rng());
@@ -109,29 +106,29 @@ mod test {
         for string in shuffled_words.iter() {
             rcl_builder.push(*string);
         }
-        let rca = rcl_builder.build();
+        let rcl = rcl_builder.build();
 
         for (i, word) in shuffled_words.iter().enumerate() {
-            assert_eq!(&rca.get(i), word);
+            assert_eq!(&rcl.get(i), word);
         }
 
-        let l = rca.len();
-        let mut iter = rca.into_iter().enumerate();
+        let l = rcl.len();
+        let mut iter = rcl.into_iter().enumerate();
         assert_eq!(iter.len(), l);
         while let Some((i, word)) = iter.next() {
             assert_eq!(word, shuffled_words[i]);
             assert_eq!(iter.len(), l - i - 1);
         }
 
-        let mut iter = rca.into_lender().enumerate();
+        let mut iter = rcl.into_lender().enumerate();
         assert_eq!(iter.len(), l);
         while let Some((i, word)) = iter.next() {
             assert_eq!(word, shuffled_words[i]);
             assert_eq!(iter.len(), l - i - 1);
         }
 
-        for from in 0..rca.len() {
-            for (i, word) in rca.iter_from(from).enumerate() {
+        for from in 0..rcl.len() {
+            for (i, word) in rcl.iter_from(from).enumerate() {
                 assert_eq!(word, shuffled_words[i + from]);
             }
         }
@@ -139,7 +136,7 @@ mod test {
         // Note: unsorted RCL does not support contains/index_of (IndexedDict trait is only for SORTED=true)
 
         let mut cursor = <AlignedCursor<A16>>::new();
-        let schema = unsafe { rca.serialize_with_schema(&mut cursor)? };
+        let schema = unsafe { rcl.serialize_with_schema(&mut cursor)? };
         println!("{}", schema.to_csv());
 
         let len = cursor.len();
@@ -159,12 +156,12 @@ mod test {
     #[test]
     #[should_panic(expected = "Strings must be sorted in ascending order")]
     fn test_panics_on_out_of_order() {
-        let mut rcab = <RearCodedListBuilder<str, true>>::new(4);
-        rcab.push("apple");
-        rcab.push("banana");
-        rcab.push("cherry");
+        let mut rclb = <RearCodedListBuilder<str, true>>::new(4);
+        rclb.push("apple");
+        rclb.push("banana");
+        rclb.push("cherry");
         // This should panic because "apricot" < "cherry"
-        rcab.push("apricot");
+        rclb.push("apricot");
     }
 }
 
