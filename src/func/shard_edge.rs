@@ -299,8 +299,8 @@ mod mwhc {
         }
     }
 
-    /// We use the lower 32 bits of sig[0] for the first vertex, the higher 32
-    /// bits of sig[1], and the lower 32 bits of sig[1] for the third vertex.
+    /// We use the lower 32 bits of `sig[0]` for the first vertex, the higher 32
+    /// bits of `sig[1]`, and the lower 32 bits of `sig[1]` for the third vertex.
     fn edge(shard: usize, seg_size: usize, sig: [u64; 2]) -> [usize; 3] {
         let mut start = shard * seg_size * 3;
         let v0 = fixed_point_inv_64!(sig[0] as u32, seg_size) + start;

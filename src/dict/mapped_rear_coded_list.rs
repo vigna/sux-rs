@@ -11,10 +11,11 @@
 //! The typical use case of this structure is to compress and access efficiently
 //! list of strings that are not in sorted order. You build a sorted
 //! [`RearCodedList`], and then you [wrap the instance together with a
-//! permutation](MappedRearCodedList::from_parts) that maps the original order
+//! mapping](MappedRearCodedList::from_parts) that maps the original order
 //! to the sorted order.
 //!
-//! There is no constraint, however, on the mapping: it can also collapse indices.
+//! There is no constraint, however, on the mapping: it can also collapse indices;
+//! and the rear-coded list can also be unsorted.
 //!
 //! As in the case of [`RearCodedList`], the structure is parameterized by the
 //! input/output type and by the storage backend, but two versions are presently
@@ -46,8 +47,9 @@
 //! [`IndexedDict`](crate::traits::IndexedDict) trait, independently of whether
 //! the underlying [`RearCodedList`] is sorted or not.
 //!
-//! Finally, the `rcl` command-line tool can be use to create
-//! a serialized rear-coded list from a file containing strings.
+//! Finally, the `mrcl` command-line tool can be use to create
+//! a serialized mapped rear-coded list starting from a
+//! serialized rear-coded list and a mapping.
 //!
 //! # Examples
 //!
@@ -69,8 +71,8 @@
 //! rclb.push("abdf");
 //!
 //! let rcl = rclb.build();
-//! let perm = vec![5, 4, 2, 0, 1, 3].into_boxed_slice(); // permutation
-//! let mrcl = MappedRearCodedListStr::from_parts(rcl, perm);
+//! let map = vec![5, 4, 2, 0, 1, 3].into_boxed_slice(); // permutation
+//! let mrcl = MappedRearCodedListStr::from_parts(rcl, map);
 //! assert_eq!(mrcl.get(0), "abdf");
 //! assert_eq!(mrcl.get(1), "abde\0f");
 //! assert_eq!(mrcl.get(2), "abc");
@@ -90,16 +92,23 @@ use value_traits::slices::SliceByValue;
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct MappedRearCodedList<I: ?Sized, O, D = Box<[u8]>, P = Box<[usize]>, Q = Box<[usize]>> {
-    rcl: RearCodedList<I, O, D, P, true>,
-    perm: Q,
+pub struct MappedRearCodedList<
+    I: ?Sized,
+    O,
+    D = Box<[u8]>,
+    P = Box<[usize]>,
+    Q = Box<[usize]>,
+    const SORTED: bool = true,
+> {
+    rcl: RearCodedList<I, O, D, P, SORTED>,
+    map: Q,
 }
 
-pub type MappedRearCodedListSliceU8 =
-    MappedRearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, Box<[usize]>>;
+pub type MappedRearCodedListSliceU8<const SORTED: bool = true> =
+    MappedRearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, Box<[usize]>, SORTED>;
 /// A rear-coded list of strings.
-pub type MappedRearCodedListStr =
-    MappedRearCodedList<str, String, Box<[u8]>, Box<[usize]>, Box<[usize]>>;
+pub type MappedRearCodedListStr<const SORTED: bool = true> =
+    MappedRearCodedList<str, String, Box<[u8]>, Box<[usize]>, Box<[usize]>, SORTED>;
 
 impl<
     I: PartialEq<O> + PartialEq + ?Sized,
@@ -107,15 +116,22 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> MappedRearCodedList<I, O, D, P, Q>
+    const SORTED: bool,
+> MappedRearCodedList<I, O, D, P, Q, SORTED>
 {
-    pub fn from_parts(rcl: RearCodedList<I, O, D, P, true>, perm: Q) -> Self {
-        assert_eq!(rcl.len(), perm.len());
-        Self { rcl, perm }
+    pub fn from_parts(rcl: RearCodedList<I, O, D, P, SORTED>, map: Q) -> Self {
+        assert_eq!(
+            rcl.len(),
+            map.len(),
+            "Length mismatch between rear-coded list ({}) and mapping ({})",
+            rcl.len(),
+            map.len()
+        );
+        Self { rcl, map }
     }
 
-    pub fn into_parts(self) -> (RearCodedList<I, O, D, P, true>, Q) {
-        (self.rcl, self.perm)
+    pub fn into_parts(self) -> (RearCodedList<I, O, D, P, SORTED>, Q) {
+        (self.rcl, self.map)
     }
 
     /// Returns the number of elements.
@@ -131,7 +147,7 @@ impl<
     /// allocating a new vector for every query.
     #[inline]
     fn get_in_place_impl(&self, index: usize, result: &mut Vec<u8>) {
-        let index = self.perm.index_value(index);
+        let index = self.map.index_value(index);
         self.rcl.get_in_place_impl(index, result)
     }
 }
@@ -142,16 +158,17 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> MappedRearCodedList<I, O, D, P, Q>
+    const SORTED: bool,
+> MappedRearCodedList<I, O, D, P, Q, SORTED>
 where
-    for<'a> Lend<'a, I, O, D, P, Q>: Lender,
+    for<'a> Lend<'a, I, O, D, P, Q, SORTED>: Lender,
 {
     /// Returns a [`Lender`] over the elements of the list.
     ///
     /// Note that [`iter`](RearCodedList::iter) is more convenient if
     /// you need owned elements.
     #[inline(always)]
-    pub fn lender(&self) -> Lend<'_, I, O, D, P, Q> {
+    pub fn lender(&self) -> Lend<'_, I, O, D, P, Q, SORTED> {
         Lend::new(self)
     }
 
@@ -161,7 +178,7 @@ where
     /// Note that [`iter`](RearCodedList::iter_from) is more convenient if
     /// you need owned elements.
     #[inline(always)]
-    pub fn lender_from(&self, from: usize) -> Lend<'_, I, O, D, P, Q> {
+    pub fn lender_from(&self, from: usize) -> Lend<'_, I, O, D, P, Q, SORTED> {
         Lend::new_from(self, from)
     }
 
@@ -170,7 +187,7 @@ where
     /// Note that [`lender`](RearCodedList::lender_from) is more efficient if
     /// you need to iterate over many elements.
     #[inline(always)]
-    pub fn iter(&self) -> Iter<'_, I, O, D, P, Q> {
+    pub fn iter(&self) -> Iter<'_, I, O, D, P, Q, SORTED> {
         Iter(self.lender())
     }
 
@@ -180,7 +197,7 @@ where
     /// Note that [`lender`](RearCodedList::lender_from) is more efficient if
     /// you need to iterate over many elements.
     #[inline(always)]
-    pub fn iter_from(&self, from: usize) -> Iter<'_, I, O, D, P, Q> {
+    pub fn iter_from(&self, from: usize) -> Iter<'_, I, O, D, P, Q, SORTED> {
         Iter(self.lender_from(from))
     }
 }
@@ -193,18 +210,19 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> Types for MappedRearCodedList<I, O, D, P, Q>
+    const SORTED: bool,
+> Types for MappedRearCodedList<I, O, D, P, Q, SORTED>
 {
     type Output<'a> = O;
     type Input = I;
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>> IndexedSeq
-    for MappedRearCodedList<[u8], Vec<u8>, D, P, Q>
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+    IndexedSeq for MappedRearCodedList<[u8], Vec<u8>, D, P, Q, SORTED>
 {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-        let index = self.perm.index_value(index);
+        let index = self.map.index_value(index);
         self.rcl.get_unchecked(index)
     }
 
@@ -214,23 +232,23 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>> IndexedS
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>>
-    MappedRearCodedList<[u8], Vec<u8>, D, P, Q>
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+    MappedRearCodedList<[u8], Vec<u8>, D, P, Q, SORTED>
 {
     /// Returns in place the byte sequence of given index by writing
     /// its bytes into the provided vector.
     pub fn get_in_place(&self, index: usize, result: &mut Vec<u8>) {
-        let index = self.perm.index_value(index);
+        let index = self.map.index_value(index);
         self.rcl.get_in_place_impl(index, result);
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>> IndexedSeq
-    for MappedRearCodedList<str, String, D, P, Q>
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+    IndexedSeq for MappedRearCodedList<str, String, D, P, Q, SORTED>
 {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-        let index = self.perm.index_value(index);
+        let index = self.map.index_value(index);
         self.rcl.get_unchecked(index)
     }
 
@@ -240,13 +258,13 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>> IndexedS
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>>
-    MappedRearCodedList<str, String, D, P, Q>
+impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+    MappedRearCodedList<str, String, D, P, Q, SORTED>
 {
     /// Returns in place the string of given index by writing
     /// its bytes into the provided string.
     pub fn get_in_place(&self, index: usize, result: &mut String) {
-        let index = self.perm.index_value(index);
+        let index = self.map.index_value(index);
         self.rcl.get_in_place(index, result)
     }
 
@@ -258,7 +276,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>>
     /// however, that using invalid UTF-8 data may lead to undefined behavior.
     #[inline]
     pub fn get_bytes(&self, index: usize) -> Vec<u8> {
-        let index = self.perm.index_value(index);
+        let index = self.map.index_value(index);
         self.rcl.get_bytes(index)
     }
 
@@ -271,7 +289,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>>
     /// however, that using invalid UTF-8 data may lead to undefined behavior.
     #[inline(always)]
     pub fn get_bytes_in_place(&self, index: usize, result: &mut Vec<u8>) {
-        let index = self.perm.index_value(index);
+        let index = self.map.index_value(index);
         self.rcl.get_in_place_impl(index, result);
     }
 }
@@ -287,8 +305,9 @@ pub struct Lend<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
+    const SORTED: bool,
 > {
-    prcl: &'a MappedRearCodedList<I, O, D, P, Q>,
+    prcl: &'a MappedRearCodedList<I, O, D, P, Q, SORTED>,
     buffer: Vec<u8>,
     index: usize,
 }
@@ -300,12 +319,13 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> Lend<'a, I, O, D, P, Q>
+    const SORTED: bool,
+> Lend<'a, I, O, D, P, Q, SORTED>
 where
     Self: Lender,
 {
     /// Creates a new lender over the rear-coded list.
-    pub fn new(prcl: &'a MappedRearCodedList<I, O, D, P, Q>) -> Self {
+    pub fn new(prcl: &'a MappedRearCodedList<I, O, D, P, Q, SORTED>) -> Self {
         Self {
             prcl,
             buffer: Vec::with_capacity(128),
@@ -315,7 +335,7 @@ where
 
     /// Creates a new lender over the rear-coded list starting from the given
     /// position.
-    pub fn new_from(prcl: &'a MappedRearCodedList<I, O, D, P, Q>, from: usize) -> Self {
+    pub fn new_from(prcl: &'a MappedRearCodedList<I, O, D, P, Q, SORTED>, from: usize) -> Self {
         Self {
             prcl,
             buffer: Vec::with_capacity(128),
@@ -342,7 +362,8 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> Lending<'b> for Lend<'a, I, O, D, P, Q>
+    const SORTED: bool,
+> Lending<'b> for Lend<'a, I, O, D, P, Q, SORTED>
 {
     type Lend = &'b I;
 }
@@ -352,7 +373,8 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> Lender for Lend<'_, str, O, D, P, Q>
+    const SORTED: bool,
+> Lender for Lend<'_, str, O, D, P, Q, SORTED>
 where
     str: PartialEq<O> + PartialEq,
 {
@@ -371,7 +393,8 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> Lender for Lend<'_, [u8], O, D, P, Q>
+    const SORTED: bool,
+> Lender for Lend<'_, [u8], O, D, P, Q, SORTED>
 where
     [u8]: PartialEq<O> + PartialEq,
 {
@@ -392,9 +415,10 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> ExactSizeLender for Lend<'a, I, O, D, P, Q>
+    const SORTED: bool,
+> ExactSizeLender for Lend<'a, I, O, D, P, Q, SORTED>
 where
-    Lend<'a, I, O, D, P, Q>: Lender,
+    Lend<'a, I, O, D, P, Q, SORTED>: Lender,
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -409,9 +433,10 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> FusedLender for Lend<'a, I, O, D, P, Q>
+    const SORTED: bool,
+> FusedLender for Lend<'a, I, O, D, P, Q, SORTED>
 where
-    Lend<'a, I, O, D, P, Q>: Lender,
+    Lend<'a, I, O, D, P, Q, SORTED>: Lender,
 {
 }
 
@@ -426,7 +451,8 @@ pub struct Iter<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
->(Lend<'a, I, O, D, P, Q>);
+    const SORTED: bool,
+>(Lend<'a, I, O, D, P, Q, SORTED>);
 
 impl<
     'a,
@@ -435,10 +461,11 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> std::iter::ExactSizeIterator for Iter<'a, I, O, D, P, Q>
+    const SORTED: bool,
+> std::iter::ExactSizeIterator for Iter<'a, I, O, D, P, Q, SORTED>
 where
-    Iter<'a, I, O, D, P, Q>: std::iter::Iterator,
-    Lend<'a, I, O, D, P, Q>: ExactSizeLender,
+    Iter<'a, I, O, D, P, Q, SORTED>: std::iter::Iterator,
+    Lend<'a, I, O, D, P, Q, SORTED>: ExactSizeLender,
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -453,17 +480,18 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> std::iter::FusedIterator for Iter<'a, I, O, D, P, Q>
+    const SORTED: bool,
+> std::iter::FusedIterator for Iter<'a, I, O, D, P, Q, SORTED>
 where
-    Iter<'a, I, O, D, P, Q>: std::iter::Iterator,
-    Lend<'a, str, String, D, P, Q>: FusedLender,
+    Iter<'a, I, O, D, P, Q, SORTED>: std::iter::Iterator,
+    Lend<'a, str, String, D, P, Q, SORTED>: FusedLender,
 {
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>> std::iter::Iterator
-    for Iter<'a, str, String, D, P, Q>
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+    std::iter::Iterator for Iter<'a, str, String, D, P, Q, SORTED>
 where
-    Lend<'a, str, String, D, P, Q>: Lender,
+    Lend<'a, str, String, D, P, Q, SORTED>: Lender,
 {
     type Item = String;
 
@@ -481,10 +509,10 @@ where
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>> std::iter::Iterator
-    for Iter<'a, [u8], Vec<u8>, D, P, Q>
+impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+    std::iter::Iterator for Iter<'a, [u8], Vec<u8>, D, P, Q, SORTED>
 where
-    Lend<'a, [u8], Vec<u8>, D, P, Q>: ExactSizeLender,
+    Lend<'a, [u8], Vec<u8>, D, P, Q, SORTED>: ExactSizeLender,
 {
     type Item = Vec<u8>;
 
@@ -509,13 +537,14 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> IntoLender for &'a MappedRearCodedList<I, O, D, P, Q>
+    const SORTED: bool,
+> IntoLender for &'a MappedRearCodedList<I, O, D, P, Q, SORTED>
 where
-    Lend<'a, I, O, D, P, Q>: Lender,
+    Lend<'a, I, O, D, P, Q, SORTED>: Lender,
 {
-    type Lender = Lend<'a, I, O, D, P, Q>;
+    type Lender = Lend<'a, I, O, D, P, Q, SORTED>;
     #[inline(always)]
-    fn into_lender(self) -> Lend<'a, I, O, D, P, Q> {
+    fn into_lender(self) -> Lend<'a, I, O, D, P, Q, SORTED> {
         Lend::new(self)
     }
 }
@@ -527,13 +556,14 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> IntoIterator for &'a MappedRearCodedList<I, O, D, P, Q>
+    const SORTED: bool,
+> IntoIterator for &'a MappedRearCodedList<I, O, D, P, Q, SORTED>
 where
-    for<'b> Lend<'b, I, O, D, P, Q>: Lender,
-    Iter<'a, I, O, D, P, Q>: std::iter::Iterator,
+    for<'b> Lend<'b, I, O, D, P, Q, SORTED>: Lender,
+    Iter<'a, I, O, D, P, Q, SORTED>: std::iter::Iterator,
 {
-    type Item = <Iter<'a, I, O, D, P, Q> as Iterator>::Item;
-    type IntoIter = Iter<'a, I, O, D, P, Q>;
+    type Item = <Iter<'a, I, O, D, P, Q, SORTED> as Iterator>::Item;
+    type IntoIter = Iter<'a, I, O, D, P, Q, SORTED>;
     #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -547,12 +577,13 @@ impl<
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
     Q: SliceByValue<Value = usize>,
-> IntoIteratorFrom for &'a MappedRearCodedList<I, O, D, P, Q>
+    const SORTED: bool,
+> IntoIteratorFrom for &'a MappedRearCodedList<I, O, D, P, Q, SORTED>
 where
-    for<'b> Lend<'b, I, O, D, P, Q>: Lender,
-    Iter<'a, I, O, D, P, Q>: std::iter::Iterator,
+    for<'b> Lend<'b, I, O, D, P, Q, SORTED>: Lender,
+    Iter<'a, I, O, D, P, Q, SORTED>: std::iter::Iterator,
 {
-    type IntoIterFrom = Iter<'a, I, O, D, P, Q>;
+    type IntoIterFrom = Iter<'a, I, O, D, P, Q, SORTED>;
     #[inline(always)]
     fn into_iter_from(self, from: usize) -> Self::IntoIter {
         self.iter_from(from)
