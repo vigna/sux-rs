@@ -53,6 +53,7 @@ arbitrary = { version = "1.3.2", features = ["derive"], optional = true }
 zerocopy = { version = "0.8.27", features = ["derive"] }
 jiff = "0.2.15"
 fallible-iterator = "0.3.0"
+sync-cell-slice = "0.9.11"
 
 [dev-dependencies]
 maligned = "0.2.1"
