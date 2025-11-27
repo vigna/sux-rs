@@ -17,7 +17,7 @@
 //! want to achieve significant compression you can try to use a
 //! [`MappedRearCodedList`](crate::dict::mapped_rear_coded_list) instead.
 //!
-//! The encoding is done in blocks of `k` elements: in each block the first
+//! The encoding is done in blocks of `ratio` elements: in each block the first
 //! string is encoded without compression, whereas the other elements are encoded
 //! with the common prefix removed.
 //!
@@ -155,7 +155,7 @@
 //! the beginning of a block as we write a full string there.
 //!
 //! The `data` portion contains strings in the following format:
-//! - if the index of the string is a multiple of `k`, we write: `<len><bytes>`
+//! - if the index of the string is a multiple of `ratio`, we write: `<len><bytes>`
 //! - otherwise, we write: `<suffix_len><rear_len><suffix_bytes>`
 //!
 //! where `<len>`, `<suffix_len>`, and `<rear_len>` are VByte-encoded integers
@@ -209,7 +209,7 @@ struct Stats {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RearCodedList<I: ?Sized, O, D = Box<[u8]>, P = Box<[usize]>, const SORTED: bool = true> {
     /// The number of strings in a block; this value trades off compression for speed.
-    k: usize,
+    ratio: usize,
     /// Number of encoded strings.
     len: usize,
     /// The encoded strings, `\0`-terminated.
@@ -249,8 +249,8 @@ impl<
     #[inline]
     pub(super) fn get_in_place_impl(&self, index: usize, result: &mut Vec<u8>) {
         result.clear();
-        let block = index / self.k;
-        let offset = index % self.k;
+        let block = index / self.ratio;
+        let offset = index % self.ratio;
 
         let start = self.pointers.as_ref()[block];
         let mut data = &self.data.as_ref()[start..];
@@ -344,7 +344,7 @@ impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, 
         });
 
         if let Ok(block_idx) = block_idx {
-            return Some(block_idx * self.k);
+            return Some(block_idx * self.ratio);
         }
 
         let mut block_idx = block_idx.unwrap_err();
@@ -364,7 +364,7 @@ impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, 
         result.extend_from_slice(&data[..to_copy]);
         data = &data[to_copy..];
 
-        let in_block = (self.k - 1).min(self.len - block_idx * self.k - 1);
+        let in_block = (self.ratio - 1).min(self.len - block_idx * self.ratio - 1);
         for idx in 0..in_block {
             // get how much data to throw away
             (to_copy, data) = decode_int(data);
@@ -378,7 +378,7 @@ impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, 
             // TODO!: this can be optimized to avoid the copy
             match memcmp_rust(string, &result) {
                 core::cmp::Ordering::Greater => {}
-                core::cmp::Ordering::Equal => return Some(block_idx * self.k + idx + 1),
+                core::cmp::Ordering::Equal => return Some(block_idx * self.ratio + idx + 1),
                 core::cmp::Ordering::Less => return None,
             }
         }
@@ -541,12 +541,12 @@ where
     /// Creates a new lender over the rear-coded list starting from the given
     /// position.
     pub fn new_from(rcl: &'a RearCodedList<I, O, D, P, SORTED>, from: usize) -> Self {
-        let block = from / rcl.k;
-        let offset = from % rcl.k;
+        let block = from / rcl.ratio;
+        let offset = from % rcl.ratio;
         let start = rcl.pointers.as_ref()[block];
         let mut res = Lend {
             rcl,
-            index: block * rcl.k,
+            index: block * rcl.ratio,
             data: &rcl.data.as_ref()[start..],
             buffer: Vec::with_capacity(128),
         };
@@ -565,7 +565,7 @@ where
         // figure out how much of the suffix we have to read
         let (to_copy, mut tmp) = decode_int(self.data);
         // figure out how much of the buffer we have to keep
-        let lcp = if self.index % self.rcl.k == 0 {
+        let lcp = if self.index % self.rcl.ratio == 0 {
             0
         } else {
             let rear_length;
@@ -807,7 +807,7 @@ where
 #[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct RearCodedListBuilder<I: ?Sized, const SORTED: bool = true> {
     /// The number of strings in a block; this value trades compression for speed.
-    k: usize,
+    ratio: usize,
     /// Number of encoded strings.
     len: usize,
     /// The encoded strings, `\0`-terminated.
@@ -850,15 +850,15 @@ fn memcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
 }
 
 impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
-    /// Creates a builder for a rear-coded list with a block size of `k`.
-    pub fn new(k: usize) -> Self {
+    /// Creates a builder for a rear-coded list with a block size of `ratio`.
+    pub fn new(ratio: usize) -> Self {
         Self {
             data: Vec::with_capacity(1024),
             last_str: Vec::with_capacity(1024),
             pointers: Vec::new(),
             len: 0,
             written_bytes: 0,
-            k,
+            ratio,
             stats: Stats::default(),
             _marker: PhantomData,
         }
@@ -974,8 +974,8 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
         let suffix_len = string.len() - lcp;
         let length_before = self.data.len();
 
-        // at every multiple of k we just encode the string as is
-        let to_encode = if self.len % self.k == 0 {
+        // at every multiple of ratio we just encode the string as is
+        let to_encode = if self.len % self.ratio == 0 {
             // compute the size in bytes of the previous block
             let last_ptr = self.pointers.last().copied().unwrap_or(0);
             let block_bytes = self.data.len() - last_ptr;
@@ -1032,7 +1032,7 @@ impl<const SORTED: bool> RearCodedListBuilder<str, SORTED> {
             data: self.data.into(),
             pointers: self.pointers.into(),
             len: self.len,
-            k: self.k,
+            ratio: self.ratio,
             _marker_i: PhantomData,
             _marker_o: PhantomData,
         }
@@ -1046,7 +1046,7 @@ impl<const SORTED: bool> RearCodedListBuilder<[u8], SORTED> {
             data: self.data.into(),
             pointers: self.pointers.into(),
             len: self.len,
-            k: self.k,
+            ratio: self.ratio,
             _marker_i: PhantomData,
             _marker_o: PhantomData,
         }
@@ -1194,7 +1194,7 @@ mod epserde_impl {
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
-        k: usize,
+        ratio: usize,
         mut lender: L,
         mut writer: impl std::io::Write,
     ) -> anyhow::Result<usize>
@@ -1212,7 +1212,7 @@ mod epserde_impl {
         let mut len = 0;
         let mut byte_len = 0;
         // First pass: count the number of strings and the byte length
-        let mut builder = RearCodedListBuilder::<I, SORTED>::new(k);
+        let mut builder = RearCodedListBuilder::<I, SORTED>::new(ratio);
         info!("Counting strings...");
         while let Some(s) = lender.next()? {
             builder.push(s.borrow());
@@ -1228,10 +1228,10 @@ mod epserde_impl {
         // Since we have two interdependent iterators (the bytes and the pointers),
         // we give to each iterator a reference to a RefCell containing a
         // builder.
-        let builder = RefCell::new(RearCodedListBuilder::<I, SORTED>::new(k));
+        let builder = RefCell::new(RearCodedListBuilder::<I, SORTED>::new(ratio));
 
         let rear_coded_list = RearCodedList::<I, O, _, _, SORTED> {
-            k,
+            ratio,
             len,
             data: SerIter::new(BytesIter::<T, I, L, SORTED> {
                 builder: &builder,
@@ -1265,11 +1265,11 @@ mod epserde_impl {
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
-        k: usize,
+        ratio: usize,
         lender: L,
         writer: impl std::io::Write,
     ) -> anyhow::Result<usize> {
-        serialize_impl::<T, str, String, L, SORTED>(k, lender, writer)
+        serialize_impl::<T, str, String, L, SORTED>(ratio, lender, writer)
     }
 
     /// Serializes strings to a stream a rear-coded list directly from a lender of `AsRef<[u8]>`.
@@ -1282,11 +1282,11 @@ mod epserde_impl {
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
-        k: usize,
+        ratio: usize,
         lender: L,
         writer: impl std::io::Write,
     ) -> anyhow::Result<usize> {
-        serialize_impl::<T, [u8], Vec<u8>, L, SORTED>(k, lender, writer)
+        serialize_impl::<T, [u8], Vec<u8>, L, SORTED>(ratio, lender, writer)
     }
 
     /// Stores into a file a rear-coded list of strings built directly from a lender of
@@ -1300,14 +1300,14 @@ mod epserde_impl {
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
-        k: usize,
+        ratio: usize,
         lender: L,
         filename: impl AsRef<std::path::Path>,
     ) -> anyhow::Result<usize> {
         let dst_file =
             std::fs::File::create(filename.as_ref()).expect("Cannot create destination file");
         let mut buf_writer = std::io::BufWriter::new(dst_file);
-        serialize_impl::<T, str, String, L, SORTED>(k, lender, &mut buf_writer)
+        serialize_impl::<T, str, String, L, SORTED>(ratio, lender, &mut buf_writer)
     }
 
     /// Stores into a file a rear-coded list of strings built directly from a lender of
@@ -1321,14 +1321,14 @@ mod epserde_impl {
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     >(
-        k: usize,
+        ratio: usize,
         lender: L,
         filename: impl AsRef<std::path::Path>,
     ) -> anyhow::Result<usize> {
         let dst_file =
             std::fs::File::create(filename.as_ref()).expect("Cannot create destination file");
         let mut buf_writer = std::io::BufWriter::new(dst_file);
-        serialize_impl::<T, [u8], Vec<u8>, L, SORTED>(k, lender, &mut buf_writer)
+        serialize_impl::<T, [u8], Vec<u8>, L, SORTED>(ratio, lender, &mut buf_writer)
     }
 
     /// An iterator that will be wrapped in a [`SerIter`] to serialize directly the

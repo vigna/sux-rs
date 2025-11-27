@@ -47,8 +47,8 @@ struct Args {
     unsorted: bool,
     /// The number of strings in a block: higher values provide more compression
     /// at the expense of slower access.
-    #[arg(short = 'k', long, default_value_t = 8)]
-    k: usize,
+    #[arg(short = 'r', long, default_value_t = 8)]
+    ratio: usize,
     /// Use the slower direct-to-disk construction algorithm, which uses very little memory (cannot be used with stdin input).
     #[arg(long, default_value_t = false)]
     low_mem: bool,
@@ -57,9 +57,9 @@ struct Args {
 fn compress<R: BufRead, const SORTED: bool>(
     mut lender: DekoBufLineLender<R>,
     dest: impl Borrow<str>,
-    k: usize,
+    ratio: usize,
 ) -> Result<()> {
-    let mut rclb = RearCodedListBuilder::<str, SORTED>::new(k);
+    let mut rclb = RearCodedListBuilder::<str, SORTED>::new(ratio);
 
     let mut pl = ProgressLogger::default();
     pl.display_memory(true);
@@ -106,16 +106,16 @@ fn main() -> Result<()> {
         call_with_sorted!(
             args.unsorted,
             rear_coded_list::store_str,
-            args.k,
+            args.ratio,
             lender,
             args.dest
         )?;
     } else if args.source == "-" {
         let stdin = DekoBufLineLender::new(std::io::BufReader::new(std::io::stdin().lock()))?;
-        call_with_sorted!(args.unsorted, compress, stdin, args.dest, args.k)?;
+        call_with_sorted!(args.unsorted, compress, stdin, args.dest, args.ratio)?;
     } else {
         let lender = DekoBufLineLender::from_path(&args.source)?;
-        call_with_sorted!(args.unsorted, compress, lender, args.dest, args.k)?;
+        call_with_sorted!(args.unsorted, compress, lender, args.dest, args.ratio)?;
     }
 
     Ok(())
