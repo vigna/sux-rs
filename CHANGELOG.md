@@ -2,10 +2,16 @@
 
 ## [0.10.1] - Unreleased
 
-### new
+### New
 
 - `PermRearCodedList` structure that combines a `RearCodedList` with a
   permutation to provide good compression even for non-sorted lists.
+
+### Changed
+
+- `RearCodedList`'s ratio parameter is now named `ratio` as in Java. Thus,
+  instances previously serialized will not be compatible. The `rcl` CLI utility
+  has now, correspondingly, a `--ratio` parameter instead of the previous `-k`.
 
 ## [0.10.0] - 2025-11-15
 
