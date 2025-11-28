@@ -32,7 +32,7 @@ use sux::utils::{
                 .args(&["filename", "n"]),
 ))]
 struct Args {
-    /// The number of keys. If no filename is provided, use the 64-bit keys
+    /// The number of keys; if no filename is provided, use the 64-bit keys
     /// [0..n).
     #[arg(short, long)]
     n: Option<usize>,
@@ -44,7 +44,7 @@ struct Args {
     /// Use this number of threads.
     #[arg(short, long)]
     threads: Option<usize>,
-    /// Use disk-based buckets to reduce memory usage at construction time.
+    /// Use disk-based buckets to reduce memory usage at construction time; providing the exact number of keys will speed up the construction.
     #[arg(short, long)]
     offline: bool,
     /// Sort shards and check for duplicate signatures.

@@ -26,7 +26,7 @@ use sux::utils::{
 use value_traits::slices::SliceByValueMut;
 
 #[derive(Parser, Debug)]
-#[command(about = "Creates a VFilter and serializes it with ε-serde", long_about = None)]
+#[command(about = "Creates a VFilter and serializes it with ε-serde.", long_about = None)]
 #[clap(group(
             ArgGroup::new("input")
                 .required(true)
@@ -34,11 +34,11 @@ use value_traits::slices::SliceByValueMut;
                 .args(&["filename", "n"]),
 ))]
 struct Args {
-    /// The number of keys. If no filename is provided, use the 64-bit keys
+    /// The number of keys; if no filename is provided, use the 64-bit keys
     /// [0..n).
     #[arg(short, long)]
     n: Option<usize>,
-    /// A file containing UTF-8 keys, one per line. At most N keys will be read.
+    /// A file containing UTF-8 keys, one per line; at most N keys will be read.
     #[arg(short, long)]
     filename: Option<String>,
     /// An optional name for the ε-serde serialized function.
@@ -49,7 +49,7 @@ struct Args {
     /// Use this number of threads.
     #[arg(short, long)]
     threads: Option<usize>,
-    /// Use disk-based buckets to reduce memory usage at construction time.
+    /// Use disk-based buckets to reduce memory usage at construction time; providing the exact number of keys will speed up the construction.
     #[arg(short, long)]
     offline: bool,
     /// Sort shards and check for duplicate signatures.
