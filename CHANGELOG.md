@@ -1,6 +1,6 @@
 # Change Log
 
-## [0.10.1] - Unreleased
+## [0.10.1] - 2025-11-28
 
 ### New
 
