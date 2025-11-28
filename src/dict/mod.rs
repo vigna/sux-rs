@@ -13,6 +13,9 @@ pub use elias_fano::{EliasFano, EliasFanoBuilder, EliasFanoConcurrentBuilder};
 pub mod rear_coded_list;
 pub use rear_coded_list::{RearCodedListBuilder, RearCodedListSliceU8, RearCodedListStr};
 
+pub mod front_coded_list;
+pub use front_coded_list::{FrontCodedListBuilder, FrontCodedListSliceU8, FrontCodedListStr};
+
 pub mod mapped_rear_coded_list;
 pub use mapped_rear_coded_list::{MappedRearCodedListSliceU8, MappedRearCodedListStr};
 
