@@ -103,11 +103,11 @@ required-features = ["cli", "epserde"]
 
 [[bin]]
 name = "vfunc"
-required-features = ["cli", "epserde", "rayon"]
+required-features = ["cli", "epserde", "deko", "rayon"]
 
 [[bin]]
 name = "vfilter"
-required-features = ["cli", "epserde", "rayon"]
+required-features = ["cli", "epserde", "deko", "rayon"]
 
 [[bin]]
 name = "mem_usage"

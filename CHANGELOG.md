@@ -2,6 +2,12 @@
 
 ## [0.10.2] - 2025-11-28
 
+### New
+
+- The `vfunc`/`vfilter` CLI utilities now use the `deko` crate to
+  transparently read compressed input files. The previous `zstd`
+  switch has been removed.
+
 ### Fixed
 
 - Fixed bug that made impossible to use the CLI utilities `vfunc`

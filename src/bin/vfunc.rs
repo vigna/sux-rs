@@ -20,7 +20,7 @@ use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{
-    BinSafe, EmptyVal, FromCloneableIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender,
+    BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig,
 };
 
 #[derive(Parser, Debug)]
@@ -44,9 +44,6 @@ struct Args {
     /// Use this number of threads.
     #[arg(short, long)]
     threads: Option<usize>,
-    /// Whether the file is compressed with zstd.
-    #[arg(short, long)]
-    zstd: bool,
     /// Use disk-based buckets to reduce memory usage at construction time.
     #[arg(short, long)]
     offline: bool,
@@ -158,19 +155,11 @@ where
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
         let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
-        let func = if args.zstd {
-            builder.try_build_func(
-                ZstdLineLender::from_path(filename)?.take(n),
-                FromCloneableIntoIterator::from(0_usize..),
-                &mut pl,
-            )?
-        } else {
-            builder.try_build_func(
-                LineLender::from_path(filename)?.take(n),
-                FromCloneableIntoIterator::from(0_usize..),
-                &mut pl,
-            )?
-        };
+        let func = builder.try_build_func(
+            DekoBufLineLender::from_path(filename)?.take(n),
+            FromCloneableIntoIterator::from(0_usize..),
+            &mut pl,
+        )?;
         if let Some(filename) = args.func {
             unsafe { func.store(filename) }?;
         }
