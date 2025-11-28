@@ -10,8 +10,11 @@
 use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
-use log::info;
-use ph::phast;
+use ph::{
+    BuildDefaultSeededHasher,
+    fmph::Bits8,
+    phast::{self, DefaultCompressedArray, Params, SeedOnly, bits_per_seed_to_100_bucket_size},
+};
 use sux::bit_field_vec;
 use value_traits::slices::*;
 
@@ -56,13 +59,18 @@ fn main() -> Result<()> {
 
     let mut pl = concurrent_progress_logger![];
 
-    info!("Building MPH");
-
     let keys = (0..args.n as u64).collect::<Vec<_>>();
 
-    pl.start("Building Phast+...");
+    pl.start("Building PHast+...");
 
-    let func = phast::Function2::from_slice_mt(&keys);
+    let func: phast::Function2<Bits8, SeedOnly, DefaultCompressedArray> =
+        phast::Function2::with_slice_p_threads_hash_sc(
+            &keys,
+            &Params::new(Bits8, bits_per_seed_to_100_bucket_size(8)),
+            args.threads,
+            BuildDefaultSeededHasher::default(),
+            SeedOnly,
+        );
 
     let mut output = bit_field_vec![(args.n - 1).ilog2() as usize + 1 => 0; args.n];
     for i in 0..args.n {
