@@ -45,9 +45,6 @@ struct Args {
     /// The number of repetitions.
     #[arg(short, long, default_value = "5")]
     repeats: usize,
-    /// Use 64-bit signatures.
-    #[arg(long)]
-    sig64: bool,
 }
 
 fn main() -> Result<()> {
@@ -56,10 +53,7 @@ fn main() -> Result<()> {
         .try_init()?;
 
     let args = Args::parse();
-    if args.sig64 { _main(args) } else { _main(args) }
-}
 
-fn _main(args: Args) -> Result<()> {
     let mut pl = concurrent_progress_logger![];
 
     info!("Building MPH");
