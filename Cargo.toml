@@ -98,6 +98,10 @@ name = "rcl"
 required-features = ["cli", "epserde", "deko"]
 
 [[bin]]
+name = "fcl"
+required-features = ["cli", "epserde", "deko"]
+
+[[bin]]
 name = "mrcl"
 required-features = ["cli", "epserde"]
 
