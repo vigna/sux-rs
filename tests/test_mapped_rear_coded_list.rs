@@ -87,7 +87,7 @@ mod test {
         let cursor_len = cursor.len();
         cursor.set_position(0);
         let c = unsafe {
-            <MappedRearCodedListStr>::read_mmap(
+            <MappedRearCodedList<str, String, Box<[u8]>, Box<[usize]>, Box<[usize]>, true>>::read_mmap(
                 &mut cursor,
                 cursor_len,
                 epserde::deser::Flags::empty(),
@@ -149,7 +149,7 @@ mod test {
         let cursor_len = cursor.len();
         cursor.set_position(0);
         let c = unsafe {
-            <MappedRearCodedListStr<false>>::read_mmap(
+            <MappedRearCodedList<str, String, Box<[u8]>, Box<[usize]>, Box<[usize]>, false>>::read_mmap(
                 &mut cursor,
                 cursor_len,
                 epserde::deser::Flags::empty(),
