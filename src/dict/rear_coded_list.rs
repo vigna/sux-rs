@@ -978,7 +978,7 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
         let to_encode = if self.len % self.ratio == 0 {
             // compute the size in bytes of the previous block
             let last_ptr = self.pointers.last().copied().unwrap_or(0);
-            let block_bytes = self.data.len() - last_ptr;
+            let block_bytes = self.written_bytes - last_ptr;
             // update stats
             self.stats.max_block_bytes = self.stats.max_block_bytes.max(block_bytes);
             self.stats.sum_block_bytes += block_bytes;
