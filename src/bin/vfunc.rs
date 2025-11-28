@@ -28,17 +28,19 @@ use sux::utils::{
 #[clap(group(
             ArgGroup::new("input")
                 .required(true)
+                .multiple(true)
                 .args(&["filename", "n"]),
 ))]
 struct Args {
     /// The number of keys. If no filename is provided, use the 64-bit keys
     /// [0..n).
-    n: usize,
+    #[arg(short, long)]
+    n: Option<usize>,
+    /// A file containing UTF-8 keys, one per line; at most N keys will be read.
+    #[arg(short, long)]
+    filename: Option<String>,
     /// A name for the ε-serde serialized function.
     func: Option<String>,
-    #[arg(short, long)]
-    /// A file containing UTF-8 keys, one per line. At most N keys will be read.
-    filename: Option<String>,
     /// Use this number of threads.
     #[arg(short, long)]
     threads: Option<usize>,
@@ -115,8 +117,10 @@ fn set_builder<W: Word + BinSafe, D: BitFieldSlice<W> + Send + Sync, S, E: Shard
     let mut builder = builder
         .offline(args.offline)
         .check_dups(args.check_dups)
-        .expected_num_keys(args.n)
         .eps(args.eps);
+    if let Some(n) = args.n {
+        builder = builder.expected_num_keys(n);
+    }
     if let Some(seed) = args.seed {
         builder = builder.seed(seed);
     }
@@ -151,9 +155,8 @@ where
     #[cfg(feature = "no_logging")]
     let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
 
-    let n = args.n;
-
     if let Some(filename) = &args.filename {
+        let n = args.n.unwrap_or(usize::MAX);
         let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
         let func = if args.zstd {
             builder.try_build_func(
@@ -172,6 +175,7 @@ where
             unsafe { func.store(filename) }?;
         }
     } else {
+        let n = args.n.unwrap();
         let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
         let func = builder.try_build_func(
             FromCloneableIntoIterator::from(0_usize..n),

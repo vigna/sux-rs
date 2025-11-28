@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.10.2] - 2025-11-28
+
+### Fixed
+
+- Fixed bug that made impossible to use the CLI utilities `vfunc`
+  and `vfilter` with a file as input.
+
 ## [0.10.1] - 2025-11-28
 
 ### New
