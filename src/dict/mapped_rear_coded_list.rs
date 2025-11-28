@@ -83,6 +83,7 @@
 //! assert_eq!(mrcl.get(4), "aab");
 //! assert_eq!(mrcl.get(5), "abdd");
 //! ```
+use crate::bits::BitFieldVec;
 use crate::dict::rear_coded_list::RearCodedList;
 use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
 use lender::FusedLender;
@@ -100,7 +101,7 @@ pub struct MappedRearCodedList<
     O,
     D = Box<[u8]>,
     P = Box<[usize]>,
-    Q = Box<[usize]>,
+    Q = BitFieldVec,
     const SORTED: bool = true,
 > {
     rcl: RearCodedList<I, O, D, P, SORTED>,
@@ -108,10 +109,10 @@ pub struct MappedRearCodedList<
 }
 
 pub type MappedRearCodedListSliceU8<const SORTED: bool = true> =
-    MappedRearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, Box<[usize]>, SORTED>;
+    MappedRearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, BitFieldVec, SORTED>;
 /// A rear-coded list of strings.
 pub type MappedRearCodedListStr<const SORTED: bool = true> =
-    MappedRearCodedList<str, String, Box<[u8]>, Box<[usize]>, Box<[usize]>, SORTED>;
+    MappedRearCodedList<str, String, Box<[u8]>, Box<[usize]>, BitFieldVec, SORTED>;
 
 impl<
     I: PartialEq<O> + PartialEq + ?Sized,
