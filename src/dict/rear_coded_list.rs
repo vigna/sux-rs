@@ -158,8 +158,10 @@
 //! - if the index of the string is a multiple of `ratio`, we write: `<len><bytes>`
 //! - otherwise, we write: `<suffix_len><rear_len><suffix_bytes>`
 //!
-//! where `<len>`, `<suffix_len>`, and `<rear_len>` are VByte-encoded integers
-//! and `<bytes>` and `<suffix_bytes>` are the actual bytes of the string or suffix.
+//! where `<len>`, `<suffix_len>`, and `<rear_len>` are VByte-encoded integers,
+//! `<bytes>` and `<suffix_bytes>` are the actual bytes of the string or suffix,
+//! and `<rear_len>` is the length of the suffix of the previous string that must be
+//! removed to obtain the common prefix.
 
 use crate::traits::{IndexedDict, IndexedSeq, IntoIteratorFrom, Types};
 use core::marker::PhantomData;
@@ -256,22 +258,22 @@ impl<
         let mut data = &self.data.as_ref()[start..];
 
         // declare these vars so the decoding looks cleaner
-        let (mut rear_length, mut len);
+        let (mut rear_len, mut suffix_len);
         // decode the first string in the block
-        (len, data) = decode_int(data);
-        result.extend_from_slice(&data[..len]);
-        data = &data[len..];
+        (suffix_len, data) = decode_int(data);
+        result.extend_from_slice(&data[..suffix_len]);
+        data = &data[suffix_len..];
 
         for _ in 0..offset {
             // get how much data to throw away
-            (len, data) = decode_int(data);
-            (rear_length, data) = decode_int(data);
-            // throw away the data
-            let lcp = result.len() - rear_length;
+            (suffix_len, data) = decode_int(data);
+            (rear_len, data) = decode_int(data);
+            // Get common prefix length by discarding the final rear_len bytes
+            let lcp = result.len() - rear_len;
             result.truncate(lcp);
-            // copy the new suffix
-            result.extend_from_slice(&data[..len]);
-            data = &data[len..];
+            // Copy the new suffix
+            result.extend_from_slice(&data[..suffix_len]);
+            data = &data[suffix_len..];
         }
     }
 }
