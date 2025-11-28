@@ -948,13 +948,14 @@ impl<
             start.elapsed().as_nanos() as f64 / self.num_keys as f64
         );
 
+        shard_edge.set_up_shards(self.num_keys, self.eps);
+
         let start = Instant::now();
 
         let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
         let filter = TypeId::of::<V>() == TypeId::of::<EmptyVal>();
 
-        shard_edge.set_up_shards(self.num_keys, self.eps);
         (self.c, self.lge) = shard_edge.set_up_graphs(self.num_keys, max_shard);
 
         if filter {
