@@ -134,6 +134,10 @@ name = "bench_rear_coded_list"
 required-features = ["cli"]
 
 [[example]]
+name = "bench_front_coded_list"
+required-features = ["cli"]
+
+[[example]]
 name = "bench_vfunc"
 required-features = ["epserde"]
 
