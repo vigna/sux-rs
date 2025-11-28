@@ -21,7 +21,7 @@ use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, BitFieldSliceMut, Word};
 use sux::utils::{
-    BinSafe, EmptyVal, FromCloneableIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender,
+    BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig,
 };
 use value_traits::slices::SliceByValueMut;
 
@@ -49,9 +49,6 @@ struct Args {
     /// Use this number of threads.
     #[arg(short, long)]
     threads: Option<usize>,
-    /// Whether the file is compressed with zstd.
-    #[arg(short, long)]
-    zstd: bool,
     /// Use disk-based buckets to reduce memory usage at construction time.
     #[arg(short, long)]
     offline: bool,
@@ -201,12 +198,8 @@ where
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
         let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
-        let filter = if args.zstd {
-            builder.try_build_filter(ZstdLineLender::from_path(filename)?.take(n), &mut pl)?
-        } else {
-            let t = LineLender::from_path(filename)?.take(n);
-            builder.try_build_filter(t, &mut pl)?
-        };
+        let filter =
+            builder.try_build_filter(DekoBufLineLender::from_path(filename)?.take(n), &mut pl)?;
         if let Some(filename) = args.filter {
             unsafe { filter.store(filename) }?;
         }
@@ -249,16 +242,11 @@ where
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
         let builder = set_builder(VBuilder::<W, BitFieldVec<W>, S, E>::default(), &args);
-        let filter = if args.zstd {
-            builder.try_build_filter(
-                ZstdLineLender::from_path(filename)?.take(n),
-                args.bits,
-                &mut pl,
-            )?
-        } else {
-            let t = LineLender::from_path(filename)?.take(n);
-            builder.try_build_filter(t, args.bits, &mut pl)?
-        };
+        let filter = builder.try_build_filter(
+            DekoBufLineLender::from_path(filename)?.take(n),
+            args.bits,
+            &mut pl,
+        )?;
         if let Some(filename) = args.filter {
             unsafe { filter.store(filename)? };
         }
