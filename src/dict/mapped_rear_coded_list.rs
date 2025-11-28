@@ -27,6 +27,10 @@
 //! - [`MappedRearCodedListSliceU8`]: stores byte sequences (`AsRef<[u8]>`),
 //!   returning `Vec<u8>` on access.
 //!
+//! These standard types use a `Box<[usize]>` for storing the mapping.
+//! However, it is possible to use any type implementing the
+//! [`SliceByValue`] trait from the [`value_traits`] crate.
+//!
 //! Besides the standard access by means of the [`IndexedSeq`] trait, this
 //! structure also implements the `get_in_place` method, which allows to write
 //! the element directly into a user-provided buffer (a string or a vector of
@@ -38,14 +42,13 @@
 //! [`Iterator`](RearCodedList::iter) or a [`Lender`](RearCodedList::lender). In
 //! the first case there will be an allocation at each iteration, whereas in
 //! second case a single buffer will be reused. You can also [iterate from a
-//! given position](RearCodedList::lender_from), which is much faster than
-//! skipping elements one by one. The iteration will not be as fast as in the
-//! non-mapped case, however, as it is not possible to build the returned
-//! strings incrementally.
+//! given position](RearCodedList::lender_from). The iteration will not be as
+//! fast as in the non-mapped case, however, as it is not possible to build the
+//! returned strings incrementally.
 //!
-//! Note that this structure does not provide implementations for the
-//! [`IndexedDict`](crate::traits::IndexedDict) trait, independently of whether
-//! the underlying [`RearCodedList`] is sorted or not.
+//! Note that, contrarily to [`RearCodedList`], this structure does not provide
+//! implementations for the [`IndexedDict`](crate::traits::IndexedDict) trait,
+//! independently of whether the underlying [`RearCodedList`] is sorted or not.
 //!
 //! Finally, the `mrcl` command-line tool can be use to create
 //! a serialized mapped rear-coded list starting from a
@@ -119,6 +122,16 @@ impl<
     const SORTED: bool,
 > MappedRearCodedList<I, O, D, P, Q, SORTED>
 {
+    /// Creates a new instance from its parts.
+    ///
+    /// It is your responsibility to ensure that the mapping is valid,
+    /// that is, that its length matches the length of the rear-coded list,
+    /// and that all indices are in range.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the length of the mapping does not match
+    /// the length of the rear-coded list.
     pub fn from_parts(rcl: RearCodedList<I, O, D, P, SORTED>, map: Q) -> Self {
         assert_eq!(
             rcl.len(),

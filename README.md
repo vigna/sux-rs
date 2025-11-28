@@ -42,7 +42,8 @@ default.
 
 ## serde Support
 
-All structures in this crate support. Support is gated by the feature `serde`.
+All structures in this crate support serialization with [serde]. Support is
+gated by the feature `serde`.
 
 ## Slice by Value Support
 
@@ -169,28 +170,28 @@ opinions expressed are however those of the authors only and do not necessarily
 reflect those of the European Union or the Italian MUR. Neither the European
 Union nor the Italian MUR can be held responsible for them
 
-[bit vectors and bit-field vectors]: <https://docs.rs/sux/latest/sux/bits/index.html>
-[rank and selection]: <https://docs.rs/sux/latest/sux/rank_sel/index.html>
-[indexed dictionaries]: <https://docs.rs/sux/latest/sux/traits/indexed_dict/index.html>
-[`EliasFano`]: <https://docs.rs/sux/latest/sux/dict/elias_fano/struct.EliasFano.html>
-[ε-serde]: <https://crates.io/crates/epserde>
-[`MemDbg`]: <https://docs.rs/mem_dbg/latest/mem_dbg/trait.MemDbg.html>
-[`MemSize`]: <https://docs.rs/mem_dbg/latest/mem_dbg/trait.MemSize.html>
-[`mem_dbg`]: <https://crates.io/crates/mem_dbg>
-[Elias–Fano representation of monotone sequences]: <https://docs.rs/sux/latest/sux/dict/elias_fano/struct.EliasFano.html>
-[lists of strings compressed by prefix omission]: <https://docs.rs/sux/latest/sux/dict/rear_coded_list/>
-[Sux]: <https://sux.di.unimi.it/>
-[the DSI Utilities]: <https://dsiutils.di.unimi.it/>
-[`BitLength`]: <https://docs.rs/sux/latest/sux/traits/rank_sel/trait.BitLength.html>
-[`Rank9`]: <https://docs.rs/sux/latest/sux/rank_sel/struct.Rank9.html>
-[`SelectSmall`]: <https://docs.rs/sux/latest/sux/rank_sel/struct.SelectSmall.html>
-[`SelectAdapt`]: <https://docs.rs/sux/latest/sux/rank_sel/struct.SelectAdapt.html>
-[static functions]: <https://docs.rs/sux/latest/sux/func/vfunc/struct.VFunc.html>
-[static filters]: <https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html>
-[Partial arrays]: <https://docs.rs/sux/latest/sux/array/struct.PartialArray.html>
-[bit vectors operations]: <https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html>
-[unaligned access]: <https://docs.rs/sux/latest/sux/bits/bit_field_vec/struct.BitFieldVec.html#method.get_unaligned>
-[value-traits]: <https://crates.io/crates/value-traits>
-[serde]: <https://crates.io/crates/serde>
-[`deko`]: <https://crates.io/crates/deko>
-[`lenders`]: <https://docs.rs/sux/latest/sux/utils/lenders/>
+[bit vectors and bit-field vectors]: https://docs.rs/sux/latest/sux/bits/index.html
+[rank and selection]: https://docs.rs/sux/latest/sux/rank_sel/index.html
+[indexed dictionaries]: https://docs.rs/sux/latest/sux/traits/indexed_dict/index.html
+[`EliasFano`]: https://docs.rs/sux/latest/sux/dict/elias_fano/struct.EliasFano.html
+[ε-serde]: https://crates.io/crates/epserde
+[`MemDbg`]: https://docs.rs/mem_dbg/latest/mem_dbg/trait.MemDbg.html
+[`MemSize`]: https://docs.rs/mem_dbg/latest/mem_dbg/trait.MemSize.html
+[`mem_dbg`]: https://crates.io/crates/mem_dbg
+[Elias–Fano representation of monotone sequences]: https://docs.rs/sux/latest/sux/dict/elias_fano/struct.EliasFano.html
+[lists of strings compressed by prefix omission]: https://docs.rs/sux/latest/sux/dict/rear_coded_list/
+[Sux]: https://sux.di.unimi.it/
+[the DSI Utilities]: https://dsiutils.di.unimi.it/
+[`BitLength`]: https://docs.rs/sux/latest/sux/traits/rank_sel/trait.BitLength.html
+[`Rank9`]: https://docs.rs/sux/latest/sux/rank_sel/struct.Rank9.html
+[`SelectSmall`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectSmall.html
+[`SelectAdapt`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectAdapt.html
+[static functions]: https://docs.rs/sux/latest/sux/func/vfunc/struct.VFunc.html
+[static filters]: https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html
+[Partial arrays]: https://docs.rs/sux/latest/sux/array/struct.PartialArray.html
+[bit vectors operations]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
+[unaligned access]: https://docs.rs/sux/latest/sux/bits/bit_field_vec/struct.BitFieldVec.html#method.get_unaligned
+[value-traits]: https://crates.io/crates/value-traits
+[serde]: https://crates.io/crates/serde
+[`deko`]: https://crates.io/crates/deko
+[`lenders`]: https://docs.rs/sux/latest/sux/utils/lenders/

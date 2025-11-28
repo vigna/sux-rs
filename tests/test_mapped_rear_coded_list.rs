@@ -6,6 +6,12 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use sux::{
+    bits::{BitFieldVec, bit_field_vec},
+    dict::{RearCodedListBuilder, mapped_rear_coded_list::MappedRearCodedList},
+    traits::IndexedSeq,
+};
+
 #[cfg(feature = "epserde")]
 mod test {
     use anyhow::Result;
@@ -158,4 +164,27 @@ mod test {
 
         Ok(())
     }
+}
+
+#[test]
+fn test_bit_field_vec_mapped_rear_coded_list() {
+    let mut builder = RearCodedListBuilder::<str, true>::new(4);
+    builder.push("a");
+    builder.push("b");
+    builder.push("c");
+    builder.push("d");
+    let mrcl = <MappedRearCodedList<
+        str,
+        String,
+        Box<[u8]>,
+        Box<[usize]>,
+        BitFieldVec<usize>,
+        true,
+    >>::from_parts(builder.build(), bit_field_vec![2; 3, 2, 1, 0]);
+
+    assert_eq!(mrcl.len(), 4);
+    assert_eq!(mrcl.get(0), "d");
+    assert_eq!(mrcl.get(1), "c");
+    assert_eq!(mrcl.get(2), "b");
+    assert_eq!(mrcl.get(3), "a");
 }
