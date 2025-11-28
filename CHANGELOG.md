@@ -13,6 +13,9 @@
 - Fixed bug that made impossible to use the CLI utilities `vfunc`
   and `vfilter` with a file as input.
 
+- `VBuilder` was not working properly without a provided expected
+  number of keys.
+
 ## [0.10.1] - 2025-11-28
 
 ### New
