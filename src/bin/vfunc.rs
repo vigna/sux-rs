@@ -36,7 +36,7 @@ struct Args {
     /// [0..n).
     #[arg(short, long)]
     n: Option<usize>,
-    /// A file containing UTF-8 keys, one per line; at most N keys will be read.
+    /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.
     #[arg(short, long)]
     filename: Option<String>,
     /// A name for the ε-serde serialized function.
