@@ -221,10 +221,10 @@ pub struct RearCodedList<I: ?Sized, O, D = Box<[u8]>, P = Box<[usize]>, const SO
 }
 
 /// A rear-coded list of byte sequences.
-pub type RearCodedListSliceU8<const SORTED: bool> =
+pub type RearCodedListSliceU8<const SORTED: bool = true> =
     RearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, SORTED>;
 /// A rear-coded list of strings.
-pub type RearCodedListStr<const SORTED: bool> =
+pub type RearCodedListStr<const SORTED: bool = true> =
     RearCodedList<str, String, Box<[u8]>, Box<[usize]>, SORTED>;
 
 impl<
