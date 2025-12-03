@@ -964,6 +964,18 @@ fn write_binary<S: BinSafe + Sig, V: BinSafe>(
     writer.write_all(buf)
 }
 
+/// An enum that can hold either an online (in-memory) or offline (file-based)
+/// [`ShardStore`].
+///
+/// This type is used to return a shard store from construction methods without
+/// requiring the caller to know whether the store is online or offline.
+pub enum AnyShardStore<S: BinSafe + Sig + Send + Sync, V: BinSafe> {
+    /// An in-memory shard store.
+    Online(ShardStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>),
+    /// A file-based shard store.
+    Offline(ShardStoreImpl<S, V, BufReader<File>>),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
