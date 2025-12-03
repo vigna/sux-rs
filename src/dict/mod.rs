@@ -19,5 +19,8 @@ pub use mapped_rear_coded_list::{MappedRearCodedListSliceU8, MappedRearCodedList
 pub mod slice_seq;
 pub use slice_seq::SliceSeq;
 
+pub mod signed_vfunc;
+pub use signed_vfunc::SignedVFunc;
+
 pub mod vfilter;
 pub use vfilter::VFilter;

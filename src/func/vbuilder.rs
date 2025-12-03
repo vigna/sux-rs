@@ -8,7 +8,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::bits::*;
-use crate::dict::VFilter;
+use crate::dict::{SignedVFunc, VFilter};
 use crate::func::{shard_edge::ShardEdge, *};
 use crate::traits::BitVecOpsMut;
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
@@ -560,7 +560,9 @@ where
     {
         let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
-        self.build_loop(keys, values, None, &get_val, new_data, pl)
+        Ok(self
+            .build_loop(keys, values, None, &get_val, new_data, false, pl)?
+            .0)
     }
 }
 
@@ -598,17 +600,20 @@ where
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
 
         Ok(VFilter {
-            func: self.build_loop(
-                keys,
-                FromCloneableIntoIterator::from(itertools::repeat_n(
-                    EmptyVal::default(),
-                    usize::MAX,
-                )),
-                Some(W::BITS),
-                &get_val,
-                new_data,
-                pl,
-            )?,
+            func: self
+                .build_loop(
+                    keys,
+                    FromCloneableIntoIterator::from(itertools::repeat_n(
+                        EmptyVal::default(),
+                        usize::MAX,
+                    )),
+                    Some(W::BITS),
+                    &get_val,
+                    new_data,
+                    false,
+                    pl,
+                )?
+                .0,
             filter_mask,
             hash_bits: W::BITS as u32,
         })
@@ -643,7 +648,9 @@ where
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
         let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
         let new_data = |bit_width, len| BitFieldVec::<W>::new_unaligned(bit_width, len);
-        self.build_loop(keys, values, None, &get_val, new_data, pl)
+        Ok(self
+            .build_loop(keys, values, None, &get_val, new_data, false, pl)?
+            .0)
     }
 }
 
@@ -681,19 +688,135 @@ where
         let new_data = |bit_width, len| BitFieldVec::<W>::new_unaligned(bit_width, len);
 
         Ok(VFilter {
-            func: self.build_loop(
-                keys,
-                FromCloneableIntoIterator::from(itertools::repeat_n(
-                    EmptyVal::default(),
-                    usize::MAX,
-                )),
-                Some(filter_bits),
-                &get_val,
-                new_data,
-                pl,
-            )?,
+            func: self
+                .build_loop(
+                    keys,
+                    FromCloneableIntoIterator::from(itertools::repeat_n(
+                        EmptyVal::default(),
+                        usize::MAX,
+                    )),
+                    Some(filter_bits),
+                    &get_val,
+                    new_data,
+                    false,
+                    pl,
+                )?
+                .0,
             filter_mask,
             hash_bits: filter_bits as _,
+        })
+    }
+}
+
+/// Builds a new function mapping keys to their position, and returns both the
+/// function and a vector of signatures.
+impl<E: ShardEdge<[u64; 2], 3>> VBuilder<usize, BitFieldVec<usize>, [u64; 2], E>
+where
+    SigVal<[u64; 2], usize>: RadixKey,
+    SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
+{
+    /// Builds a function that maps each key to its position in the input
+    /// sequence (0, 1, 2, ...), and additionally returns a [`BitFieldVec`]
+    /// containing signatures extracted from the store.
+    ///
+    /// The signatures are obtained by taking the lowest `signature_width` bits
+    /// from the second word of each key's 128-bit signature. The signatures
+    /// in the returned [`BitFieldVec`] are ordered by the position of the
+    /// corresponding key in the input sequence.
+    ///
+    /// # Arguments
+    ///
+    /// * `keys` - A lender of keys to be indexed.
+    /// * `signature_width` - The number of bits to extract from the second
+    ///   signature word.
+    /// * `pl` - A progress logger.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// - The [`VFunc`] mapping keys to their positions.
+    /// - A [`BitFieldVec`] of signatures, where the signature at position `i`
+    ///   corresponds to the key at position `i` in the input sequence.
+    pub fn try_build_sig_index<
+        T: ?Sized + ToSig<[u64; 2]> + std::fmt::Debug,
+        B: ?Sized + Borrow<T>,
+    >(
+        mut self,
+        keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        signature_width: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<
+        SignedVFunc<VFunc<T, usize, BitFieldVec<usize>, [u64; 2], E>, BitFieldVec<usize>>,
+    > {
+        assert!(signature_width > 0);
+        assert!(signature_width <= 64);
+
+        let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, usize>| sig_val.val;
+        let new_data = |bit_width, len| BitFieldVec::<usize>::new_unaligned(bit_width, len);
+
+        // Build the function with values being positions (0, 1, 2, ...) and keep the store
+        let (func, store) = self.build_loop(
+            keys,
+            FromCloneableIntoIterator::from(0usize..),
+            None,
+            &get_val,
+            new_data,
+            true,
+            pl,
+        )?;
+
+        let num_keys = func.num_keys;
+        let shard_edge = &func.shard_edge;
+        let hash_mask = if signature_width == 64 {
+            u64::MAX
+        } else {
+            (1u64 << signature_width) - 1
+        };
+
+        // Create the signature vector
+        let mut hashes = BitFieldVec::<usize>::new_unaligned(signature_width, num_keys);
+
+        // Enumerate the store and extract signatures using the same method as filters
+        pl.item_name("signature");
+        pl.expected_updates(Some(num_keys));
+        pl.start("Extracting signatures...");
+
+        match store.expect("Store should be present when keep_store is true") {
+            AnyShardStore::Online(mut shard_store) => {
+                for shard in shard_store.iter() {
+                    for sig_val in shard.iter() {
+                        let position = sig_val.val;
+                        let local_sig = shard_edge.local_sig(sig_val.sig);
+                        let signature =
+                            (mix64(shard_edge.edge_hash(local_sig)) & hash_mask) as usize;
+                        hashes.set_value(position, signature);
+                        pl.light_update();
+                    }
+                }
+            }
+            AnyShardStore::Offline(mut shard_store) => {
+                for shard in shard_store.iter() {
+                    for sig_val in shard.iter() {
+                        let position = sig_val.val;
+                        let local_sig = shard_edge.local_sig(sig_val.sig);
+                        let signature =
+                            (mix64(shard_edge.edge_hash(local_sig)) & hash_mask) as usize;
+                        hashes.set_value(position, signature);
+                        pl.light_update();
+                    }
+                }
+            }
+        }
+
+        pl.done();
+
+        Ok(SignedVFunc {
+            func,
+            hashes,
+            hash_mask,
         })
     }
 }
@@ -722,6 +845,10 @@ impl<
     /// of functions it returns the value stored in the signature/value pair,
     /// and in the case of filters it returns the hash associated with the
     /// signature.
+    ///
+    /// If `keep_store` is true, the shard store is returned wrapped in
+    /// [`AnyShardStore`]; otherwise, `None` is returned and `into_iter()` is
+    /// used for efficiency.
     fn build_loop<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
@@ -739,8 +866,9 @@ impl<
         bit_width: Option<usize>,
         get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
         new_data: fn(usize, usize) -> D,
+        keep_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, D, S, E>>
+    ) -> anyhow::Result<(VFunc<T, W, D, S, E>, Option<AnyShardStore<S, V>>)>
     where
         u128: UpcastableFrom<W>,
         SigVal<S, V>: RadixKey,
@@ -763,7 +891,9 @@ impl<
         loop {
             let seed = prng.random();
 
-            match if self.offline {
+            // We need separate branches for offline/online because they return
+            // different ShardStore types that must be wrapped in AnyShardStore
+            let result = if self.offline {
                 self.try_seed(
                     seed,
                     sig_store::new_offline::<S, V>(
@@ -776,8 +906,10 @@ impl<
                     bit_width,
                     get_val,
                     new_data,
+                    keep_store,
                     pl,
                 )
+                .map(|(func, store)| (func, store.map(AnyShardStore::Offline)))
             } else {
                 self.try_seed(
                     seed,
@@ -791,11 +923,15 @@ impl<
                     bit_width,
                     get_val,
                     new_data,
+                    keep_store,
                     pl,
                 )
-            } {
-                Ok(func) => {
-                    return Ok(func);
+                .map(|(func, store)| (func, store.map(AnyShardStore::Online)))
+            };
+
+            match result {
+                Ok((func, store)) => {
+                    return Ok((func, store));
                 }
                 Err(error) => {
                     match error.downcast::<SolveError>() {
@@ -862,15 +998,19 @@ impl<
     /// This methods reads the input, sets up the shards, allocates the backend
     /// using `new_data`, and passes the backend and an iterator on shards to
     /// the [`VBuilder::try_build_from_shard_iter`] method.
+    ///
+    /// If `keep_store` is true, uses `iter()` on the shard store so it can be
+    /// returned; otherwise uses `into_iter()` for efficiency.
     fn try_seed<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
         V: BinSafe + Default + Send + Sync + Ord + UpcastableInto<u128>,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        SS: SigStore<S, V>,
     >(
         &mut self,
         seed: u64,
-        mut sig_store: impl SigStore<S, V>,
+        mut sig_store: SS,
         keys: &mut (
                  impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -886,8 +1026,9 @@ impl<
         bit_width: Option<usize>,
         get_val: &G,
         new_data: fn(usize, usize) -> D,
+        keep_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, D, S, E>>
+    ) -> anyhow::Result<(VFunc<T, W, D, S, E>, Option<SS::ShardStore>)>
     where
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
@@ -952,7 +1093,7 @@ impl<
 
         let start = Instant::now();
 
-        let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
+        let mut shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
         let filter = TypeId::of::<V>() == TypeId::of::<EmptyVal>();
 
@@ -988,16 +1129,33 @@ impl<
                 self.bit_width,
                 shard_edge.num_vertices() * shard_edge.num_shards(),
             );
-            self.try_build_from_shard_iter(seed, data, shard_store.into_iter(), get_val, pl)
-                .inspect(|_| {
-                    info!(
-                        "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                        start.elapsed().as_secs_f64(),
-                        self.num_keys,
-                        start.elapsed().as_nanos() as f64 / self.num_keys as f64
-                    );
-                })
-                .map_err(Into::into)
+            // Use iter() when keep_store is true so we can return the shard_store,
+            // otherwise use into_iter() for efficiency
+            if keep_store {
+                let func = self
+                    .try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
+                    .inspect(|_| {
+                        info!(
+                            "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                            start.elapsed().as_secs_f64(),
+                            self.num_keys,
+                            start.elapsed().as_nanos() as f64 / self.num_keys as f64
+                        );
+                    })?;
+                Ok((func, Some(shard_store)))
+            } else {
+                let func = self
+                    .try_build_from_shard_iter(seed, data, shard_store.into_iter(), get_val, pl)
+                    .inspect(|_| {
+                        info!(
+                            "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                            start.elapsed().as_secs_f64(),
+                            self.num_keys,
+                            start.elapsed().as_nanos() as f64 / self.num_keys as f64
+                        );
+                    })?;
+                Ok((func, None))
+            }
         }
     }
 
