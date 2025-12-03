@@ -63,6 +63,7 @@
 //! # use sux::traits::IndexedSeq;
 //! # use sux::dict::RearCodedListBuilder;
 //! # use sux::dict::MappedRearCodedListStr;
+//! # use sux::bits::bit_field_vec;
 //!
 //! let mut rclb = RearCodedListBuilder::<str, true>::new(4);
 //!
@@ -74,7 +75,7 @@
 //! rclb.push("abdf");
 //!
 //! let rcl = rclb.build();
-//! let map = vec![5, 4, 2, 0, 1, 3].into_boxed_slice(); // permutation
+//! let map = bit_field_vec![4; 5, 4, 2, 0, 1, 3]; // permutation
 //! let mrcl = MappedRearCodedListStr::from_parts(rcl, map);
 //! assert_eq!(mrcl.get(0), "abdf");
 //! assert_eq!(mrcl.get(1), "abde\0f");
