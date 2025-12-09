@@ -23,6 +23,7 @@ from [the DSI Utilities] and new structures.
   prefix omission].
 - new state-of-the-art structures for [static functions] and [static filters],
   scaling to trillions of keys, and providing very fast queries;
+- support for [signed index functions];
 - [partial arrays], that is, “arrays with holes”, implemented using ranking or
   Elias–Fano.
 
@@ -191,7 +192,8 @@ Union nor the Italian MUR can be held responsible for them
 [Partial arrays]: https://docs.rs/sux/latest/sux/array/struct.PartialArray.html
 [bit vectors operations]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
 [unaligned access]: https://docs.rs/sux/latest/sux/bits/bit_field_vec/struct.BitFieldVec.html#method.get_unaligned
-[value-traits]: https://crates.io/crates/value-traits
+[`value-traits`]: https://crates.io/crates/value-traits
 [serde]: https://crates.io/crates/serde
 [`deko`]: https://crates.io/crates/deko
 [`lenders`]: https://docs.rs/sux/latest/sux/utils/lenders/
+[signed index functions]: https://docs.rs/sux/latest/sux/dict/signed_vfunc/struct.SignedVFunc.html

@@ -5,16 +5,18 @@
  */
 
 #![allow(clippy::collapsible_else_if)]
+use std::fmt::Display;
 use std::ops::{BitXor, BitXorAssign};
 
 use anyhow::Result;
-use clap::{ArgGroup, Parser};
+use clap::{ArgGroup, Parser, ValueEnum};
 use common_traits::UpcastableFrom;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
+use sux::dict::SignedVFunc;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
@@ -23,8 +25,27 @@ use sux::utils::{
     BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig,
 };
 
+#[derive(ValueEnum, Clone, Debug)]
+enum HashTypes {
+    U8,
+    U16,
+    U32,
+    U64,
+}
+
+impl Display for HashTypes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HashTypes::U8 => write!(f, "u8"),
+            HashTypes::U16 => write!(f, "u16"),
+            HashTypes::U32 => write!(f, "u32"),
+            HashTypes::U64 => write!(f, "u64"),
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
-#[command(about = "Creates a VFunc mapping each input to its rank and serializes it with ε-serde", long_about = None)]
+#[command(about = "Creates a (possibly signed) VFunc mapping each input to its rank and serializes it with ε-serde", long_about = None)]
 #[clap(group(
             ArgGroup::new("input")
                 .required(true)
@@ -72,6 +93,9 @@ struct Args {
     /// shards.
     #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
     full_sigs: bool,
+    /// Sign the function using hashes of the this type.
+    #[arg(long)]
+    hash_type: Option<HashTypes>,
     /// Use 3-hypergraphs.
     #[cfg(feature = "mwhc")]
     #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
@@ -133,6 +157,30 @@ fn set_builder<W: Word + BinSafe, D: BitFieldSlice<W> + Send + Sync, S, E: Shard
     builder
 }
 
+macro_rules! filename_save_sign(
+    ($h: ty, $builder:expr, $filename: expr, $func: expr, $n: expr, $pl: expr) => {{
+        let func = $builder.try_build_sig_index::<_, _, $h>(
+            DekoBufLineLender::from_path($filename)?.take($n),
+            &mut $pl,
+        )?;
+        if let Some(filename) = $func {
+            unsafe { func.store(filename) }?;
+        }
+    }}
+);
+
+macro_rules! n_save_sign(
+    ($h: ty, $builder:expr, $n: expr, $func: expr, $pl: expr) => {{
+        let func = $builder.try_build_sig_index::<_, _, $h>(
+            FromCloneableIntoIterator::new(0_usize..$n),
+            &mut $pl,
+        )?;
+        if let Some(filename) = $func {
+            unsafe { func.store(filename) }?;
+        }
+    }}
+);
+
 fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
 where
     str: ToSig<S>,
@@ -146,6 +194,14 @@ where
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
     VFunc<usize, u8, Box<[u8]>, S, E>: Serialize,
     VFunc<str, u8, Box<[u8]>, S, E>: Serialize,
+    SignedVFunc<VFunc<usize, usize, BitFieldVec, S, E>, Box<[u8]>>: Serialize,
+    SignedVFunc<VFunc<usize, usize, BitFieldVec, S, E>, Box<[u16]>>: Serialize,
+    SignedVFunc<VFunc<usize, usize, BitFieldVec, S, E>, Box<[u32]>>: Serialize,
+    SignedVFunc<VFunc<usize, usize, BitFieldVec, S, E>, Box<[u64]>>: Serialize,
+    SignedVFunc<VFunc<str, usize, BitFieldVec, S, E>, Box<[u8]>>: Serialize,
+    SignedVFunc<VFunc<str, usize, BitFieldVec, S, E>, Box<[u16]>>: Serialize,
+    SignedVFunc<VFunc<str, usize, BitFieldVec, S, E>, Box<[u32]>>: Serialize,
+    SignedVFunc<VFunc<str, usize, BitFieldVec, S, E>, Box<[u64]>>: Serialize,
 {
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
@@ -155,24 +211,57 @@ where
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
         let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
-        let func = builder.try_build_func(
-            DekoBufLineLender::from_path(filename)?.take(n),
-            FromCloneableIntoIterator::from(0_usize..),
-            &mut pl,
-        )?;
-        if let Some(filename) = args.func {
-            unsafe { func.store(filename) }?;
+        match args.hash_type {
+            None => {
+                let func = builder.try_build_func(
+                    DekoBufLineLender::from_path(filename)?.take(n),
+                    FromCloneableIntoIterator::from(0_usize..),
+                    &mut pl,
+                )?;
+                if let Some(filename) = args.func {
+                    unsafe { func.store(filename) }?;
+                }
+            }
+            Some(HashTypes::U8) => {
+                filename_save_sign!(u8, builder, filename, args.func, n, pl)
+            }
+            Some(HashTypes::U16) => {
+                filename_save_sign!(u16, builder, filename, args.func, n, pl)
+            }
+            Some(HashTypes::U32) => {
+                filename_save_sign!(u32, builder, filename, args.func, n, pl)
+            }
+            Some(HashTypes::U64) => {
+                filename_save_sign!(u64, builder, filename, args.func, n, pl)
+            }
         }
     } else {
         let n = args.n.unwrap();
         let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
-        let func = builder.try_build_func(
-            FromCloneableIntoIterator::from(0_usize..n),
-            FromCloneableIntoIterator::from(0_usize..),
-            &mut pl,
-        )?;
-        if let Some(filename) = args.func {
-            unsafe { func.store(filename) }?;
+        match args.hash_type {
+            None => {
+                let func = builder.try_build_func(
+                    FromCloneableIntoIterator::from(0_usize..n),
+                    FromCloneableIntoIterator::from(0_usize..),
+                    &mut pl,
+                )?;
+                if let Some(filename) = args.func {
+                    unsafe { func.store(filename) }?;
+                }
+            }
+
+            Some(HashTypes::U8) => {
+                n_save_sign!(u8, builder, n, args.func, pl)
+            }
+            Some(HashTypes::U16) => {
+                n_save_sign!(u16, builder, n, args.func, pl)
+            }
+            Some(HashTypes::U32) => {
+                n_save_sign!(u32, builder, n, args.func, pl)
+            }
+            Some(HashTypes::U64) => {
+                n_save_sign!(u64, builder, n, args.func, pl)
+            }
         }
     }
 

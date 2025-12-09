@@ -20,7 +20,7 @@ pub mod slice_seq;
 pub use slice_seq::SliceSeq;
 
 pub mod signed_vfunc;
-pub use signed_vfunc::SignedVFunc;
+pub use signed_vfunc::{BitSignedVFunc, SignedVFunc};
 
 pub mod vfilter;
 pub use vfilter::VFilter;
