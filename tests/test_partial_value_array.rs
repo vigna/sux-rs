@@ -1,4 +1,5 @@
 /*
+ * SPDX-FileCopyrightText: 2025 Inria
  * SPDX-FileCopyrightText: 2025 Sebastiano Vigna
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
@@ -134,5 +135,44 @@ fn test_single_element() {
         if i != 500 {
             assert_eq!(array.get(i), None);
         }
+    }
+}
+
+#[cfg(feature = "epserde")]
+#[test]
+fn test_serialize() {
+    use epserde::utils::AlignedCursor;
+    use maligned::A32;
+    use sux::bits::BitFieldVec;
+    use sux::dict::elias_fano::EfDict;
+
+    let mut builder = partial_value_array::new_sparse(10, 3);
+
+    builder.set(1, 123u32);
+    builder.set(2, 45678);
+    builder.set(7, 90);
+
+    let array = builder.build_bitfieldvec();
+
+    let mut cursor = <AlignedCursor<A32>>::new();
+    unsafe {
+        use epserde::ser::Serialize;
+        array.serialize(&mut cursor)?
+    };
+
+    let len = cursor.len();
+    cursor.set_position(0);
+    let array2 = unsafe {
+        use epserde::deser::Deserialize;
+        <partial_value_array::PartialValueArray<u32, EfDict, BitFieldVec<usize>>>::read_mem(
+            &mut cursor,
+            len,
+        )?
+    };
+
+    assert_eq!(array.len(), array2.len());
+    assert_eq!(array.num_values(), array2.num_values());
+    for i in 0..20 {
+        assert_eq!(array.get(i), array2.get(i), "Mismatch at index {i}");
     }
 }
