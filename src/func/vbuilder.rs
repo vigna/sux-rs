@@ -777,7 +777,6 @@ where
     ///
     /// This type of signed function offers more speed than [`BitSignedVFunc`],
     /// but you have less resolution in the choice of the hash size.
-
     pub fn try_build_sig_index<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
