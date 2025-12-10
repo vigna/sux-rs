@@ -62,6 +62,7 @@ use std::{
     collections::VecDeque,
     fs::File,
     io::*,
+    iter::FusedIterator,
     marker::PhantomData,
     ops::{BitXor, BitXorAssign},
     sync::Arc,
@@ -146,7 +147,12 @@ impl<S: Sig + PartialEq, V: BinSafe> PartialEq for SigVal<S, V> {
     FromBytes,
     IntoBytes,
 )]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde), repr(C), zero_copy)]
+#[cfg_attr(
+    feature = "epserde",
+    derive(epserde::Epserde),
+    repr(C),
+    epserde_zero_copy
+)]
 /// A newtype around `()` that is used to implement [`BitXor`] and
 /// [`BitXorAssign`] as no-ops.
 pub struct EmptyVal(());
@@ -161,6 +167,13 @@ impl BitXor for EmptyVal {
 
 impl BitXorAssign for EmptyVal {
     fn bitxor_assign(&mut self, _: EmptyVal) {}
+}
+
+// Fake implementation to treat EmptyVal like a value.
+impl UpcastableInto<u128> for EmptyVal {
+    fn upcast(self) -> u128 {
+        0
+    }
 }
 
 impl<V: BinSafe + BitXor> BitXor<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V>
@@ -191,13 +204,6 @@ where
             ],
             val: self.val.bitxor(rhs.val),
         }
-    }
-}
-
-// Fake implementation to treat EmptyVal like a value.
-impl UpcastableInto<u128> for EmptyVal {
-    fn upcast(self) -> u128 {
-        0
     }
 }
 
@@ -937,6 +943,17 @@ where
     }
 }
 
+impl<
+    S: BinSafe + Sig + Send + Sync,
+    V: BinSafe,
+    B: Send + Sync,
+    T: BorrowMut<ShardStoreImpl<S, V, B>>,
+> FusedIterator for ShardIterator<S, V, B, T>
+where
+    for<'a> ShardIterator<S, V, B, T>: Iterator,
+{
+}
+
 fn write_binary<S: BinSafe + Sig, V: BinSafe>(
     writer: &mut impl Write,
     tuples: &[SigVal<S, V>],
@@ -945,6 +962,18 @@ fn write_binary<S: BinSafe + Sig, V: BinSafe>(
     debug_assert!(pre.is_empty());
     debug_assert!(post.is_empty());
     writer.write_all(buf)
+}
+
+/// An enum that can hold either an online (in-memory) or offline (file-based)
+/// [`ShardStore`].
+///
+/// This type is used to return a shard store from construction methods without
+/// requiring the caller to know whether the store is online or offline.
+pub enum AnyShardStore<S: BinSafe + Sig + Send + Sync, V: BinSafe> {
+    /// An in-memory shard store.
+    Online(ShardStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>),
+    /// A file-based shard store.
+    Offline(ShardStoreImpl<S, V, BufReader<File>>),
 }
 
 #[cfg(test)]

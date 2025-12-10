@@ -242,7 +242,7 @@ macro_rules! fixed_point_inv_128 {
 /// shard size is with high probability `eps`.
 ///
 /// From “[ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and
-/// Filters to Trillions of Keys]((https://arxiv.org/abs/2503.18397))”.
+/// Filters to Trillions of Keys](https://arxiv.org/abs/2503.18397)”.
 fn sharding_high_bits(n: usize, eps: f64) -> u32 {
     // Bound from balls and bins problem
     let t = (n as f64 * eps * eps / 2.0).max(1.);
@@ -255,7 +255,7 @@ mod mwhc {
 
     use super::*;
 
-    /// [ε-cost sharded]((https://arxiv.org/abs/2503.18397) 3-hypergraph [MWHC
+    /// [ε-cost sharded](https://arxiv.org/abs/2503.18397) 3-hypergraph [MWHC
     /// construction](https://doi.org/10.1093/comjnl/39.6.547).
     ///
     /// This construction uses uses ε-cost sharding (“[ε-Cost Sharding: Scaling
@@ -272,7 +272,7 @@ mod mwhc {
     /// queries due to the simpler edge-generation logic, albeit construction is
     /// slower due to cache-unfriendly accesses.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
-    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde_deep_copy)]
     pub struct Mwhc3Shards {
         // One third of the number of vertices in a shard
         seg_size: usize,
@@ -299,8 +299,8 @@ mod mwhc {
         }
     }
 
-    /// We use the lower 32 bits of sig[0] for the first vertex, the higher 32
-    /// bits of sig[1], and the lower 32 bits of sig[1] for the third vertex.
+    /// We use the lower 32 bits of `sig[0]` for the first vertex, the higher 32
+    /// bits of `sig[1]`, and the lower 32 bits of `sig[1]` for the third vertex.
     fn edge(shard: usize, seg_size: usize, sig: [u64; 2]) -> [usize; 3] {
         let mut start = shard * seg_size * 3;
         let v0 = fixed_point_inv_64!(sig[0] as u32, seg_size) + start;
@@ -398,7 +398,7 @@ mod mwhc {
     /// This construction uses random peelable 3-hypergraphs, giving a 23% space
     /// overhead. See [`Mwhc3Shards`] for more information.
     #[derive(Default, Debug, MemDbg, MemSize, Clone, Copy)]
-    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde_deep_copy)]
     pub struct Mwhc3NoShards {
         // One third of the number of vertices in a shard
         seg_size: usize,
@@ -522,7 +522,7 @@ mod fuse {
     /// making the probability of a duplicate local signature negligible. As a
     /// result, it is slightly slower and uses more space at construction time.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
-    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde_deep_copy)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct FuseLge3Shards {
         shard_bits_shift: u32,
@@ -803,7 +803,7 @@ mod fuse {
     /// mostly equivalent to that described in [“Binary Fuse Filters: Fast and
     /// Smaller Than Xor Filters”](https://doi.org/10.1145/3510449).
     #[derive(Default, Debug, MemDbg, MemSize, Clone, Copy)]
-    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde_deep_copy)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct FuseLge3NoShards {
         log2_seg_size: u32,
@@ -1019,7 +1019,7 @@ mod fuse {
     ///
     /// The rest of the logic is identical.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
-    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), deep_copy)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde_deep_copy)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[derive(Default)]
     pub struct FuseLge3FullSigs(FuseLge3Shards);

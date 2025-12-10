@@ -9,6 +9,7 @@ use anyhow::Result;
 use clap::Parser;
 use common_traits::{CastableFrom, DowncastableInto};
 use epserde::prelude::*;
+use fallible_iterator::FallibleIterator;
 use lender::*;
 use sux::{
     bits::BitFieldVec,
@@ -151,14 +152,14 @@ where
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
             ZstdLineLender::from_path(filename)?
-                .map_into_iter(|x| x.unwrap().to_owned())
+                .map_into_iter(|x| Ok(x.to_owned()))
                 .take(args.n)
-                .collect()
+                .collect()?
         } else {
             LineLender::from_path(filename)?
-                .map_into_iter(|x| x.unwrap().to_owned())
+                .map_into_iter(|x| Ok(x.to_owned()))
                 .take(args.n)
-                .collect()
+                .collect()?
         };
 
         let filter = unsafe { VFilter::<W, VFunc<str, W, Box<[W]>, S, E>>::load_full(&args.func) }?;
@@ -200,14 +201,14 @@ where
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
             ZstdLineLender::from_path(filename)?
-                .map_into_iter(|x| x.unwrap().to_owned())
+                .map_into_iter(|x| Ok(x.to_owned()))
                 .take(args.n)
-                .collect()
+                .collect()?
         } else {
             LineLender::from_path(filename)?
-                .map_into_iter(|x| x.unwrap().to_owned())
+                .map_into_iter(|x| Ok(x.to_owned()))
                 .take(args.n)
-                .collect()
+                .collect()?
         };
 
         let filter =

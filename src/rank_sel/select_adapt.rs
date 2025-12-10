@@ -9,7 +9,10 @@
 use ambassador::Delegate;
 use common_traits::SelectInWord;
 use mem_dbg::{MemDbg, MemSize};
-use std::cmp::{max, min};
+use std::{
+    cmp::{max, min},
+    ops::Deref,
+};
 
 use crate::{
     prelude::{BitCount, BitLength, Select, SelectHinted},
@@ -118,6 +121,8 @@ use std::ops::Index;
 /// *M* is between 4 and 32, corresponding to worst-case linear searches between
 /// 1024 and 128 bits, typical choices being 8 and 16 (note that the
 /// constructors take the base-2 logarithm of *M*).
+///
+/// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
 /// # Examples
 /// ```rust
@@ -231,6 +236,14 @@ pub struct SelectAdapt<B, I = Box<[usize]>> {
     log2_u64_per_subinventory: usize,
     ones_per_inventory_mask: usize,
     ones_per_sub16_mask: usize,
+}
+
+impl<B, I> Deref for SelectAdapt<B, I> {
+    type Target = B;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bits
+    }
 }
 
 // Convenience trait to handle the information packed in the two upper bits of
@@ -825,6 +838,7 @@ mod tests {
     use super::*;
     use crate::bits::BitVec;
     use crate::traits::AddNumBits;
+    use crate::traits::BitVecOpsMut;
     use rand::Rng;
     use rand::SeedableRng;
     use rand::rngs::SmallRng;

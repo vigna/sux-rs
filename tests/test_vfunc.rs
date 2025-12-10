@@ -12,9 +12,11 @@ use rdst::RadixKey;
 use std::ops::{BitXor, BitXorAssign};
 use sux::{
     bits::BitFieldVec,
-    func::VBuilder,
-    func::shard_edge::{FuseLge3FullSigs, FuseLge3NoShards, FuseLge3Shards, ShardEdge},
-    utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
+    func::{
+        VBuilder,
+        shard_edge::{FuseLge3FullSigs, FuseLge3NoShards, FuseLge3Shards, ShardEdge},
+    },
+    utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
 };
 
 fn _test_vfunc<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
@@ -41,8 +43,8 @@ where
             .offline(offline)
             .low_mem(low_mem)
             .try_build_func(
-                FromIntoIterator::from(0..n),
-                FromIntoIterator::from(0_usize..),
+                FromCloneableIntoIterator::from(0..n),
+                FromCloneableIntoIterator::from(0_usize..),
                 &mut pl,
             )?;
         pl.start("Querying...");
@@ -102,7 +104,7 @@ where
             .expected_num_keys(n)
             .offline(offline)
             .low_mem(low_mem)
-            .try_build_filter(FromIntoIterator::from(0..n), &mut pl)?;
+            .try_build_filter(FromCloneableIntoIterator::from(0..n), &mut pl)?;
         pl.start("Querying (positive)...");
         for i in 0..n {
             assert!(filter.contains(i), "Contains failed for {}", i);
@@ -164,8 +166,8 @@ fn test_dup_key() -> Result<()> {
         VBuilder::<usize, BitFieldVec<usize>>::default()
             .check_dups(true)
             .try_build_func(
-                FromIntoIterator::from(std::iter::repeat_n(0, 10)),
-                FromIntoIterator::from(0..),
+                FromCloneableIntoIterator::from(std::iter::repeat_n(0, 10)),
+                FromCloneableIntoIterator::from(0..),
                 &mut ProgressLogger::default(),
             )
             .is_err()

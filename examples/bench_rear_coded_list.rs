@@ -39,7 +39,7 @@ pub fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let mut rcab = RearCodedListBuilder::new(args.k);
+    let mut rcab = RearCodedListBuilder::<str, Vec<usize>, true>::new(args.k);
     let mut pl = ProgressLogger::default();
     pl.display_memory(true).item_name("line");
 
@@ -47,17 +47,11 @@ pub fn main() -> Result<()> {
 
     pl.start("Inserting...");
 
-    for_!(result in  LineLender::new(lines) {
-        match result {
-            Ok(line) => {
-                rcab.push(line);
-                pl.light_update();
-            }
-            Err(e) => {
-                panic!("Error reading input: {}", e);
-            }
-        }
-    });
+    let mut lender = LineLender::new(lines);
+    while let Some(line) = lender.next()? {
+        rcab.push(line);
+        pl.light_update();
+    }
 
     pl.done();
 

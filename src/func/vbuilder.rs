@@ -8,8 +8,9 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::bits::*;
-use crate::dict::VFilter;
+use crate::dict::{BitSignedVFunc, SignedVFunc, VFilter};
 use crate::func::{shard_edge::ShardEdge, *};
+use crate::traits::BitVecOpsMut;
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
 use crate::utils::*;
 use common_traits::{
@@ -18,6 +19,7 @@ use common_traits::{
 use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
+use lender::FallibleLending;
 use log::info;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
@@ -36,6 +38,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use thread_priority::ThreadPriority;
+use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 use super::shard_edge::FuseLge3Shards;
 
@@ -67,45 +70,52 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// [`VFunc`]/[`VFilter`], and some elaboration about them can be found in their
 /// documentation.
 ///
-/// All construction methods require to pass one or two [`RewindableIoLender`]s
+/// All construction methods require to pass one or two [`FallibleRewindableLender`]s
 /// (keys and possibly values), and the construction might fail and keys might
 /// be scanned again. The structures in the [`lenders`] module provide easy ways
 /// to build such lenders, even starting from compressed files of UTF-8 strings.
 /// The type of the keys of the resulting filter or function will be the type of
-/// the elements of the [`RewindableIoLender`].
+/// the elements of the [`FallibleRewindableLender`].
+///
+/// # Signed Index Functions
+///
+/// The methods [`try_build_sig_index`](VBuilder::try_build_sig_index) and
+/// [`try_build_bit_sig_index`](VBuilder::try_build_bit_sig_index) builds [index
+/// functions] (i.e., functions mapping elements of a list to their rank) and
+/// they associate hashes to keys, so the result of the index function can be
+/// checked. See the documentation of the
+/// [`signed_vfunc`](crate::dict::signed_vfunc) module for more details.
 ///
 /// # Examples
 ///
 /// In this example, we build a function that maps each key to itself using a
 /// boxed slice of `usize` as a backend (note that this is really wasteful). The
 /// setter for the expected number of keys is used to optimize the construction.
-/// We use the [`FromIntoIterator`] adapter to turn a clonable [`IntoIterator`]
-/// into a [`RewindableIoLender`]. Note that you need the
+/// We use the [`FromCloneableIntoIterator`] adapter to turn a clonable [`IntoIterator`]
+/// into a [`FallibleRewindableLender`]. Note that you need the
 /// [`dsi-progress-logger`](https://crates.io/crates/dsi-progress-logger) crate.
 ///
 /// Type inference derives the input type (`usize`) from the type of the items
-/// returned by the first [`RewindableIoLender`], and the output type (again,
+/// returned by the first [`FallibleRewindableLender`], and the output type (again,
 /// `usize`, the first type parameter), from the backend type (`Box<[usize]>`,
 /// the second type parameter):
 ///
 /// ```rust
 /// # use sux::func::VBuilder;
 /// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromIntoIterator;
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use sux::utils::FromCloneableIntoIterator;
 /// let builder = VBuilder::<_, Box<[usize]>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_func(
-///    FromIntoIterator::from(0..100),
-///    FromIntoIterator::from(0..100),
+///    FromCloneableIntoIterator::new(0..100),
+///    FromCloneableIntoIterator::new(0..100),
 ///    no_logging![]
 /// )?;
 ///
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
 /// }
-/// #     Ok(())
-/// # }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// Alternatively we can use the bit-field vector backend, that will use
@@ -114,48 +124,44 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// ```rust
 /// # use sux::func::VBuilder;
 /// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromIntoIterator;
+/// # use sux::utils::FromCloneableIntoIterator;
 /// # use sux::bits::BitFieldVec;
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let builder = VBuilder::<_, BitFieldVec<usize>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_func(
-///    FromIntoIterator::from(0..100),
-///    FromIntoIterator::from(0..100),
+///    FromCloneableIntoIterator::new(0..100),
+///    FromCloneableIntoIterator::new(0..100),
 ///    no_logging![]
 /// )?;
 ///
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
 /// }
-/// #     Ok(())
-/// # }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// Since the numbers are small, we can also try to use a fixed-size output:
 /// type inference takes care of making the second range `0..100` a range of
 /// `u8`. Note that the type of keys is always `usize`, as it is still inferred
-/// from the type of the items returned by the first [`RewindableIoLender`]:
+/// from the type of the items returned by the first [`FallibleRewindableLender`]:
 ///
 /// ```rust
 /// # use sux::func::VBuilder;
 /// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromIntoIterator;
+/// # use sux::utils::FromCloneableIntoIterator;
 /// # use sux::bits::BitFieldVec;
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let builder = VBuilder::<_, Box<[u8]>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_func(
-///    FromIntoIterator::from(0..100),
-///    FromIntoIterator::from(0..100),
+///    FromCloneableIntoIterator::new(0..100),
+///    FromCloneableIntoIterator::new(0..100),
 ///    no_logging![]
 /// )?;
 ///
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
 /// }
-/// #     Ok(())
-/// # }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 ///
@@ -166,20 +172,18 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// ```rust
 /// # use sux::func::VBuilder;
 /// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromIntoIterator;
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use sux::utils::FromCloneableIntoIterator;
 /// let builder = VBuilder::<_, Box<[u8]>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_filter(
-///    FromIntoIterator::from(0..100),
+///    FromCloneableIntoIterator::new(0..100),
 ///    no_logging![]
 /// )?;
 ///
 /// for i in 0..100 {
 ///    assert!(func[i]);
 /// }
-/// #     Ok(())
-/// # }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// Since the keys are very few, we can switch to 64-bit signatures, and no
@@ -189,27 +193,25 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// # use sux::func::VBuilder;
 /// # use sux::func::shard_edge::FuseLge3NoShards;
 /// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromIntoIterator;
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use sux::utils::FromCloneableIntoIterator;
 /// let builder = VBuilder::<_, Box<[u8]>, [u64; 1], FuseLge3NoShards>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_filter(
-///    FromIntoIterator::from(0..100),
+///    FromCloneableIntoIterator::new(0..100),
 ///    no_logging![]
 /// )?;
 ///
 /// for i in 0..100 {
 ///    assert!(func[i]);
 /// }
-/// #     Ok(())
-/// # }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 
 #[derive(Setters, Debug, Derivative)]
 #[derivative(Default)]
 #[setters(generate = false)]
 pub struct VBuilder<
-    W: BinSafe + Word,
+    W: Word + BinSafe,
     D: BitFieldSlice<W> + Send + Sync = Box<[W]>,
     S = [u64; 2],
     E: ShardEdge<S, 3> = FuseLge3Shards,
@@ -329,7 +331,7 @@ pub enum SolveError {
 /// The result of a peeling procedure.
 enum PeelResult<
     'a,
-    W: BinSafe + Word + Send + Sync,
+    W: Word + BinSafe + Send + Sync,
     D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync + 'a,
     S: Sig + BinSafe,
     E: ShardEdge<S, 3>,
@@ -342,13 +344,14 @@ enum PeelResult<
         /// The shard.
         shard: Arc<Vec<SigVal<S, V>>>,
         /// The data.
-        data: ShardData<'a, W, D>,
+        data: ShardData<'a, D>,
         /// The double stack whose upper stack contains the peeled edges
         /// (possibly represented by the vertex from which they have been
         /// peeled).
         double_stack: DoubleStack<E::Vertex>,
         /// The sides stack.
         sides_stack: Vec<u8>,
+        _marker: PhantomData<W>,
     },
 }
 
@@ -530,44 +533,49 @@ impl<V: Copy> DoubleStack<V> {
 }
 
 /// An iterator over segments of data associated with each shard.
-type ShardDataIter<'a, W, D> = <D as BitFieldSliceMut<W>>::ChunksMut<'a>;
+type ShardDataIter<'a, D> = <D as SliceByValueMut>::ChunksMut<'a>;
 /// A segment of data associated with a specific shard.
-type ShardData<'a, W, D> = <ShardDataIter<'a, W, D> as Iterator>::Item;
+type ShardData<'a, D> = <ShardDataIter<'a, D> as Iterator>::Item;
 
-/// Builds a new function using a `Box<[W]>` to store values.
-///
-/// Since values are stored in a boxed slice access is particularly fast, but
-/// the bit width of the output of the function will be exactly the bit width of
-/// the unsigned type `W`.
-impl<W: BinSafe + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
+impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
     u128: UpcastableFrom<W>,
     SigVal<S, W>: RadixKey,
     SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
+    /// Builds a new function using a `Box<[W]>` to store values.
+    ///
+    /// Since values are stored in a boxed slice access is particularly fast, but
+    /// the bit width of the output of the function will be exactly the bit width of
+    /// the unsigned type `W`.
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableIoLender<B>,
-        values: impl RewindableIoLender<W>,
+        keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, Box<[W]>, S, E>>
     where
-        for<'a> ShardDataIter<'a, W, Box<[W]>>: Send,
-        for<'a> ShardData<'a, W, Box<[W]>>: Send,
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
+            BitFieldSliceMut<W>,
+        for<'a> ShardDataIter<'a, Box<[W]>>: Send,
+        for<'a> ShardData<'a, Box<[W]>>: Send,
     {
         let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
-        self.build_loop(keys, values, None, &get_val, new_data, pl)
+        Ok(self
+            .build_loop(keys, values, None, &get_val, new_data, false, pl)?
+            .0)
     }
 }
 
-/// Builds a new filter using a `Box<[W]>` to store values.
-///
-/// Since values are stored in a boxed slice access is particularly fast, but
-/// the number of bits of the hashes will be  exactly the bit width of the
-/// unsigned type `W`.
-impl<W: BinSafe + Word + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+impl<W: Word + BinSafe + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
     VBuilder<W, Box<[W]>, S, E>
 where
     u128: UpcastableFrom<W>,
@@ -575,14 +583,24 @@ where
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
 {
+    /// Builds a new filter using a `Box<[W]>` to store values.
+    ///
+    /// Since values are stored in a boxed slice access is particularly fast, but
+    /// the number of bits of the hashes will be  exactly the bit width of the
+    /// unsigned type `W`.
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableIoLender<B>,
+        keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>>
     where
-        for<'a> ShardDataIter<'a, W, Box<[W]>>: Send,
-        for<'a> ShardData<'a, W, Box<[W]>>: Send,
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
+            BitFieldSliceMut<W>,
+        for<'a> ShardDataIter<'a, Box<[W]>>: Send,
+        for<'a> ShardData<'a, Box<[W]>>: Send,
     {
         let filter_mask = W::MAX;
         let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
@@ -591,64 +609,255 @@ where
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
 
         Ok(VFilter {
-            func: self.build_loop(
-                keys,
-                FromIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
-                Some(W::BITS),
-                &get_val,
-                new_data,
-                pl,
-            )?,
+            func: self
+                .build_loop(
+                    keys,
+                    FromCloneableIntoIterator::from(itertools::repeat_n(
+                        EmptyVal::default(),
+                        usize::MAX,
+                    )),
+                    Some(W::BITS),
+                    &get_val,
+                    new_data,
+                    false,
+                    pl,
+                )?
+                .0,
             filter_mask,
             hash_bits: W::BITS as u32,
         })
     }
 }
 
-/// Builds a new function using a [bit-field vector](BitFieldVec) on words of
-/// the unsigned type `W` to store values.
-///
-/// Since values are stored in a bit-field vector access will be slower than
-/// when using a boxed slice, but the bit width of stored values will be the
-/// minimum necessary. It must be in any case at most the bit width of `W`.
-///
-/// Typically `W` will be `usize` or `u64`.
-impl<W: BinSafe + Word, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
+impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
     u128: UpcastableFrom<W>,
     SigVal<S, W>: RadixKey,
     SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
 {
-    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
+    fn _try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableIoLender<B>,
-        values: impl RewindableIoLender<W>,
+        keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
+        keep_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
+    ) -> anyhow::Result<(
+        VFunc<T, W, BitFieldVec<W>, S, E>,
+        Option<AnyShardStore<S, W>>,
+    )> {
         let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
         let new_data = |bit_width, len| BitFieldVec::<W>::new_unaligned(bit_width, len);
-        self.build_loop(keys, values, None, &get_val, new_data, pl)
+
+        self.build_loop(keys, values, None, &get_val, new_data, keep_store, pl)
+    }
+
+    /// Builds a new function using a [bit-field vector](BitFieldVec) on words of
+    /// the unsigned type `W` to store values.
+    ///
+    /// Since values are stored in a bit-field vector access will be slower than
+    /// when using a boxed slice, but the bit width of stored values will be the
+    /// minimum necessary. It must be in any case at most the bit width of `W`.
+    ///
+    /// Typically `W` will be `usize` or `u64`.
+    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
+        self,
+        keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<W>, S, E>> {
+        self._try_build_func(keys, values, false, pl)
+            .map(|res| res.0)
     }
 }
 
-/// Builds a new filter using a [bit-field vector](BitFieldVec) on words of the
-/// unsigned type `W` to store values.
-///
-/// Since values are stored in a bit-field vector access will be slower than
-/// when using a boxed slice, but the number of bits of the hashes can be set at
-/// will. It must be in any case at most the bit width of `W`.
-///
-/// Typically `W` will be `usize` or `u64`.
-impl<W: BinSafe + Word + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+impl<S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<usize, BitFieldVec<usize>, S, E>
+where
+    SigVal<S, usize>: RadixKey,
+    SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
+{
+    /// Builds a _bit-signed index function_, that is, a function that maps each
+    /// key to its position in the input sequence and verifies its out against a
+    /// [`BitFieldVec`] containing hashes of the keys.
+    ///
+    /// The hashes contain `hash_width` bits, providing a false-positive error
+    /// rate (i.e., keys that are not part of the function definition, but for
+    /// which this property is not detected) of 1/2<sup>-`hash_width`</sup>.
+    ///
+    /// This type of signed function offers more resolution than [`SignedVFunc`]
+    /// in choosing the hash size, but testing signatures will be slower.
+    pub fn try_build_bit_sig_index<
+        T: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<T>,
+    >(
+        self,
+        keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        hash_width: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<BitSignedVFunc<VFunc<T, usize, BitFieldVec<usize>, S, E>, BitFieldVec>>
+    {
+        assert!(hash_width > 0);
+        assert!(hash_width <= 64);
+
+        let (func, store) =
+            self._try_build_func(keys, FromCloneableIntoIterator::from(0..), true, pl)?;
+
+        let num_keys = func.num_keys;
+        let shard_edge = &func.shard_edge;
+        let hash_mask = if hash_width == 64 {
+            u64::MAX
+        } else {
+            (1u64 << hash_width) - 1
+        };
+
+        // Create the signature vector
+        let mut hashes = BitFieldVec::<usize>::new_unaligned(hash_width, num_keys);
+
+        // Enumerate the store and extract signatures using the same method as filters
+        pl.item_name("hash");
+        pl.expected_updates(Some(num_keys));
+        pl.start("Storing hashes...");
+
+        // We passed keep_store = true
+        match store.unwrap() {
+            AnyShardStore::Online(mut shard_store) => {
+                for shard in shard_store.iter() {
+                    for sig_val in shard.iter() {
+                        let pos = sig_val.val;
+                        let local_sig = shard_edge.local_sig(sig_val.sig);
+                        let hash = (mix64(shard_edge.edge_hash(local_sig)) & hash_mask) as usize;
+                        hashes.set_value(pos, hash);
+                        pl.light_update();
+                    }
+                }
+            }
+            AnyShardStore::Offline(mut shard_store) => {
+                for shard in shard_store.iter() {
+                    for sig_val in shard.iter() {
+                        let pos = sig_val.val;
+                        let local_sig = shard_edge.local_sig(sig_val.sig);
+                        let hash = (mix64(shard_edge.edge_hash(local_sig)) & hash_mask) as usize;
+                        hashes.set_value(pos, hash);
+                        pl.light_update();
+                    }
+                }
+            }
+        }
+
+        pl.done();
+
+        Ok(BitSignedVFunc {
+            func,
+            hashes,
+            hash_mask,
+        })
+    }
+
+    /// Builds a _signed index function_, that is, a function that maps each key
+    /// to its position in the input sequence and verifies its out against a
+    /// boxed slice containing hashes of the keys.
+    ///
+    /// The hashes are of type `H`, and the false-positive error rate (i.e.,
+    /// keys that are not part of the function definition, but for which this
+    /// property is not detected) of 1/2<sup>-`H::BITS`</sup>.
+    ///
+    /// This type of signed function offers more speed than [`BitSignedVFunc`],
+    /// but you have less resolution in the choice of the hash size.
+    pub fn try_build_sig_index<
+        T: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<T>,
+        H: Word,
+    >(
+        self,
+        keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<SignedVFunc<VFunc<T, usize, BitFieldVec<usize>, S, E>, Box<[H]>>>
+    where
+        u64: CastableInto<H>,
+    {
+        let (func, store) =
+            self._try_build_func(keys, FromCloneableIntoIterator::from(0..), true, pl)?;
+
+        let num_keys = func.num_keys;
+        let shard_edge = &func.shard_edge;
+
+        // Create the hash vector
+        let mut hashes = vec![H::ZERO; num_keys].into_boxed_slice();
+
+        // Enumerate the store and extract hashes using the same method as filters
+        pl.item_name("hash");
+        pl.expected_updates(Some(num_keys));
+        pl.start("Storing hashes...");
+
+        match store.expect("Store should be present when keep_store is true") {
+            AnyShardStore::Online(mut shard_store) => {
+                for shard in shard_store.iter() {
+                    for sig_val in shard.iter() {
+                        let pos = sig_val.val;
+                        let local_sig = shard_edge.local_sig(sig_val.sig);
+                        let hash = mix64(shard_edge.edge_hash(local_sig)).cast();
+                        hashes.set_value(pos, hash);
+                        pl.light_update();
+                    }
+                }
+            }
+            AnyShardStore::Offline(mut shard_store) => {
+                for shard in shard_store.iter() {
+                    for sig_val in shard.iter() {
+                        let pos = sig_val.val;
+                        let local_sig = shard_edge.local_sig(sig_val.sig);
+                        let hash = mix64(shard_edge.edge_hash(local_sig)).cast();
+                        hashes.set_value(pos, hash);
+                        pl.light_update();
+                    }
+                }
+            }
+        }
+
+        pl.done();
+
+        Ok(SignedVFunc { func, hashes })
+    }
+}
+
+impl<W: Word + BinSafe + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
     VBuilder<W, BitFieldVec<W>, S, E>
 where
     u128: UpcastableFrom<W>,
     SigVal<S, EmptyVal>: RadixKey,
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
 {
+    /// Builds a new filter using a [bit-field vector](BitFieldVec) on words of the
+    /// unsigned type `W` to store values.
+    ///
+    /// Since values are stored in a bit-field vector access will be slower than
+    /// when using a boxed slice, but the number of bits of the hashes can be set at
+    /// will. It must be in any case at most the bit width of `W`.
+    ///
+    /// Typically `W` will be `usize` or `u64`.
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
-        keys: impl RewindableIoLender<B>,
+        keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         filter_bits: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>> {
@@ -662,14 +871,20 @@ where
         let new_data = |bit_width, len| BitFieldVec::<W>::new_unaligned(bit_width, len);
 
         Ok(VFilter {
-            func: self.build_loop(
-                keys,
-                FromIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
-                Some(filter_bits),
-                &get_val,
-                new_data,
-                pl,
-            )?,
+            func: self
+                .build_loop(
+                    keys,
+                    FromCloneableIntoIterator::from(itertools::repeat_n(
+                        EmptyVal::default(),
+                        usize::MAX,
+                    )),
+                    Some(filter_bits),
+                    &get_val,
+                    new_data,
+                    false,
+                    pl,
+                )?
+                .0,
             filter_mask,
             hash_bits: filter_bits as _,
         })
@@ -677,8 +892,11 @@ where
 }
 
 impl<
-    W: BinSafe + Word,
-    D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
+    W: Word + BinSafe,
+    D: BitFieldSlice<W>
+        + for<'a> BitFieldSliceMut<W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut<W>>>
+        + Send
+        + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 > VBuilder<W, D, S, E>
@@ -697,25 +915,36 @@ impl<
     /// of functions it returns the value stored in the signature/value pair,
     /// and in the case of filters it returns the hash associated with the
     /// signature.
+    ///
+    /// If `keep_store` is true, the shard store is returned wrapped in
+    /// [`AnyShardStore`]; otherwise, `None` is returned and `into_iter()` is
+    /// used for efficiency.
     fn build_loop<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
         V: BinSafe + Default + Send + Sync + Ord + UpcastableInto<u128>,
     >(
         &mut self,
-        mut keys: impl RewindableIoLender<B>,
-        mut values: impl RewindableIoLender<V>,
+        mut keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        mut values: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend V>,
         bit_width: Option<usize>,
         get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
         new_data: fn(usize, usize) -> D,
+        keep_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, D, S, E>>
+    ) -> anyhow::Result<(VFunc<T, W, D, S, E>, Option<AnyShardStore<S, V>>)>
     where
         u128: UpcastableFrom<W>,
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
-        for<'a> ShardDataIter<'a, W, D>: Send,
-        for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
+        for<'a> ShardDataIter<'a, D>: Send,
+        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
         let mut dup_count = 0;
         let mut local_dup_count = 0;
@@ -732,7 +961,9 @@ impl<
         loop {
             let seed = prng.random();
 
-            match if self.offline {
+            // We need separate branches for offline/online because they return
+            // different ShardStore types that must be wrapped in AnyShardStore
+            let result = if self.offline {
                 self.try_seed(
                     seed,
                     sig_store::new_offline::<S, V>(
@@ -745,8 +976,10 @@ impl<
                     bit_width,
                     get_val,
                     new_data,
+                    keep_store,
                     pl,
                 )
+                .map(|(func, store)| (func, store.map(AnyShardStore::Offline)))
             } else {
                 self.try_seed(
                     seed,
@@ -760,11 +993,15 @@ impl<
                     bit_width,
                     get_val,
                     new_data,
+                    keep_store,
                     pl,
                 )
-            } {
-                Ok(func) => {
-                    return Ok(func);
+                .map(|(func, store)| (func, store.map(AnyShardStore::Online)))
+            };
+
+            match result {
+                Ok((func, store)) => {
+                    return Ok((func, store));
                 }
                 Err(error) => {
                     match error.downcast::<SolveError>() {
@@ -816,8 +1053,11 @@ impl<
 }
 
 impl<
-    W: BinSafe + Word,
-    D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
+    W: Word + BinSafe,
+    D: BitFieldSlice<W>
+        + for<'a> BitFieldSliceMut<W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut<W>>>
+        + Send
+        + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 > VBuilder<W, D, S, E>
@@ -828,27 +1068,42 @@ impl<
     /// This methods reads the input, sets up the shards, allocates the backend
     /// using `new_data`, and passes the backend and an iterator on shards to
     /// the [`VBuilder::try_build_from_shard_iter`] method.
+    ///
+    /// If `keep_store` is true, uses `iter()` on the shard store so it can be
+    /// returned; otherwise uses `into_iter()` for efficiency.
     fn try_seed<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
         V: BinSafe + Default + Send + Sync + Ord + UpcastableInto<u128>,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        SS: SigStore<S, V>,
     >(
         &mut self,
         seed: u64,
-        mut sig_store: impl SigStore<S, V>,
-        keys: &mut impl RewindableIoLender<B>,
-        values: &mut impl RewindableIoLender<V>,
+        mut sig_store: SS,
+        keys: &mut (
+                 impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
+             ),
+        values: &mut (
+                 impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend V>
+             ),
         bit_width: Option<usize>,
         get_val: &G,
         new_data: fn(usize, usize) -> D,
+        keep_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, D, S, E>>
+    ) -> anyhow::Result<(VFunc<T, W, D, S, E>, Option<SS::ShardStore>)>
     where
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
-        for<'a> ShardDataIter<'a, W, D>: Send,
-        for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
+        for<'a> ShardDataIter<'a, D>: Send,
+        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
         let shard_edge = &mut self.shard_edge;
 
@@ -868,22 +1123,17 @@ impl<
         let mut maybe_max_value = V::default();
         let start = Instant::now();
 
-        while let Some(result) = keys.next() {
-            match result {
-                Ok(key) => {
-                    pl.light_update();
-                    // This might be an actual value, if we are building a
-                    // function, or EmptyVal, if we are building a filter.
-                    let &maybe_val = values.next().expect("Not enough values")?;
-                    let sig_val = SigVal {
-                        sig: T::to_sig(key.borrow(), seed),
-                        val: maybe_val,
-                    };
-                    maybe_max_value = Ord::max(maybe_max_value, maybe_val);
-                    sig_store.try_push(sig_val)?;
-                }
-                Err(e) => return Err(e.into()),
-            }
+        while let Some(key) = keys.next()? {
+            pl.light_update();
+            // This might be an actual value, if we are building a
+            // function, or EmptyVal, if we are building a filter.
+            let &maybe_val = values.next()?.expect("Not enough values");
+            let sig_val = SigVal {
+                sig: T::to_sig(key.borrow(), seed),
+                val: maybe_val,
+            };
+            maybe_max_value = Ord::max(maybe_max_value, maybe_val);
+            sig_store.try_push(sig_val)?;
         }
         pl.done();
 
@@ -909,13 +1159,14 @@ impl<
             start.elapsed().as_nanos() as f64 / self.num_keys as f64
         );
 
+        shard_edge.set_up_shards(self.num_keys, self.eps);
+
         let start = Instant::now();
 
-        let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
+        let mut shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
         let filter = TypeId::of::<V>() == TypeId::of::<EmptyVal>();
 
-        shard_edge.set_up_shards(self.num_keys, self.eps);
         (self.c, self.lge) = shard_edge.set_up_graphs(self.num_keys, max_shard);
 
         if filter {
@@ -948,16 +1199,33 @@ impl<
                 self.bit_width,
                 shard_edge.num_vertices() * shard_edge.num_shards(),
             );
-            self.try_build_from_shard_iter(seed, data, shard_store.into_iter(), get_val, pl)
-                .inspect(|_| {
-                    info!(
-                        "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                        start.elapsed().as_secs_f64(),
-                        self.num_keys,
-                        start.elapsed().as_nanos() as f64 / self.num_keys as f64
-                    );
-                })
-                .map_err(Into::into)
+            // Use iter() when keep_store is true so we can return the shard_store,
+            // otherwise use into_iter() for efficiency
+            if keep_store {
+                let func = self
+                    .try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
+                    .inspect(|_| {
+                        info!(
+                            "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                            start.elapsed().as_secs_f64(),
+                            self.num_keys,
+                            start.elapsed().as_nanos() as f64 / self.num_keys as f64
+                        );
+                    })?;
+                Ok((func, Some(shard_store)))
+            } else {
+                let func = self
+                    .try_build_from_shard_iter(seed, data, shard_store.into_iter(), get_val, pl)
+                    .inspect(|_| {
+                        info!(
+                            "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                            start.elapsed().as_secs_f64(),
+                            self.num_keys,
+                            start.elapsed().as_nanos() as f64 / self.num_keys as f64
+                        );
+                    })?;
+                Ok((func, None))
+            }
         }
     }
 
@@ -983,8 +1251,8 @@ impl<
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
         P: ProgressLog + Clone + Send + Sync,
         I: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
-        for<'a> ShardDataIter<'a, W, D>: Send,
-        for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
+        for<'a> ShardDataIter<'a, D>: Send,
+        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
         let shard_edge = &self.shard_edge;
         self.num_threads = shard_edge.num_shards().min(self.max_num_threads);
@@ -1093,8 +1361,11 @@ macro_rules! remove_edge {
 }
 
 impl<
-    W: BinSafe + Word + Send + Sync,
-    D: BitFieldSlice<W> + BitFieldSliceMut<W> + Send + Sync,
+    W: Word + BinSafe + Send + Sync,
+    D: BitFieldSlice<W>
+        + for<'a> BitFieldSliceMut<W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut<W>>>
+        + Send
+        + Sync,
     S: Sig + BinSafe,
     E: ShardEdge<S, 3>,
 > VBuilder<W, D, S, E>
@@ -1153,7 +1424,7 @@ impl<
         'b,
         V: BinSafe,
         I: IntoIterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
-        SS: Fn(&Self, usize, Arc<Vec<SigVal<S, V>>>, ShardData<'b, W, D>, &mut P) -> Result<(), ()>
+        SS: Fn(&Self, usize, Arc<Vec<SigVal<S, V>>>, ShardData<'b, D>, &mut P) -> Result<(), ()>
             + Send
             + Sync
             + Copy,
@@ -1170,8 +1441,8 @@ impl<
     where
         I::IntoIter: Send,
         SigVal<S, V>: RadixKey,
-        for<'a> ShardDataIter<'a, W, D>: Send,
-        for<'a> <ShardDataIter<'a, W, D> as Iterator>::Item: Send,
+        for<'a> ShardDataIter<'a, D>: Send,
+        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
         main_pl
             .item_name("shard")
@@ -1186,7 +1457,7 @@ impl<
         let (err_send, err_recv) = crossbeam_channel::bounded::<_>(self.num_threads);
         let (data_send, data_recv) = crossbeam_channel::bounded::<(
             usize,
-            (Arc<Vec<SigVal<S, V>>>, ShardData<'_, W, D>),
+            (Arc<Vec<SigVal<S, V>>>, ShardData<'_, D>),
         )>(buffer_size);
 
         let result = std::thread::scope(|scope| {
@@ -1393,7 +1664,7 @@ impl<
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
-        data: ShardData<'a, W, D>,
+        data: ShardData<'a, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<PeelResult<'a, W, D, S, E, V>, ()> {
@@ -1479,6 +1750,7 @@ impl<
                 data,
                 double_stack,
                 sides_stack,
+                _marker: std::marker::PhantomData,
             });
         }
 
@@ -1535,7 +1807,7 @@ impl<
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
-        data: ShardData<'_, W, D>,
+        data: ShardData<'_, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()>
@@ -1667,7 +1939,7 @@ impl<
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
-        data: ShardData<'_, W, D>,
+        data: ShardData<'_, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()>
@@ -1785,7 +2057,7 @@ impl<
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
-        data: ShardData<'_, W, D>,
+        data: ShardData<'_, D>,
         get_val: &G,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()> {
@@ -1800,6 +2072,7 @@ impl<
                 mut data,
                 double_stack,
                 sides_stack,
+                _marker: PhantomData,
             }) => {
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
                 // Likely result--we have solve the rest
@@ -1864,7 +2137,7 @@ impl<
                 pl.done_with_count(system.num_equations());
 
                 for (v, &value) in result.iter().enumerate().filter(|(v, _)| used_vars[*v]) {
-                    data.set(v, value);
+                    data.set_value(v, value);
                 }
 
                 self.assign(
@@ -1904,10 +2177,12 @@ impl<
     fn assign(
         &self,
         shard_index: usize,
-        mut data: ShardData<'_, W, D>,
+        mut data: ShardData<'_, D>,
         sigs_vals_sides: impl Iterator<Item = ((E::LocalSig, W), u8)>,
         pl: &mut impl ProgressLog,
-    ) {
+    ) where
+        for<'a> ShardData<'a, D>: SliceByValueMut<Value = W>,
+    {
         if self.failed.load(Ordering::Relaxed) {
             return;
         }
@@ -1923,13 +2198,13 @@ impl<
             let side = side as usize;
             unsafe {
                 let xor = match side {
-                    0 => data.get_unchecked(edge[1]) ^ data.get_unchecked(edge[2]),
-                    1 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[2]),
-                    2 => data.get_unchecked(edge[0]) ^ data.get_unchecked(edge[1]),
+                    0 => data.get_value_unchecked(edge[1]) ^ data.get_value_unchecked(edge[2]),
+                    1 => data.get_value_unchecked(edge[0]) ^ data.get_value_unchecked(edge[2]),
+                    2 => data.get_value_unchecked(edge[0]) ^ data.get_value_unchecked(edge[1]),
                     _ => core::hint::unreachable_unchecked(),
                 };
 
-                data.set_unchecked(edge[side], val ^ xor);
+                data.set_value_unchecked(edge[side], val ^ xor);
             }
         }
         pl.done();

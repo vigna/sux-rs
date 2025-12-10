@@ -12,6 +12,7 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
+use sux::traits::bit_vec_ops::*;
 
 #[test]
 fn test() {
@@ -402,7 +403,7 @@ fn test_iter_zeros_one() {
 
 #[test]
 fn test_atomic_iter() {
-    let mut c = AtomicBitVec::new(100);
+    let c = AtomicBitVec::new(100);
     for i in 0..100 {
         c.set(i, i % 2 == 0, Ordering::Relaxed);
     }
@@ -474,7 +475,7 @@ fn test_from() {
     for i in 0..10 {
         b.set(i, i % 2 == 0);
     }
-    let b: AtomicBitVec<Vec<AtomicUsize>> = b.into();
+    let b: AtomicBitVec<Box<[AtomicUsize]>> = b.into();
     let b: BitVec<Vec<usize>> = b.into();
     for i in 0..10 {
         assert_eq!(b.get(i), i % 2 == 0);

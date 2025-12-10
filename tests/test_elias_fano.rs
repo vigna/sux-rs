@@ -178,6 +178,22 @@ fn test_elias_fano() -> Result<()> {
 }
 
 #[test]
+fn test_empty() {
+    let efb = EliasFanoBuilder::new(0, 10);
+    let ef = efb.build_with_seq_and_dict();
+    assert_eq!(ef.len(), 0);
+}
+
+#[test]
+#[should_panic]
+fn test_empty_access() {
+    let efb = EliasFanoBuilder::new(0, 10);
+    let ef = efb.build_with_seq_and_dict();
+    assert_eq!(ef.len(), 0);
+    ef.get(0);
+}
+
+#[test]
 #[should_panic]
 fn test_too_many_values() {
     let mut efb = EliasFanoBuilder::new(2, 10);
@@ -263,7 +279,7 @@ fn test_epserde() -> Result<()> {
         }?;
 
         for i in 0..n {
-            assert_eq!(ef.get(i), c.get(i));
+            assert_eq!(ef.get(i), c.uncase().get(i));
         }
     }
     Ok(())

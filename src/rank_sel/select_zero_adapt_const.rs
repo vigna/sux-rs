@@ -14,7 +14,10 @@ use crate::{
 use ambassador::Delegate;
 use common_traits::SelectInWord;
 use mem_dbg::{MemDbg, MemSize};
-use std::cmp::{max, min};
+use std::{
+    cmp::{max, min},
+    ops::Deref,
+};
 
 use crate::ambassador_impl_AsRef;
 use crate::ambassador_impl_Index;
@@ -149,6 +152,17 @@ pub struct SelectZeroAdaptConst<
     bits: B,
     inventory: I,
     spill: I,
+}
+
+impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY: usize> Deref
+    for SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_U64_PER_SUBINVENTORY>
+{
+    type Target = B;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.bits
+    }
 }
 
 impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY: usize>
@@ -586,6 +600,7 @@ mod tests {
     use super::*;
     use crate::bits::BitVec;
     use crate::traits::AddNumBits;
+    use crate::traits::BitVecOpsMut;
     use rand::Rng;
     use rand::SeedableRng;
     use rand::rngs::SmallRng;

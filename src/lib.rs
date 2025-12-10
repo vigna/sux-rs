@@ -15,6 +15,7 @@
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!("`target_pointer_width` must be 64");
 
+pub mod array;
 pub mod bits;
 pub mod dict;
 pub mod func;
@@ -25,11 +26,13 @@ pub mod utils;
 #[cfg(feature = "fuzz")]
 pub mod fuzz;
 
-/// Imports the most common items. Note that
-/// [`bit_field_slice`](crate::traits::bit_field_slice) and
+/// Imports the most common items.
+///
+/// Note that [`bit_field_slice`](crate::traits::bit_field_slice) and
 /// [`indexed_dict`](crate::traits::indexed_dict) are not included in the
 /// prelude, as they may cause ambiguities in some contexts.
 pub mod prelude {
+    pub use crate::array::*;
     pub use crate::bit_field_vec;
     pub use crate::bit_vec;
     pub use crate::bits::*;
@@ -38,6 +41,7 @@ pub mod prelude {
     pub use crate::rank_sel::*;
     pub use crate::rank_small;
     pub use crate::traits::bit_field_slice;
+    pub use crate::traits::bit_vec_ops;
     pub use crate::traits::indexed_dict;
     pub use crate::traits::{iter::*, rank_sel::*};
 }
@@ -54,7 +58,8 @@ pub(crate) trait Index<Idx> {
 }
 
 /// Parallel iterators performing very fast operations, such as [zeroing a
-/// bit](crate::bits::BitVec::reset) vector, should pass this argument to
+/// bit](crate::traits::BitVecOpsMut::reset) vector, should pass this argument
+/// to
 /// [IndexedParallelIterator::with_min_len](`rayon::iter::IndexedParallelIterator::with_min_len`).
 pub const RAYON_MIN_LEN: usize = 100_000;
 
@@ -65,6 +70,8 @@ macro_rules! panic_if_out_of_bounds {
         }
     };
 }
+use std::time::SystemTime;
+
 pub(crate) use panic_if_out_of_bounds;
 
 macro_rules! panic_if_value {
@@ -88,3 +95,49 @@ macro_rules! debug_assert_bounds {
 }
 
 pub(crate) use debug_assert_bounds;
+
+/// Initializes the `env_logger` logger with a custom format including
+/// timestamps with elapsed time since initialization.
+pub fn init_env_logger() -> anyhow::Result<()> {
+    use jiff::{
+        SpanRound,
+        fmt::friendly::{Designator, Spacing, SpanPrinter},
+    };
+    use std::io::Write;
+
+    let mut builder =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+
+    let start = std::time::Instant::now();
+    let printer = SpanPrinter::new()
+        .spacing(Spacing::None)
+        .designator(Designator::Compact);
+    let span_round = SpanRound::new()
+        .largest(jiff::Unit::Day)
+        .smallest(jiff::Unit::Millisecond)
+        .days_are_24_hours();
+
+    builder.format(move |buf, record| {
+        let Ok(ts) = jiff::Timestamp::try_from(SystemTime::now()) else {
+            return Err(std::io::Error::other("Failed to get timestamp"));
+        };
+        let style = buf.default_level_style(record.level());
+        let elapsed = start.elapsed();
+        let span = jiff::Span::new()
+            .seconds(elapsed.as_secs() as i64)
+            .milliseconds(elapsed.subsec_millis() as i64);
+        let span = span.round(span_round).expect("Failed to round span");
+        writeln!(
+            buf,
+            "{} {} {style}{}{style:#} [{:?}] {} - {}",
+            ts.strftime("%F %T%.3f"),
+            printer.span_to_string(&span),
+            record.level(),
+            std::thread::current().id(),
+            record.target(),
+            record.args()
+        )
+    });
+    builder.init();
+    Ok(())
+}

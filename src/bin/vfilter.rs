@@ -3,47 +3,53 @@
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
+
 #![allow(clippy::collapsible_else_if)]
 use std::ops::{BitXor, BitXorAssign};
 
 use anyhow::Result;
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 use common_traits::{DowncastableFrom, UpcastableFrom};
 use dsi_progress_logger::*;
-use epserde::ser::{Serialize, SerializeInner};
-use epserde::traits::{AlignHash, TypeHash};
-use lender::Lender;
+use epserde::ser::Serialize;
+use lender::FallibleLender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
+use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, BitFieldSliceMut, Word};
 use sux::utils::{
-    BinSafe, EmptyVal, FromIntoIterator, LineLender, Sig, SigVal, ToSig, ZstdLineLender,
+    BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig,
 };
+use value_traits::slices::SliceByValueMut;
 
 #[derive(Parser, Debug)]
-#[command(about = "Creates a VFilter and serializes it with ε-serde", long_about = None)]
+#[command(about = "Creates a VFilter and serializes it with ε-serde.", long_about = None)]
+#[clap(group(
+            ArgGroup::new("input")
+                .required(true)
+                .multiple(true)
+                .args(&["filename", "n"]),
+))]
 struct Args {
-    /// The number of keys. If no filename is provided, use the 64-bit keys
+    /// The number of keys; if no filename is provided, use the 64-bit keys
     /// [0..n).
-    n: usize,
+    #[arg(short, long)]
+    n: Option<usize>,
+    /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.
+    #[arg(short, long)]
+    filename: Option<String>,
     /// An optional name for the ε-serde serialized function.
     filter: Option<String>,
     /// The number of bits of the hashes used by the filter.
     #[arg(short, long, default_value_t = 8)]
     bits: usize,
-    #[arg(short, long)]
-    /// A file containing UTF-8 keys, one per line. At most N keys will be read.
-    filename: Option<String>,
     /// Use this number of threads.
     #[arg(short, long)]
     threads: Option<usize>,
-    /// Whether the file is compressed with zstd.
-    #[arg(short, long)]
-    zstd: bool,
-    /// Use disk-based buckets to reduce memory usage at construction time.
+    /// Use disk-based buckets to reduce memory usage at construction time; providing the exact number of keys will speed up the construction.
     #[arg(short, long)]
     offline: bool,
     /// Sort shards and check for duplicate signatures.
@@ -107,9 +113,7 @@ macro_rules! mwhc {
 }
 
 fn main() -> Result<()> {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .try_init()?;
+    init_env_logger()?;
 
     let args = Args::parse();
 
@@ -133,15 +137,18 @@ fn main() -> Result<()> {
     }
 }
 
-fn set_builder<W: BinSafe + Word, D: BitFieldSlice<W> + Send + Sync, S, E: ShardEdge<S, 3>>(
+fn set_builder<W: Word + BinSafe, D: BitFieldSlice<W> + Send + Sync, S, E: ShardEdge<S, 3>>(
     builder: VBuilder<W, D, S, E>,
     args: &Args,
 ) -> VBuilder<W, D, S, E> {
     let mut builder = builder
         .offline(args.offline)
         .check_dups(args.check_dups)
-        .expected_num_keys(args.n)
         .eps(args.eps);
+    if let Some(n) = args.n {
+        builder = builder.expected_num_keys(n);
+    }
+
     if let Some(seed) = args.seed {
         builder = builder.seed(seed);
     }
@@ -158,14 +165,13 @@ fn set_builder<W: BinSafe + Word, D: BitFieldSlice<W> + Send + Sync, S, E: Shard
 }
 
 fn main_with_types_boxed_slice<
-    W: Word + BinSafe + DowncastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
+    W: Word + BinSafe + DowncastableFrom<u64>,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 >(
     args: Args,
 ) -> Result<()>
 where
-    <W as SerializeInner>::SerType: Word + BinSafe,
     str: ToSig<S>,
     usize: ToSig<S>,
     u128: UpcastableFrom<W>,
@@ -173,9 +179,10 @@ where
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    Box<[W]>: BitFieldSlice<W> + BitFieldSliceMut<W>,
-    for<'a> <Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a>: Send,
-    for<'a> <<Box<[W]> as BitFieldSliceMut<W>>::ChunksMut<'a> as Iterator>::Item: Send,
+    Box<[W]>: BitFieldSliceMut<W>,
+    for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
+    for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
+        Send + BitFieldSliceMut<W>,
     VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
     VFunc<str, usize, BitFieldVec, S, E>: Serialize,
     VFunc<usize, W, Box<[W]>, S, E>: Serialize,
@@ -187,22 +194,20 @@ where
     let mut pl = ProgressLogger::default();
     #[cfg(feature = "no_logging")]
     let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
-    let n = args.n;
 
     if let Some(filename) = &args.filename {
+        let n = args.n.unwrap_or(usize::MAX);
         let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
-        let filter = if args.zstd {
-            builder.try_build_filter(ZstdLineLender::from_path(filename)?.take(n), &mut pl)?
-        } else {
-            let t = LineLender::from_path(filename)?.take(n);
-            builder.try_build_filter(t, &mut pl)?
-        };
+        let filter =
+            builder.try_build_filter(DekoBufLineLender::from_path(filename)?.take(n), &mut pl)?;
         if let Some(filename) = args.filter {
             unsafe { filter.store(filename) }?;
         }
     } else {
+        let n = args.n.unwrap();
         let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
-        let filter = builder.try_build_filter(FromIntoIterator::from(0_usize..n), &mut pl)?;
+        let filter =
+            builder.try_build_filter(FromCloneableIntoIterator::from(0_usize..n), &mut pl)?;
         if let Some(filename) = args.filter {
             unsafe { filter.store(filename) }?;
         }
@@ -212,7 +217,7 @@ where
 }
 
 fn main_with_types_bit_field_vec<
-    W: Word + BinSafe + DowncastableFrom<u64> + SerializeInner + TypeHash + AlignHash,
+    W: Word + BinSafe + DowncastableFrom<u64>,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 >(
@@ -233,27 +238,26 @@ where
     let mut pl = ProgressLogger::default();
     #[cfg(feature = "no_logging")]
     let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
-    let n = args.n;
 
     if let Some(filename) = &args.filename {
+        let n = args.n.unwrap_or(usize::MAX);
         let builder = set_builder(VBuilder::<W, BitFieldVec<W>, S, E>::default(), &args);
-        let filter = if args.zstd {
-            builder.try_build_filter(
-                ZstdLineLender::from_path(filename)?.take(n),
-                args.bits,
-                &mut pl,
-            )?
-        } else {
-            let t = LineLender::from_path(filename)?.take(n);
-            builder.try_build_filter(t, args.bits, &mut pl)?
-        };
+        let filter = builder.try_build_filter(
+            DekoBufLineLender::from_path(filename)?.take(n),
+            args.bits,
+            &mut pl,
+        )?;
         if let Some(filename) = args.filter {
             unsafe { filter.store(filename)? };
         }
     } else {
+        let n = args.n.unwrap();
         let builder = set_builder(VBuilder::<W, BitFieldVec<W>, S, E>::default(), &args);
-        let filter =
-            builder.try_build_filter(FromIntoIterator::from(0_usize..n), args.bits, &mut pl)?;
+        let filter = builder.try_build_filter(
+            FromCloneableIntoIterator::from(0_usize..n),
+            args.bits,
+            &mut pl,
+        )?;
         if let Some(filename) = args.filter {
             unsafe { filter.store(filename)? };
         }

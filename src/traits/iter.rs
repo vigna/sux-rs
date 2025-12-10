@@ -19,12 +19,12 @@ use impl_tools::autoimpl;
 /// setup is usually required again after a skip.
 ///
 /// We provide implementations for (references to) slices, vectors, and boxed
-/// slices, and delegations for [`MemCase`].
+/// slices.
 pub trait IntoIteratorFrom: IntoIterator {
     /// Which kind of iterator are we turning this into?
     type IntoIterFrom: Iterator<Item = <Self as IntoIterator>::Item>;
 
-    /// Creates an iterator from a value and a starting position.
+    /// Creates an iterator from a starting position.
     fn into_iter_from(self, from: usize) -> Self::IntoIterFrom;
 }
 
@@ -120,67 +120,4 @@ pub trait IntoReverseUncheckedIterator: Sized {
     fn into_rev_unchecked_iter(self) -> Self::IntoRevUncheckedIter;
     /// Creates a reverse unchecked iterator starting from the given position.
     fn into_rev_unchecked_iter_from(self, from: usize) -> Self::IntoRevUncheckedIter;
-}
-
-// MemCase delegations
-
-#[cfg(feature = "epserde")]
-mod mem_case {
-    use super::*;
-    use ::epserde::deser::{DeserType, DeserializeInner, MemCase};
-
-    impl<'a, S: DeserializeInner> IntoIteratorFrom for &'a MemCase<S>
-    where
-        &'a DeserType<'a, S>: IntoIteratorFrom,
-    {
-        type IntoIterFrom = <&'a DeserType<'a, S> as IntoIteratorFrom>::IntoIterFrom;
-
-        fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
-            self.uncase().into_iter_from(from)
-        }
-    }
-
-    impl<'a, S: DeserializeInner> UncheckedIterator for &'a MemCase<S>
-    where
-        for<'b> &'b DeserType<'b, S>: UncheckedIterator,
-    {
-        type Item = <&'a DeserType<'a, S> as UncheckedIterator>::Item;
-
-        unsafe fn next_unchecked(&mut self) -> Self::Item {
-            self.uncase().next_unchecked()
-        }
-    }
-
-    impl<'a, S: DeserializeInner> IntoUncheckedIterator for &'a MemCase<S>
-    where
-        for<'b> &'b DeserType<'b, S>: IntoUncheckedIterator,
-    {
-        type Item = <&'a DeserType<'a, S> as IntoUncheckedIterator>::Item;
-        type IntoUncheckedIter = <&'a DeserType<'a, S> as IntoUncheckedIterator>::IntoUncheckedIter;
-
-        fn into_unchecked_iter(self) -> Self::IntoUncheckedIter {
-            self.uncase().into_unchecked_iter()
-        }
-
-        fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter {
-            self.uncase().into_unchecked_iter_from(from)
-        }
-    }
-
-    impl<'a, S: DeserializeInner> IntoReverseUncheckedIterator for &'a MemCase<S>
-    where
-        for<'b> &'b DeserType<'b, S>: IntoReverseUncheckedIterator,
-    {
-        type Item = <&'a DeserType<'a, S> as IntoReverseUncheckedIterator>::Item;
-        type IntoRevUncheckedIter =
-            <&'a DeserType<'a, S> as IntoReverseUncheckedIterator>::IntoRevUncheckedIter;
-
-        fn into_rev_unchecked_iter(self) -> Self::IntoRevUncheckedIter {
-            self.uncase().into_rev_unchecked_iter()
-        }
-
-        fn into_rev_unchecked_iter_from(self, from: usize) -> Self::IntoRevUncheckedIter {
-            self.uncase().into_rev_unchecked_iter_from(from)
-        }
-    }
 }

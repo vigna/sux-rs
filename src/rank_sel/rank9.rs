@@ -20,6 +20,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use std::ops::Deref;
 use std::ops::Index;
 
 /// A ranking structure using 25% of additional space and providing the fastest
@@ -38,6 +39,8 @@ use std::ops::Index;
 /// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
 /// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
 /// Springer, 2008.
+///
+/// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
 /// # Examples
 ///
@@ -95,7 +98,13 @@ pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
 
 #[doc(hidden)]
 #[derive(Copy, Debug, Clone, MemDbg, MemSize, Default)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde), repr(C), zero_copy)]
+#[cfg_attr(
+    feature = "epserde",
+    derive(epserde::Epserde),
+    repr(C),
+    epserde_zero_copy
+)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlockCounters {
     pub(super) absolute: usize,
     pub(super) relative: usize,
@@ -190,6 +199,14 @@ impl<B: AsRef<[usize]> + BitLength> Rank9<B, Box<[BlockCounters]>> {
     }
 }
 
+impl<B, C> Deref for Rank9<B, C> {
+    type Target = B;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bits
+    }
+}
+
 impl<B: BitLength, C: AsRef<[BlockCounters]>> NumBits for Rank9<B, C> {
     #[inline(always)]
     fn num_ones(&self) -> usize {
@@ -210,7 +227,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for
     ///
     /// The implementation of [`RankUnchecked`] for [`Rank9`] has an weakened
     /// safety requirement: it is possible to call this method with `pos` equal
-    /// to [the length of te underlying bit
+    /// to [the length of the underlying bit
     /// vector](crate::traits::BitLength::len) provided there is at least one
     /// unused bit. This is always true if the length is not a multiple of the
     /// number of bits in a word, but requires allocating an extra word

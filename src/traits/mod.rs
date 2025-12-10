@@ -11,12 +11,7 @@
 //! See the discussion in [`bit_field_slice`] about the re-export of its traits.
 
 pub mod bit_field_slice;
-pub use bit_field_slice::AtomicBitFieldSlice;
-pub use bit_field_slice::BitFieldSlice;
-pub use bit_field_slice::BitFieldSliceCore;
-pub use bit_field_slice::BitFieldSliceIterator;
-pub use bit_field_slice::BitFieldSliceMut;
-pub use bit_field_slice::Word;
+pub use bit_field_slice::*;
 
 pub mod indexed_dict;
 pub use indexed_dict::*;
@@ -26,3 +21,6 @@ pub use iter::*;
 
 pub mod rank_sel;
 pub use rank_sel::*;
+
+pub mod bit_vec_ops;
+pub use bit_vec_ops::*;

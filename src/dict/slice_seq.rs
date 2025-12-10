@@ -13,7 +13,8 @@ use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
 /// sequence](crate::traits::IndexedSeq).
 ///
 /// You can create a [`SliceSeq`] with [`SliceSeq::new`], or with the equivalent
-/// [`From`] implementation.
+/// [`From`] implementation. Note, however, that we provide [`IndexedSeq`]
+/// implementations for vectors, slices, and arrays.
 ///
 /// While a blanket implementation of [`IndexedSeq`] could be more convenient,
 /// it would cause significant ambiguity problems.

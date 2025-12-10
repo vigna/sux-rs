@@ -5,7 +5,7 @@ authors = [
 	"Sebastiano Vigna <sebastiano.vigna@unimi.it>",
 ]
 description = "A pure Rust implementation of succinct and compressed data structures"
-version = "0.9.0"
+version = "0.10.3"
 edition = "2024"
 repository = "https://github.com/vigna/sux-rs/"
 license = "Apache-2.0 OR LGPL-2.1-or-later"
@@ -13,6 +13,7 @@ readme = "README.md"
 categories = ["compression", "data-structures"]
 keywords = ["succinct", "rank", "select"]
 resolver = "2"
+rust-version = "1.85"
 
 [dependencies]
 anyhow = "1.0.79"
@@ -22,8 +23,8 @@ libc = "0.2.147"
 log = "0.4.20"
 dsi-progress-logger = "0.8.1"
 tempfile = "3.9.0"
-lender = "0.3.1"
-epserde = { version = "0.9.0", optional = true }
+lender = "0.4.1"
+epserde = { version = "0.11.4", optional = true }
 zstd = { version = "0.13.1" }
 flate2 = "1.0.28"
 rand = { version = "0.9.0", features = ["small_rng"] }
@@ -43,13 +44,16 @@ itertools = "0.14.0"
 lambert_w = { version = "1.0.17", default-features = false, features = ["std"] }
 deko = { version = "0.5.0", optional = true }
 thread-priority = "3.0.0"
-value-traits = "0.1.4"
+value-traits = "0.2.0"
 serde = { version =  "1.0.225", optional = true, features = ["derive"] }
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 
 # Fuzz
 arbitrary = { version = "1.3.2", features = ["derive"], optional = true }
 zerocopy = { version = "0.8.27", features = ["derive"] }
+jiff = "0.2.15"
+fallible-iterator = "0.3.0"
+sync-cell-slice = "0.9.11"
 
 [dev-dependencies]
 maligned = "0.2.1"
@@ -58,8 +62,7 @@ trybuild = "1.0.110"
 
 [features]
 default = ["rayon"]
-cli = [
-] # Build the binary utils (it's here so that cargo bench doesn't build them)
+cli = ["dep:epserde", "dep:deko"] # Build the binary utils (it's here so that cargo bench doesn't build them)
 fuzz = ["dep:arbitrary"]
 slow_tests = [] # Run slow tests (use --release)
 mwhc = [] # Compile MWHC data structures (mainly for benchmarking)
@@ -92,15 +95,19 @@ bench = false
 
 [[bin]]
 name = "rcl"
+required-features = ["cli", "epserde", "deko"]
+
+[[bin]]
+name = "mrcl"
 required-features = ["cli", "epserde"]
 
 [[bin]]
 name = "vfunc"
-required-features = ["cli", "epserde", "rayon"]
+required-features = ["cli", "epserde", "deko", "rayon"]
 
 [[bin]]
 name = "vfilter"
-required-features = ["cli", "epserde", "rayon"]
+required-features = ["cli", "epserde", "deko", "rayon"]
 
 [[bin]]
 name = "mem_usage"

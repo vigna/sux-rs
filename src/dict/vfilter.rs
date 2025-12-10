@@ -20,9 +20,10 @@ use std::ops::Index;
 ///
 /// Instances of this structure are immutable; they are built using a
 /// [`VBuilder`](crate::func::VBuilder) and can be serialized using
-/// [ε-serde](`epserde`). They contain a mapping from keys to hashes stored in a
-/// [`VFunc`]; [`contains`](VFilter::contains) checks that the hash of a key is
-/// equal of the hash stored by the function for the same key. On some
+/// [ε-serde](https://crates.io/crates/epserde). They contain a mapping from
+/// keys to hashes stored in a [`VFunc`]; [`contains`](VFilter::contains) checks
+/// that the hash of a key is equal of the hash stored by the function for the
+/// same key. On some
 /// architectures, and with some constraints,
 /// [`contains_unaligned`](VFilter::contains_unaligned) might be faster.
 ///
@@ -45,13 +46,13 @@ use std::ops::Index;
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct VFilter<W: BinSafe + Word, F> {
+pub struct VFilter<W: Word + BinSafe, F> {
     pub(crate) func: F,
     pub(crate) filter_mask: W,
     pub(crate) hash_bits: u32,
 }
 
-impl<T: ?Sized + ToSig<S>, W: BinSafe + Word, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
+impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
     VFilter<W, VFunc<T, W, D, S, E>>
 where
     u64: CastableInto<W>,
@@ -112,7 +113,7 @@ where
     }
 }
 
-impl<T: ?Sized + ToSig<S>, W: BinSafe + Word, S: Sig, E: ShardEdge<S, 3>>
+impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
     VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>
 where
     u64: CastableInto<W>,
@@ -173,7 +174,7 @@ where
 
 impl<
     T: ?Sized + ToSig<S>,
-    W: BinSafe + Word,
+    W: Word + BinSafe,
     D: BitFieldSlice<W>,
     S: Sig,
     E: ShardEdge<S, 3>,
@@ -203,7 +204,7 @@ mod tests {
             VBuilder, mix64,
             shard_edge::{FuseLge3NoShards, FuseLge3Shards},
         },
-        utils::{EmptyVal, FromIntoIterator, Sig, SigVal, ToSig},
+        utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
     };
 
     use super::ShardEdge;
@@ -227,7 +228,7 @@ mod tests {
             let filter = VBuilder::<u8, Box<[_]>, S, E>::default()
                 .log2_buckets(4)
                 .offline(false)
-                .try_build_filter(FromIntoIterator::from(0..n), no_logging![])?;
+                .try_build_filter(FromCloneableIntoIterator::from(0..n), no_logging![])?;
             let shard_edge = &filter.func.shard_edge;
             for i in 0..n {
                 let sig = ToSig::<S>::to_sig(i, filter.func.seed);
