@@ -150,3 +150,42 @@ fn test_single_element() {
         }
     }
 }
+
+#[cfg(feature = "epserde")]
+#[test]
+fn test_serialize() {
+    use epserde::utils::AlignedCursor;
+    use maligned::A32;
+
+    let mut builder = partial_array::new_sparse(10, 3);
+
+    builder.set(1, 123u32);
+    builder.set(2, 45678);
+    builder.set(7, 90);
+
+    let array = builder.build();
+
+    let mut cursor = <AlignedCursor<A32>>::new();
+    unsafe {
+        use epserde::ser::Serialize;
+        array.serialize(&mut cursor).expect("Could not serialize")
+    };
+
+    let len = cursor.len();
+    cursor.set_position(0);
+    let array2 = unsafe {
+        use epserde::deser::Deserialize;
+        <partial_array::PartialArray<u32, partial_array::SparseIndex<Box<[usize]>>>>::read_mem(
+            &mut cursor,
+            len,
+        )
+        .expect("Could not deserialize")
+    };
+    let array2 = array2.uncase();
+
+    assert_eq!(array.len(), array2.len());
+    assert_eq!(array.num_values(), array2.num_values());
+    for i in 0..10 {
+        assert_eq!(array.get(i), array2.get(i), "Mismatch at index {i}");
+    }
+}

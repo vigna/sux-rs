@@ -6,13 +6,23 @@
 
 //! Immutable partial array implementations.
 
+use mem_dbg::*;
+
 use crate::bits::BitVec;
 use crate::dict::EliasFanoBuilder;
-use crate::dict::elias_fano::EfDict;
-use crate::rank_sel::Rank9;
+use crate::dict::elias_fano::EliasFano;
+use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
 use crate::traits::{BitVecOps, BitVecOpsMut};
 use crate::traits::{RankUnchecked, SuccUnchecked};
-use mem_dbg::*;
+
+#[derive(Debug, Clone, MemDbg, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SparseIndex<D> {
+    ef: EliasFano<SelectZeroAdaptConst<BitVec<D>, D, 12, 3>>,
+    /// self.ef should be not be queried for values >= self.first_invalid_position
+    first_invalid_position: usize,
+}
 
 /// Builder for creating an immutable partial array.
 ///
@@ -163,13 +173,16 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
     }
 
     /// Builds the immutable sparse partial array.
-    pub fn build(self) -> PartialArray<T, (EfDict, usize)> {
+    pub fn build(self) -> PartialArray<T, SparseIndex<Box<[usize]>>> {
         let (builder, values) = (self.builder, self.values);
         let ef_dict = builder.build_with_dict();
         let values = values.into_boxed_slice();
 
         PartialArray {
-            index: (ef_dict, self.min_next_pos),
+            index: SparseIndex {
+                ef: ef_dict,
+                first_invalid_position: self.min_next_pos,
+            },
             values,
         }
     }
@@ -279,20 +292,20 @@ impl<T> PartialArray<T, Rank9<BitVec<Box<[usize]>>>> {
     }
 }
 
-impl<T> PartialArray<T, (EfDict, usize)> {
+impl<T, D: AsRef<[usize]>> PartialArray<T, SparseIndex<D>> {
     /// Returns the total length of the array.
     ///
     /// This is the length that was specified when creating the builder,
     /// not the number of values actually stored.
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.index.0.upper_bound()
+        self.index.ef.upper_bound()
     }
 
     /// Returns true if the array len is 0.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.index.0.len() == 0
+        self.index.ef.len() == 0
     }
 
     /// Gets a reference to the value at the given position.
@@ -312,7 +325,7 @@ impl<T> PartialArray<T, (EfDict, usize)> {
     /// assert_eq!(array.get(6), None);
     /// ```
     pub fn get(&self, position: usize) -> Option<&T> {
-        if position >= self.index.1 {
+        if position >= self.index.first_invalid_position {
             if position >= self.len() {
                 panic!(
                     "Position {} is out of bounds for array of len {}",
@@ -324,7 +337,7 @@ impl<T> PartialArray<T, (EfDict, usize)> {
         }
         // Check if there's a value at this position
         // SAFETY: position <= last set position
-        let (index, pos) = unsafe { self.index.0.succ_unchecked::<false>(position) };
+        let (index, pos) = unsafe { self.index.ef.succ_unchecked::<false>(position) };
 
         if pos != position {
             None
