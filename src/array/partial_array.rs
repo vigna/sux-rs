@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Immutable partial array implementations.
+//! Immutable [partial array](PartialArray) implementations.
 
 use mem_dbg::*;
 
@@ -15,6 +15,7 @@ use crate::panic_if_out_of_bounds;
 use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
 use crate::traits::{BitVecOps, BitVecOpsMut};
 use crate::traits::{RankUnchecked, SuccUnchecked};
+use value_traits::slices::SliceByValue;
 
 /// An internal index for sparse partial arrays.
 ///
@@ -222,6 +223,9 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder> {
 /// and a [sparse](new_sparse) implementation with different
 /// space/time trade-offs.
 ///
+/// For convenience, this structure implements
+/// [`SliceByValue`](crate::traits::slices::SliceByValue).
+///
 /// See [`PartialArrayBuilder`] for details on how to create a partial array.
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
@@ -335,5 +339,18 @@ impl<T, D: AsRef<[usize]>> PartialArray<T, SparseIndex<D>> {
             // SAFETY: necessarily value_index < num values.
             Some(unsafe { self.values.get_unchecked(index) })
         }
+    }
+}
+
+impl<T: Clone, P> SliceByValue for PartialArray<T, P> {
+    type Value = T;
+
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    unsafe fn get_value_unchecked(&self, index: usize) -> Self::Value {
+        // SAFETY: the caller guarantees that index < len()
+        unsafe { self.values.get_unchecked(index) }.clone()
     }
 }
