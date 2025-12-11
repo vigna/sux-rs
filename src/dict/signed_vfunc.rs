@@ -18,7 +18,7 @@ use value_traits::slices::SliceByValue;
 
 /// A signed index function using a [`SliceByValue`] to store hashes.
 ///
-/// Usually, the [`SliceByValue`] will be a sliced box. Note that the result of
+/// Usually, the [`SliceByValue`] will be a boxed slice. Note that the result of
 /// the [`SliceByValue`] is assumed to be a hash of size
 /// `SliceByValue::Value::BITS`. If you are using implementations returning less
 /// hash bits (such as a [`BitFieldVec`]), you will need to use
