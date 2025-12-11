@@ -11,17 +11,29 @@ use mem_dbg::*;
 use crate::bits::BitVec;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EliasFano;
+use crate::panic_if_out_of_bounds;
 use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
 use crate::traits::{BitVecOps, BitVecOpsMut};
 use crate::traits::{RankUnchecked, SuccUnchecked};
 
+/// An internal index for sparse partial arrays.
+///
+/// We cannot use directly an [Elias–Fano](crate::dict::EliasFano) structure
+/// because we need to keep track of the first invalid position; and we need to
+/// keep track of the first invalid position because we want to implement just
+/// [`SuccUnchecked`](crate::traits::SuccUnchecked) on the Elias–Fano structure,
+/// because it requires just
+/// [`SelectZeroUnchecked`](crate::traits::SelectZeroUnchecked), whereas
+/// [`Succ`](crate::traits::Succ) would require
+/// [`SelectUnchecked`](crate::traits::SelectUnchecked) as well.
+#[doc(hidden)]
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SparseIndex<D> {
     ef: EliasFano<SelectZeroAdaptConst<BitVec<D>, D, 12, 3>>,
     /// self.ef should be not be queried for values >= self.first_invalid_position
-    first_invalid_position: usize,
+    first_invalid_pos: usize,
 }
 
 /// Builder for creating an immutable partial array.
@@ -85,12 +97,7 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
                 self.min_next_pos - 1
             );
         }
-        if position >= self.len {
-            panic!(
-                "Position {} is out of bounds for array of len {}",
-                position, self.len
-            );
-        }
+        panic_if_out_of_bounds!(position, self.len);
         // SAFETY: position < len
         unsafe {
             self.builder.set_unchecked(position, true);
@@ -160,12 +167,7 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
                 self.min_next_pos - 1
             );
         }
-        if position >= self.len {
-            panic!(
-                "Position {} is out of bounds for array of len {}",
-                position, self.len
-            );
-        }
+        panic_if_out_of_bounds!(position, self.len);
         // SAFETY: conditions have been just checked.
         unsafe { self.builder.push_unchecked(position) };
         self.values.push(value);
@@ -181,7 +183,7 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
         PartialArray {
             index: SparseIndex {
                 ef: ef_dict,
-                first_invalid_position: self.min_next_pos,
+                first_invalid_pos: self.min_next_pos,
             },
             values,
         }
@@ -270,13 +272,7 @@ impl<T> PartialArray<T, Rank9<BitVec<Box<[usize]>>>> {
     /// assert_eq!(array.get(6), None);
     /// ```
     pub fn get(&self, position: usize) -> Option<&T> {
-        if position >= self.len() {
-            panic!(
-                "Position {} is out of bounds for array of len {}",
-                position,
-                self.len()
-            );
-        }
+        panic_if_out_of_bounds!(position, self.len());
         // Check if there's a value at this position
         // SAFETY: position < len()
         if !unsafe { self.index.get_unchecked(position) } {
@@ -325,14 +321,8 @@ impl<T, D: AsRef<[usize]>> PartialArray<T, SparseIndex<D>> {
     /// assert_eq!(array.get(6), None);
     /// ```
     pub fn get(&self, position: usize) -> Option<&T> {
-        if position >= self.index.first_invalid_position {
-            if position >= self.len() {
-                panic!(
-                    "Position {} is out of bounds for array of len {}",
-                    position,
-                    self.len()
-                );
-            }
+        if position >= self.index.first_invalid_pos {
+            panic_if_out_of_bounds!(position, self.len());
             return None;
         }
         // Check if there's a value at this position
