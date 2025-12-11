@@ -89,21 +89,21 @@ fn test_replacement_dense() {
 }
 
 #[test]
-#[should_panic(expected = "Position 10 is out of bounds for array of len 10")]
+#[should_panic(expected = "Index out of bounds: 10 >= 10")]
 fn test_builder_bounds_check_sparse() {
     let mut builder = partial_array::new_sparse::<&str>(10, 1);
     builder.set(10, "oops");
 }
 
 #[test]
-#[should_panic(expected = "Position 10 is out of bounds for array of len 10")]
+#[should_panic(expected = "Index out of bounds: 10 >= 10")]
 fn test_builder_bounds_check_dense() {
     let mut builder = partial_array::new_dense::<&str>(10);
     builder.set(10, "oops");
 }
 
 #[test]
-#[should_panic(expected = "Position 5 is out of bounds for array of len 5")]
+#[should_panic(expected = "Index out of bounds: 5 >= 5")]
 fn test_array_bounds_check_sparse() {
     let builder = partial_array::new_sparse::<usize>(5, 0);
     let array = builder.build();
@@ -111,7 +111,7 @@ fn test_array_bounds_check_sparse() {
 }
 
 #[test]
-#[should_panic(expected = "Position 5 is out of bounds for array of len 5")]
+#[should_panic(expected = "Index out of bounds: 5 >= 5")]
 fn test_array_bounds_check_dense() {
     let builder = partial_array::new_dense::<usize>(5);
     let array = builder.build();
