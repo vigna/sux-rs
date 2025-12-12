@@ -39,7 +39,7 @@ pub fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let mut rcab = RearCodedListBuilder::<str, true>::new(args.k);
+    let mut rcab = RearCodedListBuilder::<str, Vec<usize>, true>::new(args.k);
     let mut pl = ProgressLogger::default();
     pl.display_memory(true).item_name("line");
 

@@ -40,7 +40,7 @@ mod test {
 
         // Sorted
 
-        let mut rclb = <RearCodedListBuilder<str, true>>::new(4);
+        let mut rclb = <RearCodedListBuilder<str, Vec<usize>, true>>::new(4);
         rclb.extend(words.iter().into_lender());
 
         rclb.print_stats();
@@ -102,7 +102,7 @@ mod test {
 
         // Unsorted
 
-        let mut rclb = <RearCodedListBuilder<str, false>>::new(4);
+        let mut rclb = <RearCodedListBuilder<str, Vec<usize>, false>>::new(4);
         rclb.extend(words.iter().into_lender());
 
         rclb.print_stats();
@@ -168,7 +168,7 @@ mod test {
 
 #[test]
 fn test_bit_field_vec_mapped_rear_coded_list() {
-    let mut builder = RearCodedListBuilder::<str, true>::new(4);
+    let mut builder = RearCodedListBuilder::<str, Vec<usize>, true>::new(4);
     builder.push("a");
     builder.push("b");
     builder.push("c");
