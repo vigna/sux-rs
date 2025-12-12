@@ -11,3 +11,5 @@
 
 pub mod partial_array;
 pub use partial_array::{PartialArray, PartialArrayBuilder, new_dense, new_sparse};
+pub mod partial_value_array;
+pub use partial_value_array::{PartialValueArray, PartialValueArrayBuilder};
