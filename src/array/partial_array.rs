@@ -4,15 +4,38 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Immutable partial array implementations.
+//! Immutable [partial array](PartialArray) implementations.
+
+use mem_dbg::*;
 
 use crate::bits::BitVec;
 use crate::dict::EliasFanoBuilder;
-use crate::dict::elias_fano::EfDict;
-use crate::rank_sel::Rank9;
+use crate::dict::elias_fano::EliasFano;
+use crate::panic_if_out_of_bounds;
+use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
 use crate::traits::{BitVecOps, BitVecOpsMut};
 use crate::traits::{RankUnchecked, SuccUnchecked};
-use mem_dbg::*;
+use value_traits::slices::SliceByValue;
+
+/// An internal index for sparse partial arrays.
+///
+/// We cannot use directly an [Elias–Fano](crate::dict::EliasFano) structure
+/// because we need to keep track of the first invalid position; and we need to
+/// keep track of the first invalid position because we want to implement just
+/// [`SuccUnchecked`](crate::traits::SuccUnchecked) on the Elias–Fano structure,
+/// because it requires just
+/// [`SelectZeroUnchecked`](crate::traits::SelectZeroUnchecked), whereas
+/// [`Succ`](crate::traits::Succ) would require
+/// [`SelectUnchecked`](crate::traits::SelectUnchecked) as well.
+#[doc(hidden)]
+#[derive(Debug, Clone, MemDbg, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SparseIndex<D> {
+    ef: EliasFano<SelectZeroAdaptConst<BitVec<D>, D, 12, 3>>,
+    /// self.ef should be not be queried for values >= self.first_invalid_position
+    first_invalid_pos: usize,
+}
 
 type DenseIndex = Rank9<BitVec<Box<[usize]>>>;
 
@@ -77,12 +100,7 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
                 self.min_next_pos - 1
             );
         }
-        if position >= self.len {
-            panic!(
-                "Position {} is out of bounds for array of len {}",
-                position, self.len
-            );
-        }
+        panic_if_out_of_bounds!(position, self.len);
         // SAFETY: position < len
         unsafe {
             self.builder.set_unchecked(position, true);
@@ -152,12 +170,7 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
                 self.min_next_pos - 1
             );
         }
-        if position >= self.len {
-            panic!(
-                "Position {} is out of bounds for array of len {}",
-                position, self.len
-            );
-        }
+        panic_if_out_of_bounds!(position, self.len);
         // SAFETY: conditions have been just checked.
         unsafe { self.builder.push_unchecked(position) };
         self.values.push(value);
@@ -165,13 +178,16 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
     }
 
     /// Builds the immutable sparse partial array.
-    pub fn build(self) -> PartialArray<T, (EfDict, usize)> {
+    pub fn build(self) -> PartialArray<T, SparseIndex<Box<[usize]>>> {
         let (builder, values) = (self.builder, self.values);
         let ef_dict = builder.build_with_dict();
         let values = values.into_boxed_slice();
 
         PartialArray {
-            index: (ef_dict, self.min_next_pos),
+            index: SparseIndex {
+                ef: ef_dict,
+                first_invalid_pos: self.min_next_pos,
+            },
             values,
         }
     }
@@ -208,6 +224,9 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder> {
 /// some positions contain values. There is a [dense](new_dense)
 /// and a [sparse](new_sparse) implementation with different
 /// space/time trade-offs.
+///
+/// For convenience, this structure implements
+/// [`SliceByValue`](crate::traits::slices::SliceByValue).
 ///
 /// See [`PartialArrayBuilder`] for details on how to create a partial array.
 #[derive(Debug, Clone, MemDbg, MemSize)]
@@ -259,13 +278,7 @@ impl<T> PartialArray<T, DenseIndex> {
     /// assert_eq!(array.get(6), None);
     /// ```
     pub fn get(&self, position: usize) -> Option<&T> {
-        if position >= self.len() {
-            panic!(
-                "Position {} is out of bounds for array of len {}",
-                position,
-                self.len()
-            );
-        }
+        panic_if_out_of_bounds!(position, self.len());
         // Check if there's a value at this position
         // SAFETY: position < len()
         if !unsafe { self.index.get_unchecked(position) } {
@@ -281,20 +294,20 @@ impl<T> PartialArray<T, DenseIndex> {
     }
 }
 
-impl<T> PartialArray<T, (EfDict, usize)> {
+impl<T, D: AsRef<[usize]>> PartialArray<T, SparseIndex<D>> {
     /// Returns the total length of the array.
     ///
     /// This is the length that was specified when creating the builder,
     /// not the number of values actually stored.
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.index.0.upper_bound()
+        self.index.ef.upper_bound()
     }
 
     /// Returns true if the array len is 0.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.index.0.len() == 0
+        self.index.ef.len() == 0
     }
 
     /// Gets a reference to the value at the given position.
@@ -314,19 +327,13 @@ impl<T> PartialArray<T, (EfDict, usize)> {
     /// assert_eq!(array.get(6), None);
     /// ```
     pub fn get(&self, position: usize) -> Option<&T> {
-        if position >= self.index.1 {
-            if position >= self.len() {
-                panic!(
-                    "Position {} is out of bounds for array of len {}",
-                    position,
-                    self.len()
-                );
-            }
+        if position >= self.index.first_invalid_pos {
+            panic_if_out_of_bounds!(position, self.len());
             return None;
         }
         // Check if there's a value at this position
         // SAFETY: position <= last set position
-        let (index, pos) = unsafe { self.index.0.succ_unchecked::<false>(position) };
+        let (index, pos) = unsafe { self.index.ef.succ_unchecked::<false>(position) };
 
         if pos != position {
             None
@@ -334,5 +341,18 @@ impl<T> PartialArray<T, (EfDict, usize)> {
             // SAFETY: necessarily value_index < num values.
             Some(unsafe { self.values.get_unchecked(index) })
         }
+    }
+}
+
+impl<T: Clone, P> SliceByValue for PartialArray<T, P> {
+    type Value = T;
+
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    unsafe fn get_value_unchecked(&self, index: usize) -> Self::Value {
+        // SAFETY: the caller guarantees that index < len()
+        unsafe { self.values.get_unchecked(index) }.clone()
     }
 }

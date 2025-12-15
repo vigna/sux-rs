@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.10.3] - 2025-12-09
+
+### New
+
+- New `SignedVFunc` and `BitSignedVFunc` structures that store signed
+  index functions.
+
 ## [0.10.2] - 2025-11-28
 
 ### New

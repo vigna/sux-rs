@@ -89,21 +89,21 @@ fn test_replacement_dense() {
 }
 
 #[test]
-#[should_panic(expected = "Position 10 is out of bounds for array of len 10")]
+#[should_panic(expected = "Index out of bounds: 10 >= 10")]
 fn test_builder_bounds_check_sparse() {
     let mut builder = partial_array::new_sparse::<&str>(10, 1);
     builder.set(10, "oops");
 }
 
 #[test]
-#[should_panic(expected = "Position 10 is out of bounds for array of len 10")]
+#[should_panic(expected = "Index out of bounds: 10 >= 10")]
 fn test_builder_bounds_check_dense() {
     let mut builder = partial_array::new_dense::<&str>(10);
     builder.set(10, "oops");
 }
 
 #[test]
-#[should_panic(expected = "Position 5 is out of bounds for array of len 5")]
+#[should_panic(expected = "Index out of bounds: 5 >= 5")]
 fn test_array_bounds_check_sparse() {
     let builder = partial_array::new_sparse::<usize>(5, 0);
     let array = builder.build();
@@ -111,7 +111,7 @@ fn test_array_bounds_check_sparse() {
 }
 
 #[test]
-#[should_panic(expected = "Position 5 is out of bounds for array of len 5")]
+#[should_panic(expected = "Index out of bounds: 5 >= 5")]
 fn test_array_bounds_check_dense() {
     let builder = partial_array::new_dense::<usize>(5);
     let array = builder.build();
@@ -148,5 +148,44 @@ fn test_single_element() {
         if i != 500 {
             assert_eq!(array.get(i), None);
         }
+    }
+}
+
+#[cfg(feature = "epserde")]
+#[test]
+fn test_serialize() {
+    use epserde::utils::AlignedCursor;
+    use maligned::A32;
+
+    let mut builder = partial_array::new_sparse(10, 3);
+
+    builder.set(1, 123u32);
+    builder.set(2, 45678);
+    builder.set(7, 90);
+
+    let array = builder.build();
+
+    let mut cursor = <AlignedCursor<A32>>::new();
+    unsafe {
+        use epserde::ser::Serialize;
+        array.serialize(&mut cursor).expect("Could not serialize")
+    };
+
+    let len = cursor.len();
+    cursor.set_position(0);
+    let array2 = unsafe {
+        use epserde::deser::Deserialize;
+        <partial_array::PartialArray<u32, partial_array::SparseIndex<Box<[usize]>>>>::read_mem(
+            &mut cursor,
+            len,
+        )
+        .expect("Could not deserialize")
+    };
+    let array2 = array2.uncase();
+
+    assert_eq!(array.len(), array2.len());
+    assert_eq!(array.num_values(), array2.num_values());
+    for i in 0..10 {
+        assert_eq!(array.get(i), array2.get(i), "Mismatch at index {i}");
     }
 }
