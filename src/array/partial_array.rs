@@ -6,7 +6,10 @@
 
 //! Immutable [partial array](PartialArray) implementations.
 
+use std::marker::PhantomData;
+
 use mem_dbg::*;
+use value_traits::slices::SliceByValue;
 
 use crate::bits::BitVec;
 use crate::dict::EliasFanoBuilder;
@@ -15,7 +18,8 @@ use crate::panic_if_out_of_bounds;
 use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
 use crate::traits::{BitVecOps, BitVecOpsMut};
 use crate::traits::{RankUnchecked, SuccUnchecked};
-use value_traits::slices::SliceByValue;
+
+type DenseIndex = Rank9<BitVec<Box<[usize]>>>;
 
 /// An internal index for sparse partial arrays.
 ///
@@ -116,6 +120,7 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
         PartialArray {
             index: rank9,
             values,
+            _marker: PhantomData,
         }
     }
 }
@@ -187,6 +192,7 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
                 first_invalid_pos: self.min_next_pos,
             },
             values,
+            _marker: PhantomData,
         }
     }
 }
@@ -230,20 +236,21 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder> {
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PartialArray<T, P> {
+pub struct PartialArray<T, P, V: AsRef<[T]> = Box<[T]>> {
     index: P,
-    values: Box<[T]>,
+    values: V,
+    _marker: PhantomData<T>,
 }
 
-impl<T, P> PartialArray<T, P> {
+impl<T, P, V: AsRef<[T]>> PartialArray<T, P, V> {
     /// Returns the number of values stored in the array.
     #[inline(always)]
     pub fn num_values(&self) -> usize {
-        self.values.len()
+        self.values.as_ref().len()
     }
 }
 
-impl<T> PartialArray<T, Rank9<BitVec<Box<[usize]>>>> {
+impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
     /// Returns the total length of the array.
     ///
     /// This is the length that was specified when creating the builder,
@@ -288,11 +295,11 @@ impl<T> PartialArray<T, Rank9<BitVec<Box<[usize]>>>> {
         let value_index = unsafe { self.index.rank_unchecked(position) };
 
         // SAFETY: necessarily value_index < num_values().
-        Some(unsafe { self.values.get_unchecked(value_index) })
+        Some(unsafe { self.values.as_ref().get_unchecked(value_index) })
     }
 }
 
-impl<T, D: AsRef<[usize]>> PartialArray<T, SparseIndex<D>> {
+impl<T, D: AsRef<[usize]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
     /// Returns the total length of the array.
     ///
     /// This is the length that was specified when creating the builder,
@@ -337,20 +344,20 @@ impl<T, D: AsRef<[usize]>> PartialArray<T, SparseIndex<D>> {
             None
         } else {
             // SAFETY: necessarily value_index < num values.
-            Some(unsafe { self.values.get_unchecked(index) })
+            Some(unsafe { self.values.as_ref().get_unchecked(index) })
         }
     }
 }
 
-impl<T: Clone, P> SliceByValue for PartialArray<T, P> {
+impl<T: Clone, P, V: AsRef<[T]>> SliceByValue for PartialArray<T, P, V> {
     type Value = T;
 
     fn len(&self) -> usize {
-        self.values.len()
+        self.values.as_ref().len()
     }
 
     unsafe fn get_value_unchecked(&self, index: usize) -> Self::Value {
         // SAFETY: the caller guarantees that index < len()
-        unsafe { self.values.get_unchecked(index) }.clone()
+        unsafe { self.values.as_ref().get_unchecked(index) }.clone()
     }
 }
