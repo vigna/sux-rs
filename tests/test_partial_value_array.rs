@@ -144,7 +144,6 @@ fn test_serialize() {
     use epserde::utils::AlignedCursor;
     use maligned::A32;
     use sux::bits::BitFieldVec;
-    use sux::dict::elias_fano::EfDict;
 
     let mut builder = partial_value_array::new_sparse(10, 3);
 
@@ -157,18 +156,19 @@ fn test_serialize() {
     let mut cursor = <AlignedCursor<A32>>::new();
     unsafe {
         use epserde::ser::Serialize;
-        array.serialize(&mut cursor)?
+        array.serialize(&mut cursor).expect("Could not serialize")
     };
 
     let len = cursor.len();
     cursor.set_position(0);
     let array2 = unsafe {
         use epserde::deser::Deserialize;
-        <partial_value_array::PartialValueArray<u32, EfDict, BitFieldVec<usize>>>::read_mem(
+        <partial_value_array::PartialValueArray<u32, partial_value_array::SparseIndex<Box<[usize]>>, BitFieldVec<u32>>>::read_mem(
             &mut cursor,
             len,
-        )?
+        ).expect("Could not deserialize")
     };
+    let array2 = array2.uncase();
 
     assert_eq!(array.len(), array2.len());
     assert_eq!(array.num_values(), array2.num_values());

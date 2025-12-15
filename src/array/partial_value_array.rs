@@ -17,11 +17,31 @@ use value_traits::slices::SliceByValue;
 use crate::bits::BitFieldVec;
 use crate::bits::BitVec;
 use crate::dict::EliasFanoBuilder;
-use crate::dict::elias_fano::EfDict;
-use crate::rank_sel::Rank9;
+use crate::dict::elias_fano::EliasFano;
+use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
 use crate::traits::Word;
 use crate::traits::{BitVecOps, BitVecOpsMut};
 use crate::traits::{RankUnchecked, SuccUnchecked};
+
+/// An internal index for sparse partial arrays.
+///
+/// We cannot use directly an [Elias–Fano](crate::dict::EliasFano) structure
+/// because we need to keep track of the first invalid position; and we need to
+/// keep track of the first invalid position because we want to implement just
+/// [`SuccUnchecked`](crate::traits::SuccUnchecked) on the Elias–Fano structure,
+/// because it requires just
+/// [`SelectZeroUnchecked`](crate::traits::SelectZeroUnchecked), whereas
+/// [`Succ`](crate::traits::Succ) would require
+/// [`SelectUnchecked`](crate::traits::SelectUnchecked) as well.
+#[doc(hidden)]
+#[derive(Debug, Clone, MemDbg, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SparseIndex<D> {
+    ef: EliasFano<SelectZeroAdaptConst<BitVec<D>, D, 12, 3>>,
+    /// self.ef should be not be queried for values >= self.first_invalid_position
+    first_invalid_pos: usize,
+}
 
 type DenseIndex = Rank9<BitVec<Box<[usize]>>>;
 
@@ -196,7 +216,7 @@ impl<T: Clone> PartialValueArrayBuilder<T, EliasFanoBuilder> {
     }
 
     /// Builds the immutable sparse partial array using [`BitFieldVec`] as backend.
-    pub fn build_bitfieldvec(self) -> PartialValueArray<T, (EfDict, usize), BitFieldVec<T>>
+    pub fn build_bitfieldvec(self) -> PartialValueArray<T, SparseIndex<Box<[usize]>>, BitFieldVec<T>>
     where
         T: Word,
     {
@@ -205,7 +225,10 @@ impl<T: Clone> PartialValueArrayBuilder<T, EliasFanoBuilder> {
         let values = build_bitfieldvec(values);
 
         PartialValueArray {
-            index: (ef_dict, self.min_next_pos),
+            index: SparseIndex {
+                ef: ef_dict,
+                first_invalid_pos: self.min_next_pos,
+            },
             values,
             _marker: PhantomData,
         }
@@ -248,13 +271,13 @@ impl<T: Clone> Extend<(usize, T)> for PartialValueArrayBuilder<T, EliasFanoBuild
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PartialValueArray<T: Clone, P, D: SliceByValue<Value = T>> {
+pub struct PartialValueArray<T: Clone, P, V: SliceByValue<Value = T>> {
     index: P,
-    values: D,
+    values: V,
     _marker: PhantomData<T>,
 }
 
-impl<T: Clone, P, D: SliceByValue<Value = T>> PartialValueArray<T, P, D> {
+impl<T: Clone, P, V: SliceByValue<Value = T>> PartialValueArray<T, P, V> {
     /// Returns the number of values stored in the array.
     #[inline(always)]
     pub fn num_values(&self) -> usize {
@@ -262,7 +285,7 @@ impl<T: Clone, P, D: SliceByValue<Value = T>> PartialValueArray<T, P, D> {
     }
 }
 
-impl<T: Clone, D: SliceByValue<Value = T>> PartialValueArray<T, DenseIndex, D> {
+impl<T: Clone, V: SliceByValue<Value = T>> PartialValueArray<T, DenseIndex, V> {
     /// Returns the total length of the array.
     ///
     /// This is the length that was specified when creating the builder,
@@ -317,20 +340,20 @@ impl<T: Clone, D: SliceByValue<Value = T>> PartialValueArray<T, DenseIndex, D> {
     }
 }
 
-impl<T: Clone, D: SliceByValue<Value = T>> PartialValueArray<T, (EfDict, usize), D> {
+impl<T: Clone, D: AsRef<[usize]>, V: SliceByValue<Value = T>> PartialValueArray<T, SparseIndex<D>, V> {
     /// Returns the total length of the array.
     ///
     /// This is the length that was specified when creating the builder,
     /// not the number of values actually stored.
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.index.0.upper_bound()
+        self.index.ef.upper_bound()
     }
 
     /// Returns true if the array len is 0.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.index.0.len() == 0
+        self.index.ef.len() == 0
     }
 
     /// Gets a reference to the value at the given position.
@@ -350,7 +373,7 @@ impl<T: Clone, D: SliceByValue<Value = T>> PartialValueArray<T, (EfDict, usize),
     /// assert_eq!(array.get(6), None);
     /// ```
     pub fn get(&self, position: usize) -> Option<T> {
-        if position >= self.index.1 {
+        if position >= self.index.first_invalid_pos {
             if position >= self.len() {
                 panic!(
                     "Position {} is out of bounds for array of len {}",
@@ -362,7 +385,7 @@ impl<T: Clone, D: SliceByValue<Value = T>> PartialValueArray<T, (EfDict, usize),
         }
         // Check if there's a value at this position
         // SAFETY: position <= last set position
-        let (index, pos) = unsafe { self.index.0.succ_unchecked::<false>(position) };
+        let (index, pos) = unsafe { self.index.ef.succ_unchecked::<false>(position) };
 
         if pos != position {
             None
