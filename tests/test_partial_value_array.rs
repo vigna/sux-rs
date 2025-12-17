@@ -163,10 +163,12 @@ fn test_serialize() {
     cursor.set_position(0);
     let array2 = unsafe {
         use epserde::deser::Deserialize;
-        <partial_value_array::PartialValueArray<u32, partial_value_array::SparseIndex<Box<[usize]>>, BitFieldVec<u32>>>::read_mem(
-            &mut cursor,
-            len,
-        ).expect("Could not deserialize")
+        <partial_value_array::PartialValueArray<
+            u32,
+            partial_value_array::SparseIndex<Box<[usize]>>,
+            BitFieldVec<u32>,
+        >>::read_mem(&mut cursor, len)
+        .expect("Could not deserialize")
     };
     let array2 = array2.uncase();
 

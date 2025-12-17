@@ -216,7 +216,9 @@ impl<T: Clone> PartialValueArrayBuilder<T, EliasFanoBuilder> {
     }
 
     /// Builds the immutable sparse partial array using [`BitFieldVec`] as backend.
-    pub fn build_bitfieldvec(self) -> PartialValueArray<T, SparseIndex<Box<[usize]>>, BitFieldVec<T>>
+    pub fn build_bitfieldvec(
+        self,
+    ) -> PartialValueArray<T, SparseIndex<Box<[usize]>>, BitFieldVec<T>>
     where
         T: Word,
     {
@@ -340,7 +342,9 @@ impl<T: Clone, V: SliceByValue<Value = T>> PartialValueArray<T, DenseIndex, V> {
     }
 }
 
-impl<T: Clone, D: AsRef<[usize]>, V: SliceByValue<Value = T>> PartialValueArray<T, SparseIndex<D>, V> {
+impl<T: Clone, D: AsRef<[usize]>, V: SliceByValue<Value = T>>
+    PartialValueArray<T, SparseIndex<D>, V>
+{
     /// Returns the total length of the array.
     ///
     /// This is the length that was specified when creating the builder,
