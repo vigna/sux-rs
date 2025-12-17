@@ -47,6 +47,12 @@ fn test_basic_operations() {
     assert_eq!(array.get(8), None);
     assert_eq!(array.get(9), None);
 
+    assert_eq!(
+        array.entries().collect::<Vec<_>>(),
+        vec![(1, &"foo"), (2, &"hello"), (7, &"world")]
+    );
+    assert_eq!(array.positions().collect::<Vec<_>>(), vec![1, 2, 7]);
+
     let mut builder = partial_array::new_dense(10);
 
     builder.set(1, "foo");
@@ -68,6 +74,12 @@ fn test_basic_operations() {
     assert_eq!(array.get(7), Some(&"world"));
     assert_eq!(array.get(8), None);
     assert_eq!(array.get(9), None);
+
+    assert_eq!(
+        array.entries().collect::<Vec<_>>(),
+        vec![(1, &"foo"), (2, &"hello"), (7, &"world")]
+    );
+    assert_eq!(array.positions().collect::<Vec<_>>(), vec![1, 2, 7]);
 }
 
 #[test]
