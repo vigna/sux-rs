@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use sux::array::SparseIndex;
 use sux::array::partial_value_array;
 
 #[test]
@@ -165,7 +166,7 @@ fn test_serialize() {
         use epserde::deser::Deserialize;
         <partial_value_array::PartialValueArray<
             u32,
-            partial_value_array::SparseIndex<Box<[usize]>>,
+            SparseIndex<Box<[usize]>>,
             BitFieldVec<u32>,
         >>::read_mem(&mut cursor, len)
         .expect("Could not deserialize")

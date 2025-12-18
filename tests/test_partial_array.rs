@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use sux::array::SparseIndex;
 use sux::array::partial_array;
 
 #[test]
@@ -175,11 +176,8 @@ fn test_serialize() {
     cursor.set_position(0);
     let array2 = unsafe {
         use epserde::deser::Deserialize;
-        <partial_array::PartialArray<u32, partial_array::SparseIndex<Box<[usize]>>>>::read_mem(
-            &mut cursor,
-            len,
-        )
-        .expect("Could not deserialize")
+        <partial_array::PartialArray<u32, SparseIndex<Box<[usize]>>>>::read_mem(&mut cursor, len)
+            .expect("Could not deserialize")
     };
     let array2 = array2.uncase();
 

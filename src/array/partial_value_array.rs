@@ -17,33 +17,13 @@ use value_traits::slices::SliceByValue;
 use crate::bits::BitFieldVec;
 use crate::bits::BitVec;
 use crate::dict::EliasFanoBuilder;
-use crate::dict::elias_fano::EliasFano;
-use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
+use crate::panic_if_out_of_bounds;
+use crate::rank_sel::Rank9;
+use crate::traits::RankUnchecked;
 use crate::traits::Word;
 use crate::traits::{BitVecOps, BitVecOpsMut};
-use crate::traits::{RankUnchecked, SuccUnchecked};
 
-/// An internal index for sparse partial arrays.
-///
-/// We cannot use directly an [Elias–Fano](crate::dict::EliasFano) structure
-/// because we need to keep track of the first invalid position; and we need to
-/// keep track of the first invalid position because we want to implement just
-/// [`SuccUnchecked`](crate::traits::SuccUnchecked) on the Elias–Fano structure,
-/// because it requires just
-/// [`SelectZeroUnchecked`](crate::traits::SelectZeroUnchecked), whereas
-/// [`Succ`](crate::traits::Succ) would require
-/// [`SelectUnchecked`](crate::traits::SelectUnchecked) as well.
-#[doc(hidden)]
-#[derive(Debug, Clone, MemDbg, MemSize)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct SparseIndex<D> {
-    ef: EliasFano<SelectZeroAdaptConst<BitVec<D>, D, 12, 3>>,
-    /// self.ef should be not be queried for values >= self.first_invalid_position
-    first_invalid_pos: usize,
-}
-
-type DenseIndex = Rank9<BitVec<Box<[usize]>>>;
+use super::{DenseIndex, SparseIndex};
 
 /// Builder for creating an immutable partial array.
 ///
@@ -320,13 +300,8 @@ impl<T: Clone, V: SliceByValue<Value = T>> PartialValueArray<T, DenseIndex, V> {
     /// assert_eq!(array.get(6), None);
     /// ```
     pub fn get(&self, position: usize) -> Option<T> {
-        if position >= self.len() {
-            panic!(
-                "Position {} is out of bounds for array of len {}",
-                position,
-                self.len()
-            );
-        }
+        panic_if_out_of_bounds!(position, self.len());
+
         // Check if there's a value at this position
         // SAFETY: position < len()
         if !unsafe { self.index.get_unchecked(position) } {
@@ -377,25 +352,15 @@ impl<T: Clone, D: AsRef<[usize]>, V: SliceByValue<Value = T>>
     /// assert_eq!(array.get(6), None);
     /// ```
     pub fn get(&self, position: usize) -> Option<T> {
-        if position >= self.index.first_invalid_pos {
-            if position >= self.len() {
-                panic!(
-                    "Position {} is out of bounds for array of len {}",
-                    position,
-                    self.len()
-                );
-            }
-            return None;
-        }
-        // Check if there's a value at this position
-        // SAFETY: position <= last set position
-        let (index, pos) = unsafe { self.index.ef.succ_unchecked::<false>(position) };
+        panic_if_out_of_bounds!(position, self.len());
+
+        let (value_index, pos) = self.index.get_next_pos(position)?;
 
         if pos != position {
             None
         } else {
             // SAFETY: necessarily value_index < num values.
-            Some(unsafe { self.values.get_value_unchecked(index) })
+            Some(unsafe { self.values.get_value_unchecked(value_index) })
         }
     }
 }
