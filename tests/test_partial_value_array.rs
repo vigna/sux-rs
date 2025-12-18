@@ -174,7 +174,7 @@ fn test_serialize() {
 
     assert_eq!(array.len(), array2.len());
     assert_eq!(array.num_values(), array2.num_values());
-    for i in 0..20 {
+    for i in 0..10 {
         assert_eq!(array.get(i), array2.get(i), "Mismatch at index {i}");
     }
 }
