@@ -8,7 +8,7 @@
 
 #[cfg(test)]
 use lender::{IntoLender, Lending};
-use sux::dict::RearCodedListBuilder;
+use sux::dict::{EliasFanoBuilder, RearCodedListBuilder};
 
 #[cfg(feature = "epserde")]
 mod test {
@@ -37,7 +37,7 @@ mod test {
             .collect::<Result<Vec<_>, _>>()?;
 
         // test sorted RCL
-        let mut rclb = <RearCodedListBuilder<str, true>>::new(4);
+        let mut rclb = <RearCodedListBuilder<str, Vec<usize>, true>>::new(4);
         rclb.extend(words.iter().into_lender());
 
         rclb.print_stats();
@@ -90,7 +90,11 @@ mod test {
         let len = cursor.len();
         cursor.set_position(0);
         let c = unsafe {
-            <RearCodedListStr<true>>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())?
+            <RearCodedListStr<Vec<usize>, true>>::read_mmap(
+                &mut cursor,
+                len,
+                epserde::deser::Flags::empty(),
+            )?
         };
         let c = c.uncase();
 
@@ -99,7 +103,7 @@ mod test {
         }
 
         // test unsorted RCL
-        let mut rcl_builder = <RearCodedListBuilder<str, false>>::new(4);
+        let mut rcl_builder = <RearCodedListBuilder<str, Vec<usize>, false>>::new(4);
         let mut shuffled_words = words.iter().map(|s| s.as_str()).collect::<Vec<_>>();
         shuffled_words.shuffle(&mut rand::rng());
 
@@ -142,7 +146,11 @@ mod test {
         let len = cursor.len();
         cursor.set_position(0);
         let c = unsafe {
-            <RearCodedListStr<false>>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())?
+            <RearCodedListStr<Vec<usize>, false>>::read_mmap(
+                &mut cursor,
+                len,
+                epserde::deser::Flags::empty(),
+            )?
         };
         let c = c.uncase();
 
@@ -156,7 +164,7 @@ mod test {
     #[test]
     #[should_panic(expected = "Strings must be sorted in ascending order")]
     fn test_panics_on_out_of_order() {
-        let mut rclb = <RearCodedListBuilder<str, true>>::new(4);
+        let mut rclb = <RearCodedListBuilder<str, Vec<usize>, true>>::new(4);
         rclb.push("apple");
         rclb.push("banana");
         rclb.push("cherry");
@@ -182,8 +190,23 @@ where
 }
 
 #[test]
-fn test_into_lend() {
-    let mut builder = RearCodedListBuilder::<str, true>::new(4);
+fn test_into_lend_vec() {
+    let mut builder = RearCodedListBuilder::<str, Vec<usize>, true>::new(4);
+    builder.push("a");
+    builder.push("b");
+    builder.push("c");
+    builder.push("d");
+    let rcl = builder.build();
+    read_into_lender(&rcl);
+}
+
+#[test]
+fn test_into_lend_ef() {
+    let ratio = 4;
+    let mut builder = RearCodedListBuilder::<str, EliasFanoBuilder, true>::with_pointer_builder(
+        ratio,
+        EliasFanoBuilder::new(4 / ratio, 10),
+    );
     builder.push("a");
     builder.push("b");
     builder.push("c");
@@ -204,7 +227,7 @@ fn test_zero_bytes() {
         "g\0\0",
         "h\0\0\0",
     ];
-    let mut builder = RearCodedListBuilder::<str, true>::new(4);
+    let mut builder = RearCodedListBuilder::<str, Vec<usize>, true>::new(4);
     for &s in &strings {
         builder.push(s);
     }
@@ -231,7 +254,7 @@ fn test_ser_str() -> anyhow::Result<()> {
     let deser = unsafe {
         use epserde::deser::Deserialize;
         use sux::dict::RearCodedListStr;
-        RearCodedListStr::<true>::deserialize_full(&mut cursor)?
+        RearCodedListStr::<Vec<usize>, true>::deserialize_full(&mut cursor)?
     };
     assert_eq!(deser.len(), 6);
     for (i, s) in deser.iter().enumerate() {
@@ -290,7 +313,7 @@ fn test_ser_slice() -> anyhow::Result<()> {
     cursor.set_position(0);
     let deser = unsafe {
         use sux::dict::RearCodedListSliceU8;
-        RearCodedListSliceU8::<true>::deserialize_full(&mut cursor)?
+        RearCodedListSliceU8::<Vec<usize>, true>::deserialize_full(&mut cursor)?
     };
     assert_eq!(deser.len(), 6);
     deser.iter().zip(v.iter()).for_each(|(s, t)| {

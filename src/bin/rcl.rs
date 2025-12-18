@@ -59,7 +59,7 @@ fn compress<R: BufRead, const SORTED: bool>(
     dest: impl Borrow<str>,
     ratio: usize,
 ) -> Result<()> {
-    let mut rclb = RearCodedListBuilder::<str, SORTED>::new(ratio);
+    let mut rclb = RearCodedListBuilder::<str, Vec<usize>, SORTED>::new(ratio);
 
     let mut pl = ProgressLogger::default();
     pl.display_memory(true);
