@@ -91,19 +91,19 @@ fn test_replacement_dense() {
 }
 
 #[test]
-#[should_panic(expected = "Position 5 is out of bounds for array of len 5")]
+#[should_panic(expected = "Index out of bounds: 10 >= 10")]
 fn test_array_bounds_check_sparse() {
-    let builder = partial_value_array::new_sparse::<usize>(5, 0);
+    let builder = partial_value_array::new_sparse::<usize>(10, 0);
     let array = builder.build_bitfieldvec();
-    array.get(5);
+    array.get(10);
 }
 
 #[test]
-#[should_panic(expected = "Position 5 is out of bounds for array of len 5")]
+#[should_panic(expected = "Index out of bounds: 10 >= 10")]
 fn test_array_bounds_check_dense() {
-    let builder = partial_value_array::new_dense::<usize>(5);
+    let builder = partial_value_array::new_dense::<usize>(10);
     let array = builder.build_bitfieldvec();
-    array.get(5);
+    array.get(10);
 }
 
 #[test]
