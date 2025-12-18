@@ -284,14 +284,23 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
     /// ```
     pub fn get(&self, position: usize) -> Option<&T> {
         panic_if_out_of_bounds!(position, self.len());
+
+        // SAFETY: we just checked
+        unsafe { self.get_unchecked(position) }
+    }
+
+    /// # Safety
+    ///
+    /// position < len()
+    pub unsafe fn get_unchecked(&self, position: usize) -> Option<&T> {
         // Check if there's a value at this position
-        // SAFETY: position < len()
+        // SAFETY: position < len() guaranteed by caller
         if !unsafe { self.index.get_unchecked(position) } {
             return None;
         }
 
         // Use ranking to find the index in the values array
-        // SAFETY: position < len()
+        // SAFETY: position < len() guaranteed by caller
         let value_index = unsafe { self.index.rank_unchecked(position) };
 
         // SAFETY: necessarily value_index < num_values().
@@ -332,8 +341,17 @@ impl<T, D: AsRef<[usize]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
     /// assert_eq!(array.get(6), None);
     /// ```
     pub fn get(&self, position: usize) -> Option<&T> {
+        panic_if_out_of_bounds!(position, self.len());
+
+        // SAFETY: we just checked
+        unsafe { self.get_unchecked(position) }
+    }
+        
+    /// # Safety
+    ///
+    /// position < len()
+    pub unsafe fn get_unchecked(&self, position: usize) -> Option<&T> {
         if position >= self.index.first_invalid_pos {
-            panic_if_out_of_bounds!(position, self.len());
             return None;
         }
         // Check if there's a value at this position
@@ -349,15 +367,32 @@ impl<T, D: AsRef<[usize]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
     }
 }
 
-impl<T: Clone, P, V: AsRef<[T]>> SliceByValue for PartialArray<T, P, V> {
-    type Value = T;
+/// Returns an option even when using `get_value_unchecked` because it should be safe to call
+/// whenever `position < len()`.
+impl<T: Clone, V: AsRef<[T]>> SliceByValue for PartialArray<T, DenseIndex, V> {
+    type Value = Option<T>;
 
     fn len(&self) -> usize {
-        self.values.as_ref().len()
+        self.len()
     }
 
-    unsafe fn get_value_unchecked(&self, index: usize) -> Self::Value {
-        // SAFETY: the caller guarantees that index < len()
-        unsafe { self.values.as_ref().get_unchecked(index) }.clone()
+    unsafe fn get_value_unchecked(&self, position: usize) -> Self::Value {
+        // SAFETY: position < len() guaranteed by caller
+        unsafe { self.get_unchecked(position) }.cloned()
+    }
+}
+
+/// Returns an option even when using `get_value_unchecked` because it should be safe to call
+/// whenever `position < len()`.
+impl<T: Clone, D: AsRef<[usize]>, V: AsRef<[T]>> SliceByValue for PartialArray<T, SparseIndex<D>, V> {
+    type Value = Option<T>;
+
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    unsafe fn get_value_unchecked(&self, position: usize) -> Self::Value {
+        // SAFETY: position < len() guaranteed by caller
+        unsafe { self.get_unchecked(position) }.cloned()
     }
 }
