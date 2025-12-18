@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Immutable [partial array](PartialArray) implementations.
+//! Immutable partial array implementations.
 
 use std::marker::PhantomData;
 
@@ -229,9 +229,6 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder> {
 /// and a [sparse](new_sparse) implementation with different
 /// space/time trade-offs.
 ///
-/// For convenience, this structure implements
-/// [`SliceByValue`](crate::traits::slices::SliceByValue).
-///
 /// See [`PartialArrayBuilder`] for details on how to create a partial array.
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
@@ -346,18 +343,5 @@ impl<T, D: AsRef<[usize]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
             // SAFETY: necessarily value_index < num values.
             Some(unsafe { self.values.as_ref().get_unchecked(index) })
         }
-    }
-}
-
-impl<T: Clone, P, V: AsRef<[T]>> SliceByValue for PartialArray<T, P, V> {
-    type Value = T;
-
-    fn len(&self) -> usize {
-        self.values.as_ref().len()
-    }
-
-    unsafe fn get_value_unchecked(&self, index: usize) -> Self::Value {
-        // SAFETY: the caller guarantees that index < len()
-        unsafe { self.values.as_ref().get_unchecked(index) }.clone()
     }
 }
