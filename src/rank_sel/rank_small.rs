@@ -436,6 +436,9 @@ macro_rules! impl_rank_small {
                 }
             }
 
+            /// Prefetch the cache lines needed to compute `rank_unchecked(pos)`.
+            ///
+            /// See [`RankUnchecked::prefetch`] for details.
             #[inline(always)]
             fn prefetch(&self, pos: usize) {
                 let word_pos = pos / 64 as usize;
