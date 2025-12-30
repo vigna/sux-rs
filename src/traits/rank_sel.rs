@@ -108,6 +108,8 @@ pub trait RankUnchecked {
     /// vector](`BitLength::len`) (excluded).
     ///
     /// Some implementation might accept the length as a valid argument.
+    ///
+    /// Pad the input bitslice to work around this.
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
 }
 
