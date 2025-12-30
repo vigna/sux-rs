@@ -182,3 +182,26 @@ impl SeedableRng for Mwc192 {
         }
     }
 }
+
+/// Prefetch the cache line containing (the first byte of) `data[index]` into
+/// all levels of the cache.
+#[inline(always)]
+pub fn prefetch_index<T>(data: impl AsRef<[T]>, index: usize) {
+    let ptr = data.as_ref().as_ptr().wrapping_add(index) as *const i8;
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        std::arch::x86_64::_mm_prefetch(ptr, std::arch::x86_64::_MM_HINT_T0);
+    }
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        std::arch::x86::_mm_prefetch(ptr, std::arch::x86::_MM_HINT_T0);
+    }
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        std::arch::aarch64::_prefetch(ptr, std::arch::aarch64::_PREFETCH_LOCALITY3);
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "x86", target_arch = "aarch64")))]
+    {
+        // Do nothing.
+    }
+}

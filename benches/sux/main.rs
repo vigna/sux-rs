@@ -5,7 +5,7 @@ mod utils;
 use std::fmt;
 
 use bench_select::*;
-use clap::{Parser, ValueEnum, arg};
+use clap::{Parser, ValueEnum};
 use criterion::Criterion;
 use sux::rank_sel::*;
 use utils::*;
