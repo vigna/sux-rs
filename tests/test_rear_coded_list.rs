@@ -31,7 +31,7 @@ mod test {
     }
 
     fn test_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
-        use maligned::A16;
+        use epserde::prelude::Aligned16;
         let words = BufReader::new(std::fs::File::open(path.as_ref())?)
             .lines()
             .collect::<Result<Vec<_>, _>>()?;
@@ -83,7 +83,7 @@ mod test {
             assert!(rcl.index_of(word.as_str()).is_none());
         }
 
-        let mut cursor = <AlignedCursor<A16>>::new();
+        let mut cursor = <AlignedCursor<Aligned16>>::new();
         let schema = unsafe { rcl.serialize_with_schema(&mut cursor)? };
         println!("{}", schema.to_csv());
 
@@ -135,7 +135,7 @@ mod test {
 
         // Note: unsorted RCL does not support contains/index_of (IndexedDict trait is only for SORTED=true)
 
-        let mut cursor = <AlignedCursor<A16>>::new();
+        let mut cursor = <AlignedCursor<Aligned16>>::new();
         let schema = unsafe { rcl.serialize_with_schema(&mut cursor)? };
         println!("{}", schema.to_csv());
 
@@ -224,7 +224,7 @@ fn test_ser_str() -> anyhow::Result<()> {
 
     let v = vec!["a", "ab", "ab", "abc", "b", "bb"];
 
-    let mut cursor = AlignedCursor::<maligned::A16>::new();
+    let mut cursor = AlignedCursor::<epserde::prelude::Aligned16>::new();
     serialize_str::<_, _, true>(4, FromSlice::new(v.as_slice()), &mut cursor)?;
 
     cursor.set_position(0);
@@ -284,7 +284,7 @@ fn test_ser_slice() -> anyhow::Result<()> {
         vec![2u8, 2u8],
     ];
 
-    let mut cursor = AlignedCursor::<maligned::A16>::new();
+    let mut cursor = AlignedCursor::<epserde::prelude::Aligned16>::new();
     serialize_slice_u8::<_, _, true>(4, FromSlice::new(v.as_slice()), &mut cursor)?;
 
     cursor.set_position(0);

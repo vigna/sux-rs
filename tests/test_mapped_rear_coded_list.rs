@@ -32,7 +32,7 @@ mod test {
     }
 
     fn test_perm_rear_coded_list(path: impl AsRef<str>) -> Result<()> {
-        use maligned::A16;
+        use epserde::prelude::Aligned16;
         let words = BufReader::new(std::fs::File::open(path.as_ref())?)
             .lines()
             .collect::<Result<Vec<_>, _>>()?;
@@ -80,7 +80,7 @@ mod test {
             }]
         }
 
-        let mut cursor = <AlignedCursor<A16>>::new();
+        let mut cursor = <AlignedCursor<Aligned16>>::new();
         let schema = unsafe { mrcl.serialize_with_schema(&mut cursor)? };
         println!("{}", schema.to_csv());
 
@@ -142,7 +142,7 @@ mod test {
             }]
         }
 
-        let mut cursor = <AlignedCursor<A16>>::new();
+        let mut cursor = <AlignedCursor<Aligned16>>::new();
         let schema = unsafe { mrcl.serialize_with_schema(&mut cursor)? };
         println!("{}", schema.to_csv());
 

@@ -24,7 +24,7 @@ log = "0.4.20"
 dsi-progress-logger = "0.8.1"
 tempfile = "3.9.0"
 lender = "0.4.1"
-epserde = { version = "0.11.4", optional = true }
+epserde = { version = "0.11.5", optional = true }
 zstd = { version = "0.13.1" }
 flate2 = "1.0.28"
 rand = { version = "0.9.0", features = ["small_rng"] }
@@ -56,7 +56,6 @@ fallible-iterator = "0.3.0"
 sync-cell-slice = "0.9.11"
 
 [dev-dependencies]
-maligned = "0.2.1"
 criterion = { version = "0.7.0", features = ["html_reports"] }
 trybuild = "1.0.110"
 
