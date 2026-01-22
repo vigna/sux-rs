@@ -25,8 +25,8 @@ dsi-progress-logger = "0.8.1"
 tempfile = "3.9.0"
 lender = "0.4.1"
 epserde = { version = "0.11.5", optional = true }
-zstd = { version = "0.13.1" }
-flate2 = "1.0.28"
+zstd = { version = "0.13.1", optional = true }
+flate2 = { version = "1.0.28", optional = true }
 rand = { version = "0.9.0", features = ["small_rng"] }
 rdst = "0.20.12"
 mem_dbg = "0.3.0"
@@ -61,8 +61,10 @@ trybuild = "1.0.110"
 clap = { version = "4.4.18", features = ["derive"] }
 
 [features]
-default = ["rayon"]
+default = ["rayon", "flate2", "zstd"]
 clap = ["dep:clap"]
+flate2 = ["dep:flate2"]
+zstd = ["dep:zstd"]
 cli = ["clap", "dep:epserde", "dep:deko"] # Build the binary utils (it's here so that cargo bench doesn't build them)
 fuzz = ["dep:arbitrary"]
 slow_tests = [] # Run slow tests (use --release)

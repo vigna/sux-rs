@@ -111,15 +111,20 @@ the structures (e.g., `bench_rear_coded_list`, `bench_vfunc`, and
 
 The crate has the following features:
 
-- `rayon`: enables support for parallel iterators using the `rayon` crate (this
-  is the only default feature);
+- `rayon`: enables support for parallel iterators using the `rayon` crate
+  (default);
+- `flate2`: enables support for gzip-compressed files in the [`lenders`] module
+  (default);
+- `zstd`: enables support for zstd-compressed files in the [`lenders`] module
+  (default);
+- `deko`: enables support for the [`deko`] crate, which provides dynamic
+  detection of compressed files for the [`lenders`] module;
 - `epserde`: enables support for [ε-serde];
 - `serde`: enables support for [serde];
-- `cli`: builds the binaries;
+- `clap`: enables the `clap` crate for command-line argument parsing;
+- `cli`: builds the binaries (implies `clap`, `epserde`, `deko`);
 - `mmap`: enables support for memory mapping in ε-serde (implies `epserde`);
-- `mem_dbg`: enables support for the [`MemDbg`] and [`MemSize`] traits;
-- `deko`: enables support for the [`deko`] crate, which provides dynamic
-  detection of compressed files for the [`lenders`] module.
+- `mem_dbg`: enables support for the [`MemDbg`] and [`MemSize`] traits.
 
 ## Benchmarks
 
@@ -193,7 +198,7 @@ Union nor the Italian MUR can be held responsible for them
 [bit vectors operations]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
 [unaligned access]: https://docs.rs/sux/latest/sux/bits/bit_field_vec/struct.BitFieldVec.html#method.get_unaligned
 [`value-traits`]: https://crates.io/crates/value-traits
-[serde]: https://crates.io/crates/serde
-[`deko`]: https://crates.io/crates/deko
+[serde]: https://crates.io/crates/serde/
+[`deko`]: https://crates.io/crates/deko/
 [`lenders`]: https://docs.rs/sux/latest/sux/utils/lenders/
 [signed index functions]: https://docs.rs/sux/latest/sux/dict/signed_vfunc/struct.SignedVFunc.html
