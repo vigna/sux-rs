@@ -6,6 +6,8 @@
 
 * New method `EliasFano::into_parts`.
 
+* New features `clap`, `zstd` and `flate2` gate the corresponding
+  dependencies.
 
 ## [0.10.3] - 2025-12-09
 

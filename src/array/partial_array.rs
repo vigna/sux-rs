@@ -229,8 +229,7 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder> {
 /// and a [sparse](new_sparse) implementation with different
 /// space/time trade-offs.
 ///
-/// For convenience, this structure implements
-/// [`SliceByValue`](crate::traits::slices::SliceByValue).
+/// For convenience, this structure implements [`SliceByValue`].
 ///
 /// See [`PartialArrayBuilder`] for details on how to create a partial array.
 #[derive(Debug, Clone, MemDbg, MemSize)]

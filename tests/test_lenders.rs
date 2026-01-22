@@ -5,10 +5,13 @@
  */
 
 use std::fmt::Debug;
-use std::io::{Cursor, Write};
+use std::io::Cursor;
+#[cfg(feature = "flate2")]
+use std::io::Write;
 
 use anyhow::{Context, Result, bail, ensure};
 use fallible_iterator::{FallibleIterator, IntoFallibleIterator};
+#[cfg(feature = "flate2")]
 use flate2::write::GzEncoder;
 use lender::{FallibleLender, FallibleLending, IntoFallibleLender, IteratorExt, Lender, hrc_mut};
 
@@ -64,6 +67,7 @@ fn test_line_lender() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "zstd")]
 #[test]
 fn test_zstd_line_lender() -> Result<()> {
     let mut buf = Cursor::new(
@@ -83,6 +87,7 @@ fn test_zstd_line_lender() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "flate2")]
 #[test]
 fn test_gzip_line_lender() -> Result<()> {
     let mut encoder = GzEncoder::new(Vec::new(), flate2::Compression::default());
