@@ -243,8 +243,8 @@ fn test_extend() {
 #[cfg(feature = "epserde")]
 #[test]
 fn test_epserde() -> Result<()> {
+    use epserde::prelude::Aligned16;
     use epserde::ser::Serialize;
-    use maligned::A16;
 
     let mut rng = SmallRng::seed_from_u64(0);
     for (n, u) in [(100, 1000), (100, 100), (1000, 100)] {
@@ -263,7 +263,7 @@ fn test_epserde() -> Result<()> {
         // Finish the creation of elias-fano
         let ef = unsafe { efb.build().map_high_bits(SelectAdaptConst::<_, _>::new) };
 
-        let mut cursor = <AlignedCursor<A16>>::new();
+        let mut cursor = <AlignedCursor<Aligned16>>::new();
         let schema = unsafe { ef.serialize_with_schema(&mut cursor) }?;
         println!("{}", schema.to_csv());
 

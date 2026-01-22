@@ -128,11 +128,11 @@
 //! use sux::dict::rear_coded_list;
 //! use sux::utils::LineLender;
 //! use sux::utils::FromSlice;
-//! use maligned::A16;
+//! use epserde::prelude::Aligned16;
 //! use epserde::prelude::*;
 //!
 //! let strings = vec!["aa", "aab", "abc", "abdd", "abde\0f", "abdf"];
-//! let mut cursor = <AlignedCursor<A16>>::new();
+//! let mut cursor = <AlignedCursor<Aligned16>>::new();
 //! rear_coded_list::serialize_str::<_, _, true>(4, FromSlice::new(&strings), &mut cursor)?;
 //! cursor.set_position(0);
 //! let rcl = unsafe {

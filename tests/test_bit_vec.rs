@@ -440,8 +440,8 @@ fn test_eq() {
 #[cfg(feature = "epserde")]
 #[test]
 fn test_epserde() -> Result<()> {
+    use epserde::prelude::Aligned16;
     use epserde::utils::AlignedCursor;
-    use maligned::A16;
     use rand::RngCore;
     let mut rng = SmallRng::seed_from_u64(0);
     let mut b = BitVec::new(200);
@@ -449,7 +449,7 @@ fn test_epserde() -> Result<()> {
         b.set(i, rng.next_u64() % 2 != 0);
     }
 
-    let mut cursor = <AlignedCursor<A16>>::new();
+    let mut cursor = <AlignedCursor<Aligned16>>::new();
     unsafe {
         use epserde::ser::Serialize;
         b.serialize(&mut cursor)?

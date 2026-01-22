@@ -7,7 +7,7 @@
 
 #![cfg(target_pointer_width = "64")]
 
-use clap::{Parser, ValueEnum, arg};
+use clap::{Parser, ValueEnum};
 use mem_dbg::*;
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use sux::{

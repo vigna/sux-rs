@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.10.4]
+
+### New
+
+* New method `EliasFano::into_parts`.
+
+
 ## [0.10.3] - 2025-12-09
 
 ### New
