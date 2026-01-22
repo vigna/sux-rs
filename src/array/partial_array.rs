@@ -345,7 +345,7 @@ impl<T, D: AsRef<[usize]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
         // SAFETY: we just checked
         unsafe { self.get_unchecked(position) }
     }
-        
+
     /// # Safety
     ///
     /// position < len()
@@ -383,7 +383,9 @@ impl<T: Clone, V: AsRef<[T]>> SliceByValue for PartialArray<T, DenseIndex, V> {
 
 /// Returns an option even when using `get_value_unchecked` because it should be safe to call
 /// whenever `position < len()`.
-impl<T: Clone, D: AsRef<[usize]>, V: AsRef<[T]>> SliceByValue for PartialArray<T, SparseIndex<D>, V> {
+impl<T: Clone, D: AsRef<[usize]>, V: AsRef<[T]>> SliceByValue
+    for PartialArray<T, SparseIndex<D>, V>
+{
     type Value = Option<T>;
 
     fn len(&self) -> usize {
