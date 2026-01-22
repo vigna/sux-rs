@@ -231,7 +231,7 @@ impl<H, L> EliasFano<H, L> {
     pub fn into_parts(self) -> (usize, usize, usize, L, H) {
         (self.n, self.u, self.l, self.low_bits, self.high_bits)
     }
-    
+
     /// Estimate the size of an instance.
     pub fn estimate_size(u: usize, n: usize) -> usize {
         2 * n + (n * (u as f64 / n as f64).log2().ceil() as usize)
