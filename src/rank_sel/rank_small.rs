@@ -436,6 +436,20 @@ macro_rules! impl_rank_small {
                     }
                 }
             }
+
+            /// Prefetch the cache lines needed to compute `rank_unchecked(pos)`.
+            ///
+            /// See [`RankUnchecked::prefetch`] for details.
+            #[inline(always)]
+            fn prefetch(&self, pos: usize) {
+                let word_pos = pos / 64 as usize;
+                let block = word_pos / Self::WORDS_PER_BLOCK;
+                crate::utils::prefetch_index(self.bits.as_ref(), word_pos);
+                // `counts` can be large enough to not fit in L3, so needs prefetching as well.
+                crate::utils::prefetch_index(self.counts.as_ref(), block);
+                // `upper_counts` is small enough to fit in caches, so does not need prefetching.
+                // crate::utils::prefetch_index(self.upper_counts.as_ref(), word_pos / (1usize << 26));
+            }
         }
     };
 }
