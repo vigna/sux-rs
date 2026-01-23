@@ -113,9 +113,13 @@ pub trait RankUnchecked {
     /// point the original length will fall within the valid range).
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
 
-    /// Prefetch the cache lines needed to compute `rank_unchecked(pos)`.
+    /// Prefetches the cache lines needed to compute
+    /// [`rank_unchecked(pos)](#tymethod.rank_unchecked`).
     ///
     /// This can speed up computing the rank of many positions in parallel.
+    /// 
+    /// # Examples
+    /// 
     /// For example, take the following for loop:
     /// ```
     /// use sux::prelude::RankUnchecked;
@@ -139,12 +143,13 @@ pub trait RankUnchecked {
     /// }
     /// ```
     ///
-    /// For [`crate::rank_sel::Rank9`] and [`crate::rank_sel::RankSmall`], this gives around 10% to 30% speedup when there are 16 billion keys.
+    /// For [`Rank9`](crate::rank_sel::Rank9) and
+    /// [`RankSmall`](crate::rank_sel::RankSmall), this gives around 10% to 30%
+    /// speedup when there are 16 billion keys.
     ///
     /// Prefetching out-of-bounds is never unsafe, and neither is this method.
     fn prefetch(&self, pos: usize) {
-        // Default implementation to not break implementations in dependents.
-        let _ = pos;
+        // Default implementation is no-op
     }
 }
 
