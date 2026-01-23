@@ -253,6 +253,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for
     /// assert_eq!(unsafe { rank9.rank_unchecked(8) }, rank9.num_ones());
     #[inline(always)]
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
+        debug_assert!(pos < self.bits.len());
         unsafe {
             let word_pos = pos / usize::BITS as usize;
             let bit_pos = pos % usize::BITS as usize;

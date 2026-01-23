@@ -107,7 +107,10 @@ pub trait RankUnchecked {
     /// `pos` must be between 0 (included) and the [length of the underlying bit
     /// vector](`BitLength::len`) (excluded).
     ///
-    /// Some implementation might accept the length as a valid argument.
+    /// Some implementation might accept the length as a valid argument. If
+    /// you need to be sure that the length is a valid argument, just
+    /// add a padding zero bit at the end of your vector (at which
+    /// point the original length will fall within the valid range).
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
 }
 

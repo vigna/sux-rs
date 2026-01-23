@@ -410,6 +410,7 @@ macro_rules! impl_rank_small {
         {
             #[inline(always)]
             unsafe fn rank_unchecked(&self, pos: usize) -> usize {
+                debug_assert!(pos < self.bits.len());
                 unsafe {
                     let word_pos = pos / 64 as usize;
                     let block = word_pos / Self::WORDS_PER_BLOCK;
