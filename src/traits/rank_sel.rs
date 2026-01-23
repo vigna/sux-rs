@@ -117,9 +117,9 @@ pub trait RankUnchecked {
     /// [`rank_unchecked(pos)](#tymethod.rank_unchecked`).
     ///
     /// This can speed up computing the rank of many positions in parallel.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// For example, take the following for loop:
     /// ```
     /// use sux::prelude::RankUnchecked;
