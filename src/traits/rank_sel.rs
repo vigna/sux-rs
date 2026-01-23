@@ -107,8 +107,50 @@ pub trait RankUnchecked {
     /// `pos` must be between 0 (included) and the [length of the underlying bit
     /// vector](`BitLength::len`) (excluded).
     ///
-    /// Some implementation might accept the length as a valid argument.
+    /// Some implementation might accept the length as a valid argument. If
+    /// you need to be sure that the length is a valid argument, just
+    /// add a padding zero bit at the end of your vector (at which
+    /// point the original length will fall within the valid range).
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
+
+    /// Prefetches the cache lines needed to compute
+    /// [`rank_unchecked(pos)](#tymethod.rank_unchecked`).
+    ///
+    /// This can speed up computing the rank of many positions in parallel.
+    /// 
+    /// # Examples
+    /// 
+    /// For example, take the following for loop:
+    /// ```
+    /// use sux::prelude::RankUnchecked;
+    /// fn query_all(rank: &impl RankUnchecked, positions: &[usize]) {
+    ///    for i in 0..positions.len() {
+    ///        let r = unsafe { rank.rank_unchecked(positions[i]) };
+    ///        // ...
+    ///    }
+    /// }
+    /// ```
+    /// By prefetching cache lines some iterations ahead, we can make sure that
+    /// they are already loaded in memory by the time we get to that loop iteration:
+    /// ```
+    /// use sux::prelude::RankUnchecked;
+    /// fn query_all(rank: &impl RankUnchecked, positions: &[usize]) {
+    ///    for i in 0..positions.len() {
+    ///        rank.prefetch(positions[(i + 32).min(positions.len() - 1)]);
+    ///        let r = unsafe { rank.rank_unchecked(positions[i]) };
+    ///        // ...
+    ///    }
+    /// }
+    /// ```
+    ///
+    /// For [`Rank9`](crate::rank_sel::Rank9) and
+    /// [`RankSmall`](crate::rank_sel::RankSmall), this gives around 10% to 30%
+    /// speedup when there are 16 billion keys.
+    ///
+    /// Prefetching out-of-bounds is never unsafe, and neither is this method.
+    fn prefetch(&self, pos: usize) {
+        // Default implementation is no-op
+    }
 }
 
 /// Ranking zeros over a bit vector.

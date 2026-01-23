@@ -16,7 +16,7 @@ use crate::bits::BitVec;
 use crate::dict::EliasFanoBuilder;
 use crate::panic_if_out_of_bounds;
 use crate::rank_sel::Rank9;
-use crate::traits::RankUnchecked;
+use crate::traits::{RankUnchecked, SuccUnchecked};
 use crate::traits::{BitVecOps, BitVecOpsMut};
 
 use super::{DenseIndex, SparseIndex};
@@ -83,6 +83,7 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
             );
         }
         panic_if_out_of_bounds!(position, self.len);
+
         // SAFETY: position < len
         unsafe {
             self.builder.set_unchecked(position, true);
@@ -209,8 +210,7 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder> {
 /// and a [sparse](new_sparse) implementation with different
 /// space/time trade-offs.
 ///
-/// For convenience, this structure implements
-/// [`SliceByValue`](crate::traits::slices::SliceByValue).
+/// For convenience, this structure implements [`SliceByValue`].
 ///
 /// See [`PartialArrayBuilder`] for details on how to create a partial array.
 #[derive(Debug, Clone, MemDbg, MemSize)]
@@ -265,14 +265,22 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
     pub fn get(&self, position: usize) -> Option<&T> {
         panic_if_out_of_bounds!(position, self.len());
 
+        // SAFETY: we just checked
+        unsafe { self.get_unchecked(position) }
+    }
+
+    /// # Safety
+    ///
+    /// position < len()
+    pub unsafe fn get_unchecked(&self, position: usize) -> Option<&T> {
         // Check if there's a value at this position
-        // SAFETY: position < len()
+        // SAFETY: position < len() guaranteed by caller
         if !unsafe { self.index.get_unchecked(position) } {
             return None;
         }
 
         // Use ranking to find the index in the values array
-        // SAFETY: position < len()
+        // SAFETY: position < len() guaranteed by caller
         let value_index = unsafe { self.index.rank_unchecked(position) };
 
         // SAFETY: necessarily value_index < num_values().
@@ -315,7 +323,20 @@ impl<T, D: AsRef<[usize]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
     pub fn get(&self, position: usize) -> Option<&T> {
         panic_if_out_of_bounds!(position, self.len());
 
-        let (value_index, pos) = self.index.get_next_pos(position)?;
+        // SAFETY: we just checked
+        unsafe { self.get_unchecked(position) }
+    }
+
+    /// # Safety
+    ///
+    /// position < len()
+    pub unsafe fn get_unchecked(&self, position: usize) -> Option<&T> {
+        if position >= self.index.first_invalid_pos {
+            return None;
+        }
+        // Check if there's a value at this position
+        // SAFETY: position <= last set position
+        let (value_index, pos) = unsafe { self.index.ef.succ_unchecked::<false>(position) };
 
         if pos != position {
             None
@@ -326,15 +347,34 @@ impl<T, D: AsRef<[usize]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
     }
 }
 
-impl<T: Clone, P, V: AsRef<[T]>> SliceByValue for PartialArray<T, P, V> {
-    type Value = T;
+/// Returns an option even when using `get_value_unchecked` because it should be safe to call
+/// whenever `position < len()`.
+impl<T: Clone, V: AsRef<[T]>> SliceByValue for PartialArray<T, DenseIndex, V> {
+    type Value = Option<T>;
 
     fn len(&self) -> usize {
-        self.values.as_ref().len()
+        self.len()
     }
 
-    unsafe fn get_value_unchecked(&self, index: usize) -> Self::Value {
-        // SAFETY: the caller guarantees that index < len()
-        unsafe { self.values.as_ref().get_unchecked(index) }.clone()
+    unsafe fn get_value_unchecked(&self, position: usize) -> Self::Value {
+        // SAFETY: position < len() guaranteed by caller
+        unsafe { self.get_unchecked(position) }.cloned()
+    }
+}
+
+/// Returns an option even when using `get_value_unchecked` because it should be safe to call
+/// whenever `position < len()`.
+impl<T: Clone, D: AsRef<[usize]>, V: AsRef<[T]>> SliceByValue
+    for PartialArray<T, SparseIndex<D>, V>
+{
+    type Value = Option<T>;
+
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    unsafe fn get_value_unchecked(&self, position: usize) -> Self::Value {
+        // SAFETY: position < len() guaranteed by caller
+        unsafe { self.get_unchecked(position) }.cloned()
     }
 }

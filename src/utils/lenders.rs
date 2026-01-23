@@ -24,9 +24,10 @@
 //! from a [`BufRead`] as a `&str`, but lends an internal buffer, rather than
 //! allocating a new string for each line. Convenience constructors are provided
 //! for [`File`](LineLender::from_file) and [`Path`](LineLender::from_path).
-//!  Analogously, we provide `ZstdLineLender` (enabled by the `zstd` feature)
-//! that lends lines from a zstd-compressed [`Read`], and [`GzipLineLender`],
-//! which lends lines from a gzip-compressed [`Read`].
+//! Analogously, we provide `ZstdLineLender` (enabled by the `zstd` feature)
+//! that lends lines from a zstd-compressed [`Read`](std::io::Read), and
+//! [`GzipLineLender`], which lends lines from a gzip-compressed
+//! [`Read`](std::io::Read).
 //!
 //! Finally, under the `deko` feature, we provide `DekoLineLender` and
 //! `DekoBufLineLender`, which work like the previous two implementations, but
@@ -81,15 +82,13 @@
 //!   returning an [`IntoFallibleLender`], use [`FromIntoFallibleLenderFactory`] to
 //!   properly propagate errors.
 use fallible_iterator::{FallibleIterator, IntoFallibleIterator};
-use flate2::read::GzDecoder;
 use io::{BufRead, BufReader};
 use lender::{higher_order::FnMutHKARes, *};
 use std::{
     fs::File,
-    io::{self, Read, Seek},
+    io::{self, Seek},
     path::Path,
 };
-use zstd::Decoder;
 
 /// The main trait: a [`FallibleLender`] that can be rewound to the beginning.
 ///
@@ -174,106 +173,126 @@ impl<B: BufRead + Seek> FallibleRewindableLender for LineLender<B> {
     }
 }
 
-/// A structure lending the lines coming from a
-/// [`zstd`](https://facebook.github.io/zstd/)-compressed [`Read`] as `&str`.
-///
-/// The lines are read into a reusable internal string buffer that grows as
-/// needed.
-pub struct ZstdLineLender<R: Read> {
-    buf: BufReader<Decoder<'static, BufReader<R>>>,
-    line: String,
-}
+#[cfg(feature = "zstd")]
+mod zstd_lender {
+    use super::*;
+    use std::io::Read;
+    use zstd::Decoder;
 
-impl<R: Read> ZstdLineLender<R> {
-    pub fn new(read: R) -> io::Result<Self> {
-        Ok(ZstdLineLender {
-            buf: BufReader::new(Decoder::new(read)?),
-            line: String::with_capacity(128),
-        })
+    /// A structure lending the lines coming from a
+    /// [`zstd`](https://facebook.github.io/zstd/)-compressed [`Read`] as `&str`.
+    ///
+    /// The lines are read into a reusable internal string buffer that grows as
+    /// needed.
+    pub struct ZstdLineLender<R: Read> {
+        buf: BufReader<Decoder<'static, BufReader<R>>>,
+        line: String,
+    }
+
+    impl<R: Read> ZstdLineLender<R> {
+        pub fn new(read: R) -> io::Result<Self> {
+            Ok(ZstdLineLender {
+                buf: BufReader::new(Decoder::new(read)?),
+                line: String::with_capacity(128),
+            })
+        }
+    }
+
+    impl ZstdLineLender<BufReader<Decoder<'static, BufReader<File>>>> {
+        pub fn from_path(path: impl AsRef<Path>) -> io::Result<ZstdLineLender<File>> {
+            ZstdLineLender::new(File::open(path)?)
+        }
+
+        pub fn from_file(file: File) -> io::Result<ZstdLineLender<File>> {
+            ZstdLineLender::new(file)
+        }
+    }
+
+    impl<'lend, R: Read> FallibleLending<'lend> for ZstdLineLender<R> {
+        type Lend = &'lend str;
+    }
+
+    impl<R: Read> FallibleLender for ZstdLineLender<R> {
+        type Error = io::Error;
+        fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
+            next(&mut self.buf, &mut self.line)
+        }
+    }
+
+    impl<R: Read + Seek> FallibleRewindableLender for ZstdLineLender<R> {
+        type RewindError = io::Error;
+        fn rewind(mut self) -> io::Result<Self> {
+            let mut read = self.buf.into_inner().finish();
+            read.rewind()?;
+            self.buf = BufReader::new(Decoder::with_buffer(read)?);
+            Ok(self)
+        }
     }
 }
 
-impl ZstdLineLender<BufReader<Decoder<'static, BufReader<File>>>> {
-    pub fn from_path(path: impl AsRef<Path>) -> io::Result<ZstdLineLender<File>> {
-        ZstdLineLender::new(File::open(path)?)
+#[cfg(feature = "zstd")]
+pub use zstd_lender::*;
+
+#[cfg(feature = "flate2")]
+mod flate2_lender {
+    use super::*;
+    use flate2::read::GzDecoder;
+    use std::io::Read;
+
+    /// A structure lending the lines coming from a
+    /// [`gzip`](https://www.gzip.org/)-compressed [`Read`] as `&str`.
+    ///
+    /// The lines are read into a reusable internal string buffer that
+    /// grows as needed.
+    #[derive(Debug)]
+    pub struct GzipLineLender<R: Read> {
+        buf: BufReader<GzDecoder<R>>,
+        line: String,
     }
 
-    pub fn from_file(file: File) -> io::Result<ZstdLineLender<File>> {
-        ZstdLineLender::new(file)
-    }
-}
-
-impl<'lend, R: Read> FallibleLending<'lend> for ZstdLineLender<R> {
-    type Lend = &'lend str;
-}
-
-impl<R: Read> FallibleLender for ZstdLineLender<R> {
-    type Error = io::Error;
-    fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
-        next(&mut self.buf, &mut self.line)
-    }
-}
-
-impl<R: Read + Seek> FallibleRewindableLender for ZstdLineLender<R> {
-    type RewindError = io::Error;
-    fn rewind(mut self) -> io::Result<Self> {
-        let mut read = self.buf.into_inner().finish();
-        read.rewind()?;
-        self.buf = BufReader::new(Decoder::with_buffer(read)?);
-        Ok(self)
-    }
-}
-
-/// A structure lending the lines coming from a
-/// [`gzip`](https://www.gzip.org/)-compressed [`Read`] as `&str`.
-///
-/// The lines are read into a reusable internal string buffer that
-/// grows as needed.
-#[derive(Debug)]
-pub struct GzipLineLender<R: Read> {
-    buf: BufReader<GzDecoder<R>>,
-    line: String,
-}
-
-impl<R: Read> GzipLineLender<R> {
-    pub fn new(read: R) -> io::Result<Self> {
-        Ok(GzipLineLender {
-            buf: BufReader::new(GzDecoder::new(read)),
-            line: String::with_capacity(128),
-        })
-    }
-}
-
-impl GzipLineLender<BufReader<GzDecoder<BufReader<File>>>> {
-    pub fn from_path(path: impl AsRef<Path>) -> io::Result<GzipLineLender<File>> {
-        GzipLineLender::new(File::open(path)?)
+    impl<R: Read> GzipLineLender<R> {
+        pub fn new(read: R) -> io::Result<Self> {
+            Ok(GzipLineLender {
+                buf: BufReader::new(GzDecoder::new(read)),
+                line: String::with_capacity(128),
+            })
+        }
     }
 
-    pub fn from_file(file: File) -> io::Result<GzipLineLender<File>> {
-        GzipLineLender::new(file)
+    impl GzipLineLender<BufReader<GzDecoder<BufReader<File>>>> {
+        pub fn from_path(path: impl AsRef<Path>) -> io::Result<GzipLineLender<File>> {
+            GzipLineLender::new(File::open(path)?)
+        }
+
+        pub fn from_file(file: File) -> io::Result<GzipLineLender<File>> {
+            GzipLineLender::new(file)
+        }
     }
-}
 
-impl<'lend, R: Read> FallibleLending<'lend> for GzipLineLender<R> {
-    type Lend = &'lend str;
-}
+    impl<'lend, R: Read> FallibleLending<'lend> for GzipLineLender<R> {
+        type Lend = &'lend str;
+    }
 
-impl<R: Read> FallibleLender for GzipLineLender<R> {
-    type Error = io::Error;
-    fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
-        next(&mut self.buf, &mut self.line)
+    impl<R: Read> FallibleLender for GzipLineLender<R> {
+        type Error = io::Error;
+        fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
+            next(&mut self.buf, &mut self.line)
+        }
+    }
+
+    impl<R: Read + Seek> FallibleRewindableLender for GzipLineLender<R> {
+        type RewindError = io::Error;
+        fn rewind(mut self) -> io::Result<Self> {
+            let mut read = self.buf.into_inner().into_inner();
+            read.rewind()?;
+            self.buf = BufReader::new(GzDecoder::new(read));
+            Ok(self)
+        }
     }
 }
 
-impl<R: Read + Seek> FallibleRewindableLender for GzipLineLender<R> {
-    type RewindError = io::Error;
-    fn rewind(mut self) -> io::Result<Self> {
-        let mut read = self.buf.into_inner().into_inner();
-        read.rewind()?;
-        self.buf = BufReader::new(GzDecoder::new(read));
-        Ok(self)
-    }
-}
+#[cfg(feature = "flate2")]
+pub use flate2_lender::*;
 
 #[cfg(feature = "deko")]
 mod deko {

@@ -226,6 +226,12 @@ pub struct EliasFano<H = BitVec<Box<[usize]>>, L = BitFieldVec<usize, Box<[usize
 }
 
 impl<H, L> EliasFano<H, L> {
+    /// Returns the parts composing the structure (number of elements, upper
+    /// bound, number of lower bits, low bits, high bits).
+    pub fn into_parts(self) -> (usize, usize, usize, L, H) {
+        (self.n, self.u, self.l, self.low_bits, self.high_bits)
+    }
+
     /// Estimate the size of an instance.
     pub fn estimate_size(u: usize, n: usize) -> usize {
         2 * n + (n * (u as f64 / n as f64).log2().ceil() as usize)

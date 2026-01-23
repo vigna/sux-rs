@@ -155,8 +155,8 @@ fn test_single_element() {
 #[cfg(feature = "epserde")]
 #[test]
 fn test_serialize() {
+    use epserde::prelude::Aligned64;
     use epserde::utils::AlignedCursor;
-    use maligned::A32;
 
     let mut builder = partial_array::new_sparse(10, 3);
 
@@ -166,7 +166,7 @@ fn test_serialize() {
 
     let array = builder.build();
 
-    let mut cursor = <AlignedCursor<A32>>::new();
+    let mut cursor = <AlignedCursor<Aligned64>>::new();
     unsafe {
         use epserde::ser::Serialize;
         array.serialize(&mut cursor).expect("Could not serialize")

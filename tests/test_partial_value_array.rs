@@ -142,19 +142,18 @@ fn test_single_element() {
 #[cfg(feature = "epserde")]
 #[test]
 fn test_serialize() {
-    use epserde::utils::AlignedCursor;
-    use maligned::A32;
+    use epserde::prelude::{AlignedCursor, Aligned64};
     use sux::bits::BitFieldVec;
 
     let mut builder = partial_value_array::new_sparse(10, 3);
 
-    builder.set(1, 123u32);
+    builder.set(1, 123u64);
     builder.set(2, 45678);
     builder.set(7, 90);
 
     let array = builder.build_bitfieldvec();
 
-    let mut cursor = <AlignedCursor<A32>>::new();
+    let mut cursor = <AlignedCursor<Aligned64>>::new();
     unsafe {
         use epserde::ser::Serialize;
         array.serialize(&mut cursor).expect("Could not serialize")
@@ -165,9 +164,9 @@ fn test_serialize() {
     let array2 = unsafe {
         use epserde::deser::Deserialize;
         <partial_value_array::PartialValueArray<
-            u32,
+            u64,
             SparseIndex<Box<[usize]>>,
-            BitFieldVec<u32>,
+            BitFieldVec<u64>,
         >>::read_mem(&mut cursor, len)
         .expect("Could not deserialize")
     };

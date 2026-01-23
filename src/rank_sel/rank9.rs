@@ -253,6 +253,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for
     /// assert_eq!(unsafe { rank9.rank_unchecked(8) }, rank9.num_ones());
     #[inline(always)]
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
+        debug_assert!(pos < self.bits.len());
         unsafe {
             let word_pos = pos / usize::BITS as usize;
             let bit_pos = pos % usize::BITS as usize;
@@ -268,6 +269,15 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for
                 + counts.rel(offset)
                 + (word & ((1 << bit_pos) - 1)).count_ones() as usize
         }
+    }
+
+    #[inline(always)]
+    fn prefetch(&self, pos: usize) {
+        let word_pos = pos / usize::BITS as usize;
+        let block = word_pos / Self::WORDS_PER_BLOCK;
+        crate::utils::prefetch_index(&self.bits, word_pos);
+        // `counts` can be large enough to not fit in L3, so needs prefetching as well.
+        crate::utils::prefetch_index(&self.counts, block);
     }
 }
 
