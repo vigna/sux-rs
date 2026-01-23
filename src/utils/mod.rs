@@ -183,7 +183,7 @@ impl SeedableRng for Mwc192 {
     }
 }
 
-/// Prefetch the cache line containing (the first byte of) `data[index]` into
+/// Prefetches the cache line containing (the first byte of) `data[index]` into
 /// all levels of the cache.
 #[inline(always)]
 pub fn prefetch_index<T>(data: impl AsRef<[T]>, index: usize) {

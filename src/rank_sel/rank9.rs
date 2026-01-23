@@ -271,9 +271,6 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for
         }
     }
 
-    /// Prefetch the cache lines needed to compute `rank_unchecked(pos)`.
-    ///
-    /// See [`RankUnchecked::prefetch`] for details.
     #[inline(always)]
     fn prefetch(&self, pos: usize) {
         let word_pos = pos / usize::BITS as usize;
