@@ -5,18 +5,22 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Immutable [partial array](PartialArray) implementations.
+//! Immutable partial array implementations for cheaply-clonable values
+//!
+//! This supports storing values in [`BitFieldVec`] to save memory.
 
 use std::marker::PhantomData;
 
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;
 
+use crate::bits::BitFieldVec;
 use crate::bits::BitVec;
 use crate::dict::EliasFanoBuilder;
 use crate::panic_if_out_of_bounds;
 use crate::rank_sel::Rank9;
-use crate::traits::{RankUnchecked, SuccUnchecked};
+use crate::traits::RankUnchecked;
+use crate::traits::Word;
 use crate::traits::{BitVecOps, BitVecOpsMut};
 
 use super::{DenseIndex, SparseIndex};
@@ -29,7 +33,7 @@ use super::{DenseIndex, SparseIndex};
 ///
 /// To get a builder you can use either [new_dense] or [new_sparse].
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct PartialArrayBuilder<T, B> {
+pub struct PartialValueArrayBuilder<T, B> {
     builder: B,
     values: Vec<T>,
     len: usize,
@@ -48,21 +52,21 @@ pub struct PartialArrayBuilder<T, B> {
 /// # Examples
 ///
 /// ```rust
-/// use sux::array::partial_array;
+/// use sux::array::partial_value_array;
 ///
-/// let mut builder = partial_array::new_dense(10);
-/// builder.set(1, "foo");
-/// builder.set(2, "hello");
-/// builder.set(7, "world");
+/// let mut builder = partial_value_array::new_dense(10);
+/// builder.set(1, 123u32);
+/// builder.set(2, 45678);
+/// builder.set(7, 90);
 ///
-/// let array = builder.build();
-/// assert_eq!(array.get(1), Some(&"foo"));
-/// assert_eq!(array.get(2), Some(&"hello"));
+/// let array = builder.build_bitfieldvec();
+/// assert_eq!(array.get(1), Some(123));
+/// assert_eq!(array.get(2), Some(45678));
 /// assert_eq!(array.get(3), None);
-/// assert_eq!(array.get(7), Some(&"world"));
+/// assert_eq!(array.get(7), Some(90));
 /// ```
-pub fn new_dense<T>(len: usize) -> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
-    PartialArrayBuilder {
+pub fn new_dense<T>(len: usize) -> PartialValueArrayBuilder<T, BitVec<Box<[usize]>>> {
+    PartialValueArrayBuilder {
         builder: BitVec::new(len).into(),
         values: vec![],
         len,
@@ -70,7 +74,22 @@ pub fn new_dense<T>(len: usize) -> PartialArrayBuilder<T, BitVec<Box<[usize]>>> 
     }
 }
 
-impl<T> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
+fn build_bitfieldvec<T: Word>(values: Vec<T>) -> BitFieldVec<T> {
+    let bit_width = values
+        .iter()
+        .map(|value| value.len())
+        .max()
+        .unwrap_or(1)
+        .try_into()
+        .expect("bit_width overflowed usize");
+    let mut bfv = BitFieldVec::with_capacity(bit_width, values.len());
+    for value in values {
+        bfv.push(value);
+    }
+    bfv
+}
+
+impl<T: Clone> PartialValueArrayBuilder<T, BitVec<Box<[usize]>>> {
     /// Sets a value at the given position.
     ///
     /// The provided position must be greater than the last position set.
@@ -82,8 +101,12 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
                 self.min_next_pos - 1
             );
         }
-        panic_if_out_of_bounds!(position, self.len);
-
+        if position >= self.len {
+            panic!(
+                "Position {} is out of bounds for array of len {}",
+                position, self.len
+            );
+        }
         // SAFETY: position < len
         unsafe {
             self.builder.set_unchecked(position, true);
@@ -92,13 +115,16 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
         self.min_next_pos = position + 1;
     }
 
-    /// Builds the immutable dense partial array.
-    pub fn build(self) -> PartialArray<T, DenseIndex> {
+    /// Builds the immutable dense partial array using [`BitFieldVec`] as backend.
+    pub fn build_bitfieldvec(self) -> PartialValueArray<T, DenseIndex, BitFieldVec<T>>
+    where
+        T: Word,
+    {
         let (bit_vec, values) = (self.builder, self.values);
         let rank9 = Rank9::new(bit_vec);
-        let values = values.into_boxed_slice();
+        let values = build_bitfieldvec(values);
 
-        PartialArray {
+        PartialValueArray {
             index: rank9,
             values,
             _marker: PhantomData,
@@ -117,23 +143,26 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
 /// # Examples
 ///
 /// ```rust
-/// use sux::array::partial_array;
+/// use sux::array::partial_value_array;
 ///
-/// let mut builder = partial_array::new_sparse(10, 3);
-/// builder.set(1, "foo");
-/// builder.set(2, "hello");
-/// builder.set(7, "world");
+/// let mut builder = partial_value_array::new_sparse(10, 3);
+/// builder.set(1, 123u32);
+/// builder.set(2, 45678);
+/// builder.set(7, 90);
 ///
-/// let array = builder.build();
-/// assert_eq!(array.get(1), Some(&"foo"));
-/// assert_eq!(array.get(2), Some(&"hello"));
+/// let array = builder.build_bitfieldvec();
+/// assert_eq!(array.get(1), Some(123));
+/// assert_eq!(array.get(2), Some(45678));
 /// assert_eq!(array.get(3), None);
-/// assert_eq!(array.get(7), Some(&"world"));
+/// assert_eq!(array.get(7), Some(90));
 /// ```
 ///
 /// Note that you must specify the number of values in advance.
-pub fn new_sparse<T>(len: usize, num_values: usize) -> PartialArrayBuilder<T, EliasFanoBuilder> {
-    PartialArrayBuilder {
+pub fn new_sparse<T>(
+    len: usize,
+    num_values: usize,
+) -> PartialValueArrayBuilder<T, EliasFanoBuilder> {
+    PartialValueArrayBuilder {
         builder: EliasFanoBuilder::new(num_values, len),
         values: vec![],
         len,
@@ -141,7 +170,7 @@ pub fn new_sparse<T>(len: usize, num_values: usize) -> PartialArrayBuilder<T, El
     }
 }
 
-impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
+impl<T: Clone> PartialValueArrayBuilder<T, EliasFanoBuilder> {
     /// Sets a value at the given position.
     ///
     /// The provided position must be greater than the last position
@@ -154,20 +183,30 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
                 self.min_next_pos - 1
             );
         }
-        panic_if_out_of_bounds!(position, self.len);
+        if position >= self.len {
+            panic!(
+                "Position {} is out of bounds for array of len {}",
+                position, self.len
+            );
+        }
         // SAFETY: conditions have been just checked.
         unsafe { self.builder.push_unchecked(position) };
         self.values.push(value);
         self.min_next_pos = position + 1;
     }
 
-    /// Builds the immutable sparse partial array.
-    pub fn build(self) -> PartialArray<T, SparseIndex<Box<[usize]>>> {
+    /// Builds the immutable sparse partial array using [`BitFieldVec`] as backend.
+    pub fn build_bitfieldvec(
+        self,
+    ) -> PartialValueArray<T, SparseIndex<Box<[usize]>>, BitFieldVec<T>>
+    where
+        T: Word,
+    {
         let (builder, values) = (self.builder, self.values);
         let ef_dict = builder.build_with_dict();
-        let values = values.into_boxed_slice();
+        let values = build_bitfieldvec(values);
 
-        PartialArray {
+        PartialValueArray {
             index: SparseIndex {
                 ef: ef_dict,
                 first_invalid_pos: self.min_next_pos,
@@ -182,7 +221,7 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
 ///
 /// Position must be in strictly increasing order. The first returned
 /// position must be greater than the last position set.
-impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
+impl<T: Clone> Extend<(usize, T)> for PartialValueArrayBuilder<T, BitVec<Box<[usize]>>> {
     fn extend<I: IntoIterator<Item = (usize, T)>>(&mut self, iter: I) {
         for (pos, val) in iter {
             self.set(pos, val);
@@ -194,7 +233,7 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
 ///
 /// Position must be in strictly increasing order. The first returned
 /// position must be greater than the last position set.
-impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder> {
+impl<T: Clone> Extend<(usize, T)> for PartialValueArrayBuilder<T, EliasFanoBuilder> {
     fn extend<I: IntoIterator<Item = (usize, T)>>(&mut self, iter: I) {
         for (pos, val) in iter {
             self.set(pos, val);
@@ -210,27 +249,25 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder> {
 /// and a [sparse](new_sparse) implementation with different
 /// space/time trade-offs.
 ///
-/// For convenience, this structure implements [`SliceByValue`].
-///
-/// See [`PartialArrayBuilder`] for details on how to create a partial array.
+/// See [`PartialValueArrayBuilder`] for details on how to create a partial array.
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PartialArray<T, P, V: AsRef<[T]> = Box<[T]>> {
+pub struct PartialValueArray<T: Clone, P, V: SliceByValue<Value = T>> {
     index: P,
     values: V,
     _marker: PhantomData<T>,
 }
 
-impl<T, P, V: AsRef<[T]>> PartialArray<T, P, V> {
+impl<T: Clone, P, V: SliceByValue<Value = T>> PartialValueArray<T, P, V> {
     /// Returns the number of values stored in the array.
     #[inline(always)]
     pub fn num_values(&self) -> usize {
-        self.values.as_ref().len()
+        self.values.len()
     }
 }
 
-impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
+impl<T: Clone, V: SliceByValue<Value = T>> PartialValueArray<T, DenseIndex, V> {
     /// Returns the total length of the array.
     ///
     /// This is the length that was specified when creating the builder,
@@ -254,41 +291,35 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
     /// # Examples
     ///
     /// ```rust
-    /// use sux::array::partial_array;
-    /// let mut builder = partial_array::new_dense(10);
-    /// builder.set(5, 42);
+    /// use sux::array::partial_value_array;
+    /// let mut builder = partial_value_array::new_dense(10);
+    /// builder.set(5, 42u32);
     ///
-    /// let array = builder.build();
-    /// assert_eq!(array.get(5), Some(&42));
+    /// let array = builder.build_bitfieldvec();
+    /// assert_eq!(array.get(5), Some(42));
     /// assert_eq!(array.get(6), None);
     /// ```
-    pub fn get(&self, position: usize) -> Option<&T> {
+    pub fn get(&self, position: usize) -> Option<T> {
         panic_if_out_of_bounds!(position, self.len());
 
-        // SAFETY: we just checked
-        unsafe { self.get_unchecked(position) }
-    }
-
-    /// # Safety
-    ///
-    /// position < len()
-    pub unsafe fn get_unchecked(&self, position: usize) -> Option<&T> {
         // Check if there's a value at this position
-        // SAFETY: position < len() guaranteed by caller
+        // SAFETY: position < len()
         if !unsafe { self.index.get_unchecked(position) } {
             return None;
         }
 
         // Use ranking to find the index in the values array
-        // SAFETY: position < len() guaranteed by caller
+        // SAFETY: position < len()
         let value_index = unsafe { self.index.rank_unchecked(position) };
 
         // SAFETY: necessarily value_index < num_values().
-        Some(unsafe { self.values.as_ref().get_unchecked(value_index) })
+        Some(unsafe { self.values.get_value_unchecked(value_index) })
     }
 }
 
-impl<T, D: AsRef<[usize]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
+impl<T: Clone, D: AsRef<[usize]>, V: SliceByValue<Value = T>>
+    PartialValueArray<T, SparseIndex<D>, V>
+{
     /// Returns the total length of the array.
     ///
     /// This is the length that was specified when creating the builder,
@@ -312,69 +343,24 @@ impl<T, D: AsRef<[usize]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
     /// # Examples
     ///
     /// ```rust
-    /// use sux::array::partial_array;
-    /// let mut builder = partial_array::new_sparse(10, 1);
-    /// builder.set(5, 42);
+    /// use sux::array::partial_value_array;
+    /// let mut builder = partial_value_array::new_sparse(10, 1);
+    /// builder.set(5, 42u32);
     ///
-    /// let array = builder.build();
-    /// assert_eq!(array.get(5), Some(&42));
+    /// let array = builder.build_bitfieldvec();
+    /// assert_eq!(array.get(5), Some(42));
     /// assert_eq!(array.get(6), None);
     /// ```
-    pub fn get(&self, position: usize) -> Option<&T> {
+    pub fn get(&self, position: usize) -> Option<T> {
         panic_if_out_of_bounds!(position, self.len());
 
-        // SAFETY: we just checked
-        unsafe { self.get_unchecked(position) }
-    }
-
-    /// # Safety
-    ///
-    /// position < len()
-    pub unsafe fn get_unchecked(&self, position: usize) -> Option<&T> {
-        if position >= self.index.first_invalid_pos {
-            return None;
-        }
-        // Check if there's a value at this position
-        // SAFETY: position <= last set position
-        let (value_index, pos) = unsafe { self.index.ef.succ_unchecked::<false>(position) };
+        let (value_index, pos) = self.index.get_next_pos(position)?;
 
         if pos != position {
             None
         } else {
             // SAFETY: necessarily value_index < num values.
-            Some(unsafe { self.values.as_ref().get_unchecked(value_index) })
+            Some(unsafe { self.values.get_value_unchecked(value_index) })
         }
-    }
-}
-
-/// Returns an option even when using `get_value_unchecked` because it should be safe to call
-/// whenever `position < len()`.
-impl<T: Clone, V: AsRef<[T]>> SliceByValue for PartialArray<T, DenseIndex, V> {
-    type Value = Option<T>;
-
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    unsafe fn get_value_unchecked(&self, position: usize) -> Self::Value {
-        // SAFETY: position < len() guaranteed by caller
-        unsafe { self.get_unchecked(position) }.cloned()
-    }
-}
-
-/// Returns an option even when using `get_value_unchecked` because it should be safe to call
-/// whenever `position < len()`.
-impl<T: Clone, D: AsRef<[usize]>, V: AsRef<[T]>> SliceByValue
-    for PartialArray<T, SparseIndex<D>, V>
-{
-    type Value = Option<T>;
-
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    unsafe fn get_value_unchecked(&self, position: usize) -> Self::Value {
-        // SAFETY: position < len() guaranteed by caller
-        unsafe { self.get_unchecked(position) }.cloned()
     }
 }
