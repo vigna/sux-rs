@@ -112,6 +112,40 @@ pub trait RankUnchecked {
     /// add a padding zero bit at the end of your vector (at which
     /// point the original length will fall within the valid range).
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
+
+    /// Prefetch the cache lines needed to compute `rank_unchecked(pos)`.
+    ///
+    /// This can speed up computing the rank of many positions in parallel.
+    /// For example, take the following for loop:
+    /// ```
+    /// use sux::prelude::RankUnchecked;
+    /// fn query_all(rank: &impl RankUnchecked, positions: &[usize]) {
+    ///    for i in 0..positions.len() {
+    ///        let r = unsafe { rank.rank_unchecked(positions[i]) };
+    ///        // ...
+    ///    }
+    /// }
+    /// ```
+    /// By prefetching cache lines some iterations ahead, we can make sure that
+    /// they are already loaded in memory by the time we get to that loop iteration:
+    /// ```
+    /// use sux::prelude::RankUnchecked;
+    /// fn query_all(rank: &impl RankUnchecked, positions: &[usize]) {
+    ///    for i in 0..positions.len() {
+    ///        rank.prefetch(positions[(i + 32).min(positions.len() - 1)]);
+    ///        let r = unsafe { rank.rank_unchecked(positions[i]) };
+    ///        // ...
+    ///    }
+    /// }
+    /// ```
+    ///
+    /// For [`crate::rank_sel::Rank9`] and [`crate::rank_sel::RankSmall`], this gives around 10% to 30% speedup when there are 16 billion keys.
+    ///
+    /// Prefetching out-of-bounds is never unsafe, and neither is this method.
+    fn prefetch(&self, pos: usize) {
+        // Default implementation to not break implementations in dependents.
+        let _ = pos;
+    }
 }
 
 /// Ranking zeros over a bit vector.

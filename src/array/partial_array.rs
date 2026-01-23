@@ -103,6 +103,7 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
             );
         }
         panic_if_out_of_bounds!(position, self.len);
+
         // SAFETY: position < len
         unsafe {
             self.builder.set_unchecked(position, true);
