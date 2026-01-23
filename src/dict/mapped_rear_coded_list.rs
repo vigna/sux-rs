@@ -65,7 +65,7 @@
 //! # use sux::dict::MappedRearCodedListStr;
 //! # use sux::bits::bit_field_vec;
 //!
-//! let mut rclb = RearCodedListBuilder::<str, true>::new(4);
+//! let mut rclb = RearCodedListBuilder::<str, Vec<usize>, true>::new(4);
 //!
 //! rclb.push("aa");
 //! rclb.push("aab");
@@ -85,7 +85,7 @@
 //! assert_eq!(mrcl.get(5), "abdd");
 //! ```
 use crate::bits::BitFieldVec;
-use crate::dict::rear_coded_list::RearCodedList;
+use crate::dict::rear_coded_list::{BuiltPointers, RearCodedList};
 use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
 use lender::FusedLender;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
@@ -119,7 +119,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > MappedRearCodedList<I, O, D, P, Q, SORTED>
@@ -171,7 +171,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > MappedRearCodedList<I, O, D, P, Q, SORTED>
@@ -223,7 +223,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > Types for MappedRearCodedList<I, O, D, P, Q, SORTED>
@@ -232,7 +232,7 @@ impl<
     type Input = I;
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+impl<D: AsRef<[u8]>, P: BuiltPointers, Q: SliceByValue<Value = usize>, const SORTED: bool>
     IndexedSeq for MappedRearCodedList<[u8], Vec<u8>, D, P, Q, SORTED>
 {
     #[inline(always)]
@@ -247,7 +247,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+impl<D: AsRef<[u8]>, P: BuiltPointers, Q: SliceByValue<Value = usize>, const SORTED: bool>
     MappedRearCodedList<[u8], Vec<u8>, D, P, Q, SORTED>
 {
     /// Returns in place the byte sequence of given index by writing
@@ -258,7 +258,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+impl<D: AsRef<[u8]>, P: BuiltPointers, Q: SliceByValue<Value = usize>, const SORTED: bool>
     IndexedSeq for MappedRearCodedList<str, String, D, P, Q, SORTED>
 {
     #[inline(always)]
@@ -273,7 +273,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+impl<D: AsRef<[u8]>, P: BuiltPointers, Q: SliceByValue<Value = usize>, const SORTED: bool>
     MappedRearCodedList<str, String, D, P, Q, SORTED>
 {
     /// Returns in place the string of given index by writing
@@ -318,7 +318,7 @@ pub struct Lend<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > {
@@ -332,7 +332,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > Lend<'a, I, O, D, P, Q, SORTED>
@@ -375,7 +375,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > Lending<'b> for Lend<'a, I, O, D, P, Q, SORTED>
@@ -386,7 +386,7 @@ impl<
 impl<
     O: PartialEq<str> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > Lender for Lend<'_, str, O, D, P, Q, SORTED>
@@ -406,7 +406,7 @@ where
 impl<
     O: PartialEq<[u8]> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > Lender for Lend<'_, [u8], O, D, P, Q, SORTED>
@@ -428,7 +428,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > ExactSizeLender for Lend<'a, I, O, D, P, Q, SORTED>
@@ -446,7 +446,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > FusedLender for Lend<'a, I, O, D, P, Q, SORTED>
@@ -464,7 +464,7 @@ pub struct Iter<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 >(Lend<'a, I, O, D, P, Q, SORTED>);
@@ -474,7 +474,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > std::iter::ExactSizeIterator for Iter<'a, I, O, D, P, Q, SORTED>
@@ -493,7 +493,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > std::iter::FusedIterator for Iter<'a, I, O, D, P, Q, SORTED>
@@ -503,7 +503,7 @@ where
 {
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+impl<'a, D: AsRef<[u8]>, P: BuiltPointers, Q: SliceByValue<Value = usize>, const SORTED: bool>
     std::iter::Iterator for Iter<'a, str, String, D, P, Q, SORTED>
 where
     Lend<'a, str, String, D, P, Q, SORTED>: Lender,
@@ -524,7 +524,7 @@ where
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+impl<'a, D: AsRef<[u8]>, P: BuiltPointers, Q: SliceByValue<Value = usize>, const SORTED: bool>
     std::iter::Iterator for Iter<'a, [u8], Vec<u8>, D, P, Q, SORTED>
 where
     Lend<'a, [u8], Vec<u8>, D, P, Q, SORTED>: ExactSizeLender,
@@ -550,7 +550,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > IntoLender for &'a MappedRearCodedList<I, O, D, P, Q, SORTED>
@@ -569,7 +569,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > IntoIterator for &'a MappedRearCodedList<I, O, D, P, Q, SORTED>
@@ -590,7 +590,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     Q: SliceByValue<Value = usize>,
     const SORTED: bool,
 > IntoIteratorFrom for &'a MappedRearCodedList<I, O, D, P, Q, SORTED>

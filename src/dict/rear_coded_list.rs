@@ -95,7 +95,7 @@
 //! use sux::traits::{IndexedSeq, IndexedDict};
 //! use sux::dict::RearCodedListBuilder;
 //!
-//! let mut rclb = RearCodedListBuilder::<str, true>::new(4);
+//! let mut rclb = RearCodedListBuilder::<str, Vec<usize>, true>::new(4);
 //!
 //! rclb.push("aa");
 //! rclb.push("aab");
@@ -163,6 +163,7 @@
 //! and `<rear_len>` is the length of the suffix of the previous string that must be
 //! removed to obtain the common prefix.
 
+use crate::dict::elias_fano::{EfSeq, EliasFanoBuilder};
 use crate::traits::{IndexedDict, IndexedSeq, IntoIteratorFrom, Types};
 use core::marker::PhantomData;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending};
@@ -223,19 +224,21 @@ pub struct RearCodedList<I: ?Sized, O, D = Box<[u8]>, P = Box<[usize]>, const SO
 }
 
 /// A rear-coded list of byte sequences.
-pub type RearCodedListSliceU8<const SORTED: bool = true> =
-    RearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, SORTED>;
+pub type RearCodedListSliceU8<P = Box<[u8]>, const SORTED: bool = true> =
+    RearCodedList<[u8], Vec<u8>, Box<[u8]>, P, SORTED>;
 /// A rear-coded list of strings.
-pub type RearCodedListStr<const SORTED: bool = true> =
-    RearCodedList<str, String, Box<[u8]>, Box<[usize]>, SORTED>;
+pub type RearCodedListStr<P = Box<[u8]>, const SORTED: bool = true> =
+    RearCodedList<str, String, Box<[u8]>, P, SORTED>;
 
 impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
 > RearCodedList<I, O, D, P, SORTED>
+where
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     /// Returns the number of elements.
     ///
@@ -254,7 +257,7 @@ impl<
         let block = index / self.ratio;
         let offset = index % self.ratio;
 
-        let start = self.pointers.as_ref()[block];
+        let start = self.pointers.get(block);
         let mut data = &self.data.as_ref()[start..];
 
         // declare these vars so the decoding looks cleaner
@@ -282,7 +285,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
 > RearCodedList<I, O, D, P, SORTED>
 where
@@ -327,7 +330,10 @@ where
     }
 }
 
-impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, true> {
+impl<I: ?Sized, O, D: AsRef<[u8]>, P: BuiltPointers> RearCodedList<I, O, D, P, true>
+where
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
+{
     /// Internal method that finds the index of a slice of bytes using a binary
     /// search on the blocks followed by a linear search within the block.
     ///
@@ -338,9 +344,9 @@ impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, 
     fn index_of(&self, value: impl AsRef<[u8]>) -> Option<usize> {
         let string = value.as_ref();
         // first to a binary search on the blocks to find the block
-        let block_idx = self.pointers.as_ref().binary_search_by(|block_ptr| {
+        let block_idx = self.pointers.binary_search_by(|block_ptr| {
             // do a quick in-place decode of the explicit string at the beginning of the block
-            let data = &self.data.as_ref()[*block_ptr..];
+            let data = &self.data.as_ref()[block_ptr..];
             let (len, tmp) = decode_int(data);
             memcmp(string, &tmp[..len]).reverse()
         });
@@ -350,14 +356,14 @@ impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, 
         }
 
         let mut block_idx = block_idx.unwrap_err();
-        if block_idx == 0 || block_idx > self.pointers.as_ref().len() {
+        if block_idx == 0 || block_idx > self.pointers.len() {
             // the string is before the first block
             return None;
         }
         block_idx -= 1;
         // finish by a linear search on the block
         let mut result = Vec::with_capacity(128);
-        let start = self.pointers.as_ref()[block_idx];
+        let start = self.pointers.get(block_idx);
         let mut data = &self.data.as_ref()[start..];
 
         let (mut to_copy, mut rear_length);
@@ -394,7 +400,7 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
 > Types for RearCodedList<I, O, D, P, SORTED>
 {
@@ -402,8 +408,10 @@ impl<
     type Input = I;
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IndexedSeq
+impl<D: AsRef<[u8]>, P: BuiltPointers, const SORTED: bool> IndexedSeq
     for RearCodedList<[u8], Vec<u8>, D, P, SORTED>
+where
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
@@ -418,8 +426,10 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IndexedSeq
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
+impl<D: AsRef<[u8]>, P: BuiltPointers, const SORTED: bool>
     RearCodedList<[u8], Vec<u8>, D, P, SORTED>
+where
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     /// Returns in place the byte sequence of given index by writing
     /// its bytes into the provided vector.
@@ -428,8 +438,10 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IndexedSeq
+impl<D: AsRef<[u8]>, P: BuiltPointers, const SORTED: bool> IndexedSeq
     for RearCodedList<str, String, D, P, SORTED>
+where
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
@@ -446,8 +458,9 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> IndexedSeq
     }
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
-    RearCodedList<str, String, D, P, SORTED>
+impl<D: AsRef<[u8]>, P: BuiltPointers, const SORTED: bool> RearCodedList<str, String, D, P, SORTED>
+where
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     /// Returns in place the string of given index by writing
     /// its bytes into the provided string.
@@ -493,8 +506,10 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized + AsRef<[u8]>,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
 > IndexedDict for RearCodedList<I, O, D, P, true>
+where
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
         self.index_of(value.borrow())
@@ -510,9 +525,11 @@ pub struct Lend<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
-> {
+> where
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
+{
     rcl: &'a RearCodedList<I, O, D, P, SORTED>,
     data: &'a [u8],
     buffer: Vec<u8>,
@@ -524,11 +541,12 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
 > Lend<'a, I, O, D, P, SORTED>
 where
     Self: Lender,
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     /// Creates a new lender over the rear-coded list.
     pub fn new(rcl: &'a RearCodedList<I, O, D, P, SORTED>) -> Self {
@@ -545,7 +563,7 @@ where
     pub fn new_from(rcl: &'a RearCodedList<I, O, D, P, SORTED>, from: usize) -> Self {
         let block = from / rcl.ratio;
         let offset = from % rcl.ratio;
-        let start = rcl.pointers.as_ref()[block];
+        let start = rcl.pointers.get(block);
         let mut res = Lend {
             rcl,
             index: block * rcl.ratio,
@@ -590,17 +608,20 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
 > Lending<'b> for Lend<'a, I, O, D, P, SORTED>
+where
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     type Lend = &'b I;
 }
 
-impl<O: PartialEq<str> + PartialEq, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> Lender
+impl<O: PartialEq<str> + PartialEq, D: AsRef<[u8]>, P: BuiltPointers, const SORTED: bool> Lender
     for Lend<'_, str, O, D, P, SORTED>
 where
     str: PartialEq<O> + PartialEq,
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     fn next(&mut self) -> Option<&'_ str> {
         self.next_impl().map(|s| std::str::from_utf8(s).unwrap())
@@ -612,10 +633,11 @@ where
     }
 }
 
-impl<O: PartialEq<[u8]> + PartialEq, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> Lender
+impl<O: PartialEq<[u8]> + PartialEq, D: AsRef<[u8]>, P: BuiltPointers, const SORTED: bool> Lender
     for Lend<'_, [u8], O, D, P, SORTED>
 where
     [u8]: PartialEq<O> + PartialEq,
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     fn next(&mut self) -> Option<&[u8]> {
         self.next_impl()
@@ -632,11 +654,12 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
 > ExactSizeLender for Lend<'a, I, O, D, P, SORTED>
 where
     Lend<'a, I, O, D, P, SORTED>: Lender,
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -649,11 +672,12 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
 > FusedLender for Lend<'a, I, O, D, P, SORTED>
 where
     Lend<'a, I, O, D, P, SORTED>: Lender,
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
 }
 
@@ -666,21 +690,24 @@ pub struct Iter<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
->(Lend<'a, I, O, D, P, SORTED>);
+>(Lend<'a, I, O, D, P, SORTED>)
+where
+    for<'out> P: Types<Input = usize, Output<'out> = usize>;
 
 impl<
     'a,
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
 > std::iter::ExactSizeIterator for Iter<'a, I, O, D, P, SORTED>
 where
     Iter<'a, I, O, D, P, SORTED>: std::iter::Iterator,
     Lend<'a, I, O, D, P, SORTED>: ExactSizeLender,
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -693,19 +720,21 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
 > std::iter::FusedIterator for Iter<'a, I, O, D, P, SORTED>
 where
     Iter<'a, I, O, D, P, SORTED>: std::iter::Iterator,
     Lend<'a, str, String, D, P, SORTED>: FusedLender,
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> std::iter::Iterator
+impl<'a, D: AsRef<[u8]>, P: BuiltPointers, const SORTED: bool> std::iter::Iterator
     for Iter<'a, str, String, D, P, SORTED>
 where
     Lend<'a, str, String, D, P, SORTED>: Lender,
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     type Item = String;
 
@@ -723,10 +752,11 @@ where
     }
 }
 
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> std::iter::Iterator
+impl<'a, D: AsRef<[u8]>, P: BuiltPointers, const SORTED: bool> std::iter::Iterator
     for Iter<'a, [u8], Vec<u8>, D, P, SORTED>
 where
     Lend<'a, [u8], Vec<u8>, D, P, SORTED>: ExactSizeLender,
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     type Item = Vec<u8>;
 
@@ -749,11 +779,12 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
 > IntoLender for &'a RearCodedList<I, O, D, P, SORTED>
 where
     Lend<'a, I, O, D, P, SORTED>: Lender,
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     type Lender = Lend<'a, I, O, D, P, SORTED>;
     #[inline(always)]
@@ -767,12 +798,13 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
 > IntoIterator for &'a RearCodedList<I, O, D, P, SORTED>
 where
     for<'b> Lend<'b, I, O, D, P, SORTED>: Lender,
     Iter<'a, I, O, D, P, SORTED>: std::iter::Iterator,
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     type Item = <Iter<'a, I, O, D, P, SORTED> as Iterator>::Item;
     type IntoIter = Iter<'a, I, O, D, P, SORTED>;
@@ -787,17 +819,73 @@ impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
     D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
+    P: BuiltPointers,
     const SORTED: bool,
 > IntoIteratorFrom for &'a RearCodedList<I, O, D, P, SORTED>
 where
     for<'b> Lend<'b, I, O, D, P, SORTED>: Lender,
     Iter<'a, I, O, D, P, SORTED>: std::iter::Iterator,
+    for<'out> P: Types<Input = usize, Output<'out> = usize>,
 {
     type IntoIterFrom = Iter<'a, I, O, D, P, SORTED>;
     #[inline(always)]
     fn into_iter_from(self, from: usize) -> Self::IntoIter {
         self.iter_from(from)
+    }
+}
+
+/// Workaround for [a compiler
+/// bug](https://github.com/rust-lang/rust/issues/87755#issuecomment-2564811303)
+pub trait BuiltPointers
+where
+    for<'a> Self: IndexedSeq<Output<'a> = usize, Input = usize>,
+{
+}
+
+impl<P> BuiltPointers for P where for<'a> P: IndexedSeq<Output<'a> = usize, Input = usize> {}
+
+/// Structure that can append `usize` and yield a [`IndexedSeq`]
+///
+/// # Safety
+///
+/// Values in the built `IndexedSeq` must match the input in the same order.
+pub unsafe trait PointersBuilder {
+    type Built: BuiltPointers;
+
+    fn push(&mut self, pointer: usize);
+    fn len(&self) -> usize;
+    fn build(self) -> Self::Built;
+}
+
+unsafe impl PointersBuilder for Vec<usize> {
+    type Built = Box<[usize]>;
+
+    fn push(&mut self, pointer: usize) {
+        Vec::push(self, pointer)
+    }
+
+    fn len(&self) -> usize {
+        Vec::len(self)
+    }
+
+    fn build(self) -> Self::Built {
+        self.into()
+    }
+}
+
+unsafe impl PointersBuilder for EliasFanoBuilder {
+    type Built = EfSeq;
+
+    fn push(&mut self, pointer: usize) {
+        EliasFanoBuilder::push(self, pointer)
+    }
+
+    fn len(&self) -> usize {
+        self.count
+    }
+
+    fn build(self) -> Self::Built {
+        EliasFanoBuilder::build_with_seq(self)
     }
 }
 
@@ -807,7 +895,11 @@ where
 /// and a boolean constant `SORTED` that indicates whether the strings are sorted
 /// in ascending order (which will enable checks and indexing capabilities).
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct RearCodedListBuilder<I: ?Sized, const SORTED: bool = true> {
+pub struct RearCodedListBuilder<
+    I: ?Sized,
+    P: PointersBuilder = Vec<usize>,
+    const SORTED: bool = true,
+> {
     /// The number of strings in a block; this value trades compression for speed.
     ratio: usize,
     /// Number of encoded strings.
@@ -819,7 +911,8 @@ pub struct RearCodedListBuilder<I: ?Sized, const SORTED: bool = true> {
     /// as we truncate data after each push
     written_bytes: usize,
     /// The pointer to the starting string of each block.
-    pointers: Vec<usize>,
+    pointers: P,
+    last_pointer: Option<usize>,
     /// Statistics of the encoded data.
     stats: Stats,
     /// Cache of the last encoded string for incremental encoding.
@@ -851,13 +944,22 @@ fn memcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
     string.len().cmp(&other.len())
 }
 
-impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
-    /// Creates a builder for a rear-coded list with a block size of `ratio`.
+impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, Vec<usize>, SORTED> {
+    /// Creates a builder for a rear-coded list with a block size of `k`.
     pub fn new(ratio: usize) -> Self {
+        Self::with_pointer_builder(ratio, Vec::new())
+    }
+}
+
+impl<I: ?Sized, P: PointersBuilder, const SORTED: bool> RearCodedListBuilder<I, P, SORTED> {
+    /// Creates a builder for a rear-coded list with a block size of `k`
+    /// using a custom structure to store pointers, such as [`EfSeq`].
+    pub fn with_pointer_builder(ratio: usize, pointers_builder: P) -> Self {
         Self {
             data: Vec::with_capacity(1024),
             last_str: Vec::with_capacity(1024),
-            pointers: Vec::new(),
+            pointers: pointers_builder,
+            last_pointer: None,
             len: 0,
             written_bytes: 0,
             ratio,
@@ -979,8 +1081,8 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
         // at every multiple of ratio we just encode the string as is
         let to_encode = if self.len % self.ratio == 0 {
             // compute the size in bytes of the previous block
-            let last_ptr = self.pointers.last().copied().unwrap_or(0);
-            let block_bytes = self.written_bytes - last_ptr;
+            let last_pointer = self.last_pointer.unwrap_or(0);
+            let block_bytes = self.written_bytes - last_pointer;
             // update stats
             self.stats.max_block_bytes = self.stats.max_block_bytes.max(block_bytes);
             self.stats.sum_block_bytes += block_bytes;
@@ -1027,12 +1129,12 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
     }
 }
 
-impl<const SORTED: bool> RearCodedListBuilder<str, SORTED> {
+impl<P: PointersBuilder, const SORTED: bool> RearCodedListBuilder<str, P, SORTED> {
     /// Builds a rear-coded list of strings.
-    pub fn build(self) -> RearCodedListStr<SORTED> {
+    pub fn build(self) -> RearCodedListStr<P::Built, SORTED> {
         RearCodedList {
             data: self.data.into(),
-            pointers: self.pointers.into(),
+            pointers: self.pointers.build(),
             len: self.len,
             ratio: self.ratio,
             _marker_i: PhantomData,
@@ -1041,12 +1143,12 @@ impl<const SORTED: bool> RearCodedListBuilder<str, SORTED> {
     }
 }
 
-impl<const SORTED: bool> RearCodedListBuilder<[u8], SORTED> {
+impl<P: PointersBuilder, const SORTED: bool> RearCodedListBuilder<[u8], P, SORTED> {
     /// Builds a rear-coded list of slices of bytes (`[u8]`).
-    pub fn build(self) -> RearCodedListSliceU8<SORTED> {
+    pub fn build(self) -> RearCodedListSliceU8<P::Built, SORTED> {
         RearCodedList {
             data: self.data.into(),
-            pointers: self.pointers.into(),
+            pointers: self.pointers.build(),
             len: self.len,
             ratio: self.ratio,
             _marker_i: PhantomData,
@@ -1055,7 +1157,9 @@ impl<const SORTED: bool> RearCodedListBuilder<[u8], SORTED> {
     }
 }
 
-impl<I: ?Sized + AsRef<[u8]>, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
+impl<I: ?Sized + AsRef<[u8]>, P: PointersBuilder, const SORTED: bool>
+    RearCodedListBuilder<I, P, SORTED>
+{
     /// Appends a string to the end of the list.
     ///
     /// # Panics
@@ -1085,7 +1189,7 @@ impl<I: ?Sized + AsRef<[u8]>, const SORTED: bool> RearCodedListBuilder<I, SORTED
     /// use sux::dict::RearCodedListBuilder;
     ///
     /// // For sorted lists
-    /// let mut rclb = RearCodedListBuilder::<str, true>::new(4);
+    /// let mut rclb = RearCodedListBuilder::<str, Vec<usize>, true>::new(4);
     /// rclb.push("aa");
     /// rclb.push("aab");
     /// rclb.push("abc");
@@ -1094,7 +1198,7 @@ impl<I: ?Sized + AsRef<[u8]>, const SORTED: bool> RearCodedListBuilder<I, SORTED
     /// assert_eq!(rcl.len(), 4);
     ///
     /// // For unsorted lists
-    /// let mut rclb = RearCodedListBuilder::<str, false>::new(4);
+    /// let mut rclb = RearCodedListBuilder::<str, Vec<usize>, false>::new(4);
     /// for word in ["foo", "bar", "baz", "qux"] {
     ///     rclb.push(word);
     /// }
@@ -1214,7 +1318,7 @@ mod epserde_impl {
         let mut len = 0;
         let mut byte_len = 0;
         // First pass: count the number of strings and the byte length
-        let mut builder = RearCodedListBuilder::<I, SORTED>::new(ratio);
+        let mut builder = RearCodedListBuilder::<I, Vec<usize>, SORTED>::new(ratio);
         info!("Counting strings...");
         while let Some(s) = lender.next()? {
             builder.push(s.borrow());
@@ -1230,7 +1334,7 @@ mod epserde_impl {
         // Since we have two interdependent iterators (the bytes and the pointers),
         // we give to each iterator a reference to a RefCell containing a
         // builder.
-        let builder = RefCell::new(RearCodedListBuilder::<I, SORTED>::new(ratio));
+        let builder = RefCell::new(RearCodedListBuilder::<I, _, SORTED>::new(ratio));
 
         let rear_coded_list = RearCodedList::<I, O, _, _, SORTED> {
             ratio,
@@ -1349,7 +1453,7 @@ mod epserde_impl {
             > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         const SORTED: bool,
     > {
-        builder: &'a RefCell<RearCodedListBuilder<I, SORTED>>,
+        builder: &'a RefCell<RearCodedListBuilder<I, Vec<usize>, SORTED>>,
         lender: L,
         byte_len: usize,
         pos: usize,
@@ -1421,7 +1525,7 @@ mod epserde_impl {
     /// We just need to read the pointers from the builder. The field `pos` keeps
     /// track of the position of the next pointer to write.
     struct PointersIter<'a, I: ?Sized + AsRef<[u8]>, const SORTED: bool> {
-        builder: &'a RefCell<RearCodedListBuilder<I, SORTED>>,
+        builder: &'a RefCell<RearCodedListBuilder<I, Vec<usize>, SORTED>>,
         pos: usize,
     }
 

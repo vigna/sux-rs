@@ -39,7 +39,7 @@ fn main() -> Result<()> {
 
     if args.unsorted {
         unsafe {
-            let rcl = <RearCodedListStr<false>>::load_full(&args.rcl)?;
+            let rcl = <RearCodedListStr<Box<[usize]>, false>>::load_full(&args.rcl)?;
             let width = rcl.len().len() as usize;
 
             let mut map = bit_field_vec![width => 0; rcl.len()];
@@ -60,7 +60,7 @@ fn main() -> Result<()> {
         }
     } else {
         unsafe {
-            let rcl = <RearCodedListStr<true>>::load_full(&args.rcl)?;
+            let rcl = <RearCodedListStr<Box<[usize]>, true>>::load_full(&args.rcl)?;
             let width = rcl.len().len() as usize;
 
             let mut map = bit_field_vec![width => 0; rcl.len()];
