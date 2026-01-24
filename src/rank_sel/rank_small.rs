@@ -15,7 +15,10 @@ use std::{
 
 use crate::{
     prelude::{BitLength, BitVec, Rank, RankHinted, RankUnchecked, RankZero},
-    traits::{BitCount, NumBits},
+    traits::{
+        BitCount, NumBits, Select, SelectHinted, SelectUnchecked, SelectZero, SelectZeroHinted,
+        SelectZeroUnchecked,
+    },
 };
 
 use crate::ambassador_impl_AsRef;

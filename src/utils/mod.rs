@@ -196,12 +196,12 @@ pub fn prefetch_index<T>(data: impl AsRef<[T]>, index: usize) {
     unsafe {
         std::arch::x86::_mm_prefetch(ptr, std::arch::x86::_MM_HINT_T0);
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", feature = "aarch64_prefetch"))]
     unsafe {
-        std::arch::aarch64::_prefetch(ptr, std::arch::aarch64::_PREFETCH_LOCALITY3);
+        std::arch::aarch64::_prefetch::<{ std::arch::aarch64::_PREFETCH_READ }, { std::arch::aarch64::_PREFETCH_LOCALITY3 }>(ptr);
     }
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "x86", target_arch = "aarch64")))]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "x86", all(target_arch = "aarch64", feature = "aarch64_prefetch"))))]
     {
-        // Do nothing.
+        let _ = ptr; // Silence unused variable warning.
     }
 }

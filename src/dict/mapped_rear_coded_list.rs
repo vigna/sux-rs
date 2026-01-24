@@ -238,7 +238,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
         let index = self.map.index_value(index);
-        self.rcl.get_unchecked(index)
+        unsafe { self.rcl.get_unchecked(index) }
     }
 
     #[inline(always)]
@@ -264,7 +264,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
         let index = self.map.index_value(index);
-        self.rcl.get_unchecked(index)
+        unsafe { self.rcl.get_unchecked(index) }
     }
 
     #[inline(always)]

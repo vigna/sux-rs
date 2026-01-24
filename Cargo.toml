@@ -32,7 +32,7 @@ rdst = "0.20.12"
 mem_dbg = "0.3.0"
 rayon = { version = "1.8.1", optional = true }
 env_logger = { version = "0.11.0" }
-ambassador = { version = "0.4.2" }
+ambassador = { version = "0.5.0" }
 impl-tools = "0.11.2"
 clap = { version = "4.4.18", features = ["derive"], optional = true }
 crossbeam-channel = "0.5.14"
@@ -66,6 +66,7 @@ zstd = ["dep:zstd"]
 cli = ["clap", "dep:epserde", "dep:deko"] # Build the binary utils (it's here so that cargo bench doesn't build them)
 fuzz = ["dep:arbitrary"]
 slow_tests = [] # Run slow tests (use --release)
+aarch64_prefetch = [] # Enable aarch64 prefetch (requires nightly)
 mwhc = [] # Compile MWHC data structures (mainly for benchmarking)
 no_logging = [
 ] # Disable logging for binaries that build functions and filters (for benchmarking)

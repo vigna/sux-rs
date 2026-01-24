@@ -6,8 +6,10 @@
  */
 
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
-// TODO: this will disappear as soon as Ambassador emits unsafe blocks
-#![allow(unsafe_op_in_unsafe_fn)]
+#![cfg_attr(
+    all(feature = "aarch64_prefetch", target_arch = "aarch64"),
+    feature(stdarch_aarch64_prefetch)
+)]
 #![deny(unconditional_recursion)]
 #![allow(clippy::duplicated_attributes)]
 #![allow(clippy::len_without_is_empty)]
