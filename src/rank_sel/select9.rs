@@ -9,8 +9,8 @@
 use super::Rank9;
 use super::rank9::BlockCounters;
 use crate::traits::{
-    BitCount, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select,
-    SelectHinted, SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked,
+    BitCount, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
+    SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked,
 };
 use ambassador::Delegate;
 use common_traits::SelectInWord;
