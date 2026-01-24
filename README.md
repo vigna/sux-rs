@@ -124,7 +124,8 @@ The crate has the following features:
 - `clap`: enables the `clap` crate for command-line argument parsing;
 - `cli`: builds the binaries (implies `clap`, `epserde`, `deko`);
 - `mmap`: enables support for memory mapping in ε-serde (implies `epserde`);
-- `mem_dbg`: enables support for the [`MemDbg`] and [`MemSize`] traits.
+- `mem_dbg`: enables support for the [`MemDbg`] and [`MemSize`] traits;
+- `aarch64_prefetch`: enables prefetch support on aarch64 (requires nightly).
 
 ## Benchmarks
 

@@ -9,7 +9,10 @@
 use super::{Inventory, SpanType};
 use crate::{
     prelude::{BitCount, BitLength},
-    traits::{NumBits, SelectZero, SelectZeroHinted, SelectZeroUnchecked},
+    traits::{
+        NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted, SelectUnchecked,
+        SelectZero, SelectZeroHinted, SelectZeroUnchecked,
+    },
 };
 use ambassador::Delegate;
 use common_traits::SelectInWord;

@@ -148,7 +148,7 @@ pub trait RankUnchecked {
     /// speedup when there are 16 billion keys.
     ///
     /// Prefetching out-of-bounds is never unsafe, and neither is this method.
-    fn prefetch(&self, pos: usize) {
+    fn prefetch(&self, _pos: usize) {
         // Default implementation is no-op
     }
 }
