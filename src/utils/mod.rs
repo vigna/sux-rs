@@ -188,11 +188,11 @@ impl SeedableRng for Mwc192 {
 #[inline(always)]
 pub fn prefetch_index<T>(data: impl AsRef<[T]>, index: usize) {
     let ptr = data.as_ref().as_ptr().wrapping_add(index) as *const i8;
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
     unsafe {
         std::arch::x86_64::_mm_prefetch(ptr, std::arch::x86_64::_MM_HINT_T0);
     }
-    #[cfg(target_arch = "x86")]
+    #[cfg(all(target_arch = "x86", target_feature = "sse"))]
     unsafe {
         std::arch::x86::_mm_prefetch(ptr, std::arch::x86::_MM_HINT_T0);
     }
@@ -204,8 +204,8 @@ pub fn prefetch_index<T>(data: impl AsRef<[T]>, index: usize) {
         >(ptr);
     }
     #[cfg(not(any(
-        target_arch = "x86_64",
-        target_arch = "x86",
+        all(target_arch = "x86_64", target_feature = "sse"),
+        all(target_arch = "x86", target_feature = "sse"),
         all(target_arch = "aarch64", feature = "aarch64_prefetch")
     )))]
     {
