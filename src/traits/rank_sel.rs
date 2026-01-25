@@ -114,7 +114,7 @@ pub trait RankUnchecked {
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
 
     /// Prefetches the cache lines needed to compute
-    /// [`rank_unchecked(pos)](#tymethod.rank_unchecked`).
+    /// [`rank_unchecked(pos)](#tymethod.rank_unchecked).
     ///
     /// This can speed up computing the rank of many positions in parallel.
     ///
@@ -308,8 +308,9 @@ pub trait SelectZeroHinted {
 /// [`BitCount::count_ones`].
 ///
 /// This structure forwards to the wrapped structure all traits defined in [this
-/// module](crate::rank_sel) except for [`NumBits`] and [`BitCount`]. It is typically
-/// used to provide [`NumBits`] to [`Select`]/[`SelectZero`] implementations; see,
+/// module](crate::traits::rank_sel) except for [`NumBits`] and [`BitCount`]. It
+/// is typically used to provide [`NumBits`] to [`Select`]/[`SelectZero`]
+/// implementations; see,
 /// for example, [`SelectAdapt`](crate::rank_sel::SelectAdapt).
 #[derive(Debug, Clone, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]

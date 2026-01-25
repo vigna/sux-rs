@@ -58,7 +58,7 @@
 //!
 //! # Low-level support
 //!
-//! The methods [`address_of`](BitFieldVec::addr_of) and
+//! The methods [`addr_of`](BitFieldVec::addr_of) and
 //! [`get_unaligned`](BitFieldVec::get_unaligned) can be used to manually
 //! prefetch parts of the data structure, or read values using unaligned read,
 //! when the bit width makes it possible.

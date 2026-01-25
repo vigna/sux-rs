@@ -127,18 +127,18 @@ impl RankSel {
 /// Command line arguments for the benchmarking suite.
 #[derive(Parser, Debug)]
 struct Cli {
-    /// The lengths of the bitvectors to benchmark.
+    /// The lengths of the bit vectors to benchmark.
     #[arg(long, short, num_args = 1.., value_delimiter = ',', default_value = "1000000,4000000,16000000,64000000,256000000,1024000000")]
     lengths: Vec<u64>,
-    /// The densities of the bitvectors to benchmark.
+    /// The densities of the bit vectors to benchmark.
     #[arg(long, short, num_args = 1.., value_delimiter = ',', default_value = "0.1,0.5,0.9")]
     densities: Vec<f64>,
     /// The number of repetitions for each benchmark.
     #[arg(long, short, default_value = "5")]
     repeats: usize,
-    /// Whether to use a non-uniform distributions of 1s in the bitvectors.
+    /// Whether to use a non-uniform distributions of 1s in the bit vectors.
     /// When using a non-uniform distribution, 1% of the bits for the provided density
-    /// are located in the first half of the bitvector, and the rest in the second half.
+    /// are located in the first half of the bit vector, and the rest in the second half.
     #[arg(short, long, default_value = "false", verbatim_doc_comment)]
     non_uniform: bool,
     /// Flag for exact matching of the structure names to benchmark.
