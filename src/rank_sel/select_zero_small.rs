@@ -233,6 +233,10 @@ macro_rules! impl_select_zero_small {
                 + SelectZeroHinted,
         > SelectZeroUnchecked for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
+            /// # Safety
+            ///
+            /// `rank` must be between zero (included) and the number of zeros in the
+            /// underlying bit vector (excluded).
             unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
                 let upper_counts = self.small_counters.upper_counts();
                 let counts = self.small_counters.counts();

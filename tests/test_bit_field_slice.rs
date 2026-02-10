@@ -436,8 +436,11 @@ fn test_atomic_bit_field_slice_vec_par_reset() {
 
 #[test]
 fn test_atomic_bit_field_slice_array() {
-    let mut arr: [AtomicUsize; 3] =
-        [AtomicUsize::new(1), AtomicUsize::new(2), AtomicUsize::new(3)];
+    let mut arr: [AtomicUsize; 3] = [
+        AtomicUsize::new(1),
+        AtomicUsize::new(2),
+        AtomicUsize::new(3),
+    ];
     assert_eq!(AtomicBitFieldSlice::len(&arr), 3);
     assert!(!AtomicBitFieldSlice::is_empty(&arr));
 
@@ -475,8 +478,11 @@ fn test_atomic_bit_field_slice_array() {
 #[cfg(feature = "rayon")]
 #[test]
 fn test_atomic_bit_field_slice_array_par_reset() {
-    let mut arr: [AtomicUsize; 3] =
-        [AtomicUsize::new(1), AtomicUsize::new(2), AtomicUsize::new(3)];
+    let mut arr: [AtomicUsize; 3] = [
+        AtomicUsize::new(1),
+        AtomicUsize::new(2),
+        AtomicUsize::new(3),
+    ];
     AtomicBitFieldSlice::par_reset_atomic(&mut arr, Ordering::Relaxed);
     for i in 0..3 {
         assert_eq!(

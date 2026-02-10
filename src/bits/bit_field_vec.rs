@@ -226,7 +226,7 @@ fn mask<W: Word>(bit_width: usize) -> W {
 
 impl<W: Word, B> BitFieldVec<W, B> {
     /// # Safety
-    /// `len` * `bit_width` must be between 0 (included) the number of
+    /// `len` * `bit_width` must be between 0 (included) and the number of
     /// bits in `bits` (included).
     #[inline(always)]
     pub unsafe fn from_raw_parts(bits: B, bit_width: usize, len: usize) -> Self {
@@ -867,7 +867,6 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
                 let new_value = f(value);
                 // put the new value in the write buffer
                 write_buffer |= new_value << bits_in_buffer;
-                // -= bit_width but with no casts
                 bits_in_buffer += bit_width;
             }
 
@@ -1194,7 +1193,7 @@ impl<W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'_, W, B>
 
 impl<W: Word, B: AsRef<[W]>> FusedIterator for BitFieldVecIterator<'_, W, B> {}
 
-/// This implements iteration from the end, but its slower than the forward iteration
+/// This implements iteration from the end, but it's slower than the forward iteration
 /// as here we do a random access, while in the forward iterator we do a sequential access
 /// and we keep a buffer of `W::BITS` bits to speed up the iteration.
 ///
@@ -1205,9 +1204,9 @@ impl<W: Word, B: AsRef<[W]>> DoubleEndedIterator for BitFieldVecIterator<'_, W, 
         if self.range.is_empty() {
             return None;
         }
-        // SAFETY: index has just been checked.
-        let res = unsafe { self.unchecked.next_unchecked() };
         self.range.end -= 1;
+        // SAFETY: range.end was > range.start, so it is a valid index.
+        let res = unsafe { self.unchecked.vec.get_value_unchecked(self.range.end) };
         Some(res)
     }
 }
@@ -1296,7 +1295,7 @@ pub struct AtomicBitFieldVec<W: Word + IntoAtomic = usize, B = Vec<<W as IntoAto
 
 impl<W: Word + IntoAtomic, B> AtomicBitFieldVec<W, B> {
     /// # Safety
-    /// `len` * `bit_width` must be between 0 (included) the number of
+    /// `len` * `bit_width` must be between 0 (included) and the number of
     /// bits in `bits` (included).
     #[inline(always)]
     pub unsafe fn from_raw_parts(bits: B, bit_width: usize, len: usize) -> Self {

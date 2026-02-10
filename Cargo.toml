@@ -5,7 +5,7 @@ authors = [
 	"Sebastiano Vigna <sebastiano.vigna@unimi.it>",
 ]
 description = "A pure Rust implementation of succinct and compressed data structures"
-version = "0.10.3"
+version = "0.11.0"
 edition = "2024"
 repository = "https://github.com/vigna/sux-rs/"
 license = "Apache-2.0 OR LGPL-2.1-or-later"
@@ -23,7 +23,7 @@ libc = "0.2.147"
 log = "0.4.20"
 dsi-progress-logger = "0.8.1"
 tempfile = "3.9.0"
-lender = "0.4.1"
+lender = "0.5.0"
 epserde = { version = "0.11.5", optional = true }
 zstd = { version = "0.13.1", optional = true }
 flate2 = { version = "1.0.28", optional = true }
@@ -42,7 +42,7 @@ derive_setters = "0.1.6"
 thiserror = "2.0.11"
 itertools = "0.14.0"
 lambert_w = { version = "1.0.17", default-features = false, features = ["std"] }
-deko = { version = "0.5.0", optional = true }
+deko = { version = "0.6.0", optional = true }
 thread-priority = "3.0.0"
 value-traits = "0.2.0"
 serde = { version =  "1.0.225", optional = true, features = ["derive"] }
@@ -55,7 +55,7 @@ jiff = "0.2.15"
 fallible-iterator = "0.3.0"
 
 [dev-dependencies]
-criterion = { version = "0.7.0", features = ["html_reports"] }
+criterion = { version = "0.8.1", features = ["html_reports"] }
 clap = { version = "4.4.18", features = ["derive"] }
 
 [features]

@@ -88,7 +88,7 @@ use crate::bits::BitFieldVec;
 use crate::dict::rear_coded_list::RearCodedList;
 use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
 use lender::FusedLender;
-use lender::{ExactSizeLender, IntoLender, Lender, Lending};
+use lender::{ExactSizeLender, IntoLender, Lender, Lending, check_covariance};
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;
 
@@ -199,8 +199,8 @@ where
 
     /// Returns an [`Iterator`] over the elements of the list.
     ///
-    /// Note that [`lender`](RearCodedList::lender_from) is more efficient if
-    /// you need to iterate over many elements.
+    /// Note that [`lender`](MappedRearCodedList::lender_from) is more efficient
+    /// if you need to iterate over many elements.
     #[inline(always)]
     pub fn iter(&self) -> Iter<'_, I, O, D, P, Q, SORTED> {
         Iter(self.lender())
@@ -209,8 +209,8 @@ where
     /// Returns an [`Iterator`] over the elements of the list
     /// starting from the given index.
     ///
-    /// Note that [`lender`](RearCodedList::lender_from) is more efficient if
-    /// you need to iterate over many elements.
+    /// Note that [`lender`](MappedRearCodedList::lender_from) is more efficient
+    /// if you need to iterate over many elements.
     #[inline(always)]
     pub fn iter_from(&self, from: usize) -> Iter<'_, I, O, D, P, Q, SORTED> {
         Iter(self.lender_from(from))
@@ -393,6 +393,7 @@ impl<
 where
     str: PartialEq<O> + PartialEq,
 {
+    check_covariance!();
     fn next(&mut self) -> Option<&'_ str> {
         self.next_impl().map(|s| std::str::from_utf8(s).unwrap())
     }
@@ -413,6 +414,7 @@ impl<
 where
     [u8]: PartialEq<O> + PartialEq,
 {
+    check_covariance!();
     fn next(&mut self) -> Option<&[u8]> {
         self.next_impl()
     }

@@ -201,7 +201,7 @@ impl<B> BitVec<B> {
     }
 
     /// # Safety
-    /// `len` must be between 0 (included) the number of
+    /// `len` must be between 0 (included) and the number of
     /// bits in `bits` (included).
     #[inline(always)]
     pub unsafe fn from_raw_parts(bits: B, len: usize) -> Self {
@@ -432,7 +432,7 @@ impl<B> AtomicBitVec<B> {
     }
 
     /// # Safety
-    /// `len` must be between 0 (included) the number of
+    /// `len` must be between 0 (included) and the number of
     /// bits in `bits` (included).
     #[inline(always)]
     pub unsafe fn from_raw_parts(bits: B, len: usize) -> Self {

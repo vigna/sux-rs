@@ -274,7 +274,9 @@ pub trait SelectHinted {
     /// Selection the one of given rank, provided the position of a preceding one
     /// and its rank.
     ///
-    /// # Safety `rank` must be between zero (included) and the number of ones
+    /// # Safety
+    ///
+    /// `rank` must be between zero (included) and the number of ones
     /// in the underlying bit vector (excluded). `hint_pos` must be between 0
     /// (included) and the [length of the underlying bit
     /// vector](`BitLength::len`) (included), and must be the position of a one
@@ -334,14 +336,17 @@ pub struct AddNumBits<B> {
 }
 
 impl<B> AddNumBits<B> {
+    /// Returns the underlying bit structure.
     pub fn into_inner(self) -> B {
         self.bits
     }
 
+    /// Creates a new `AddNumBits` from raw parts.
+    ///
     /// # Safety
-    /// `len` must be between 0 (included) the number of
-    /// bits in `data` (included). No test is performed
-    /// on the number of ones.
+    ///
+    /// `number_of_ones` must be the actual number of ones in `bits`. No
+    /// validation is performed to verify this invariant.
     #[inline(always)]
     pub unsafe fn from_raw_parts(bits: B, number_of_ones: usize) -> Self {
         Self {
@@ -349,6 +354,11 @@ impl<B> AddNumBits<B> {
             number_of_ones,
         }
     }
+
+    /// Decomposes this `AddNumBits` into its raw parts.
+    ///
+    /// Returns a tuple containing the underlying bit structure and the cached
+    /// number of ones.
     #[inline(always)]
     pub fn into_raw_parts(self) -> (B, usize) {
         (self.bits, self.number_of_ones)

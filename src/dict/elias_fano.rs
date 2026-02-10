@@ -127,7 +127,6 @@ pub type EfSeqDict = EliasFano<
 /// efb.push(10);
 ///
 /// let ef = efb.build_with_seq();
-/// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
 ///
 /// assert_eq!(ef.get(0), 0);
 /// assert_eq!(ef.get(1), 2);
@@ -681,6 +680,15 @@ where
         if start_index > ef.len() {
             panic!("Index out of bounds: {} > {}", start_index, ef.len());
         }
+        if start_index == ef.len() {
+            return Self {
+                ef,
+                index: start_index,
+                word_idx: 0,
+                window: 0,
+                low_bits: ef.low_bits.into_unchecked_iter_from(start_index),
+            };
+        }
         let bit_pos = unsafe { ef.high_bits.select_unchecked(start_index) };
         let word_idx = bit_pos / (usize::BITS as usize);
         let bits_to_clean = bit_pos % (usize::BITS as usize);
@@ -1019,7 +1027,7 @@ impl EliasFanoConcurrentBuilder {
     /// Creates a concurrent builder for a sequence containing `n` nonnegative
     /// numbers smaller than or equal to `u`.
     pub fn new(n: usize, u: usize) -> Self {
-        let l = if u >= n {
+        let l = if n > 0 && u >= n {
             (u as f64 / n as f64).log2().floor() as usize
         } else {
             0

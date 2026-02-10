@@ -14,8 +14,8 @@ use fallible_iterator::{FallibleIterator, IntoFallibleIterator};
 #[cfg(feature = "flate2")]
 use flate2::write::GzEncoder;
 use lender::{
-    FallibleLender, FallibleLending, IntoFallibleLender, IteratorExt, Lender,
-    check_covariance_fallible, covar_mut,
+    FallibleIteratorExt, FallibleLender, FallibleLending, IntoFallibleLender, IntoIteratorExt,
+    IteratorExt, Lender, check_covariance_fallible, covar_mut, fallible_lend,
 };
 
 use sux::utils::lenders::*;
@@ -329,4 +329,388 @@ fn test_flatten() {
     assert_eq!(lender.next().unwrap(), Some(2));
     assert_eq!(lender.next().unwrap(), Some(3));
     assert_eq!(lender.next().unwrap(), None);
+}
+
+#[test]
+fn test_line_lender_new() {
+    let data = b"line1\nline2\n";
+    let cursor = Cursor::new(&data[..]);
+    let mut lender = LineLender::new(cursor);
+
+    assert_eq!(lender.next().unwrap(), Some("line1"));
+    assert_eq!(lender.next().unwrap(), Some("line2"));
+    assert_eq!(lender.next().unwrap(), None);
+}
+
+#[test]
+fn test_line_lender_rewind() {
+    let data = b"first\nsecond\n";
+    let cursor = Cursor::new(&data[..]);
+    let mut lender = LineLender::new(cursor);
+
+    assert_eq!(lender.next().unwrap(), Some("first"));
+    assert_eq!(lender.next().unwrap(), Some("second"));
+
+    let mut lender = lender.rewind().unwrap();
+
+    assert_eq!(lender.next().unwrap(), Some("first"));
+    assert_eq!(lender.next().unwrap(), Some("second"));
+}
+
+// Test FromSlice adapter
+#[test]
+fn test_from_slice_new() {
+    let data = vec![1, 2, 3];
+    let mut lender = FromSlice::new(data.as_slice());
+
+    assert_eq!(lender.next().unwrap(), Some(&1));
+    assert_eq!(lender.next().unwrap(), Some(&2));
+    assert_eq!(lender.next().unwrap(), Some(&3));
+    assert_eq!(lender.next().unwrap(), None);
+}
+
+#[test]
+fn test_from_slice_rewind() {
+    let data = vec![10, 20, 30];
+    let mut lender = FromSlice::new(data.as_slice());
+
+    assert_eq!(lender.next().unwrap(), Some(&10));
+    assert_eq!(lender.next().unwrap(), Some(&20));
+
+    let mut lender = lender.rewind().unwrap();
+
+    assert_eq!(lender.next().unwrap(), Some(&10));
+    assert_eq!(lender.next().unwrap(), Some(&20));
+    assert_eq!(lender.next().unwrap(), Some(&30));
+    assert_eq!(lender.next().unwrap(), None);
+}
+
+#[test]
+fn test_from_slice_from_trait() {
+    let data = [1, 2, 3];
+    let mut lender = FromSlice::from(&data[..]);
+
+    assert_eq!(lender.next().unwrap(), Some(&1));
+    assert_eq!(lender.next().unwrap(), Some(&2));
+}
+
+// Test FromCloneableIntoIterator adapter
+#[test]
+fn test_from_cloneable_into_iterator_new() {
+    let mut lender = FromCloneableIntoIterator::new(0..3);
+
+    assert_eq!(lender.next().unwrap(), Some(&0));
+    assert_eq!(lender.next().unwrap(), Some(&1));
+    assert_eq!(lender.next().unwrap(), Some(&2));
+    assert_eq!(lender.next().unwrap(), None);
+}
+
+#[test]
+fn test_from_cloneable_into_iterator_rewind() {
+    let mut lender = FromCloneableIntoIterator::new(5..8);
+
+    assert_eq!(lender.next().unwrap(), Some(&5));
+    assert_eq!(lender.next().unwrap(), Some(&6));
+
+    let mut lender = lender.rewind().unwrap();
+
+    assert_eq!(lender.next().unwrap(), Some(&5));
+    assert_eq!(lender.next().unwrap(), Some(&6));
+    assert_eq!(lender.next().unwrap(), Some(&7));
+}
+
+#[test]
+fn test_from_cloneable_into_iterator_from_trait() {
+    let mut lender = FromCloneableIntoIterator::from(1..4);
+
+    assert_eq!(lender.next().unwrap(), Some(&1));
+    assert_eq!(lender.next().unwrap(), Some(&2));
+}
+
+// Test FromIntoIterator adapter
+#[test]
+fn test_from_into_iterator_new() {
+    let data = vec![10, 20, 30];
+    let mut lender = FromIntoIterator::new(&data);
+
+    assert_eq!(lender.next().unwrap(), Some(&&10));
+    assert_eq!(lender.next().unwrap(), Some(&&20));
+    assert_eq!(lender.next().unwrap(), Some(&&30));
+    assert_eq!(lender.next().unwrap(), None);
+}
+
+#[test]
+fn test_from_into_iterator_rewind() {
+    let data = vec![100, 200];
+    let mut lender = FromIntoIterator::new(&data);
+
+    assert_eq!(lender.next().unwrap(), Some(&&100));
+    assert_eq!(lender.next().unwrap(), Some(&&200));
+
+    let mut lender = lender.rewind().unwrap();
+
+    assert_eq!(lender.next().unwrap(), Some(&&100));
+    assert_eq!(lender.next().unwrap(), Some(&&200));
+}
+
+#[test]
+fn test_from_into_iterator_from_trait() {
+    let data = vec![1, 2, 3];
+    let mut lender = FromIntoIterator::from(&data);
+
+    assert_eq!(lender.next().unwrap(), Some(&&1));
+}
+
+// Test FromIntoLenderFactory adapter
+#[test]
+fn test_from_into_lender_factory_new() {
+    use lender::FromIntoIter;
+
+    let mut count = 0;
+    let mut lender = FromIntoLenderFactory::new(|| {
+        count += 1;
+        Ok::<FromIntoIter<std::ops::Range<i32>>, core::convert::Infallible>(
+            (0..count).into_into_lender(),
+        )
+    })
+    .unwrap();
+
+    assert_eq!(lender.next().unwrap(), Some(0));
+    assert_eq!(lender.next().unwrap(), None);
+
+    let mut lender = lender.rewind().unwrap();
+    assert_eq!(lender.next().unwrap(), Some(0));
+    assert_eq!(lender.next().unwrap(), Some(1));
+    assert_eq!(lender.next().unwrap(), None);
+}
+
+// Test FromIntoFallibleLenderFactory adapter
+#[test]
+fn test_from_into_fallible_lender_factory_new() {
+    use fallible_iterator::IteratorExt as FallibleIteratorExt;
+    use lender::FromFallibleIter;
+
+    let mut count = 0;
+    let mut lender = FromIntoFallibleLenderFactory::new(|| {
+        count += 1;
+        Ok::<
+            FromFallibleIter<fallible_iterator::IntoFallible<std::ops::Range<i32>>>,
+            core::convert::Infallible,
+        >(
+            (0..count)
+                .into_iter()
+                .into_fallible()
+                .into_fallible_lender(),
+        )
+    })
+    .unwrap();
+
+    assert_eq!(lender.next().unwrap(), Some(0));
+    assert_eq!(lender.next().unwrap(), None);
+
+    let mut lender = lender.rewind().unwrap();
+    assert_eq!(lender.next().unwrap(), Some(0));
+    assert_eq!(lender.next().unwrap(), Some(1));
+    assert_eq!(lender.next().unwrap(), None);
+}
+
+// Test lender adapter implementations
+#[test]
+fn test_enumerate_rewind() {
+    let data = vec![10, 20, 30];
+    let lender = FromSlice::new(data.as_slice());
+    let mut enumerated = lender.enumerate();
+
+    assert_eq!(enumerated.next().unwrap(), Some((0, &10)));
+    assert_eq!(enumerated.next().unwrap(), Some((1, &20)));
+
+    let mut enumerated = enumerated.rewind().unwrap();
+
+    assert_eq!(enumerated.next().unwrap(), Some((0, &10)));
+    assert_eq!(enumerated.next().unwrap(), Some((1, &20)));
+}
+
+#[test]
+fn test_fuse_rewind() {
+    let data = vec![1, 2];
+    let lender = FromSlice::new(data.as_slice());
+    let mut fused = lender.fuse();
+
+    assert_eq!(fused.next().unwrap(), Some(&1));
+    assert_eq!(fused.next().unwrap(), Some(&2));
+    assert_eq!(fused.next().unwrap(), None);
+
+    let mut fused = fused.rewind().unwrap();
+
+    assert_eq!(fused.next().unwrap(), Some(&1));
+}
+
+#[test]
+fn test_take_rewind() {
+    let data = vec![1, 2, 3, 4, 5];
+    let lender = FromSlice::new(data.as_slice());
+    let mut taken = lender.take(4);
+
+    // Take first two, leaving take count at 2
+    assert_eq!(taken.next().unwrap(), Some(&1));
+    assert_eq!(taken.next().unwrap(), Some(&2));
+
+    // Rewind - note: into_parts returns remaining count (2), not original (4)
+    let mut taken = taken.rewind().unwrap();
+
+    // After rewind with remaining count=2, we can only take 2 more
+    assert_eq!(taken.next().unwrap(), Some(&1));
+    assert_eq!(taken.next().unwrap(), Some(&2));
+    assert_eq!(taken.next().unwrap(), None);
+}
+
+#[test]
+fn test_skip_rewind() {
+    let data = vec![1, 2, 3, 4, 5];
+    let lender = FromSlice::new(data.as_slice());
+    let mut skipped = lender.skip(2);
+
+    // After skip, we start at element 3
+    assert_eq!(skipped.next().unwrap(), Some(&3));
+    assert_eq!(skipped.next().unwrap(), Some(&4));
+
+    // Rewind - note: into_parts returns remaining skip count (0), not original (2)
+    let mut skipped = skipped.rewind().unwrap();
+
+    // After rewind with skip=0, we start from element 1
+    assert_eq!(skipped.next().unwrap(), Some(&1));
+    assert_eq!(skipped.next().unwrap(), Some(&2));
+}
+
+#[test]
+fn test_step_by_rewind() {
+    let data = vec![1, 2, 3, 4, 5, 6];
+    let lender = FromSlice::new(data.as_slice());
+    let mut stepped = lender.step_by(2);
+
+    assert_eq!(stepped.next().unwrap(), Some(&1));
+    assert_eq!(stepped.next().unwrap(), Some(&3));
+
+    let mut stepped = stepped.rewind().unwrap();
+
+    assert_eq!(stepped.next().unwrap(), Some(&1));
+    assert_eq!(stepped.next().unwrap(), Some(&3));
+}
+
+#[test]
+fn test_chain_rewind() {
+    let data1 = vec![1, 2];
+    let data2 = vec![3, 4];
+    let lender1 = FromSlice::new(data1.as_slice());
+    let lender2 = FromSlice::new(data2.as_slice());
+    let mut chained = lender1.chain(lender2);
+
+    assert_eq!(chained.next().unwrap(), Some(&1));
+    assert_eq!(chained.next().unwrap(), Some(&2));
+    assert_eq!(chained.next().unwrap(), Some(&3));
+
+    let mut chained = chained.rewind().unwrap();
+
+    assert_eq!(chained.next().unwrap(), Some(&1));
+    assert_eq!(chained.next().unwrap(), Some(&2));
+}
+
+#[test]
+fn test_peekable_rewind() {
+    let data = vec![1, 2, 3];
+    let lender = FromSlice::new(data.as_slice());
+    let mut peekable = lender.peekable();
+
+    assert_eq!(peekable.next().unwrap(), Some(&1));
+    assert_eq!(peekable.next().unwrap(), Some(&2));
+
+    let mut peekable = peekable.rewind().unwrap();
+
+    assert_eq!(peekable.next().unwrap(), Some(&1));
+}
+
+// Test intersperse rewind
+#[test]
+fn test_intersperse_rewind() {
+    let data = vec![1, 2, 3];
+    let lender = FromSlice::new(data.as_slice());
+    let mut interspersed = lender.intersperse(&0);
+
+    // Items: 1, 0, 2, 0, 3
+    assert_eq!(interspersed.next().unwrap(), Some(&1));
+    assert_eq!(interspersed.next().unwrap(), Some(&0));
+    assert_eq!(interspersed.next().unwrap(), Some(&2));
+
+    let mut interspersed = interspersed.rewind().unwrap();
+
+    assert_eq!(interspersed.next().unwrap(), Some(&1));
+    assert_eq!(interspersed.next().unwrap(), Some(&0));
+}
+
+#[test]
+fn test_cycle_rewind() {
+    let data = vec![1, 2];
+    let lender = FromSlice::new(data.as_slice());
+    let mut cycled = lender.cycle();
+
+    assert_eq!(cycled.next().unwrap(), Some(&1));
+    assert_eq!(cycled.next().unwrap(), Some(&2));
+    assert_eq!(cycled.next().unwrap(), Some(&1));
+    assert_eq!(cycled.next().unwrap(), Some(&2));
+
+    let mut cycled = cycled.rewind().unwrap();
+
+    assert_eq!(cycled.next().unwrap(), Some(&1));
+    assert_eq!(cycled.next().unwrap(), Some(&2));
+    assert_eq!(cycled.next().unwrap(), Some(&1));
+}
+
+#[test]
+fn test_fallible_empty_rewind() {
+    // Use FromSlice's lending type which satisfies FallibleLending
+    let mut empty =
+        lender::fallible_empty::<fallible_lend!(&'lend i32), core::convert::Infallible>();
+
+    assert_eq!(FallibleLender::next(&mut empty).unwrap(), None);
+
+    let mut empty = empty.rewind().unwrap();
+
+    assert_eq!(FallibleLender::next(&mut empty).unwrap(), None);
+}
+
+#[test]
+fn test_fallible_repeat_rewind() {
+    let data = vec![42];
+    let mut lender = FromSlice::new(data.as_slice());
+    // Get one lend, then use it as a repeat source
+    let value = FallibleLender::next(&mut lender).unwrap().unwrap();
+    let mut repeated =
+        lender::fallible_repeat::<fallible_lend!(&'lend i32), core::convert::Infallible>(value);
+
+    assert_eq!(FallibleLender::next(&mut repeated).unwrap(), Some(&42));
+    assert_eq!(FallibleLender::next(&mut repeated).unwrap(), Some(&42));
+
+    let mut repeated = repeated.rewind().unwrap();
+
+    assert_eq!(FallibleLender::next(&mut repeated).unwrap(), Some(&42));
+    assert_eq!(FallibleLender::next(&mut repeated).unwrap(), Some(&42));
+}
+
+#[test]
+fn test_map_rewind() {
+    let data = vec![1, 2, 3];
+    let lender = FromSlice::new(data.as_slice());
+    let mut mapped = lender.map(covar_mut!(for<'lend> |x: &'lend i32| -> Result<
+        i32,
+        std::convert::Infallible,
+    > { Ok(x * 10) }));
+
+    assert_eq!(mapped.next().unwrap(), Some(10));
+    assert_eq!(mapped.next().unwrap(), Some(20));
+
+    let mut mapped = mapped.rewind().unwrap();
+
+    assert_eq!(mapped.next().unwrap(), Some(10));
+    assert_eq!(mapped.next().unwrap(), Some(20));
+    assert_eq!(mapped.next().unwrap(), Some(30));
 }
