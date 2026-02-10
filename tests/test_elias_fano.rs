@@ -10,9 +10,8 @@ use std::iter::zip;
 
 use anyhow::Result;
 use indexed_dict::*;
-use rand::Rng;
-use rand::SeedableRng;
 use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
 
 #[test]

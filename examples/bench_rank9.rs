@@ -8,9 +8,8 @@
 use anyhow::{Ok, Result};
 use clap::Parser;
 use dsi_progress_logger::*;
-use rand::Rng;
-use rand::SeedableRng;
 use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 use sux::prelude::*;
 use sux::traits::bit_vec_ops::*;
