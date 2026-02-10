@@ -13,7 +13,10 @@ use anyhow::{Context, Result, bail, ensure};
 use fallible_iterator::{FallibleIterator, IntoFallibleIterator};
 #[cfg(feature = "flate2")]
 use flate2::write::GzEncoder;
-use lender::{FallibleLender, FallibleLending, IntoFallibleLender, IteratorExt, Lender, hrc_mut};
+use lender::{
+    FallibleLender, FallibleLending, IntoFallibleLender, IteratorExt, Lender,
+    check_covariance_fallible, covar_mut,
+};
 
 use sux::utils::lenders::*;
 
@@ -142,6 +145,7 @@ impl<'lend, T> FallibleLending<'lend> for FallibleVecLender<T> {
 }
 
 impl<T> FallibleLender for FallibleVecLender<T> {
+    check_covariance_fallible!();
     type Error = std::io::Error;
     fn next(&mut self) -> Result<Option<&T>, std::io::Error> {
         if self.index < self.vec.len() {
@@ -294,7 +298,7 @@ fn test_from_result_lender_factory() -> Result<()> {
 fn test_map() {
     let data = vec![1, 2, 3];
 
-    let mut iter = FromSlice::new(&data).map(hrc_mut!(for<'lend> |x: &'lend i32| -> Result<
+    let mut iter = FromSlice::new(&data).map(covar_mut!(for<'lend> |x: &'lend i32| -> Result<
         i32,
         std::convert::Infallible,
     > { Ok(x * 2) }));
@@ -308,18 +312,9 @@ fn test_map() {
 #[test]
 fn test_flatten() {
     let data = vec![
-        vec![1, 2, 3]
-            .into_iter()
-            .into_lender()
-            .into_fallible::<std::convert::Infallible>(),
-        vec![1, 2, 3]
-            .into_iter()
-            .into_lender()
-            .into_fallible::<std::convert::Infallible>(),
-        vec![1, 2, 3]
-            .into_iter()
-            .into_lender()
-            .into_fallible::<std::convert::Infallible>(),
+        vec![1, 2, 3].into_iter().into_lender().into_fallible(),
+        vec![1, 2, 3].into_iter().into_lender().into_fallible(),
+        vec![1, 2, 3].into_iter().into_lender().into_fallible(),
     ];
 
     let mut lender = data.into_iter().into_lender().into_fallible().flatten();
