@@ -1,7 +1,7 @@
 use criterion::{BenchmarkId, Criterion};
 use mem_dbg::{MemDbg, SizeFlags};
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use std::fs::create_dir_all;
 use std::hint::black_box;
 use std::io::Write;

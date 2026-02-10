@@ -4,7 +4,7 @@ use crate::utils::*;
 use criterion::BenchmarkId;
 use criterion::Criterion;
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use sux::bits::bit_vec::BitVec;
 use sux::rank_sel::SelectAdapt;
 use sux::rank_sel::SelectAdaptConst;

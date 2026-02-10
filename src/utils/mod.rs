@@ -13,7 +13,7 @@ pub mod lenders;
 pub use lenders::*;
 
 pub mod sig_store;
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, SeedableRng, TryRng};
 pub use sig_store::*;
 
 pub mod fair_chunks;
@@ -131,8 +131,9 @@ impl Mwc192 {
     const MWC_A2: u64 = 0xffa04e67b3c95d86;
 }
 
-impl RngCore for Mwc192 {
-    fn next_u64(&mut self) -> u64 {
+impl TryRng for Mwc192 {
+    type Error = core::convert::Infallible;
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
         let result = self.y;
         let t = (Self::MWC_A2 as u128)
             .wrapping_mul(self.x as u128)
@@ -140,14 +141,14 @@ impl RngCore for Mwc192 {
         self.x = self.y;
         self.y = t as u64;
         self.c = (t >> 64) as u64;
-        result
+        Ok(result)
     }
 
-    fn next_u32(&mut self) -> u32 {
-        self.next_u64() as u32
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(self.next_u64() as u32)
     }
 
-    fn fill_bytes(&mut self, dst: &mut [u8]) {
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
         let mut left = dst;
         while left.len() >= 8 {
             let (l, r) = { left }.split_at_mut(8);
@@ -163,6 +164,8 @@ impl RngCore for Mwc192 {
             let chunk: [u8; 4] = self.next_u32().to_le_bytes();
             left.copy_from_slice(&chunk[..n]);
         }
+
+        Ok(())
     }
 }
 

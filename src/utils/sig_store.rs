@@ -979,7 +979,7 @@ pub enum AnyShardStore<S: BinSafe + Sig + Send + Sync, V: BinSafe> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{Rng, SeedableRng, rngs::SmallRng};
+    use rand::{RngExt, SeedableRng, rngs::SmallRng};
 
     fn _test_sig_store<S: BinSafe + Sig + Send + Sync>(
         mut sig_store: impl SigStore<S, u64>,

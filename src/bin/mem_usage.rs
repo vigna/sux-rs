@@ -9,7 +9,7 @@
 
 use clap::{Parser, ValueEnum};
 use mem_dbg::*;
-use rand::{Rng, SeedableRng, rngs::SmallRng};
+use rand::{RngExt, SeedableRng, rngs::SmallRng};
 use sux::{
     bits::BitVec,
     rank_sel::{Rank9, RankSmall, Select9, SelectAdapt},

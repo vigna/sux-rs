@@ -7,9 +7,9 @@
 
 use anyhow::Result;
 use core::sync::atomic::Ordering;
-use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
+use rand::{Rng, SeedableRng};
 use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
 use sux::traits::bit_vec_ops::*;
@@ -442,7 +442,6 @@ fn test_eq() {
 fn test_epserde() -> Result<()> {
     use epserde::prelude::Aligned16;
     use epserde::utils::AlignedCursor;
-    use rand::RngCore;
     let mut rng = SmallRng::seed_from_u64(0);
     let mut b = BitVec::new(200);
     for i in 0..200 {

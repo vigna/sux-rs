@@ -698,9 +698,9 @@ mod tests {
     use crate::bits::BitVec;
     use crate::traits::AddNumBits;
     use crate::traits::BitVecOpsMut;
-    use rand::Rng;
-    use rand::SeedableRng;
+
     use rand::rngs::SmallRng;
+    use rand::{RngExt, SeedableRng};
 
     #[test]
     fn test_sub64s() {

@@ -5,9 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use rand::Rng;
-use rand::SeedableRng;
 use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
 
 const INV: usize = 12;

@@ -11,9 +11,8 @@ use dsi_progress_logger::*;
 use indexed_dict::*;
 use mem_dbg::DbgFlags;
 use mem_dbg::MemDbg;
-use rand::Rng;
-use rand::SeedableRng;
 use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 use sux::prelude::*;
 
