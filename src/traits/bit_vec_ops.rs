@@ -298,7 +298,7 @@ impl<B: ?Sized + AsRef<[usize]>> Iterator for OnesIterator<'_, B> {
         // find the next word with ones
         while self.word == 0 {
             self.word_idx += 1;
-            if self.word_idx == self.bits.as_ref().len() {
+            if self.word_idx >= self.bits.as_ref().len() {
                 return None;
             }
             self.word = unsafe { *self.bits.as_ref().get_unchecked(self.word_idx) };
@@ -316,6 +316,8 @@ impl<B: ?Sized + AsRef<[usize]>> Iterator for OnesIterator<'_, B> {
         }
     }
 }
+
+impl<B: ?Sized + AsRef<[usize]>> FusedIterator for OnesIterator<'_, B> {}
 
 /// An iterator over the positions of the zeros in a bit vector.
 #[derive(Debug, Clone, MemDbg, MemSize)]
@@ -351,7 +353,7 @@ impl<B: ?Sized + AsRef<[usize]>> Iterator for ZerosIterator<'_, B> {
         // find the next flipped word with zeros
         while self.word == 0 {
             self.word_idx += 1;
-            if self.word_idx == self.bits.as_ref().len() {
+            if self.word_idx >= self.bits.as_ref().len() {
                 return None;
             }
             self.word = unsafe { !*self.bits.as_ref().get_unchecked(self.word_idx) };
@@ -369,6 +371,8 @@ impl<B: ?Sized + AsRef<[usize]>> Iterator for ZerosIterator<'_, B> {
         }
     }
 }
+
+impl<B: ?Sized + AsRef<[usize]>> FusedIterator for ZerosIterator<'_, B> {}
 
 impl<T: ?Sized + AsRef<[AtomicUsize]> + BitLength> AtomicBitVecOps for T {}
 

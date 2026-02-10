@@ -96,7 +96,7 @@ pub struct FairChunks<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize
     target_weight: usize,
     /// The position of the first non-returned element.
     curr_pos: usize,
-    /// The weight at [`start_pos`](Self::curr_pos).
+    /// The weight at [`curr_pos`](Self::curr_pos).
     current_weight: usize,
     /// The number of weights.
     num_weights: usize,
@@ -139,7 +139,7 @@ impl<I: for<'a> Succ<Input = usize, Output<'a> = usize>> FairChunks<I> {
     /// queries.
     ///
     /// This constructor requires that the cumulative weight function implements
-    /// implement [`Succ`]. In the typical case of
+    /// [`Succ`]. In the typical case of
     /// [`EliasFano`](crate::dict::EliasFano), it is necessary to have
     /// selections on zeroes and ones. The constructor
     /// [`new_with`](Self::new_with) makes it possible to use a cumulative
@@ -158,7 +158,9 @@ impl<I: for<'a> Succ<Input = usize, Output<'a> = usize>> FairChunks<I> {
             cwf,
             curr_pos: 0,
             current_weight: 0,
-            num_weights: len - 1,
+            num_weights: len
+                .checked_sub(1)
+                .expect("Cumulative weight function must have at least one element"),
             max_weight,
         }
     }

@@ -280,12 +280,12 @@ impl<B: AsRef<[usize]> + BitCount> SelectZeroAdapt<B, Box<[usize]>> {
     }
 
     /// Creates a new selection structure over a bit vector with a specified
-    /// distance between indexed ones.
+    /// distance between indexed zeros.
     ///
     /// This low-level constructor should be used with care, as the parameter
     /// `log2_ones_per_inventory` is usually computed as the floor of the base-2
     /// logarithm of ceiling of the target inventory span multiplied by the
-    /// density of ones in the bit vector. Thus, this constructor makes sense
+    /// density of zeros in the bit vector. Thus, this constructor makes sense
     /// only if the density is known in advance.
     ///
     /// Unless you understand all the implications, it is preferable to use the

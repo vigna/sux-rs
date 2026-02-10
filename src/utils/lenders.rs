@@ -85,6 +85,7 @@ use fallible_iterator::{FallibleIterator, IntoFallibleIterator};
 use io::{BufRead, BufReader};
 use lender::{higher_order::FnMutHKARes, *};
 use std::{
+    convert::Infallible,
     fs::File,
     io::{self, Seek},
     path::Path,
@@ -159,6 +160,7 @@ impl<'lend, B: BufRead> FallibleLending<'lend> for LineLender<B> {
 }
 
 impl<B: BufRead> FallibleLender for LineLender<B> {
+    check_covariance_fallible!();
     type Error = io::Error;
     fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
         next(&mut self.buf, &mut self.line)
@@ -213,6 +215,7 @@ mod zstd_lender {
     }
 
     impl<R: Read> FallibleLender for ZstdLineLender<R> {
+        check_covariance_fallible!();
         type Error = io::Error;
         fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
             next(&mut self.buf, &mut self.line)
@@ -274,6 +277,7 @@ mod flate2_lender {
     }
 
     impl<R: Read> FallibleLender for GzipLineLender<R> {
+        check_covariance_fallible!();
         type Error = io::Error;
         fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
             next(&mut self.buf, &mut self.line)
@@ -365,6 +369,7 @@ mod deko {
     }
 
     impl<R: Read> FallibleLender for DekoLineLender<R> {
+        check_covariance_fallible!();
         type Error = io::Error;
         fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
             next(&mut self.buf, &mut self.line)
@@ -372,6 +377,7 @@ mod deko {
     }
 
     impl<R: BufRead> FallibleLender for DekoBufLineLender<R> {
+        check_covariance_fallible!();
         type Error = io::Error;
         fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
             next(&mut self.buf, &mut self.line)
@@ -437,11 +443,21 @@ impl<'a, T> FromSlice<'a, T> {
     }
 }
 
+impl<'a, T> Clone for FromSlice<'a, T> {
+    fn clone(&self) -> Self {
+        FromSlice {
+            slice: self.slice,
+            iter: self.iter.clone(),
+        }
+    }
+}
+
 impl<'a, 'lend, T> FallibleLending<'lend> for FromSlice<'a, T> {
     type Lend = &'lend T;
 }
 
 impl<'a, T> FallibleLender for FromSlice<'a, T> {
+    check_covariance_fallible!();
     type Error = core::convert::Infallible;
     fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
         Ok(self.iter.next())
@@ -500,6 +516,7 @@ impl<'lend, I: IntoIterator + Clone> FallibleLending<'lend> for FromCloneableInt
 }
 
 impl<I: IntoIterator + Clone> FallibleLender for FromCloneableIntoIterator<I> {
+    check_covariance_fallible!();
     type Error = core::convert::Infallible;
     fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
         self.item = self.iter.next();
@@ -555,6 +572,8 @@ impl<'a, I> FallibleLender for FromIntoLender<'a, I>
 where
     &'a I: IntoLender,
 {
+    // SAFETY: the lend is that of I::Lender
+    unsafe_assume_covariance_fallible!();
     type Error = core::convert::Infallible;
     fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
         Ok(self.lender.next())
@@ -618,6 +637,8 @@ impl<'a, I> FallibleLender for FromIntoFallibleLender<'a, I>
 where
     &'a I: IntoFallibleLender,
 {
+    // SAFETY: the lend is that of I::FallibleLender
+    unsafe_assume_covariance_fallible!();
     type Error = <&'a I as IntoFallibleLender>::Error;
     fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
         FallibleLender::next(&mut self.lender)
@@ -684,6 +705,7 @@ impl<'a, I> FallibleLender for FromIntoIterator<'a, I>
 where
     &'a I: IntoIterator,
 {
+    check_covariance_fallible!();
     type Error = core::convert::Infallible;
     fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
         self.item = self.iter.next();
@@ -749,6 +771,7 @@ impl<'a, I> FallibleLender for FromIntoFallibleIterator<'a, I>
 where
     &'a I: IntoFallibleIterator,
 {
+    check_covariance_fallible!();
     type Error = <&'a I as IntoFallibleIterator>::Error;
     fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
         self.iter.next().map(|value| {
@@ -828,6 +851,8 @@ impl<'lend, L: IntoLender, E, F: FnMut() -> Result<L, E>> FallibleLending<'lend>
 impl<L: IntoLender, E, F: FnMut() -> Result<L, E>> FallibleLender
     for FromIntoLenderFactory<L, E, F>
 {
+    // SAFETY: the lend is that of L::Lender
+    unsafe_assume_covariance_fallible!();
     type Error = core::convert::Infallible;
 
     fn next(&mut self) -> Result<Option<Lend<'_, L::Lender>>, Self::Error> {
@@ -913,6 +938,8 @@ impl<'lend, L: FallibleLender, E, F: FnMut() -> Result<L, E>> FallibleLending<'l
 impl<L: FallibleLender, E, F: FnMut() -> Result<L, E>> FallibleLender
     for FromIntoFallibleLenderFactory<L, E, F>
 {
+    // SAFETY: the lend is that of L
+    unsafe_assume_covariance_fallible!();
     type Error = <L as FallibleLender>::Error;
 
     fn next(&mut self) -> Result<Option<FallibleLend<'_, L>>, Self::Error> {
@@ -948,13 +975,13 @@ impl<
 impl<L: FallibleRewindableLender + Clone> FallibleRewindableLender for lender::Cycle<L> {
     type RewindError = L::RewindError;
     fn rewind(self) -> Result<Self, Self::RewindError> {
-        let (original, _current) = self.into_inner();
+        let (original, _current) = self.into_parts();
         original.rewind().map(|lender| lender.cycle())
     }
 }
 
-impl<E, L: ?Sized + for<'all> FallibleLending<'all>> FallibleRewindableLender
-    for lender::FallibleEmpty<E, L>
+impl<L: ?Sized + for<'all> FallibleLending<'all>, E> FallibleRewindableLender
+    for lender::FallibleEmpty<L, E>
 {
     type RewindError = core::convert::Infallible;
     fn rewind(self) -> Result<Self, Self::RewindError> {
@@ -1000,13 +1027,12 @@ impl<'this, L: FallibleRewindableLender> FallibleRewindableLender
     }
 }
 
-impl<'this, L: FallibleRewindableLender> FallibleRewindableLender
-    for lender::FallibleRepeat<'this, <L as FallibleLender>::Error, L>
+impl<'this, L: ?Sized + CovariantFallibleLending, E: 'this> FallibleRewindableLender
+    for lender::FallibleRepeat<'this, L, E>
 where
-    <L as FallibleLender>::Error: Clone,
     for<'lend> <L as FallibleLending<'lend>>::Lend: Clone,
 {
-    type RewindError = L::RewindError;
+    type RewindError = Infallible;
     fn rewind(self) -> Result<Self, Self::RewindError> {
         Ok(self)
     }
@@ -1062,5 +1088,54 @@ impl<
     fn rewind(self) -> Result<Self, Self::RewindError> {
         let lender = self.into_inner();
         lender.rewind().map(|lender| lender.flatten())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    // Tests for the private `next` helper function - must stay in source file
+    #[test]
+    fn test_next_with_newline() {
+        let data = b"hello\nworld\n";
+        let mut cursor = Cursor::new(&data[..]);
+        let mut line = String::new();
+
+        let result = next(&mut cursor, &mut line).unwrap();
+        assert_eq!(result, Some("hello"));
+
+        let result = next(&mut cursor, &mut line).unwrap();
+        assert_eq!(result, Some("world"));
+
+        let result = next(&mut cursor, &mut line).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_next_with_crlf() {
+        let data = b"hello\r\nworld\r\n";
+        let mut cursor = Cursor::new(&data[..]);
+        let mut line = String::new();
+
+        let result = next(&mut cursor, &mut line).unwrap();
+        assert_eq!(result, Some("hello"));
+
+        let result = next(&mut cursor, &mut line).unwrap();
+        assert_eq!(result, Some("world"));
+    }
+
+    #[test]
+    fn test_next_no_trailing_newline() {
+        let data = b"hello";
+        let mut cursor = Cursor::new(&data[..]);
+        let mut line = String::new();
+
+        let result = next(&mut cursor, &mut line).unwrap();
+        assert_eq!(result, Some("hello"));
+
+        let result = next(&mut cursor, &mut line).unwrap();
+        assert_eq!(result, None);
     }
 }

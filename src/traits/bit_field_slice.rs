@@ -155,9 +155,7 @@ where
     /// May panic if the index is not in in [0..[len](SliceByValue::len))
     /// or the value does not fit in [`BitWidth::bit_width`] bits.
     fn set_atomic(&self, index: usize, value: W, order: Ordering) {
-        if index >= self.len() {
-            panic_if_out_of_bounds!(index, self.len());
-        }
+        panic_if_out_of_bounds!(index, self.len());
         let bw = self.bit_width();
 
         let mask = if bw == 0 {

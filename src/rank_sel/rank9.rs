@@ -225,7 +225,7 @@ impl<B: BitLength, C: AsRef<[BlockCounters]>> BitCount for Rank9<B, C> {
 impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for Rank9<B, C> {
     /// # Safety
     ///
-    /// The implementation of [`RankUnchecked`] for [`Rank9`] has an weakened
+    /// The implementation of [`RankUnchecked`] for [`Rank9`] has a weakened
     /// safety requirement: it is possible to call this method with `pos` equal
     /// to [the length of the underlying bit
     /// vector](crate::traits::BitLength::len) provided there is at least one

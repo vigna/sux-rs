@@ -666,3 +666,60 @@ fn test_iter_from() {
         }
     }
 }
+
+#[test]
+fn test_iter_double_ended() {
+    let b = bit_field_vec![7; 0, 1, 2, 3, 4, 5];
+
+    // next_back only
+    let mut iter = b.into_iter();
+    for j in (0..b.len()).rev() {
+        assert_eq!(iter.next_back(), Some(j));
+    }
+    assert_eq!(iter.next_back(), None);
+
+    // next and next_back interleaved
+    let mut iter = b.into_iter();
+    assert_eq!(iter.next(), Some(0));
+    assert_eq!(iter.next_back(), Some(5));
+    assert_eq!(iter.next(), Some(1));
+    assert_eq!(iter.next_back(), Some(4));
+    assert_eq!(iter.next(), Some(2));
+    assert_eq!(iter.next_back(), Some(3));
+    assert_eq!(iter.next(), None);
+    assert_eq!(iter.next_back(), None);
+
+    // single-element vector
+    let b = bit_field_vec![7; 42];
+    let mut iter = b.into_iter();
+    assert_eq!(iter.next_back(), Some(42));
+    assert_eq!(iter.next_back(), None);
+    assert_eq!(iter.next(), None);
+
+    // empty vector
+    let b = BitFieldVec::<usize>::new(7, 0);
+    let mut iter = b.into_iter();
+    assert_eq!(iter.next_back(), None);
+
+    // rev()
+    let b = bit_field_vec![7; 0, 1, 2, 3, 4, 5];
+    let rev: Vec<_> = b.into_iter().rev().collect();
+    assert_eq!(rev, vec![5, 4, 3, 2, 1, 0]);
+
+    // various bit widths
+    for bit_width in 1..=64 {
+        let n = 10usize;
+        let mask = if bit_width == 64 {
+            usize::MAX
+        } else {
+            (1usize << bit_width) - 1
+        };
+        let mut bfv = BitFieldVec::<usize>::new(bit_width, n);
+        for i in 0..n {
+            bfv.set_value(i, i & mask);
+        }
+        let rev: Vec<_> = bfv.into_iter().rev().collect();
+        let expected: Vec<_> = (0..n).rev().map(|i| i & mask).collect();
+        assert_eq!(rev, expected, "Failed for bit_width={bit_width}");
+    }
+}

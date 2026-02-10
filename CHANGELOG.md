@@ -1,13 +1,21 @@
 # Change Log
 
-## [0.10.4]
+## [0.11.0] - 2026-02-10
 
 ### New
+
+* Adapted to `Lender` 0.5.0 (i.e., we have covariance checks).
 
 * New method `EliasFano::into_parts`.
 
 * New features `clap`, `zstd` and `flate2` gate the corresponding
   dependencies.
+
+### Fixed
+
+* Fixed broken `DoubleEndedIterator` impl for bit vectors.
+
+* Several minor bug fixes in bounds checking.
 
 ## [0.10.3] - 2025-12-09
 
@@ -87,7 +95,7 @@
   you can apply subslicing.
 
 - Support for ε-serde depends now on the feature `epserde`. Support for memory
-  mapping in ε-serde is provided by the `mmap` feature, which is on by default.
+  mapping in ε-serde is provided by the `mmap` feature.
 
 - serde support for all structures (with feature `serde`).
 

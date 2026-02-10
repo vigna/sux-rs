@@ -226,7 +226,7 @@ where
     for<'a> Self::Output<'a>: PartialOrd<Self::Input> + PartialOrd,
 {
     /// Returns the index of the predecessor and the predecessor of the given
-    /// value, or `None` if there is no predecessor.
+    /// value.
     ///
     /// The predecessor is the greatest value in the dictionary that is less
     /// than or equal to the given value, if `STRICT` is `false`, or the

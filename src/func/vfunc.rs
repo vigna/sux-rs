@@ -100,6 +100,10 @@ impl<
     #[inline]
     pub fn get_by_sig(&self, sig: S) -> W {
         let edge = self.shard_edge.edge(sig);
+        // SAFETY: The ShardEdge implementation guarantees that all indices
+        // returned by `edge()` are within bounds of `self.data`. This invariant
+        // is established during construction by VBuilder, which ensures the
+        // data array is sized according to the ShardEdge's `num_vertices()`.
         unsafe {
             self.data.get_value_unchecked(edge[0])
                 ^ self.data.get_value_unchecked(edge[1])
@@ -139,6 +143,10 @@ impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
     #[inline]
     pub fn get_by_sig_unaligned(&self, sig: S) -> W {
         let edge = self.shard_edge.edge(sig);
+        // SAFETY: The ShardEdge implementation guarantees that all indices
+        // returned by `edge()` are within bounds of `self.data`. This invariant
+        // is established during construction by VBuilder, which ensures the
+        // data array is sized according to the ShardEdge's `num_vertices()`.
         unsafe {
             self.data.get_unaligned_unchecked(edge[0])
                 ^ self.data.get_unaligned_unchecked(edge[1])

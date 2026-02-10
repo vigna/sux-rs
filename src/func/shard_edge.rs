@@ -798,7 +798,7 @@ mod fuse {
     /// elimination](https://doi.org/10.1016/j.ic.2020.104517) in the smaller
     /// cases to improve the overhead.
     ///
-    /// This construction, coupled `[u64; 1]` signatures, is the fastest for
+    /// This construction, coupled with `[u64; 1]` signatures, is the fastest for
     /// small sets of keys, but it works only up to 3.8 billion keys. It is
     /// mostly equivalent to that described in [“Binary Fuse Filters: Fast and
     /// Smaller Than Xor Filters”](https://doi.org/10.1145/3510449).

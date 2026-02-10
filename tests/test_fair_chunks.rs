@@ -95,8 +95,8 @@ fn test_fair_chunks_fused_iterator() {
 fn test_fair_chunks_example_from_docs() {
     // Test the exact example from the documentation
     let weights = [
-        15usize, 27, 20, 26, 4, 22, 10, 25, 7, 13, 0, 11, 5, 28, 23, 1, 12, 24, 3, 30, 8, 29, 17, 2,
-        14, 9, 16, 18, 21, 19,
+        15usize, 27, 20, 26, 4, 22, 10, 25, 7, 13, 0, 11, 5, 28, 23, 1, 12, 24, 3, 30, 8, 29, 17,
+        2, 14, 9, 16, 18, 21, 19,
     ];
     let mut cwf = vec![0usize];
     cwf.extend(weights.iter().scan(0, |acc, x| {

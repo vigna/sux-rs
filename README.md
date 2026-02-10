@@ -11,7 +11,7 @@
 
 A pure Rust implementation of succinct and compressed data structures.
 
-This crate started is part of the [Sux] project; it contains also code ported
+This crate started as part of the [Sux] project; it contains also code ported
 from [the DSI Utilities] and new structures.
 
 ## Highlights
@@ -38,8 +38,7 @@ All structures in this crate are designed to work well with [ε-serde]: in
 particular, once you have created and serialized them, you can easily map them
 into memory or load them in memory regions with specific `mmap()` attributes.
 Support for ε-serde is provided by the feature `epserde`, and support for
-memory mapping in ε-serde is provided by the `mmap` feature, which is on by
-default.
+memory mapping in ε-serde is provided by the `mmap` feature.
 
 ## serde Support
 
@@ -124,8 +123,10 @@ The crate has the following features:
 - `clap`: enables the `clap` crate for command-line argument parsing;
 - `cli`: builds the binaries (implies `clap`, `epserde`, `deko`);
 - `mmap`: enables support for memory mapping in ε-serde (implies `epserde`);
-- `mem_dbg`: enables support for the [`MemDbg`] and [`MemSize`] traits;
 - `aarch64_prefetch`: enables prefetch support on aarch64 (requires nightly).
+
+Note: The [`MemDbg`] and [`MemSize`] traits from the [`mem_dbg`] crate are
+always available as `mem_dbg` is a required dependency.
 
 ## Benchmarks
 

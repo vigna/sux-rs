@@ -165,7 +165,7 @@
 
 use crate::traits::{IndexedDict, IndexedSeq, IntoIteratorFrom, Types};
 use core::marker::PhantomData;
-use lender::{ExactSizeLender, IntoLender, Lender, Lending};
+use lender::{ExactSizeLender, IntoLender, Lender, Lending, check_covariance};
 use lender::{FusedLender, for_};
 use mem_dbg::*;
 use std::borrow::Borrow;
@@ -337,7 +337,7 @@ impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, 
     /// Use by the implementation of [`IndexedDict::index_of`].
     fn index_of(&self, value: impl AsRef<[u8]>) -> Option<usize> {
         let string = value.as_ref();
-        // first to a binary search on the blocks to find the block
+        // first do a binary search on the blocks to find the block
         let block_idx = self.pointers.as_ref().binary_search_by(|block_ptr| {
             // do a quick in-place decode of the explicit string at the beginning of the block
             let data = &self.data.as_ref()[*block_ptr..];
@@ -602,6 +602,7 @@ impl<O: PartialEq<str> + PartialEq, D: AsRef<[u8]>, P: AsRef<[usize]>, const SOR
 where
     str: PartialEq<O> + PartialEq,
 {
+    check_covariance!();
     fn next(&mut self) -> Option<&'_ str> {
         self.next_impl().map(|s| std::str::from_utf8(s).unwrap())
     }
@@ -617,6 +618,7 @@ impl<O: PartialEq<[u8]> + PartialEq, D: AsRef<[u8]>, P: AsRef<[usize]>, const SO
 where
     [u8]: PartialEq<O> + PartialEq,
 {
+    check_covariance!();
     fn next(&mut self) -> Option<&[u8]> {
         self.next_impl()
     }
@@ -1547,5 +1549,438 @@ mod tests {
             longest_common_prefix(str2, str2),
             (str2.len(), core::cmp::Ordering::Equal)
         );
+    }
+
+    // Tests for RearCodedListBuilder
+
+    #[test]
+    fn test_builder_basic_str() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        assert!(builder.is_empty());
+        assert_eq!(builder.len(), 0);
+
+        builder.push("apple");
+        builder.push("application");
+        builder.push("banana");
+
+        assert!(!builder.is_empty());
+        assert_eq!(builder.len(), 3);
+
+        let rcl = builder.build();
+        assert_eq!(rcl.len(), 3);
+        assert_eq!(rcl.get(0), "apple");
+        assert_eq!(rcl.get(1), "application");
+        assert_eq!(rcl.get(2), "banana");
+    }
+
+    #[test]
+    fn test_builder_basic_bytes() {
+        let mut builder = RearCodedListBuilder::<[u8], true>::new(4);
+        builder.push(b"hello".as_slice());
+        builder.push(b"world".as_slice());
+
+        let rcl = builder.build();
+        assert_eq!(rcl.len(), 2);
+        assert_eq!(rcl.get(0), b"hello".to_vec());
+        assert_eq!(rcl.get(1), b"world".to_vec());
+    }
+
+    #[test]
+    fn test_builder_unsorted() {
+        // Test unsorted list (SORTED = false)
+        let mut builder = RearCodedListBuilder::<str, false>::new(4);
+        builder.push("zebra");
+        builder.push("apple");
+        builder.push("banana");
+        builder.push("aardvark");
+
+        let rcl = builder.build();
+        assert_eq!(rcl.len(), 4);
+        assert_eq!(rcl.get(0), "zebra");
+        assert_eq!(rcl.get(1), "apple");
+        assert_eq!(rcl.get(2), "banana");
+        assert_eq!(rcl.get(3), "aardvark");
+    }
+
+    #[test]
+    fn test_builder_with_blocks() {
+        // Test with ratio that creates multiple blocks
+        let mut builder = RearCodedListBuilder::<str, true>::new(2);
+        builder.push("aa");
+        builder.push("aab");
+        builder.push("abc");
+        builder.push("abcd");
+        builder.push("abcde");
+        builder.push("abcdef");
+
+        let rcl = builder.build();
+        assert_eq!(rcl.len(), 6);
+        for i in 0..6 {
+            assert!(!rcl.get(i).is_empty());
+        }
+    }
+
+    // Tests for RearCodedList access methods
+
+    #[test]
+    fn test_get_in_place_str() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("hello");
+        builder.push("help");
+        builder.push("helper");
+
+        let rcl = builder.build();
+        let mut result = String::new();
+
+        rcl.get_in_place(0, &mut result);
+        assert_eq!(result, "hello");
+
+        rcl.get_in_place(1, &mut result);
+        assert_eq!(result, "help");
+
+        rcl.get_in_place(2, &mut result);
+        assert_eq!(result, "helper");
+    }
+
+    #[test]
+    fn test_get_in_place_bytes() {
+        let mut builder = RearCodedListBuilder::<[u8], true>::new(4);
+        builder.push(b"test1".as_slice());
+        builder.push(b"test2".as_slice());
+
+        let rcl = builder.build();
+        let mut result = Vec::new();
+
+        rcl.get_in_place(0, &mut result);
+        assert_eq!(result, b"test1");
+
+        rcl.get_in_place(1, &mut result);
+        assert_eq!(result, b"test2");
+    }
+
+    #[test]
+    fn test_get_bytes() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("hello");
+        builder.push("world");
+
+        let rcl = builder.build();
+
+        let bytes = rcl.get_bytes(0);
+        assert_eq!(bytes, b"hello");
+
+        let bytes = rcl.get_bytes(1);
+        assert_eq!(bytes, b"world");
+    }
+
+    #[test]
+    fn test_get_bytes_in_place() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("bar");
+        builder.push("foo");
+
+        let rcl = builder.build();
+        let mut result = Vec::new();
+
+        rcl.get_bytes_in_place(0, &mut result);
+        assert_eq!(result, b"bar");
+
+        rcl.get_bytes_in_place(1, &mut result);
+        assert_eq!(result, b"foo");
+    }
+
+    // Tests for IndexedDict (binary search)
+
+    #[test]
+    fn test_index_of() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("aa");
+        builder.push("aab");
+        builder.push("abc");
+        builder.push("abdd");
+        builder.push("abde");
+        builder.push("abdf");
+
+        let rcl = builder.build();
+
+        assert_eq!(rcl.index_of("aa"), Some(0));
+        assert_eq!(rcl.index_of("aab"), Some(1));
+        assert_eq!(rcl.index_of("abc"), Some(2));
+        assert_eq!(rcl.index_of("abdd"), Some(3));
+        assert_eq!(rcl.index_of("abde"), Some(4));
+        assert_eq!(rcl.index_of("abdf"), Some(5));
+
+        assert_eq!(rcl.index_of("not_found"), None);
+        assert_eq!(rcl.index_of("a"), None);
+        assert_eq!(rcl.index_of("zzz"), None);
+    }
+
+    #[test]
+    fn test_contains() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("apple");
+        builder.push("banana");
+        builder.push("cherry");
+
+        let rcl = builder.build();
+
+        assert!(rcl.contains("apple"));
+        assert!(rcl.contains("banana"));
+        assert!(rcl.contains("cherry"));
+        assert!(!rcl.contains("orange"));
+    }
+
+    #[test]
+    fn test_index_of_with_multiple_blocks() {
+        // Create enough elements to span multiple blocks
+        let mut builder = RearCodedListBuilder::<str, true>::new(3);
+        let strings: Vec<String> = (0..20).map(|i| format!("str{:03}", i)).collect();
+        for s in strings.iter() {
+            builder.push(s.as_str());
+        }
+
+        let rcl = builder.build();
+
+        for (i, s) in strings.iter().enumerate() {
+            assert_eq!(rcl.index_of(s.as_str()), Some(i));
+        }
+
+        assert_eq!(rcl.index_of("not_found"), None);
+    }
+
+    // Tests for iterators
+
+    #[test]
+    fn test_iter_str() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("a");
+        builder.push("b");
+        builder.push("c");
+
+        let rcl = builder.build();
+        let collected: Vec<String> = rcl.iter().collect();
+
+        assert_eq!(collected, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_iter_bytes() {
+        let mut builder = RearCodedListBuilder::<[u8], true>::new(4);
+        builder.push(b"x".as_slice());
+        builder.push(b"y".as_slice());
+        builder.push(b"z".as_slice());
+
+        let rcl = builder.build();
+        let collected: Vec<Vec<u8>> = rcl.iter().collect();
+
+        assert_eq!(collected, vec![b"x".to_vec(), b"y".to_vec(), b"z".to_vec()]);
+    }
+
+    #[test]
+    fn test_iter_from() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("a");
+        builder.push("b");
+        builder.push("c");
+        builder.push("d");
+        builder.push("e");
+
+        let rcl = builder.build();
+        let collected: Vec<String> = rcl.iter_from(2).collect();
+
+        assert_eq!(collected, vec!["c", "d", "e"]);
+    }
+
+    #[test]
+    fn test_iter_exact_size() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("one");
+        builder.push("three");
+        builder.push("two");
+
+        let rcl = builder.build();
+        let iter = rcl.iter();
+
+        assert_eq!(iter.len(), 3);
+    }
+
+    // Tests for lenders
+
+    #[test]
+    fn test_lender_str() {
+        use lender::Lender;
+
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("hello");
+        builder.push("help");
+        builder.push("world");
+
+        let rcl = builder.build();
+        let mut lender = rcl.lender();
+
+        assert_eq!(lender.next(), Some("hello"));
+        assert_eq!(lender.next(), Some("help"));
+        assert_eq!(lender.next(), Some("world"));
+        assert_eq!(lender.next(), None);
+    }
+
+    #[test]
+    fn test_lender_from() {
+        use lender::Lender;
+
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("a");
+        builder.push("b");
+        builder.push("c");
+        builder.push("d");
+
+        let rcl = builder.build();
+        let mut lender = rcl.lender_from(2);
+
+        assert_eq!(lender.next(), Some("c"));
+        assert_eq!(lender.next(), Some("d"));
+        assert_eq!(lender.next(), None);
+    }
+
+    #[test]
+    fn test_lender_exact_size() {
+        use lender::{ExactSizeLender, Lender};
+
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("one");
+        builder.push("three");
+        builder.push("two");
+
+        let rcl = builder.build();
+        let mut lender = rcl.lender();
+
+        assert_eq!(lender.len(), 3);
+        lender.next();
+        assert_eq!(lender.len(), 2);
+        lender.next();
+        assert_eq!(lender.len(), 1);
+        lender.next();
+        assert_eq!(lender.len(), 0);
+    }
+
+    // Tests for IntoIterator
+
+    #[test]
+    fn test_into_iterator() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("x");
+        builder.push("y");
+        builder.push("z");
+
+        let rcl = builder.build();
+        let collected: Vec<String> = (&rcl).into_iter().collect();
+
+        assert_eq!(collected, vec!["x", "y", "z"]);
+    }
+
+    #[test]
+    fn test_into_iterator_from() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("a");
+        builder.push("b");
+        builder.push("c");
+
+        let rcl = builder.build();
+        let collected: Vec<String> = (&rcl).into_iter_from(1).collect();
+
+        assert_eq!(collected, vec!["b", "c"]);
+    }
+
+    // Edge cases
+
+    #[test]
+    fn test_single_element() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("only_one");
+
+        let rcl = builder.build();
+        assert_eq!(rcl.len(), 1);
+        assert_eq!(rcl.get(0), "only_one");
+        assert_eq!(rcl.index_of("only_one"), Some(0));
+        assert_eq!(rcl.index_of("not_found"), None);
+    }
+
+    #[test]
+    fn test_empty_strings() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("");
+        builder.push("a");
+        builder.push("b");
+
+        let rcl = builder.build();
+        assert_eq!(rcl.len(), 3);
+        assert_eq!(rcl.get(0), "");
+        assert_eq!(rcl.get(1), "a");
+        assert_eq!(rcl.index_of(""), Some(0));
+    }
+
+    #[test]
+    fn test_strings_with_null_bytes() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.push("ab\0cd");
+        builder.push("ab\0de");
+        builder.push("ab\0df");
+
+        let rcl = builder.build();
+        assert_eq!(rcl.len(), 3);
+        assert_eq!(rcl.get(0), "ab\0cd");
+        assert_eq!(rcl.get(1), "ab\0de");
+        assert_eq!(rcl.index_of("ab\0cd"), Some(0));
+        assert_eq!(rcl.index_of("ab\0de"), Some(1));
+    }
+
+    #[test]
+    fn test_large_compression_ratio() {
+        // Test with many similar strings that should compress well
+        let mut builder = RearCodedListBuilder::<str, true>::new(8);
+        let prefix = "this_is_a_very_long_common_prefix_";
+        for i in 0..100 {
+            let s = format!("{}{:03}", prefix, i);
+            builder.push(s.as_str());
+        }
+
+        let rcl = builder.build();
+        assert_eq!(rcl.len(), 100);
+
+        for i in 0..100 {
+            let expected = format!("{}{:03}", prefix, i);
+            assert_eq!(rcl.get(i), expected);
+        }
+    }
+
+    #[test]
+    fn test_memcmp_rust() {
+        assert_eq!(memcmp_rust(b"abc", b"abc"), core::cmp::Ordering::Equal);
+        assert_eq!(memcmp_rust(b"abc", b"abd"), core::cmp::Ordering::Less);
+        assert_eq!(memcmp_rust(b"abd", b"abc"), core::cmp::Ordering::Greater);
+        assert_eq!(memcmp_rust(b"ab", b"abc"), core::cmp::Ordering::Less);
+        assert_eq!(memcmp_rust(b"abc", b"ab"), core::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn test_index_of_boundary_cases() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(3);
+        builder.push("aaa");
+        builder.push("bbb");
+        builder.push("ccc");
+        builder.push("ddd");
+        builder.push("eee");
+
+        let rcl = builder.build();
+
+        // Test element before first
+        assert_eq!(rcl.index_of(""), None);
+
+        // Test element after last
+        assert_eq!(rcl.index_of("zzz"), None);
+
+        // Test exact matches at block boundaries
+        assert_eq!(rcl.index_of("aaa"), Some(0));
+        assert_eq!(rcl.index_of("ddd"), Some(3)); // Start of second block
     }
 }
