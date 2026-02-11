@@ -22,7 +22,7 @@ use std::ops::Index;
 /// [`VBuilder`](crate::func::VBuilder) and can be serialized using
 /// [ε-serde](https://crates.io/crates/epserde). They contain a mapping from
 /// keys to hashes stored in a [`VFunc`]; [`contains`](VFilter::contains) checks
-/// that the hash of a key is equal of the hash stored by the function for the
+/// that the hash of a key is equal to the hash stored by the function for the
 /// same key. On some
 /// architectures, and with some constraints,
 /// [`contains_unaligned`](VFilter::contains_unaligned) might be faster.
@@ -120,7 +120,7 @@ where
 {
     /// Returns the hash associated with the given signature by the underlying
     /// function, or a random hash if the signature is not the signature of a
-    /// key, using [unaligned reads](BitFieldVec::get_unaligned)..
+    /// key, using [unaligned reads](BitFieldVec::get_unaligned).
     ///
     /// This method uses [`BitFieldVec::get_unaligned`], and has
     /// the same constraints.

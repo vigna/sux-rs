@@ -90,7 +90,7 @@ where
 /// This structure contains a `hash_mask`, and values returned by the
 /// [`SliceByValue`] are compared only on the masked bits. This approach makes
 /// it possible to have, for example, signature stored in a [`BitFieldVec`]
-/// using less bit than the integer type supporting the [`BitFieldVec`]. If you
+/// using fewer bits than the integer type supporting the [`BitFieldVec`]. If you
 /// are using all the bits of the type (e.g., 16-bit signatures on `u16`),
 /// please consider using a [`SignedVFunc`] as hash comparison will be faster.
 #[derive(Debug, MemDbg, MemSize)]

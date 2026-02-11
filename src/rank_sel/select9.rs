@@ -145,8 +145,8 @@ impl<R, I> Select9<R, I> {
         self.rank9
     }
 
-    const LOG2_ZEROS_PER_INVENTORY: usize = 9;
-    const ONES_PER_INVENTORY: usize = 1 << Self::LOG2_ZEROS_PER_INVENTORY;
+    const LOG2_ONES_PER_INVENTORY: usize = 9;
+    const ONES_PER_INVENTORY: usize = 1 << Self::LOG2_ONES_PER_INVENTORY;
 }
 
 impl<R: BitLength, I> Select9<R, I> {
@@ -335,7 +335,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         unsafe {
-            let inventory_index_left = rank >> Self::LOG2_ZEROS_PER_INVENTORY;
+            let inventory_index_left = rank >> Self::LOG2_ONES_PER_INVENTORY;
 
             debug_assert!(inventory_index_left <= self.inventory_size);
             let inventory_left = *self.inventory.as_ref().get_unchecked(inventory_index_left);
