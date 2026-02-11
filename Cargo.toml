@@ -53,6 +53,7 @@ arbitrary = { version = "1.3.2", features = ["derive"], optional = true }
 zerocopy = { version = "0.8.27", features = ["derive"] }
 jiff = "0.2.15"
 fallible-iterator = "0.3.0"
+prefetch-index = "0.1.0"
 
 [dev-dependencies]
 criterion = { version = "0.8.1", features = ["html_reports"] }
@@ -66,7 +67,7 @@ zstd = ["dep:zstd"]
 cli = ["clap", "dep:epserde", "dep:deko"] # Build the binary utils (it's here so that cargo bench doesn't build them)
 fuzz = ["dep:arbitrary"]
 slow_tests = [] # Run slow tests (use --release)
-aarch64_prefetch = [] # Enable aarch64 prefetch (requires nightly)
+aarch64_prefetch = ["prefetch-index/aarch64"] # Enable aarch64 prefetch (requires nightly)
 mwhc = [] # Compile MWHC data structures (mainly for benchmarking)
 no_logging = [
 ] # Disable logging for binaries that build functions and filters (for benchmarking)

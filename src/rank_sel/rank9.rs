@@ -275,9 +275,9 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for
     fn prefetch(&self, pos: usize) {
         let word_pos = pos / usize::BITS as usize;
         let block = word_pos / Self::WORDS_PER_BLOCK;
-        crate::utils::prefetch_index(&self.bits, word_pos);
+        prefetch_index::prefetch_index(&self.bits, word_pos);
         // `counts` can be large enough to not fit in L3, so needs prefetching as well.
-        crate::utils::prefetch_index(&self.counts, block);
+        prefetch_index::prefetch_index(&self.counts, block);
     }
 }
 

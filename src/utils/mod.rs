@@ -9,6 +9,8 @@
 //! Utility traits and implementations.
 use common_traits::{Atomic, IntoAtomic};
 
+pub use prefetch_index::prefetch_index;
+
 pub mod lenders;
 pub use lenders::*;
 
@@ -183,35 +185,5 @@ impl SeedableRng for Mwc192 {
             y: u64::from_ne_bytes(s1),
             c: 1,
         }
-    }
-}
-
-/// Prefetches the cache line containing (the first byte of) `data[index]` into
-/// all levels of the cache.
-#[inline(always)]
-pub fn prefetch_index<T>(data: impl AsRef<[T]>, index: usize) {
-    let ptr = data.as_ref().as_ptr().wrapping_add(index) as *const i8;
-    #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
-    unsafe {
-        std::arch::x86_64::_mm_prefetch(ptr, std::arch::x86_64::_MM_HINT_T0);
-    }
-    #[cfg(all(target_arch = "x86", target_feature = "sse"))]
-    unsafe {
-        std::arch::x86::_mm_prefetch(ptr, std::arch::x86::_MM_HINT_T0);
-    }
-    #[cfg(all(target_arch = "aarch64", feature = "aarch64_prefetch"))]
-    unsafe {
-        std::arch::aarch64::_prefetch::<
-            { std::arch::aarch64::_PREFETCH_READ },
-            { std::arch::aarch64::_PREFETCH_LOCALITY3 },
-        >(ptr);
-    }
-    #[cfg(not(any(
-        all(target_arch = "x86_64", target_feature = "sse"),
-        all(target_arch = "x86", target_feature = "sse"),
-        all(target_arch = "aarch64", feature = "aarch64_prefetch")
-    )))]
-    {
-        let _ = ptr; // Silence unused variable warning.
     }
 }
