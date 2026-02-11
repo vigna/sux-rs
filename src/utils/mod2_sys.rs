@@ -40,7 +40,7 @@ pub struct Modulo2System<W: Word = usize> {
 }
 
 impl<W: Word> Modulo2Equation<W> {
-    /// Creates a new equation with given variables constant term.
+    /// Creates a new equation with given variables and constant term.
     ///
     /// # Safety
     ///

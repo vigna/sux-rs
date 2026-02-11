@@ -200,7 +200,7 @@ mod zstd_lender {
         }
     }
 
-    impl ZstdLineLender<BufReader<Decoder<'static, BufReader<File>>>> {
+    impl ZstdLineLender<File> {
         pub fn from_path(path: impl AsRef<Path>) -> io::Result<ZstdLineLender<File>> {
             ZstdLineLender::new(File::open(path)?)
         }
@@ -262,7 +262,7 @@ mod flate2_lender {
         }
     }
 
-    impl GzipLineLender<BufReader<GzDecoder<BufReader<File>>>> {
+    impl GzipLineLender<File> {
         pub fn from_path(path: impl AsRef<Path>) -> io::Result<GzipLineLender<File>> {
             GzipLineLender::new(File::open(path)?)
         }
