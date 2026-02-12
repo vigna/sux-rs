@@ -11,7 +11,7 @@ use sux::utils::FairChunks;
 #[test]
 fn test_fair_chunks_basic() {
     // Weights: 10, 20, 30, 40
-    let cwf = vec![0usize, 10, 30, 60, 100];
+    let cwf = [0usize, 10, 30, 60, 100];
     let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
     efb.extend(cwf.iter().copied());
     let ef = efb.build_with_seq_and_dict();
@@ -27,7 +27,7 @@ fn test_fair_chunks_basic() {
 #[test]
 fn test_fair_chunks_new_with() {
     // Same test but using new_with constructor
-    let cwf = vec![0usize, 10, 30, 60, 100];
+    let cwf = [0usize, 10, 30, 60, 100];
     let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
     efb.extend(cwf.iter().copied());
     let ef = efb.build_with_dict();
@@ -40,7 +40,7 @@ fn test_fair_chunks_new_with() {
 #[test]
 fn test_fair_chunks_single_element() {
     // Single element with weight 100, target 50
-    let cwf = vec![0usize, 100];
+    let cwf = [0usize, 100];
     let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
     efb.extend(cwf.iter().copied());
     let ef = efb.build_with_seq_and_dict();
@@ -52,7 +52,7 @@ fn test_fair_chunks_single_element() {
 #[test]
 fn test_fair_chunks_large_target() {
     // Target larger than total weight - should return single chunk
-    let cwf = vec![0usize, 10, 20, 30];
+    let cwf = [0usize, 10, 20, 30];
     let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
     efb.extend(cwf.iter().copied());
     let ef = efb.build_with_seq_and_dict();
@@ -63,7 +63,7 @@ fn test_fair_chunks_large_target() {
 #[test]
 fn test_fair_chunks_small_target() {
     // Very small target - should create many chunks
-    let cwf = vec![0usize, 10, 20, 30, 40, 50];
+    let cwf = [0usize, 10, 20, 30, 40, 50];
     let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
     efb.extend(cwf.iter().copied());
     let ef = efb.build_with_seq_and_dict();
@@ -78,7 +78,7 @@ fn test_fair_chunks_small_target() {
 
 #[test]
 fn test_fair_chunks_fused_iterator() {
-    let cwf = vec![0usize, 10, 20, 30];
+    let cwf = [0usize, 10, 20, 30];
     let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
     efb.extend(cwf.iter().copied());
     let ef = efb.build_with_seq_and_dict();
@@ -125,7 +125,7 @@ fn test_fair_chunks_example_from_docs() {
 #[test]
 fn test_fair_chunks_contiguous_ranges() {
     // Verify all returned ranges are contiguous and cover the full range
-    let cwf = vec![0usize, 5, 15, 30, 50, 75, 100];
+    let cwf = [0usize, 5, 15, 30, 50, 75, 100];
     let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
     efb.extend(cwf.iter().copied());
     let ef = efb.build_with_seq_and_dict();

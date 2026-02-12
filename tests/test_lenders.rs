@@ -498,7 +498,6 @@ fn test_from_into_fallible_lender_factory_new() {
             core::convert::Infallible,
         >(
             (0..count)
-                .into_iter()
                 .into_fallible()
                 .into_fallible_lender(),
         )
