@@ -98,6 +98,7 @@ pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
 
 #[doc(hidden)]
 #[derive(Copy, Debug, Clone, MemDbg, MemSize, Default)]
+#[mem_size_flat]
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),

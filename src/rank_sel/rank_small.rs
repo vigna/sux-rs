@@ -200,6 +200,7 @@ macro_rules! rank_small {
 
 #[doc(hidden)]
 #[derive(Copy, Debug, Clone, MemDbg, MemSize)]
+#[mem_size_flat]
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),

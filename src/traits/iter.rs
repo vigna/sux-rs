@@ -108,7 +108,7 @@ pub trait IntoUncheckedIterator: Sized {
 /// to obtain an iterator starting from a given position.
 ///
 /// Note that
-/// [`into_rev_unchecked_iter`](IntoReverseUncheckedIterator::into_rev_unchecked_iter_from)
+/// [`into_rev_unchecked_iter`](IntoReverseUncheckedIterator::into_rev_unchecked_iter)
 /// cannot be implemented in terms of
 /// [`into_rev_unchecked_iter_from`](IntoReverseUncheckedIterator::into_rev_unchecked_iter_from)
 /// because we cannot know which is the last position.

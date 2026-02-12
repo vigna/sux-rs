@@ -918,13 +918,13 @@ impl EliasFanoBuilder {
     /// Builds an Elias-Fano structure.
     ///
     /// The resulting structure has no selection structure attached. To use it
-    /// property, you need to call [`EliasFano::map_high_bits`] to add to the
+    /// properly, you need to call [`EliasFano::map_high_bits`] to add to the
     /// high bits a selection structure.
     ///
     /// Usually, however, the default implementations returned by the
-    /// [`build_with_seq`](EliasFanoConcurrentBuilder::build_with_seq),
-    /// [`build_with_dict`](EliasFanoConcurrentBuilder::build_with_dict), and
-    /// [`build_with_seq_and_dict`](EliasFanoConcurrentBuilder::build_with_seq_and_dict)
+    /// [`build_with_seq`](EliasFanoBuilder::build_with_seq),
+    /// [`build_with_dict`](EliasFanoBuilder::build_with_dict), and
+    /// [`build_with_seq_and_dict`](EliasFanoBuilder::build_with_seq_and_dict)
     /// methods are more convenient.
     pub fn build(self) -> EliasFano {
         assert!(
@@ -1069,9 +1069,9 @@ impl EliasFanoConcurrentBuilder {
     /// high bits a selection structure.
     ///
     /// Usually, however, the default implementations returned by the
-    /// [`build_with_seq`](EliasFanoBuilder::build_with_seq),
-    /// [`build_with_dict`](EliasFanoBuilder::build_with_dict), and
-    /// [`build_with_seq_and_dict`](EliasFanoBuilder::build_with_seq_and_dict)
+    /// [`build_with_seq`](EliasFanoConcurrentBuilder::build_with_seq),
+    /// [`build_with_dict`](EliasFanoConcurrentBuilder::build_with_dict), and
+    /// [`build_with_seq_and_dict`](EliasFanoConcurrentBuilder::build_with_seq_and_dict)
     /// methods are more convenient.
     pub fn build(self) -> EliasFano {
         let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
@@ -1099,7 +1099,7 @@ impl EliasFanoConcurrentBuilder {
     /// Builds an Elias-Fano structure with constant-time indexing, using
     /// default values.
     ///
-    /// The resulting structure implements [`IndexedDict`], [`Succ`], and [`Pred`],
+    /// The resulting structure implements [`IndexedDict`], [`SuccUnchecked`], and [`PredUnchecked`],
     /// but not [`IndexedSeq`].
     pub fn build_with_dict(self) -> EfDict {
         let ef = self.build();

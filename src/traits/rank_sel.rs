@@ -226,7 +226,7 @@ pub trait SelectUnchecked {
 #[delegatable_trait]
 pub trait Select: SelectUnchecked + NumBits {
     /// Returns the position of the one of given rank, or `None` if no such
-    /// bit exist.
+    /// bit exists.
     fn select(&self, rank: usize) -> Option<usize> {
         if rank >= self.num_ones() {
             None
@@ -236,7 +236,7 @@ pub trait Select: SelectUnchecked + NumBits {
     }
 }
 
-/// Selection zeros over a bit vector without bound checks.
+/// Selection of zeros over a bit vector without bound checks.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait SelectZeroUnchecked {
@@ -248,12 +248,12 @@ pub trait SelectZeroUnchecked {
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize;
 }
 
-/// Selection zeros over a bit vector.
+/// Selection of zeros over a bit vector.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait SelectZero: SelectZeroUnchecked + NumBits {
     /// Returns the position of the zero of given rank, or `None` if no such
-    /// bit exist.
+    /// bit exists.
     fn select_zero(&self, rank: usize) -> Option<usize> {
         if rank >= self.num_zeros() {
             None
@@ -271,7 +271,7 @@ pub trait SelectZero: SelectZeroUnchecked + NumBits {
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait SelectHinted {
-    /// Selection the one of given rank, provided the position of a preceding one
+    /// Selects the one of given rank, provided the position of a preceding one
     /// and its rank.
     ///
     /// # Safety
@@ -286,14 +286,14 @@ pub trait SelectHinted {
     unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize;
 }
 
-/// Selection zeros over a bit vector, with a hint.
+/// Selection of zeros over a bit vector, with a hint.
 ///
 /// This trait is used to implement fast selection over zeros by adding to bit
 /// vectors indices of different kind.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait SelectZeroHinted {
-    /// Selection the zero of given rank, provided the position of a preceding zero
+    /// Selects the zero of given rank, provided the position of a preceding zero
     /// and its rank.
     ///
     /// # Safety

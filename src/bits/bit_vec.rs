@@ -10,13 +10,13 @@
 //! There are two flavors: [`BitVec`], a mutable bit vector, and
 //! [`AtomicBitVec`], a mutable, thread-safe bit vector.
 //!
-//! Operations on these structures is provided by the extension traits
+//! Operations on these structures are provided by the extension traits
 //! [`BitVecOps`], [`BitVecOpsMut`], and [`AtomicBitVecOps`],
 //! which must be pulled in scope as needed. There are also
 //! operations that are specific to certain implementations, such as
 //! [`push`](BitVec::push).
 //!
-//! These flavors depends on a backend, and presently we provide:
+//! These flavors depend on a backend, and presently we provide:
 //!
 //! - `BitVec<Vec<usize>>`: a mutable, growable and resizable bit vector;
 //! - `BitVec<AsRef<[usize]>>`: an immutable bit vector, useful for
