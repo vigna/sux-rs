@@ -178,10 +178,9 @@ impl<W: Word> Modulo2System<W> {
         'main: for i in 0..equations.len() - 1 {
             ensure!(!equations[i].vars.is_empty());
             for j in i + 1..equations.len() {
-                // SAFETY: to add the two equations, multiple references to the vector
-                // of equations are needed, one of which is mutable
-                let eq_j = unsafe { &*(&equations[j] as *const Modulo2Equation<W>) };
-                let eq_i = &mut equations[i];
+                let (left, right) = equations.split_at_mut(j);
+                let eq_i = &mut left[i];
+                let eq_j = &right[0];
 
                 let first_var_j = eq_j.vars[0];
 
@@ -333,11 +332,7 @@ impl<W: Word> Modulo2System<W> {
                     }
                     dense.push(equation.to_owned());
                 } else if priority[first] == 1 {
-                    // SAFETY: to add the equations, multiple references to the vector
-                    // of equations are needed, one of which is mutable
-                    let equation = unsafe { &*(&equations[first] as *const Modulo2Equation<W>) };
-
-                    let pivot = equation
+                    let pivot = equations[first]
                         .vars
                         .iter()
                         .copied()
@@ -346,18 +341,25 @@ impl<W: Word> Modulo2System<W> {
                     pivots.push(pivot as usize);
                     solved.push(first);
                     weight[pivot as usize] = 0;
-                    var_to_eqs[pivot as usize]
+                    for &eq in var_to_eqs[pivot as usize]
                         .as_ref()
                         .iter()
                         .filter(|&&eq_idx| eq_idx != first)
-                        .for_each(|&eq| {
-                            equations[eq].add(equation);
+                    {
+                        let lo = eq.min(first);
+                        let hi = eq.max(first);
+                        let (left, right) = equations.split_at_mut(hi);
+                        if eq < first {
+                            left[lo].add(&right[0]);
+                        } else {
+                            right[0].add(&left[lo]);
+                        }
 
-                            priority[eq] -= 1;
-                            if priority[eq] == 1 {
-                                equation_list.push(eq)
-                            }
-                        });
+                        priority[eq] -= 1;
+                        if priority[eq] == 1 {
+                            equation_list.push(eq)
+                        }
+                    }
                 }
             }
         }
