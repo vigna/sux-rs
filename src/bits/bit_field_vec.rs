@@ -50,7 +50,7 @@
 //! vector is never modified by the methods of this structure.
 //!
 //! For high-speed unchecked scanning, we implement [`IntoUncheckedIterator`]
-//! and [`IntoReverseUncheckedIterator`] on a reference to this type. The are
+//! and [`IntoReverseUncheckedIterator`] on a reference to this type. They are
 //! used, for example, to provide
 //! [predecessor](crate::traits::indexed_dict::Pred) and
 //! [successor](crate::traits::indexed_dict::Succ) primitives for
@@ -1427,7 +1427,7 @@ where
     #[inline]
     unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering) {
         unsafe {
-            debug_assert!(self.bit_width != W::BITS);
+            debug_assert!(self.bit_width <= W::BITS);
             let pos = index * self.bit_width;
             let word_index = pos / W::BITS;
             let bit_index = pos % W::BITS;

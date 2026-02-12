@@ -54,7 +54,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// for all keys; in the second case, such information will be stored in a
 /// number of on-disk buckets.
 ///
-/// There are several setters: for example, you can set [set the maximum number
+/// There are several setters: for example, you can [set the maximum number
 /// of threads](VBuilder::max_num_threads).
 ///
 /// Once signatures have been computed, each parallel thread will process a
@@ -79,8 +79,8 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// # Signed Index Functions
 ///
 /// The methods [`try_build_sig_index`](VBuilder::try_build_sig_index) and
-/// [`try_build_bit_sig_index`](VBuilder::try_build_bit_sig_index) builds [index
-/// functions] (i.e., functions mapping elements of a list to their rank) and
+/// [`try_build_bit_sig_index`](VBuilder::try_build_bit_sig_index) build index
+/// functions (i.e., functions mapping elements of a list to their rank) and
 /// they associate hashes to keys, so the result of the index function can be
 /// checked. See the documentation of the
 /// [`signed_vfunc`](crate::dict::signed_vfunc) module for more details.
@@ -260,7 +260,7 @@ pub struct VBuilder<
     log2_buckets: u32,
 
     /// The target relative space loss due to [ε-cost
-    /// sharding](https://doi.org/10.4230/LIPIcs.ESA.2019.38).s
+    /// sharding](https://doi.org/10.4230/LIPIcs.ESA.2019.38).
     ///
     /// The default is 0.001. Setting a larger target, for example, 0.01, will
     /// increase the space overhead due to sharding, but will provide in general
@@ -302,7 +302,7 @@ pub enum BuildError {
     /// A duplicate key was detected.
     DuplicateKey,
     #[error("Duplicate local signatures: use full signatures")]
-    /// A duplicate key was detected.
+    /// Duplicate local signatures were detected.
     DuplicateLocalSignatures,
     #[error("Value too large for specified bit size")]
     /// A value is too large for the specified bit size.
@@ -687,12 +687,12 @@ where
     SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
 {
     /// Builds a _bit-signed index function_, that is, a function that maps each
-    /// key to its position in the input sequence and verifies its out against a
+    /// key to its position in the input sequence and verifies its output against a
     /// [`BitFieldVec`] containing hashes of the keys.
     ///
     /// The hashes contain `hash_width` bits, providing a false-positive error
     /// rate (i.e., keys that are not part of the function definition, but for
-    /// which this property is not detected) of 1/2<sup>-`hash_width`</sup>.
+    /// which this property is not detected) of 2<sup>-`hash_width`</sup>.
     ///
     /// This type of signed function offers more resolution than [`SignedVFunc`]
     /// in choosing the hash size, but testing signatures will be slower.
@@ -767,12 +767,12 @@ where
     }
 
     /// Builds a _signed index function_, that is, a function that maps each key
-    /// to its position in the input sequence and verifies its out against a
+    /// to its position in the input sequence and verifies its output against a
     /// boxed slice containing hashes of the keys.
     ///
     /// The hashes are of type `H`, and the false-positive error rate (i.e.,
     /// keys that are not part of the function definition, but for which this
-    /// property is not detected) of 1/2<sup>-`H::BITS`</sup>.
+    /// property is not detected) is 2<sup>-`H::BITS`</sup>.
     ///
     /// This type of signed function offers more speed than [`BitSignedVFunc`],
     /// but you have less resolution in the choice of the hash size.
@@ -907,7 +907,7 @@ impl<
     /// `new_data(bit_width, len)` function, which is called to create the data
     /// structure to store the values.
     ///
-    /// When `V` is [`EmptyVal`], the this method builds a function supporting a
+    /// When `V` is [`EmptyVal`], this method builds a function supporting a
     /// filter by mapping each key to a mix of its local signature. The
     /// necessary abstraction is provided by the `get_val` function, which is
     /// called to extract the value from the signature/value pair; in the case
@@ -1484,7 +1484,7 @@ impl<
                     loop {
                         match data_recv.recv() {
                             Err(_) => return,
-                            Ok((shard_index, (shard, mut data))) => {
+                            Ok((shard_index, (mut shard, mut data))) => {
                                 if shard.is_empty() {
                                     return;
                                 }
@@ -1642,7 +1642,7 @@ impl<
     /// byte per vertex (for the stack of sides).
     ///
     /// This peeler uses more memory than
-    /// [`peek_by_sig_vals_low_mem`](VBuilder::peel_by_sig_vals_low_mem) but
+    /// [`peel_by_sig_vals_low_mem`](VBuilder::peel_by_sig_vals_low_mem) but
     /// less memory than
     /// [`peel_by_sig_vals_high_mem`](VBuilder::peel_by_sig_vals_high_mem). It
     /// is fairly slow as it has to go through a cache-unfriendly memory
@@ -1794,7 +1794,7 @@ impl<
     ///
     /// This is the fastest and more memory-consuming peeler. It has however
     /// just a small advantage during assignment with respect to
-    /// [`peek_by_sig_vals_low_mem`](VBuilder::peel_by_sig_vals_low_mem), which
+    /// [`peel_by_sig_vals_low_mem`](VBuilder::peel_by_sig_vals_low_mem), which
     /// uses almost half the memory. It is the peeler of choice for low levels
     /// of parallelism.
     ///
@@ -1926,7 +1926,7 @@ impl<
     ///
     /// This is by far the less memory-hungry peeler, and it is just slightly
     /// slower than
-    /// [`peek_by_sig_vals_high_mem`](VBuilder::peel_by_sig_vals_high_mem),
+    /// [`peel_by_sig_vals_high_mem`](VBuilder::peel_by_sig_vals_high_mem),
     /// which uses almost twice the memory. It is the peeler of choice for
     /// significant levels of parallelism.
     ///

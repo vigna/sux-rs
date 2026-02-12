@@ -1,5 +1,13 @@
 # Change Log
 
+## [0.12.0]
+
+### Changed
+
+* Moved to `mmap-rs` 0.7.0, `mem_dbg` 0.4.0 and `epserde` 0.12.0.
+
+* `par_count_ones` was in `BitVecMutOps` instead of `BitVecOps`.
+
 ## [0.11.1] - 2026-02-10
 
 ### Changed

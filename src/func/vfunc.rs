@@ -19,7 +19,7 @@ use value_traits::slices::SliceByValue;
 ///
 /// *Static functions* map keys to values, but they do not store the keys:
 /// querying a static function with a key outside of the original set will lead
-/// to an arbitrary result. Another name for static functions *retrieval data
+/// to an arbitrary result. Another name for static functions is *retrieval data
 /// structure*. Values are retrieved using the [`get`](VFunc::get) method. On
 /// some architectures, and with some constraints,
 /// [`get_unaligned`](VFunc::get_unaligned) might be faster.
