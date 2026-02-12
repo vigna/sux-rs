@@ -98,6 +98,26 @@ pub trait BitVecOps: AsRef<[usize]> + BitLength {
     fn iter_zeros(&self) -> ZerosIterator<'_, [usize]> {
         ZerosIterator::new(self.as_ref(), self.len())
     }
+
+    /// A parallel version of
+    /// [`BitCount::count_ones`](crate::traits::BitCount::count_ones).
+    #[cfg(feature = "rayon")]
+    fn par_count_ones(&self) -> usize {
+        let full_words = self.len() / BITS;
+        let residual = self.len() % BITS;
+        let bits = self.as_ref();
+        let mut num_ones;
+        num_ones = bits[..full_words]
+            .par_iter()
+            .with_min_len(RAYON_MIN_LEN)
+            .map(|x| x.count_ones() as usize)
+            .sum();
+        if residual != 0 {
+            num_ones += (self.as_ref()[full_words] << (BITS - residual)).count_ones() as usize
+        }
+
+        num_ones
+    }
 }
 
 impl<T: AsRef<[usize]> + AsMut<[usize]> + BitLength> BitVecOpsMut for T {}
@@ -199,26 +219,6 @@ pub trait BitVecOpsMut: AsRef<[usize]> + AsMut<[usize]> + BitLength {
             let mask = (1 << residual) - 1;
             bits[full_words] = (bits[full_words] & !mask) | (!bits[full_words] & mask);
         }
-    }
-
-    /// A parallel version of
-    /// [`BitCount::count_ones`](crate::traits::BitCount::count_ones).
-    #[cfg(feature = "rayon")]
-    fn par_count_ones(&self) -> usize {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.as_ref();
-        let mut num_ones;
-        num_ones = bits[..full_words]
-            .par_iter()
-            .with_min_len(RAYON_MIN_LEN)
-            .map(|x| x.count_ones() as usize)
-            .sum();
-        if residual != 0 {
-            num_ones += (self.as_ref()[full_words] << (BITS - residual)).count_ones() as usize
-        }
-
-        num_ones
     }
 }
 
@@ -597,7 +597,7 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
 
     /// Returns an iterator over the bits of this atomic bit vector.
     ///
-    /// Note that modifying the bit vector while iterating over it will lead
+    /// Note that modifying the bit vector while iterating over it will lead to
     /// behavior depending on processor scheduling and memory model.
     /// Nonetheless, all returned values have been valid at some point during
     /// the iteration.
@@ -609,7 +609,7 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
 
 /// An iterator over the bits of an atomic bit vector as booleans.
 ///
-/// Note that modifying the bit vector while iterating over it will lead
+/// Note that modifying the bit vector while iterating over it will lead to
 /// behavior depending on processor scheduling and memory model.
 #[derive(Debug, MemDbg, MemSize)]
 pub struct AtomicBitIterator<'a, B: ?Sized> {
