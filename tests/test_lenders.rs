@@ -496,11 +496,7 @@ fn test_from_into_fallible_lender_factory_new() {
         Ok::<
             FromFallibleIter<fallible_iterator::IntoFallible<std::ops::Range<i32>>>,
             core::convert::Infallible,
-        >(
-            (0..count)
-                .into_fallible()
-                .into_fallible_lender(),
-        )
+        >((0..count).into_fallible().into_fallible_lender())
     })
     .unwrap();
 
