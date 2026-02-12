@@ -1484,7 +1484,7 @@ impl<
                     loop {
                         match data_recv.recv() {
                             Err(_) => return,
-                            Ok((shard_index, (mut shard, mut data))) => {
+                            Ok((shard_index, (shard, mut data))) => {
                                 if shard.is_empty() {
                                     return;
                                 }
