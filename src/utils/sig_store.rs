@@ -76,7 +76,7 @@ impl<T: FromBytes + IntoBytes + Copy + Send + Sync + 'static> BinSafe for T {}
 
 /// A trait for types that can be used as signatures.
 pub trait Sig: BinSafe + Default + PartialEq + Eq + std::fmt::Debug {
-    /// Extracts high bits from  the signature.
+    /// Extracts high bits from the signature.
     ///
     /// These bits are used to shard elements. Note that `high_bits` can be 0,
     /// but it is guaranteed to be less than 64.
@@ -644,8 +644,6 @@ pub trait ShardStore<S: Sig, V: BinSafe> {
     fn iter(&mut self) -> Self::ShardIterator<'_>;
 
     /// Returns an iterator on shards, consuming self.
-    ///
-    /// This method can be called multiple times.
     fn into_iter(self) -> Self::ShardIntoIterator;
 
     /// Returns the number of signature/value pairs in the store.
@@ -701,7 +699,7 @@ where
         }
     }
 
-    fn into_iter<'a>(self) -> ShardIterator<S, V, B, Self> {
+    fn into_iter(self) -> ShardIterator<S, V, B, Self> {
         ShardIterator {
             store: self,
             borrowed: false,

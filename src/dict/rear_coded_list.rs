@@ -301,7 +301,7 @@ where
     /// Returns a [`Lender`] over the elements of the list
     /// starting from the given index.
     ///
-    /// Note that [`iter`](RearCodedList::iter_from) is more convenient if
+    /// Note that [`iter_from`](RearCodedList::iter_from) is more convenient if
     /// you need owned elements.
     #[inline(always)]
     pub fn lender_from(&self, from: usize) -> Lend<'_, I, O, D, P, SORTED> {
@@ -310,7 +310,7 @@ where
 
     /// Returns an [`Iterator`] over the elements of the list.
     ///
-    /// Note that [`lender`](RearCodedList::lender_from) is more efficient if
+    /// Note that [`lender`](RearCodedList::lender) is more efficient if
     /// you need to iterate over many elements.
     #[inline(always)]
     pub fn iter(&self) -> Iter<'_, I, O, D, P, SORTED> {
@@ -320,7 +320,7 @@ where
     /// Returns an [`Iterator`] over the elements of the list
     /// starting from the given index.
     ///
-    /// Note that [`lender`](RearCodedList::lender_from) is more efficient if
+    /// Note that [`lender_from`](RearCodedList::lender_from) is more efficient if
     /// you need to iterate over many elements.
     #[inline(always)]
     pub fn iter_from(&self, from: usize) -> Iter<'_, I, O, D, P, SORTED> {
@@ -662,7 +662,7 @@ where
 
 // Iterators
 
-/// Sequential [`Iterator`] over the the contents of the list.
+/// Sequential [`Iterator`] over the contents of the list.
 #[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct Iter<
     'a,
@@ -701,7 +701,7 @@ impl<
 > std::iter::FusedIterator for Iter<'a, I, O, D, P, SORTED>
 where
     Iter<'a, I, O, D, P, SORTED>: std::iter::Iterator,
-    Lend<'a, str, String, D, P, SORTED>: FusedLender,
+    Lend<'a, I, O, D, P, SORTED>: FusedLender,
 {
 }
 
@@ -735,7 +735,6 @@ where
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
-        // SAFETY: We encoded valid UTF-8 strings
         self.0.next_impl().map(|v| v.into())
     }
 

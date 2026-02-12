@@ -39,10 +39,10 @@
 //! writes the bytes of the string into a user-provided `Vec<u8>`.
 //!
 //! Mapped rear-coded lists can be iterated upon using either an
-//! [`Iterator`](RearCodedList::iter) or a [`Lender`](RearCodedList::lender). In
+//! [`Iterator`](MappedRearCodedList::iter) or a [`Lender`](MappedRearCodedList::lender). In
 //! the first case there will be an allocation at each iteration, whereas in
 //! second case a single buffer will be reused. You can also [iterate from a
-//! given position](RearCodedList::lender_from). The iteration will not be as
+//! given position](MappedRearCodedList::lender_from). The iteration will not be as
 //! fast as in the non-mapped case, however, as it is not possible to build the
 //! returned strings incrementally.
 //!
@@ -180,7 +180,7 @@ where
 {
     /// Returns a [`Lender`] over the elements of the list.
     ///
-    /// Note that [`iter`](RearCodedList::iter) is more convenient if
+    /// Note that [`iter`](MappedRearCodedList::iter) is more convenient if
     /// you need owned elements.
     #[inline(always)]
     pub fn lender(&self) -> Lend<'_, I, O, D, P, Q, SORTED> {
@@ -190,7 +190,7 @@ where
     /// Returns a [`Lender`] over the elements of the list
     /// starting from the given index.
     ///
-    /// Note that [`iter`](RearCodedList::iter_from) is more convenient if
+    /// Note that [`iter_from`](MappedRearCodedList::iter_from) is more convenient if
     /// you need owned elements.
     #[inline(always)]
     pub fn lender_from(&self, from: usize) -> Lend<'_, I, O, D, P, Q, SORTED> {
@@ -199,7 +199,7 @@ where
 
     /// Returns an [`Iterator`] over the elements of the list.
     ///
-    /// Note that [`lender`](MappedRearCodedList::lender_from) is more efficient
+    /// Note that [`lender`](MappedRearCodedList::lender) is more efficient
     /// if you need to iterate over many elements.
     #[inline(always)]
     pub fn iter(&self) -> Iter<'_, I, O, D, P, Q, SORTED> {
@@ -209,7 +209,7 @@ where
     /// Returns an [`Iterator`] over the elements of the list
     /// starting from the given index.
     ///
-    /// Note that [`lender`](MappedRearCodedList::lender_from) is more efficient
+    /// Note that [`lender_from`](MappedRearCodedList::lender_from) is more efficient
     /// if you need to iterate over many elements.
     #[inline(always)]
     pub fn iter_from(&self, from: usize) -> Iter<'_, I, O, D, P, Q, SORTED> {
@@ -459,7 +459,7 @@ where
 
 // Iterators
 
-/// Sequential [`Iterator`] over the the contents of the list.
+/// Sequential [`Iterator`] over the contents of the list.
 #[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct Iter<
     'a,
@@ -501,7 +501,7 @@ impl<
 > std::iter::FusedIterator for Iter<'a, I, O, D, P, Q, SORTED>
 where
     Iter<'a, I, O, D, P, Q, SORTED>: std::iter::Iterator,
-    Lend<'a, str, String, D, P, Q, SORTED>: FusedLender,
+    Lend<'a, I, O, D, P, Q, SORTED>: FusedLender,
 {
 }
 
@@ -535,7 +535,6 @@ where
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
-        // SAFETY: We encoded valid UTF-8 strings
         self.0.next_impl().map(|v| v.into())
     }
 
