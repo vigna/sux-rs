@@ -2,6 +2,11 @@
 
 ## [0.12.0]
 
+### New
+
+* New `iter_from_succ` method for indexed dictionaries that makes it possible to
+  iterate from the successor of value.
+
 ### Changed
 
 * Moved to `mmap-rs` 0.7.0, `mem_dbg` 0.4.0 and `epserde` 0.12.0.
