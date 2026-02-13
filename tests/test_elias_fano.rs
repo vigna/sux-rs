@@ -314,3 +314,101 @@ fn test_convenience_methods() {
         assert_eq!(ef.succ(i * 10).unwrap(), (i, i * 10));
     }
 }
+
+#[test]
+fn test_iter_from_succ() -> Result<()> {
+    let mut rng = SmallRng::seed_from_u64(0);
+    for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
+        values.sort();
+
+        // Test with EfSeqDict (has both SelectUnchecked and SelectZeroUnchecked)
+        let mut efb = EliasFanoBuilder::new(n, u);
+        for &v in &values {
+            efb.push(v);
+        }
+        let ef = efb.build_with_seq_and_dict();
+
+        // Test iter_from_succ: results match succ + iter_from
+        for v in 0..=u {
+            let succ_result = ef.succ(v);
+            let iter_succ_result = ef.iter_from_succ(v);
+            match (succ_result, iter_succ_result) {
+                (None, None) => {}
+                (Some((idx, val)), Some((idx2, iter))) => {
+                    assert_eq!(idx, idx2);
+                    // The iterator should yield the successor and all subsequent values
+                    let collected: Vec<usize> = iter.collect();
+                    assert_eq!(collected.len(), n - idx);
+                    assert_eq!(collected[0], val);
+                    for (i, &cv) in collected.iter().enumerate() {
+                        assert_eq!(cv, values[idx + i]);
+                    }
+                }
+                _ => panic!("succ and iter_from_succ disagree for value {v}"),
+            }
+        }
+
+        // Test iter_from_succ_strict
+        for v in 0..=u {
+            let succ_result = ef.succ_strict(v);
+            let iter_succ_result = ef.iter_from_succ_strict(v);
+            match (succ_result, iter_succ_result) {
+                (None, None) => {}
+                (Some((idx, val)), Some((idx2, iter))) => {
+                    assert_eq!(idx, idx2);
+                    let collected: Vec<usize> = iter.collect();
+                    assert_eq!(collected.len(), n - idx);
+                    assert_eq!(collected[0], val);
+                    for (i, &cv) in collected.iter().enumerate() {
+                        assert_eq!(cv, values[idx + i]);
+                    }
+                }
+                _ => panic!("succ_strict and iter_from_succ_strict disagree for value {v}"),
+            }
+        }
+
+        // Test with EfDict (only SelectZeroUnchecked, no SelectUnchecked)
+        // This tests the inherent unchecked method's weaker bounds
+        let mut efb = EliasFanoBuilder::new(n, u);
+        for &v in &values {
+            efb.push(v);
+        }
+        let ef_dict = efb.build_with_dict();
+
+        for v in 0..=u {
+            // Use succ_unchecked on EfDict (no Succ trait since no SelectUnchecked)
+            // and compare with iter_from_succ_unchecked
+            let succ_result = values.partition_point(|&x| x < v);
+            if succ_result < n {
+                let (idx, iter) =
+                    unsafe { ef_dict.iter_from_succ_unchecked::<false>(v) };
+                assert_eq!(idx, succ_result);
+                let collected: Vec<usize> = iter.collect();
+                assert_eq!(collected.len(), n - idx);
+                assert_eq!(collected[0], values[succ_result]);
+                for (i, &cv) in collected.iter().enumerate() {
+                    assert_eq!(cv, values[idx + i]);
+                }
+            }
+        }
+
+        // Test unchecked version directly
+        for v in 0..=u {
+            if let Some((idx, val)) = ef.succ(v) {
+                let (idx2, iter) = unsafe { ef.iter_from_succ_unchecked::<false>(v) };
+                assert_eq!(idx, idx2);
+                let collected: Vec<usize> = iter.collect();
+                assert_eq!(collected[0], val);
+            }
+        }
+    }
+
+    // Test empty sequence
+    let efb = EliasFanoBuilder::new(0, 10);
+    let ef = efb.build_with_seq_and_dict();
+    assert!(ef.iter_from_succ(0).is_none());
+    assert!(ef.iter_from_succ_strict(0).is_none());
+
+    Ok(())
+}

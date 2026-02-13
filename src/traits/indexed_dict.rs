@@ -48,6 +48,7 @@ use ambassador::delegatable_trait;
 use impl_tools::autoimpl;
 use std::borrow::Borrow;
 
+use super::iter::IntoIteratorFrom;
 use crate::{debug_assert_bounds, panic_if_out_of_bounds};
 
 /// The types of the dictionary.
@@ -146,6 +147,27 @@ where
         &self,
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output<'_>);
+
+    /// Returns the index of the successor and an iterator starting at
+    /// the successor position.
+    ///
+    /// The iterator's first `next()` call returns the successor value
+    /// itself. The index returned is the position of the successor in
+    /// the sequence.
+    ///
+    /// # Safety
+    ///
+    /// The successor must exist.
+    unsafe fn iter_from_succ_unchecked<const STRICT: bool>(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, <&'_ Self as IntoIteratorFrom>::IntoIterFrom)
+    where
+        for<'a> &'a Self: IntoIteratorFrom,
+    {
+        let (rank, _) = unsafe { self.succ_unchecked::<STRICT>(value) };
+        (rank, self.into_iter_from(rank))
+    }
 }
 
 impl<T: SuccUnchecked + ?Sized> SuccUnchecked for &T
@@ -198,6 +220,39 @@ where
             None
         } else {
             Some(unsafe { self.succ_unchecked::<true>(value) })
+        }
+    }
+
+    /// Returns the index of the successor and an iterator starting at
+    /// the successor position, or `None` if there is no successor.
+    fn iter_from_succ(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> Option<(usize, <&'_ Self as IntoIteratorFrom>::IntoIterFrom)>
+    where
+        for<'a> &'a Self: IntoIteratorFrom,
+    {
+        if self.is_empty() || *value.borrow() > self.get(self.len() - 1) {
+            None
+        } else {
+            Some(unsafe { self.iter_from_succ_unchecked::<false>(value) })
+        }
+    }
+
+    /// Returns the index of the strict successor and an iterator starting
+    /// at the strict successor position, or `None` if there is no strict
+    /// successor.
+    fn iter_from_succ_strict(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> Option<(usize, <&'_ Self as IntoIteratorFrom>::IntoIterFrom)>
+    where
+        for<'a> &'a Self: IntoIteratorFrom,
+    {
+        if self.is_empty() || *value.borrow() >= self.get(self.len() - 1) {
+            None
+        } else {
+            Some(unsafe { self.iter_from_succ_unchecked::<true>(value) })
         }
     }
 }

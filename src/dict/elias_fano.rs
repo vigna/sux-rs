@@ -435,6 +435,118 @@ where
 {
 }
 
+impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+{
+    /// Returns the index of the successor and an iterator starting
+    /// at that position.
+    ///
+    /// This is an efficient fused version that avoids the
+    /// `select` operation that [`iter_from`](EliasFano::iter_from)
+    /// would perform.
+    ///
+    /// # Safety
+    ///
+    /// The successor must exist.
+    #[allow(clippy::collapsible_else_if)]
+    pub unsafe fn iter_from_succ_unchecked<const STRICT: bool>(
+        &self,
+        value: usize,
+    ) -> (usize, EliasFanoIterator<'_, H, L>) {
+        let zeros_to_skip = value >> self.l;
+        let bit_pos = if zeros_to_skip == 0 {
+            0
+        } else {
+            unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip - 1) + 1 }
+        };
+
+        let mut rank = bit_pos - zeros_to_skip;
+        let mut iter = self.low_bits.into_unchecked_iter_from(rank);
+        let mut word_idx = bit_pos / (usize::BITS as usize);
+        let bits_to_clean = bit_pos % (usize::BITS as usize);
+
+        let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) }
+            & (usize::MAX << bits_to_clean);
+
+        loop {
+            while window == 0 {
+                word_idx += 1;
+                debug_assert!(word_idx < self.high_bits.as_ref().len());
+                window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
+            }
+            let bit_idx = window.trailing_zeros() as usize;
+            let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
+            let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
+
+            if STRICT {
+                if res > value {
+                    return (
+                        rank,
+                        EliasFanoIterator {
+                            ef: self,
+                            index: rank,
+                            word_idx,
+                            window,
+                            low_bits: self.low_bits.into_unchecked_iter_from(rank),
+                        },
+                    );
+                }
+            } else {
+                if res >= value {
+                    return (
+                        rank,
+                        EliasFanoIterator {
+                            ef: self,
+                            index: rank,
+                            word_idx,
+                            window,
+                            low_bits: self.low_bits.into_unchecked_iter_from(rank),
+                        },
+                    );
+                }
+            }
+
+            window &= window - 1;
+            rank += 1;
+        }
+    }
+}
+
+impl<
+        H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked,
+        L: SliceByValue<Value = usize>,
+    > EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+{
+    pub fn iter_from_succ(
+        &self,
+        value: usize,
+    ) -> Option<(usize, EliasFanoIterator<'_, H, L>)> {
+        if self.n == 0
+            || value > unsafe { IndexedSeq::get_unchecked(self, self.n - 1) }
+        {
+            None
+        } else {
+            Some(unsafe { self.iter_from_succ_unchecked::<false>(value) })
+        }
+    }
+
+    pub fn iter_from_succ_strict(
+        &self,
+        value: usize,
+    ) -> Option<(usize, EliasFanoIterator<'_, H, L>)> {
+        if self.n == 0
+            || value >= unsafe { IndexedSeq::get_unchecked(self, self.n - 1) }
+        {
+            None
+        } else {
+            Some(unsafe { self.iter_from_succ_unchecked::<true>(value) })
+        }
+    }
+}
+
 #[allow(clippy::collapsible_else_if)]
 impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> PredUnchecked
     for EliasFano<H, L>
