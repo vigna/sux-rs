@@ -381,8 +381,7 @@ fn test_iter_from_succ() -> Result<()> {
             // and compare with iter_from_succ_unchecked
             let succ_result = values.partition_point(|&x| x < v);
             if succ_result < n {
-                let (idx, iter) =
-                    unsafe { ef_dict.iter_from_succ_unchecked::<false>(v) };
+                let (idx, iter) = unsafe { ef_dict.iter_from_succ_unchecked::<false>(v) };
                 assert_eq!(idx, succ_result);
                 let collected: Vec<usize> = iter.collect();
                 assert_eq!(collected.len(), n - idx);

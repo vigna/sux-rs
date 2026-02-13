@@ -513,20 +513,13 @@ where
     }
 }
 
-impl<
-        H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked,
-        L: SliceByValue<Value = usize>,
-    > EliasFano<H, L>
+impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = usize>>
+    EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
-    pub fn iter_from_succ(
-        &self,
-        value: usize,
-    ) -> Option<(usize, EliasFanoIterator<'_, H, L>)> {
-        if self.n == 0
-            || value > unsafe { IndexedSeq::get_unchecked(self, self.n - 1) }
-        {
+    pub fn iter_from_succ(&self, value: usize) -> Option<(usize, EliasFanoIterator<'_, H, L>)> {
+        if self.n == 0 || value > unsafe { IndexedSeq::get_unchecked(self, self.n - 1) } {
             None
         } else {
             Some(unsafe { self.iter_from_succ_unchecked::<false>(value) })
@@ -537,9 +530,7 @@ where
         &self,
         value: usize,
     ) -> Option<(usize, EliasFanoIterator<'_, H, L>)> {
-        if self.n == 0
-            || value >= unsafe { IndexedSeq::get_unchecked(self, self.n - 1) }
-        {
+        if self.n == 0 || value >= unsafe { IndexedSeq::get_unchecked(self, self.n - 1) } {
             None
         } else {
             Some(unsafe { self.iter_from_succ_unchecked::<true>(value) })
