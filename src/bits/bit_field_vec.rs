@@ -1769,6 +1769,203 @@ impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFrom
     }
 }
 
+/// A bidirectional cursor over a [`BitFieldVec`] that keeps a word buffer
+/// and only reloads it when reading a value that crosses a word boundary.
+///
+/// `bits_idx` can temporarily be `W::BITS` (deferred word advance), meaning
+/// we're logically at the start of the next word but haven't loaded it yet.
+/// This avoids a memory access in the common non-crossing path. The load
+/// happens at the start of the next `next`/`next_unchecked` call, or is
+/// handled naturally by `prev`/`prev_unchecked` (since `W::BITS >= bit_width`).
+///
+/// Invariant: `word_idx * W::BITS + bits_idx == idx * bit_width`.
+pub struct Cursor<'a, W: Word = usize> {
+    /// The backing data as a slice (avoids `AsRef` dispatch on every access).
+    data: &'a [W],
+    /// Buffer containing the word at `word_idx` cast to u64.
+    buffer: u64,
+    /// The index of the current value (next to read going forward).
+    idx: usize,
+    /// The index of the word loaded in the buffer.
+    word_idx: usize,
+    /// The bit offset within the buffer (0..=W::BITS).
+    bits_idx: usize,
+    /// Cached bit width.
+    bit_width: usize,
+    /// Cached mask with the lowest `bit_width` bits set.
+    mask: u64,
+    /// Cached length of the vector.
+    len: usize,
+}
+
+impl<'a, W: Word + CastableInto<u64>> Cursor<'a, W> {
+    /// Creates a new cursor positioned at the given index.
+    pub fn new<B: AsRef<[W]>>(data: &'a BitFieldVec<W, B>, idx: usize) -> Self {
+        debug_assert!(
+            W::BITS <= 64,
+            "Cursor only supports word sizes up to 64 bits"
+        );
+        assert!(
+            idx <= data.len,
+            "cursor index out of bounds: {} > {}",
+            idx,
+            data.len
+        );
+        let bit_width = data.bit_width;
+        let mask: u64 = data.mask.cast();
+        let slice = data.bits.as_ref();
+        let bit_offset = idx * bit_width;
+        let word_idx = bit_offset / W::BITS;
+        let bits_idx = bit_offset % W::BITS;
+        let buffer = slice.get(word_idx).map_or(0u64, |w| (*w).cast());
+        Cursor {
+            data: slice,
+            buffer,
+            idx,
+            word_idx,
+            bits_idx,
+            bit_width,
+            mask,
+            len: data.len,
+        }
+    }
+
+    /// Returns the value at the current position and advances the cursor forward.
+    /// Returns `None` if the cursor is at the end.
+    #[inline(always)]
+    pub fn next(&mut self) -> Option<u64> {
+        if self.idx >= self.len {
+            return None;
+        }
+        // Handle deferred word boundary from a previous call
+        if self.bits_idx == W::BITS {
+            self.word_idx += 1;
+            self.buffer = (*self.data.get(self.word_idx)?).cast();
+            self.bits_idx = 0;
+        }
+        let start = self.bits_idx;
+        let end = start + self.bit_width;
+
+        let result = if end <= W::BITS {
+            let val = (self.buffer >> start) & self.mask;
+            self.bits_idx = end;
+            // Don't eagerly load — deferred to the next call
+            val
+        } else {
+            // Value spans two words
+            let low_count = W::BITS - start;
+            let low_bits = self.buffer >> start;
+            let next_word_idx = self.word_idx + 1;
+            let next_buffer: u64 = (*self.data.get(next_word_idx)?).cast();
+            self.word_idx = next_word_idx;
+            self.buffer = next_buffer;
+            let high_count = self.bit_width - low_count;
+            let high_bits = next_buffer & ((1u64 << high_count) - 1);
+            self.bits_idx = high_count;
+            low_bits | (high_bits << low_count)
+        };
+        self.idx += 1;
+        Some(result)
+    }
+
+    /// Advances the cursor forward and returns the value.
+    ///
+    /// # Safety
+    /// The caller must ensure `idx < len`.
+    #[inline(always)]
+    pub unsafe fn next_unchecked(&mut self) -> u64 {
+        // Handle deferred word boundary from a previous call
+        if self.bits_idx == W::BITS {
+            self.word_idx += 1;
+            self.buffer = unsafe { (*self.data.get_unchecked(self.word_idx)).cast() };
+            self.bits_idx = 0;
+        }
+        let start = self.bits_idx;
+        let end = start + self.bit_width;
+
+        let result = if end <= W::BITS {
+            let val = (self.buffer >> start) & self.mask;
+            self.bits_idx = end;
+            val
+        } else {
+            let low_count = W::BITS - start;
+            let low_bits = self.buffer >> start;
+            self.word_idx += 1;
+            self.buffer = unsafe { (*self.data.get_unchecked(self.word_idx)).cast() };
+            let high_count = self.bit_width - low_count;
+            let high_bits = self.buffer & ((1u64 << high_count) - 1);
+            self.bits_idx = high_count;
+            low_bits | (high_bits << low_count)
+        };
+        self.idx += 1;
+        result
+    }
+
+    /// Moves the cursor backward and returns the value at the new position.
+    /// Returns `None` if the cursor is at the beginning.
+    #[inline(always)]
+    pub fn prev(&mut self) -> Option<u64> {
+        if self.idx == 0 {
+            return None;
+        }
+        // bits_idx can be W::BITS from deferred load, which is fine:
+        // W::BITS >= bit_width so the first branch handles it correctly,
+        // reading from the current (still-valid) buffer.
+        let result = if self.bits_idx >= self.bit_width {
+            self.bits_idx -= self.bit_width;
+            (self.buffer >> self.bits_idx) & self.mask
+        } else if self.bits_idx == 0 {
+            let prev_word_idx = self.word_idx.checked_sub(1)?;
+            let prev_buffer: u64 = (*self.data.get(prev_word_idx)?).cast();
+            self.word_idx = prev_word_idx;
+            self.buffer = prev_buffer;
+            self.bits_idx = W::BITS - self.bit_width;
+            (self.buffer >> self.bits_idx) & self.mask
+        } else {
+            let high_count = self.bits_idx;
+            let high_bits = self.buffer & ((1u64 << high_count) - 1);
+            let low_count = self.bit_width - high_count;
+            let prev_word_idx = self.word_idx.checked_sub(1)?;
+            let prev_buffer: u64 = (*self.data.get(prev_word_idx)?).cast();
+            self.word_idx = prev_word_idx;
+            self.buffer = prev_buffer;
+            self.bits_idx = W::BITS - low_count;
+            let low_bits = self.buffer >> self.bits_idx;
+            low_bits | (high_bits << low_count)
+        };
+        self.idx -= 1;
+        Some(result)
+    }
+
+    /// Moves the cursor backward and returns the value at the new position.
+    ///
+    /// # Safety
+    /// The caller must ensure `idx > 0`.
+    #[inline(always)]
+    pub unsafe fn prev_unchecked(&mut self) -> u64 {
+        let result = if self.bits_idx >= self.bit_width {
+            self.bits_idx -= self.bit_width;
+            (self.buffer >> self.bits_idx) & self.mask
+        } else if self.bits_idx == 0 {
+            self.word_idx -= 1;
+            self.buffer = unsafe { (*self.data.get_unchecked(self.word_idx)).cast() };
+            self.bits_idx = W::BITS - self.bit_width;
+            (self.buffer >> self.bits_idx) & self.mask
+        } else {
+            let high_count = self.bits_idx;
+            let high_bits = self.buffer & ((1u64 << high_count) - 1);
+            let low_count = self.bit_width - high_count;
+            self.word_idx -= 1;
+            self.buffer = unsafe { (*self.data.get_unchecked(self.word_idx)).cast() };
+            self.bits_idx = W::BITS - low_count;
+            let low_bits = self.buffer >> self.bits_idx;
+            low_bits | (high_bits << low_count)
+        };
+        self.idx -= 1;
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1863,6 +2060,115 @@ mod tests {
                 source.copy(7, &mut dest_actual, 3 + 64 * 3, 40 + 21 + 64);
                 copy(&source, 7, &mut dest_expected, 3 + 64 * 3, 40 + 21 + 64);
                 assert_eq!(dest_actual, dest_expected);
+            }
+        }
+    }
+
+    #[test]
+    fn test_cursor_next() {
+        let b = bit_field_vec![5; 3, 17, 31, 0, 7, 25, 12, 1, 30, 15, 8, 22, 4, 19, 11];
+        let mut cursor = Cursor::new(&b, 0);
+        for i in 0..b.len() {
+            let expected = b.index_value(i) as u64;
+            let got = cursor.next().unwrap();
+            assert_eq!(
+                got, expected,
+                "mismatch at index {}: expected {}, got {}",
+                i, expected, got
+            );
+        }
+        assert_eq!(cursor.next(), None);
+    }
+
+    #[test]
+    fn test_cursor_prev() {
+        let b = bit_field_vec![5; 3, 17, 31, 0, 7, 25, 12, 1, 30, 15, 8, 22, 4, 19, 11];
+        let mut cursor = Cursor::new(&b, b.len());
+        for i in (0..b.len()).rev() {
+            let expected = b.index_value(i) as u64;
+            let got = cursor.prev().unwrap();
+            assert_eq!(
+                got, expected,
+                "mismatch at index {}: expected {}, got {}",
+                i, expected, got
+            );
+        }
+        assert_eq!(cursor.prev(), None);
+    }
+
+    #[test]
+    fn test_cursor_bidirectional() {
+        let b = bit_field_vec![7; 100, 50, 127, 0, 63, 1, 99, 42];
+        let mut cursor = Cursor::new(&b, 0);
+        assert_eq!(cursor.next(), Some(100));
+        assert_eq!(cursor.next(), Some(50));
+        assert_eq!(cursor.next(), Some(127));
+        assert_eq!(cursor.next(), Some(0));
+        // Backward
+        assert_eq!(cursor.prev(), Some(0));
+        assert_eq!(cursor.prev(), Some(127));
+        // Forward again
+        assert_eq!(cursor.next(), Some(127));
+        assert_eq!(cursor.next(), Some(0));
+        assert_eq!(cursor.next(), Some(63));
+    }
+
+    #[test]
+    fn test_cursor_power_of_two_width() {
+        let mut b = BitFieldVec::<usize>::new(8, 20);
+        for i in 0..20 {
+            b.set_value(i, i * 11 % 256);
+        }
+        let mut cursor = Cursor::new(&b, 0);
+        for i in 0..20 {
+            assert_eq!(cursor.next(), Some((i * 11 % 256) as u64));
+        }
+        for i in (0..20).rev() {
+            assert_eq!(cursor.prev(), Some((i * 11 % 256) as u64));
+        }
+    }
+
+    #[test]
+    fn test_cursor_from_middle() {
+        let b = bit_field_vec![5; 3, 17, 31, 0, 7, 25, 12, 1];
+        let mut cursor = Cursor::new(&b, 4);
+        assert_eq!(cursor.next(), Some(7));
+        assert_eq!(cursor.prev(), Some(7));
+        assert_eq!(cursor.prev(), Some(0));
+        assert_eq!(cursor.prev(), Some(31));
+    }
+
+    #[test]
+    fn test_cursor_various_bit_widths() {
+        for bit_width in 1..=64 {
+            let mask = if bit_width == 64 {
+                u64::MAX
+            } else {
+                (1u64 << bit_width) - 1
+            };
+            let n = 100;
+            let mut b = BitFieldVec::<usize>::new(bit_width, n);
+            for i in 0..n {
+                b.set_value(i, (i as u64 * 7 & mask) as usize);
+            }
+            let mut cursor = Cursor::new(&b, 0);
+            for i in 0..n {
+                let expected = b.index_value(i) as u64;
+                let got = cursor.next().unwrap();
+                assert_eq!(
+                    got, expected,
+                    "forward mismatch at index {} with bit_width {}",
+                    i, bit_width
+                );
+            }
+            for i in (0..n).rev() {
+                let expected = b.index_value(i) as u64;
+                let got = cursor.prev().unwrap();
+                assert_eq!(
+                    got, expected,
+                    "backward mismatch at index {} with bit_width {}",
+                    i, bit_width
+                );
             }
         }
     }
