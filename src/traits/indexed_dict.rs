@@ -37,12 +37,12 @@
 //! [`EliasFano`](crate::dict::elias_fano::EliasFano)).
 //!
 //! We suggest that every implementation of [`IndexedSeq`] also implements
-//! [`IntoIterator`]/[`IntoIteratorFrom`](crate::traits::iter::IntoIteratorFrom)
-//! with `Item = Self::Output` on a reference. This property can be tested on a
-//! type `T` with the clause `where for<'a> &'a T: IntoIteratorFrom<Item =
-//! Self::Output>` (or `where for<'a> &'a T: IntoIterator<Item = Self::Output>`,
-//! if you don't need to select the starting position). Many implementations
-//! offer also equivalent `iter`/`iter_from` convenience methods.
+//! [`IntoIterator`]/[`IntoIteratorFrom`] with `Item = Self::Output` on a
+//! reference. This property can be tested on a type `T` with the clause `where
+//! for<'a> &'a T: IntoIteratorFrom<Item = Self::Output>` (or `where for<'a> &'a
+//! T: IntoIterator<Item = Self::Output>`, if you don't need to select the
+//! starting position). Many implementations offer also equivalent
+//! `iter`/`iter_from` convenience methods.
 
 use ambassador::delegatable_trait;
 use impl_tools::autoimpl;
