@@ -4,10 +4,26 @@
 
 ### New
 
-* New `iter_from_succ` method for indexed dictionaries that makes it possible to
-  iterate from the successor of value.
+* New `BidiIterator`/`IntoBidiIterator`/`IntoBidiIteratorFrom` traits for
+  bidirectional iterators. Returned by new methods in the `Succ`/`Pred` traits.
+  The `EliasFano` implementation is slower than a forward-only or backward-only
+  iterator, but much faster than calling select (and it does not need
+  selection).
+
+* New construction methods for iterators in indexed dictionaries. You can now
+  obtain (bidirectional) iterators from a position, or from a
+  successor/predecessor call.
+
+* Iterators on `EliasFano` can be reversed with a cost lower than starting
+  a new one (and without any selection structure).
 
 ### Changed
+
+* Major trait and type renaming due to the previous unfortunate usage of
+  "rev"/"reverse" in the sense of "back"/"backward". `DoubleEndedIterator::rev`
+  has a very specific semantics whose meaning is entirely different from what we
+  were trying to express. All traits, types and methods containing "rev"/"reverse"
+  now contain "back"/"backward" instead.
 
 * Moved to `mmap-rs` 0.7.0, `mem_dbg` 0.4.0 and `epserde` 0.12.0.
 

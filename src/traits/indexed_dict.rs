@@ -48,7 +48,7 @@ use ambassador::delegatable_trait;
 use impl_tools::autoimpl;
 use std::borrow::Borrow;
 
-use super::iter::{IntoBidiIteratorFrom, IntoIteratorFrom};
+use super::iter::BidiIterator;
 use crate::{debug_assert_bounds, panic_if_out_of_bounds};
 
 /// The types of the dictionary.
@@ -124,12 +124,22 @@ pub trait IndexedDict: Types {
 }
 
 /// Unchecked successor computation for dictionaries whose values are monotonically increasing.
-#[delegatable_trait]
 pub trait SuccUnchecked: Types
 where
     Self::Input: for<'a> PartialOrd<Self::Output<'a>> + PartialOrd,
     for<'a> Self::Output<'a>: PartialOrd<Self::Input> + PartialOrd,
 {
+    /// The forward iterator type returned by
+    /// [`iter_from_succ_unchecked`](SuccUnchecked::iter_from_succ_unchecked).
+    type Iter<'a>: Iterator<Item = Self::Output<'a>>
+    where
+        Self: 'a;
+    /// The bidirectional iterator type returned by
+    /// [`iter_bidi_from_succ_unchecked`](SuccUnchecked::iter_bidi_from_succ_unchecked).
+    type BidiIter<'a>: BidiIterator<Item = Self::Output<'a>>
+    where
+        Self: 'a;
+
     /// Returns the index of the successor and the successor of the given value.
     ///
     /// The successor is the least value in the dictionary that is greater than
@@ -161,13 +171,7 @@ where
     unsafe fn iter_from_succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> (usize, <&'_ Self as IntoIteratorFrom>::IntoIterFrom)
-    where
-        for<'a> &'a Self: IntoIteratorFrom,
-    {
-        let (rank, _) = unsafe { self.succ_unchecked::<STRICT>(value) };
-        (rank, self.into_iter_from(rank))
-    }
+    ) -> (usize, Self::Iter<'_>);
 
     /// Returns the index of the successor and a bidirectional iterator
     /// positioned at the successor.
@@ -178,16 +182,10 @@ where
     /// # Safety
     ///
     /// The successor must exist.
-    unsafe fn bidi_iter_from_succ_unchecked<const STRICT: bool>(
+    unsafe fn iter_bidi_from_succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> (usize, <&'_ Self as IntoBidiIteratorFrom>::IntoBidiIterFrom)
-    where
-        for<'a> &'a Self: IntoBidiIteratorFrom,
-    {
-        let (rank, _) = unsafe { self.succ_unchecked::<STRICT>(value) };
-        (rank, self.into_bidi_iter_from(rank))
-    }
+    ) -> (usize, Self::BidiIter<'_>);
 }
 
 impl<T: SuccUnchecked + ?Sized> SuccUnchecked for &T
@@ -195,12 +193,37 @@ where
     T::Input: for<'a> PartialOrd<T::Output<'a>> + PartialOrd,
     for<'a> T::Output<'a>: PartialOrd<T::Input> + PartialOrd,
 {
+    type Iter<'a>
+        = T::Iter<'a>
+    where
+        Self: 'a;
+    type BidiIter<'a>
+        = T::BidiIter<'a>
+    where
+        Self: 'a;
+
     #[inline(always)]
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output<'_>) {
         unsafe { (*self).succ_unchecked::<STRICT>(value) }
+    }
+
+    #[inline(always)]
+    unsafe fn iter_from_succ_unchecked<const STRICT: bool>(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, Self::Iter<'_>) {
+        unsafe { (*self).iter_from_succ_unchecked::<STRICT>(value) }
+    }
+
+    #[inline(always)]
+    unsafe fn iter_bidi_from_succ_unchecked<const STRICT: bool>(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, Self::BidiIter<'_>) {
+        unsafe { (*self).iter_bidi_from_succ_unchecked::<STRICT>(value) }
     }
 }
 
@@ -245,13 +268,7 @@ where
 
     /// Returns the index of the successor and an iterator starting at
     /// the successor position, or `None` if there is no successor.
-    fn iter_from_succ(
-        &self,
-        value: impl Borrow<Self::Input>,
-    ) -> Option<(usize, <&'_ Self as IntoIteratorFrom>::IntoIterFrom)>
-    where
-        for<'a> &'a Self: IntoIteratorFrom,
-    {
+    fn iter_from_succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Iter<'_>)> {
         if self.is_empty() || *value.borrow() > self.get(self.len() - 1) {
             None
         } else {
@@ -265,10 +282,7 @@ where
     fn iter_from_succ_strict(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> Option<(usize, <&'_ Self as IntoIteratorFrom>::IntoIterFrom)>
-    where
-        for<'a> &'a Self: IntoIteratorFrom,
-    {
+    ) -> Option<(usize, Self::Iter<'_>)> {
         if self.is_empty() || *value.borrow() >= self.get(self.len() - 1) {
             None
         } else {
@@ -278,34 +292,28 @@ where
 
     /// Returns the index of the successor and a bidirectional iterator
     /// positioned at the successor, or `None` if there is no successor.
-    fn bidi_iter_from_succ(
+    fn iter_bidi_from_succ(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> Option<(usize, <&'_ Self as IntoBidiIteratorFrom>::IntoBidiIterFrom)>
-    where
-        for<'a> &'a Self: IntoBidiIteratorFrom,
-    {
+    ) -> Option<(usize, Self::BidiIter<'_>)> {
         if self.is_empty() || *value.borrow() > self.get(self.len() - 1) {
             None
         } else {
-            Some(unsafe { self.bidi_iter_from_succ_unchecked::<false>(value) })
+            Some(unsafe { self.iter_bidi_from_succ_unchecked::<false>(value) })
         }
     }
 
     /// Returns the index of the strict successor and a bidirectional iterator
     /// positioned at the strict successor, or `None` if there is no strict
     /// successor.
-    fn bidi_iter_from_succ_strict(
+    fn iter_bidi_from_succ_strict(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> Option<(usize, <&'_ Self as IntoBidiIteratorFrom>::IntoBidiIterFrom)>
-    where
-        for<'a> &'a Self: IntoBidiIteratorFrom,
-    {
+    ) -> Option<(usize, Self::BidiIter<'_>)> {
         if self.is_empty() || *value.borrow() >= self.get(self.len() - 1) {
             None
         } else {
-            Some(unsafe { self.bidi_iter_from_succ_unchecked::<true>(value) })
+            Some(unsafe { self.iter_bidi_from_succ_unchecked::<true>(value) })
         }
     }
 }
@@ -324,15 +332,54 @@ where
     fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
         (*self).succ_strict(value)
     }
+
+    #[inline(always)]
+    fn iter_from_succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Iter<'_>)> {
+        (*self).iter_from_succ(value)
+    }
+
+    #[inline(always)]
+    fn iter_from_succ_strict(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> Option<(usize, Self::Iter<'_>)> {
+        (*self).iter_from_succ_strict(value)
+    }
+
+    #[inline(always)]
+    fn iter_bidi_from_succ(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> Option<(usize, Self::BidiIter<'_>)> {
+        (*self).iter_bidi_from_succ(value)
+    }
+
+    #[inline(always)]
+    fn iter_bidi_from_succ_strict(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> Option<(usize, Self::BidiIter<'_>)> {
+        (*self).iter_bidi_from_succ_strict(value)
+    }
 }
 
 /// Unchecked predecessor computation for dictionaries whose values are monotonically increasing.
-#[delegatable_trait]
 pub trait PredUnchecked: Types
 where
     Self::Input: for<'a> PartialOrd<Self::Output<'a>> + PartialOrd,
     for<'a> Self::Output<'a>: PartialOrd<Self::Input> + PartialOrd,
 {
+    /// The backward iterator type returned by
+    /// [`iter_back_from_pred_unchecked`](PredUnchecked::iter_back_from_pred_unchecked).
+    type BackIter<'a>: Iterator<Item = Self::Output<'a>>
+    where
+        Self: 'a;
+    /// The bidirectional iterator type returned by
+    /// [`iter_bidi_from_pred_unchecked`](PredUnchecked::iter_bidi_from_pred_unchecked).
+    type BidiIter<'a>: BidiIterator<Item = Self::Output<'a>>
+    where
+        Self: 'a;
+
     /// Returns the index of the predecessor and the predecessor of the given
     /// value.
     ///
@@ -352,6 +399,21 @@ where
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output<'_>);
 
+    /// Returns the index of the predecessor and a backward iterator starting
+    /// at the predecessor position.
+    ///
+    /// The iterator's first [`next()`](Iterator::next) call returns the
+    /// predecessor value itself, and subsequent calls return preceding elements
+    /// in decreasing order.
+    ///
+    /// # Safety
+    ///
+    /// The predecessor must exist.
+    unsafe fn iter_back_from_pred_unchecked<const STRICT: bool>(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, Self::BackIter<'_>);
+
     /// Returns the index of the predecessor and a bidirectional iterator
     /// positioned at the predecessor.
     ///
@@ -363,16 +425,10 @@ where
     /// # Safety
     ///
     /// The predecessor must exist.
-    unsafe fn bidi_iter_from_pred_unchecked<const STRICT: bool>(
+    unsafe fn iter_bidi_from_pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> (usize, <&'_ Self as IntoBidiIteratorFrom>::IntoBidiIterFrom)
-    where
-        for<'a> &'a Self: IntoBidiIteratorFrom,
-    {
-        let (rank, _) = unsafe { self.pred_unchecked::<STRICT>(value) };
-        (rank, self.into_bidi_iter_from(rank))
-    }
+    ) -> (usize, Self::BidiIter<'_>);
 }
 
 impl<T: PredUnchecked + ?Sized> PredUnchecked for &T
@@ -380,12 +436,37 @@ where
     T::Input: for<'a> PartialOrd<T::Output<'a>> + PartialOrd,
     for<'a> T::Output<'a>: PartialOrd<T::Input> + PartialOrd,
 {
+    type BackIter<'a>
+        = T::BackIter<'a>
+    where
+        Self: 'a;
+    type BidiIter<'a>
+        = T::BidiIter<'a>
+    where
+        Self: 'a;
+
     #[inline(always)]
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output<'_>) {
         unsafe { (*self).pred_unchecked::<STRICT>(value) }
+    }
+
+    #[inline(always)]
+    unsafe fn iter_back_from_pred_unchecked<const STRICT: bool>(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, Self::BackIter<'_>) {
+        unsafe { (*self).iter_back_from_pred_unchecked::<STRICT>(value) }
+    }
+
+    #[inline(always)]
+    unsafe fn iter_bidi_from_pred_unchecked<const STRICT: bool>(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, Self::BidiIter<'_>) {
+        unsafe { (*self).iter_bidi_from_pred_unchecked::<STRICT>(value) }
     }
 }
 
@@ -428,36 +509,57 @@ where
         }
     }
 
-    /// Returns the index of the predecessor and a bidirectional iterator
-    /// positioned at the predecessor, or [`None`] if there is no predecessor.
-    fn bidi_iter_from_pred(
+    /// Returns the index of the predecessor and a backward iterator starting
+    /// at the predecessor, or [`None`] if there is no predecessor.
+    fn iter_back_from_pred(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> Option<(usize, <&'_ Self as IntoBidiIteratorFrom>::IntoBidiIterFrom)>
-    where
-        for<'a> &'a Self: IntoBidiIteratorFrom,
-    {
+    ) -> Option<(usize, Self::BackIter<'_>)> {
         if self.is_empty() || *value.borrow() < self.get(0) {
             None
         } else {
-            Some(unsafe { self.bidi_iter_from_pred_unchecked::<false>(value) })
+            Some(unsafe { self.iter_back_from_pred_unchecked::<false>(value) })
+        }
+    }
+
+    /// Returns the index of the strict predecessor and a backward iterator
+    /// starting at the strict predecessor, or [`None`] if there is no strict
+    /// predecessor.
+    fn iter_back_from_pred_strict(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> Option<(usize, Self::BackIter<'_>)> {
+        if self.is_empty() || *value.borrow() <= self.get(0) {
+            None
+        } else {
+            Some(unsafe { self.iter_back_from_pred_unchecked::<true>(value) })
+        }
+    }
+
+    /// Returns the index of the predecessor and a bidirectional iterator
+    /// positioned at the predecessor, or [`None`] if there is no predecessor.
+    fn iter_bidi_from_pred(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> Option<(usize, Self::BidiIter<'_>)> {
+        if self.is_empty() || *value.borrow() < self.get(0) {
+            None
+        } else {
+            Some(unsafe { self.iter_bidi_from_pred_unchecked::<false>(value) })
         }
     }
 
     /// Returns the index of the strict predecessor and a bidirectional
     /// iterator positioned at the strict predecessor, or [`None`] if there is
     /// no strict predecessor.
-    fn bidi_iter_from_pred_strict(
+    fn iter_bidi_from_pred_strict(
         &self,
         value: impl Borrow<Self::Input>,
-    ) -> Option<(usize, <&'_ Self as IntoBidiIteratorFrom>::IntoBidiIterFrom)>
-    where
-        for<'a> &'a Self: IntoBidiIteratorFrom,
-    {
+    ) -> Option<(usize, Self::BidiIter<'_>)> {
         if self.is_empty() || *value.borrow() <= self.get(0) {
             None
         } else {
-            Some(unsafe { self.bidi_iter_from_pred_unchecked::<true>(value) })
+            Some(unsafe { self.iter_bidi_from_pred_unchecked::<true>(value) })
         }
     }
 }
@@ -475,6 +577,38 @@ where
     #[inline(always)]
     fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
         (*self).pred_strict(value)
+    }
+
+    #[inline(always)]
+    fn iter_back_from_pred(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> Option<(usize, Self::BackIter<'_>)> {
+        (*self).iter_back_from_pred(value)
+    }
+
+    #[inline(always)]
+    fn iter_back_from_pred_strict(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> Option<(usize, Self::BackIter<'_>)> {
+        (*self).iter_back_from_pred_strict(value)
+    }
+
+    #[inline(always)]
+    fn iter_bidi_from_pred(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> Option<(usize, Self::BidiIter<'_>)> {
+        (*self).iter_bidi_from_pred(value)
+    }
+
+    #[inline(always)]
+    fn iter_bidi_from_pred_strict(
+        &self,
+        value: impl Borrow<Self::Input>,
+    ) -> Option<(usize, Self::BidiIter<'_>)> {
+        (*self).iter_bidi_from_pred_strict(value)
     }
 }
 

@@ -50,7 +50,26 @@
 //! subtracting *i* (note that this will work because the upper bits are
 //! nondecreasing).
 //!
+//! # Iterators
 //!
+//! This implementation provides a number of iterators over the values of the
+//! sequence:
+//!
+//! - Forward iterators, returned by [`iter`] and [`iter_from`], that iterate
+//!   over the values in increasing order, are the fastest.
+//!
+//! - Backward iterators, returned by [`iter_back`] and [`iter_back_from`], that
+//!   iterate over the values in decreasing order, are slightly slower than
+//!   forward iterators.
+//!
+//! - Bidirectional iterators, returned by [`iter_bidi`] and [`iter_bidi_from`], that
+//!   can iterate in both directions, are the slowest, but they are significantly
+//!   faster than selecting values.
+//!
+//! Beside the convenience inherent methods, we implement [`IntoIterator`],
+//! [`IntoIteratorFrom`] [`IntoBackIterator`], [`IntoBackIteratorFrom`],
+//! [`IntoBidiIterator`], and [`IntoBidiIteratorFrom`] for references to an
+//! [`EliasFano`] structure.
 
 use crate::prelude::{indexed_dict::*, *};
 use crate::traits::{AtomicBitVecOps, BitVecOpsMut, bit_field_slice::*};
@@ -370,12 +389,200 @@ where
     }
 }
 
-#[allow(clippy::collapsible_else_if)]
+// Iteration
+
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+{
+    #[inline(always)]
+    pub fn iter(&self) -> EliasFanoIter<'_, H, L> {
+        EliasFanoIter::new(self)
+    }
+}
+
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
+{
+    /// Returns a backward iterator over the values of the sequence, starting
+    /// from the last element and going backwards.
+    ///
+    /// This method does not require [`SelectUnchecked`] on the high bits,
+    /// as it finds the last word by scanning from the end of the high-bits
+    /// array.
+    pub fn iter_back(&self) -> EliasFanoBackIter<'_, H, L> {
+        let high = self.high_bits.as_ref();
+        let (word_idx, window) = if high.is_empty() {
+            (0, 0)
+        } else {
+            let mut word_idx = high.len() - 1;
+            let mut window = unsafe { *high.get_unchecked(word_idx) };
+            while window == 0 && word_idx > 0 {
+                word_idx -= 1;
+                window = unsafe { *high.get_unchecked(word_idx) };
+            }
+            (word_idx, window)
+        };
+        EliasFanoBackIter {
+            ef: self,
+            index: self.n,
+            word_idx,
+            window,
+            low_bits: self.low_bits.into_unchecked_iter_back_from(self.n),
+        }
+    }
+}
+
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+{
+    #[inline(always)]
+    pub fn iter_from(&self, from: usize) -> EliasFanoIter<'_, H, L> {
+        EliasFanoIter::new_from(self, from)
+    }
+}
+
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize> + IntoUncheckedBackIterator<Item = usize>,
+{
+    /// Returns a backward iterator that yields elements before position `from`
+    /// in decreasing order.
+    ///
+    /// This is equivalent to `self.iter_from(from).backward()`.
+    #[inline(always)]
+    pub fn iter_back_from(&self, from: usize) -> EliasFanoBackIter<'_, H, L> {
+        self.iter_from(from).backward()
+    }
+}
+
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IntoIteratorFrom
+    for &'a EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+{
+    type IntoIterFrom = EliasFanoIter<'a, H, L>;
+
+    #[inline(always)]
+    fn into_iter_from(self, from: usize) -> EliasFanoIter<'a, H, L> {
+        EliasFanoIter::new_from(self, from)
+    }
+}
+
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IntoBidiIterator
+    for &'a EliasFano<H, L>
+{
+    type Item = usize;
+    type IntoIterBidi = EliasFanoBidiIter<'a, H, L>;
+
+    #[inline(always)]
+    fn into_iter_bidi(self) -> EliasFanoBidiIter<'a, H, L> {
+        self.into_iter_bidi_from(0)
+    }
+}
+
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IntoBidiIteratorFrom
+    for &'a EliasFano<H, L>
+{
+    type IntoIterBidiFrom = EliasFanoBidiIter<'a, H, L>;
+
+    #[inline(always)]
+    fn into_iter_bidi_from(self, from: usize) -> EliasFanoBidiIter<'a, H, L> {
+        if from > self.n {
+            panic!("Index out of bounds: {} > {}", from, self.n);
+        }
+        if self.n == 0 {
+            return EliasFanoBidiIter {
+                ef: self,
+                index: 0,
+                word_idx: 0,
+                window: 0,
+                index_in_word: 0,
+            };
+        }
+        // When from == n we use select(n - 1) to find the last element's
+        // word, then set index_in_word past all ones in that word.
+        let bit_pos = if from == self.n {
+            unsafe { self.high_bits.select_unchecked(from - 1) }
+        } else {
+            unsafe { self.high_bits.select_unchecked(from) }
+        };
+        let word_idx = bit_pos / (usize::BITS as usize);
+        let window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
+        let index_in_word = if from == self.n {
+            (window & (usize::MAX >> (usize::BITS as usize - 1 - bit_pos % usize::BITS as usize)))
+                .count_ones() as usize
+        } else {
+            (window & ((1_usize << (bit_pos % usize::BITS as usize)) - 1)).count_ones() as usize
+        };
+        EliasFanoBidiIter {
+            ef: self,
+            index: from,
+            word_idx,
+            window,
+            index_in_word,
+        }
+    }
+}
+
+impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> IntoBackIterator for &'a EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
+{
+    type Item = usize;
+    type IntoIterBack = EliasFanoBackIter<'a, H, L>;
+
+    #[inline(always)]
+    fn into_iter_back(self) -> EliasFanoBackIter<'a, H, L> {
+        self.iter_back()
+    }
+}
+
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IntoBackIteratorFrom
+    for &'a EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize> + IntoUncheckedBackIterator<Item = usize>,
+{
+    type IntoIterBackFrom = EliasFanoBackIter<'a, H, L>;
+
+    #[inline(always)]
+    fn into_iter_back_from(self, from: usize) -> EliasFanoBackIter<'a, H, L> {
+        self.iter_back_from(from + 1)
+    }
+}
+
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L> {
+    /// Returns a bidirectional iterator positioned at the first element.
+    #[inline(always)]
+    pub fn iter_bidi(&self) -> EliasFanoBidiIter<'_, H, L> {
+        self.into_iter_bidi()
+    }
+
+    /// Returns a bidirectional iterator positioned at the given index.
+    #[inline(always)]
+    pub fn iter_bidi_from(&self, from: usize) -> EliasFanoBidiIter<'_, H, L> {
+        self.into_iter_bidi_from(from)
+    }
+}
+
+// Succ / Pred
+
 impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> SuccUnchecked
     for EliasFano<H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
+    type Iter<'a>
+        = EliasFanoIter<'a, H, L>
+    where
+        Self: 'a;
+    type BidiIter<'a>
+        = EliasFanoBidiIter<'a, H, L>
+    where
+        Self: 'a;
+
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -412,14 +619,9 @@ where
             // compose the value
             let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
 
-            if STRICT {
-                if res > value {
-                    return (rank, res);
-                }
-            } else {
-                if res >= value {
-                    return (rank, res);
-                }
+            let found = if STRICT { res > value } else { res >= value };
+            if found {
+                return (rank, res);
             }
 
             // clear the lowest bit set
@@ -427,34 +629,12 @@ where
             rank += 1;
         }
     }
-}
 
-impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = usize>> Succ
-    for EliasFano<H, L>
-where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
-{
-}
-
-impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L>
-where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
-{
-    /// Returns the index of the successor and an iterator starting
-    /// at that position.
-    ///
-    /// This is an efficient fused version that avoids the
-    /// `select` operation that [`iter_from`](EliasFano::iter_from)
-    /// would perform.
-    ///
-    /// # Safety
-    ///
-    /// The successor must exist.
-    #[allow(clippy::collapsible_else_if)]
-    pub unsafe fn iter_from_succ_unchecked<const STRICT: bool>(
+    unsafe fn iter_from_succ_unchecked<const STRICT: bool>(
         &self,
-        value: usize,
-    ) -> (usize, EliasFanoIterator<'_, H, L>) {
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, Self::Iter<'_>) {
+        let value = *value.borrow();
         let zeros_to_skip = value >> self.l;
         let bit_pos = if zeros_to_skip == 0 {
             0
@@ -480,80 +660,30 @@ where
             let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
             let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
 
-            if STRICT {
-                if res > value {
-                    return (
-                        rank,
-                        EliasFanoIterator {
-                            ef: self,
-                            index: rank,
-                            word_idx,
-                            window,
-                            low_bits: self.low_bits.into_unchecked_iter_from(rank),
-                        },
-                    );
-                }
-            } else {
-                if res >= value {
-                    return (
-                        rank,
-                        EliasFanoIterator {
-                            ef: self,
-                            index: rank,
-                            word_idx,
-                            window,
-                            low_bits: self.low_bits.into_unchecked_iter_from(rank),
-                        },
-                    );
-                }
+            let found = if STRICT { res > value } else { res >= value };
+            if found {
+                return (
+                    rank,
+                    EliasFanoIter {
+                        ef: self,
+                        index: rank,
+                        word_idx,
+                        window,
+                        low_bits: self.low_bits.into_unchecked_iter_from(rank),
+                    },
+                );
             }
 
             window &= window - 1;
             rank += 1;
         }
     }
-}
 
-impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = usize>>
-    EliasFano<H, L>
-where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
-{
-    pub fn iter_from_succ(&self, value: usize) -> Option<(usize, EliasFanoIterator<'_, H, L>)> {
-        if self.n == 0 || value > unsafe { IndexedSeq::get_unchecked(self, self.n - 1) } {
-            None
-        } else {
-            Some(unsafe { self.iter_from_succ_unchecked::<false>(value) })
-        }
-    }
-
-    pub fn iter_from_succ_strict(
+    unsafe fn iter_bidi_from_succ_unchecked<const STRICT: bool>(
         &self,
-        value: usize,
-    ) -> Option<(usize, EliasFanoIterator<'_, H, L>)> {
-        if self.n == 0 || value >= unsafe { IndexedSeq::get_unchecked(self, self.n - 1) } {
-            None
-        } else {
-            Some(unsafe { self.iter_from_succ_unchecked::<true>(value) })
-        }
-    }
-}
-
-impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L> {
-    /// Returns the index of the successor and a bidirectional iterator
-    /// positioned at that index.
-    ///
-    /// This is an efficient fused version that avoids the `select` operation
-    /// that positioning via [`iter_from`](EliasFano::iter_from) would perform.
-    ///
-    /// # Safety
-    ///
-    /// The successor must exist.
-    #[allow(clippy::collapsible_else_if)]
-    pub unsafe fn bidi_iter_from_succ_unchecked<const STRICT: bool>(
-        &self,
-        value: usize,
-    ) -> (usize, EliasFanoBidiIterator<'_, H, L>) {
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, Self::BidiIter<'_>) {
+        let value = *value.borrow();
         let zeros_to_skip = value >> self.l;
         let bit_pos = if zeros_to_skip == 0 {
             0
@@ -579,38 +709,20 @@ impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> El
             let low = unsafe { self.low_bits.get_value_unchecked(rank) };
             let res = (high_bits << self.l) | low;
 
-            if STRICT {
-                if res > value {
-                    let full_word = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
-                    let index_in_word =
-                        (full_word & ((1_usize << bit_idx) - 1)).count_ones() as usize;
-                    return (
-                        rank,
-                        EliasFanoBidiIterator {
-                            ef: self,
-                            index: rank,
-                            word_idx,
-                            window: full_word,
-                            index_in_word,
-                        },
-                    );
-                }
-            } else {
-                if res >= value {
-                    let full_word = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
-                    let index_in_word =
-                        (full_word & ((1_usize << bit_idx) - 1)).count_ones() as usize;
-                    return (
-                        rank,
-                        EliasFanoBidiIterator {
-                            ef: self,
-                            index: rank,
-                            word_idx,
-                            window: full_word,
-                            index_in_word,
-                        },
-                    );
-                }
+            let found = if STRICT { res > value } else { res >= value };
+            if found {
+                let full_word = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
+                let index_in_word = (full_word & ((1_usize << bit_idx) - 1)).count_ones() as usize;
+                return (
+                    rank,
+                    EliasFanoBidiIter {
+                        ef: self,
+                        index: rank,
+                        word_idx,
+                        window: full_word,
+                        index_in_word,
+                    },
+                );
             }
 
             window &= window - 1;
@@ -619,42 +731,27 @@ impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> El
     }
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = usize>>
-    EliasFano<H, L>
+impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = usize>> Succ
+    for EliasFano<H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
-    /// Returns the index of the successor and a bidirectional iterator
-    /// positioned at that index, or `None` if there is no successor.
-    pub fn bidi_iter_from_succ(
-        &self,
-        value: usize,
-    ) -> Option<(usize, EliasFanoBidiIterator<'_, H, L>)> {
-        if self.n == 0 || value > unsafe { IndexedSeq::get_unchecked(self, self.n - 1) } {
-            None
-        } else {
-            Some(unsafe { self.bidi_iter_from_succ_unchecked::<false>(value) })
-        }
-    }
-
-    /// Returns the index of the strict successor and a bidirectional iterator
-    /// positioned at that index, or `None` if there is no strict successor.
-    pub fn bidi_iter_from_succ_strict(
-        &self,
-        value: usize,
-    ) -> Option<(usize, EliasFanoBidiIterator<'_, H, L>)> {
-        if self.n == 0 || value >= unsafe { IndexedSeq::get_unchecked(self, self.n - 1) } {
-            None
-        } else {
-            Some(unsafe { self.bidi_iter_from_succ_unchecked::<true>(value) })
-        }
-    }
 }
 
-#[allow(clippy::collapsible_else_if)]
 impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> PredUnchecked
     for EliasFano<H, L>
 where
-    for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
 {
+    type BackIter<'a>
+        = EliasFanoBackIter<'a, H, L>
+    where
+        Self: 'a;
+    type BidiIter<'a>
+        = EliasFanoBidiIter<'a, H, L>
+    where
+        Self: 'a;
+
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -664,7 +761,7 @@ where
         let mut bit_pos = unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip) } - 1;
 
         let mut rank = bit_pos - zeros_to_skip;
-        let mut iter = self.low_bits.into_rev_unchecked_iter_from(rank + 1);
+        let mut iter = self.low_bits.into_unchecked_iter_back_from(rank + 1);
 
         // SAFETY: we are certainly iterating within the length of the arrays
         // and within the range of the iterator because there is a predecessor for sure.
@@ -693,14 +790,14 @@ where
                     );
                 }
 
-                if STRICT {
-                    if lower_bits < value & ((1 << self.l) - 1) {
-                        return (rank, ((bit_pos - rank) << self.l) | lower_bits);
-                    }
+                let low_value = value & ((1 << self.l) - 1);
+                let found = if STRICT {
+                    lower_bits < low_value
                 } else {
-                    if lower_bits <= value & ((1 << self.l) - 1) {
-                        return (rank, ((bit_pos - rank) << self.l) | lower_bits);
-                    }
+                    lower_bits <= low_value
+                };
+                if found {
+                    return (rank, ((bit_pos - rank) << self.l) | lower_bits);
                 }
 
                 bit_pos -= 1;
@@ -708,47 +805,23 @@ where
             }
         }
     }
-}
 
-impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = usize>> Pred
-    for EliasFano<H, L>
-where
-    for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
-{
-}
-
-impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L>
-where
-    for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
-{
-    /// Returns the index of the predecessor and a reverse iterator ending
-    /// at that position (inclusive).
-    ///
-    /// The returned reverse iterator will yield the predecessor and all
-    /// preceding elements in decreasing order.
-    ///
-    /// This is an efficient fused version that avoids the `select` operation
-    /// that [`rev_iter_from`](EliasFano::rev_iter_from) would perform.
-    ///
-    /// # Safety
-    ///
-    /// The predecessor must exist.
-    #[allow(clippy::collapsible_else_if)]
-    pub unsafe fn rev_iter_from_pred_unchecked<const STRICT: bool>(
+    unsafe fn iter_back_from_pred_unchecked<const STRICT: bool>(
         &self,
-        value: usize,
-    ) -> (usize, EliasFanoRevIterator<'_, H, L>) {
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, Self::BackIter<'_>) {
+        let value = *value.borrow();
         let zeros_to_skip = value >> self.l;
         let mut bit_pos = unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip) } - 1;
 
         let mut rank = bit_pos - zeros_to_skip;
-        let mut rev_iter = self.low_bits.into_rev_unchecked_iter_from(rank + 1);
+        let mut iter_back = self.low_bits.into_unchecked_iter_back_from(rank + 1);
 
         // SAFETY: we are certainly iterating within the length of the arrays
         // and within the range of the iterator because there is a predecessor for sure.
         unsafe {
             loop {
-                let _lower_bits = rev_iter.next_unchecked();
+                let _lower_bits = iter_back.next_unchecked();
                 let mut word_idx = bit_pos / (usize::BITS as usize);
                 let bit_idx = bit_pos % (usize::BITS as usize);
                 if self.high_bits.as_ref().get_unchecked(word_idx) & (1_usize << bit_idx) == 0 {
@@ -760,54 +833,43 @@ where
                         word_idx -= 1;
                         window = *self.high_bits.as_ref().get_unchecked(word_idx);
                     }
-                    // The window has all bits in this word up to (but not
-                    // including) bit_idx, and includes the predecessor's bit.
-                    // This is exactly the right state for the reverse iterator
-                    // at position rank + 1.
+                    // The window contains all bits in this word up to (but
+                    // not including) bit_idx, including the predecessor's bit.
+                    // The backward iterator starts at index rank + 1 so that
+                    // its first next() yields the predecessor at rank.
                     return (
                         rank,
-                        EliasFanoRevIterator {
+                        EliasFanoBackIter {
                             ef: self,
                             index: rank + 1,
                             word_idx,
                             window,
-                            low_bits: self.low_bits.into_rev_unchecked_iter_from(rank + 1),
+                            low_bits: self.low_bits.into_unchecked_iter_back_from(rank + 1),
                         },
                     );
                 }
 
-                if STRICT {
-                    if _lower_bits < value & ((1 << self.l) - 1) {
-                        // bit_pos is a one and the low bits match: predecessor
-                        // is at rank. Build window with bits 0..=bit_idx.
-                        let window = *self.high_bits.as_ref().get_unchecked(word_idx)
-                            & (usize::MAX >> (usize::BITS as usize - 1 - bit_idx));
-                        return (
-                            rank,
-                            EliasFanoRevIterator {
-                                ef: self,
-                                index: rank + 1,
-                                word_idx,
-                                window,
-                                low_bits: self.low_bits.into_rev_unchecked_iter_from(rank + 1),
-                            },
-                        );
-                    }
+                let low_value = value & ((1 << self.l) - 1);
+                let found = if STRICT {
+                    _lower_bits < low_value
                 } else {
-                    if _lower_bits <= value & ((1 << self.l) - 1) {
-                        let window = *self.high_bits.as_ref().get_unchecked(word_idx)
-                            & (usize::MAX >> (usize::BITS as usize - 1 - bit_idx));
-                        return (
-                            rank,
-                            EliasFanoRevIterator {
-                                ef: self,
-                                index: rank + 1,
-                                word_idx,
-                                window,
-                                low_bits: self.low_bits.into_rev_unchecked_iter_from(rank + 1),
-                            },
-                        );
-                    }
+                    _lower_bits <= low_value
+                };
+                if found {
+                    // bit_pos is a one and the low bits match: predecessor
+                    // is at rank. Build window with bits 0..=bit_idx.
+                    let window = *self.high_bits.as_ref().get_unchecked(word_idx)
+                        & (usize::MAX >> (usize::BITS as usize - 1 - bit_idx));
+                    return (
+                        rank,
+                        EliasFanoBackIter {
+                            ef: self,
+                            index: rank + 1,
+                            word_idx,
+                            window,
+                            low_bits: self.low_bits.into_unchecked_iter_back_from(rank + 1),
+                        },
+                    );
                 }
 
                 bit_pos -= 1;
@@ -815,66 +877,12 @@ where
             }
         }
     }
-}
 
-impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = usize>>
-    EliasFano<H, L>
-where
-    for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
-{
-    /// Returns the index of the predecessor and a reverse iterator ending
-    /// at that position (inclusive), or `None` if there is no predecessor.
-    ///
-    /// The predecessor is the greatest value in the sequence that is less
-    /// than or equal to the given value.
-    pub fn rev_iter_from_pred(
+    unsafe fn iter_bidi_from_pred_unchecked<const STRICT: bool>(
         &self,
-        value: usize,
-    ) -> Option<(usize, EliasFanoRevIterator<'_, H, L>)> {
-        if self.n == 0 || value < unsafe { IndexedSeq::get_unchecked(self, 0) } {
-            None
-        } else {
-            Some(unsafe { self.rev_iter_from_pred_unchecked::<false>(value) })
-        }
-    }
-
-    /// Returns the index of the strict predecessor and a reverse iterator
-    /// ending at that position (inclusive), or `None` if there is no strict
-    /// predecessor.
-    ///
-    /// The strict predecessor is the greatest value in the sequence that is
-    /// strictly less than the given value.
-    pub fn rev_iter_from_pred_strict(
-        &self,
-        value: usize,
-    ) -> Option<(usize, EliasFanoRevIterator<'_, H, L>)> {
-        if self.n == 0 || value <= unsafe { IndexedSeq::get_unchecked(self, 0) } {
-            None
-        } else {
-            Some(unsafe { self.rev_iter_from_pred_unchecked::<true>(value) })
-        }
-    }
-}
-
-impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L> {
-    /// Returns the index of the predecessor and a bidirectional iterator
-    /// positioned at that index.
-    ///
-    /// Calling [`next()`](Iterator::next) on the returned iterator will yield
-    /// the predecessor; calling [`prev()`](BidiIterator::prev) will yield the
-    /// element before the predecessor, if any.
-    ///
-    /// This is an efficient fused version that avoids the
-    /// [`select`](SelectUnchecked::select_unchecked) operation.
-    ///
-    /// # Safety
-    ///
-    /// The predecessor must exist.
-    #[allow(clippy::collapsible_else_if)]
-    pub unsafe fn bidi_iter_from_pred_unchecked<const STRICT: bool>(
-        &self,
-        value: usize,
-    ) -> (usize, EliasFanoBidiIterator<'_, H, L>) {
+        value: impl Borrow<Self::Input>,
+    ) -> (usize, Self::BidiIter<'_>) {
+        let value = *value.borrow();
         let zeros_to_skip = value >> self.l;
         let mut bit_pos = unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip) } - 1;
 
@@ -901,7 +909,7 @@ impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> El
                         (full_word & ((1_usize << pred_bit) - 1)).count_ones() as usize;
                     return (
                         rank,
-                        EliasFanoBidiIterator {
+                        EliasFanoBidiIter {
                             ef: self,
                             index: rank,
                             word_idx,
@@ -913,38 +921,26 @@ impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> El
 
                 let low = self.low_bits.get_value_unchecked(rank);
 
-                if STRICT {
-                    if low < value & ((1 << self.l) - 1) {
-                        let full_word = *self.high_bits.as_ref().get_unchecked(word_idx);
-                        let index_in_word =
-                            (full_word & ((1_usize << bit_idx) - 1)).count_ones() as usize;
-                        return (
-                            rank,
-                            EliasFanoBidiIterator {
-                                ef: self,
-                                index: rank,
-                                word_idx,
-                                window: full_word,
-                                index_in_word,
-                            },
-                        );
-                    }
+                let low_value = value & ((1 << self.l) - 1);
+                let found = if STRICT {
+                    low < low_value
                 } else {
-                    if low <= value & ((1 << self.l) - 1) {
-                        let full_word = *self.high_bits.as_ref().get_unchecked(word_idx);
-                        let index_in_word =
-                            (full_word & ((1_usize << bit_idx) - 1)).count_ones() as usize;
-                        return (
-                            rank,
-                            EliasFanoBidiIterator {
-                                ef: self,
-                                index: rank,
-                                word_idx,
-                                window: full_word,
-                                index_in_word,
-                            },
-                        );
-                    }
+                    low <= low_value
+                };
+                if found {
+                    let full_word = *self.high_bits.as_ref().get_unchecked(word_idx);
+                    let index_in_word =
+                        (full_word & ((1_usize << bit_idx) - 1)).count_ones() as usize;
+                    return (
+                        rank,
+                        EliasFanoBidiIter {
+                            ef: self,
+                            index: rank,
+                            word_idx,
+                            window: full_word,
+                            index_in_word,
+                        },
+                    );
                 }
 
                 bit_pos -= 1;
@@ -954,185 +950,11 @@ impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> El
     }
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = usize>>
-    EliasFano<H, L>
-{
-    /// Returns the index of the predecessor and a bidirectional iterator
-    /// positioned at that index, or [`None`] if there is no predecessor.
-    pub fn bidi_iter_from_pred(
-        &self,
-        value: usize,
-    ) -> Option<(usize, EliasFanoBidiIterator<'_, H, L>)> {
-        if self.n == 0 || value < unsafe { IndexedSeq::get_unchecked(self, 0) } {
-            None
-        } else {
-            Some(unsafe { self.bidi_iter_from_pred_unchecked::<false>(value) })
-        }
-    }
-
-    /// Returns the index of the strict predecessor and a bidirectional
-    /// iterator positioned at that index, or [`None`] if there is no strict
-    /// predecessor.
-    pub fn bidi_iter_from_pred_strict(
-        &self,
-        value: usize,
-    ) -> Option<(usize, EliasFanoBidiIterator<'_, H, L>)> {
-        if self.n == 0 || value <= unsafe { IndexedSeq::get_unchecked(self, 0) } {
-            None
-        } else {
-            Some(unsafe { self.bidi_iter_from_pred_unchecked::<true>(value) })
-        }
-    }
-}
-
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFano<H, L>
+impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = usize>> Pred
+    for EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
 {
-    #[inline(always)]
-    pub fn iter(&self) -> EliasFanoIterator<'_, H, L> {
-        EliasFanoIterator::new(self)
-    }
-}
-
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFano<H, L>
-where
-    for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
-{
-    /// Returns a reverse iterator over the values of the sequence, starting
-    /// from the last element and going backwards.
-    ///
-    /// This method does not require [`SelectUnchecked`] on the high bits,
-    /// as it finds the last word by scanning from the end of the high-bits
-    /// array.
-    pub fn rev_iter(&self) -> EliasFanoRevIterator<'_, H, L> {
-        let high = self.high_bits.as_ref();
-        let (word_idx, window) = if high.is_empty() {
-            (0, 0)
-        } else {
-            let mut word_idx = high.len() - 1;
-            let mut window = unsafe { *high.get_unchecked(word_idx) };
-            while window == 0 && word_idx > 0 {
-                word_idx -= 1;
-                window = unsafe { *high.get_unchecked(word_idx) };
-            }
-            (word_idx, window)
-        };
-        EliasFanoRevIterator {
-            ef: self,
-            index: self.n,
-            word_idx,
-            window,
-            low_bits: self.low_bits.into_rev_unchecked_iter_from(self.n),
-        }
-    }
-}
-
-impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L>
-where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
-{
-    #[inline(always)]
-    pub fn iter_from(&self, from: usize) -> EliasFanoIterator<'_, H, L> {
-        EliasFanoIterator::new_from(self, from)
-    }
-}
-
-impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L>
-where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize> + IntoReverseUncheckedIterator<Item = usize>,
-{
-    /// Returns a reverse iterator that yields elements before position `from`
-    /// in decreasing order.
-    ///
-    /// This is equivalent to `self.iter_from(from).rev()`.
-    #[inline(always)]
-    pub fn rev_iter_from(&self, from: usize) -> EliasFanoRevIterator<'_, H, L> {
-        self.iter_from(from).rev()
-    }
-}
-
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IntoIteratorFrom
-    for &'a EliasFano<H, L>
-where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
-{
-    type IntoIterFrom = EliasFanoIterator<'a, H, L>;
-
-    #[inline(always)]
-    fn into_iter_from(self, from: usize) -> EliasFanoIterator<'a, H, L> {
-        EliasFanoIterator::new_from(self, from)
-    }
-}
-
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IntoBidiIterator
-    for &'a EliasFano<H, L>
-{
-    type Item = usize;
-    type IntoBidiIter = EliasFanoBidiIterator<'a, H, L>;
-
-    #[inline(always)]
-    fn into_bidi_iter(self) -> EliasFanoBidiIterator<'a, H, L> {
-        self.into_bidi_iter_from(0)
-    }
-}
-
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IntoBidiIteratorFrom
-    for &'a EliasFano<H, L>
-{
-    type IntoBidiIterFrom = EliasFanoBidiIterator<'a, H, L>;
-
-    #[inline(always)]
-    fn into_bidi_iter_from(self, from: usize) -> EliasFanoBidiIterator<'a, H, L> {
-        if from > self.n {
-            panic!("Index out of bounds: {} > {}", from, self.n);
-        }
-        if self.n == 0 {
-            return EliasFanoBidiIterator {
-                ef: self,
-                index: 0,
-                word_idx: 0,
-                window: 0,
-                index_in_word: 0,
-            };
-        }
-        // When from == n we use select(n - 1) to find the last element's
-        // word, then set index_in_word past all ones in that word.
-        let bit_pos = if from == self.n {
-            unsafe { self.high_bits.select_unchecked(from - 1) }
-        } else {
-            unsafe { self.high_bits.select_unchecked(from) }
-        };
-        let word_idx = bit_pos / (usize::BITS as usize);
-        let window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
-        let index_in_word = if from == self.n {
-            (window & (usize::MAX >> (usize::BITS as usize - 1 - bit_pos % usize::BITS as usize)))
-                .count_ones() as usize
-        } else {
-            (window & ((1_usize << (bit_pos % usize::BITS as usize)) - 1)).count_ones() as usize
-        };
-        EliasFanoBidiIterator {
-            ef: self,
-            index: from,
-            word_idx,
-            window,
-            index_in_word,
-        }
-    }
-}
-
-impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L> {
-    /// Returns a bidirectional iterator positioned at the first element.
-    #[inline(always)]
-    pub fn bidi_iter(&self) -> EliasFanoBidiIterator<'_, H, L> {
-        self.into_bidi_iter()
-    }
-
-    /// Returns a bidirectional iterator positioned at the given index.
-    #[inline(always)]
-    pub fn bidi_iter_from(&self, from: usize) -> EliasFanoBidiIterator<'_, H, L> {
-        self.into_bidi_iter_from(from)
-    }
 }
 
 // -----------------------------------------------------------------------------
@@ -1157,7 +979,7 @@ where
     for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
 {
     type Item = usize;
-    type Iter = EliasFanoIterator<'a, H, L>;
+    type Iter = EliasFanoIter<'a, H, L>;
 }
 
 impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
@@ -1176,7 +998,7 @@ where
     for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
 {
     type Item = usize;
-    type IterFrom = EliasFanoIterator<'a, H, L>;
+    type IterFrom = EliasFanoIter<'a, H, L>;
 }
 
 impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
@@ -1198,7 +1020,7 @@ where
     for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
 {
     type Item = usize;
-    type Iter = EliasFanoIterator<'a, H, L>;
+    type Iter = EliasFanoIter<'a, H, L>;
 }
 
 impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
@@ -1217,7 +1039,7 @@ where
     for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
 {
     type Item = usize;
-    type IterFrom = EliasFanoIterator<'a, H, L>;
+    type IterFrom = EliasFanoIter<'a, H, L>;
 }
 
 impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
@@ -1235,7 +1057,7 @@ where
 
 /// An iterator for [`EliasFano`].
 #[derive(MemDbg, MemSize)]
-pub struct EliasFanoIterator<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>>
+pub struct EliasFanoIter<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -1250,7 +1072,7 @@ where
     low_bits: <&'a L as IntoUncheckedIterator>::IntoUncheckedIter,
 }
 
-impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFanoIterator<'a, H, L>
+impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFanoIter<'a, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -1271,7 +1093,7 @@ where
 }
 
 impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
-    EliasFanoIterator<'a, H, L>
+    EliasFanoIter<'a, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -1311,18 +1133,16 @@ where
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator for EliasFanoIterator<'_, H, L>
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> UncheckedIterator
+    for EliasFanoIter<'_, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
     type Item = usize;
 
     #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.ef.len() {
-            return None;
-        }
-        // find the next word with zeros
+    unsafe fn next_unchecked(&mut self) -> usize {
+        // find the next word with ones
         while self.window == 0 {
             self.word_idx += 1;
             debug_assert!(self.word_idx < self.ef.high_bits.as_ref().len());
@@ -1337,7 +1157,22 @@ where
         // compose the value
         let res = (high_bits << self.ef.l) | unsafe { self.low_bits.next_unchecked() };
         self.index += 1;
-        Some(res)
+        res
+    }
+}
+
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator for EliasFanoIter<'_, H, L>
+where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+{
+    type Item = usize;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.ef.len() {
+            return None;
+        }
+        Some(unsafe { self.next_unchecked() })
     }
 
     #[inline(always)]
@@ -1371,7 +1206,7 @@ where
 }
 
 impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeIterator
-    for EliasFanoIterator<'_, H, L>
+    for EliasFanoIter<'_, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
@@ -1381,53 +1216,53 @@ where
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> FusedIterator
-    for EliasFanoIterator<'_, H, L>
-where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> FusedIterator for EliasFanoIter<'_, H, L> where
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize>
 {
 }
 
-impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFanoIterator<'a, H, L>
+impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFanoIter<'a, H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize> + IntoReverseUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize> + IntoUncheckedBackIterator<Item = usize>,
 {
-    /// Converts this forward iterator into a reverse iterator at the current
+    /// Converts this forward iterator into a backward iterator at the current
     /// cursor position.
     ///
-    /// The reverse iterator will yield elements before the current position
+    /// The backward iterator will yield elements before the current position
     /// in decreasing order. The high-bits window is converted using XOR with
     /// the original word, and the low-bits reverse iterator is created from
     /// the current index.
-    pub fn rev(self) -> EliasFanoRevIterator<'a, H, L> {
+    pub fn backward(self) -> EliasFanoBackIter<'a, H, L> {
         // When the forward iterator is exhausted (index >= n), the
         // word_idx/window state may not reflect the actual end position
         // (e.g., when created via new_from(ef, n)). We delegate to
-        // rev_iter() which correctly scans from the end.
+        // iter_back() which correctly scans from the end.
         // This also handles the n == 0 case, since 0 >= 0.
         if self.index >= self.ef.n {
-            return self.ef.rev_iter();
+            return self.ef.iter_back();
         }
         let original = unsafe { *self.ef.high_bits.as_ref().get_unchecked(self.word_idx) };
-        EliasFanoRevIterator {
+        EliasFanoBackIter {
             ef: self.ef,
             index: self.index,
             word_idx: self.word_idx,
             window: self.window ^ original,
-            low_bits: self.ef.low_bits.into_rev_unchecked_iter_from(self.index),
+            low_bits: self.ef.low_bits.into_unchecked_iter_back_from(self.index),
         }
     }
 }
 
-/// A reverse iterator for [`EliasFano`].
+/// A backward iterator for [`EliasFano`].
 ///
 /// Instead of scanning bits from right to left (using [`trailing_zeros`](usize::trailing_zeros)),
 /// it scans from left to right (using [`leading_zeros`](usize::leading_zeros)),
-/// and accesses low bits through a reverse unchecked iterator.
+/// and accesses low bits through a backward unchecked iterator.
+///
+/// This iterator is slightly slower than a [forward iterator](EliasFanoIterator).
 #[derive(MemDbg, MemSize)]
-pub struct EliasFanoRevIterator<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>>
+pub struct EliasFanoBackIter<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>>
 where
-    for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
 {
     ef: &'a EliasFano<H, L>,
     /// The index of the next value that will be returned when `next` is
@@ -1438,27 +1273,27 @@ where
     word_idx: usize,
     /// Current window on the high bits.
     window: usize,
-    low_bits: <&'a L as IntoReverseUncheckedIterator>::IntoRevUncheckedIter,
+    low_bits: <&'a L as IntoUncheckedBackIterator>::IntoUncheckedIterBack,
 }
 
-impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFanoRevIterator<'a, H, L>
+impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFanoBackIter<'a, H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize> + IntoReverseUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = usize> + IntoUncheckedBackIterator<Item = usize>,
 {
-    /// Converts this reverse iterator back into a forward iterator at the
+    /// Converts this backward iterator back into a forward iterator at the
     /// current cursor position.
     ///
     /// The forward iterator will yield elements from the current position
     /// onward in increasing order. The high-bits window is converted using
     /// XOR with the original word, and the low-bits forward iterator is
     /// created from the current index.
-    pub fn rev(self) -> EliasFanoIterator<'a, H, L> {
+    pub fn forward(self) -> EliasFanoIter<'a, H, L> {
         let window = if self.ef.high_bits.as_ref().is_empty() {
             self.window
         } else {
             self.window ^ unsafe { *self.ef.high_bits.as_ref().get_unchecked(self.word_idx) }
         };
-        EliasFanoIterator {
+        EliasFanoIter {
             ef: self.ef,
             index: self.index,
             word_idx: self.word_idx,
@@ -1468,17 +1303,15 @@ where
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator for EliasFanoRevIterator<'_, H, L>
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> UncheckedIterator
+    for EliasFanoBackIter<'_, H, L>
 where
-    for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
 {
     type Item = usize;
 
     #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index == 0 {
-            return None;
-        }
+    unsafe fn next_unchecked(&mut self) -> usize {
         while self.window == 0 {
             self.word_idx -= 1;
             self.window = unsafe { *self.ef.high_bits.as_ref().get_unchecked(self.word_idx) };
@@ -1488,7 +1321,22 @@ where
         self.index -= 1;
         let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
         let low = unsafe { self.low_bits.next_unchecked() };
-        Some((high_bits << self.ef.l) | low)
+        (high_bits << self.ef.l) | low
+    }
+}
+
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator for EliasFanoBackIter<'_, H, L>
+where
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
+{
+    type Item = usize;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index == 0 {
+            return None;
+        }
+        Some(unsafe { self.next_unchecked() })
     }
 
     #[inline(always)]
@@ -1521,9 +1369,9 @@ where
 }
 
 impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeIterator
-    for EliasFanoRevIterator<'_, H, L>
+    for EliasFanoBackIter<'_, H, L>
 where
-    for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -1532,9 +1380,9 @@ where
 }
 
 impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> FusedIterator
-    for EliasFanoRevIterator<'_, H, L>
+    for EliasFanoBackIter<'_, H, L>
 where
-    for<'b> &'b L: IntoReverseUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
 {
 }
 
@@ -1543,17 +1391,17 @@ where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
     type Item = usize;
-    type IntoIter = EliasFanoIterator<'a, H, L>;
+    type IntoIter = EliasFanoIter<'a, H, L>;
 
     #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
-        EliasFanoIterator::new(self)
+        EliasFanoIter::new(self)
     }
 }
 
 /// A bidirectional iterator (cursor) for [`EliasFano`].
 ///
-/// Unlike [`EliasFanoIterator`] and [`EliasFanoRevIterator`], this cursor
+/// Unlike [`EliasFanoIterator`] and [`EliasFanoBackIterator`], this cursor
 /// does not clear bits from the current word. Instead, it uses
 /// [`select_in_word`](SelectInWord::select_in_word) to find the relevant bit
 /// on each call to [`next`](EliasFanoBidiIterator::next) or
@@ -1563,8 +1411,11 @@ where
 /// The cursor position `index` ranges from 0 to *n*. Calling `next()` yields
 /// element `index` and increments the cursor; calling `prev()` yields element
 /// `index - 1` and decrements it.
+///
+/// This iterator is slightly slower than a [backward
+/// iterator](EliasFanoBackIter), but much faster than using selection.
 #[derive(MemDbg, MemSize)]
-pub struct EliasFanoBidiIterator<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> {
+pub struct EliasFanoBidiIter<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> {
     ef: &'a EliasFano<H, L>,
     /// Cursor position: `next()` yields element `index`, `prev()` yields
     /// element `index - 1`.
@@ -1578,9 +1429,7 @@ pub struct EliasFanoBidiIterator<'a, H: AsRef<[usize]>, L: SliceByValue<Value = 
     index_in_word: usize,
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator
-    for EliasFanoBidiIterator<'_, H, L>
-{
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator for EliasFanoBidiIter<'_, H, L> {
     type Item = usize;
 
     #[inline(always)]
@@ -1634,7 +1483,7 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator
 }
 
 impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeIterator
-    for EliasFanoBidiIterator<'_, H, L>
+    for EliasFanoBidiIter<'_, H, L>
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -1643,18 +1492,18 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeIterator
 }
 
 impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> FusedIterator
-    for EliasFanoBidiIterator<'_, H, L>
+    for EliasFanoBidiIter<'_, H, L>
 {
 }
 
 impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> BidiIterator
-    for EliasFanoBidiIterator<'_, H, L>
+    for EliasFanoBidiIter<'_, H, L>
 {
-    type PrevIter = PrevIter<Self>;
+    type SwappedIter = SwappedIter<Self>;
 
     #[inline(always)]
-    fn prev_iter(self) -> PrevIter<Self> {
-        PrevIter(self)
+    fn swap(self) -> SwappedIter<Self> {
+        SwappedIter(self)
     }
 
     #[inline(always)]
@@ -1706,7 +1555,7 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> BidiIterator
 }
 
 impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeBidiIterator
-    for EliasFanoBidiIterator<'_, H, L>
+    for EliasFanoBidiIter<'_, H, L>
 {
     #[inline(always)]
     fn prev_len(&self) -> usize {
@@ -1715,7 +1564,7 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeBidiIterator
 }
 
 impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> FusedBidiIterator
-    for EliasFanoBidiIterator<'_, H, L>
+    for EliasFanoBidiIter<'_, H, L>
 {
 }
 

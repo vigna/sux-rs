@@ -60,13 +60,13 @@ fn bench_forward_iter(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_reverse_iter(c: &mut Criterion) {
-    let mut group = c.benchmark_group("ef_reverse_iter");
+fn bench_back_iter(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ef_back_iter");
     for &(l, u) in CONFIGS {
         let ef = build_ef(u);
         group.bench_function(BenchmarkId::from_parameter(format!("l={l}")), |b| {
             b.iter(|| {
-                for v in ef.rev_iter() {
+                for v in ef.iter_back() {
                     black_box(v);
                 }
             })
@@ -75,13 +75,13 @@ fn bench_reverse_iter(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_bidi_iter_forward(c: &mut Criterion) {
-    let mut group = c.benchmark_group("ef_bidi_iter_forwards");
+fn bench_iter_bidi_forward(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ef_iter_bidi_forwards");
     for &(l, u) in CONFIGS {
         let ef = build_ef(u);
         group.bench_function(BenchmarkId::from_parameter(format!("l={l}")), |b| {
             b.iter(|| {
-                let (_, iter) = unsafe { ef.bidi_iter_from_succ_unchecked::<false>(0) };
+                let (_, iter) = unsafe { ef.iter_bidi_from_succ_unchecked::<false>(0) };
                 for v in iter {
                     black_box(v);
                 }
@@ -91,14 +91,14 @@ fn bench_bidi_iter_forward(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_bidi_iter_backward(c: &mut Criterion) {
-    let mut group = c.benchmark_group("ef_bidi_iter_backwards");
+fn bench_iter_bidi_backward(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ef_iter_bidi_backwards");
     for &(l, u) in CONFIGS {
         let ef = build_ef(u);
         group.bench_function(BenchmarkId::from_parameter(format!("l={l}")), |b| {
             b.iter(|| {
                 let (_, iter) =
-                    unsafe { ef.bidi_iter_from_succ_unchecked::<false>(ef.get_unchecked(N - 1)) };
+                    unsafe { ef.iter_bidi_from_succ_unchecked::<false>(ef.get_unchecked(N - 1)) };
                 for v in iter {
                     black_box(v);
                 }
@@ -126,8 +126,8 @@ fn bench_sequential_select(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_forward_iter,
-    bench_reverse_iter,
-    bench_bidi_iter,
+    bench_back_iter,
+    bench_iter_bidi,
     bench_sequential_select,
 );
 criterion_main!(benches);

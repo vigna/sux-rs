@@ -50,7 +50,7 @@
 //! vector is never modified by the methods of this structure.
 //!
 //! For high-speed unchecked scanning, we implement [`IntoUncheckedIterator`]
-//! and [`IntoReverseUncheckedIterator`] on a reference to this type. They are
+//! and [`IntoUncheckedBackIterator`] on a reference to this type. They are
 //! used, for example, to provide
 //! [predecessor](crate::traits::indexed_dict::Pred) and
 //! [successor](crate::traits::indexed_dict::Succ) primitives for
@@ -1126,15 +1126,15 @@ impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> IntoReverseUncheckedIterator for &'a BitFieldVec<W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedBackIterator for &'a BitFieldVec<W, B> {
     type Item = W;
-    type IntoRevUncheckedIter = BitFieldVectorReverseUncheckedIterator<'a, W, B>;
+    type IntoUncheckedIterBack = BitFieldVectorReverseUncheckedIterator<'a, W, B>;
 
-    fn into_rev_unchecked_iter(self) -> Self::IntoRevUncheckedIter {
+    fn into_unchecked_iter_back(self) -> Self::IntoUncheckedIterBack {
         BitFieldVectorReverseUncheckedIterator::new(self, self.len())
     }
 
-    fn into_rev_unchecked_iter_from(self, from: usize) -> Self::IntoRevUncheckedIter {
+    fn into_unchecked_iter_back_from(self, from: usize) -> Self::IntoUncheckedIterBack {
         BitFieldVectorReverseUncheckedIterator::new(self, from)
     }
 }
