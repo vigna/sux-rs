@@ -565,9 +565,7 @@ fn test_rev_iter_from_pred() -> Result<()> {
                         assert_eq!(cv, values[idx - i]);
                     }
                 }
-                _ => panic!(
-                    "pred_strict and rev_iter_from_pred_strict disagree for value {v}"
-                ),
+                _ => panic!("pred_strict and rev_iter_from_pred_strict disagree for value {v}"),
             }
         }
 
@@ -581,8 +579,7 @@ fn test_rev_iter_from_pred() -> Result<()> {
         for v in 0..=u {
             let pred_idx = values.partition_point(|&x| x <= v);
             if pred_idx > 0 {
-                let (idx, iter) =
-                    unsafe { ef_dict.rev_iter_from_pred_unchecked::<false>(v) };
+                let (idx, iter) = unsafe { ef_dict.rev_iter_from_pred_unchecked::<false>(v) };
                 assert_eq!(idx, pred_idx - 1);
                 let collected: Vec<usize> = iter.collect();
                 assert_eq!(collected.len(), idx + 1);
@@ -596,8 +593,7 @@ fn test_rev_iter_from_pred() -> Result<()> {
         // Test unchecked version directly
         for v in 0..=u {
             if let Some((idx, val)) = ef.pred(v) {
-                let (idx2, iter) =
-                    unsafe { ef.rev_iter_from_pred_unchecked::<false>(v) };
+                let (idx2, iter) = unsafe { ef.rev_iter_from_pred_unchecked::<false>(v) };
                 assert_eq!(idx, idx2);
                 let collected: Vec<usize> = iter.collect();
                 assert_eq!(collected[0], val);
@@ -666,7 +662,7 @@ fn test_bidi_iter() -> Result<()> {
             }
         }
 
-        // Test bidi_iter_from_pred: matches pred, then prev/next work correctly
+        // Test bidi_iter_from_pred: matches pred, then next/prev work correctly
         for v in 0..=u {
             let pred_result = ef.pred(v);
             let bidi_result = ef.bidi_iter_from_pred(v);
@@ -674,19 +670,17 @@ fn test_bidi_iter() -> Result<()> {
                 (None, None) => {}
                 (Some((idx, val)), Some((idx2, mut bidi))) => {
                     assert_eq!(idx, idx2);
-                    // prev() yields the predecessor first
-                    assert_eq!(bidi.prev(), Some(val));
-                    // next() goes forward to the predecessor again
+                    assert_eq!(bidi.len(), n - idx);
+                    // next() yields the predecessor first
                     assert_eq!(bidi.next(), Some(val));
-                    // prev() back to the predecessor
+                    // prev() goes back to the predecessor
                     assert_eq!(bidi.prev(), Some(val));
-                    // Collect the rest via prev()
-                    let mut prev_vals = Vec::new();
-                    while let Some(pv) = bidi.prev() {
-                        prev_vals.push(pv);
-                    }
-                    for (i, &cv) in prev_vals.iter().enumerate() {
-                        assert_eq!(cv, values[idx - 1 - i]);
+                    // next() again yields the predecessor
+                    assert_eq!(bidi.next(), Some(val));
+                    // Collect the rest via next()
+                    let rest: Vec<usize> = bidi.collect();
+                    for (i, &cv) in rest.iter().enumerate() {
+                        assert_eq!(cv, values[idx + 1 + i]);
                     }
                 }
                 _ => panic!("pred and bidi_iter_from_pred disagree for value {v}"),
@@ -701,11 +695,9 @@ fn test_bidi_iter() -> Result<()> {
                 (None, None) => {}
                 (Some((idx, val)), Some((idx2, mut bidi))) => {
                     assert_eq!(idx, idx2);
-                    assert_eq!(bidi.prev(), Some(val));
+                    assert_eq!(bidi.next(), Some(val));
                 }
-                _ => panic!(
-                    "pred_strict and bidi_iter_from_pred_strict disagree for value {v}"
-                ),
+                _ => panic!("pred_strict and bidi_iter_from_pred_strict disagree for value {v}"),
             }
         }
 
@@ -733,18 +725,16 @@ fn test_bidi_iter() -> Result<()> {
         for v in 0..=u {
             let succ_idx = values.partition_point(|&x| x < v);
             if succ_idx < n {
-                let (idx, mut bidi) =
-                    unsafe { ef_dict.bidi_iter_from_succ_unchecked::<false>(v) };
+                let (idx, mut bidi) = unsafe { ef_dict.bidi_iter_from_succ_unchecked::<false>(v) };
                 assert_eq!(idx, succ_idx);
                 assert_eq!(bidi.next(), Some(values[succ_idx]));
             }
 
             let pred_idx = values.partition_point(|&x| x <= v);
             if pred_idx > 0 {
-                let (idx, mut bidi) =
-                    unsafe { ef_dict.bidi_iter_from_pred_unchecked::<false>(v) };
+                let (idx, mut bidi) = unsafe { ef_dict.bidi_iter_from_pred_unchecked::<false>(v) };
                 assert_eq!(idx, pred_idx - 1);
-                assert_eq!(bidi.prev(), Some(values[pred_idx - 1]));
+                assert_eq!(bidi.next(), Some(values[pred_idx - 1]));
             }
         }
     }
@@ -758,4 +748,318 @@ fn test_bidi_iter() -> Result<()> {
     assert!(ef.bidi_iter_from_pred_strict(0).is_none());
 
     Ok(())
+}
+
+#[test]
+fn test_bidi_iter_trait_methods() -> Result<()> {
+    let values: Vec<usize> = vec![10, 20, 30, 40, 50];
+    let n = values.len();
+    let u = 50;
+
+    let mut efb = EliasFanoBuilder::new(n, u);
+    for &v in &values {
+        efb.push(v);
+    }
+    let ef = efb.build_with_seq_and_dict();
+
+    // --- IntoBidiIterator ---
+
+    // into_bidi_iter (default calls into_bidi_iter_from(0))
+    let mut bidi = (&ef).into_bidi_iter();
+    assert_eq!(bidi.next(), Some(10));
+    assert_eq!(bidi.prev(), Some(10));
+    assert_eq!(bidi.prev(), None);
+
+    // into_bidi_iter_from
+    let mut bidi = (&ef).into_bidi_iter_from(2);
+    assert_eq!(bidi.next(), Some(30));
+    assert_eq!(bidi.prev(), Some(30));
+    assert_eq!(bidi.prev(), Some(20));
+
+    // into_bidi_iter_from at end
+    let mut bidi = (&ef).into_bidi_iter_from(n);
+    assert_eq!(bidi.next(), None);
+    assert_eq!(bidi.prev(), Some(50));
+
+    // --- Convenience methods ---
+
+    let mut bidi = ef.bidi_iter();
+    assert_eq!(bidi.next(), Some(10));
+
+    let mut bidi = ef.bidi_iter_from(3);
+    assert_eq!(bidi.next(), Some(40));
+    assert_eq!(bidi.prev(), Some(40));
+    assert_eq!(bidi.prev(), Some(30));
+
+    // --- BidiIterator default methods ---
+
+    // prev_advance_by: success
+    let mut bidi = ef.bidi_iter_from(n);
+    assert_eq!(bidi.prev_advance_by(3), Ok(()));
+    assert_eq!(bidi.prev(), Some(20));
+
+    // prev_advance_by: partial failure
+    let mut bidi = ef.bidi_iter_from(2);
+    let err = bidi.prev_advance_by(5);
+    assert!(err.is_err());
+    assert_eq!(err.unwrap_err().get(), 3);
+
+    // prev_nth: success
+    let mut bidi = ef.bidi_iter_from(n);
+    assert_eq!(bidi.prev_nth(2), Some(30));
+
+    // prev_nth: past the end
+    let mut bidi = ef.bidi_iter_from(2);
+    assert_eq!(bidi.prev_nth(5), None);
+
+    // prev_fold
+    let bidi = ef.bidi_iter_from(n);
+    let sum = bidi.prev_fold(0usize, |acc, x| acc + x);
+    assert_eq!(sum, values.iter().sum::<usize>());
+
+    // prev_for_each
+    let bidi = ef.bidi_iter_from(n);
+    let mut collected = Vec::new();
+    bidi.prev_for_each(|x| collected.push(x));
+    assert_eq!(collected, vec![50, 40, 30, 20, 10]);
+
+    // prev_count
+    let bidi = ef.bidi_iter_from(n);
+    assert_eq!(bidi.prev_count(), n);
+
+    let bidi = ef.bidi_iter_from(3);
+    assert_eq!(bidi.prev_count(), 3);
+
+    // --- ExactSizeBidiIterator ---
+
+    let bidi = ef.bidi_iter_from(2);
+    assert_eq!(bidi.prev_len(), 2);
+
+    let bidi = ef.bidi_iter_from(n);
+    assert_eq!(bidi.prev_len(), n);
+
+    // --- PrevIter wrapper ---
+
+    // prev_iter() wraps in PrevIter, prev_iter() again unwraps
+    let bidi = ef.bidi_iter_from(3);
+    let mut rev = bidi.prev_iter();
+    // PrevIter::next delegates to inner prev
+    assert_eq!(rev.next(), Some(30));
+    assert_eq!(rev.next(), Some(20));
+    assert_eq!(rev.next(), Some(10));
+    assert_eq!(rev.next(), None);
+
+    // PrevIter::prev delegates to inner next
+    let bidi = ef.bidi_iter_from(2);
+    let mut rev = bidi.prev_iter();
+    assert_eq!(rev.prev(), Some(30));
+    assert_eq!(rev.prev(), Some(40));
+
+    // PrevIter::prev_iter unwraps back to the original type
+    let bidi = ef.bidi_iter_from(2);
+    let rev = bidi.prev_iter();
+    let mut bidi2 = rev.prev_iter();
+    assert_eq!(bidi2.next(), Some(30));
+
+    // PrevIter::size_hint delegates to prev_size_hint
+    let bidi = ef.bidi_iter_from(3);
+    let rev = bidi.prev_iter();
+    assert_eq!(rev.size_hint(), (3, Some(3)));
+
+    // PrevIter::prev_size_hint delegates to size_hint
+    let bidi = ef.bidi_iter_from(3);
+    let rev = bidi.prev_iter();
+    assert_eq!(rev.prev_size_hint(), (2, Some(2)));
+
+    // PrevIter::nth delegates to prev_nth
+    let bidi = ef.bidi_iter_from(n);
+    let mut rev = bidi.prev_iter();
+    assert_eq!(rev.nth(1), Some(40));
+
+    // PrevIter::fold delegates to prev_fold
+    let bidi = ef.bidi_iter_from(n);
+    let rev = bidi.prev_iter();
+    let sum = rev.fold(0usize, |acc, x| acc + x);
+    assert_eq!(sum, values.iter().sum::<usize>());
+
+    // PrevIter::for_each delegates to prev_for_each
+    let bidi = ef.bidi_iter_from(n);
+    let rev = bidi.prev_iter();
+    let mut collected = Vec::new();
+    rev.for_each(|x| collected.push(x));
+    assert_eq!(collected, vec![50, 40, 30, 20, 10]);
+
+    // PrevIter::count delegates to prev_count
+    let bidi = ef.bidi_iter_from(n);
+    let rev = bidi.prev_iter();
+    assert_eq!(rev.count(), n);
+
+    // PrevIter ExactSizeIterator::len delegates to prev_len
+    let bidi = ef.bidi_iter_from(3);
+    let rev = bidi.prev_iter();
+    assert_eq!(rev.len(), 3);
+
+    // PrevIter ExactSizeBidiIterator::prev_len delegates to len
+    let bidi = ef.bidi_iter_from(3);
+    let rev = bidi.prev_iter();
+    assert_eq!(rev.prev_len(), 2);
+
+    // PrevIter::prev_advance_by (stable path)
+    let bidi = ef.bidi_iter_from(2);
+    let mut rev = bidi.prev_iter();
+    assert_eq!(rev.prev_advance_by(2), Ok(()));
+    assert_eq!(rev.prev(), Some(50));
+
+    // PrevIter::prev_advance_by partial failure
+    let bidi = ef.bidi_iter_from(2);
+    let mut rev = bidi.prev_iter();
+    let err = rev.prev_advance_by(5);
+    assert!(err.is_err());
+    assert_eq!(err.unwrap_err().get(), 2);
+
+    // PrevIter::prev_nth
+    let bidi = ef.bidi_iter_from(1);
+    let mut rev = bidi.prev_iter();
+    assert_eq!(rev.prev_nth(2), Some(40));
+
+    // PrevIter::prev_fold
+    let bidi = ef.bidi_iter_from(0);
+    let rev = bidi.prev_iter();
+    let sum = rev.prev_fold(0usize, |acc, x| acc + x);
+    assert_eq!(sum, values.iter().sum::<usize>());
+
+    // PrevIter::prev_for_each
+    let bidi = ef.bidi_iter_from(0);
+    let rev = bidi.prev_iter();
+    let mut collected = Vec::new();
+    rev.prev_for_each(|x| collected.push(x));
+    assert_eq!(collected, values);
+
+    // PrevIter::prev_count
+    let bidi = ef.bidi_iter_from(0);
+    let rev = bidi.prev_iter();
+    assert_eq!(rev.prev_count(), n);
+
+    // --- Edge cases for into_bidi_iter_from ---
+
+    // Empty EF
+    let efb = EliasFanoBuilder::new(0, 10);
+    let ef_empty = efb.build_with_seq_and_dict();
+    let mut bidi = (&ef_empty).into_bidi_iter_from(0);
+    assert_eq!(bidi.next(), None);
+    assert_eq!(bidi.prev(), None);
+    let mut bidi = ef_empty.bidi_iter();
+    assert_eq!(bidi.next(), None);
+
+    // from == n (non-empty): prev should work
+    let mut bidi = (&ef).into_bidi_iter_from(n);
+    assert_eq!(bidi.next(), None);
+    assert_eq!(bidi.prev(), Some(50));
+    assert_eq!(bidi.prev(), Some(40));
+
+    // from == n via bidi_iter_from convenience (exercises the select(n-1) branch)
+    let mut bidi = ef.bidi_iter_from(n);
+    assert_eq!(bidi.prev(), Some(50));
+    assert_eq!(bidi.next(), Some(50));
+    assert_eq!(bidi.next(), None);
+
+    // --- Iterator::count() overrides ---
+
+    // Forward iterator count
+    assert_eq!(ef.iter().count(), n);
+    assert_eq!(ef.iter_from(3).count(), n - 3);
+    assert_eq!(ef.iter_from(n).count(), 0);
+
+    // Reverse iterator count
+    assert_eq!(ef.rev_iter().count(), n);
+    assert_eq!(ef.rev_iter_from(3).count(), 3);
+    assert_eq!(ef.rev_iter_from(0).count(), 0);
+
+    // Bidi iterator count (forward)
+    assert_eq!(ef.bidi_iter().count(), n);
+    assert_eq!(ef.bidi_iter_from(2).count(), n - 2);
+    assert_eq!(ef.bidi_iter_from(n).count(), 0);
+
+    // Bidi iterator prev_count
+    assert_eq!(ef.bidi_iter().prev_count(), 0);
+    assert_eq!(ef.bidi_iter_from(3).prev_count(), 3);
+    assert_eq!(ef.bidi_iter_from(n).prev_count(), n);
+
+    // --- Iterator::last() overrides ---
+
+    // Forward iterator last
+    assert_eq!(ef.iter().last(), Some(50));
+    assert_eq!(ef.iter_from(3).last(), Some(50));
+    assert_eq!(ef.iter_from(n).last(), None);
+
+    // Reverse iterator last
+    assert_eq!(ef.rev_iter().last(), Some(10));
+    assert_eq!(ef.rev_iter_from(3).last(), Some(10));
+    assert_eq!(ef.rev_iter_from(0).last(), None);
+
+    // Bidi iterator last (forward)
+    assert_eq!(ef.bidi_iter().last(), Some(50));
+    assert_eq!(ef.bidi_iter_from(2).last(), Some(50));
+    assert_eq!(ef.bidi_iter_from(n).last(), None);
+
+    // last() after partial consumption
+    let mut it = ef.iter();
+    it.next();
+    assert_eq!(it.last(), Some(50));
+    let mut it = ef.rev_iter();
+    it.next();
+    assert_eq!(it.last(), Some(10));
+    let mut it = ef.bidi_iter();
+    it.next();
+    assert_eq!(it.last(), Some(50));
+
+    // --- Trait-level defaults in indexed_dict ---
+
+    // Call the trait methods explicitly to exercise the defaults
+    // (EF's inherent methods shadow them in normal usage)
+    let succ_result = Succ::bidi_iter_from_succ(&ef, 25);
+    assert!(succ_result.is_some());
+    let (idx, mut bidi) = succ_result.unwrap();
+    assert_eq!(idx, 2);
+    assert_eq!(bidi.next(), Some(30));
+
+    let succ_strict_result = Succ::bidi_iter_from_succ_strict(&ef, 30);
+    assert!(succ_strict_result.is_some());
+    let (idx, mut bidi) = succ_strict_result.unwrap();
+    assert_eq!(idx, 3);
+    assert_eq!(bidi.next(), Some(40));
+
+    // Succ trait: no successor case
+    assert!(Succ::bidi_iter_from_succ(&ef, 51).is_none());
+    assert!(Succ::bidi_iter_from_succ_strict(&ef, 50).is_none());
+
+    let pred_result = Pred::bidi_iter_from_pred(&ef, 35);
+    assert!(pred_result.is_some());
+    let (idx, mut bidi) = pred_result.unwrap();
+    assert_eq!(idx, 2);
+    assert_eq!(bidi.next(), Some(30));
+
+    let pred_strict_result = Pred::bidi_iter_from_pred_strict(&ef, 30);
+    assert!(pred_strict_result.is_some());
+    let (idx, mut bidi) = pred_strict_result.unwrap();
+    assert_eq!(idx, 1);
+    assert_eq!(bidi.next(), Some(20));
+
+    // Pred trait: no predecessor case
+    assert!(Pred::bidi_iter_from_pred(&ef, 5).is_none());
+    assert!(Pred::bidi_iter_from_pred_strict(&ef, 10).is_none());
+
+    Ok(())
+}
+
+#[test]
+#[should_panic(expected = "Index out of bounds")]
+fn test_bidi_iter_from_out_of_bounds() {
+    let values: Vec<usize> = vec![10, 20, 30];
+    let mut efb = EliasFanoBuilder::new(3, 30);
+    for &v in &values {
+        efb.push(v);
+    }
+    let ef = efb.build_with_seq_and_dict();
+    let _ = ef.bidi_iter_from(4);
 }
