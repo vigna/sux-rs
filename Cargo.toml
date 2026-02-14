@@ -142,3 +142,7 @@ required-features = ["epserde", "clap"]
 [[bench]]
 name = "sux"
 harness = false
+
+[[bench]]
+name = "bench_elias_fano_iter"
+harness = false
