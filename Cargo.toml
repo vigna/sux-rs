@@ -77,6 +77,10 @@ serde = ["dep:serde"]
 epserde = ["dep:epserde"]
 mmap = ["epserde/mmap"]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [profile.release]
 opt-level = 3 # like --release
 #lto = "fat"              # Full LTO

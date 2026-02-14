@@ -137,7 +137,7 @@ fn test_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
             }
 
             for from in 0..v.len() {
-                let mut iter = v.into_rev_unchecked_iter_from(from);
+                let mut iter = v.into_unchecked_iter_back_from(from);
                 for v in values[..from].iter().rev() {
                     unsafe {
                         assert_eq!(iter.next_unchecked(), *v);
