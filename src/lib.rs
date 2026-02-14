@@ -10,6 +10,7 @@
     all(feature = "aarch64_prefetch", target_arch = "aarch64"),
     feature(stdarch_aarch64_prefetch)
 )]
+#![cfg_attr(feature = "iter_advance_by", feature(iter_advance_by))]
 #![deny(unconditional_recursion)]
 #![allow(clippy::duplicated_attributes)]
 #![allow(clippy::len_without_is_empty)]
