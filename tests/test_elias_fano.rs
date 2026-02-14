@@ -411,3 +411,351 @@ fn test_iter_from_succ() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_rev_iter() -> Result<()> {
+    let mut rng = SmallRng::seed_from_u64(0);
+    for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
+        values.sort();
+
+        let mut efb = EliasFanoBuilder::new(n, u);
+        for &v in &values {
+            efb.push(v);
+        }
+        let ef = efb.build_with_seq_and_dict();
+
+        // 1. rev_iter() yields all elements in reverse order
+        let rev: Vec<usize> = ef.rev_iter().collect();
+        let mut expected = values.clone();
+        expected.reverse();
+        assert_eq!(rev, expected);
+
+        // 2. rev_iter_from(k) yields elements k-1, k-2, ..., 0
+        for from in 0..=n {
+            let rev: Vec<usize> = ef.rev_iter_from(from).collect();
+            let expected: Vec<usize> = values[..from].iter().copied().rev().collect();
+            assert_eq!(rev, expected);
+        }
+
+        // 3. iter().rev() at position 0 is empty; iter_from(n).rev() yields all in reverse
+        let rev: Vec<usize> = ef.iter().rev().collect();
+        assert!(rev.is_empty());
+
+        let rev: Vec<usize> = ef.iter_from(n).rev().collect();
+        let mut expected = values.clone();
+        expected.reverse();
+        assert_eq!(rev, expected);
+
+        // 4. Round-trip: iter_from(k).rev().rev() yields same as iter_from(k)
+        for from in 0..=n {
+            let roundtrip: Vec<usize> = ef.iter_from(from).rev().rev().collect();
+            let direct: Vec<usize> = ef.iter_from(from).collect();
+            assert_eq!(roundtrip, direct);
+        }
+
+        // 5. rev_iter().rev() yields forward from cursor n (empty)
+        let roundtrip: Vec<usize> = ef.rev_iter().rev().collect();
+        assert!(roundtrip.is_empty());
+
+        // Consuming rev_iter fully then rev gives forward from cursor 0 = iter()
+        let mut rev = ef.rev_iter();
+        while rev.next().is_some() {}
+        let roundtrip: Vec<usize> = rev.rev().collect();
+        let direct: Vec<usize> = ef.iter().collect();
+        assert_eq!(roundtrip, direct);
+
+        // 6. ExactSizeIterator::len() is correct throughout iteration
+        let mut rev = ef.rev_iter();
+        for remaining in (0..n).rev() {
+            assert_eq!(rev.len(), remaining + 1);
+            rev.next();
+            assert_eq!(rev.len(), remaining);
+        }
+        assert_eq!(rev.len(), 0);
+        assert!(rev.next().is_none());
+
+        // Test len for iter_from().rev()
+        for from in 0..=n {
+            let mut rev = ef.iter_from(from).rev();
+            assert_eq!(rev.len(), from);
+            for remaining in (0..from).rev() {
+                rev.next();
+                assert_eq!(rev.len(), remaining);
+            }
+        }
+    }
+
+    // 7. Works with EfDict (only SelectZeroUnchecked, no SelectUnchecked)
+    let mut rng = SmallRng::seed_from_u64(42);
+    for (n, u) in [(10, 1000), (100, 100)] {
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
+        values.sort();
+
+        let mut efb = EliasFanoBuilder::new(n, u);
+        for &v in &values {
+            efb.push(v);
+        }
+        let ef = efb.build_with_dict();
+
+        // EfDict has no SelectUnchecked, so iter_from/rev_iter_from won't work,
+        // but rev_iter() should work since it only needs AsRef<[usize]>
+        let rev: Vec<usize> = ef.rev_iter().collect();
+        let mut expected = values.clone();
+        expected.reverse();
+        assert_eq!(rev, expected);
+    }
+
+    // Test empty sequence
+    let efb = EliasFanoBuilder::new(0, 10);
+    let ef = efb.build_with_seq_and_dict();
+    let rev: Vec<usize> = ef.rev_iter().collect();
+    assert!(rev.is_empty());
+    assert_eq!(ef.rev_iter().len(), 0);
+
+    Ok(())
+}
+
+#[test]
+fn test_rev_iter_from_pred() -> Result<()> {
+    let mut rng = SmallRng::seed_from_u64(0);
+    for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
+        values.sort();
+
+        // Test with EfSeqDict (has both SelectUnchecked and SelectZeroUnchecked)
+        let mut efb = EliasFanoBuilder::new(n, u);
+        for &v in &values {
+            efb.push(v);
+        }
+        let ef = efb.build_with_seq_and_dict();
+
+        // Test rev_iter_from_pred: results match pred + reverse iteration
+        for v in 0..=u {
+            let pred_result = ef.pred(v);
+            let iter_pred_result = ef.rev_iter_from_pred(v);
+            match (pred_result, iter_pred_result) {
+                (None, None) => {}
+                (Some((idx, val)), Some((idx2, iter))) => {
+                    assert_eq!(idx, idx2);
+                    // The iterator should yield the predecessor and all preceding values
+                    let collected: Vec<usize> = iter.collect();
+                    assert_eq!(collected.len(), idx + 1);
+                    assert_eq!(collected[0], val);
+                    for (i, &cv) in collected.iter().enumerate() {
+                        assert_eq!(cv, values[idx - i]);
+                    }
+                }
+                _ => panic!("pred and rev_iter_from_pred disagree for value {v}"),
+            }
+        }
+
+        // Test rev_iter_from_pred_strict
+        for v in 0..=u {
+            let pred_result = ef.pred_strict(v);
+            let iter_pred_result = ef.rev_iter_from_pred_strict(v);
+            match (pred_result, iter_pred_result) {
+                (None, None) => {}
+                (Some((idx, val)), Some((idx2, iter))) => {
+                    assert_eq!(idx, idx2);
+                    let collected: Vec<usize> = iter.collect();
+                    assert_eq!(collected.len(), idx + 1);
+                    assert_eq!(collected[0], val);
+                    for (i, &cv) in collected.iter().enumerate() {
+                        assert_eq!(cv, values[idx - i]);
+                    }
+                }
+                _ => panic!(
+                    "pred_strict and rev_iter_from_pred_strict disagree for value {v}"
+                ),
+            }
+        }
+
+        // Test with EfDict (only SelectZeroUnchecked, no SelectUnchecked)
+        let mut efb = EliasFanoBuilder::new(n, u);
+        for &v in &values {
+            efb.push(v);
+        }
+        let ef_dict = efb.build_with_dict();
+
+        for v in 0..=u {
+            let pred_idx = values.partition_point(|&x| x <= v);
+            if pred_idx > 0 {
+                let (idx, iter) =
+                    unsafe { ef_dict.rev_iter_from_pred_unchecked::<false>(v) };
+                assert_eq!(idx, pred_idx - 1);
+                let collected: Vec<usize> = iter.collect();
+                assert_eq!(collected.len(), idx + 1);
+                assert_eq!(collected[0], values[idx]);
+                for (i, &cv) in collected.iter().enumerate() {
+                    assert_eq!(cv, values[idx - i]);
+                }
+            }
+        }
+
+        // Test unchecked version directly
+        for v in 0..=u {
+            if let Some((idx, val)) = ef.pred(v) {
+                let (idx2, iter) =
+                    unsafe { ef.rev_iter_from_pred_unchecked::<false>(v) };
+                assert_eq!(idx, idx2);
+                let collected: Vec<usize> = iter.collect();
+                assert_eq!(collected[0], val);
+            }
+        }
+    }
+
+    // Test empty sequence
+    let efb = EliasFanoBuilder::new(0, 10);
+    let ef = efb.build_with_seq_and_dict();
+    assert!(ef.rev_iter_from_pred(0).is_none());
+    assert!(ef.rev_iter_from_pred_strict(0).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn test_bidi_iter() -> Result<()> {
+    let mut rng = SmallRng::seed_from_u64(0);
+    for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
+        values.sort();
+
+        let mut efb = EliasFanoBuilder::new(n, u);
+        for &v in &values {
+            efb.push(v);
+        }
+        let ef = efb.build_with_seq_and_dict();
+
+        // Test bidi_iter_from_succ: matches succ, then next/prev work correctly
+        for v in 0..=u {
+            let succ_result = ef.succ(v);
+            let bidi_result = ef.bidi_iter_from_succ(v);
+            match (succ_result, bidi_result) {
+                (None, None) => {}
+                (Some((idx, val)), Some((idx2, mut bidi))) => {
+                    assert_eq!(idx, idx2);
+                    assert_eq!(bidi.len(), n - idx);
+                    // next() yields the successor first
+                    assert_eq!(bidi.next(), Some(val));
+                    // prev() goes back to the successor
+                    assert_eq!(bidi.prev(), Some(val));
+                    // next() again yields the successor
+                    assert_eq!(bidi.next(), Some(val));
+                    // Collect the rest via next()
+                    let rest: Vec<usize> = bidi.collect();
+                    for (i, &cv) in rest.iter().enumerate() {
+                        assert_eq!(cv, values[idx + 1 + i]);
+                    }
+                }
+                _ => panic!("succ and bidi_iter_from_succ disagree for value {v}"),
+            }
+        }
+
+        // Test bidi_iter_from_succ_strict
+        for v in 0..=u {
+            let succ_result = ef.succ_strict(v);
+            let bidi_result = ef.bidi_iter_from_succ_strict(v);
+            match (succ_result, bidi_result) {
+                (None, None) => {}
+                (Some((idx, val)), Some((idx2, mut bidi))) => {
+                    assert_eq!(idx, idx2);
+                    assert_eq!(bidi.next(), Some(val));
+                }
+                _ => panic!("succ_strict and bidi_iter_from_succ_strict disagree for value {v}"),
+            }
+        }
+
+        // Test bidi_iter_from_pred: matches pred, then prev/next work correctly
+        for v in 0..=u {
+            let pred_result = ef.pred(v);
+            let bidi_result = ef.bidi_iter_from_pred(v);
+            match (pred_result, bidi_result) {
+                (None, None) => {}
+                (Some((idx, val)), Some((idx2, mut bidi))) => {
+                    assert_eq!(idx, idx2);
+                    // prev() yields the predecessor first
+                    assert_eq!(bidi.prev(), Some(val));
+                    // next() goes forward to the predecessor again
+                    assert_eq!(bidi.next(), Some(val));
+                    // prev() back to the predecessor
+                    assert_eq!(bidi.prev(), Some(val));
+                    // Collect the rest via prev()
+                    let mut prev_vals = Vec::new();
+                    while let Some(pv) = bidi.prev() {
+                        prev_vals.push(pv);
+                    }
+                    for (i, &cv) in prev_vals.iter().enumerate() {
+                        assert_eq!(cv, values[idx - 1 - i]);
+                    }
+                }
+                _ => panic!("pred and bidi_iter_from_pred disagree for value {v}"),
+            }
+        }
+
+        // Test bidi_iter_from_pred_strict
+        for v in 0..=u {
+            let pred_result = ef.pred_strict(v);
+            let bidi_result = ef.bidi_iter_from_pred_strict(v);
+            match (pred_result, bidi_result) {
+                (None, None) => {}
+                (Some((idx, val)), Some((idx2, mut bidi))) => {
+                    assert_eq!(idx, idx2);
+                    assert_eq!(bidi.prev(), Some(val));
+                }
+                _ => panic!(
+                    "pred_strict and bidi_iter_from_pred_strict disagree for value {v}"
+                ),
+            }
+        }
+
+        // Test full traversal forward then backward
+        if let Some((_, mut bidi)) = ef.bidi_iter_from_succ(0) {
+            // Forward
+            for i in 0..n {
+                assert_eq!(bidi.next(), Some(values[i]));
+            }
+            assert_eq!(bidi.next(), None);
+            // Backward
+            for i in (0..n).rev() {
+                assert_eq!(bidi.prev(), Some(values[i]));
+            }
+            assert_eq!(bidi.prev(), None);
+        }
+
+        // Test with EfDict (only SelectZeroUnchecked)
+        let mut efb = EliasFanoBuilder::new(n, u);
+        for &v in &values {
+            efb.push(v);
+        }
+        let ef_dict = efb.build_with_dict();
+
+        for v in 0..=u {
+            let succ_idx = values.partition_point(|&x| x < v);
+            if succ_idx < n {
+                let (idx, mut bidi) =
+                    unsafe { ef_dict.bidi_iter_from_succ_unchecked::<false>(v) };
+                assert_eq!(idx, succ_idx);
+                assert_eq!(bidi.next(), Some(values[succ_idx]));
+            }
+
+            let pred_idx = values.partition_point(|&x| x <= v);
+            if pred_idx > 0 {
+                let (idx, mut bidi) =
+                    unsafe { ef_dict.bidi_iter_from_pred_unchecked::<false>(v) };
+                assert_eq!(idx, pred_idx - 1);
+                assert_eq!(bidi.prev(), Some(values[pred_idx - 1]));
+            }
+        }
+    }
+
+    // Test empty sequence
+    let efb = EliasFanoBuilder::new(0, 10);
+    let ef = efb.build_with_seq_and_dict();
+    assert!(ef.bidi_iter_from_succ(0).is_none());
+    assert!(ef.bidi_iter_from_succ_strict(0).is_none());
+    assert!(ef.bidi_iter_from_pred(0).is_none());
+    assert!(ef.bidi_iter_from_pred_strict(0).is_none());
+
+    Ok(())
+}
