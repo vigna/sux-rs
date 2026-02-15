@@ -103,7 +103,7 @@ impl<
         // SAFETY: The ShardEdge implementation guarantees that all indices
         // returned by `edge()` are within bounds of `self.data`. This invariant
         // is established during construction by VBuilder, which ensures the
-        // data array is sized according to the ShardEdge's `num_vertices()`.
+        // data array is sized according to the ShardEdge's `num_vertices()`
         unsafe {
             self.data.get_value_unchecked(edge[0])
                 ^ self.data.get_value_unchecked(edge[1])
@@ -146,7 +146,7 @@ impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
         // SAFETY: The ShardEdge implementation guarantees that all indices
         // returned by `edge()` are within bounds of `self.data`. This invariant
         // is established during construction by VBuilder, which ensures the
-        // data array is sized according to the ShardEdge's `num_vertices()`.
+        // data array is sized according to the ShardEdge's `num_vertices()`
         unsafe {
             self.data.get_unaligned_unchecked(edge[0])
                 ^ self.data.get_unaligned_unchecked(edge[1])

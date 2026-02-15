@@ -18,7 +18,7 @@
 //!   [`RearCodedList`](crate::dict::rear_coded_list::RearCodedList)), one
 //!   usually accepts as inputs references to [`str`] but returns owned
 //!   [`String`]s.
-//! - [`IndexedSeq`] provide positional access to the values in the dictionary.
+//! - [`IndexedSeq`] provides positional access to the values in the dictionary.
 //! - [`IndexedDict`] provides access by value, that is, given a value, its
 //!   position in the dictionary.
 //! - [`SuccUnchecked`]/[`Succ`] provide the successor of a value in a sorted
@@ -64,7 +64,7 @@ pub trait Types {
 /// # Notes
 ///
 /// This trait does not include an `iter` iteration method with a default
-/// implementation, even if it would be convenient, because it would cause
+/// implementation, although it would be convenient, because it would cause
 /// significant problems with structures that have their own implementation of
 /// the method, and in which the implementation is dependent on additional trait
 /// bounds (see, e.g., [`EliasFano`](crate::dict::elias_fano::EliasFano)).
@@ -86,6 +86,7 @@ pub trait IndexedSeq: Types {
     /// Returns the value at the specified index.
     ///
     /// # Panics
+    ///
     /// May panic if the index is not in [0..[len](`IndexedSeq::len`)).
     fn get(&self, index: usize) -> Self::Output<'_> {
         panic_if_out_of_bounds!(index, self.len());
@@ -95,7 +96,9 @@ pub trait IndexedSeq: Types {
     /// Returns the value at the specified index.
     ///
     /// # Safety
-    /// `index` must be in [0..[len](`IndexedSeq::len`)). No bounds checking is performed.
+    ///
+    /// `index` must be in [0..[len](`IndexedSeq::len`)). No bounds checking
+    /// is performed.
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_>;
 
     /// Returns the length (number of items) of the dictionary.
@@ -246,7 +249,7 @@ where
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
     fn succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
-        if self.is_empty() || *value.borrow() > self.get(self.len() - 1) {
+        if self.is_empty() || *value.borrow() > unsafe { self.get_unchecked(self.len() - 1) } {
             None
         } else {
             Some(unsafe { self.succ_unchecked::<false>(value) })
@@ -262,7 +265,7 @@ where
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
     fn succ_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
-        if self.is_empty() || *value.borrow() >= self.get(self.len() - 1) {
+        if self.is_empty() || *value.borrow() >= unsafe { self.get_unchecked(self.len() - 1) } {
             None
         } else {
             Some(unsafe { self.succ_unchecked::<true>(value) })
@@ -272,7 +275,7 @@ where
     /// Returns the index of the successor and an iterator starting at
     /// the successor position, or `None` if there is no successor.
     fn iter_from_succ(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Iter<'_>)> {
-        if self.is_empty() || *value.borrow() > self.get(self.len() - 1) {
+        if self.is_empty() || *value.borrow() > unsafe { self.get_unchecked(self.len() - 1) } {
             None
         } else {
             Some(unsafe { self.iter_from_succ_unchecked::<false>(value) })
@@ -286,7 +289,7 @@ where
         &self,
         value: impl Borrow<Self::Input>,
     ) -> Option<(usize, Self::Iter<'_>)> {
-        if self.is_empty() || *value.borrow() >= self.get(self.len() - 1) {
+        if self.is_empty() || *value.borrow() >= unsafe { self.get_unchecked(self.len() - 1) } {
             None
         } else {
             Some(unsafe { self.iter_from_succ_unchecked::<true>(value) })
@@ -299,7 +302,7 @@ where
         &self,
         value: impl Borrow<Self::Input>,
     ) -> Option<(usize, Self::BidiIter<'_>)> {
-        if self.is_empty() || *value.borrow() > self.get(self.len() - 1) {
+        if self.is_empty() || *value.borrow() > unsafe { self.get_unchecked(self.len() - 1) } {
             None
         } else {
             Some(unsafe { self.iter_bidi_from_succ_unchecked::<false>(value) })
@@ -313,7 +316,7 @@ where
         &self,
         value: impl Borrow<Self::Input>,
     ) -> Option<(usize, Self::BidiIter<'_>)> {
-        if self.is_empty() || *value.borrow() >= self.get(self.len() - 1) {
+        if self.is_empty() || *value.borrow() >= unsafe { self.get_unchecked(self.len() - 1) } {
             None
         } else {
             Some(unsafe { self.iter_bidi_from_succ_unchecked::<true>(value) })
@@ -489,7 +492,7 @@ where
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
     fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
-        if self.is_empty() || *value.borrow() < self.get(0) {
+        if self.is_empty() || *value.borrow() < unsafe { self.get_unchecked(0) } {
             None
         } else {
             Some(unsafe { self.pred_unchecked::<false>(value) })
@@ -505,7 +508,7 @@ where
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
     fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)> {
-        if self.is_empty() || *value.borrow() <= self.get(0) {
+        if self.is_empty() || *value.borrow() <= unsafe { self.get_unchecked(0) } {
             None
         } else {
             Some(unsafe { self.pred_unchecked::<true>(value) })
@@ -518,7 +521,7 @@ where
         &self,
         value: impl Borrow<Self::Input>,
     ) -> Option<(usize, Self::BackIter<'_>)> {
-        if self.is_empty() || *value.borrow() < self.get(0) {
+        if self.is_empty() || *value.borrow() < unsafe { self.get_unchecked(0) } {
             None
         } else {
             Some(unsafe { self.iter_back_from_pred_unchecked::<false>(value) })
@@ -532,7 +535,7 @@ where
         &self,
         value: impl Borrow<Self::Input>,
     ) -> Option<(usize, Self::BackIter<'_>)> {
-        if self.is_empty() || *value.borrow() <= self.get(0) {
+        if self.is_empty() || *value.borrow() <= unsafe { self.get_unchecked(0) } {
             None
         } else {
             Some(unsafe { self.iter_back_from_pred_unchecked::<true>(value) })
@@ -545,7 +548,7 @@ where
         &self,
         value: impl Borrow<Self::Input>,
     ) -> Option<(usize, Self::BidiIter<'_>)> {
-        if self.is_empty() || *value.borrow() < self.get(0) {
+        if self.is_empty() || *value.borrow() < unsafe { self.get_unchecked(0) } {
             None
         } else {
             Some(unsafe { self.iter_bidi_from_pred_unchecked::<false>(value) })
@@ -559,7 +562,7 @@ where
         &self,
         value: impl Borrow<Self::Input>,
     ) -> Option<(usize, Self::BidiIter<'_>)> {
-        if self.is_empty() || *value.borrow() <= self.get(0) {
+        if self.is_empty() || *value.borrow() <= unsafe { self.get_unchecked(0) } {
             None
         } else {
             Some(unsafe { self.iter_bidi_from_pred_unchecked::<true>(value) })
@@ -648,6 +651,7 @@ macro_rules! impl_indexed_seq {
 
             unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
                 debug_assert_bounds!(index, self.len());
+                // SAFETY: the caller must ensure index < self.len()
                 unsafe { *self.get_unchecked(index) }
             }
 
@@ -668,6 +672,7 @@ macro_rules! impl_indexed_seq {
             unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
                 use std::ops::Deref;
                 debug_assert_bounds!(index, self.len());
+                // SAFETY: the caller must ensure index < self.len()
                 unsafe { *self.deref().get_unchecked(index) }
             }
 
@@ -687,7 +692,8 @@ macro_rules! impl_indexed_seq {
 
             unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
                 debug_assert_bounds!(index, self.len());
-                unsafe { self.as_slice().get_unchecked(index).clone() }
+                // SAFETY: the caller must ensure index < self.len()
+                unsafe { *self.as_slice().get_unchecked(index) }
             }
 
             fn len(&self) -> usize {

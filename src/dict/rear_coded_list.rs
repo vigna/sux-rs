@@ -32,16 +32,16 @@
 //!   `Vec<u8>` on access.
 //!
 //! Besides the standard access by means of the [`IndexedSeq`] trait, this
-//! structure also implements the `get_in_place` method, which allows to write
-//! the element directly into a user-provided buffer (a string or a vector of
-//! bytes), avoiding allocations. [`RearCodedListStr`] has an additional
+//! structure also implements the `get_in_place` method, which makes it possible
+//! to write the element directly into a user-provided buffer (a string or a
+//! vector of bytes), avoiding allocations. [`RearCodedListStr`] has an additional
 //! [`get_bytes_in_place`](RearCodedListStr::get_bytes_in_place) method that
 //! writes the bytes of the string into a user-provided `Vec<u8>`.
 //!
 //! Rear-coded lists can be iterated upon using either an
 //! [`Iterator`](RearCodedList::iter) or a [`Lender`](RearCodedList::lender).
 //! In the first case there will be an allocation at each iteration, whereas in
-//! second case a single buffer will be reused. You can also
+//! the second case a single buffer will be reused. You can also
 //! [iterate from a given position](RearCodedList::lender_from), which is
 //! much faster than skipping elements one by one.
 //!
@@ -67,10 +67,11 @@
 //! possible to serialize iterators and deserialize vectors or boxed slices. The
 //! method is about three times slower than using a [`RearCodedListBuilder`],
 //! but it uses very little memory. Since you can memory map an instance of this
-//! class with ε-serde, this allows to create and use lists that would not fit
+//! class with ε-serde, this makes it possible to create and use lists that
+//! would not fit
 //! into memory.
 //!
-//! Finally, the `rcl` command-line tool can be use to create
+//! Finally, the `rcl` command-line tool can be used to create
 //! a serialized rear-coded list from a file containing strings.
 //!
 //! # UTF-8 Encoding and Panics
@@ -114,7 +115,7 @@
 //! ```
 //!
 //! Here instead we serialize directly the list in an aligned cursor. Note that
-//! the methods accepts a
+//! the methods accept a
 //! [`FallibleRewindableLender`](crate::utils::lenders::FallibleRewindableLender),
 //! so we create it from a buffer using the
 //! [`FromSlice`](crate::utils::FromSlice) adapter. Using the [`store_str`]
@@ -151,7 +152,7 @@
 //! # Format
 //!
 //! The rear-coded list keeps an array of pointers to the beginning of each block
-//! in data. Due do the omission of prefixes, we can only start decoding from
+//! in data. Due to the omission of prefixes, we can only start decoding from
 //! the beginning of a block as we write a full string there.
 //!
 //! The `data` portion contains strings in the following format:
@@ -464,7 +465,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
     ///
     /// This method can be used to avoid UTF-8 checks when you just need the raw
     /// bytes, or to use methods such as [`String::from_utf8_unchecked`] and
-    /// [`str::from_utf8_unchecked`] to avoid the cost UTF-8 checks. Be aware,
+    /// [`str::from_utf8_unchecked`] to avoid the cost of UTF-8 checks. Be aware,
     /// however, that using invalid UTF-8 data may lead to undefined behavior.
     #[inline]
     pub fn get_bytes(&self, index: usize) -> Vec<u8> {
@@ -478,7 +479,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
     ///
     /// This method can be used to avoid UTF-8 checks when you just need the raw
     /// bytes, or to use methods such as [`String::from_utf8_unchecked`] and
-    /// [`str::from_utf8_unchecked`] to avoid the cost UTF-8 checks. Be aware,
+    /// [`str::from_utf8_unchecked`] to avoid the cost of UTF-8 checks. Be aware,
     /// however, that using invalid UTF-8 data may lead to undefined behavior.
     #[inline(always)]
     pub fn get_bytes_in_place(&self, index: usize, result: &mut Vec<u8>) {
@@ -1253,13 +1254,13 @@ mod epserde_impl {
         };
 
         info!("Serializing...");
-        // SAFETY: There is no padding.
+        // SAFETY: There is no padding
         let written = unsafe { rear_coded_list.serialize(&mut writer)? };
         info!("Completed.");
         Ok(written)
     }
 
-    /// Serializes strings to a stream a rear-coded list directly from a lender of `AsRef<str>`.
+    /// Serializes to a stream a rear-coded list of strings directly from a lender of `AsRef<str>`.
     #[cfg(feature = "epserde")]
     pub fn serialize_str<
         T: ?Sized + Borrow<str>,
@@ -1276,7 +1277,7 @@ mod epserde_impl {
         serialize_impl::<T, str, String, L, SORTED>(ratio, lender, writer)
     }
 
-    /// Serializes strings to a stream a rear-coded list directly from a lender of `AsRef<[u8]>`.
+    /// Serializes to a stream a rear-coded list of byte sequences directly from a lender of `AsRef<[u8]>`.
     #[cfg(feature = "epserde")]
     pub fn serialize_slice_u8<
         T: ?Sized + Borrow<[u8]>,
@@ -1294,7 +1295,7 @@ mod epserde_impl {
     }
 
     /// Stores into a file a rear-coded list of strings built directly from a lender of
-    /// `AsRef<str]>`.
+    /// `AsRef<str>`.
     #[cfg(feature = "epserde")]
     pub fn store_str<
         T: ?Sized + Borrow<str>,

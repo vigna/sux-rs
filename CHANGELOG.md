@@ -1,14 +1,14 @@
 # Change Log
 
-## [0.12.0]
+## [0.12.0] - 2026-02-15
 
 ### New
 
-* New `BidiIterator`/`IntoBidiIterator`/`IntoBidiIteratorFrom` traits for
-  bidirectional iterators. Returned by new methods in the `Succ`/`Pred` traits.
-  The `EliasFano` implementation is slower than a forward-only or backward-only
-  iterator, but much faster than calling select (and it does not need
-  selection).
+* New `BidiIterator` trait for bidirectional iterators. Returned by new methods
+  in the `Succ`/`Pred` traits, and by types implementing
+  `IntoBidiIterator`/`IntoBidiIteratorFrom`. The `EliasFano` implementation is
+  slower than a forward-only or backward-only iterator, but much faster than
+  calling select (and it does not need selection).
 
 * New construction methods for iterators in indexed dictionaries. You can now
   obtain (bidirectional) iterators from a position, or from a
@@ -31,15 +31,14 @@
 
 * Removed deprecated method `AtomicBitFieldVec::reset`.
 
-* `SuccUnchecked`/`PredUnchecked` and `Succ`/`Pred` have now new
-  methods returning iterators.
-
 * Types implementing `Iterator` end now in `Iter` rather than `Iterator`.
 
 * `EliasFano` implements new backward and bidirectional iterators.
 
 * For consistency, a number of types starting with `BitFieldVector`
   now start with `BitFieldVec`.
+
+* Removed deprecated `bit_field_vec![width; length; value]` syntax.
 
 ## [0.11.1] - 2026-02-10
 

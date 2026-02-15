@@ -43,7 +43,8 @@ use mem_dbg::{MemDbg, MemSize};
 /// We provide implementations for (references to) slices, vectors, and boxed
 /// slices.
 pub trait IntoIteratorFrom: IntoIterator {
-    /// Which kind of iterator are we turning this into?
+    /// The iterator type returned by
+    /// [`into_iter_from`](IntoIteratorFrom::into_iter_from).
     type IntoIterFrom: Iterator<Item = <Self as IntoIterator>::Item>;
 
     /// Creates an iterator from a starting position.
@@ -90,10 +91,10 @@ impl<'a, T> IntoIteratorFrom for &'a Box<[T]> {
     }
 }
 
-/// A trait for iterating on values very quickly and very unsafely.
+/// A trait for iterating over values very quickly and very unsafely.
 ///
 /// The purpose of this trait is to allow cheap parallel iteration over multiple
-/// structures of the same size. The hosting code can take care that the
+/// structures of the same size. The calling code can take care that the
 /// iteration is safe, and can use this trait to iterate very cheaply over each
 /// structure. See the implementation of
 /// [`EliasFanoIter`](crate::dict::elias_fano::EliasFanoIter) for an example.
@@ -102,14 +103,16 @@ pub trait UncheckedIterator {
     type Item;
     /// Returns the next item in the iterator. If there is no next item,
     /// the result is undefined.
+    ///
     /// # Safety
+    ///
     /// The caller must ensure that there is a next item.
     unsafe fn next_unchecked(&mut self) -> Self::Item;
 }
 
 /// A trait for types that can turn into an [`UncheckedIterator`].
 ///
-/// Differently from [`IntoIterator`], this trait provides a way
+/// Unlike [`IntoIterator`], this trait provides a way
 /// to obtain an iterator starting from a given position.
 pub trait IntoUncheckedIterator: Sized {
     type Item;
@@ -124,9 +127,10 @@ pub trait IntoUncheckedIterator: Sized {
     fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter;
 }
 
-/// A trait for types that can turn into an [`UncheckedIterator`] moving backwards.
+/// A trait for types that can turn into an [`UncheckedIterator`] moving
+/// backward.
 ///
-/// Differently from [`IntoIterator`], this trait provides a way
+/// Unlike [`IntoIterator`], this trait provides a way
 /// to obtain an iterator starting from a given position.
 ///
 /// Note that

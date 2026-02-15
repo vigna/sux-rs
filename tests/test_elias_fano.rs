@@ -704,8 +704,8 @@ fn test_iter_bidi() -> Result<()> {
         // Test full traversal forward then backward
         if let Some((_, mut bidi)) = ef.iter_bidi_from_succ(0) {
             // Forward
-            for i in 0..n {
-                assert_eq!(bidi.next(), Some(values[i]));
+            for &v in &values {
+                assert_eq!(bidi.next(), Some(v));
             }
             assert_eq!(bidi.next(), None);
             // Backward
@@ -882,6 +882,7 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
     // SwappedIter::fold delegates to prev_fold
     let bidi = ef.iter_bidi_from(n);
     let rev = bidi.swap();
+    #[allow(clippy::unnecessary_fold)]
     let sum = rev.fold(0usize, |acc, x| acc + x);
     assert_eq!(sum, values.iter().sum::<usize>());
 

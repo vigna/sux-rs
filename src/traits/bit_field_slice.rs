@@ -21,14 +21,14 @@
 //! Finally, the trait [`AtomicBitFieldSlice`] is a specialized trait for
 //! slices of bit fields that support atomic operations.
 //!
-//! All the traits depends on a type parameter `W` that must implement [`Word`],
-//! and which default to `usize`, but any type satisfying the [`Word`] trait can
+//! All the traits depend on a type parameter `W` that must implement [`Word`],
+//! and which defaults to `usize`, but any type satisfying the [`Word`] trait can
 //! be used, with the restriction that the bit width of the slice can be at most
 //! the bit width of `W` as defined by [`AsBytes::BITS`]. Additionally, to
 //! implement [`AtomicBitFieldSlice`], `W` must implement [`IntoAtomic`]. The
 //! methods of all traits accept and return values of type `W`.
 //!
-//! Implementations must return always zero upon a read operation when the bit
+//! Implementations must always return zero upon a read operation when the bit
 //! width is zero. The behavior of write operations in the same context is not
 //! defined.
 //!
@@ -62,7 +62,7 @@ impl<W: UnsignedInt + FiniteRangeNumber + AsBytes> Word for W {}
 /// The dependence on `W` is necessary to implement this trait on vectors and
 /// slices, as we need the bit width of the values stored in the slice.
 pub trait BitWidth<W> {
-    /// Returns the width of the slice.
+    /// Returns the bit width of the slice.
     ///
     /// All elements stored in the slice must fit within this bit width.
     fn bit_width(&self) -> usize;

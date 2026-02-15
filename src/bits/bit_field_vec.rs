@@ -15,7 +15,7 @@
 //! There are two flavors: [`BitFieldVec`], a mutable bit-field vector, and
 //! [`AtomicBitFieldVec`], a mutable, thread-safe bit-field vector.
 //!
-//! These flavors depends on a backend, and presently we provide, given an
+//! These flavors depend on a backend, and presently we provide, given an
 //! unsigned integer type `W` or an unsigned atomic integer type `A`:
 //!
 //! - `BitFieldVec<Vec<T>>`: a mutable, growable and resizable bit-field vector;
@@ -126,11 +126,6 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 /// - `bit_field_vec![width; v₀, v₁, … ]`: creates a bit-field vector of
 ///   given bit width with entries set to `v₀`, `v₁`, ….
 ///
-///
-/// Note that the syntax `bit_field_vec![width; length; value]` that has been
-/// deprecated in favor of `bit_field_vec![width => value; length]`, so that
-/// value and length are in the same order as in [`vec!`].
-///
 /// # Examples
 ///
 /// ```
@@ -164,13 +159,9 @@ macro_rules! bit_field_vec {
         $crate::bits::BitFieldVec::<usize, _>::new($w, 0)
     };
     ($w:expr; $n:expr; $v:expr) => {
-        {
-            let mut bit_field_vec = $crate::bits::BitFieldVec::<usize, _>::with_capacity($w, $n);
-            // Force type
-            let v: usize = $v;
-            bit_field_vec.resize($n, v);
-            bit_field_vec
-        }
+        compile_error!(
+            "the syntax bit_field_vec![width; length; value] has been removed: use bit_field_vec![width => value; length] instead"
+        )
     };
     ($w:expr => $v:expr; $n:expr) => {
         {
@@ -246,7 +237,7 @@ impl<W: Word, B> BitFieldVec<W, B> {
     /// Modifies the bit field in place.
     ///
     /// # Safety
-    /// This is unsafe because it's the caller's responsibility to ensure that
+    /// This is unsafe because it's the caller's responsibility to ensure
     /// that the length is compatible with the modified bits.
     #[inline(always)]
     pub unsafe fn map<W2: Word, B2>(self, f: impl FnOnce(B) -> B2) -> BitFieldVec<W2, B2> {
@@ -425,7 +416,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         self.len = len;
     }
 
-    /// Sets len to 0
+    /// Sets len to 0.
     pub fn clear(&mut self) {
         self.len = 0;
     }
@@ -485,7 +476,7 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
         self.len += 1;
     }
 
-    /// Truncates or extend with `value` the vector.
+    /// Truncates or extends with `value` the vector.
     pub fn resize(&mut self, new_len: usize, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
         if new_len > self.len {
@@ -688,7 +679,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
         }
     }
 
-    /// This implementation perform the copy word by word, which is
+    /// This implementation performs the copy word by word, which is
     /// significantly faster than the default implementation.
     fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
         assert_eq!(
@@ -875,13 +866,13 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
         }
 
         // The position inside the word. In most parametrization of the
-        // vector, since the bit_width is not necessarily a integer
+        // vector, since the bit_width is not necessarily an integer
         // divisor of the word size, we need to keep track of the position
         // inside the word. As we scroll through the bits, due to the bits
         // remainder, we may need to operate on two words at the same time.
         let mut global_bit_index: usize = 0;
 
-        // The number of words in the bitvec.
+        // The bit-index boundaries of the current word.
         let mut lower_word_limit = 0;
         let mut upper_word_limit = W::BITS;
 
@@ -957,7 +948,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
 
     /// # Errors
     ///
-    /// This method will return an error if the chunk size multiplied by the by
+    /// This method will return an error if the chunk size multiplied by
     /// the [bit width](BitWidth::bit_width) is not a multiple of
     /// `W::BITS` and more than one chunk must be returned.
     fn try_chunks_mut(
@@ -1015,7 +1006,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIter<'a, W, B> {
             word_index = bit_offset / W::BITS;
             fill = W::BITS - bit_index;
             unsafe {
-                // SAFETY: index has been check at the start and it is within bounds
+                // SAFETY: index has been checked at the start and it is within bounds
                 *vec.bits.as_ref().get_unchecked(word_index) >> bit_index
             }
         };
@@ -1089,7 +1080,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedBackIter<'a, W, B> {
             word_index = bit_offset / W::BITS;
             fill = bit_index + 1;
             unsafe {
-                // SAFETY: index has been check at the start and it is within bounds
+                // SAFETY: index has been checked at the start and it is within bounds
                 *vec.bits.as_ref().get_unchecked(word_index) << (W::BITS - fill)
             }
         };
@@ -1153,11 +1144,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIter<'a, W, B> {
     fn new(vec: &'a BitFieldVec<W, B>, from: usize) -> Self {
         let len = vec.len();
         if from > len {
-            panic!(
-                "Start index out of bounds: {} >
-            {}",
-                from, len
-            );
+            panic!("Start index out of bounds: {} > {}", from, len);
         }
         Self {
             unchecked: BitFieldVecUncheckedIter::new(vec, from),
@@ -1172,7 +1159,7 @@ impl<W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIter<'_, W, B> {
         if self.range.is_empty() {
             return None;
         }
-        // SAFETY: index has just been checked.
+        // SAFETY: index has just been checked
         let res = unsafe { self.unchecked.next_unchecked() };
         self.range.start += 1;
         Some(res)
@@ -1205,7 +1192,7 @@ impl<W: Word, B: AsRef<[W]>> DoubleEndedIterator for BitFieldVecIter<'_, W, B> {
             return None;
         }
         self.range.end -= 1;
-        // SAFETY: range.end was > range.start, so it is a valid index.
+        // SAFETY: range.end was > range.start, so it is a valid index
         let res = unsafe { self.unchecked.vec.get_value_unchecked(self.range.end) };
         Some(res)
     }

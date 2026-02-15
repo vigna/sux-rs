@@ -564,7 +564,7 @@ fn test_macro() {
     assert_eq!(b.bit_width(), 5);
 
     // 10 values of bit width 6, all set to 3
-    let b = bit_field_vec![6; 10; 3];
+    let b = bit_field_vec![6 => 3; 10];
     assert_eq!(b.len(), 10);
     assert_eq!(b.bit_width(), 6);
     assert!(b.iter().all(|x| x == 3));
