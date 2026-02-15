@@ -425,7 +425,7 @@ fn test_iter_back() -> Result<()> {
         }
         let ef = efb.build_with_seq_and_dict();
 
-        // 1. iter_back() yields all elements in reverse order
+        // 1. iter_back() yields all elements in backward order
         let rev: Vec<usize> = ef.iter_back().collect();
         let mut expected = values.clone();
         expected.reverse();
@@ -438,7 +438,7 @@ fn test_iter_back() -> Result<()> {
             assert_eq!(rev, expected);
         }
 
-        // 3. iter().backward() at position 0 is empty; iter_from(n).backward() yields all in reverse
+        // 3. iter().backward() at position 0 is empty; iter_from(n).backward() yields all in backward
         let back: Vec<usize> = ef.iter().backward().collect();
         assert!(back.is_empty());
 
@@ -530,7 +530,7 @@ fn test_iter_back_from_pred() -> Result<()> {
         }
         let ef = efb.build_with_seq_and_dict();
 
-        // Test iter_back_from_pred: results match pred + reverse iteration
+        // Test iter_back_from_pred: results match pred + backward iteration
         for v in 0..=u {
             let pred_result = ef.pred(v);
             let iter_pred_result = ef.iter_back_from_pred(v);
@@ -976,7 +976,7 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
     assert_eq!(ef.iter_from(3).count(), n - 3);
     assert_eq!(ef.iter_from(n).count(), 0);
 
-    // Reverse iterator count
+    // Backward iterator count
     assert_eq!(ef.iter_back().count(), n);
     assert_eq!(ef.iter_back_from(3).count(), 3);
     assert_eq!(ef.iter_back_from(0).count(), 0);
@@ -998,7 +998,7 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
     assert_eq!(ef.iter_from(3).last(), Some(50));
     assert_eq!(ef.iter_from(n).last(), None);
 
-    // Reverse iterator last
+    // Backward iterator last
     assert_eq!(ef.iter_back().last(), Some(10));
     assert_eq!(ef.iter_back_from(3).last(), Some(10));
     assert_eq!(ef.iter_back_from(0).last(), None);

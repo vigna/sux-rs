@@ -75,7 +75,7 @@
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones, 1) }.count_ones(), 1);
 //! ```
 
-use crate::traits::{AtomicBitIterator, AtomicBitVecOps, BitIterator, BitVecOps, BitVecOpsMut};
+use crate::traits::{AtomicBitIter, AtomicBitVecOps, BitIter, BitVecOps, BitVecOpsMut};
 use common_traits::{IntoAtomic, SelectInWord};
 #[allow(unused_imports)] // this is in the std prelude but not in no_std!
 use core::borrow::BorrowMut;
@@ -393,11 +393,11 @@ impl FromIterator<bool> for BitVec<Vec<usize>> {
 }
 
 impl<'a, B: AsRef<[usize]>> IntoIterator for &'a BitVec<B> {
-    type IntoIter = BitIterator<'a, B>;
+    type IntoIter = BitIter<'a, B>;
     type Item = bool;
 
     fn into_iter(self) -> Self::IntoIter {
-        BitIterator::new(&self.bits, self.len())
+        BitIter::new(&self.bits, self.len())
     }
 }
 
@@ -508,11 +508,11 @@ impl<B: AsRef<[AtomicUsize]>> Index<usize> for AtomicBitVec<B> {
 }
 
 impl<'a, B: AsRef<[AtomicUsize]>> IntoIterator for &'a AtomicBitVec<B> {
-    type IntoIter = AtomicBitIterator<'a, B>;
+    type IntoIter = AtomicBitIter<'a, B>;
     type Item = bool;
 
     fn into_iter(self) -> Self::IntoIter {
-        AtomicBitIterator::new(&self.bits, self.len())
+        AtomicBitIter::new(&self.bits, self.len())
     }
 }
 

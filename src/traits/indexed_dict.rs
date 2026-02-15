@@ -30,18 +30,18 @@
 //! are independent. A structure may implement any combination of them, provided
 //! it implements [`Types`].
 //!
-//! All method accepting values have arguments of type `impl
+//! All methods accepting values have arguments of type `impl
 //! Borrow<Self::Input>`. This makes it possible to pass a value both by
 //! reference and by value, which is particularly convenient in the case of
 //! primitive types (see, e.g.,
 //! [`EliasFano`](crate::dict::elias_fano::EliasFano)).
 //!
 //! We suggest that every implementation of [`IndexedSeq`] also implements
-//! [`IntoIterator`]/[`IntoIteratorFrom`] with `Item = Self::Output` on a
+//! [`IntoIterator`]/[`IntoIteratorFrom`](super::iter::IntoIteratorFrom) with `Item = Self::Output` on a
 //! reference. This property can be tested on a type `T` with the clause `where
 //! for<'a> &'a T: IntoIteratorFrom<Item = Self::Output>` (or `where for<'a> &'a
 //! T: IntoIterator<Item = Self::Output>`, if you don't need to select the
-//! starting position). Many implementations offer also equivalent
+//! starting position). Many implementations also offer equivalent
 //! `iter`/`iter_from` convenience methods.
 
 use ambassador::delegatable_trait;
@@ -64,7 +64,7 @@ pub trait Types {
 /// # Notes
 ///
 /// This trait does not include an `iter` iteration method with a default
-/// implementation, even it would be convenient, because it would cause
+/// implementation, even if it would be convenient, because it would cause
 /// significant problems with structures that have their own implementation of
 /// the method, and in which the implementation is dependent on additional trait
 /// bounds (see, e.g., [`EliasFano`](crate::dict::elias_fano::EliasFano)).
@@ -77,15 +77,16 @@ pub trait Types {
 /// method would make the call predictable, but it would be less ergonomic.
 ///
 /// The (pretty standard) strategy outlined in the [module
-/// documentation](crate::traits::indexed_dict) is more flexible, as it allows
-/// to write methods that use the inherent implementation only if available.
+/// documentation](crate::traits::indexed_dict) is more flexible, as it makes it
+/// possible to write methods that use the inherent implementation only if
+/// available.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait IndexedSeq: Types {
     /// Returns the value at the specified index.
     ///
     /// # Panics
-    /// May panic if the index is not in in [0..[len](`IndexedSeq::len`)).
+    /// May panic if the index is not in [0..[len](`IndexedSeq::len`)).
     fn get(&self, index: usize) -> Self::Output<'_> {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_unchecked(index) }
@@ -116,7 +117,7 @@ pub trait IndexedDict: Types {
 
     /// Returns true if the dictionary contains the given value.
     ///
-    /// The default implementations just calls
+    /// The default implementation just calls
     /// [`index_of`](`IndexedDict::index_of`).
     fn contains(&self, value: impl Borrow<Self::Input>) -> bool {
         self.index_of(value).is_some()
@@ -152,7 +153,7 @@ where
     ///
     /// # Safety
     ///
-    /// The successors must exist.
+    /// The successor must exist.
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -161,9 +162,9 @@ where
     /// Returns the index of the successor and an iterator starting at
     /// the successor position.
     ///
-    /// The iterator's first `next()` call returns the successor value
-    /// itself. The index returned is the position of the successor in
-    /// the sequence.
+    /// The iterator's first [`next()`](Iterator::next) call returns the
+    /// successor value itself. The index returned is the position of the
+    /// successor in the sequence.
     ///
     /// # Safety
     ///
@@ -176,8 +177,10 @@ where
     /// Returns the index of the successor and a bidirectional iterator
     /// positioned at the successor.
     ///
-    /// The iterator's first `next()` call returns the successor value itself;
-    /// the first `prev()` call returns the element before the successor.
+    /// The iterator's first [`next()`](Iterator::next) call returns the
+    /// successor value itself; the first
+    /// [`prev()`](crate::traits::BidiIterator::prev) call returns the element
+    /// before the successor.
     ///
     /// # Safety
     ///

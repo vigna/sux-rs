@@ -243,12 +243,12 @@ impl<W: Word, B> BitFieldVec<W, B> {
         (self.bits, self.bit_width, self.len)
     }
 
-    #[inline(always)]
     /// Modifies the bit field in place.
     ///
     /// # Safety
     /// This is unsafe because it's the caller's responsibility to ensure that
     /// that the length is compatible with the modified bits.
+    #[inline(always)]
     pub unsafe fn map<W2: Word, B2>(self, f: impl FnOnce(B) -> B2) -> BitFieldVec<W2, B2> {
         BitFieldVec {
             bits: f(self.bits),
@@ -988,7 +988,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
 
 /// An [`UncheckedIterator`] over the values of a [`BitFieldVec`].
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct BitFieldVectorUncheckedIterator<'a, W, B>
+pub struct BitFieldVecUncheckedIter<'a, W, B>
 where
     W: Word,
 {
@@ -998,7 +998,7 @@ where
     fill: usize,
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> BitFieldVectorUncheckedIterator<'a, W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIter<'a, W, B> {
     fn new(vec: &'a BitFieldVec<W, B>, index: usize) -> Self {
         if index > vec.len() {
             panic!("Start index out of bounds: {} > {}", index, vec.len());
@@ -1029,7 +1029,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVectorUncheckedIterator<'a, W, B> {
 }
 
 impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
-    for BitFieldVectorUncheckedIterator<'_, W, B>
+    for BitFieldVecUncheckedIter<'_, W, B>
 {
     type Item = W;
     unsafe fn next_unchecked(&mut self) -> W {
@@ -1055,22 +1055,22 @@ impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
 
 impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedIterator for &'a BitFieldVec<W, B> {
     type Item = W;
-    type IntoUncheckedIter = BitFieldVectorUncheckedIterator<'a, W, B>;
+    type IntoUncheckedIter = BitFieldVecUncheckedIter<'a, W, B>;
     fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter {
-        BitFieldVectorUncheckedIterator::new(self, from)
+        BitFieldVecUncheckedIter::new(self, from)
     }
 }
 
 /// An [`UncheckedIterator`] moving backwards over the values of a [`BitFieldVec`].
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct BitFieldVectorReverseUncheckedIterator<'a, W: Word, B> {
+pub struct BitFieldVecUncheckedBackIter<'a, W: Word, B> {
     vec: &'a BitFieldVec<W, B>,
     word_index: usize,
     window: W,
     fill: usize,
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> BitFieldVectorReverseUncheckedIterator<'a, W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedBackIter<'a, W, B> {
     fn new(vec: &'a BitFieldVec<W, B>, index: usize) -> Self {
         if index > vec.len() {
             panic!("Start index out of bounds: {} > {}", index, vec.len());
@@ -1103,7 +1103,7 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVectorReverseUncheckedIterator<'a, W, B
 }
 
 impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
-    for BitFieldVectorReverseUncheckedIterator<'_, W, B>
+    for BitFieldVecUncheckedBackIter<'_, W, B>
 {
     type Item = W;
     unsafe fn next_unchecked(&mut self) -> W {
@@ -1128,28 +1128,28 @@ impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
 
 impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedBackIterator for &'a BitFieldVec<W, B> {
     type Item = W;
-    type IntoUncheckedIterBack = BitFieldVectorReverseUncheckedIterator<'a, W, B>;
+    type IntoUncheckedIterBack = BitFieldVecUncheckedBackIter<'a, W, B>;
 
     fn into_unchecked_iter_back(self) -> Self::IntoUncheckedIterBack {
-        BitFieldVectorReverseUncheckedIterator::new(self, self.len())
+        BitFieldVecUncheckedBackIter::new(self, self.len())
     }
 
     fn into_unchecked_iter_back_from(self, from: usize) -> Self::IntoUncheckedIterBack {
-        BitFieldVectorReverseUncheckedIterator::new(self, from)
+        BitFieldVecUncheckedBackIter::new(self, from)
     }
 }
 
 /// An [`Iterator`] over the values of a [`BitFieldVec`].
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct BitFieldVecIterator<'a, W, B>
+pub struct BitFieldVecIter<'a, W, B>
 where
     W: Word,
 {
-    unchecked: BitFieldVectorUncheckedIterator<'a, W, B>,
+    unchecked: BitFieldVecUncheckedIter<'a, W, B>,
     range: core::ops::Range<usize>,
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, B> {
+impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIter<'a, W, B> {
     fn new(vec: &'a BitFieldVec<W, B>, from: usize) -> Self {
         let len = vec.len();
         if from > len {
@@ -1160,13 +1160,13 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIterator<'a, W, B> {
             );
         }
         Self {
-            unchecked: BitFieldVectorUncheckedIterator::new(vec, from),
+            unchecked: BitFieldVecUncheckedIter::new(vec, from),
             range: from..len,
         }
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'_, W, B> {
+impl<W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIter<'_, W, B> {
     type Item = W;
     fn next(&mut self) -> Option<Self::Item> {
         if self.range.is_empty() {
@@ -1184,14 +1184,14 @@ impl<W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIterator<'_, W, B> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIterator<'_, W, B> {
+impl<W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIter<'_, W, B> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.range.len()
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> FusedIterator for BitFieldVecIterator<'_, W, B> {}
+impl<W: Word, B: AsRef<[W]>> FusedIterator for BitFieldVecIter<'_, W, B> {}
 
 /// This implements iteration from the end, but it's slower than the forward iteration
 /// as here we do a random access, while in the forward iterator we do a sequential access
@@ -1199,7 +1199,7 @@ impl<W: Word, B: AsRef<[W]>> FusedIterator for BitFieldVecIterator<'_, W, B> {}
 ///
 /// If needed we could also keep a buffer from the end, but the logic would be more complex
 /// and potentially slower.
-impl<W: Word, B: AsRef<[W]>> DoubleEndedIterator for BitFieldVecIterator<'_, W, B> {
+impl<W: Word, B: AsRef<[W]>> DoubleEndedIterator for BitFieldVecIter<'_, W, B> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.range.is_empty() {
             return None;
@@ -1236,18 +1236,18 @@ impl<W: Word, B: AsRef<[W]>, C: AsRef<[W]>> PartialEq<BitFieldVec<W, C>> for Bit
 
 impl<'a, W: Word, B: AsRef<[W]>> IntoIterator for &'a BitFieldVec<W, B> {
     type Item = W;
-    type IntoIter = BitFieldVecIterator<'a, W, B>;
+    type IntoIter = BitFieldVecIter<'a, W, B>;
 
     fn into_iter(self) -> Self::IntoIter {
-        BitFieldVecIterator::new(self, 0)
+        BitFieldVecIter::new(self, 0)
     }
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> IntoIteratorFrom for &'a BitFieldVec<W, B> {
-    type IntoIterFrom = BitFieldVecIterator<'a, W, B>;
+    type IntoIterFrom = BitFieldVecIter<'a, W, B>;
 
-    fn into_iter_from(self, from: usize) -> Self::IntoIter {
-        BitFieldVecIterator::new(self, from)
+    fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
+        BitFieldVecIter::new(self, from)
     }
 }
 
@@ -1260,11 +1260,11 @@ impl<W: Word> core::iter::Extend<W> for BitFieldVec<W, Vec<W>> {
 }
 
 impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
-    pub fn iter_from(&self, from: usize) -> BitFieldVecIterator<'_, W, B> {
-        BitFieldVecIterator::new(self, from)
+    pub fn iter_from(&self, from: usize) -> BitFieldVecIter<'_, W, B> {
+        BitFieldVecIter::new(self, from)
     }
 
-    pub fn iter(&self) -> BitFieldVecIterator<'_, W, B> {
+    pub fn iter(&self) -> BitFieldVecIter<'_, W, B> {
         self.iter_from(0)
     }
 }
@@ -1345,17 +1345,6 @@ where
     }
 }
 
-impl<W: Word + IntoAtomic, B: AsRef<[W::AtomicType]>> AtomicBitFieldVec<W, B>
-where
-    W::AtomicType: AtomicUnsignedInt + AsBytes,
-{
-    /// Writes zeros in all values.
-    #[deprecated(since = "0.4.4", note = "reset is deprecated in favor of reset_atomic")]
-    pub fn reset(&mut self, ordering: Ordering) {
-        self.reset_atomic(ordering)
-    }
-}
-
 impl<W: Word + IntoAtomic, B> BitWidth<W::AtomicType> for AtomicBitFieldVec<W, B> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
@@ -1413,7 +1402,7 @@ where
 
     /// Sets the element of the slice at the specified index.
     ///
-    /// May panic if the index is not in in [0..[len](SliceByValue::len))
+    /// May panic if the index is not in [0..[len](SliceByValue::len))
     /// or the value does not fit in [`BitWidth::bit_width`] bits.
     #[inline(always)]
     fn set_atomic(&self, index: usize, value: W, order: Ordering) {
@@ -1678,7 +1667,7 @@ impl<W: Word> From<BitFieldVec<W, Box<[W]>>> for BitFieldVec<W, Vec<W>> {
 
 impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueGat<'a> for BitFieldVec<W, B> {
     type Item = W;
-    type Iter = BitFieldVecIterator<'a, W, B>;
+    type Iter = BitFieldVecIter<'a, W, B>;
 }
 
 impl<W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValue for BitFieldVec<W, B> {
@@ -1691,7 +1680,7 @@ impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFromGat<'a>
     for BitFieldVec<W, B>
 {
     type Item = W;
-    type IterFrom = BitFieldVecIterator<'a, W, B>;
+    type IterFrom = BitFieldVecIter<'a, W, B>;
 }
 
 impl<W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFrom for BitFieldVec<W, B> {
@@ -1707,7 +1696,7 @@ impl<'a, 'b, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueGat<'a>
     for BitFieldVecSubsliceImpl<'b, W, B>
 {
     type Item = W;
-    type Iter = BitFieldVecIterator<'a, W, B>;
+    type Iter = BitFieldVecIter<'a, W, B>;
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValue
@@ -1722,7 +1711,7 @@ impl<'a, 'b, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFromGat<'
     for BitFieldVecSubsliceImpl<'b, W, B>
 {
     type Item = W;
-    type IterFrom = BitFieldVecIterator<'a, W, B>;
+    type IterFrom = BitFieldVecIter<'a, W, B>;
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFrom
@@ -1740,7 +1729,7 @@ impl<'a, 'b, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueGat<'a>
     for BitFieldVecSubsliceImplMut<'b, W, B>
 {
     type Item = W;
-    type Iter = BitFieldVecIterator<'a, W, B>;
+    type Iter = BitFieldVecIter<'a, W, B>;
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValue
@@ -1755,7 +1744,7 @@ impl<'a, 'b, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFromGat<'
     for BitFieldVecSubsliceImplMut<'b, W, B>
 {
     type Item = W;
-    type IterFrom = BitFieldVecIterator<'a, W, B>;
+    type IterFrom = BitFieldVecIter<'a, W, B>;
 }
 
 impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFrom
