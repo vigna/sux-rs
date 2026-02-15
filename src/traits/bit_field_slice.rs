@@ -135,7 +135,7 @@ where
     /// Returns the value at the specified index.
     ///
     /// # Panics
-    /// May panic if the index is not in in [0..[len](SliceByValue::len))
+    /// May panic if the index is not in [0..[len](SliceByValue::len))
     fn get_atomic(&self, index: usize, order: Ordering) -> W {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_atomic_unchecked(index, order) }
@@ -152,7 +152,7 @@ where
 
     /// Sets the element of the slice at the specified index.
     ///
-    /// May panic if the index is not in in [0..[len](SliceByValue::len))
+    /// May panic if the index is not in [0..[len](SliceByValue::len))
     /// or the value does not fit in [`BitWidth::bit_width`] bits.
     fn set_atomic(&self, index: usize, value: W, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len());

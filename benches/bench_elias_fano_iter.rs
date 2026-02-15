@@ -81,8 +81,7 @@ fn bench_iter_bidi_forward(c: &mut Criterion) {
         let ef = build_ef(u);
         group.bench_function(BenchmarkId::from_parameter(format!("l={l}")), |b| {
             b.iter(|| {
-                let (_, iter) = unsafe { ef.iter_bidi_from_succ_unchecked::<false>(0) };
-                for v in iter {
+                for v in ef.iter_bidi() {
                     black_box(v);
                 }
             })
@@ -97,9 +96,7 @@ fn bench_iter_bidi_backward(c: &mut Criterion) {
         let ef = build_ef(u);
         group.bench_function(BenchmarkId::from_parameter(format!("l={l}")), |b| {
             b.iter(|| {
-                let (_, iter) =
-                    unsafe { ef.iter_bidi_from_succ_unchecked::<false>(ef.get_unchecked(N - 1)) };
-                for v in iter {
+                for v in ef.iter_bidi_from(N).swap() {
                     black_box(v);
                 }
             })
@@ -127,7 +124,8 @@ criterion_group!(
     benches,
     bench_forward_iter,
     bench_back_iter,
-    bench_iter_bidi,
+    bench_iter_bidi_forward,
+    bench_iter_bidi_backward,
     bench_sequential_select,
 );
 criterion_main!(benches);

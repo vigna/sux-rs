@@ -10,26 +10,30 @@
 //! - [`IntoIteratorFrom`] makes it possible to start iterators from
 //!   a given position, which is useful for compressed and succinct data
 //!   structures where the setup of an iterator can be expensive.
-//!   It is implement for basic containers (arrays, vectors, etc.).
+//!   It is implemented for basic containers (arrays, vectors, etc.).
 //!
 //! - [`UncheckedIterator`]/[`IntoUncheckedIterator`]/[`IntoUncheckedBackIterator`]
-//!   are unsafe traits for iterating very cheaply and without testing on lists
-//!   of values. Their main purpose is to abstract fast, unchecked iteration over
-//!   implementations of [`BitFieldSlice`](crate::traits::BitFieldSlice).
+//!   are traits providing unsafe cheap iteration. Their main purpose is to
+//!   abstract fast, unchecked iteration over implementations of
+//!   [`BitFieldSlice`](crate::traits::BitFieldSlice).
 //!
 //! - [`IntoBackIterator`]/[`IntoBackIteratorFrom`] are counterparts of
 //!   [`IntoIterator`]/[`IntoIteratorFrom`] for backward iteration.
 //!
 //! - [`BidiIterator`]/[`IntoBidiIterator`]/[`IntoBidiIteratorFrom`] are traits
-//!   for bidirectional iteration. These will be usually slower than their unidirectional
-//!   counterparts, but they provide more flexibility.
+//!   for bidirectional iteration. These will usually be slower than their unidirectional
+//!   counterparts, but they provide more flexibility. [`ExactSizeBidiIterator`]
+//!   and [`FusedBidiIterator`] are the bidirectional counterparts of
+//!   [`ExactSizeIterator`] and [`FusedIterator`](core::iter::FusedIterator).
+//!   [`SwappedIter`] wraps a [`BidiIterator`] swapping the roles of
+//!   [`next`](Iterator::next) and [`prev`](BidiIterator::prev).
 
 use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
 
 /// Conversion into an [`Iterator`] starting from a given position.
 ///
-/// This trait is similar to [`IntoIterator`], but it allows to specify a
+/// This trait is similar to [`IntoIterator`], but it allows specifying a
 /// starting position for the iteration. Calling
 /// [`into_iter`](IntoIterator::into_iter) followed by a call to
 /// [`skip`](Iterator::skip) would be sufficient, but for many compressed and
@@ -88,11 +92,11 @@ impl<'a, T> IntoIteratorFrom for &'a Box<[T]> {
 
 /// A trait for iterating on values very quickly and very unsafely.
 ///
-/// The purpose of this trait is to allow cheap parallel iteration over
-/// multiple structures of the same size. The hosting code can take care
-/// that the iteration is safe, and can use this unsafe
-/// trait to iterate very cheaply over each structure. See the implementation
-/// of [`EliasFanoIterator`](crate::dict::elias_fano::EliasFanoIterator) for an example.
+/// The purpose of this trait is to allow cheap parallel iteration over multiple
+/// structures of the same size. The hosting code can take care that the
+/// iteration is safe, and can use this trait to iterate very cheaply over each
+/// structure. See the implementation of
+/// [`EliasFanoIter`](crate::dict::elias_fano::EliasFanoIter) for an example.
 #[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
 pub trait UncheckedIterator {
     type Item;

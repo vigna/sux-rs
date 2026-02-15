@@ -85,18 +85,18 @@ pub trait BitVecOps: AsRef<[usize]> + BitLength {
 
     /// Returns an iterator over the bits of this bit vector as booleans.
     #[inline(always)]
-    fn iter(&self) -> BitIterator<'_, [usize]> {
-        BitIterator::new(self.as_ref(), self.len())
+    fn iter(&self) -> BitIter<'_, [usize]> {
+        BitIter::new(self.as_ref(), self.len())
     }
 
     /// Returns an iterator over the positions of the ones in this bit vector.
-    fn iter_ones(&self) -> OnesIterator<'_, [usize]> {
-        OnesIterator::new(self.as_ref(), self.len())
+    fn iter_ones(&self) -> OnesIter<'_, [usize]> {
+        OnesIter::new(self.as_ref(), self.len())
     }
 
     /// Returns an iterator over the positions of the zeros in this bit vector.
-    fn iter_zeros(&self) -> ZerosIterator<'_, [usize]> {
-        ZerosIterator::new(self.as_ref(), self.len())
+    fn iter_zeros(&self) -> ZerosIter<'_, [usize]> {
+        ZerosIter::new(self.as_ref(), self.len())
     }
 
     /// A parallel version of
@@ -224,16 +224,16 @@ pub trait BitVecOpsMut: AsRef<[usize]> + AsMut<[usize]> + BitLength {
 
 /// An iterator over the bits of a bit vector as booleans.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct BitIterator<'a, B: ?Sized> {
+pub struct BitIter<'a, B: ?Sized> {
     bits: &'a B,
     len: usize,
     next_bit_pos: usize,
 }
 
-impl<'a, B: ?Sized + AsRef<[usize]>> BitIterator<'a, B> {
+impl<'a, B: ?Sized + AsRef<[usize]>> BitIter<'a, B> {
     pub fn new(bits: &'a B, len: usize) -> Self {
         debug_assert!(len <= bits.as_ref().len() * BITS);
-        BitIterator {
+        BitIter {
             bits,
             len,
             next_bit_pos: 0,
@@ -241,7 +241,7 @@ impl<'a, B: ?Sized + AsRef<[usize]>> BitIterator<'a, B> {
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> Iterator for BitIterator<'_, B> {
+impl<B: ?Sized + AsRef<[usize]>> Iterator for BitIter<'_, B> {
     type Item = bool;
     fn next(&mut self) -> Option<bool> {
         if self.next_bit_pos == self.len {
@@ -256,17 +256,17 @@ impl<B: ?Sized + AsRef<[usize]>> Iterator for BitIterator<'_, B> {
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> ExactSizeIterator for BitIterator<'_, B> {
+impl<B: ?Sized + AsRef<[usize]>> ExactSizeIterator for BitIter<'_, B> {
     fn len(&self) -> usize {
         self.len - self.next_bit_pos
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> FusedIterator for BitIterator<'_, B> {}
+impl<B: ?Sized + AsRef<[usize]>> FusedIterator for BitIter<'_, B> {}
 
 /// An iterator over the positions of the ones in a bit vector.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct OnesIterator<'a, B: ?Sized> {
+pub struct OnesIter<'a, B: ?Sized> {
     bits: &'a B,
     len: usize,
     word_idx: usize,
@@ -274,7 +274,7 @@ pub struct OnesIterator<'a, B: ?Sized> {
     word: usize,
 }
 
-impl<'a, B: ?Sized + AsRef<[usize]>> OnesIterator<'a, B> {
+impl<'a, B: ?Sized + AsRef<[usize]>> OnesIter<'a, B> {
     pub fn new(bits: &'a B, len: usize) -> Self {
         debug_assert!(len <= bits.as_ref().len() * BITS);
         let word = if bits.as_ref().is_empty() {
@@ -291,7 +291,7 @@ impl<'a, B: ?Sized + AsRef<[usize]>> OnesIterator<'a, B> {
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> Iterator for OnesIterator<'_, B> {
+impl<B: ?Sized + AsRef<[usize]>> Iterator for OnesIter<'_, B> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -317,11 +317,11 @@ impl<B: ?Sized + AsRef<[usize]>> Iterator for OnesIterator<'_, B> {
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> FusedIterator for OnesIterator<'_, B> {}
+impl<B: ?Sized + AsRef<[usize]>> FusedIterator for OnesIter<'_, B> {}
 
 /// An iterator over the positions of the zeros in a bit vector.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct ZerosIterator<'a, B: ?Sized> {
+pub struct ZerosIter<'a, B: ?Sized> {
     bits: &'a B,
     len: usize,
     word_idx: usize,
@@ -329,7 +329,7 @@ pub struct ZerosIterator<'a, B: ?Sized> {
     word: usize,
 }
 
-impl<'a, B: ?Sized + AsRef<[usize]>> ZerosIterator<'a, B> {
+impl<'a, B: ?Sized + AsRef<[usize]>> ZerosIter<'a, B> {
     pub fn new(bits: &'a B, len: usize) -> Self {
         debug_assert!(len <= bits.as_ref().len() * BITS);
         let word = if bits.as_ref().is_empty() {
@@ -346,7 +346,7 @@ impl<'a, B: ?Sized + AsRef<[usize]>> ZerosIterator<'a, B> {
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> Iterator for ZerosIterator<'_, B> {
+impl<B: ?Sized + AsRef<[usize]>> Iterator for ZerosIter<'_, B> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -372,7 +372,7 @@ impl<B: ?Sized + AsRef<[usize]>> Iterator for ZerosIterator<'_, B> {
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> FusedIterator for ZerosIterator<'_, B> {}
+impl<B: ?Sized + AsRef<[usize]>> FusedIterator for ZerosIter<'_, B> {}
 
 impl<T: ?Sized + AsRef<[AtomicUsize]> + BitLength> AtomicBitVecOps for T {}
 
@@ -602,8 +602,8 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
     /// Nonetheless, all returned values have been valid at some point during
     /// the iteration.
     #[inline(always)]
-    fn iter(&self) -> AtomicBitIterator<'_, [AtomicUsize]> {
-        AtomicBitIterator::new(self.as_ref(), self.len())
+    fn iter(&self) -> AtomicBitIter<'_, [AtomicUsize]> {
+        AtomicBitIter::new(self.as_ref(), self.len())
     }
 }
 
@@ -612,16 +612,16 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
 /// Note that modifying the bit vector while iterating over it will lead to
 /// behavior depending on processor scheduling and memory model.
 #[derive(Debug, MemDbg, MemSize)]
-pub struct AtomicBitIterator<'a, B: ?Sized> {
+pub struct AtomicBitIter<'a, B: ?Sized> {
     bits: &'a B,
     len: usize,
     next_bit_pos: usize,
 }
 
-impl<'a, B: ?Sized + AsRef<[AtomicUsize]>> AtomicBitIterator<'a, B> {
+impl<'a, B: ?Sized + AsRef<[AtomicUsize]>> AtomicBitIter<'a, B> {
     pub fn new(bits: &'a B, len: usize) -> Self {
         debug_assert!(len <= bits.as_ref().len() * BITS);
-        AtomicBitIterator {
+        AtomicBitIter {
             bits,
             len,
             next_bit_pos: 0,
@@ -629,7 +629,7 @@ impl<'a, B: ?Sized + AsRef<[AtomicUsize]>> AtomicBitIterator<'a, B> {
     }
 }
 
-impl<B: ?Sized + AsRef<[AtomicUsize]>> Iterator for AtomicBitIterator<'_, B> {
+impl<B: ?Sized + AsRef<[AtomicUsize]>> Iterator for AtomicBitIter<'_, B> {
     type Item = bool;
     fn next(&mut self) -> Option<bool> {
         if self.next_bit_pos == self.len {
@@ -649,10 +649,10 @@ impl<B: ?Sized + AsRef<[AtomicUsize]>> Iterator for AtomicBitIterator<'_, B> {
     }
 }
 
-impl<B: ?Sized + AsRef<[AtomicUsize]>> ExactSizeIterator for AtomicBitIterator<'_, B> {
+impl<B: ?Sized + AsRef<[AtomicUsize]>> ExactSizeIterator for AtomicBitIter<'_, B> {
     fn len(&self) -> usize {
         self.len - self.next_bit_pos
     }
 }
 
-impl<B: ?Sized + AsRef<[AtomicUsize]>> FusedIterator for AtomicBitIterator<'_, B> {}
+impl<B: ?Sized + AsRef<[AtomicUsize]>> FusedIterator for AtomicBitIter<'_, B> {}

@@ -74,7 +74,6 @@ macro_rules! panic_if_out_of_bounds {
         }
     };
 }
-use std::time::SystemTime;
 
 pub(crate) use panic_if_out_of_bounds;
 
@@ -122,7 +121,7 @@ pub fn init_env_logger() -> anyhow::Result<()> {
         .days_are_24_hours();
 
     builder.format(move |buf, record| {
-        let Ok(ts) = jiff::Timestamp::try_from(SystemTime::now()) else {
+        let Ok(ts) = jiff::Timestamp::try_from(std::time::SystemTime::now()) else {
             return Err(std::io::Error::other("Failed to get timestamp"));
         };
         let style = buf.default_level_style(record.level());

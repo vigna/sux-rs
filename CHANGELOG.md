@@ -23,11 +23,23 @@
   "rev"/"reverse" in the sense of "back"/"backward". `DoubleEndedIterator::rev`
   has a very specific semantics whose meaning is entirely different from what we
   were trying to express. All traits, types and methods containing "rev"/"reverse"
-  now contain "back"/"backward" instead.
+  now contain "back" instead. This includes iterators on `BitFieldVec`.
 
 * Moved to `mmap-rs` 0.7.0, `mem_dbg` 0.4.0 and `epserde` 0.12.0.
 
 * `par_count_ones` was in `BitVecMutOps` instead of `BitVecOps`.
+
+* Removed deprecated method `AtomicBitFieldVec::reset`.
+
+* `SuccUnchecked`/`PredUnchecked` and `Succ`/`Pred` have now new
+  methods returning iterators.
+
+* Types implementing `Iterator` end now in `Iter` rather than `Iterator`.
+
+* `EliasFano` implements new backward and bidirectional iterators.
+
+* For consistency, a number of types starting with `BitFieldVector`
+  now start with `BitFieldVec`.
 
 ## [0.11.1] - 2026-02-10
 

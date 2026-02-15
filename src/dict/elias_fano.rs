@@ -14,13 +14,13 @@
 //! it possible to store the sequence using at most 2 + lg(*u*/*n*) bits per
 //! element, which is very close to the information-theoretical lower bound ≈ lg
 //! *e* + lg(*u*/*n*) when *n* is much smaller than *u*. A typical example is a
-//! list of pointer into records of a large file: instead of using, for each
-//! pointer, a number of bit sufficient to express the length of the file, the
+//! list of pointers into records of a large file: instead of using, for each
+//! pointer, a number of bits sufficient to express the length of the file, the
 //! Elias–Fano representation makes it possible to use, for each pointer, a
 //! number of bits roughly equal to the logarithm of the average length of a
 //! record.
 //!
-//! The representation was introduced in Peter Elias in “[Efficient storage and
+//! The representation was introduced by Peter Elias in "[Efficient storage and
 //! retrieval by content and address of static
 //! files](https://dl.acm.org/doi/abs/10.1145/321812.321820)”, *J. Assoc.
 //! Comput. Mach.*, 21(2):246–260, ACM, 1974, and also independently by Robert
@@ -34,7 +34,7 @@
 //! indices](https://dl.acm.org/doi/10.1145/2433396.2433409)”, *Proceedings of
 //! the 6th ACM International Conference on Web Search and Data Mining,
 //! WSDM'13*, pages 83–92, ACM, 2013. The name “Elias–Fano” for this
-//! representation was used for the first time by  Sebastiano Vigna in
+//! representation was used for the first time by Sebastiano Vigna in
 //! “[Broadword Implementation of Rank/Select
 //! Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
 //! _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
@@ -55,18 +55,20 @@
 //! This implementation provides a number of iterators over the values of the
 //! sequence:
 //!
-//! - Forward iterators, returned by [`iter`] and [`iter_from`], that iterate
-//!   over the values in increasing order, are the fastest.
+//! - Forward iterators, returned by [`iter`](EliasFano::iter) and
+//!   [`iter_from`](EliasFano::iter_from), that iterate over the values in
+//!   increasing order, are the fastest.
 //!
-//! - Backward iterators, returned by [`iter_back`] and [`iter_back_from`], that
-//!   iterate over the values in decreasing order, are slightly slower than
-//!   forward iterators.
+//! - Backward iterators, returned by [`iter_back`](EliasFano::iter_back) and
+//!   [`iter_back_from`](EliasFano::iter_back_from), that iterate over the
+//!   values in decreasing order, are slightly slower than forward iterators.
 //!
-//! - Bidirectional iterators, returned by [`iter_bidi`] and [`iter_bidi_from`], that
-//!   can iterate in both directions, are the slowest, but they are significantly
-//!   faster than selecting values.
+//! - Bidirectional iterators, returned by [`iter_bidi`](EliasFano::iter_bidi)
+//!   and [`iter_bidi_from`](EliasFano::iter_bidi_from), that can iterate in
+//!   both directions, are the slowest, but they are significantly faster than
+//!   selecting values.
 //!
-//! Beside the convenience inherent methods, we implement [`IntoIterator`],
+//! Besides the convenience inherent methods, we implement [`IntoIterator`],
 //! [`IntoIteratorFrom`] [`IntoBackIterator`], [`IntoBackIteratorFrom`],
 //! [`IntoBidiIterator`], and [`IntoBidiIteratorFrom`] for references to an
 //! [`EliasFano`] structure.
@@ -86,7 +88,7 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 /// different const parameters or a different selection structure altogether.
 pub type EfSeq = EliasFano<SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
 
-/// The default type for an Elias–Fano structure implementing an
+/// The default type for an Elias–Fano structure implementing a
 /// [`SuccUnchecked`] and [`PredUnchecked`].
 ///
 /// You can start from this type to customize your Elias–Fano structure using
@@ -240,7 +242,7 @@ pub struct EliasFano<H = BitVec<Box<[usize]>>, L = BitFieldVec<usize, Box<[usize
     l: usize,
     /// The lower-bits array.
     low_bits: L,
-    /// the higher-bits array.
+    /// The higher-bits array.
     high_bits: H,
 }
 
@@ -256,7 +258,7 @@ impl<H, L> EliasFano<H, L> {
         2 * n + (n * (u as f64 / n as f64).log2().ceil() as usize)
     }
 
-    /// Returns the number elements in the sequence.
+    /// Returns the number of elements in the sequence.
     ///
     /// This method is equivalent to [`IndexedSeq::len`], but it is provided to
     /// reduce ambiguity in method resolution.
@@ -295,7 +297,7 @@ impl<H, L> EliasFano<H, L> {
     /// # Safety
     ///
     /// This method is unsafe because it is not possible to guarantee that the
-    /// new low bits are identical to the old ones as vector.
+    /// new low bits are identical to the old ones as a vector.
     pub unsafe fn map_low_bits<F, L2>(self, func: F) -> EliasFano<H, L2>
     where
         F: FnOnce(L) -> L2,
@@ -821,7 +823,7 @@ where
         // and within the range of the iterator because there is a predecessor for sure.
         unsafe {
             loop {
-                let _lower_bits = iter_back.next_unchecked();
+                let lower_bits = iter_back.next_unchecked();
                 let mut word_idx = bit_pos / (usize::BITS as usize);
                 let bit_idx = bit_pos % (usize::BITS as usize);
                 if self.high_bits.as_ref().get_unchecked(word_idx) & (1_usize << bit_idx) == 0 {
@@ -851,9 +853,9 @@ where
 
                 let low_value = value & ((1 << self.l) - 1);
                 let found = if STRICT {
-                    _lower_bits < low_value
+                    lower_bits < low_value
                 } else {
-                    _lower_bits <= low_value
+                    lower_bits <= low_value
                 };
                 if found {
                     // bit_pos is a one and the low bits match: predecessor
@@ -1062,12 +1064,12 @@ where
     for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
 {
     ef: &'a EliasFano<H, L>,
-    /// The index of the next value it will be returned when `next` is called.
+    /// The index of the next value that will be returned when `next` is called.
     index: usize,
-    /// Index of the word loaded in the `word` field.
+    /// Index of the word loaded in the `window` field.
     word_idx: usize,
     /// Current window on the high bits.
-    /// This is an usize because BitVec is implemented only for `Vec<usize>` and `&[usize]`.
+    /// This is a `usize` because `BitVec` is implemented only for `Vec<usize>` and `&[usize]`.
     window: usize,
     low_bits: <&'a L as IntoUncheckedIterator>::IntoUncheckedIter,
 }
@@ -1230,7 +1232,7 @@ where
     ///
     /// The backward iterator will yield elements before the current position
     /// in decreasing order. The high-bits window is converted using XOR with
-    /// the original word, and the low-bits reverse iterator is created from
+    /// the original word, and the low-bits backward iterator is created from
     /// the current index.
     pub fn backward(self) -> EliasFanoBackIter<'a, H, L> {
         // When the forward iterator is exhausted (index >= n), the
@@ -1258,7 +1260,7 @@ where
 /// it scans from left to right (using [`leading_zeros`](usize::leading_zeros)),
 /// and accesses low bits through a backward unchecked iterator.
 ///
-/// This iterator is slightly slower than a [forward iterator](EliasFanoIterator).
+/// This iterator is slightly slower than a [forward iterator](EliasFanoIter).
 #[derive(MemDbg, MemSize)]
 pub struct EliasFanoBackIter<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>>
 where
@@ -1401,11 +1403,11 @@ where
 
 /// A bidirectional iterator (cursor) for [`EliasFano`].
 ///
-/// Unlike [`EliasFanoIterator`] and [`EliasFanoBackIterator`], this cursor
+/// Unlike [`EliasFanoIter`] and [`EliasFanoBackIter`], this cursor
 /// does not clear bits from the current word. Instead, it uses
 /// [`select_in_word`](SelectInWord::select_in_word) to find the relevant bit
-/// on each call to [`next`](EliasFanoBidiIterator::next) or
-/// [`prev`](EliasFanoBidiIterator::prev). Low bits are accessed via random
+/// on each call to [`next`](Iterator::next) or
+/// [`prev`](BidiIterator::prev). Low bits are accessed via random
 /// access ([`get_value_unchecked`](SliceByValue::get_value_unchecked)).
 ///
 /// The cursor position `index` ranges from 0 to *n*. Calling `next()` yields
@@ -1637,7 +1639,7 @@ impl EliasFanoBuilder {
     /// Creates a builder for an [`EliasFano`] containing
     /// `n` numbers smaller than or equal to `u`.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// When any of the underlying structures would exceed `usize` in length.
     pub fn new(n: usize, u: usize) -> Self {
@@ -1664,7 +1666,7 @@ impl EliasFanoBuilder {
     }
     /// Adds a new value to the builder.
     ///
-    /// # Panic
+    /// # Panics
     /// May panic if the value is smaller than the last provided
     /// value, or if too many values are provided.
     pub fn push(&mut self, value: usize) {
@@ -1687,7 +1689,7 @@ impl EliasFanoBuilder {
 
     /// # Safety
     ///
-    /// Values passed to this function must be smaller than or equal `u` and must be monotone.
+    /// Values passed to this function must be smaller than or equal to `u` and must be monotone.
     /// Moreover, the function should not be called more than `n` times.
     pub unsafe fn push_unchecked(&mut self, value: usize) {
         let low = value & ((1 << self.l) - 1);
@@ -1700,7 +1702,7 @@ impl EliasFanoBuilder {
         self.last_value = value;
     }
 
-    /// Returns the numbers of values added so far.
+    /// Returns the number of values added so far.
     pub fn count(&self) -> usize {
         self.count
     }
@@ -1744,18 +1746,18 @@ impl EliasFanoBuilder {
         unsafe { ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new) }
     }
 
-    /// Builds an Elias-Fano structure with constant-time indexing, using
-    /// default values.
+    /// Builds an Elias-Fano structure with constant-time successor and
+    /// predecessor, using default values.
     ///
-    /// The resulting structure implements [`SuccUnchecked`], and [`PredUnchecked`],
-    /// but not [`IndexedSeq`].
+    /// The resulting structure implements [`SuccUnchecked`] and
+    /// [`PredUnchecked`], but not [`IndexedSeq`].
     pub fn build_with_dict(self) -> EfDict {
         let ef = self.build();
         unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new) }
     }
 
-    /// Builds an Elias-Fano structure with constant-time access and indexing,
-    /// using default values.
+    /// Builds an Elias-Fano structure with constant-time access, successor,
+    /// and predecessor, using default values.
     ///
     /// The resulting structure implements [`IndexedDict`], [`Succ`],
     /// [`Pred`], and [`IndexedSeq`].
@@ -1886,18 +1888,18 @@ impl EliasFanoConcurrentBuilder {
         unsafe { ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new) }
     }
 
-    /// Builds an Elias-Fano structure with constant-time indexing, using
-    /// default values.
+    /// Builds an Elias-Fano structure with constant-time successor and
+    /// predecessor, using default values.
     ///
-    /// The resulting structure implements [`IndexedDict`], [`SuccUnchecked`], and [`PredUnchecked`],
-    /// but not [`IndexedSeq`].
+    /// The resulting structure implements [`SuccUnchecked`] and
+    /// [`PredUnchecked`], but not [`IndexedSeq`].
     pub fn build_with_dict(self) -> EfDict {
         let ef = self.build();
         unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new) }
     }
 
-    /// Builds an Elias-Fano structure with constant-time access and indexing,
-    /// using default values.
+    /// Builds an Elias-Fano structure with constant-time access, successor,
+    /// and predecessor, using default values.
     ///
     /// The resulting structure implements [`IndexedDict`], [`Succ`],
     /// [`Pred`], and [`IndexedSeq`].

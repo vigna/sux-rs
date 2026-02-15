@@ -629,11 +629,11 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
 /// combinations of type parameters. Having this trait greatly simplifies the
 /// type signatures.
 pub trait ShardStore<S: Sig, V: BinSafe> {
-    type ShardIterator<'a>: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync
+    type ShardIter<'a>: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync
     where
         Self: 'a;
 
-    type ShardIntoIterator: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync;
+    type ShardIntoIter: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync;
 
     /// Returns the shard sizes.
     fn shard_sizes(&self) -> &[usize];
@@ -641,10 +641,10 @@ pub trait ShardStore<S: Sig, V: BinSafe> {
     /// Returns an iterator on shards.
     ///
     /// This method can be called multiple times.
-    fn iter(&mut self) -> Self::ShardIterator<'_>;
+    fn iter(&mut self) -> Self::ShardIter<'_>;
 
     /// Returns an iterator on shards, consuming self.
-    fn into_iter(self) -> Self::ShardIntoIterator;
+    fn into_iter(self) -> Self::ShardIntoIter;
 
     /// Returns the number of signature/value pairs in the store.
     fn len(&self) -> usize {
@@ -674,22 +674,22 @@ pub struct ShardStoreImpl<S, V, B> {
 impl<S: BinSafe + Sig + Send + Sync, V: BinSafe, B: Send + Sync> ShardStore<S, V>
     for ShardStoreImpl<S, V, B>
 where
-    for<'a> ShardIterator<S, V, B, Self>: Iterator<Item = Arc<Vec<SigVal<S, V>>>>,
-    for<'a> ShardIterator<S, V, B, &'a mut Self>: Iterator<Item = Arc<Vec<SigVal<S, V>>>>,
+    for<'a> ShardIter<S, V, B, Self>: Iterator<Item = Arc<Vec<SigVal<S, V>>>>,
+    for<'a> ShardIter<S, V, B, &'a mut Self>: Iterator<Item = Arc<Vec<SigVal<S, V>>>>,
 {
-    type ShardIterator<'a>
-        = ShardIterator<S, V, B, &'a mut Self>
+    type ShardIter<'a>
+        = ShardIter<S, V, B, &'a mut Self>
     where
         B: 'a;
 
-    type ShardIntoIterator = ShardIterator<S, V, B, Self>;
+    type ShardIntoIter = ShardIter<S, V, B, Self>;
 
     fn shard_sizes(&self) -> &[usize] {
         &self.shard_sizes
     }
 
-    fn iter(&mut self) -> ShardIterator<S, V, B, &'_ mut Self> {
-        ShardIterator {
+    fn iter(&mut self) -> ShardIter<S, V, B, &'_ mut Self> {
+        ShardIter {
             store: self,
             borrowed: true,
             next_bucket: 0,
@@ -699,8 +699,8 @@ where
         }
     }
 
-    fn into_iter(self) -> ShardIterator<S, V, B, Self> {
-        ShardIterator {
+    fn into_iter(self) -> ShardIter<S, V, B, Self> {
+        ShardIter {
             store: self,
             borrowed: false,
             next_bucket: 0,
@@ -713,11 +713,11 @@ where
 
 /// An iterator on shards in a [`ShardStore`].
 ///
-/// A [`ShardIterator`] handles the mapping between buckets and shards. If a
+/// A [`ShardIter`] handles the mapping between buckets and shards. If a
 /// shard is made by one or more buckets, it will aggregate them as necessary;
 /// if a bucket contains several shards, it will split the bucket into shards.
 #[derive(Debug)]
-pub struct ShardIterator<S: BinSafe + Sig, V: BinSafe, B, T: BorrowMut<ShardStoreImpl<S, V, B>>> {
+pub struct ShardIter<S: BinSafe + Sig, V: BinSafe, B, T: BorrowMut<ShardStoreImpl<S, V, B>>> {
     store: T,
     /// Whether the store is borrowed.
     borrowed: bool,
@@ -734,7 +734,7 @@ impl<
     S: BinSafe + Sig + Send + Sync,
     V: BinSafe,
     T: BorrowMut<ShardStoreImpl<S, V, BufReader<File>>>,
-> Iterator for ShardIterator<S, V, BufReader<File>, T>
+> Iterator for ShardIter<S, V, BufReader<File>, T>
 {
     type Item = Arc<Vec<SigVal<S, V>>>;
     fn next(&mut self) -> Option<Self::Item> {
@@ -843,7 +843,7 @@ impl<
     S: BinSafe + Sig + Send + Sync,
     V: BinSafe,
     T: BorrowMut<ShardStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>>,
-> Iterator for ShardIterator<S, V, Arc<Vec<SigVal<S, V>>>, T>
+> Iterator for ShardIter<S, V, Arc<Vec<SigVal<S, V>>>, T>
 {
     type Item = Arc<Vec<SigVal<S, V>>>;
 
@@ -932,9 +932,9 @@ impl<
     V: BinSafe,
     B: Send + Sync,
     T: BorrowMut<ShardStoreImpl<S, V, B>>,
-> ExactSizeIterator for ShardIterator<S, V, B, T>
+> ExactSizeIterator for ShardIter<S, V, B, T>
 where
-    for<'a> ShardIterator<S, V, B, T>: Iterator,
+    for<'a> ShardIter<S, V, B, T>: Iterator,
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -947,9 +947,9 @@ impl<
     V: BinSafe,
     B: Send + Sync,
     T: BorrowMut<ShardStoreImpl<S, V, B>>,
-> FusedIterator for ShardIterator<S, V, B, T>
+> FusedIterator for ShardIter<S, V, B, T>
 where
-    for<'a> ShardIterator<S, V, B, T>: Iterator,
+    for<'a> ShardIter<S, V, B, T>: Iterator,
 {
 }
 
