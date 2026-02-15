@@ -293,15 +293,23 @@ impl BitVec<Vec<usize>> {
     /// Resizes the bit vector in place, extending it with `value` if it is
     /// necessary.
     pub fn resize(&mut self, new_len: usize, value: bool) {
-        // TODO: rewrite by word
         if new_len > self.len {
-            if new_len > self.bits.len() * BITS {
-                self.bits.resize(new_len.div_ceil(BITS), 0);
-            }
-            for i in self.len..new_len {
-                unsafe {
-                    self.set_unchecked(i, value);
-                }
+            let old_len = self.len;
+            let old_word = old_len / BITS;
+            let old_bit = old_len % BITS;
+            let word_value = if value { !0usize } else { 0 };
+
+            self.bits.resize(new_len.div_ceil(BITS), word_value);
+
+            // Handle the partial word at old_len, then fill all
+            // remaining words (which may contain stale data from
+            // previous truncations).
+            if old_bit != 0 {
+                let mask = !0usize << old_bit;
+                self.bits[old_word] = (self.bits[old_word] & !mask) | (word_value & mask);
+                self.bits[old_word + 1..].fill(word_value);
+            } else {
+                self.bits[old_word..].fill(word_value);
             }
         }
         self.len = new_len;

@@ -813,7 +813,6 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
         if bit_width.is_power_of_two() {
             let mut bits_in_buffer = 0;
 
-            // TODO!: figure out how to simplify
             let mut buffer_limit = (self.len() * bit_width) % W::BITS;
             if buffer_limit == 0 {
                 buffer_limit = W::BITS;

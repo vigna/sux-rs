@@ -141,7 +141,6 @@ pub trait BitVecOpsMut: AsRef<[usize]> + AsMut<[usize]> + BitLength {
         let word_index = index / BITS;
         let bit_index = index % BITS;
         let bits = self.as_mut();
-        // TODO: no test?
         // For constant values, this should be inlined with no test.
         unsafe {
             if value {

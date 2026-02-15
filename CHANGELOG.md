@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.12.1]
+
+### Changed
+
+* `BitVec::resize` now fills the new bits by word, and not by bit.
+
 ## [0.12.0] - 2026-02-15
 
 ### New

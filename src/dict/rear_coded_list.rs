@@ -379,7 +379,7 @@ impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, 
             // copy the new suffix
             result.extend_from_slice(&data[..to_copy]);
             data = &data[to_copy..];
-            // TODO!: this can be optimized to avoid the copy
+
             match memcmp_rust(string, &result) {
                 core::cmp::Ordering::Greater => {}
                 core::cmp::Ordering::Equal => return Some(block_idx * self.ratio + idx + 1),

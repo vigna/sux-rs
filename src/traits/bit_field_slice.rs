@@ -89,7 +89,6 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> + SliceByValueMut<Value = 
     /// [`bit_width`](BitWidth::bit_width) bits.
     #[inline(always)]
     fn mask(&self) -> W {
-        // TODO: Maybe testless?
         if self.bit_width() == 0 {
             W::ZERO
         } else {

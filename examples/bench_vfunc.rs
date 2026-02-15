@@ -86,7 +86,6 @@ fn main() -> Result<()> {
     }
     if args.no_shards {
         if args.sig64 {
-            // TODO
             main_with_types::<[u64; 1], FuseLge3NoShards>(args)
         } else {
             main_with_types::<[u64; 2], FuseLge3NoShards>(args)
