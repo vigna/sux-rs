@@ -1529,7 +1529,7 @@ impl<
                                         // that implies equality of local
                                         // signatures.
 
-                                        // SAFETY: we drop this immediately after sorting.
+                                        // SAFETY: we drop this immediately after sorting
                                         let shard = unsafe {
                                             transmute::<
                                                 &mut Vec<SigVal<S, V>>,
@@ -2093,7 +2093,7 @@ impl<
                 // SAFETY: there is no undefined behavior here, but the
                 // raw construction methods we use assume that the
                 // equations are sorted, that the variables are not repeated,
-                // and the variables are in the range [0..num_vertices).
+                // and the variables are in the range [0..num_vertices)
                 let mut system = unsafe {
                     crate::utils::mod2_sys::Modulo2System::from_parts(
                         num_vertices,

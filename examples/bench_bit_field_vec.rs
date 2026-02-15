@@ -77,9 +77,9 @@ pub fn main() -> Result<()> {
         }
         pl.done_with_count(args.n);
 
-        let mut iter = a.into_rev_unchecked_iter();
+        let mut iter = a.into_unchecked_iter_back();
         pl.item_name("item");
-        pl.start("Scanning (reverse unchecked) ...");
+        pl.start("Scanning (backward unchecked) ...");
         for _ in 0..args.n {
             black_box(unsafe { iter.next_unchecked() });
         }

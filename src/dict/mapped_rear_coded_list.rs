@@ -32,16 +32,17 @@
 //! [`SliceByValue`] trait from the [`value_traits`] crate.
 //!
 //! Besides the standard access by means of the [`IndexedSeq`] trait, this
-//! structure also implements the `get_in_place` method, which allows to write
-//! the element directly into a user-provided buffer (a string or a vector of
-//! bytes), avoiding allocations. [`MappedRearCodedListStr`] has an additional
+//! structure also implements the `get_in_place` method, which makes it possible
+//! to write the element directly into a user-provided buffer (a string or a
+//! vector of bytes), avoiding allocations. [`MappedRearCodedListStr`] has an
+//! additional
 //! [`get_bytes_in_place`](MappedRearCodedListStr::get_bytes_in_place) method that
 //! writes the bytes of the string into a user-provided `Vec<u8>`.
 //!
 //! Mapped rear-coded lists can be iterated upon using either an
 //! [`Iterator`](MappedRearCodedList::iter) or a [`Lender`](MappedRearCodedList::lender). In
 //! the first case there will be an allocation at each iteration, whereas in
-//! second case a single buffer will be reused. You can also [iterate from a
+//! the second case a single buffer will be reused. You can also [iterate from a
 //! given position](MappedRearCodedList::lender_from). The iteration will not be as
 //! fast as in the non-mapped case, however, as it is not possible to build the
 //! returned strings incrementally.
@@ -50,7 +51,7 @@
 //! implementations for the [`IndexedDict`](crate::traits::IndexedDict) trait,
 //! independently of whether the underlying [`RearCodedList`] is sorted or not.
 //!
-//! Finally, the `mrcl` command-line tool can be use to create
+//! Finally, the `mrcl` command-line tool can be used to create
 //! a serialized mapped rear-coded list starting from a
 //! serialized rear-coded list and a mapping.
 //!
@@ -111,7 +112,7 @@ pub struct MappedRearCodedList<
 
 pub type MappedRearCodedListSliceU8<const SORTED: bool = true> =
     MappedRearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, BitFieldVec, SORTED>;
-/// A rear-coded list of strings.
+/// A mapped rear-coded list of strings.
 pub type MappedRearCodedListStr<const SORTED: bool = true> =
     MappedRearCodedList<str, String, Box<[u8]>, Box<[usize]>, BitFieldVec, SORTED>;
 
@@ -287,7 +288,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
     ///
     /// This method can be used to avoid UTF-8 checks when you just need the raw
     /// bytes, or to use methods such as [`String::from_utf8_unchecked`] and
-    /// [`str::from_utf8_unchecked`] to avoid the cost UTF-8 checks. Be aware,
+    /// [`str::from_utf8_unchecked`] to avoid the cost of UTF-8 checks. Be aware,
     /// however, that using invalid UTF-8 data may lead to undefined behavior.
     #[inline]
     pub fn get_bytes(&self, index: usize) -> Vec<u8> {
@@ -300,7 +301,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
     ///
     /// This method can be used to avoid UTF-8 checks when you just need the raw
     /// bytes, or to use methods such as [`String::from_utf8_unchecked`] and
-    /// [`str::from_utf8_unchecked`] to avoid the cost UTF-8 checks. Be aware,
+    /// [`str::from_utf8_unchecked`] to avoid the cost of UTF-8 checks. Be aware,
     /// however, that using invalid UTF-8 data may lead to undefined behavior.
     #[inline(always)]
     pub fn get_bytes_in_place(&self, index: usize, result: &mut Vec<u8>) {

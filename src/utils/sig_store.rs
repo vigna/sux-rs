@@ -751,8 +751,8 @@ impl<
             let len = store.shard_sizes[self.next_shard];
             let mut shard = Vec::<SigVal<S, V>>::with_capacity(len);
 
-            // SAFETY: we just allocated this vector so it is safe to set the length.
-            // read_exact guarantees that the vector will be filled with data.
+            // SAFETY: we just allocated this vector so it is safe to set the length,
+            // and read_exact guarantees that the vector will be filled with data
             #[allow(clippy::uninit_vec)]
             unsafe {
                 shard.set_len(len);

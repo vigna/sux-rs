@@ -175,7 +175,7 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
             );
         }
         panic_if_out_of_bounds!(position, self.len);
-        // SAFETY: conditions have been just checked.
+        // SAFETY: conditions have been just checked
         unsafe { self.builder.push_unchecked(position) };
         self.values.push(value);
         self.min_next_pos = position + 1;
