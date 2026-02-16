@@ -8,6 +8,10 @@
 
 * Optimized methods for bidirectional iterators on `EliasFano`.
 
+### Fixed
+
+* Locked `dsi-progress-logger` version to 0.8.2 for Rust 1.85.
+
 ## [0.12.0] - 2026-02-15
 
 ### New
