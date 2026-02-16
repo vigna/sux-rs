@@ -138,11 +138,13 @@ pub type EfSeqDict = EliasFano<
 ///
 /// - Forward iterators, returned by [`iter`](EliasFano::iter) and
 ///   [`iter_from`](EliasFano::iter_from), that iterate over the values in
-///   increasing order, are the fastest.
+///   increasing order, are the fastest. The returned iterators implement
+///   also [`UncheckedIterator`].
 ///
 /// - Backward iterators, returned by [`iter_back`](EliasFano::iter_back) and
 ///   [`iter_back_from`](EliasFano::iter_back_from), that iterate over the
 ///   values in decreasing order, are slightly slower than forward iterators.
+///   The returned iterators implement also [`UncheckedIterator`].
 ///
 /// - Bidirectional iterators, returned by [`iter_bidi`](EliasFano::iter_bidi)
 ///   and [`iter_bidi_from`](EliasFano::iter_bidi_from), that can iterate in
@@ -1234,6 +1236,20 @@ where
         let low = unsafe { self.ef.low_bits.get_value_unchecked(self.ef.n - 1) };
         Some((high_bits << self.ef.l) | low)
     }
+
+    #[inline(always)]
+    fn fold<B, F>(mut self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut accum = init;
+        let n = self.ef.len();
+        while self.index < n {
+            // SAFETY: self.index < n guarantees there is a next element
+            accum = f(accum, unsafe { self.next_unchecked() });
+        }
+        accum
+    }
 }
 
 impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeIterator
@@ -1397,6 +1413,19 @@ where
         let low = unsafe { self.ef.low_bits.get_value_unchecked(0) };
         Some((high_bits << self.ef.l) | low)
     }
+
+    #[inline(always)]
+    fn fold<B, F>(mut self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut accum = init;
+        while self.index > 0 {
+            // SAFETY: self.index > 0 guarantees there is a previous element
+            accum = f(accum, unsafe { self.next_unchecked() });
+        }
+        accum
+    }
 }
 
 impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeIterator
@@ -1511,6 +1540,28 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator for EliasFanoBi
         let low = unsafe { self.ef.low_bits.get_value_unchecked(self.ef.n - 1) };
         Some((high_bits << self.ef.l) | low)
     }
+
+    #[inline(always)]
+    fn fold<B, F>(mut self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut accum = init;
+        while self.index < self.ef.n {
+            while self.index_in_word >= self.window.count_ones() as usize {
+                self.index_in_word -= self.window.count_ones() as usize;
+                self.word_idx += 1;
+                self.window = unsafe { *self.ef.high_bits.as_ref().get_unchecked(self.word_idx) };
+            }
+            let bit_idx = self.window.select_in_word(self.index_in_word);
+            let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
+            let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
+            self.index += 1;
+            self.index_in_word += 1;
+            accum = f(accum, (high_bits << self.ef.l) | low);
+        }
+        accum
+    }
 }
 
 impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeIterator
@@ -1582,6 +1633,28 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> BidiIterator
         let high_bits = (word_idx * usize::BITS as usize) + bit_idx;
         let low = unsafe { self.ef.low_bits.get_value_unchecked(0) };
         Some((high_bits << self.ef.l) | low)
+    }
+
+    #[inline(always)]
+    fn prev_fold<B, F>(mut self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut accum = init;
+        while self.index > 0 {
+            while self.index_in_word == 0 {
+                self.word_idx -= 1;
+                self.window = unsafe { *self.ef.high_bits.as_ref().get_unchecked(self.word_idx) };
+                self.index_in_word = self.window.count_ones() as usize;
+            }
+            self.index -= 1;
+            self.index_in_word -= 1;
+            let bit_idx = self.window.select_in_word(self.index_in_word);
+            let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
+            let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
+            accum = f(accum, (high_bits << self.ef.l) | low);
+        }
+        accum
     }
 }
 

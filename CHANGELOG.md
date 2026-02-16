@@ -2,9 +2,11 @@
 
 ## [0.12.1]
 
-### Changed
+### Improved
 
 * `BitVec::resize` now fills the new bits by word, and not by bit.
+
+* Optimized methods for bidirectional iterators on `EliasFano`.
 
 ## [0.12.0] - 2026-02-15
 

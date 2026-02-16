@@ -11,8 +11,8 @@
 //! [`AtomicBitVec`], a mutable, thread-safe bit vector.
 //!
 //! Operations on these structures are provided by the extension traits
-//! [`BitVecOps`], [`BitVecOpsMut`], and [`AtomicBitVecOps`],
-//! which must be pulled in scope as needed. There are also
+//! [`BitVecOps`], [`BitVecOpsMut`](crate::traits::BitVecOpsMut), and
+//! [`AtomicBitVecOps`], which must be pulled in scope as needed. There are also
 //! operations that are specific to certain implementations, such as
 //! [`push`](BitVec::push).
 //!
@@ -75,7 +75,7 @@
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones, 1) }.count_ones(), 1);
 //! ```
 
-use crate::traits::{AtomicBitIter, AtomicBitVecOps, BitIter, BitVecOps, BitVecOpsMut};
+use crate::traits::{AtomicBitIter, AtomicBitVecOps, BitIter, BitVecOps};
 use common_traits::{IntoAtomic, SelectInWord};
 #[allow(unused_imports)] // this is in the std prelude but not in no_std!
 use core::borrow::BorrowMut;
