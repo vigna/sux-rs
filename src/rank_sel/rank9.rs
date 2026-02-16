@@ -286,7 +286,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B,
 impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankZero for Rank9<B, C> {}
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use crate::traits::BitCount;
     #[test]

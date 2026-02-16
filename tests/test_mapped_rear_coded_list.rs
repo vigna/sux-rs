@@ -13,7 +13,7 @@ use sux::{
 };
 
 #[cfg(feature = "epserde")]
-mod test {
+mod tests {
     use anyhow::Result;
     use epserde::deser::Deserialize;
     use epserde::ser::Serialize;

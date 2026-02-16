@@ -11,7 +11,7 @@ use lender::{IntoLender, Lending};
 use sux::dict::RearCodedListBuilder;
 
 #[cfg(feature = "epserde")]
-mod test {
+mod tests {
     use anyhow::Result;
     use epserde::deser::Deserialize;
     use epserde::ser::Serialize;
