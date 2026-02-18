@@ -1,79 +1,85 @@
 # Change Log
 
-## [0.12.1]
+## [0.12.2] 2026-02-18
+
+## ChangedNew
+
+- Upgraded to `lender` 0.6.0.
+
+## [0.12.1] 2026-02-16
 
 ### Improved
 
-* `BitVec::resize` now fills the new bits by word, and not by bit.
+- `BitVec::resize` now fills the new bits by word, and not by bit.
 
-* Optimized methods for bidirectional iterators on `EliasFano`.
+- Optimized methods for bidirectional iterators on `EliasFano`.
 
 ### Fixed
 
-* Locked `dsi-progress-logger` version to 0.8.2 for Rust 1.85.
+- Locked `dsi-progress-logger` version to 0.8.2 for Rust 1.85.
 
 ## [0.12.0] - 2026-02-15
 
 ### New
 
-* New `BidiIterator` trait for bidirectional iterators. Returned by new methods
+- New `BidiIterator` trait for bidirectional iterators. Returned by new methods
   in the `Succ`/`Pred` traits, and by types implementing
   `IntoBidiIterator`/`IntoBidiIteratorFrom`. The `EliasFano` implementation is
   slower than a forward-only or backward-only iterator, but much faster than
   calling select (and it does not need selection).
 
-* New construction methods for iterators in indexed dictionaries. You can now
+- New construction methods for iterators in indexed dictionaries. You can now
   obtain (bidirectional) iterators from a position, or from a
   successor/predecessor call.
 
-* Iterators on `EliasFano` can be reversed with a cost lower than starting
+- Iterators on `EliasFano` can be reversed with a cost lower than starting
   a new one (and without any selection structure).
 
 ### Changed
 
-* Major trait and type renaming due to the previous unfortunate usage of
+- Major trait and type renaming due to the previous unfortunate usage of
   "rev"/"reverse" in the sense of "back"/"backward". `DoubleEndedIterator::rev`
   has a very specific semantics whose meaning is entirely different from what we
   were trying to express. All traits, types and methods containing "rev"/"reverse"
   now contain "back" instead. This includes iterators on `BitFieldVec`.
 
-* Moved to `mmap-rs` 0.7.0, `mem_dbg` 0.4.0 and `epserde` 0.12.0.
+- Moved to `mmap-rs` 0.7.0, `mem_dbg` 0.4.0 and `epserde` 0.12.0.
 
-* `par_count_ones` was in `BitVecMutOps` instead of `BitVecOps`.
+- `par_count_ones` was in `BitVecMutOps` instead of `BitVecOps`.
 
-* Removed deprecated method `AtomicBitFieldVec::reset`.
+- Removed deprecated method `AtomicBitFieldVec::reset`.
 
-* Types implementing `Iterator` end now in `Iter` rather than `Iterator`.
+- Types implementing `Iterator` end now in `Iter` rather than `Iterator`.
 
-* `EliasFano` implements new backward and bidirectional iterators.
+- `EliasFano` implements new backward and bidirectional iterators.
 
-* For consistency, a number of types starting with `BitFieldVector`
+- For consistency, a number of types starting with `BitFieldVector`
   now start with `BitFieldVec`.
 
-* Removed deprecated `bit_field_vec![width; length; value]` syntax.
+- Removed deprecated `bit_field_vec![width; length; value]` syntax.
 
 ## [0.11.1] - 2026-02-10
 
 ### Changed
 
-* Moved to `rand` 0.10.0.
+- Moved to `rand` 0.10.0.
 
 ## [0.11.0] - 2026-02-10
 
 ### New
 
-* Adapted to `Lender` 0.5.0 (i.e., we have covariance checks).
+- Adapted to `Lender` 0.5.0 (i.e., we have covariance checks).
 
-* New method `EliasFano::into_parts`.
+- New method `EliasFano::into_parts`.
 
-* New features `clap`, `zstd` and `flate2` gate the corresponding
+- New features `clap`, `zstd` and `flate2` gate the corresponding
   dependencies.
 
 ### Fixed
 
-* Fixed broken `DoubleEndedIterator` impl for bit vectors.
+- Fixed broken `DoubleEndedIterator` impl for bit vectors.
 
-* Several minor bug fixes in bounds checking.
+- Several minor bug fixes in bounds checking.
 
 ## [0.10.3] - 2025-12-09
 
