@@ -2,7 +2,7 @@
 
 ## [0.12.2] 2026-02-18
 
-## ChangedNew
+## Changed
 
 - Upgraded to `lender` 0.6.0.
 
