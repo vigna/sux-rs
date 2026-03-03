@@ -146,7 +146,7 @@ impl<
         Self { rcl, map }
     }
 
-    pub fn into_parts(self) -> (RearCodedList<I, O, D, P, SORTED>, Q) {
+    pub const fn into_parts(self) -> (RearCodedList<I, O, D, P, SORTED>, Q) {
         (self.rcl, self.map)
     }
 
@@ -155,7 +155,7 @@ impl<
     /// This method is equivalent to [`IndexedSeq::len`], but it is provided to
     /// reduce ambiguity in method resolution.
     #[inline]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.rcl.len()
     }
 

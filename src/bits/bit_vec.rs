@@ -196,15 +196,15 @@ impl<B> BitVec<B> {
     /// This method is equivalent to [`BitLength::len`], but it is provided to
     /// reduce ambiguity in method resolution.
     #[inline(always)]
-    pub fn len(&self) -> usize {
-        BitLength::len(self)
+    pub const fn len(&self) -> usize {
+        self.len
     }
 
     /// # Safety
     /// `len` must be between 0 (included) and the number of
     /// bits in `bits` (included).
     #[inline(always)]
-    pub unsafe fn from_raw_parts(bits: B, len: usize) -> Self {
+    pub const unsafe fn from_raw_parts(bits: B, len: usize) -> Self {
         Self { bits, len }
     }
 
@@ -435,15 +435,15 @@ impl<B> AtomicBitVec<B> {
     /// This method is equivalent to [`BitLength::len`], but it is provided to
     /// reduce ambiguity in method resolution.
     #[inline(always)]
-    pub fn len(&self) -> usize {
-        BitLength::len(self)
+    pub const fn len(&self) -> usize {
+        self.len
     }
 
     /// # Safety
     /// `len` must be between 0 (included) and the number of
     /// bits in `bits` (included).
     #[inline(always)]
-    pub unsafe fn from_raw_parts(bits: B, len: usize) -> Self {
+    pub const unsafe fn from_raw_parts(bits: B, len: usize) -> Self {
         Self { bits, len }
     }
     #[inline(always)]

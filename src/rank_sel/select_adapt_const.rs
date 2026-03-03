@@ -196,7 +196,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
 
     /// Computes adaptively the number of 32-bit subinventory entries
     #[inline(always)]
-    fn log2_ones_per_sub32(span: usize) -> usize {
+    const fn log2_ones_per_sub32(span: usize) -> usize {
         debug_assert!(span >= 1 << 16);
         // Since span >= 2^16, (span >> 15).ilog2() >= 0, which implies in any case
         // at least doubling the frequency of the subinventory with respect to the
@@ -205,7 +205,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
         Self::LOG2_ONES_PER_SUB16.saturating_sub((span >> 15).ilog2() as usize + 1)
     }
 
-    pub fn into_inner(self) -> B {
+    pub const fn into_inner(self) -> B {
         self.bits
     }
 

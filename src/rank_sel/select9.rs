@@ -141,7 +141,7 @@ pub struct Select9<R = Rank9, I = Box<[usize]>> {
 }
 
 impl<R, I> Select9<R, I> {
-    pub fn into_inner(self) -> R {
+    pub const fn into_inner(self) -> R {
         self.rank9
     }
 

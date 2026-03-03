@@ -96,19 +96,19 @@ where
     }
 
     /// Returns the number of keys in the filter.
-    pub fn len(&self) -> usize {
-        self.func.len()
+    pub const fn len(&self) -> usize {
+        self.func.num_keys
     }
 
     /// Returns whether the function has no keys.
-    pub fn is_empty(&self) -> bool {
-        self.func.is_empty()
+    pub const fn is_empty(&self) -> bool {
+        self.func.num_keys == 0
     }
 
     /// Returns the number bits of the hash associated with keys.
     ///
     /// The filter precision (false-positive rate) is 2<sup>-`hash_bits`</sup>.
-    pub fn hash_bits(&self) -> u32 {
+    pub const fn hash_bits(&self) -> u32 {
         self.hash_bits
     }
 }

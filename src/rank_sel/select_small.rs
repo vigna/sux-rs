@@ -157,7 +157,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     const BLOCK_BIT_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
     const SUBBLOCK_BIT_SIZE: usize = (Self::WORDS_PER_SUBBLOCK * usize::BITS as usize);
 
-    pub fn into_inner(self) -> C {
+    pub const fn into_inner(self) -> C {
         self.small_counters
     }
 }

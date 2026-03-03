@@ -318,13 +318,13 @@ impl SpanType {
 }
 
 impl<B, I> SelectAdapt<B, I> {
-    pub fn into_inner(self) -> B {
+    pub const fn into_inner(self) -> B {
         self.bits
     }
 
     // Compute adaptively the number of 32-bit subinventory entries
     #[inline(always)]
-    fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
+    const fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
         debug_assert!(span >= 1 << 16);
         // Since span >= 2^16, (span >> 15).ilog2() >= 0, which implies in any case
         // at least doubling the frequency of the subinventory with respect to the

@@ -75,13 +75,13 @@ where
     }
 
     /// Returns the number of keys in the function.
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.func.num_keys
     }
 
     /// Returns whether the function has no keys.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
+    pub const fn is_empty(&self) -> bool {
+        self.func.num_keys == 0
     }
 }
 
@@ -147,13 +147,13 @@ where
     }
 
     /// Returns the number of keys in the function.
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.func.num_keys
     }
 
     /// Returns whether the function has no keys.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
+    pub const fn is_empty(&self) -> bool {
+        self.func.num_keys == 0
     }
 }
 
