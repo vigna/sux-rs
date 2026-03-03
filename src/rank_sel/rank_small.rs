@@ -491,7 +491,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2>
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
     RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
-    pub const fn into_inner(self) -> B {
+    pub fn into_inner(self) -> B {
         self.bits
     }
 

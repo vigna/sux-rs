@@ -126,7 +126,7 @@ impl BlockCounters {
 impl<B, C> Rank9<B, C> {
     pub(super) const WORDS_PER_BLOCK: usize = 8;
 
-    pub const fn into_inner(self) -> B {
+    pub fn into_inner(self) -> B {
         self.bits
     }
 
