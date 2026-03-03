@@ -167,7 +167,7 @@ impl<B: SelectZeroHinted, I> Deref for SelectZeroAdapt<B, I> {
 }
 
 impl<B, I> SelectZeroAdapt<B, I> {
-    pub const fn into_inner(self) -> B {
+    pub fn into_inner(self) -> B {
         self.bits
     }
 

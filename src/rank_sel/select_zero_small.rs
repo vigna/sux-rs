@@ -117,7 +117,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
     const BLOCK_BIT_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
 
-    pub const fn into_inner(self) -> C {
+    pub fn into_inner(self) -> C {
         self.small_counters
     }
 }

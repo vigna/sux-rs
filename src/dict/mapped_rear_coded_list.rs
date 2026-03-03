@@ -146,7 +146,7 @@ impl<
         Self { rcl, map }
     }
 
-    pub const fn into_parts(self) -> (RearCodedList<I, O, D, P, SORTED>, Q) {
+    pub fn into_parts(self) -> (RearCodedList<I, O, D, P, SORTED>, Q) {
         (self.rcl, self.map)
     }
 

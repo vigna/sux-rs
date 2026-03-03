@@ -205,7 +205,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_U64_PER_SUBINVENTORY
         Self::LOG2_ONES_PER_SUB16.saturating_sub((span >> 15).ilog2() as usize + 1)
     }
 
-    pub const fn into_inner(self) -> B {
+    pub fn into_inner(self) -> B {
         self.bits
     }
 

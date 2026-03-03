@@ -318,7 +318,7 @@ impl SpanType {
 }
 
 impl<B, I> SelectAdapt<B, I> {
-    pub const fn into_inner(self) -> B {
+    pub fn into_inner(self) -> B {
         self.bits
     }
 
