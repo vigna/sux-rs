@@ -274,7 +274,7 @@ pub struct EliasFano<H = BitVec<Box<[usize]>>, L = BitFieldVec<usize, Box<[usize
 impl<H, L> EliasFano<H, L> {
     /// Returns the parts composing the structure (number of elements, upper
     /// bound, number of lower bits, low bits, high bits).
-    pub fn into_parts(self) -> (usize, usize, usize, L, H) {
+    pub const fn into_parts(self) -> (usize, usize, usize, L, H) {
         (self.n, self.u, self.l, self.low_bits, self.high_bits)
     }
 
@@ -288,13 +288,13 @@ impl<H, L> EliasFano<H, L> {
     /// This method is equivalent to [`IndexedSeq::len`], but it is provided to
     /// reduce ambiguity in method resolution.
     #[inline]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.n
     }
 
     /// Returns the upper bound used to build the structure.
     #[inline]
-    pub fn upper_bound(&self) -> usize {
+    pub const fn upper_bound(&self) -> usize {
         self.u
     }
 

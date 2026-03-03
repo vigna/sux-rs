@@ -129,11 +129,11 @@ impl<W: Word> Modulo2System<W> {
         }
     }
 
-    pub fn num_vars(&self) -> usize {
+    pub const fn num_vars(&self) -> usize {
         self.num_vars
     }
 
-    pub fn num_equations(&self) -> usize {
+    pub const fn num_equations(&self) -> usize {
         self.equations.len()
     }
 

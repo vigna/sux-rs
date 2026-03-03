@@ -244,7 +244,7 @@ impl<
     /// This method is equivalent to [`IndexedSeq::len`], but it is provided to
     /// reduce ambiguity in method resolution.
     #[inline]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.len
     }
 
@@ -870,12 +870,12 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
     }
 
     /// Returns the number of strings in the list.
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.len
     }
 
     /// Returns whether the builder is empty.
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 

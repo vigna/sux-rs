@@ -314,14 +314,14 @@ impl<T, D: AsRef<[usize]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
     /// This is the length that was specified when creating the builder,
     /// not the number of values actually stored.
     #[inline(always)]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.index.ef.upper_bound()
     }
 
     /// Returns true if the array len is 0.
     #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
+    pub const fn is_empty(&self) -> bool {
+        self.index.ef.upper_bound() == 0
     }
 
     /// Gets a reference to the value at the given position.

@@ -422,14 +422,14 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     }
 
     /// Returns the bit width of the values inside the vector.
-    pub fn bit_width(&self) -> usize {
+    pub const fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= W::BITS);
         self.bit_width
     }
 
     /// Returns the mask used to extract values from the vector.
     /// This will keep the lowest `bit_width` bits.
-    pub fn mask(&self) -> W {
+    pub const fn mask(&self) -> W {
         self.mask
     }
 
@@ -1300,7 +1300,7 @@ impl<W: Word + IntoAtomic, B> AtomicBitFieldVec<W, B> {
 
     /// Returns the mask used to extract values from the vector.
     /// This will keep the lowest `bit_width` bits.
-    pub fn mask(&self) -> W {
+    pub const fn mask(&self) -> W {
         self.mask
     }
 }
