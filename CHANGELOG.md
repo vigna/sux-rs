@@ -5,11 +5,12 @@
 ### Changed
 
 - Removed dependency on `common_traits`, replaced by `num-primitive`
-  and the new `atomic-primitive` crate.
+  and the new `atomic-primitive` crate. New `SelectInWord`, `AsU128` and
+  `PrimitiveUnsignedExt` traits to compensate for the removed traits.
 
 ## [0.12.2] - 2026-02-18
 
-## Changed
+### Changed
 
 - Upgraded to `lender` 0.6.0.
 

@@ -1741,7 +1741,7 @@ impl<
                 edge_index,
                 double_stack,
                 push_lower,
-                |v| E::Vertex::as_from(v)
+                E::Vertex::as_from
             );
         }
 

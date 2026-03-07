@@ -45,7 +45,7 @@ impl<T: AtomicPrimitive> core::fmt::Display for CannotCastToAtomicError<T> {
         );
         write!(
             f,
-            "Cannot cast {} (align_of: {}) to atomic type {} (align_of: {}) because the have incompatible alignments",
+            "Cannot cast {} (align_of: {}) to atomic type {} (align_of: {}) because they have incompatible alignments",
             core::any::type_name::<T>(),
             core::mem::align_of::<T>(),
             core::any::type_name::<Atomic<T>>(),
@@ -81,7 +81,7 @@ pub fn transmute_vec_into_atomic<W: AtomicPrimitive>(v: Vec<W>) -> Vec<Atomic<W>
 }
 
 /// Transmutes a vector of elements of atomic type into a vector of elements of
-/// the associated atomic non-atomic type.
+/// the associated non-atomic type.
 ///
 /// [It is not safe to transmute a
 /// vector](https://doc.rust-lang.org/std/mem/fn.transmute.html). This method
@@ -216,7 +216,7 @@ pub fn prefetch_index<T>(data: impl AsRef<[T]>, index: usize) {
 
 /// Extension trait for [`PrimitiveUnsigned`] types.
 pub trait PrimitiveUnsignedExt {
-    /// Return the number of bits necessary to represent an unsigned integer
+    /// Returns the number of bits necessary to represent an unsigned integer
     /// value.
     ///
     /// This is one for zero; otherwise, it is equal to `ilog2(self) + 1`.
