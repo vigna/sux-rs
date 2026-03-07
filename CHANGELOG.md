@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.13.1] - 2026-03-07
+
+### Changed
+
+- Fixed `num-primitive` version at 0.2.1.
+
 ## [0.13.0] - 2026-03-07
 
 ### Changed
