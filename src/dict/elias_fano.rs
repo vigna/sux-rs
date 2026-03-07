@@ -52,7 +52,7 @@
 
 use crate::prelude::{indexed_dict::*, *};
 use crate::traits::{AtomicBitVecOps, BitVecOpsMut, bit_field_slice::*};
-use common_traits::SelectInWord;
+use crate::utils::SelectInWord;
 use core::sync::atomic::Ordering;
 use mem_dbg::*;
 use std::borrow::Borrow;

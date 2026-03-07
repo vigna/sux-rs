@@ -62,8 +62,8 @@
 //!   is similar to [`FuseLge3Shards`].
 
 use crate::utils::{BinSafe, Sig};
-use common_traits::{CastableFrom, UnsignedInt, UpcastableInto};
 use mem_dbg::*;
+use num_primitive::{PrimitiveNumberAs, PrimitiveUnsigned};
 use rdst::RadixKey;
 use std::fmt::Display;
 
@@ -128,7 +128,7 @@ pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send 
     /// Note that since all our graphs have more vertices than edges, this
     /// type is also used to represent an edge by its index (i.e., the
     /// index of the associated key).
-    type Vertex: UnsignedInt + CastableFrom<usize> + UpcastableInto<usize>;
+    type Vertex: PrimitiveUnsigned + PrimitiveNumberAs<usize>;
 
     /// Sets up the sharding logic for the given number of keys.
     ///

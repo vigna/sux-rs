@@ -7,7 +7,6 @@
 #![allow(clippy::collapsible_else_if)]
 use anyhow::Result;
 use clap::Parser;
-use common_traits::{CastableFrom, DowncastableInto};
 use epserde::prelude::*;
 use fallible_iterator::FallibleIterator;
 use lender::*;
@@ -132,7 +131,7 @@ fn main() -> Result<()> {
 }
 
 fn main_with_types_boxed_slice<
-    W: Word + BinSafe + CastableFrom<u64> + DowncastableInto<u8> + TypeHash + AlignHash,
+    W: Word + BinSafe + TypeHash + AlignHash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 >(
@@ -141,6 +140,7 @@ fn main_with_types_boxed_slice<
 where
     str: ToSig<S>,
     usize: ToSig<S>,
+    u64: num_primitive::PrimitiveNumberAs<W>,
     Box<[W]>: BitFieldSlice<W>,
     VFilter<W, VFunc<usize, W, Box<[W]>, S, E>>: Deserialize,
     VFilter<W, VFunc<str, W, Box<[W]>, S, E>>: Deserialize,
@@ -186,7 +186,7 @@ where
 }
 
 fn main_with_types_bit_field_vec<
-    W: Word + BinSafe + CastableFrom<u64> + DowncastableInto<u8> + TypeHash + AlignHash,
+    W: Word + BinSafe + TypeHash + AlignHash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 >(
@@ -195,6 +195,7 @@ fn main_with_types_bit_field_vec<
 where
     str: ToSig<S>,
     usize: ToSig<S>,
+    u64: num_primitive::PrimitiveNumberAs<W>,
     VFilter<W, VFunc<usize, W, BitFieldVec<W>, S, E>>: Deserialize,
     VFilter<W, VFunc<str, W, BitFieldVec<W>, S, E>>: Deserialize,
 {

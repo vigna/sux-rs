@@ -53,7 +53,6 @@
 #![allow(clippy::comparison_chain)]
 #![allow(clippy::type_complexity)]
 use anyhow::Result;
-use common_traits::UpcastableInto;
 use mem_dbg::{MemDbg, MemSize};
 
 use rdst::RadixKey;
@@ -170,9 +169,35 @@ impl BitXorAssign for EmptyVal {
     fn bitxor_assign(&mut self, _: EmptyVal) {}
 }
 
-// Fake implementation to treat EmptyVal like a value.
-impl UpcastableInto<u128> for EmptyVal {
-    fn upcast(self) -> u128 {
+// Fake implementations to treat EmptyVal like a value.
+impl From<EmptyVal> for u128 {
+    fn from(_: EmptyVal) -> u128 {
+        0
+    }
+}
+
+/// Trait for types that can be converted to `u128` via an `as` cast.
+///
+/// We need this trait because [`EmptyVal`] is not a primitive type, so it
+/// cannot implement [`PrimitiveNumberAs`](num_primitive::PrimitiveNumberAs).
+/// This trait is implemented for all primitive types via a blanket on
+/// [`PrimitiveNumberAs<u128>`](num_primitive::PrimitiveNumberAs) and manually
+/// for [`EmptyVal`], making it possible to avoid a
+/// [`num_traits`](https://crates.io/crates/num-traits) dependency.
+pub trait AsU128: Copy {
+    fn as_u128(self) -> u128;
+}
+
+impl<T: num_primitive::PrimitiveNumber + num_primitive::PrimitiveNumberAs<u128>> AsU128 for T {
+    #[inline(always)]
+    fn as_u128(self) -> u128 {
+        self.as_to()
+    }
+}
+
+impl AsU128 for EmptyVal {
+    #[inline(always)]
+    fn as_u128(self) -> u128 {
         0
     }
 }

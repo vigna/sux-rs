@@ -9,7 +9,6 @@ use std::ops::{BitXor, BitXorAssign};
 
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
-use common_traits::{DowncastableFrom, UpcastableFrom};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
@@ -164,17 +163,12 @@ fn set_builder<W: Word + BinSafe, D: BitFieldSlice<W> + Send + Sync, S, E: Shard
     builder
 }
 
-fn main_with_types_boxed_slice<
-    W: Word + BinSafe + DowncastableFrom<u64>,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
->(
+fn main_with_types_boxed_slice<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
     args: Args,
 ) -> Result<()>
 where
     str: ToSig<S>,
     usize: ToSig<S>,
-    u128: UpcastableFrom<W>,
     SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, usize>: RadixKey + BitXor + BitXorAssign,
@@ -216,17 +210,12 @@ where
     Ok(())
 }
 
-fn main_with_types_bit_field_vec<
-    W: Word + BinSafe + DowncastableFrom<u64>,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
->(
+fn main_with_types_bit_field_vec<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
     args: Args,
 ) -> Result<()>
 where
     str: ToSig<S>,
     usize: ToSig<S>,
-    u128: UpcastableFrom<W>,
     SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, usize>: RadixKey + BitXor + BitXorAssign,

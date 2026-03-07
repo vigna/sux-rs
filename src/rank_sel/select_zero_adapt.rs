@@ -7,8 +7,8 @@
  */
 
 use super::{Inventory, SpanType};
+use crate::utils::SelectInWord;
 use ambassador::Delegate;
-use common_traits::SelectInWord;
 use mem_dbg::{MemDbg, MemSize};
 use std::{
     cmp::{max, min},

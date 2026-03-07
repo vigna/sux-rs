@@ -10,8 +10,8 @@ use crate::func::mix64;
 use crate::func::{VFunc, shard_edge::ShardEdge};
 use crate::traits::bit_field_slice::*;
 use crate::utils::{BinSafe, Sig, ToSig};
-use common_traits::CastableInto;
 use mem_dbg::*;
+use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
 use std::borrow::Borrow;
 use std::ops::Index;
 
@@ -55,7 +55,7 @@ pub struct VFilter<W: Word + BinSafe, F> {
 impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
     VFilter<W, VFunc<T, W, D, S, E>>
 where
-    u64: CastableInto<W>,
+    u64: PrimitiveNumberAs<W>,
 {
     /// Returns the hash associated with the given signature by the underlying
     /// function, or a random hash if the signature is not the signature of a
@@ -86,7 +86,8 @@ where
     pub fn contains_by_sig(&self, sig: S) -> bool {
         let shard_edge = &self.func.shard_edge;
         self.func.get_by_sig(sig)
-            == mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))).cast() & self.filter_mask
+            == mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))).as_to::<W>()
+                & self.filter_mask
     }
 
     /// Returns whether a key is contained in the filter.
@@ -116,7 +117,7 @@ where
 impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
     VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>
 where
-    u64: CastableInto<W>,
+    u64: PrimitiveNumberAs<W>,
 {
     /// Returns the hash associated with the given signature by the underlying
     /// function, or a random hash if the signature is not the signature of a
@@ -158,7 +159,8 @@ where
     pub fn contains_by_sig_unaligned(&self, sig: S) -> bool {
         let shard_edge = &self.func.shard_edge;
         self.func.get_by_sig_unaligned(sig)
-            == mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))).cast() & self.filter_mask
+            == mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))).as_to::<W>()
+                & self.filter_mask
     }
 
     /// Returns whether a key is contained in the filter, using [unaligned
@@ -181,7 +183,7 @@ impl<
     B: Borrow<T>,
 > Index<B> for VFilter<W, VFunc<T, W, D, S, E>>
 where
-    u64: CastableInto<W>,
+    u64: PrimitiveNumberAs<W>,
 {
     type Output = bool;
 
@@ -195,8 +197,8 @@ where
 mod tests {
     use std::ops::{BitXor, BitXorAssign};
 
-    use common_traits::UpcastableFrom;
     use dsi_progress_logger::no_logging;
+    use num_primitive::PrimitiveNumberAs;
     use rdst::RadixKey;
 
     use crate::{
@@ -220,7 +222,7 @@ mod tests {
     -> anyhow::Result<()>
     where
         usize: ToSig<S>,
-        u128: UpcastableFrom<usize>,
+        u128: PrimitiveNumberAs<usize>,
         SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
         SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     {

@@ -12,8 +12,8 @@ use crate::traits::{
     BitCount, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
     SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked,
 };
+use crate::utils::SelectInWord;
 use ambassador::Delegate;
-use common_traits::SelectInWord;
 use mem_dbg::{MemDbg, MemSize};
 
 const ONES_STEP_9: usize = (1usize << 0)
