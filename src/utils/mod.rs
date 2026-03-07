@@ -7,7 +7,8 @@
  */
 
 //! Utility traits and implementations.
-use common_traits::{Atomic, IntoAtomic};
+use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic};
+use num_primitive::PrimitiveUnsigned;
 
 pub mod lenders;
 pub use lenders::*;
@@ -22,35 +23,38 @@ pub use fair_chunks::FairChunks;
 pub mod mod2_sys;
 pub use mod2_sys::*;
 
+pub mod select_in_word;
+pub use select_in_word::*;
+
 /// An error type raised when attempting to cast a non-atomic type to an atomic
 /// type with incompatible alignments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CannotCastToAtomicError<T: IntoAtomic>(core::marker::PhantomData<T>);
+pub struct CannotCastToAtomicError<T: AtomicPrimitive>(core::marker::PhantomData<T>);
 
-impl<T: IntoAtomic> Default for CannotCastToAtomicError<T> {
+impl<T: AtomicPrimitive> Default for CannotCastToAtomicError<T> {
     fn default() -> Self {
         CannotCastToAtomicError(core::marker::PhantomData)
     }
 }
 
-impl<T: IntoAtomic> core::fmt::Display for CannotCastToAtomicError<T> {
+impl<T: AtomicPrimitive> core::fmt::Display for CannotCastToAtomicError<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         assert_ne!(
             core::mem::align_of::<T>(),
-            core::mem::align_of::<T::AtomicType>()
+            core::mem::align_of::<Atomic<T>>()
         );
         write!(
             f,
             "Cannot cast {} (align_of: {}) to atomic type {} (align_of: {}) because the have incompatible alignments",
             core::any::type_name::<T>(),
             core::mem::align_of::<T>(),
-            core::any::type_name::<T::AtomicType>(),
-            core::mem::align_of::<T::AtomicType>()
+            core::any::type_name::<Atomic<T>>(),
+            core::mem::align_of::<Atomic<T>>()
         )
     }
 }
 
-impl<T: IntoAtomic + core::fmt::Debug> core::error::Error for CannotCastToAtomicError<T> {}
+impl<T: AtomicPrimitive + core::fmt::Debug> core::error::Error for CannotCastToAtomicError<T> {}
 
 /// Transmutes a vector of elements of non-atomic type into a vector of elements
 /// of the associated atomic type.
@@ -67,10 +71,10 @@ impl<T: IntoAtomic + core::fmt::Debug> core::error::Error for CannotCastToAtomic
 /// Otherwise, we fall back to a safe but less efficient method that allocates a
 /// new vector and copies the elements one by one. The compiler might be able
 /// to optimize this case away in some situations.
-pub fn transmute_vec_into_atomic<W: IntoAtomic>(v: Vec<W>) -> Vec<W::AtomicType> {
-    if core::mem::align_of::<W::AtomicType>() == core::mem::align_of::<W>() {
+pub fn transmute_vec_into_atomic<W: AtomicPrimitive>(v: Vec<W>) -> Vec<Atomic<W>> {
+    if core::mem::align_of::<Atomic<W>>() == core::mem::align_of::<W>() {
         let mut v = std::mem::ManuallyDrop::new(v);
-        unsafe { Vec::from_raw_parts(v.as_mut_ptr() as *mut W::AtomicType, v.len(), v.capacity()) }
+        unsafe { Vec::from_raw_parts(v.as_mut_ptr() as *mut Atomic<W>, v.len(), v.capacity()) }
     } else {
         v.into_iter().map(W::to_atomic).collect()
     }
@@ -82,29 +86,23 @@ pub fn transmute_vec_into_atomic<W: IntoAtomic>(v: Vec<W>) -> Vec<W::AtomicType>
 /// [It is not safe to transmute a
 /// vector](https://doc.rust-lang.org/std/mem/fn.transmute.html). This method
 /// implements a correct transmutation of the vector content.
-pub fn transmute_vec_from_atomic<A: Atomic>(v: Vec<A>) -> Vec<A::NonAtomicType> {
+pub fn transmute_vec_from_atomic<A: PrimitiveAtomic>(v: Vec<A>) -> Vec<A::Value> {
     let mut v = std::mem::ManuallyDrop::new(v);
     // this is always safe because atomic types have bigger or equal alignment
     // than their non-atomic counterparts
-    unsafe {
-        Vec::from_raw_parts(
-            v.as_mut_ptr() as *mut A::NonAtomicType,
-            v.len(),
-            v.capacity(),
-        )
-    }
+    unsafe { Vec::from_raw_parts(v.as_mut_ptr() as *mut A::Value, v.len(), v.capacity()) }
 }
 
 /// Transmutes a boxed slice of elements of non-atomic type into a boxed slice
 /// of elements of the associated atomic type.
 ///
 /// See [`transmute_vec_into_atomic`] for details.
-pub fn transmute_boxed_slice_into_atomic<W: IntoAtomic + Copy>(
+pub fn transmute_boxed_slice_into_atomic<W: AtomicPrimitive + Copy>(
     b: Box<[W]>,
-) -> Box<[W::AtomicType]> {
-    if core::mem::align_of::<W::AtomicType>() == core::mem::align_of::<W>() {
+) -> Box<[Atomic<W>]> {
+    if core::mem::align_of::<Atomic<W>>() == core::mem::align_of::<W>() {
         let mut b = std::mem::ManuallyDrop::new(b);
-        unsafe { Box::from_raw(b.as_mut() as *mut [W] as *mut [W::AtomicType]) }
+        unsafe { Box::from_raw(b.as_mut() as *mut [W] as *mut [Atomic<W>]) }
     } else {
         IntoIterator::into_iter(b).map(W::to_atomic).collect()
     }
@@ -116,9 +114,9 @@ pub fn transmute_boxed_slice_into_atomic<W: IntoAtomic + Copy>(
 /// [It is not safe to transmute a
 /// vector](https://doc.rust-lang.org/std/mem/fn.transmute.html). This method
 /// implements a correct transmutation of the vector content.
-pub fn transmute_boxed_slice_from_atomic<A: Atomic>(b: Box<[A]>) -> Box<[A::NonAtomicType]> {
+pub fn transmute_boxed_slice_from_atomic<A: PrimitiveAtomic>(b: Box<[A]>) -> Box<[A::Value]> {
     let mut b = std::mem::ManuallyDrop::new(b);
-    unsafe { Box::from_raw(b.as_mut() as *mut [A] as *mut [A::NonAtomicType]) }
+    unsafe { Box::from_raw(b.as_mut() as *mut [A] as *mut [A::Value]) }
 }
 
 pub struct Mwc192 {
@@ -213,5 +211,33 @@ pub fn prefetch_index<T>(data: impl AsRef<[T]>, index: usize) {
     )))]
     {
         let _ = ptr; // Silence unused variable warning.
+    }
+}
+
+/// Extension trait for [`PrimitiveUnsigned`] types.
+pub trait PrimitiveUnsignedExt {
+    /// Return the number of bits necessary to represent an unsigned integer
+    /// value.
+    ///
+    /// This is one for zero; otherwise, it is equal to `ilog2(self) + 1`.
+    ///
+    /// ```
+    /// use sux::utils::PrimitiveUnsignedExt;
+    ///
+    /// assert_eq!(0_u64.bit_len(), 1);
+    /// assert_eq!(1_u64.bit_len(), 1);
+    /// assert_eq!(2_u64.bit_len(), 2);
+    /// assert_eq!(3_u64.bit_len(), 2);
+    /// assert_eq!(4_u64.bit_len(), 3);
+    /// assert_eq!(255_u64.bit_len(), 8);
+    /// assert_eq!(256_u64.bit_len(), 9);
+    /// ```
+    fn bit_len(self) -> u32;
+}
+
+impl<T: PrimitiveUnsigned> PrimitiveUnsignedExt for T {
+    #[inline(always)]
+    fn bit_len(self) -> u32 {
+        if self == T::MIN { 1 } else { self.ilog2() + 1 }
     }
 }

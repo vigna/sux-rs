@@ -7,14 +7,10 @@
 
 use anyhow::Ok;
 use anyhow::Result;
+use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic, PrimitiveAtomicInteger};
 use bit_field_slice::*;
-use common_traits::AsBytes;
-use common_traits::Atomic;
-use common_traits::AtomicUnsignedInt;
-use common_traits::CastableFrom;
-use common_traits::CastableInto;
-use common_traits::IntoAtomic;
 use core::sync::atomic::Ordering;
+use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngExt, SeedableRng};
@@ -49,16 +45,19 @@ fn test_bit_field_vec_apply() {
     test_bit_field_vec_apply_param::<u64>();
 }
 
-fn test_bit_field_vec_apply_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
-    for bit_width in 0..W::BITS {
+fn test_bit_field_vec_apply_param<W: Word + PrimitiveNumberAs<u64>>()
+where
+    u64: PrimitiveNumberAs<W>,
+{
+    for bit_width in 0..W::BITS as usize {
         let n = 100;
-        let u = W::ONE << bit_width.saturating_sub(1).min(60);
+        let u = W::ONE << (bit_width.saturating_sub(1).min(60) as u32);
         let mut rng = SmallRng::seed_from_u64(0);
 
         let mut cp = BitFieldVec::<W>::new(bit_width, n);
         for _ in 0..10 {
             let values = (0..n)
-                .map(|_| rng.random_range(0..u.cast()).cast())
+                .map(|_| rng.random_range(0u64..u.as_to()).as_to())
                 .collect::<Vec<W>>();
 
             let mut indices = (0..n).collect::<Vec<_>>();
@@ -69,7 +68,7 @@ fn test_bit_field_vec_apply_param<W: Word + CastableInto<u64> + CastableFrom<u64
             }
 
             let new_values = (0..n)
-                .map(|_| rng.random_range(0..u.cast()).cast())
+                .map(|_| rng.random_range(0u64..u.as_to()).as_to())
                 .collect::<Vec<W>>();
 
             // Test that apply_in_place happens in the right order
@@ -88,10 +87,13 @@ fn test_bit_field_vec_apply_param<W: Word + CastableInto<u64> + CastableFrom<u64
     }
 }
 
-fn test_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
-    for bit_width in 0..W::BITS {
+fn test_param<W: Word + PrimitiveNumberAs<u64>>()
+where
+    u64: PrimitiveNumberAs<W>,
+{
+    for bit_width in 0..W::BITS as usize {
         let n = 100;
-        let u = W::ONE << bit_width.saturating_sub(1).min(60);
+        let u = W::ONE << (bit_width.saturating_sub(1).min(60) as u32);
         let mut rng = SmallRng::seed_from_u64(0);
 
         let mut v = BitFieldVec::<W>::new(bit_width, n);
@@ -101,12 +103,12 @@ fn test_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
             if bit_width == 0 {
                 W::ZERO
             } else {
-                (W::ONE << bit_width) - W::ONE
+                (W::ONE << bit_width as u32) - W::ONE
             }
         );
         for _ in 0..10 {
             let values = (0..n)
-                .map(|_| rng.random_range(0..u.cast()).cast())
+                .map(|_| rng.random_range(0u64..u.as_to()).as_to())
                 .collect::<Vec<W>>();
 
             let mut indices = (0..n).collect::<Vec<_>>();
@@ -157,13 +159,14 @@ fn test_param<W: Word + CastableInto<u64> + CastableFrom<u64>>() {
     }
 }
 
-fn test_atomic_param<W: Word + IntoAtomic + CastableInto<u64> + CastableFrom<u64>>()
+fn test_atomic_param<W: Word + AtomicPrimitive + PrimitiveNumberAs<u64>>()
 where
-    W::AtomicType: AtomicUnsignedInt + AsBytes,
+    u64: PrimitiveNumberAs<W>,
+    Atomic<W>: PrimitiveAtomicInteger,
 {
     use sux::traits::bit_field_slice::AtomicBitFieldSlice;
 
-    for bit_width in 0..W::BITS {
+    for bit_width in 0..W::BITS as usize {
         let n: usize = 100;
         let u: u64 = 1 << bit_width;
         let mut rng = SmallRng::seed_from_u64(0);
@@ -175,12 +178,12 @@ where
             if bit_width == 0 {
                 W::ZERO
             } else {
-                (W::ONE << bit_width) - W::ONE
+                (W::ONE << bit_width as u32) - W::ONE
             }
         );
         for _ in 0..10 {
             let values: Vec<W> = (0..n)
-                .map(|_| rng.random_range(0..u).cast())
+                .map(|_| rng.random_range(0..u).as_to())
                 .collect::<Vec<_>>();
 
             let mut indices = (0..n).collect::<Vec<_>>();
@@ -597,10 +600,9 @@ fn test_slice() {
     assert_eq!(b.index_value(21), 4);
 }
 
-fn atomic_slice_eq<T: Atomic>(actual: &[T], expected: &[T])
+fn atomic_slice_eq<T: PrimitiveAtomic>(actual: &[T], expected: &[T])
 where
-    <T as Atomic>::NonAtomicType: PartialEq,
-    <T as Atomic>::NonAtomicType: std::fmt::Debug,
+    T::Value: PartialEq + std::fmt::Debug,
 {
     assert_eq!(actual.len(), expected.len());
     for (actual, expected) in actual.iter().zip(expected) {

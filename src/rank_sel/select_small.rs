@@ -8,8 +8,8 @@
 
 use super::SmallCounters;
 use crate::prelude::*;
+use crate::utils::SelectInWord;
 use ambassador::Delegate;
-use common_traits::SelectInWord;
 use mem_dbg::{MemDbg, MemSize};
 
 use crate::ambassador_impl_AsRef;

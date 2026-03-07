@@ -1,12 +1,19 @@
 # Change Log
 
-## [0.12.2] 2026-02-18
+## [0.13.0] - 2026-03-07
+
+### Changed
+
+- Removed dependency on `common_traits`, replaced by `num-primitive`
+  and the new `atomic-primitive` crate.
+
+## [0.12.2] - 2026-02-18
 
 ## Changed
 
 - Upgraded to `lender` 0.6.0.
 
-## [0.12.1] 2026-02-16
+## [0.12.1] - 2026-02-16
 
 ### Improved
 

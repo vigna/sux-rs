@@ -10,7 +10,6 @@ use std::ops::{BitXor, BitXorAssign};
 
 use anyhow::Result;
 use clap::{ArgGroup, Parser, ValueEnum};
-use common_traits::UpcastableFrom;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
@@ -185,7 +184,6 @@ fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Resu
 where
     str: ToSig<S>,
     usize: ToSig<S>,
-    u128: UpcastableFrom<usize>,
     SigVal<S, usize>: RadixKey,
     SigVal<S, EmptyVal>: RadixKey,
     SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,

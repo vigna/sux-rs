@@ -12,8 +12,8 @@ use crate::func::shard_edge::ShardEdge;
 use crate::traits::bit_field_slice::*;
 use crate::utils::*;
 use crate::{bits::BitFieldVec, func::VFunc};
-use common_traits::{UpcastableFrom, UpcastableInto};
 use mem_dbg::*;
+use num_primitive::PrimitiveNumber;
 use value_traits::slices::SliceByValue;
 
 /// A signed index function using a [`SliceByValue`] to store hashes.
@@ -40,8 +40,7 @@ impl<
     H: SliceByValue,
 > SignedVFunc<VFunc<T, W, D, S, E>, H>
 where
-    H::Value: UpcastableInto<u64>,
-    usize: UpcastableFrom<W>,
+    H::Value: PrimitiveNumber,
 {
     /// Returns the index of a key associated with the given signature, if there
     /// was such a key in the list provided at construction time; otherwise,
@@ -53,9 +52,20 @@ where
     /// This method is mainly useful in the construction of compound functions.
     #[inline]
     pub fn get_by_sig(&self, sig: S) -> Option<W> {
+        // Static check that H::Value → u64 conversion is lossless
+        const {
+            assert!(
+                size_of::<H::Value>() <= size_of::<u64>(),
+                "Hash value type must fit in u64 without truncation"
+            );
+        }
         let index = self.func.get_by_sig(sig);
         let shard_edge = &self.func.shard_edge;
-        if self.hashes.get_value(index.upcast())?.upcast()
+        // as_to is safe: index is bounded by num_keys, which is a usize
+        if self
+            .hashes
+            .get_value(index.as_to::<usize>())?
+            .as_to::<u64>()
             == crate::func::mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)))
         {
             Some(index)
@@ -111,8 +121,7 @@ impl<
     H: SliceByValue,
 > BitSignedVFunc<VFunc<T, W, D, S, E>, H>
 where
-    H::Value: UpcastableInto<u64>,
-    usize: UpcastableFrom<W>,
+    H::Value: PrimitiveNumber,
 {
     /// Returns the index of a key associated with the given signature, if there
     /// was such a key in the list provided at construction time; otherwise,
@@ -124,9 +133,20 @@ where
     /// This method is mainly useful in the construction of compound functions.
     #[inline]
     pub fn get_by_sig(&self, sig: S) -> Option<W> {
+        // Static check that H::Value → u64 conversion is lossless
+        const {
+            assert!(
+                size_of::<H::Value>() <= size_of::<u64>(),
+                "Hash value type must fit in u64 without truncation"
+            );
+        }
         let index = self.func.get_by_sig(sig);
         let shard_edge = &self.func.shard_edge;
-        if self.hashes.get_value(index.upcast())?.upcast()
+        // as_to is safe: index is bounded by num_keys, which is a usize
+        if self
+            .hashes
+            .get_value(index.as_to::<usize>())?
+            .as_to::<u64>()
             == (crate::func::mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)))
                 & self.hash_mask)
         {
@@ -160,8 +180,7 @@ where
 impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>, H: SliceByValue>
     BitSignedVFunc<VFunc<T, W, BitFieldVec<W>, S, E>, H>
 where
-    H::Value: UpcastableInto<u64>,
-    usize: UpcastableFrom<W>,
+    H::Value: PrimitiveNumber,
 {
     /// Returns the index of a key associated with the given signature, if there
     /// was such a key in the list provided at construction time; otherwise,
@@ -176,9 +195,20 @@ where
     /// This method is mainly useful in the construction of compound functions.
     #[inline]
     pub fn get_by_sig_unaligned(&self, sig: S) -> Option<W> {
+        // Static check that H::Value → u64 conversion is lossless
+        const {
+            assert!(
+                size_of::<H::Value>() <= size_of::<u64>(),
+                "Hash value type must fit in u64 without truncation"
+            );
+        }
         let index = self.func.get_by_sig_unaligned(sig);
         let shard_edge = &self.func.shard_edge;
-        if self.hashes.get_value(index.upcast())?.upcast()
+        // as_to is safe: index is bounded by num_keys, which is a usize
+        if self
+            .hashes
+            .get_value(index.as_to::<usize>())?
+            .as_to::<u64>()
             == (crate::func::mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)))
                 & self.hash_mask)
         {

@@ -22,11 +22,13 @@
 //! slices of bit fields that support atomic operations.
 //!
 //! All the traits depend on a type parameter `W` that must implement [`Word`],
-//! and which defaults to `usize`, but any type satisfying the [`Word`] trait can
-//! be used, with the restriction that the bit width of the slice can be at most
-//! the bit width of `W` as defined by [`AsBytes::BITS`]. Additionally, to
-//! implement [`AtomicBitFieldSlice`], `W` must implement [`IntoAtomic`]. The
-//! methods of all traits accept and return values of type `W`.
+//! and which defaults to `usize`, but any type satisfying the [`Word`] trait
+//! can be used, with the restriction that the bit width of the slice can be at
+//! most the bit width of `W` as defined by
+//! [`PrimitiveInteger::BITS`](num_primitive::PrimitiveInteger::BITS).
+//! Additionally, to implement [`AtomicBitFieldSlice`], `W` must implement
+//! [`AtomicPrimitive`](atomic_primitive::AtomicPrimitive). The methods of all
+//! traits accept and return values of type `W`.
 //!
 //! Implementations must always return zero upon a read operation when the bit
 //! width is zero. The behavior of write operations in the same context is not
@@ -41,8 +43,9 @@
 //! and non-atomic unsigned integer types that view their elements as values
 //! with a bit width equal to that of the type.
 #![allow(clippy::result_unit_err)]
-use common_traits::*;
-use core::sync::atomic::*;
+use atomic_primitive::{AtomicPrimitive, PrimitiveAtomicInteger};
+use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use num_primitive::{PrimitiveNumberAs, PrimitiveUnsigned};
 #[cfg(feature = "rayon")]
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
@@ -52,9 +55,23 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 use crate::{debug_assert_bounds, panic_if_out_of_bounds, panic_if_value};
 
 /// A derived trait that the types used as a parameter for [`BitFieldSlice`] must satisfy.
-/// To be usable in an [`AtomicBitFieldSlice`], the type must also implement [`IntoAtomic`].
-pub trait Word: UnsignedInt + FiniteRangeNumber + AsBytes {}
-impl<W: UnsignedInt + FiniteRangeNumber + AsBytes> Word for W {}
+/// To be usable in an [`AtomicBitFieldSlice`], the type must also implement
+/// [`AtomicPrimitive`].
+pub trait Word: PrimitiveUnsigned + PrimitiveNumberAs<u128> {
+    const ZERO: Self;
+    const ONE: Self;
+}
+
+macro_rules! impl_word {
+    ($($ty:ty),*) => {
+        $(impl Word for $ty {
+            const ZERO: Self = 0;
+            const ONE: Self = 1;
+        })*
+    };
+}
+
+impl_word!(u8, u16, u32, u64, u128, usize);
 
 /// Common method for [`BitFieldSlice`], [`BitFieldSliceMut`], and
 /// [`AtomicBitFieldSlice`].
@@ -92,7 +109,7 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> + SliceByValueMut<Value = 
         if self.bit_width() == 0 {
             W::ZERO
         } else {
-            W::MAX >> (W::BITS as u32 - self.bit_width() as u32)
+            W::MAX >> (W::BITS - self.bit_width() as u32)
         }
     }
 
@@ -112,9 +129,9 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> + SliceByValueMut<Value = 
 ///
 /// Different implementations might provide different atomicity guarantees. See
 /// [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec) for an example.
-pub trait AtomicBitFieldSlice<W: Word + IntoAtomic>: BitWidth<W::AtomicType>
+pub trait AtomicBitFieldSlice<W: Word + AtomicPrimitive>: BitWidth<W::Atomic>
 where
-    W::AtomicType: AtomicUnsignedInt + AsBytes,
+    W::Atomic: PrimitiveAtomicInteger,
 {
     /// See [`slice::len`].
     fn len(&self) -> usize;
@@ -160,7 +177,7 @@ where
         let mask = if bw == 0 {
             W::ZERO
         } else {
-            W::MAX >> (W::BITS as u32 - bw as u32)
+            W::MAX >> (W::BITS - bw as u32)
         };
         panic_if_value!(value, mask, bw);
         unsafe {
@@ -263,9 +280,7 @@ macro_rules! impl_slice_mut {
         impl BitFieldSliceMut<$ty> for [$ty] {
 
             fn reset(&mut self) {
-                for idx in 0..<[$ty]>::len(self) {
-                    unsafe{ self.set_unchecked(idx, 0) };
-                }
+                self.fill(0);
             }
 
             #[cfg(feature = "rayon")]
@@ -283,9 +298,7 @@ macro_rules! impl_slice_mut {
         impl BitFieldSliceMut<$ty> for Vec<$ty> {
             #[inline(always)]
             fn reset(&mut self) {
-                for idx in 0..<[$ty]>::len(self) {
-                    unsafe{ self.set_unchecked(idx, 0) };
-                }
+                self.fill(0);
             }
 
             #[cfg(feature = "rayon")]
@@ -304,9 +317,7 @@ macro_rules! impl_slice_mut {
         impl<const N: usize> BitFieldSliceMut<$ty> for [$ty; N] {
             #[inline(always)]
             fn reset(&mut self) {
-                for idx in 0..<[$ty]>::len(self) {
-                    unsafe{ self.set_unchecked(idx, 0) };
-                }
+                self.fill(0);
             }
 
             #[cfg(feature = "rayon")]
@@ -358,21 +369,21 @@ macro_rules! impl_bit_width_atomic {
         impl BitWidth<$aty> for [$aty] {
             #[inline(always)]
             fn bit_width(&self) -> usize {
-                <$aty>::BITS as usize
+                <$aty as PrimitiveAtomicInteger>::BITS as usize
             }
         }
 
         impl BitWidth<$aty> for Vec<$aty> {
             #[inline(always)]
             fn bit_width(&self) -> usize {
-                <$aty>::BITS as usize
+                <$aty as PrimitiveAtomicInteger>::BITS as usize
             }
         }
 
         impl<const N: usize> BitWidth<$aty> for [$aty; N] {
             #[inline(always)]
             fn bit_width(&self) -> usize {
-                <$aty>::BITS as usize
+                <$aty as PrimitiveAtomicInteger>::BITS as usize
             }
         }
     )*};
@@ -493,9 +504,9 @@ impl_atomic!(usize, AtomicUsize);
 
 macro_rules! impl_atomic_delegation {
     ($($ty:ty),*) => {$(
-        impl<W: Word + IntoAtomic, T: AtomicBitFieldSlice<W>> AtomicBitFieldSlice<W> for $ty
+        impl<W: Word + AtomicPrimitive, T: AtomicBitFieldSlice<W>> AtomicBitFieldSlice<W> for $ty
         where
-            W::AtomicType: AtomicUnsignedInt + AsBytes
+            W::Atomic: PrimitiveAtomicInteger,
         {
             #[inline(always)]
             fn len(&self) -> usize {

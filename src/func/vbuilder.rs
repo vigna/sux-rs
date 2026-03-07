@@ -13,14 +13,12 @@ use crate::func::{shard_edge::ShardEdge, *};
 use crate::traits::BitVecOpsMut;
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
 use crate::utils::*;
-use common_traits::{
-    CastableInto, DowncastableFrom, DowncastableInto, UnsignedInt, UpcastableFrom, UpcastableInto,
-};
 use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
 use lender::FallibleLending;
 use log::info;
+use num_primitive::PrimitiveNumber;
 use rand::rngs::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
 use rayon::iter::ParallelIterator;
@@ -536,9 +534,9 @@ type ShardDataIter<'a, D> = <D as SliceByValueMut>::ChunksMut<'a>;
 /// A segment of data associated with a specific shard.
 type ShardData<'a, D> = <ShardDataIter<'a, D> as Iterator>::Item;
 
-impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
+impl<W: Word + BinSafe + AsU128, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+    VBuilder<W, Box<[W]>, S, E>
 where
-    u128: UpcastableFrom<W>,
     SigVal<S, W>: RadixKey,
     SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
@@ -574,10 +572,9 @@ where
     }
 }
 
-impl<W: Word + BinSafe + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
-    VBuilder<W, Box<[W]>, S, E>
+impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
 where
-    u128: UpcastableFrom<W>,
+    // u128 can always be created from any Word type via as cast
     SigVal<S, EmptyVal>: RadixKey,
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<W> + BitFieldSlice<W>,
@@ -603,7 +600,7 @@ where
     {
         let filter_mask = W::MAX;
         let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
-            mix64(shard_edge.edge_hash(sig_val.sig)).downcast()
+            W::as_from(mix64(shard_edge.edge_hash(sig_val.sig)))
         };
         let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
 
@@ -615,7 +612,7 @@ where
                         EmptyVal::default(),
                         usize::MAX,
                     )),
-                    Some(W::BITS),
+                    Some(W::BITS as usize),
                     &get_val,
                     new_data,
                     false,
@@ -623,14 +620,14 @@ where
                 )?
                 .0,
             filter_mask,
-            hash_bits: W::BITS as u32,
+            hash_bits: W::BITS,
         })
     }
 }
 
-impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
+impl<W: Word + BinSafe + AsU128, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+    VBuilder<W, BitFieldVec<W>, S, E>
 where
-    u128: UpcastableFrom<W>,
     SigVal<S, W>: RadixKey,
     SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
 {
@@ -787,10 +784,7 @@ where
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<SignedVFunc<VFunc<T, usize, BitFieldVec<usize>, S, E>, Box<[H]>>>
-    where
-        u64: CastableInto<H>,
-    {
+    ) -> anyhow::Result<SignedVFunc<VFunc<T, usize, BitFieldVec<usize>, S, E>, Box<[H]>>> {
         let (func, store) =
             self._try_build_func(keys, FromCloneableIntoIterator::from(0..), true, pl)?;
 
@@ -811,7 +805,7 @@ where
                     for sig_val in shard.iter() {
                         let pos = sig_val.val;
                         let local_sig = shard_edge.local_sig(sig_val.sig);
-                        let hash = mix64(shard_edge.edge_hash(local_sig)).cast();
+                        let hash = H::as_from(mix64(shard_edge.edge_hash(local_sig)));
                         hashes.set_value(pos, hash);
                         pl.light_update();
                     }
@@ -822,7 +816,7 @@ where
                     for sig_val in shard.iter() {
                         let pos = sig_val.val;
                         let local_sig = shard_edge.local_sig(sig_val.sig);
-                        let hash = mix64(shard_edge.edge_hash(local_sig)).cast();
+                        let hash = H::as_from(mix64(shard_edge.edge_hash(local_sig)));
                         hashes.set_value(pos, hash);
                         pl.light_update();
                     }
@@ -836,10 +830,9 @@ where
     }
 }
 
-impl<W: Word + BinSafe + DowncastableFrom<u64>, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
-    VBuilder<W, BitFieldVec<W>, S, E>
+impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, BitFieldVec<W>, S, E>
 where
-    u128: UpcastableFrom<W>,
+    // u128 can always be created from any Word type via as cast
     SigVal<S, EmptyVal>: RadixKey,
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
 {
@@ -861,11 +854,10 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>> {
         assert!(filter_bits > 0);
-        assert!(filter_bits <= W::BITS);
-        let filter_mask = W::MAX >> (W::BITS - filter_bits);
+        assert!(filter_bits <= W::BITS as usize);
+        let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
         let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
-            <W as DowncastableFrom<u64>>::downcast_from(mix64(shard_edge.edge_hash(sig_val.sig)))
-                & filter_mask
+            W::as_from(mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
         };
         let new_data = |bit_width, len| BitFieldVec::<W>::new_unaligned(bit_width, len);
 
@@ -921,7 +913,7 @@ impl<
     fn build_loop<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
-        V: BinSafe + Default + Send + Sync + Ord + UpcastableInto<u128>,
+        V: BinSafe + Default + Send + Sync + Ord + AsU128,
     >(
         &mut self,
         mut keys: impl FallibleRewindableLender<
@@ -939,12 +931,20 @@ impl<
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<(VFunc<T, W, D, S, E>, Option<AnyShardStore<S, V>>)>
     where
-        u128: UpcastableFrom<W>,
+        // u128 can always be created from any Word type via as cast
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
+        // Static check that Vertex → usize conversion is lossless
+        const {
+            assert!(
+                size_of::<E::Vertex>() <= size_of::<usize>(),
+                "ShardEdge::Vertex must fit in usize without truncation"
+            );
+        }
+
         let mut dup_count = 0;
         let mut local_dup_count = 0;
         let mut prng = SmallRng::seed_from_u64(self.seed);
@@ -1073,7 +1073,7 @@ impl<
     fn try_seed<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
-        V: BinSafe + Default + Send + Sync + Ord + UpcastableInto<u128>,
+        V: BinSafe + Default + Send + Sync + Ord + AsU128,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
         SS: SigStore<S, V>,
     >(
@@ -1140,7 +1140,7 @@ impl<
         self.bit_width = if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
             bit_width.expect("Bit width must be set for filters")
         } else {
-            let len_width = maybe_max_value.upcast().len() as usize;
+            let len_width = maybe_max_value.as_u128().bit_len() as usize;
             if let Some(bit_width) = bit_width {
                 if len_width > bit_width {
                     return Err(BuildError::ValueTooLarge.into());
@@ -1177,7 +1177,10 @@ impl<
             pl.info(format_args!(
                 "Number of keys: {} Max value: {} Bit width: {}",
                 self.num_keys,
-                maybe_max_value.upcast(),
+                {
+                    let v: u128 = maybe_max_value.as_u128();
+                    v
+                },
                 self.bit_width,
             ));
         }
@@ -1322,35 +1325,35 @@ impl<
 }
 
 macro_rules! remove_edge {
-    ($xor_graph: ident, $e: ident, $side: ident, $edge: ident, $stack: ident, $push:ident) => {
+    ($xor_graph: ident, $e: ident, $side: ident, $edge: ident, $stack: ident, $push:ident, $conv: expr) => {
         match $side {
             0 => {
                 if $xor_graph.degree($e[1]) == 2 {
-                    $stack.$push($e[1].cast());
+                    $stack.$push($conv($e[1]));
                 }
                 $xor_graph.remove($e[1], $edge, 1);
                 if $xor_graph.degree($e[2]) == 2 {
-                    $stack.$push($e[2].cast());
+                    $stack.$push($conv($e[2]));
                 }
                 $xor_graph.remove($e[2], $edge, 2);
             }
             1 => {
                 if $xor_graph.degree($e[0]) == 2 {
-                    $stack.$push($e[0].cast());
+                    $stack.$push($conv($e[0]));
                 }
                 $xor_graph.remove($e[0], $edge, 0);
                 if $xor_graph.degree($e[2]) == 2 {
-                    $stack.$push($e[2].cast());
+                    $stack.$push($conv($e[2]));
                 }
                 $xor_graph.remove($e[2], $edge, 2);
             }
             2 => {
                 if $xor_graph.degree($e[0]) == 2 {
-                    $stack.$push($e[0].cast());
+                    $stack.$push($conv($e[0]));
                 }
                 $xor_graph.remove($e[0], $edge, 0);
                 if $xor_graph.degree($e[1]) == 2 {
-                    $stack.$push($e[1].cast());
+                    $stack.$push($conv($e[1]));
                 }
                 $xor_graph.remove($e[1], $edge, 1);
             }
@@ -1684,7 +1687,7 @@ impl<
                 .iter()
                 .enumerate()
             {
-                xor_graph.add(v, edge_index.cast(), side);
+                xor_graph.add(v, E::Vertex::as_from(edge_index), side);
             }
         }
         pl.done_with_count(shard.len());
@@ -1714,12 +1717,12 @@ impl<
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
             if degree == 1 {
-                double_stack.push_lower(v.cast());
+                double_stack.push_lower(E::Vertex::as_from(v));
             }
         }
 
         while let Some(v) = double_stack.pop_lower() {
-            let v: usize = v.upcast();
+            let v: usize = v.as_to();
             if xor_graph.degree(v) == 0 {
                 continue;
             }
@@ -1728,9 +1731,18 @@ impl<
             xor_graph.zero(v);
             double_stack.push_upper(edge_index);
             sides_stack.push(side as u8);
+            let edge: usize = edge_index.as_to();
 
-            let e = shard_edge.local_edge(shard_edge.local_sig(shard[edge_index.upcast()].sig));
-            remove_edge!(xor_graph, e, side, edge_index, double_stack, push_lower);
+            let e = shard_edge.local_edge(shard_edge.local_sig(shard[edge].sig));
+            remove_edge!(
+                xor_graph,
+                e,
+                side,
+                edge_index,
+                double_stack,
+                push_lower,
+                |v| E::Vertex::as_from(v)
+            );
         }
 
         pl.done();
@@ -1761,7 +1773,8 @@ impl<
                 .map(|&edge_index| {
                     // Turn edge indices into local edge signatures
                     // and associated values
-                    let sig_val = &shard[edge_index.upcast()];
+                    let edge: usize = edge_index.as_to();
+                    let sig_val = &shard[edge];
                     let local_sig = shard_edge.local_sig(sig_val.sig);
                     (
                         local_sig,
@@ -1870,12 +1883,12 @@ impl<
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
             if degree == 1 {
-                visit_stack.push(v.cast());
+                visit_stack.push(E::Vertex::as_from(v));
             }
         }
 
         while let Some(v) = visit_stack.pop() {
-            let v: usize = v.upcast();
+            let v: usize = v.as_to();
             if xor_graph.degree(v) == 0 {
                 continue;
             }
@@ -1885,7 +1898,9 @@ impl<
             sides_stack.push(side as u8);
 
             let e = self.shard_edge.local_edge(sig_val.sig);
-            remove_edge!(xor_graph, e, side, sig_val, visit_stack, push);
+            remove_edge!(xor_graph, e, side, sig_val, visit_stack, push, |v| {
+                E::Vertex::as_from(v)
+            });
         }
 
         pl.done();
@@ -1998,21 +2013,23 @@ impl<
         // Preload all vertices of degree one in the visit stack
         for (v, degree) in xor_graph.degrees().enumerate() {
             if degree == 1 {
-                visit_stack.push_lower(v.cast());
+                visit_stack.push_lower(E::Vertex::as_from(v));
             }
         }
 
         while let Some(v) = visit_stack.pop_lower() {
-            let v: usize = v.upcast();
+            let v: usize = v.as_to();
             if xor_graph.degree(v) == 0 {
                 continue;
             }
             let (sig_val, side) = xor_graph.edge_and_side(v);
             xor_graph.zero(v);
-            visit_stack.push_upper(v.cast());
+            visit_stack.push_upper(E::Vertex::as_from(v));
 
             let e = self.shard_edge.local_edge(sig_val.sig);
-            remove_edge!(xor_graph, e, side, sig_val, visit_stack, push_lower);
+            remove_edge!(xor_graph, e, side, sig_val, visit_stack, push_lower, |v| {
+                E::Vertex::as_from(v)
+            });
         }
 
         pl.done();
@@ -2032,7 +2049,7 @@ impl<
             shard_index,
             data,
             visit_stack.iter_upper().map(|&v| {
-                let (sig_val, side) = xor_graph.edge_and_side(v.upcast());
+                let (sig_val, side) = xor_graph.edge_and_side(v.as_to());
                 ((sig_val.sig, get_val(shard_edge, sig_val)), side as u8)
             }),
             pl,
@@ -2085,7 +2102,7 @@ impl<
                 let mut peeled_edges = BitVec::new(shard.len());
                 let mut used_vars = BitVec::new(num_vertices);
                 for &edge in double_stack.iter_upper() {
-                    peeled_edges.set(edge.upcast(), true);
+                    peeled_edges.set(edge.as_to(), true);
                 }
 
                 // Create data for a system using non-peeled edges
@@ -2145,7 +2162,8 @@ impl<
                     double_stack
                         .iter_upper()
                         .map(|&edge_index| {
-                            let sig_val = &shard[edge_index.upcast()];
+                            let edge: usize = edge_index.as_to();
+                            let sig_val = &shard[edge];
                             let local_sig = shard_edge.local_sig(sig_val.sig);
                             (
                                 local_sig,
