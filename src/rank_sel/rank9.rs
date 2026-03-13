@@ -73,7 +73,7 @@ use std::ops::Index;
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(AsRef<[usize]>, target = "bits")]
+#[delegate(AsRef<[u64]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted<64>, target = "bits")]
@@ -138,7 +138,7 @@ impl<B, C> Rank9<B, C> {
     /// new backend is identical to the old one as a bit vector.
     pub unsafe fn map<B1>(self, f: impl FnOnce(B) -> B1) -> Rank9<B1, C>
     where
-        B1: AsRef<[usize]> + BitLength,
+        B1: AsRef<[u64]> + BitLength,
     {
         Rank9 {
             bits: f(self.bits),
@@ -158,7 +158,7 @@ impl<B: BitLength, C> Rank9<B, C> {
     }
 }
 
-impl<B: AsRef<[usize]> + BitLength> Rank9<B, Box<[BlockCounters]>> {
+impl<B: AsRef<[u64]> + BitLength> Rank9<B, Box<[BlockCounters]>> {
     /// Creates a new Rank9 structure from a given bit vector.
     pub fn new(bits: B) -> Self {
         let num_bits = bits.len();
@@ -223,7 +223,7 @@ impl<B: BitLength, C: AsRef<[BlockCounters]>> BitCount for Rank9<B, C> {
     }
 }
 
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for Rank9<B, C> {
+impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for Rank9<B, C> {
     /// # Safety
     ///
     /// The implementation of [`RankUnchecked`] for [`Rank9`] has a weakened
@@ -282,8 +282,8 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for
     }
 }
 
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> {}
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankZero for Rank9<B, C> {}
+impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> {}
+impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> RankZero for Rank9<B, C> {}
 
 #[cfg(test)]
 mod tests {
@@ -291,7 +291,7 @@ mod tests {
     use crate::traits::BitCount;
     #[test]
     fn test_last() {
-        let bits = unsafe { BitVec::from_raw_parts(vec![!1usize; 1 << 10], (1 << 10) * 64) };
+        let bits = unsafe { BitVec::from_raw_parts(vec![!1u64; 1 << 10], (1 << 10) * 64) };
 
         let rank9: Rank9 = Rank9::new(bits);
 

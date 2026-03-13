@@ -11,7 +11,7 @@ use crate::bits::*;
 use crate::dict::{BitSignedVFunc, SignedVFunc, VFilter};
 use crate::func::{shard_edge::ShardEdge, *};
 use crate::traits::BitVecOpsMut;
-use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
+use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, PlatformWord, Word};
 use crate::utils::*;
 use derivative::Derivative;
 use derive_setters::*;
@@ -721,7 +721,7 @@ where
         };
 
         // Create the signature vector
-        let mut hashes = BitFieldVec::<usize>::new_unaligned(hash_width, num_keys);
+        let mut hashes = BitFieldVec::<PlatformWord>::new_unaligned(hash_width, num_keys);
 
         // Enumerate the store and extract signatures using the same method as filters
         pl.item_name("hash");
@@ -735,7 +735,7 @@ where
                     for sig_val in shard.iter() {
                         let pos = sig_val.val;
                         let local_sig = shard_edge.local_sig(sig_val.sig);
-                        let hash = (mix64(shard_edge.edge_hash(local_sig)) & hash_mask) as usize;
+                        let hash = (mix64(shard_edge.edge_hash(local_sig)) & hash_mask) as PlatformWord;
                         hashes.set_value(pos, hash);
                         pl.light_update();
                     }
@@ -746,7 +746,7 @@ where
                     for sig_val in shard.iter() {
                         let pos = sig_val.val;
                         let local_sig = shard_edge.local_sig(sig_val.sig);
-                        let hash = (mix64(shard_edge.edge_hash(local_sig)) & hash_mask) as usize;
+                        let hash = (mix64(shard_edge.edge_hash(local_sig)) & hash_mask) as PlatformWord;
                         hashes.set_value(pos, hash);
                         pl.light_update();
                     }

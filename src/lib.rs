@@ -16,9 +16,6 @@
 #![allow(clippy::duplicated_attributes)]
 #![allow(clippy::len_without_is_empty)]
 
-#[cfg(not(target_pointer_width = "64"))]
-compile_error!("`target_pointer_width` must be 64");
-
 pub mod array;
 pub mod bits;
 pub mod dict;

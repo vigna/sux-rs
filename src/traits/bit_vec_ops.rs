@@ -39,11 +39,13 @@
 
 use crate::traits::bit_field_slice::Word;
 use crate::traits::BitLength;
+use super::PlatformWord;
+use atomic_primitive::Atomic;
 use mem_dbg::{MemDbg, MemSize};
 use std::{
     iter::FusedIterator,
     marker::PhantomData,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::Ordering,
 };
 
 #[cfg(feature = "rayon")]
@@ -384,13 +386,13 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for ZerosIter<'_, W, B> {
 
 impl<W: Word, B: ?Sized + AsRef<[W]>> FusedIterator for ZerosIter<'_, W, B> {}
 
-/// Bits per usize word, used by the non-generic atomic operations.
-const ATOMIC_BITS: usize = usize::BITS as usize;
+/// Bits per platform word, used by the atomic operations.
+const ATOMIC_BITS: usize = PlatformWord::BITS as usize;
 
-impl<T: ?Sized + AsRef<[AtomicUsize]> + BitLength> AtomicBitVecOps for T {}
+impl<T: ?Sized + AsRef<[Atomic<PlatformWord>]> + BitLength> AtomicBitVecOps for T {}
 
 /// Operations on atomic bit vectors.
-pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
+pub trait AtomicBitVecOps: AsRef<[Atomic<PlatformWord>]> + BitLength {
     /// Returns true if the bit of given index is set.
     ///
     /// This method performs a single atomic operation with the given memory
@@ -453,10 +455,10 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
         unsafe {
             if value {
                 bits.get_unchecked(word_index)
-                    .fetch_or(1 << bit_index, ordering);
+                    .fetch_or((1 as PlatformWord) << bit_index, ordering);
             } else {
                 bits.get_unchecked(word_index)
-                    .fetch_and(!(1 << bit_index), ordering);
+                    .fetch_and(!((1 as PlatformWord) << bit_index), ordering);
             }
         }
     }
@@ -479,10 +481,10 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
         let old_word = unsafe {
             if value {
                 bits.get_unchecked(word_index)
-                    .fetch_or(1 << bit_index, ordering)
+                    .fetch_or((1 as PlatformWord) << bit_index, ordering)
             } else {
                 bits.get_unchecked(word_index)
-                    .fetch_and(!(1 << bit_index), ordering)
+                    .fetch_and(!((1 as PlatformWord) << bit_index), ordering)
             }
         };
 
@@ -494,7 +496,7 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
         let full_words = self.len() / ATOMIC_BITS;
         let residual = self.len() % ATOMIC_BITS;
         let bits = self.as_ref();
-        let word_value: usize = if value { !0 } else { 0 };
+        let word_value: PlatformWord = if value { !0 } else { 0 };
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
         core::sync::atomic::fence(Ordering::SeqCst);
@@ -502,7 +504,7 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
             .iter()
             .for_each(|x| x.store(word_value, ordering));
         if residual != 0 {
-            let mask = (1 << residual) - 1;
+            let mask = ((1 as PlatformWord) << residual) - 1;
             bits[full_words].store(
                 (bits[full_words].load(ordering) & !mask) | (word_value & mask),
                 ordering,
@@ -516,7 +518,7 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
         let full_words = self.len() / ATOMIC_BITS;
         let residual = self.len() % ATOMIC_BITS;
         let bits = self.as_ref();
-        let word_value: usize = if value { !0 } else { 0 };
+        let word_value: PlatformWord = if value { !0 } else { 0 };
 
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
@@ -526,7 +528,7 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
             .with_min_len(RAYON_MIN_LEN)
             .for_each(|x| x.store(word_value, ordering));
         if residual != 0 {
-            let mask = (1 << residual) - 1;
+            let mask = ((1 as PlatformWord) << residual) - 1;
             bits[full_words].store(
                 (bits[full_words].load(ordering) & !mask) | (word_value & mask),
                 ordering,
@@ -555,9 +557,9 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
         core::sync::atomic::fence(Ordering::SeqCst);
         bits[..full_words]
             .iter()
-            .for_each(|x| _ = x.fetch_xor(!0, ordering));
+            .for_each(|x| _ = x.fetch_xor(!0 as PlatformWord, ordering));
         if residual != 0 {
-            let mask = (1 << residual) - 1;
+            let mask = ((1 as PlatformWord) << residual) - 1;
             let last_word = bits[full_words].load(ordering);
             bits[full_words].store((last_word & !mask) | (!last_word & mask), ordering);
         }
@@ -575,9 +577,9 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
         bits[..full_words]
             .par_iter()
             .with_min_len(RAYON_MIN_LEN)
-            .for_each(|x| _ = x.fetch_xor(!0, ordering));
+            .for_each(|x| _ = x.fetch_xor(!0 as PlatformWord, ordering));
         if residual != 0 {
-            let mask = (1 << residual) - 1;
+            let mask = ((1 as PlatformWord) << residual) - 1;
             let last_word = bits[full_words].load(ordering);
             bits[full_words].store((last_word & !mask) | (!last_word & mask), ordering);
         }
@@ -615,7 +617,7 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
     /// Nonetheless, all returned values have been valid at some point during
     /// the iteration.
     #[inline(always)]
-    fn iter(&self) -> AtomicBitIter<'_, [AtomicUsize]> {
+    fn iter(&self) -> AtomicBitIter<'_, [Atomic<PlatformWord>]> {
         AtomicBitIter::new(self.as_ref(), self.len())
     }
 }
@@ -631,7 +633,7 @@ pub struct AtomicBitIter<'a, B: ?Sized> {
     next_bit_pos: usize,
 }
 
-impl<'a, B: ?Sized + AsRef<[AtomicUsize]>> AtomicBitIter<'a, B> {
+impl<'a, B: ?Sized + AsRef<[Atomic<PlatformWord>]>> AtomicBitIter<'a, B> {
     pub fn new(bits: &'a B, len: usize) -> Self {
         debug_assert!(len <= bits.as_ref().len() * ATOMIC_BITS);
         AtomicBitIter {
@@ -642,7 +644,7 @@ impl<'a, B: ?Sized + AsRef<[AtomicUsize]>> AtomicBitIter<'a, B> {
     }
 }
 
-impl<B: ?Sized + AsRef<[AtomicUsize]>> Iterator for AtomicBitIter<'_, B> {
+impl<B: ?Sized + AsRef<[Atomic<PlatformWord>]>> Iterator for AtomicBitIter<'_, B> {
     type Item = bool;
     fn next(&mut self) -> Option<bool> {
         if self.next_bit_pos == self.len {
@@ -662,10 +664,10 @@ impl<B: ?Sized + AsRef<[AtomicUsize]>> Iterator for AtomicBitIter<'_, B> {
     }
 }
 
-impl<B: ?Sized + AsRef<[AtomicUsize]>> ExactSizeIterator for AtomicBitIter<'_, B> {
+impl<B: ?Sized + AsRef<[Atomic<PlatformWord>]>> ExactSizeIterator for AtomicBitIter<'_, B> {
     fn len(&self) -> usize {
         self.len - self.next_bit_pos
     }
 }
 
-impl<B: ?Sized + AsRef<[AtomicUsize]>> FusedIterator for AtomicBitIter<'_, B> {}
+impl<B: ?Sized + AsRef<[Atomic<PlatformWord>]>> FusedIterator for AtomicBitIter<'_, B> {}

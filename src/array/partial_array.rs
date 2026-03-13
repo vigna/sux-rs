@@ -16,10 +16,12 @@ use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EliasFano;
 use crate::panic_if_out_of_bounds;
 use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
-use crate::traits::{BitVecOps, BitVecOpsMut};
+use crate::traits::{BitVecOps, BitVecOpsMut, PlatformWord};
 use crate::traits::{RankUnchecked, SuccUnchecked};
 
-type DenseIndex = Rank9<BitVec<Box<[usize]>>>;
+// Rank9 is inherently u64-based, so the dense index must use u64 backing
+// regardless of PlatformWord.
+type DenseIndex = Rank9<BitVec<Box<[u64]>>>;
 
 /// An internal index for sparse partial arrays.
 ///
@@ -81,16 +83,19 @@ pub struct PartialArrayBuilder<T, B> {
 /// assert_eq!(array.get(3), None);
 /// assert_eq!(array.get(7), Some(&"world"));
 /// ```
-pub fn new_dense<T>(len: usize) -> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
+pub fn new_dense<T>(len: usize) -> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
+    let n_of_words = len.div_ceil(64);
+    // SAFETY: the backing has exactly enough words for len bits
+    let bit_vec = unsafe { BitVec::from_raw_parts(vec![0u64; n_of_words].into_boxed_slice(), len) };
     PartialArrayBuilder {
-        builder: BitVec::new(len).into(),
+        builder: bit_vec,
         values: vec![],
         len,
         min_next_pos: 0,
     }
 }
 
-impl<T> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
+impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
     /// Sets a value at the given position.
     ///
     /// The provided position must be greater than the last position set.
@@ -113,7 +118,7 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
     }
 
     /// Builds the immutable dense partial array.
-    pub fn build(self) -> PartialArray<T, Rank9<BitVec<Box<[usize]>>>> {
+    pub fn build(self) -> PartialArray<T, Rank9<BitVec<Box<[u64]>>>> {
         let (bit_vec, values) = (self.builder, self.values);
         let rank9 = Rank9::new(bit_vec);
         let values = values.into_boxed_slice();
@@ -182,7 +187,7 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
     }
 
     /// Builds the immutable sparse partial array.
-    pub fn build(self) -> PartialArray<T, SparseIndex<Box<[usize]>>> {
+    pub fn build(self) -> PartialArray<T, SparseIndex<Box<[PlatformWord]>>> {
         let (builder, values) = (self.builder, self.values);
         let ef_dict = builder.build_with_dict();
         let values = values.into_boxed_slice();
@@ -202,7 +207,7 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
 ///
 /// Position must be in strictly increasing order. The first returned
 /// position must be greater than the last position set.
-impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
+impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
     fn extend<I: IntoIterator<Item = (usize, T)>>(&mut self, iter: I) {
         for (pos, val) in iter {
             self.set(pos, val);
@@ -308,7 +313,7 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
     }
 }
 
-impl<T, D: AsRef<[usize]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
+impl<T, D: AsRef<[PlatformWord]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
     /// Returns the total length of the array.
     ///
     /// This is the length that was specified when creating the builder,
@@ -384,7 +389,7 @@ impl<T: Clone, V: AsRef<[T]>> SliceByValue for PartialArray<T, DenseIndex, V> {
 
 /// Returns an option even when using `get_value_unchecked` because it should be safe to call
 /// whenever `position < len()`.
-impl<T: Clone, D: AsRef<[usize]>, V: AsRef<[T]>> SliceByValue
+impl<T: Clone, D: AsRef<[PlatformWord]>, V: AsRef<[T]>> SliceByValue
     for PartialArray<T, SparseIndex<D>, V>
 {
     type Value = Option<T>;

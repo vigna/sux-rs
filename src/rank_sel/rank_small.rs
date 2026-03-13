@@ -16,8 +16,8 @@ use std::{
 use crate::{
     prelude::{BitLength, BitVec, Rank, RankHinted, RankUnchecked, RankZero},
     traits::{
-        BitCount, NumBits, Select, SelectHinted, SelectUnchecked, SelectZero, SelectZeroHinted,
-        SelectZeroUnchecked,
+        BitCount, NumBits, PlatformWord, Select, SelectHinted, SelectUnchecked, SelectZero,
+        SelectZeroHinted, SelectZeroUnchecked,
     },
 };
 
@@ -42,7 +42,7 @@ use std::ops::Index;
 /// possible to combine selection structures arbitrarily.
 #[delegatable_trait]
 pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
-    fn upper_counts(&self) -> &[usize];
+    fn upper_counts(&self) -> &[PlatformWord];
     fn counts(&self) -> &[Block32Counters<NUM_U32S, COUNTER_WIDTH>];
 }
 
@@ -125,7 +125,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(AsRef<[usize]>, target = "bits")]
+#[delegate(AsRef<[PlatformWord]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::RankHinted<64>, target = "bits"))]
@@ -140,7 +140,7 @@ pub struct RankSmall<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
     B = BitVec,
-    C1 = Box<[usize]>,
+    C1 = Box<[PlatformWord]>,
     C2 = Box<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
 > {
     pub(super) bits: B,
@@ -337,7 +337,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize> Default
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
     RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
-    pub(super) const WORDS_PER_BLOCK: usize = 1 << (COUNTER_WIDTH - usize::BITS.ilog2() as usize);
+    pub(super) const WORDS_PER_BLOCK: usize = 1 << (COUNTER_WIDTH - PlatformWord::BITS.ilog2() as usize);
     pub(super) const WORDS_PER_SUBBLOCK: usize = match NUM_U32S {
         1 => Self::WORDS_PER_BLOCK / 4, // poppy has 4 subblocks
         2 => Self::WORDS_PER_BLOCK / 8, // small rank9 has 8 subblocks
@@ -348,12 +348,12 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
 
 macro_rules! impl_rank_small {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $WORD_BITS: literal) => {
-        impl<B: AsRef<[usize]> + BitLength + RankHinted<$WORD_BITS>>
+        impl<B: AsRef<[PlatformWord]> + BitLength + RankHinted<$WORD_BITS>>
             RankSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
                 B,
-                Box<[usize]>,
+                Box<[PlatformWord]>,
                 Box<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             >
         {
@@ -361,15 +361,14 @@ macro_rules! impl_rank_small {
             pub fn new(bits: B) -> Self {
                 let num_bits = bits.len();
                 let num_words = num_bits.div_ceil($WORD_BITS as usize);
-                // TODO(32-bit): on 32-bit, 1usize << 32 overflows; fix when enabling 32-bit
-                let num_upper_counts = num_bits.div_ceil(1usize << 32);
+                let num_upper_counts = (num_bits as u64).div_ceil(1u64 << 32) as usize;
                 let num_counts = num_bits.div_ceil($WORD_BITS as usize * Self::WORDS_PER_BLOCK);
 
-                let mut upper_counts = Vec::with_capacity(num_upper_counts);
+                let mut upper_counts: Vec<PlatformWord> = Vec::with_capacity(num_upper_counts);
                 let mut counts = Vec::with_capacity(num_counts);
 
-                let mut past_ones = 0;
-                let mut upper_count = 0;
+                let mut past_ones: usize = 0;
+                let mut upper_count: usize = 0;
 
                 // Superblock boundary: number of words per 2^32 bits
                 let words_per_superblock = 1usize << (32 - ($WORD_BITS as u32).ilog2());
@@ -377,7 +376,7 @@ macro_rules! impl_rank_small {
                 for i in (0..num_words).step_by(Self::WORDS_PER_BLOCK) {
                     if i % words_per_superblock == 0 {
                         upper_count = past_ones;
-                        upper_counts.push(upper_count);
+                        upper_counts.push(upper_count as PlatformWord);
                     }
                     let mut count = Block32Counters::<$NUM_U32S, $COUNTER_WIDTH>::default();
                     count.absolute = (past_ones - upper_count) as u32;
@@ -412,8 +411,8 @@ macro_rules! impl_rank_small {
             }
         }
         impl<
-            B: AsRef<[usize]> + BitLength + RankHinted<$WORD_BITS>,
-            C1: AsRef<[usize]>,
+            B: AsRef<[PlatformWord]> + BitLength + RankHinted<$WORD_BITS>,
+            C1: AsRef<[PlatformWord]>,
             C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
         > RankUnchecked for RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
         {
@@ -431,7 +430,7 @@ macro_rules! impl_rank_small {
                         .as_ref()
                         .get_unchecked(word_pos / words_per_superblock);
 
-                    let hint_rank = upper_count + counts.absolute as usize + counts.rel(offset);
+                    let hint_rank = *upper_count as usize + counts.absolute as usize + counts.rel(offset);
                     if Self::WORDS_PER_SUBBLOCK == 1 {
                         // Rank<2, 9> works like Rank9.
                         let word = self.bits.as_ref().get_unchecked(word_pos);
@@ -521,7 +520,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
         f: impl FnOnce(B) -> B1,
     ) -> RankSmall<NUM_U32S, COUNTER_WIDTH, B1, C1, C2>
     where
-        B1: AsRef<[usize]> + BitLength,
+        B1: AsRef<[PlatformWord]> + BitLength,
     {
         RankSmall {
             bits: f(self.bits),
@@ -554,12 +553,12 @@ impl<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
     B,
-    C1: AsRef<[usize]>,
+    C1: AsRef<[PlatformWord]>,
     C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
 > SmallCounters<NUM_U32S, COUNTER_WIDTH> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
-    fn upper_counts(&self) -> &[usize] {
+    fn upper_counts(&self) -> &[PlatformWord] {
         self.upper_counts.as_ref()
     }
 
@@ -579,7 +578,7 @@ mod tests {
     #[test]
     fn test_last() {
         let bits: AddNumBits<_> =
-            unsafe { BitVec::from_raw_parts(vec![!1usize; 1 << 10], (1 << 10) * 64) }.into();
+            unsafe { BitVec::from_raw_parts(vec![!1u64; 1 << 10], (1 << 10) * 64) }.into();
 
         let rank_small = rank_small![1; bits.clone()];
         assert_eq!(

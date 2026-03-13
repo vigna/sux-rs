@@ -690,8 +690,7 @@ macro_rules! impl_rank_hinted_for_bitvec {
     };
 }
 
-// TODO(32-bit): when PlatformWord changes to u64, change usize to u64 here
-impl_rank_hinted_for_bitvec!(usize, 64);
+impl_rank_hinted_for_bitvec!(u64, 64);
 impl_rank_hinted_for_bitvec!(u32, 32);
 
 // SelectHinted and SelectZeroHinted for PlatformWord-backed bit vectors.

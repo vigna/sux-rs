@@ -9,26 +9,25 @@
 use super::Rank9;
 use super::rank9::BlockCounters;
 use crate::traits::{
-    BitCount, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
-    SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked,
+    BitCount, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select,
+    SelectHinted, SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked,
 };
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
 
-// TODO(32-bit): change to u64 when enabling 32-bit (1usize << 54 overflows on 32-bit)
-const ONES_STEP_9: usize = (1usize << 0)
-    | (1usize << 9)
-    | (1usize << 18)
-    | (1usize << 27)
-    | (1usize << 36)
-    | (1usize << 45)
-    | (1usize << 54);
+const ONES_STEP_9: u64 = (1u64 << 0)
+    | (1u64 << 9)
+    | (1u64 << 18)
+    | (1u64 << 27)
+    | (1u64 << 36)
+    | (1u64 << 45)
+    | (1u64 << 54);
 
-const MSBS_STEP_9: usize = 0x100usize * ONES_STEP_9;
+const MSBS_STEP_9: u64 = 0x100u64 * ONES_STEP_9;
 
-const ONES_STEP_16: usize = (1usize << 0) | (1usize << 16) | (1usize << 32) | (1usize << 48);
-const MSBS_STEP_16: usize = 0x8000usize * ONES_STEP_16;
+const ONES_STEP_16: u64 = (1u64 << 0) | (1u64 << 16) | (1u64 << 32) | (1u64 << 48);
+const MSBS_STEP_16: u64 = 0x8000u64 * ONES_STEP_16;
 
 macro_rules! ULEQ_STEP_9 {
     ($x:ident, $y:ident) => {
@@ -120,7 +119,7 @@ use std::ops::{Deref, Index};
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(AsRef<[usize]>, target = "rank9")]
+#[delegate(AsRef<[u64]>, target = "rank9")]
 #[delegate(Index<usize>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "rank9")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "rank9")]
@@ -133,7 +132,7 @@ use std::ops::{Deref, Index};
 #[delegate(crate::traits::rank_sel::SelectZero, target = "rank9")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "rank9")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "rank9")]
-pub struct Select9<R = Rank9, I = Box<[usize]>> {
+pub struct Select9<R = Rank9, I = Box<[u64]>> {
     rank9: R,
     inventory: I,
     subinventory: I,
@@ -162,7 +161,7 @@ impl<R: BitLength, I> Select9<R, I> {
     }
 }
 
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>, Box<[usize]>> {
+impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>, Box<[u64]>> {
     pub fn new(rank9: Rank9<B, C>) -> Self {
         let num_bits = rank9.len();
         let num_words = num_bits.div_ceil(64);
@@ -171,8 +170,8 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
         let u64_per_subinventory = 4;
         let subinventory_size = num_words.div_ceil(u64_per_subinventory);
 
-        let mut inventory = Vec::with_capacity(inventory_size + 1);
-        let mut subinventory = vec![0; subinventory_size].into_boxed_slice();
+        let mut inventory: Vec<u64> = Vec::with_capacity(inventory_size + 1);
+        let mut subinventory: Box<[u64]> = vec![0u64; subinventory_size].into();
 
         // construct the inventory
         let mut curr_num_ones = 0;
@@ -184,26 +183,28 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
                 let in_word_index = word.select_in_word(next_quantum - curr_num_ones);
                 let index = (i * u64::BITS as usize) + in_word_index;
 
-                inventory.push(index);
+                inventory.push(index as u64);
 
                 next_quantum += Self::ONES_PER_INVENTORY;
             }
             curr_num_ones += ones_in_word;
         }
-        inventory.push(((num_words + 3) & !3) * 64);
+        inventory.push(((num_words + 3) & !3) as u64 * 64);
         assert!(inventory.len() == inventory_size + 1);
-        let inventory = inventory.into_boxed_slice();
+        let inventory: Box<[u64]> = inventory.into();
 
         let iter = 0..inventory_size;
         let counts = rank9.counts.as_ref();
 
         // construct the subinventory
         iter.for_each(|inventory_idx| {
-            let subinv_start = (inventory[inventory_idx] / 64) / u64_per_subinventory;
-            let subinv_end = (inventory[inventory_idx + 1] / 64) / u64_per_subinventory;
+            let inv_left = inventory[inventory_idx] as usize;
+            let inv_right = inventory[inventory_idx + 1] as usize;
+            let subinv_start = (inv_left / 64) / u64_per_subinventory;
+            let subinv_end = (inv_right / 64) / u64_per_subinventory;
             let span = subinv_end - subinv_start;
-            let block_left = (inventory[inventory_idx] / 64) / 8;
-            let block_span = (inventory[inventory_idx + 1] / 64) / 8 - block_left;
+            let block_left = (inv_left / 64) / 8;
+            let block_span = (inv_right / 64) / 8 - block_left;
             let counts_at_start = counts[block_left].absolute;
 
             let mut state = -1;
@@ -255,13 +256,13 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
 
             if state != -1 {
                 // clean up the lower bits
-                let mut word_idx = inventory[inventory_idx] / usize::BITS as usize;
-                let bit_idx = inventory[inventory_idx] % usize::BITS as usize;
+                let mut word_idx = inv_left / 64;
+                let bit_idx = inv_left % 64;
                 let mut word = (rank9.bits.as_ref()[word_idx] >> bit_idx) << bit_idx;
 
-                let start_bit_idx = inventory[inventory_idx];
-                let end_bit_idx = inventory[inventory_idx + 1];
-                let end_word_idx = end_bit_idx.div_ceil(u64::BITS as usize);
+                let start_bit_idx = inv_left;
+                let end_bit_idx = inv_right;
+                let end_word_idx = end_bit_idx.div_ceil(64);
                 let mut subinventory_idx = 0;
                 'outer: loop {
                     while word != 0 {
@@ -271,7 +272,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, 
                         match state {
                             0 => {
                                 debug_assert!(subinventory[subinv_start + subinventory_idx] == 0);
-                                subinventory[subinv_start + subinventory_idx] = bit_index;
+                                subinventory[subinv_start + subinventory_idx] = bit_index as u64;
                             }
                             1 => {
                                 let s32: &mut [u32] = unsafe {
@@ -331,7 +332,7 @@ impl<R: BitLength, I> Deref for Select9<R, I> {
     }
 }
 
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> SelectUnchecked
+impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>> SelectUnchecked
     for Select9<Rank9<B, C>, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -339,13 +340,15 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
             let inventory_index_left = rank >> Self::LOG2_ONES_PER_INVENTORY;
 
             debug_assert!(inventory_index_left <= self.inventory_size);
-            let inventory_left = *self.inventory.as_ref().get_unchecked(inventory_index_left);
+            let inventory_left =
+                *self.inventory.as_ref().get_unchecked(inventory_index_left) as usize;
 
-            let block_right = (*self
-                .inventory
-                .as_ref()
-                .get_unchecked(inventory_index_left + 1))
-                / 64;
+            let block_right =
+                *self
+                    .inventory
+                    .as_ref()
+                    .get_unchecked(inventory_index_left + 1) as usize
+                    / 64;
             let mut block_left = inventory_left / 64;
             let span = block_right / 4 - block_left / 4;
 
@@ -368,9 +371,11 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
                 2..=15 => {
                     block_left &= !7;
                     count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
-                    let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute as usize;
+                    let rank_in_superblock =
+                        rank - counts.get_unchecked(count_left).absolute as usize;
 
-                    let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
+                    let rank_in_superblock_step_16 =
+                        rank_in_superblock as u64 * ONES_STEP_16;
 
                     let first = *subinv_ref.get_unchecked(subinv_pos);
                     let second = *subinv_ref.get_unchecked(subinv_pos + 1);
@@ -391,8 +396,10 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
                 16..=127 => {
                     block_left &= !7;
                     count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
-                    let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute as usize;
-                    let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
+                    let rank_in_superblock =
+                        rank - counts.get_unchecked(count_left).absolute as usize;
+                    let rank_in_superblock_step_16 =
+                        rank_in_superblock as u64 * ONES_STEP_16;
 
                     let first = *subinv_ref.get_unchecked(subinv_pos);
                     let second = *subinv_ref.get_unchecked(subinv_pos + 1);
@@ -441,12 +448,13 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
                         + inventory_left;
                 }
                 _ => {
-                    return *subinv_ref.get_unchecked(rank % Self::ONES_PER_INVENTORY);
+                    return *subinv_ref
+                        .get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize;
                 }
             }
 
-            let rank_in_block_step_9 = rank_in_block * ONES_STEP_9;
-            let relative = counts.get_unchecked(count_left).relative as usize;
+            let rank_in_block_step_9 = rank_in_block as u64 * ONES_STEP_9;
+            let relative = counts.get_unchecked(count_left).relative;
 
             let offset_in_block =
                 ULEQ_STEP_9!(relative, rank_in_block_step_9).count_ones() as usize;
@@ -467,7 +475,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
     }
 }
 
-impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>> Select
+impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>> Select
     for Select9<Rank9<B, C>, I>
 {
 }
