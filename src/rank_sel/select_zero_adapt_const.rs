@@ -11,8 +11,8 @@ use crate::utils::SelectInWord;
 use crate::{
     prelude::{BitCount, BitLength},
     traits::{
-        NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted, SelectUnchecked,
-        SelectZero, SelectZeroHinted, SelectZeroUnchecked,
+        NumBits, PlatformWord, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
+        SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked,
     },
 };
 use ambassador::Delegate;
@@ -133,7 +133,7 @@ use std::ops::Index;
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(AsRef<[usize]>, target = "bits")]
+#[delegate(AsRef<[PlatformWord]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
@@ -149,7 +149,7 @@ use std::ops::Index;
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
 pub struct SelectZeroAdaptConst<
     B,
-    I = Box<[usize]>,
+    I = Box<[PlatformWord]>,
     const LOG2_ZEROS_PER_INVENTORY: usize = 12,
     const LOG2_WORDS_PER_SUBINVENTORY: usize = 3,
 > {
@@ -227,10 +227,10 @@ impl<B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER
 }
 
 impl<
-    B: AsRef<[usize]> + BitCount,
+    B: AsRef<[PlatformWord]> + BitCount,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
-> SelectZeroAdaptConst<B, Box<[usize]>, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+> SelectZeroAdaptConst<B, Box<[PlatformWord]>, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     /// Creates a new selection structure over a [`SelectZeroHinted`] with a specified
     /// distance between indexed zeros.
@@ -249,7 +249,7 @@ impl<
         let words_per_inventory = words_per_subinventory + 1;
 
         let inventory_words = inventory_size * words_per_inventory + 1;
-        let mut inventory = Vec::with_capacity(inventory_words);
+        let mut inventory: Vec<PlatformWord> = Vec::with_capacity(inventory_words);
 
         let mut past_ones = 0;
         let mut next_quantum = 0;
@@ -261,10 +261,10 @@ impl<
 
             while past_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word(next_quantum - past_ones);
-                let index = (i * usize::BITS as usize) + in_word_index;
+                let index = (i * PlatformWord::BITS as usize) + in_word_index;
 
                 // write the position of the one in the inventory
-                inventory.push(index);
+                inventory.push(index as PlatformWord);
                 // make space for the subinventory
                 inventory.resize(inventory.len() + words_per_subinventory, 0);
 
@@ -275,7 +275,7 @@ impl<
 
         assert_eq!(past_ones, num_ones);
         // in the last inventory write the number of bits
-        inventory.push(num_bits);
+        inventory.push(num_bits as PlatformWord);
         assert_eq!(inventory.len(), inventory_words);
 
         // We estimate the subinventory and exact spill size
@@ -285,8 +285,8 @@ impl<
             .step_by(words_per_inventory)
             .enumerate()
         {
-            let start = inv;
-            let span = inventory[i * words_per_inventory + words_per_inventory] - start;
+            let start = inv as usize;
+            let span = inventory[i * words_per_inventory + words_per_inventory] as usize - start;
             past_ones = i * Self::ONES_PER_INVENTORY;
             let ones = min(num_ones - past_ones, Self::ONES_PER_INVENTORY);
 
@@ -316,8 +316,8 @@ impl<
 
         let spill_size = spilled;
 
-        let mut inventory: Box<[usize]> = inventory.into();
-        let mut spill: Box<[usize]> = vec![0; spill_size].into();
+        let mut inventory: Box<[PlatformWord]> = inventory.into();
+        let mut spill: Box<[PlatformWord]> = vec![0; spill_size].into();
 
         spilled = 0;
         let locally_stored_u32s = 2 * (words_per_subinventory - 1);
@@ -328,8 +328,8 @@ impl<
             let start_inv_idx = inventory_idx * words_per_inventory;
             let end_inv_idx = start_inv_idx + words_per_inventory;
             // Read the first-level index to get the start and end bit indices
-            let start_bit_idx = inventory[start_inv_idx];
-            let end_bit_idx = inventory[end_inv_idx];
+            let start_bit_idx = inventory[start_inv_idx] as usize;
+            let end_bit_idx = inventory[end_inv_idx] as usize;
             // compute the span of the inventory
             let span = end_bit_idx - start_bit_idx;
             let span_type = SpanType::from_span(span);
@@ -348,13 +348,13 @@ impl<
                     log2_quantum = Self::log2_ones_per_sub32(span);
                     inventory[start_inv_idx].set_u32_span();
                     // The first word of the subinventory is used to store the spill index.
-                    inventory[start_inv_idx + 1] = spilled;
+                    inventory[start_inv_idx + 1] = spilled as PlatformWord;
                 }
                 SpanType::U64 => {
                     log2_quantum = 0;
                     inventory[start_inv_idx].set_u64_span();
                     // The first word of the subinventory is used to store the spill index.
-                    inventory[start_inv_idx + 1] = spilled;
+                    inventory[start_inv_idx + 1] = spilled as PlatformWord;
                 }
             }
 
@@ -366,9 +366,9 @@ impl<
             let mut subinventory_idx = 1;
             next_quantum += quantum;
 
-            let mut word_idx = start_bit_idx / usize::BITS as usize;
-            let end_word_idx = end_bit_idx.div_ceil(usize::BITS as usize);
-            let bit_idx = start_bit_idx % usize::BITS as usize;
+            let mut word_idx = start_bit_idx / PlatformWord::BITS as usize;
+            let end_word_idx = end_bit_idx.div_ceil(PlatformWord::BITS as usize);
+            let bit_idx = start_bit_idx % PlatformWord::BITS as usize;
 
             // Clear the lower bits
             let mut word = (!bits.as_ref()[word_idx] >> bit_idx) << bit_idx;
@@ -384,7 +384,7 @@ impl<
                     // find the quantum bit in the word
                     let in_word_index = word.select_in_word(next_quantum - past_ones);
                     // compute the global index of the quantum bit in the bitvec
-                    let bit_index = (word_idx * usize::BITS as usize) + in_word_index;
+                    let bit_index = (word_idx * PlatformWord::BITS as usize) + in_word_index;
 
                     // This exit is necessary in case the number of ones per
                     // inventory is larger than the number of available
@@ -444,11 +444,11 @@ impl<
                         }
                         SpanType::U64 => {
                             if subinventory_idx < words_per_subinventory {
-                                inventory[start_inv_idx + 1 + subinventory_idx] = bit_index;
+                                inventory[start_inv_idx + 1 + subinventory_idx] = bit_index as PlatformWord;
                                 subinventory_idx += 1;
                             } else {
                                 assert!(spilled < spill_size);
-                                spill[spilled] = bit_index;
+                                spill[spilled] = bit_index as PlatformWord;
                                 spilled += 1;
                             }
                             // This exit is not necessary for correctness, but
@@ -499,8 +499,8 @@ impl<
 }
 
 impl<
-    B: AsRef<[usize]> + BitLength + SelectZeroHinted,
-    I: AsRef<[usize]>,
+    B: AsRef<[PlatformWord]> + BitLength + SelectZeroHinted,
+    I: AsRef<[PlatformWord]>,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectZeroUnchecked
@@ -524,7 +524,7 @@ impl<
 
                 debug_assert!(subrank >> Self::LOG2_ONES_PER_SUB16 < subinventory.len());
 
-                let hint_pos = inventory_rank
+                let hint_pos = inventory_rank as usize
                     + *subinventory.get_unchecked(subrank >> Self::LOG2_ONES_PER_SUB16) as usize;
                 let residual = subrank & Self::ONES_PER_SUB16_MASK;
 
@@ -551,7 +551,7 @@ impl<
 
                     inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize
                 } else {
-                    let start_spill_idx = *inventory.get_unchecked(inventory_start_pos + 1);
+                    let start_spill_idx = *inventory.get_unchecked(inventory_start_pos + 1) as usize;
 
                     let spilled_u32s = self
                         .spill
@@ -578,19 +578,19 @@ impl<
                 if subrank == 0 {
                     return inventory_rank;
                 }
-                return *inventory.get_unchecked(inventory_start_pos + 1 + subrank);
+                return *inventory.get_unchecked(inventory_start_pos + 1 + subrank) as usize;
             }
-            let spill_idx = { *inventory.get_unchecked(inventory_start_pos + 1) } + subrank
+            let spill_idx = { *inventory.get_unchecked(inventory_start_pos + 1) as usize } + subrank
                 - words_per_subinventory;
             debug_assert!(spill_idx < self.spill.as_ref().len());
-            *self.spill.as_ref().get_unchecked(spill_idx)
+            *self.spill.as_ref().get_unchecked(spill_idx) as usize
         }
     }
 }
 
 impl<
-    B: AsRef<[usize]> + NumBits + SelectZeroHinted,
-    I: AsRef<[usize]>,
+    B: AsRef<[PlatformWord]> + NumBits + SelectZeroHinted,
+    I: AsRef<[PlatformWord]>,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectZero for SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>

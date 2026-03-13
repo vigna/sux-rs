@@ -44,7 +44,7 @@ thiserror = "2.0.11"
 itertools = "0.14.0"
 lambert_w = { version = "1.0.17", default-features = false, features = ["std"] }
 deko = { version = "0.6.0", optional = true }
-thread-priority = "3.0.0"
+thread-priority = { version = "3.0.0", optional = true }
 value-traits = "0.2.0"
 serde = { version =  "1.0.225", optional = true, features = ["derive"] }
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
@@ -72,7 +72,7 @@ iter_advance_by = [] # Enable iter_advance_by (requires nightly)
 mwhc = [] # Compile MWHC data structures (mainly for benchmarking)
 no_logging = [
 ] # Disable logging for binaries that build functions and filters (for benchmarking)
-rayon = ["dep:rayon"]
+rayon = ["dep:rayon", "dep:thread-priority"]
 deko = ["dep:deko"]
 serde = ["dep:serde"]
 epserde = ["dep:epserde"]

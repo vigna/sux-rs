@@ -26,7 +26,7 @@ fn test_signed_vfunc() -> Result<()> {
     let mut pl = ProgressLogger::default();
     let n = 1000;
     let func: SignedVFunc<
-        VFunc<usize, usize, BitFieldVec, [u64; 2], FuseLge3Shards>,
+        VFunc<usize, usize, BitFieldVec<usize>, [u64; 2], FuseLge3Shards>,
         Box<[usize]>,
     > = VBuilder::default()
         .expected_num_keys(n)
@@ -51,7 +51,7 @@ fn test_bit_signed_vfunc() -> Result<()> {
     let mut pl = ProgressLogger::default();
     let n = 1000;
     let func: BitSignedVFunc<
-        VFunc<usize, usize, BitFieldVec, [u64; 2], FuseLge3Shards>,
+        VFunc<usize, usize, BitFieldVec<usize>, [u64; 2], FuseLge3Shards>,
         BitFieldVec,
     > = VBuilder::default()
         .expected_num_keys(n)

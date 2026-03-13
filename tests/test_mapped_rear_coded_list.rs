@@ -180,7 +180,13 @@ fn test_bit_field_vec_mapped_rear_coded_list() {
         Box<[usize]>,
         BitFieldVec<usize>,
         true,
-    >>::from_parts(builder.build(), bit_field_vec![2; 3, 2, 1, 0]);
+    >>::from_parts(builder.build(), {
+        let mut bfv = BitFieldVec::<usize>::new(2, 0);
+        for &v in &[3, 2, 1, 0] {
+            bfv.push(v);
+        }
+        bfv
+    });
 
     assert_eq!(mrcl.len(), 4);
     assert_eq!(mrcl.get(0), "d");
@@ -193,8 +199,8 @@ use lender::{ExactSizeLender, IntoLender, Lender};
 use sux::dict::mapped_rear_coded_list::{MappedRearCodedListSliceU8, MappedRearCodedListStr};
 use sux::traits::IntoIteratorFrom;
 
-fn make_map(bit_width: usize, values: &[usize]) -> BitFieldVec {
-    let mut bfv = BitFieldVec::new(bit_width, 0);
+fn make_map(bit_width: usize, values: &[usize]) -> BitFieldVec<usize> {
+    let mut bfv = BitFieldVec::<usize>::new(bit_width, 0);
     for &v in values {
         bfv.push(v);
     }
@@ -510,7 +516,7 @@ fn test_lender_fused() {
 fn test_empty() {
     let rclb = RearCodedListBuilder::<str, true>::new(4);
     let rcl = rclb.build();
-    let map: BitFieldVec = BitFieldVec::new(1, 0); // empty map
+    let map: BitFieldVec<usize> = BitFieldVec::<usize>::new(1, 0); // empty map
     let mrcl = MappedRearCodedListStr::from_parts(rcl, map);
 
     assert_eq!(mrcl.len(), 0);

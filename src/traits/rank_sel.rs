@@ -20,6 +20,8 @@ use mem_dbg::{MemDbg, MemSize};
 use std::ops::Deref;
 use std::ops::Index;
 
+use super::PlatformWord;
+
 /// A trait expressing a length in bits.
 ///
 /// This trait is typically used in conjunction with `AsRef<[usize]>` to provide
@@ -317,7 +319,7 @@ pub trait SelectZeroHinted {
 #[derive(Debug, Clone, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(AsRef<[usize]>, target = "bits")]
+#[delegate(AsRef<[PlatformWord]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]

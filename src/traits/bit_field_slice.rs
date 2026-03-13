@@ -75,16 +75,15 @@ impl_word!(u8, u16, u32, u64, u128, usize);
 
 /// The default word type for bit-storage structures on the current platform.
 ///
-/// This is `usize` during the migration to explicit word types.
-/// Once all structures have been updated, it will become `u64` on 64-bit
-/// platforms and `u32` on 32-bit platforms.
-///
-/// Structures like [`BitVec`](crate::bits::BitVec) default to
+/// On 64-bit platforms this is `u64`; on 32-bit platforms (including WASM) it is
+/// `u32`. Structures like [`BitVec`](crate::bits::BitVec) default to
 /// `Vec<PlatformWord>` backing, keeping storage native to the platform while
 /// allowing explicit `u64` backing when 64-bit words are needed
 /// (e.g., for [`Rank9`](crate::rank_sel::Rank9)).
-// TODO(32-bit): change to u64/u32 after all modules are migrated
-pub type PlatformWord = usize;
+#[cfg(target_pointer_width = "64")]
+pub type PlatformWord = u64;
+#[cfg(not(target_pointer_width = "64"))]
+pub type PlatformWord = u32;
 
 /// Common method for [`BitFieldSlice`], [`BitFieldSliceMut`], and
 /// [`AtomicBitFieldSlice`].

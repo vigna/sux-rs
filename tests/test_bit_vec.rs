@@ -6,12 +6,13 @@
  */
 
 use anyhow::Result;
+use atomic_primitive::Atomic;
 use core::sync::atomic::Ordering;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
-use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
+use sux::traits::PlatformWord;
 use sux::traits::bit_vec_ops::*;
 
 #[test]
@@ -28,7 +29,7 @@ fn test() {
     assert_eq!(bm.count_ones(), u);
 
     // Dirty vector
-    let ones = [usize::MAX; 2];
+    let ones = [PlatformWord::MAX; 2];
     assert_eq!(unsafe { BitVec::from_raw_parts(&ones, 0) }.count_ones(), 0);
     assert_eq!(unsafe { BitVec::from_raw_parts(&ones, 1) }.count_ones(), 1);
 
@@ -79,7 +80,10 @@ fn test() {
     let bm: AtomicBitVec = bm.into();
 
     // Dirty vector
-    let ones = [AtomicUsize::new(usize::MAX), AtomicUsize::new(usize::MAX)];
+    let ones = [
+        Atomic::<PlatformWord>::new(PlatformWord::MAX),
+        Atomic::<PlatformWord>::new(PlatformWord::MAX),
+    ];
     assert_eq!(
         unsafe { AtomicBitVec::from_raw_parts(&ones, 0) }.count_ones(),
         0
@@ -430,7 +434,7 @@ fn test_eq() {
         assert_eq!(b, c);
     }
 
-    let c: BitVec<Box<[usize]>> = c.into();
+    let c: BitVec<Box<[PlatformWord]>> = c.into();
     assert_eq!(b, c);
     let (bits, l) = c.into_raw_parts();
     let d = unsafe { BitVec::from_raw_parts(bits.as_ref(), l) };
@@ -459,7 +463,7 @@ fn test_epserde() -> Result<()> {
     cursor.set_position(0);
     let c = unsafe {
         use epserde::deser::Deserialize;
-        <BitVec<Vec<usize>>>::read_mem(&mut cursor, len)?
+        <BitVec<Vec<PlatformWord>>>::read_mem(&mut cursor, len)?
     };
 
     for i in 0..200 {
@@ -471,66 +475,66 @@ fn test_epserde() -> Result<()> {
 #[test]
 fn test_from() {
     // Vec to atomic vec
-    let mut b = BitVec::<Vec<usize>>::new(10);
+    let mut b = BitVec::<Vec<PlatformWord>>::new(10);
     for i in 0..10 {
         b.set(i, i % 2 == 0);
     }
-    let b: AtomicBitVec<Box<[AtomicUsize]>> = b.into();
-    let b: BitVec<Vec<usize>> = b.into();
+    let b: AtomicBitVec<Box<[Atomic<PlatformWord>]>> = b.into();
+    let b: BitVec<Vec<PlatformWord>> = b.into();
     for i in 0..10 {
         assert_eq!(b.get(i), i % 2 == 0);
         assert_eq!(b[i], i % 2 == 0);
     }
 
     // Boxed slice to atomic boxed slice
-    let bits = vec![0; 10].into_boxed_slice();
-    let mut b = unsafe { BitVec::<Box<[usize]>>::from_raw_parts(bits, 10) };
+    let bits = vec![0 as PlatformWord; 10].into_boxed_slice();
+    let mut b = unsafe { BitVec::<Box<[PlatformWord]>>::from_raw_parts(bits, 10) };
     for i in 0..10 {
         b.set(i, i % 2 == 0);
     }
-    let b: AtomicBitVec<Box<[AtomicUsize]>> = b.into();
-    let b: BitVec<Box<[usize]>> = b.into();
+    let b: AtomicBitVec<Box<[Atomic<PlatformWord>]>> = b.into();
+    let b: BitVec<Box<[PlatformWord]>> = b.into();
     for i in 0..10 {
         assert_eq!(b.get(i), i % 2 == 0);
     }
 
     // Reference to atomic reference
-    let bits = vec![0; 10].into_boxed_slice();
-    let mut b = unsafe { BitVec::<Box<[usize]>>::from_raw_parts(bits, 10) };
+    let bits = vec![0 as PlatformWord; 10].into_boxed_slice();
+    let mut b = unsafe { BitVec::<Box<[PlatformWord]>>::from_raw_parts(bits, 10) };
     for i in 0..10 {
         b.set(i, i % 2 == 0);
     }
     let (bits, l) = b.into_raw_parts();
-    let b = unsafe { BitVec::<&[usize]>::from_raw_parts(bits.as_ref(), l) };
-    if let Result::<AtomicBitVec<&[AtomicUsize]>, _>::Ok(b) = b.try_into() {
+    let b = unsafe { BitVec::<&[PlatformWord]>::from_raw_parts(bits.as_ref(), l) };
+    if let Result::<AtomicBitVec<&[Atomic<PlatformWord>]>, _>::Ok(b) = b.try_into() {
         let (bits, l) = b.into_raw_parts();
-        let b = unsafe { AtomicBitVec::<&[AtomicUsize]>::from_raw_parts(bits, l) };
-        let b: BitVec<&[usize]> = b.into();
+        let b = unsafe { AtomicBitVec::<&[Atomic<PlatformWord>]>::from_raw_parts(bits, l) };
+        let b: BitVec<&[PlatformWord]> = b.into();
         for i in 0..10 {
             assert_eq!(b.get(i), i % 2 == 0);
         }
     }
 
     // Mutable reference to mutable reference
-    let mut bits = vec![0; 10].into_boxed_slice();
-    let mut b = unsafe { BitVec::<&mut [usize]>::from_raw_parts(bits.as_mut(), 10) };
+    let mut bits = vec![0 as PlatformWord; 10].into_boxed_slice();
+    let mut b = unsafe { BitVec::<&mut [PlatformWord]>::from_raw_parts(bits.as_mut(), 10) };
     for i in 0..10 {
         b.set(i, i % 2 == 0);
     }
-    if let Result::<AtomicBitVec<&mut [AtomicUsize]>, _>::Ok(b) = b.try_into() {
-        let b: BitVec<&mut [usize]> = b.into();
+    if let Result::<AtomicBitVec<&mut [Atomic<PlatformWord>]>, _>::Ok(b) = b.try_into() {
+        let b: BitVec<&mut [PlatformWord]> = b.into();
         for i in 0..10 {
             assert_eq!(b.get(i), i % 2 == 0);
         }
     }
 
     // Vec to boxed slice
-    let mut b = BitVec::<Vec<usize>>::new(10);
+    let mut b = BitVec::<Vec<PlatformWord>>::new(10);
     for i in 0..10 {
         b.set(i, i % 2 == 0);
     }
-    let b: BitVec<Box<[usize]>> = b.into();
-    let b: BitVec<Vec<usize>> = b.into();
+    let b: BitVec<Box<[PlatformWord]>> = b.into();
+    let b: BitVec<Vec<PlatformWord>> = b.into();
     for i in 0..10 {
         assert_eq!(b.get(i), i % 2 == 0);
     }
@@ -539,17 +543,17 @@ fn test_from() {
 #[test]
 fn test_iter_ones_zeros() {
     // Exit on bit found beyond bit length (dirty vector)
-    let v = unsafe { BitVec::from_raw_parts(vec![1_usize << 63], 10) };
+    let v = unsafe { BitVec::from_raw_parts(vec![1_u64 << 63], 10) };
     assert_eq!(v.iter_ones().next(), None);
 
-    let v = unsafe { BitVec::from_raw_parts(vec![!(1_usize << 63)], 10) };
+    let v = unsafe { BitVec::from_raw_parts(vec![!(1_u64 << 63)], 10) };
     assert_eq!(v.iter_zeros().next(), None);
 
     // Exit on last word
-    let v = unsafe { BitVec::from_raw_parts(vec![0_usize], 10) };
+    let v = unsafe { BitVec::from_raw_parts(vec![0_u64], 10) };
     assert_eq!(v.iter_ones().next(), None);
 
-    let v = unsafe { BitVec::from_raw_parts(vec![!0_usize], 10) };
+    let v = unsafe { BitVec::from_raw_parts(vec![!0_u64], 10) };
     assert_eq!(v.iter_zeros().next(), None);
 }
 
