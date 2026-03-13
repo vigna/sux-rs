@@ -18,13 +18,13 @@
 //!
 //! These flavors depend on a backend, and presently we provide:
 //!
-//! - `BitVec<Vec<usize>>`: a mutable, growable and resizable bit vector;
-//! - `BitVec<AsRef<[usize]>>`: an immutable bit vector, useful for
+//! - `BitVec<Vec<PlatformWord>>`: a mutable, growable and resizable bit vector;
+//! - `BitVec<AsRef<[PlatformWord]>>`: an immutable bit vector, useful for
 //!   [ε-serde](https://crates.io/crates/epserde) support;
-//! - `BitVec<AsRef<[usize]> + AsMut<[usize]>>`: a mutable (but not resizable)
-//!   bit vector;
-//! - `AtomicBitVec<AsRef<[AtomicUsize]>>`: a thread-safe, mutable (but not
-//!   resizable) bit vector.
+//! - `BitVec<AsRef<[PlatformWord]> + AsMut<[PlatformWord]>>`: a mutable (but
+//!   not resizable) bit vector;
+//! - `AtomicBitVec<AsRef<[Atomic<PlatformWord>]>>`: a thread-safe, mutable (but
+//!   not resizable) bit vector.
 //!
 //! Note that nothing is assumed about the content of the backend outside the
 //! bits of the bit vector. Moreover, the content of the backend outside of
@@ -39,6 +39,7 @@
 //! ```rust
 //! use sux::prelude::*;
 //! use sux::traits::bit_vec_ops::*;
+//! use sux::traits::PlatformWord;
 //! use std::sync::atomic::Ordering;
 //!
 //! // Convenience macro
@@ -66,34 +67,34 @@
 //! assert!(a.get(0, Ordering::Relaxed));
 //!
 //! // Back to normal, but immutable size
-//! let b: BitVec<Vec<usize>> = a.into();
-//! let mut b: BitVec<Box<[usize]>> = b.into();
+//! let b: BitVec<Vec<PlatformWord>> = a.into();
+//! let mut b: BitVec<Box<[PlatformWord]>> = b.into();
 //! b.set(2, false);
 //!
 //! // If we create an artificially dirty bit vector, everything still works.
-//! let ones = [usize::MAX; 2];
+//! let ones = [PlatformWord::MAX; 2];
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones, 1) }.count_ones(), 1);
 //! ```
 
-use crate::traits::{AtomicBitIter, AtomicBitVecOps, BitIter, BitVecOps};
+use crate::traits::{AtomicBitIter, AtomicBitVecOps, BitIter, BitVecOps, PlatformWord};
 use crate::utils::SelectInWord;
-use atomic_primitive::AtomicPrimitive;
+use atomic_primitive::{Atomic, AtomicPrimitive};
 #[allow(unused_imports)] // this is in the std prelude but not in no_std!
 use core::borrow::BorrowMut;
 use core::fmt;
 use mem_dbg::*;
-use std::{
-    ops::Index,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::{ops::Index, sync::atomic::Ordering};
 
 use crate::{
-    traits::{BITS, rank_sel::*},
+    traits::rank_sel::*,
     utils::{
         CannotCastToAtomicError, transmute_boxed_slice_from_atomic,
         transmute_boxed_slice_into_atomic, transmute_vec_from_atomic, transmute_vec_into_atomic,
     },
 };
+
+/// Bits per platform word.
+const WORD_BITS: usize = PlatformWord::BITS as usize;
 
 /// A bit vector.
 ///
@@ -106,7 +107,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct BitVec<B = Vec<usize>> {
+pub struct BitVec<B = Vec<PlatformWord>> {
     bits: B,
     len: usize,
 }
@@ -229,7 +230,7 @@ impl<B> BitVec<B> {
     }
 }
 
-impl BitVec<Vec<usize>> {
+impl BitVec<Vec<PlatformWord>> {
     /// Creates a new bit vector of length `len` initialized to `false`.
     pub fn new(len: usize) -> Self {
         Self::with_value(len, false)
@@ -237,9 +238,9 @@ impl BitVec<Vec<usize>> {
 
     /// Creates a new bit vector of length `len` initialized to `value`.
     pub fn with_value(len: usize, value: bool) -> Self {
-        let n_of_words = len.div_ceil(BITS);
-        let extra_bits = (n_of_words * BITS) - len;
-        let word_value = if value { !0 } else { 0 };
+        let n_of_words = len.div_ceil(WORD_BITS);
+        let extra_bits = (n_of_words * WORD_BITS) - len;
+        let word_value: PlatformWord = if value { !0 } else { 0 };
         let mut bits = vec![word_value; n_of_words];
         if extra_bits > 0 {
             let last_word_value = word_value >> extra_bits;
@@ -253,7 +254,7 @@ impl BitVec<Vec<usize>> {
     /// Note that the capacity will be rounded up to a multiple of the word
     /// size.
     pub fn with_capacity(capacity: usize) -> Self {
-        let n_of_words = capacity.div_ceil(BITS);
+        let n_of_words = capacity.div_ceil(WORD_BITS);
         Self {
             bits: Vec::with_capacity(n_of_words),
             len: 0,
@@ -262,20 +263,20 @@ impl BitVec<Vec<usize>> {
 
     /// Returns the current capacity of this bit vector.
     pub fn capacity(&self) -> usize {
-        self.bits.capacity() * BITS
+        self.bits.capacity() * WORD_BITS
     }
 
     /// Appends a bit to the end of this bit vector.
     pub fn push(&mut self, b: bool) {
-        if self.bits.len() * BITS == self.len {
+        if self.bits.len() * WORD_BITS == self.len {
             self.bits.push(0);
         }
-        let word_index = self.len / BITS;
-        let bit_index = self.len % BITS;
+        let word_index = self.len / WORD_BITS;
+        let bit_index = self.len % WORD_BITS;
         // Clear bit
-        self.bits[word_index] &= !(1 << bit_index);
+        self.bits[word_index] &= !((1 as PlatformWord) << bit_index);
         // Set bit
-        self.bits[word_index] |= (b as usize) << bit_index;
+        self.bits[word_index] |= (b as PlatformWord) << bit_index;
         self.len += 1;
     }
 
@@ -286,7 +287,7 @@ impl BitVec<Vec<usize>> {
             return None;
         }
         let last_pos = self.len - 1;
-        let result = unsafe { self.get_unchecked(last_pos) };
+        let result = unsafe { BitVecOps::<PlatformWord>::get_unchecked(self, last_pos) };
         self.len = last_pos;
         Some(result)
     }
@@ -296,17 +297,17 @@ impl BitVec<Vec<usize>> {
     pub fn resize(&mut self, new_len: usize, value: bool) {
         if new_len > self.len {
             let old_len = self.len;
-            let old_word = old_len / BITS;
-            let old_bit = old_len % BITS;
-            let word_value = if value { !0usize } else { 0 };
+            let old_word = old_len / WORD_BITS;
+            let old_bit = old_len % WORD_BITS;
+            let word_value: PlatformWord = if value { !0 } else { 0 };
 
-            self.bits.resize(new_len.div_ceil(BITS), word_value);
+            self.bits.resize(new_len.div_ceil(WORD_BITS), word_value);
 
             // Handle the partial word at old_len, then fill all
             // remaining words (which may contain stale data from
             // previous truncations).
             if old_bit != 0 {
-                let mask = !0usize << old_bit;
+                let mask: PlatformWord = !0 << old_bit;
                 self.bits[old_word] = (self.bits[old_word] & !mask) | (word_value & mask);
                 self.bits[old_word + 1..].fill(word_value);
             } else {
@@ -317,7 +318,7 @@ impl BitVec<Vec<usize>> {
     }
 }
 
-impl<B: AsRef<[usize]>> BitVec<B> {
+impl<B: AsRef<[PlatformWord]>> BitVec<B> {
     /// Returns an owned copy of the bit vector.
     pub fn to_owned(&self) -> BitVec {
         BitVec {
@@ -334,55 +335,56 @@ impl<B> BitLength for BitVec<B> {
     }
 }
 
-impl<B: AsRef<[usize]>> BitCount for BitVec<B> {
+impl<B: AsRef<[PlatformWord]>> BitCount for BitVec<B> {
     fn count_ones(&self) -> usize {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.as_ref();
+        let full_words = self.len() / WORD_BITS;
+        let residual = self.len() % WORD_BITS;
+        let bits: &[PlatformWord] = self.as_ref();
         let mut num_ones = bits[..full_words]
             .iter()
             .map(|x| x.count_ones() as usize)
             .sum();
         if residual != 0 {
-            num_ones += (self.as_ref()[full_words] << (BITS - residual)).count_ones() as usize
+            num_ones += (bits[full_words] << (WORD_BITS - residual)).count_ones() as usize
         }
         num_ones
     }
 }
 
-impl<B: AsRef<[usize]>, C: AsRef<[usize]>> PartialEq<BitVec<C>> for BitVec<B> {
+impl<B: AsRef<[PlatformWord]>, C: AsRef<[PlatformWord]>> PartialEq<BitVec<C>> for BitVec<B> {
     fn eq(&self, other: &BitVec<C>) -> bool {
         let len = self.len();
         if len != other.len() {
             return false;
         }
 
-        let full_words = len / BITS;
+        let full_words = len / WORD_BITS;
         if self.as_ref()[..full_words] != other.as_ref()[..full_words] {
             return false;
         }
 
-        let residual = len % BITS;
+        let residual = len % WORD_BITS;
 
         residual == 0
-            || (self.as_ref()[full_words] ^ other.as_ref()[full_words]) << (BITS - residual) == 0
+            || (self.as_ref()[full_words] ^ other.as_ref()[full_words]) << (WORD_BITS - residual)
+                == 0
     }
 }
 
-impl<B: AsRef<[usize]>> Eq for BitVec<B> {}
+impl<B: AsRef<[PlatformWord]>> Eq for BitVec<B> {}
 
-impl<B: AsRef<[usize]>> Index<usize> for BitVec<B> {
+impl<B: AsRef<[PlatformWord]>> Index<usize> for BitVec<B> {
     type Output = bool;
 
     fn index(&self, index: usize) -> &Self::Output {
-        match self.get(index) {
+        match BitVecOps::<PlatformWord>::get(self, index) {
             false => &false,
             true => &true,
         }
     }
 }
 
-impl Extend<bool> for BitVec<Vec<usize>> {
+impl Extend<bool> for BitVec<Vec<PlatformWord>> {
     fn extend<T>(&mut self, i: T)
     where
         T: IntoIterator<Item = bool>,
@@ -393,7 +395,7 @@ impl Extend<bool> for BitVec<Vec<usize>> {
     }
 }
 
-impl FromIterator<bool> for BitVec<Vec<usize>> {
+impl FromIterator<bool> for BitVec<Vec<PlatformWord>> {
     fn from_iter<T: IntoIterator<Item = bool>>(iter: T) -> Self {
         let mut res = Self::new(0);
         res.extend(iter);
@@ -401,8 +403,8 @@ impl FromIterator<bool> for BitVec<Vec<usize>> {
     }
 }
 
-impl<'a, B: AsRef<[usize]>> IntoIterator for &'a BitVec<B> {
-    type IntoIter = BitIter<'a, B>;
+impl<'a, B: AsRef<[PlatformWord]>> IntoIterator for &'a BitVec<B> {
+    type IntoIter = BitIter<'a, PlatformWord, B>;
     type Item = bool;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -410,7 +412,7 @@ impl<'a, B: AsRef<[usize]>> IntoIterator for &'a BitVec<B> {
     }
 }
 
-impl<B: AsRef<[usize]>> fmt::Display for BitVec<B> {
+impl<B: AsRef<[PlatformWord]>> fmt::Display for BitVec<B> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[")?;
         for b in self {
@@ -425,7 +427,7 @@ impl<B: AsRef<[usize]>> fmt::Display for BitVec<B> {
 /// A thread-safe bit vector.
 ///
 /// See the [module documentation](mod@crate::bits::bit_vec) for details.
-pub struct AtomicBitVec<B = Box<[AtomicUsize]>> {
+pub struct AtomicBitVec<B = Box<[Atomic<PlatformWord>]>> {
     bits: B,
     len: usize,
 }
@@ -453,7 +455,7 @@ impl<B> AtomicBitVec<B> {
     }
 }
 
-impl AtomicBitVec<Box<[AtomicUsize]>> {
+impl AtomicBitVec<Box<[Atomic<PlatformWord>]>> {
     /// Creates a new atomic bit vector of length `len` initialized to `false`.
     pub fn new(len: usize) -> Self {
         Self::with_value(len, false)
@@ -461,16 +463,16 @@ impl AtomicBitVec<Box<[AtomicUsize]>> {
 
     /// Creates a new atomic bit vector of length `len` initialized to `value`.
     pub fn with_value(len: usize, value: bool) -> Self {
-        let n_of_words = len.div_ceil(BITS);
-        let extra_bits = (n_of_words * BITS) - len;
-        let word_value = if value { !0 } else { 0 };
+        let n_of_words = len.div_ceil(WORD_BITS);
+        let extra_bits = (n_of_words * WORD_BITS) - len;
+        let word_value: PlatformWord = if value { !0 } else { 0 };
         let mut bits = (0..n_of_words)
-            .map(|_| AtomicUsize::new(word_value))
+            .map(|_| <Atomic<PlatformWord>>::new(word_value))
             .collect::<Vec<_>>()
             .into_boxed_slice();
         if extra_bits > 0 {
             let last_word_value = word_value >> extra_bits;
-            bits[n_of_words - 1] = AtomicUsize::new(last_word_value);
+            bits[n_of_words - 1] = <Atomic<PlatformWord>>::new(last_word_value);
         }
         Self { bits, len }
     }
@@ -483,11 +485,11 @@ impl<B> BitLength for AtomicBitVec<B> {
     }
 }
 
-impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
+impl<B: AsRef<[Atomic<PlatformWord>]>> BitCount for AtomicBitVec<B> {
     fn count_ones(&self) -> usize {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
-        let bits = self.as_ref();
+        let full_words = self.len() / WORD_BITS;
+        let residual = self.len() % WORD_BITS;
+        let bits: &[Atomic<PlatformWord>] = self.as_ref();
         let mut num_ones;
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
@@ -497,14 +499,14 @@ impl<B: AsRef<[AtomicUsize]>> BitCount for AtomicBitVec<B> {
             .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
             .sum();
         if residual != 0 {
-            num_ones += (bits[full_words].load(Ordering::Relaxed) << (BITS - residual)).count_ones()
-                as usize
+            num_ones += (bits[full_words].load(Ordering::Relaxed) << (WORD_BITS - residual))
+                .count_ones() as usize
         }
         num_ones
     }
 }
 
-impl<B: AsRef<[AtomicUsize]>> Index<usize> for AtomicBitVec<B> {
+impl<B: AsRef<[Atomic<PlatformWord>]>> Index<usize> for AtomicBitVec<B> {
     type Output = bool;
 
     /// Shorthand for `get` using [`Ordering::Relaxed`].
@@ -516,7 +518,7 @@ impl<B: AsRef<[AtomicUsize]>> Index<usize> for AtomicBitVec<B> {
     }
 }
 
-impl<'a, B: AsRef<[AtomicUsize]>> IntoIterator for &'a AtomicBitVec<B> {
+impl<'a, B: AsRef<[Atomic<PlatformWord>]>> IntoIterator for &'a AtomicBitVec<B> {
     type IntoIter = AtomicBitIter<'a, B>;
     type Item = bool;
 
@@ -650,41 +652,61 @@ impl<W, B: AsRef<[W]>> AsRef<[W]> for AtomicBitVec<B> {
     }
 }
 
-impl<B: AsRef<[usize]>> RankHinted<64> for BitVec<B> {
-    #[inline(always)]
-    unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        let bits = self.as_ref();
-        let mut rank = hint_rank;
-        let mut hint_pos = hint_pos;
+// RankHinted implementations for different word types.
+// Since RankHinted<64> and RankHinted<32> are different traits, these impls
+// do not overlap and can coexist on all platforms.
 
-        debug_assert!(
-            hint_pos < bits.len(),
-            "hint_pos: {}, len: {}",
-            hint_pos,
-            bits.len()
-        );
+macro_rules! impl_rank_hinted_for_bitvec {
+    ($W:ty, $BITS:literal) => {
+        impl<B: AsRef<[$W]>> RankHinted<$BITS> for BitVec<B> {
+            #[inline(always)]
+            unsafe fn rank_hinted(
+                &self,
+                pos: usize,
+                hint_pos: usize,
+                hint_rank: usize,
+            ) -> usize {
+                let bits: &[$W] = self.as_ref();
+                let mut rank = hint_rank;
+                let mut hint_pos = hint_pos;
 
-        while (hint_pos + 1) * 64 <= pos {
-            rank += unsafe { bits.get_unchecked(hint_pos).count_ones() } as usize;
-            hint_pos += 1;
+                debug_assert!(
+                    hint_pos < bits.len(),
+                    "hint_pos: {}, len: {}",
+                    hint_pos,
+                    bits.len()
+                );
+
+                while (hint_pos + 1) * $BITS <= pos {
+                    rank += unsafe { bits.get_unchecked(hint_pos) }.count_ones() as usize;
+                    hint_pos += 1;
+                }
+
+                rank + (unsafe { *bits.get_unchecked(hint_pos) }
+                    & ((1 as $W) << (pos % $BITS)).wrapping_sub(1))
+                    .count_ones() as usize
+            }
         }
-
-        rank + (unsafe { bits.get_unchecked(hint_pos) } & ((1 << (pos % 64)) - 1)).count_ones()
-            as usize
-    }
+    };
 }
 
-impl<B: AsRef<[usize]>> SelectHinted for BitVec<B> {
+// TODO(32-bit): when PlatformWord changes to u64, change usize to u64 here
+impl_rank_hinted_for_bitvec!(usize, 64);
+impl_rank_hinted_for_bitvec!(u32, 32);
+
+// SelectHinted and SelectZeroHinted for PlatformWord-backed bit vectors.
+
+impl<B: AsRef<[PlatformWord]>> SelectHinted for BitVec<B> {
     unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        let mut word_index = hint_pos / BITS;
-        let bit_index = hint_pos % BITS;
+        let mut word_index = hint_pos / WORD_BITS;
+        let bit_index = hint_pos % WORD_BITS;
         let mut residual = rank - hint_rank;
         let mut word =
-            (unsafe { self.as_ref().get_unchecked(word_index) } >> bit_index) << bit_index;
+            (unsafe { *self.as_ref().get_unchecked(word_index) } >> bit_index) << bit_index;
         loop {
             let bit_count = word.count_ones() as usize;
             if residual < bit_count {
-                return word_index * BITS + word.select_in_word(residual);
+                return word_index * WORD_BITS + word.select_in_word(residual);
             }
             word_index += 1;
             word = *unsafe { self.as_ref().get_unchecked(word_index) };
@@ -693,20 +715,20 @@ impl<B: AsRef<[usize]>> SelectHinted for BitVec<B> {
     }
 }
 
-impl<B: AsRef<[usize]>> SelectZeroHinted for BitVec<B> {
+impl<B: AsRef<[PlatformWord]>> SelectZeroHinted for BitVec<B> {
     unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        let mut word_index = hint_pos / BITS;
-        let bit_index = hint_pos % BITS;
+        let mut word_index = hint_pos / WORD_BITS;
+        let bit_index = hint_pos % WORD_BITS;
         let mut residual = rank - hint_rank;
         let mut word =
             (!*unsafe { self.as_ref().get_unchecked(word_index) } >> bit_index) << bit_index;
         loop {
             let bit_count = word.count_ones() as usize;
             if residual < bit_count {
-                return word_index * BITS + word.select_in_word(residual);
+                return word_index * WORD_BITS + word.select_in_word(residual);
             }
             word_index += 1;
-            word = unsafe { !self.as_ref().get_unchecked(word_index) };
+            word = unsafe { !*self.as_ref().get_unchecked(word_index) };
             residual -= bit_count;
         }
     }

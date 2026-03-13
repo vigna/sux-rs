@@ -539,17 +539,17 @@ fn test_from() {
 #[test]
 fn test_iter_ones_zeros() {
     // Exit on bit found beyond bit length (dirty vector)
-    let v = unsafe { BitVec::from_raw_parts(vec![1 << 63], 10) };
+    let v = unsafe { BitVec::from_raw_parts(vec![1_usize << 63], 10) };
     assert_eq!(v.iter_ones().next(), None);
 
-    let v = unsafe { BitVec::from_raw_parts(vec![!(1 << 63)], 10) };
+    let v = unsafe { BitVec::from_raw_parts(vec![!(1_usize << 63)], 10) };
     assert_eq!(v.iter_zeros().next(), None);
 
     // Exit on last word
-    let v = unsafe { BitVec::from_raw_parts(vec![0], 10) };
+    let v = unsafe { BitVec::from_raw_parts(vec![0_usize], 10) };
     assert_eq!(v.iter_ones().next(), None);
 
-    let v = unsafe { BitVec::from_raw_parts(vec![!0], 10) };
+    let v = unsafe { BitVec::from_raw_parts(vec![!0_usize], 10) };
     assert_eq!(v.iter_zeros().next(), None);
 }
 

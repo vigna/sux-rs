@@ -9,8 +9,8 @@
 //!
 //! `sux` does not provide a dedicated trait for bit vectors (whereas it
 //! provides a trait for [bit-field slices](crate::traits::bit_field_slice)).
-//! Rather, it considers anything that is `AsRef<[usize]>` and implements
-//! [`BitLength`] as a bit vector.
+//! Rather, it considers anything that is `AsRef<[W]>` (where `W` implements
+//! [`Word`]) and implements [`BitLength`] as a bit vector.
 //!
 //! This approach was chosen for efficiency reasons—all methods are implemented
 //! as efficiently as possible for a concrete representation. Other crates opt
@@ -27,7 +27,7 @@
 //!
 //! All traits provided in this module are extension traits. They have no
 //! unimplemented methods: just pulling them into scope will provide anything
-//! that is `AsRef<[usize]>` and implements [`BitLength`] with the operations of
+//! that is `AsRef<[W]>` and implements [`BitLength`] with the operations of
 //! a bit vector.
 //!
 //! Iteration on the bits of the vector, or on the positions of the ones or of the
@@ -37,10 +37,12 @@
 //! [`BitVec`](crate::bits::BitVec) and
 //! [`AtomicBitVec`](crate::bits::AtomicBitVec).
 
+use crate::traits::bit_field_slice::Word;
 use crate::traits::BitLength;
 use mem_dbg::{MemDbg, MemSize};
 use std::{
     iter::FusedIterator,
+    marker::PhantomData,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -48,8 +50,6 @@ use std::{
 use crate::RAYON_MIN_LEN;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
-
-pub const BITS: usize = usize::BITS as usize;
 
 macro_rules! panic_if_out_of_bounds {
     ($index: expr, $len: expr) => {
@@ -59,10 +59,10 @@ macro_rules! panic_if_out_of_bounds {
     };
 }
 
-impl<T: ?Sized + AsRef<[usize]> + BitLength> BitVecOps for T {}
+impl<W: Word, T: ?Sized + AsRef<[W]> + BitLength> BitVecOps<W> for T {}
 
 /// Read-only operations on bit vectors.
-pub trait BitVecOps: AsRef<[usize]> + BitLength {
+pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
     /// Returns true if the bit of given index is set.
     #[inline]
     fn get(&self, index: usize) -> bool {
@@ -78,24 +78,25 @@ pub trait BitVecOps: AsRef<[usize]> + BitLength {
     /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> bool {
-        let word_index = index / BITS;
-        let word = unsafe { self.as_ref().get_unchecked(word_index) };
-        (word >> (index % BITS)) & 1 != 0
+        let bits_per_word = W::BITS as usize;
+        let word_index = index / bits_per_word;
+        let word = unsafe { *self.as_ref().get_unchecked(word_index) };
+        (word >> (index % bits_per_word)) & W::ONE != W::ZERO
     }
 
     /// Returns an iterator over the bits of this bit vector as booleans.
     #[inline(always)]
-    fn iter(&self) -> BitIter<'_, [usize]> {
+    fn iter(&self) -> BitIter<'_, W, [W]> {
         BitIter::new(self.as_ref(), self.len())
     }
 
     /// Returns an iterator over the positions of the ones in this bit vector.
-    fn iter_ones(&self) -> OnesIter<'_, [usize]> {
+    fn iter_ones(&self) -> OnesIter<'_, W, [W]> {
         OnesIter::new(self.as_ref(), self.len())
     }
 
     /// Returns an iterator over the positions of the zeros in this bit vector.
-    fn iter_zeros(&self) -> ZerosIter<'_, [usize]> {
+    fn iter_zeros(&self) -> ZerosIter<'_, W, [W]> {
         ZerosIter::new(self.as_ref(), self.len())
     }
 
@@ -103,8 +104,9 @@ pub trait BitVecOps: AsRef<[usize]> + BitLength {
     /// [`BitCount::count_ones`](crate::traits::BitCount::count_ones).
     #[cfg(feature = "rayon")]
     fn par_count_ones(&self) -> usize {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
+        let bits_per_word = W::BITS as usize;
+        let full_words = self.len() / bits_per_word;
+        let residual = self.len() % bits_per_word;
         let bits = self.as_ref();
         let mut num_ones;
         num_ones = bits[..full_words]
@@ -113,17 +115,18 @@ pub trait BitVecOps: AsRef<[usize]> + BitLength {
             .map(|x| x.count_ones() as usize)
             .sum();
         if residual != 0 {
-            num_ones += (self.as_ref()[full_words] << (BITS - residual)).count_ones() as usize
+            num_ones +=
+                (self.as_ref()[full_words] << (bits_per_word - residual)).count_ones() as usize
         }
 
         num_ones
     }
 }
 
-impl<T: AsRef<[usize]> + AsMut<[usize]> + BitLength> BitVecOpsMut for T {}
+impl<W: Word, T: AsRef<[W]> + AsMut<[W]> + BitLength> BitVecOpsMut<W> for T {}
 
 /// Mutation operations on bit vectors.
-pub trait BitVecOpsMut: AsRef<[usize]> + AsMut<[usize]> + BitLength {
+pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
     /// Sets the bit of given index to the given value.
     #[inline]
     fn set(&mut self, index: usize, value: bool) {
@@ -138,28 +141,30 @@ pub trait BitVecOpsMut: AsRef<[usize]> + AsMut<[usize]> + BitLength {
     /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
     #[inline(always)]
     unsafe fn set_unchecked(&mut self, index: usize, value: bool) {
-        let word_index = index / BITS;
-        let bit_index = index % BITS;
+        let bits_per_word = W::BITS as usize;
+        let word_index = index / bits_per_word;
+        let bit_index = index % bits_per_word;
         let bits = self.as_mut();
         // For constant values, this should be inlined with no test.
         unsafe {
             if value {
-                *bits.get_unchecked_mut(word_index) |= 1 << bit_index;
+                *bits.get_unchecked_mut(word_index) |= W::ONE << bit_index;
             } else {
-                *bits.get_unchecked_mut(word_index) &= !(1 << bit_index);
+                *bits.get_unchecked_mut(word_index) &= !(W::ONE << bit_index);
             }
         }
     }
 
     /// Sets all bits to the given value.
     fn fill(&mut self, value: bool) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
+        let bits_per_word = W::BITS as usize;
+        let full_words = self.len() / bits_per_word;
+        let residual = self.len() % bits_per_word;
         let bits = self.as_mut();
-        let word_value = if value { !0 } else { 0 };
+        let word_value: W = if value { !W::ZERO } else { W::ZERO };
         bits[..full_words].iter_mut().for_each(|x| *x = word_value);
         if residual != 0 {
-            let mask = (1 << residual) - 1;
+            let mask = (W::ONE << residual) - W::ONE;
             bits[full_words] = (bits[full_words] & !mask) | (word_value & mask);
         }
     }
@@ -167,16 +172,17 @@ pub trait BitVecOpsMut: AsRef<[usize]> + AsMut<[usize]> + BitLength {
     /// Sets all bits to the given value using a parallel implementation.
     #[cfg(feature = "rayon")]
     fn par_fill(&mut self, value: bool) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
+        let bits_per_word = W::BITS as usize;
+        let full_words = self.len() / bits_per_word;
+        let residual = self.len() % bits_per_word;
         let bits = self.as_mut();
-        let word_value = if value { !0 } else { 0 };
+        let word_value: W = if value { !W::ZERO } else { W::ZERO };
         bits[..full_words]
             .par_iter_mut()
             .with_min_len(RAYON_MIN_LEN)
             .for_each(|x| *x = word_value);
         if residual != 0 {
-            let mask = (1 << residual) - 1;
+            let mask = (W::ONE << residual) - W::ONE;
             bits[full_words] = (bits[full_words] & !mask) | (word_value & mask);
         }
     }
@@ -194,12 +200,13 @@ pub trait BitVecOpsMut: AsRef<[usize]> + AsMut<[usize]> + BitLength {
 
     /// Flip all bits.
     fn flip(&mut self) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
+        let bits_per_word = W::BITS as usize;
+        let full_words = self.len() / bits_per_word;
+        let residual = self.len() % bits_per_word;
         let bits = self.as_mut();
         bits[..full_words].iter_mut().for_each(|x| *x = !*x);
         if residual != 0 {
-            let mask = (1 << residual) - 1;
+            let mask = (W::ONE << residual) - W::ONE;
             bits[full_words] = (bits[full_words] & !mask) | (!bits[full_words] & mask);
         }
     }
@@ -207,15 +214,16 @@ pub trait BitVecOpsMut: AsRef<[usize]> + AsMut<[usize]> + BitLength {
     /// Flips all bits using a parallel implementation.
     #[cfg(feature = "rayon")]
     fn par_flip(&mut self) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
+        let bits_per_word = W::BITS as usize;
+        let full_words = self.len() / bits_per_word;
+        let residual = self.len() % bits_per_word;
         let bits = self.as_mut();
         bits[..full_words]
             .par_iter_mut()
             .with_min_len(RAYON_MIN_LEN)
             .for_each(|x| *x = !*x);
         if residual != 0 {
-            let mask = (1 << residual) - 1;
+            let mask = (W::ONE << residual) - W::ONE;
             bits[full_words] = (bits[full_words] & !mask) | (!bits[full_words] & mask);
         }
     }
@@ -223,61 +231,63 @@ pub trait BitVecOpsMut: AsRef<[usize]> + AsMut<[usize]> + BitLength {
 
 /// An iterator over the bits of a bit vector as booleans.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct BitIter<'a, B: ?Sized> {
+pub struct BitIter<'a, W: Word, B: ?Sized> {
     bits: &'a B,
     len: usize,
     next_bit_pos: usize,
+    _phantom: PhantomData<W>,
 }
 
-impl<'a, B: ?Sized + AsRef<[usize]>> BitIter<'a, B> {
+impl<'a, W: Word, B: ?Sized + AsRef<[W]>> BitIter<'a, W, B> {
     pub fn new(bits: &'a B, len: usize) -> Self {
-        debug_assert!(len <= bits.as_ref().len() * BITS);
+        debug_assert!(len <= bits.as_ref().len() * W::BITS as usize);
         BitIter {
             bits,
             len,
             next_bit_pos: 0,
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> Iterator for BitIter<'_, B> {
+impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for BitIter<'_, W, B> {
     type Item = bool;
     fn next(&mut self) -> Option<bool> {
         if self.next_bit_pos == self.len {
             return None;
         }
-        let word_idx = self.next_bit_pos / BITS;
-        let bit_idx = self.next_bit_pos % BITS;
+        let bits_per_word = W::BITS as usize;
+        let word_idx = self.next_bit_pos / bits_per_word;
+        let bit_idx = self.next_bit_pos % bits_per_word;
         let word = unsafe { *self.bits.as_ref().get_unchecked(word_idx) };
-        let bit = (word >> bit_idx) & 1;
+        let bit = (word >> bit_idx) & W::ONE;
         self.next_bit_pos += 1;
-        Some(bit != 0)
+        Some(bit != W::ZERO)
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> ExactSizeIterator for BitIter<'_, B> {
+impl<W: Word, B: ?Sized + AsRef<[W]>> ExactSizeIterator for BitIter<'_, W, B> {
     fn len(&self) -> usize {
         self.len - self.next_bit_pos
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> FusedIterator for BitIter<'_, B> {}
+impl<W: Word, B: ?Sized + AsRef<[W]>> FusedIterator for BitIter<'_, W, B> {}
 
 /// An iterator over the positions of the ones in a bit vector.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct OnesIter<'a, B: ?Sized> {
+pub struct OnesIter<'a, W: Word, B: ?Sized> {
     bits: &'a B,
     len: usize,
     word_idx: usize,
-    // BitVec is currently implemented only for AsRef<[usize]>.
-    word: usize,
+    word: W,
 }
 
-impl<'a, B: ?Sized + AsRef<[usize]>> OnesIter<'a, B> {
+impl<'a, W: Word, B: ?Sized + AsRef<[W]>> OnesIter<'a, W, B> {
     pub fn new(bits: &'a B, len: usize) -> Self {
-        debug_assert!(len <= bits.as_ref().len() * BITS);
+        debug_assert!(len <= bits.as_ref().len() * W::BITS as usize);
         let word = if bits.as_ref().is_empty() {
-            0
+            W::ZERO
         } else {
             unsafe { *bits.as_ref().get_unchecked(0) }
         };
@@ -290,12 +300,13 @@ impl<'a, B: ?Sized + AsRef<[usize]>> OnesIter<'a, B> {
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> Iterator for OnesIter<'_, B> {
+impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for OnesIter<'_, W, B> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let bits_per_word = W::BITS as usize;
         // find the next word with ones
-        while self.word == 0 {
+        while self.word == W::ZERO {
             self.word_idx += 1;
             if self.word_idx >= self.bits.as_ref().len() {
                 return None;
@@ -305,34 +316,33 @@ impl<B: ?Sized + AsRef<[usize]>> Iterator for OnesIter<'_, B> {
         // find the lowest bit set index in the word
         let bit_idx = self.word.trailing_zeros() as usize;
         // compute the global bit index
-        let res = (self.word_idx * BITS) + bit_idx;
+        let res = (self.word_idx * bits_per_word) + bit_idx;
         if res >= self.len {
             None
         } else {
             // clear the lowest bit set
-            self.word &= self.word - 1;
+            self.word &= self.word - W::ONE;
             Some(res)
         }
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> FusedIterator for OnesIter<'_, B> {}
+impl<W: Word, B: ?Sized + AsRef<[W]>> FusedIterator for OnesIter<'_, W, B> {}
 
 /// An iterator over the positions of the zeros in a bit vector.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct ZerosIter<'a, B: ?Sized> {
+pub struct ZerosIter<'a, W: Word, B: ?Sized> {
     bits: &'a B,
     len: usize,
     word_idx: usize,
-    // BitVec is currently implemented only for AsRef<[usize]>.
-    word: usize,
+    word: W,
 }
 
-impl<'a, B: ?Sized + AsRef<[usize]>> ZerosIter<'a, B> {
+impl<'a, W: Word, B: ?Sized + AsRef<[W]>> ZerosIter<'a, W, B> {
     pub fn new(bits: &'a B, len: usize) -> Self {
-        debug_assert!(len <= bits.as_ref().len() * BITS);
+        debug_assert!(len <= bits.as_ref().len() * W::BITS as usize);
         let word = if bits.as_ref().is_empty() {
-            0
+            W::ZERO
         } else {
             unsafe { !*bits.as_ref().get_unchecked(0) }
         };
@@ -345,12 +355,13 @@ impl<'a, B: ?Sized + AsRef<[usize]>> ZerosIter<'a, B> {
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> Iterator for ZerosIter<'_, B> {
+impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for ZerosIter<'_, W, B> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let bits_per_word = W::BITS as usize;
         // find the next flipped word with zeros
-        while self.word == 0 {
+        while self.word == W::ZERO {
             self.word_idx += 1;
             if self.word_idx >= self.bits.as_ref().len() {
                 return None;
@@ -360,18 +371,21 @@ impl<B: ?Sized + AsRef<[usize]>> Iterator for ZerosIter<'_, B> {
         // find the lowest zero bit index in the word
         let bit_idx = self.word.trailing_zeros() as usize;
         // compute the global bit index
-        let res = (self.word_idx * BITS) + bit_idx;
+        let res = (self.word_idx * bits_per_word) + bit_idx;
         if res >= self.len {
             None
         } else {
             // clear the lowest bit set
-            self.word &= self.word - 1;
+            self.word &= self.word - W::ONE;
             Some(res)
         }
     }
 }
 
-impl<B: ?Sized + AsRef<[usize]>> FusedIterator for ZerosIter<'_, B> {}
+impl<W: Word, B: ?Sized + AsRef<[W]>> FusedIterator for ZerosIter<'_, W, B> {}
+
+/// Bits per usize word, used by the non-generic atomic operations.
+const ATOMIC_BITS: usize = usize::BITS as usize;
 
 impl<T: ?Sized + AsRef<[AtomicUsize]> + BitLength> AtomicBitVecOps for T {}
 
@@ -415,10 +429,10 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
     /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
     #[inline]
     unsafe fn get_unchecked(&self, index: usize, ordering: Ordering) -> bool {
-        let word_index = index / BITS;
+        let word_index = index / ATOMIC_BITS;
         let bits = self.as_ref();
         let word = unsafe { bits.get_unchecked(word_index).load(ordering) };
-        (word >> (index % BITS)) & 1 != 0
+        (word >> (index % ATOMIC_BITS)) & 1 != 0
     }
 
     /// Sets the bit of given index to the given value.
@@ -431,8 +445,8 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
     /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
     #[inline]
     unsafe fn set_unchecked(&self, index: usize, value: bool, ordering: Ordering) {
-        let word_index = index / BITS;
-        let bit_index = index % BITS;
+        let word_index = index / ATOMIC_BITS;
+        let bit_index = index % ATOMIC_BITS;
         let bits = self.as_ref();
 
         // For constant values, this should be inlined with no test.
@@ -458,8 +472,8 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
     /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
     #[inline]
     unsafe fn swap_unchecked(&self, index: usize, value: bool, ordering: Ordering) -> bool {
-        let word_index = index / BITS;
-        let bit_index = index % BITS;
+        let word_index = index / ATOMIC_BITS;
+        let bit_index = index % ATOMIC_BITS;
         let bits = self.as_ref();
 
         let old_word = unsafe {
@@ -477,10 +491,10 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
 
     /// Sets all bits to the given value.
     fn fill(&mut self, value: bool, ordering: Ordering) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
+        let full_words = self.len() / ATOMIC_BITS;
+        let residual = self.len() % ATOMIC_BITS;
         let bits = self.as_ref();
-        let word_value = if value { !0 } else { 0 };
+        let word_value: usize = if value { !0 } else { 0 };
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
         core::sync::atomic::fence(Ordering::SeqCst);
@@ -499,10 +513,10 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
     /// Sets all bits to the given value using a parallel implementation.
     #[cfg(feature = "rayon")]
     fn par_fill(&mut self, value: bool, ordering: Ordering) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
+        let full_words = self.len() / ATOMIC_BITS;
+        let residual = self.len() % ATOMIC_BITS;
         let bits = self.as_ref();
-        let word_value = if value { !0 } else { 0 };
+        let word_value: usize = if value { !0 } else { 0 };
 
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
@@ -533,8 +547,8 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
 
     /// Flips all bits.
     fn flip(&mut self, ordering: Ordering) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
+        let full_words = self.len() / ATOMIC_BITS;
+        let residual = self.len() % ATOMIC_BITS;
         let bits = self.as_ref();
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
@@ -552,8 +566,8 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
     /// Flips all bits using a parallel implementation.
     #[cfg(feature = "rayon")]
     fn par_flip(&mut self, ordering: Ordering) {
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
+        let full_words = self.len() / ATOMIC_BITS;
+        let residual = self.len() % ATOMIC_BITS;
         let bits = self.as_ref();
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
@@ -575,8 +589,8 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
     fn par_count_ones(&self) -> usize {
         use crate::RAYON_MIN_LEN;
 
-        let full_words = self.len() / BITS;
-        let residual = self.len() % BITS;
+        let full_words = self.len() / ATOMIC_BITS;
+        let residual = self.len() % ATOMIC_BITS;
         let bits = self.as_ref();
         let mut num_ones;
         // Just to be sure, add a fence to ensure that we will see all the final
@@ -588,8 +602,8 @@ pub trait AtomicBitVecOps: AsRef<[AtomicUsize]> + BitLength {
             .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
             .sum();
         if residual != 0 {
-            num_ones += (bits[full_words].load(Ordering::Relaxed) << (BITS - residual)).count_ones()
-                as usize
+            num_ones += (bits[full_words].load(Ordering::Relaxed) << (ATOMIC_BITS - residual))
+                .count_ones() as usize
         }
         num_ones
     }
@@ -619,7 +633,7 @@ pub struct AtomicBitIter<'a, B: ?Sized> {
 
 impl<'a, B: ?Sized + AsRef<[AtomicUsize]>> AtomicBitIter<'a, B> {
     pub fn new(bits: &'a B, len: usize) -> Self {
-        debug_assert!(len <= bits.as_ref().len() * BITS);
+        debug_assert!(len <= bits.as_ref().len() * ATOMIC_BITS);
         AtomicBitIter {
             bits,
             len,
@@ -634,8 +648,8 @@ impl<B: ?Sized + AsRef<[AtomicUsize]>> Iterator for AtomicBitIter<'_, B> {
         if self.next_bit_pos == self.len {
             return None;
         }
-        let word_idx = self.next_bit_pos / BITS;
-        let bit_idx = self.next_bit_pos % BITS;
+        let word_idx = self.next_bit_pos / ATOMIC_BITS;
+        let bit_idx = self.next_bit_pos % ATOMIC_BITS;
         let word = unsafe {
             self.bits
                 .as_ref()
