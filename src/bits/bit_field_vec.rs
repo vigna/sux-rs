@@ -114,8 +114,8 @@ use std::iter::FusedIterator;
 use std::sync::atomic::{Ordering, compiler_fence, fence};
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
-/// Convenient, [`vec!`]-like macro to initialize `usize`-based bit-field
-/// vectors.
+/// Convenient, [`vec!`]-like macro to initialize [`PlatformWord`]-based
+/// bit-field vectors.
 ///
 /// - `bit_field_vec![width]`: creates an empty bit-field vector of given bit
 ///   width.
@@ -156,7 +156,7 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 #[macro_export]
 macro_rules! bit_field_vec {
     ($w:expr) => {
-        $crate::bits::BitFieldVec::<usize, _>::new($w, 0)
+        $crate::bits::BitFieldVec::<$crate::traits::PlatformWord, _>::new($w, 0)
     };
     ($w:expr; $n:expr; $v:expr) => {
         compile_error!(
@@ -165,19 +165,19 @@ macro_rules! bit_field_vec {
     };
     ($w:expr => $v:expr; $n:expr) => {
         {
-            let mut bit_field_vec = $crate::bits::BitFieldVec::<usize, _>::with_capacity($w, $n);
+            let mut bit_field_vec = $crate::bits::BitFieldVec::<$crate::traits::PlatformWord, _>::with_capacity($w, $n);
             // Force type
-            let v: usize = $v;
+            let v: $crate::traits::PlatformWord = $v;
             bit_field_vec.resize($n, v);
             bit_field_vec
         }
     };
     ($w:expr; $($x:expr),+ $(,)?) => {
         {
-            let mut b = $crate::bits::BitFieldVec::<usize, _>::with_capacity($w, [$($x),+].len());
+            let mut b = $crate::bits::BitFieldVec::<$crate::traits::PlatformWord, _>::with_capacity($w, [$($x),+].len());
             $(
                 // Force type
-                let x: usize = $x;
+                let x: $crate::traits::PlatformWord = $x;
                 b.push(x);
             )*
             b
@@ -195,7 +195,7 @@ macro_rules! bit_field_vec {
 #[value_traits_subslices_mut(bound = "B: AsRef<[W]> + AsMut<[W]>")]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct BitFieldVec<W: Word = usize, B = Vec<W>> {
+pub struct BitFieldVec<W: Word = PlatformWord, B = Vec<W>> {
     /// The underlying storage.
     bits: B,
     /// The bit width of the values stored in the vector.
@@ -1289,7 +1289,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 /// See the [module documentation](crate::bits) for more details.
 #[derive(Debug, Clone, Hash, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-pub struct AtomicBitFieldVec<W: Word + AtomicPrimitive = usize, B = Vec<Atomic<W>>> {
+pub struct AtomicBitFieldVec<W: Word + AtomicPrimitive = PlatformWord, B = Vec<Atomic<W>>> {
     /// The underlying storage.
     bits: B,
     /// The bit width of the values stored in the vector.
@@ -1767,7 +1767,7 @@ mod tests {
 
     #[test]
     fn test_with_capacity() {
-        let mut b = BitFieldVec::<usize, _>::with_capacity(10, 100);
+        let mut b = BitFieldVec::<PlatformWord, _>::with_capacity(10, 100);
         let capacity = b.bits.capacity();
         for _ in 0..100 {
             b.push(0);
