@@ -347,8 +347,8 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
 }
 
 macro_rules! impl_rank_small {
-    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
-        impl<B: AsRef<[usize]> + BitLength + RankHinted<64>>
+    ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $WORD_BITS: literal) => {
+        impl<B: AsRef<[usize]> + BitLength + RankHinted<$WORD_BITS>>
             RankSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
@@ -360,9 +360,10 @@ macro_rules! impl_rank_small {
             /// Creates a new RankSmall structure from a given bit vector.
             pub fn new(bits: B) -> Self {
                 let num_bits = bits.len();
-                let num_words = num_bits.div_ceil(64 as usize);
+                let num_words = num_bits.div_ceil($WORD_BITS as usize);
+                // TODO(32-bit): on 32-bit, 1usize << 32 overflows; fix when enabling 32-bit
                 let num_upper_counts = num_bits.div_ceil(1usize << 32);
-                let num_counts = num_bits.div_ceil(64 as usize * Self::WORDS_PER_BLOCK);
+                let num_counts = num_bits.div_ceil($WORD_BITS as usize * Self::WORDS_PER_BLOCK);
 
                 let mut upper_counts = Vec::with_capacity(num_upper_counts);
                 let mut counts = Vec::with_capacity(num_counts);
@@ -370,8 +371,11 @@ macro_rules! impl_rank_small {
                 let mut past_ones = 0;
                 let mut upper_count = 0;
 
+                // Superblock boundary: number of words per 2^32 bits
+                let words_per_superblock = 1usize << (32 - ($WORD_BITS as u32).ilog2());
+
                 for i in (0..num_words).step_by(Self::WORDS_PER_BLOCK) {
-                    if i % (1usize << 26) == 0 {
+                    if i % words_per_superblock == 0 {
                         upper_count = past_ones;
                         upper_counts.push(upper_count);
                     }
@@ -408,7 +412,7 @@ macro_rules! impl_rank_small {
             }
         }
         impl<
-            B: AsRef<[usize]> + BitLength + RankHinted<64>,
+            B: AsRef<[usize]> + BitLength + RankHinted<$WORD_BITS>,
             C1: AsRef<[usize]>,
             C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
         > RankUnchecked for RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
@@ -417,50 +421,60 @@ macro_rules! impl_rank_small {
             unsafe fn rank_unchecked(&self, pos: usize) -> usize {
                 debug_assert!(pos < self.bits.len());
                 unsafe {
-                    let word_pos = pos / 64 as usize;
+                    let word_pos = pos / $WORD_BITS as usize;
                     let block = word_pos / Self::WORDS_PER_BLOCK;
                     let offset = (word_pos % Self::WORDS_PER_BLOCK) / Self::WORDS_PER_SUBBLOCK;
                     let counts = self.counts.as_ref().get_unchecked(block);
+                    let words_per_superblock = 1usize << (32 - ($WORD_BITS as u32).ilog2());
                     let upper_count = self
                         .upper_counts
                         .as_ref()
-                        .get_unchecked(word_pos / (1usize << 26));
+                        .get_unchecked(word_pos / words_per_superblock);
 
                     let hint_rank = upper_count + counts.absolute as usize + counts.rel(offset);
                     if Self::WORDS_PER_SUBBLOCK == 1 {
                         // Rank<2, 9> works like Rank9.
                         let word = self.bits.as_ref().get_unchecked(word_pos);
-                        hint_rank + (word & ((1 << (pos % 64 as usize)) - 1)).count_ones() as usize
+                        hint_rank + (word & ((1 << (pos % $WORD_BITS as usize)) - 1)).count_ones() as usize
                     } else {
                         // For the other cases we need a bit more work.
                         #[allow(clippy::modulo_one)]
                         let hint_pos = word_pos
                             - ((word_pos % Self::WORDS_PER_BLOCK) % Self::WORDS_PER_SUBBLOCK);
 
-                        RankHinted::<64>::rank_hinted(&self.bits, pos, hint_pos, hint_rank)
+                        RankHinted::<$WORD_BITS>::rank_hinted(&self.bits, pos, hint_pos, hint_rank)
                     }
                 }
             }
 
             #[inline(always)]
             fn prefetch(&self, pos: usize) {
-                let word_pos = pos / 64 as usize;
+                let word_pos = pos / $WORD_BITS as usize;
                 let block = word_pos / Self::WORDS_PER_BLOCK;
                 crate::utils::prefetch_index(self.bits.as_ref(), word_pos);
                 // `counts` can be large enough to not fit in L3, so needs prefetching as well.
                 crate::utils::prefetch_index(self.counts.as_ref(), block);
                 // `upper_counts` is small enough to fit in caches, so does not need prefetching.
-                // crate::utils::prefetch_index(self.upper_counts.as_ref(), word_pos / (1usize << 26));
             }
         }
     };
 }
 
-impl_rank_small!(2; 9);
-impl_rank_small!(1; 9);
-impl_rank_small!(1; 10);
-impl_rank_small!(1; 11);
-impl_rank_small!(3; 13);
+/// Helper macro to instantiate all RankSmall variants with the correct word bits.
+macro_rules! impl_all_rank_small {
+    ($WORD_BITS: literal) => {
+        impl_rank_small!(2; 9; $WORD_BITS);
+        impl_rank_small!(1; 9; $WORD_BITS);
+        impl_rank_small!(1; 10; $WORD_BITS);
+        impl_rank_small!(1; 11; $WORD_BITS);
+        impl_rank_small!(3; 13; $WORD_BITS);
+    };
+}
+
+#[cfg(target_pointer_width = "64")]
+impl_all_rank_small!(64);
+#[cfg(not(target_pointer_width = "64"))]
+impl_all_rank_small!(32);
 
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> Rank
     for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
