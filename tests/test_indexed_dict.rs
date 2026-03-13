@@ -83,7 +83,7 @@ fn test_indexed_seq_various_types() {
 // Tests for Succ and Pred using EliasFano
 #[test]
 fn test_succ_with_elias_fano() {
-    let values = [10usize, 20, 30, 40, 50];
+    let values = [10u64, 20, 30, 40, 50];
     let mut efb = EliasFanoBuilder::new(values.len(), *values.last().unwrap());
     efb.extend(values);
     let ef = efb.build_with_seq_and_dict();
@@ -118,7 +118,7 @@ fn test_succ_with_elias_fano() {
 
 #[test]
 fn test_pred_with_elias_fano() {
-    let values = [10usize, 20, 30, 40, 50];
+    let values = [10u64, 20, 30, 40, 50];
     let mut efb = EliasFanoBuilder::new(values.len(), *values.last().unwrap());
     efb.extend(values);
     let ef = efb.build_with_seq_and_dict();
@@ -153,7 +153,7 @@ fn test_pred_with_elias_fano() {
 
 #[test]
 fn test_succ_pred_delegation() {
-    let values = [10usize, 20, 30];
+    let values = [10u64, 20, 30];
     let mut efb = EliasFanoBuilder::new(values.len(), *values.last().unwrap());
     efb.extend(values);
     let ef = efb.build_with_seq_and_dict();

@@ -154,7 +154,7 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[usize]>>> {
 /// Note that you must specify the number of values in advance.
 pub fn new_sparse<T>(len: usize, num_values: usize) -> PartialArrayBuilder<T, EliasFanoBuilder> {
     PartialArrayBuilder {
-        builder: EliasFanoBuilder::new(num_values, len),
+        builder: EliasFanoBuilder::new(num_values, len as u64),
         values: vec![],
         len,
         min_next_pos: 0,
@@ -176,7 +176,7 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
         }
         panic_if_out_of_bounds!(position, self.len);
         // SAFETY: conditions have been just checked
-        unsafe { self.builder.push_unchecked(position) };
+        unsafe { self.builder.push_unchecked(position as u64) };
         self.values.push(value);
         self.min_next_pos = position + 1;
     }
@@ -315,7 +315,7 @@ impl<T, D: AsRef<[usize]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
     /// not the number of values actually stored.
     #[inline(always)]
     pub const fn len(&self) -> usize {
-        self.index.ef.upper_bound()
+        self.index.ef.upper_bound() as usize
     }
 
     /// Returns true if the array len is 0.
@@ -356,9 +356,9 @@ impl<T, D: AsRef<[usize]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
         }
         // Check if there's a value at this position
         // SAFETY: position <= last set position
-        let (index, pos) = unsafe { self.index.ef.succ_unchecked::<false>(position) };
+        let (index, pos) = unsafe { self.index.ef.succ_unchecked::<false>(position as u64) };
 
-        if pos != position {
+        if pos != position as u64 {
             None
         } else {
             // SAFETY: necessarily value_index < num values.
