@@ -107,19 +107,19 @@ pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlockCounters {
-    pub(super) absolute: usize,
-    pub(super) relative: usize,
+    pub(super) absolute: u64,
+    pub(super) relative: u64,
 }
 
 impl BlockCounters {
     #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
-        (self.relative >> (9 * (word ^ 7))) & 0x1FF
+        ((self.relative >> (9 * (word ^ 7))) & 0x1FF) as usize
     }
 
     #[inline(always)]
     pub fn set_rel(&mut self, word: usize, counter: usize) {
-        self.relative |= counter << (9 * (word ^ 7));
+        self.relative |= (counter as u64) << (9 * (word ^ 7));
     }
 }
 
@@ -162,26 +162,26 @@ impl<B: AsRef<[usize]> + BitLength> Rank9<B, Box<[BlockCounters]>> {
     /// Creates a new Rank9 structure from a given bit vector.
     pub fn new(bits: B) -> Self {
         let num_bits = bits.len();
-        let num_words = num_bits.div_ceil(usize::BITS as usize);
-        let num_counts = num_bits.div_ceil(usize::BITS as usize * Self::WORDS_PER_BLOCK);
+        let num_words = num_bits.div_ceil(64);
+        let num_counts = num_bits.div_ceil(64 * Self::WORDS_PER_BLOCK);
 
         // We use the last counter to store the total number of ones
         let mut counts = Vec::with_capacity(num_counts + 1);
 
-        let mut num_ones = 0;
+        let mut num_ones: u64 = 0;
 
         for i in (0..num_words).step_by(Self::WORDS_PER_BLOCK) {
             let mut count = BlockCounters {
                 absolute: num_ones,
                 relative: 0,
             };
-            num_ones += bits.as_ref()[i].count_ones() as usize;
+            num_ones += bits.as_ref()[i].count_ones() as u64;
 
             for j in 1..8 {
-                let rel_count = num_ones - count.absolute;
+                let rel_count = (num_ones - count.absolute) as usize;
                 count.set_rel(j, rel_count);
                 if i + j < num_words {
-                    num_ones += bits.as_ref()[i + j].count_ones() as usize;
+                    num_ones += bits.as_ref()[i + j].count_ones() as u64;
                 }
             }
 
@@ -212,7 +212,7 @@ impl<B: BitLength, C: AsRef<[BlockCounters]>> NumBits for Rank9<B, C> {
     #[inline(always)]
     fn num_ones(&self) -> usize {
         // SAFETY: The last counter is always present
-        unsafe { self.counts.as_ref().last().unwrap_unchecked().absolute }
+        unsafe { self.counts.as_ref().last().unwrap_unchecked().absolute as usize }
     }
 }
 
@@ -256,8 +256,8 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
         debug_assert!(pos < self.bits.len().next_multiple_of(64));
         unsafe {
-            let word_pos = pos / usize::BITS as usize;
-            let bit_pos = pos % usize::BITS as usize;
+            let word_pos = pos / 64;
+            let bit_pos = pos % 64;
             let block = word_pos / Self::WORDS_PER_BLOCK;
             let offset = word_pos % Self::WORDS_PER_BLOCK;
             // When pos is equal to the length of the underlying bit vector and
@@ -266,7 +266,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for
             let word = self.bits.as_ref().get_unchecked(word_pos);
             let counts = self.counts.as_ref().get_unchecked(block);
 
-            counts.absolute
+            counts.absolute as usize
                 + counts.rel(offset)
                 + (word & ((1 << bit_pos) - 1)).count_ones() as usize
         }
@@ -274,7 +274,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for
 
     #[inline(always)]
     fn prefetch(&self, pos: usize) {
-        let word_pos = pos / usize::BITS as usize;
+        let word_pos = pos / 64;
         let block = word_pos / Self::WORDS_PER_BLOCK;
         crate::utils::prefetch_index(&self.bits, word_pos);
         // `counts` can be large enough to not fit in L3, so needs prefetching as well.
