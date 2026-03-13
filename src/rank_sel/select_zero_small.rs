@@ -114,6 +114,8 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O> Deref
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, C, I, O>
 {
+    // TODO(32-bit): 1usize << 32 overflows on 32-bit; on 32-bit the entire
+    // bit vector fits in one superblock as u32 counters cover the full range.
     const SUPERBLOCK_BIT_SIZE: usize = 1 << 32;
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
     const BLOCK_BIT_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
