@@ -237,7 +237,7 @@ pub struct SelectAdapt<B, I = Box<[usize]>> {
     spill: I,
     log2_ones_per_inventory: usize,
     log2_ones_per_sub16: usize,
-    log2_u64_per_subinventory: usize,
+    log2_words_per_subinventory: usize,
     ones_per_inventory_mask: usize,
     ones_per_sub16_mask: usize,
 }
@@ -272,12 +272,12 @@ impl Inventory for usize {
 
     #[inline(always)]
     fn is_u32_span(&self) -> bool {
-        *self >> 62 == 2
+        *self >> (usize::BITS - 2) == 2
     }
 
     #[inline(always)]
     fn is_u64_span(&self) -> bool {
-        *self >> 62 == 3
+        *self >> (usize::BITS - 2) == 3
     }
 
     #[inline(always)]
@@ -285,17 +285,17 @@ impl Inventory for usize {
 
     #[inline(always)]
     fn set_u32_span(&mut self) {
-        *self |= 1 << 63;
+        *self |= 1 << (usize::BITS - 1);
     }
 
     #[inline(always)]
     fn set_u64_span(&mut self) {
-        *self |= 3 << 62;
+        *self |= 3 << (usize::BITS - 2);
     }
 
     #[inline(always)]
     fn get(&self) -> usize {
-        *self & 0x3FFF_FFFF_FFFF_FFFF
+        *self & (usize::MAX >> 2)
     }
 }
 
@@ -312,7 +312,11 @@ impl SpanType {
     pub fn from_span(x: usize) -> SpanType {
         match x {
             0..=0x10000 => SpanType::U16,
+            #[cfg(target_pointer_width = "64")]
             0x10001..=0x100000000 => SpanType::U32,
+            #[cfg(not(target_pointer_width = "64"))]
+            0x10001.. => SpanType::U32,
+            #[cfg(target_pointer_width = "64")]
             _ => SpanType::U64,
         }
     }
@@ -349,7 +353,7 @@ impl<B, I> SelectAdapt<B, I> {
             spill: self.spill,
             log2_ones_per_inventory: self.log2_ones_per_inventory,
             log2_ones_per_sub16: self.log2_ones_per_sub16,
-            log2_u64_per_subinventory: self.log2_u64_per_subinventory,
+            log2_words_per_subinventory: self.log2_words_per_subinventory,
             ones_per_inventory_mask: self.ones_per_inventory_mask,
             ones_per_sub16_mask: self.ones_per_sub16_mask,
         }
@@ -378,17 +382,17 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
     ///
     /// * `bits`: A bit vector.
     ///
-    /// * `max_log2_u64_per_subinv`: The base-2 logarithm of the maximum
+    /// * `max_log2_words_per_subinv`: The base-2 logarithm of the maximum
     ///   number [*M*](SelectAdapt) of 64-bit words in each subinventory.
     ///   Increasing by one this value approximately doubles the space occupancy
     ///   and halves the length of sequential broadword searches. Typical values
     ///   are 3 and 4.
     ///
-    pub fn new(bits: B, max_log2_u64_per_subinv: usize) -> Self {
+    pub fn new(bits: B, max_log2_words_per_subinv: usize) -> Self {
         Self::with_span(
             bits,
             Self::DEFAULT_TARGET_INVENTORY_SPAN,
-            max_log2_u64_per_subinv,
+            max_log2_words_per_subinv,
         )
     }
 
@@ -403,7 +407,7 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
     ///   first-level inventory entry. The actual span might be smaller by a
     ///   factor of 2.
     ///
-    /// * `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
+    /// * `max_log2_words_per_subinventory`: The base-2 logarithm of the maximum
     ///   number [*M*](SelectAdapt) of 64-bit words in each subinventory.
     ///   Increasing by one this value approximately doubles the space occupancy
     ///   and halves the length of sequential broadword searches. Typical values
@@ -412,7 +416,7 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
     pub fn with_span(
         bits: B,
         target_inventory_span: usize,
-        max_log2_u64_per_subinventory: usize,
+        max_log2_words_per_subinventory: usize,
     ) -> Self {
         // TODO: is this necessary? (everywhere)
         let num_bits = max(1usize, bits.len());
@@ -427,7 +431,7 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
             bits,
             num_ones,
             log2_ones_per_inventory,
-            max_log2_u64_per_subinventory,
+            max_log2_words_per_subinventory,
         )
     }
 
@@ -450,7 +454,7 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
     /// * `log2_ones_per_inventory`: The base-2 logarithm of the distance
     ///   between two indexed ones.
     ///
-    /// * `max_log2_u64_per_subinventory`: The base-2 logarithm of the maximum
+    /// * `max_log2_words_per_subinventory`: The base-2 logarithm of the maximum
     ///   number [*M*](SelectAdapt) of 64-bit words in each subinventory.
     ///   Increasing by one this value approximately doubles the space occupancy
     ///   and halves the length of sequential broadword searches. Typical values
@@ -458,14 +462,14 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
     pub fn with_inv(
         bits: B,
         log2_ones_per_inventory: usize,
-        max_log2_u64_per_subinventory: usize,
+        max_log2_words_per_subinventory: usize,
     ) -> Self {
         let num_ones = bits.count_ones();
         Self::_new(
             bits,
             num_ones,
             log2_ones_per_inventory,
-            max_log2_u64_per_subinventory,
+            max_log2_words_per_subinventory,
         )
     }
 
@@ -473,31 +477,31 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
         bits: B,
         num_ones: usize,
         log2_ones_per_inventory: usize,
-        max_log2_u64_per_subinventory: usize,
+        max_log2_words_per_subinventory: usize,
     ) -> Self {
         let num_bits = max(1, bits.len());
         let ones_per_inventory = 1 << log2_ones_per_inventory;
         let ones_per_inventory_mask = ones_per_inventory - 1;
         let inventory_size = num_ones.div_ceil(ones_per_inventory);
 
-        // We use a smaller value than max_log2_u64_per_subinventory when with a
+        // We use a smaller value than max_log2_words_per_subinventory when with a
         // smaller value we can still index, in the 16-bit case, all bits the
         // subinventory. This can happen only in extremely sparse vectors, or
         // if a very small value of log2_ones_per_inventory is set directly.
 
-        let log2_u64_per_subinventory =
-            max_log2_u64_per_subinventory.min(log2_ones_per_inventory.saturating_sub(2));
+        let log2_words_per_subinventory =
+            max_log2_words_per_subinventory.min(log2_ones_per_inventory.saturating_sub(2));
 
-        let u64_per_subinventory = 1 << log2_u64_per_subinventory;
-        // A u64 for the inventory, and u64_per_inventory for the subinventory
-        let u64_per_inventory = u64_per_subinventory + 1;
+        let words_per_subinventory = 1 << log2_words_per_subinventory;
+        // A u64 for the inventory, and words_per_inventory for the subinventory
+        let words_per_inventory = words_per_subinventory + 1;
 
         let log2_ones_per_sub16 =
-            log2_ones_per_inventory.saturating_sub(log2_u64_per_subinventory + 2);
+            log2_ones_per_inventory.saturating_sub(log2_words_per_subinventory + 2);
         let ones_per_sub16 = 1 << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
-        let inventory_words = inventory_size * u64_per_inventory + 1;
+        let inventory_words = inventory_size * words_per_inventory + 1;
         let mut inventory = Vec::with_capacity(inventory_words);
 
         let mut past_ones = 0;
@@ -515,7 +519,7 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
                 // write the position of the one in the inventory
                 inventory.push(index);
                 // make space for the subinventory
-                inventory.resize(inventory.len() + u64_per_subinventory, 0);
+                inventory.resize(inventory.len() + words_per_subinventory, 0);
 
                 next_quantum += ones_per_inventory;
             }
@@ -528,14 +532,14 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
         assert_eq!(inventory.len(), inventory_words);
 
         // We estimate the subinventory and exact spill size
-        for (i, inv) in inventory[..inventory_size * u64_per_inventory]
+        for (i, inv) in inventory[..inventory_size * words_per_inventory]
             .iter()
             .copied()
-            .step_by(u64_per_inventory)
+            .step_by(words_per_inventory)
             .enumerate()
         {
             let start = inv;
-            let span = inventory[i * u64_per_inventory + u64_per_inventory] - start;
+            let span = inventory[i * words_per_inventory + words_per_inventory] - start;
             past_ones = i * ones_per_inventory;
             let ones = min(num_ones - past_ones, ones_per_inventory);
 
@@ -551,13 +555,13 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
                     // We store an inventory entry each 1 << log2_ones_per_sub32 ones.
                     let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span, log2_ones_per_sub16);
                     let num_u32s = ones.div_ceil(1 << log2_ones_per_sub32);
-                    let num_u64s = num_u32s.div_ceil(2);
-                    let spilled_u64s = num_u64s.saturating_sub(u64_per_subinventory - 1);
+                    let num_words = num_u32s.div_ceil(2);
+                    let spilled_u64s = num_words.saturating_sub(words_per_subinventory - 1);
                     spilled += spilled_u64s;
                 }
                 SpanType::U64 => {
                     // We store an inventory entry for each one after the first.
-                    spilled += (ones - 1).saturating_sub(u64_per_subinventory - 1);
+                    spilled += (ones - 1).saturating_sub(words_per_subinventory - 1);
                 }
                 _ => {}
             }
@@ -569,13 +573,13 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
         let mut spill: Box<[usize]> = vec![0; spill_size].into();
 
         spilled = 0;
-        let locally_stored_u32s = 2 * (u64_per_subinventory - 1);
+        let locally_stored_u32s = 2 * (words_per_subinventory - 1);
 
         // Second phase: we fill the subinventories and the spill.
         for inventory_idx in 0..inventory_size {
             // Get the start and end indices of the current inventory
-            let start_inv_idx = inventory_idx * u64_per_inventory;
-            let end_inv_idx = start_inv_idx + u64_per_inventory;
+            let start_inv_idx = inventory_idx * words_per_inventory;
+            let end_inv_idx = start_inv_idx + words_per_inventory;
             // Read the first-level index to get the start and end bit indices
             let start_bit_idx = inventory[start_inv_idx];
             let end_bit_idx = inventory[end_inv_idx];
@@ -692,7 +696,7 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
                             }
                         }
                         SpanType::U64 => {
-                            if subinventory_idx < u64_per_subinventory {
+                            if subinventory_idx < words_per_subinventory {
                                 inventory[start_inv_idx + 1 + subinventory_idx] = bit_index;
                                 subinventory_idx += 1;
                             } else {
@@ -745,7 +749,7 @@ impl<B: AsRef<[usize]> + BitCount> SelectAdapt<B, Box<[usize]>> {
             spill,
             log2_ones_per_inventory,
             log2_ones_per_sub16,
-            log2_u64_per_subinventory,
+            log2_words_per_subinventory,
             ones_per_inventory_mask,
             ones_per_sub16_mask,
         }
@@ -760,7 +764,7 @@ impl<B: AsRef<[usize]> + BitLength + SelectHinted, I: AsRef<[usize]>> SelectUnch
             let inventory = self.inventory.as_ref();
             let inventory_index = rank >> self.log2_ones_per_inventory;
             let inventory_start_pos =
-                (inventory_index << self.log2_u64_per_subinventory) + inventory_index;
+                (inventory_index << self.log2_words_per_subinventory) + inventory_index;
 
             let inventory_rank = { *inventory.get_unchecked(inventory_start_pos) };
             let subrank = rank & self.ones_per_inventory_mask;
@@ -780,17 +784,17 @@ impl<B: AsRef<[usize]> + BitLength + SelectHinted, I: AsRef<[usize]>> SelectUnch
                 return self.bits.select_hinted(rank, hint_pos, rank - residual);
             }
 
-            let u64_per_subinventory = 1 << self.log2_u64_per_subinventory;
+            let words_per_subinventory = 1 << self.log2_words_per_subinventory;
 
             if inventory_rank.is_u32_span() {
                 let inventory_rank = inventory_rank.get();
 
                 let span = (*inventory
-                    .get_unchecked(inventory_start_pos + u64_per_subinventory + 1))
+                    .get_unchecked(inventory_start_pos + words_per_subinventory + 1))
                 .get()
                     - inventory_rank;
                 let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span, self.log2_ones_per_sub16);
-                let hint_pos = if subrank >> log2_ones_per_sub32 < (u64_per_subinventory - 1) * 2 {
+                let hint_pos = if subrank >> log2_ones_per_sub32 < (words_per_subinventory - 1) * 2 {
                     let u32s = inventory
                         .get_unchecked(inventory_start_pos + 2..)
                         .align_to::<u32>()
@@ -809,7 +813,7 @@ impl<B: AsRef<[usize]> + BitLength + SelectHinted, I: AsRef<[usize]>> SelectUnch
 
                     inventory_rank
                         + *spilled_u32s.get_unchecked(
-                            (subrank >> log2_ones_per_sub32) - (u64_per_subinventory - 1) * 2,
+                            (subrank >> log2_ones_per_sub32) - (words_per_subinventory - 1) * 2,
                         ) as usize
                 };
                 let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
@@ -819,14 +823,14 @@ impl<B: AsRef<[usize]> + BitLength + SelectHinted, I: AsRef<[usize]>> SelectUnch
             debug_assert!(inventory_rank.is_u64_span());
             let inventory_rank = inventory_rank.get();
 
-            if subrank < u64_per_subinventory {
+            if subrank < words_per_subinventory {
                 if subrank == 0 {
                     return inventory_rank;
                 }
                 return *inventory.get_unchecked(inventory_start_pos + 1 + subrank);
             }
             let spill_idx = { *inventory.get_unchecked(inventory_start_pos + 1) } + subrank
-                - u64_per_subinventory;
+                - words_per_subinventory;
             debug_assert!(spill_idx < self.spill.as_ref().len());
             *self.spill.as_ref().get_unchecked(spill_idx)
         }
