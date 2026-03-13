@@ -16,6 +16,7 @@ use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
 
+// TODO(32-bit): change to u64 when enabling 32-bit (1usize << 54 overflows on 32-bit)
 const ONES_STEP_9: usize = (1usize << 0)
     | (1usize << 9)
     | (1usize << 18)
@@ -361,13 +362,13 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
                     block_left &= !7;
                     count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
 
-                    debug_assert!(rank < counts.get_unchecked(count_left + 1).absolute);
-                    rank_in_block = rank - counts.get_unchecked(count_left).absolute;
+                    debug_assert!(rank < counts.get_unchecked(count_left + 1).absolute as usize);
+                    rank_in_block = rank - counts.get_unchecked(count_left).absolute as usize;
                 }
                 2..=15 => {
                     block_left &= !7;
                     count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
-                    let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute;
+                    let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute as usize;
 
                     let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
 
@@ -384,13 +385,13 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
                     block_left += where_ * 4;
                     count_left += where_ / 2;
 
-                    rank_in_block = rank - counts.get_unchecked(count_left).absolute;
+                    rank_in_block = rank - counts.get_unchecked(count_left).absolute as usize;
                     debug_assert!(rank_in_block < 512);
                 }
                 16..=127 => {
                     block_left &= !7;
                     count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
-                    let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute;
+                    let rank_in_superblock = rank - counts.get_unchecked(count_left).absolute as usize;
                     let rank_in_superblock_step_16 = rank_in_superblock * ONES_STEP_16;
 
                     let first = *subinv_ref.get_unchecked(subinv_pos);
@@ -421,7 +422,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
 
                     block_left += where1 * 4;
                     count_left += where1 / 2;
-                    rank_in_block = rank - counts.get_unchecked(count_left).absolute;
+                    rank_in_block = rank - counts.get_unchecked(count_left).absolute as usize;
 
                     debug_assert!(rank_in_block < 512);
                 }
@@ -445,7 +446,7 @@ impl<B: AsRef<[usize]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[usize]>
             }
 
             let rank_in_block_step_9 = rank_in_block * ONES_STEP_9;
-            let relative = counts.get_unchecked(count_left).relative;
+            let relative = counts.get_unchecked(count_left).relative as usize;
 
             let offset_in_block =
                 ULEQ_STEP_9!(relative, rank_in_block_step_9).count_ones() as usize;
