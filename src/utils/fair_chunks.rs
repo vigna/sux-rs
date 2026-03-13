@@ -29,12 +29,12 @@ use crate::traits::{Succ, SuccUnchecked};
 /// use sux::utils::FairChunks;
 /// // The weights of our elements
 /// let weights = [
-///     15, 27, 20, 26,  4, 22, 10, 25, 7, 13,  0, 11, 5, 28, 23,
+///     15u64, 27, 20, 26,  4, 22, 10, 25, 7, 13,  0, 11, 5, 28, 23,
 ///     1, 12, 24,  3, 30,  8, 29, 17, 2, 14,  9, 16, 18, 21, 19,
 /// ];
 /// // Compute the cumulative weight function
-/// let mut cwf = vec![0];
-/// cwf.extend(weights.iter().scan(0, |acc, x| {
+/// let mut cwf = vec![0u64];
+/// cwf.extend(weights.iter().scan(0u64, |acc, x| {
 ///    *acc += x;
 ///   Some(*acc)
 /// }));
@@ -61,8 +61,8 @@ use crate::traits::{Succ, SuccUnchecked};
 ///
 /// // To save memory, we can build a smaller Elias–Fano structure
 /// // only supporting unchecked successor queries
-/// let mut cwf = vec![0];
-/// cwf.extend(weights.iter().scan(0, |acc, x| {
+/// let mut cwf = vec![0u64];
+/// cwf.extend(weights.iter().scan(0u64, |acc, x| {
 ///    *acc += x;
 ///   Some(*acc)
 /// }));
@@ -87,24 +87,24 @@ use crate::traits::{Succ, SuccUnchecked};
 /// ```
 
 #[derive(Debug, Clone, Copy)]
-pub struct FairChunks<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize>> {
+pub struct FairChunks<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> {
     /// Cumulative weight function. This is used to generate chunks with
     /// approximately the same target weight.
     cwf: I,
     /// How much overall weight each chunk will approximately have. When 0,
     /// the iterator is exhausted.
-    target_weight: usize,
+    target_weight: u64,
     /// The position of the first non-returned element.
     curr_pos: usize,
     /// The weight at [`curr_pos`](Self::curr_pos).
-    current_weight: usize,
+    current_weight: u64,
     /// The number of weights.
     num_weights: usize,
     /// The last element of [cwf](Self::cwf).
-    max_weight: usize,
+    max_weight: u64,
 }
 
-impl<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize>> FairChunks<I> {
+impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> FairChunks<I> {
     /// Creates a fair chunk iterator using a structure supporting unchecked
     /// successor queries.
     ///
@@ -122,7 +122,7 @@ impl<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize>> FairChunks<I> 
     /// * `num_weights` - The number of weights.
     ///
     /// * `max_weight` - The last element of the cumulative weight function.
-    pub fn new_with(target_weight: usize, cwf: I, num_weights: usize, max_weight: usize) -> Self {
+    pub fn new_with(target_weight: u64, cwf: I, num_weights: usize, max_weight: u64) -> Self {
         Self {
             target_weight,
             cwf,
@@ -134,7 +134,7 @@ impl<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize>> FairChunks<I> 
     }
 }
 
-impl<I: for<'a> Succ<Input = usize, Output<'a> = usize>> FairChunks<I> {
+impl<I: for<'a> Succ<Input = u64, Output<'a> = u64>> FairChunks<I> {
     /// Creates a fair chunk iterator using a structure supporting successor
     /// queries.
     ///
@@ -150,7 +150,7 @@ impl<I: for<'a> Succ<Input = usize, Output<'a> = usize>> FairChunks<I> {
     /// * `target_weight` - The target weight of the chunks.
     ///
     /// * `cwf` - The cumulative weight function.
-    pub fn new(target_weight: usize, cwf: I) -> Self {
+    pub fn new(target_weight: u64, cwf: I) -> Self {
         let len = cwf.len();
         let max_weight = if len == 0 { 0 } else { cwf.get(len - 1) };
         Self {
@@ -166,7 +166,7 @@ impl<I: for<'a> Succ<Input = usize, Output<'a> = usize>> FairChunks<I> {
     }
 }
 
-impl<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize>> Iterator for FairChunks<I> {
+impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> Iterator for FairChunks<I> {
     type Item = core::ops::Range<usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -188,4 +188,4 @@ impl<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize>> Iterator for F
     }
 }
 
-impl<I: for<'a> SuccUnchecked<Input = usize, Output<'a> = usize>> FusedIterator for FairChunks<I> {}
+impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> FusedIterator for FairChunks<I> {}

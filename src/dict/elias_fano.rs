@@ -235,7 +235,7 @@ pub type EfSeqDict = EliasFano<
 /// # use sux::traits::{Types,IndexedSeq};
 ///
 /// // Convenience constructor that iterates over a slice
-/// let mut ef: EliasFano = vec![0, 2, 8, 10].into();
+/// let mut ef: EliasFano = vec![0u64, 2, 8, 10].into();
 /// // Add a selection structure for ones (implements IndexedSeq)
 /// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
 ///
@@ -244,7 +244,7 @@ pub type EfSeqDict = EliasFano<
 ///
 /// let mut efb = EliasFanoBuilder::new(4, 10);
 /// // Add values using an iterator
-/// efb.extend(vec![0, 2, 8, 10]);
+/// efb.extend(vec![0u64, 2, 8, 10]);
 /// let ef = efb.build();
 /// // Add a selection structure for ones (implements IndexedSeq)
 /// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
@@ -257,12 +257,12 @@ pub type EfSeqDict = EliasFano<
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[value_traits_subslices(bound = "H: AsRef<[usize]> + SelectUnchecked")]
-#[value_traits_subslices(bound = "L: SliceByValue<Value = usize>")]
-pub struct EliasFano<H = BitVec<Box<[usize]>>, L = BitFieldVec<usize, Box<[usize]>>> {
+#[value_traits_subslices(bound = "L: SliceByValue<Value = u64>")]
+pub struct EliasFano<H = BitVec<Box<[usize]>>, L = BitFieldVec<u64, Box<[u64]>>> {
     /// The number of values.
     n: usize,
     /// An upper bound to the values.
-    u: usize,
+    u: u64,
     /// The number of lower bits.
     l: usize,
     /// The lower-bits array.
@@ -274,12 +274,12 @@ pub struct EliasFano<H = BitVec<Box<[usize]>>, L = BitFieldVec<usize, Box<[usize
 impl<H, L> EliasFano<H, L> {
     /// Returns the parts composing the structure (number of elements, upper
     /// bound, number of lower bits, low bits, high bits).
-    pub fn into_parts(self) -> (usize, usize, usize, L, H) {
+    pub fn into_parts(self) -> (usize, u64, usize, L, H) {
         (self.n, self.u, self.l, self.low_bits, self.high_bits)
     }
 
     /// Estimate the size of an instance.
-    pub fn estimate_size(u: usize, n: usize) -> usize {
+    pub fn estimate_size(u: u64, n: usize) -> usize {
         2 * n + (n * (u as f64 / n as f64).log2().ceil() as usize)
     }
 
@@ -294,7 +294,7 @@ impl<H, L> EliasFano<H, L> {
 
     /// Returns the upper bound used to build the structure.
     #[inline]
-    pub const fn upper_bound(&self) -> usize {
+    pub const fn upper_bound(&self) -> u64 {
         self.u
     }
 
@@ -337,12 +337,12 @@ impl<H, L> EliasFano<H, L> {
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Types for EliasFano<H, L> {
-    type Output<'a> = usize;
-    type Input = usize;
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> Types for EliasFano<H, L> {
+    type Output<'a> = u64;
+    type Input = u64;
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IndexedSeq
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>> IndexedSeq
     for EliasFano<H, L>
 {
     #[inline]
@@ -351,26 +351,26 @@ impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> Indexe
     }
 
     #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> usize {
+    unsafe fn get_unchecked(&self, index: usize) -> u64 {
         unsafe {
-            let high_bits = self.high_bits.select_unchecked(index) - index;
+            let high_bits = (self.high_bits.select_unchecked(index) - index) as u64;
             let low_bits = self.low_bits.get_value_unchecked(index);
             (high_bits << self.l) | low_bits
         }
     }
 }
 
-impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> IndexedDict
+impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = u64>> IndexedDict
     for EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
     fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
         let value = *value.borrow();
         if value > self.u {
             return None;
         }
-        let zeros_to_skip = value >> self.l;
+        let zeros_to_skip = (value >> self.l) as usize;
         let bit_pos = if zeros_to_skip == 0 {
             0
         } else {
@@ -401,7 +401,7 @@ where
             // compute the global bit index
             let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
             // compose the value
-            let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
+            let res = ((high_bits as u64) << self.l) | unsafe { iter.next_unchecked() };
             if res == value {
                 return Some(rank);
             }
@@ -418,9 +418,9 @@ where
 
 // Iteration
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFano<H, L>
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
     /// Returns a forward iterator over the values of the sequence.
     #[inline(always)]
@@ -429,9 +429,9 @@ where
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFano<H, L>
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = u64>,
 {
     /// Returns a backward iterator over the values of the sequence, starting
     /// from the last element and going backward.
@@ -463,9 +463,9 @@ where
     }
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L>
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>> EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
     /// Returns a forward iterator starting from position `from`.
     #[inline(always)]
@@ -474,9 +474,9 @@ where
     }
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L>
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>> EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize> + IntoUncheckedBackIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64> + IntoUncheckedBackIterator<Item = u64>,
 {
     /// Returns a backward iterator that yields elements before position `from`
     /// in decreasing order.
@@ -488,10 +488,10 @@ where
     }
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IntoIteratorFrom
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>> IntoIteratorFrom
     for &'a EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
     type IntoIterFrom = EliasFanoIter<'a, H, L>;
 
@@ -501,10 +501,10 @@ where
     }
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IntoBidiIterator
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>> IntoBidiIterator
     for &'a EliasFano<H, L>
 {
-    type Item = usize;
+    type Item = u64;
     type IntoIterBidi = EliasFanoBidiIter<'a, H, L>;
 
     #[inline(always)]
@@ -513,7 +513,7 @@ impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> In
     }
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IntoBidiIteratorFrom
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>> IntoBidiIteratorFrom
     for &'a EliasFano<H, L>
 {
     type IntoIterBidiFrom = EliasFanoBidiIter<'a, H, L>;
@@ -557,11 +557,11 @@ impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> In
     }
 }
 
-impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> IntoBackIterator for &'a EliasFano<H, L>
+impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = u64>> IntoBackIterator for &'a EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = u64>,
 {
-    type Item = usize;
+    type Item = u64;
     type IntoIterBack = EliasFanoBackIter<'a, H, L>;
 
     #[inline(always)]
@@ -570,10 +570,10 @@ where
     }
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> IntoBackIteratorFrom
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>> IntoBackIteratorFrom
     for &'a EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize> + IntoUncheckedBackIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64> + IntoUncheckedBackIterator<Item = u64>,
 {
     type IntoIterBackFrom = EliasFanoBackIter<'a, H, L>;
 
@@ -583,7 +583,7 @@ where
     }
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> EliasFano<H, L> {
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>> EliasFano<H, L> {
     /// Returns a bidirectional iterator positioned at the first element.
     #[inline(always)]
     pub fn iter_bidi(&self) -> EliasFanoBidiIter<'_, H, L> {
@@ -599,10 +599,10 @@ impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>> EliasF
 
 // Succ / Pred
 
-impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> SuccUnchecked
+impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = u64>> SuccUnchecked
     for EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
     type Iter<'a>
         = EliasFanoIter<'a, H, L>
@@ -618,7 +618,7 @@ where
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output<'_>) {
         let value = *value.borrow();
-        let zeros_to_skip = value >> self.l;
+        let zeros_to_skip = (value >> self.l) as usize;
         let bit_pos = if zeros_to_skip == 0 {
             0
         } else {
@@ -647,7 +647,7 @@ where
             // compute the global bit index
             let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
             // compose the value
-            let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
+            let res = ((high_bits as u64) << self.l) | unsafe { iter.next_unchecked() };
 
             let found = if STRICT { res > value } else { res >= value };
             if found {
@@ -665,7 +665,7 @@ where
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Iter<'_>) {
         let value = *value.borrow();
-        let zeros_to_skip = value >> self.l;
+        let zeros_to_skip = (value >> self.l) as usize;
         let bit_pos = if zeros_to_skip == 0 {
             0
         } else {
@@ -688,7 +688,7 @@ where
             }
             let bit_idx = window.trailing_zeros() as usize;
             let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
-            let res = (high_bits << self.l) | unsafe { iter.next_unchecked() };
+            let res = ((high_bits as u64) << self.l) | unsafe { iter.next_unchecked() };
 
             let found = if STRICT { res > value } else { res >= value };
             if found {
@@ -714,7 +714,7 @@ where
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::BidiIter<'_>) {
         let value = *value.borrow();
-        let zeros_to_skip = value >> self.l;
+        let zeros_to_skip = (value >> self.l) as usize;
         let bit_pos = if zeros_to_skip == 0 {
             0
         } else {
@@ -737,7 +737,7 @@ where
             let bit_idx = window.trailing_zeros() as usize;
             let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
             let low = unsafe { self.low_bits.get_value_unchecked(rank) };
-            let res = (high_bits << self.l) | low;
+            let res = ((high_bits as u64) << self.l) | low;
 
             let found = if STRICT { res > value } else { res >= value };
             if found {
@@ -761,17 +761,17 @@ where
     }
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = usize>> Succ
+impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = u64>> Succ
     for EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
 }
 
-impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = usize>> PredUnchecked
+impl<H: AsRef<[usize]> + SelectZeroUnchecked, L: SliceByValue<Value = u64>> PredUnchecked
     for EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = u64>,
 {
     type BackIter<'a>
         = EliasFanoBackIter<'a, H, L>
@@ -787,7 +787,7 @@ where
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output<'_>) {
         let value = *value.borrow();
-        let zeros_to_skip = value >> self.l;
+        let zeros_to_skip = (value >> self.l) as usize;
         let mut bit_pos = unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip) } - 1;
 
         let mut rank = bit_pos - zeros_to_skip;
@@ -811,23 +811,23 @@ where
                     }
                     return (
                         rank,
-                        (((usize::BITS as usize) - 1 + bit_pos
+                        ((((usize::BITS as usize) - 1 + bit_pos
                             - zeros
                             - window.leading_zeros() as usize
-                            - rank)
+                            - rank) as u64)
                             << self.l)
                             | lower_bits,
                     );
                 }
 
-                let low_value = value & ((1 << self.l) - 1);
+                let low_value = value & ((1_u64 << self.l) - 1);
                 let found = if STRICT {
                     lower_bits < low_value
                 } else {
                     lower_bits <= low_value
                 };
                 if found {
-                    return (rank, ((bit_pos - rank) << self.l) | lower_bits);
+                    return (rank, (((bit_pos - rank) as u64) << self.l) | lower_bits);
                 }
 
                 bit_pos -= 1;
@@ -841,7 +841,7 @@ where
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::BackIter<'_>) {
         let value = *value.borrow();
-        let zeros_to_skip = value >> self.l;
+        let zeros_to_skip = (value >> self.l) as usize;
         let mut bit_pos = unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip) } - 1;
 
         let mut rank = bit_pos - zeros_to_skip;
@@ -879,7 +879,7 @@ where
                     );
                 }
 
-                let low_value = value & ((1 << self.l) - 1);
+                let low_value = value & ((1_u64 << self.l) - 1);
                 let found = if STRICT {
                     lower_bits < low_value
                 } else {
@@ -913,7 +913,7 @@ where
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::BidiIter<'_>) {
         let value = *value.borrow();
-        let zeros_to_skip = value >> self.l;
+        let zeros_to_skip = (value >> self.l) as usize;
         let mut bit_pos = unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip) } - 1;
 
         let mut rank = bit_pos - zeros_to_skip;
@@ -951,7 +951,7 @@ where
 
                 let low = self.low_bits.get_value_unchecked(rank);
 
-                let low_value = value & ((1 << self.l) - 1);
+                let low_value = value & ((1_u64 << self.l) - 1);
                 let found = if STRICT {
                     low < low_value
                 } else {
@@ -980,20 +980,20 @@ where
     }
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = usize>> Pred
+impl<H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked, L: SliceByValue<Value = u64>> Pred
     for EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = u64>,
 {
 }
 
 // -----------------------------------------------------------------------------
 // Value traits
 
-impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>>
     value_traits::slices::SliceByValue for EliasFano<H, L>
 {
-    type Value = usize;
+    type Value = u64;
 
     fn len(&self) -> usize {
         self.n
@@ -1003,38 +1003,38 @@ impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
     }
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>>
     value_traits::iter::IterateByValueGat<'a> for EliasFano<H, L>
 where
-    for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
+    for<'c> &'c L: IntoUncheckedIterator<Item = u64>,
 {
-    type Item = usize;
+    type Item = u64;
     type Iter = EliasFanoIter<'a, H, L>;
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>>
     value_traits::iter::IterateByValue for EliasFano<H, L>
 where
-    for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
+    for<'c> &'c L: IntoUncheckedIterator<Item = u64>,
 {
     fn iter_value(&self) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
         self.iter_from(0)
     }
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>>
     value_traits::iter::IterateByValueFromGat<'a> for EliasFano<H, L>
 where
-    for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
+    for<'c> &'c L: IntoUncheckedIterator<Item = u64>,
 {
-    type Item = usize;
+    type Item = u64;
     type IterFrom = EliasFanoIter<'a, H, L>;
 }
 
-impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
+impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>>
     value_traits::iter::IterateByValueFrom for EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
     fn iter_value_from(
         &self,
@@ -1044,38 +1044,38 @@ where
     }
 }
 
-impl<'a, 'b, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
+impl<'a, 'b, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>>
     value_traits::iter::IterateByValueGat<'a> for EliasFanoSubsliceImpl<'b, H, L>
 where
-    for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
+    for<'c> &'c L: IntoUncheckedIterator<Item = u64>,
 {
-    type Item = usize;
+    type Item = u64;
     type Iter = EliasFanoIter<'a, H, L>;
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>>
     value_traits::iter::IterateByValue for EliasFanoSubsliceImpl<'a, H, L>
 where
-    for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
+    for<'c> &'c L: IntoUncheckedIterator<Item = u64>,
 {
     fn iter_value(&self) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
         self.slice.iter_from(0)
     }
 }
 
-impl<'a, 'b, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
+impl<'a, 'b, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>>
     value_traits::iter::IterateByValueFromGat<'a> for EliasFanoSubsliceImpl<'b, H, L>
 where
-    for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
+    for<'c> &'c L: IntoUncheckedIterator<Item = u64>,
 {
-    type Item = usize;
+    type Item = u64;
     type IterFrom = EliasFanoIter<'a, H, L>;
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>>
     value_traits::iter::IterateByValueFrom for EliasFanoSubsliceImpl<'a, H, L>
 where
-    for<'c> &'c L: IntoUncheckedIterator<Item = usize>,
+    for<'c> &'c L: IntoUncheckedIterator<Item = u64>,
 {
     fn iter_value_from(
         &self,
@@ -1087,9 +1087,9 @@ where
 
 /// An iterator for [`EliasFano`].
 #[derive(MemDbg, MemSize)]
-pub struct EliasFanoIter<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>>
+pub struct EliasFanoIter<'a, H: AsRef<[usize]>, L: SliceByValue<Value = u64>>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
     ef: &'a EliasFano<H, L>,
     /// The index of the next value that will be returned when `next` is called.
@@ -1102,9 +1102,9 @@ where
     low_bits: <&'a L as IntoUncheckedIterator>::IntoUncheckedIter,
 }
 
-impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFanoIter<'a, H, L>
+impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = u64>> EliasFanoIter<'a, H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
     pub fn new(ef: &'a EliasFano<H, L>) -> Self {
         let window = if ef.high_bits.as_ref().is_empty() {
@@ -1123,10 +1123,10 @@ where
     }
 }
 
-impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
+impl<'a, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = u64>>
     EliasFanoIter<'a, H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
     pub fn new_from(ef: &'a EliasFano<H, L>, start_index: usize) -> Self {
         if start_index > ef.len() {
@@ -1166,15 +1166,15 @@ where
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> UncheckedIterator
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> UncheckedIterator
     for EliasFanoIter<'_, H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
-    type Item = usize;
+    type Item = u64;
 
     #[inline(always)]
-    unsafe fn next_unchecked(&mut self) -> usize {
+    unsafe fn next_unchecked(&mut self) -> u64 {
         // find the next word with ones
         while self.window == 0 {
             self.word_idx += 1;
@@ -1188,17 +1188,17 @@ where
         // clear the lowest bit set
         self.window &= self.window - 1;
         // compose the value
-        let res = (high_bits << self.ef.l) | unsafe { self.low_bits.next_unchecked() };
+        let res = ((high_bits as u64) << self.ef.l) | unsafe { self.low_bits.next_unchecked() };
         self.index += 1;
         res
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator for EliasFanoIter<'_, H, L>
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> Iterator for EliasFanoIter<'_, H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
-    type Item = usize;
+    type Item = u64;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1234,7 +1234,7 @@ where
         let bit_idx = usize::BITS as usize - 1 - word.leading_zeros() as usize;
         let high_bits = (word_idx * usize::BITS as usize) + bit_idx - (self.ef.n - 1);
         let low = unsafe { self.ef.low_bits.get_value_unchecked(self.ef.n - 1) };
-        Some((high_bits << self.ef.l) | low)
+        Some(((high_bits as u64) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1252,10 +1252,10 @@ where
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeIterator
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> ExactSizeIterator
     for EliasFanoIter<'_, H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -1263,14 +1263,14 @@ where
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> FusedIterator for EliasFanoIter<'_, H, L> where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> FusedIterator for EliasFanoIter<'_, H, L> where
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>
 {
 }
 
-impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFanoIter<'a, H, L>
+impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = u64>> EliasFanoIter<'a, H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize> + IntoUncheckedBackIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64> + IntoUncheckedBackIterator<Item = u64>,
 {
     /// Converts this forward iterator into a backward iterator at the current
     /// cursor position.
@@ -1307,9 +1307,9 @@ where
 ///
 /// This iterator is slightly slower than a [forward iterator](EliasFanoIter).
 #[derive(MemDbg, MemSize)]
-pub struct EliasFanoBackIter<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>>
+pub struct EliasFanoBackIter<'a, H: AsRef<[usize]>, L: SliceByValue<Value = u64>>
 where
-    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = u64>,
 {
     ef: &'a EliasFano<H, L>,
     /// The index of the next value that will be returned when `next` is
@@ -1323,9 +1323,9 @@ where
     low_bits: <&'a L as IntoUncheckedBackIterator>::IntoUncheckedIterBack,
 }
 
-impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> EliasFanoBackIter<'a, H, L>
+impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = u64>> EliasFanoBackIter<'a, H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize> + IntoUncheckedBackIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64> + IntoUncheckedBackIterator<Item = u64>,
 {
     /// Converts this backward iterator back into a forward iterator at the
     /// current cursor position.
@@ -1350,15 +1350,15 @@ where
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> UncheckedIterator
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> UncheckedIterator
     for EliasFanoBackIter<'_, H, L>
 where
-    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = u64>,
 {
-    type Item = usize;
+    type Item = u64;
 
     #[inline(always)]
-    unsafe fn next_unchecked(&mut self) -> usize {
+    unsafe fn next_unchecked(&mut self) -> u64 {
         while self.window == 0 {
             self.word_idx -= 1;
             self.window = unsafe { *self.ef.high_bits.as_ref().get_unchecked(self.word_idx) };
@@ -1368,15 +1368,15 @@ where
         self.index -= 1;
         let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
         let low = unsafe { self.low_bits.next_unchecked() };
-        (high_bits << self.ef.l) | low
+        ((high_bits as u64) << self.ef.l) | low
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator for EliasFanoBackIter<'_, H, L>
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> Iterator for EliasFanoBackIter<'_, H, L>
 where
-    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = u64>,
 {
-    type Item = usize;
+    type Item = u64;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1411,7 +1411,7 @@ where
         let bit_idx = unsafe { *words.get_unchecked(word_idx) }.trailing_zeros() as usize;
         let high_bits = (word_idx * usize::BITS as usize) + bit_idx;
         let low = unsafe { self.ef.low_bits.get_value_unchecked(0) };
-        Some((high_bits << self.ef.l) | low)
+        Some(((high_bits as u64) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1428,10 +1428,10 @@ where
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeIterator
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> ExactSizeIterator
     for EliasFanoBackIter<'_, H, L>
 where
-    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = u64>,
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -1439,18 +1439,18 @@ where
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> FusedIterator
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> FusedIterator
     for EliasFanoBackIter<'_, H, L>
 where
-    for<'b> &'b L: IntoUncheckedBackIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedBackIterator<Item = u64>,
 {
 }
 
-impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> IntoIterator for &'a EliasFano<H, L>
+impl<'a, H: AsRef<[usize]>, L: SliceByValue<Value = u64>> IntoIterator for &'a EliasFano<H, L>
 where
-    for<'b> &'b L: IntoUncheckedIterator<Item = usize>,
+    for<'b> &'b L: IntoUncheckedIterator<Item = u64>,
 {
-    type Item = usize;
+    type Item = u64;
     type IntoIter = EliasFanoIter<'a, H, L>;
 
     #[inline(always)]
@@ -1475,7 +1475,7 @@ where
 /// This iterator is slightly slower than a [backward
 /// iterator](EliasFanoBackIter), but much faster than using selection.
 #[derive(MemDbg, MemSize)]
-pub struct EliasFanoBidiIter<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usize>> {
+pub struct EliasFanoBidiIter<'a, H: AsRef<[usize]>, L: SliceByValue<Value = u64>> {
     ef: &'a EliasFano<H, L>,
     /// Cursor position: `next()` yields element `index`, `prev()` yields
     /// element `index - 1`.
@@ -1489,8 +1489,8 @@ pub struct EliasFanoBidiIter<'a, H: AsRef<[usize]>, L: SliceByValue<Value = usiz
     index_in_word: usize,
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator for EliasFanoBidiIter<'_, H, L> {
-    type Item = usize;
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> Iterator for EliasFanoBidiIter<'_, H, L> {
+    type Item = u64;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1508,7 +1508,7 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator for EliasFanoBi
         let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
         self.index += 1;
         self.index_in_word += 1;
-        Some((high_bits << self.ef.l) | low)
+        Some(((high_bits as u64) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1538,7 +1538,7 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator for EliasFanoBi
         let bit_idx = usize::BITS as usize - 1 - word.leading_zeros() as usize;
         let high_bits = (word_idx * usize::BITS as usize) + bit_idx - (self.ef.n - 1);
         let low = unsafe { self.ef.low_bits.get_value_unchecked(self.ef.n - 1) };
-        Some((high_bits << self.ef.l) | low)
+        Some(((high_bits as u64) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1558,13 +1558,13 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> Iterator for EliasFanoBi
             let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
             self.index += 1;
             self.index_in_word += 1;
-            accum = f(accum, (high_bits << self.ef.l) | low);
+            accum = f(accum, ((high_bits as u64) << self.ef.l) | low);
         }
         accum
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeIterator
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> ExactSizeIterator
     for EliasFanoBidiIter<'_, H, L>
 {
     #[inline(always)]
@@ -1573,12 +1573,12 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeIterator
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> FusedIterator
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> FusedIterator
     for EliasFanoBidiIter<'_, H, L>
 {
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> BidiIterator
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> BidiIterator
     for EliasFanoBidiIter<'_, H, L>
 {
     type SwappedIter = SwappedIter<Self>;
@@ -1589,7 +1589,7 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> BidiIterator
     }
 
     #[inline(always)]
-    fn prev(&mut self) -> Option<usize> {
+    fn prev(&mut self) -> Option<u64> {
         if self.index == 0 {
             return None;
         }
@@ -1604,7 +1604,7 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> BidiIterator
         let bit_idx = self.window.select_in_word(self.index_in_word);
         let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
         let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
-        Some((high_bits << self.ef.l) | low)
+        Some(((high_bits as u64) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1618,7 +1618,7 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> BidiIterator
     }
 
     #[inline(always)]
-    fn prev_last(self) -> Option<usize> {
+    fn prev_last(self) -> Option<u64> {
         if self.index == 0 {
             return None;
         }
@@ -1632,7 +1632,7 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> BidiIterator
         let bit_idx = unsafe { *words.get_unchecked(word_idx) }.trailing_zeros() as usize;
         let high_bits = (word_idx * usize::BITS as usize) + bit_idx;
         let low = unsafe { self.ef.low_bits.get_value_unchecked(0) };
-        Some((high_bits << self.ef.l) | low)
+        Some(((high_bits as u64) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1652,13 +1652,13 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> BidiIterator
             let bit_idx = self.window.select_in_word(self.index_in_word);
             let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
             let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
-            accum = f(accum, (high_bits << self.ef.l) | low);
+            accum = f(accum, ((high_bits as u64) << self.ef.l) | low);
         }
         accum
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeBidiIterator
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> ExactSizeBidiIterator
     for EliasFanoBidiIter<'_, H, L>
 {
     #[inline(always)]
@@ -1667,7 +1667,7 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> ExactSizeBidiIterator
     }
 }
 
-impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> FusedBidiIterator
+impl<H: AsRef<[usize]>, L: SliceByValue<Value = u64>> FusedBidiIterator
     for EliasFanoBidiIter<'_, H, L>
 {
 }
@@ -1678,11 +1678,11 @@ impl<H: AsRef<[usize]>, L: SliceByValue<Value = usize>> FusedBidiIterator
 /// and find the maximum value, but then it uses
 /// [`EliasFanoBuilder::push_unchecked`], thus partially compensating for the
 /// cost of the first scan.
-impl<A: AsRef<[usize]>> From<A> for EliasFano {
+impl<A: AsRef<[u64]>> From<A> for EliasFano {
     fn from(values: A) -> Self {
         let values = values.as_ref();
-        let mut max = 0;
-        let mut prev = 0;
+        let mut max = 0u64;
+        let mut prev = 0u64;
         for &value in values {
             if value < prev {
                 panic!("The values provided are not monotone: {} < {}", value, prev);
@@ -1720,20 +1720,20 @@ impl<A: AsRef<[usize]>> From<A> for EliasFano {
 ///
 /// let ef = efb.build();
 /// let mut iter = ef.iter();
-/// assert_eq!(iter.next(), Some(0));
-/// assert_eq!(iter.next(), Some(2));
-/// assert_eq!(iter.next(), Some(8));
-/// assert_eq!(iter.next(), Some(10));
+/// assert_eq!(iter.next(), Some(0u64));
+/// assert_eq!(iter.next(), Some(2u64));
+/// assert_eq!(iter.next(), Some(8u64));
+/// assert_eq!(iter.next(), Some(10u64));
 /// assert_eq!(iter.next(), None);
 /// ```
 #[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct EliasFanoBuilder {
     n: usize,
-    u: usize,
+    u: u64,
     l: usize,
-    low_bits: BitFieldVec,
+    low_bits: BitFieldVec<u64>,
     high_bits: BitVec,
-    last_value: usize,
+    last_value: u64,
     count: usize,
 }
 
@@ -1744,8 +1744,8 @@ impl EliasFanoBuilder {
     /// # Panics
     ///
     /// When any of the underlying structures would exceed `usize` in length.
-    pub fn new(n: usize, u: usize) -> Self {
-        let l = if n > 0 && u >= n {
+    pub fn new(n: usize, u: u64) -> Self {
+        let l = if n > 0 && u >= n as u64 {
             (u as f64 / n as f64).log2().floor() as usize
         } else {
             0
@@ -1754,13 +1754,13 @@ impl EliasFanoBuilder {
         let num_high_bits = n
             .checked_add(1)
             .unwrap_or_else(|| panic!("n ({n}) is too large"))
-            .checked_add(u >> l)
+            .checked_add((u >> l) as usize)
             .unwrap_or_else(|| panic!("n ({n}) and/or u ({u}) is too large"));
         Self {
             n,
             u,
             l,
-            low_bits: BitFieldVec::new(l, n),
+            low_bits: BitFieldVec::<u64>::new(l, n),
             high_bits: BitVec::new(num_high_bits),
             last_value: 0,
             count: 0,
@@ -1771,7 +1771,7 @@ impl EliasFanoBuilder {
     /// # Panics
     /// May panic if the value is smaller than the last provided
     /// value, or if too many values are provided.
-    pub fn push(&mut self, value: usize) {
+    pub fn push(&mut self, value: u64) {
         if self.count == self.n {
             panic!("Too many values");
         }
@@ -1793,11 +1793,11 @@ impl EliasFanoBuilder {
     ///
     /// Values passed to this function must be smaller than or equal to `u` and must be monotone.
     /// Moreover, the function should not be called more than `n` times.
-    pub unsafe fn push_unchecked(&mut self, value: usize) {
-        let low = value & ((1 << self.l) - 1);
+    pub unsafe fn push_unchecked(&mut self, value: u64) {
+        let low = value & ((1_u64 << self.l) - 1);
         self.low_bits.set_value(self.count, low);
 
-        let high = (value >> self.l) + self.count;
+        let high = ((value >> self.l) as usize) + self.count;
         self.high_bits.set(high, true);
 
         self.count += 1;
@@ -1872,8 +1872,8 @@ impl EliasFanoBuilder {
     }
 }
 
-impl Extend<usize> for EliasFanoBuilder {
-    fn extend<T: IntoIterator<Item = usize>>(&mut self, iter: T) {
+impl Extend<u64> for EliasFanoBuilder {
+    fn extend<T: IntoIterator<Item = u64>>(&mut self, iter: T) {
         for value in iter {
             self.push(value);
         }
@@ -1901,27 +1901,27 @@ impl Extend<usize> for EliasFanoBuilder {
 ///
 /// let ef = efcb.build();
 /// let mut iter = ef.iter();
-/// assert_eq!(iter.next(), Some(0));
-/// assert_eq!(iter.next(), Some(2));
-/// assert_eq!(iter.next(), Some(8));
-/// assert_eq!(iter.next(), Some(10));
+/// assert_eq!(iter.next(), Some(0u64));
+/// assert_eq!(iter.next(), Some(2u64));
+/// assert_eq!(iter.next(), Some(8u64));
+/// assert_eq!(iter.next(), Some(10u64));
 /// assert_eq!(iter.next(), None);
 /// ```
 
 #[derive(MemDbg, MemSize)]
 pub struct EliasFanoConcurrentBuilder {
     n: usize,
-    u: usize,
+    u: u64,
     l: usize,
-    low_bits: AtomicBitFieldVec,
+    low_bits: AtomicBitFieldVec<u64>,
     high_bits: AtomicBitVec,
 }
 
 impl EliasFanoConcurrentBuilder {
     /// Creates a concurrent builder for a sequence containing `n` numbers
     /// smaller than or equal to `u`.
-    pub fn new(n: usize, u: usize) -> Self {
-        let l = if n > 0 && u >= n {
+    pub fn new(n: usize, u: u64) -> Self {
+        let l = if n > 0 && u >= n as u64 {
             (u as f64 / n as f64).log2().floor() as usize
         } else {
             0
@@ -1931,8 +1931,8 @@ impl EliasFanoConcurrentBuilder {
             u,
             n,
             l,
-            low_bits: AtomicBitFieldVec::new(l, n),
-            high_bits: AtomicBitVec::new(n + (u >> l) + 1),
+            low_bits: AtomicBitFieldVec::<u64>::new(l, n),
+            high_bits: AtomicBitVec::new(n + ((u >> l) as usize) + 1),
         }
     }
 
@@ -1943,8 +1943,8 @@ impl EliasFanoConcurrentBuilder {
     /// - All values must be smaller than or equal to `u`.
     /// - All indices must be smaller than `n`.
     /// - You must call this function exactly `n` times.
-    pub unsafe fn set(&self, index: usize, value: usize) {
-        let low = value & ((1 << self.l) - 1);
+    pub unsafe fn set(&self, index: usize, value: u64) {
+        let low = value & ((1_u64 << self.l) - 1);
         // Note that the concurrency guarantees of BitFieldVec
         // are sufficient for us.
         unsafe {
@@ -1952,7 +1952,7 @@ impl EliasFanoConcurrentBuilder {
                 .set_atomic_unchecked(index, low, Ordering::Relaxed)
         };
 
-        let high = (value >> self.l) + index;
+        let high = ((value >> self.l) as usize) + index;
         self.high_bits.set(high, true, Ordering::Relaxed);
     }
 
@@ -1969,8 +1969,8 @@ impl EliasFanoConcurrentBuilder {
     /// methods are more convenient.
     pub fn build(self) -> EliasFano {
         let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
-        let low_bits: BitFieldVec<usize, Vec<usize>> = self.low_bits.into();
-        let low_bits: BitFieldVec<usize, Box<[usize]>> = low_bits.into();
+        let low_bits: BitFieldVec<u64, Vec<u64>> = self.low_bits.into();
+        let low_bits: BitFieldVec<u64, Box<[u64]>> = low_bits.into();
         EliasFano {
             n: self.n,
             u: self.u,

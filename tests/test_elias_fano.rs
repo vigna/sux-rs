@@ -20,8 +20,16 @@ fn test_elias_fano_concurrent() -> Result<()> {
     use rayon::prelude::*;
     use sux::dict::elias_fano::EliasFanoConcurrentBuilder;
     let mut rng = SmallRng::seed_from_u64(0);
-    for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
-        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
+    for (n, u) in [
+        (10, 1000u64),
+        (100, 1000),
+        (100, 100),
+        (1000, 100),
+        (1000, 10),
+    ] {
+        let mut values = (0..n)
+            .map(|_| rng.random_range(0..u))
+            .collect::<Vec<u64>>();
 
         values.sort();
 
@@ -41,8 +49,16 @@ fn test_elias_fano_concurrent() -> Result<()> {
 #[test]
 fn test_elias_fano() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
-    for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
-        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
+    for (n, u) in [
+        (10, 1000u64),
+        (100, 1000),
+        (100, 100),
+        (1000, 100),
+        (1000, 10),
+    ] {
+        let mut values = (0..n)
+            .map(|_| rng.random_range(0..u))
+            .collect::<Vec<u64>>();
 
         values.sort();
 
@@ -94,7 +110,7 @@ fn test_elias_fano() -> Result<()> {
         }
 
         let last = values.last().unwrap();
-        let mut lower_bound = 0;
+        let mut lower_bound = 0u64;
         for (i, v) in values.iter().enumerate() {
             if lower_bound > *v {
                 continue;
@@ -110,7 +126,7 @@ fn test_elias_fano() -> Result<()> {
 
         assert_eq!(None, ef.succ(last + 1));
 
-        let mut lower_bound = 0;
+        let mut lower_bound = 0u64;
         for (i, v) in values.iter().enumerate() {
             if lower_bound >= *v {
                 continue;
@@ -124,7 +140,7 @@ fn test_elias_fano() -> Result<()> {
             }
         }
 
-        assert_eq!(None, ef.succ_strict(last));
+        assert_eq!(None, ef.succ_strict(*last));
 
         let first = *values.first().unwrap();
         let mut upper_bound = first + 1;
@@ -227,13 +243,13 @@ fn test_too_large() {
 #[test]
 #[should_panic]
 fn test_from_non_monotone() {
-    let _ef: EliasFano = vec![1, 0].into();
+    let _ef: EliasFano = vec![1u64, 0].into();
 }
 
 #[test]
 fn test_extend() {
     let mut efb = EliasFanoBuilder::new(3, 10);
-    let v = vec![0, 1, 2];
+    let v = vec![0u64, 1, 2];
     efb.extend(v.clone());
     let ef = efb.build();
     zip(ef.iter(), v.iter()).for_each(|(a, b)| assert_eq!(a, *b));
@@ -246,10 +262,12 @@ fn test_epserde() -> Result<()> {
     use epserde::ser::Serialize;
 
     let mut rng = SmallRng::seed_from_u64(0);
-    for (n, u) in [(100, 1000), (100, 100), (1000, 100)] {
+    for (n, u) in [(100, 1000u64), (100, 100), (1000, 100)] {
         use epserde::utils::AlignedCursor;
 
-        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
+        let mut values = (0..n)
+            .map(|_| rng.random_range(0..u))
+            .collect::<Vec<u64>>();
 
         values.sort();
 
@@ -273,7 +291,7 @@ fn test_epserde() -> Result<()> {
 
             <EliasFano<
                 SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>>,
-                BitFieldVec<usize, Box<[usize]>>,
+                BitFieldVec<u64, Box<[usize]>>,
             >>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())
         }?;
 
@@ -287,39 +305,50 @@ fn test_epserde() -> Result<()> {
 #[test]
 fn test_convenience_methods() {
     let mut efb = EliasFanoBuilder::new(10, 100);
-    for i in 0..10 {
+    for i in 0u64..10 {
         efb.push(i * 10);
     }
     let ef = efb.build_with_seq();
     for i in 0..10 {
-        assert_eq!(ef.get(i), i * 10);
+        assert_eq!(ef.get(i), i as u64 * 10);
     }
 
     let mut efb = EliasFanoBuilder::new(10, 100);
-    for i in 0..10 {
+    for i in 0u64..10 {
         efb.push(i * 10);
     }
     let ef = efb.build_with_dict();
     for i in 0..10 {
-        assert_eq!(unsafe { ef.succ_unchecked::<false>(i * 10) }, (i, i * 10));
+        assert_eq!(
+            unsafe { ef.succ_unchecked::<false>(i as u64 * 10) },
+            (i, i as u64 * 10)
+        );
     }
 
     let mut efb = EliasFanoBuilder::new(10, 100);
-    for i in 0..10 {
+    for i in 0u64..10 {
         efb.push(i * 10);
     }
     let ef = efb.build_with_seq_and_dict();
     for i in 0..10 {
-        assert_eq!(ef.get(i), i * 10);
-        assert_eq!(ef.succ(i * 10).unwrap(), (i, i * 10));
+        assert_eq!(ef.get(i), i as u64 * 10);
+        assert_eq!(ef.succ(i as u64 * 10).unwrap(), (i, i as u64 * 10));
     }
 }
 
 #[test]
 fn test_iter_from_succ() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
-    for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
-        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
+    for (n, u) in [
+        (10, 1000u64),
+        (100, 1000),
+        (100, 100),
+        (1000, 100),
+        (1000, 10),
+    ] {
+        let mut values = (0..n)
+            .map(|_| rng.random_range(0..u))
+            .collect::<Vec<u64>>();
         values.sort();
 
         // Test with EfSeqDict (has both SelectUnchecked and SelectZeroUnchecked)
@@ -338,7 +367,7 @@ fn test_iter_from_succ() -> Result<()> {
                 (Some((idx, val)), Some((idx2, iter))) => {
                     assert_eq!(idx, idx2);
                     // The iterator should yield the successor and all subsequent values
-                    let collected: Vec<usize> = iter.collect();
+                    let collected: Vec<u64> = iter.collect();
                     assert_eq!(collected.len(), n - idx);
                     assert_eq!(collected[0], val);
                     for (i, &cv) in collected.iter().enumerate() {
@@ -357,7 +386,7 @@ fn test_iter_from_succ() -> Result<()> {
                 (None, None) => {}
                 (Some((idx, val)), Some((idx2, iter))) => {
                     assert_eq!(idx, idx2);
-                    let collected: Vec<usize> = iter.collect();
+                    let collected: Vec<u64> = iter.collect();
                     assert_eq!(collected.len(), n - idx);
                     assert_eq!(collected[0], val);
                     for (i, &cv) in collected.iter().enumerate() {
@@ -383,7 +412,7 @@ fn test_iter_from_succ() -> Result<()> {
             if succ_result < n {
                 let (idx, iter) = unsafe { ef_dict.iter_from_succ_unchecked::<false>(v) };
                 assert_eq!(idx, succ_result);
-                let collected: Vec<usize> = iter.collect();
+                let collected: Vec<u64> = iter.collect();
                 assert_eq!(collected.len(), n - idx);
                 assert_eq!(collected[0], values[succ_result]);
                 for (i, &cv) in collected.iter().enumerate() {
@@ -397,7 +426,7 @@ fn test_iter_from_succ() -> Result<()> {
             if let Some((idx, val)) = ef.succ(v) {
                 let (idx2, iter) = unsafe { ef.iter_from_succ_unchecked::<false>(v) };
                 assert_eq!(idx, idx2);
-                let collected: Vec<usize> = iter.collect();
+                let collected: Vec<u64> = iter.collect();
                 assert_eq!(collected[0], val);
             }
         }
@@ -415,8 +444,16 @@ fn test_iter_from_succ() -> Result<()> {
 #[test]
 fn test_iter_back() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
-    for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
-        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
+    for (n, u) in [
+        (10, 1000u64),
+        (100, 1000),
+        (100, 100),
+        (1000, 100),
+        (1000, 10),
+    ] {
+        let mut values = (0..n)
+            .map(|_| rng.random_range(0..u))
+            .collect::<Vec<u64>>();
         values.sort();
 
         let mut efb = EliasFanoBuilder::new(n, u);
@@ -426,43 +463,43 @@ fn test_iter_back() -> Result<()> {
         let ef = efb.build_with_seq_and_dict();
 
         // 1. iter_back() yields all elements in backward order
-        let rev: Vec<usize> = ef.iter_back().collect();
+        let rev: Vec<u64> = ef.iter_back().collect();
         let mut expected = values.clone();
         expected.reverse();
         assert_eq!(rev, expected);
 
         // 2. iter_back_from(k) yields elements k-1, k-2, ..., 0
         for from in 0..=n {
-            let rev: Vec<usize> = ef.iter_back_from(from).collect();
-            let expected: Vec<usize> = values[..from].iter().copied().rev().collect();
+            let rev: Vec<u64> = ef.iter_back_from(from).collect();
+            let expected: Vec<u64> = values[..from].iter().copied().rev().collect();
             assert_eq!(rev, expected);
         }
 
         // 3. iter().backward() at position 0 is empty; iter_from(n).backward() yields all in backward
-        let back: Vec<usize> = ef.iter().backward().collect();
+        let back: Vec<u64> = ef.iter().backward().collect();
         assert!(back.is_empty());
 
-        let back: Vec<usize> = ef.iter_from(n).backward().collect();
+        let back: Vec<u64> = ef.iter_from(n).backward().collect();
         let mut expected = values.clone();
         expected.reverse();
         assert_eq!(back, expected);
 
         // 4. Round-trip: iter_from(k).backward().forward() yields same as iter_from(k)
         for from in 0..=n {
-            let roundtrip: Vec<usize> = ef.iter_from(from).backward().forward().collect();
-            let direct: Vec<usize> = ef.iter_from(from).collect();
+            let roundtrip: Vec<u64> = ef.iter_from(from).backward().forward().collect();
+            let direct: Vec<u64> = ef.iter_from(from).collect();
             assert_eq!(roundtrip, direct);
         }
 
         // 5. iter_back().forward() yields forward from cursor n (empty)
-        let roundtrip: Vec<usize> = ef.iter_back().forward().collect();
+        let roundtrip: Vec<u64> = ef.iter_back().forward().collect();
         assert!(roundtrip.is_empty());
 
         // Consuming iter_back fully then forward gives forward from cursor 0 = iter()
         let mut back = ef.iter_back();
         while back.next().is_some() {}
-        let roundtrip: Vec<usize> = back.forward().collect();
-        let direct: Vec<usize> = ef.iter().collect();
+        let roundtrip: Vec<u64> = back.forward().collect();
+        let direct: Vec<u64> = ef.iter().collect();
         assert_eq!(roundtrip, direct);
 
         // 6. ExactSizeIterator::len() is correct throughout iteration
@@ -488,8 +525,10 @@ fn test_iter_back() -> Result<()> {
 
     // 7. Works with EfDict (only SelectZeroUnchecked, no SelectUnchecked)
     let mut rng = SmallRng::seed_from_u64(42);
-    for (n, u) in [(10, 1000), (100, 100)] {
-        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
+    for (n, u) in [(10, 1000u64), (100, 100)] {
+        let mut values = (0..n)
+            .map(|_| rng.random_range(0..u))
+            .collect::<Vec<u64>>();
         values.sort();
 
         let mut efb = EliasFanoBuilder::new(n, u);
@@ -500,7 +539,7 @@ fn test_iter_back() -> Result<()> {
 
         // EfDict has no SelectUnchecked, so iter_from/iter_back_from won't work,
         // but iter_back() should work since it only needs AsRef<[usize]>
-        let rev: Vec<usize> = ef.iter_back().collect();
+        let rev: Vec<u64> = ef.iter_back().collect();
         let mut expected = values.clone();
         expected.reverse();
         assert_eq!(rev, expected);
@@ -509,7 +548,7 @@ fn test_iter_back() -> Result<()> {
     // Test empty sequence
     let efb = EliasFanoBuilder::new(0, 10);
     let ef = efb.build_with_seq_and_dict();
-    let rev: Vec<usize> = ef.iter_back().collect();
+    let rev: Vec<u64> = ef.iter_back().collect();
     assert!(rev.is_empty());
     assert_eq!(ef.iter_back().len(), 0);
 
@@ -519,8 +558,16 @@ fn test_iter_back() -> Result<()> {
 #[test]
 fn test_iter_back_from_pred() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
-    for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
-        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
+    for (n, u) in [
+        (10, 1000u64),
+        (100, 1000),
+        (100, 100),
+        (1000, 100),
+        (1000, 10),
+    ] {
+        let mut values = (0..n)
+            .map(|_| rng.random_range(0..u))
+            .collect::<Vec<u64>>();
         values.sort();
 
         // Test with EfSeqDict (has both SelectUnchecked and SelectZeroUnchecked)
@@ -539,7 +586,7 @@ fn test_iter_back_from_pred() -> Result<()> {
                 (Some((idx, val)), Some((idx2, iter))) => {
                     assert_eq!(idx, idx2);
                     // The iterator should yield the predecessor and all preceding values
-                    let collected: Vec<usize> = iter.collect();
+                    let collected: Vec<u64> = iter.collect();
                     assert_eq!(collected.len(), idx + 1);
                     assert_eq!(collected[0], val);
                     for (i, &cv) in collected.iter().enumerate() {
@@ -558,7 +605,7 @@ fn test_iter_back_from_pred() -> Result<()> {
                 (None, None) => {}
                 (Some((idx, val)), Some((idx2, iter))) => {
                     assert_eq!(idx, idx2);
-                    let collected: Vec<usize> = iter.collect();
+                    let collected: Vec<u64> = iter.collect();
                     assert_eq!(collected.len(), idx + 1);
                     assert_eq!(collected[0], val);
                     for (i, &cv) in collected.iter().enumerate() {
@@ -581,7 +628,7 @@ fn test_iter_back_from_pred() -> Result<()> {
             if pred_idx > 0 {
                 let (idx, iter) = unsafe { ef_dict.iter_back_from_pred_unchecked::<false>(v) };
                 assert_eq!(idx, pred_idx - 1);
-                let collected: Vec<usize> = iter.collect();
+                let collected: Vec<u64> = iter.collect();
                 assert_eq!(collected.len(), idx + 1);
                 assert_eq!(collected[0], values[idx]);
                 for (i, &cv) in collected.iter().enumerate() {
@@ -595,7 +642,7 @@ fn test_iter_back_from_pred() -> Result<()> {
             if let Some((idx, val)) = ef.pred(v) {
                 let (idx2, iter) = unsafe { ef.iter_back_from_pred_unchecked::<false>(v) };
                 assert_eq!(idx, idx2);
-                let collected: Vec<usize> = iter.collect();
+                let collected: Vec<u64> = iter.collect();
                 assert_eq!(collected[0], val);
             }
         }
@@ -613,8 +660,16 @@ fn test_iter_back_from_pred() -> Result<()> {
 #[test]
 fn test_iter_bidi() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
-    for (n, u) in [(10, 1000), (100, 1000), (100, 100), (1000, 100), (1000, 10)] {
-        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<_>>();
+    for (n, u) in [
+        (10, 1000u64),
+        (100, 1000),
+        (100, 100),
+        (1000, 100),
+        (1000, 10),
+    ] {
+        let mut values = (0..n)
+            .map(|_| rng.random_range(0..u))
+            .collect::<Vec<u64>>();
         values.sort();
 
         let mut efb = EliasFanoBuilder::new(n, u);
@@ -639,7 +694,7 @@ fn test_iter_bidi() -> Result<()> {
                     // next() again yields the successor
                     assert_eq!(bidi.next(), Some(val));
                     // Collect the rest via next()
-                    let rest: Vec<usize> = bidi.collect();
+                    let rest: Vec<u64> = bidi.collect();
                     for (i, &cv) in rest.iter().enumerate() {
                         assert_eq!(cv, values[idx + 1 + i]);
                     }
@@ -678,7 +733,7 @@ fn test_iter_bidi() -> Result<()> {
                     // next() again yields the predecessor
                     assert_eq!(bidi.next(), Some(val));
                     // Collect the rest via next()
-                    let rest: Vec<usize> = bidi.collect();
+                    let rest: Vec<u64> = bidi.collect();
                     for (i, &cv) in rest.iter().enumerate() {
                         assert_eq!(cv, values[idx + 1 + i]);
                     }
@@ -752,9 +807,9 @@ fn test_iter_bidi() -> Result<()> {
 
 #[test]
 fn test_iter_bidi_trait_methods() -> Result<()> {
-    let values: Vec<usize> = vec![10, 20, 30, 40, 50];
+    let values: Vec<u64> = vec![10, 20, 30, 40, 50];
     let n = values.len();
-    let u = 50;
+    let u = 50u64;
 
     let mut efb = EliasFanoBuilder::new(n, u);
     for &v in &values {
@@ -766,30 +821,30 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
 
     // into_iter_bidi (default calls into_iter_bidi_from(0))
     let mut bidi = (&ef).into_iter_bidi();
-    assert_eq!(bidi.next(), Some(10));
-    assert_eq!(bidi.prev(), Some(10));
+    assert_eq!(bidi.next(), Some(10u64));
+    assert_eq!(bidi.prev(), Some(10u64));
     assert_eq!(bidi.prev(), None);
 
     // into_iter_bidi_from
     let mut bidi = (&ef).into_iter_bidi_from(2);
-    assert_eq!(bidi.next(), Some(30));
-    assert_eq!(bidi.prev(), Some(30));
-    assert_eq!(bidi.prev(), Some(20));
+    assert_eq!(bidi.next(), Some(30u64));
+    assert_eq!(bidi.prev(), Some(30u64));
+    assert_eq!(bidi.prev(), Some(20u64));
 
     // into_iter_bidi_from at end
     let mut bidi = (&ef).into_iter_bidi_from(n);
     assert_eq!(bidi.next(), None);
-    assert_eq!(bidi.prev(), Some(50));
+    assert_eq!(bidi.prev(), Some(50u64));
 
     // --- Convenience methods ---
 
     let mut bidi = ef.iter_bidi();
-    assert_eq!(bidi.next(), Some(10));
+    assert_eq!(bidi.next(), Some(10u64));
 
     let mut bidi = ef.iter_bidi_from(3);
-    assert_eq!(bidi.next(), Some(40));
-    assert_eq!(bidi.prev(), Some(40));
-    assert_eq!(bidi.prev(), Some(30));
+    assert_eq!(bidi.next(), Some(40u64));
+    assert_eq!(bidi.prev(), Some(40u64));
+    assert_eq!(bidi.prev(), Some(30u64));
 
     // --- BidiIterator default methods ---
 
@@ -798,7 +853,7 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
     {
         let mut bidi = ef.iter_bidi_from(n);
         assert_eq!(bidi.prev_advance_by(3), Ok(()));
-        assert_eq!(bidi.prev(), Some(20));
+        assert_eq!(bidi.prev(), Some(20u64));
 
         // prev_advance_by: partial failure
         let mut bidi = ef.iter_bidi_from(2);
@@ -809,7 +864,7 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
 
     // prev_nth: success
     let mut bidi = ef.iter_bidi_from(n);
-    assert_eq!(bidi.prev_nth(2), Some(30));
+    assert_eq!(bidi.prev_nth(2), Some(30u64));
 
     // prev_nth: past the end
     let mut bidi = ef.iter_bidi_from(2);
@@ -817,14 +872,14 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
 
     // prev_fold
     let bidi = ef.iter_bidi_from(n);
-    let sum = bidi.prev_fold(0usize, |acc, x| acc + x);
-    assert_eq!(sum, values.iter().sum::<usize>());
+    let sum = bidi.prev_fold(0u64, |acc, x| acc + x);
+    assert_eq!(sum, values.iter().sum::<u64>());
 
     // prev_for_each
     let bidi = ef.iter_bidi_from(n);
     let mut collected = Vec::new();
     bidi.prev_for_each(|x| collected.push(x));
-    assert_eq!(collected, vec![50, 40, 30, 20, 10]);
+    assert_eq!(collected, vec![50u64, 40, 30, 20, 10]);
 
     // prev_count
     let bidi = ef.iter_bidi_from(n);
@@ -847,22 +902,22 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
     let bidi = ef.iter_bidi_from(3);
     let mut rev = bidi.swap();
     // SwappedIter::next delegates to inner prev
-    assert_eq!(rev.next(), Some(30));
-    assert_eq!(rev.next(), Some(20));
-    assert_eq!(rev.next(), Some(10));
+    assert_eq!(rev.next(), Some(30u64));
+    assert_eq!(rev.next(), Some(20u64));
+    assert_eq!(rev.next(), Some(10u64));
     assert_eq!(rev.next(), None);
 
     // SwappedIter::prev delegates to inner next
     let bidi = ef.iter_bidi_from(2);
     let mut rev = bidi.swap();
-    assert_eq!(rev.prev(), Some(30));
-    assert_eq!(rev.prev(), Some(40));
+    assert_eq!(rev.prev(), Some(30u64));
+    assert_eq!(rev.prev(), Some(40u64));
 
     // SwappedIter::swap unwraps back to the original type
     let bidi = ef.iter_bidi_from(2);
     let rev = bidi.swap();
     let mut bidi2 = rev.swap();
-    assert_eq!(bidi2.next(), Some(30));
+    assert_eq!(bidi2.next(), Some(30u64));
 
     // SwappedIter::size_hint delegates to prev_size_hint
     let bidi = ef.iter_bidi_from(3);
@@ -877,21 +932,21 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
     // SwappedIter::nth delegates to prev_nth
     let bidi = ef.iter_bidi_from(n);
     let mut rev = bidi.swap();
-    assert_eq!(rev.nth(1), Some(40));
+    assert_eq!(rev.nth(1), Some(40u64));
 
     // SwappedIter::fold delegates to prev_fold
     let bidi = ef.iter_bidi_from(n);
     let rev = bidi.swap();
     #[allow(clippy::unnecessary_fold)]
-    let sum = rev.fold(0usize, |acc, x| acc + x);
-    assert_eq!(sum, values.iter().sum::<usize>());
+    let sum = rev.fold(0u64, |acc, x| acc + x);
+    assert_eq!(sum, values.iter().sum::<u64>());
 
     // SwappedIter::for_each delegates to prev_for_each
     let bidi = ef.iter_bidi_from(n);
     let rev = bidi.swap();
     let mut collected = Vec::new();
     rev.for_each(|x| collected.push(x));
-    assert_eq!(collected, vec![50, 40, 30, 20, 10]);
+    assert_eq!(collected, vec![50u64, 40, 30, 20, 10]);
 
     // SwappedIter::count delegates to prev_count
     let bidi = ef.iter_bidi_from(n);
@@ -914,7 +969,7 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
         let bidi = ef.iter_bidi_from(2);
         let mut rev = bidi.swap();
         assert_eq!(rev.prev_advance_by(2), Ok(()));
-        assert_eq!(rev.prev(), Some(50));
+        assert_eq!(rev.prev(), Some(50u64));
 
         // SwappedIter::prev_advance_by partial failure
         let bidi = ef.iter_bidi_from(2);
@@ -927,13 +982,13 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
     // SwappedIter::prev_nth
     let bidi = ef.iter_bidi_from(1);
     let mut rev = bidi.swap();
-    assert_eq!(rev.prev_nth(2), Some(40));
+    assert_eq!(rev.prev_nth(2), Some(40u64));
 
     // SwappedIter::prev_fold
     let bidi = ef.iter_bidi_from(0);
     let rev = bidi.swap();
-    let sum = rev.prev_fold(0usize, |acc, x| acc + x);
-    assert_eq!(sum, values.iter().sum::<usize>());
+    let sum = rev.prev_fold(0u64, |acc, x| acc + x);
+    assert_eq!(sum, values.iter().sum::<u64>());
 
     // SwappedIter::prev_for_each
     let bidi = ef.iter_bidi_from(0);
@@ -961,13 +1016,13 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
     // from == n (non-empty): prev should work
     let mut bidi = (&ef).into_iter_bidi_from(n);
     assert_eq!(bidi.next(), None);
-    assert_eq!(bidi.prev(), Some(50));
-    assert_eq!(bidi.prev(), Some(40));
+    assert_eq!(bidi.prev(), Some(50u64));
+    assert_eq!(bidi.prev(), Some(40u64));
 
     // from == n via iter_bidi_from convenience (exercises the select(n-1) branch)
     let mut bidi = ef.iter_bidi_from(n);
-    assert_eq!(bidi.prev(), Some(50));
-    assert_eq!(bidi.next(), Some(50));
+    assert_eq!(bidi.prev(), Some(50u64));
+    assert_eq!(bidi.next(), Some(50u64));
     assert_eq!(bidi.next(), None);
 
     // --- Iterator::count() overrides ---
@@ -995,30 +1050,30 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
     // --- Iterator::last() overrides ---
 
     // Forward iterator last
-    assert_eq!(ef.iter().last(), Some(50));
-    assert_eq!(ef.iter_from(3).last(), Some(50));
+    assert_eq!(ef.iter().last(), Some(50u64));
+    assert_eq!(ef.iter_from(3).last(), Some(50u64));
     assert_eq!(ef.iter_from(n).last(), None);
 
     // Backward iterator last
-    assert_eq!(ef.iter_back().last(), Some(10));
-    assert_eq!(ef.iter_back_from(3).last(), Some(10));
+    assert_eq!(ef.iter_back().last(), Some(10u64));
+    assert_eq!(ef.iter_back_from(3).last(), Some(10u64));
     assert_eq!(ef.iter_back_from(0).last(), None);
 
     // Bidi iterator last (forward)
-    assert_eq!(ef.iter_bidi().last(), Some(50));
-    assert_eq!(ef.iter_bidi_from(2).last(), Some(50));
+    assert_eq!(ef.iter_bidi().last(), Some(50u64));
+    assert_eq!(ef.iter_bidi_from(2).last(), Some(50u64));
     assert_eq!(ef.iter_bidi_from(n).last(), None);
 
     // last() after partial consumption
     let mut it = ef.iter();
     it.next();
-    assert_eq!(it.last(), Some(50));
+    assert_eq!(it.last(), Some(50u64));
     let mut it = ef.iter_back();
     it.next();
-    assert_eq!(it.last(), Some(10));
+    assert_eq!(it.last(), Some(10u64));
     let mut it = ef.iter_bidi();
     it.next();
-    assert_eq!(it.last(), Some(50));
+    assert_eq!(it.last(), Some(50u64));
 
     // --- Trait-level defaults in indexed_dict ---
 
@@ -1028,13 +1083,13 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
     assert!(succ_result.is_some());
     let (idx, mut bidi) = succ_result.unwrap();
     assert_eq!(idx, 2);
-    assert_eq!(bidi.next(), Some(30));
+    assert_eq!(bidi.next(), Some(30u64));
 
     let succ_strict_result = Succ::iter_bidi_from_succ_strict(&ef, 30);
     assert!(succ_strict_result.is_some());
     let (idx, mut bidi) = succ_strict_result.unwrap();
     assert_eq!(idx, 3);
-    assert_eq!(bidi.next(), Some(40));
+    assert_eq!(bidi.next(), Some(40u64));
 
     // Succ trait: no successor case
     assert!(Succ::iter_bidi_from_succ(&ef, 51).is_none());
@@ -1044,13 +1099,13 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
     assert!(pred_result.is_some());
     let (idx, mut bidi) = pred_result.unwrap();
     assert_eq!(idx, 2);
-    assert_eq!(bidi.next(), Some(30));
+    assert_eq!(bidi.next(), Some(30u64));
 
     let pred_strict_result = Pred::iter_bidi_from_pred_strict(&ef, 30);
     assert!(pred_strict_result.is_some());
     let (idx, mut bidi) = pred_strict_result.unwrap();
     assert_eq!(idx, 1);
-    assert_eq!(bidi.next(), Some(20));
+    assert_eq!(bidi.next(), Some(20u64));
 
     // Pred trait: no predecessor case
     assert!(Pred::iter_bidi_from_pred(&ef, 5).is_none());
@@ -1062,7 +1117,7 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
 #[test]
 #[should_panic(expected = "Index out of bounds")]
 fn test_iter_bidi_from_out_of_bounds() {
-    let values: Vec<usize> = vec![10, 20, 30];
+    let values: Vec<u64> = vec![10, 20, 30];
     let mut efb = EliasFanoBuilder::new(3, 30);
     for &v in &values {
         efb.push(v);
