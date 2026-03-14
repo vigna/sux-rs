@@ -110,7 +110,7 @@ use std::ops::Index;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[PlatformWord]>, target = "small_counters")]
 #[delegate(Index<usize>, target = "small_counters")]
-#[delegate(crate::traits::rank_sel::BitCount, target = "small_counters")]
+#[delegate(crate::traits::rank_sel::BitCount<PlatformWord>, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::Rank, target = "small_counters")]
@@ -118,9 +118,9 @@ use std::ops::Index;
 #[cfg_attr(not(target_pointer_width = "64"), delegate(crate::traits::rank_sel::RankHinted<32>, target = "small_counters"))]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "small_counters")]
-#[delegate(crate::traits::rank_sel::SelectHinted, target = "small_counters")]
+#[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "small_counters")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "small_counters")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "small_counters")]
 #[delegate(
     crate::traits::rank_sel::SelectZeroUnchecked,
     target = "small_counters"
@@ -161,8 +161,8 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     const SUPERBLOCK_BIT_SIZE: usize = usize::MAX;
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
     const WORDS_PER_SUBBLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_SUBBLOCK;
-    const BLOCK_BIT_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
-    const SUBBLOCK_BIT_SIZE: usize = (Self::WORDS_PER_SUBBLOCK * usize::BITS as usize);
+    const BLOCK_BIT_SIZE: usize = (Self::WORDS_PER_BLOCK * PlatformWord::BITS as usize);
+    const SUBBLOCK_BIT_SIZE: usize = (Self::WORDS_PER_SUBBLOCK * PlatformWord::BITS as usize);
 
     pub fn into_inner(self) -> C {
         self.small_counters
@@ -189,7 +189,7 @@ macro_rules! impl_rank_small_sel {
                 + AsRef<[PlatformWord]>
                 + BitLength
                 + NumBits
-                + SelectHinted,
+                + SelectHinted<PlatformWord>,
         > SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             /// Creates a new selection structure with eight [`RankSmall`]
@@ -275,7 +275,7 @@ macro_rules! impl_rank_small_sel {
                 + AsRef<[PlatformWord]>
                 + BitLength
                 + NumBits
-                + SelectHinted,
+                + SelectHinted<PlatformWord>,
         > SelectUnchecked for SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -378,7 +378,7 @@ macro_rules! impl_rank_small_sel {
                 + AsRef<[PlatformWord]>
                 + BitLength
                 + NumBits
-                + SelectHinted,
+                + SelectHinted<PlatformWord>,
         > Select for SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
         }
@@ -420,13 +420,13 @@ impl<C: SmallCounters<2, 9> + AsRef<[PlatformWord]> + BitLength + NumBits> Selec
         hint_pos
             + unsafe {
                 self.as_ref()
-                    .get_unchecked(hint_pos / usize::BITS as usize)
+                    .get_unchecked(hint_pos / PlatformWord::BITS as usize)
                     .select_in_word(rank_in_word)
             }
     }
 }
 
-impl<C: SmallCounters<1, 9> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectHinted>
+impl<C: SmallCounters<1, 9> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectHinted<PlatformWord>>
     SelectSmall<1, 9, C>
 {
     #[inline(always)]
@@ -463,7 +463,7 @@ impl<C: SmallCounters<1, 9> + AsRef<[PlatformWord]> + BitLength + NumBits + Sele
     }
 }
 
-impl<C: SmallCounters<1, 10> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectHinted>
+impl<C: SmallCounters<1, 10> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectHinted<PlatformWord>>
     SelectSmall<1, 10, C>
 {
     #[inline(always)]
@@ -500,7 +500,7 @@ impl<C: SmallCounters<1, 10> + AsRef<[PlatformWord]> + BitLength + NumBits + Sel
     }
 }
 
-impl<C: SmallCounters<1, 11> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectHinted>
+impl<C: SmallCounters<1, 11> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectHinted<PlatformWord>>
     SelectSmall<1, 11, C>
 {
     #[inline(always)]
@@ -537,7 +537,8 @@ impl<C: SmallCounters<1, 11> + AsRef<[PlatformWord]> + BitLength + NumBits + Sel
     }
 }
 
-impl<C: SmallCounters<3, 13> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectHinted>
+#[cfg(target_pointer_width = "64")]
+impl<C: SmallCounters<3, 13> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectHinted<PlatformWord>>
     SelectSmall<3, 13, C>
 {
     unsafe fn complete_select(
@@ -583,6 +584,7 @@ impl_rank_small_sel!(2; 9);
 impl_rank_small_sel!(1; 9);
 impl_rank_small_sel!(1; 10);
 impl_rank_small_sel!(1; 11);
+#[cfg(target_pointer_width = "64")]
 impl_rank_small_sel!(3; 13);
 
 /// A trait providing the semantics of

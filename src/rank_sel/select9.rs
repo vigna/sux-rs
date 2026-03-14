@@ -9,7 +9,7 @@
 use super::Rank9;
 use super::rank9::BlockCounters;
 use crate::traits::{
-    BitCount, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select,
+    BitCount, BitLength, NumBits, PlatformWord, Rank, RankHinted, RankUnchecked, RankZero, Select,
     SelectHinted, SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked,
 };
 use crate::utils::SelectInWord;
@@ -121,16 +121,16 @@ use std::ops::{Deref, Index};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[u64]>, target = "rank9")]
 #[delegate(Index<usize>, target = "rank9")]
-#[delegate(crate::traits::rank_sel::BitCount, target = "rank9")]
+#[delegate(crate::traits::rank_sel::BitCount<PlatformWord>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "rank9")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "rank9")]
 #[delegate(crate::traits::rank_sel::Rank, target = "rank9")]
 #[delegate(crate::traits::rank_sel::RankHinted<64>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "rank9")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "rank9")]
-#[delegate(crate::traits::rank_sel::SelectHinted, target = "rank9")]
+#[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "rank9")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "rank9")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "rank9")]
 pub struct Select9<R = Rank9, I = Box<[u64]>> {
     rank9: R,
@@ -279,7 +279,7 @@ impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>
                                     subinventory[subinv_start..subinv_end].align_to_mut().1
                                 };
                                 debug_assert!(s32[subinventory_idx] == 0);
-                                debug_assert!((bit_index - start_bit_idx) < (1 << 32));
+                                debug_assert!((bit_index - start_bit_idx) <= u32::MAX as usize);
                                 s32[subinventory_idx] = sub_offset as u32;
                             }
                             2 => {

@@ -130,12 +130,12 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::RankHinted<64>, target = "bits"))]
 #[cfg_attr(not(target_pointer_width = "64"), delegate(crate::traits::rank_sel::RankHinted<32>, target = "bits"))]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::Select, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "bits")]
 pub struct RankSmall<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
@@ -209,7 +209,7 @@ macro_rules! rank_small {
     epserde_zero_copy
 )]
 pub struct Block32Counters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
-    pub(super) absolute: u32,
+    pub(super) absolute: u64,
     pub(super) relative: [u32; NUM_U32S],
 }
 
@@ -283,17 +283,13 @@ impl Block32Counters<1, 11> {
     }
 }
 
+#[cfg(target_pointer_width = "64")]
 impl Block32Counters<3, 13> {
     #[inline(always)]
     pub fn all_rel(&self) -> u128 {
-        #[cfg(target_endian = "little")]
-        unsafe {
-            read_unaligned(addr_of!(*self) as *const u128) >> 32
-        }
-        #[cfg(target_endian = "big")]
-        unsafe {
-            read_unaligned(addr_of!(*self) as *const u128) & (1 << 96) - 1
-        }
+        self.relative[0] as u128
+            | (self.relative[1] as u128) << 32
+            | (self.relative[2] as u128) << 64
     }
 
     #[inline(always)]
@@ -305,21 +301,9 @@ impl Block32Counters<3, 13> {
     pub fn set_rel(&mut self, word: usize, counter: usize) {
         let mut packed = self.all_rel();
         packed |= (counter as u128) << (13 * (word ^ 7));
-
-        #[cfg(target_endian = "little")]
-        unsafe {
-            write_unaligned(
-                addr_of_mut!(*self) as *mut u128,
-                (packed << 32) | self.absolute as u128,
-            )
-        };
-        #[cfg(target_endian = "big")]
-        unsafe {
-            write_unaligned(
-                addr_of_mut!(*self) as *mut u128,
-                packed | (self.absolute as u128) << 96,
-            );
-        };
+        self.relative[0] = packed as u32;
+        self.relative[1] = (packed >> 32) as u32;
+        self.relative[2] = (packed >> 64) as u32;
     }
 }
 
@@ -379,7 +363,7 @@ macro_rules! impl_rank_small {
                         upper_counts.push(upper_count as PlatformWord);
                     }
                     let mut count = Block32Counters::<$NUM_U32S, $COUNTER_WIDTH>::default();
-                    count.absolute = (past_ones - upper_count) as u32;
+                    count.absolute = (past_ones - upper_count) as u64;
                     past_ones += bits.as_ref()[i].count_ones() as usize;
 
                     for j in 1..Self::WORDS_PER_BLOCK {
@@ -466,7 +450,6 @@ macro_rules! impl_all_rank_small {
         impl_rank_small!(1; 9; $WORD_BITS);
         impl_rank_small!(1; 10; $WORD_BITS);
         impl_rank_small!(1; 11; $WORD_BITS);
-        impl_rank_small!(3; 13; $WORD_BITS);
     };
 }
 
@@ -474,6 +457,10 @@ macro_rules! impl_all_rank_small {
 impl_all_rank_small!(64);
 #[cfg(not(target_pointer_width = "64"))]
 impl_all_rank_small!(32);
+
+// RankSmall<3, 13> uses 128-bit broadword operations, only available on 64-bit.
+#[cfg(target_pointer_width = "64")]
+impl_rank_small!(3; 13; 64);
 
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> Rank
     for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
@@ -540,8 +527,8 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> Nu
     }
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> BitCount
-    for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2>
+    BitCount<PlatformWord> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn count_ones(&self) -> usize {
@@ -577,10 +564,15 @@ mod tests {
 
     #[test]
     fn test_last() {
-        let bits: AddNumBits<_> =
-            unsafe { BitVec::from_raw_parts(vec![!1u64; 1 << 10], (1 << 10) * 64) }.into();
+        let bits: AddNumBits<_> = unsafe {
+            BitVec::from_raw_parts(
+                vec![!1 as PlatformWord; 1 << 10],
+                (1 << 10) * PlatformWord::BITS as usize,
+            )
+        }
+        .into();
 
-        let rank_small = rank_small![1; bits.clone()];
+        let rank_small = rank_small![0; bits.clone()];
         assert_eq!(
             rank_small.rank(rank_small.len()),
             rank_small.bits.num_ones()
@@ -604,10 +596,13 @@ mod tests {
             rank_small.bits.num_ones()
         );
 
-        let rank_small = rank_small![4; bits.clone()];
-        assert_eq!(
-            rank_small.rank(rank_small.len()),
-            rank_small.bits.num_ones()
-        );
+        #[cfg(target_pointer_width = "64")]
+        {
+            let rank_small = rank_small![4; bits.clone()];
+            assert_eq!(
+                rank_small.rank(rank_small.len()),
+                rank_small.bits.num_ones()
+            );
+        }
     }
 }

@@ -136,7 +136,7 @@ use std::ops::Index;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[PlatformWord]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
-#[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
+#[delegate(crate::traits::rank_sel::BitCount<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
@@ -145,9 +145,9 @@ use std::ops::Index;
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::Select, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "bits")]
 pub struct SelectZeroAdapt<B, I = Box<[PlatformWord]>> {
     bits: B,
     inventory: I,
@@ -159,7 +159,7 @@ pub struct SelectZeroAdapt<B, I = Box<[PlatformWord]>> {
     ones_per_sub16_mask: usize,
 }
 
-impl<B: SelectZeroHinted, I> Deref for SelectZeroAdapt<B, I> {
+impl<B: SelectZeroHinted<PlatformWord>, I> Deref for SelectZeroAdapt<B, I> {
     type Target = B;
 
     fn deref(&self) -> &Self::Target {
@@ -190,7 +190,7 @@ impl<B, I> SelectZeroAdapt<B, I> {
     /// new backend is identical to the old one as a bit vector.
     pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectZeroAdapt<C, I>
     where
-        C: SelectZeroHinted,
+        C: SelectZeroHinted<PlatformWord>,
     {
         SelectZeroAdapt {
             bits: f(self.bits),
@@ -218,7 +218,7 @@ impl<B: BitLength, C> SelectZeroAdapt<B, C> {
     }
 }
 
-impl<B: AsRef<[PlatformWord]> + BitCount> SelectZeroAdapt<B, Box<[PlatformWord]>> {
+impl<B: AsRef<[PlatformWord]> + BitCount<PlatformWord>> SelectZeroAdapt<B, Box<[PlatformWord]>> {
     /// Creates a new selection structure over a bit vector using a
     /// [default target inventory
     /// span](SelectZeroAdapt::DEFAULT_TARGET_INVENTORY_SPAN).
@@ -324,6 +324,13 @@ impl<B: AsRef<[PlatformWord]> + BitCount> SelectZeroAdapt<B, Box<[PlatformWord]>
         log2_ones_per_inventory: usize,
         max_log2_words_per_subinventory: usize,
     ) -> Self {
+        assert!(
+            bits.len() <= (PlatformWord::MAX >> 2) as usize,
+            "Bit vector length ({}) exceeds the maximum representable \
+             inventory value ({})",
+            bits.len(),
+            (PlatformWord::MAX >> 2) as usize
+        );
         let num_bits = max(1, bits.len());
         let ones_per_inventory = 1 << log2_ones_per_inventory;
         let ones_per_inventory_mask = ones_per_inventory - 1;
@@ -404,6 +411,7 @@ impl<B: AsRef<[PlatformWord]> + BitCount> SelectZeroAdapt<B, Box<[PlatformWord]>
                     let spilled_u64s = num_words.saturating_sub(words_per_subinventory - 1);
                     spilled += spilled_u64s;
                 }
+                #[cfg(target_pointer_width = "64")]
                 SpanType::U64 => {
                     // We store an inventory entry for each one after the first.
                     spilled += (ones - 1).saturating_sub(words_per_subinventory - 1);
@@ -448,6 +456,7 @@ impl<B: AsRef<[PlatformWord]> + BitCount> SelectZeroAdapt<B, Box<[PlatformWord]>
                     // The first word of the subinventory is used to store the spill index.
                     inventory[start_inv_idx + 1] = spilled as PlatformWord;
                 }
+                #[cfg(target_pointer_width = "64")]
                 SpanType::U64 => {
                     log2_quantum = 0;
                     inventory[start_inv_idx].set_u64_span();
@@ -540,6 +549,7 @@ impl<B: AsRef<[PlatformWord]> + BitCount> SelectZeroAdapt<B, Box<[PlatformWord]>
                                 break 'outer;
                             }
                         }
+                        #[cfg(target_pointer_width = "64")]
                         SpanType::U64 => {
                             if subinventory_idx < words_per_subinventory {
                                 inventory[start_inv_idx + 1 + subinventory_idx] = bit_index as PlatformWord;
@@ -601,7 +611,7 @@ impl<B: AsRef<[PlatformWord]> + BitCount> SelectZeroAdapt<B, Box<[PlatformWord]>
     }
 }
 
-impl<B: AsRef<[PlatformWord]> + BitLength + SelectZeroHinted, I: AsRef<[PlatformWord]>> SelectZeroUnchecked
+impl<B: AsRef<[PlatformWord]> + BitLength + SelectZeroHinted<PlatformWord>, I: AsRef<[PlatformWord]>> SelectZeroUnchecked
     for SelectZeroAdapt<B, I>
 {
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
@@ -669,6 +679,7 @@ impl<B: AsRef<[PlatformWord]> + BitLength + SelectZeroHinted, I: AsRef<[Platform
                     .select_zero_hinted(rank, hint_pos, rank - residual);
             }
 
+            #[cfg(target_pointer_width = "64")]
             debug_assert!(inventory_rank.is_u64_span());
             let inventory_rank = inventory_rank.get();
 
@@ -686,12 +697,13 @@ impl<B: AsRef<[PlatformWord]> + BitLength + SelectZeroHinted, I: AsRef<[Platform
     }
 }
 
-impl<B: AsRef<[PlatformWord]> + NumBits + SelectZeroHinted, I: AsRef<[PlatformWord]>> SelectZero
+impl<B: AsRef<[PlatformWord]> + NumBits + SelectZeroHinted<PlatformWord>, I: AsRef<[PlatformWord]>> SelectZero
     for SelectZeroAdapt<B, I>
 {
 }
 
 #[cfg(test)]
+#[cfg(target_pointer_width = "64")]
 mod tests {
     use std::collections::BTreeSet;
 

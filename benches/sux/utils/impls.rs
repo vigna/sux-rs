@@ -2,7 +2,7 @@ use mem_dbg::{MemDbg, MemSize};
 use sux::bits::BitVec;
 use sux::rank_sel::{Rank9, RankSmall};
 use sux::rank_sel::{Select9, SelectAdapt, SelectAdaptConst, SelectSmall};
-use sux::traits::{AddNumBits, BitLength, NumBits, Select, SelectHinted, SelectUnchecked};
+use sux::traits::{AddNumBits, BitLength, NumBits, PlatformWord, Select, SelectHinted, SelectUnchecked};
 
 use super::Build;
 
@@ -23,7 +23,7 @@ macro_rules! impl_select_adapt {
                 }
             }
         }
-        impl<B: BitLength + SelectHinted + AsRef<[usize]>> BitLength for $name<B> {
+        impl<B: BitLength + SelectHinted<PlatformWord> + AsRef<[usize]>> BitLength for $name<B> {
             fn len(&self) -> usize {
                 self.inner.len()
             }
@@ -71,7 +71,7 @@ macro_rules! impl_select_adapt_const {
                 }
             }
         }
-        impl<B: BitLength + SelectHinted + AsRef<[usize]>> BitLength for $name<B> {
+        impl<B: BitLength + SelectHinted<PlatformWord> + AsRef<[usize]>> BitLength for $name<B> {
             fn len(&self) -> usize {
                 self.inner.len()
             }

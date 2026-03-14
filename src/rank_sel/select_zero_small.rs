@@ -76,7 +76,7 @@ use std::ops::Index;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[PlatformWord]>, target = "small_counters")]
 #[delegate(Index<usize>, target = "small_counters")]
-#[delegate(crate::traits::rank_sel::BitCount, target = "small_counters")]
+#[delegate(crate::traits::rank_sel::BitCount<PlatformWord>, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::Rank, target = "small_counters")]
@@ -85,9 +85,9 @@ use std::ops::Index;
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::Select, target = "small_counters")]
-#[delegate(crate::traits::rank_sel::SelectHinted, target = "small_counters")]
+#[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "small_counters")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "small_counters")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "small_counters")]
 #[delegate(crate::rank_sel::SmallCounters<NUM_U32S, COUNTER_WIDTH>, target = "small_counters")]
 pub struct SelectZeroSmall<
     const NUM_U32S: usize,
@@ -122,7 +122,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     #[cfg(not(target_pointer_width = "64"))]
     const SUPERBLOCK_BIT_SIZE: usize = usize::MAX;
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
-    const BLOCK_BIT_SIZE: usize = (Self::WORDS_PER_BLOCK * usize::BITS as usize);
+    const BLOCK_BIT_SIZE: usize = (Self::WORDS_PER_BLOCK * PlatformWord::BITS as usize);
 
     pub fn into_inner(self) -> C {
         self.small_counters
@@ -149,7 +149,7 @@ macro_rules! impl_select_zero_small {
                 + AsRef<[PlatformWord]>
                 + BitLength
                 + NumBits
-                + SelectZeroHinted,
+                + SelectZeroHinted<PlatformWord>,
         > SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             /// Creates a new selection structure with eight [`RankSmall`]
@@ -237,7 +237,7 @@ macro_rules! impl_select_zero_small {
                 + AsRef<[PlatformWord]>
                 + BitLength
                 + NumBits
-                + SelectZeroHinted,
+                + SelectZeroHinted<PlatformWord>,
         > SelectZeroUnchecked for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             /// # Safety
@@ -249,10 +249,10 @@ macro_rules! impl_select_zero_small {
                 let counts = self.small_counters.counts();
 
                 let upper_block_idx =
-                    upper_counts.linear_partition_point(|i, &x| (i << 32) - x as usize <= rank) - 1;
+                    upper_counts.linear_partition_point(|i, &x| i * Self::SUPERBLOCK_BIT_SIZE - x as usize <= rank) - 1;
                 let upper_rank_ones =
                     *unsafe { upper_counts.get_unchecked(upper_block_idx) } as usize;
-                let upper_rank = (upper_block_idx << 32) - upper_rank_ones;
+                let upper_rank = upper_block_idx * Self::SUPERBLOCK_BIT_SIZE - upper_rank_ones;
                 let local_rank = rank - upper_rank;
 
                 let inventory = self.inventory.as_ref();
@@ -347,7 +347,7 @@ macro_rules! impl_select_zero_small {
                 + AsRef<[PlatformWord]>
                 + BitLength
                 + NumBits
-                + SelectZeroHinted,
+                + SelectZeroHinted<PlatformWord>,
         > SelectZero for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
         }
@@ -374,7 +374,7 @@ impl<C: SmallCounters<2, 9> + AsRef<[PlatformWord]> + BitLength + NumBits> Selec
         // We cannot put this const together with the rest because we need
         // to use it for defining POS_STEP_9.
         const SUBBLOCK_BIT_SIZE: u64 =
-            (usize::BITS as u64) * RankSmall::<2, 9>::WORDS_PER_SUBBLOCK as u64;
+            (PlatformWord::BITS as u64) * RankSmall::<2, 9>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_9: u64 = (SUBBLOCK_BIT_SIZE << (6 * 9))
             | ((2 * SUBBLOCK_BIT_SIZE) << (5 * 9))
             | ((3 * SUBBLOCK_BIT_SIZE) << (4 * 9))
@@ -403,13 +403,13 @@ impl<C: SmallCounters<2, 9> + AsRef<[PlatformWord]> + BitLength + NumBits> Selec
             + (!unsafe {
                 self.small_counters
                     .as_ref()
-                    .get_unchecked(hint_pos / usize::BITS as usize)
+                    .get_unchecked(hint_pos / PlatformWord::BITS as usize)
             })
             .select_in_word(rank_in_word)
     }
 }
 
-impl<C: SmallCounters<1, 9> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectZeroHinted>
+impl<C: SmallCounters<1, 9> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectZeroHinted<PlatformWord>>
     SelectZeroSmall<1, 9, C>
 {
     #[inline(always)]
@@ -423,7 +423,7 @@ impl<C: SmallCounters<1, 9> + AsRef<[PlatformWord]> + BitLength + NumBits + Sele
         const ONES_STEP_9: u64 = (1_u64 << 0) | (1_u64 << 9) | (1_u64 << 18);
         const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
         const SUBBLOCK_BIT_SIZE: u64 =
-            (usize::BITS as u64) * RankSmall::<1, 9>::WORDS_PER_SUBBLOCK as u64;
+            (PlatformWord::BITS as u64) * RankSmall::<1, 9>::WORDS_PER_SUBBLOCK as u64;
         // We cannot put this const together with the rest because we need
         // to use it for defining POS_STEP_9.
         const POS_STEP_9: u64 =
@@ -450,7 +450,7 @@ impl<C: SmallCounters<1, 9> + AsRef<[PlatformWord]> + BitLength + NumBits + Sele
     }
 }
 
-impl<C: SmallCounters<1, 10> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectZeroHinted>
+impl<C: SmallCounters<1, 10> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectZeroHinted<PlatformWord>>
     SelectZeroSmall<1, 10, C>
 {
     #[inline(always)]
@@ -466,7 +466,7 @@ impl<C: SmallCounters<1, 10> + AsRef<[PlatformWord]> + BitLength + NumBits + Sel
         // We cannot put this const together with the rest because we need
         // to use it for defining POS_STEP_10.
         const SUBBLOCK_BIT_SIZE: u64 =
-            (usize::BITS as u64) * RankSmall::<1, 10>::WORDS_PER_SUBBLOCK as u64;
+            (PlatformWord::BITS as u64) * RankSmall::<1, 10>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_10: u64 =
             (SUBBLOCK_BIT_SIZE << 20) | ((2 * SUBBLOCK_BIT_SIZE) << 10) | (3 * SUBBLOCK_BIT_SIZE);
 
@@ -491,7 +491,7 @@ impl<C: SmallCounters<1, 10> + AsRef<[PlatformWord]> + BitLength + NumBits + Sel
     }
 }
 
-impl<C: SmallCounters<1, 11> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectZeroHinted>
+impl<C: SmallCounters<1, 11> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectZeroHinted<PlatformWord>>
     SelectZeroSmall<1, 11, C>
 {
     #[inline(always)]
@@ -507,7 +507,7 @@ impl<C: SmallCounters<1, 11> + AsRef<[PlatformWord]> + BitLength + NumBits + Sel
         // We cannot put this const together with the rest because we need
         // to use it for defining POS_STEP_11.
         const SUBBLOCK_BIT_SIZE: u64 =
-            (usize::BITS as u64) * RankSmall::<1, 11>::WORDS_PER_SUBBLOCK as u64;
+            (PlatformWord::BITS as u64) * RankSmall::<1, 11>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_11: u64 =
             (SUBBLOCK_BIT_SIZE << 22) | ((2 * SUBBLOCK_BIT_SIZE) << 11) | (3 * SUBBLOCK_BIT_SIZE);
 
@@ -532,7 +532,8 @@ impl<C: SmallCounters<1, 11> + AsRef<[PlatformWord]> + BitLength + NumBits + Sel
     }
 }
 
-impl<C: SmallCounters<3, 13> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectZeroHinted>
+#[cfg(target_pointer_width = "64")]
+impl<C: SmallCounters<3, 13> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectZeroHinted<PlatformWord>>
     SelectZeroSmall<3, 13, C>
 {
     unsafe fn complete_select(
@@ -553,7 +554,7 @@ impl<C: SmallCounters<3, 13> + AsRef<[PlatformWord]> + BitLength + NumBits + Sel
         // We cannot put this const together with the rest because we need
         // to use it for defining POS_STEP_13.
         const SUBBLOCK_BIT_SIZE: u64 =
-            (usize::BITS as u64) * RankSmall::<3, 13>::WORDS_PER_SUBBLOCK as u64;
+            (PlatformWord::BITS as u64) * RankSmall::<3, 13>::WORDS_PER_SUBBLOCK as u64;
         const POS_STEP_13: u128 = ((SUBBLOCK_BIT_SIZE as u128) << 78)
             | ((2 * (SUBBLOCK_BIT_SIZE as u128)) << 65)
             | ((3 * (SUBBLOCK_BIT_SIZE as u128)) << 52)
@@ -587,6 +588,7 @@ impl_select_zero_small!(2; 9);
 impl_select_zero_small!(1; 9);
 impl_select_zero_small!(1; 10);
 impl_select_zero_small!(1; 11);
+#[cfg(target_pointer_width = "64")]
 impl_select_zero_small!(3; 13);
 
 /// A trait providing the semantics of
