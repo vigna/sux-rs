@@ -66,7 +66,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// [`rank_small`](crate::rank_small) macro that selects the correct
 /// combination.
 ///
-/// Presently we support the following combinations:
+/// Presently we support the following combinations for 64-bit words:
 ///
 /// - `rank_small![0; -]` (builds `RankSmall<2, 9>`): 18.75% additional space,
 ///   speed slightly slower than [`Rank9`](super::Rank9).
@@ -74,6 +74,11 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// - `rank_small![2; -]` (builds `RankSmall<1, 10>`): 6.25% additional space.
 /// - `rank_small![3; -]` (builds `RankSmall<1, 11>`): 3.125% additional space.
 /// - `rank_small![4; -]` (builds `RankSmall<3, 13>`): 1.56% additional space.
+///
+/// And the following for 32-bit words (use the `u32` qualifier):
+///
+/// - `rank_small![0, u32; -]` (builds `RankSmall<1, 7>`): 12.5% additional space.
+/// - `rank_small![1, u32; -]` (builds `RankSmall<1, 8>`): 6.25% additional space.
 ///
 /// The first structure is a space-savvy version of [`Rank9`](super::Rank9),
 /// while the other ones provide increasing less space usage at the expense of
@@ -161,6 +166,8 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B> Deref
 /// A convenient macro to build a [`RankSmall`] structure with the correct
 /// parameters.
 ///
+/// 64-bit word variants:
+///
 /// - `rank_small![0; -]` (builds `RankSmall<2, 9>`): 18.75% additional space,
 ///   speed slightly slower than [`Rank9`](super::Rank9).
 /// - `rank_small![1; -]` (builds `RankSmall<1, 9>`): 12.5% additional space.
@@ -168,6 +175,13 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B> Deref
 /// - `rank_small![3; -]` (builds `RankSmall<1, 11>`): 3.125% additional
 ///   space.
 /// - `rank_small![4; -]` (builds `RankSmall<3, 13>`): 1.56% additional space.
+///
+/// 32-bit word variants:
+///
+/// - `rank_small![0, u32; -]` (builds `RankSmall<1, 7>`): 12.5% additional
+///   space.
+/// - `rank_small![1, u32; -]` (builds `RankSmall<1, 8>`): 6.25% additional
+///   space.
 ///
 /// # Examples
 ///
@@ -195,6 +209,12 @@ macro_rules! rank_small {
     };
     (4 ; $bits: expr) => {
         $crate::prelude::RankSmall::<3, 13, _, _, _>::new($bits)
+    };
+    (0, u32 ; $bits: expr) => {
+        $crate::prelude::RankSmall::<1, 7, _, _, _>::new($bits)
+    };
+    (1, u32 ; $bits: expr) => {
+        $crate::prelude::RankSmall::<1, 8, _, _, _>::new($bits)
     };
 }
 
@@ -659,17 +679,12 @@ mod tests {
                 (1 << 10) * u32::BITS as usize,
             )
         };
+        let expected32: usize = bits32.as_ref().iter().map(|w| w.count_ones() as usize).sum();
 
-        let rank_small = RankSmall::<1, 7, _, _, _>::new(bits32.clone());
-        assert_eq!(
-            rank_small.rank(rank_small.len()),
-            bits32.as_ref().iter().map(|w| w.count_ones() as usize).sum::<usize>()
-        );
+        let rank_small = rank_small![0, u32; bits32.clone()];
+        assert_eq!(rank_small.rank(rank_small.len()), expected32);
 
-        let rank_small = RankSmall::<1, 8, _, _, _>::new(bits32.clone());
-        assert_eq!(
-            rank_small.rank(rank_small.len()),
-            bits32.as_ref().iter().map(|w| w.count_ones() as usize).sum::<usize>()
-        );
+        let rank_small = rank_small![1, u32; bits32.clone()];
+        assert_eq!(rank_small.rank(rank_small.len()), expected32);
     }
 }
