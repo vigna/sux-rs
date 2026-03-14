@@ -103,8 +103,8 @@ fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Resu
 where
     str: ToSig<S>,
     usize: ToSig<S>,
-    VFunc<usize, usize, BitFieldVec, S, E>: Deserialize,
-    VFunc<str, usize, BitFieldVec, S, E>: Deserialize,
+    VFunc<usize, usize, BitFieldVec<usize>, S, E>: Deserialize,
+    VFunc<str, usize, BitFieldVec<usize>, S, E>: Deserialize,
 {
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
@@ -119,7 +119,7 @@ where
                 .collect()?
         };
 
-        let func = unsafe { VFunc::<str, usize, BitFieldVec, S, E>::load_full(&args.func) }?;
+        let func = unsafe { VFunc::<str, usize, BitFieldVec<usize>, S, E>::load_full(&args.func) }?;
         bench(args.n, args.repeats, || {
             if args.unaligned {
                 for key in &keys {

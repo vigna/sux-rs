@@ -3,29 +3,30 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 use sux::prelude::*;
+use sux::traits::PlatformWord;
 use sux::traits::indexed_dict::IndexedSeq;
 
 const N: usize = 10_000_000;
 
 /// (label, upper_bound) pairs chosen so that l = floor(log2(u/n)) gives
 /// the desired number of lower bits.
-const CONFIGS: &[(usize, usize)] = &[
-    (2, 4 * N),      // l = 2
-    (4, 16 * N),     // l = 4
-    (8, 256 * N),    // l = 8
-    (16, 65536 * N), // l = 16
+const CONFIGS: &[(usize, u64)] = &[
+    (2, 4 * N as u64),      // l = 2
+    (4, 16 * N as u64),     // l = 4
+    (8, 256 * N as u64),    // l = 8
+    (16, 65536 * N as u64), // l = 16
 ];
 
 type EfBench = EliasFano<
     SelectZeroAdaptConst<
-        SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>,
-        Box<[usize]>,
+        SelectAdaptConst<BitVec<Box<[PlatformWord]>>, Box<[PlatformWord]>, 12, 3>,
+        Box<[PlatformWord]>,
         12,
         3,
     >,
 >;
 
-fn build_ef(u: usize) -> EfBench {
+fn build_ef(u: u64) -> EfBench {
     let mut rng = SmallRng::seed_from_u64(0);
     let mut values = Vec::with_capacity(N);
     for _ in 0..N {

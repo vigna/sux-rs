@@ -272,7 +272,6 @@ impl<W: Word, const N: usize> BitWidth<W> for [W; N] {
     }
 }
 
-
 impl<W: Word> BitFieldSlice<W> for [W] {
     fn as_slice(&self) -> &[W] {
         self
@@ -291,7 +290,6 @@ impl<W: Word, const N: usize> BitFieldSlice<W> for [W; N] {
     }
 }
 
-
 impl<W: Word> BitFieldSliceMut<W> for [W] {
     fn reset(&mut self) {
         self.fill(W::ZERO);
@@ -302,7 +300,7 @@ impl<W: Word> BitFieldSliceMut<W> for [W] {
         self.as_mut()
             .par_iter_mut()
             .with_min_len(crate::RAYON_MIN_LEN)
-            .for_each(|w| { *w = W::ZERO });
+            .for_each(|w| *w = W::ZERO);
     }
 
     fn as_mut_slice(&mut self) -> &mut [W] {
@@ -318,10 +316,9 @@ impl<W: Word> BitFieldSliceMut<W> for Vec<W> {
 
     #[cfg(feature = "rayon")]
     fn par_reset(&mut self) {
-        self
-            .par_iter_mut()
+        self.par_iter_mut()
             .with_min_len(crate::RAYON_MIN_LEN)
-            .for_each(|w| { *w = W::ZERO });
+            .for_each(|w| *w = W::ZERO);
     }
 
     fn as_mut_slice(&mut self) -> &mut [W] {
@@ -337,17 +334,15 @@ impl<W: Word, const N: usize> BitFieldSliceMut<W> for [W; N] {
 
     #[cfg(feature = "rayon")]
     fn par_reset(&mut self) {
-        self
-            .par_iter_mut()
+        self.par_iter_mut()
             .with_min_len(crate::RAYON_MIN_LEN)
-            .for_each(|w| { *w = W::ZERO });
+            .for_each(|w| *w = W::ZERO);
     }
 
     fn as_mut_slice(&mut self) -> &mut [W] {
         self
     }
 }
-
 
 // Generic implementations for slices/vectors of atomic types.
 //
@@ -467,4 +462,3 @@ where
             .for_each(|w| w.store(A::Value::ZERO, order));
     }
 }
-

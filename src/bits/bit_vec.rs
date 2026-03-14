@@ -78,7 +78,8 @@
 
 use crate::traits::{AtomicBitIter, AtomicBitVecOps, BitIter, BitVecOps, PlatformWord, Word};
 use crate::utils::SelectInWord;
-use atomic_primitive::{Atomic, AtomicPrimitive};
+use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic};
+use num_primitive::PrimitiveInteger;
 #[allow(unused_imports)] // this is in the std prelude but not in no_std!
 use core::borrow::BorrowMut;
 use core::fmt;
@@ -93,8 +94,6 @@ use crate::{
     },
 };
 
-/// Bits per platform word.
-const WORD_BITS: usize = PlatformWord::BITS as usize;
 
 /// A bit vector.
 ///
@@ -312,10 +311,10 @@ impl<W: Word> BitVec<Vec<W>> {
         let word_index = self.len / bits_per_word;
         let bit_index = self.len % bits_per_word;
         // Clear bit
-        self.bits[word_index] = self.bits[word_index] & !(W::ONE << bit_index);
+        self.bits[word_index] &= !(W::ONE << bit_index);
         // Set bit
         if b {
-            self.bits[word_index] = self.bits[word_index] | (W::ONE << bit_index);
+            self.bits[word_index] |= W::ONE << bit_index;
         }
         self.len += 1;
     }
@@ -413,41 +412,119 @@ impl<W: Word, B: AsRef<[W]>> BitCount<W> for BitVec<B> {
     }
 }
 
-impl<B: AsRef<[PlatformWord]>, C: AsRef<[PlatformWord]>> PartialEq<BitVec<C>> for BitVec<B> {
+/// Associates a backend type with its word type.
+///
+/// This trait enables generic implementations of standard traits like
+/// [`PartialEq`], [`Eq`], [`Index`], [`IntoIterator`], and
+/// [`Display`](fmt::Display) for [`BitVec`] across all word types, working
+/// around the limitation that Rust does not allow unconstrained type
+/// parameters in impl blocks.
+pub trait BackendWord {
+    /// The word type stored by this backend.
+    type W: Word;
+}
+
+macro_rules! impl_backend_word {
+    ($W:ty) => {
+        impl BackendWord for Vec<$W> {
+            type W = $W;
+        }
+        impl BackendWord for Box<[$W]> {
+            type W = $W;
+        }
+        impl<'a> BackendWord for &'a [$W] {
+            type W = $W;
+        }
+        impl<'a> BackendWord for &'a mut [$W] {
+            type W = $W;
+        }
+    };
+}
+
+impl_backend_word!(u8);
+impl_backend_word!(u16);
+impl_backend_word!(u32);
+impl_backend_word!(u64);
+impl_backend_word!(u128);
+impl_backend_word!(usize);
+
+/// Associates an atomic backend type with its word type.
+///
+/// This is the atomic counterpart of [`BackendWord`], used for
+/// [`AtomicBitVec`]'s [`Index`] and [`IntoIterator`] implementations.
+/// A separate trait is needed because the compiler cannot prove that
+/// `Atomic<W> != W` for coherence purposes.
+pub trait AtomicBackendWord {
+    /// The word type stored atomically by this backend.
+    type W: Word + AtomicPrimitive;
+}
+
+macro_rules! impl_atomic_backend_word {
+    ($W:ty, $A:ty) => {
+        impl AtomicBackendWord for Box<[$A]> {
+            type W = $W;
+        }
+        impl<'a> AtomicBackendWord for &'a [$A] {
+            type W = $W;
+        }
+        impl<'a> AtomicBackendWord for &'a mut [$A] {
+            type W = $W;
+        }
+    };
+}
+
+use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, AtomicUsize};
+impl_atomic_backend_word!(u8, AtomicU8);
+impl_atomic_backend_word!(u16, AtomicU16);
+impl_atomic_backend_word!(u32, AtomicU32);
+impl_atomic_backend_word!(u64, AtomicU64);
+impl_atomic_backend_word!(usize, AtomicUsize);
+
+impl<B, C> PartialEq<BitVec<C>> for BitVec<B>
+where
+    B: BackendWord + AsRef<[<B as BackendWord>::W]>,
+    C: BackendWord<W = <B as BackendWord>::W> + AsRef<[<B as BackendWord>::W]>,
+{
     fn eq(&self, other: &BitVec<C>) -> bool {
         let len = self.len();
         if len != other.len() {
             return false;
         }
 
-        let full_words = len / WORD_BITS;
+        let word_bits = <B as BackendWord>::W::BITS as usize;
+        let full_words = len / word_bits;
         if self.as_ref()[..full_words] != other.as_ref()[..full_words] {
             return false;
         }
 
-        let residual = len % WORD_BITS;
-
+        let residual = len % word_bits;
         residual == 0
-            || (self.as_ref()[full_words] ^ other.as_ref()[full_words]) << (WORD_BITS - residual)
-                == 0
+            || (self.as_ref()[full_words] ^ other.as_ref()[full_words]) << (word_bits - residual)
+                == <B as BackendWord>::W::ZERO
     }
 }
 
-impl<B: AsRef<[PlatformWord]>> Eq for BitVec<B> {}
+impl<B> Eq for BitVec<B> where B: BackendWord + AsRef<[<B as BackendWord>::W]> {}
 
-impl<B: AsRef<[PlatformWord]>> Index<usize> for BitVec<B> {
+impl<B> Index<usize> for BitVec<B>
+where
+    B: BackendWord + AsRef<[<B as BackendWord>::W]>,
+{
     type Output = bool;
 
     fn index(&self, index: usize) -> &Self::Output {
-        match BitVecOps::<PlatformWord>::get(self, index) {
+        match BitVecOps::<<B as BackendWord>::W>::get(self, index) {
             false => &false,
             true => &true,
         }
     }
 }
 
-impl<'a, B: AsRef<[PlatformWord]>> IntoIterator for &'a BitVec<B> {
-    type IntoIter = BitIter<'a, PlatformWord, B>;
+impl<'a, B> IntoIterator for &'a BitVec<B>
+where
+    B: BackendWord + AsRef<[<B as BackendWord>::W]>,
+{
+    type IntoIter = BitIter<'a, <B as BackendWord>::W, B>;
     type Item = bool;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -455,7 +532,10 @@ impl<'a, B: AsRef<[PlatformWord]>> IntoIterator for &'a BitVec<B> {
     }
 }
 
-impl<B: AsRef<[PlatformWord]>> fmt::Display for BitVec<B> {
+impl<B> fmt::Display for BitVec<B>
+where
+    B: BackendWord + AsRef<[<B as BackendWord>::W]>,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[")?;
         for b in self {
@@ -498,7 +578,10 @@ impl<B> AtomicBitVec<B> {
     }
 }
 
-impl AtomicBitVec<Box<[Atomic<PlatformWord>]>> {
+impl<B> AtomicBitVec<B>
+where
+    B: AtomicBackendWord + From<Vec<Atomic<<B as AtomicBackendWord>::W>>>,
+{
     /// Creates a new atomic bit vector of length `len` initialized to `false`.
     pub fn new(len: usize) -> Self {
         Self::with_value(len, false)
@@ -506,18 +589,25 @@ impl AtomicBitVec<Box<[Atomic<PlatformWord>]>> {
 
     /// Creates a new atomic bit vector of length `len` initialized to `value`.
     pub fn with_value(len: usize, value: bool) -> Self {
-        let n_of_words = len.div_ceil(WORD_BITS);
-        let extra_bits = (n_of_words * WORD_BITS) - len;
-        let word_value: PlatformWord = if value { !0 } else { 0 };
-        let mut bits = (0..n_of_words)
-            .map(|_| <Atomic<PlatformWord>>::new(word_value))
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+        let bits_per_word = <B as AtomicBackendWord>::W::BITS as usize;
+        let n_of_words = len.div_ceil(bits_per_word);
+        let extra_bits = (n_of_words * bits_per_word) - len;
+        let word_value: <B as AtomicBackendWord>::W = if value {
+            !<B as AtomicBackendWord>::W::ZERO
+        } else {
+            <B as AtomicBackendWord>::W::ZERO
+        };
+        let mut bits: Vec<Atomic<<B as AtomicBackendWord>::W>> = (0..n_of_words)
+            .map(|_| <Atomic<<B as AtomicBackendWord>::W>>::new(word_value))
+            .collect();
         if extra_bits > 0 {
             let last_word_value = word_value >> extra_bits;
-            bits[n_of_words - 1] = <Atomic<PlatformWord>>::new(last_word_value);
+            bits[n_of_words - 1] = <Atomic<<B as AtomicBackendWord>::W>>::new(last_word_value);
         }
-        Self { bits, len }
+        Self {
+            bits: B::from(bits),
+            len,
+        }
     }
 }
 
@@ -528,11 +618,15 @@ impl<B> BitLength for AtomicBitVec<B> {
     }
 }
 
-impl<B: AsRef<[Atomic<PlatformWord>]>> BitCount<PlatformWord> for AtomicBitVec<B> {
+impl<B> BitCount<<B as AtomicBackendWord>::W> for AtomicBitVec<B>
+where
+    B: AtomicBackendWord + AsRef<[Atomic<<B as AtomicBackendWord>::W>]>,
+{
     fn count_ones(&self) -> usize {
-        let full_words = self.len() / WORD_BITS;
-        let residual = self.len() % WORD_BITS;
-        let bits: &[Atomic<PlatformWord>] = self.as_ref();
+        let bits_per_word = <B as AtomicBackendWord>::W::BITS as usize;
+        let full_words = self.len() / bits_per_word;
+        let residual = self.len() % bits_per_word;
+        let bits: &[Atomic<<B as AtomicBackendWord>::W>] = self.as_ref();
         let mut num_ones;
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
@@ -542,27 +636,37 @@ impl<B: AsRef<[Atomic<PlatformWord>]>> BitCount<PlatformWord> for AtomicBitVec<B
             .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
             .sum();
         if residual != 0 {
-            num_ones += (bits[full_words].load(Ordering::Relaxed) << (WORD_BITS - residual))
+            num_ones += (bits[full_words].load(Ordering::Relaxed) << (bits_per_word - residual))
                 .count_ones() as usize
         }
         num_ones
     }
 }
 
-impl<B: AsRef<[Atomic<PlatformWord>]>> Index<usize> for AtomicBitVec<B> {
+impl<B> Index<usize> for AtomicBitVec<B>
+where
+    B: AtomicBackendWord + AsRef<[Atomic<<B as AtomicBackendWord>::W>]>,
+{
     type Output = bool;
 
     /// Shorthand for `get` using [`Ordering::Relaxed`].
     fn index(&self, index: usize) -> &Self::Output {
-        match self.get(index, Ordering::Relaxed) {
+        match AtomicBitVecOps::<Atomic<<B as AtomicBackendWord>::W>>::get(
+            self,
+            index,
+            Ordering::Relaxed,
+        ) {
             false => &false,
             true => &true,
         }
     }
 }
 
-impl<'a, B: AsRef<[Atomic<PlatformWord>]>> IntoIterator for &'a AtomicBitVec<B> {
-    type IntoIter = AtomicBitIter<'a, B>;
+impl<'a, B> IntoIterator for &'a AtomicBitVec<B>
+where
+    B: AtomicBackendWord + AsRef<[Atomic<<B as AtomicBackendWord>::W>]>,
+{
+    type IntoIter = AtomicBitIter<'a, Atomic<<B as AtomicBackendWord>::W>, B>;
     type Item = bool;
 
     fn into_iter(self) -> Self::IntoIter {

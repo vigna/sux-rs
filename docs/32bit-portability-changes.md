@@ -63,9 +63,9 @@ requires `B: BitCount<W>` and disambiguates with
 
 ## 3. New Types and Traits
 
-| Item | Location | Purpose |
-|------|----------|---------|
-| `PlatformWord` | `traits::bit_field_slice` | Type alias: `u64` on 64-bit, `u32` on 32-bit |
+| Item             | Location                  | Purpose                                                         |
+| ---------------- | ------------------------- | --------------------------------------------------------------- |
+| `PlatformWord`   | `traits::bit_field_slice` | Type alias: `u64` on 64-bit, `u32` on 32-bit                    |
 | `AtomicBitWidth` | `traits::bit_field_slice` | Trait for atomic slice bit width (avoids blanket-impl conflict) |
 
 ## 4. Core Type Changes
@@ -198,40 +198,40 @@ The most impactful single-file change (477 lines modified in `elias_fano.rs`).
 
 ### Cascading changes from EliasFano
 
-| File | Change |
-|------|--------|
-| `fair_chunks.rs` | `target_weight`, `max_weight`: `usize` → `u64`. Trait bounds: `SuccUnchecked<Input = u64>`. |
-| `partial_array.rs` | Dense index: `Box<[usize]>` → `Box<[u64]>`. `EliasFanoBuilder::new(n, len as u64)`. |
-| `mapped_rear_coded_list.rs` | `BitFieldVec` → `BitFieldVec<usize>` (explicit). |
-| `shard_edge.rs` | Overflow-safe assertions: `MAX + 1` → `result - 1 <= MAX`. |
-| `signed_vfunc.rs` | `BitFieldVec` → `BitFieldVec<usize>` (explicit). |
+| File                        | Change                                                                                      |
+| --------------------------- | ------------------------------------------------------------------------------------------- |
+| `fair_chunks.rs`            | `target_weight`, `max_weight`: `usize` → `u64`. Trait bounds: `SuccUnchecked<Input = u64>`. |
+| `partial_array.rs`          | Dense index: `Box<[usize]>` → `Box<[u64]>`. `EliasFanoBuilder::new(n, len as u64)`.         |
+| `mapped_rear_coded_list.rs` | `BitFieldVec` → `BitFieldVec<usize>` (explicit).                                            |
+| `shard_edge.rs`             | Overflow-safe assertions: `MAX + 1` → `result - 1 <= MAX`.                                  |
+| `signed_vfunc.rs`           | `BitFieldVec` → `BitFieldVec<usize>` (explicit).                                            |
 
 ## 8. Dependency and Build Changes
 
-| Change | File | Purpose |
-|--------|------|---------|
-| `thread-priority` made optional, gated by `rayon` | `Cargo.toml` | Reduce mandatory deps |
-| `epserde` default-features disabled, explicit `["std", "derive"]` | `Cargo.toml` | Reduce feature surface |
-| `criterion` default-features disabled | `Cargo.toml` | Avoid deps that don't compile everywhere |
-| WASM runner configured | `.cargo/config.toml` | `[target.wasm32-wasip1] runner = "wasmtime"` |
+| Change                                                            | File                 | Purpose                                      |
+| ----------------------------------------------------------------- | -------------------- | -------------------------------------------- |
+| `thread-priority` made optional, gated by `rayon`                 | `Cargo.toml`         | Reduce mandatory deps                        |
+| `epserde` default-features disabled, explicit `["std", "derive"]` | `Cargo.toml`         | Reduce feature surface                       |
+| `criterion` default-features disabled                             | `Cargo.toml`         | Avoid deps that don't compile everywhere     |
+| WASM runner configured                                            | `.cargo/config.toml` | `[target.wasm32-wasip1] runner = "wasmtime"` |
 
 ## 9. Test Changes
 
-| File | Added | Removed | Summary |
-|------|-------|---------|---------|
-| `test_bit_vec.rs` | 5 | 0 | Word-type parametric tests (u8/u16/u32/u64/u128); `PlatformWord` replaces `usize` |
-| `test_bit_field_vec.rs` | 0 | 0 | `bit_width()` → `atomic_bit_width()`; iterator yields `PlatformWord` |
-| `test_bit_field_slice.rs` | 0 | 0 | `BitWidth::bit_width` → `AtomicBitWidth::atomic_bit_width` for atomics |
-| `test_elias_fano.rs` | 0 | 0 | All values `usize` → `u64` |
-| `test_fair_chunks.rs` | 0 | 0 | All weights `usize` → `u64` |
-| `test_indexed_dict.rs` | 0 | 0 | EF values `usize` → `u64` |
-| `test_mapped_rear_coded_list.rs` | 0 | 0 | Explicit `BitFieldVec::<usize>` |
-| `test_rank_sel.rs` | 0 | 0 | `bit_vec![u64: ...]` syntax |
-| `test_rank_small.rs` | 2 | 0 | u32 variant tests |
-| `test_select9.rs` | 0 | 0 | Explicit `BitVec<Vec<u64>>` |
-| `test_select_small.rs` | 2 | 0 | u32 variant tests |
-| `test_signed_vfunc.rs` | 0 | 0 | Explicit `BitFieldVec<usize>` |
-| **Total** | **9** | **0** | |
+| File                             | Added | Removed | Summary                                                                           |
+| -------------------------------- | ----- | ------- | --------------------------------------------------------------------------------- |
+| `test_bit_vec.rs`                | 5     | 0       | Word-type parametric tests (u8/u16/u32/u64/u128); `PlatformWord` replaces `usize` |
+| `test_bit_field_vec.rs`          | 0     | 0       | `bit_width()` → `atomic_bit_width()`; iterator yields `PlatformWord`              |
+| `test_bit_field_slice.rs`        | 0     | 0       | `BitWidth::bit_width` → `AtomicBitWidth::atomic_bit_width` for atomics            |
+| `test_elias_fano.rs`             | 0     | 0       | All values `usize` → `u64`                                                        |
+| `test_fair_chunks.rs`            | 0     | 0       | All weights `usize` → `u64`                                                       |
+| `test_indexed_dict.rs`           | 0     | 0       | EF values `usize` → `u64`                                                         |
+| `test_mapped_rear_coded_list.rs` | 0     | 0       | Explicit `BitFieldVec::<usize>`                                                   |
+| `test_rank_sel.rs`               | 0     | 0       | `bit_vec![u64: ...]` syntax                                                       |
+| `test_rank_small.rs`             | 2     | 0       | u32 variant tests                                                                 |
+| `test_select9.rs`                | 0     | 0       | Explicit `BitVec<Vec<u64>>`                                                       |
+| `test_select_small.rs`           | 2     | 0       | u32 variant tests                                                                 |
+| `test_signed_vfunc.rs`           | 0     | 0       | Explicit `BitFieldVec<usize>`                                                     |
+| **Total**                        | **9** | **0**   |                                                                                   |
 
 ## 10. Performance Assessment
 
@@ -253,6 +253,7 @@ improvement (edge case when `pos % bits == 0`).
 ### On 32-bit platforms
 
 New functionality — no baseline to compare. The key design decisions:
+
 - Rank9/Select9 retain `u64` backing (wider-than-native memory accesses).
 - SelectAdapt family uses 32-bit inventory entries (halves inventory memory).
 - EliasFano values are `u64` (architecture-independent).
@@ -263,6 +264,7 @@ New functionality — no baseline to compare. The key design decisions:
 
 Entirely new hot-path code. The broadword ULEQ operations in `complete_select`
 for `<1,7>` and `<1,8>` use the K−1 field convention (3 fields for 4 subblocks):
+
 - `ONES_STEP_7 = (1<<0)|(1<<7)|(1<<14)` — the 4th subblock uses the implicit
   zero-extension field.
 - `ONES_STEP_8 = (1<<0)|(1<<8)|(1<<16)` — same convention.
@@ -284,3 +286,5 @@ for `<1,7>` and `<1,8>` use the K−1 field convention (3 fields for 4 subblocks
 4. **`AtomicBitVecOps` not generalized**: Remains hardcoded to `PlatformWord`.
    This is intentional (atomic operations always use the platform word), but
    limits testing atomic bit vectors with non-native word types.
+
+WARNING: hash truncation in VFunc!

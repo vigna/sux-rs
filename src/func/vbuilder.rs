@@ -11,14 +11,14 @@ use crate::bits::*;
 use crate::dict::{BitSignedVFunc, SignedVFunc, VFilter};
 use crate::func::{shard_edge::ShardEdge, *};
 use crate::traits::BitVecOpsMut;
-use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, PlatformWord, Word};
+use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
 use crate::utils::*;
 use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
 use lender::FallibleLending;
 use log::info;
-use num_primitive::PrimitiveNumber;
+use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
 use rand::rngs::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
 use rayon::iter::ParallelIterator;
@@ -687,15 +687,17 @@ where
     /// key to its position in the input sequence and verifies its output against a
     /// [`BitFieldVec`] containing hashes of the keys.
     ///
-    /// The hashes contain `hash_width` bits, providing a false-positive error
-    /// rate (i.e., keys that are not part of the function definition, but for
-    /// which this property is not detected) of 2<sup>-`hash_width`</sup>.
+    /// The hashes, of `hash_width` bits, are stored in a [`BitFieldVec`] on
+    /// words of type `H`, providing a false-positive error rate (i.e., keys
+    /// that are not part of the function definition, but for which this
+    /// property is not detected) of 2<sup>-`hash_width`</sup>.
     ///
     /// This type of signed function offers more resolution than [`SignedVFunc`]
     /// in choosing the hash size, but testing signatures will be slower.
     pub fn try_build_bit_sig_index<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
+        H: Word,
     >(
         self,
         keys: impl FallibleRewindableLender<
@@ -704,10 +706,12 @@ where
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<BitSignedVFunc<VFunc<T, usize, BitFieldVec<usize>, S, E>, BitFieldVec>>
+    ) -> anyhow::Result<BitSignedVFunc<VFunc<T, usize, BitFieldVec<usize>, S, E>, BitFieldVec<H>>>
+    where
+        u64: PrimitiveNumberAs<H>,
     {
         assert!(hash_width > 0);
-        assert!(hash_width <= 64);
+        assert!(hash_width <= H::BITS as usize);
 
         let (func, store) =
             self._try_build_func(keys, FromCloneableIntoIterator::from(0..), true, pl)?;
@@ -721,7 +725,7 @@ where
         };
 
         // Create the signature vector
-        let mut hashes = BitFieldVec::<PlatformWord>::new_unaligned(hash_width, num_keys);
+        let mut hashes = BitFieldVec::<H>::new_unaligned(hash_width, num_keys);
 
         // Enumerate the store and extract signatures using the same method as filters
         pl.item_name("hash");
@@ -735,7 +739,8 @@ where
                     for sig_val in shard.iter() {
                         let pos = sig_val.val;
                         let local_sig = shard_edge.local_sig(sig_val.sig);
-                        let hash = (mix64(shard_edge.edge_hash(local_sig)) & hash_mask) as PlatformWord;
+                        let hash =
+                            (mix64(shard_edge.edge_hash(local_sig)) & hash_mask).as_to::<H>();
                         hashes.set_value(pos, hash);
                         pl.light_update();
                     }
@@ -746,7 +751,8 @@ where
                     for sig_val in shard.iter() {
                         let pos = sig_val.val;
                         let local_sig = shard_edge.local_sig(sig_val.sig);
-                        let hash = (mix64(shard_edge.edge_hash(local_sig)) & hash_mask) as PlatformWord;
+                        let hash =
+                            (mix64(shard_edge.edge_hash(local_sig)) & hash_mask).as_to::<H>();
                         hashes.set_value(pos, hash);
                         pl.light_update();
                     }
@@ -2102,8 +2108,8 @@ impl<
                 ));
 
                 let num_vertices = shard_edge.num_vertices();
-                let mut peeled_edges = BitVec::new(shard.len());
-                let mut used_vars = BitVec::new(num_vertices);
+                let mut peeled_edges: BitVec = BitVec::new(shard.len());
+                let mut used_vars: BitVec = BitVec::new(num_vertices);
                 for &edge in double_stack.iter_upper() {
                     peeled_edges.set(edge.as_to(), true);
                 }
