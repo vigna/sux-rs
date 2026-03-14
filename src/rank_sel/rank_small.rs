@@ -75,10 +75,12 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// - `rank_small![3; -]` (builds `RankSmall<1, 11>`): 3.125% additional space.
 /// - `rank_small![4; -]` (builds `RankSmall<3, 13>`): 1.56% additional space.
 ///
-/// And the following for 32-bit words (use the `u32` qualifier):
+/// And the following for 32-bit words:
 ///
-/// - `rank_small![0, u32; -]` (builds `RankSmall<1, 7>`): 12.5% additional space.
-/// - `rank_small![1, u32; -]` (builds `RankSmall<1, 8>`): 6.25% additional space.
+/// - `rank_small![0, u32; -]` (builds `RankSmall<1, 7>`): 12.5% additional
+///   space.
+/// - `rank_small![1, u32; -]` (builds `RankSmall<1, 8>`): 6.25% additional
+///   space.
 ///
 /// The first structure is a space-savvy version of [`Rank9`](super::Rank9),
 /// while the other ones provide increasing less space usage at the expense of
