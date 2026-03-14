@@ -13,6 +13,7 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use sux::prelude::*;
 use sux::traits::PlatformWord;
+use sux::traits::bit_field_slice::Word;
 use sux::traits::bit_vec_ops::*;
 
 #[test]
@@ -588,4 +589,191 @@ fn test_macro() {
     assert!(b[3]);
     assert!(!b[4]);
     assert!(!b[5]);
+}
+
+/// Test BitVec with all word types using a macro.
+macro_rules! test_word_type {
+    ($W:ty) => {{
+        use rand::RngExt;
+        let mut rng = SmallRng::seed_from_u64(0);
+
+        let u = 1000;
+        let n = 50;
+        let n2 = 100;
+
+        // Test with_value + count_ones
+        let bm: BitVec<Vec<$W>> = BitVec::with_value(u, true);
+        assert_eq!(bm.len(), u);
+        assert_eq!(BitCount::<$W>::count_ones(&bm), u);
+        for i in 0..u {
+            assert!(BitVecOps::<$W>::get(&bm, i));
+        }
+
+        // Test new (all zeros) + set/get
+        let mut bm: BitVec<Vec<$W>> = BitVec::new(u);
+        assert_eq!(BitCount::<$W>::count_ones(&bm), 0);
+
+        for _ in 0..10 {
+            let mut values = (0..u).collect::<Vec<_>>();
+            let (indices, _) = values.partial_shuffle(&mut rng, n2);
+
+            for &i in &indices[..n] {
+                BitVecOpsMut::<$W>::set(&mut bm, i, true);
+            }
+            for i in 0..u {
+                assert_eq!(
+                    BitVecOps::<$W>::get(&bm, i),
+                    indices[..n].contains(&i)
+                );
+            }
+
+            for &i in &indices[n..] {
+                BitVecOpsMut::<$W>::set(&mut bm, i, true);
+            }
+            for i in 0..u {
+                assert_eq!(
+                    BitVecOps::<$W>::get(&bm, i),
+                    indices.contains(&i)
+                );
+            }
+
+            for &i in &indices[..n] {
+                BitVecOpsMut::<$W>::set(&mut bm, i, false);
+            }
+            for i in 0..u {
+                assert_eq!(
+                    BitVecOps::<$W>::get(&bm, i),
+                    indices[n..].contains(&i)
+                );
+            }
+
+            for &i in &indices[n..] {
+                BitVecOpsMut::<$W>::set(&mut bm, i, false);
+            }
+            for i in 0..u {
+                assert!(!BitVecOps::<$W>::get(&bm, i));
+            }
+        }
+
+        // Test push/pop
+        let mut b: BitVec<Vec<$W>> = BitVec::new(0);
+        b.push(true);
+        b.push(false);
+        assert!(BitVecOps::<$W>::get(&b, 0));
+        assert!(!BitVecOps::<$W>::get(&b, 1));
+        for i in 2..200 {
+            b.push(i % 2 == 0);
+        }
+        for i in 2..200 {
+            assert_eq!(BitVecOps::<$W>::get(&b, i), i % 2 == 0);
+        }
+        for i in 0..200 {
+            assert_eq!(b.pop(), Some(i % 2 != 0));
+        }
+        assert_eq!(b.pop(), None);
+
+        // Test resize
+        let mut c: BitVec<Vec<$W>> = BitVec::new(0);
+        c.resize(100, true);
+        for i in 0..100 {
+            assert!(BitVecOps::<$W>::get(&c, i));
+        }
+        c.resize(50, false);
+        for i in 0..50 {
+            assert!(BitVecOps::<$W>::get(&c, i));
+        }
+        assert_eq!(c.len(), 50);
+
+        // Test fill
+        for len in [0, 1, 33, 64, 65, 100, 127, 128, 1000] {
+            let mut c: BitVec<Vec<$W>> = BitVec::new(len);
+            BitVecOpsMut::<$W>::fill(&mut c, true);
+            for b in BitVecOps::<$W>::iter(&c) {
+                assert!(b);
+            }
+            BitVecOpsMut::<$W>::fill(&mut c, false);
+            for b in BitVecOps::<$W>::iter(&c) {
+                assert!(!b);
+            }
+        }
+
+        // Test flip
+        for len in [0, 1, 33, 64, 65, 100, 127, 128, 1000] {
+            let mut c: BitVec<Vec<$W>> = BitVec::new(len);
+            BitVecOpsMut::<$W>::flip(&mut c);
+            for b in BitVecOps::<$W>::iter(&c) {
+                assert!(b);
+            }
+            BitVecOpsMut::<$W>::flip(&mut c);
+            for b in BitVecOps::<$W>::iter(&c) {
+                assert!(!b);
+            }
+        }
+
+        // Test iter_ones / iter_zeros
+        for len in [0, 1, 33, 100, 200] {
+            let mut c: BitVec<Vec<$W>> = BitVec::new(len);
+            for i in 0..len {
+                BitVecOpsMut::<$W>::set(&mut c, i, i % 2 == 0);
+            }
+            for (j, p) in BitVecOps::<$W>::iter_ones(&c).enumerate() {
+                assert_eq!(p, j * 2);
+            }
+            for (j, p) in BitVecOps::<$W>::iter_zeros(&c).enumerate() {
+                assert_eq!(p, j * 2 + 1);
+            }
+        }
+
+        // Test count_ones with random data
+        for _ in 0..10 {
+            let len = 100 + (rng.random_range(0..500));
+            let bits = (0..len)
+                .map(|_| rng.random_bool(0.5))
+                .collect::<BitVec<Vec<$W>>>();
+            let expected: usize = BitVecOps::<$W>::iter(&bits).filter(|&b| b).count();
+            assert_eq!(BitCount::<$W>::count_ones(&bits), expected);
+        }
+
+        // Test bit_vec! macro with word type
+        let b = bit_vec![$W: 0, 1, 0, 1];
+        assert_eq!(b.len(), 4);
+        assert!(!BitVecOps::<$W>::get(&b, 0));
+        assert!(BitVecOps::<$W>::get(&b, 1));
+
+        let b = bit_vec![$W: false; 10];
+        assert_eq!(b.len(), 10);
+        assert_eq!(BitCount::<$W>::count_ones(&b), 0);
+
+        let b = bit_vec![$W: true; 10];
+        assert_eq!(b.len(), 10);
+        assert_eq!(BitCount::<$W>::count_ones(&b), 10);
+
+        let b = bit_vec![$W];
+        assert_eq!(b.len(), 0);
+    }};
+}
+
+#[test]
+fn test_word_u8() {
+    test_word_type!(u8);
+}
+
+#[test]
+fn test_word_u16() {
+    test_word_type!(u16);
+}
+
+#[test]
+fn test_word_u32() {
+    test_word_type!(u32);
+}
+
+#[test]
+fn test_word_u64() {
+    test_word_type!(u64);
+}
+
+#[test]
+fn test_word_u128() {
+    test_word_type!(u128);
 }
