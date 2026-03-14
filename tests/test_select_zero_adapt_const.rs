@@ -86,9 +86,10 @@ fn test_w_rank9() {
             .map(|b| !b)
             .collect::<BitVec>();
 
-        let rank9 = Rank9::new(bits.clone());
-
-        let select = SelectZeroAdaptConst::<_, _, INV, SUB>::new(rank9);
+        #[cfg(target_pointer_width = "64")]
+        let select = SelectZeroAdaptConst::<_, _, INV, SUB>::new(Rank9::new(bits.clone()));
+        #[cfg(not(target_pointer_width = "64"))]
+        let select = SelectZeroAdaptConst::<_, _, INV, SUB>::new(RankSmall::<1, 7, _>::new(bits.clone()));
 
         let zeros = select.num_zeros();
         let mut pos = Vec::with_capacity(zeros);
@@ -214,7 +215,10 @@ fn test_non_uniform() {
 fn test_map() {
     let bits: AddNumBits<_> = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1].into();
     let sel = SelectZeroAdaptConst::<_, _>::new(bits);
+    #[cfg(target_pointer_width = "64")]
     let rank_sel = unsafe { sel.map(Rank9::new) };
+    #[cfg(not(target_pointer_width = "64"))]
+    let rank_sel = unsafe { sel.map(RankSmall::<1, 7, _>::new) };
     assert_eq!(rank_sel.rank(0), 0);
     assert_eq!(rank_sel.rank(1), 0);
     assert_eq!(rank_sel.rank(2), 1);

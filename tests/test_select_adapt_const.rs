@@ -82,9 +82,10 @@ fn test_w_rank9() {
             .map(|_| rng.random_bool(density))
             .collect::<BitVec>();
 
-        let rank9 = Rank9::new(bits.clone());
-
-        let select = SelectAdaptConst::<_, _, INV, SUB>::new(rank9);
+        #[cfg(target_pointer_width = "64")]
+        let select = SelectAdaptConst::<_, _, INV, SUB>::new(Rank9::new(bits.clone()));
+        #[cfg(not(target_pointer_width = "64"))]
+        let select = SelectAdaptConst::<_, _, INV, SUB>::new(RankSmall::<1, 7, _>::new(bits.clone()));
 
         let ones = select.num_ones();
         let mut pos = Vec::with_capacity(ones);
@@ -205,19 +206,14 @@ fn test_non_uniform() {
 fn test_map() {
     let bits: AddNumBits<_> = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1].into();
     let sel = SelectAdaptConst::<_, _>::new(bits);
+    #[cfg(target_pointer_width = "64")]
     let rank_sel = unsafe { sel.map(Rank9::new) };
+    #[cfg(not(target_pointer_width = "64"))]
+    let rank_sel = unsafe { sel.map(RankSmall::<1, 7, _>::new) };
     assert_eq!(rank_sel.rank(0), 0);
     assert_eq!(rank_sel.rank(1), 0);
     assert_eq!(rank_sel.rank(2), 1);
     assert_eq!(rank_sel.rank(10), 5);
-    /*
-    let rank_seol01 = unsafe { rank_sel.map(SelectAdaptZeroConst::<_, _>::new) };
-    assert_eq!(rank_seol01.select_zero(0), Some(0));
-    assert_eq!(rank_seol01.select_zero(1), Some(2));
-    assert_eq!(rank_seol01.select_zero(2), Some(5));
-    assert_eq!(rank_seol01.select_zero(3), Some(7));
-    assert_eq!(rank_seol01.select_zero(4), Some(8));
-    assert_eq!(rank_seol01.select_zero(5), None);*/
 }
 
 #[test]

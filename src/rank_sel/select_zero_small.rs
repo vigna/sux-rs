@@ -164,8 +164,8 @@ macro_rules! impl_select_zero_small {
                 let num_ones = small_counters.len() - small_counters.num_ones();
 
                 let target_inventory_span = blocks_per_inv * Self::BLOCK_BIT_SIZE;
-                let log2_ones_per_inventory = (num_ones * target_inventory_span)
-                    .div_ceil(num_bits.max(1))
+                let log2_ones_per_inventory = (num_ones as u64 * target_inventory_span as u64)
+                    .div_ceil(num_bits.max(1) as u64)
                     .max(1)
                     .ilog2() as usize;
 

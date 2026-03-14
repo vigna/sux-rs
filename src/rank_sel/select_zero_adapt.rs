@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use super::{Inventory, SpanType};
+use super::{Inventory, SpanType, assert_inventory_length, LOG2_U16_PER_PLATFORM_WORD, U32_PER_PLATFORM_WORD};
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
@@ -43,6 +43,15 @@ use std::ops::Index;
 
 /// A version of [`SelectAdapt`](super::SelectAdapt) implementing [selection on
 /// zeros](crate::traits::SelectZero).
+///
+/// # Maximum bit-vector length
+///
+/// The inventory encodes positions in the top bits of each
+/// [`PlatformWord`](crate::traits::PlatformWord) entry, leaving
+/// `PlatformWord::BITS - 2` bits for the actual position. On 32-bit
+/// platforms this limits the bit vector length to 2^30 − 1 (about 1
+/// billion bits); on 64-bit platforms the limit is 2^62 − 1. The
+/// constructor panics if the bit vector exceeds this limit.
 ///
 /// # Examples
 /// ```rust
@@ -203,7 +212,7 @@ impl<B, I> SelectZeroAdapt<B, I> {
         }
     }
 
-    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
+    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * PlatformWord::BITS as usize;
 }
 
 impl<B: BitLength, C> SelectZeroAdapt<B, C> {
@@ -232,6 +241,10 @@ impl<B: AsRef<[PlatformWord]> + BitCount<PlatformWord>> SelectZeroAdapt<B, Box<[
     ///   and halves the length of sequential broadword searches. Typical values
     ///   are 3 and 4.
     ///
+    /// # Panics
+    ///
+    /// Panics if the bit vector length exceeds `PlatformWord::MAX >> 2`
+    /// (2^62 − 1 on 64-bit platforms, 2^30 − 1 on 32-bit).
     pub fn new(bits: B, max_log2_words_per_subinv: usize) -> Self {
         Self::with_span(
             bits,
@@ -257,17 +270,22 @@ impl<B: AsRef<[PlatformWord]> + BitCount<PlatformWord>> SelectZeroAdapt<B, Box<[
     ///   and halves the length of sequential broadword searches. Typical values
     ///   are 3 and 4.
     ///
+    /// # Panics
+    ///
+    /// Panics if the bit vector length exceeds `PlatformWord::MAX >> 2`
+    /// (2^62 − 1 on 64-bit platforms, 2^30 − 1 on 32-bit).
     pub fn with_span(
         bits: B,
         target_inventory_span: usize,
         max_log2_words_per_subinventory: usize,
     ) -> Self {
+        assert_inventory_length(bits.len());
         // TODO: is this necessary? (everywhere)
         let num_bits = max(1usize, bits.len());
         let num_ones = bits.count_zeros();
 
-        let log2_ones_per_inventory = (num_ones * target_inventory_span)
-            .div_ceil(num_bits)
+        let log2_ones_per_inventory = (num_ones as u64 * target_inventory_span as u64)
+            .div_ceil(num_bits as u64)
             .max(1)
             .ilog2() as usize;
 
@@ -303,11 +321,17 @@ impl<B: AsRef<[PlatformWord]> + BitCount<PlatformWord>> SelectZeroAdapt<B, Box<[
     ///   Increasing by one this value approximately doubles the space occupancy
     ///   and halves the length of sequential broadword searches. Typical values
     ///   are 3 and 4.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the bit vector length exceeds `PlatformWord::MAX >> 2`
+    /// (2^62 − 1 on 64-bit platforms, 2^30 − 1 on 32-bit).
     pub fn with_inv(
         bits: B,
         log2_ones_per_inventory: usize,
         max_log2_words_per_subinventory: usize,
     ) -> Self {
+        assert_inventory_length(bits.len());
         let num_ones = bits.count_zeros();
         Self::_new(
             bits,
@@ -323,13 +347,7 @@ impl<B: AsRef<[PlatformWord]> + BitCount<PlatformWord>> SelectZeroAdapt<B, Box<[
         log2_ones_per_inventory: usize,
         max_log2_words_per_subinventory: usize,
     ) -> Self {
-        assert!(
-            bits.len() <= (PlatformWord::MAX >> 2) as usize,
-            "Bit vector length ({}) exceeds the maximum representable \
-             inventory value ({})",
-            bits.len(),
-            (PlatformWord::MAX >> 2) as usize
-        );
+        assert_inventory_length(bits.len());
         let num_bits = max(1, bits.len());
         let ones_per_inventory = 1 << log2_ones_per_inventory;
         let ones_per_inventory_mask = ones_per_inventory - 1;
@@ -348,7 +366,7 @@ impl<B: AsRef<[PlatformWord]> + BitCount<PlatformWord>> SelectZeroAdapt<B, Box<[
         let words_per_inventory = words_per_subinventory + 1;
 
         let log2_ones_per_sub16 =
-            log2_ones_per_inventory.saturating_sub(log2_words_per_subinventory + 2);
+            log2_ones_per_inventory.saturating_sub(log2_words_per_subinventory + LOG2_U16_PER_PLATFORM_WORD);
         let ones_per_sub16 = 1 << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
@@ -406,7 +424,7 @@ impl<B: AsRef<[PlatformWord]> + BitCount<PlatformWord>> SelectZeroAdapt<B, Box<[
                     // We store an inventory entry each 1 << log2_ones_per_sub32 ones.
                     let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span, log2_ones_per_sub16);
                     let num_u32s = ones.div_ceil(1 << log2_ones_per_sub32);
-                    let num_words = num_u32s.div_ceil(2);
+                    let num_words = num_u32s.div_ceil(U32_PER_PLATFORM_WORD);
                     let spilled_u64s = num_words.saturating_sub(words_per_subinventory - 1);
                     spilled += spilled_u64s;
                 }
@@ -425,7 +443,7 @@ impl<B: AsRef<[PlatformWord]> + BitCount<PlatformWord>> SelectZeroAdapt<B, Box<[
         let mut spill: Box<[PlatformWord]> = vec![0; spill_size].into();
 
         spilled = 0;
-        let locally_stored_u32s = 2 * (words_per_subinventory - 1);
+        let locally_stored_u32s = U32_PER_PLATFORM_WORD * (words_per_subinventory - 1);
 
         // Second phase: we fill the subinventories and the spill.
         for inventory_idx in 0..inventory_size {
@@ -591,7 +609,7 @@ impl<B: AsRef<[PlatformWord]> + BitCount<PlatformWord>> SelectZeroAdapt<B, Box<[
             if span_type == SpanType::U32 {
                 spilled += subinventory_idx
                     .saturating_sub(locally_stored_u32s)
-                    .div_ceil(2);
+                    .div_ceil(U32_PER_PLATFORM_WORD);
             }
         }
 
@@ -650,7 +668,7 @@ impl<B: AsRef<[PlatformWord]> + BitLength + SelectZeroHinted<PlatformWord>, I: A
                 .get()
                     - inventory_rank;
                 let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span, self.log2_ones_per_sub16);
-                let hint_pos = if subrank >> log2_ones_per_sub32 < (words_per_subinventory - 1) * 2 {
+                let hint_pos = if subrank >> log2_ones_per_sub32 < (words_per_subinventory - 1) * U32_PER_PLATFORM_WORD {
                     let u32s = inventory
                         .get_unchecked(inventory_start_pos + 2..)
                         .align_to::<u32>()
@@ -669,7 +687,7 @@ impl<B: AsRef<[PlatformWord]> + BitLength + SelectZeroHinted<PlatformWord>, I: A
 
                     inventory_rank
                         + *spilled_u32s.get_unchecked(
-                            (subrank >> log2_ones_per_sub32) - (words_per_subinventory - 1) * 2,
+                            (subrank >> log2_ones_per_sub32) - (words_per_subinventory - 1) * U32_PER_PLATFORM_WORD,
                         ) as usize
                 };
                 let residual = subrank & ((1 << log2_ones_per_sub32) - 1);

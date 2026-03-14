@@ -133,19 +133,19 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[u64]>, target = "bits")]
-#[cfg_attr(target_pointer_width = "64", delegate(AsRef<[u32]>, target = "bits"))]
+#[delegate(AsRef<[u32]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted<u64>, target = "bits")]
-#[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::RankHinted<u32>, target = "bits"))]
+#[delegate(crate::traits::rank_sel::RankHinted<u32>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted<u64>, target = "bits")]
-#[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::SelectZeroHinted<u32>, target = "bits"))]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted<u32>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::Select, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectHinted<u64>, target = "bits")]
-#[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::SelectHinted<u32>, target = "bits"))]
+#[delegate(crate::traits::rank_sel::SelectHinted<u32>, target = "bits")]
 pub struct RankSmall<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
@@ -605,6 +605,15 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> Nu
 
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2>
     BitCount<u64> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+{
+    #[inline(always)]
+    fn count_ones(&self) -> usize {
+        self.num_ones
+    }
+}
+
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2>
+    BitCount<u32> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn count_ones(&self) -> usize {
