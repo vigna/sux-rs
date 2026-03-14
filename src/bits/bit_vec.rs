@@ -34,6 +34,28 @@
 //! with [`TryFrom`]/[`TryInto`] when going [from a non-atomic to an atomic bit
 //! vector](BitVec#impl-TryFrom%3CBitVec%3C%26%5BW%5D%3E%3E-for-AtomicBitVec%3C%26%5B%3CW+as+AtomicPrimitive%3E::Atomic%5D%3E).
 //!
+//! # Type annotations
+//!
+//! Both [`BitVec`] and [`AtomicBitVec`] have default type parameters for
+//! their backends. However, Rust does not apply struct default type
+//! parameters in expression position, so constructor calls like
+//! `BitVec::new(n)` or `AtomicBitVec::new(n)` leave the backend type
+//! unconstrained. This causes method-resolution ambiguity between
+//! [`BitVecOps`] and [`AtomicBitVecOps`].
+//!
+//! The fix is to annotate the binding with the bare type alias, which
+//! *does* apply defaults:
+//!
+//! ```rust
+//! # use sux::prelude::*;
+//! let mut b: BitVec = BitVec::new(10);     // OK: B = Vec<PlatformWord>
+//! let a: AtomicBitVec = AtomicBitVec::new(10); // OK: B = Box<[Atomic<PlatformWord>]>
+//! ```
+//!
+//! The [`bit_vec!`](macro@crate::bits::bit_vec) macro and
+//! [`FromIterator`](core::iter::FromIterator) / [`Extend`] do not need
+//! annotations because the word type is determined by the output context.
+//!
 //! # Examples
 //!
 //! ```rust
@@ -778,23 +800,26 @@ impl<W> From<BitVec<Box<[W]>>> for BitVec<Vec<W>> {
     }
 }
 
-impl<W, B: AsRef<[W]>> AsRef<[W]> for BitVec<B> {
+impl<W: Word, B: AsRef<[W]>> AsRef<[W]> for BitVec<B> {
     #[inline(always)]
     fn as_ref(&self) -> &[W] {
         self.bits.as_ref()
     }
 }
 
-impl<W, B: AsMut<[W]>> AsMut<[W]> for BitVec<B> {
+impl<W: Word, B: AsMut<[W]>> AsMut<[W]> for BitVec<B> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut [W] {
         self.bits.as_mut()
     }
 }
 
-impl<W, B: AsRef<[W]>> AsRef<[W]> for AtomicBitVec<B> {
+impl<B: AtomicBackendWord> AsRef<[Atomic<B::W>]> for AtomicBitVec<B>
+where
+    B: AsRef<[Atomic<B::W>]>,
+{
     #[inline(always)]
-    fn as_ref(&self) -> &[W] {
+    fn as_ref(&self) -> &[Atomic<B::W>] {
         self.bits.as_ref()
     }
 }

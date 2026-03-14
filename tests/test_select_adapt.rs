@@ -219,7 +219,10 @@ fn test_non_uniform() {
 fn test_map() {
     let bits: AddNumBits<_> = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1].into();
     let sel = SelectAdapt::<_, _>::new(bits, 3);
+    #[cfg(target_pointer_width = "64")]
     let rank_sel = unsafe { sel.map(RankSmall::<1, 10, _>::new) };
+    #[cfg(not(target_pointer_width = "64"))]
+    let rank_sel = unsafe { sel.map(RankSmall::<1, 7, _>::new) };
     assert_eq!(rank_sel.rank(0), 0);
     assert_eq!(rank_sel.rank(1), 0);
     assert_eq!(rank_sel.rank(2), 1);

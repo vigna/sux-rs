@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use super::{Inventory, SpanType};
+use super::{DEFAULT_LOG2_ONES_PER_INVENTORY, Inventory, SpanType, assert_inventory_length, LOG2_U16_PER_PLATFORM_WORD, U32_PER_PLATFORM_WORD};
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
@@ -58,6 +58,15 @@ use std::ops::Index;
 ///
 /// [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst) is a variant of this
 /// structure that provides the same functionality for zero bits.
+///
+/// # Maximum bit-vector length
+///
+/// The inventory encodes positions in the top bits of each
+/// [`PlatformWord`] entry, leaving `PlatformWord::BITS - 2` bits for
+/// the actual position. On 32-bit platforms this limits the bit vector
+/// length to 2^30 − 1 (about 1 billion bits); on 64-bit platforms the
+/// limit is 2^62 − 1. The constructor panics if the bit vector exceeds
+/// this limit.
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
@@ -167,7 +176,7 @@ use std::ops::Index;
 pub struct SelectAdaptConst<
     B,
     I = Box<[PlatformWord]>,
-    const LOG2_ONES_PER_INVENTORY: usize = 12,
+    const LOG2_ONES_PER_INVENTORY: usize = DEFAULT_LOG2_ONES_PER_INVENTORY,
     const LOG2_WORDS_PER_SUBINVENTORY: usize = 3,
 > {
     bits: B,
@@ -189,7 +198,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
     SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     const LOG2_ONES_PER_SUB16: usize =
-        LOG2_ONES_PER_INVENTORY.saturating_sub(LOG2_WORDS_PER_SUBINVENTORY + 2);
+        LOG2_ONES_PER_INVENTORY.saturating_sub(LOG2_WORDS_PER_SUBINVENTORY + LOG2_U16_PER_PLATFORM_WORD);
     const ONES_PER_SUB16_MASK: usize = (1 << Self::LOG2_ONES_PER_SUB16) - 1;
     const ONES_PER_INVENTORY: usize = (1 << LOG2_ONES_PER_INVENTORY);
     const ONES_PER_INVENTORY_MASK: usize = (1 << LOG2_ONES_PER_INVENTORY) - 1;
@@ -226,7 +235,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
         }
     }
 
-    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 8192;
+    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * PlatformWord::BITS as usize;
 }
 
 impl<B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
@@ -250,14 +259,13 @@ impl<
 {
     /// Creates a new selection structure over a [`SelectHinted`] with a specified
     /// distance between indexed ones.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the bit vector length exceeds `PlatformWord::MAX >> 2`
+    /// (2^62 − 1 on 64-bit platforms, 2^30 − 1 on 32-bit).
     pub fn new(bits: B) -> Self {
-        assert!(
-            bits.len() <= (PlatformWord::MAX >> 2) as usize,
-            "Bit vector length ({}) exceeds the maximum representable \
-             inventory value ({})",
-            bits.len(),
-            (PlatformWord::MAX >> 2) as usize
-        );
+        assert_inventory_length(bits.len());
         let num_ones = bits.count_ones();
         let num_bits = max(1, bits.len());
         let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY);
@@ -320,7 +328,7 @@ impl<
                     // We store an inventory entry each 1 << log2_ones_per_sub32 ones.
                     let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span);
                     let num_u32s = ones.div_ceil(1 << log2_ones_per_sub32);
-                    let num_words = num_u32s.div_ceil(2);
+                    let num_words = num_u32s.div_ceil(U32_PER_PLATFORM_WORD);
                     let spilled_u64s = num_words.saturating_sub(words_per_subinventory - 1);
                     spilled += spilled_u64s;
                 }
@@ -339,7 +347,7 @@ impl<
         let mut spill: Box<[PlatformWord]> = vec![0; spill_size].into();
 
         spilled = 0;
-        let locally_stored_u32s = 2 * (words_per_subinventory - 1);
+        let locally_stored_u32s = U32_PER_PLATFORM_WORD * (words_per_subinventory - 1);
 
         // Second phase: we fill the subinventories and the spill.
         for inventory_idx in 0..inventory_size {
@@ -505,7 +513,7 @@ impl<
             if span_type == SpanType::U32 {
                 spilled += subinventory_idx
                     .saturating_sub(locally_stored_u32s)
-                    .div_ceil(2);
+                    .div_ceil(U32_PER_PLATFORM_WORD);
             }
         }
 
@@ -561,7 +569,7 @@ impl<
                     - inventory_rank;
                 let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span);
 
-                let hint_pos = if subrank >> log2_ones_per_sub32 < (words_per_subinventory - 1) * 2 {
+                let hint_pos = if subrank >> log2_ones_per_sub32 < (words_per_subinventory - 1) * U32_PER_PLATFORM_WORD {
                     let u32s = inventory
                         .get_unchecked(inventory_start_pos + 2..)
                         .align_to::<u32>()
@@ -580,7 +588,7 @@ impl<
 
                     inventory_rank
                         + *spilled_u32s.get_unchecked(
-                            (subrank >> log2_ones_per_sub32) - (words_per_subinventory - 1) * 2,
+                            (subrank >> log2_ones_per_sub32) - (words_per_subinventory - 1) * U32_PER_PLATFORM_WORD,
                         ) as usize
                 };
                 let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
