@@ -60,12 +60,14 @@ use crate::{debug_assert_bounds, panic_if_out_of_bounds, panic_if_value};
 /// [`AtomicPrimitive`].
 pub trait Word: PrimitiveUnsigned + PrimitiveNumberAs<u128> {
     const ZERO: Self;
+    const ONE: Self;
 }
 
 macro_rules! impl_word {
     ($($ty:ty),*) => {
         $(impl Word for $ty {
             const ZERO: Self = 0;
+            const ONE: Self = 1;
         })*
     };
 }
