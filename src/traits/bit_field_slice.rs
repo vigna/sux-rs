@@ -44,7 +44,8 @@
 //! with a bit width equal to that of the type.
 #![allow(clippy::result_unit_err)]
 use atomic_primitive::{AtomicPrimitive, PrimitiveAtomicInteger};
-use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::Ordering;
+use impl_tools::autoimpl;
 use num_primitive::{PrimitiveNumberAs, PrimitiveUnsigned};
 #[cfg(feature = "rayon")]
 use rayon::iter::{
@@ -59,14 +60,12 @@ use crate::{debug_assert_bounds, panic_if_out_of_bounds, panic_if_value};
 /// [`AtomicPrimitive`].
 pub trait Word: PrimitiveUnsigned + PrimitiveNumberAs<u128> {
     const ZERO: Self;
-    const ONE: Self;
 }
 
 macro_rules! impl_word {
     ($($ty:ty),*) => {
         $(impl Word for $ty {
             const ZERO: Self = 0;
-            const ONE: Self = 1;
         })*
     };
 }
@@ -90,6 +89,7 @@ pub type PlatformWord = u32;
 ///
 /// The dependence on `W` is necessary to implement this trait on vectors and
 /// slices, as we need the bit width of the values stored in the slice.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait BitWidth<W> {
     /// Returns the bit width of the slice.
     ///
@@ -102,6 +102,7 @@ pub trait BitWidth<W> {
 /// This trait combines [`SliceByValue`] and [`BitWidth`]. Additionally,
 /// it provides the method [`as_slice`](BitFieldSlice::as_slice) to
 /// access the backend of the slice.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait BitFieldSlice<W: Word>: SliceByValue<Value = W> + BitWidth<W> {
     /// Returns the backend of the slice as a slice of `W`.
     fn as_slice(&self) -> &[W];
@@ -113,6 +114,7 @@ pub trait BitFieldSlice<W: Word>: SliceByValue<Value = W> + BitWidth<W> {
 /// provides reset methods and the method
 /// [`as_mut_slice`](BitFieldSliceMut::as_mut_slice) to mutate the backend of
 /// the slice.
+#[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
 pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> + SliceByValueMut<Value = W> {
     /// Returns the mask to apply to values to ensure they fit in
     /// [`bit_width`](BitWidth::bit_width) bits.
@@ -136,12 +138,47 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> + SliceByValueMut<Value = 
     fn as_mut_slice(&mut self) -> &mut [W];
 }
 
+/// Bit width for atomic slices.
+///
+/// This trait is separate from [`BitWidth`] because a blanket impl
+/// `impl<A: PrimitiveAtomicInteger> BitWidth<A> for [A]` would conflict
+/// with `impl<W: Word> BitWidth<W> for [W]` — the compiler cannot prove
+/// that [`Word`] and [`PrimitiveAtomicInteger`] are disjoint. A dedicated
+/// trait sidesteps the overlap entirely.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+pub trait AtomicBitWidth {
+    /// Returns the bit width of the atomic slice.
+    fn atomic_bit_width(&self) -> usize;
+}
+
+impl<A: PrimitiveAtomicInteger> AtomicBitWidth for [A] {
+    #[inline(always)]
+    fn atomic_bit_width(&self) -> usize {
+        A::BITS as usize
+    }
+}
+
+impl<A: PrimitiveAtomicInteger> AtomicBitWidth for Vec<A> {
+    #[inline(always)]
+    fn atomic_bit_width(&self) -> usize {
+        A::BITS as usize
+    }
+}
+
+impl<A: PrimitiveAtomicInteger, const N: usize> AtomicBitWidth for [A; N] {
+    #[inline(always)]
+    fn atomic_bit_width(&self) -> usize {
+        A::BITS as usize
+    }
+}
+
 /// A (tentatively) thread-safe slice of bit fields of constant bit width
 /// supporting atomic operations.
 ///
 /// Different implementations might provide different atomicity guarantees. See
 /// [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec) for an example.
-pub trait AtomicBitFieldSlice<W: Word + AtomicPrimitive>: BitWidth<W::Atomic>
+#[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
+pub trait AtomicBitFieldSlice<W: Word + AtomicPrimitive>: AtomicBitWidth
 where
     W::Atomic: PrimitiveAtomicInteger,
 {
@@ -181,10 +218,10 @@ where
     /// Sets the element of the slice at the specified index.
     ///
     /// May panic if the index is not in [0..[len](SliceByValue::len))
-    /// or the value does not fit in [`BitWidth::bit_width`] bits.
+    /// or the value does not fit in [`AtomicBitWidth::atomic_bit_width`] bits.
     fn set_atomic(&self, index: usize, value: W, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len());
-        let bw = self.bit_width();
+        let bw = self.atomic_bit_width();
 
         let mask = if bw == 0 {
             W::ZERO
@@ -233,17 +270,6 @@ impl<W: Word, const N: usize> BitWidth<W> for [W; N] {
     }
 }
 
-macro_rules! impl_bit_width_delegation {
-    ($($ty:ty),*) => {$(
-        impl<W, T: BitWidth<W> + ?Sized> BitWidth<W> for $ty {
-            #[inline(always)]
-            fn bit_width(&self) -> usize {
-                T::bit_width(self)
-            }
-        }
-)*}}
-
-impl_bit_width_delegation!(&T, &mut T, Box<T>);
 
 impl<W: Word> BitFieldSlice<W> for [W] {
     fn as_slice(&self) -> &[W] {
@@ -263,17 +289,6 @@ impl<W: Word, const N: usize> BitFieldSlice<W> for [W; N] {
     }
 }
 
-macro_rules! impl_slice_delegation {
-    ($($ty:ty),*) => {$(
-        impl<W: Word, T: BitFieldSlice<W> + ?Sized> BitFieldSlice<W> for $ty {
-            #[inline(always)]
-            fn as_slice(&self) -> &[W] {
-                T::as_slice(self)
-            }
-        }
-)*}}
-
-impl_slice_delegation!(&T, &mut T, Box<T>);
 
 impl<W: Word> BitFieldSliceMut<W> for [W] {
     fn reset(&mut self) {
@@ -331,213 +346,123 @@ impl<W: Word, const N: usize> BitFieldSliceMut<W> for [W; N] {
     }
 }
 
-macro_rules! impl_slice_mut_delegation {
-    ($($ty:ty),*) => {$(
-        impl<W: Word, T: BitFieldSliceMut<W> + ?Sized> BitFieldSliceMut<W> for $ty {
-            #[inline(always)]
-            fn reset(&mut self) {
-                T::reset(self)
-            }
 
-            #[cfg(feature = "rayon")]
-            #[inline(always)]
-            fn par_reset(&mut self) {
-                T::par_reset(self)
-            }
+// Generic implementations for slices/vectors of atomic types.
+//
+// These impls are parameterized by the atomic type A (e.g., AtomicU64)
+// and derive the value type W from A::Value (e.g., u64). This avoids
+// the associated-type projection ambiguity that occurs when writing
+// `impl<W> ... for [W::Atomic]` — Rust can't resolve methods on
+// `[W::Atomic]` because it cannot infer W from the projection.
 
-            #[inline(always)]
-            fn as_mut_slice(&mut self) -> &mut [W] {
-                T::as_mut_slice(self)
-            }
+impl<A: PrimitiveAtomicInteger> AtomicBitFieldSlice<A::Value> for [A]
+where
+    A::Value: Word + AtomicPrimitive<Atomic = A>,
+{
+    #[inline(always)]
+    fn len(&self) -> usize {
+        <[A]>::len(self)
+    }
+
+    #[inline(always)]
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> A::Value {
+        debug_assert_bounds!(index, self.len());
+        unsafe { self.get_unchecked(index).load(order) }
+    }
+
+    #[inline(always)]
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: A::Value, order: Ordering) {
+        debug_assert_bounds!(index, self.len());
+        unsafe {
+            self.get_unchecked(index).store(value, order);
         }
-)*}}
+    }
 
-// Can't delegate on &T because reset requires &mut T
-impl_slice_mut_delegation!(&mut T, Box<T>);
-
-// Implementations for slices of atomic types
-
-// This macro cannot be replaced by a generic impl because the compiler
-// cannot prove that `PrimitiveAtomicInteger` and `Word` don't overlap,
-// which would conflict with the generic `BitWidth<W: Word>` impls above.
-macro_rules! impl_bit_width_atomic {
-    ($($aty:ty),*) => {$(
-        impl BitWidth<$aty> for [$aty] {
-            #[inline(always)]
-            fn bit_width(&self) -> usize {
-                <$aty as PrimitiveAtomicInteger>::BITS as usize
-            }
+    fn reset_atomic(&mut self, order: Ordering) {
+        for idx in 0..self.len() {
+            unsafe { self.set_atomic_unchecked(idx, A::Value::ZERO, order) };
         }
+    }
 
-        impl BitWidth<$aty> for Vec<$aty> {
-            #[inline(always)]
-            fn bit_width(&self) -> usize {
-                <$aty as PrimitiveAtomicInteger>::BITS as usize
-            }
-        }
-
-        impl<const N: usize> BitWidth<$aty> for [$aty; N] {
-            #[inline(always)]
-            fn bit_width(&self) -> usize {
-                <$aty as PrimitiveAtomicInteger>::BITS as usize
-            }
-        }
-    )*};
+    #[cfg(feature = "rayon")]
+    fn par_reset_atomic(&mut self, order: Ordering) {
+        self.par_iter()
+            .with_min_len(crate::RAYON_MIN_LEN)
+            .for_each(|w| w.store(A::Value::ZERO, order));
+    }
 }
 
-impl_bit_width_atomic!(AtomicU8, AtomicU16, AtomicU32, AtomicU64, AtomicUsize);
+impl<A: PrimitiveAtomicInteger> AtomicBitFieldSlice<A::Value> for Vec<A>
+where
+    A::Value: Word + AtomicPrimitive<Atomic = A>,
+{
+    #[inline(always)]
+    fn len(&self) -> usize {
+        Vec::len(self)
+    }
 
-// This macro cannot be replaced by a generic impl because its supertrait
-// BitWidth<W::Atomic> is itself macro-based (impl_bit_width_atomic!), so
-// the compiler cannot connect generic W::Atomic to the concrete impls.
-macro_rules! impl_atomic {
-    ($std:ty, $atomic:ty) => {
-        impl AtomicBitFieldSlice<$std> for [$atomic] {
-            #[inline(always)]
-            fn len(&self) -> usize {
-                <[$atomic]>::len(self)
-            }
+    #[inline(always)]
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> A::Value {
+        debug_assert_bounds!(index, self.len());
+        unsafe { self.as_slice().get_unchecked(index).load(order) }
+    }
 
-            #[inline(always)]
-            unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> $std {
-                debug_assert_bounds!(index, self.len());
-                unsafe { self.get_unchecked(index).load(order) }
-            }
-
-            #[inline(always)]
-            unsafe fn set_atomic_unchecked(&self, index: usize, value: $std, order: Ordering) {
-                debug_assert_bounds!(index, self.len());
-                unsafe {
-                    self.get_unchecked(index).store(value, order);
-                }
-            }
-
-            fn reset_atomic(&mut self, order: Ordering) {
-                for idx in 0..self.len() {
-                    unsafe { self.set_atomic_unchecked(idx, 0, order) };
-                }
-            }
-
-            #[cfg(feature = "rayon")]
-            fn par_reset_atomic(&mut self, order: Ordering) {
-                self.par_iter()
-                    .with_min_len(crate::RAYON_MIN_LEN)
-                    .for_each(|w| w.store(0, order));
-            }
+    #[inline(always)]
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: A::Value, order: Ordering) {
+        debug_assert_bounds!(index, self.len());
+        unsafe {
+            self.as_slice().get_unchecked(index).store(value, order);
         }
+    }
 
-        impl AtomicBitFieldSlice<$std> for Vec<$atomic> {
-            #[inline(always)]
-            fn len(&self) -> usize {
-                Vec::len(self)
-            }
-
-            #[inline(always)]
-            unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> $std {
-                debug_assert_bounds!(index, self.len());
-                unsafe { self.as_slice().get_unchecked(index).load(order) }
-            }
-            #[inline(always)]
-            unsafe fn set_atomic_unchecked(&self, index: usize, value: $std, order: Ordering) {
-                debug_assert_bounds!(index, self.len());
-                unsafe {
-                    self.as_slice().get_unchecked(index).store(value, order);
-                }
-            }
-
-            fn reset_atomic(&mut self, order: Ordering) {
-                for idx in 0..self.len() {
-                    unsafe { self.set_atomic_unchecked(idx, 0, order) };
-                }
-            }
-
-            #[cfg(feature = "rayon")]
-            fn par_reset_atomic(&mut self, order: Ordering) {
-                self.par_iter()
-                    .with_min_len(crate::RAYON_MIN_LEN)
-                    .for_each(|w| w.store(0, order));
-            }
+    fn reset_atomic(&mut self, order: Ordering) {
+        for idx in 0..self.len() {
+            unsafe { self.set_atomic_unchecked(idx, A::Value::ZERO, order) };
         }
+    }
 
-        impl<const N: usize> AtomicBitFieldSlice<$std> for [$atomic; N] {
-            #[inline(always)]
-            fn len(&self) -> usize {
-                N
-            }
-
-            #[inline(always)]
-            unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> $std {
-                debug_assert_bounds!(index, self.len());
-                unsafe { self.as_slice().get_unchecked(index).load(order) }
-            }
-            #[inline(always)]
-            unsafe fn set_atomic_unchecked(&self, index: usize, value: $std, order: Ordering) {
-                debug_assert_bounds!(index, self.len());
-                unsafe {
-                    self.as_slice().get_unchecked(index).store(value, order);
-                }
-            }
-
-            fn reset_atomic(&mut self, order: Ordering) {
-                for idx in 0..self.len() {
-                    unsafe { self.set_atomic_unchecked(idx, 0, order) };
-                }
-            }
-
-            #[cfg(feature = "rayon")]
-            fn par_reset_atomic(&mut self, order: Ordering) {
-                self.par_iter()
-                    .with_min_len(crate::RAYON_MIN_LEN)
-                    .for_each(|w| w.store(0, order));
-            }
-        }
-    };
+    #[cfg(feature = "rayon")]
+    fn par_reset_atomic(&mut self, order: Ordering) {
+        self.par_iter()
+            .with_min_len(crate::RAYON_MIN_LEN)
+            .for_each(|w| w.store(A::Value::ZERO, order));
+    }
 }
 
-impl_atomic!(u8, AtomicU8);
-impl_atomic!(u16, AtomicU16);
-impl_atomic!(u32, AtomicU32);
-impl_atomic!(u64, AtomicU64);
-impl_atomic!(usize, AtomicUsize);
+impl<A: PrimitiveAtomicInteger, const N: usize> AtomicBitFieldSlice<A::Value> for [A; N]
+where
+    A::Value: Word + AtomicPrimitive<Atomic = A>,
+{
+    #[inline(always)]
+    fn len(&self) -> usize {
+        N
+    }
 
-macro_rules! impl_atomic_delegation {
-    ($($ty:ty),*) => {$(
-        impl<W: Word + AtomicPrimitive, T: AtomicBitFieldSlice<W>> AtomicBitFieldSlice<W> for $ty
-        where
-            W::Atomic: PrimitiveAtomicInteger,
-        {
-            #[inline(always)]
-            fn len(&self) -> usize {
-                T::len(self)
-            }
+    #[inline(always)]
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> A::Value {
+        debug_assert_bounds!(index, self.len());
+        unsafe { self.as_slice().get_unchecked(index).load(order) }
+    }
 
-            #[inline(always)]
-            unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> W {
-                unsafe { T::get_atomic_unchecked(self, index, order) }
-            }
-            #[inline(always)]
-            fn get_atomic(&self, index: usize, order: Ordering) -> W {
-                T::get_atomic(self, index, order)
-            }
-            #[inline(always)]
-            unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering) {
-                unsafe { T::set_atomic_unchecked(self, index, value, order) }
-            }
-            #[inline(always)]
-            fn set_atomic(&self, index: usize, value: W, order: Ordering) {
-                T::set_atomic(self, index, value, order)
-            }
-            #[inline(always)]
-            fn reset_atomic(&mut self, order: Ordering) {
-                T::reset_atomic(self, order)
-            }
-            #[inline(always)]
-            #[cfg(feature = "rayon")]
-            fn par_reset_atomic(&mut self, order: Ordering) {
-                T::par_reset_atomic(self, order)
-            }
+    #[inline(always)]
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: A::Value, order: Ordering) {
+        debug_assert_bounds!(index, self.len());
+        unsafe {
+            self.as_slice().get_unchecked(index).store(value, order);
         }
-)*}}
+    }
 
-// Can't delegate on &T because reset requires &mut T
-impl_atomic_delegation!(&mut T, Box<T>);
+    fn reset_atomic(&mut self, order: Ordering) {
+        for idx in 0..self.len() {
+            unsafe { self.set_atomic_unchecked(idx, A::Value::ZERO, order) };
+        }
+    }
+
+    #[cfg(feature = "rayon")]
+    fn par_reset_atomic(&mut self, order: Ordering) {
+        self.par_iter()
+            .with_min_len(crate::RAYON_MIN_LEN)
+            .for_each(|w| w.store(A::Value::ZERO, order));
+    }
+}
+

@@ -129,7 +129,7 @@ fn test_slices_atomic() {
         AtomicU32::new(2),
         AtomicU32::new(3),
     ];
-    assert_eq!(s.bit_width(), 32);
+    assert_eq!(s.atomic_bit_width(), 32);
     assert_eq!(AtomicBitFieldSlice::len(&s), 4);
 
     s.set_atomic(0, 1, Ordering::Relaxed);
@@ -296,24 +296,24 @@ use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize};
 #[test]
 fn test_atomic_bit_width() {
     let slice: &[AtomicU8] = &[];
-    assert_eq!(BitWidth::bit_width(&slice), 8);
+    assert_eq!(AtomicBitWidth::atomic_bit_width(&slice), 8);
 
     let slice: &[AtomicU32] = &[];
-    assert_eq!(BitWidth::bit_width(&slice), 32);
+    assert_eq!(AtomicBitWidth::atomic_bit_width(&slice), 32);
 
     let slice: &[AtomicU64] = &[];
-    assert_eq!(BitWidth::bit_width(&slice), 64);
+    assert_eq!(AtomicBitWidth::atomic_bit_width(&slice), 64);
 
     let slice: &[AtomicUsize] = &[];
-    assert_eq!(BitWidth::bit_width(&slice), usize::BITS as usize);
+    assert_eq!(AtomicBitWidth::atomic_bit_width(&slice), usize::BITS as usize);
 
     // Vec
     let vec: Vec<AtomicU32> = Vec::new();
-    assert_eq!(BitWidth::bit_width(&vec), 32);
+    assert_eq!(AtomicBitWidth::atomic_bit_width(&vec), 32);
 
     // Array
     let arr: [AtomicU32; 0] = [];
-    assert_eq!(BitWidth::bit_width(&arr), 32);
+    assert_eq!(AtomicBitWidth::atomic_bit_width(&arr), 32);
 }
 
 #[test]

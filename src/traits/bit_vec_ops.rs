@@ -80,10 +80,11 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
     /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> bool {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         let bits_per_word = W::BITS as usize;
         let word_index = index / bits_per_word;
         let word = unsafe { *self.as_ref().get_unchecked(word_index) };
-        (word >> (index % bits_per_word)) & W::ONE != W::ZERO
+        (word >> (index % bits_per_word)) & ONE != W::ZERO
     }
 
     /// Returns an iterator over the bits of this bit vector as booleans.
@@ -143,6 +144,7 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
     /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
     #[inline(always)]
     unsafe fn set_unchecked(&mut self, index: usize, value: bool) {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         let bits_per_word = W::BITS as usize;
         let word_index = index / bits_per_word;
         let bit_index = index % bits_per_word;
@@ -150,15 +152,16 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
         // For constant values, this should be inlined with no test.
         unsafe {
             if value {
-                *bits.get_unchecked_mut(word_index) |= W::ONE << bit_index;
+                *bits.get_unchecked_mut(word_index) |= ONE << bit_index;
             } else {
-                *bits.get_unchecked_mut(word_index) &= !(W::ONE << bit_index);
+                *bits.get_unchecked_mut(word_index) &= !(ONE << bit_index);
             }
         }
     }
 
     /// Sets all bits to the given value.
     fn fill(&mut self, value: bool) {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         let bits_per_word = W::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
@@ -166,7 +169,7 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
         let word_value: W = if value { !W::ZERO } else { W::ZERO };
         bits[..full_words].iter_mut().for_each(|x| *x = word_value);
         if residual != 0 {
-            let mask = (W::ONE << residual) - W::ONE;
+            let mask = (ONE << residual) - ONE;
             bits[full_words] = (bits[full_words] & !mask) | (word_value & mask);
         }
     }
@@ -174,6 +177,7 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
     /// Sets all bits to the given value using a parallel implementation.
     #[cfg(feature = "rayon")]
     fn par_fill(&mut self, value: bool) {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         let bits_per_word = W::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
@@ -184,7 +188,7 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
             .with_min_len(RAYON_MIN_LEN)
             .for_each(|x| *x = word_value);
         if residual != 0 {
-            let mask = (W::ONE << residual) - W::ONE;
+            let mask = (ONE << residual) - ONE;
             bits[full_words] = (bits[full_words] & !mask) | (word_value & mask);
         }
     }
@@ -202,13 +206,14 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
 
     /// Flip all bits.
     fn flip(&mut self) {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         let bits_per_word = W::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
         let bits = self.as_mut();
         bits[..full_words].iter_mut().for_each(|x| *x = !*x);
         if residual != 0 {
-            let mask = (W::ONE << residual) - W::ONE;
+            let mask = (ONE << residual) - ONE;
             bits[full_words] = (bits[full_words] & !mask) | (!bits[full_words] & mask);
         }
     }
@@ -216,6 +221,7 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
     /// Flips all bits using a parallel implementation.
     #[cfg(feature = "rayon")]
     fn par_flip(&mut self) {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         let bits_per_word = W::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
@@ -225,7 +231,7 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
             .with_min_len(RAYON_MIN_LEN)
             .for_each(|x| *x = !*x);
         if residual != 0 {
-            let mask = (W::ONE << residual) - W::ONE;
+            let mask = (ONE << residual) - ONE;
             bits[full_words] = (bits[full_words] & !mask) | (!bits[full_words] & mask);
         }
     }
@@ -255,6 +261,7 @@ impl<'a, W: Word, B: ?Sized + AsRef<[W]>> BitIter<'a, W, B> {
 impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for BitIter<'_, W, B> {
     type Item = bool;
     fn next(&mut self) -> Option<bool> {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         if self.next_bit_pos == self.len {
             return None;
         }
@@ -262,7 +269,7 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for BitIter<'_, W, B> {
         let word_idx = self.next_bit_pos / bits_per_word;
         let bit_idx = self.next_bit_pos % bits_per_word;
         let word = unsafe { *self.bits.as_ref().get_unchecked(word_idx) };
-        let bit = (word >> bit_idx) & W::ONE;
+        let bit = (word >> bit_idx) & ONE;
         self.next_bit_pos += 1;
         Some(bit != W::ZERO)
     }
@@ -306,6 +313,7 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for OnesIter<'_, W, B> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         let bits_per_word = W::BITS as usize;
         // find the next word with ones
         while self.word == W::ZERO {
@@ -323,7 +331,7 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for OnesIter<'_, W, B> {
             None
         } else {
             // clear the lowest bit set
-            self.word &= self.word - W::ONE;
+            self.word &= self.word - ONE;
             Some(res)
         }
     }
@@ -361,6 +369,7 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for ZerosIter<'_, W, B> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         let bits_per_word = W::BITS as usize;
         // find the next flipped word with zeros
         while self.word == W::ZERO {
@@ -378,7 +387,7 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for ZerosIter<'_, W, B> {
             None
         } else {
             // clear the lowest bit set
-            self.word &= self.word - W::ONE;
+            self.word &= self.word - ONE;
             Some(res)
         }
     }
