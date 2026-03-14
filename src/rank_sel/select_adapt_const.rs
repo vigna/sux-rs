@@ -153,7 +153,7 @@ use std::ops::Index;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[PlatformWord]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
-#[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
+#[delegate(crate::traits::rank_sel::BitCount<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
@@ -161,9 +161,9 @@ use std::ops::Index;
 #[cfg_attr(not(target_pointer_width = "64"), delegate(crate::traits::rank_sel::RankHinted<32>, target = "bits"))]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
 pub struct SelectAdaptConst<
     B,
@@ -218,7 +218,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
     /// new backend is identical to the old one as a bit vector.
     pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectAdaptConst<C, I>
     where
-        C: SelectHinted,
+        C: SelectHinted<PlatformWord>,
     {
         SelectAdaptConst {
             bits: f(self.bits),
@@ -244,7 +244,7 @@ impl<B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER
 }
 
 impl<
-    B: AsRef<[PlatformWord]> + BitCount,
+    B: AsRef<[PlatformWord]> + BitCount<PlatformWord>,
     const LOG2_ONES_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectAdaptConst<B, Box<[PlatformWord]>, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
@@ -252,6 +252,13 @@ impl<
     /// Creates a new selection structure over a [`SelectHinted`] with a specified
     /// distance between indexed ones.
     pub fn new(bits: B) -> Self {
+        assert!(
+            bits.len() <= (PlatformWord::MAX >> 2) as usize,
+            "Bit vector length ({}) exceeds the maximum representable \
+             inventory value ({})",
+            bits.len(),
+            (PlatformWord::MAX >> 2) as usize
+        );
         let num_ones = bits.count_ones();
         let num_bits = max(1, bits.len());
         let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY);
@@ -318,6 +325,7 @@ impl<
                     let spilled_u64s = num_words.saturating_sub(words_per_subinventory - 1);
                     spilled += spilled_u64s;
                 }
+                #[cfg(target_pointer_width = "64")]
                 SpanType::U64 => {
                     // We store an inventory entry for each one after the first.
                     spilled += (ones - 1).saturating_sub(words_per_subinventory - 1);
@@ -362,6 +370,7 @@ impl<
                     // The first word of the subinventory is used to store the spill index.
                     inventory[start_inv_idx + 1] = spilled as PlatformWord;
                 }
+                #[cfg(target_pointer_width = "64")]
                 SpanType::U64 => {
                     log2_quantum = 0;
                     inventory[start_inv_idx].set_u64_span();
@@ -454,6 +463,7 @@ impl<
                                 break 'outer;
                             }
                         }
+                        #[cfg(target_pointer_width = "64")]
                         SpanType::U64 => {
                             if subinventory_idx < words_per_subinventory {
                                 inventory[start_inv_idx + 1 + subinventory_idx] = bit_index as PlatformWord;
@@ -511,7 +521,7 @@ impl<
 }
 
 impl<
-    B: AsRef<[PlatformWord]> + BitLength + SelectHinted,
+    B: AsRef<[PlatformWord]> + BitLength + SelectHinted<PlatformWord>,
     I: AsRef<[PlatformWord]>,
     const LOG2_ONES_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
@@ -578,6 +588,7 @@ impl<
                 return self.bits.select_hinted(rank, hint_pos, rank - residual);
             }
 
+            #[cfg(target_pointer_width = "64")]
             debug_assert!(inventory_rank.is_u64_span());
             let inventory_rank = inventory_rank.get();
 
@@ -596,7 +607,7 @@ impl<
 }
 
 impl<
-    B: AsRef<[PlatformWord]> + NumBits + SelectHinted,
+    B: AsRef<[PlatformWord]> + NumBits + SelectHinted<PlatformWord>,
     I: AsRef<[PlatformWord]>,
     const LOG2_ONES_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
@@ -605,6 +616,7 @@ impl<
 }
 
 #[cfg(test)]
+#[cfg(target_pointer_width = "64")]
 mod tests {
     use std::collections::BTreeSet;
 

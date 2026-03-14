@@ -40,9 +40,12 @@ pub trait BitLength {
 /// The computation can be expensive: if you need a constant-time
 /// version, use [`NumBits`]. If you need to cache the result
 /// of these methods, you can use [`AddNumBits`].
+///
+/// The type parameter `W` specifies the word type used by the
+/// underlying bit vector backend (typically [`PlatformWord`]).
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
-pub trait BitCount: BitLength {
+pub trait BitCount<W>: BitLength {
     /// Returns the number of ones in the underlying bit vector,
     /// with a possibly expensive computation; see [`NumBits::num_ones`]
     /// for constant-time version.
@@ -270,9 +273,12 @@ pub trait SelectZero: SelectZeroUnchecked + NumBits {
 /// This trait is used to implement fast selection by adding to bit vectors
 /// indices of different kind. See, for example,
 /// [`SelectAdapt`](crate::rank_sel::SelectAdapt).
+///
+/// The type parameter `W` specifies the word type used by the
+/// underlying bit vector backend (typically [`PlatformWord`]).
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
-pub trait SelectHinted {
+pub trait SelectHinted<W> {
     /// Selects the one of given rank, provided the position of a preceding one
     /// and its rank.
     ///
@@ -292,9 +298,12 @@ pub trait SelectHinted {
 ///
 /// This trait is used to implement fast selection over zeros by adding to bit
 /// vectors indices of different kind.
+///
+/// The type parameter `W` specifies the word type used by the
+/// underlying bit vector backend (typically [`PlatformWord`]).
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
-pub trait SelectZeroHinted {
+pub trait SelectZeroHinted<W> {
     /// Selects the zero of given rank, provided the position of a preceding zero
     /// and its rank.
     ///
@@ -328,10 +337,10 @@ pub trait SelectZeroHinted {
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::Select, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
 pub struct AddNumBits<B> {
     bits: B,
@@ -386,7 +395,7 @@ impl<B: BitLength> NumBits for AddNumBits<B> {
     }
 }
 
-impl<B: BitLength> BitCount for AddNumBits<B> {
+impl<B: BitLength> BitCount<PlatformWord> for AddNumBits<B> {
     #[inline(always)]
     fn count_ones(&self) -> usize {
         self.number_of_ones
@@ -400,7 +409,7 @@ impl<B> Deref for AddNumBits<B> {
     }
 }
 
-impl<B: BitCount> From<B> for AddNumBits<B> {
+impl<B: BitCount<PlatformWord>> From<B> for AddNumBits<B> {
     fn from(bits: B) -> Self {
         let number_of_ones = bits.count_ones();
         AddNumBits {

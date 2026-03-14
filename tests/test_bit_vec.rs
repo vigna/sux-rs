@@ -23,7 +23,7 @@ fn test() {
 
     let mut rng = SmallRng::seed_from_u64(0);
 
-    let bm = BitVec::with_value(u, true);
+    let bm: BitVec = BitVec::with_value(u, true);
 
     assert_eq!(bm.len(), u);
     assert_eq!(bm.count_ones(), u);
@@ -37,7 +37,7 @@ fn test() {
         assert!(bm[i]);
     }
 
-    let mut bm = BitVec::new(u);
+    let mut bm: BitVec = BitVec::new(u);
 
     for _ in 0..10 {
         let mut values = (0..u).collect::<Vec<_>>();
@@ -154,7 +154,7 @@ fn test_atomic_swap() {
 
 #[test]
 fn test_push_pop() {
-    let mut b = BitVec::new(0);
+    let mut b: BitVec = BitVec::new(0);
     b.push(true);
     b.push(false);
     assert!(b.get(0));
@@ -173,7 +173,7 @@ fn test_push_pop() {
 
 #[test]
 fn test_resize() {
-    let mut c = BitVec::new(0);
+    let mut c: BitVec = BitVec::new(0);
     c.resize(100, true);
     for i in 0..100 {
         assert!(c.get(i));
@@ -188,7 +188,7 @@ fn test_resize() {
 #[test]
 fn test_fill() {
     for len in [0, 1, 64, 65, 100, 127, 128, 1000] {
-        let mut c = BitVec::new(len);
+        let mut c: BitVec = BitVec::new(len);
         c.fill(true);
         for (i, b) in c.into_iter().enumerate() {
             assert!(b, "{}", i);
@@ -267,7 +267,7 @@ fn test_atomic_fill() {
 #[test]
 fn test_flip() {
     for len in [0, 1, 64, 65, 100, 127, 128, 1000] {
-        let mut c = BitVec::new(len);
+        let mut c: BitVec = BitVec::new(len);
         c.flip();
         for (i, b) in c.into_iter().enumerate() {
             assert!(b, "{}", i);
@@ -339,7 +339,7 @@ fn test_atomic_flip() {
 
 #[test]
 fn test_iter() {
-    let mut c = BitVec::new(100);
+    let mut c: BitVec = BitVec::new(100);
     for i in 0..100 {
         c.set(i, i % 2 == 0);
     }
@@ -351,7 +351,7 @@ fn test_iter() {
 
 #[test]
 fn test_iter_ones_alternate() {
-    let mut c = BitVec::new(200);
+    let mut c: BitVec = BitVec::new(200);
     for i in 0..200 {
         c.set(i, i % 2 == 0);
     }
@@ -363,13 +363,13 @@ fn test_iter_ones_alternate() {
 
 #[test]
 fn test_iter_ones_empty() {
-    let c = BitVec::new(200);
+    let c: BitVec = BitVec::new(200);
     assert_eq!(c.iter_ones().next(), None);
 }
 
 #[test]
 fn test_iter_ones_one() {
-    let mut c = BitVec::new(200);
+    let mut c: BitVec = BitVec::new(200);
     c.set(1, true);
     let mut i = c.iter_ones();
     assert_eq!(i.next(), Some(1));
@@ -378,7 +378,7 @@ fn test_iter_ones_one() {
 
 #[test]
 fn test_iter_zeros_alternate() {
-    let mut c = BitVec::new(200);
+    let mut c: BitVec = BitVec::new(200);
     for i in 0..200 {
         c.set(i, i % 2 != 0);
     }
@@ -390,14 +390,14 @@ fn test_iter_zeros_alternate() {
 
 #[test]
 fn test_iter_zeros_full() {
-    let mut c = BitVec::new(200);
+    let mut c: BitVec = BitVec::new(200);
     c.flip();
     assert_eq!(c.iter_zeros().next(), None);
 }
 
 #[test]
 fn test_iter_zeros_one() {
-    let mut c = BitVec::new(200);
+    let mut c: BitVec = BitVec::new(200);
     c.set(1, true);
     c.flip();
     let mut i = c.iter_zeros();
@@ -419,8 +419,8 @@ fn test_atomic_iter() {
 
 #[test]
 fn test_eq() {
-    let mut b = BitVec::new(0);
-    let mut c = BitVec::new(0);
+    let mut b: BitVec = BitVec::new(0);
+    let mut c: BitVec = BitVec::new(0);
     assert_eq!(b, c);
 
     b.push(true);
@@ -448,7 +448,7 @@ fn test_epserde() -> Result<()> {
     use epserde::utils::AlignedCursor;
     use rand::{Rng, SeedableRng};
     let mut rng = SmallRng::seed_from_u64(0);
-    let mut b = BitVec::new(200);
+    let mut b: BitVec = BitVec::new(200);
     for i in 0..200 {
         b.set(i, rng.next_u64() % 2 != 0);
     }

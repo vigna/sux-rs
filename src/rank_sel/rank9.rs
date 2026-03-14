@@ -7,6 +7,7 @@
  */
 
 use crate::prelude::*;
+use crate::traits::PlatformWord;
 use ambassador::Delegate;
 use mem_dbg::*;
 
@@ -77,7 +78,7 @@ use std::ops::Index;
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted<64>, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
 #[delegate(
     crate::traits::rank_sel::Select,
@@ -90,7 +91,7 @@ use std::ops::Index;
     target = "bits",
     where = "C: AsRef<[BlockCounters]>"
 )]
-#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "bits")]
 pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
     pub(super) bits: B,
     pub(super) counts: C,
@@ -216,7 +217,7 @@ impl<B: BitLength, C: AsRef<[BlockCounters]>> NumBits for Rank9<B, C> {
     }
 }
 
-impl<B: BitLength, C: AsRef<[BlockCounters]>> BitCount for Rank9<B, C> {
+impl<B: BitLength, C: AsRef<[BlockCounters]>> BitCount<PlatformWord> for Rank9<B, C> {
     #[inline(always)]
     fn count_ones(&self) -> usize {
         self.num_ones()

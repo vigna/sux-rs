@@ -219,7 +219,7 @@ use std::ops::Index;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[PlatformWord]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
-#[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
+#[delegate(crate::traits::rank_sel::BitCount<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
@@ -227,9 +227,9 @@ use std::ops::Index;
 #[cfg_attr(not(target_pointer_width = "64"), delegate(crate::traits::rank_sel::RankHinted<32>, target = "bits"))]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
 pub struct SelectAdapt<B, I = Box<[PlatformWord]>> {
     bits: B,
@@ -250,15 +250,23 @@ impl<B, I> Deref for SelectAdapt<B, I> {
     }
 }
 
-// Convenience trait to handle the information packed in the two upper bits of
-// an inventory entry. It is used by all variants.
-
+/// Convenience trait to handle the information packed in the two upper bits
+/// of an inventory entry. It is used by all variants.
+///
+/// The top 2 bits of each [`PlatformWord`] entry encode the span type
+/// ([`SpanType`]), leaving `PlatformWord::BITS - 2` bits for the actual
+/// position. On 64-bit platforms this allows positions up to 2^62 − 1; on
+/// 32-bit platforms only up to 2^30 − 1 (about 1 billion). Constructors
+/// of all SelectAdapt variants assert that the bit vector length fits in
+/// this range.
 pub(super) trait Inventory {
     fn is_u16_span(&self) -> bool;
     fn is_u32_span(&self) -> bool;
+    #[cfg(target_pointer_width = "64")]
     fn is_u64_span(&self) -> bool;
     fn set_u16_span(&mut self);
     fn set_u32_span(&mut self);
+    #[cfg(target_pointer_width = "64")]
     fn set_u64_span(&mut self);
     fn get(&self) -> usize;
 }
@@ -275,6 +283,7 @@ impl Inventory for PlatformWord {
         *self >> (PlatformWord::BITS - 2) == 2
     }
 
+    #[cfg(target_pointer_width = "64")]
     #[inline(always)]
     fn is_u64_span(&self) -> bool {
         *self >> (PlatformWord::BITS - 2) == 3
@@ -288,6 +297,7 @@ impl Inventory for PlatformWord {
         *self |= 1 << (PlatformWord::BITS - 1);
     }
 
+    #[cfg(target_pointer_width = "64")]
     #[inline(always)]
     fn set_u64_span(&mut self) {
         *self |= 3 << (PlatformWord::BITS - 2);
@@ -299,12 +309,15 @@ impl Inventory for PlatformWord {
     }
 }
 
-// The type subinventory entries for a span. It is used by all variants.
+// The type of subinventory entries for a span. It is used by all variants.
+// On 32-bit, the assert on bit vector length (≤ PlatformWord::MAX >> 2)
+// guarantees that U64 spans are unreachable.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpanType {
     U16,
     U32,
+    #[cfg(target_pointer_width = "64")]
     U64,
 }
 
@@ -345,7 +358,7 @@ impl<B, I> SelectAdapt<B, I> {
     /// new backend is identical to the old one as a bit vector.
     pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectAdapt<C, I>
     where
-        C: SelectHinted,
+        C: SelectHinted<PlatformWord>,
     {
         SelectAdapt {
             bits: f(self.bits),
@@ -373,7 +386,7 @@ impl<B: BitLength, C> SelectAdapt<B, C> {
     }
 }
 
-impl<B: AsRef<[PlatformWord]> + BitCount> SelectAdapt<B, Box<[PlatformWord]>> {
+impl<B: AsRef<[PlatformWord]> + BitCount<PlatformWord>> SelectAdapt<B, Box<[PlatformWord]>> {
     /// Creates a new selection structure over a bit vector using a
     /// [default target inventory
     /// span](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN).
@@ -479,6 +492,13 @@ impl<B: AsRef<[PlatformWord]> + BitCount> SelectAdapt<B, Box<[PlatformWord]>> {
         log2_ones_per_inventory: usize,
         max_log2_words_per_subinventory: usize,
     ) -> Self {
+        assert!(
+            bits.len() <= (PlatformWord::MAX >> 2) as usize,
+            "Bit vector length ({}) exceeds the maximum representable \
+             inventory value ({})",
+            bits.len(),
+            (PlatformWord::MAX >> 2) as usize
+        );
         let num_bits = max(1, bits.len());
         let ones_per_inventory = 1 << log2_ones_per_inventory;
         let ones_per_inventory_mask = ones_per_inventory - 1;
@@ -559,6 +579,7 @@ impl<B: AsRef<[PlatformWord]> + BitCount> SelectAdapt<B, Box<[PlatformWord]>> {
                     let spilled_u64s = num_words.saturating_sub(words_per_subinventory - 1);
                     spilled += spilled_u64s;
                 }
+                #[cfg(target_pointer_width = "64")]
                 SpanType::U64 => {
                     // We store an inventory entry for each one after the first.
                     spilled += (ones - 1).saturating_sub(words_per_subinventory - 1);
@@ -603,6 +624,7 @@ impl<B: AsRef<[PlatformWord]> + BitCount> SelectAdapt<B, Box<[PlatformWord]>> {
                     // The first word of the subinventory is used to store the spill index.
                     inventory[start_inv_idx + 1] = spilled as PlatformWord;
                 }
+                #[cfg(target_pointer_width = "64")]
                 SpanType::U64 => {
                     log2_quantum = 0;
                     inventory[start_inv_idx].set_u64_span();
@@ -695,6 +717,7 @@ impl<B: AsRef<[PlatformWord]> + BitCount> SelectAdapt<B, Box<[PlatformWord]>> {
                                 break 'outer;
                             }
                         }
+                        #[cfg(target_pointer_width = "64")]
                         SpanType::U64 => {
                             if subinventory_idx < words_per_subinventory {
                                 inventory[start_inv_idx + 1 + subinventory_idx] = bit_index as PlatformWord;
@@ -756,7 +779,7 @@ impl<B: AsRef<[PlatformWord]> + BitCount> SelectAdapt<B, Box<[PlatformWord]>> {
     }
 }
 
-impl<B: AsRef<[PlatformWord]> + BitLength + SelectHinted, I: AsRef<[PlatformWord]>> SelectUnchecked
+impl<B: AsRef<[PlatformWord]> + BitLength + SelectHinted<PlatformWord>, I: AsRef<[PlatformWord]>> SelectUnchecked
     for SelectAdapt<B, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -820,6 +843,7 @@ impl<B: AsRef<[PlatformWord]> + BitLength + SelectHinted, I: AsRef<[PlatformWord
                 return self.bits.select_hinted(rank, hint_pos, rank - residual);
             }
 
+            #[cfg(target_pointer_width = "64")]
             debug_assert!(inventory_rank.is_u64_span());
             let inventory_rank = inventory_rank.get();
 
@@ -837,9 +861,10 @@ impl<B: AsRef<[PlatformWord]> + BitLength + SelectHinted, I: AsRef<[PlatformWord
     }
 }
 
-impl<B: SelectHinted + AsRef<[PlatformWord]> + NumBits, I: AsRef<[PlatformWord]>> Select for SelectAdapt<B, I> {}
+impl<B: SelectHinted<PlatformWord> + AsRef<[PlatformWord]> + NumBits, I: AsRef<[PlatformWord]>> Select for SelectAdapt<B, I> {}
 
 #[cfg(test)]
+#[cfg(target_pointer_width = "64")]
 mod tests {
     use std::collections::BTreeSet;
 
