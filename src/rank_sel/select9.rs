@@ -125,7 +125,7 @@ use std::ops::{Deref, Index};
 #[delegate(crate::traits::rank_sel::BitLength, target = "rank9")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "rank9")]
 #[delegate(crate::traits::rank_sel::Rank, target = "rank9")]
-#[delegate(crate::traits::rank_sel::RankHinted<64>, target = "rank9")]
+#[delegate(crate::traits::rank_sel::RankHinted<u64>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "rank9")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "rank9")]
 #[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "rank9")]

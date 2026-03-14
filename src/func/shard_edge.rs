@@ -344,7 +344,7 @@ mod mwhc {
                 self.seg_size = self.seg_size.next_multiple_of(128);
             }
 
-            assert!(self.seg_size * 3 <= Self::Vertex::MAX as usize + 1);
+            assert!(self.seg_size * 3 - 1 <= Self::Vertex::MAX as usize);
             (1.23, false)
         }
 
@@ -741,7 +741,7 @@ mod fuse {
                 .try_into()
                 .unwrap();
 
-            assert!((self.l as usize + 2) << self.log2_seg_size <= u32::MAX as usize + 1);
+            assert!(((self.l as usize + 2) << self.log2_seg_size) - 1 <= u32::MAX as usize);
             (c, lge)
         }
 

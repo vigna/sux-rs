@@ -660,52 +660,36 @@ impl<W, B: AsRef<[W]>> AsRef<[W]> for AtomicBitVec<B> {
     }
 }
 
-// RankHinted implementations for different word types.
-// Since RankHinted<64> and RankHinted<32> are different traits, these impls
-// do not overlap and can coexist on all platforms.
-//
-// This macro is necessary because the const generic parameter of RankHinted
-// is tied to the word size (e.g., RankHinted<64> for u64, RankHinted<32> for
-// u32). Writing a single generic impl would require
-// `impl<W: Word> RankHinted<{W::BITS as usize}>`, which needs the
-// `generic_const_exprs` feature (rust-lang/rust#76560).
+impl<W: Word, B: AsRef<[W]>> RankHinted<W> for BitVec<B> {
+    #[inline(always)]
+    unsafe fn rank_hinted(
+        &self,
+        pos: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
+        let bits_per_word = W::BITS as usize;
+        let bits: &[W] = self.as_ref();
+        let mut rank = hint_rank;
+        let mut hint_pos = hint_pos;
 
-macro_rules! impl_rank_hinted_for_bitvec {
-    ($W:ty, $BITS:literal) => {
-        impl<B: AsRef<[$W]>> RankHinted<$BITS> for BitVec<B> {
-            #[inline(always)]
-            unsafe fn rank_hinted(
-                &self,
-                pos: usize,
-                hint_pos: usize,
-                hint_rank: usize,
-            ) -> usize {
-                let bits: &[$W] = self.as_ref();
-                let mut rank = hint_rank;
-                let mut hint_pos = hint_pos;
+        debug_assert!(
+            hint_pos < bits.len(),
+            "hint_pos: {}, len: {}",
+            hint_pos,
+            bits.len()
+        );
 
-                debug_assert!(
-                    hint_pos < bits.len(),
-                    "hint_pos: {}, len: {}",
-                    hint_pos,
-                    bits.len()
-                );
-
-                while (hint_pos + 1) * $BITS <= pos {
-                    rank += unsafe { bits.get_unchecked(hint_pos) }.count_ones() as usize;
-                    hint_pos += 1;
-                }
-
-                rank + (unsafe { *bits.get_unchecked(hint_pos) }
-                    & ((1 as $W) << (pos % $BITS)).wrapping_sub(1))
-                    .count_ones() as usize
-            }
+        while (hint_pos + 1) * bits_per_word <= pos {
+            rank += unsafe { bits.get_unchecked(hint_pos) }.count_ones() as usize;
+            hint_pos += 1;
         }
-    };
-}
 
-impl_rank_hinted_for_bitvec!(u64, 64);
-impl_rank_hinted_for_bitvec!(u32, 32);
+        rank + (unsafe { *bits.get_unchecked(hint_pos) }
+            & (W::ONE << (pos % bits_per_word)).wrapping_sub(W::ONE))
+            .count_ones() as usize
+    }
+}
 
 // SelectHinted and SelectZeroHinted for different word-type backends.
 

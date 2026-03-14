@@ -190,25 +190,30 @@ pub trait RankZero: Rank {
 ///
 /// This trait is used to implement fast ranking by adding to bit vectors
 /// counters of different kind.
+///
+/// The type parameter `W` specifies the word type used by the
+/// underlying bit vector backend (typically [`PlatformWord`]).
+/// The hint position is expressed as a multiple of the word bit size
+/// (`W::BITS`).
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
-pub trait RankHinted<const HINT_BIT_SIZE: usize> {
+pub trait RankHinted<W> {
     /// Returns the number of ones preceding the specified position,
     /// provided a preceding position and its associated rank.
     ///
     /// The hinted position, `hint_pos`, is expressed as a multiple of
-    /// `HINT_BIT_SIZE`. This parameter is necessary as some rank implementation
+    /// `W::BITS`. This parameter is necessary as some rank implementation
     /// can accept only hints at specific positions (usually, multiples of the
-    /// word size, to which `HINT_BIT_SIZE` should be set, in that case).
+    /// word size).
     ///
     /// # Safety
     ///
     /// `pos` must be between 0 (included) and
     /// the [length of the underlying bit vector](`BitLength::len`) (excluded).
-    /// `hint_pos` * `HINT_BIT_SIZE` must be between 0 (included) and
+    /// `hint_pos` * `W::BITS` must be between 0 (included) and
     /// `pos` (included).
     /// `hint_rank` must be the number of ones in the underlying bit vector
-    /// before `hint_pos` * `HINT_BIT_SIZE`.
+    /// before `hint_pos` * `W::BITS`.
     ///
     /// Some implementation might consider the length as a valid argument.
     unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize;
@@ -332,8 +337,7 @@ pub trait SelectZeroHinted<W> {
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
-#[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::RankHinted<64>, target = "bits"))]
-#[cfg_attr(not(target_pointer_width = "64"), delegate(crate::traits::rank_sel::RankHinted<32>, target = "bits"))]
+#[delegate(crate::traits::rank_sel::RankHinted<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::Select, target = "bits")]
