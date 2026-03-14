@@ -319,9 +319,14 @@ impl Block32Counters<1, 8> {
 impl Block32Counters<3, 13> {
     #[inline(always)]
     pub fn all_rel(&self) -> u128 {
-        self.relative[0] as u128
-            | (self.relative[1] as u128) << 32
-            | (self.relative[2] as u128) << 64
+        #[cfg(target_endian = "little")]
+        unsafe {
+            read_unaligned(addr_of!(*self) as *const u128) >> 32
+        }
+        #[cfg(target_endian = "big")]
+        unsafe {
+            read_unaligned(addr_of!(*self) as *const u128) & ((1 << 96) - 1)
+        }
     }
 
     #[inline(always)]
@@ -333,9 +338,21 @@ impl Block32Counters<3, 13> {
     pub fn set_rel(&mut self, word: usize, counter: usize) {
         let mut packed = self.all_rel();
         packed |= (counter as u128) << (13 * (word ^ 7));
-        self.relative[0] = packed as u32;
-        self.relative[1] = (packed >> 32) as u32;
-        self.relative[2] = (packed >> 64) as u32;
+
+        #[cfg(target_endian = "little")]
+        unsafe {
+            write_unaligned(
+                addr_of_mut!(*self) as *mut u128,
+                (packed << 32) | self.absolute as u128,
+            )
+        };
+        #[cfg(target_endian = "big")]
+        unsafe {
+            write_unaligned(
+                addr_of_mut!(*self) as *mut u128,
+                packed | (self.absolute as u128) << 96,
+            );
+        };
     }
 }
 
