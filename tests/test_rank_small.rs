@@ -80,12 +80,12 @@ fn test_rank_small4() {
 
 #[test]
 fn test_rank_small_0_u32() {
-    test_rank_small![0, u32; u32];
+    test_rank_small![0, u32 ; u32];
 }
 
 #[test]
 fn test_rank_small_1_u32() {
-    test_rank_small![1, u32; u32];
+    test_rank_small![1, u32 ; u32];
 }
 
 #[test]
