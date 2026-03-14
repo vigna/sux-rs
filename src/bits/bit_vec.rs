@@ -663,6 +663,12 @@ impl<W, B: AsRef<[W]>> AsRef<[W]> for AtomicBitVec<B> {
 // RankHinted implementations for different word types.
 // Since RankHinted<64> and RankHinted<32> are different traits, these impls
 // do not overlap and can coexist on all platforms.
+//
+// This macro is necessary because the const generic parameter of RankHinted
+// is tied to the word size (e.g., RankHinted<64> for u64, RankHinted<32> for
+// u32). Writing a single generic impl would require
+// `impl<W: Word> RankHinted<{W::BITS as usize}>`, which needs the
+// `generic_const_exprs` feature (rust-lang/rust#76560).
 
 macro_rules! impl_rank_hinted_for_bitvec {
     ($W:ty, $BITS:literal) => {

@@ -212,32 +212,26 @@ where
     fn par_reset_atomic(&mut self, order: Ordering);
 }
 
-macro_rules! impl_bit_width {
-    ($($ty:ty),*) => {$(
-        impl BitWidth<$ty> for [$ty] {
-            #[inline(always)]
-            fn bit_width(&self) -> usize {
-                <$ty>::BITS as usize
-            }
-        }
-
-        impl BitWidth<$ty> for Vec<$ty> {
-            #[inline(always)]
-            fn bit_width(&self) -> usize {
-                <$ty>::BITS as usize
-            }
-        }
-
-        impl<const N: usize> BitWidth<$ty> for [$ty; N] {
-            #[inline(always)]
-            fn bit_width(&self) -> usize {
-                <$ty>::BITS as usize
-            }
-        }
-    )*};
+impl<W: Word> BitWidth<W> for [W] {
+    #[inline(always)]
+    fn bit_width(&self) -> usize {
+        W::BITS as usize
+    }
 }
 
-impl_bit_width!(u8, u16, u32, u64, u128, usize);
+impl<W: Word> BitWidth<W> for Vec<W> {
+    #[inline(always)]
+    fn bit_width(&self) -> usize {
+        W::BITS as usize
+    }
+}
+
+impl<W: Word, const N: usize> BitWidth<W> for [W; N] {
+    #[inline(always)]
+    fn bit_width(&self) -> usize {
+        W::BITS as usize
+    }
+}
 
 macro_rules! impl_bit_width_delegation {
     ($($ty:ty),*) => {$(
@@ -251,29 +245,23 @@ macro_rules! impl_bit_width_delegation {
 
 impl_bit_width_delegation!(&T, &mut T, Box<T>);
 
-macro_rules! impl_slice {
-    ($($ty:ty),*) => {$(
-        impl BitFieldSlice<$ty> for [$ty] {
-
-            fn as_slice(&self) -> &[$ty] {
-                self
-            }
-        }
-        impl BitFieldSlice<$ty> for Vec<$ty> {
-            fn as_slice(&self) -> &[$ty] {
-                self
-            }
-        }
-
-        impl<const N: usize> BitFieldSlice<$ty> for [$ty; N] {
-            fn as_slice(&self) -> &[$ty] {
-                self
-            }
-        }
-    )*};
+impl<W: Word> BitFieldSlice<W> for [W] {
+    fn as_slice(&self) -> &[W] {
+        self
+    }
 }
 
-impl_slice!(u8, u16, u32, u64, u128, usize);
+impl<W: Word> BitFieldSlice<W> for Vec<W> {
+    fn as_slice(&self) -> &[W] {
+        self
+    }
+}
+
+impl<W: Word, const N: usize> BitFieldSlice<W> for [W; N] {
+    fn as_slice(&self) -> &[W] {
+        self
+    }
+}
 
 macro_rules! impl_slice_delegation {
     ($($ty:ty),*) => {$(
@@ -287,68 +275,61 @@ macro_rules! impl_slice_delegation {
 
 impl_slice_delegation!(&T, &mut T, Box<T>);
 
-macro_rules! impl_slice_mut {
-    ($($ty:ty),*) => {$(
-        impl BitFieldSliceMut<$ty> for [$ty] {
+impl<W: Word> BitFieldSliceMut<W> for [W] {
+    fn reset(&mut self) {
+        self.fill(W::ZERO);
+    }
 
-            fn reset(&mut self) {
-                self.fill(0);
-            }
+    #[cfg(feature = "rayon")]
+    fn par_reset(&mut self) {
+        self.as_mut()
+            .par_iter_mut()
+            .with_min_len(crate::RAYON_MIN_LEN)
+            .for_each(|w| { *w = W::ZERO });
+    }
 
-            #[cfg(feature = "rayon")]
-            fn par_reset(&mut self) {
-                self.as_mut()
-                    .par_iter_mut()
-                    .with_min_len(crate::RAYON_MIN_LEN)
-                    .for_each(|w| { *w = 0 });
-            }
-
-            fn as_mut_slice(&mut self) -> &mut [$ty] {
-                self
-            }
-        }
-        impl BitFieldSliceMut<$ty> for Vec<$ty> {
-            #[inline(always)]
-            fn reset(&mut self) {
-                self.fill(0);
-            }
-
-            #[cfg(feature = "rayon")]
-            fn par_reset(&mut self) {
-                self
-                    .par_iter_mut()
-                    .with_min_len(crate::RAYON_MIN_LEN)
-                    .for_each(|w| { *w = 0 });
-            }
-
-            fn as_mut_slice(&mut self) -> &mut [$ty] {
-                self
-            }
-        }
-
-        impl<const N: usize> BitFieldSliceMut<$ty> for [$ty; N] {
-            #[inline(always)]
-            fn reset(&mut self) {
-                self.fill(0);
-            }
-
-            #[cfg(feature = "rayon")]
-            fn par_reset(&mut self) {
-                self
-                    .par_iter_mut()
-                    .with_min_len(crate::RAYON_MIN_LEN)
-                    .for_each(|w| { *w = 0 });
-            }
-
-            fn as_mut_slice(&mut self) -> &mut [$ty] {
-                self
-            }
-        }
-
-    )*};
+    fn as_mut_slice(&mut self) -> &mut [W] {
+        self
+    }
 }
 
-impl_slice_mut!(u8, u16, u32, u64, u128, usize);
+impl<W: Word> BitFieldSliceMut<W> for Vec<W> {
+    #[inline(always)]
+    fn reset(&mut self) {
+        self.fill(W::ZERO);
+    }
+
+    #[cfg(feature = "rayon")]
+    fn par_reset(&mut self) {
+        self
+            .par_iter_mut()
+            .with_min_len(crate::RAYON_MIN_LEN)
+            .for_each(|w| { *w = W::ZERO });
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [W] {
+        self
+    }
+}
+
+impl<W: Word, const N: usize> BitFieldSliceMut<W> for [W; N] {
+    #[inline(always)]
+    fn reset(&mut self) {
+        self.fill(W::ZERO);
+    }
+
+    #[cfg(feature = "rayon")]
+    fn par_reset(&mut self) {
+        self
+            .par_iter_mut()
+            .with_min_len(crate::RAYON_MIN_LEN)
+            .for_each(|w| { *w = W::ZERO });
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [W] {
+        self
+    }
+}
 
 macro_rules! impl_slice_mut_delegation {
     ($($ty:ty),*) => {$(
@@ -376,6 +357,9 @@ impl_slice_mut_delegation!(&mut T, Box<T>);
 
 // Implementations for slices of atomic types
 
+// This macro cannot be replaced by a generic impl because the compiler
+// cannot prove that `PrimitiveAtomicInteger` and `Word` don't overlap,
+// which would conflict with the generic `BitWidth<W: Word>` impls above.
 macro_rules! impl_bit_width_atomic {
     ($($aty:ty),*) => {$(
         impl BitWidth<$aty> for [$aty] {
@@ -403,25 +387,28 @@ macro_rules! impl_bit_width_atomic {
 
 impl_bit_width_atomic!(AtomicU8, AtomicU16, AtomicU32, AtomicU64, AtomicUsize);
 
+// This macro cannot be replaced by a generic impl because its supertrait
+// BitWidth<W::Atomic> is itself macro-based (impl_bit_width_atomic!), so
+// the compiler cannot connect generic W::Atomic to the concrete impls.
 macro_rules! impl_atomic {
     ($std:ty, $atomic:ty) => {
         impl AtomicBitFieldSlice<$std> for [$atomic] {
             #[inline(always)]
             fn len(&self) -> usize {
-                self.as_ref().len()
+                <[$atomic]>::len(self)
             }
 
             #[inline(always)]
             unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> $std {
                 debug_assert_bounds!(index, self.len());
-                unsafe { self.as_ref().get_unchecked(index).load(order) }
+                unsafe { self.get_unchecked(index).load(order) }
             }
 
             #[inline(always)]
             unsafe fn set_atomic_unchecked(&self, index: usize, value: $std, order: Ordering) {
                 debug_assert_bounds!(index, self.len());
                 unsafe {
-                    self.as_ref().get_unchecked(index).store(value, order);
+                    self.get_unchecked(index).store(value, order);
                 }
             }
 
@@ -433,8 +420,7 @@ macro_rules! impl_atomic {
 
             #[cfg(feature = "rayon")]
             fn par_reset_atomic(&mut self, order: Ordering) {
-                self.as_ref()
-                    .par_iter()
+                self.par_iter()
                     .with_min_len(crate::RAYON_MIN_LEN)
                     .for_each(|w| w.store(0, order));
             }
@@ -443,7 +429,7 @@ macro_rules! impl_atomic {
         impl AtomicBitFieldSlice<$std> for Vec<$atomic> {
             #[inline(always)]
             fn len(&self) -> usize {
-                self.len()
+                Vec::len(self)
             }
 
             #[inline(always)]
