@@ -7,7 +7,7 @@
  */
 
 use sux::{
-    bits::{BitFieldVec, bit_field_vec},
+    bits::BitFieldVec,
     dict::{RearCodedListBuilder, mapped_rear_coded_list::MappedRearCodedList},
     traits::IndexedSeq,
 };

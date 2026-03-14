@@ -23,7 +23,7 @@ struct Args {
     n: usize,
 
     /// The size of the universe.
-    u: usize,
+    u: u64,
 
     /// The number of values to test.
     t: usize,

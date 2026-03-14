@@ -13,7 +13,6 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use sux::prelude::*;
 use sux::traits::PlatformWord;
-use sux::traits::bit_field_slice::Word;
 use sux::traits::bit_vec_ops::*;
 
 #[test]
@@ -86,11 +85,11 @@ fn test() {
         Atomic::<PlatformWord>::new(PlatformWord::MAX),
     ];
     assert_eq!(
-        unsafe { AtomicBitVec::from_raw_parts(&ones, 0) }.count_ones(),
+        unsafe { AtomicBitVec::from_raw_parts(&ones[..], 0) }.count_ones(),
         0
     );
     assert_eq!(
-        unsafe { AtomicBitVec::from_raw_parts(&ones, 1) }.count_ones(),
+        unsafe { AtomicBitVec::from_raw_parts(&ones[..], 1) }.count_ones(),
         1
     );
 
@@ -132,7 +131,7 @@ fn test() {
         }
     }
 
-    let bm = AtomicBitVec::with_value(u, true);
+    let bm: AtomicBitVec = AtomicBitVec::with_value(u, true);
 
     assert_eq!(bm.len(), u);
     assert_eq!(bm.count_ones(), u);
@@ -144,7 +143,7 @@ fn test() {
 
 #[test]
 fn test_atomic_swap() {
-    let b = AtomicBitVec::new(10);
+    let b: AtomicBitVec = AtomicBitVec::new(10);
     assert!(!b.get(1, Ordering::Relaxed));
     assert!(!b.swap(1, true, Ordering::Relaxed));
     assert!(b.get(1, Ordering::Relaxed));
@@ -228,7 +227,7 @@ fn test_fill() {
 #[test]
 fn test_atomic_fill() {
     for len in [0, 1, 64, 65, 100, 127, 128, 1000] {
-        let mut c = AtomicBitVec::new(len);
+        let mut c: AtomicBitVec = AtomicBitVec::new(len);
         c.fill(true, Ordering::Relaxed);
         for i in 0..c.len() {
             assert!(c.get(i, Ordering::Relaxed), "{}", i);
@@ -304,7 +303,7 @@ fn test_flip() {
 #[test]
 fn test_atomic_flip() {
     for len in [0, 1, 64, 65, 100, 127, 128, 1000] {
-        let mut c = AtomicBitVec::new(len);
+        let mut c: AtomicBitVec = AtomicBitVec::new(len);
         c.flip(Ordering::Relaxed);
         for i in 0..c.len() {
             assert!(c.get(i, Ordering::Relaxed), "{}", i);
@@ -408,7 +407,7 @@ fn test_iter_zeros_one() {
 
 #[test]
 fn test_atomic_iter() {
-    let c = AtomicBitVec::new(100);
+    let c: AtomicBitVec = AtomicBitVec::new(100);
     for i in 0..100 {
         c.set(i, i % 2 == 0, Ordering::Relaxed);
     }
@@ -750,6 +749,36 @@ macro_rules! test_word_type {
 
         let b = bit_vec![$W];
         assert_eq!(b.len(), 0);
+
+        // Test Index<usize>
+        let b = bit_vec![$W: 0, 1, 0, 1, 1, 0];
+        assert_eq!(b[0], false);
+        assert_eq!(b[1], true);
+        assert_eq!(b[2], false);
+        assert_eq!(b[3], true);
+        assert_eq!(b[4], true);
+        assert_eq!(b[5], false);
+
+        // Test PartialEq (same backend type)
+        let b1 = bit_vec![$W: 0, 1, 0, 1];
+        let b2 = bit_vec![$W: 0, 1, 0, 1];
+        let b3 = bit_vec![$W: 1, 0, 1, 0];
+        assert_eq!(b1, b2);
+        assert_ne!(b1, b3);
+
+        // Test PartialEq (cross-backend: Vec vs Box)
+        let b_box: BitVec<Box<[$W]>> = b1.clone().into();
+        assert_eq!(b1, b_box);
+
+        // Test IntoIterator
+        let b = bit_vec![$W: 1, 0, 1, 1, 0];
+        let collected: Vec<bool> = (&b).into_iter().collect();
+        assert_eq!(collected, vec![true, false, true, true, false]);
+
+        // Test Display
+        let b = bit_vec![$W: 1, 0, 1];
+        let s = format!("{}", b);
+        assert_eq!(s, "[101]");
     }};
 }
 

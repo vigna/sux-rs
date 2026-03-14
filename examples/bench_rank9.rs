@@ -39,7 +39,7 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
     let n = args.n;
-    let mut bit_vec = BitVec::new(n);
+    let mut bit_vec: BitVec = BitVec::new(n);
     let mut rng = SmallRng::seed_from_u64(0);
     for i in 0..n {
         if rng.random_bool(args.density) {

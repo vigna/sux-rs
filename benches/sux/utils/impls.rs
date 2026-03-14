@@ -23,7 +23,7 @@ macro_rules! impl_select_adapt {
                 }
             }
         }
-        impl<B: BitLength + SelectHinted<PlatformWord> + AsRef<[usize]>> BitLength for $name<B> {
+        impl<B: BitLength + SelectHinted<PlatformWord> + AsRef<[PlatformWord]>> BitLength for $name<B> {
             fn len(&self) -> usize {
                 self.inner.len()
             }
@@ -60,7 +60,7 @@ macro_rules! impl_select_adapt_const {
         #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub struct $name<B> {
-            inner: SelectAdaptConst<B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, $subinv>,
+            inner: SelectAdaptConst<B, Box<[PlatformWord]>, LOG2_ONES_PER_INVENTORY, $subinv>,
         }
 
         impl Build<BitVec> for $name<AddNumBits<BitVec>> {
@@ -71,7 +71,7 @@ macro_rules! impl_select_adapt_const {
                 }
             }
         }
-        impl<B: BitLength + SelectHinted<PlatformWord> + AsRef<[usize]>> BitLength for $name<B> {
+        impl<B: BitLength + SelectHinted<PlatformWord> + AsRef<[PlatformWord]>> BitLength for $name<B> {
             fn len(&self) -> usize {
                 self.inner.len()
             }
