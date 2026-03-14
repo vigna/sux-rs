@@ -77,7 +77,7 @@ use std::ops::Index;
 #[delegate(AsRef<[u64]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
-#[delegate(crate::traits::rank_sel::RankHinted<64>, target = "bits")]
+#[delegate(crate::traits::rank_sel::RankHinted<u64>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
 #[delegate(

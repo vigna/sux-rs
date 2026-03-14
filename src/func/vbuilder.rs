@@ -1398,7 +1398,10 @@ impl<
 
     /// After this number of keys, in the case of filters we remove duplicate
     /// edges.
+    #[cfg(target_pointer_width = "64")]
     const MAX_NO_LOCAL_SIG_CHECK: usize = 1 << 33;
+    #[cfg(not(target_pointer_width = "64"))]
+    const MAX_NO_LOCAL_SIG_CHECK: usize = usize::MAX;
 
     /// Solves in parallel shards returned by an iterator, storing
     /// the result in `data`.
