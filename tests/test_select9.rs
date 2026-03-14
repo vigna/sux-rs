@@ -15,7 +15,7 @@ fn test() {
     for len in (1..1000).chain((1000..10000).step_by(100)) {
         let bits = (0..len)
             .map(|_| rng.random_bool(density))
-            .collect::<BitVec>();
+            .collect::<BitVec<Vec<u64>>>();
         let select9 = Select9::new(Rank9::new(bits.clone()));
 
         let ones = bits.count_ones();
@@ -35,7 +35,7 @@ fn test() {
 
 #[test]
 fn test_into_inner() {
-    let bits = BitVec::new(0);
+    let bits = bit_vec![u64];
     let select = Select9::new(Rank9::new(bits));
 
     let inner = select.into_inner();
@@ -51,7 +51,7 @@ fn test_mult_usize() {
     for len in (1 << 10..1 << 15).step_by(usize::BITS as _) {
         let bits = (0..len)
             .map(|_| rng.random_bool(density))
-            .collect::<BitVec>();
+            .collect::<BitVec<Vec<u64>>>();
         let select9 = Select9::new(Rank9::new(bits.clone()));
 
         let ones = bits.count_ones();
@@ -71,7 +71,7 @@ fn test_mult_usize() {
 
 #[test]
 fn test_empty() {
-    let bits = BitVec::new(0);
+    let bits = bit_vec![u64];
     let select9 = Select9::new(Rank9::new(bits.clone()));
     assert_eq!(select9.count_ones(), 0);
     assert_eq!(select9.len(), 0);
@@ -81,7 +81,7 @@ fn test_empty() {
 #[test]
 fn test_ones() {
     let len = 300_000;
-    let bits = (0..len).map(|_| true).collect::<BitVec>();
+    let bits = (0..len).map(|_| true).collect::<BitVec<Vec<u64>>>();
     let select9 = Select9::new(Rank9::new(bits));
     assert_eq!(select9.count_ones(), len);
     assert_eq!(select9.len(), len);
@@ -93,7 +93,7 @@ fn test_ones() {
 #[test]
 fn test_zeros() {
     let len = 300_000;
-    let bits = (0..len).map(|_| false).collect::<BitVec>();
+    let bits = (0..len).map(|_| false).collect::<BitVec<Vec<u64>>>();
     let select9 = Select9::new(Rank9::new(bits));
     assert_eq!(select9.count_ones(), 0);
     assert_eq!(select9.len(), len);
@@ -107,7 +107,7 @@ fn test_few_ones() {
         for num_ones in [1, 2, 4, 8, 16, 32, 64, 128, 256] {
             let bits = (0..len)
                 .map(|i| i % (len / num_ones) == 0)
-                .collect::<BitVec>();
+                .collect::<BitVec<Vec<u64>>>();
             let select9 = Select9::new(Rank9::new(bits));
             assert_eq!(select9.count_ones(), num_ones);
             assert_eq!(select9.len(), len);
@@ -141,7 +141,7 @@ fn test_non_uniform() {
             let first_half = loop {
                 let b = (0..len1)
                     .map(|_| rng.random_bool(density0))
-                    .collect::<BitVec>();
+                    .collect::<BitVec<Vec<u64>>>();
                 if b.count_ones() > 0 {
                     break b;
                 }
@@ -149,7 +149,7 @@ fn test_non_uniform() {
             let num_ones_first_half = first_half.count_ones();
             let second_half = (0..len2)
                 .map(|_| rng.random_bool(density1))
-                .collect::<BitVec>();
+                .collect::<BitVec<Vec<u64>>>();
             let num_ones_second_half = second_half.count_ones();
 
             assert!(num_ones_first_half > 0);
@@ -158,7 +158,7 @@ fn test_non_uniform() {
             let bits = first_half
                 .into_iter()
                 .chain(second_half.into_iter())
-                .collect::<BitVec>();
+                .collect::<BitVec<Vec<u64>>>();
 
             assert_eq!(
                 num_ones_first_half + num_ones_second_half,
@@ -192,7 +192,7 @@ fn test_rank() {
     for len in (10_000..100_000).step_by(1000) {
         let bits = (0..len)
             .map(|_| rng.random_bool(density))
-            .collect::<BitVec>();
+            .collect::<BitVec<Vec<u64>>>();
         let select9 = Select9::new(Rank9::new(bits.clone()));
 
         let mut ranks = Vec::with_capacity(len);

@@ -161,9 +161,43 @@ pub struct BitVec<B = Vec<PlatformWord>> {
 /// assert_eq!(b[3], true);
 /// assert_eq!(b[4], false);
 /// assert_eq!(b[5], false);
+///
+/// // With explicit word type (useful for cross-platform code)
+/// let b = bit_vec![u64: 0, 1, 0, 1];
+/// assert_eq!(b.len(), 4);
+/// let b = bit_vec![u64: false; 10];
+/// assert_eq!(b.len(), 10);
 /// ```
 #[macro_export]
 macro_rules! bit_vec {
+    // Arms with explicit word type (colon separator)
+    ($W:ty) => {
+        $crate::bits::BitVec::<Vec<$W>>::new(0)
+    };
+    ($W:ty: false; $n:expr) => {
+        $crate::bits::BitVec::<Vec<$W>>::new($n)
+    };
+    ($W:ty: 0; $n:expr) => {
+        $crate::bits::BitVec::<Vec<$W>>::new($n)
+    };
+    ($W:ty: true; $n:expr) => {
+        {
+            $crate::bits::BitVec::<Vec<$W>>::with_value($n, true)
+        }
+    };
+    ($W:ty: 1; $n:expr) => {
+        {
+            $crate::bits::BitVec::<Vec<$W>>::with_value($n, true)
+        }
+    };
+    ($W:ty: $($x:expr),+ $(,)?) => {
+        {
+            let mut b = $crate::bits::BitVec::<Vec<$W>>::with_capacity([$($x),+].len());
+            $( b.push($x != 0); )*
+            b
+        }
+    };
+    // Default arms (PlatformWord backing)
     () => {
         $crate::bits::BitVec::<Vec<$crate::traits::PlatformWord>>::new(0)
     };

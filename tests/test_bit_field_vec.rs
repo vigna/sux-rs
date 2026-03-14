@@ -16,6 +16,7 @@ use rand::seq::SliceRandom;
 use rand::{RngExt, SeedableRng};
 use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
+use sux::traits::PlatformWord;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 #[test]
@@ -666,7 +667,7 @@ fn test_iter_from() {
     for i in 0..b.len() {
         let mut iter = b.iter_from(i);
         for j in i..b.len() {
-            assert_eq!(iter.next(), Some(j as u64));
+            assert_eq!(iter.next(), Some(j as PlatformWord));
         }
     }
 }
@@ -678,7 +679,7 @@ fn test_iter_double_ended() {
     // next_back only
     let mut iter = b.into_iter();
     for j in (0..b.len()).rev() {
-        assert_eq!(iter.next_back(), Some(j as u64));
+        assert_eq!(iter.next_back(), Some(j as PlatformWord));
     }
     assert_eq!(iter.next_back(), None);
 

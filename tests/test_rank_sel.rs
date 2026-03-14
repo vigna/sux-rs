@@ -9,7 +9,7 @@ use sux::prelude::*;
 
 #[test]
 fn test_rank_sel_rank_zero() {
-    let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
+    let bits = bit_vec![u64: 0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
     let rank9 = Rank9::new(bits);
     assert_eq!(rank9.rank_zero(0), 0);
     assert_eq!(rank9.rank_zero(1), 1);
