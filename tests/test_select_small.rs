@@ -8,6 +8,7 @@
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
+use sux::traits::BitVecOps;
 
 macro_rules! test {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
@@ -67,6 +68,51 @@ fn test_rank_small3() {
 #[test]
 fn test_rank_small4() {
     test!(3; 13);
+}
+
+macro_rules! test_u32 {
+    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
+        use sux::traits::Select;
+        let mut rng = SmallRng::seed_from_u64(0);
+        let density = 0.5;
+        let lens = (1..1000)
+            .chain((1000..10000).step_by(100))
+            .chain([1 << 20, 1 << 24]);
+        for len in lens {
+            let bits = (0..len)
+                .map(|_| rng.random_bool(density))
+                .collect::<BitVec<Vec<u32>>>();
+            let rank_small_sel =
+                SelectSmall::<$NUM_U32S, $COUNTER_WIDTH, _>::new(RankSmall::<
+                    $NUM_U32S,
+                    $COUNTER_WIDTH,
+                    _,
+                >::new(bits.clone()));
+
+            let ones = BitCount::<u32>::count_ones(&bits);
+            let mut pos = Vec::with_capacity(ones);
+            for (i, bit) in BitVecOps::<u32>::iter(&bits).enumerate() {
+                if bit {
+                    pos.push(i);
+                }
+            }
+
+            for (i, &p) in pos.iter().enumerate() {
+                assert_eq!(rank_small_sel.select(i), Some(p));
+            }
+            assert_eq!(rank_small_sel.select(ones + 1), None);
+        }
+    };
+}
+
+#[test]
+fn test_rank_small_0_u32() {
+    test_u32!(1; 7);
+}
+
+#[test]
+fn test_rank_small_1_u32() {
+    test_u32!(1; 8);
 }
 
 #[test]

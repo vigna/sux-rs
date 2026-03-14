@@ -109,17 +109,21 @@ use std::ops::Index;
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[PlatformWord]>, target = "small_counters")]
+#[cfg_attr(target_pointer_width = "64", delegate(AsRef<[u32]>, target = "small_counters"))]
 #[delegate(Index<usize>, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::BitCount<PlatformWord>, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::Rank, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::RankHinted<PlatformWord>, target = "small_counters")]
+#[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::RankHinted<u32>, target = "small_counters"))]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "small_counters")]
+#[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::SelectHinted<u32>, target = "small_counters"))]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "small_counters")]
+#[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::SelectZeroHinted<u32>, target = "small_counters"))]
 #[delegate(
     crate::traits::rank_sel::SelectZeroUnchecked,
     target = "small_counters"
@@ -160,8 +164,9 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     const SUPERBLOCK_BIT_SIZE: usize = usize::MAX;
     const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
     const WORDS_PER_SUBBLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_SUBBLOCK;
-    const BLOCK_BIT_SIZE: usize = (Self::WORDS_PER_BLOCK * PlatformWord::BITS as usize);
-    const SUBBLOCK_BIT_SIZE: usize = (Self::WORDS_PER_SUBBLOCK * PlatformWord::BITS as usize);
+    const BLOCK_BIT_SIZE: usize = 1 << COUNTER_WIDTH;
+    const SUBBLOCK_BIT_SIZE: usize =
+        Self::BLOCK_BIT_SIZE / (Self::WORDS_PER_BLOCK / Self::WORDS_PER_SUBBLOCK);
 
     pub fn into_inner(self) -> C {
         self.small_counters
@@ -182,13 +187,13 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
 }
 
 macro_rules! impl_rank_small_sel {
-    ($NUM_U32S: tt; $COUNTER_WIDTH: literal) => {
+    ($NUM_U32S: tt; $COUNTER_WIDTH: literal; $W: ty) => {
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + AsRef<[PlatformWord]>
+                + AsRef<[$W]>
                 + BitLength
                 + NumBits
-                + SelectHinted<PlatformWord>,
+                + SelectHinted<$W>,
         > SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             /// Creates a new selection structure with eight [`RankSmall`]
@@ -213,6 +218,7 @@ macro_rules! impl_rank_small_sel {
             }
 
             fn _new(small_counters: C, num_ones: usize, log2_ones_per_inventory: usize) -> Self {
+                let bits_per_word = <$W>::BITS as usize;
                 let ones_per_inventory = 1 << log2_ones_per_inventory;
 
                 let inventory_size = num_ones.div_ceil(ones_per_inventory);
@@ -228,7 +234,7 @@ macro_rules! impl_rank_small_sel {
 
                 for superblock in small_counters
                     .as_ref()
-                    .chunks(Self::SUPERBLOCK_BIT_SIZE / PlatformWord::BITS as usize)
+                    .chunks(Self::SUPERBLOCK_BIT_SIZE / bits_per_word)
                 {
                     let mut first = true;
                     for (i, word) in superblock.iter().copied().enumerate() {
@@ -236,7 +242,7 @@ macro_rules! impl_rank_small_sel {
 
                         while past_ones + ones_in_word > next_quantum {
                             let in_word_index = word.select_in_word(next_quantum - past_ones);
-                            let in_superblock_index = i * PlatformWord::BITS as usize + in_word_index;
+                            let in_superblock_index = i * bits_per_word + in_word_index;
                             if first {
                                 inventory_begin.push(inventory.len() as PlatformWord);
                                 first = false;
@@ -271,10 +277,10 @@ macro_rules! impl_rank_small_sel {
 
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + AsRef<[PlatformWord]>
+                + AsRef<[$W]>
                 + BitLength
                 + NumBits
-                + SelectHinted<PlatformWord>,
+                + SelectHinted<$W>,
         > SelectUnchecked for SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
@@ -374,17 +380,17 @@ macro_rules! impl_rank_small_sel {
 
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + AsRef<[PlatformWord]>
+                + AsRef<[$W]>
                 + BitLength
                 + NumBits
-                + SelectHinted<PlatformWord>,
+                + SelectHinted<$W>,
         > Select for SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
         }
     };
 }
 
-impl<C: SmallCounters<2, 9> + AsRef<[PlatformWord]> + BitLength + NumBits> SelectSmall<2, 9, C> {
+impl<C: SmallCounters<2, 9> + AsRef<[u64]> + BitLength + NumBits> SelectSmall<2, 9, C> {
     #[inline(always)]
     unsafe fn complete_select(
         &self,
@@ -419,13 +425,13 @@ impl<C: SmallCounters<2, 9> + AsRef<[PlatformWord]> + BitLength + NumBits> Selec
         hint_pos
             + unsafe {
                 self.as_ref()
-                    .get_unchecked(hint_pos / PlatformWord::BITS as usize)
+                    .get_unchecked(hint_pos / u64::BITS as usize)
                     .select_in_word(rank_in_word)
             }
     }
 }
 
-impl<C: SmallCounters<1, 9> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectHinted<PlatformWord>>
+impl<C: SmallCounters<1, 9> + AsRef<[u64]> + BitLength + NumBits + SelectHinted<u64>>
     SelectSmall<1, 9, C>
 {
     #[inline(always)]
@@ -462,7 +468,7 @@ impl<C: SmallCounters<1, 9> + AsRef<[PlatformWord]> + BitLength + NumBits + Sele
     }
 }
 
-impl<C: SmallCounters<1, 10> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectHinted<PlatformWord>>
+impl<C: SmallCounters<1, 10> + AsRef<[u64]> + BitLength + NumBits + SelectHinted<u64>>
     SelectSmall<1, 10, C>
 {
     #[inline(always)]
@@ -499,7 +505,7 @@ impl<C: SmallCounters<1, 10> + AsRef<[PlatformWord]> + BitLength + NumBits + Sel
     }
 }
 
-impl<C: SmallCounters<1, 11> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectHinted<PlatformWord>>
+impl<C: SmallCounters<1, 11> + AsRef<[u64]> + BitLength + NumBits + SelectHinted<u64>>
     SelectSmall<1, 11, C>
 {
     #[inline(always)]
@@ -536,8 +542,7 @@ impl<C: SmallCounters<1, 11> + AsRef<[PlatformWord]> + BitLength + NumBits + Sel
     }
 }
 
-#[cfg(target_pointer_width = "64")]
-impl<C: SmallCounters<3, 13> + AsRef<[PlatformWord]> + BitLength + NumBits + SelectHinted<PlatformWord>>
+impl<C: SmallCounters<3, 13> + AsRef<[u64]> + BitLength + NumBits + SelectHinted<u64>>
     SelectSmall<3, 13, C>
 {
     unsafe fn complete_select(
@@ -579,12 +584,87 @@ impl<C: SmallCounters<3, 13> + AsRef<[PlatformWord]> + BitLength + NumBits + Sel
     }
 }
 
-impl_rank_small_sel!(2; 9);
-impl_rank_small_sel!(1; 9);
-impl_rank_small_sel!(1; 10);
-impl_rank_small_sel!(1; 11);
-#[cfg(target_pointer_width = "64")]
-impl_rank_small_sel!(3; 13);
+impl<C: SmallCounters<1, 7> + AsRef<[u32]> + BitLength + NumBits> SelectSmall<1, 7, C> {
+    #[inline(always)]
+    unsafe fn complete_select(
+        &self,
+        block_count: &Block32Counters<1, 7>,
+        mut hint_pos: usize,
+        rank: usize,
+        hint_rank: usize,
+    ) -> usize {
+        const ONES_STEP_7: u64 = (1_u64 << 0) | (1_u64 << 7) | (1_u64 << 14);
+        const MSBS_STEP_7: u64 = 0x40_u64 * ONES_STEP_7;
+        macro_rules! ULEQ_STEP_7 {
+            ($x:ident, $y:ident) => {
+                (((((($y) | MSBS_STEP_7) - (($x) & !MSBS_STEP_7)) | ($x ^ $y)) ^ ($x & !$y))
+                    & MSBS_STEP_7)
+            };
+        }
+
+        let rank_in_block = rank - hint_rank;
+        let rank_in_block_step_7 = rank_in_block as u64 * ONES_STEP_7;
+        let relative = block_count.all_rel();
+        let offset_in_block = ULEQ_STEP_7!(relative, rank_in_block_step_7).count_ones() as usize;
+
+        let rank_in_word = rank_in_block - block_count.rel(offset_in_block);
+        hint_pos += offset_in_block * Self::SUBBLOCK_BIT_SIZE;
+
+        hint_pos
+            + unsafe {
+                self.as_ref()
+                    .get_unchecked(hint_pos / u32::BITS as usize)
+                    .select_in_word(rank_in_word)
+            }
+    }
+}
+
+impl<C: SmallCounters<1, 8> + AsRef<[u32]> + BitLength + NumBits + SelectHinted<u32>>
+    SelectSmall<1, 8, C>
+{
+    #[inline(always)]
+    unsafe fn complete_select(
+        &self,
+        block_count: &Block32Counters<1, 8>,
+        hint_pos: usize,
+        rank: usize,
+        hint_rank: usize,
+    ) -> usize {
+        const ONES_STEP_8: u64 = (1_u64 << 0) | (1_u64 << 8) | (1_u64 << 16);
+        const MSBS_STEP_8: u64 = 0x80_u64 * ONES_STEP_8;
+        macro_rules! ULEQ_STEP_8 {
+            ($x:ident, $y:ident) => {
+                (((((($y) | MSBS_STEP_8) - (($x) & !MSBS_STEP_8)) | ($x ^ $y)) ^ ($x & !$y))
+                    & MSBS_STEP_8)
+            };
+        }
+
+        let rank_in_block = rank - hint_rank;
+        let rank_in_block_step_8 = rank_in_block as u64 * ONES_STEP_8;
+        let relative = block_count.all_rel();
+
+        let offset_in_block = ULEQ_STEP_8!(relative, rank_in_block_step_8).count_ones() as usize;
+
+        unsafe {
+            self.select_hinted(
+                rank,
+                hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
+                hint_rank + block_count.rel(offset_in_block),
+            )
+        }
+    }
+}
+
+// 64-bit word variants
+impl_rank_small_sel!(2; 9; u64);
+impl_rank_small_sel!(1; 9; u64);
+impl_rank_small_sel!(1; 10; u64);
+impl_rank_small_sel!(1; 11; u64);
+impl_rank_small_sel!(3; 13; u64);
+
+// 32-bit word variants
+impl_rank_small_sel!(1; 7; u32);
+impl_rank_small_sel!(1; 8; u32);
 
 /// A trait providing the semantics of
 /// [`partition_point`](slice::partition_point), but using a linear search.

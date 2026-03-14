@@ -133,15 +133,19 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[u64]>, target = "bits")]
+#[cfg_attr(target_pointer_width = "64", delegate(AsRef<[u32]>, target = "bits"))]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted<u64>, target = "bits")]
+#[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::RankHinted<u32>, target = "bits"))]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted<u64>, target = "bits")]
+#[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::SelectZeroHinted<u32>, target = "bits"))]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::Select, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectHinted<u64>, target = "bits")]
+#[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::SelectHinted<u32>, target = "bits"))]
 pub struct RankSmall<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
@@ -631,48 +635,30 @@ impl<
 mod tests {
 
     use super::*;
-    use crate::traits::AddNumBits;
-    use crate::traits::NumBits;
 
     #[test]
     fn test_last() {
-        let bits: AddNumBits<_> = unsafe {
+        let bits = unsafe {
             BitVec::from_raw_parts(
-                vec![!1 as u64; 1 << 10],
+                vec![!1u64; 1 << 10],
                 (1 << 10) * u64::BITS as usize,
             )
-        }
-        .into();
+        };
 
         let rank_small = rank_small![0; bits.clone()];
-        assert_eq!(
-            rank_small.rank(rank_small.len()),
-            rank_small.bits.num_ones()
-        );
+        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
 
         let rank_small = rank_small![1; bits.clone()];
-        assert_eq!(
-            rank_small.rank(rank_small.len()),
-            rank_small.bits.num_ones()
-        );
+        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
 
         let rank_small = rank_small![2; bits.clone()];
-        assert_eq!(
-            rank_small.rank(rank_small.len()),
-            rank_small.bits.num_ones()
-        );
+        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
 
         let rank_small = rank_small![3; bits.clone()];
-        assert_eq!(
-            rank_small.rank(rank_small.len()),
-            rank_small.bits.num_ones()
-        );
+        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
 
         let rank_small = rank_small![4; bits.clone()];
-        assert_eq!(
-            rank_small.rank(rank_small.len()),
-            rank_small.bits.num_ones()
-        );
+        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
 
         // u32 word variants
         let bits32 = unsafe {
@@ -681,12 +667,11 @@ mod tests {
                 (1 << 10) * u32::BITS as usize,
             )
         };
-        let expected32: usize = bits32.as_ref().iter().map(|w| w.count_ones() as usize).sum();
 
         let rank_small = rank_small![0, u32; bits32.clone()];
-        assert_eq!(rank_small.rank(rank_small.len()), expected32);
+        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
 
         let rank_small = rank_small![1, u32; bits32.clone()];
-        assert_eq!(rank_small.rank(rank_small.len()), expected32);
+        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
     }
 }

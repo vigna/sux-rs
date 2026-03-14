@@ -17,6 +17,7 @@ use crate::ambassador_impl_Index;
 use ambassador::{Delegate, delegatable_trait};
 use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ops::Index;
 
@@ -334,24 +335,30 @@ pub trait SelectZeroHinted<W> {
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[PlatformWord]>, target = "bits")]
+#[cfg_attr(target_pointer_width = "64", delegate(AsRef<[u32]>, target = "bits"))]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted<PlatformWord>, target = "bits")]
+#[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::RankHinted<u32>, target = "bits"))]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::Select, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "bits")]
+#[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::SelectHinted<u32>, target = "bits"))]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "bits")]
+#[cfg_attr(target_pointer_width = "64", delegate(crate::traits::rank_sel::SelectZeroHinted<u32>, target = "bits"))]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
-pub struct AddNumBits<B> {
+pub struct AddNumBits<B, W = PlatformWord> {
     bits: B,
     number_of_ones: usize,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    _phantom: PhantomData<W>,
 }
 
-impl<B> AddNumBits<B> {
+impl<W, B> AddNumBits<B, W> {
     /// Returns the underlying bit structure.
     pub fn into_inner(self) -> B {
         self.bits
@@ -368,6 +375,7 @@ impl<B> AddNumBits<B> {
         Self {
             bits,
             number_of_ones,
+            _phantom: PhantomData,
         }
     }
 
@@ -381,7 +389,7 @@ impl<B> AddNumBits<B> {
     }
 }
 
-impl<B: BitLength> AddNumBits<B> {
+impl<W, B: BitLength> AddNumBits<B, W> {
     /// Returns the number of bits in the underlying bit vector.
     ///
     /// This method is equivalent to [`BitLength::len`], but it is provided to
@@ -392,33 +400,34 @@ impl<B: BitLength> AddNumBits<B> {
     }
 }
 
-impl<B: BitLength> NumBits for AddNumBits<B> {
+impl<W, B: BitLength> NumBits for AddNumBits<B, W> {
     #[inline(always)]
     fn num_ones(&self) -> usize {
         self.number_of_ones
     }
 }
 
-impl<B: BitLength> BitCount<PlatformWord> for AddNumBits<B> {
+impl<W, B: BitLength> BitCount<W> for AddNumBits<B, W> {
     #[inline(always)]
     fn count_ones(&self) -> usize {
         self.number_of_ones
     }
 }
 
-impl<B> Deref for AddNumBits<B> {
+impl<W, B> Deref for AddNumBits<B, W> {
     type Target = B;
     fn deref(&self) -> &Self::Target {
         &self.bits
     }
 }
 
-impl<B: BitCount<PlatformWord>> From<B> for AddNumBits<B> {
+impl<W, B: BitCount<W>> From<B> for AddNumBits<B, W> {
     fn from(bits: B) -> Self {
-        let number_of_ones = bits.count_ones();
+        let number_of_ones = BitCount::<W>::count_ones(&bits);
         AddNumBits {
             bits,
             number_of_ones,
+            _phantom: PhantomData,
         }
     }
 }
