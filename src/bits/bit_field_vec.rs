@@ -629,6 +629,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
     }
 
     unsafe fn set_value_unchecked(&mut self, index: usize, value: W) {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         let bits = W::BITS as usize;
         let pos = index * self.bit_width;
         let word_index = pos / bits;
@@ -643,7 +644,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
                 *data.get_unchecked_mut(word_index) = word;
             } else {
                 let mut word = *data.get_unchecked_mut(word_index);
-                word &= (W::ONE << bit_index) - W::ONE;
+                word &= (ONE << bit_index) - ONE;
                 word |= value << bit_index;
                 *data.get_unchecked_mut(word_index) = word;
 
@@ -662,6 +663,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
     }
 
     unsafe fn replace_value_unchecked(&mut self, index: usize, value: W) -> W {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         let bits = W::BITS as usize;
         let pos = index * self.bit_width;
         let word_index = pos / bits;
@@ -679,7 +681,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
             } else {
                 let mut word = *data.get_unchecked_mut(word_index);
                 let mut old_value = word >> bit_index;
-                word &= (W::ONE << bit_index) - W::ONE;
+                word &= (ONE << bit_index) - ONE;
                 word |= value << bit_index;
                 *data.get_unchecked_mut(word_index) = word;
 
@@ -1350,9 +1352,9 @@ where
     }
 }
 
-impl<W: Word + AtomicPrimitive, B> BitWidth<W::Atomic> for AtomicBitFieldVec<W, B> {
+impl<W: Word + AtomicPrimitive, B> AtomicBitWidth for AtomicBitFieldVec<W, B> {
     #[inline(always)]
-    fn bit_width(&self) -> usize {
+    fn atomic_bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= W::BITS as usize);
         self.bit_width
     }
@@ -1421,6 +1423,7 @@ where
 
     #[inline]
     unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering) {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         unsafe {
             let wbits = W::BITS as usize;
             debug_assert!(self.bit_width <= wbits);
@@ -1451,7 +1454,7 @@ where
                 fence(Ordering::Acquire);
                 loop {
                     let mut new = word;
-                    new &= (W::ONE << bit_index) - W::ONE;
+                    new &= (ONE << bit_index) - ONE;
                     new |= value << bit_index;
 
                     match data

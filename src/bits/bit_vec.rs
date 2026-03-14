@@ -270,6 +270,7 @@ impl<W: Word> BitVec<Vec<W>> {
 
     /// Appends a bit to the end of this bit vector.
     pub fn push(&mut self, b: bool) {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         let bits_per_word = W::BITS as usize;
         if self.bits.len() * bits_per_word == self.len {
             self.bits.push(W::ZERO);
@@ -277,10 +278,10 @@ impl<W: Word> BitVec<Vec<W>> {
         let word_index = self.len / bits_per_word;
         let bit_index = self.len % bits_per_word;
         // Clear bit
-        self.bits[word_index] = self.bits[word_index] & !(W::ONE << bit_index);
+        self.bits[word_index] = self.bits[word_index] & !(ONE << bit_index);
         // Set bit
         if b {
-            self.bits[word_index] = self.bits[word_index] | (W::ONE << bit_index);
+            self.bits[word_index] = self.bits[word_index] | (ONE << bit_index);
         }
         self.len += 1;
     }
@@ -668,6 +669,7 @@ impl<W: Word, B: AsRef<[W]>> RankHinted<W> for BitVec<B> {
         hint_pos: usize,
         hint_rank: usize,
     ) -> usize {
+        #[allow(non_snake_case)] let ONE = W::from(1u8);
         let bits_per_word = W::BITS as usize;
         let bits: &[W] = self.as_ref();
         let mut rank = hint_rank;
@@ -686,7 +688,7 @@ impl<W: Word, B: AsRef<[W]>> RankHinted<W> for BitVec<B> {
         }
 
         rank + (unsafe { *bits.get_unchecked(hint_pos) }
-            & (W::ONE << (pos % bits_per_word)).wrapping_sub(W::ONE))
+            & (ONE << (pos % bits_per_word)).wrapping_sub(ONE))
             .count_ones() as usize
     }
 }

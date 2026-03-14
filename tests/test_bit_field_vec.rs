@@ -49,9 +49,10 @@ fn test_bit_field_vec_apply_param<W: Word + PrimitiveNumberAs<u64>>()
 where
     u64: PrimitiveNumberAs<W>,
 {
+    let ONE = W::from(1u8);
     for bit_width in 0..W::BITS as usize {
         let n = 100;
-        let u = W::ONE << (bit_width.saturating_sub(1).min(60) as u32);
+        let u = ONE << (bit_width.saturating_sub(1).min(60) as u32);
         let mut rng = SmallRng::seed_from_u64(0);
 
         let mut cp = BitFieldVec::<W>::new(bit_width, n);
@@ -91,9 +92,10 @@ fn test_param<W: Word + PrimitiveNumberAs<u64>>()
 where
     u64: PrimitiveNumberAs<W>,
 {
+    let ONE = W::from(1u8);
     for bit_width in 0..W::BITS as usize {
         let n = 100;
-        let u = W::ONE << (bit_width.saturating_sub(1).min(60) as u32);
+        let u = ONE << (bit_width.saturating_sub(1).min(60) as u32);
         let mut rng = SmallRng::seed_from_u64(0);
 
         let mut v = BitFieldVec::<W>::new(bit_width, n);
@@ -103,7 +105,7 @@ where
             if bit_width == 0 {
                 W::ZERO
             } else {
-                (W::ONE << bit_width as u32) - W::ONE
+                (ONE << bit_width as u32) - ONE
             }
         );
         for _ in 0..10 {
@@ -164,21 +166,22 @@ where
     u64: PrimitiveNumberAs<W>,
     Atomic<W>: PrimitiveAtomicInteger,
 {
-    use sux::traits::bit_field_slice::AtomicBitFieldSlice;
+    use sux::traits::bit_field_slice::{AtomicBitFieldSlice, AtomicBitWidth};
 
+    let ONE = W::from(1u8);
     for bit_width in 0..W::BITS as usize {
         let n: usize = 100;
         let u: u64 = 1 << bit_width;
         let mut rng = SmallRng::seed_from_u64(0);
 
         let v = AtomicBitFieldVec::<W>::new(bit_width, n);
-        assert_eq!(v.bit_width(), bit_width);
+        assert_eq!(v.atomic_bit_width(), bit_width);
         assert_eq!(
             v.mask(),
             if bit_width == 0 {
                 W::ZERO
             } else {
-                (W::ONE << bit_width as u32) - W::ONE
+                (ONE << bit_width as u32) - ONE
             }
         );
         for _ in 0..10 {
