@@ -38,7 +38,7 @@ type DenseIndex = Rank9<BitVec<Box<[u64]>>>;
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SparseIndex<D> {
-    ef: EliasFano<SelectZeroAdaptConst<BitVec<D>, D, 12, 3>>,
+    ef: EliasFano<u64, SelectZeroAdaptConst<BitVec<D>, D, 12, 3>>,
     /// self.ef should be not be queried for values >= self.first_invalid_position
     first_invalid_pos: usize,
 }
@@ -319,13 +319,13 @@ impl<T, D: AsRef<[PlatformWord]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>,
     /// This is the length that was specified when creating the builder,
     /// not the number of values actually stored.
     #[inline(always)]
-    pub const fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.index.ef.upper_bound() as usize
     }
 
     /// Returns true if the array len is 0.
     #[inline(always)]
-    pub const fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.index.ef.upper_bound() == 0
     }
 

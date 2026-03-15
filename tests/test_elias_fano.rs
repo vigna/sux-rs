@@ -194,7 +194,7 @@ fn test_elias_fano() -> Result<()> {
 
 #[test]
 fn test_empty() {
-    let efb = EliasFanoBuilder::new(0, 10);
+    let efb = EliasFanoBuilder::new(0, 10u64);
     let ef = efb.build_with_seq_and_dict();
     assert_eq!(ef.len(), 0);
 }
@@ -202,7 +202,7 @@ fn test_empty() {
 #[test]
 #[should_panic]
 fn test_empty_access() {
-    let efb = EliasFanoBuilder::new(0, 10);
+    let efb = EliasFanoBuilder::new(0, 10u64);
     let ef = efb.build_with_seq_and_dict();
     assert_eq!(ef.len(), 0);
     ef.get(0);
@@ -211,7 +211,7 @@ fn test_empty_access() {
 #[test]
 #[should_panic]
 fn test_too_many_values() {
-    let mut efb = EliasFanoBuilder::new(2, 10);
+    let mut efb = EliasFanoBuilder::new(2, 10u64);
     efb.push(0);
     efb.push(1);
     efb.push(2);
@@ -220,7 +220,7 @@ fn test_too_many_values() {
 #[test]
 #[should_panic]
 fn test_too_few_values() {
-    let mut efb = EliasFanoBuilder::new(2, 10);
+    let mut efb = EliasFanoBuilder::new(2, 10u64);
     efb.push(0);
     efb.build();
 }
@@ -228,7 +228,7 @@ fn test_too_few_values() {
 #[test]
 #[should_panic]
 fn test_non_monotone() {
-    let mut efb = EliasFanoBuilder::new(2, 10);
+    let mut efb = EliasFanoBuilder::new(2, 10u64);
     efb.push(1);
     efb.push(0);
 }
@@ -236,7 +236,7 @@ fn test_non_monotone() {
 #[test]
 #[should_panic]
 fn test_too_large() {
-    let mut efb = EliasFanoBuilder::new(2, 10);
+    let mut efb = EliasFanoBuilder::new(2, 10u64);
     efb.push(11);
 }
 
@@ -248,7 +248,7 @@ fn test_from_non_monotone() {
 
 #[test]
 fn test_extend() {
-    let mut efb = EliasFanoBuilder::new(3, 10);
+    let mut efb = EliasFanoBuilder::new(3, 10u64);
     let v = vec![0u64, 1, 2];
     efb.extend(v.clone());
     let ef = efb.build();
@@ -290,6 +290,7 @@ fn test_epserde() -> Result<()> {
             use epserde::deser::Deserialize;
 
             <EliasFano<
+                u64,
                 SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>>,
                 BitFieldVec<u64, Box<[usize]>>,
             >>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())
@@ -304,7 +305,7 @@ fn test_epserde() -> Result<()> {
 
 #[test]
 fn test_convenience_methods() {
-    let mut efb = EliasFanoBuilder::new(10, 100);
+    let mut efb = EliasFanoBuilder::new(10, 100u64);
     for i in 0u64..10 {
         efb.push(i * 10);
     }
@@ -313,7 +314,7 @@ fn test_convenience_methods() {
         assert_eq!(ef.get(i), i as u64 * 10);
     }
 
-    let mut efb = EliasFanoBuilder::new(10, 100);
+    let mut efb = EliasFanoBuilder::new(10, 100u64);
     for i in 0u64..10 {
         efb.push(i * 10);
     }
@@ -325,7 +326,7 @@ fn test_convenience_methods() {
         );
     }
 
-    let mut efb = EliasFanoBuilder::new(10, 100);
+    let mut efb = EliasFanoBuilder::new(10, 100u64);
     for i in 0u64..10 {
         efb.push(i * 10);
     }
@@ -433,7 +434,7 @@ fn test_iter_from_succ() -> Result<()> {
     }
 
     // Test empty sequence
-    let efb = EliasFanoBuilder::new(0, 10);
+    let efb = EliasFanoBuilder::new(0, 10u64);
     let ef = efb.build_with_seq_and_dict();
     assert!(ef.iter_from_succ(0).is_none());
     assert!(ef.iter_from_succ_strict(0).is_none());
@@ -546,7 +547,7 @@ fn test_iter_back() -> Result<()> {
     }
 
     // Test empty sequence
-    let efb = EliasFanoBuilder::new(0, 10);
+    let efb = EliasFanoBuilder::new(0, 10u64);
     let ef = efb.build_with_seq_and_dict();
     let rev: Vec<u64> = ef.iter_back().collect();
     assert!(rev.is_empty());
@@ -649,7 +650,7 @@ fn test_iter_back_from_pred() -> Result<()> {
     }
 
     // Test empty sequence
-    let efb = EliasFanoBuilder::new(0, 10);
+    let efb = EliasFanoBuilder::new(0, 10u64);
     let ef = efb.build_with_seq_and_dict();
     assert!(ef.iter_back_from_pred(0).is_none());
     assert!(ef.iter_back_from_pred_strict(0).is_none());
@@ -795,7 +796,7 @@ fn test_iter_bidi() -> Result<()> {
     }
 
     // Test empty sequence
-    let efb = EliasFanoBuilder::new(0, 10);
+    let efb = EliasFanoBuilder::new(0, 10u64);
     let ef = efb.build_with_seq_and_dict();
     assert!(ef.iter_bidi_from_succ(0).is_none());
     assert!(ef.iter_bidi_from_succ_strict(0).is_none());
@@ -1005,7 +1006,7 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
     // --- Edge cases for into_iter_bidi_from ---
 
     // Empty EF
-    let efb = EliasFanoBuilder::new(0, 10);
+    let efb = EliasFanoBuilder::new(0, 10u64);
     let ef_empty = efb.build_with_seq_and_dict();
     let mut bidi = (&ef_empty).into_iter_bidi_from(0);
     assert_eq!(bidi.next(), None);
@@ -1118,10 +1119,169 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
 #[should_panic(expected = "Index out of bounds")]
 fn test_iter_bidi_from_out_of_bounds() {
     let values: Vec<u64> = vec![10, 20, 30];
-    let mut efb = EliasFanoBuilder::new(3, 30);
+    let mut efb = EliasFanoBuilder::new(3, 30u64);
     for &v in &values {
         efb.push(v);
     }
     let ef = efb.build_with_seq_and_dict();
     let _ = ef.iter_bidi_from(4);
+}
+
+// ── u128 tests ──────────────────────────────────────────────────────────────
+
+#[test]
+fn test_u128_basic() {
+    // Values that exceed u64::MAX
+    let values: Vec<u128> = vec![
+        0,
+        1_000_000,
+        u64::MAX as u128,
+        u64::MAX as u128 + 1,
+        u64::MAX as u128 + 1_000_000,
+        u128::MAX / 2,
+    ];
+    let n = values.len();
+    let u = *values.last().unwrap();
+
+    let mut efb = EliasFanoBuilder::new(n, u);
+    for &v in &values {
+        efb.push(v);
+    }
+    let ef = efb.build();
+    let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
+
+    // Test get
+    for (i, &expected) in values.iter().enumerate() {
+        assert_eq!(ef.get(i), expected, "get({i}) failed");
+    }
+
+    // Test forward iteration
+    let collected: Vec<u128> = ef.iter().collect();
+    assert_eq!(collected, values);
+}
+
+#[test]
+fn test_u128_from_slice() {
+    let values: Vec<u128> = vec![100, 200, u64::MAX as u128 + 500, u128::MAX / 4];
+    let ef: EliasFano<u128> = values.as_slice().into();
+    let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
+
+    for (i, &expected) in values.iter().enumerate() {
+        assert_eq!(ef.get(i), expected);
+    }
+}
+
+#[test]
+fn test_u128_iteration() {
+    let values: Vec<u128> = vec![
+        0,
+        42,
+        u64::MAX as u128 - 1,
+        u64::MAX as u128,
+        u64::MAX as u128 + 1,
+        u64::MAX as u128 * 2,
+    ];
+    let n = values.len();
+    let u = *values.last().unwrap();
+
+    let mut efb = EliasFanoBuilder::new(n, u);
+    for &v in &values {
+        efb.push(v);
+    }
+    let ef = efb.build();
+    let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
+
+    // Forward iteration
+    let fwd: Vec<u128> = ef.iter().collect();
+    assert_eq!(fwd, values);
+
+    // Iteration from a position
+    let from_2: Vec<u128> = ef.iter_from(2).collect();
+    assert_eq!(from_2, &values[2..]);
+
+    // Backward iteration
+    let ef = unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _>::new) };
+    let bwd: Vec<u128> = ef.iter_back().collect();
+    let mut expected_rev = values.clone();
+    expected_rev.reverse();
+    assert_eq!(bwd, expected_rev);
+}
+
+#[test]
+fn test_u128_succ_pred() {
+    let values: Vec<u128> = vec![
+        100,
+        u64::MAX as u128,
+        u64::MAX as u128 + 100,
+        u128::MAX / 4,
+    ];
+    let n = values.len();
+    let u = *values.last().unwrap();
+
+    let mut efb = EliasFanoBuilder::new(n, u);
+    for &v in &values {
+        efb.push(v);
+    }
+    let ef = efb.build();
+    // Add select for ones (IndexedSeq) then select for zeros (SuccUnchecked/PredUnchecked)
+    let ef = unsafe {
+        ef.map_high_bits(SelectAdaptConst::<_, _>::new)
+            .map_high_bits(SelectZeroAdaptConst::<_, _>::new)
+    };
+
+    // Successor
+    let (idx, val) = unsafe { ef.succ_unchecked::<false>(0u128) };
+    assert_eq!((idx, val), (0, 100));
+
+    let (idx, val) = unsafe { ef.succ_unchecked::<false>(101u128) };
+    assert_eq!((idx, val), (1, u64::MAX as u128));
+
+    let (idx, val) = unsafe { ef.succ_unchecked::<false>(u64::MAX as u128 + 1) };
+    assert_eq!((idx, val), (2, u64::MAX as u128 + 100));
+
+    // Predecessor
+    let (idx, val) = unsafe { ef.pred_unchecked::<false>(u128::MAX / 4) };
+    assert_eq!((idx, val), (3, u128::MAX / 4));
+
+    let (idx, val) = unsafe { ef.pred_unchecked::<false>(u64::MAX as u128 + 50) };
+    assert_eq!((idx, val), (1, u64::MAX as u128));
+}
+
+#[test]
+fn test_u128_empty() {
+    let ef: EliasFano<u128> = [].as_slice().into();
+    let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
+    assert_eq!(ef.len(), 0);
+    assert!(ef.iter().next().is_none());
+}
+
+#[test]
+fn test_u128_single() {
+    let val = u128::MAX / 3;
+    let ef: EliasFano<u128> = [val].as_slice().into();
+    let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
+    assert_eq!(ef.len(), 1);
+    assert_eq!(ef.get(0), val);
+}
+
+#[test]
+fn test_u128_duplicates() {
+    let val = u64::MAX as u128 + 42;
+    let values: Vec<u128> = vec![val, val, val];
+    let ef: EliasFano<u128> = values.as_slice().into();
+    let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
+    for i in 0..3 {
+        assert_eq!(ef.get(i), val);
+    }
+}
+
+#[test]
+fn test_u128_extend() {
+    let values: Vec<u128> = vec![10, u64::MAX as u128, u64::MAX as u128 + 100];
+    let mut efb = EliasFanoBuilder::new(3, u64::MAX as u128 + 100);
+    efb.extend(values.clone());
+    let ef = efb.build();
+    let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
+    let collected: Vec<u128> = ef.iter().collect();
+    assert_eq!(collected, values);
 }

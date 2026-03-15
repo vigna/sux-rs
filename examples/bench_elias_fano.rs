@@ -60,6 +60,7 @@ fn main() -> Result<()> {
     const LOG2_U64_PER_INVENTORY: usize = 3;
     // Add an index on zeros
     let elias_fano_s: EliasFano<
+        u64,
         SelectZeroAdaptConst<
             SelectAdaptConst<_, _, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_INVENTORY>,
             _,
