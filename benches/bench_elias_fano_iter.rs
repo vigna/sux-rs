@@ -18,6 +18,7 @@ const CONFIGS: &[(usize, u64)] = &[
 ];
 
 type EfBench = EliasFano<
+    u64,
     SelectZeroAdaptConst<
         SelectAdaptConst<BitVec<Box<[PlatformWord]>>, Box<[PlatformWord]>, 12, 3>,
         Box<[PlatformWord]>,
