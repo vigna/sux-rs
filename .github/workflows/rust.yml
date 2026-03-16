@@ -13,11 +13,15 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - name: Check formatting
         run: cargo fmt -- --check
-      - name: Run clippy
-        run: cargo clippy
+      - name: Clippy (default)
+        run: cargo clippy -- -D warnings
+      - name: Clippy (no default features)
+        run: cargo clippy --no-default-features -- -D warnings
+      - name: Clippy (all features except slow_tests)
+        run: cargo clippy --features rayon,flate2,zstd,clap,cli,fuzz,mwhc,no_logging,deko,serde,epserde,mmap -- -D warnings
 
   build:
     runs-on: ubuntu-latest
@@ -32,32 +36,29 @@ jobs:
         features:
           - ''
           - '--no-default-features'
-          - '--features rayon,flate2,zstd,clap,cli,fuzz,slow_tests,mwhc,no_logging,deko,serde,epserde,mmap'
+          - '--features rayon,flate2,zstd,clap,cli,fuzz,mwhc,no_logging,deko,serde,epserde,mmap'
         include:
           - rust: nightly
-            features: '--all-features'
+            features: '--features rayon,flate2,zstd,clap,cli,fuzz,mwhc,no_logging,deko,serde,epserde,mmap,aarch64_prefetch,iter_advance_by'
 
     steps:
       - name: Install rust (${{ matrix.rust }})
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-          profile: minimal
-          override: true
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - name: Build
         run: cargo build --verbose ${{ matrix.features }}
+      - name: Test
+        run: cargo test --verbose ${{ matrix.features }}
 
   docs:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - name: Install nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          profile: minimal
+        uses: dtolnay/rust-toolchain@nightly
       - name: Build docs
         env:
           RUSTDOCFLAGS: "--cfg docsrs"
@@ -72,7 +73,7 @@ jobs:
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v6
 
       - name: Generate code coverage
         run: |
@@ -83,3 +84,16 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path-to-lcov: "lcov.info"
+
+  build-i686:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install 32-bit support
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+      - name: Add i686 target
+        run: rustup target add i686-unknown-linux-gnu
+      - name: Build (32-bit)
+        run: cargo build --target i686-unknown-linux-gnu
+      - name: Test (32-bit)
+        run: cargo test --target i686-unknown-linux-gnu

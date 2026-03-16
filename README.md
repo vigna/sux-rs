@@ -1,13 +1,12 @@
 # `sux`
 
-[![downloads](https://img.shields.io/crates/d/sux)](https://crates.io/crates/sux)
-[![dependents](https://img.shields.io/librariesio/dependents/cargo/sux)](https://crates.io/crates/sux/reverse_dependencies)
-![GitHub CI](https://github.com/vigna/sux-rs/actions/workflows/rust.yml/badge.svg)
+[![crates.io](https://img.shields.io/crates/v/sux.svg)](https://crates.io/crates/sux)
+[![docs.rs](https://docs.rs/sux/badge.svg)](https://docs.rs/sux)
+[![rustc](https://img.shields.io/badge/rustc-1.85+-red.svg)](https://rust-lang.github.io/rfcs/2495-min-rust-version.html)
+[![CI](https://github.com/vigna/sux-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/vigna/sux-rs/actions)
 ![license](https://img.shields.io/crates/l/sux)
-[![Line count](https://tokei.rs/b1/github/vigna/sux-rs?type=Rust,Python)](https://github.com/vigna/sux-rs)
-[![Latest version](https://img.shields.io/crates/v/sux.svg)](https://crates.io/crates/sux)
-[![Documentation](https://docs.rs/sux/badge.svg)](https://docs.rs/sux)
-[![Coverage Status](https://coveralls.io/repos/github/vigna/sux-rs/badge.svg?branch=main)](https://coveralls.io/github/vigna/sux-rs?branch=main)
+[![downloads](https://img.shields.io/crates/d/sux)](https://crates.io/crates/sux)
+[![coveralls](https://coveralls.io/repos/github/vigna/sux-rs/badge.svg?branch=main)](https://coveralls.io/github/vigna/sux-rs?branch=main)
 
 A pure Rust implementation of succinct and compressed data structures.
 
