@@ -441,8 +441,9 @@ impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> BitCount for BitVec<B> {
 
 /// Associates a backend type with its word type.
 ///
-/// This trait enables generic implementations of standard traits like
-/// [`PartialEq`], [`Eq`], [`Index`], [`IntoIterator`], and
+/// This trait enables generic implementations of [`WordType`], [`BitCount`],
+/// [`RankHinted`], [`SelectHinted`], [`SelectZeroHinted`], and standard traits
+/// like [`PartialEq`], [`Eq`], [`Index`], [`IntoIterator`], and
 /// [`Display`](fmt::Display) for [`BitVec`] across all word types, working
 /// around the limitation that Rust does not allow unconstrained type
 /// parameters in impl blocks.
