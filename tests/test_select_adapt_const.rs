@@ -25,7 +25,7 @@ fn test() {
                 .collect::<BitVec>()
                 .into();
 
-            let select = SelectAdaptConst::<_, _, _, INV, SUB>::new(bits.clone());
+            let select = SelectAdaptConst::<_, _, INV, SUB>::new(bits.clone());
 
             let ones = select.num_ones();
             let mut pos = Vec::with_capacity(ones);
@@ -53,7 +53,7 @@ fn test_one_u64() {
             .map(|_| rng.random_bool(density))
             .collect::<BitVec>()
             .into();
-        let select = SelectAdaptConst::<_, _, _, 13, 0>::new(bits.clone());
+        let select = SelectAdaptConst::<_, _, 13, 0>::new(bits.clone());
 
         let ones = select.num_ones();
         let mut pos = Vec::with_capacity(ones);
@@ -83,9 +83,9 @@ fn test_w_rank9() {
             .collect::<BitVec>();
 
         #[cfg(target_pointer_width = "64")]
-        let select = SelectAdaptConst::<_, _, _, INV, SUB>::new(Rank9::new(bits.clone()));
+        let select = SelectAdaptConst::<_, _, INV, SUB>::new(Rank9::new(bits.clone()));
         #[cfg(not(target_pointer_width = "64"))]
-        let select = SelectAdaptConst::<_, _, _, INV, SUB>::new(RankSmall::<1, 7, _>::new(bits.clone()));
+        let select = SelectAdaptConst::<_, _, INV, SUB>::new(RankSmall::<1, 7, _>::new(bits.clone()));
 
         let ones = select.num_ones();
         let mut pos = Vec::with_capacity(ones);
@@ -104,8 +104,8 @@ fn test_w_rank9() {
 
 #[test]
 fn test_empty() {
-    let bits: AddNumBits<_> = BitVec::new(0).into();
-    let select = SelectAdaptConst::<_, _, _, INV, SUB>::new(bits.clone());
+    let bits: AddNumBits<BitVec> = BitVec::new(0).into();
+    let select = SelectAdaptConst::<_, _, INV, SUB>::new(bits.clone());
     assert_eq!(select.num_ones(), 0);
     assert_eq!(select.len(), 0);
     assert_eq!(select.select(0), None);
@@ -120,7 +120,7 @@ fn test_empty() {
 fn test_ones() {
     let len = 300_000;
     let bits: AddNumBits<_> = (0..len).map(|_| true).collect::<BitVec>().into();
-    let select = SelectAdaptConst::<_, _, _, INV, SUB>::new(bits);
+    let select = SelectAdaptConst::<_, _, INV, SUB>::new(bits);
     assert_eq!(select.num_ones(), len);
     assert_eq!(select.len(), len);
     for i in 0..len {
@@ -132,7 +132,7 @@ fn test_ones() {
 fn test_zeros() {
     let len = 300_000;
     let bits: AddNumBits<_> = (0..len).map(|_| false).collect::<BitVec>().into();
-    let select = SelectAdaptConst::<_, _, _, INV, SUB>::new(bits);
+    let select = SelectAdaptConst::<_, _, INV, SUB>::new(bits);
     assert_eq!(select.num_ones(), 0);
     assert_eq!(select.len(), len);
     assert_eq!(select.select(0), None);
@@ -193,7 +193,7 @@ fn test_non_uniform() {
                 }
             }
 
-            let select = SelectAdaptConst::<_, _, _, INV, SUB>::new(bits);
+            let select = SelectAdaptConst::<_, _, INV, SUB>::new(bits);
             for (i, &p) in pos.iter().enumerate() {
                 assert_eq!(select.select(i), Some(p));
             }
@@ -229,7 +229,7 @@ fn test_extremely_sparse() {
         .chain((0..len / 2).map(|_| false))
         .collect::<BitVec>()
         .into();
-    let simple = SelectAdaptConst::<_, _, _, 13, 0>::new(bits);
+    let simple = SelectAdaptConst::<_, _, 13, 0>::new(bits);
 
     assert_eq!(simple.count_ones(), 4);
     assert_eq!(simple.select(0), Some(len / 2));
@@ -247,7 +247,7 @@ fn test_sub32s() {
             .map(|_| rng.random_bool(density))
             .collect::<BitVec>()
             .into();
-        let simple = SelectAdaptConst::<_, _, _, 13, 3>::new(bits.clone());
+        let simple = SelectAdaptConst::<_, _, 13, 3>::new(bits.clone());
 
         let ones = simple.count_ones();
         let mut pos = Vec::with_capacity(ones);
@@ -274,7 +274,7 @@ fn test_sub32s_last_small() {
             .map(|_| rng.random_bool(density))
             .collect::<BitVec>()
             .into();
-        let simple = SelectAdaptConst::<_, _, _, 13, 16>::new(bits.clone());
+        let simple = SelectAdaptConst::<_, _, 13, 16>::new(bits.clone());
 
         let ones = simple.count_ones();
         let mut pos = Vec::with_capacity(ones);

@@ -60,8 +60,8 @@ fn test_map() {
     let rank9 = Rank9::new(bits);
     let rank9_sel = unsafe {
         rank9.map(|x| {
-            let x: AddNumBits<_, u64> = x.into();
-            SelectAdapt::<u64, _>::new(x, 3)
+            let x: AddNumBits<_> = x.into();
+            SelectAdapt::new(x, 3)
         })
     };
     assert_eq!(rank9_sel.rank(0), 0);

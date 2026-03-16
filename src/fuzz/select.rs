@@ -50,13 +50,13 @@ pub fn harness(mut data: Data) {
             }
         };
     }
-    test_struct!(SelectAdaptConst<_, _, _, 6>);
-    test_struct!(SelectAdaptConst<_, _, _, 7>);
-    test_struct!(SelectAdaptConst<_, _, _, 8>);
-    test_struct!(SelectAdaptConst<_, _, _, 9>);
-    test_struct!(SelectAdaptConst<_, _, _, 10>);
-    test_struct!(SelectAdaptConst<_, _, _, 11>);
-    test_struct!(SelectAdaptConst<_, _, _, 12>);
-    test_struct!(SelectAdaptConst<_, _, _, 13>);
-    test_struct!(SelectAdaptConst<_, _, _, 14>);
+    test_struct!(SelectAdaptConst<_, _, 6>);
+    test_struct!(SelectAdaptConst<_, _, 7>);
+    test_struct!(SelectAdaptConst<_, _, 8>);
+    test_struct!(SelectAdaptConst<_, _, 9>);
+    test_struct!(SelectAdaptConst<_, _, 10>);
+    test_struct!(SelectAdaptConst<_, _, 11>);
+    test_struct!(SelectAdaptConst<_, _, 12>);
+    test_struct!(SelectAdaptConst<_, _, 13>);
+    test_struct!(SelectAdaptConst<_, _, 14>);
 }

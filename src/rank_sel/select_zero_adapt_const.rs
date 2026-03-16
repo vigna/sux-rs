@@ -12,18 +12,17 @@ use crate::{
     prelude::{BitCount, BitLength},
     traits::{
         NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
-        SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word,
+        SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word, WordType,
     },
 };
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
+use num_primitive::PrimitiveInteger;
 use std::{
     cmp::{max, min},
     ops::Deref,
 };
-use std::marker::PhantomData;
 
-use crate::ambassador_impl_AsRef;
 use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
@@ -36,6 +35,7 @@ use crate::traits::rank_sel::ambassador_impl_Select;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
+use crate::traits::rank_sel::ambassador_impl_WordType;
 use std::ops::Index;
 
 // NOTE: to make parallel modifications with SelectAdaptConst as easy as
@@ -60,7 +60,7 @@ use std::ops::Index;
 /// # use sux::rank_sel::{SelectZeroAdaptConst, Rank9};
 /// // Standalone select (default values)
 /// let bits = bit_vec![0, 1, 0, 0, 1, 0, 1, 0];
-/// let select = SelectZeroAdaptConst::<_,_>::new(bits);
+/// let select = SelectZeroAdaptConst::<_>::new(bits);
 ///
 /// // If the backend does not implement NumBits
 /// // we just get SelectZeroUnchecked
@@ -74,7 +74,7 @@ use std::ops::Index;
 ///
 /// // Let's add NumBits to the backend
 /// let bits: AddNumBits<_> = bit_vec![0, 1, 0, 0, 1, 0, 1, 0].into();
-/// let select = SelectZeroAdaptConst::<_,_>::new(bits);
+/// let select = SelectZeroAdaptConst::<_>::new(bits);
 ///
 /// assert_eq!(select.select_zero(0), Some(0));
 /// assert_eq!(select.select_zero(1), Some(2));
@@ -109,7 +109,7 @@ use std::ops::Index;
 ///
 /// // Select over a Rank9 structure
 /// let rank9 = Rank9::new(sel_rank9.into_inner().into_inner());
-/// let rank9_sel = SelectZeroAdaptConst::<_,_>::new(rank9);
+/// let rank9_sel = SelectZeroAdaptConst::<_>::new(rank9);
 ///
 /// assert_eq!(rank9_sel.select_zero(0), Some(0));
 /// assert_eq!(rank9_sel.select_zero(1), Some(2));
@@ -143,21 +143,20 @@ use std::ops::Index;
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(AsRef<[W]>, target = "bits")]
+#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
-#[delegate(crate::traits::rank_sel::BitCount<W>, target = "bits")]
+#[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
-#[delegate(crate::traits::rank_sel::RankHinted<W>, target = "bits")]
+#[delegate(crate::traits::rank_sel::RankHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::Select, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectHinted<W>, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted<W>, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
 pub struct SelectZeroAdaptConst<
-    W,
     B,
     I = Box<[usize]>,
     const LOG2_ZEROS_PER_INVENTORY: usize = DEFAULT_LOG2_ONES_PER_INVENTORY,
@@ -166,11 +165,19 @@ pub struct SelectZeroAdaptConst<
     bits: B,
     inventory: I,
     spill: I,
-    _phantom: PhantomData<W>,
 }
 
-impl<W, B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize> Deref
-    for SelectZeroAdaptConst<W, B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+impl<B: WordType + AsRef<[B::Word]>, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize> AsRef<[B::Word]>
+    for SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+{
+    #[inline(always)]
+    fn as_ref(&self) -> &[B::Word] {
+        self.bits.as_ref()
+    }
+}
+
+impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize> Deref
+    for SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     type Target = B;
 
@@ -180,8 +187,8 @@ impl<W, B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINV
     }
 }
 
-impl<W, B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
-    SelectZeroAdaptConst<W, B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
+    SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     const LOG2_ONES_PER_SUB16: usize =
         LOG2_ZEROS_PER_INVENTORY.saturating_sub(LOG2_WORDS_PER_SUBINVENTORY + LOG2_U16_PER_USIZE);
@@ -210,23 +217,22 @@ impl<W, B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINV
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectZeroAdaptConst<W, C, I>
+    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectZeroAdaptConst<C, I>
     where
-        C: SelectZeroHinted<W>,
+        C: SelectZeroHinted,
     {
         SelectZeroAdaptConst {
             bits: f(self.bits),
             inventory: self.inventory,
             spill: self.spill,
-            _phantom: PhantomData,
         }
     }
 
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
 }
 
-impl<W, B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
-    SelectZeroAdaptConst<W, B, C, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+impl<B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
+    SelectZeroAdaptConst<B, C, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     /// Returns the number of bits in the bit vector.
     ///
@@ -239,11 +245,12 @@ impl<W, B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_
 }
 
 impl<
-    W: Word + SelectInWord,
-    B: AsRef<[W]> + BitCount<W>,
+    B: WordType + AsRef<[B::Word]> + BitCount,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
-> SelectZeroAdaptConst<W, B, Box<[usize]>, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+> SelectZeroAdaptConst<B, Box<[usize]>, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+where
+    B::Word: Word + SelectInWord,
 {
     /// Creates a new selection structure over a [`SelectZeroHinted`] with a specified
     /// distance between indexed zeros.
@@ -274,7 +281,7 @@ impl<
         let mut next_quantum = 0;
         let mut spilled = 0;
 
-        let bits_per_word = W::BITS as usize;
+        let bits_per_word = B::Word::BITS as usize;
 
         // First phase: we build an inventory for each one out of ones_per_inventory.
         for (i, word) in bits.as_ref().iter().copied().map(|b| !b).enumerate() {
@@ -518,19 +525,19 @@ impl<
             bits,
             inventory,
             spill,
-            _phantom: PhantomData,
         }
     }
 }
 
 impl<
-    W: Word + SelectInWord,
-    B: AsRef<[W]> + BitLength + SelectZeroHinted<W>,
+    B: WordType + AsRef<[B::Word]> + BitLength + SelectZeroHinted,
     I: AsRef<[usize]>,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectZeroUnchecked
-    for SelectZeroAdaptConst<W, B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+    for SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+where
+    B::Word: Word + SelectInWord,
 {
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
         unsafe {
@@ -616,12 +623,13 @@ impl<
 }
 
 impl<
-    W: Word + SelectInWord,
-    B: AsRef<[W]> + NumBits + SelectZeroHinted<W>,
+    B: WordType + AsRef<[B::Word]> + NumBits + SelectZeroHinted,
     I: AsRef<[usize]>,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
-> SelectZero for SelectZeroAdaptConst<W, B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+> SelectZero for SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+where
+    B::Word: Word + SelectInWord,
 {
 }
 
@@ -653,21 +661,21 @@ mod tests {
         bits.flip();
         let bits: AddNumBits<BitVec> = bits.into();
 
-        let simple = SelectZeroAdaptConst::<_, _, _, 13, 0>::new(&bits);
+        let simple = SelectZeroAdaptConst::<_, _, 13, 0>::new(&bits);
         assert!(simple.inventory[0].is_u64_span());
 
         for (i, &p) in pos.iter().enumerate() {
             assert_eq!(simple.select_zero(i), Some(p));
         }
         assert_eq!(simple.select_zero(pos.len()), None);
-        let simple = SelectZeroAdaptConst::<_, _, _, 13, 3>::new(&bits);
+        let simple = SelectZeroAdaptConst::<_, _, 13, 3>::new(&bits);
         assert!(simple.inventory[0].is_u64_span());
 
         for (i, &p) in pos.iter().enumerate() {
             assert_eq!(simple.select_zero(i), Some(p));
         }
         assert_eq!(simple.select_zero(pos.len()), None);
-        let simple = SelectZeroAdaptConst::<_, _, _, 13, 16>::new(&bits);
+        let simple = SelectZeroAdaptConst::<_, _, 13, 16>::new(&bits);
         assert!(simple.inventory[0].is_u64_span());
 
         for (i, &p) in pos.iter().enumerate() {

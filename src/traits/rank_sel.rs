@@ -12,16 +12,29 @@
 //! mutable references, and boxes. Moreover, usually they are all forwarded to
 //! underlying implementations.
 
-use crate::ambassador_impl_AsRef;
 use crate::ambassador_impl_Index;
 use ambassador::{Delegate, delegatable_trait};
 use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
-use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ops::Index;
 
-use super::PlatformWord;
+/// Associates a type with its word type.
+///
+/// This trait is the single source of truth for the word type used by a bit
+/// vector backend. Only leaf structures (like [`BitVec`](crate::bits::BitVec))
+/// implement it concretely; every other struct delegates to its inner field.
+///
+/// `WordType` replaces the former `W` phantom type parameter that was threaded
+/// through traits like `BitCount<W>`, `RankHinted<W>`, etc. Those traits are
+/// now unparameterized and recover the word type via `<Self as WordType>::Word`
+/// or, more commonly, via `B::Word` where `B` is a backend bound.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
+pub trait WordType {
+    /// The word type used by this backend.
+    type Word;
+}
 
 /// A trait expressing a length in bits.
 ///
@@ -41,12 +54,9 @@ pub trait BitLength {
 /// The computation can be expensive: if you need a constant-time
 /// version, use [`NumBits`]. If you need to cache the result
 /// of these methods, you can use [`AddNumBits`].
-///
-/// The type parameter `W` specifies the word type used by the
-/// underlying bit vector backend (typically [`PlatformWord`]).
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
-pub trait BitCount<W>: BitLength {
+pub trait BitCount: BitLength {
     /// Returns the number of ones in the underlying bit vector,
     /// with a possibly expensive computation; see [`NumBits::num_ones`]
     /// for constant-time version.
@@ -192,29 +202,26 @@ pub trait RankZero: Rank {
 /// This trait is used to implement fast ranking by adding to bit vectors
 /// counters of different kind.
 ///
-/// The type parameter `W` specifies the word type used by the
-/// underlying bit vector backend (typically [`PlatformWord`]).
-/// The hint position is expressed as a multiple of the word bit size
-/// (`W::BITS`).
+/// The hint position is expressed as a multiple of the word bit size.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
-pub trait RankHinted<W> {
+pub trait RankHinted {
     /// Returns the number of ones preceding the specified position,
     /// provided a preceding position and its associated rank.
     ///
-    /// The hinted position, `hint_pos`, is expressed as a multiple of
-    /// `W::BITS`. This parameter is necessary as some rank implementation
-    /// can accept only hints at specific positions (usually, multiples of the
-    /// word size).
+    /// The hinted position, `hint_pos`, is expressed as a word index
+    /// (i.e., a multiple of the word bit size). This parameter is necessary
+    /// as some rank implementations can accept only hints at specific
+    /// positions (usually, multiples of the word size).
     ///
     /// # Safety
     ///
     /// `pos` must be between 0 (included) and
     /// the [length of the underlying bit vector](`BitLength::len`) (excluded).
-    /// `hint_pos` * `W::BITS` must be between 0 (included) and
-    /// `pos` (included).
+    /// `hint_pos` must be between 0 (included) and
+    /// `pos` (included), expressed in words.
     /// `hint_rank` must be the number of ones in the underlying bit vector
-    /// before `hint_pos` * `W::BITS`.
+    /// before the bit at the start of word `hint_pos`.
     ///
     /// Some implementation might consider the length as a valid argument.
     unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize;
@@ -279,12 +286,9 @@ pub trait SelectZero: SelectZeroUnchecked + NumBits {
 /// This trait is used to implement fast selection by adding to bit vectors
 /// indices of different kind. See, for example,
 /// [`SelectAdapt`](crate::rank_sel::SelectAdapt).
-///
-/// The type parameter `W` specifies the word type used by the
-/// underlying bit vector backend (typically [`PlatformWord`]).
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
-pub trait SelectHinted<W> {
+pub trait SelectHinted {
     /// Selects the one of given rank, provided the position of a preceding one
     /// and its rank.
     ///
@@ -304,12 +308,9 @@ pub trait SelectHinted<W> {
 ///
 /// This trait is used to implement fast selection over zeros by adding to bit
 /// vectors indices of different kind.
-///
-/// The type parameter `W` specifies the word type used by the
-/// underlying bit vector backend (typically [`PlatformWord`]).
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
-pub trait SelectZeroHinted<W> {
+pub trait SelectZeroHinted {
     /// Selects the zero of given rank, provided the position of a preceding zero
     /// and its rank.
     ///
@@ -334,31 +335,25 @@ pub trait SelectZeroHinted<W> {
 #[derive(Debug, Clone, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(AsRef<[u32]>, target = "bits")]
-#[delegate(AsRef<[u64]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
+#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
-#[delegate(crate::traits::rank_sel::RankHinted<u32>, target = "bits")]
-#[delegate(crate::traits::rank_sel::RankHinted<u64>, target = "bits")]
+#[delegate(crate::traits::rank_sel::RankHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::Select, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectHinted<u32>, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectHinted<u64>, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted<u32>, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted<u64>, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
-pub struct AddNumBits<B, W = PlatformWord> {
+pub struct AddNumBits<B> {
     bits: B,
     number_of_ones: usize,
-    #[cfg_attr(feature = "serde", serde(skip))]
-    _phantom: PhantomData<W>,
 }
 
-impl<W, B> AddNumBits<B, W> {
+impl<B> AddNumBits<B> {
     /// Returns the underlying bit structure.
     pub fn into_inner(self) -> B {
         self.bits
@@ -375,7 +370,6 @@ impl<W, B> AddNumBits<B, W> {
         Self {
             bits,
             number_of_ones,
-            _phantom: PhantomData,
         }
     }
 
@@ -389,7 +383,7 @@ impl<W, B> AddNumBits<B, W> {
     }
 }
 
-impl<W, B: BitLength> AddNumBits<B, W> {
+impl<B: BitLength> AddNumBits<B> {
     /// Returns the number of bits in the underlying bit vector.
     ///
     /// This method is equivalent to [`BitLength::len`], but it is provided to
@@ -400,34 +394,43 @@ impl<W, B: BitLength> AddNumBits<B, W> {
     }
 }
 
-impl<W, B: BitLength> NumBits for AddNumBits<B, W> {
+impl<B: BitLength> NumBits for AddNumBits<B> {
     #[inline(always)]
     fn num_ones(&self) -> usize {
         self.number_of_ones
     }
 }
 
-impl<W, B: BitLength> BitCount<W> for AddNumBits<B, W> {
+impl<B: BitLength> BitCount for AddNumBits<B> {
     #[inline(always)]
     fn count_ones(&self) -> usize {
         self.number_of_ones
     }
 }
 
-impl<W, B> Deref for AddNumBits<B, W> {
+impl<B> Deref for AddNumBits<B> {
     type Target = B;
     fn deref(&self) -> &Self::Target {
         &self.bits
     }
 }
 
-impl<W, B: BitCount<W>> From<B> for AddNumBits<B, W> {
+impl<B: BitCount> From<B> for AddNumBits<B> {
     fn from(bits: B) -> Self {
-        let number_of_ones = BitCount::<W>::count_ones(&bits);
+        let number_of_ones = bits.count_ones();
         AddNumBits {
             bits,
             number_of_ones,
-            _phantom: PhantomData,
         }
+    }
+}
+
+// Manual AsRef forwarding (ambassador can't resolve B::Word)
+impl<B: WordType + AsRef<[<B as WordType>::Word]>> AsRef<[<B as WordType>::Word]>
+    for AddNumBits<B>
+{
+    #[inline(always)]
+    fn as_ref(&self) -> &[<B as WordType>::Word] {
+        self.bits.as_ref()
     }
 }

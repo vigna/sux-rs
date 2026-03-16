@@ -44,7 +44,7 @@ macro_rules! test_rank_small {
             }
             assert_eq!(
                 rank_small.rank(bits.len() + 1),
-                BitCount::<$W>::count_ones(&bits)
+                BitCount::count_ones(&bits)
             );
         }
     };
@@ -94,8 +94,8 @@ fn test_rank_small_map() {
     let rank_small = rank_small![2; bits];
     let rank_small_sel = unsafe {
         rank_small.map(|b| {
-            let b: AddNumBits<_, u64> = b.into();
-            SelectAdapt::<u64, _>::new(b, 2)
+            let b: AddNumBits<_> = b.into();
+            SelectAdapt::new(b, 2)
         })
     };
     assert_eq!(rank_small_sel.rank(0), 0);

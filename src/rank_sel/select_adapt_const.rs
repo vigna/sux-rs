@@ -10,6 +10,7 @@ use super::{DEFAULT_LOG2_ONES_PER_INVENTORY, Inventory, SpanType, assert_invento
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
+use num_primitive::PrimitiveInteger;
 use std::{
     cmp::{max, min},
     ops::Deref,
@@ -19,12 +20,10 @@ use crate::{
     prelude::{BitCount, BitLength, Select, SelectHinted},
     traits::{
         NumBits, Rank, RankHinted, RankUnchecked, RankZero, SelectUnchecked,
-        SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word,
+        SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word, WordType,
     },
 };
-use std::marker::PhantomData;
 
-use crate::ambassador_impl_AsRef;
 use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
@@ -37,6 +36,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use crate::traits::rank_sel::ambassador_impl_WordType;
 use std::ops::Index;
 
 /// A const-based version of [`SelectAdapt`](super::SelectAdapt).
@@ -161,21 +161,20 @@ use std::ops::Index;
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(AsRef<[W]>, target = "bits")]
+#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
-#[delegate(crate::traits::rank_sel::BitCount<W>, target = "bits")]
+#[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
-#[delegate(crate::traits::rank_sel::RankHinted<W>, target = "bits")]
+#[delegate(crate::traits::rank_sel::RankHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectHinted<W>, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted<W>, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
 pub struct SelectAdaptConst<
-    W,
     B,
     I = Box<[usize]>,
     const LOG2_ONES_PER_INVENTORY: usize = DEFAULT_LOG2_ONES_PER_INVENTORY,
@@ -184,11 +183,19 @@ pub struct SelectAdaptConst<
     bits: B,
     inventory: I,
     spill: I,
-    _phantom: PhantomData<W>,
 }
 
-impl<W, B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize> Deref
-    for SelectAdaptConst<W, B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+impl<B: WordType + AsRef<[B::Word]>, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
+    AsRef<[B::Word]> for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+{
+    #[inline(always)]
+    fn as_ref(&self) -> &[B::Word] {
+        self.bits.as_ref()
+    }
+}
+
+impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize> Deref
+    for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     type Target = B;
 
@@ -197,8 +204,8 @@ impl<W, B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVE
     }
 }
 
-impl<W, B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
-    SelectAdaptConst<W, B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
+    SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     const LOG2_ONES_PER_SUB16: usize =
         LOG2_ONES_PER_INVENTORY.saturating_sub(LOG2_WORDS_PER_SUBINVENTORY + LOG2_U16_PER_USIZE);
@@ -227,23 +234,22 @@ impl<W, B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVE
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectAdaptConst<W, C, I>
+    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectAdaptConst<C, I>
     where
-        C: SelectHinted<W>,
+        C: SelectHinted,
     {
         SelectAdaptConst {
             bits: f(self.bits),
             inventory: self.inventory,
             spill: self.spill,
-            _phantom: PhantomData,
         }
     }
 
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
 }
 
-impl<W, B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
-    SelectAdaptConst<W, B, C, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+impl<B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
+    SelectAdaptConst<B, C, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     /// Returns the number of bits in the bit vector.
     ///
@@ -256,11 +262,12 @@ impl<W, B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_
 }
 
 impl<
-    W: Word + SelectInWord,
-    B: AsRef<[W]> + BitCount<W>,
+    B: WordType + AsRef<[B::Word]> + BitCount,
     const LOG2_ONES_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
-> SelectAdaptConst<W, B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+> SelectAdaptConst<B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+where
+    B::Word: Word + SelectInWord,
 {
     /// Creates a new selection structure over a [`SelectHinted`] with a specified
     /// distance between indexed ones.
@@ -286,7 +293,7 @@ impl<
         let mut next_quantum = 0;
         let mut spilled = 0;
 
-        let bits_per_word = W::BITS as usize;
+        let bits_per_word = B::Word::BITS as usize;
 
         // First phase: we build an inventory for each one out of ones_per_inventory.
         for (i, word) in bits.as_ref().iter().copied().enumerate() {
@@ -530,18 +537,18 @@ impl<
             bits,
             inventory,
             spill,
-            _phantom: PhantomData,
         }
     }
 }
 
 impl<
-    W: Word + SelectInWord,
-    B: AsRef<[W]> + BitLength + SelectHinted<W>,
+    B: WordType + AsRef<[B::Word]> + BitLength + SelectHinted,
     I: AsRef<[usize]>,
     const LOG2_ONES_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
-> SelectUnchecked for SelectAdaptConst<W, B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+> SelectUnchecked for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+where
+    B::Word: Word + SelectInWord,
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         unsafe {
@@ -623,12 +630,13 @@ impl<
 }
 
 impl<
-    W: Word + SelectInWord,
-    B: AsRef<[W]> + NumBits + SelectHinted<W>,
+    B: WordType + AsRef<[B::Word]> + NumBits + SelectHinted,
     I: AsRef<[usize]>,
     const LOG2_ONES_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
-> Select for SelectAdaptConst<W, B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+> Select for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+where
+    B::Word: Word + SelectInWord,
 {
 }
 
@@ -659,21 +667,21 @@ mod tests {
         }
         let bits: AddNumBits<BitVec> = bits.into();
 
-        let simple = SelectAdaptConst::<_, _, _, 13, 0>::new(&bits);
+        let simple = SelectAdaptConst::<_, _, 13, 0>::new(&bits);
         assert!(simple.inventory[0].is_u64_span());
 
         for (i, &p) in pos.iter().enumerate() {
             assert_eq!(simple.select(i), Some(p));
         }
         assert_eq!(simple.select(pos.len()), None);
-        let simple = SelectAdaptConst::<_, _, _, 13, 3>::new(&bits);
+        let simple = SelectAdaptConst::<_, _, 13, 3>::new(&bits);
         assert!(simple.inventory[0].is_u64_span());
 
         for (i, &p) in pos.iter().enumerate() {
             assert_eq!(simple.select(i), Some(p));
         }
         assert_eq!(simple.select(pos.len()), None);
-        let simple = SelectAdaptConst::<_, _, _, 13, 16>::new(&bits);
+        let simple = SelectAdaptConst::<_, _, 13, 16>::new(&bits);
         assert!(simple.inventory[0].is_u64_span());
 
         for (i, &p) in pos.iter().enumerate() {

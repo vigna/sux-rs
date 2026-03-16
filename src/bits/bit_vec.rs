@@ -95,7 +95,7 @@
 //!
 //! // If we create an artificially dirty bit vector, everything still works.
 //! let ones = [PlatformWord::MAX; 2];
-//! assert_eq!(unsafe { BitVec::from_raw_parts(ones, 1) }.count_ones(), 1);
+//! assert_eq!(unsafe { BitVec::from_raw_parts(ones.as_slice(), 1) }.count_ones(), 1);
 //! ```
 
 use crate::traits::{AtomicBitIter, AtomicBitVecOps, BitIter, BitVecOps, PlatformWord, Word};
@@ -416,12 +416,17 @@ impl<B> BitLength for BitVec<B> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> BitCount<W> for BitVec<B> {
+impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> WordType for BitVec<B> {
+    type Word = <B as BackendWord>::W;
+}
+
+impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> BitCount for BitVec<B> {
     fn count_ones(&self) -> usize {
-        let bits_per_word = W::BITS as usize;
+        type W<B> = <B as BackendWord>::W;
+        let bits_per_word = W::<B>::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
-        let bits: &[W] = self.as_ref();
+        let bits: &[W::<B>] = self.as_ref();
         let mut num_ones: usize = bits[..full_words]
             .iter()
             .map(|x| x.count_ones() as usize)
@@ -640,7 +645,11 @@ impl<B> BitLength for AtomicBitVec<B> {
     }
 }
 
-impl<B> BitCount<<B as AtomicBackendWord>::W> for AtomicBitVec<B>
+impl<B: AtomicBackendWord> WordType for AtomicBitVec<B> {
+    type Word = <B as AtomicBackendWord>::W;
+}
+
+impl<B> BitCount for AtomicBitVec<B>
 where
     B: AtomicBackendWord + AsRef<[Atomic<<B as AtomicBackendWord>::W>]>,
 {
@@ -824,7 +833,7 @@ where
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> RankHinted<W> for BitVec<B> {
+impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> RankHinted for BitVec<B> {
     #[inline(always)]
     unsafe fn rank_hinted(
         &self,
@@ -832,9 +841,9 @@ impl<W: Word, B: AsRef<[W]>> RankHinted<W> for BitVec<B> {
         hint_pos: usize,
         hint_rank: usize,
     ) -> usize {
-
-        let bits_per_word = W::BITS as usize;
-        let bits: &[W] = self.as_ref();
+        type W<B> = <B as BackendWord>::W;
+        let bits_per_word = W::<B>::BITS as usize;
+        let bits: &[W::<B>] = self.as_ref();
         let mut rank = hint_rank;
         let mut hint_pos = hint_pos;
 
@@ -851,21 +860,25 @@ impl<W: Word, B: AsRef<[W]>> RankHinted<W> for BitVec<B> {
         }
 
         rank + (unsafe { *bits.get_unchecked(hint_pos) }
-            & (W::ONE << (pos % bits_per_word)).wrapping_sub(W::ONE))
+            & (W::<B>::ONE << (pos % bits_per_word)).wrapping_sub(W::<B>::ONE))
             .count_ones() as usize
     }
 }
 
-// SelectHinted and SelectZeroHinted for different word-type backends.
+// SelectHinted and SelectZeroHinted for BitVec.
 
-impl<W: Word + SelectInWord, B: AsRef<[W]>> SelectHinted<W> for BitVec<B> {
+impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> SelectHinted for BitVec<B>
+where
+    <B as BackendWord>::W: SelectInWord,
+{
     unsafe fn select_hinted(
         &self,
         rank: usize,
         hint_pos: usize,
         hint_rank: usize,
     ) -> usize {
-        let bits_per_word = W::BITS as usize;
+        type W<B> = <B as BackendWord>::W;
+        let bits_per_word = W::<B>::BITS as usize;
         let mut word_index = hint_pos / bits_per_word;
         let bit_index = hint_pos % bits_per_word;
         let mut residual = rank - hint_rank;
@@ -883,14 +896,18 @@ impl<W: Word + SelectInWord, B: AsRef<[W]>> SelectHinted<W> for BitVec<B> {
     }
 }
 
-impl<W: Word + SelectInWord, B: AsRef<[W]>> SelectZeroHinted<W> for BitVec<B> {
+impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> SelectZeroHinted for BitVec<B>
+where
+    <B as BackendWord>::W: SelectInWord,
+{
     unsafe fn select_zero_hinted(
         &self,
         rank: usize,
         hint_pos: usize,
         hint_rank: usize,
     ) -> usize {
-        let bits_per_word = W::BITS as usize;
+        type W<B> = <B as BackendWord>::W;
+        let bits_per_word = W::<B>::BITS as usize;
         let mut word_index = hint_pos / bits_per_word;
         let bit_index = hint_pos % bits_per_word;
         let mut residual = rank - hint_rank;

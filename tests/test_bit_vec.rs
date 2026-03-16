@@ -30,8 +30,8 @@ fn test() {
 
     // Dirty vector
     let ones = [PlatformWord::MAX; 2];
-    assert_eq!(unsafe { BitVec::from_raw_parts(&ones, 0) }.count_ones(), 0);
-    assert_eq!(unsafe { BitVec::from_raw_parts(&ones, 1) }.count_ones(), 1);
+    assert_eq!(unsafe { BitVec::from_raw_parts(ones.as_slice(), 0) }.count_ones(), 0);
+    assert_eq!(unsafe { BitVec::from_raw_parts(ones.as_slice(), 1) }.count_ones(), 1);
 
     for i in 0..u {
         assert!(bm[i]);
@@ -603,14 +603,14 @@ macro_rules! test_word_type {
         // Test with_value + count_ones
         let bm: BitVec<Vec<$W>> = BitVec::with_value(u, true);
         assert_eq!(bm.len(), u);
-        assert_eq!(BitCount::<$W>::count_ones(&bm), u);
+        assert_eq!(BitCount::count_ones(&bm), u);
         for i in 0..u {
             assert!(BitVecOps::<$W>::get(&bm, i));
         }
 
         // Test new (all zeros) + set/get
         let mut bm: BitVec<Vec<$W>> = BitVec::new(u);
-        assert_eq!(BitCount::<$W>::count_ones(&bm), 0);
+        assert_eq!(BitCount::count_ones(&bm), 0);
 
         for _ in 0..10 {
             let mut values = (0..u).collect::<Vec<_>>();
@@ -730,7 +730,7 @@ macro_rules! test_word_type {
                 .map(|_| rng.random_bool(0.5))
                 .collect::<BitVec<Vec<$W>>>();
             let expected: usize = BitVecOps::<$W>::iter(&bits).filter(|&b| b).count();
-            assert_eq!(BitCount::<$W>::count_ones(&bits), expected);
+            assert_eq!(BitCount::count_ones(&bits), expected);
         }
 
         // Test bit_vec! macro with word type
@@ -741,11 +741,11 @@ macro_rules! test_word_type {
 
         let b = bit_vec![$W: false; 10];
         assert_eq!(b.len(), 10);
-        assert_eq!(BitCount::<$W>::count_ones(&b), 0);
+        assert_eq!(BitCount::count_ones(&b), 0);
 
         let b = bit_vec![$W: true; 10];
         assert_eq!(b.len(), 10);
-        assert_eq!(BitCount::<$W>::count_ones(&b), 10);
+        assert_eq!(BitCount::count_ones(&b), 10);
 
         let b = bit_vec![$W];
         assert_eq!(b.len(), 0);
