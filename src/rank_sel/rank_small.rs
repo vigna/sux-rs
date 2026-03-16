@@ -14,7 +14,7 @@ use std::{
 };
 
 use crate::{
-    prelude::{BitLength, BitVec, Rank, RankHinted, RankUnchecked, RankZero},
+    prelude::{BitLength, BitVec, Rank, RankHinted, RankUnchecked, RankZero, WordType},
     traits::{
         BitCount, NumBits, Select, SelectHinted, SelectUnchecked, SelectZero,
         SelectZeroHinted, SelectZeroUnchecked,
@@ -31,6 +31,7 @@ use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use crate::traits::rank_sel::ambassador_impl_WordType;
 use std::ops::Index;
 
 /// A trait abstracting the access to the internal counters of a [`RankSmall`]
@@ -135,17 +136,15 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 #[delegate(AsRef<[u64]>, target = "bits")]
 #[delegate(AsRef<[u32]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
+#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
-#[delegate(crate::traits::rank_sel::RankHinted<u64>, target = "bits")]
-#[delegate(crate::traits::rank_sel::RankHinted<u32>, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted<u64>, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted<u32>, target = "bits")]
+#[delegate(crate::traits::rank_sel::RankHinted, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::Select, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectHinted<u64>, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectHinted<u32>, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
 pub struct RankSmall<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
@@ -413,7 +412,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
 
 macro_rules! impl_rank_small {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $W: ty) => {
-        impl<B: AsRef<[$W]> + BitLength + RankHinted<$W>>
+        impl<B: AsRef<[$W]> + BitLength + RankHinted>
             RankSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
@@ -477,7 +476,7 @@ macro_rules! impl_rank_small {
             }
         }
         impl<
-            B: AsRef<[$W]> + BitLength + RankHinted<$W>,
+            B: AsRef<[$W]> + BitLength + RankHinted,
             C1: AsRef<[u64]>,
             C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
         > RankUnchecked for RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
@@ -508,7 +507,7 @@ macro_rules! impl_rank_small {
                         let hint_pos = word_pos
                             - ((word_pos % Self::WORDS_PER_BLOCK) % Self::WORDS_PER_SUBBLOCK);
 
-                        RankHinted::<$W>::rank_hinted(&self.bits, pos, hint_pos, hint_rank)
+                        RankHinted::rank_hinted(&self.bits, pos, hint_pos, hint_rank)
                     }
                 }
             }
@@ -603,17 +602,8 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> Nu
     }
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2>
-    BitCount<u64> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
-{
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.num_ones
-    }
-}
-
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2>
-    BitCount<u32> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> BitCount
+    for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn count_ones(&self) -> usize {

@@ -11,9 +11,7 @@ use crate::prelude::*;
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
-use std::marker::PhantomData;
 
-use crate::ambassador_impl_AsRef;
 use crate::ambassador_impl_Index;
 use crate::rank_sel::ambassador_impl_SmallCounters;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
@@ -27,6 +25,7 @@ use crate::traits::rank_sel::ambassador_impl_Select;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
+use crate::traits::rank_sel::ambassador_impl_WordType;
 use std::ops::Deref;
 use std::ops::Index;
 
@@ -46,7 +45,7 @@ use std::ops::Index;
 ///
 /// let bits = bit_vec![u64: 0, 1, 0, 0, 1, 0, 1, 0];
 /// let rank_small = rank_small![1; bits];
-/// let sel = SelectZeroSmall::<1, 9, u64, _>::new(rank_small);
+/// let sel = SelectZeroSmall::<1, 9, _>::new(rank_small);
 ///
 /// assert_eq!(sel.select_zero(0), Some(0));
 /// assert_eq!(sel.select_zero(1), Some(2));
@@ -57,7 +56,7 @@ use std::ops::Index;
 ///
 /// // One can also stack a SelectZeroSmall on top of a SelectSmall:
 /// let rank_small = sel.into_inner();
-/// let sel = SelectZeroSmall::<1, 9, u64, _>::new(SelectSmall::<1, 9, u64, _>::new(rank_small));
+/// let sel = SelectZeroSmall::<1, 9, _>::new(SelectSmall::<1, 9, _>::new(rank_small));
 ///
 /// assert_eq!(sel.select_zero(0), Some(0));
 /// assert_eq!(sel.select_zero(1), Some(2));
@@ -74,24 +73,23 @@ use std::ops::Index;
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(AsRef<[W]>, target = "small_counters")]
+#[delegate(crate::traits::rank_sel::WordType, target = "small_counters")]
 #[delegate(Index<usize>, target = "small_counters")]
-#[delegate(crate::traits::rank_sel::BitCount<W>, target = "small_counters")]
+#[delegate(crate::traits::rank_sel::BitCount, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::Rank, target = "small_counters")]
-#[delegate(crate::traits::rank_sel::RankHinted<W>, target = "small_counters")]
+#[delegate(crate::traits::rank_sel::RankHinted, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::Select, target = "small_counters")]
-#[delegate(crate::traits::rank_sel::SelectHinted<W>, target = "small_counters")]
+#[delegate(crate::traits::rank_sel::SelectHinted, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "small_counters")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted<W>, target = "small_counters")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "small_counters")]
 #[delegate(crate::rank_sel::SmallCounters<NUM_U32S, COUNTER_WIDTH>, target = "small_counters")]
 pub struct SelectZeroSmall<
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
-    W,
     C,
     I = Box<[u32]>,
     O = Box<[usize]>,
@@ -100,11 +98,19 @@ pub struct SelectZeroSmall<
     inventory: I,
     inventory_begin: O,
     log2_ones_per_inventory: usize,
-    _phantom: PhantomData<W>,
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, W, C, I, O> Deref
-    for SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, W, C, I, O>
+impl<C: WordType + AsRef<[C::Word]>, const NUM_U32S: usize, const COUNTER_WIDTH: usize, I, O>
+    AsRef<[C::Word]> for SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, C, I, O>
+{
+    #[inline(always)]
+    fn as_ref(&self) -> &[C::Word] {
+        self.small_counters.as_ref()
+    }
+}
+
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O> Deref
+    for SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, C, I, O>
 {
     type Target = C;
 
@@ -113,8 +119,8 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, W, C, I, O> Deref
     }
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, W, C, I, O>
-    SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, W, C, I, O>
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
+    SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, C, I, O>
 {
     // On 64-bit, superblocks contain 2^32 bits.
     // On 32-bit, a single superblock covers the entire address space.
@@ -129,8 +135,8 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, W, C, I, O>
     }
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, W, C: BitLength, I, O>
-    SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, W, C, I, O>
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
+    SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, C, I, O>
 {
     /// Returns the number of bits in the bit vector.
     ///
@@ -149,8 +155,8 @@ macro_rules! impl_select_zero_small {
                 + AsRef<[$W]>
                 + BitLength
                 + NumBits
-                + SelectZeroHinted<$W>,
-        > SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, $W, C>
+                + SelectZeroHinted,
+        > SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             /// Creates a new selection structure with eight [`RankSmall`]
             /// blocks per inventory an average.
@@ -229,7 +235,6 @@ macro_rules! impl_select_zero_small {
                     inventory,
                     inventory_begin,
                     log2_ones_per_inventory,
-                    _phantom: PhantomData,
                 }
             }
         }
@@ -239,8 +244,8 @@ macro_rules! impl_select_zero_small {
                 + AsRef<[$W]>
                 + BitLength
                 + NumBits
-                + SelectZeroHinted<$W>,
-        > SelectZeroUnchecked for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, $W, C>
+                + SelectZeroHinted,
+        > SelectZeroUnchecked for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             /// # Safety
             ///
@@ -349,14 +354,14 @@ macro_rules! impl_select_zero_small {
                 + AsRef<[$W]>
                 + BitLength
                 + NumBits
-                + SelectZeroHinted<$W>,
-        > SelectZero for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, $W, C>
+                + SelectZeroHinted,
+        > SelectZero for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
         }
     };
 }
 
-impl<C: SmallCounters<2, 9> + AsRef<[u64]> + BitLength + NumBits> SelectZeroSmall<2, 9, u64, C> {
+impl<C: SmallCounters<2, 9> + AsRef<[u64]> + BitLength + NumBits> SelectZeroSmall<2, 9, C> {
     #[inline(always)]
     unsafe fn complete_select(
         &self,
@@ -409,8 +414,8 @@ impl<C: SmallCounters<2, 9> + AsRef<[u64]> + BitLength + NumBits> SelectZeroSmal
     }
 }
 
-impl<C: SmallCounters<1, 9> + AsRef<[u64]> + BitLength + NumBits + SelectZeroHinted<u64>>
-    SelectZeroSmall<1, 9, u64, C>
+impl<C: SmallCounters<1, 9> + AsRef<[u64]> + BitLength + NumBits + SelectZeroHinted>
+    SelectZeroSmall<1, 9, C>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -450,8 +455,8 @@ impl<C: SmallCounters<1, 9> + AsRef<[u64]> + BitLength + NumBits + SelectZeroHin
     }
 }
 
-impl<C: SmallCounters<1, 10> + AsRef<[u64]> + BitLength + NumBits + SelectZeroHinted<u64>>
-    SelectZeroSmall<1, 10, u64, C>
+impl<C: SmallCounters<1, 10> + AsRef<[u64]> + BitLength + NumBits + SelectZeroHinted>
+    SelectZeroSmall<1, 10, C>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -491,8 +496,8 @@ impl<C: SmallCounters<1, 10> + AsRef<[u64]> + BitLength + NumBits + SelectZeroHi
     }
 }
 
-impl<C: SmallCounters<1, 11> + AsRef<[u64]> + BitLength + NumBits + SelectZeroHinted<u64>>
-    SelectZeroSmall<1, 11, u64, C>
+impl<C: SmallCounters<1, 11> + AsRef<[u64]> + BitLength + NumBits + SelectZeroHinted>
+    SelectZeroSmall<1, 11, C>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -532,8 +537,8 @@ impl<C: SmallCounters<1, 11> + AsRef<[u64]> + BitLength + NumBits + SelectZeroHi
     }
 }
 
-impl<C: SmallCounters<3, 13> + AsRef<[u64]> + BitLength + NumBits + SelectZeroHinted<u64>>
-    SelectZeroSmall<3, 13, u64, C>
+impl<C: SmallCounters<3, 13> + AsRef<[u64]> + BitLength + NumBits + SelectZeroHinted>
+    SelectZeroSmall<3, 13, C>
 {
     unsafe fn complete_select(
         &self,

@@ -103,7 +103,7 @@ fn test_space_select_adapt_const() {
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
 
-        let sel = SelectAdaptConst::<_, _, _, 12, 2>::new(bits.clone());
+        let sel = SelectAdaptConst::<_, _, 12, 2>::new(bits.clone());
         let ov = overhead(&sel);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10}",
@@ -111,7 +111,7 @@ fn test_space_select_adapt_const() {
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
 
-        let sel = SelectAdaptConst::<_, _, _, 13, 0>::new(bits.clone());
+        let sel = SelectAdaptConst::<_, _, 13, 0>::new(bits.clone());
         let ov = overhead(&sel);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10}",
@@ -188,7 +188,7 @@ fn test_space_select_zero_adapt_const() {
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
 
-        let sel = SelectZeroAdaptConst::<_, _, _, 12, 2>::new(bits.clone());
+        let sel = SelectZeroAdaptConst::<_, _, 12, 2>::new(bits.clone());
         let ov = overhead(&sel);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10}",
@@ -196,7 +196,7 @@ fn test_space_select_zero_adapt_const() {
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
 
-        let sel = SelectZeroAdaptConst::<_, _, _, 13, 0>::new(bits.clone());
+        let sel = SelectZeroAdaptConst::<_, _, 13, 0>::new(bits.clone());
         let ov = overhead(&sel);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10}",

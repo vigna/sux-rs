@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;
 
-use crate::bits::BitVec;
+use crate::bits::{BackendWord, BitVec};
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EliasFano;
 use crate::panic_if_out_of_bounds;
@@ -38,7 +38,7 @@ type DenseIndex = Rank9<BitVec<Box<[u64]>>>;
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SparseIndex<D> {
-    ef: EliasFano<u64, SelectZeroAdaptConst<PlatformWord, BitVec<D>, Box<[usize]>, 12, 3>>,
+    ef: EliasFano<u64, SelectZeroAdaptConst<BitVec<D>, Box<[usize]>, 12, 3>>,
     /// self.ef should be not be queried for values >= self.first_invalid_position
     first_invalid_pos: usize,
 }
@@ -313,7 +313,7 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
     }
 }
 
-impl<T, D: AsRef<[PlatformWord]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
+impl<T, D: BackendWord<W = PlatformWord> + AsRef<[PlatformWord]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
     /// Returns the total length of the array.
     ///
     /// This is the length that was specified when creating the builder,
@@ -389,7 +389,7 @@ impl<T: Clone, V: AsRef<[T]>> SliceByValue for PartialArray<T, DenseIndex, V> {
 
 /// Returns an option even when using `get_value_unchecked` because it should be safe to call
 /// whenever `position < len()`.
-impl<T: Clone, D: AsRef<[PlatformWord]>, V: AsRef<[T]>> SliceByValue
+impl<T: Clone, D: BackendWord<W = PlatformWord> + AsRef<[PlatformWord]>, V: AsRef<[T]>> SliceByValue
     for PartialArray<T, SparseIndex<D>, V>
 {
     type Value = Option<T>;

@@ -98,7 +98,7 @@ fn test_mult_usize() {
 
 #[test]
 fn test_empty() {
-    let bits: AddNumBits<_> = BitVec::new(0).into();
+    let bits: AddNumBits<BitVec> = BitVec::new(0).into();
     let select = SelectZeroAdapt::new(bits.clone(), 3);
     assert_eq!(select.count_ones(), 0);
     assert_eq!(select.len(), 0);

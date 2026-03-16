@@ -10,6 +10,7 @@ use super::{Inventory, SpanType, assert_inventory_length, LOG2_U16_PER_USIZE, U3
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
+use num_primitive::PrimitiveInteger;
 use std::{
     cmp::{max, min},
     ops::Deref,
@@ -19,12 +20,10 @@ use crate::{
     prelude::{BitCount, BitLength, SelectZeroHinted},
     traits::{
         NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
-        SelectUnchecked, SelectZero, SelectZeroUnchecked, Word,
+        SelectUnchecked, SelectZero, SelectZeroUnchecked, Word, WordType,
     },
 };
-use std::marker::PhantomData;
 
-use crate::ambassador_impl_AsRef;
 use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
@@ -37,6 +36,7 @@ use crate::traits::rank_sel::ambassador_impl_Select;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
+use crate::traits::rank_sel::ambassador_impl_WordType;
 use std::ops::Index;
 
 // NOTE: to make parallel modifications with SelectAdapt as easy as possible,
@@ -144,20 +144,20 @@ use std::ops::Index;
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(AsRef<[W]>, target = "bits")]
+#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
-#[delegate(crate::traits::rank_sel::BitCount<W>, target = "bits")]
+#[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
-#[delegate(crate::traits::rank_sel::RankHinted<W>, target = "bits")]
+#[delegate(crate::traits::rank_sel::RankHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::Select, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectHinted<W>, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted<W>, target = "bits")]
-pub struct SelectZeroAdapt<W, B, I = Box<[usize]>> {
+#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
+pub struct SelectZeroAdapt<B, I = Box<[usize]>> {
     bits: B,
     inventory: I,
     spill: I,
@@ -166,10 +166,16 @@ pub struct SelectZeroAdapt<W, B, I = Box<[usize]>> {
     log2_words_per_subinventory: usize,
     ones_per_inventory_mask: usize,
     ones_per_sub16_mask: usize,
-    _phantom: PhantomData<W>,
 }
 
-impl<W, B, I> Deref for SelectZeroAdapt<W, B, I> {
+impl<B: WordType + AsRef<[B::Word]>, I> AsRef<[B::Word]> for SelectZeroAdapt<B, I> {
+    #[inline(always)]
+    fn as_ref(&self) -> &[B::Word] {
+        self.bits.as_ref()
+    }
+}
+
+impl<B, I> Deref for SelectZeroAdapt<B, I> {
     type Target = B;
 
     fn deref(&self) -> &Self::Target {
@@ -177,7 +183,7 @@ impl<W, B, I> Deref for SelectZeroAdapt<W, B, I> {
     }
 }
 
-impl<W, B, I> SelectZeroAdapt<W, B, I> {
+impl<B, I> SelectZeroAdapt<B, I> {
     pub fn into_inner(self) -> B {
         self.bits
     }
@@ -198,9 +204,9 @@ impl<W, B, I> SelectZeroAdapt<W, B, I> {
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectZeroAdapt<W, C, I>
+    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectZeroAdapt<C, I>
     where
-        C: SelectZeroHinted<W>,
+        C: SelectZeroHinted,
     {
         SelectZeroAdapt {
             bits: f(self.bits),
@@ -211,14 +217,13 @@ impl<W, B, I> SelectZeroAdapt<W, B, I> {
             log2_words_per_subinventory: self.log2_words_per_subinventory,
             ones_per_inventory_mask: self.ones_per_inventory_mask,
             ones_per_sub16_mask: self.ones_per_sub16_mask,
-            _phantom: PhantomData,
         }
     }
 
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
 }
 
-impl<W, B: BitLength, C> SelectZeroAdapt<W, B, C> {
+impl<B: BitLength, C> SelectZeroAdapt<B, C> {
     /// Returns the number of bits in the bit vector.
     ///
     /// This method is equivalent to [`BitLength::len`], but it is provided to
@@ -229,7 +234,10 @@ impl<W, B: BitLength, C> SelectZeroAdapt<W, B, C> {
     }
 }
 
-impl<W: Word + SelectInWord, B: AsRef<[W]> + BitCount<W>> SelectZeroAdapt<W, B, Box<[usize]>> {
+impl<B: WordType + AsRef<[B::Word]> + BitCount> SelectZeroAdapt<B, Box<[usize]>>
+where
+    B::Word: Word + SelectInWord,
+{
     /// Creates a new selection structure over a bit vector using a
     /// [default target inventory
     /// span](SelectZeroAdapt::DEFAULT_TARGET_INVENTORY_SPAN).
@@ -376,7 +384,7 @@ impl<W: Word + SelectInWord, B: AsRef<[W]> + BitCount<W>> SelectZeroAdapt<W, B, 
         let inventory_words = inventory_size * words_per_inventory + 1;
         let mut inventory: Vec<usize> = Vec::with_capacity(inventory_words);
 
-        let bits_per_word = W::BITS as usize;
+        let bits_per_word = B::Word::BITS as usize;
 
         let mut past_ones = 0;
         let mut next_quantum = 0;
@@ -629,13 +637,14 @@ impl<W: Word + SelectInWord, B: AsRef<[W]> + BitCount<W>> SelectZeroAdapt<W, B, 
             log2_words_per_subinventory,
             ones_per_inventory_mask,
             ones_per_sub16_mask,
-            _phantom: PhantomData,
         }
     }
 }
 
-impl<W: Word + SelectInWord, B: AsRef<[W]> + BitLength + SelectZeroHinted<W>, I: AsRef<[usize]>> SelectZeroUnchecked
-    for SelectZeroAdapt<W, B, I>
+impl<B: WordType + AsRef<[B::Word]> + BitLength + SelectZeroHinted, I: AsRef<[usize]>> SelectZeroUnchecked
+    for SelectZeroAdapt<B, I>
+where
+    B::Word: Word + SelectInWord,
 {
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
         unsafe {
@@ -720,8 +729,10 @@ impl<W: Word + SelectInWord, B: AsRef<[W]> + BitLength + SelectZeroHinted<W>, I:
     }
 }
 
-impl<W: Word + SelectInWord, B: AsRef<[W]> + NumBits + SelectZeroHinted<W>, I: AsRef<[usize]>> SelectZero
-    for SelectZeroAdapt<W, B, I>
+impl<B: WordType + AsRef<[B::Word]> + NumBits + SelectZeroHinted, I: AsRef<[usize]>> SelectZero
+    for SelectZeroAdapt<B, I>
+where
+    B::Word: Word + SelectInWord,
 {
 }
 
