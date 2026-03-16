@@ -62,7 +62,8 @@ fn main() -> Result<()> {
     let elias_fano_s: EliasFano<
         u64,
         SelectZeroAdaptConst<
-            SelectAdaptConst<_, _, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_INVENTORY>,
+            _,
+            SelectAdaptConst<_, _, _, LOG2_ONES_PER_INVENTORY, LOG2_U64_PER_INVENTORY>,
             _,
             LOG2_ONES_PER_INVENTORY,
             LOG2_U64_PER_INVENTORY,

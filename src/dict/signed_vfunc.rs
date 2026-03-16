@@ -66,7 +66,10 @@ where
             .hashes
             .get_value(index.as_to::<usize>())?
             .as_to::<u64>()
-            == crate::func::mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)))
+            == <H::Value>::as_from(
+                crate::func::mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))),
+            )
+            .as_to::<u64>()
         {
             Some(index)
         } else {

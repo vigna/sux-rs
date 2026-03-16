@@ -282,7 +282,7 @@ impl Block32Counters<1, 10> {
 
     #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
-        (self.relative[0] as usize >> (10 * (word ^ 3))) & ((1 << 10) - 1)
+        (self.relative[0] as u64 >> (10 * (word ^ 3))) as usize & ((1 << 10) - 1)
     }
 
     #[inline(always)]
@@ -299,7 +299,7 @@ impl Block32Counters<1, 11> {
 
     #[inline(always)]
     pub fn rel(&self, word: usize) -> usize {
-        (self.relative[0] as usize >> (11 * (word ^ 3))) & ((1 << 11) - 1)
+        (self.relative[0] as u64 >> (11 * (word ^ 3))) as usize & ((1 << 11) - 1)
     }
 
     #[inline(always)]

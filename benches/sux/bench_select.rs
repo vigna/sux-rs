@@ -49,8 +49,9 @@ pub fn compare_adapt_const(
         let bits: AddNumBits<_> = bits.into();
         let num_ones = bits.num_ones();
         let sel: SelectAdaptConst<
+            PlatformWord,
             AddNumBits<_>,
-            Box<[PlatformWord]>,
+            Box<[usize]>,
             LOG2_ONES_PER_INVENTORY,
             LOG2_WORDS_PER_SUBINVENTORY,
         > = SelectAdaptConst::new(bits);
@@ -108,7 +109,7 @@ macro_rules! bench_select_adapt_const {
         for (bitvec, bitvec_id) in std::iter::zip(&$bitvecs, &$bitvec_ids) {
             let bits = bitvec.clone();
             let bits: AddNumBits<_> = bits.into();
-            let sel: SelectAdaptConst<AddNumBits<_>, Box<[PlatformWord]>, $log_inv_size, $log_subinv_size> =
+            let sel: SelectAdaptConst<PlatformWord, AddNumBits<_>, Box<[usize]>, $log_inv_size, $log_subinv_size> =
                 SelectAdaptConst::new(bits);
             group.bench_with_input(
                 BenchmarkId::from_parameter(format!(

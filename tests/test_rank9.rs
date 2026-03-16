@@ -18,8 +18,8 @@ fn test() {
     for len in lens {
         let bits = (0..len)
             .map(|_| rng.random_bool(density))
-            .collect::<BitVec>();
-        let rank9: Rank9 = Rank9::new(bits.clone());
+            .collect::<BitVec<Vec<u64>>>();
+        let rank9 = Rank9::new(bits.clone());
 
         let mut ranks = Vec::with_capacity(len);
         let mut r = 0;
@@ -39,7 +39,7 @@ fn test() {
 
 #[test]
 fn test_rank_zero() {
-    let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
+    let bits = bit_vec![u64: 0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
     let rank9 = Rank9::new(bits);
     assert_eq!(rank9.rank_zero(0), 0);
     assert_eq!(rank9.rank_zero(1), 1);
@@ -56,12 +56,12 @@ fn test_rank_zero() {
 
 #[test]
 fn test_map() {
-    let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
+    let bits = bit_vec![u64: 0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
     let rank9 = Rank9::new(bits);
     let rank9_sel = unsafe {
         rank9.map(|x| {
-            let x: AddNumBits<_> = x.into();
-            SelectAdapt::<_, _>::new(x, 3)
+            let x: AddNumBits<_, u64> = x.into();
+            SelectAdapt::<u64, _>::new(x, 3)
         })
     };
     assert_eq!(rank9_sel.rank(0), 0);
@@ -75,7 +75,7 @@ fn test_map() {
 
 #[test]
 fn test_empty() {
-    let bits = BitVec::new(0);
+    let bits = BitVec::<Vec<u64>>::new(0);
     let rank9 = Rank9::new(bits);
 
     assert_eq!(rank9.len(), 0);

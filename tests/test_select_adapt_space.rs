@@ -51,7 +51,7 @@ fn test_space_select_adapt() {
         // SelectAdapt with M=8 (max_log2=3), default span 8192
         let sel = SelectAdapt::new(bits.clone(), 3);
         let ov = overhead(&sel);
-        let th = theoretical_overhead(SelectAdapt::<AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN, 3);
+        let th = theoretical_overhead(SelectAdapt::<PlatformWord, AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN, 3);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10.2}% {:>10}",
             "SelectAdapt(M=3)", density, ov, th, PlatformWord::BITS
@@ -66,7 +66,7 @@ fn test_space_select_adapt() {
         // SelectAdapt with M=1 (max_log2=0), default span 8192
         let sel = SelectAdapt::new(bits.clone(), 0);
         let ov = overhead(&sel);
-        let th = theoretical_overhead(SelectAdapt::<AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN, 0);
+        let th = theoretical_overhead(SelectAdapt::<PlatformWord, AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN, 0);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10.2}% {:>10}",
             "SelectAdapt(M=0)", density, ov, th, PlatformWord::BITS
@@ -103,7 +103,7 @@ fn test_space_select_adapt_const() {
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
 
-        let sel = SelectAdaptConst::<_, _, 12, 2>::new(bits.clone());
+        let sel = SelectAdaptConst::<_, _, _, 12, 2>::new(bits.clone());
         let ov = overhead(&sel);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10}",
@@ -111,7 +111,7 @@ fn test_space_select_adapt_const() {
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
 
-        let sel = SelectAdaptConst::<_, _, 13, 0>::new(bits.clone());
+        let sel = SelectAdaptConst::<_, _, _, 13, 0>::new(bits.clone());
         let ov = overhead(&sel);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10}",
@@ -139,7 +139,7 @@ fn test_space_select_zero_adapt() {
 
         let sel = SelectZeroAdapt::new(bits.clone(), 3);
         let ov = overhead(&sel);
-        let th = theoretical_overhead(SelectZeroAdapt::<AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN, 3);
+        let th = theoretical_overhead(SelectZeroAdapt::<PlatformWord, AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN, 3);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10.2}% {:>10}",
             "SelectZeroAdapt(M=3)", density, ov, th, PlatformWord::BITS
@@ -151,7 +151,7 @@ fn test_space_select_zero_adapt() {
 
         let sel = SelectZeroAdapt::new(bits.clone(), 0);
         let ov = overhead(&sel);
-        let th = theoretical_overhead(SelectZeroAdapt::<AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN, 0);
+        let th = theoretical_overhead(SelectZeroAdapt::<PlatformWord, AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN, 0);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10.2}% {:>10}",
             "SelectZeroAdapt(M=0)", density, ov, th, PlatformWord::BITS
@@ -188,7 +188,7 @@ fn test_space_select_zero_adapt_const() {
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
 
-        let sel = SelectZeroAdaptConst::<_, _, 12, 2>::new(bits.clone());
+        let sel = SelectZeroAdaptConst::<_, _, _, 12, 2>::new(bits.clone());
         let ov = overhead(&sel);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10}",
@@ -196,7 +196,7 @@ fn test_space_select_zero_adapt_const() {
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
 
-        let sel = SelectZeroAdaptConst::<_, _, 13, 0>::new(bits.clone());
+        let sel = SelectZeroAdaptConst::<_, _, _, 13, 0>::new(bits.clone());
         let ov = overhead(&sel);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10}",
