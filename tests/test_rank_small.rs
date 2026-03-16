@@ -90,12 +90,12 @@ fn test_rank_small_1_u32() {
 
 #[test]
 fn test_rank_small_map() {
-    let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
+    let bits = bit_vec![u64: 0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
     let rank_small = rank_small![2; bits];
     let rank_small_sel = unsafe {
         rank_small.map(|b| {
-            let b: AddNumBits<_> = b.into();
-            SelectAdapt::new(b, 2)
+            let b: AddNumBits<_, u64> = b.into();
+            SelectAdapt::<u64, _>::new(b, 2)
         })
     };
     assert_eq!(rank_small_sel.rank(0), 0);
@@ -109,8 +109,8 @@ fn test_rank_small_map() {
 
 #[test]
 fn test_rank_small_empty() {
-    let bits = BitVec::new(0);
-    let rank_small = RankSmall::<2, 9>::new(bits);
+    let bits = BitVec::<Vec<u64>>::new(0);
+    let rank_small = RankSmall::<2, 9, _>::new(bits);
 
     assert_eq!(rank_small.len(), 0);
     let inner = rank_small.into_inner();
@@ -128,7 +128,7 @@ fn test_rank_small_large() {
             bits.set(i, true);
         };
     }
-    let rank_small = RankSmall::<2, 9>::new(bits.clone());
+    let rank_small = RankSmall::<2, 9, _>::new(bits.clone());
     for i in (0..bits.len()).step_by(5) {
         assert_eq!(rank_small.rank(i), i.div_ceil(5));
     }

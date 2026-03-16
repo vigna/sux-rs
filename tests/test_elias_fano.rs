@@ -291,7 +291,7 @@ fn test_epserde() -> Result<()> {
 
             <EliasFano<
                 u64,
-                SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>>,
+                SelectAdaptConst<usize, BitVec<Box<[usize]>>, Box<[usize]>>,
                 BitFieldVec<u64, Box<[usize]>>,
             >>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())
         }?;

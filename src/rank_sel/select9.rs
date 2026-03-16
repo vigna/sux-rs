@@ -9,8 +9,8 @@
 use super::Rank9;
 use super::rank9::BlockCounters;
 use crate::traits::{
-    BitCount, BitLength, NumBits, PlatformWord, Rank, RankHinted, RankUnchecked, RankZero, Select,
-    SelectHinted, SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked,
+    BitCount, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
+    SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked,
 };
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
@@ -121,16 +121,16 @@ use std::ops::{Deref, Index};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(AsRef<[u64]>, target = "rank9")]
 #[delegate(Index<usize>, target = "rank9")]
-#[delegate(crate::traits::rank_sel::BitCount<PlatformWord>, target = "rank9")]
+#[delegate(crate::traits::rank_sel::BitCount<u64>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "rank9")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "rank9")]
 #[delegate(crate::traits::rank_sel::Rank, target = "rank9")]
 #[delegate(crate::traits::rank_sel::RankHinted<u64>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "rank9")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "rank9")]
-#[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "rank9")]
+#[delegate(crate::traits::rank_sel::SelectHinted<u64>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "rank9")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "rank9")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted<u64>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "rank9")]
 pub struct Select9<R = Rank9, I = Box<[u64]>> {
     rank9: R,

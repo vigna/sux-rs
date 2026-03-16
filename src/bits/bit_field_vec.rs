@@ -773,7 +773,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
             let residual = bit_len - (bits - dst_bit) - (dst_last_word - dst_first_word - 1) * bits;
             let mask = W::MAX >> (bits - residual);
             dest[dst_last_word] &= !mask;
-            dest[dst_last_word] |= source[src_last_word] & mask;
+            dest[dst_last_word] |= (word | (source[src_last_word] << shift)) & mask;
         } else {
             // src_first_word != src_last_word && dst_first_word !=
             // dst_last_word && src_bit > dst_bit

@@ -26,4 +26,4 @@ pub mod vfilter;
 pub use vfilter::VFilter;
 
 pub mod ef_list;
-pub use ef_list::EfList;
+pub use ef_list::{EfList, EfListBuilder};

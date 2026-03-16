@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 use crate::prelude::*;
-use crate::traits::BitVecOpsMut;
+use crate::traits::{BitVecOpsMut, PlatformWord};
 use arbitrary::Arbitrary;
 use std::collections::BTreeSet;
 
@@ -26,7 +26,7 @@ pub fn harness(mut data: Data) {
         .map(|value| value % data.len)
         .collect::<BTreeSet<_>>();
 
-    let mut bitvec = BitVec::new(data.len);
+    let mut bitvec = BitVec::<Vec<PlatformWord>>::new(data.len);
     if data.len != 0 {
         ones.iter().for_each(|value| {
             bitvec.set(*value, true); // set bit to one
@@ -50,13 +50,13 @@ pub fn harness(mut data: Data) {
             }
         };
     }
-    test_struct!(SelectAdaptConst<_, _, 6>);
-    test_struct!(SelectAdaptConst<_, _, 7>);
-    test_struct!(SelectAdaptConst<_, _, 8>);
-    test_struct!(SelectAdaptConst<_, _, 9>);
-    test_struct!(SelectAdaptConst<_, _, 10>);
-    test_struct!(SelectAdaptConst<_, _, 11>);
-    test_struct!(SelectAdaptConst<_, _, 12>);
-    test_struct!(SelectAdaptConst<_, _, 13>);
-    test_struct!(SelectAdaptConst<_, _, 14>);
+    test_struct!(SelectAdaptConst<_, _, _, 6>);
+    test_struct!(SelectAdaptConst<_, _, _, 7>);
+    test_struct!(SelectAdaptConst<_, _, _, 8>);
+    test_struct!(SelectAdaptConst<_, _, _, 9>);
+    test_struct!(SelectAdaptConst<_, _, _, 10>);
+    test_struct!(SelectAdaptConst<_, _, _, 11>);
+    test_struct!(SelectAdaptConst<_, _, _, 12>);
+    test_struct!(SelectAdaptConst<_, _, _, 13>);
+    test_struct!(SelectAdaptConst<_, _, _, 14>);
 }

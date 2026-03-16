@@ -45,11 +45,115 @@ use crate::traits::bit_field_slice::Word;
 use crate::traits::indexed_dict::IndexedSeq;
 use crate::utils::PrimitiveUnsignedExt;
 
+/// Builder for creating an [`EfList`].
+///
+/// Values must be strictly positive and are pushed one at a time.
+///
+/// # Examples
+///
+/// ```rust
+/// use sux::dict::ef_list::EfListBuilder;
+/// use value_traits::slices::SliceByValue;
+///
+/// let mut builder = EfListBuilder::new();
+/// builder.push(1u64);
+/// builder.push(3);
+/// builder.push(7);
+/// builder.push(42);
+///
+/// let ef_list = builder.build();
+/// assert_eq!(ef_list.index_value(0), 1);
+/// assert_eq!(ef_list.index_value(3), 42);
+/// ```
+#[derive(Debug, Clone, MemDbg, MemSize)]
+pub struct EfListBuilder<V: Word = u64> {
+    values: Vec<V>,
+}
+
+impl<V: Word> EfListBuilder<V> {
+    /// Creates a new empty builder.
+    pub fn new() -> Self {
+        EfListBuilder { values: vec![] }
+    }
+
+    /// Pushes a strictly positive value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value` is zero.
+    pub fn push(&mut self, value: V) {
+        assert!(value > V::ZERO, "EfList requires strictly positive values");
+        self.values.push(value);
+    }
+
+    /// Builds the [`EfList`].
+    pub fn build(self) -> EfList<V> {
+        let values = self.values;
+        let n = values.len();
+
+        // Compute total bits needed
+        let mut total_bits: u64 = 0;
+        for &v in &values {
+            total_bits += (v.bit_len() - 1) as u64;
+        }
+
+        // Build delimiters: n + 1 cumulative bit positions
+        let mut efb = EliasFanoBuilder::new(n + 1, total_bits);
+        let mut pos: u64 = 0;
+        // SAFETY: pos = 0 is ≤ total_bits and is the first push
+        unsafe { efb.push_unchecked(0u64) };
+        for &v in &values {
+            pos += (v.bit_len() - 1) as u64;
+            // SAFETY: pos is non-decreasing and ≤ total_bits
+            unsafe { efb.push_unchecked(pos) };
+        }
+        let delimiters = efb.build_with_seq();
+
+        // Build data: pack the MSB-removed representations
+        let n_words = (total_bits as usize).div_ceil(V::BITS as usize);
+        let mut data = vec![V::ZERO; n_words];
+
+        let mut bit_pos = 0usize;
+        for &v in &values {
+            let width = (v.bit_len() - 1) as usize;
+            if width > 0 {
+                // Strip the MSB: keep only the low `width` bits
+                let bits = v ^ (V::ONE << width);
+                EfList::<V>::write_bits(&mut data, bit_pos, bits, width);
+            }
+            bit_pos += width;
+        }
+
+        EfList {
+            n,
+            delimiters,
+            data: data.into_boxed_slice(),
+        }
+    }
+}
+
+impl<V: Word> Default for EfListBuilder<V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<V: Word> Extend<V> for EfListBuilder<V> {
+    fn extend<I: IntoIterator<Item = V>>(&mut self, iter: I) {
+        for v in iter {
+            self.push(v);
+        }
+    }
+}
+
 /// A compact list of strictly positive integers.
 ///
 /// Values are stored by concatenating their binary representations with the
 /// most significant bit removed. The boundaries between values are recorded
 /// in an [`EfSeq`] (Elias–Fano sequence), enabling efficient random access.
+///
+/// Use [`EfListBuilder`] for incremental construction, or [`EfList::new`]
+/// to build from an iterator directly.
 ///
 /// # Type Parameters
 ///
@@ -84,48 +188,9 @@ impl<V: Word> EfList<V> {
     /// assert_eq!(ef.index_value(1), 5);
     /// ```
     pub fn new(values: impl IntoIterator<Item = V>) -> Self {
-        let values: Vec<V> = values.into_iter().collect();
-        let n = values.len();
-
-        // Compute total bits needed and validate
-        let mut total_bits: u64 = 0;
-        for &v in &values {
-            assert!(v > V::ZERO, "EfList requires strictly positive values");
-            total_bits += (v.bit_len() - 1) as u64;
-        }
-
-        // Build delimiters: n + 1 cumulative bit positions
-        let mut efb = EliasFanoBuilder::new(n + 1, total_bits);
-        let mut pos: u64 = 0;
-        // SAFETY: pos = 0 is ≤ total_bits and is the first push
-        unsafe { efb.push_unchecked(0u64) };
-        for &v in &values {
-            pos += (v.bit_len() - 1) as u64;
-            // SAFETY: pos is non-decreasing and ≤ total_bits
-            unsafe { efb.push_unchecked(pos) };
-        }
-        let delimiters = efb.build_with_seq();
-
-        // Build data: pack the MSB-removed representations
-        let n_words = (total_bits as usize).div_ceil(V::BITS as usize);
-        let mut data = vec![V::ZERO; n_words];
-
-        let mut bit_pos = 0usize;
-        for &v in &values {
-            let width = (v.bit_len() - 1) as usize;
-            if width > 0 {
-                // Strip the MSB: keep only the low `width` bits
-                let bits = v ^ (V::ONE << width);
-                Self::write_bits(&mut data, bit_pos, bits, width);
-            }
-            bit_pos += width;
-        }
-
-        EfList {
-            n,
-            delimiters,
-            data: data.into_boxed_slice(),
-        }
+        let mut builder = EfListBuilder::new();
+        builder.extend(values);
+        builder.build()
     }
 
     /// Writes `width` low bits of `value` into `data` starting at bit

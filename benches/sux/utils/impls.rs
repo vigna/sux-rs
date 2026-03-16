@@ -2,7 +2,9 @@ use mem_dbg::{MemDbg, MemSize};
 use sux::bits::BitVec;
 use sux::rank_sel::{Rank9, RankSmall};
 use sux::rank_sel::{Select9, SelectAdapt, SelectAdaptConst, SelectSmall};
-use sux::traits::{AddNumBits, BitLength, NumBits, PlatformWord, Select, SelectHinted, SelectUnchecked};
+use sux::traits::{
+    AddNumBits, BitLength, NumBits, PlatformWord, Select, SelectHinted, SelectUnchecked,
+};
 
 use super::Build;
 
@@ -12,7 +14,7 @@ macro_rules! impl_select_adapt {
         #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub struct $name<B> {
-            inner: SelectAdapt<B>,
+            inner: SelectAdapt<PlatformWord, B>,
         }
 
         impl Build<BitVec> for $name<AddNumBits<BitVec>> {
@@ -60,14 +62,14 @@ macro_rules! impl_select_adapt_const {
         #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub struct $name<B> {
-            inner: SelectAdaptConst<B, Box<[PlatformWord]>, LOG2_ONES_PER_INVENTORY, $subinv>,
+            inner: SelectAdaptConst<PlatformWord, B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, $subinv>,
         }
 
         impl Build<BitVec> for $name<AddNumBits<BitVec>> {
             fn new(bits: BitVec) -> Self {
                 let bits: AddNumBits<_> = bits.into();
                 Self {
-                    inner: SelectAdaptConst::<_, _, LOG2_ONES_PER_INVENTORY, $subinv>::new(bits),
+                    inner: SelectAdaptConst::<_, _, _, LOG2_ONES_PER_INVENTORY, $subinv>::new(bits),
                 }
             }
         }
@@ -141,32 +143,32 @@ impl Build<BitVec> for RankSmall<3, 13> {
     }
 }
 
-impl Build<BitVec> for SelectSmall<2, 9, RankSmall<2, 9>> {
+impl Build<BitVec> for SelectSmall<2, 9, u64, RankSmall<2, 9>> {
     fn new(bits: BitVec) -> Self {
-        SelectSmall::<2, 9, _>::new(RankSmall::<2, 9>::new(bits))
+        SelectSmall::<2, 9, u64, _>::new(RankSmall::<2, 9>::new(bits))
     }
 }
 
-impl Build<BitVec> for SelectSmall<1, 9, RankSmall<1, 9>> {
+impl Build<BitVec> for SelectSmall<1, 9, u64, RankSmall<1, 9>> {
     fn new(bits: BitVec) -> Self {
-        SelectSmall::<1, 9, _>::new(RankSmall::<1, 9>::new(bits))
+        SelectSmall::<1, 9, u64, _>::new(RankSmall::<1, 9>::new(bits))
     }
 }
 
-impl Build<BitVec> for SelectSmall<1, 10, RankSmall<1, 10>> {
+impl Build<BitVec> for SelectSmall<1, 10, u64, RankSmall<1, 10>> {
     fn new(bits: BitVec) -> Self {
-        SelectSmall::<1, 10, _>::new(RankSmall::<1, 10>::new(bits))
+        SelectSmall::<1, 10, u64, _>::new(RankSmall::<1, 10>::new(bits))
     }
 }
 
-impl Build<BitVec> for SelectSmall<1, 11, RankSmall<1, 11>> {
+impl Build<BitVec> for SelectSmall<1, 11, u64, RankSmall<1, 11>> {
     fn new(bits: BitVec) -> Self {
-        SelectSmall::<1, 11, _>::new(RankSmall::<1, 11>::new(bits))
+        SelectSmall::<1, 11, u64, _>::new(RankSmall::<1, 11>::new(bits))
     }
 }
 
-impl Build<BitVec> for SelectSmall<3, 13, RankSmall<3, 13>> {
+impl Build<BitVec> for SelectSmall<3, 13, u64, RankSmall<3, 13>> {
     fn new(bits: BitVec) -> Self {
-        SelectSmall::<3, 13, _>::new(RankSmall::<3, 13>::new(bits))
+        SelectSmall::<3, 13, u64, _>::new(RankSmall::<3, 13>::new(bits))
     }
 }

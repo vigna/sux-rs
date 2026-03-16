@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use super::{DEFAULT_LOG2_ONES_PER_INVENTORY, Inventory, SpanType, assert_inventory_length, LOG2_U16_PER_PLATFORM_WORD, U32_PER_PLATFORM_WORD};
+use super::{DEFAULT_LOG2_ONES_PER_INVENTORY, Inventory, SpanType, assert_inventory_length, LOG2_U16_PER_USIZE, U32_PER_USIZE};
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
@@ -18,10 +18,11 @@ use std::{
 use crate::{
     prelude::{BitCount, BitLength, Select, SelectHinted},
     traits::{
-        NumBits, PlatformWord, Rank, RankHinted, RankUnchecked, RankZero, SelectUnchecked,
-        SelectZero, SelectZeroHinted, SelectZeroUnchecked,
+        NumBits, Rank, RankHinted, RankUnchecked, RankZero, SelectUnchecked,
+        SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word,
     },
 };
+use std::marker::PhantomData;
 
 use crate::ambassador_impl_AsRef;
 use crate::ambassador_impl_Index;
@@ -62,7 +63,7 @@ use std::ops::Index;
 /// # Maximum bit-vector length
 ///
 /// The inventory encodes positions in the top bits of each
-/// [`PlatformWord`] entry, leaving `PlatformWord::BITS - 2` bits for
+/// [`usize`] entry, leaving `usize::BITS - 2` bits for
 /// the actual position. On 32-bit platforms this limits the bit vector
 /// length to 2^30 − 1 (about 1 billion bits); on 64-bit platforms the
 /// limit is 2^62 − 1. The constructor panics if the bit vector exceeds
@@ -160,32 +161,34 @@ use std::ops::Index;
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(AsRef<[PlatformWord]>, target = "bits")]
+#[delegate(AsRef<[W]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
-#[delegate(crate::traits::rank_sel::BitCount<PlatformWord>, target = "bits")]
+#[delegate(crate::traits::rank_sel::BitCount<W>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
-#[delegate(crate::traits::rank_sel::RankHinted<PlatformWord>, target = "bits")]
+#[delegate(crate::traits::rank_sel::RankHinted<W>, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankZero, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectHinted<PlatformWord>, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectHinted<W>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
-#[delegate(crate::traits::rank_sel::SelectZeroHinted<PlatformWord>, target = "bits")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted<W>, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
 pub struct SelectAdaptConst<
+    W,
     B,
-    I = Box<[PlatformWord]>,
+    I = Box<[usize]>,
     const LOG2_ONES_PER_INVENTORY: usize = DEFAULT_LOG2_ONES_PER_INVENTORY,
     const LOG2_WORDS_PER_SUBINVENTORY: usize = 3,
 > {
     bits: B,
     inventory: I,
     spill: I,
+    _phantom: PhantomData<W>,
 }
 
-impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize> Deref
-    for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+impl<W, B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize> Deref
+    for SelectAdaptConst<W, B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     type Target = B;
 
@@ -194,11 +197,11 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
     }
 }
 
-impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
-    SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+impl<W, B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
+    SelectAdaptConst<W, B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     const LOG2_ONES_PER_SUB16: usize =
-        LOG2_ONES_PER_INVENTORY.saturating_sub(LOG2_WORDS_PER_SUBINVENTORY + LOG2_U16_PER_PLATFORM_WORD);
+        LOG2_ONES_PER_INVENTORY.saturating_sub(LOG2_WORDS_PER_SUBINVENTORY + LOG2_U16_PER_USIZE);
     const ONES_PER_SUB16_MASK: usize = (1 << Self::LOG2_ONES_PER_SUB16) - 1;
     const ONES_PER_INVENTORY: usize = (1 << LOG2_ONES_PER_INVENTORY);
     const ONES_PER_INVENTORY_MASK: usize = (1 << LOG2_ONES_PER_INVENTORY) - 1;
@@ -224,22 +227,23 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectAdaptConst<C, I>
+    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectAdaptConst<W, C, I>
     where
-        C: SelectHinted<PlatformWord>,
+        C: SelectHinted<W>,
     {
         SelectAdaptConst {
             bits: f(self.bits),
             inventory: self.inventory,
             spill: self.spill,
+            _phantom: PhantomData,
         }
     }
 
-    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * PlatformWord::BITS as usize;
+    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
 }
 
-impl<B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
-    SelectAdaptConst<B, C, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+impl<W, B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
+    SelectAdaptConst<W, B, C, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     /// Returns the number of bits in the bit vector.
     ///
@@ -252,17 +256,18 @@ impl<B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER
 }
 
 impl<
-    B: AsRef<[PlatformWord]> + BitCount<PlatformWord>,
+    W: Word + SelectInWord,
+    B: AsRef<[W]> + BitCount<W>,
     const LOG2_ONES_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
-> SelectAdaptConst<B, Box<[PlatformWord]>, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+> SelectAdaptConst<W, B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     /// Creates a new selection structure over a [`SelectHinted`] with a specified
     /// distance between indexed ones.
     ///
     /// # Panics
     ///
-    /// Panics if the bit vector length exceeds `PlatformWord::MAX >> 2`
+    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
     /// (2^62 − 1 on 64-bit platforms, 2^30 − 1 on 32-bit).
     pub fn new(bits: B) -> Self {
         assert_inventory_length(bits.len());
@@ -275,11 +280,13 @@ impl<
         let words_per_inventory = words_per_subinventory + 1;
 
         let inventory_words = inventory_size * words_per_inventory + 1;
-        let mut inventory: Vec<PlatformWord> = Vec::with_capacity(inventory_words);
+        let mut inventory: Vec<usize> = Vec::with_capacity(inventory_words);
 
         let mut past_ones = 0;
         let mut next_quantum = 0;
         let mut spilled = 0;
+
+        let bits_per_word = W::BITS as usize;
 
         // First phase: we build an inventory for each one out of ones_per_inventory.
         for (i, word) in bits.as_ref().iter().copied().enumerate() {
@@ -287,10 +294,10 @@ impl<
 
             while past_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word(next_quantum - past_ones);
-                let index = (i * PlatformWord::BITS as usize) + in_word_index;
+                let index = (i * bits_per_word) + in_word_index;
 
                 // write the position of the one in the inventory
-                inventory.push(index as PlatformWord);
+                inventory.push(index);
                 // make space for the subinventory
                 inventory.resize(inventory.len() + words_per_subinventory, 0);
 
@@ -301,7 +308,7 @@ impl<
 
         assert_eq!(past_ones, num_ones);
         // in the last inventory write the number of bits
-        inventory.push(num_bits as PlatformWord);
+        inventory.push(num_bits);
         assert_eq!(inventory.len(), inventory_words);
 
         // We estimate the subinventory and exact spill size
@@ -328,7 +335,7 @@ impl<
                     // We store an inventory entry each 1 << log2_ones_per_sub32 ones.
                     let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span);
                     let num_u32s = ones.div_ceil(1 << log2_ones_per_sub32);
-                    let num_words = num_u32s.div_ceil(U32_PER_PLATFORM_WORD);
+                    let num_words = num_u32s.div_ceil(U32_PER_USIZE);
                     let spilled_u64s = num_words.saturating_sub(words_per_subinventory - 1);
                     spilled += spilled_u64s;
                 }
@@ -343,11 +350,11 @@ impl<
 
         let spill_size = spilled;
 
-        let mut inventory: Box<[PlatformWord]> = inventory.into();
-        let mut spill: Box<[PlatformWord]> = vec![0; spill_size].into();
+        let mut inventory: Box<[usize]> = inventory.into();
+        let mut spill: Box<[usize]> = vec![0; spill_size].into();
 
         spilled = 0;
-        let locally_stored_u32s = U32_PER_PLATFORM_WORD * (words_per_subinventory - 1);
+        let locally_stored_u32s = U32_PER_USIZE * (words_per_subinventory - 1);
 
         // Second phase: we fill the subinventories and the spill.
         for inventory_idx in 0..inventory_size {
@@ -375,14 +382,14 @@ impl<
                     log2_quantum = Self::log2_ones_per_sub32(span);
                     inventory[start_inv_idx].set_u32_span();
                     // The first word of the subinventory is used to store the spill index.
-                    inventory[start_inv_idx + 1] = spilled as PlatformWord;
+                    inventory[start_inv_idx + 1] = spilled;
                 }
                 #[cfg(target_pointer_width = "64")]
                 SpanType::U64 => {
                     log2_quantum = 0;
                     inventory[start_inv_idx].set_u64_span();
                     // The first word of the subinventory is used to store the spill index.
-                    inventory[start_inv_idx + 1] = spilled as PlatformWord;
+                    inventory[start_inv_idx + 1] = spilled;
                 }
             }
 
@@ -394,9 +401,9 @@ impl<
             let mut subinventory_idx = 1;
             next_quantum += quantum;
 
-            let mut word_idx = start_bit_idx / PlatformWord::BITS as usize;
-            let end_word_idx = end_bit_idx.div_ceil(PlatformWord::BITS as usize);
-            let bit_idx = start_bit_idx % PlatformWord::BITS as usize;
+            let mut word_idx = start_bit_idx / bits_per_word;
+            let end_word_idx = end_bit_idx.div_ceil(bits_per_word);
+            let bit_idx = start_bit_idx % bits_per_word;
 
             // Clear the lower bits
             let mut word = (bits.as_ref()[word_idx] >> bit_idx) << bit_idx;
@@ -412,7 +419,7 @@ impl<
                     // find the quantum bit in the word
                     let in_word_index = word.select_in_word(next_quantum - past_ones);
                     // compute the global index of the quantum bit in the bit vector
-                    let bit_index = (word_idx * PlatformWord::BITS as usize) + in_word_index;
+                    let bit_index = (word_idx * bits_per_word) + in_word_index;
 
                     // This exit is necessary in case the number of ones per
                     // inventory is larger than the number of available
@@ -473,11 +480,11 @@ impl<
                         #[cfg(target_pointer_width = "64")]
                         SpanType::U64 => {
                             if subinventory_idx < words_per_subinventory {
-                                inventory[start_inv_idx + 1 + subinventory_idx] = bit_index as PlatformWord;
+                                inventory[start_inv_idx + 1 + subinventory_idx] = bit_index;
                                 subinventory_idx += 1;
                             } else {
                                 assert!(spilled < spill_size);
-                                spill[spilled] = bit_index as PlatformWord;
+                                spill[spilled] = bit_index;
                                 spilled += 1;
                             }
                             // This exit is not necessary for correctness, but
@@ -513,7 +520,7 @@ impl<
             if span_type == SpanType::U32 {
                 spilled += subinventory_idx
                     .saturating_sub(locally_stored_u32s)
-                    .div_ceil(U32_PER_PLATFORM_WORD);
+                    .div_ceil(U32_PER_USIZE);
             }
         }
 
@@ -523,16 +530,18 @@ impl<
             bits,
             inventory,
             spill,
+            _phantom: PhantomData,
         }
     }
 }
 
 impl<
-    B: AsRef<[PlatformWord]> + BitLength + SelectHinted<PlatformWord>,
-    I: AsRef<[PlatformWord]>,
+    W: Word + SelectInWord,
+    B: AsRef<[W]> + BitLength + SelectHinted<W>,
+    I: AsRef<[usize]>,
     const LOG2_ONES_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
-> SelectUnchecked for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+> SelectUnchecked for SelectAdaptConst<W, B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         unsafe {
@@ -569,7 +578,7 @@ impl<
                     - inventory_rank;
                 let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span);
 
-                let hint_pos = if subrank >> log2_ones_per_sub32 < (words_per_subinventory - 1) * U32_PER_PLATFORM_WORD {
+                let hint_pos = if subrank >> log2_ones_per_sub32 < (words_per_subinventory - 1) * U32_PER_USIZE {
                     let u32s = inventory
                         .get_unchecked(inventory_start_pos + 2..)
                         .align_to::<u32>()
@@ -588,7 +597,7 @@ impl<
 
                     inventory_rank
                         + *spilled_u32s.get_unchecked(
-                            (subrank >> log2_ones_per_sub32) - (words_per_subinventory - 1) * U32_PER_PLATFORM_WORD,
+                            (subrank >> log2_ones_per_sub32) - (words_per_subinventory - 1) * U32_PER_USIZE,
                         ) as usize
                 };
                 let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
@@ -614,11 +623,12 @@ impl<
 }
 
 impl<
-    B: AsRef<[PlatformWord]> + NumBits + SelectHinted<PlatformWord>,
-    I: AsRef<[PlatformWord]>,
+    W: Word + SelectInWord,
+    B: AsRef<[W]> + NumBits + SelectHinted<W>,
+    I: AsRef<[usize]>,
     const LOG2_ONES_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
-> Select for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+> Select for SelectAdaptConst<W, B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
 }
 
@@ -649,21 +659,21 @@ mod tests {
         }
         let bits: AddNumBits<BitVec> = bits.into();
 
-        let simple = SelectAdaptConst::<_, _, 13, 0>::new(&bits);
+        let simple = SelectAdaptConst::<_, _, _, 13, 0>::new(&bits);
         assert!(simple.inventory[0].is_u64_span());
 
         for (i, &p) in pos.iter().enumerate() {
             assert_eq!(simple.select(i), Some(p));
         }
         assert_eq!(simple.select(pos.len()), None);
-        let simple = SelectAdaptConst::<_, _, 13, 3>::new(&bits);
+        let simple = SelectAdaptConst::<_, _, _, 13, 3>::new(&bits);
         assert!(simple.inventory[0].is_u64_span());
 
         for (i, &p) in pos.iter().enumerate() {
             assert_eq!(simple.select(i), Some(p));
         }
         assert_eq!(simple.select(pos.len()), None);
-        let simple = SelectAdaptConst::<_, _, 13, 16>::new(&bits);
+        let simple = SelectAdaptConst::<_, _, _, 13, 16>::new(&bits);
         assert!(simple.inventory[0].is_u64_span());
 
         for (i, &p) in pos.iter().enumerate() {

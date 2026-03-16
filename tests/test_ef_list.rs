@@ -1,3 +1,4 @@
+use sux::dict::EfListBuilder;
 use sux::prelude::*;
 use value_traits::slices::SliceByValue;
 
@@ -203,6 +204,54 @@ fn test_u128_duplicates() {
 #[should_panic(expected = "strictly positive")]
 fn test_u128_zero_panics() {
     EfList::new(vec![0u128, 1, 2]);
+}
+
+// ────────────────────── builder tests ──────────────────────
+
+#[test]
+fn test_builder_push() {
+    let mut builder = EfListBuilder::new();
+    builder.push(1u64);
+    builder.push(3);
+    builder.push(7);
+    builder.push(42);
+    builder.push(100);
+
+    let ef = builder.build();
+    assert_eq!(ef.len(), 5);
+    assert_eq!(ef.index_value(0), 1);
+    assert_eq!(ef.index_value(1), 3);
+    assert_eq!(ef.index_value(2), 7);
+    assert_eq!(ef.index_value(3), 42);
+    assert_eq!(ef.index_value(4), 100);
+}
+
+#[test]
+fn test_builder_extend() {
+    let mut builder = EfListBuilder::new();
+    builder.push(1u32);
+    builder.extend([2u32, 3, 4, 5]);
+
+    let ef = builder.build();
+    assert_eq!(ef.len(), 5);
+    for i in 0..5 {
+        assert_eq!(ef.index_value(i), (i + 1) as u32);
+    }
+}
+
+#[test]
+fn test_builder_empty() {
+    let builder = EfListBuilder::<u64>::new();
+    let ef = builder.build();
+    assert_eq!(ef.len(), 0);
+    assert!(ef.is_empty());
+}
+
+#[test]
+#[should_panic(expected = "strictly positive")]
+fn test_builder_zero_panics() {
+    let mut builder = EfListBuilder::new();
+    builder.push(0u64);
 }
 
 // ────────────────────── cross-type / stress ──────────────────────

@@ -1477,9 +1477,13 @@ mod tests {
     const UPPER_BOUND_2: usize = 128_usize.pow(2) + UPPER_BOUND_1;
     const UPPER_BOUND_3: usize = 128_usize.pow(3) + UPPER_BOUND_2;
     const UPPER_BOUND_4: usize = 128_usize.pow(4) + UPPER_BOUND_3;
+    #[cfg(target_pointer_width = "64")]
     const UPPER_BOUND_5: usize = 128_usize.pow(5) + UPPER_BOUND_4;
+    #[cfg(target_pointer_width = "64")]
     const UPPER_BOUND_6: usize = 128_usize.pow(6) + UPPER_BOUND_5;
+    #[cfg(target_pointer_width = "64")]
     const UPPER_BOUND_7: usize = 128_usize.pow(7) + UPPER_BOUND_6;
+    #[cfg(target_pointer_width = "64")]
     const UPPER_BOUND_8: usize = 128_usize.pow(8) + UPPER_BOUND_7;
 
     #[test]
@@ -1506,6 +1510,26 @@ mod tests {
             UPPER_BOUND_4 - 1,
             UPPER_BOUND_4,
             UPPER_BOUND_4 + 1,
+        ];
+        let mut buffer = Vec::with_capacity(128);
+
+        for i in &values {
+            encode_int(*i, &mut buffer);
+        }
+
+        let mut data = &buffer[..];
+        for i in &values {
+            let (j, tmp) = decode_int(data);
+            assert_eq!(data.len() - tmp.len(), encode_int_len(*i));
+            data = tmp;
+            assert_eq!(*i, j);
+        }
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn test_encode_decode_int_large() {
+        let values = [
             UPPER_BOUND_5 - 1,
             UPPER_BOUND_5,
             UPPER_BOUND_5 + 1,

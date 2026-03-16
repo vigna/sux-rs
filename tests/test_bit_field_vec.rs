@@ -225,6 +225,7 @@ where
     }
 }
 
+#[cfg(target_pointer_width = "64")]
 #[test]
 fn test_clear() {
     let mut b = BitFieldVec::<usize, _>::new(50, 10);
@@ -320,6 +321,7 @@ fn test_pop() {
     assert_eq!(c.pop(), None);
 }
 
+#[cfg(target_pointer_width = "64")]
 #[test]
 fn test_unaligned() {
     for bit_width in [50, 56, 57, 58, 60, 64] {
@@ -365,6 +367,7 @@ fn test_unaligned_unchecked_63() {
     assert_eq!(unsafe { c.get_unaligned_unchecked(0) }, 0);
 }
 
+#[cfg(target_pointer_width = "64")]
 #[cfg(debug_assertions)]
 #[should_panic]
 #[test]
@@ -401,6 +404,7 @@ fn test_unaligned_63() {
     assert_eq!(c.get_unaligned(0), 0);
 }
 
+#[cfg(target_pointer_width = "64")]
 #[should_panic]
 #[test]
 fn test_unaligned_no_padding() {
@@ -445,6 +449,7 @@ fn test_eq() {
     assert_eq!(b, d);
 }
 
+#[cfg(target_pointer_width = "64")]
 #[test]
 fn test_reset() {
     let mut b = BitFieldVec::<usize, _>::new(50, 10);
@@ -467,6 +472,7 @@ fn test_reset() {
     }
 }
 
+#[cfg(target_pointer_width = "64")]
 #[test]
 fn test_atomic_reset() {
     let mut b = AtomicBitFieldVec::<usize, _>::new(50, 10);
@@ -489,6 +495,7 @@ fn test_atomic_reset() {
     }
 }
 
+#[cfg(target_pointer_width = "64")]
 #[test]
 fn test_set_len() {
     let mut b = BitFieldVec::<usize, _>::new(50, 10);
@@ -498,6 +505,7 @@ fn test_set_len() {
     assert_eq!(b.len(), 5);
 }
 
+#[cfg(target_pointer_width = "64")]
 #[test]
 fn test_from() {
     // Vec to atomic vec
@@ -712,9 +720,9 @@ fn test_iter_double_ended() {
     assert_eq!(rev, vec![5, 4, 3, 2, 1, 0]);
 
     // various bit widths
-    for bit_width in 1..=64 {
+    for bit_width in 1..=usize::BITS as usize {
         let n = 10usize;
-        let mask = if bit_width == 64 {
+        let mask = if bit_width == usize::BITS as usize {
             usize::MAX
         } else {
             (1usize << bit_width) - 1
