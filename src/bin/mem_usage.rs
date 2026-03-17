@@ -141,7 +141,12 @@ fn main() {
 
     match args.sel_type {
         StructType::SelectAdapt => {
-            mem_usage::<SelectAdapt<PlatformWord, _>>(args.len, args.density, uniform, "SelectAdapt");
+            mem_usage::<SelectAdapt<PlatformWord, _>>(
+                args.len,
+                args.density,
+                uniform,
+                "SelectAdapt",
+            );
         }
         StructType::Select9 => {
             mem_usage::<Select9>(args.len, args.density, uniform, "Select9");

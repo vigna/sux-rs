@@ -30,8 +30,14 @@ fn test() {
 
     // Dirty vector
     let ones = [PlatformWord::MAX; 2];
-    assert_eq!(unsafe { BitVec::from_raw_parts(ones.as_slice(), 0) }.count_ones(), 0);
-    assert_eq!(unsafe { BitVec::from_raw_parts(ones.as_slice(), 1) }.count_ones(), 1);
+    assert_eq!(
+        unsafe { BitVec::from_raw_parts(ones.as_slice(), 0) }.count_ones(),
+        0
+    );
+    assert_eq!(
+        unsafe { BitVec::from_raw_parts(ones.as_slice(), 1) }.count_ones(),
+        1
+    );
 
     for i in 0..u {
         assert!(bm[i]);

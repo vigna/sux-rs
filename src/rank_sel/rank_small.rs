@@ -16,8 +16,8 @@ use std::{
 use crate::{
     prelude::{BitLength, BitVec, Rank, RankHinted, RankUnchecked, RankZero, WordType},
     traits::{
-        BitCount, NumBits, Select, SelectHinted, SelectUnchecked, SelectZero,
-        SelectZeroHinted, SelectZeroUnchecked,
+        BitCount, NumBits, Select, SelectHinted, SelectUnchecked, SelectZero, SelectZeroHinted,
+        SelectZeroUnchecked,
     },
 };
 
@@ -496,11 +496,13 @@ macro_rules! impl_rank_small {
                         .as_ref()
                         .get_unchecked(word_pos / words_per_superblock);
 
-                    let hint_rank = *upper_count as usize + counts.absolute as usize + counts.rel(offset);
+                    let hint_rank =
+                        *upper_count as usize + counts.absolute as usize + counts.rel(offset);
                     if Self::WORDS_PER_SUBBLOCK == 1 {
                         // Single-word subblocks: rank directly from the word.
                         let word = self.bits.as_ref().get_unchecked(word_pos);
-                        hint_rank + (word & ((1 << (pos % bits_per_word)) - 1)).count_ones() as usize
+                        hint_rank
+                            + (word & ((1 << (pos % bits_per_word)) - 1)).count_ones() as usize
                     } else {
                         // Multi-word subblocks: use RankHinted.
                         #[allow(clippy::modulo_one)]
@@ -637,12 +639,8 @@ mod tests {
 
     #[test]
     fn test_last() {
-        let bits = unsafe {
-            BitVec::from_raw_parts(
-                vec![!1u64; 1 << 10],
-                (1 << 10) * u64::BITS as usize,
-            )
-        };
+        let bits =
+            unsafe { BitVec::from_raw_parts(vec![!1u64; 1 << 10], (1 << 10) * u64::BITS as usize) };
 
         let rank_small = rank_small![0; bits.clone()];
         assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
@@ -660,12 +658,8 @@ mod tests {
         assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
 
         // u32 word variants
-        let bits32 = unsafe {
-            BitVec::from_raw_parts(
-                vec![!1u32; 1 << 10],
-                (1 << 10) * u32::BITS as usize,
-            )
-        };
+        let bits32 =
+            unsafe { BitVec::from_raw_parts(vec![!1u32; 1 << 10], (1 << 10) * u32::BITS as usize) };
 
         let rank_small = rank_small![0, u32; bits32.clone()];
         assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());

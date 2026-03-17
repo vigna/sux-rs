@@ -6,7 +6,10 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use super::{DEFAULT_LOG2_ONES_PER_INVENTORY, Inventory, SpanType, assert_inventory_length, LOG2_U16_PER_USIZE, U32_PER_USIZE};
+use super::{
+    DEFAULT_LOG2_ONES_PER_INVENTORY, Inventory, LOG2_U16_PER_USIZE, SpanType, U32_PER_USIZE,
+    assert_inventory_length,
+};
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
@@ -19,8 +22,8 @@ use std::{
 use crate::{
     prelude::{BitCount, BitLength, Select, SelectHinted},
     traits::{
-        NumBits, Rank, RankHinted, RankUnchecked, RankZero, SelectUnchecked,
-        SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word, WordType,
+        NumBits, Rank, RankHinted, RankUnchecked, RankZero, SelectUnchecked, SelectZero,
+        SelectZeroHinted, SelectZeroUnchecked, Word, WordType,
     },
 };
 
@@ -185,8 +188,13 @@ pub struct SelectAdaptConst<
     spill: I,
 }
 
-impl<B: WordType + AsRef<[B::Word]>, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
-    AsRef<[B::Word]> for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+impl<
+    B: WordType + AsRef<[B::Word]>,
+    I,
+    const LOG2_ONES_PER_INVENTORY: usize,
+    const LOG2_WORDS_PER_SUBINVENTORY: usize,
+> AsRef<[B::Word]>
+    for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     #[inline(always)]
     fn as_ref(&self) -> &[B::Word] {
@@ -248,8 +256,12 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
 }
 
-impl<B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
-    SelectAdaptConst<B, C, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+impl<
+    B: BitLength,
+    C,
+    const LOG2_ONES_PER_INVENTORY: usize,
+    const LOG2_WORDS_PER_SUBINVENTORY: usize,
+> SelectAdaptConst<B, C, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     /// Returns the number of bits in the bit vector.
     ///
@@ -585,7 +597,9 @@ where
                     - inventory_rank;
                 let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span);
 
-                let hint_pos = if subrank >> log2_ones_per_sub32 < (words_per_subinventory - 1) * U32_PER_USIZE {
+                let hint_pos = if subrank >> log2_ones_per_sub32
+                    < (words_per_subinventory - 1) * U32_PER_USIZE
+                {
                     let u32s = inventory
                         .get_unchecked(inventory_start_pos + 2..)
                         .align_to::<u32>()
@@ -593,7 +607,8 @@ where
 
                     inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize
                 } else {
-                    let start_spill_idx = *inventory.get_unchecked(inventory_start_pos + 1) as usize;
+                    let start_spill_idx =
+                        *inventory.get_unchecked(inventory_start_pos + 1) as usize;
 
                     let spilled_u32s = self
                         .spill
@@ -604,7 +619,8 @@ where
 
                     inventory_rank
                         + *spilled_u32s.get_unchecked(
-                            (subrank >> log2_ones_per_sub32) - (words_per_subinventory - 1) * U32_PER_USIZE,
+                            (subrank >> log2_ones_per_sub32)
+                                - (words_per_subinventory - 1) * U32_PER_USIZE,
                         ) as usize
                 };
                 let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
@@ -621,7 +637,8 @@ where
                 }
                 return *inventory.get_unchecked(inventory_start_pos + 1 + subrank) as usize;
             }
-            let spill_idx = { *inventory.get_unchecked(inventory_start_pos + 1) as usize } + subrank
+            let spill_idx = { *inventory.get_unchecked(inventory_start_pos + 1) as usize }
+                + subrank
                 - words_per_subinventory;
             debug_assert!(spill_idx < self.spill.as_ref().len());
             *self.spill.as_ref().get_unchecked(spill_idx) as usize

@@ -37,16 +37,12 @@
 //! [`BitVec`](crate::bits::BitVec) and
 //! [`AtomicBitVec`](crate::bits::AtomicBitVec).
 
-use crate::traits::bit_field_slice::Word;
 use crate::traits::BitLength;
+use crate::traits::bit_field_slice::Word;
 use atomic_primitive::PrimitiveAtomic;
-use num_primitive::PrimitiveInteger;
 use mem_dbg::{MemDbg, MemSize};
-use std::{
-    iter::FusedIterator,
-    marker::PhantomData,
-    sync::atomic::Ordering,
-};
+use num_primitive::PrimitiveInteger;
+use std::{iter::FusedIterator, marker::PhantomData, sync::atomic::Ordering};
 
 #[cfg(feature = "rayon")]
 use crate::RAYON_MIN_LEN;
@@ -80,7 +76,6 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
     /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> bool {
-
         let bits_per_word = W::BITS as usize;
         let word_index = index / bits_per_word;
         let word = unsafe { *self.as_ref().get_unchecked(word_index) };
@@ -144,7 +139,6 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
     /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
     #[inline(always)]
     unsafe fn set_unchecked(&mut self, index: usize, value: bool) {
-
         let bits_per_word = W::BITS as usize;
         let word_index = index / bits_per_word;
         let bit_index = index % bits_per_word;
@@ -161,7 +155,6 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
 
     /// Sets all bits to the given value.
     fn fill(&mut self, value: bool) {
-
         let bits_per_word = W::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
@@ -177,7 +170,6 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
     /// Sets all bits to the given value using a parallel implementation.
     #[cfg(feature = "rayon")]
     fn par_fill(&mut self, value: bool) {
-
         let bits_per_word = W::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
@@ -206,7 +198,6 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
 
     /// Flip all bits.
     fn flip(&mut self) {
-
         let bits_per_word = W::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
@@ -221,7 +212,6 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
     /// Flips all bits using a parallel implementation.
     #[cfg(feature = "rayon")]
     fn par_flip(&mut self) {
-
         let bits_per_word = W::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
@@ -261,7 +251,6 @@ impl<'a, W: Word, B: ?Sized + AsRef<[W]>> BitIter<'a, W, B> {
 impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for BitIter<'_, W, B> {
     type Item = bool;
     fn next(&mut self) -> Option<bool> {
-
         if self.next_bit_pos == self.len {
             return None;
         }
@@ -313,7 +302,6 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for OnesIter<'_, W, B> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-
         let bits_per_word = W::BITS as usize;
         // find the next word with ones
         while self.word == W::ZERO {
@@ -369,7 +357,6 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for ZerosIter<'_, W, B> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-
         let bits_per_word = W::BITS as usize;
         // find the next flipped word with zeros
         while self.word == W::ZERO {
@@ -517,7 +504,11 @@ where
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
         let bits = self.as_ref();
-        let word_value: A::Value = if value { !A::Value::ZERO } else { A::Value::ZERO };
+        let word_value: A::Value = if value {
+            !A::Value::ZERO
+        } else {
+            A::Value::ZERO
+        };
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
         core::sync::atomic::fence(Ordering::SeqCst);
@@ -540,7 +531,11 @@ where
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
         let bits = self.as_ref();
-        let word_value: A::Value = if value { !A::Value::ZERO } else { A::Value::ZERO };
+        let word_value: A::Value = if value {
+            !A::Value::ZERO
+        } else {
+            A::Value::ZERO
+        };
 
         // Just to be sure, add a fence to ensure that we will see all the final
         // values

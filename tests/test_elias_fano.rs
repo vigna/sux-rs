@@ -28,9 +28,7 @@ fn test_elias_fano_concurrent() -> Result<()> {
         (1000, 100),
         (1000, 10),
     ] {
-        let mut values = (0..n)
-            .map(|_| rng.random_range(0..u))
-            .collect::<Vec<u64>>();
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<u64>>();
 
         values.sort();
 
@@ -57,9 +55,7 @@ fn test_elias_fano() -> Result<()> {
         (1000, 100),
         (1000, 10),
     ] {
-        let mut values = (0..n)
-            .map(|_| rng.random_range(0..u))
-            .collect::<Vec<u64>>();
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<u64>>();
 
         values.sort();
 
@@ -256,7 +252,7 @@ fn test_extend() {
     zip(ef.iter(), v.iter()).for_each(|(a, b)| assert_eq!(a, *b));
 }
 
-#[cfg(feature = "epserde")]
+#[cfg(feature = "mmap")]
 #[test]
 fn test_epserde() -> Result<()> {
     use epserde::prelude::Aligned16;
@@ -266,9 +262,7 @@ fn test_epserde() -> Result<()> {
     for (n, u) in [(100, 1000u64), (100, 100), (1000, 100)] {
         use epserde::utils::AlignedCursor;
 
-        let mut values = (0..n)
-            .map(|_| rng.random_range(0..u))
-            .collect::<Vec<u64>>();
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<u64>>();
 
         values.sort();
 
@@ -293,7 +287,7 @@ fn test_epserde() -> Result<()> {
             <EliasFano<
                 u64,
                 SelectAdaptConst<BitVec<Box<[PlatformWord]>>, Box<[usize]>>,
-                BitFieldVec<u64, Box<[u64]>>,
+                BitFieldVec<Box<[u64]>>,
             >>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())
         }?;
 
@@ -348,9 +342,7 @@ fn test_iter_from_succ() -> Result<()> {
         (1000, 100),
         (1000, 10),
     ] {
-        let mut values = (0..n)
-            .map(|_| rng.random_range(0..u))
-            .collect::<Vec<u64>>();
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<u64>>();
         values.sort();
 
         // Test with EfSeqDict (has both SelectUnchecked and SelectZeroUnchecked)
@@ -453,9 +445,7 @@ fn test_iter_back() -> Result<()> {
         (1000, 100),
         (1000, 10),
     ] {
-        let mut values = (0..n)
-            .map(|_| rng.random_range(0..u))
-            .collect::<Vec<u64>>();
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<u64>>();
         values.sort();
 
         let mut efb = EliasFanoBuilder::new(n, u);
@@ -528,9 +518,7 @@ fn test_iter_back() -> Result<()> {
     // 7. Works with EfDict (only SelectZeroUnchecked, no SelectUnchecked)
     let mut rng = SmallRng::seed_from_u64(42);
     for (n, u) in [(10, 1000u64), (100, 100)] {
-        let mut values = (0..n)
-            .map(|_| rng.random_range(0..u))
-            .collect::<Vec<u64>>();
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<u64>>();
         values.sort();
 
         let mut efb = EliasFanoBuilder::new(n, u);
@@ -567,9 +555,7 @@ fn test_iter_back_from_pred() -> Result<()> {
         (1000, 100),
         (1000, 10),
     ] {
-        let mut values = (0..n)
-            .map(|_| rng.random_range(0..u))
-            .collect::<Vec<u64>>();
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<u64>>();
         values.sort();
 
         // Test with EfSeqDict (has both SelectUnchecked and SelectZeroUnchecked)
@@ -669,9 +655,7 @@ fn test_iter_bidi() -> Result<()> {
         (1000, 100),
         (1000, 10),
     ] {
-        let mut values = (0..n)
-            .map(|_| rng.random_range(0..u))
-            .collect::<Vec<u64>>();
+        let mut values = (0..n).map(|_| rng.random_range(0..u)).collect::<Vec<u64>>();
         values.sort();
 
         let mut efb = EliasFanoBuilder::new(n, u);
@@ -1210,12 +1194,7 @@ fn test_u128_iteration() {
 
 #[test]
 fn test_u128_succ_pred() {
-    let values: Vec<u128> = vec![
-        100,
-        u64::MAX as u128,
-        u64::MAX as u128 + 100,
-        u128::MAX / 4,
-    ];
+    let values: Vec<u128> = vec![100, u64::MAX as u128, u64::MAX as u128 + 100, u128::MAX / 4];
     let n = values.len();
     let u = *values.last().unwrap();
 

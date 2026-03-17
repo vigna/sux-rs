@@ -130,7 +130,12 @@ fn main() -> Result<()> {
     }
 }
 
-fn set_builder<W: Word + BinSafe, D: BitFieldSlice<W> + Send + Sync, S, E: ShardEdge<S, 3>>(
+fn set_builder<
+    W: Word + BinSafe,
+    D: BitFieldSlice<Value = W> + Send + Sync,
+    S,
+    E: ShardEdge<S, 3>,
+>(
     builder: VBuilder<W, D, S, E>,
     args: &Args,
 ) -> VBuilder<W, D, S, E> {
@@ -208,7 +213,10 @@ where
 
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
-        let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
+        let builder = set_builder(
+            VBuilder::<_, BitFieldVec<Vec<usize>>, S, E>::default(),
+            &args,
+        );
         match args.hash_type {
             None => {
                 let func = builder.try_build_func(
@@ -235,7 +243,10 @@ where
         }
     } else {
         let n = args.n.unwrap();
-        let builder = set_builder(VBuilder::<_, BitFieldVec<usize>, S, E>::default(), &args);
+        let builder = set_builder(
+            VBuilder::<_, BitFieldVec<Vec<usize>>, S, E>::default(),
+            &args,
+        );
         match args.hash_type {
             None => {
                 let func = builder.try_build_func(

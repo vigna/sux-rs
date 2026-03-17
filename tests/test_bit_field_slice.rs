@@ -12,16 +12,16 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 #[test]
 fn test_is_empty() {
-    assert!(BitFieldVec::<usize, _>::new(0, 0).is_empty());
+    assert!(BitFieldVec::<Vec<usize>>::new(0, 0).is_empty());
 }
 
 #[test]
 fn test_set_value() {
-    let mut s = BitFieldVec::<usize, _>::new(3, 10);
+    let mut s = BitFieldVec::<Vec<usize>>::new(3, 10);
     s.set_value(0, 1);
     assert_eq!(s.index_value(0), 1);
 
-    let mut s = BitFieldVec::<usize, _>::new(0, 10);
+    let mut s = BitFieldVec::<Vec<usize>>::new(0, 10);
     s.set_value(0, 0);
     assert_eq!(s.index_value(0), 0);
 }
@@ -29,20 +29,20 @@ fn test_set_value() {
 #[test]
 #[should_panic]
 fn test_set_too_large() {
-    let mut s = BitFieldVec::<usize, _>::new(3, 10);
+    let mut s = BitFieldVec::<Vec<usize>>::new(3, 10);
     s.set_value(0, 10);
 }
 
 #[test]
 #[should_panic]
 fn test_set_out_of_bounds() {
-    let mut s = BitFieldVec::<usize, _>::new(3, 10);
+    let mut s = BitFieldVec::<Vec<usize>>::new(3, 10);
     s.set_value(10, 4);
 }
 
 #[test]
 fn test_set_atomic() {
-    let s = AtomicBitFieldVec::<usize, _>::new(3, 10);
+    let s = AtomicBitFieldVec::<usize>::new(3, 10);
     s.set_atomic(0, 1, Ordering::Relaxed);
     assert_eq!(s.get_atomic(0, Ordering::Relaxed), 1);
 
@@ -53,7 +53,7 @@ fn test_set_atomic() {
         assert_eq!(s.get_atomic_unchecked(0, Ordering::Relaxed), 1);
     }
 
-    let s = AtomicBitFieldVec::<usize, _>::new(0, 10);
+    let s = AtomicBitFieldVec::<usize>::new(0, 10);
     s.set_atomic(0, 0, Ordering::Relaxed);
     assert_eq!(s.get_atomic(0, Ordering::Relaxed), 0);
 }
@@ -61,20 +61,20 @@ fn test_set_atomic() {
 #[test]
 #[should_panic]
 fn test_set_atomic_too_large() {
-    let s = AtomicBitFieldVec::<usize, _>::new(3, 10);
+    let s = AtomicBitFieldVec::<usize>::new(3, 10);
     s.set_atomic(0, 10, Ordering::Relaxed);
 }
 
 #[test]
 #[should_panic]
 fn test_set_atomic_out_of_bounds() {
-    let s = AtomicBitFieldVec::<usize, _>::new(3, 10);
+    let s = AtomicBitFieldVec::<usize>::new(3, 10);
     s.set_atomic(10, 4, Ordering::Relaxed);
 }
 
 #[test]
 fn test_iterator() {
-    let mut s = BitFieldVec::<usize, _>::new(3, 0);
+    let mut s = BitFieldVec::<Vec<usize>>::new(3, 0);
     let t = [0, 1, 2, 2, 1, 0, 3, 0];
     s.extend(t);
     for i in s.iter() {
@@ -305,7 +305,10 @@ fn test_atomic_bit_width() {
     assert_eq!(AtomicBitWidth::atomic_bit_width(&slice), 64);
 
     let slice: &[AtomicUsize] = &[];
-    assert_eq!(AtomicBitWidth::atomic_bit_width(&slice), usize::BITS as usize);
+    assert_eq!(
+        AtomicBitWidth::atomic_bit_width(&slice),
+        usize::BITS as usize
+    );
 
     // Vec
     let vec: Vec<AtomicU32> = Vec::new();

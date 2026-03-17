@@ -255,8 +255,9 @@ macro_rules! impl_select_zero_small {
                 let upper_counts = self.small_counters.upper_counts();
                 let counts = self.small_counters.counts();
 
-                let upper_block_idx =
-                    upper_counts.linear_partition_point(|i, &x| i * Self::SUPERBLOCK_BIT_SIZE - x as usize <= rank) - 1;
+                let upper_block_idx = upper_counts.linear_partition_point(|i, &x| {
+                    i * Self::SUPERBLOCK_BIT_SIZE - x as usize <= rank
+                }) - 1;
                 let upper_rank_ones =
                     *unsafe { upper_counts.get_unchecked(upper_block_idx) } as usize;
                 let upper_rank = upper_block_idx * Self::SUPERBLOCK_BIT_SIZE - upper_rank_ones;
@@ -305,8 +306,9 @@ macro_rules! impl_select_zero_small {
 
                 let last_block_idx;
                 if inv_idx + 1 < inventory.len() {
-                    let next_inv_upper_block_idx =
-                        inventory_begin.linear_partition_point(|_, &x| x as usize <= inv_idx + 1) - 1; // TODO: +1?
+                    let next_inv_upper_block_idx = inventory_begin
+                        .linear_partition_point(|_, &x| x as usize <= inv_idx + 1)
+                        - 1; // TODO: +1?
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
                         let next_inv_pos = *unsafe { inventory.get_unchecked(inv_idx + 1) }
                             as usize

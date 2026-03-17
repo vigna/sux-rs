@@ -63,20 +63,15 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
-pub type EfSeq = EliasFano<
-    u64,
-    SelectAdaptConst<BitVec<Box<[PlatformWord]>>, Box<[usize]>, 12, 3>,
->;
+pub type EfSeq = EliasFano<u64, SelectAdaptConst<BitVec<Box<[PlatformWord]>>, Box<[usize]>, 12, 3>>;
 
 /// The default type for an Elias–Fano structure implementing
 /// [`SuccUnchecked`] and [`PredUnchecked`].
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
-pub type EfDict = EliasFano<
-    u64,
-    SelectZeroAdaptConst<BitVec<Box<[PlatformWord]>>, Box<[usize]>, 12, 3>,
->;
+pub type EfDict =
+    EliasFano<u64, SelectZeroAdaptConst<BitVec<Box<[PlatformWord]>>, Box<[usize]>, 12, 3>>;
 
 /// The default type for an Elias–Fano structure implementing an
 /// [`IndexedDict`], [`Succ`], and [`Pred`].
@@ -266,7 +261,7 @@ pub type EfSeqDict = EliasFano<
 #[value_traits_subslices(bound = "V: Word + From<PlatformWord>")]
 #[value_traits_subslices(bound = "H: AsRef<[PlatformWord]> + SelectUnchecked")]
 #[value_traits_subslices(bound = "L: SliceByValue<Value = V>")]
-pub struct EliasFano<V = u64, H = BitVec<Box<[PlatformWord]>>, L = BitFieldVec<V, Box<[V]>>> {
+pub struct EliasFano<V = u64, H = BitVec<Box<[PlatformWord]>>, L = BitFieldVec<Box<[V]>>> {
     /// The number of values.
     n: usize,
     /// An upper bound to the values.
@@ -1832,7 +1827,7 @@ impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Val
 /// [`EliasFanoBuilder::push_unchecked`], thus partially compensating for the
 /// cost of the first scan.
 impl<V: Word + From<PlatformWord>, A: AsRef<[V]>> From<A>
-    for EliasFano<V, BitVec<Box<[PlatformWord]>>, BitFieldVec<V, Box<[V]>>>
+    for EliasFano<V, BitVec<Box<[PlatformWord]>>, BitFieldVec<Box<[V]>>>
 {
     fn from(values: A) -> Self {
         let values = values.as_ref();
@@ -1886,7 +1881,7 @@ pub struct EliasFanoBuilder<V: Word = u64> {
     n: usize,
     u: V,
     l: usize,
-    low_bits: BitFieldVec<V>,
+    low_bits: BitFieldVec<Vec<V>>,
     high_bits: BitVec,
     last_value: V,
     count: usize,
@@ -1917,7 +1912,7 @@ impl<V: Word + From<PlatformWord>> EliasFanoBuilder<V> {
             n,
             u,
             l,
-            low_bits: BitFieldVec::<V>::new(l, n),
+            low_bits: BitFieldVec::<Vec<V>>::new(l, n),
             high_bits: BitVec::new(num_high_bits),
             last_value: V::ZERO,
             count: 0,
@@ -2126,8 +2121,8 @@ impl EliasFanoConcurrentBuilder {
     /// methods are more convenient.
     pub fn build(self) -> EliasFano {
         let high_bits: BitVec<Box<[PlatformWord]>> = self.high_bits.into();
-        let low_bits: BitFieldVec<u64, Vec<u64>> = self.low_bits.into();
-        let low_bits: BitFieldVec<u64, Box<[u64]>> = low_bits.into();
+        let low_bits: BitFieldVec<Vec<u64>> = self.low_bits.into();
+        let low_bits: BitFieldVec<Box<[u64]>> = low_bits.into();
         EliasFano {
             n: self.n,
             u: self.u,

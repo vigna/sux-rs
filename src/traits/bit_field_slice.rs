@@ -21,14 +21,13 @@
 //! Finally, the trait [`AtomicBitFieldSlice`] is a specialized trait for
 //! slices of bit fields that support atomic operations.
 //!
-//! All the traits depend on a type parameter `W` that must implement [`Word`],
-//! and which defaults to `usize`, but any type satisfying the [`Word`] trait
-//! can be used, with the restriction that the bit width of the slice can be at
-//! most the bit width of `W` as defined by
+//! The [`SliceByValue::Value`] type of implementors must satisfy the [`Word`]
+//! trait, with the restriction that the bit width of the slice can be at most
+//! the bit width of `Value` as defined by
 //! [`PrimitiveInteger::BITS`](num_primitive::PrimitiveInteger::BITS).
-//! Additionally, to implement [`AtomicBitFieldSlice`], `W` must implement
-//! [`AtomicPrimitive`](atomic_primitive::AtomicPrimitive). The methods of all
-//! traits accept and return values of type `W`.
+//! Additionally, to implement [`AtomicBitFieldSlice`], the word type must
+//! implement [`AtomicPrimitive`](atomic_primitive::AtomicPrimitive). The
+//! methods of all traits accept and return values of type `Value`.
 //!
 //! Implementations must always return zero upon a read operation when the bit
 //! width is zero. The behavior of write operations in the same context is not
@@ -43,6 +42,7 @@
 //! and non-atomic unsigned integer types that view their elements as values
 //! with a bit width equal to that of the type.
 #![allow(clippy::result_unit_err)]
+use crate::traits::WordType;
 use atomic_primitive::{AtomicPrimitive, PrimitiveAtomicInteger};
 use core::sync::atomic::Ordering;
 use impl_tools::autoimpl;
@@ -88,11 +88,8 @@ pub type PlatformWord = u32;
 
 /// Common method for [`BitFieldSlice`], [`BitFieldSliceMut`], and
 /// [`AtomicBitFieldSlice`].
-///
-/// The dependence on `W` is necessary to implement this trait on vectors and
-/// slices, as we need the bit width of the values stored in the slice.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-pub trait BitWidth<W> {
+pub trait BitWidth {
     /// Returns the bit width of the slice.
     ///
     /// All elements stored in the slice must fit within this bit width.
@@ -105,9 +102,9 @@ pub trait BitWidth<W> {
 /// it provides the method [`as_slice`](BitFieldSlice::as_slice) to
 /// access the backend of the slice.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-pub trait BitFieldSlice<W: Word>: SliceByValue<Value = W> + BitWidth<W> {
-    /// Returns the backend of the slice as a slice of `W`.
-    fn as_slice(&self) -> &[W];
+pub trait BitFieldSlice: SliceByValue + BitWidth {
+    /// Returns the backend of the slice as a slice of `Self::Value`.
+    fn as_slice(&self) -> &[Self::Value];
 }
 
 /// A mutable slice of bit fields of constant bit width.
@@ -116,19 +113,13 @@ pub trait BitFieldSlice<W: Word>: SliceByValue<Value = W> + BitWidth<W> {
 /// provides reset methods and the method
 /// [`as_mut_slice`](BitFieldSliceMut::as_mut_slice) to mutate the backend of
 /// the slice.
+///
+/// Note that this trait does **not** require `Value: Word` in its supertrait
+/// bounds; individual implementations or callers that need [`Word`] operations
+/// (e.g., [`mask`](BitFieldSliceMut::mask)) must add the bound themselves. This
+/// avoids a Rust trait-solver limitation (E0284) with higher-ranked bounds.
 #[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
-pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> + SliceByValueMut<Value = W> {
-    /// Returns the mask to apply to values to ensure they fit in
-    /// [`bit_width`](BitWidth::bit_width) bits.
-    #[inline(always)]
-    fn mask(&self) -> W {
-        if self.bit_width() == 0 {
-            W::ZERO
-        } else {
-            W::MAX >> (W::BITS - self.bit_width() as u32)
-        }
-    }
-
+pub trait BitFieldSliceMut: BitFieldSlice + SliceByValueMut {
     /// Sets all values to zero.
     fn reset(&mut self);
 
@@ -136,8 +127,19 @@ pub trait BitFieldSliceMut<W: Word>: BitFieldSlice<W> + SliceByValueMut<Value = 
     #[cfg(feature = "rayon")]
     fn par_reset(&mut self);
 
-    /// Returns the backend of the slice as a mutable slice of `W`.
-    fn as_mut_slice(&mut self) -> &mut [W];
+    /// Returns the backend of the slice as a mutable slice of `Self::Value`.
+    fn as_mut_slice(&mut self) -> &mut [Self::Value];
+}
+
+/// Returns the mask to apply to values to ensure they fit in the given bit
+/// width, i.e., the value 2^`bit_width` - 1.
+#[inline(always)]
+pub fn mask<W: Word>(bit_width: usize) -> W {
+    if bit_width == 0 {
+        W::ZERO
+    } else {
+        W::MAX >> (W::BITS - bit_width as u32)
+    }
 }
 
 /// Bit width for atomic slices.
@@ -251,46 +253,58 @@ where
     fn par_reset_atomic(&mut self, order: Ordering);
 }
 
-impl<W: Word> BitWidth<W> for [W] {
+impl<W: Word> WordType for [W] {
+    type Word = W;
+}
+
+impl<W: Word> WordType for Vec<W> {
+    type Word = W;
+}
+
+impl<W: Word, const N: usize> WordType for [W; N] {
+    type Word = W;
+}
+
+impl<W: Word> BitWidth for [W] {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         W::BITS as usize
     }
 }
 
-impl<W: Word> BitWidth<W> for Vec<W> {
+impl<W: Word> BitWidth for Vec<W> {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         W::BITS as usize
     }
 }
 
-impl<W: Word, const N: usize> BitWidth<W> for [W; N] {
+impl<W: Word, const N: usize> BitWidth for [W; N] {
     #[inline(always)]
     fn bit_width(&self) -> usize {
         W::BITS as usize
     }
 }
 
-impl<W: Word> BitFieldSlice<W> for [W] {
+impl<W: Word> BitFieldSlice for [W] {
     fn as_slice(&self) -> &[W] {
         self
     }
 }
 
-impl<W: Word> BitFieldSlice<W> for Vec<W> {
+impl<W: Word> BitFieldSlice for Vec<W> {
     fn as_slice(&self) -> &[W] {
         self
     }
 }
 
-impl<W: Word, const N: usize> BitFieldSlice<W> for [W; N] {
+impl<W: Word, const N: usize> BitFieldSlice for [W; N] {
     fn as_slice(&self) -> &[W] {
         self
     }
 }
 
-impl<W: Word> BitFieldSliceMut<W> for [W] {
+impl<W: Word> BitFieldSliceMut for [W] {
     fn reset(&mut self) {
         self.fill(W::ZERO);
     }
@@ -308,7 +322,7 @@ impl<W: Word> BitFieldSliceMut<W> for [W] {
     }
 }
 
-impl<W: Word> BitFieldSliceMut<W> for Vec<W> {
+impl<W: Word> BitFieldSliceMut for Vec<W> {
     #[inline(always)]
     fn reset(&mut self) {
         self.fill(W::ZERO);
@@ -326,7 +340,7 @@ impl<W: Word> BitFieldSliceMut<W> for Vec<W> {
     }
 }
 
-impl<W: Word, const N: usize> BitFieldSliceMut<W> for [W; N] {
+impl<W: Word, const N: usize> BitFieldSliceMut for [W; N] {
     #[inline(always)]
     fn reset(&mut self) {
         self.fill(W::ZERO);

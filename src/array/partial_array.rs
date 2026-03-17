@@ -313,7 +313,9 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
     }
 }
 
-impl<T, D: BackendWord<W = PlatformWord> + AsRef<[PlatformWord]>, V: AsRef<[T]>> PartialArray<T, SparseIndex<D>, V> {
+impl<T, D: BackendWord<W = PlatformWord> + AsRef<[PlatformWord]>, V: AsRef<[T]>>
+    PartialArray<T, SparseIndex<D>, V>
+{
     /// Returns the total length of the array.
     ///
     /// This is the length that was specified when creating the builder,

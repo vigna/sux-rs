@@ -89,7 +89,8 @@ fn test_w_rank9() {
         #[cfg(target_pointer_width = "64")]
         let select = SelectZeroAdaptConst::<_, _, INV, SUB>::new(Rank9::new(bits.clone()));
         #[cfg(not(target_pointer_width = "64"))]
-        let select = SelectZeroAdaptConst::<_, _, INV, SUB>::new(RankSmall::<1, 7, _>::new(bits.clone()));
+        let select =
+            SelectZeroAdaptConst::<_, _, INV, SUB>::new(RankSmall::<1, 7, _>::new(bits.clone()));
 
         let zeros = select.num_zeros();
         let mut pos = Vec::with_capacity(zeros);

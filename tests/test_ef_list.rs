@@ -261,13 +261,13 @@ fn test_u64_mixed_widths() {
     // Mix values with very different bit lengths to stress
     // the variable-width packing
     let values = vec![
-        1u64,              // width 0
-        3,                 // width 1
-        7,                 // width 2
-        255,               // width 7
-        65535,             // width 15
-        (1u64 << 32) - 1,  // width 31
-        u64::MAX,          // width 63
+        1u64,             // width 0
+        3,                // width 1
+        7,                // width 2
+        255,              // width 7
+        65535,            // width 15
+        (1u64 << 32) - 1, // width 31
+        u64::MAX,         // width 63
     ];
     let ef = EfList::new(values.clone());
     for (i, &v) in values.iter().enumerate() {

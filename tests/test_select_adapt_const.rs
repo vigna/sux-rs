@@ -85,7 +85,8 @@ fn test_w_rank9() {
         #[cfg(target_pointer_width = "64")]
         let select = SelectAdaptConst::<_, _, INV, SUB>::new(Rank9::new(bits.clone()));
         #[cfg(not(target_pointer_width = "64"))]
-        let select = SelectAdaptConst::<_, _, INV, SUB>::new(RankSmall::<1, 7, _>::new(bits.clone()));
+        let select =
+            SelectAdaptConst::<_, _, INV, SUB>::new(RankSmall::<1, 7, _>::new(bits.clone()));
 
         let ones = select.num_ones();
         let mut pos = Vec::with_capacity(ones);

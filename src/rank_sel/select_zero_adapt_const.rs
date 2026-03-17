@@ -6,13 +6,16 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use super::{DEFAULT_LOG2_ONES_PER_INVENTORY, Inventory, SpanType, assert_inventory_length, LOG2_U16_PER_USIZE, U32_PER_USIZE};
+use super::{
+    DEFAULT_LOG2_ONES_PER_INVENTORY, Inventory, LOG2_U16_PER_USIZE, SpanType, U32_PER_USIZE,
+    assert_inventory_length,
+};
 use crate::utils::SelectInWord;
 use crate::{
     prelude::{BitCount, BitLength},
     traits::{
-        NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
-        SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word, WordType,
+        NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted, SelectUnchecked,
+        SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word, WordType,
     },
 };
 use ambassador::Delegate;
@@ -167,7 +170,12 @@ pub struct SelectZeroAdaptConst<
     spill: I,
 }
 
-impl<B: WordType + AsRef<[B::Word]>, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize> AsRef<[B::Word]>
+impl<
+    B: WordType + AsRef<[B::Word]>,
+    I,
+    const LOG2_ZEROS_PER_INVENTORY: usize,
+    const LOG2_WORDS_PER_SUBINVENTORY: usize,
+> AsRef<[B::Word]>
     for SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     #[inline(always)]
@@ -231,8 +239,12 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENT
     pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
 }
 
-impl<B: BitLength, C, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
-    SelectZeroAdaptConst<B, C, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+impl<
+    B: BitLength,
+    C,
+    const LOG2_ONES_PER_INVENTORY: usize,
+    const LOG2_WORDS_PER_SUBINVENTORY: usize,
+> SelectZeroAdaptConst<B, C, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     /// Returns the number of bits in the bit vector.
     ///
@@ -576,7 +588,9 @@ where
                 .get()
                     - inventory_rank;
                 let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span);
-                let hint_pos = if subrank >> log2_ones_per_sub32 < (words_per_subinventory - 1) * U32_PER_USIZE {
+                let hint_pos = if subrank >> log2_ones_per_sub32
+                    < (words_per_subinventory - 1) * U32_PER_USIZE
+                {
                     let u32s = inventory
                         .get_unchecked(inventory_start_pos + 2..)
                         .align_to::<u32>()
@@ -595,7 +609,8 @@ where
 
                     inventory_rank
                         + *spilled_u32s.get_unchecked(
-                            (subrank >> log2_ones_per_sub32) - (words_per_subinventory - 1) * U32_PER_USIZE,
+                            (subrank >> log2_ones_per_sub32)
+                                - (words_per_subinventory - 1) * U32_PER_USIZE,
                         ) as usize
                 };
                 let residual = subrank & ((1 << log2_ones_per_sub32) - 1);

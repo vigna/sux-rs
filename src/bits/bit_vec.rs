@@ -101,11 +101,11 @@
 use crate::traits::{AtomicBitIter, AtomicBitVecOps, BitIter, BitVecOps, PlatformWord, Word};
 use crate::utils::SelectInWord;
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic};
-use num_primitive::PrimitiveInteger;
 #[allow(unused_imports)] // this is in the std prelude but not in no_std!
 use core::borrow::BorrowMut;
 use core::fmt;
 use mem_dbg::*;
+use num_primitive::PrimitiveInteger;
 use std::{ops::Index, sync::atomic::Ordering};
 
 use crate::{
@@ -115,7 +115,6 @@ use crate::{
         transmute_boxed_slice_into_atomic, transmute_vec_from_atomic, transmute_vec_into_atomic,
     },
 };
-
 
 /// A bit vector.
 ///
@@ -325,7 +324,6 @@ impl<W: Word> BitVec<Vec<W>> {
 
     /// Appends a bit to the end of this bit vector.
     pub fn push(&mut self, b: bool) {
-
         let bits_per_word = W::BITS as usize;
         if self.bits.len() * bits_per_word == self.len {
             self.bits.push(W::ZERO);
@@ -363,7 +361,8 @@ impl<W: Word> BitVec<Vec<W>> {
             let old_bit = old_len % bits_per_word;
             let word_value = if value { !W::ZERO } else { W::ZERO };
 
-            self.bits.resize(new_len.div_ceil(bits_per_word), word_value);
+            self.bits
+                .resize(new_len.div_ceil(bits_per_word), word_value);
 
             // Handle the partial word at old_len, then fill all
             // remaining words (which may contain stale data from
@@ -426,14 +425,13 @@ impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> BitCount for BitVec<B> {
         let bits_per_word = W::<B>::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
-        let bits: &[W::<B>] = self.as_ref();
+        let bits: &[W<B>] = self.as_ref();
         let mut num_ones: usize = bits[..full_words]
             .iter()
             .map(|x| x.count_ones() as usize)
             .sum();
         if residual != 0 {
-            num_ones +=
-                (bits[full_words] << (bits_per_word - residual)).count_ones() as usize
+            num_ones += (bits[full_words] << (bits_per_word - residual)).count_ones() as usize
         }
         num_ones
     }
@@ -836,15 +834,10 @@ where
 
 impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> RankHinted for BitVec<B> {
     #[inline(always)]
-    unsafe fn rank_hinted(
-        &self,
-        pos: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
+    unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
         type W<B> = <B as BackendWord>::W;
         let bits_per_word = W::<B>::BITS as usize;
-        let bits: &[W::<B>] = self.as_ref();
+        let bits: &[W<B>] = self.as_ref();
         let mut rank = hint_rank;
         let mut hint_pos = hint_pos;
 
@@ -862,7 +855,7 @@ impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> RankHinted for BitVec<B> {
 
         rank + (unsafe { *bits.get_unchecked(hint_pos) }
             & (W::<B>::ONE << (pos % bits_per_word)).wrapping_sub(W::<B>::ONE))
-            .count_ones() as usize
+        .count_ones() as usize
     }
 }
 
@@ -872,19 +865,14 @@ impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> SelectHinted for BitVec<B>
 where
     <B as BackendWord>::W: SelectInWord,
 {
-    unsafe fn select_hinted(
-        &self,
-        rank: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
+    unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
         type W<B> = <B as BackendWord>::W;
         let bits_per_word = W::<B>::BITS as usize;
         let mut word_index = hint_pos / bits_per_word;
         let bit_index = hint_pos % bits_per_word;
         let mut residual = rank - hint_rank;
-        let mut word = (unsafe { *self.as_ref().get_unchecked(word_index) } >> bit_index)
-            << bit_index;
+        let mut word =
+            (unsafe { *self.as_ref().get_unchecked(word_index) } >> bit_index) << bit_index;
         loop {
             let bit_count = word.count_ones() as usize;
             if residual < bit_count {
@@ -901,19 +889,14 @@ impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> SelectZeroHinted for BitVe
 where
     <B as BackendWord>::W: SelectInWord,
 {
-    unsafe fn select_zero_hinted(
-        &self,
-        rank: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
+    unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
         type W<B> = <B as BackendWord>::W;
         let bits_per_word = W::<B>::BITS as usize;
         let mut word_index = hint_pos / bits_per_word;
         let bit_index = hint_pos % bits_per_word;
         let mut residual = rank - hint_rank;
-        let mut word = (!*unsafe { self.as_ref().get_unchecked(word_index) } >> bit_index)
-            << bit_index;
+        let mut word =
+            (!*unsafe { self.as_ref().get_unchecked(word_index) } >> bit_index) << bit_index;
         loop {
             let bit_count = word.count_ones() as usize;
             if residual < bit_count {

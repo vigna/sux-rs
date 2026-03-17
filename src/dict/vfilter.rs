@@ -52,8 +52,13 @@ pub struct VFilter<W: Word + BinSafe, F> {
     pub(crate) hash_bits: u32,
 }
 
-impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, D: BitFieldSlice<W>, S: Sig, E: ShardEdge<S, 3>>
-    VFilter<W, VFunc<T, W, D, S, E>>
+impl<
+    T: ?Sized + ToSig<S>,
+    W: Word + BinSafe,
+    D: BitFieldSlice<Value = W>,
+    S: Sig,
+    E: ShardEdge<S, 3>,
+> VFilter<W, VFunc<T, W, D, S, E>>
 where
     u64: PrimitiveNumberAs<W>,
 {
@@ -115,7 +120,7 @@ where
 }
 
 impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
-    VFilter<W, VFunc<T, W, BitFieldVec<W>, S, E>>
+    VFilter<W, VFunc<T, W, BitFieldVec<Vec<W>>, S, E>>
 where
     u64: PrimitiveNumberAs<W>,
 {
@@ -177,7 +182,7 @@ where
 impl<
     T: ?Sized + ToSig<S>,
     W: Word + BinSafe,
-    D: BitFieldSlice<W>,
+    D: BitFieldSlice<Value = W>,
     S: Sig,
     E: ShardEdge<S, 3>,
     B: Borrow<T>,

@@ -48,7 +48,6 @@ use ambassador::delegatable_trait;
 use impl_tools::autoimpl;
 use std::borrow::Borrow;
 
-
 use super::iter::BidiIterator;
 use crate::{debug_assert_bounds, panic_if_out_of_bounds};
 

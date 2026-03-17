@@ -120,7 +120,10 @@ use std::ops::Index;
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "small_counters")]
-#[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "small_counters")]
+#[delegate(
+    crate::traits::rank_sel::SelectZeroUnchecked,
+    target = "small_counters"
+)]
 #[delegate(crate::rank_sel::SmallCounters<NUM_U32S, COUNTER_WIDTH>, target = "small_counters")]
 pub struct SelectSmall<
     const NUM_U32S: usize,
@@ -290,7 +293,8 @@ macro_rules! impl_rank_small_sel {
                     let upper_counts = self.small_counters.upper_counts();
                     let counts = self.small_counters.counts();
 
-                    let upper_block_idx = upper_counts.linear_partition_point(|&x| x as usize <= rank) - 1;
+                    let upper_block_idx =
+                        upper_counts.linear_partition_point(|&x| x as usize <= rank) - 1;
                     let upper_rank = *upper_counts.get_unchecked(upper_block_idx) as usize;
                     let local_rank = rank - upper_rank;
 
@@ -337,8 +341,9 @@ macro_rules! impl_rank_small_sel {
 
                     let last_block_idx;
                     if inv_idx + 1 < inventory.len() {
-                        let next_inv_upper_block_idx =
-                            inventory_begin.linear_partition_point(|&x| x as usize <= inv_idx + 1) - 1; // TODO: +1?
+                        let next_inv_upper_block_idx = inventory_begin
+                            .linear_partition_point(|&x| x as usize <= inv_idx + 1)
+                            - 1; // TODO: +1?
                         last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
                             let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize
                                 + upper_block_idx * Self::SUPERBLOCK_BIT_SIZE;

@@ -21,7 +21,7 @@ use value_traits::slices::SliceByValue;
 /// Usually, the [`SliceByValue`] will be a boxed slice. Note that the result of
 /// the [`SliceByValue`] is assumed to be a hash of size
 /// `SliceByValue::Value::BITS`. If you are using implementations returning less
-/// hash bits (such as a [`BitFieldVec`]), you will need to use
+/// hash bits (such as a [`BitFieldVec<Vec<W>>`](BitFieldVec)), you will need to use
 /// [`BitSignedVFunc`] instead.
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
@@ -66,9 +66,9 @@ where
             .hashes
             .get_value(index.as_to::<usize>())?
             .as_to::<u64>()
-            == <H::Value>::as_from(
-                crate::func::mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))),
-            )
+            == <H::Value>::as_from(crate::func::mix64(
+                shard_edge.edge_hash(shard_edge.local_sig(sig)),
+            ))
             .as_to::<u64>()
         {
             Some(index)
@@ -102,8 +102,8 @@ where
 ///
 /// This structure contains a `hash_mask`, and values returned by the
 /// [`SliceByValue`] are compared only on the masked bits. This approach makes
-/// it possible to have, for example, signature stored in a [`BitFieldVec`]
-/// using fewer bits than the integer type supporting the [`BitFieldVec`]. If you
+/// it possible to have, for example, signature stored in a [`BitFieldVec`](crate::bits::BitFieldVec)
+/// using fewer bits than the integer type supporting the [`BitFieldVec`](crate::bits::BitFieldVec). If you
 /// are using all the bits of the type (e.g., 16-bit signatures on `u16`),
 /// please consider using a [`SignedVFunc`] as hash comparison will be faster.
 #[derive(Debug, MemDbg, MemSize)]
@@ -181,7 +181,7 @@ where
 }
 
 impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>, H: SliceByValue>
-    BitSignedVFunc<VFunc<T, W, BitFieldVec<W>, S, E>, H>
+    BitSignedVFunc<VFunc<T, W, BitFieldVec<Vec<W>>, S, E>, H>
 where
     H::Value: PrimitiveNumber,
 {

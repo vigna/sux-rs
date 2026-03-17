@@ -141,7 +141,7 @@ where
     str: ToSig<S>,
     usize: ToSig<S>,
     u64: num_primitive::PrimitiveNumberAs<W>,
-    Box<[W]>: BitFieldSlice<W>,
+    Box<[W]>: BitFieldSlice<Value = W>,
     VFilter<W, VFunc<usize, W, Box<[W]>, S, E>>: Deserialize,
     VFilter<W, VFunc<str, W, Box<[W]>, S, E>>: Deserialize,
 {
@@ -196,8 +196,8 @@ where
     str: ToSig<S>,
     usize: ToSig<S>,
     u64: num_primitive::PrimitiveNumberAs<W>,
-    VFilter<W, VFunc<usize, W, BitFieldVec<W>, S, E>>: Deserialize,
-    VFilter<W, VFunc<str, W, BitFieldVec<W>, S, E>>: Deserialize,
+    VFilter<W, VFunc<usize, W, BitFieldVec<Vec<W>>, S, E>>: Deserialize,
+    VFilter<W, VFunc<str, W, BitFieldVec<Vec<W>>, S, E>>: Deserialize,
 {
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
@@ -212,8 +212,9 @@ where
                 .collect()?
         };
 
-        let filter =
-            unsafe { VFilter::<W, VFunc<str, W, BitFieldVec<W>, S, E>>::load_full(&args.func) }?;
+        let filter = unsafe {
+            VFilter::<W, VFunc<str, W, BitFieldVec<Vec<W>>, S, E>>::load_full(&args.func)
+        }?;
 
         bench(args.n, args.repeats, || {
             if args.unaligned {
@@ -228,8 +229,9 @@ where
         });
     } else {
         // No filename
-        let filter =
-            unsafe { VFilter::<W, VFunc<usize, W, BitFieldVec<W>, S, E>>::load_full(&args.func) }?;
+        let filter = unsafe {
+            VFilter::<W, VFunc<usize, W, BitFieldVec<Vec<W>>, S, E>>::load_full(&args.func)
+        }?;
 
         bench(args.n, args.repeats, || {
             let mut key: usize = 0;
