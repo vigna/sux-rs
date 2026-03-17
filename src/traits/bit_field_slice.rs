@@ -42,7 +42,6 @@
 //! and non-atomic unsigned integer types that view their elements as values
 //! with a bit width equal to that of the type.
 #![allow(clippy::result_unit_err)]
-use crate::traits::WordType;
 use atomic_primitive::{AtomicPrimitive, PrimitiveAtomicInteger};
 use core::sync::atomic::Ordering;
 use impl_tools::autoimpl;
@@ -251,18 +250,6 @@ where
     /// details.
     #[cfg(feature = "rayon")]
     fn par_reset_atomic(&mut self, order: Ordering);
-}
-
-impl<W: Word> WordType for [W] {
-    type Word = W;
-}
-
-impl<W: Word> WordType for Vec<W> {
-    type Word = W;
-}
-
-impl<W: Word, const N: usize> WordType for [W; N] {
-    type Word = W;
 }
 
 impl<W: Word> BitWidth for [W] {

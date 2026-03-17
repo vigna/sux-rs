@@ -415,17 +415,23 @@ impl<B> BitLength for BitVec<B> {
     }
 }
 
-impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> WordType for BitVec<B> {
-    type Word = <B as BackendWord>::W;
+impl<B: WordType> WordType for BitVec<B>
+where
+    B::Word: Word,
+    B: AsRef<[B::Word]>,
+{
+    type Word = B::Word;
 }
 
-impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> BitCount for BitVec<B> {
+impl<B: WordType + AsRef<[B::Word]>> BitCount for BitVec<B>
+where
+    B::Word: Word,
+{
     fn count_ones(&self) -> usize {
-        type W<B> = <B as BackendWord>::W;
-        let bits_per_word = W::<B>::BITS as usize;
+        let bits_per_word = B::Word::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
-        let bits: &[W<B>] = self.as_ref();
+        let bits: &[B::Word] = self.as_ref();
         let mut num_ones: usize = bits[..full_words]
             .iter()
             .map(|x| x.count_ones() as usize)
@@ -437,49 +443,12 @@ impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> BitCount for BitVec<B> {
     }
 }
 
-/// Associates a backend type with its word type.
-///
-/// This trait enables generic implementations of [`WordType`], [`BitCount`],
-/// [`RankHinted`], [`SelectHinted`], [`SelectZeroHinted`], and standard traits
-/// like [`PartialEq`], [`Eq`], [`Index`], [`IntoIterator`], and
-/// [`Display`](fmt::Display) for [`BitVec`] across all word types, working
-/// around the limitation that Rust does not allow unconstrained type
-/// parameters in impl blocks.
-pub trait BackendWord {
-    /// The word type stored by this backend.
-    type W: Word;
-}
-
-macro_rules! impl_backend_word {
-    ($W:ty) => {
-        impl BackendWord for Vec<$W> {
-            type W = $W;
-        }
-        impl BackendWord for Box<[$W]> {
-            type W = $W;
-        }
-        impl<'a> BackendWord for &'a [$W] {
-            type W = $W;
-        }
-        impl<'a> BackendWord for &'a mut [$W] {
-            type W = $W;
-        }
-    };
-}
-
-impl_backend_word!(u8);
-impl_backend_word!(u16);
-impl_backend_word!(u32);
-impl_backend_word!(u64);
-impl_backend_word!(u128);
-impl_backend_word!(usize);
-
 /// Associates an atomic backend type with its word type.
 ///
-/// This is the atomic counterpart of [`BackendWord`], used for
-/// [`AtomicBitVec`]'s [`Index`] and [`IntoIterator`] implementations.
-/// A separate trait is needed because the compiler cannot prove that
-/// `Atomic<W> != W` for coherence purposes.
+/// This is used for [`AtomicBitVec`]'s [`Index`] and [`IntoIterator`]
+/// implementations. A separate trait from [`WordType`] is needed because
+/// atomic backends store `Atomic<W>` rather than `W`, and the compiler
+/// cannot prove that `Atomic<W> != W` for coherence purposes.
 pub trait AtomicBackendWord {
     /// The word type stored atomically by this backend.
     type W: Word + AtomicPrimitive;
@@ -508,8 +477,9 @@ impl_atomic_backend_word!(usize, AtomicUsize);
 
 impl<B, C> PartialEq<BitVec<C>> for BitVec<B>
 where
-    B: BackendWord + AsRef<[<B as BackendWord>::W]>,
-    C: BackendWord<W = <B as BackendWord>::W> + AsRef<[<B as BackendWord>::W]>,
+    B: WordType + AsRef<[B::Word]>,
+    B::Word: Word,
+    C: WordType<Word = B::Word> + AsRef<[B::Word]>,
 {
     fn eq(&self, other: &BitVec<C>) -> bool {
         let len = self.len();
@@ -517,7 +487,7 @@ where
             return false;
         }
 
-        let word_bits = <B as BackendWord>::W::BITS as usize;
+        let word_bits = B::Word::BITS as usize;
         let full_words = len / word_bits;
         if self.as_ref()[..full_words] != other.as_ref()[..full_words] {
             return false;
@@ -526,20 +496,26 @@ where
         let residual = len % word_bits;
         residual == 0
             || (self.as_ref()[full_words] ^ other.as_ref()[full_words]) << (word_bits - residual)
-                == <B as BackendWord>::W::ZERO
+                == B::Word::ZERO
     }
 }
 
-impl<B> Eq for BitVec<B> where B: BackendWord + AsRef<[<B as BackendWord>::W]> {}
+impl<B> Eq for BitVec<B>
+where
+    B: WordType + AsRef<[B::Word]>,
+    B::Word: Word,
+{
+}
 
 impl<B> Index<usize> for BitVec<B>
 where
-    B: BackendWord + AsRef<[<B as BackendWord>::W]>,
+    B: WordType + AsRef<[B::Word]>,
+    B::Word: Word,
 {
     type Output = bool;
 
     fn index(&self, index: usize) -> &Self::Output {
-        match BitVecOps::<<B as BackendWord>::W>::get(self, index) {
+        match BitVecOps::<B::Word>::get(self, index) {
             false => &false,
             true => &true,
         }
@@ -548,9 +524,10 @@ where
 
 impl<'a, B> IntoIterator for &'a BitVec<B>
 where
-    B: BackendWord + AsRef<[<B as BackendWord>::W]>,
+    B: WordType + AsRef<[B::Word]>,
+    B::Word: Word,
 {
-    type IntoIter = BitIter<'a, <B as BackendWord>::W, B>;
+    type IntoIter = BitIter<'a, B::Word, B>;
     type Item = bool;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -560,7 +537,8 @@ where
 
 impl<B> fmt::Display for BitVec<B>
 where
-    B: BackendWord + AsRef<[<B as BackendWord>::W]>,
+    B: WordType + AsRef<[B::Word]>,
+    B::Word: Word,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[")?;
@@ -832,12 +810,14 @@ where
     }
 }
 
-impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> RankHinted for BitVec<B> {
+impl<B: WordType + AsRef<[B::Word]>> RankHinted for BitVec<B>
+where
+    B::Word: Word,
+{
     #[inline(always)]
     unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        type W<B> = <B as BackendWord>::W;
-        let bits_per_word = W::<B>::BITS as usize;
-        let bits: &[W<B>] = self.as_ref();
+        let bits_per_word = B::Word::BITS as usize;
+        let bits: &[B::Word] = self.as_ref();
         let mut rank = hint_rank;
         let mut hint_pos = hint_pos;
 
@@ -854,20 +834,19 @@ impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> RankHinted for BitVec<B> {
         }
 
         rank + (unsafe { *bits.get_unchecked(hint_pos) }
-            & (W::<B>::ONE << (pos % bits_per_word)).wrapping_sub(W::<B>::ONE))
+            & (B::Word::ONE << (pos % bits_per_word)).wrapping_sub(B::Word::ONE))
         .count_ones() as usize
     }
 }
 
 // SelectHinted and SelectZeroHinted for BitVec.
 
-impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> SelectHinted for BitVec<B>
+impl<B: WordType + AsRef<[B::Word]>> SelectHinted for BitVec<B>
 where
-    <B as BackendWord>::W: SelectInWord,
+    B::Word: Word + SelectInWord,
 {
     unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        type W<B> = <B as BackendWord>::W;
-        let bits_per_word = W::<B>::BITS as usize;
+        let bits_per_word = B::Word::BITS as usize;
         let mut word_index = hint_pos / bits_per_word;
         let bit_index = hint_pos % bits_per_word;
         let mut residual = rank - hint_rank;
@@ -885,13 +864,12 @@ where
     }
 }
 
-impl<B: BackendWord + AsRef<[<B as BackendWord>::W]>> SelectZeroHinted for BitVec<B>
+impl<B: WordType + AsRef<[B::Word]>> SelectZeroHinted for BitVec<B>
 where
-    <B as BackendWord>::W: SelectInWord,
+    B::Word: Word + SelectInWord,
 {
     unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
-        type W<B> = <B as BackendWord>::W;
-        let bits_per_word = W::<B>::BITS as usize;
+        let bits_per_word = B::Word::BITS as usize;
         let mut word_index = hint_pos / bits_per_word;
         let bit_index = hint_pos % bits_per_word;
         let mut residual = rank - hint_rank;

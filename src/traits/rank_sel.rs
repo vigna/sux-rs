@@ -13,6 +13,7 @@
 //! underlying implementations.
 
 use crate::ambassador_impl_Index;
+use crate::traits::Word;
 use ambassador::{Delegate, delegatable_trait};
 use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
@@ -21,19 +22,27 @@ use std::ops::Index;
 
 /// Associates a type with its word type.
 ///
-/// This trait is the single source of truth for the word type used by a bit
-/// vector backend. Only leaf structures (like [`BitVec`](crate::bits::BitVec))
-/// implement it concretely; every other struct delegates to its inner field.
-///
-/// `WordType` replaces the former `W` phantom type parameter that was threaded
-/// through traits like `BitCount<W>`, `RankHinted<W>`, etc. Those traits are
-/// now unparameterized and recover the word type via `<Self as WordType>::Word`
-/// or, more commonly, via `B::Word` where `B` is a backend bound.
+/// This trait is the single source of information for the word type used by a
+/// bit vector backend. Only leaf structures (like
+/// [`BitVec`](crate::bits::BitVec)) implement it concretely; every other struct
+/// delegates to its inner field.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait WordType {
     /// The word type used by this backend.
     type Word;
+}
+
+impl<W: Word> WordType for [W] {
+    type Word = W;
+}
+
+impl<W: Word> WordType for Vec<W> {
+    type Word = W;
+}
+
+impl<W: Word, const N: usize> WordType for [W; N] {
+    type Word = W;
 }
 
 /// A trait expressing a length in bits.
