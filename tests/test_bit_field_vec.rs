@@ -16,7 +16,7 @@ use rand::seq::SliceRandom;
 use rand::{RngExt, SeedableRng};
 use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
-use sux::traits::PlatformWord;
+
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 #[test]
@@ -164,6 +164,8 @@ fn test_atomic_param<W: Word + AtomicPrimitive + PrimitiveNumberAs<u64>>()
 where
     u64: PrimitiveNumberAs<W>,
     Atomic<W>: PrimitiveAtomicInteger,
+    Vec<W::Atomic>: WordType<Word = W>,
+    [W::Atomic]: WordType<Word = W>,
 {
     use sux::traits::bit_field_slice::{AtomicBitFieldSlice, AtomicBitWidth};
 
@@ -172,7 +174,7 @@ where
         let u: u64 = 1 << bit_width;
         let mut rng = SmallRng::seed_from_u64(0);
 
-        let v = AtomicBitFieldVec::<W>::new(bit_width, n);
+        let v = AtomicBitFieldVec::<Vec<W::Atomic>>::new(bit_width, n);
         assert_eq!(v.atomic_bit_width(), bit_width);
         assert_eq!(
             v.mask(),
@@ -208,11 +210,11 @@ where
 
         let w: BitFieldVec<Vec<W>> = v.into();
         let x = w.clone();
-        let y: AtomicBitFieldVec<W> = x.into();
-        let z: AtomicBitFieldVec<W> = w.into();
+        let y: AtomicBitFieldVec<Vec<W::Atomic>> = x.into();
+        let z: AtomicBitFieldVec<Vec<W::Atomic>> = w.into();
 
         let (b, w, l) = z.into_raw_parts();
-        let z = unsafe { AtomicBitFieldVec::<W>::from_raw_parts(b, w, l) };
+        let z = unsafe { AtomicBitFieldVec::<Vec<W::Atomic>>::from_raw_parts(b, w, l) };
         for i in 0..n {
             assert_eq!(
                 z.get_atomic(i, Ordering::Relaxed),
@@ -257,7 +259,7 @@ fn test_bit_width_zero() {
 
 #[test]
 fn test_from_slice() -> Result<()> {
-    let mut c = BitFieldVec::new(12, 1000);
+    let mut c = BitFieldVec::<Vec<usize>>::new(12, 1000);
     for i in 0..c.len() {
         c.set_value(i, i)
     }
@@ -276,7 +278,7 @@ fn test_from_slice() -> Result<()> {
 
 #[test]
 fn test_push() {
-    let mut c = BitFieldVec::new(12, 0);
+    let mut c = BitFieldVec::<Vec<usize>>::new(12, 0);
     for i in 0..1000 {
         c.push(i);
     }
@@ -287,7 +289,7 @@ fn test_push() {
 
 #[test]
 fn test_resize() {
-    let mut c = BitFieldVec::new(12, 0);
+    let mut c = BitFieldVec::<Vec<usize>>::new(12, 0);
     c.resize(100, 2_usize);
     for i in 0..100 {
         assert_eq!(c.index_value(i), 2);
@@ -301,7 +303,7 @@ fn test_resize() {
 
 #[test]
 fn test_pop() {
-    let mut c = BitFieldVec::new(12, 0);
+    let mut c = BitFieldVec::<Vec<usize>>::new(12, 0);
     for i in 0..1000 {
         c.push(i);
     }
@@ -322,7 +324,7 @@ fn test_pop() {
 #[test]
 fn test_unaligned() {
     for bit_width in [50, 56, 57, 58, 60, 64] {
-        let mut c = BitFieldVec::new_unaligned(bit_width, 100);
+        let mut c = BitFieldVec::<Vec<usize>>::new_unaligned(bit_width, 100);
         for i in 0..10 {
             c.set_value(i, i);
         }
@@ -472,7 +474,7 @@ fn test_reset() {
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn test_atomic_reset() {
-    let mut b = AtomicBitFieldVec::<usize>::new(50, 10);
+    let mut b = AtomicBitFieldVec::<Vec<AtomicUsize>>::new(50, 10);
     for i in 0..10 {
         b.set_atomic(i, 1, Ordering::Relaxed);
     }
@@ -510,7 +512,7 @@ fn test_from() {
     for i in 0..10 {
         b.set_value(i, i);
     }
-    let b: AtomicBitFieldVec<usize, Vec<AtomicUsize>> = b.into();
+    let b: AtomicBitFieldVec<Vec<AtomicUsize>> = b.into();
     let b: BitFieldVec<Vec<usize>> = b.into();
     for i in 0..10 {
         assert_eq!(b.index_value(i), i);
@@ -522,7 +524,7 @@ fn test_from() {
     for i in 0..10 {
         b.set_value(i, i);
     }
-    let b: AtomicBitFieldVec<usize, Box<[AtomicUsize]>> = b.into();
+    let b: AtomicBitFieldVec<Box<[AtomicUsize]>> = b.into();
     let b: BitFieldVec<Box<[usize]>> = b.into();
     for i in 0..10 {
         assert_eq!(b.index_value(i), i);
@@ -536,7 +538,7 @@ fn test_from() {
     }
     let (bits, w, l) = b.into_raw_parts();
     let b = unsafe { BitFieldVec::<&[usize]>::from_raw_parts(bits.as_ref(), w, l) };
-    if let Result::<AtomicBitFieldVec<usize, &[AtomicUsize]>, _>::Ok(b) = b.try_into() {
+    if let Result::<AtomicBitFieldVec<&[AtomicUsize]>, _>::Ok(b) = b.try_into() {
         let b: BitFieldVec<&[usize]> = b.into();
         for i in 0..10 {
             assert_eq!(b.index_value(i), i);
@@ -549,7 +551,7 @@ fn test_from() {
     for i in 0..10 {
         b.set_value(i, i);
     }
-    if let Result::<AtomicBitFieldVec<usize, &mut [AtomicUsize]>, _>::Ok(b) = b.try_into() {
+    if let Result::<AtomicBitFieldVec<&mut [AtomicUsize]>, _>::Ok(b) = b.try_into() {
         let b: BitFieldVec<&mut [usize]> = b.into();
         for i in 0..10 {
             assert_eq!(b.index_value(i), i);
@@ -623,7 +625,7 @@ where
 
 #[test]
 fn test_slice_atomic() {
-    let b = AtomicBitFieldVec::<u64>::new(6, 50);
+    let b = AtomicBitFieldVec::<Vec<std::sync::atomic::AtomicU64>>::new(6, 50);
     let mut v = Vec::new();
     for _ in 0..5 {
         v.push(std::sync::atomic::AtomicU64::new(0));
@@ -671,7 +673,7 @@ fn test_iter_from() {
     for i in 0..b.len() {
         let mut iter = b.iter_from(i);
         for j in i..b.len() {
-            assert_eq!(iter.next(), Some(j as PlatformWord));
+            assert_eq!(iter.next(), Some(j));
         }
     }
 }
@@ -683,7 +685,7 @@ fn test_iter_double_ended() {
     // next_back only
     let mut iter = b.into_iter();
     for j in (0..b.len()).rev() {
-        assert_eq!(iter.next_back(), Some(j as PlatformWord));
+        assert_eq!(iter.next_back(), Some(j));
     }
     assert_eq!(iter.next_back(), None);
 

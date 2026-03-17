@@ -7,10 +7,11 @@
  */
 
 use crate::prelude::*;
+use crate::traits::{Word, WordType};
 use ambassador::Delegate;
 use mem_dbg::*;
+use num_primitive::PrimitiveInteger;
 
-use crate::ambassador_impl_AsRef;
 use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
@@ -74,7 +75,6 @@ use std::ops::Index;
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(AsRef<[u64]>, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::WordType, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
@@ -96,6 +96,13 @@ use std::ops::Index;
 pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
     pub(super) bits: B,
     pub(super) counts: C,
+}
+
+impl<B: WordType + AsRef<[B::Word]>, C> AsRef<[B::Word]> for Rank9<B, C> {
+    #[inline(always)]
+    fn as_ref(&self) -> &[B::Word] {
+        self.bits.as_ref()
+    }
 }
 
 #[doc(hidden)]
@@ -140,7 +147,8 @@ impl<B, C> Rank9<B, C> {
     /// new backend is identical to the old one as a bit vector.
     pub unsafe fn map<B1>(self, f: impl FnOnce(B) -> B1) -> Rank9<B1, C>
     where
-        B1: AsRef<[u64]> + BitLength,
+        B1: WordType + AsRef<[B1::Word]> + BitLength,
+        B1::Word: Word,
     {
         Rank9 {
             bits: f(self.bits),
@@ -160,9 +168,17 @@ impl<B: BitLength, C> Rank9<B, C> {
     }
 }
 
-impl<B: AsRef<[u64]> + BitLength> Rank9<B, Box<[BlockCounters]>> {
+impl<B: WordType + AsRef<[B::Word]> + BitLength> Rank9<B, Box<[BlockCounters]>>
+where
+    B::Word: Word,
+{
     /// Creates a new Rank9 structure from a given bit vector.
+    ///
+    /// # Panics
+    ///
+    /// Compile-time panic if `B::Word` is not a 64-bit type.
     pub fn new(bits: B) -> Self {
+        const { assert!(size_of::<B::Word>() == 8, "Rank9 requires 64-bit words") }
         let num_bits = bits.len();
         let num_words = num_bits.div_ceil(64);
         let num_counts = num_bits.div_ceil(64 * Self::WORDS_PER_BLOCK);
@@ -225,7 +241,11 @@ impl<B: BitLength, C: AsRef<[BlockCounters]>> BitCount for Rank9<B, C> {
     }
 }
 
-impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for Rank9<B, C> {
+impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked
+    for Rank9<B, C>
+where
+    B::Word: Word,
+{
     /// # Safety
     ///
     /// The implementation of [`RankUnchecked`] for [`Rank9`] has a weakened
@@ -246,9 +266,9 @@ impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for R
     /// assert_eq!(unsafe { rank9.rank_unchecked(8) }, rank9.num_ones());
     ///
     /// // The same call would not be legal where
-    /// let rank9 = Rank9::new(BitVec::new(usize::BITS as usize));
+    /// let rank9 = Rank9::new(BitVec::<Vec<u64>>::new(usize::BITS as usize));
     /// // But we can ensure that an unused bit is present
-    /// let mut bv = BitVec::new(usize::BITS as usize);
+    /// let mut bv = BitVec::<Vec<u64>>::new(usize::BITS as usize);
     /// bv.push(false);
     /// bv.pop();
     /// let rank9 = Rank9::new(bv);
@@ -265,12 +285,12 @@ impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for R
             // When pos is equal to the length of the underlying bit vector and
             // there is at least one unused bit, this access is safe as there
             // is a word of index word_pos.
-            let word = self.bits.as_ref().get_unchecked(word_pos);
+            let word = *self.bits.as_ref().get_unchecked(word_pos);
             let counts = self.counts.as_ref().get_unchecked(block);
 
             counts.absolute as usize
                 + counts.rel(offset)
-                + (word & ((1 << bit_pos) - 1)).count_ones() as usize
+                + (word & ((B::Word::ONE << bit_pos as u32) - B::Word::ONE)).count_ones() as usize
         }
     }
 
@@ -284,8 +304,16 @@ impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked for R
     }
 }
 
-impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> {}
-impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> RankZero for Rank9<B, C> {}
+impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> where
+    B::Word: Word
+{
+}
+impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> RankZero
+    for Rank9<B, C>
+where
+    B::Word: Word,
+{
+}
 
 #[cfg(test)]
 mod tests {

@@ -621,8 +621,8 @@ where
             .step_by(words_per_inventory)
             .enumerate()
         {
-            let start = inv as usize;
-            let span = inventory[i * words_per_inventory + words_per_inventory] as usize - start;
+            let start = inv;
+            let span = inventory[i * words_per_inventory + words_per_inventory] - start;
             past_ones = i * ones_per_inventory;
             let ones = min(num_ones - past_ones, ones_per_inventory);
 
@@ -665,8 +665,8 @@ where
             let start_inv_idx = inventory_idx * words_per_inventory;
             let end_inv_idx = start_inv_idx + words_per_inventory;
             // Read the first-level index to get the start and end bit indices
-            let start_bit_idx = inventory[start_inv_idx] as usize;
-            let end_bit_idx = inventory[end_inv_idx] as usize;
+            let start_bit_idx = inventory[start_inv_idx];
+            let end_bit_idx = inventory[end_inv_idx];
             // compute the span of the inventory
             let span = end_bit_idx - start_bit_idx;
             let span_type = SpanType::from_span(span);
@@ -865,7 +865,7 @@ where
 
                 debug_assert!(subrank >> self.log2_ones_per_sub16 < subinventory.len());
 
-                let hint_pos = inventory_rank as usize
+                let hint_pos = inventory_rank
                     + *subinventory.get_unchecked(subrank >> self.log2_ones_per_sub16) as usize;
                 let residual = subrank & self.ones_per_sub16_mask;
 
@@ -893,7 +893,7 @@ where
                     inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize
                 } else {
                     let start_spill_idx =
-                        *inventory.get_unchecked(inventory_start_pos + 1) as usize;
+                        *inventory.get_unchecked(inventory_start_pos + 1);
 
                     let spilled_u32s = self
                         .spill
@@ -920,13 +920,13 @@ where
                 if subrank == 0 {
                     return inventory_rank;
                 }
-                return *inventory.get_unchecked(inventory_start_pos + 1 + subrank) as usize;
+                return *inventory.get_unchecked(inventory_start_pos + 1 + subrank);
             }
-            let spill_idx = { *inventory.get_unchecked(inventory_start_pos + 1) as usize }
+            let spill_idx = { *inventory.get_unchecked(inventory_start_pos + 1) }
                 + subrank
                 - words_per_subinventory;
             debug_assert!(spill_idx < self.spill.as_ref().len());
-            *self.spill.as_ref().get_unchecked(spill_idx) as usize
+            *self.spill.as_ref().get_unchecked(spill_idx)
         }
     }
 }

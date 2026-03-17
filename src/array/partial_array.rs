@@ -17,11 +17,11 @@ use crate::dict::elias_fano::EliasFano;
 use crate::panic_if_out_of_bounds;
 use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
 use crate::traits::WordType;
-use crate::traits::{BitVecOps, BitVecOpsMut, PlatformWord};
+use crate::traits::{BitVecOps, BitVecOpsMut};
 use crate::traits::{RankUnchecked, SuccUnchecked};
 
 // Rank9 is inherently u64-based, so the dense index must use u64 backing
-// regardless of PlatformWord.
+// regardless of usize.
 type DenseIndex = Rank9<BitVec<Box<[u64]>>>;
 
 /// An internal index for sparse partial arrays.
@@ -188,7 +188,7 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
     }
 
     /// Builds the immutable sparse partial array.
-    pub fn build(self) -> PartialArray<T, SparseIndex<Box<[PlatformWord]>>> {
+    pub fn build(self) -> PartialArray<T, SparseIndex<Box<[usize]>>> {
         let (builder, values) = (self.builder, self.values);
         let ef_dict = builder.build_with_dict();
         let values = values.into_boxed_slice();
@@ -314,7 +314,7 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
     }
 }
 
-impl<T, D: WordType<Word = PlatformWord> + AsRef<[PlatformWord]>, V: AsRef<[T]>>
+impl<T, D: WordType<Word = usize> + AsRef<[usize]>, V: AsRef<[T]>>
     PartialArray<T, SparseIndex<D>, V>
 {
     /// Returns the total length of the array.
@@ -392,7 +392,7 @@ impl<T: Clone, V: AsRef<[T]>> SliceByValue for PartialArray<T, DenseIndex, V> {
 
 /// Returns an option even when using `get_value_unchecked` because it should be safe to call
 /// whenever `position < len()`.
-impl<T: Clone, D: WordType<Word = PlatformWord> + AsRef<[PlatformWord]>, V: AsRef<[T]>> SliceByValue
+impl<T: Clone, D: WordType<Word = usize> + AsRef<[usize]>, V: AsRef<[T]>> SliceByValue
     for PartialArray<T, SparseIndex<D>, V>
 {
     type Value = Option<T>;

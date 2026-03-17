@@ -5,7 +5,7 @@
  */
 
 use sux::array::partial_array;
-use sux::traits::PlatformWord;
+
 
 #[test]
 fn test_empty_array() {
@@ -176,7 +176,7 @@ fn test_serialize() {
     cursor.set_position(0);
     let array2 = unsafe {
         use epserde::deser::Deserialize;
-        <partial_array::PartialArray<u32, partial_array::SparseIndex<Box<[PlatformWord]>>>>::read_mem(
+        <partial_array::PartialArray<u32, partial_array::SparseIndex<Box<[usize]>>>>::read_mem(
             &mut cursor,
             len,
         )

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 use crate::prelude::*;
-use crate::traits::{BitVecOpsMut, PlatformWord};
+use crate::traits::BitVecOpsMut;
 use arbitrary::Arbitrary;
 use std::collections::BTreeSet;
 
@@ -26,7 +26,7 @@ pub fn harness(mut data: Data) {
         .map(|value| value % data.len)
         .collect::<BTreeSet<_>>();
 
-    let mut bitvec = BitVec::<Vec<PlatformWord>>::new(data.len);
+    let mut bitvec = BitVec::<Vec<usize>>::new(data.len);
     if data.len != 0 {
         ones.iter().for_each(|value| {
             bitvec.set(*value, true); // set bit to one

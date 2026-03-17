@@ -42,7 +42,7 @@ fn test_set_out_of_bounds() {
 
 #[test]
 fn test_set_atomic() {
-    let s = AtomicBitFieldVec::<usize>::new(3, 10);
+    let s = AtomicBitFieldVec::<Vec<AtomicUsize>>::new(3, 10);
     s.set_atomic(0, 1, Ordering::Relaxed);
     assert_eq!(s.get_atomic(0, Ordering::Relaxed), 1);
 
@@ -53,7 +53,7 @@ fn test_set_atomic() {
         assert_eq!(s.get_atomic_unchecked(0, Ordering::Relaxed), 1);
     }
 
-    let s = AtomicBitFieldVec::<usize>::new(0, 10);
+    let s = AtomicBitFieldVec::<Vec<AtomicUsize>>::new(0, 10);
     s.set_atomic(0, 0, Ordering::Relaxed);
     assert_eq!(s.get_atomic(0, Ordering::Relaxed), 0);
 }
@@ -61,14 +61,14 @@ fn test_set_atomic() {
 #[test]
 #[should_panic]
 fn test_set_atomic_too_large() {
-    let s = AtomicBitFieldVec::<usize>::new(3, 10);
+    let s = AtomicBitFieldVec::<Vec<AtomicUsize>>::new(3, 10);
     s.set_atomic(0, 10, Ordering::Relaxed);
 }
 
 #[test]
 #[should_panic]
 fn test_set_atomic_out_of_bounds() {
-    let s = AtomicBitFieldVec::<usize>::new(3, 10);
+    let s = AtomicBitFieldVec::<Vec<AtomicUsize>>::new(3, 10);
     s.set_atomic(10, 4, Ordering::Relaxed);
 }
 

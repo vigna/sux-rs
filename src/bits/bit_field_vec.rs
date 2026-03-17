@@ -115,7 +115,7 @@ use std::iter::FusedIterator;
 use std::sync::atomic::{Ordering, compiler_fence, fence};
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
-/// Convenient, [`vec!`]-like macro to initialize [`PlatformWord`]-based
+/// Convenient, [`vec!`]-like macro to initialize [`usize`]-based
 /// bit-field vectors.
 ///
 /// - `bit_field_vec![width]`: creates an empty bit-field vector of given bit
@@ -168,7 +168,7 @@ macro_rules! bit_field_vec {
         {
             let mut bit_field_vec = <$crate::bits::BitFieldVec>::with_capacity($w, $n);
             // Force type
-            let v: $crate::traits::PlatformWord = $v;
+            let v: usize = $v;
             bit_field_vec.resize($n, v);
             bit_field_vec
         }
@@ -178,7 +178,7 @@ macro_rules! bit_field_vec {
             let mut b = <$crate::bits::BitFieldVec>::with_capacity($w, [$($x),+].len());
             $(
                 // Force type
-                let x: $crate::traits::PlatformWord = $x;
+                let x: usize = $x;
                 b.push(x);
             )*
             b
@@ -205,7 +205,7 @@ macro_rules! bit_field_vec {
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(crate::traits::rank_sel::WordType, target = "bits")]
-pub struct BitFieldVec<B: WordType = Vec<PlatformWord>> {
+pub struct BitFieldVec<B: WordType = Vec<usize>> {
     /// The underlying storage.
     bits: B,
     /// The bit width of the values stored in the vector.
@@ -1363,20 +1363,30 @@ where
 /// happen.
 ///
 /// See the [module documentation](crate::bits) for more details.
-#[derive(Debug, Clone, Hash, MemDbg, MemSize)]
+#[derive(Debug, Clone, Hash, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-pub struct AtomicBitFieldVec<W: Word + AtomicPrimitive = PlatformWord, B = Vec<Atomic<W>>> {
+#[cfg_attr(
+    feature = "epserde",
+    epserde(bound(
+        deser = "for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: WordType<Word = B::Word>"
+    ))
+)]
+#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
+pub struct AtomicBitFieldVec<B: WordType = Vec<Atomic<usize>>> {
     /// The underlying storage.
     bits: B,
     /// The bit width of the values stored in the vector.
     bit_width: usize,
     /// A mask with its lowest `bit_width` bits set to one.
-    mask: W,
+    mask: B::Word,
     /// The length of the vector.
     len: usize,
 }
 
-impl<W: Word + AtomicPrimitive, B> AtomicBitFieldVec<W, B> {
+impl<B: WordType> AtomicBitFieldVec<B>
+where
+    B::Word: Word + AtomicPrimitive,
+{
     /// # Safety
     /// `len` * `bit_width` must be between 0 (included) and the number of
     /// bits in `bits` (included).
@@ -1397,28 +1407,34 @@ impl<W: Word + AtomicPrimitive, B> AtomicBitFieldVec<W, B> {
 
     /// Returns the mask used to extract values from the vector.
     /// This will keep the lowest `bit_width` bits.
-    pub const fn mask(&self) -> W {
+    pub const fn mask(&self) -> B::Word {
         self.mask
     }
 }
 
-impl<W: Word + AtomicPrimitive, B: AsRef<[W::Atomic]>> AtomicBitFieldVec<W, B> {
+impl<B: WordType + AsRef<[<B::Word as AtomicPrimitive>::Atomic]>> AtomicBitFieldVec<B>
+where
+    B::Word: Word + AtomicPrimitive,
+{
     /// Returns the backend of the `AtomicBitFieldVec` as a slice of `A`, where `A` is the
-    /// atomic variant of `W`.
-    pub fn as_slice(&self) -> &[W::Atomic] {
+    /// atomic variant of `B::Word`.
+    pub fn as_slice(&self) -> &[<B::Word as AtomicPrimitive>::Atomic] {
         self.bits.as_ref()
     }
 }
 
-impl<W: Word + AtomicPrimitive> AtomicBitFieldVec<W>
+impl<A: PrimitiveAtomic> AtomicBitFieldVec<Vec<A>>
 where
-    W::Atomic: PrimitiveAtomic,
+    A::Value: Word + AtomicPrimitive<Atomic = A>,
+    Vec<A>: WordType<Word = A::Value>,
 {
-    pub fn new(bit_width: usize, len: usize) -> AtomicBitFieldVec<W> {
+    pub fn new(bit_width: usize, len: usize) -> AtomicBitFieldVec<Vec<A>> {
         // we need at least two words to avoid branches in the gets
-        let n_of_words = Ord::max(1, (len * bit_width).div_ceil(W::BITS as usize));
-        AtomicBitFieldVec::<W> {
-            bits: (0..n_of_words).map(|_| W::Atomic::new(W::ZERO)).collect(),
+        let n_of_words = Ord::max(1, (len * bit_width).div_ceil(A::Value::BITS as usize));
+        AtomicBitFieldVec {
+            bits: (0..n_of_words)
+                .map(|_| A::new(A::Value::ZERO))
+                .collect(),
             bit_width,
             mask: mask(bit_width),
             len,
@@ -1426,24 +1442,25 @@ where
     }
 }
 
-impl<W: Word + AtomicPrimitive, B> WordType for AtomicBitFieldVec<W, B> {
-    type Word = W;
-}
-
-impl<W: Word + AtomicPrimitive, B> AtomicBitWidth for AtomicBitFieldVec<W, B> {
+impl<B: WordType> AtomicBitWidth for AtomicBitFieldVec<B>
+where
+    B::Word: Word + AtomicPrimitive,
+{
     #[inline(always)]
     fn atomic_bit_width(&self) -> usize {
-        debug_assert!(self.bit_width <= W::BITS as usize);
+        debug_assert!(self.bit_width <= B::Word::BITS as usize);
         self.bit_width
     }
 }
 
-impl<W: Word + AtomicPrimitive, T: AsRef<[W::Atomic]>> SliceByValue for AtomicBitFieldVec<W, T>
+impl<B: WordType + AsRef<[<B::Word as AtomicPrimitive>::Atomic]>> SliceByValue
+    for AtomicBitFieldVec<B>
 where
-    W::Atomic: PrimitiveAtomicInteger,
-    Self: AtomicBitFieldSlice<W>,
+    B::Word: Word + AtomicPrimitive,
+    <B::Word as AtomicPrimitive>::Atomic: PrimitiveAtomicInteger,
+    Self: AtomicBitFieldSlice<B::Word>,
 {
-    type Value = W;
+    type Value = B::Word;
 
     #[inline(always)]
     fn len(&self) -> usize {
@@ -1455,10 +1472,11 @@ where
     }
 }
 
-impl<W: Word + AtomicPrimitive, T: AsRef<[W::Atomic]>> AtomicBitFieldSlice<W>
-    for AtomicBitFieldVec<W, T>
+impl<B: WordType + AsRef<[<B::Word as AtomicPrimitive>::Atomic]>> AtomicBitFieldSlice<B::Word>
+    for AtomicBitFieldVec<B>
 where
-    W::Atomic: PrimitiveAtomicInteger,
+    B::Word: Word + AtomicPrimitive,
+    <B::Word as AtomicPrimitive>::Atomic: PrimitiveAtomicInteger,
 {
     #[inline]
     fn len(&self) -> usize {
@@ -1466,8 +1484,8 @@ where
     }
 
     #[inline]
-    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> W {
-        let wbits = W::BITS as usize;
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> B::Word {
+        let wbits = B::Word::BITS as usize;
         let pos = index * self.bit_width;
         let word_index = pos / wbits;
         let bit_index = pos % wbits;
@@ -1491,7 +1509,7 @@ where
     /// May panic if the index is not in [0..[len](SliceByValue::len))
     /// or the value does not fit in [`BitWidth::bit_width`] bits.
     #[inline(always)]
-    fn set_atomic(&self, index: usize, value: W, order: Ordering) {
+    fn set_atomic(&self, index: usize, value: B::Word, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len);
         panic_if_value!(value, self.mask, self.bit_width);
         unsafe {
@@ -1500,9 +1518,9 @@ where
     }
 
     #[inline]
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering) {
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: B::Word, order: Ordering) {
         unsafe {
-            let wbits = W::BITS as usize;
+            let wbits = B::Word::BITS as usize;
             debug_assert!(self.bit_width <= wbits);
             let pos = index * self.bit_width;
             let word_index = pos / wbits;
@@ -1531,7 +1549,7 @@ where
                 fence(Ordering::Acquire);
                 loop {
                     let mut new = word;
-                    new &= (W::ONE << bit_index) - W::ONE;
+                    new &= (B::Word::ONE << bit_index) - B::Word::ONE;
                     new |= value << bit_index;
 
                     match data
@@ -1573,38 +1591,41 @@ where
 
     fn reset_atomic(&mut self, ordering: Ordering) {
         let bit_len = self.len * self.bit_width;
-        let full_words = bit_len / W::BITS as usize;
-        let residual = bit_len % W::BITS as usize;
+        let full_words = bit_len / B::Word::BITS as usize;
+        let residual = bit_len % B::Word::BITS as usize;
         let bits = self.bits.as_ref();
         bits[..full_words]
             .iter()
-            .for_each(|x| x.store(W::ZERO, ordering));
+            .for_each(|x| x.store(B::Word::ZERO, ordering));
         if residual != 0 {
-            bits[full_words].fetch_and(W::MAX << residual, ordering);
+            bits[full_words].fetch_and(B::Word::MAX << residual, ordering);
         }
     }
 
     #[cfg(feature = "rayon")]
     fn par_reset_atomic(&mut self, ordering: Ordering) {
         let bit_len = self.len * self.bit_width;
-        let full_words = bit_len / W::BITS as usize;
-        let residual = bit_len % W::BITS as usize;
+        let full_words = bit_len / B::Word::BITS as usize;
+        let residual = bit_len % B::Word::BITS as usize;
         let bits = self.bits.as_ref();
         bits[..full_words]
             .par_iter()
             .with_min_len(RAYON_MIN_LEN)
-            .for_each(|x| x.store(W::ZERO, ordering));
+            .for_each(|x| x.store(B::Word::ZERO, ordering));
         if residual != 0 {
-            bits[full_words].fetch_and(W::MAX << residual, ordering);
+            bits[full_words].fetch_and(B::Word::MAX << residual, ordering);
         }
     }
 }
 
 // Conversions
 
-impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, Vec<W::Atomic>>> for BitFieldVec<Vec<W>> {
+impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<Vec<W::Atomic>>> for BitFieldVec<Vec<W>>
+where
+    Vec<W::Atomic>: WordType<Word = W>,
+{
     #[inline]
-    fn from(value: AtomicBitFieldVec<W, Vec<W::Atomic>>) -> Self {
+    fn from(value: AtomicBitFieldVec<Vec<W::Atomic>>) -> Self {
         BitFieldVec {
             bits: transmute_vec_from_atomic(value.bits),
             len: value.len,
@@ -1614,11 +1635,13 @@ impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, Vec<W::Atomic>>> for B
     }
 }
 
-impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, Box<[W::Atomic]>>>
+impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<Box<[W::Atomic]>>>
     for BitFieldVec<Box<[W]>>
+where
+    [W::Atomic]: WordType<Word = W>,
 {
     #[inline]
-    fn from(value: AtomicBitFieldVec<W, Box<[W::Atomic]>>) -> Self {
+    fn from(value: AtomicBitFieldVec<Box<[W::Atomic]>>) -> Self {
         BitFieldVec {
             bits: transmute_boxed_slice_from_atomic(value.bits),
 
@@ -1629,11 +1652,13 @@ impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, Box<[W::Atomic]>>>
     }
 }
 
-impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, &'a [W::Atomic]>>
+impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<&'a [W::Atomic]>>
     for BitFieldVec<&'a [W]>
+where
+    [W::Atomic]: WordType<Word = W>,
 {
     #[inline]
-    fn from(value: AtomicBitFieldVec<W, &'a [W::Atomic]>) -> Self {
+    fn from(value: AtomicBitFieldVec<&'a [W::Atomic]>) -> Self {
         BitFieldVec {
             bits: unsafe { core::mem::transmute::<&'a [W::Atomic], &'a [W]>(value.bits) },
             len: value.len,
@@ -1643,11 +1668,13 @@ impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, &'a [W::Atomic]>>
     }
 }
 
-impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, &'a mut [W::Atomic]>>
+impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<&'a mut [W::Atomic]>>
     for BitFieldVec<&'a mut [W]>
+where
+    [W::Atomic]: WordType<Word = W>,
 {
     #[inline]
-    fn from(value: AtomicBitFieldVec<W, &'a mut [W::Atomic]>) -> Self {
+    fn from(value: AtomicBitFieldVec<&'a mut [W::Atomic]>) -> Self {
         BitFieldVec {
             bits: unsafe { core::mem::transmute::<&'a mut [W::Atomic], &'a mut [W]>(value.bits) },
             len: value.len,
@@ -1657,7 +1684,10 @@ impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, &'a mut [W::Atomic
     }
 }
 
-impl<W: Word + AtomicPrimitive> From<BitFieldVec<Vec<W>>> for AtomicBitFieldVec<W, Vec<W::Atomic>> {
+impl<W: Word + AtomicPrimitive> From<BitFieldVec<Vec<W>>> for AtomicBitFieldVec<Vec<W::Atomic>>
+where
+    Vec<W::Atomic>: WordType<Word = W>,
+{
     #[inline]
     fn from(value: BitFieldVec<Vec<W>>) -> Self {
         AtomicBitFieldVec {
@@ -1671,7 +1701,9 @@ impl<W: Word + AtomicPrimitive> From<BitFieldVec<Vec<W>>> for AtomicBitFieldVec<
 }
 
 impl<W: Word + AtomicPrimitive> From<BitFieldVec<Box<[W]>>>
-    for AtomicBitFieldVec<W, Box<[W::Atomic]>>
+    for AtomicBitFieldVec<Box<[W::Atomic]>>
+where
+    [W::Atomic]: WordType<Word = W>,
 {
     #[inline]
     fn from(value: BitFieldVec<Box<[W]>>) -> Self {
@@ -1685,7 +1717,9 @@ impl<W: Word + AtomicPrimitive> From<BitFieldVec<Box<[W]>>>
 }
 
 impl<'a, W: Word + AtomicPrimitive> TryFrom<BitFieldVec<&'a [W]>>
-    for AtomicBitFieldVec<W, &'a [W::Atomic]>
+    for AtomicBitFieldVec<&'a [W::Atomic]>
+where
+    [W::Atomic]: WordType<Word = W>,
 {
     type Error = CannotCastToAtomicError<W>;
 
@@ -1704,7 +1738,9 @@ impl<'a, W: Word + AtomicPrimitive> TryFrom<BitFieldVec<&'a [W]>>
 }
 
 impl<'a, W: Word + AtomicPrimitive> TryFrom<BitFieldVec<&'a mut [W]>>
-    for AtomicBitFieldVec<W, &'a mut [W::Atomic]>
+    for AtomicBitFieldVec<&'a mut [W::Atomic]>
+where
+    [W::Atomic]: WordType<Word = W>,
 {
     type Error = CannotCastToAtomicError<W>;
 
@@ -1871,7 +1907,7 @@ mod tests {
 
     #[test]
     fn test_with_capacity() {
-        let mut b = BitFieldVec::<Vec<PlatformWord>>::with_capacity(10, 100);
+        let mut b = BitFieldVec::<Vec<usize>>::with_capacity(10, 100);
         let capacity = b.bits.capacity();
         for _ in 0..100 {
             b.push(0);

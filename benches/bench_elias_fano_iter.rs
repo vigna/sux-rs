@@ -3,7 +3,7 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 use sux::prelude::*;
-use sux::traits::PlatformWord;
+
 use sux::traits::indexed_dict::IndexedSeq;
 
 const N: usize = 10_000_000;
@@ -20,8 +20,7 @@ const CONFIGS: &[(usize, u64)] = &[
 type EfBench = EliasFano<
     u64,
     SelectZeroAdaptConst<
-        PlatformWord,
-        SelectAdaptConst<PlatformWord, BitVec<Box<[PlatformWord]>>, Box<[usize]>, 12, 3>,
+        SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>,
         Box<[usize]>,
         12,
         3,

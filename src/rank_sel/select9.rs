@@ -10,11 +10,12 @@ use super::Rank9;
 use super::rank9::BlockCounters;
 use crate::traits::{
     BitCount, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
-    SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, WordType,
+    SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word, WordType,
 };
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
+use num_primitive::PrimitiveInteger;
 
 const ONES_STEP_9: u64 = (1u64 << 0)
     | (1u64 << 9)
@@ -42,7 +43,6 @@ macro_rules! ULEQ_STEP_16 {
     };
 }
 
-use crate::ambassador_impl_AsRef;
 use crate::ambassador_impl_Index;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
@@ -120,7 +120,6 @@ use std::ops::{Deref, Index};
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(AsRef<[u64]>, target = "rank9")]
 #[delegate(Index<usize>, target = "rank9")]
 #[delegate(crate::traits::rank_sel::WordType, target = "rank9")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "rank9")]
@@ -140,6 +139,13 @@ pub struct Select9<R = Rank9, I = Box<[u64]>> {
     subinventory: I,
     inventory_size: usize,
     subinventory_size: usize,
+}
+
+impl<B: WordType + AsRef<[B::Word]>, C, I> AsRef<[B::Word]> for Select9<Rank9<B, C>, I> {
+    #[inline(always)]
+    fn as_ref(&self) -> &[B::Word] {
+        self.rank9.as_ref()
+    }
 }
 
 impl<R, I> Select9<R, I> {
@@ -163,8 +169,18 @@ impl<R: BitLength, I> Select9<R, I> {
     }
 }
 
-impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>, Box<[u64]>> {
+impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>>
+    Select9<Rank9<B, C>, Box<[u64]>>
+where
+    B::Word: Word + SelectInWord,
+{
+    /// Creates a new Select9 structure.
+    ///
+    /// # Panics
+    ///
+    /// Compile-time panic if `B::Word` is not a 64-bit type.
     pub fn new(rank9: Rank9<B, C>) -> Self {
+        const { assert!(size_of::<B::Word>() == 8, "Select9 requires 64-bit words") }
         let num_bits = rank9.len();
         let num_words = num_bits.div_ceil(64);
         let inventory_size = rank9.num_ones().div_ceil(Self::ONES_PER_INVENTORY);
@@ -183,7 +199,7 @@ impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>
 
             while curr_num_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word(next_quantum - curr_num_ones);
-                let index = (i * u64::BITS as usize) + in_word_index;
+                let index = (i * B::Word::BITS as usize) + in_word_index;
 
                 inventory.push(index as u64);
 
@@ -267,9 +283,9 @@ impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>
                 let end_word_idx = end_bit_idx.div_ceil(64);
                 let mut subinventory_idx = 0;
                 'outer: loop {
-                    while word != 0 {
+                    while word != B::Word::ZERO {
                         let in_word_index = word.trailing_zeros() as usize;
-                        let bit_index = (word_idx * u64::BITS as usize) + in_word_index;
+                        let bit_index = (word_idx * B::Word::BITS as usize) + in_word_index;
                         let sub_offset = bit_index - start_bit_idx;
                         match state {
                             0 => {
@@ -300,7 +316,7 @@ impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> Select9<Rank9<B, C>
                             break 'outer;
                         }
 
-                        word &= word - 1;
+                        word &= word - B::Word::ONE;
                     }
 
                     // move to the next word and bound check
@@ -334,8 +350,10 @@ impl<R: BitLength, I> Deref for Select9<R, I> {
     }
 }
 
-impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>> SelectUnchecked
-    for Select9<Rank9<B, C>, I>
+impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>>
+    SelectUnchecked for Select9<Rank9<B, C>, I>
+where
+    B::Word: Word + SelectInWord,
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         unsafe {
@@ -473,7 +491,9 @@ impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>> Se
     }
 }
 
-impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>> Select
+impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>> Select
     for Select9<Rank9<B, C>, I>
+where
+    B::Word: Word + SelectInWord,
 {
 }

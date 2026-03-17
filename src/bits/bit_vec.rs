@@ -18,12 +18,12 @@
 //!
 //! These flavors depend on a backend, and presently we provide:
 //!
-//! - `BitVec<Vec<PlatformWord>>`: a mutable, growable and resizable bit vector;
-//! - `BitVec<AsRef<[PlatformWord]>>`: an immutable bit vector, useful for
+//! - `BitVec<Vec<usize>>`: a mutable, growable and resizable bit vector;
+//! - `BitVec<AsRef<[usize]>>`: an immutable bit vector, useful for
 //!   [ε-serde](https://crates.io/crates/epserde) support;
-//! - `BitVec<AsRef<[PlatformWord]> + AsMut<[PlatformWord]>>`: a mutable (but
+//! - `BitVec<AsRef<[usize]> + AsMut<[usize]>>`: a mutable (but
 //!   not resizable) bit vector;
-//! - `AtomicBitVec<AsRef<[Atomic<PlatformWord>]>>`: a thread-safe, mutable (but
+//! - `AtomicBitVec<AsRef<[Atomic<usize>]>>`: a thread-safe, mutable (but
 //!   not resizable) bit vector.
 //!
 //! Note that nothing is assumed about the content of the backend outside the
@@ -48,8 +48,8 @@
 //!
 //! ```rust
 //! # use sux::prelude::*;
-//! let mut b: BitVec = BitVec::new(10);     // OK: B = Vec<PlatformWord>
-//! let a: AtomicBitVec = AtomicBitVec::new(10); // OK: B = Box<[Atomic<PlatformWord>]>
+//! let mut b: BitVec = BitVec::new(10);     // OK: B = Vec<usize>
+//! let a: AtomicBitVec = AtomicBitVec::new(10); // OK: B = Box<[Atomic<usize>]>
 //! ```
 //!
 //! The [`bit_vec!`](macro@crate::bits::bit_vec) macro and
@@ -61,7 +61,7 @@
 //! ```rust
 //! use sux::prelude::*;
 //! use sux::traits::bit_vec_ops::*;
-//! use sux::traits::PlatformWord;
+
 //! use std::sync::atomic::Ordering;
 //!
 //! // Convenience macro
@@ -89,16 +89,16 @@
 //! assert!(a.get(0, Ordering::Relaxed));
 //!
 //! // Back to normal, but immutable size
-//! let b: BitVec<Vec<PlatformWord>> = a.into();
-//! let mut b: BitVec<Box<[PlatformWord]>> = b.into();
+//! let b: BitVec<Vec<usize>> = a.into();
+//! let mut b: BitVec<Box<[usize]>> = b.into();
 //! b.set(2, false);
 //!
 //! // If we create an artificially dirty bit vector, everything still works.
-//! let ones = [PlatformWord::MAX; 2];
+//! let ones = [usize::MAX; 2];
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones.as_slice(), 1) }.count_ones(), 1);
 //! ```
 
-use crate::traits::{AtomicBitIter, AtomicBitVecOps, BitIter, BitVecOps, PlatformWord, Word};
+use crate::traits::{AtomicBitIter, AtomicBitVecOps, BitIter, BitVecOps, Word};
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic};
@@ -129,7 +129,7 @@ use crate::{
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(crate::traits::rank_sel::WordType, target = "bits")]
-pub struct BitVec<B = Vec<PlatformWord>> {
+pub struct BitVec<B = Vec<usize>> {
     bits: B,
     len: usize,
 }
@@ -219,29 +219,29 @@ macro_rules! bit_vec {
             b
         }
     };
-    // Default arms (PlatformWord backing)
+    // Default arms (usize backing)
     () => {
-        $crate::bits::BitVec::<Vec<$crate::traits::PlatformWord>>::new(0)
+        $crate::bits::BitVec::<Vec<usize>>::new(0)
     };
     (false; $n:expr) => {
-        $crate::bits::BitVec::<Vec<$crate::traits::PlatformWord>>::new($n)
+        $crate::bits::BitVec::<Vec<usize>>::new($n)
     };
     (0; $n:expr) => {
-        $crate::bits::BitVec::<Vec<$crate::traits::PlatformWord>>::new($n)
+        $crate::bits::BitVec::<Vec<usize>>::new($n)
     };
     (true; $n:expr) => {
         {
-            $crate::bits::BitVec::<Vec<$crate::traits::PlatformWord>>::with_value($n, true)
+            $crate::bits::BitVec::<Vec<usize>>::with_value($n, true)
         }
     };
     (1; $n:expr) => {
         {
-            $crate::bits::BitVec::<Vec<$crate::traits::PlatformWord>>::with_value($n, true)
+            $crate::bits::BitVec::<Vec<usize>>::with_value($n, true)
         }
     };
     ($($x:expr),+ $(,)?) => {
         {
-            let mut b = $crate::bits::BitVec::<Vec<$crate::traits::PlatformWord>>::with_capacity([$($x),+].len());
+            let mut b = $crate::bits::BitVec::<Vec<usize>>::with_capacity([$($x),+].len());
             $( b.push($x != 0); )*
             b
         }
@@ -400,7 +400,7 @@ impl<W: Word> FromIterator<bool> for BitVec<Vec<W>> {
     }
 }
 
-impl<B: AsRef<[PlatformWord]>> BitVec<B> {
+impl<B: AsRef<[usize]>> BitVec<B> {
     /// Returns an owned copy of the bit vector.
     pub fn to_owned(&self) -> BitVec {
         BitVec {
@@ -548,7 +548,7 @@ where
 /// A thread-safe bit vector.
 ///
 /// See the [module documentation](mod@crate::bits::bit_vec) for details.
-pub struct AtomicBitVec<B = Box<[Atomic<PlatformWord>]>> {
+pub struct AtomicBitVec<B = Box<[Atomic<usize>]>> {
     bits: B,
     len: usize,
 }

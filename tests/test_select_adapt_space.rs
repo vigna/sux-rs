@@ -13,7 +13,7 @@ use mem_dbg::{MemSize, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
-use sux::traits::PlatformWord;
+
 
 const LEN: usize = 1_000_000;
 
@@ -25,11 +25,11 @@ fn overhead(s: &(impl MemSize + BitLength)) -> f64 {
 }
 
 /// Returns the theoretical overhead percentage for SelectAdapt-family structures:
-/// (1 + M) * PlatformWord::BITS / L, where L is the target inventory span and
+/// (1 + M) * usize::BITS / L, where L is the target inventory span and
 /// M = 2^max_log2_words_per_subinv.
 fn theoretical_overhead(target_inventory_span: usize, max_log2_words_per_subinv: usize) -> f64 {
     let m = 1usize << max_log2_words_per_subinv;
-    (1 + m) as f64 * PlatformWord::BITS as f64 / target_inventory_span as f64 * 100.0
+    (1 + m) as f64 * usize::BITS as f64 / target_inventory_span as f64 * 100.0
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn test_space_select_adapt() {
         let sel = SelectAdapt::new(bits.clone(), 3);
         let ov = overhead(&sel);
         let th = theoretical_overhead(
-            SelectAdapt::<PlatformWord, AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN,
+            SelectAdapt::<AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN,
             3,
         );
         eprintln!(
@@ -61,7 +61,7 @@ fn test_space_select_adapt() {
             density,
             ov,
             th,
-            PlatformWord::BITS
+            usize::BITS
         );
         // Overhead should be at most 3× theoretical (accounting for quantization,
         // spill, and struct fields).
@@ -74,7 +74,7 @@ fn test_space_select_adapt() {
         let sel = SelectAdapt::new(bits.clone(), 0);
         let ov = overhead(&sel);
         let th = theoretical_overhead(
-            SelectAdapt::<PlatformWord, AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN,
+            SelectAdapt::<AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN,
             0,
         );
         eprintln!(
@@ -83,7 +83,7 @@ fn test_space_select_adapt() {
             density,
             ov,
             th,
-            PlatformWord::BITS
+            usize::BITS
         );
         assert!(
             ov < th * 3.0,
@@ -116,7 +116,7 @@ fn test_space_select_adapt_const() {
             "SelectAdaptConst<default>",
             density,
             ov,
-            PlatformWord::BITS
+            usize::BITS
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
 
@@ -127,7 +127,7 @@ fn test_space_select_adapt_const() {
             "SelectAdaptConst<12,2>",
             density,
             ov,
-            PlatformWord::BITS
+            usize::BITS
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
 
@@ -138,7 +138,7 @@ fn test_space_select_adapt_const() {
             "SelectAdaptConst<13,0>",
             density,
             ov,
-            PlatformWord::BITS
+            usize::BITS
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
     }
@@ -163,7 +163,7 @@ fn test_space_select_zero_adapt() {
         let sel = SelectZeroAdapt::new(bits.clone(), 3);
         let ov = overhead(&sel);
         let th = theoretical_overhead(
-            SelectZeroAdapt::<PlatformWord, AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN,
+            SelectZeroAdapt::<AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN,
             3,
         );
         eprintln!(
@@ -172,7 +172,7 @@ fn test_space_select_zero_adapt() {
             density,
             ov,
             th,
-            PlatformWord::BITS
+            usize::BITS
         );
         assert!(
             ov < th * 3.0,
@@ -182,7 +182,7 @@ fn test_space_select_zero_adapt() {
         let sel = SelectZeroAdapt::new(bits.clone(), 0);
         let ov = overhead(&sel);
         let th = theoretical_overhead(
-            SelectZeroAdapt::<PlatformWord, AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN,
+            SelectZeroAdapt::<AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN,
             0,
         );
         eprintln!(
@@ -191,7 +191,7 @@ fn test_space_select_zero_adapt() {
             density,
             ov,
             th,
-            PlatformWord::BITS
+            usize::BITS
         );
         assert!(
             ov < th * 3.0,
@@ -224,7 +224,7 @@ fn test_space_select_zero_adapt_const() {
             "SelectZeroAdaptConst<def>",
             density,
             ov,
-            PlatformWord::BITS
+            usize::BITS
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
 
@@ -235,7 +235,7 @@ fn test_space_select_zero_adapt_const() {
             "SelectZeroAdaptConst<12,2>",
             density,
             ov,
-            PlatformWord::BITS
+            usize::BITS
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
 
@@ -246,7 +246,7 @@ fn test_space_select_zero_adapt_const() {
             "SelectZeroAdaptConst<13,0>",
             density,
             ov,
-            PlatformWord::BITS
+            usize::BITS
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
     }

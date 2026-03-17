@@ -48,11 +48,6 @@ pub mod prelude {
 }
 
 #[ambassador::delegatable_trait_remote]
-pub(crate) trait AsRef<T> {
-    fn as_ref(&self) -> &T;
-}
-
-#[ambassador::delegatable_trait_remote]
 pub(crate) trait Index<Idx> {
     type Output;
     fn index(&self, index: Idx) -> &Self::Output;
