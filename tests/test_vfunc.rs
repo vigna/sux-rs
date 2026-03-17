@@ -38,7 +38,7 @@ where
 
     for &n in sizes {
         dbg!(offline, n);
-        let func = VBuilder::<_, BitFieldVec<Vec<_>>, S, E>::default()
+        let func = VBuilder::<_, BitFieldVec<Box<[_]>>, S, E>::default()
             .expected_num_keys(n)
             .offline(offline)
             .low_mem(low_mem)
@@ -163,7 +163,7 @@ fn test_dup_key() -> Result<()> {
         .try_init();
 
     assert!(
-        VBuilder::<usize, BitFieldVec<Vec<usize>>>::default()
+        VBuilder::<usize, BitFieldVec<Box<[usize]>>>::default()
             .check_dups(true)
             .try_build_func(
                 FromCloneableIntoIterator::from(std::iter::repeat_n(0, 10)),

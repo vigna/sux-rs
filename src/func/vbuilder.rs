@@ -123,7 +123,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// # use dsi_progress_logger::no_logging;
 /// # use sux::utils::FromCloneableIntoIterator;
 /// # use sux::bits::BitFieldVec;
-/// let builder = VBuilder::<_, BitFieldVec<Vec<usize>>>::default()
+/// let builder = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
 ///     .expected_num_keys(100);
 /// let func = builder.try_build_func(
 ///    FromCloneableIntoIterator::new(0..100),
@@ -624,7 +624,7 @@ where
 }
 
 impl<W: Word + BinSafe + AsU128, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
-    VBuilder<W, BitFieldVec<Vec<W>>, S, E>
+    VBuilder<W, BitFieldVec<Box<[W]>>, S, E>
 where
     SigVal<S, W>: RadixKey,
     SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
@@ -642,11 +642,12 @@ where
         keep_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<(
-        VFunc<T, W, BitFieldVec<Vec<W>>, S, E>,
+        VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>,
         Option<AnyShardStore<S, W>>,
     )> {
         let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
-        let new_data = |bit_width, len| BitFieldVec::<Vec<W>>::new_unaligned(bit_width, len);
+        let new_data =
+            |bit_width, len| BitFieldVec::<Vec<W>>::new_unaligned(bit_width, len).into();
 
         self.build_loop(keys, values, None, &get_val, new_data, keep_store, pl)
     }
@@ -670,13 +671,13 @@ where
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<Vec<W>>, S, E>> {
+    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>> {
         self._try_build_func(keys, values, false, pl)
             .map(|res| res.0)
     }
 }
 
-impl<S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<usize, BitFieldVec<Vec<usize>>, S, E>
+impl<S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>
 where
     SigVal<S, usize>: RadixKey,
     SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
@@ -705,7 +706,7 @@ where
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<
-        BitSignedVFunc<VFunc<T, usize, BitFieldVec<Vec<usize>>, S, E>, BitFieldVec<Vec<H>>>,
+        BitSignedVFunc<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>,
     >
     where
         u64: PrimitiveNumberAs<H>,
@@ -725,7 +726,8 @@ where
         };
 
         // Create the signature vector
-        let mut hashes = BitFieldVec::<Vec<H>>::new_unaligned(hash_width, num_keys);
+        let mut hashes: BitFieldVec<Box<[H]>> =
+            BitFieldVec::<Vec<H>>::new_unaligned(hash_width, num_keys).into();
 
         // Enumerate the store and extract signatures using the same method as filters
         pl.item_name("hash");
@@ -790,7 +792,7 @@ where
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<SignedVFunc<VFunc<T, usize, BitFieldVec<Vec<usize>>, S, E>, Box<[H]>>> {
+    ) -> anyhow::Result<SignedVFunc<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>> {
         let (func, store) =
             self._try_build_func(keys, FromCloneableIntoIterator::from(0..), true, pl)?;
 
@@ -837,7 +839,7 @@ where
 }
 
 impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
-    VBuilder<W, BitFieldVec<Vec<W>>, S, E>
+    VBuilder<W, BitFieldVec<Box<[W]>>, S, E>
 where
     // u128 can always be created from any Word type via as cast
     SigVal<S, EmptyVal>: RadixKey,
@@ -859,14 +861,15 @@ where
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         filter_bits: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<Vec<W>>, S, E>>> {
+    ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>> {
         assert!(filter_bits > 0);
         assert!(filter_bits <= W::BITS as usize);
         let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
         let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
             W::as_from(mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
         };
-        let new_data = |bit_width, len| BitFieldVec::<Vec<W>>::new_unaligned(bit_width, len);
+        let new_data =
+            |bit_width, len| BitFieldVec::<Vec<W>>::new_unaligned(bit_width, len).into();
 
         Ok(VFilter {
             func: self

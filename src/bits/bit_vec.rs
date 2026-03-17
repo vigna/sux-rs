@@ -16,14 +16,15 @@
 //! operations that are specific to certain implementations, such as
 //! [`push`](BitVec::push).
 //!
-//! These flavors depend on a backend, and presently we provide:
+//! These flavors depend on a backend with a word type `W`, and presently we
+//! provide:
 //!
-//! - `BitVec<Vec<usize>>`: a mutable, growable and resizable bit vector;
-//! - `BitVec<AsRef<[usize]>>`: an immutable bit vector, useful for
+//! - `BitVec<Vec<W>>`: a mutable, growable and resizable bit vector;
+//! - `BitVec<AsRef<[W]>>`: an immutable bit vector, useful for
 //!   [ε-serde](https://crates.io/crates/epserde) support;
-//! - `BitVec<AsRef<[usize]> + AsMut<[usize]>>`: a mutable (but
+//! - `BitVec<AsRef<[W]> + AsMut<[W]>>`: a mutable (but
 //!   not resizable) bit vector;
-//! - `AtomicBitVec<AsRef<[Atomic<usize>]>>`: a thread-safe, mutable (but
+//! - `AtomicBitVec<AsRef<[Atomic<W>]>>`: a thread-safe, mutable (but
 //!   not resizable) bit vector.
 //!
 //! Note that nothing is assumed about the content of the backend outside the
@@ -40,8 +41,7 @@
 //! their backends. However, Rust does not apply struct default type
 //! parameters in expression position, so constructor calls like
 //! `BitVec::new(n)` or `AtomicBitVec::new(n)` leave the backend type
-//! unconstrained. This causes method-resolution ambiguity between
-//! [`BitVecOps`] and [`AtomicBitVecOps`].
+//! unconstrained.
 //!
 //! The fix is to annotate the binding with the bare type alias, which
 //! *does* apply defaults:

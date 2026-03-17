@@ -196,8 +196,8 @@ where
     str: ToSig<S>,
     usize: ToSig<S>,
     u64: num_primitive::PrimitiveNumberAs<W>,
-    VFilter<W, VFunc<usize, W, BitFieldVec<Vec<W>>, S, E>>: Deserialize,
-    VFilter<W, VFunc<str, W, BitFieldVec<Vec<W>>, S, E>>: Deserialize,
+    VFilter<W, VFunc<usize, W, BitFieldVec<Box<[W]>>, S, E>>: Deserialize,
+    VFilter<W, VFunc<str, W, BitFieldVec<Box<[W]>>, S, E>>: Deserialize,
 {
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
@@ -213,7 +213,7 @@ where
         };
 
         let filter = unsafe {
-            VFilter::<W, VFunc<str, W, BitFieldVec<Vec<W>>, S, E>>::load_full(&args.func)
+            VFilter::<W, VFunc<str, W, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
         }?;
 
         bench(args.n, args.repeats, || {
@@ -230,7 +230,7 @@ where
     } else {
         // No filename
         let filter = unsafe {
-            VFilter::<W, VFunc<usize, W, BitFieldVec<Vec<W>>, S, E>>::load_full(&args.func)
+            VFilter::<W, VFunc<usize, W, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
         }?;
 
         bench(args.n, args.repeats, || {

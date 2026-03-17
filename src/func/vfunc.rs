@@ -48,7 +48,7 @@ use value_traits::slices::SliceByValue;
 /// * `W`: The word used to store the data, which is also the output type. It
 ///   can be any unsigned type.
 /// * `D`: The backend storing the function data. It can be a
-///   [`BitFieldVec<Vec<W>>`](crate::bits::BitFieldVec) or a `Box<[W]>`. In the first
+///   [`BitFieldVec<Box<[W]>>`](crate::bits::BitFieldVec) or a `Box<[W]>`. In the first
 ///   case, the data is stored using exactly the number of bits needed, but
 ///   access is slightly slower, while in the second case the data is stored in
 ///   a boxed slice of `W`, thus forcing the number of bits to the number of
@@ -130,7 +130,7 @@ impl<
 }
 
 impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
-    VFunc<T, W, BitFieldVec<Vec<W>>, S, E>
+    VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>
 {
     /// Returns the value associated with the given signature, or a random value
     /// if the signature is not the signature of a key, using [unaligned
