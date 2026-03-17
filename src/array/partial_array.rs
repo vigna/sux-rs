@@ -11,11 +11,12 @@ use std::marker::PhantomData;
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;
 
-use crate::bits::{BackendWord, BitVec};
+use crate::bits::BitVec;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EliasFano;
 use crate::panic_if_out_of_bounds;
 use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
+use crate::traits::WordType;
 use crate::traits::{BitVecOps, BitVecOpsMut, PlatformWord};
 use crate::traits::{RankUnchecked, SuccUnchecked};
 
@@ -313,7 +314,7 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
     }
 }
 
-impl<T, D: BackendWord<W = PlatformWord> + AsRef<[PlatformWord]>, V: AsRef<[T]>>
+impl<T, D: WordType<Word = PlatformWord> + AsRef<[PlatformWord]>, V: AsRef<[T]>>
     PartialArray<T, SparseIndex<D>, V>
 {
     /// Returns the total length of the array.
@@ -391,7 +392,7 @@ impl<T: Clone, V: AsRef<[T]>> SliceByValue for PartialArray<T, DenseIndex, V> {
 
 /// Returns an option even when using `get_value_unchecked` because it should be safe to call
 /// whenever `position < len()`.
-impl<T: Clone, D: BackendWord<W = PlatformWord> + AsRef<[PlatformWord]>, V: AsRef<[T]>> SliceByValue
+impl<T: Clone, D: WordType<Word = PlatformWord> + AsRef<[PlatformWord]>, V: AsRef<[T]>> SliceByValue
     for PartialArray<T, SparseIndex<D>, V>
 {
     type Value = Option<T>;
