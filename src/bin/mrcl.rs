@@ -21,7 +21,7 @@ struct Args {
     map: String,
     /// A name for the ε-serde serialized mapped rear-coded list.​
     dest: String,
-    /// The rear-coded list is not sorted.​
+    /// Assume the rear-coded list is not sorted.​
     #[arg(short, long)]
     unsorted: bool,
     /// Assume the map is a permutation and invert it.​

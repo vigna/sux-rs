@@ -37,9 +37,9 @@ fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
 }
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmark VFilter with strings or 64-bit integers", long_about = None, next_line_help = true, max_term_width = 100)]
+#[command(about = "Benchmarks VFilter with strings or 64-bit integers.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// The maximum number strings to use from the file, or the number of 64-bit keys.​
+    /// The maximum number of strings to use from the file, or the number of 64-bit keys.​
     n: usize,
     /// A name for the ε-serde serialized filter.​
     func: String,
@@ -52,7 +52,7 @@ struct Args {
     /// The number of repetitions.​
     #[arg(short, long, default_value = "5")]
     repeats: usize,
-    /// Whether the file is compressed with zstd.​
+    /// The input file is compressed with zstd.​
     #[arg(short, long)]
     zstd: bool,
     /// Use 64-bit signatures.​

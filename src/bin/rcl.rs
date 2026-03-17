@@ -42,7 +42,7 @@ struct Args {
     source: String,
     /// A name for the ε-serde serialized rear-coded list.​
     dest: String,
-    /// The list of strings is not sorted (no checks, no indexing).​
+    /// Assume the input is not sorted (disables checks and indexing).​
     #[arg(long)]
     unsorted: bool,
     /// The number of strings in a block: higher values provide more compression

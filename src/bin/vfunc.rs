@@ -44,7 +44,7 @@ impl Display for HashTypes {
 }
 
 #[derive(Parser, Debug)]
-#[command(about = "Creates a (possibly signed) VFunc mapping each input to its rank and serializes it with ε-serde", long_about = None, next_line_help = true, max_term_width = 100)]
+#[command(about = "Creates a (possibly signed) VFunc mapping each input to its rank and serializes it with ε-serde.", long_about = None, next_line_help = true, max_term_width = 100)]
 #[clap(group(
             ArgGroup::new("input")
                 .required(true)
@@ -92,7 +92,7 @@ struct Args {
     /// shards.​
     #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
     full_sigs: bool,
-    /// Sign the function using hashes of the this type.​
+    /// Sign the function using hashes of this type.​
     #[arg(long)]
     hash_type: Option<HashTypes>,
     /// Use 3-hypergraphs.​

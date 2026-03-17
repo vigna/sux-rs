@@ -15,19 +15,19 @@ use sux::prelude::*;
 use sux::traits::bit_vec_ops::*;
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmarks Rank9", long_about = None, next_line_help = true, max_term_width = 100)]
+#[command(about = "Benchmarks Rank9.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// The number of elements​
+    /// The number of elements.​
     n: usize,
 
-    /// The number of values to test​
+    /// The number of values to test.​
     t: usize,
 
-    /// The number of test repetitions​
+    /// The density of ones in the bit vector.​
     #[arg(short, long, default_value = "0.5")]
     density: f64,
 
-    /// The number of test repetitions​
+    /// The number of test repetitions.​
     #[arg(short, long, default_value = "10")]
     repeats: usize,
 }
