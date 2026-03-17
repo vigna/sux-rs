@@ -14,7 +14,6 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
 
-
 #[test]
 #[cfg(feature = "rayon")]
 fn test_elias_fano_concurrent() -> Result<()> {

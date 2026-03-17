@@ -164,8 +164,6 @@ fn test_atomic_param<W: Word + AtomicPrimitive + PrimitiveNumberAs<u64>>()
 where
     u64: PrimitiveNumberAs<W>,
     Atomic<W>: PrimitiveAtomicInteger,
-    Vec<W::Atomic>: WordType<Word = W>,
-    [W::Atomic]: WordType<Word = W>,
 {
     use sux::traits::bit_field_slice::{AtomicBitFieldSlice, AtomicBitWidth};
 

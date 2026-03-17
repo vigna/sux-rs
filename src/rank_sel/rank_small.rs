@@ -156,13 +156,8 @@ pub struct RankSmall<
     pub(super) num_ones: usize,
 }
 
-impl<
-        const NUM_U32S: usize,
-        const COUNTER_WIDTH: usize,
-        B: WordType + AsRef<[B::Word]>,
-        C1,
-        C2,
-    > AsRef<[B::Word]> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: WordType + AsRef<[B::Word]>, C1, C2>
+    AsRef<[B::Word]> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn as_ref(&self) -> &[B::Word] {
@@ -442,7 +437,15 @@ macro_rules! impl_rank_small {
                 const {
                     assert!(
                         size_of::<B::Word>() == size_of::<$W>(),
-                        concat!("RankSmall<", stringify!($NUM_U32S), ", ", stringify!($COUNTER_WIDTH), "> requires ", stringify!($W), "-sized words")
+                        concat!(
+                            "RankSmall<",
+                            stringify!($NUM_U32S),
+                            ", ",
+                            stringify!($COUNTER_WIDTH),
+                            "> requires ",
+                            stringify!($W),
+                            "-sized words"
+                        )
                     )
                 }
                 let bits_per_word = B::Word::BITS as usize;
@@ -526,7 +529,9 @@ macro_rules! impl_rank_small {
                         // Single-word subblocks: rank directly from the word.
                         let word = *self.bits.as_ref().get_unchecked(word_pos);
                         hint_rank
-                            + (word & ((B::Word::ONE << (pos % bits_per_word) as u32) - B::Word::ONE)).count_ones() as usize
+                            + (word
+                                & ((B::Word::ONE << (pos % bits_per_word) as u32) - B::Word::ONE))
+                                .count_ones() as usize
                     } else {
                         // Multi-word subblocks: use RankHinted.
                         #[allow(clippy::modulo_one)]

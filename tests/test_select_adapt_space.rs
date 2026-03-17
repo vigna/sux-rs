@@ -14,7 +14,6 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
 
-
 const LEN: usize = 1_000_000;
 
 /// Returns the additional space of `s` as a percentage of the bit vector length.
