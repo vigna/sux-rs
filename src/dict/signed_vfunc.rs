@@ -21,7 +21,7 @@ use value_traits::slices::SliceByValue;
 /// Usually, the [`SliceByValue`] will be a boxed slice. Note that the result of
 /// the [`SliceByValue`] is assumed to be a hash of size
 /// `SliceByValue::Value::BITS`. If you are using implementations returning less
-/// hash bits (such as a [`BitFieldVec<Vec<W>>`](BitFieldVec)), you will need to use
+/// hash bits (such as a [`BitFieldVec<Box<[W]>>`](BitFieldVec)), you will need to use
 /// [`BitSignedVFunc`] instead.
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
@@ -181,7 +181,7 @@ where
 }
 
 impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>, H: SliceByValue>
-    BitSignedVFunc<VFunc<T, W, BitFieldVec<Vec<W>>, S, E>, H>
+    BitSignedVFunc<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>, H>
 where
     H::Value: PrimitiveNumber,
 {

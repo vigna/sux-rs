@@ -120,7 +120,7 @@ where
 }
 
 impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
-    VFilter<W, VFunc<T, W, BitFieldVec<Vec<W>>, S, E>>
+    VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
 where
     u64: PrimitiveNumberAs<W>,
 {

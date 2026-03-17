@@ -26,7 +26,7 @@ fn test_signed_vfunc() -> Result<()> {
     let mut pl = ProgressLogger::default();
     let n = 1000;
     let func: SignedVFunc<
-        VFunc<usize, usize, BitFieldVec<Vec<usize>>, [u64; 2], FuseLge3Shards>,
+        VFunc<usize, usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>,
         Box<[usize]>,
     > = VBuilder::default()
         .expected_num_keys(n)
@@ -51,8 +51,8 @@ fn test_bit_signed_vfunc() -> Result<()> {
     let mut pl = ProgressLogger::default();
     let n = 1000;
     let func: BitSignedVFunc<
-        VFunc<usize, usize, BitFieldVec<Vec<usize>>, [u64; 2], FuseLge3Shards>,
-        BitFieldVec,
+        VFunc<usize, usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>,
+        BitFieldVec<Box<[usize]>>,
     > = VBuilder::default()
         .expected_num_keys(n)
         .try_build_bit_sig_index(FromCloneableIntoIterator::from(0..n), 31, &mut pl)?;

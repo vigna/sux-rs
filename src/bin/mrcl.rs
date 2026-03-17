@@ -55,7 +55,7 @@ fn main() -> Result<()> {
                 map = inv_map;
             }
 
-            <MappedRearCodedListStr<false>>::from_parts(rcl, map).store(&args.dest)?;
+            <MappedRearCodedListStr<false>>::from_parts(rcl, map.into()).store(&args.dest)?;
         }
     } else {
         unsafe {
@@ -76,7 +76,7 @@ fn main() -> Result<()> {
                 map = inv_map;
             }
 
-            <MappedRearCodedListStr<true>>::from_parts(rcl, map).store(&args.dest)?;
+            <MappedRearCodedListStr<true>>::from_parts(rcl, map.into()).store(&args.dest)?;
         }
     }
 

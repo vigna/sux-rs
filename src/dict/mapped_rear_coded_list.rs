@@ -78,7 +78,7 @@
 //! let rcl = rclb.build();
 //! let mut map = BitFieldVec::<Vec<usize>>::new(4, 0);
 //! for &v in &[5, 4, 2, 0, 1, 3] { map.push(v); } // permutation
-//! let mrcl = MappedRearCodedListStr::from_parts(rcl, map);
+//! let mrcl = MappedRearCodedListStr::from_parts(rcl, map.into());
 //! assert_eq!(mrcl.get(0), "abdf");
 //! assert_eq!(mrcl.get(1), "abde\0f");
 //! assert_eq!(mrcl.get(2), "abc");
@@ -112,10 +112,10 @@ pub struct MappedRearCodedList<
 }
 
 pub type MappedRearCodedListSliceU8<const SORTED: bool = true> =
-    MappedRearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, BitFieldVec<Vec<usize>>, SORTED>;
+    MappedRearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, BitFieldVec<Box<[usize]>>, SORTED>;
 /// A mapped rear-coded list of strings.
 pub type MappedRearCodedListStr<const SORTED: bool = true> =
-    MappedRearCodedList<str, String, Box<[u8]>, Box<[usize]>, BitFieldVec<Vec<usize>>, SORTED>;
+    MappedRearCodedList<str, String, Box<[u8]>, Box<[usize]>, BitFieldVec<Box<[usize]>>, SORTED>;
 
 impl<
     I: PartialEq<O> + PartialEq + ?Sized,
