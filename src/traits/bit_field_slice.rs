@@ -73,7 +73,6 @@ macro_rules! impl_word {
 
 impl_word!(u8, u16, u32, u64, u128, usize);
 
-
 /// Common method for [`BitFieldSlice`], [`BitFieldSliceMut`], and
 /// [`AtomicBitFieldSlice`].
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]

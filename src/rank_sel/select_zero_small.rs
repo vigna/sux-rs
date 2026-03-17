@@ -431,9 +431,8 @@ where
     }
 }
 
-impl<
-        C: SmallCounters<1, 9> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted,
-    > SelectZeroSmall<1, 9, C>
+impl<C: SmallCounters<1, 9> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
+    SelectZeroSmall<1, 9, C>
 where
     C::Word: Word + SelectInWord,
 {
@@ -475,9 +474,8 @@ where
     }
 }
 
-impl<
-        C: SmallCounters<1, 10> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted,
-    > SelectZeroSmall<1, 10, C>
+impl<C: SmallCounters<1, 10> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
+    SelectZeroSmall<1, 10, C>
 where
     C::Word: Word + SelectInWord,
 {
@@ -519,9 +517,8 @@ where
     }
 }
 
-impl<
-        C: SmallCounters<1, 11> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted,
-    > SelectZeroSmall<1, 11, C>
+impl<C: SmallCounters<1, 11> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
+    SelectZeroSmall<1, 11, C>
 where
     C::Word: Word + SelectInWord,
 {
@@ -563,9 +560,8 @@ where
     }
 }
 
-impl<
-        C: SmallCounters<3, 13> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted,
-    > SelectZeroSmall<3, 13, C>
+impl<C: SmallCounters<3, 13> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
+    SelectZeroSmall<3, 13, C>
 where
     C::Word: Word + SelectInWord,
 {

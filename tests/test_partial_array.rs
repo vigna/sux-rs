@@ -6,7 +6,6 @@
 
 use sux::array::partial_array;
 
-
 #[test]
 fn test_empty_array() {
     let builder = partial_array::new_sparse::<i32>(0, 0);

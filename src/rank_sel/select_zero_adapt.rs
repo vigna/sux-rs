@@ -693,8 +693,7 @@ where
 
                     inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize
                 } else {
-                    let start_spill_idx =
-                        *inventory.get_unchecked(inventory_start_pos + 1);
+                    let start_spill_idx = *inventory.get_unchecked(inventory_start_pos + 1);
 
                     let spilled_u32s = self
                         .spill
@@ -725,8 +724,7 @@ where
                 }
                 return *inventory.get_unchecked(inventory_start_pos + 1 + subrank);
             }
-            let spill_idx = { *inventory.get_unchecked(inventory_start_pos + 1) }
-                + subrank
+            let spill_idx = { *inventory.get_unchecked(inventory_start_pos + 1) } + subrank
                 - words_per_subinventory;
             debug_assert!(spill_idx < self.spill.as_ref().len());
             *self.spill.as_ref().get_unchecked(spill_idx)

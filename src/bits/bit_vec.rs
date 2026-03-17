@@ -437,38 +437,6 @@ where
     }
 }
 
-/// Associates an atomic backend type with its word type.
-///
-/// This is used for [`AtomicBitVec`]'s [`Index`] and [`IntoIterator`]
-/// implementations. A separate trait from [`WordType`] is needed because
-/// atomic backends store `Atomic<W>` rather than `W`, and the compiler
-/// cannot prove that `Atomic<W> != W` for coherence purposes.
-pub trait AtomicBackendWord {
-    /// The word type stored atomically by this backend.
-    type W: Word + AtomicPrimitive;
-}
-
-macro_rules! impl_atomic_backend_word {
-    ($W:ty, $A:ty) => {
-        impl AtomicBackendWord for Box<[$A]> {
-            type W = $W;
-        }
-        impl<'a> AtomicBackendWord for &'a [$A] {
-            type W = $W;
-        }
-        impl<'a> AtomicBackendWord for &'a mut [$A] {
-            type W = $W;
-        }
-    };
-}
-
-use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, AtomicUsize};
-impl_atomic_backend_word!(u8, AtomicU8);
-impl_atomic_backend_word!(u16, AtomicU16);
-impl_atomic_backend_word!(u32, AtomicU32);
-impl_atomic_backend_word!(u64, AtomicU64);
-impl_atomic_backend_word!(usize, AtomicUsize);
-
 impl<B, C> PartialEq<BitVec<C>> for BitVec<B>
 where
     B: WordType + AsRef<[B::Word]>,
@@ -578,7 +546,9 @@ impl<B> AtomicBitVec<B> {
 
 impl<B> AtomicBitVec<B>
 where
-    B: AtomicBackendWord + From<Vec<Atomic<<B as AtomicBackendWord>::W>>>,
+    B: WordType + From<Vec<B::Word>>,
+    B::Word: PrimitiveAtomic,
+    <B::Word as PrimitiveAtomic>::Value: Word,
 {
     /// Creates a new atomic bit vector of length `len` initialized to `false`.
     pub fn new(len: usize) -> Self {
@@ -587,20 +557,18 @@ where
 
     /// Creates a new atomic bit vector of length `len` initialized to `value`.
     pub fn with_value(len: usize, value: bool) -> Self {
-        let bits_per_word = <B as AtomicBackendWord>::W::BITS as usize;
+        let bits_per_word = <B::Word as PrimitiveAtomic>::Value::BITS as usize;
         let n_of_words = len.div_ceil(bits_per_word);
         let extra_bits = (n_of_words * bits_per_word) - len;
-        let word_value: <B as AtomicBackendWord>::W = if value {
-            !<B as AtomicBackendWord>::W::ZERO
+        let word_value = if value {
+            !<B::Word as PrimitiveAtomic>::Value::ZERO
         } else {
-            <B as AtomicBackendWord>::W::ZERO
+            <B::Word as PrimitiveAtomic>::Value::ZERO
         };
-        let mut bits: Vec<Atomic<<B as AtomicBackendWord>::W>> = (0..n_of_words)
-            .map(|_| <Atomic<<B as AtomicBackendWord>::W>>::new(word_value))
-            .collect();
+        let mut bits: Vec<B::Word> = (0..n_of_words).map(|_| B::Word::new(word_value)).collect();
         if extra_bits > 0 {
             let last_word_value = word_value >> extra_bits;
-            bits[n_of_words - 1] = <Atomic<<B as AtomicBackendWord>::W>>::new(last_word_value);
+            bits[n_of_words - 1] = B::Word::new(last_word_value);
         }
         Self {
             bits: B::from(bits),
@@ -616,19 +584,21 @@ impl<B> BitLength for AtomicBitVec<B> {
     }
 }
 
-impl<B: AtomicBackendWord> WordType for AtomicBitVec<B> {
-    type Word = <B as AtomicBackendWord>::W;
+impl<B: WordType> WordType for AtomicBitVec<B> {
+    type Word = B::Word;
 }
 
 impl<B> BitCount for AtomicBitVec<B>
 where
-    B: AtomicBackendWord + AsRef<[Atomic<<B as AtomicBackendWord>::W>]>,
+    B: WordType + AsRef<[B::Word]>,
+    B::Word: PrimitiveAtomic,
+    <B::Word as PrimitiveAtomic>::Value: Word,
 {
     fn count_ones(&self) -> usize {
-        let bits_per_word = <B as AtomicBackendWord>::W::BITS as usize;
+        let bits_per_word = <B::Word as PrimitiveAtomic>::Value::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
-        let bits: &[Atomic<<B as AtomicBackendWord>::W>] = self.as_ref();
+        let bits: &[B::Word] = self.as_ref();
         let mut num_ones;
         // Just to be sure, add a fence to ensure that we will see all the final
         // values
@@ -647,17 +617,15 @@ where
 
 impl<B> Index<usize> for AtomicBitVec<B>
 where
-    B: AtomicBackendWord + AsRef<[Atomic<<B as AtomicBackendWord>::W>]>,
+    B: WordType + AsRef<[B::Word]>,
+    B::Word: PrimitiveAtomic,
+    <B::Word as PrimitiveAtomic>::Value: Word,
 {
     type Output = bool;
 
     /// Shorthand for `get` using [`Ordering::Relaxed`].
     fn index(&self, index: usize) -> &Self::Output {
-        match AtomicBitVecOps::<Atomic<<B as AtomicBackendWord>::W>>::get(
-            self,
-            index,
-            Ordering::Relaxed,
-        ) {
+        match AtomicBitVecOps::<B::Word>::get(self, index, Ordering::Relaxed) {
             false => &false,
             true => &true,
         }
@@ -666,9 +634,11 @@ where
 
 impl<'a, B> IntoIterator for &'a AtomicBitVec<B>
 where
-    B: AtomicBackendWord + AsRef<[Atomic<<B as AtomicBackendWord>::W>]>,
+    B: WordType + AsRef<[B::Word]>,
+    B::Word: PrimitiveAtomic,
+    <B::Word as PrimitiveAtomic>::Value: Word,
 {
-    type IntoIter = AtomicBitIter<'a, Atomic<<B as AtomicBackendWord>::W>, B>;
+    type IntoIter = AtomicBitIter<'a, B::Word, B>;
     type Item = bool;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -794,12 +764,12 @@ impl<W: Word, B: AsMut<[W]>> AsMut<[W]> for BitVec<B> {
     }
 }
 
-impl<B: AtomicBackendWord> AsRef<[Atomic<B::W>]> for AtomicBitVec<B>
+impl<B: WordType> AsRef<[B::Word]> for AtomicBitVec<B>
 where
-    B: AsRef<[Atomic<B::W>]>,
+    B: AsRef<[B::Word]>,
 {
     #[inline(always)]
-    fn as_ref(&self) -> &[Atomic<B::W>] {
+    fn as_ref(&self) -> &[B::Word] {
         self.bits.as_ref()
     }
 }

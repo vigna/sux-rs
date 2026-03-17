@@ -13,10 +13,8 @@
 //! underlying implementations.
 
 use crate::ambassador_impl_Index;
-use crate::traits::Word;
 use ambassador::{Delegate, delegatable_trait};
 use impl_tools::autoimpl;
-use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, AtomicUsize};
 use mem_dbg::{MemDbg, MemSize};
 use std::ops::Deref;
 use std::ops::Index;
@@ -34,34 +32,17 @@ pub trait WordType {
     type Word;
 }
 
-impl<W: Word> WordType for [W] {
+impl<W> WordType for [W] {
     type Word = W;
 }
 
-impl<W: Word> WordType for Vec<W> {
+impl<W> WordType for Vec<W> {
     type Word = W;
 }
 
-impl<W: Word, const N: usize> WordType for [W; N] {
+impl<W, const N: usize> WordType for [W; N] {
     type Word = W;
 }
-
-macro_rules! impl_atomic_word_type {
-    ($W:ty, $A:ty) => {
-        impl WordType for [$A] {
-            type Word = $W;
-        }
-        impl WordType for Vec<$A> {
-            type Word = $W;
-        }
-    };
-}
-
-impl_atomic_word_type!(u8, AtomicU8);
-impl_atomic_word_type!(u16, AtomicU16);
-impl_atomic_word_type!(u32, AtomicU32);
-impl_atomic_word_type!(u64, AtomicU64);
-impl_atomic_word_type!(usize, AtomicUsize);
 
 /// A trait expressing a length in bits.
 ///

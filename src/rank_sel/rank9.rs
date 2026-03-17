@@ -308,10 +308,8 @@ impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> Rank
     B::Word: Word
 {
 }
-impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> RankZero
-    for Rank9<B, C>
-where
-    B::Word: Word,
+impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> RankZero for Rank9<B, C> where
+    B::Word: Word
 {
 }
 
