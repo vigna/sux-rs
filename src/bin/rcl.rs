@@ -5,7 +5,7 @@
  */
 use std::{borrow::Borrow, io::BufRead};
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
@@ -43,14 +43,14 @@ struct Args {
     /// A name for the ε-serde serialized rear-coded list.​
     dest: String,
     /// The list of strings is not sorted (no checks, no indexing).​
-    #[arg(long, default_value_t = false)]
+    #[arg(long)]
     unsorted: bool,
     /// The number of strings in a block: higher values provide more compression
     /// at the expense of slower access.​
     #[arg(short = 'r', long, default_value_t = 8)]
     ratio: usize,
     /// Use the slower direct-to-disk construction algorithm, which uses very little memory (cannot be used with stdin input).​
-    #[arg(long, default_value_t = false)]
+    #[arg(long)]
     low_mem: bool,
 }
 
@@ -84,11 +84,12 @@ fn compress<R: BufRead, const SORTED: bool>(
     rclb.print_stats();
 
     let rcl = rclb.build();
-    let dst_file = std::fs::File::create(dest.borrow()).expect("Cannot create destination file");
+    let dst_file = std::fs::File::create(dest.borrow())
+        .with_context(|| format!("cannot create file '{}'", dest.borrow()))?;
     let mut dst_file = std::io::BufWriter::new(dst_file);
     unsafe {
         rcl.serialize(&mut dst_file)
-            .expect("Cannot serialize rear-coded list")
+            .context("cannot serialize rear-coded list")?
     };
     Ok(())
 }
@@ -100,7 +101,7 @@ fn main() -> Result<()> {
 
     if args.low_mem {
         if args.source == "-" {
-            panic!("Low-memory mode cannot read from standard input");
+            bail!("low-memory mode cannot read from standard input");
         }
         let lender = DekoBufLineLender::from_path(&args.source)?;
         call_with_sorted!(
