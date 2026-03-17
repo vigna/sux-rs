@@ -97,8 +97,11 @@
 //! assert_eq!(b.index_value(3), 0);
 //! assert_eq!(b.index_value(4), 1);
 //! ```
+
 use crate::RAYON_MIN_LEN;
 use crate::prelude::{bit_field_slice::*, *};
+use crate::traits::Backend;
+use crate::traits::ambassador_impl_Backend;
 use crate::utils::PrimitiveUnsignedExt;
 use crate::utils::{
     CannotCastToAtomicError, transmute_boxed_slice_from_atomic, transmute_boxed_slice_into_atomic,
@@ -108,9 +111,8 @@ use crate::{panic_if_out_of_bounds, panic_if_value};
 use ambassador::Delegate;
 use anyhow::{Result, bail};
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic, PrimitiveAtomicInteger};
-use num_primitive::{PrimitiveInteger, PrimitiveNumber};
-
 use mem_dbg::*;
+use num_primitive::{PrimitiveInteger, PrimitiveNumber};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use std::iter::FusedIterator;
@@ -202,12 +204,12 @@ macro_rules! bit_field_vec {
 #[cfg_attr(
     feature = "epserde",
     epserde(bound(
-        deser = "for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: WordType<Word = B::Word>"
+        deser = "for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = B::Word>"
     ))
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
-pub struct BitFieldVec<B: WordType = Vec<usize>> {
+#[delegate(crate::traits::Backend, target = "bits")]
+pub struct BitFieldVec<B: Backend = Vec<usize>> {
     /// The underlying storage.
     bits: B,
     /// The bit width of the values stored in the vector.
@@ -230,7 +232,7 @@ fn mask<W: Word>(bit_width: usize) -> W {
     }
 }
 
-impl<B: WordType> BitFieldVec<B>
+impl<B: Backend> BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -258,7 +260,7 @@ where
     /// This is unsafe because it's the caller's responsibility to ensure
     /// that the length is compatible with the modified bits.
     #[inline(always)]
-    pub unsafe fn map<B2: WordType>(self, f: impl FnOnce(B) -> B2) -> BitFieldVec<B2>
+    pub unsafe fn map<B2: Backend>(self, f: impl FnOnce(B) -> B2) -> BitFieldVec<B2>
     where
         B2::Word: Word,
     {
@@ -271,7 +273,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> BitFieldVec<B>
+impl<B: Backend + AsRef<[B::Word]>> BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -390,7 +392,7 @@ impl<'a, W: Word> FusedIterator for ChunksMut<'a, W> where
 {
 }
 
-impl<B: WordType + AsRef<[B::Word]>> BitFieldVec<B> where B::Word: Word {}
+impl<B: Backend + AsRef<[B::Word]>> BitFieldVec<B> where B::Word: Word {}
 
 impl<W: Word> BitFieldVec<Vec<W>> {
     /// Creates a new zero-initialized vector of given bit width and length.
@@ -538,9 +540,9 @@ impl<W: Word> BitFieldVec<Vec<W>> {
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldVec<B> where B::Word: Word {}
+impl<B: Backend + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldVec<B> where B::Word: Word {}
 
-impl<B: WordType> BitWidth for BitFieldVec<B>
+impl<B: Backend> BitWidth for BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -551,7 +553,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> SliceByValue for BitFieldVec<B>
+impl<B: Backend + AsRef<[B::Word]>> SliceByValue for BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -580,7 +582,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> BitFieldSlice for BitFieldVec<B>
+impl<B: Backend + AsRef<[B::Word]>> BitFieldSlice for BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -589,7 +591,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldSliceMut for BitFieldVec<B>
+impl<B: Backend + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldSliceMut for BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -649,7 +651,7 @@ impl<W: Word> core::fmt::Display for ChunksMutError<W> {
 
 impl<W: Word> std::error::Error for ChunksMutError<W> {}
 
-impl<B: WordType + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueMut for BitFieldVec<B>
+impl<B: Backend + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueMut for BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -1030,7 +1032,7 @@ where
 
 /// An [`UncheckedIterator`] over the values of a [`BitFieldVec`].
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct BitFieldVecUncheckedIter<'a, B: WordType>
+pub struct BitFieldVecUncheckedIter<'a, B: Backend>
 where
     B::Word: Word,
 {
@@ -1040,7 +1042,7 @@ where
     fill: usize,
 }
 
-impl<'a, B: WordType + AsRef<[B::Word]>> BitFieldVecUncheckedIter<'a, B>
+impl<'a, B: Backend + AsRef<[B::Word]>> BitFieldVecUncheckedIter<'a, B>
 where
     B::Word: Word,
 {
@@ -1074,7 +1076,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> crate::traits::UncheckedIterator
+impl<B: Backend + AsRef<[B::Word]>> crate::traits::UncheckedIterator
     for BitFieldVecUncheckedIter<'_, B>
 where
     B::Word: Word,
@@ -1101,7 +1103,7 @@ where
     }
 }
 
-impl<'a, B: WordType + AsRef<[B::Word]>> IntoUncheckedIterator for &'a BitFieldVec<B>
+impl<'a, B: Backend + AsRef<[B::Word]>> IntoUncheckedIterator for &'a BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -1114,7 +1116,7 @@ where
 
 /// An [`UncheckedIterator`] moving backwards over the values of a [`BitFieldVec`].
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct BitFieldVecUncheckedBackIter<'a, B: WordType>
+pub struct BitFieldVecUncheckedBackIter<'a, B: Backend>
 where
     B::Word: Word,
 {
@@ -1124,7 +1126,7 @@ where
     fill: usize,
 }
 
-impl<'a, B: WordType + AsRef<[B::Word]>> BitFieldVecUncheckedBackIter<'a, B>
+impl<'a, B: Backend + AsRef<[B::Word]>> BitFieldVecUncheckedBackIter<'a, B>
 where
     B::Word: Word,
 {
@@ -1160,7 +1162,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> crate::traits::UncheckedIterator
+impl<B: Backend + AsRef<[B::Word]>> crate::traits::UncheckedIterator
     for BitFieldVecUncheckedBackIter<'_, B>
 where
     B::Word: Word,
@@ -1186,7 +1188,7 @@ where
     }
 }
 
-impl<'a, B: WordType + AsRef<[B::Word]>> IntoUncheckedBackIterator for &'a BitFieldVec<B>
+impl<'a, B: Backend + AsRef<[B::Word]>> IntoUncheckedBackIterator for &'a BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -1204,7 +1206,7 @@ where
 
 /// An [`Iterator`] over the values of a [`BitFieldVec`].
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct BitFieldVecIter<'a, B: WordType>
+pub struct BitFieldVecIter<'a, B: Backend>
 where
     B::Word: Word,
 {
@@ -1212,7 +1214,7 @@ where
     range: core::ops::Range<usize>,
 }
 
-impl<'a, B: WordType + AsRef<[B::Word]>> BitFieldVecIter<'a, B>
+impl<'a, B: Backend + AsRef<[B::Word]>> BitFieldVecIter<'a, B>
 where
     B::Word: Word,
 {
@@ -1228,7 +1230,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> Iterator for BitFieldVecIter<'_, B>
+impl<B: Backend + AsRef<[B::Word]>> Iterator for BitFieldVecIter<'_, B>
 where
     B::Word: Word,
 {
@@ -1249,7 +1251,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> ExactSizeIterator for BitFieldVecIter<'_, B>
+impl<B: Backend + AsRef<[B::Word]>> ExactSizeIterator for BitFieldVecIter<'_, B>
 where
     B::Word: Word,
 {
@@ -1259,7 +1261,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> FusedIterator for BitFieldVecIter<'_, B> where B::Word: Word {}
+impl<B: Backend + AsRef<[B::Word]>> FusedIterator for BitFieldVecIter<'_, B> where B::Word: Word {}
 
 /// This implements iteration from the end, but it's slower than the forward iteration
 /// as here we do a random access, while in the forward iterator we do a sequential access
@@ -1267,7 +1269,7 @@ impl<B: WordType + AsRef<[B::Word]>> FusedIterator for BitFieldVecIter<'_, B> wh
 ///
 /// If needed we could also keep a buffer from the end, but the logic would be more complex
 /// and potentially slower.
-impl<B: WordType + AsRef<[B::Word]>> DoubleEndedIterator for BitFieldVecIter<'_, B>
+impl<B: Backend + AsRef<[B::Word]>> DoubleEndedIterator for BitFieldVecIter<'_, B>
 where
     B::Word: Word,
 {
@@ -1284,7 +1286,7 @@ where
 
 /// Equality between bit-field vectors requires that the word is the same, the
 /// bit width is the same, and the content is the same.
-impl<B: WordType + AsRef<[B::Word]>, C: WordType<Word = B::Word> + AsRef<[B::Word]>>
+impl<B: Backend + AsRef<[B::Word]>, C: Backend<Word = B::Word> + AsRef<[B::Word]>>
     PartialEq<BitFieldVec<C>> for BitFieldVec<B>
 where
     B::Word: Word,
@@ -1310,7 +1312,7 @@ where
     }
 }
 
-impl<'a, B: WordType + AsRef<[B::Word]>> IntoIterator for &'a BitFieldVec<B>
+impl<'a, B: Backend + AsRef<[B::Word]>> IntoIterator for &'a BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -1322,7 +1324,7 @@ where
     }
 }
 
-impl<'a, B: WordType + AsRef<[B::Word]>> IntoIteratorFrom for &'a BitFieldVec<B>
+impl<'a, B: Backend + AsRef<[B::Word]>> IntoIteratorFrom for &'a BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -1341,7 +1343,7 @@ impl<W: Word> core::iter::Extend<W> for BitFieldVec<Vec<W>> {
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> BitFieldVec<B>
+impl<B: Backend + AsRef<[B::Word]>> BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -1370,12 +1372,12 @@ where
 #[cfg_attr(
     feature = "epserde",
     epserde(bound(
-        deser = "for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: WordType<Word = B::Word>"
+        deser = "for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = B::Word>"
     ))
 )]
-#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
+#[delegate(crate::traits::Backend, target = "bits")]
 pub struct AtomicBitFieldVec<
-    B: WordType<Word: PrimitiveAtomicInteger<Value: Word>> = Vec<Atomic<usize>>,
+    B: Backend<Word: PrimitiveAtomicInteger<Value: Word>> = Vec<Atomic<usize>>,
 > {
     /// The underlying storage.
     bits: B,
@@ -1387,7 +1389,7 @@ pub struct AtomicBitFieldVec<
     len: usize,
 }
 
-impl<B: WordType<Word: PrimitiveAtomicInteger<Value: Word>>> AtomicBitFieldVec<B> {
+impl<B: Backend<Word: PrimitiveAtomicInteger<Value: Word>>> AtomicBitFieldVec<B> {
     /// # Safety
     /// `len` * `bit_width` must be between 0 (included) and the number of
     /// bits in `bits` (included).
@@ -1413,7 +1415,7 @@ impl<B: WordType<Word: PrimitiveAtomicInteger<Value: Word>>> AtomicBitFieldVec<B
     }
 }
 
-impl<B: WordType<Word: PrimitiveAtomicInteger<Value: Word>> + AsRef<[B::Word]>>
+impl<B: Backend<Word: PrimitiveAtomicInteger<Value: Word>> + AsRef<[B::Word]>>
     AtomicBitFieldVec<B>
 {
     /// Returns the backend of the `AtomicBitFieldVec` as a slice of atomic words.
@@ -1435,7 +1437,7 @@ impl<A: PrimitiveAtomicInteger<Value: Word>> AtomicBitFieldVec<Vec<A>> {
     }
 }
 
-impl<B: WordType<Word: PrimitiveAtomicInteger<Value: Word>>> AtomicBitWidth
+impl<B: Backend<Word: PrimitiveAtomicInteger<Value: Word>>> AtomicBitWidth
     for AtomicBitFieldVec<B>
 {
     #[inline(always)]
@@ -1445,7 +1447,7 @@ impl<B: WordType<Word: PrimitiveAtomicInteger<Value: Word>>> AtomicBitWidth
     }
 }
 
-impl<B: WordType<Word: PrimitiveAtomicInteger<Value: Word>> + AsRef<[B::Word]>> SliceByValue
+impl<B: Backend<Word: PrimitiveAtomicInteger<Value: Word>> + AsRef<[B::Word]>> SliceByValue
     for AtomicBitFieldVec<B>
 {
     type Value = <B::Word as PrimitiveAtomic>::Value;
@@ -1460,7 +1462,7 @@ impl<B: WordType<Word: PrimitiveAtomicInteger<Value: Word>> + AsRef<[B::Word]>> 
     }
 }
 
-impl<B: WordType<Word: PrimitiveAtomicInteger<Value: Word>> + AsRef<[B::Word]>>
+impl<B: Backend<Word: PrimitiveAtomicInteger<Value: Word>> + AsRef<[B::Word]>>
     AtomicBitFieldSlice<<B::Word as PrimitiveAtomic>::Value> for AtomicBitFieldVec<B>
 {
     #[inline]
@@ -1774,8 +1776,7 @@ impl<W: Word> From<BitFieldVec<Box<[W]>>> for BitFieldVec<Vec<W>> {
     }
 }
 
-impl<'a, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueGat<'a>
-    for BitFieldVec<B>
+impl<'a, B: Backend + AsRef<[B::Word]>> value_traits::iter::IterateByValueGat<'a> for BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -1783,7 +1784,7 @@ where
     type Iter = BitFieldVecIter<'a, B>;
 }
 
-impl<B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValue for BitFieldVec<B>
+impl<B: Backend + AsRef<[B::Word]>> value_traits::iter::IterateByValue for BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -1792,7 +1793,7 @@ where
     }
 }
 
-impl<'a, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueFromGat<'a>
+impl<'a, B: Backend + AsRef<[B::Word]>> value_traits::iter::IterateByValueFromGat<'a>
     for BitFieldVec<B>
 where
     B::Word: Word,
@@ -1801,7 +1802,7 @@ where
     type IterFrom = BitFieldVecIter<'a, B>;
 }
 
-impl<B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueFrom for BitFieldVec<B>
+impl<B: Backend + AsRef<[B::Word]>> value_traits::iter::IterateByValueFrom for BitFieldVec<B>
 where
     B::Word: Word,
 {
@@ -1813,7 +1814,7 @@ where
     }
 }
 
-impl<'a, 'b, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueGat<'a>
+impl<'a, 'b, B: Backend + AsRef<[B::Word]>> value_traits::iter::IterateByValueGat<'a>
     for BitFieldVecSubsliceImpl<'b, B>
 where
     B::Word: Word,
@@ -1822,7 +1823,7 @@ where
     type Iter = BitFieldVecIter<'a, B>;
 }
 
-impl<'a, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValue
+impl<'a, B: Backend + AsRef<[B::Word]>> value_traits::iter::IterateByValue
     for BitFieldVecSubsliceImpl<'a, B>
 where
     B::Word: Word,
@@ -1832,7 +1833,7 @@ where
     }
 }
 
-impl<'a, 'b, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueFromGat<'a>
+impl<'a, 'b, B: Backend + AsRef<[B::Word]>> value_traits::iter::IterateByValueFromGat<'a>
     for BitFieldVecSubsliceImpl<'b, B>
 where
     B::Word: Word,
@@ -1841,7 +1842,7 @@ where
     type IterFrom = BitFieldVecIter<'a, B>;
 }
 
-impl<'a, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueFrom
+impl<'a, B: Backend + AsRef<[B::Word]>> value_traits::iter::IterateByValueFrom
     for BitFieldVecSubsliceImpl<'a, B>
 where
     B::Word: Word,
@@ -1854,7 +1855,7 @@ where
     }
 }
 
-impl<'a, 'b, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueGat<'a>
+impl<'a, 'b, B: Backend + AsRef<[B::Word]>> value_traits::iter::IterateByValueGat<'a>
     for BitFieldVecSubsliceImplMut<'b, B>
 where
     B::Word: Word,
@@ -1863,7 +1864,7 @@ where
     type Iter = BitFieldVecIter<'a, B>;
 }
 
-impl<'a, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValue
+impl<'a, B: Backend + AsRef<[B::Word]>> value_traits::iter::IterateByValue
     for BitFieldVecSubsliceImplMut<'a, B>
 where
     B::Word: Word,
@@ -1873,7 +1874,7 @@ where
     }
 }
 
-impl<'a, 'b, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueFromGat<'a>
+impl<'a, 'b, B: Backend + AsRef<[B::Word]>> value_traits::iter::IterateByValueFromGat<'a>
     for BitFieldVecSubsliceImplMut<'b, B>
 where
     B::Word: Word,
@@ -1882,7 +1883,7 @@ where
     type IterFrom = BitFieldVecIter<'a, B>;
 }
 
-impl<'a, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueFrom
+impl<'a, B: Backend + AsRef<[B::Word]>> value_traits::iter::IterateByValueFrom
     for BitFieldVecSubsliceImplMut<'a, B>
 where
     B::Word: Word,
@@ -1910,8 +1911,8 @@ mod tests {
     }
 
     fn copy<
-        B: WordType + AsRef<[B::Word]>,
-        C: WordType<Word = B::Word> + AsRef<[B::Word]> + AsMut<[B::Word]>,
+        B: Backend + AsRef<[B::Word]>,
+        C: Backend<Word = B::Word> + AsRef<[B::Word]> + AsMut<[B::Word]>,
     >(
         source: &BitFieldVec<B>,
         from: usize,

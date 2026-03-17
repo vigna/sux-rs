@@ -8,7 +8,7 @@
 
 use super::SmallCounters;
 use crate::prelude::*;
-use crate::traits::{Word, WordType};
+use crate::traits::{Backend, Word};
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
@@ -16,6 +16,7 @@ use num_primitive::PrimitiveInteger;
 
 use crate::ambassador_impl_Index;
 use crate::rank_sel::ambassador_impl_SmallCounters;
+use crate::traits::ambassador_impl_Backend;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
@@ -27,7 +28,6 @@ use crate::traits::rank_sel::ambassador_impl_Select;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
-use crate::traits::rank_sel::ambassador_impl_WordType;
 use std::ops::Deref;
 use std::ops::Index;
 
@@ -75,7 +75,7 @@ use std::ops::Index;
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(crate::traits::rank_sel::WordType, target = "small_counters")]
+#[delegate(crate::traits::Backend, target = "small_counters")]
 #[delegate(Index<usize>, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "small_counters")]
@@ -102,7 +102,7 @@ pub struct SelectZeroSmall<
     log2_ones_per_inventory: usize,
 }
 
-impl<C: WordType + AsRef<[C::Word]>, const NUM_U32S: usize, const COUNTER_WIDTH: usize, I, O>
+impl<C: Backend + AsRef<[C::Word]>, const NUM_U32S: usize, const COUNTER_WIDTH: usize, I, O>
     AsRef<[C::Word]> for SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, C, I, O>
 {
     #[inline(always)]
@@ -154,7 +154,7 @@ macro_rules! impl_select_zero_small {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $W: ty) => {
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + WordType
+                + Backend
                 + AsRef<[C::Word]>
                 + BitLength
                 + NumBits
@@ -246,7 +246,7 @@ macro_rules! impl_select_zero_small {
 
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + WordType
+                + Backend
                 + AsRef<[C::Word]>
                 + BitLength
                 + NumBits
@@ -361,7 +361,7 @@ macro_rules! impl_select_zero_small {
 
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + WordType
+                + Backend
                 + AsRef<[C::Word]>
                 + BitLength
                 + NumBits
@@ -374,7 +374,7 @@ macro_rules! impl_select_zero_small {
     };
 }
 
-impl<C: SmallCounters<2, 9> + WordType + AsRef<[C::Word]> + BitLength + NumBits>
+impl<C: SmallCounters<2, 9> + Backend + AsRef<[C::Word]> + BitLength + NumBits>
     SelectZeroSmall<2, 9, C>
 where
     C::Word: Word + SelectInWord,
@@ -431,7 +431,7 @@ where
     }
 }
 
-impl<C: SmallCounters<1, 9> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
+impl<C: SmallCounters<1, 9> + Backend + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
     SelectZeroSmall<1, 9, C>
 where
     C::Word: Word + SelectInWord,
@@ -474,7 +474,7 @@ where
     }
 }
 
-impl<C: SmallCounters<1, 10> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
+impl<C: SmallCounters<1, 10> + Backend + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
     SelectZeroSmall<1, 10, C>
 where
     C::Word: Word + SelectInWord,
@@ -517,7 +517,7 @@ where
     }
 }
 
-impl<C: SmallCounters<1, 11> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
+impl<C: SmallCounters<1, 11> + Backend + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
     SelectZeroSmall<1, 11, C>
 where
     C::Word: Word + SelectInWord,
@@ -560,7 +560,7 @@ where
     }
 }
 
-impl<C: SmallCounters<3, 13> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
+impl<C: SmallCounters<3, 13> + Backend + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
     SelectZeroSmall<3, 13, C>
 where
     C::Word: Word + SelectInWord,

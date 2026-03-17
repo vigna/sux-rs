@@ -19,12 +19,13 @@ use std::{
 use crate::{
     prelude::{BitCount, BitLength, SelectZeroHinted},
     traits::{
-        NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted, SelectUnchecked,
-        SelectZero, SelectZeroUnchecked, Word, WordType,
+        Backend, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
+        SelectUnchecked, SelectZero, SelectZeroUnchecked, Word,
     },
 };
 
 use crate::ambassador_impl_Index;
+use crate::traits::ambassador_impl_Backend;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
@@ -36,7 +37,6 @@ use crate::traits::rank_sel::ambassador_impl_Select;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
-use crate::traits::rank_sel::ambassador_impl_WordType;
 use std::ops::Index;
 
 // NOTE: to make parallel modifications with SelectAdapt as easy as possible,
@@ -144,7 +144,7 @@ use std::ops::Index;
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
+#[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
@@ -168,7 +168,7 @@ pub struct SelectZeroAdapt<B, I = Box<[usize]>> {
     ones_per_sub16_mask: usize,
 }
 
-impl<B: WordType + AsRef<[B::Word]>, I> AsRef<[B::Word]> for SelectZeroAdapt<B, I> {
+impl<B: Backend + AsRef<[B::Word]>, I> AsRef<[B::Word]> for SelectZeroAdapt<B, I> {
     #[inline(always)]
     fn as_ref(&self) -> &[B::Word] {
         self.bits.as_ref()
@@ -234,7 +234,7 @@ impl<B: BitLength, C> SelectZeroAdapt<B, C> {
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + BitCount> SelectZeroAdapt<B, Box<[usize]>>
+impl<B: Backend + AsRef<[B::Word]> + BitCount> SelectZeroAdapt<B, Box<[usize]>>
 where
     B::Word: Word + SelectInWord,
 {
@@ -641,7 +641,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + BitLength + SelectZeroHinted, I: AsRef<[usize]>>
+impl<B: Backend + AsRef<[B::Word]> + BitLength + SelectZeroHinted, I: AsRef<[usize]>>
     SelectZeroUnchecked for SelectZeroAdapt<B, I>
 where
     B::Word: Word + SelectInWord,
@@ -732,7 +732,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + NumBits + SelectZeroHinted, I: AsRef<[usize]>> SelectZero
+impl<B: Backend + AsRef<[B::Word]> + NumBits + SelectZeroHinted, I: AsRef<[usize]>> SelectZero
     for SelectZeroAdapt<B, I>
 where
     B::Word: Word + SelectInWord,

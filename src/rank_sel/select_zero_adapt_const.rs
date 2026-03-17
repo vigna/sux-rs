@@ -14,8 +14,8 @@ use crate::utils::SelectInWord;
 use crate::{
     prelude::{BitCount, BitLength},
     traits::{
-        NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted, SelectUnchecked,
-        SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word, WordType,
+        Backend, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
+        SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word,
     },
 };
 use ambassador::Delegate;
@@ -27,6 +27,7 @@ use std::{
 };
 
 use crate::ambassador_impl_Index;
+use crate::traits::ambassador_impl_Backend;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
@@ -38,7 +39,6 @@ use crate::traits::rank_sel::ambassador_impl_Select;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
-use crate::traits::rank_sel::ambassador_impl_WordType;
 use std::ops::Index;
 
 // NOTE: to make parallel modifications with SelectAdaptConst as easy as
@@ -146,7 +146,7 @@ use std::ops::Index;
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
+#[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
@@ -171,7 +171,7 @@ pub struct SelectZeroAdaptConst<
 }
 
 impl<
-    B: WordType + AsRef<[B::Word]>,
+    B: Backend + AsRef<[B::Word]>,
     I,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
@@ -257,7 +257,7 @@ impl<
 }
 
 impl<
-    B: WordType + AsRef<[B::Word]> + BitCount,
+    B: Backend + AsRef<[B::Word]> + BitCount,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectZeroAdaptConst<B, Box<[usize]>, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
@@ -542,7 +542,7 @@ where
 }
 
 impl<
-    B: WordType + AsRef<[B::Word]> + BitLength + SelectZeroHinted,
+    B: Backend + AsRef<[B::Word]> + BitLength + SelectZeroHinted,
     I: AsRef<[usize]>,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
@@ -638,7 +638,7 @@ where
 }
 
 impl<
-    B: WordType + AsRef<[B::Word]> + NumBits + SelectZeroHinted,
+    B: Backend + AsRef<[B::Word]> + NumBits + SelectZeroHinted,
     I: AsRef<[usize]>,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,

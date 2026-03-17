@@ -98,8 +98,16 @@
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones.as_slice(), 1) }.count_ones(), 1);
 //! ```
 
-use crate::traits::{AtomicBitIter, AtomicBitVecOps, BitIter, BitVecOps, Word};
+use crate::traits::ambassador_impl_Backend;
+use crate::traits::{AtomicBitIter, AtomicBitVecOps, Backend, BitIter, BitVecOps, Word};
 use crate::utils::SelectInWord;
+use crate::{
+    traits::rank_sel::*,
+    utils::{
+        CannotCastToAtomicError, transmute_boxed_slice_from_atomic,
+        transmute_boxed_slice_into_atomic, transmute_vec_from_atomic, transmute_vec_into_atomic,
+    },
+};
 use ambassador::Delegate;
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic};
 #[allow(unused_imports)] // this is in the std prelude but not in no_std!
@@ -108,14 +116,6 @@ use core::fmt;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
 use std::{ops::Index, sync::atomic::Ordering};
-
-use crate::{
-    traits::rank_sel::*,
-    utils::{
-        CannotCastToAtomicError, transmute_boxed_slice_from_atomic,
-        transmute_boxed_slice_into_atomic, transmute_vec_from_atomic, transmute_vec_into_atomic,
-    },
-};
 
 /// A bit vector.
 ///
@@ -128,7 +128,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
+#[delegate(crate::traits::Backend, target = "bits")]
 pub struct BitVec<B = Vec<usize>> {
     bits: B,
     len: usize,
@@ -417,7 +417,7 @@ impl<B> BitLength for BitVec<B> {
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> BitCount for BitVec<B>
+impl<B: Backend + AsRef<[B::Word]>> BitCount for BitVec<B>
 where
     B::Word: Word,
 {
@@ -439,9 +439,9 @@ where
 
 impl<B, C> PartialEq<BitVec<C>> for BitVec<B>
 where
-    B: WordType + AsRef<[B::Word]>,
+    B: Backend + AsRef<[B::Word]>,
     B::Word: Word,
-    C: WordType<Word = B::Word> + AsRef<[B::Word]>,
+    C: Backend<Word = B::Word> + AsRef<[B::Word]>,
 {
     fn eq(&self, other: &BitVec<C>) -> bool {
         let len = self.len();
@@ -464,14 +464,14 @@ where
 
 impl<B> Eq for BitVec<B>
 where
-    B: WordType + AsRef<[B::Word]>,
+    B: Backend + AsRef<[B::Word]>,
     B::Word: Word,
 {
 }
 
 impl<B> Index<usize> for BitVec<B>
 where
-    B: WordType + AsRef<[B::Word]>,
+    B: Backend + AsRef<[B::Word]>,
     B::Word: Word,
 {
     type Output = bool;
@@ -486,7 +486,7 @@ where
 
 impl<'a, B> IntoIterator for &'a BitVec<B>
 where
-    B: WordType + AsRef<[B::Word]>,
+    B: Backend + AsRef<[B::Word]>,
     B::Word: Word,
 {
     type IntoIter = BitIter<'a, B::Word, B>;
@@ -499,7 +499,7 @@ where
 
 impl<B> fmt::Display for BitVec<B>
 where
-    B: WordType + AsRef<[B::Word]>,
+    B: Backend + AsRef<[B::Word]>,
     B::Word: Word,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -546,7 +546,7 @@ impl<B> AtomicBitVec<B> {
 
 impl<B> AtomicBitVec<B>
 where
-    B: WordType + From<Vec<B::Word>>,
+    B: Backend + From<Vec<B::Word>>,
     B::Word: PrimitiveAtomic,
     <B::Word as PrimitiveAtomic>::Value: Word,
 {
@@ -584,13 +584,13 @@ impl<B> BitLength for AtomicBitVec<B> {
     }
 }
 
-impl<B: WordType> WordType for AtomicBitVec<B> {
+impl<B: Backend> Backend for AtomicBitVec<B> {
     type Word = B::Word;
 }
 
 impl<B> BitCount for AtomicBitVec<B>
 where
-    B: WordType + AsRef<[B::Word]>,
+    B: Backend + AsRef<[B::Word]>,
     B::Word: PrimitiveAtomic,
     <B::Word as PrimitiveAtomic>::Value: Word,
 {
@@ -617,7 +617,7 @@ where
 
 impl<B> Index<usize> for AtomicBitVec<B>
 where
-    B: WordType + AsRef<[B::Word]>,
+    B: Backend + AsRef<[B::Word]>,
     B::Word: PrimitiveAtomic,
     <B::Word as PrimitiveAtomic>::Value: Word,
 {
@@ -634,7 +634,7 @@ where
 
 impl<'a, B> IntoIterator for &'a AtomicBitVec<B>
 where
-    B: WordType + AsRef<[B::Word]>,
+    B: Backend + AsRef<[B::Word]>,
     B::Word: PrimitiveAtomic,
     <B::Word as PrimitiveAtomic>::Value: Word,
 {
@@ -764,7 +764,7 @@ impl<W: Word, B: AsMut<[W]>> AsMut<[W]> for BitVec<B> {
     }
 }
 
-impl<B: WordType> AsRef<[B::Word]> for AtomicBitVec<B>
+impl<B: Backend> AsRef<[B::Word]> for AtomicBitVec<B>
 where
     B: AsRef<[B::Word]>,
 {
@@ -774,7 +774,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> RankHinted for BitVec<B>
+impl<B: Backend + AsRef<[B::Word]>> RankHinted for BitVec<B>
 where
     B::Word: Word,
 {
@@ -805,7 +805,7 @@ where
 
 // SelectHinted and SelectZeroHinted for BitVec.
 
-impl<B: WordType + AsRef<[B::Word]>> SelectHinted for BitVec<B>
+impl<B: Backend + AsRef<[B::Word]>> SelectHinted for BitVec<B>
 where
     B::Word: Word + SelectInWord,
 {
@@ -828,7 +828,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> SelectZeroHinted for BitVec<B>
+impl<B: Backend + AsRef<[B::Word]>> SelectZeroHinted for BitVec<B>
 where
     B::Word: Word + SelectInWord,
 {

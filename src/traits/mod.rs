@@ -11,9 +11,11 @@
 //! See the discussion in [`bit_field_slice`] about the re-export of its traits.
 
 pub mod bit_field_slice;
+use ambassador::delegatable_trait;
 pub use bit_field_slice::*;
 
 pub mod indexed_dict;
+use impl_tools::autoimpl;
 pub use indexed_dict::*;
 
 pub mod iter;
@@ -24,3 +26,43 @@ pub use rank_sel::*;
 
 pub mod bit_vec_ops;
 pub use bit_vec_ops::*;
+
+/// The basic trait defining backends.
+///
+/// Backends are types that can be seen as slices of words. The
+/// type of the word is given by the [`Word`](Self::Word) associated
+/// type.
+///
+/// This trait is delegated by every structure to its backend (an inner field);
+/// it makes it possible to write generic code that can work with any backend by
+/// providing the word type.
+///
+/// Usually, this trait is coupled with [`AsRef<[<Self as
+/// Backend>::Word]>`](core::convert::AsRef) or [`AsMut<[<Self as
+/// Backend>::Word]>`](core::convert::AsMut) to allow access to the underlying
+/// slice of words, but this is not strictly required (see, e.g., the
+/// [`BitWidth`] trait).
+///
+/// We implement this trait for slices, vectors, and arrays; moreover,
+/// we delegate it automatically to reference and `Box` types.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
+pub trait Backend {
+    /// The word type used by this backend.
+    ///
+    /// Since we have backends based on both atomic and non-atomic primitive
+    /// types, we do not require the word type to implement any specific trait.
+    type Word;
+}
+
+impl<W> Backend for [W] {
+    type Word = W;
+}
+
+impl<W> Backend for Vec<W> {
+    type Word = W;
+}
+
+impl<W, const N: usize> Backend for [W; N] {
+    type Word = W;
+}
