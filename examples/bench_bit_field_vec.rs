@@ -15,7 +15,7 @@ use sux::prelude::*;
 use value_traits::slices::*;
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmarks bit-field vectors", long_about = None)]
+#[command(about = "Benchmarks bit-field vectors", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
     /// The width of the elements of the vector.
     width: usize,

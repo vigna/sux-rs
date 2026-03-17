@@ -17,7 +17,7 @@ use sux::{
 };
 
 #[derive(Parser)]
-#[command(about = "Prints the memory layout of rank and select structures.", long_about = None)]
+#[command(about = "Prints the memory layout of rank and select structures.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
     len: usize,
     density: f64,

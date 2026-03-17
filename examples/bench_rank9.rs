@@ -15,7 +15,7 @@ use sux::prelude::*;
 use sux::traits::bit_vec_ops::*;
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmarks Rank9", long_about = None)]
+#[command(about = "Benchmarks Rank9", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
     /// The number of elements
     n: usize,

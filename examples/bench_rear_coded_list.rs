@@ -17,7 +17,7 @@ use sux::prelude::*;
 use sux::utils::LineLender;
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmarks construction and access fo read-coded lists", long_about = None)]
+#[command(about = "Benchmarks construction and access fo read-coded lists", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
     /// The file to read, every line will be inserted in the RCA.
     file_path: String,

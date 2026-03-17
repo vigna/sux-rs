@@ -13,7 +13,7 @@ use sux::{init_env_logger, prelude::*, utils::PrimitiveUnsignedExt};
 use value_traits::slices::SliceByValueMut;
 
 #[derive(Parser, Debug)]
-#[command(about = "Serializes a mapped rear-coded list starting from a rear-coded list and a mapping.", long_about = None)]
+#[command(about = "Serializes a mapped rear-coded list starting from a rear-coded list and a mapping.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
     /// A file containing an ε-serde serialized rear-coded list.
     rcl: String,

@@ -36,7 +36,7 @@ macro_rules! call_with_sorted {
 }
 
 #[derive(Parser, Debug)]
-#[command(about = "Builds a rear-coded list starting from a list of UTF-8 encoded strings.", long_about = None)]
+#[command(about = "Builds a rear-coded list starting from a list of UTF-8 encoded strings.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
     /// A file containing UTF-8 strings, one per line, or - for standard input; it can be compressed with any format supported by the deko crate.
     source: String,
