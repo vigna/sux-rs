@@ -15,16 +15,16 @@ use value_traits::slices::SliceByValueMut;
 #[derive(Parser, Debug)]
 #[command(about = "Serializes a mapped rear-coded list starting from a rear-coded list and a mapping.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// A file containing an ε-serde serialized rear-coded list.
+    /// A file containing an ε-serde serialized rear-coded list.​
     rcl: String,
-    /// An ASCII file containing the mapping, one value per line.
+    /// An ASCII file containing the mapping, one value per line.​
     map: String,
-    /// A name for the ε-serde serialized mapped rear-coded list.
+    /// A name for the ε-serde serialized mapped rear-coded list.​
     dest: String,
-    /// The rear-coded list is not sorted.
+    /// The rear-coded list is not sorted.​
     #[arg(short, long, default_value_t = false)]
     unsorted: bool,
-    /// Assume the map is a permutation and invert it.
+    /// Assume the map is a permutation and invert it.​
     #[arg(short, long, default_value_t = false)]
     invert: bool,
 }

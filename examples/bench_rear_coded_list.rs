@@ -19,15 +19,15 @@ use sux::utils::LineLender;
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks construction and access fo read-coded lists", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// The file to read, every line will be inserted in the RCA.
+    /// The file to read, every line will be inserted in the RCA.​
     file_path: String,
 
     #[arg(short, long, default_value = "4")]
-    /// Fully write every string with index multiple of k.
+    /// Fully write every string with index multiple of k.​
     k: usize,
 
     #[arg(short, long, default_value = "10000")]
-    /// How many iterations of random access speed test
+    /// How many iterations of random access speed test​
     accesses: usize,
 }
 

@@ -38,18 +38,18 @@ macro_rules! call_with_sorted {
 #[derive(Parser, Debug)]
 #[command(about = "Builds a rear-coded list starting from a list of UTF-8 encoded strings.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// A file containing UTF-8 strings, one per line, or - for standard input; it can be compressed with any format supported by the deko crate.
+    /// A file containing UTF-8 strings, one per line, or - for standard input; it can be compressed with any format supported by the deko crate.​
     source: String,
-    /// A name for the ε-serde serialized rear-coded list.
+    /// A name for the ε-serde serialized rear-coded list.​
     dest: String,
-    /// The list of strings is not sorted (no checks, no indexing).
+    /// The list of strings is not sorted (no checks, no indexing).​
     #[arg(long, default_value_t = false)]
     unsorted: bool,
     /// The number of strings in a block: higher values provide more compression
-    /// at the expense of slower access.
+    /// at the expense of slower access.​
     #[arg(short = 'r', long, default_value_t = 8)]
     ratio: usize,
-    /// Use the slower direct-to-disk construction algorithm, which uses very little memory (cannot be used with stdin input).
+    /// Use the slower direct-to-disk construction algorithm, which uses very little memory (cannot be used with stdin input).​
     #[arg(long, default_value_t = false)]
     low_mem: bool,
 }

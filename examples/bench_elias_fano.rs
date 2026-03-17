@@ -19,16 +19,16 @@ use sux::prelude::*;
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks Elias-Fano", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// The number of elements in the list.
+    /// The number of elements in the list.​
     n: usize,
 
-    /// The size of the universe.
+    /// The size of the universe.​
     u: u64,
 
-    /// The number of values to test.
+    /// The number of values to test.​
     t: usize,
 
-    /// The number of test repetitions.
+    /// The number of test repetitions.​
     #[arg(short, long, default_value = "10")]
     repeats: usize,
 }
