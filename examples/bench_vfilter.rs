@@ -37,7 +37,7 @@ fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
 }
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmark VFilter with strings or 64-bit integers", long_about = None)]
+#[command(about = "Benchmark VFilter with strings or 64-bit integers", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
     /// The maximum number strings to use from the file, or the number of 64-bit keys.
     n: usize,
