@@ -17,7 +17,7 @@ use std::hint::black_box;
 use sux::prelude::*;
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmarks Elias-Fano", long_about = None, next_line_help = true, max_term_width = 100)]
+#[command(about = "Benchmarks Elias-Fano.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
     /// The number of elements in the list.​
     n: usize,

@@ -35,7 +35,7 @@ fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
 }
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmark VFunc with strings or 64-bit integers", long_about = None, next_line_help = true, max_term_width = 100)]
+#[command(about = "Benchmarks VFunc with strings or 64-bit integers.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
     /// The maximum number of strings to read from the file, or the number of 64-bit keys.​
     n: usize,
@@ -47,7 +47,7 @@ struct Args {
     /// The number of repetitions.​
     #[arg(short, long, default_value = "5")]
     repeats: usize,
-    /// Whether the file is compressed with zstd.​
+    /// The input file is compressed with zstd.​
     #[arg(short, long)]
     zstd: bool,
     /// Use 64-bit signatures.​

@@ -40,7 +40,7 @@ struct Args {
     /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.​
     #[arg(short, long)]
     filename: Option<String>,
-    /// An optional name for the ε-serde serialized function.​
+    /// An optional name for the ε-serde serialized filter.​
     filter: Option<String>,
     /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]

@@ -17,9 +17,9 @@ use sux::prelude::*;
 use sux::utils::LineLender;
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmarks construction and access fo read-coded lists", long_about = None, next_line_help = true, max_term_width = 100)]
+#[command(about = "Benchmarks construction and access of rear-coded lists.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// The file to read, every line will be inserted in the RCA.​
+    /// The file to read; every line will be inserted in the rear-coded list.​
     file_path: String,
 
     #[arg(short, long, default_value = "4")]
@@ -27,7 +27,7 @@ struct Args {
     k: usize,
 
     #[arg(short, long, default_value = "10000")]
-    /// How many iterations of random access speed test​
+    /// The number of random-access speed-test iterations.​
     accesses: usize,
 }
 
