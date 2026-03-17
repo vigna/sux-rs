@@ -13,36 +13,14 @@
 //! underlying implementations.
 
 use crate::ambassador_impl_Index;
+use crate::traits::Backend;
 use ambassador::{Delegate, delegatable_trait};
 use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
 use std::ops::Deref;
 use std::ops::Index;
 
-/// Associates a type with its word type.
-///
-/// This trait is the single source of information for the word type used by a
-/// bit vector backend. Only leaf structures (like
-/// [`BitVec`](crate::bits::BitVec)) implement it concretely; every other struct
-/// delegates to its inner field.
-#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
-pub trait WordType {
-    /// The word type used by this backend.
-    type Word;
-}
-
-impl<W> WordType for [W] {
-    type Word = W;
-}
-
-impl<W> WordType for Vec<W> {
-    type Word = W;
-}
-
-impl<W, const N: usize> WordType for [W; N] {
-    type Word = W;
-}
+use crate::traits::ambassador_impl_Backend;
 
 /// A trait expressing a length in bits.
 ///
@@ -344,7 +322,7 @@ pub trait SelectZeroHinted {
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "bits")]
-#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
+#[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted, target = "bits")]
@@ -434,11 +412,9 @@ impl<B: BitCount> From<B> for AddNumBits<B> {
 }
 
 // Manual AsRef forwarding (ambassador can't resolve B::Word)
-impl<B: WordType + AsRef<[<B as WordType>::Word]>> AsRef<[<B as WordType>::Word]>
-    for AddNumBits<B>
-{
+impl<B: Backend + AsRef<[<B as Backend>::Word]>> AsRef<[<B as Backend>::Word]> for AddNumBits<B> {
     #[inline(always)]
-    fn as_ref(&self) -> &[<B as WordType>::Word] {
+    fn as_ref(&self) -> &[<B as Backend>::Word] {
         self.bits.as_ref()
     }
 }

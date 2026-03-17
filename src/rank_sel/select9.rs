@@ -9,8 +9,8 @@
 use super::Rank9;
 use super::rank9::BlockCounters;
 use crate::traits::{
-    BitCount, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
-    SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word, WordType,
+    Backend, BitCount, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select,
+    SelectHinted, SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word,
 };
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
@@ -44,6 +44,7 @@ macro_rules! ULEQ_STEP_16 {
 }
 
 use crate::ambassador_impl_Index;
+use crate::traits::ambassador_impl_Backend;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
@@ -55,7 +56,6 @@ use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
-use crate::traits::rank_sel::ambassador_impl_WordType;
 use std::ops::{Deref, Index};
 
 /// A selection structure over [`Rank9`] using 25%–37.5% additional space and
@@ -121,7 +121,7 @@ use std::ops::{Deref, Index};
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "rank9")]
-#[delegate(crate::traits::rank_sel::WordType, target = "rank9")]
+#[delegate(crate::traits::Backend, target = "rank9")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "rank9")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "rank9")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "rank9")]
@@ -141,7 +141,7 @@ pub struct Select9<R = Rank9, I = Box<[u64]>> {
     subinventory_size: usize,
 }
 
-impl<B: WordType + AsRef<[B::Word]>, C, I> AsRef<[B::Word]> for Select9<Rank9<B, C>, I> {
+impl<B: Backend + AsRef<[B::Word]>, C, I> AsRef<[B::Word]> for Select9<Rank9<B, C>, I> {
     #[inline(always)]
     fn as_ref(&self) -> &[B::Word] {
         self.rank9.as_ref()
@@ -169,7 +169,7 @@ impl<R: BitLength, I> Select9<R, I> {
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>>
+impl<B: Backend + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>>
     Select9<Rank9<B, C>, Box<[u64]>>
 where
     B::Word: Word + SelectInWord,
@@ -350,7 +350,7 @@ impl<R: BitLength, I> Deref for Select9<R, I> {
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>>
+impl<B: Backend + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>>
     SelectUnchecked for Select9<Rank9<B, C>, I>
 where
     B::Word: Word + SelectInWord,
@@ -491,7 +491,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>> Select
+impl<B: Backend + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>> Select
     for Select9<Rank9<B, C>, I>
 where
     B::Word: Word + SelectInWord,

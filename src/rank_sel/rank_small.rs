@@ -15,14 +15,15 @@ use std::{
 };
 
 use crate::{
-    prelude::{BitLength, BitVec, Rank, RankHinted, RankUnchecked, RankZero, WordType},
+    prelude::{BitLength, BitVec, Rank, RankHinted, RankUnchecked, RankZero},
     traits::{
-        BitCount, NumBits, Select, SelectHinted, SelectUnchecked, SelectZero, SelectZeroHinted,
-        SelectZeroUnchecked, Word,
+        Backend, BitCount, NumBits, Select, SelectHinted, SelectUnchecked, SelectZero,
+        SelectZeroHinted, SelectZeroUnchecked, Word,
     },
 };
 
 use crate::ambassador_impl_Index;
+use crate::traits::ambassador_impl_Backend;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
 use crate::traits::rank_sel::ambassador_impl_Select;
@@ -31,7 +32,6 @@ use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
-use crate::traits::rank_sel::ambassador_impl_WordType;
 use std::ops::Index;
 
 /// A trait abstracting the access to the internal counters of a [`RankSmall`]
@@ -134,7 +134,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "bits")]
-#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
+#[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
@@ -156,7 +156,7 @@ pub struct RankSmall<
     pub(super) num_ones: usize,
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: WordType + AsRef<[B::Word]>, C1, C2>
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: Backend + AsRef<[B::Word]>, C1, C2>
     AsRef<[B::Word]> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
@@ -419,7 +419,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
 
 macro_rules! impl_rank_small {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $W: ty) => {
-        impl<B: WordType + AsRef<[B::Word]> + BitLength + RankHinted>
+        impl<B: Backend + AsRef<[B::Word]> + BitLength + RankHinted>
             RankSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
@@ -501,7 +501,7 @@ macro_rules! impl_rank_small {
             }
         }
         impl<
-            B: WordType + AsRef<[B::Word]> + BitLength + RankHinted,
+            B: Backend + AsRef<[B::Word]> + BitLength + RankHinted,
             C1: AsRef<[u64]>,
             C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
         > RankUnchecked for RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>

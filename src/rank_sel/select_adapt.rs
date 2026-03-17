@@ -18,12 +18,13 @@ use std::{
 use crate::{
     prelude::{BitCount, BitLength, Select, SelectHinted},
     traits::{
-        NumBits, Rank, RankHinted, RankUnchecked, RankZero, SelectUnchecked, SelectZero,
-        SelectZeroHinted, SelectZeroUnchecked, Word, WordType,
+        Backend, NumBits, Rank, RankHinted, RankUnchecked, RankZero, SelectUnchecked, SelectZero,
+        SelectZeroHinted, SelectZeroUnchecked, Word,
     },
 };
 
 use crate::ambassador_impl_Index;
+use crate::traits::ambassador_impl_Backend;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
@@ -35,7 +36,6 @@ use crate::traits::rank_sel::ambassador_impl_SelectHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
-use crate::traits::rank_sel::ambassador_impl_WordType;
 use std::ops::Index;
 
 /// A selection structure based on an adaptive two-level inventory.
@@ -228,7 +228,7 @@ use std::ops::Index;
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
+#[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
@@ -252,7 +252,7 @@ pub struct SelectAdapt<B, I = Box<[usize]>> {
     ones_per_sub16_mask: usize,
 }
 
-impl<B: WordType + AsRef<[B::Word]>, I> AsRef<[B::Word]> for SelectAdapt<B, I> {
+impl<B: Backend + AsRef<[B::Word]>, I> AsRef<[B::Word]> for SelectAdapt<B, I> {
     #[inline(always)]
     fn as_ref(&self) -> &[B::Word] {
         self.bits.as_ref()
@@ -435,7 +435,7 @@ impl<B: BitLength, C> SelectAdapt<B, C> {
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + BitCount> SelectAdapt<B, Box<[usize]>>
+impl<B: Backend + AsRef<[B::Word]> + BitCount> SelectAdapt<B, Box<[usize]>>
 where
     B::Word: Word + SelectInWord,
 {
@@ -842,7 +842,7 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + BitLength + SelectHinted, I: AsRef<[usize]>> SelectUnchecked
+impl<B: Backend + AsRef<[B::Word]> + BitLength + SelectHinted, I: AsRef<[usize]>> SelectUnchecked
     for SelectAdapt<B, I>
 where
     B::Word: Word + SelectInWord,
@@ -929,7 +929,7 @@ where
     }
 }
 
-impl<B: WordType + SelectHinted + AsRef<[B::Word]> + NumBits, I: AsRef<[usize]>> Select
+impl<B: Backend + SelectHinted + AsRef<[B::Word]> + NumBits, I: AsRef<[usize]>> Select
     for SelectAdapt<B, I>
 where
     B::Word: Word + SelectInWord,

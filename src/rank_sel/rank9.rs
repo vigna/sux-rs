@@ -7,12 +7,13 @@
  */
 
 use crate::prelude::*;
-use crate::traits::{Word, WordType};
+use crate::traits::{Backend, Word};
 use ambassador::Delegate;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
 
 use crate::ambassador_impl_Index;
+use crate::traits::ambassador_impl_Backend;
 use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
 use crate::traits::rank_sel::ambassador_impl_Select;
@@ -21,7 +22,6 @@ use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
 use crate::traits::rank_sel::ambassador_impl_SelectZero;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
-use crate::traits::rank_sel::ambassador_impl_WordType;
 use std::ops::Deref;
 use std::ops::Index;
 
@@ -76,7 +76,7 @@ use std::ops::Index;
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "bits")]
-#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
+#[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
@@ -98,7 +98,7 @@ pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
     pub(super) counts: C,
 }
 
-impl<B: WordType + AsRef<[B::Word]>, C> AsRef<[B::Word]> for Rank9<B, C> {
+impl<B: Backend + AsRef<[B::Word]>, C> AsRef<[B::Word]> for Rank9<B, C> {
     #[inline(always)]
     fn as_ref(&self) -> &[B::Word] {
         self.bits.as_ref()
@@ -147,7 +147,7 @@ impl<B, C> Rank9<B, C> {
     /// new backend is identical to the old one as a bit vector.
     pub unsafe fn map<B1>(self, f: impl FnOnce(B) -> B1) -> Rank9<B1, C>
     where
-        B1: WordType + AsRef<[B1::Word]> + BitLength,
+        B1: Backend + AsRef<[B1::Word]> + BitLength,
         B1::Word: Word,
     {
         Rank9 {
@@ -168,7 +168,7 @@ impl<B: BitLength, C> Rank9<B, C> {
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + BitLength> Rank9<B, Box<[BlockCounters]>>
+impl<B: Backend + AsRef<[B::Word]> + BitLength> Rank9<B, Box<[BlockCounters]>>
 where
     B::Word: Word,
 {
@@ -241,7 +241,7 @@ impl<B: BitLength, C: AsRef<[BlockCounters]>> BitCount for Rank9<B, C> {
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked
+impl<B: Backend + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked
     for Rank9<B, C>
 where
     B::Word: Word,
@@ -304,11 +304,11 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> where
+impl<B: Backend + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> where
     B::Word: Word
 {
 }
-impl<B: WordType + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> RankZero for Rank9<B, C> where
+impl<B: Backend + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> RankZero for Rank9<B, C> where
     B::Word: Word
 {
 }
