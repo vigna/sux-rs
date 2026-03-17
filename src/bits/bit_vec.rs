@@ -100,6 +100,7 @@
 
 use crate::traits::{AtomicBitIter, AtomicBitVecOps, BitIter, BitVecOps, PlatformWord, Word};
 use crate::utils::SelectInWord;
+use ambassador::Delegate;
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic};
 #[allow(unused_imports)] // this is in the std prelude but not in no_std!
 use core::borrow::BorrowMut;
@@ -124,9 +125,10 @@ use crate::{
 /// implementation](#impl-FromIterator<bool>-for-BitVec).
 ///
 /// See the [module documentation](mod@crate::bits::bit_vec) for more details.
-#[derive(Debug, Clone, Copy, MemDbg, MemSize)]
+#[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
 pub struct BitVec<B = Vec<PlatformWord>> {
     bits: B,
     len: usize,
@@ -413,14 +415,6 @@ impl<B> BitLength for BitVec<B> {
     fn len(&self) -> usize {
         self.len
     }
-}
-
-impl<B: WordType> WordType for BitVec<B>
-where
-    B::Word: Word,
-    B: AsRef<[B::Word]>,
-{
-    type Word = B::Word;
 }
 
 impl<B: WordType + AsRef<[B::Word]>> BitCount for BitVec<B>

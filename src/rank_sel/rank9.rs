@@ -105,7 +105,7 @@ pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
     feature = "epserde",
     derive(epserde::Epserde),
     repr(C),
-    epserde_zero_copy
+    epserde(zero_copy)
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlockCounters {
