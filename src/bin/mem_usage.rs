@@ -19,10 +19,14 @@ use sux::{
 #[derive(Parser)]
 #[command(about = "Prints the memory layout of rank and select structures.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
+    /// The length of the bit vector.​
     len: usize,
+    /// The density of ones in the bit vector.​
     density: f64,
+    /// Use non-uniform density (1% in the first half, 99% in the second).​
     #[arg(short, long)]
     non_uniform: bool,
+    /// The rank/select structure to test.​
     #[arg(value_enum)]
     sel_type: StructType,
 }
