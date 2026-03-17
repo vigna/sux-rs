@@ -151,7 +151,7 @@ impl<S: Sig + PartialEq, V: BinSafe> PartialEq for SigVal<S, V> {
     feature = "epserde",
     derive(epserde::Epserde),
     repr(C),
-    epserde_zero_copy
+    epserde(zero_copy)
 )]
 /// A newtype around `()` that is used to implement [`BitXor`] and
 /// [`BitXorAssign`] as no-ops.

@@ -230,7 +230,7 @@ macro_rules! rank_small {
     feature = "epserde",
     derive(epserde::Epserde),
     repr(C),
-    epserde_zero_copy
+    epserde(zero_copy)
 )]
 pub struct Block32Counters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     pub(super) absolute: u32,

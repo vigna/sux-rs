@@ -95,7 +95,6 @@
 //! assert_eq!(b.index_value(3), 0);
 //! assert_eq!(b.index_value(4), 1);
 //! ```
-#[cfg(feature = "rayon")]
 use crate::RAYON_MIN_LEN;
 use crate::prelude::{bit_field_slice::*, *};
 use crate::utils::PrimitiveUnsignedExt;
@@ -104,6 +103,7 @@ use crate::utils::{
     transmute_vec_from_atomic, transmute_vec_into_atomic,
 };
 use crate::{panic_if_out_of_bounds, panic_if_value};
+use ambassador::Delegate;
 use anyhow::{Result, bail};
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic, PrimitiveAtomicInteger};
 use num_primitive::{PrimitiveInteger, PrimitiveNumber};
@@ -190,7 +190,7 @@ macro_rules! bit_field_vec {
 /// etc.).
 ///
 /// See the [module documentation](crate::bits) for more details.
-#[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
+#[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, Delegate, value_traits::Subslices)]
 #[value_traits_subslices(bound = "B: AsRef<[B::Word]>")]
 #[value_traits_subslices(bound = "B::Word: Word")]
 #[derive(value_traits::SubslicesMut)]
@@ -204,6 +204,7 @@ macro_rules! bit_field_vec {
     ))
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[delegate(crate::traits::rank_sel::WordType, target = "bits")]
 pub struct BitFieldVec<B: WordType = Vec<PlatformWord>> {
     /// The underlying storage.
     bits: B,
@@ -536,10 +537,6 @@ impl<W: Word> BitFieldVec<Vec<W>> {
 }
 
 impl<B: WordType + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldVec<B> where B::Word: Word {}
-
-impl<B: WordType> WordType for BitFieldVec<B> {
-    type Word = B::Word;
-}
 
 impl<B: WordType> BitWidth for BitFieldVec<B>
 where
