@@ -13,7 +13,7 @@ use indexed_dict::*;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
-use sux::traits::PlatformWord;
+
 
 #[test]
 #[cfg(feature = "rayon")]
@@ -286,7 +286,7 @@ fn test_epserde() -> Result<()> {
 
             <EliasFano<
                 u64,
-                SelectAdaptConst<BitVec<Box<[PlatformWord]>>, Box<[usize]>>,
+                SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>>,
                 BitFieldVec<Box<[u64]>>,
             >>::read_mmap(&mut cursor, len, epserde::deser::Flags::empty())
         }?;

@@ -30,7 +30,7 @@ struct Args {
 trait Struct {
     fn build(bits: BitVec) -> Self;
 }
-impl Struct for SelectAdapt<PlatformWord, AddNumBits<BitVec>> {
+impl Struct for SelectAdapt<AddNumBits<BitVec>> {
     fn build(bits: BitVec) -> Self {
         SelectAdapt::new(bits.into(), 3)
     }
@@ -141,7 +141,7 @@ fn main() {
 
     match args.sel_type {
         StructType::SelectAdapt => {
-            mem_usage::<SelectAdapt<PlatformWord, _>>(
+            mem_usage::<SelectAdapt<AddNumBits<BitVec>>>(
                 args.len,
                 args.density,
                 uniform,

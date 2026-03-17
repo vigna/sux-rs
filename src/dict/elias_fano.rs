@@ -54,6 +54,7 @@ use crate::prelude::{indexed_dict::*, *};
 use crate::traits::{AtomicBitVecOps, BitVecOpsMut, bit_field_slice::*};
 use crate::utils::SelectInWord;
 use core::sync::atomic::Ordering;
+use std::sync::atomic::AtomicU64;
 use mem_dbg::*;
 use std::borrow::Borrow;
 use std::iter::FusedIterator;
@@ -63,7 +64,7 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
-pub type EfSeq = EliasFano<u64, SelectAdaptConst<BitVec<Box<[PlatformWord]>>, Box<[usize]>, 12, 3>>;
+pub type EfSeq = EliasFano<u64, SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
 
 /// The default type for an Elias–Fano structure implementing
 /// [`SuccUnchecked`] and [`PredUnchecked`].
@@ -71,7 +72,7 @@ pub type EfSeq = EliasFano<u64, SelectAdaptConst<BitVec<Box<[PlatformWord]>>, Bo
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
 pub type EfDict =
-    EliasFano<u64, SelectZeroAdaptConst<BitVec<Box<[PlatformWord]>>, Box<[usize]>, 12, 3>>;
+    EliasFano<u64, SelectZeroAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
 
 /// The default type for an Elias–Fano structure implementing an
 /// [`IndexedDict`], [`Succ`], and [`Pred`].
@@ -81,7 +82,7 @@ pub type EfDict =
 pub type EfSeqDict = EliasFano<
     u64,
     SelectZeroAdaptConst<
-        SelectAdaptConst<BitVec<Box<[PlatformWord]>>, Box<[usize]>, 12, 3>,
+        SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>,
         Box<[usize]>,
         12,
         3,
@@ -258,10 +259,10 @@ pub type EfSeqDict = EliasFano<
 #[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[value_traits_subslices(bound = "V: Word + From<PlatformWord>")]
-#[value_traits_subslices(bound = "H: AsRef<[PlatformWord]> + SelectUnchecked")]
+#[value_traits_subslices(bound = "V: Word + From<u64>")]
+#[value_traits_subslices(bound = "H: AsRef<[usize]> + SelectUnchecked")]
 #[value_traits_subslices(bound = "L: SliceByValue<Value = V>")]
-pub struct EliasFano<V = u64, H = BitVec<Box<[PlatformWord]>>, L = BitFieldVec<Box<[V]>>> {
+pub struct EliasFano<V = u64, H = BitVec<Box<[usize]>>, L = BitFieldVec<Box<[V]>>> {
     /// The number of values.
     n: usize,
     /// An upper bound to the values.
@@ -343,7 +344,7 @@ impl<V, H, L> EliasFano<V, H, L> {
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>> Types
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>> Types
     for EliasFano<V, H, L>
 {
     type Output<'a> = V;
@@ -351,8 +352,8 @@ impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Val
 }
 
 impl<
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > IndexedSeq for EliasFano<V, H, L>
 {
@@ -365,7 +366,7 @@ impl<
     unsafe fn get_unchecked(&self, index: usize) -> V {
         unsafe {
             let high_bits =
-                V::from((self.high_bits.select_unchecked(index) - index) as PlatformWord);
+                V::from((self.high_bits.select_unchecked(index) - index) as u64);
             let low_bits = self.low_bits.get_value_unchecked(index);
             (high_bits << self.l) | low_bits
         }
@@ -373,8 +374,8 @@ impl<
 }
 
 impl<
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectZeroUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectZeroUnchecked,
     L: SliceByValue<Value = V>,
 > IndexedDict for EliasFano<V, H, L>
 where
@@ -394,14 +395,14 @@ where
 
         let mut rank = bit_pos - zeros_to_skip;
         let mut iter = self.low_bits.into_unchecked_iter_from(rank);
-        let mut word_idx = bit_pos / (PlatformWord::BITS as usize);
-        let bits_to_clean = bit_pos % (PlatformWord::BITS as usize);
+        let mut word_idx = bit_pos / (usize::BITS as usize);
+        let bits_to_clean = bit_pos % (usize::BITS as usize);
 
         // SAFETY: we are certainly iterating within the length of the arrays
         // and within the range of the iterator because there is a successor for sure
 
         let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) }
-            & (PlatformWord::MAX << bits_to_clean);
+            & (usize::MAX << bits_to_clean);
 
         loop {
             while window == 0 {
@@ -414,10 +415,10 @@ where
             // find the lowest bit set index in the word
             let bit_idx = window.trailing_zeros() as usize;
             // compute the global bit index
-            let high_bits = (word_idx * PlatformWord::BITS as usize) + bit_idx - rank;
+            let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
             // compose the value
             let res =
-                (V::from(high_bits as PlatformWord) << self.l) | unsafe { iter.next_unchecked() };
+                (V::from(high_bits as u64) << self.l) | unsafe { iter.next_unchecked() };
             if res == value {
                 return Some(rank);
             }
@@ -434,7 +435,7 @@ where
 
 // Iteration
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     EliasFano<V, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
@@ -446,7 +447,7 @@ where
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     EliasFano<V, H, L>
 where
     for<'b> &'b L: IntoUncheckedBackIterator<Item = V>,
@@ -482,8 +483,8 @@ where
 }
 
 impl<
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > EliasFano<V, H, L>
 where
@@ -497,8 +498,8 @@ where
 }
 
 impl<
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > EliasFano<V, H, L>
 where
@@ -516,8 +517,8 @@ where
 
 impl<
     'a,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > IntoIteratorFrom for &'a EliasFano<V, H, L>
 where
@@ -533,8 +534,8 @@ where
 
 impl<
     'a,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > IntoBidiIterator for &'a EliasFano<V, H, L>
 {
@@ -549,8 +550,8 @@ impl<
 
 impl<
     'a,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > IntoBidiIteratorFrom for &'a EliasFano<V, H, L>
 {
@@ -577,15 +578,15 @@ impl<
         } else {
             unsafe { self.high_bits.select_unchecked(from) }
         };
-        let word_idx = bit_pos / (PlatformWord::BITS as usize);
+        let word_idx = bit_pos / (usize::BITS as usize);
         let window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
         let index_in_word = if from == self.n {
             (window
-                & (PlatformWord::MAX
-                    >> (PlatformWord::BITS as usize - 1 - bit_pos % PlatformWord::BITS as usize)))
+                & (usize::MAX
+                    >> (usize::BITS as usize - 1 - bit_pos % usize::BITS as usize)))
                 .count_ones() as usize
         } else {
-            (window & (((1 as PlatformWord) << (bit_pos % PlatformWord::BITS as usize)) - 1))
+            (window & (((1_usize) << (bit_pos % usize::BITS as usize)) - 1))
                 .count_ones() as usize
         };
         EliasFanoBidiIter {
@@ -598,7 +599,7 @@ impl<
     }
 }
 
-impl<'a, V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<'a, V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     IntoBackIterator for &'a EliasFano<V, H, L>
 where
     for<'b> &'b L: IntoUncheckedBackIterator<Item = V>,
@@ -614,8 +615,8 @@ where
 
 impl<
     'a,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > IntoBackIteratorFrom for &'a EliasFano<V, H, L>
 where
@@ -630,8 +631,8 @@ where
 }
 
 impl<
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > EliasFano<V, H, L>
 {
@@ -651,8 +652,8 @@ impl<
 // Succ / Pred
 
 impl<
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectZeroUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectZeroUnchecked,
     L: SliceByValue<Value = V>,
 > SuccUnchecked for EliasFano<V, H, L>
 where
@@ -681,14 +682,14 @@ where
 
         let mut rank = bit_pos - zeros_to_skip;
         let mut iter = self.low_bits.into_unchecked_iter_from(rank);
-        let mut word_idx = bit_pos / (PlatformWord::BITS as usize);
-        let bits_to_clean = bit_pos % (PlatformWord::BITS as usize);
+        let mut word_idx = bit_pos / (usize::BITS as usize);
+        let bits_to_clean = bit_pos % (usize::BITS as usize);
 
         // SAFETY: we are certainly iterating within the length of the arrays
         // and within the range of the iterator because there is a successor for sure
 
         let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) }
-            & (PlatformWord::MAX << bits_to_clean);
+            & (usize::MAX << bits_to_clean);
 
         loop {
             while window == 0 {
@@ -699,10 +700,10 @@ where
             // find the lowest bit set index in the word
             let bit_idx = window.trailing_zeros() as usize;
             // compute the global bit index
-            let high_bits = (word_idx * PlatformWord::BITS as usize) + bit_idx - rank;
+            let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
             // compose the value
             let res =
-                (V::from(high_bits as PlatformWord) << self.l) | unsafe { iter.next_unchecked() };
+                (V::from(high_bits as u64) << self.l) | unsafe { iter.next_unchecked() };
 
             let found = if STRICT { res > value } else { res >= value };
             if found {
@@ -729,11 +730,11 @@ where
 
         let mut rank = bit_pos - zeros_to_skip;
         let mut iter = self.low_bits.into_unchecked_iter_from(rank);
-        let mut word_idx = bit_pos / (PlatformWord::BITS as usize);
-        let bits_to_clean = bit_pos % (PlatformWord::BITS as usize);
+        let mut word_idx = bit_pos / (usize::BITS as usize);
+        let bits_to_clean = bit_pos % (usize::BITS as usize);
 
         let mut window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) }
-            & (PlatformWord::MAX << bits_to_clean);
+            & (usize::MAX << bits_to_clean);
 
         loop {
             while window == 0 {
@@ -742,9 +743,9 @@ where
                 window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
             }
             let bit_idx = window.trailing_zeros() as usize;
-            let high_bits = (word_idx * PlatformWord::BITS as usize) + bit_idx - rank;
+            let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
             let res =
-                (V::from(high_bits as PlatformWord) << self.l) | unsafe { iter.next_unchecked() };
+                (V::from(high_bits as u64) << self.l) | unsafe { iter.next_unchecked() };
 
             let found = if STRICT { res > value } else { res >= value };
             if found {
@@ -778,11 +779,11 @@ where
         };
 
         let mut rank = bit_pos - zeros_to_skip;
-        let mut word_idx = bit_pos / (PlatformWord::BITS as usize);
-        let bits_to_clean = bit_pos % (PlatformWord::BITS as usize);
+        let mut word_idx = bit_pos / (usize::BITS as usize);
+        let bits_to_clean = bit_pos % (usize::BITS as usize);
 
         let full_word = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
-        let mut window = full_word & (PlatformWord::MAX << bits_to_clean);
+        let mut window = full_word & (usize::MAX << bits_to_clean);
 
         loop {
             while window == 0 {
@@ -791,15 +792,15 @@ where
                 window = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
             }
             let bit_idx = window.trailing_zeros() as usize;
-            let high_bits = (word_idx * PlatformWord::BITS as usize) + bit_idx - rank;
+            let high_bits = (word_idx * usize::BITS as usize) + bit_idx - rank;
             let low = unsafe { self.low_bits.get_value_unchecked(rank) };
-            let res = (V::from(high_bits as PlatformWord) << self.l) | low;
+            let res = (V::from(high_bits as u64) << self.l) | low;
 
             let found = if STRICT { res > value } else { res >= value };
             if found {
                 let full_word = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
                 let index_in_word =
-                    (full_word & (((1 as PlatformWord) << bit_idx) - 1)).count_ones() as usize;
+                    (full_word & (((1_usize) << bit_idx) - 1)).count_ones() as usize;
                 return (
                     rank,
                     EliasFanoBidiIter {
@@ -819,8 +820,8 @@ where
 }
 
 impl<
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked + SelectZeroUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked,
     L: SliceByValue<Value = V>,
 > Succ for EliasFano<V, H, L>
 where
@@ -829,8 +830,8 @@ where
 }
 
 impl<
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectZeroUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectZeroUnchecked,
     L: SliceByValue<Value = V>,
 > PredUnchecked for EliasFano<V, H, L>
 where
@@ -861,27 +862,27 @@ where
         unsafe {
             loop {
                 let lower_bits = iter.next_unchecked();
-                let mut word_idx = bit_pos / (PlatformWord::BITS as usize);
-                let bit_idx = bit_pos % (PlatformWord::BITS as usize);
+                let mut word_idx = bit_pos / (usize::BITS as usize);
+                let bit_idx = bit_pos % (usize::BITS as usize);
                 if self.high_bits.as_ref().get_unchecked(word_idx)
-                    & ((1 as PlatformWord) << bit_idx)
+                    & ((1_usize) << bit_idx)
                     == 0
                 {
                     let mut zeros = bit_idx;
                     let mut window = *self.high_bits.as_ref().get_unchecked(word_idx)
-                        & !(PlatformWord::MAX << bit_idx);
+                        & !(usize::MAX << bit_idx);
                     while window == 0 {
                         word_idx -= 1;
                         window = *self.high_bits.as_ref().get_unchecked(word_idx);
-                        zeros += PlatformWord::BITS as usize;
+                        zeros += usize::BITS as usize;
                     }
                     return (
                         rank,
                         (V::from(
-                            ((PlatformWord::BITS as usize) - 1 + bit_pos
+                            ((usize::BITS as usize) - 1 + bit_pos
                                 - zeros
                                 - window.leading_zeros() as usize
-                                - rank) as PlatformWord,
+                                - rank) as u64,
                         ) << self.l)
                             | lower_bits,
                     );
@@ -896,7 +897,7 @@ where
                 if found {
                     return (
                         rank,
-                        (V::from((bit_pos - rank) as PlatformWord) << self.l) | lower_bits,
+                        (V::from((bit_pos - rank) as u64) << self.l) | lower_bits,
                     );
                 }
 
@@ -922,16 +923,16 @@ where
         unsafe {
             loop {
                 let lower_bits = iter_back.next_unchecked();
-                let mut word_idx = bit_pos / (PlatformWord::BITS as usize);
-                let bit_idx = bit_pos % (PlatformWord::BITS as usize);
+                let mut word_idx = bit_pos / (usize::BITS as usize);
+                let bit_idx = bit_pos % (usize::BITS as usize);
                 if self.high_bits.as_ref().get_unchecked(word_idx)
-                    & ((1 as PlatformWord) << bit_idx)
+                    & ((1_usize) << bit_idx)
                     == 0
                 {
                     // bit_pos is a zero: the predecessor must be below this
                     // position. Find the highest set bit at or below bit_pos.
                     let mut window = *self.high_bits.as_ref().get_unchecked(word_idx)
-                        & !(PlatformWord::MAX << bit_idx);
+                        & !(usize::MAX << bit_idx);
                     while window == 0 {
                         word_idx -= 1;
                         window = *self.high_bits.as_ref().get_unchecked(word_idx);
@@ -962,7 +963,7 @@ where
                     // bit_pos is a one and the low bits match: predecessor
                     // is at rank. Build window with bits 0..=bit_idx.
                     let window = *self.high_bits.as_ref().get_unchecked(word_idx)
-                        & (PlatformWord::MAX >> (PlatformWord::BITS as usize - 1 - bit_idx));
+                        & (usize::MAX >> (usize::BITS as usize - 1 - bit_idx));
                     return (
                         rank,
                         EliasFanoBackIter {
@@ -993,27 +994,27 @@ where
 
         unsafe {
             loop {
-                let mut word_idx = bit_pos / (PlatformWord::BITS as usize);
-                let bit_idx = bit_pos % (PlatformWord::BITS as usize);
+                let mut word_idx = bit_pos / (usize::BITS as usize);
+                let bit_idx = bit_pos % (usize::BITS as usize);
                 if self.high_bits.as_ref().get_unchecked(word_idx)
-                    & ((1 as PlatformWord) << bit_idx)
+                    & ((1_usize) << bit_idx)
                     == 0
                 {
                     // bit_pos is a zero: the predecessor must be below this
                     // position. Find the highest set bit at or below bit_pos.
                     let mut masked = *self.high_bits.as_ref().get_unchecked(word_idx)
-                        & !(PlatformWord::MAX << bit_idx);
+                        & !(usize::MAX << bit_idx);
                     while masked == 0 {
                         word_idx -= 1;
                         masked = *self.high_bits.as_ref().get_unchecked(word_idx);
                     }
                     // The predecessor's bit is the highest set bit in masked.
                     let pred_bit =
-                        PlatformWord::BITS as usize - 1 - masked.leading_zeros() as usize;
+                        usize::BITS as usize - 1 - masked.leading_zeros() as usize;
                     let full_word = *self.high_bits.as_ref().get_unchecked(word_idx);
                     // index_in_word for cursor at rank: ones at positions < pred_bit
                     let index_in_word =
-                        (full_word & (((1 as PlatformWord) << pred_bit) - 1)).count_ones() as usize;
+                        (full_word & (((1_usize) << pred_bit) - 1)).count_ones() as usize;
                     return (
                         rank,
                         EliasFanoBidiIter {
@@ -1037,7 +1038,7 @@ where
                 if found {
                     let full_word = *self.high_bits.as_ref().get_unchecked(word_idx);
                     let index_in_word =
-                        (full_word & (((1 as PlatformWord) << bit_idx) - 1)).count_ones() as usize;
+                        (full_word & (((1_usize) << bit_idx) - 1)).count_ones() as usize;
                     return (
                         rank,
                         EliasFanoBidiIter {
@@ -1058,8 +1059,8 @@ where
 }
 
 impl<
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked + SelectZeroUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked,
     L: SliceByValue<Value = V>,
 > Pred for EliasFano<V, H, L>
 where
@@ -1071,8 +1072,8 @@ where
 // Value traits
 
 impl<
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > value_traits::slices::SliceByValue for EliasFano<V, H, L>
 {
@@ -1088,8 +1089,8 @@ impl<
 
 impl<
     'a,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > value_traits::iter::IterateByValueGat<'a> for EliasFano<V, H, L>
 where
@@ -1100,8 +1101,8 @@ where
 }
 
 impl<
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > value_traits::iter::IterateByValue for EliasFano<V, H, L>
 where
@@ -1114,8 +1115,8 @@ where
 
 impl<
     'a,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > value_traits::iter::IterateByValueFromGat<'a> for EliasFano<V, H, L>
 where
@@ -1126,8 +1127,8 @@ where
 }
 
 impl<
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > value_traits::iter::IterateByValueFrom for EliasFano<V, H, L>
 where
@@ -1144,8 +1145,8 @@ where
 impl<
     'a,
     'b,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > value_traits::iter::IterateByValueGat<'a> for EliasFanoSubsliceImpl<'b, V, H, L>
 where
@@ -1157,8 +1158,8 @@ where
 
 impl<
     'a,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > value_traits::iter::IterateByValue for EliasFanoSubsliceImpl<'a, V, H, L>
 where
@@ -1172,8 +1173,8 @@ where
 impl<
     'a,
     'b,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > value_traits::iter::IterateByValueFromGat<'a> for EliasFanoSubsliceImpl<'b, V, H, L>
 where
@@ -1185,8 +1186,8 @@ where
 
 impl<
     'a,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > value_traits::iter::IterateByValueFrom for EliasFanoSubsliceImpl<'a, V, H, L>
 where
@@ -1204,8 +1205,8 @@ where
 #[derive(MemDbg, MemSize)]
 pub struct EliasFanoIter<
     'a,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]>,
+    V: Word + From<u64>,
+    H: AsRef<[usize]>,
     L: SliceByValue<Value = V>,
 > where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
@@ -1216,11 +1217,11 @@ pub struct EliasFanoIter<
     /// Index of the word loaded in the `window` field.
     word_idx: usize,
     /// Current window on the high bits.
-    window: PlatformWord,
+    window: usize,
     low_bits: <&'a L as IntoUncheckedIterator>::IntoUncheckedIter,
 }
 
-impl<'a, V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<'a, V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     EliasFanoIter<'a, V, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
@@ -1244,8 +1245,8 @@ where
 
 impl<
     'a,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]> + SelectUnchecked,
+    V: Word + From<u64>,
+    H: AsRef<[usize]> + SelectUnchecked,
     L: SliceByValue<Value = V>,
 > EliasFanoIter<'a, V, H, L>
 where
@@ -1266,8 +1267,8 @@ where
         }
         // SAFETY: start_index < ef.len(), so it's a valid rank
         let bit_pos = unsafe { ef.high_bits.select_unchecked(start_index) };
-        let word_idx = bit_pos / (PlatformWord::BITS as usize);
-        let bits_to_clean = bit_pos % (PlatformWord::BITS as usize);
+        let word_idx = bit_pos / (usize::BITS as usize);
+        let bits_to_clean = bit_pos % (usize::BITS as usize);
 
         let window = if ef.high_bits.as_ref().is_empty() {
             0
@@ -1276,7 +1277,7 @@ where
             // returns a valid bit position
             let word = unsafe { *ef.high_bits.as_ref().get_unchecked(word_idx) };
             // clean off the bits that we don't care about
-            word & (PlatformWord::MAX << bits_to_clean)
+            word & (usize::MAX << bits_to_clean)
         };
 
         Self {
@@ -1289,7 +1290,7 @@ where
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     UncheckedIterator for EliasFanoIter<'_, V, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
@@ -1307,18 +1308,18 @@ where
         // find the lowest bit set index in the word
         let bit_idx = self.window.trailing_zeros() as usize;
         // compute the global bit index
-        let high_bits = (self.word_idx * PlatformWord::BITS as usize) + bit_idx - self.index;
+        let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
         // clear the lowest bit set
         self.window &= self.window - 1;
         // compose the value
-        let res = (V::from(high_bits as PlatformWord) << self.ef.l)
+        let res = (V::from(high_bits as u64) << self.ef.l)
             | unsafe { self.low_bits.next_unchecked() };
         self.index += 1;
         res
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>> Iterator
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>> Iterator
     for EliasFanoIter<'_, V, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
@@ -1356,10 +1357,10 @@ where
             word_idx -= 1;
         }
         let word = unsafe { *words.get_unchecked(word_idx) };
-        let bit_idx = PlatformWord::BITS as usize - 1 - word.leading_zeros() as usize;
-        let high_bits = (word_idx * PlatformWord::BITS as usize) + bit_idx - (self.ef.n - 1);
+        let bit_idx = usize::BITS as usize - 1 - word.leading_zeros() as usize;
+        let high_bits = (word_idx * usize::BITS as usize) + bit_idx - (self.ef.n - 1);
         let low = unsafe { self.ef.low_bits.get_value_unchecked(self.ef.n - 1) };
-        Some((V::from(high_bits as PlatformWord) << self.ef.l) | low)
+        Some((V::from(high_bits as u64) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1377,7 +1378,7 @@ where
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     ExactSizeIterator for EliasFanoIter<'_, V, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
@@ -1388,14 +1389,14 @@ where
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     FusedIterator for EliasFanoIter<'_, V, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
 {
 }
 
-impl<'a, V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<'a, V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     EliasFanoIter<'a, V, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V> + IntoUncheckedBackIterator<Item = V>,
@@ -1437,8 +1438,8 @@ where
 #[derive(MemDbg, MemSize)]
 pub struct EliasFanoBackIter<
     'a,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]>,
+    V: Word + From<u64>,
+    H: AsRef<[usize]>,
     L: SliceByValue<Value = V>,
 > where
     for<'b> &'b L: IntoUncheckedBackIterator<Item = V>,
@@ -1451,11 +1452,11 @@ pub struct EliasFanoBackIter<
     /// Index of the word loaded in the `window` field.
     word_idx: usize,
     /// Current window on the high bits.
-    window: PlatformWord,
+    window: usize,
     low_bits: <&'a L as IntoUncheckedBackIterator>::IntoUncheckedIterBack,
 }
 
-impl<'a, V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<'a, V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     EliasFanoBackIter<'a, V, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V> + IntoUncheckedBackIterator<Item = V>,
@@ -1483,7 +1484,7 @@ where
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     UncheckedIterator for EliasFanoBackIter<'_, V, H, L>
 where
     for<'b> &'b L: IntoUncheckedBackIterator<Item = V>,
@@ -1496,16 +1497,16 @@ where
             self.word_idx -= 1;
             self.window = unsafe { *self.ef.high_bits.as_ref().get_unchecked(self.word_idx) };
         }
-        let bit_idx = PlatformWord::BITS as usize - 1 - self.window.leading_zeros() as usize;
-        self.window ^= (1 as PlatformWord) << bit_idx;
+        let bit_idx = usize::BITS as usize - 1 - self.window.leading_zeros() as usize;
+        self.window ^= (1_usize) << bit_idx;
         self.index -= 1;
-        let high_bits = (self.word_idx * PlatformWord::BITS as usize) + bit_idx - self.index;
+        let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
         let low = unsafe { self.low_bits.next_unchecked() };
-        (V::from(high_bits as PlatformWord) << self.ef.l) | low
+        (V::from(high_bits as u64) << self.ef.l) | low
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>> Iterator
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>> Iterator
     for EliasFanoBackIter<'_, V, H, L>
 where
     for<'b> &'b L: IntoUncheckedBackIterator<Item = V>,
@@ -1543,9 +1544,9 @@ where
             word_idx += 1;
         }
         let bit_idx = unsafe { *words.get_unchecked(word_idx) }.trailing_zeros() as usize;
-        let high_bits = (word_idx * PlatformWord::BITS as usize) + bit_idx;
+        let high_bits = (word_idx * usize::BITS as usize) + bit_idx;
         let low = unsafe { self.ef.low_bits.get_value_unchecked(0) };
-        Some((V::from(high_bits as PlatformWord) << self.ef.l) | low)
+        Some((V::from(high_bits as u64) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1562,7 +1563,7 @@ where
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     ExactSizeIterator for EliasFanoBackIter<'_, V, H, L>
 where
     for<'b> &'b L: IntoUncheckedBackIterator<Item = V>,
@@ -1573,14 +1574,14 @@ where
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     FusedIterator for EliasFanoBackIter<'_, V, H, L>
 where
     for<'b> &'b L: IntoUncheckedBackIterator<Item = V>,
 {
 }
 
-impl<'a, V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<'a, V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     IntoIterator for &'a EliasFano<V, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
@@ -1612,8 +1613,8 @@ where
 #[derive(MemDbg, MemSize)]
 pub struct EliasFanoBidiIter<
     'a,
-    V: Word + From<PlatformWord>,
-    H: AsRef<[PlatformWord]>,
+    V: Word + From<u64>,
+    H: AsRef<[usize]>,
     L: SliceByValue<Value = V>,
 > {
     ef: &'a EliasFano<V, H, L>,
@@ -1623,13 +1624,13 @@ pub struct EliasFanoBidiIter<
     /// Index of the word loaded in `window`.
     word_idx: usize,
     /// The full, unmodified word from `high_bits[word_idx]`.
-    window: PlatformWord,
+    window: usize,
     /// Rank of the cursor within the current word: the number of ones in
     /// `window` that correspond to elements at positions < `index`.
     index_in_word: usize,
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>> Iterator
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>> Iterator
     for EliasFanoBidiIter<'_, V, H, L>
 {
     type Item = V;
@@ -1646,11 +1647,11 @@ impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Val
             self.window = unsafe { *self.ef.high_bits.as_ref().get_unchecked(self.word_idx) };
         }
         let bit_idx = self.window.select_in_word(self.index_in_word);
-        let high_bits = (self.word_idx * PlatformWord::BITS as usize) + bit_idx - self.index;
+        let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
         let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
         self.index += 1;
         self.index_in_word += 1;
-        Some((V::from(high_bits as PlatformWord) << self.ef.l) | low)
+        Some((V::from(high_bits as u64) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1677,10 +1678,10 @@ impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Val
             word_idx -= 1;
         }
         let word = unsafe { *words.get_unchecked(word_idx) };
-        let bit_idx = PlatformWord::BITS as usize - 1 - word.leading_zeros() as usize;
-        let high_bits = (word_idx * PlatformWord::BITS as usize) + bit_idx - (self.ef.n - 1);
+        let bit_idx = usize::BITS as usize - 1 - word.leading_zeros() as usize;
+        let high_bits = (word_idx * usize::BITS as usize) + bit_idx - (self.ef.n - 1);
         let low = unsafe { self.ef.low_bits.get_value_unchecked(self.ef.n - 1) };
-        Some((V::from(high_bits as PlatformWord) << self.ef.l) | low)
+        Some((V::from(high_bits as u64) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1696,20 +1697,20 @@ impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Val
                 self.window = unsafe { *self.ef.high_bits.as_ref().get_unchecked(self.word_idx) };
             }
             let bit_idx = self.window.select_in_word(self.index_in_word);
-            let high_bits = (self.word_idx * PlatformWord::BITS as usize) + bit_idx - self.index;
+            let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
             let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
             self.index += 1;
             self.index_in_word += 1;
             accum = f(
                 accum,
-                (V::from(high_bits as PlatformWord) << self.ef.l) | low,
+                (V::from(high_bits as u64) << self.ef.l) | low,
             );
         }
         accum
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     ExactSizeIterator for EliasFanoBidiIter<'_, V, H, L>
 {
     #[inline(always)]
@@ -1718,12 +1719,12 @@ impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Val
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     FusedIterator for EliasFanoBidiIter<'_, V, H, L>
 {
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     BidiIterator for EliasFanoBidiIter<'_, V, H, L>
 {
     type SwappedIter = SwappedIter<Self>;
@@ -1747,9 +1748,9 @@ impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Val
         self.index -= 1;
         self.index_in_word -= 1;
         let bit_idx = self.window.select_in_word(self.index_in_word);
-        let high_bits = (self.word_idx * PlatformWord::BITS as usize) + bit_idx - self.index;
+        let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
         let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
-        Some((V::from(high_bits as PlatformWord) << self.ef.l) | low)
+        Some((V::from(high_bits as u64) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1775,9 +1776,9 @@ impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Val
             word_idx += 1;
         }
         let bit_idx = unsafe { *words.get_unchecked(word_idx) }.trailing_zeros() as usize;
-        let high_bits = (word_idx * PlatformWord::BITS as usize) + bit_idx;
+        let high_bits = (word_idx * usize::BITS as usize) + bit_idx;
         let low = unsafe { self.ef.low_bits.get_value_unchecked(0) };
-        Some((V::from(high_bits as PlatformWord) << self.ef.l) | low)
+        Some((V::from(high_bits as u64) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1795,18 +1796,18 @@ impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Val
             self.index -= 1;
             self.index_in_word -= 1;
             let bit_idx = self.window.select_in_word(self.index_in_word);
-            let high_bits = (self.word_idx * PlatformWord::BITS as usize) + bit_idx - self.index;
+            let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
             let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
             accum = f(
                 accum,
-                (V::from(high_bits as PlatformWord) << self.ef.l) | low,
+                (V::from(high_bits as u64) << self.ef.l) | low,
             );
         }
         accum
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     ExactSizeBidiIterator for EliasFanoBidiIter<'_, V, H, L>
 {
     #[inline(always)]
@@ -1815,7 +1816,7 @@ impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Val
     }
 }
 
-impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Value = V>>
+impl<V: Word + From<u64>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
     FusedBidiIterator for EliasFanoBidiIter<'_, V, H, L>
 {
 }
@@ -1826,8 +1827,8 @@ impl<V: Word + From<PlatformWord>, H: AsRef<[PlatformWord]>, L: SliceByValue<Val
 /// and find the maximum value, but then it uses
 /// [`EliasFanoBuilder::push_unchecked`], thus partially compensating for the
 /// cost of the first scan.
-impl<V: Word + From<PlatformWord>, A: AsRef<[V]>> From<A>
-    for EliasFano<V, BitVec<Box<[PlatformWord]>>, BitFieldVec<Box<[V]>>>
+impl<V: Word + From<u64>, A: AsRef<[V]>> From<A>
+    for EliasFano<V, BitVec<Box<[usize]>>, BitFieldVec<Box<[V]>>>
 {
     fn from(values: A) -> Self {
         let values = values.as_ref();
@@ -1887,7 +1888,7 @@ pub struct EliasFanoBuilder<V: Word = u64> {
     count: usize,
 }
 
-impl<V: Word + From<PlatformWord>> EliasFanoBuilder<V> {
+impl<V: Word + From<u64>> EliasFanoBuilder<V> {
     /// Creates a builder for an [`EliasFano`] containing
     /// `n` numbers smaller than or equal to `u`.
     ///
@@ -1895,7 +1896,7 @@ impl<V: Word + From<PlatformWord>> EliasFanoBuilder<V> {
     ///
     /// When any of the underlying structures would exceed `usize` in length.
     pub fn new(n: usize, u: V) -> Self {
-        let n_as_v = V::from(n as PlatformWord);
+        let n_as_v = V::from(n as u64);
         let l = if n > 0 && u >= n_as_v {
             (u / n_as_v).ilog2() as usize
         } else {
@@ -1977,7 +1978,7 @@ impl<V: Word + From<PlatformWord>> EliasFanoBuilder<V> {
             self.n,
             self.count
         );
-        let high_bits: BitVec<Box<[PlatformWord]>> = self.high_bits.into();
+        let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
         EliasFano {
             n: self.n,
             u: self.u,
@@ -2024,7 +2025,7 @@ impl EliasFanoBuilder<u64> {
     }
 }
 
-impl<V: Word + From<PlatformWord>> Extend<V> for EliasFanoBuilder<V> {
+impl<V: Word + From<u64>> Extend<V> for EliasFanoBuilder<V> {
     fn extend<T: IntoIterator<Item = V>>(&mut self, iter: T) {
         for value in iter {
             self.push(value);
@@ -2065,7 +2066,7 @@ pub struct EliasFanoConcurrentBuilder {
     n: usize,
     u: u64,
     l: usize,
-    low_bits: AtomicBitFieldVec<u64>,
+    low_bits: AtomicBitFieldVec<Vec<AtomicU64>>,
     high_bits: AtomicBitVec,
 }
 
@@ -2083,7 +2084,7 @@ impl EliasFanoConcurrentBuilder {
             u,
             n,
             l,
-            low_bits: AtomicBitFieldVec::<u64>::new(l, n),
+            low_bits: AtomicBitFieldVec::<Vec<AtomicU64>>::new(l, n),
             high_bits: AtomicBitVec::new(n + ((u >> l) as usize) + 1),
         }
     }
@@ -2120,7 +2121,7 @@ impl EliasFanoConcurrentBuilder {
     /// [`build_with_seq_and_dict`](EliasFanoConcurrentBuilder::build_with_seq_and_dict)
     /// methods are more convenient.
     pub fn build(self) -> EliasFano {
-        let high_bits: BitVec<Box<[PlatformWord]>> = self.high_bits.into();
+        let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
         let low_bits: BitFieldVec<Vec<u64>> = self.low_bits.into();
         let low_bits: BitFieldVec<Box<[u64]>> = low_bits.into();
         EliasFano {

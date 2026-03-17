@@ -8,10 +8,11 @@
 
 use super::SmallCounters;
 use crate::prelude::*;
-use crate::traits::WordType;
+use crate::traits::{Word, WordType};
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
+use num_primitive::PrimitiveInteger;
 
 use crate::ambassador_impl_Index;
 use crate::rank_sel::ambassador_impl_SmallCounters;
@@ -195,11 +196,14 @@ macro_rules! impl_rank_small_sel {
     ($NUM_U32S: tt; $COUNTER_WIDTH: literal; $W: ty) => {
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + AsRef<[$W]>
+                + WordType
+                + AsRef<[C::Word]>
                 + BitLength
                 + NumBits
                 + SelectHinted,
         > SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+        where
+            C::Word: Word + SelectInWord,
         {
             /// Creates a new selection structure with eight [`RankSmall`]
             /// blocks per inventory an average.
@@ -223,7 +227,7 @@ macro_rules! impl_rank_small_sel {
             }
 
             fn _new(small_counters: C, num_ones: usize, log2_ones_per_inventory: usize) -> Self {
-                let bits_per_word = <$W>::BITS as usize;
+                let bits_per_word = C::Word::BITS as usize;
                 let ones_per_inventory = 1 << log2_ones_per_inventory;
 
                 let inventory_size = num_ones.div_ceil(ones_per_inventory);
@@ -282,11 +286,14 @@ macro_rules! impl_rank_small_sel {
 
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + AsRef<[$W]>
+                + WordType
+                + AsRef<[C::Word]>
                 + BitLength
                 + NumBits
                 + SelectHinted,
         > SelectUnchecked for SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+        where
+            C::Word: Word + SelectInWord,
         {
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
                 unsafe {
@@ -387,17 +394,24 @@ macro_rules! impl_rank_small_sel {
 
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + AsRef<[$W]>
+                + WordType
+                + AsRef<[C::Word]>
                 + BitLength
                 + NumBits
                 + SelectHinted,
         > Select for SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+        where
+            C::Word: Word + SelectInWord,
         {
         }
     };
 }
 
-impl<C: SmallCounters<2, 9> + AsRef<[u64]> + BitLength + NumBits> SelectSmall<2, 9, C> {
+impl<C: SmallCounters<2, 9> + WordType + AsRef<[C::Word]> + BitLength + NumBits>
+    SelectSmall<2, 9, C>
+where
+    C::Word: Word + SelectInWord,
+{
     #[inline(always)]
     unsafe fn complete_select(
         &self,
@@ -432,14 +446,16 @@ impl<C: SmallCounters<2, 9> + AsRef<[u64]> + BitLength + NumBits> SelectSmall<2,
         hint_pos
             + unsafe {
                 self.as_ref()
-                    .get_unchecked(hint_pos / u64::BITS as usize)
+                    .get_unchecked(hint_pos / C::Word::BITS as usize)
                     .select_in_word(rank_in_word)
             }
     }
 }
 
-impl<C: SmallCounters<1, 9> + AsRef<[u64]> + BitLength + NumBits + SelectHinted>
+impl<C: SmallCounters<1, 9> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectHinted>
     SelectSmall<1, 9, C>
+where
+    C::Word: Word + SelectInWord,
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -475,8 +491,10 @@ impl<C: SmallCounters<1, 9> + AsRef<[u64]> + BitLength + NumBits + SelectHinted>
     }
 }
 
-impl<C: SmallCounters<1, 10> + AsRef<[u64]> + BitLength + NumBits + SelectHinted>
+impl<C: SmallCounters<1, 10> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectHinted>
     SelectSmall<1, 10, C>
+where
+    C::Word: Word + SelectInWord,
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -512,8 +530,10 @@ impl<C: SmallCounters<1, 10> + AsRef<[u64]> + BitLength + NumBits + SelectHinted
     }
 }
 
-impl<C: SmallCounters<1, 11> + AsRef<[u64]> + BitLength + NumBits + SelectHinted>
+impl<C: SmallCounters<1, 11> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectHinted>
     SelectSmall<1, 11, C>
+where
+    C::Word: Word + SelectInWord,
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -549,8 +569,10 @@ impl<C: SmallCounters<1, 11> + AsRef<[u64]> + BitLength + NumBits + SelectHinted
     }
 }
 
-impl<C: SmallCounters<3, 13> + AsRef<[u64]> + BitLength + NumBits + SelectHinted>
+impl<C: SmallCounters<3, 13> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectHinted>
     SelectSmall<3, 13, C>
+where
+    C::Word: Word + SelectInWord,
 {
     unsafe fn complete_select(
         &self,
@@ -591,7 +613,11 @@ impl<C: SmallCounters<3, 13> + AsRef<[u64]> + BitLength + NumBits + SelectHinted
     }
 }
 
-impl<C: SmallCounters<1, 7> + AsRef<[u32]> + BitLength + NumBits> SelectSmall<1, 7, C> {
+impl<C: SmallCounters<1, 7> + WordType + AsRef<[C::Word]> + BitLength + NumBits>
+    SelectSmall<1, 7, C>
+where
+    C::Word: Word + SelectInWord,
+{
     #[inline(always)]
     unsafe fn complete_select(
         &self,
@@ -620,14 +646,16 @@ impl<C: SmallCounters<1, 7> + AsRef<[u32]> + BitLength + NumBits> SelectSmall<1,
         hint_pos
             + unsafe {
                 self.as_ref()
-                    .get_unchecked(hint_pos / u32::BITS as usize)
+                    .get_unchecked(hint_pos / C::Word::BITS as usize)
                     .select_in_word(rank_in_word)
             }
     }
 }
 
-impl<C: SmallCounters<1, 8> + AsRef<[u32]> + BitLength + NumBits + SelectHinted>
+impl<C: SmallCounters<1, 8> + WordType + AsRef<[C::Word]> + BitLength + NumBits + SelectHinted>
     SelectSmall<1, 8, C>
+where
+    C::Word: Word + SelectInWord,
 {
     #[inline(always)]
     unsafe fn complete_select(
