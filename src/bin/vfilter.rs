@@ -34,49 +34,49 @@ use value_traits::slices::SliceByValueMut;
 ))]
 struct Args {
     /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0..n).
+    /// [0..n).​
     #[arg(short, long)]
     n: Option<usize>,
-    /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.
+    /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.​
     #[arg(short, long)]
     filename: Option<String>,
-    /// An optional name for the ε-serde serialized function.
+    /// An optional name for the ε-serde serialized function.​
     filter: Option<String>,
-    /// The number of bits of the hashes used by the filter.
+    /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]
     bits: usize,
-    /// Use this number of threads.
+    /// Use this number of threads.​
     #[arg(short, long)]
     threads: Option<usize>,
-    /// Use disk-based buckets to reduce memory usage at construction time; providing the exact number of keys will speed up the construction.
+    /// Use disk-based buckets to reduce memory usage at construction time; providing the exact number of keys will speed up the construction.​
     #[arg(short, long)]
     offline: bool,
-    /// Sort shards and check for duplicate signatures.
+    /// Sort shards and check for duplicate signatures.​
     #[arg(short, long)]
     check_dups: bool,
-    /// A 64-bit seed for the pseudorandom number generator.
+    /// A 64-bit seed for the pseudorandom number generator.​
     #[arg(long)]
     seed: Option<u64>,
-    /// Use 64-bit signatures.
+    /// Use 64-bit signatures.​
     #[arg(long, requires = "no_shards")]
     sig64: bool,
-    /// The target relative space overhead due to sharding.
+    /// The target relative space overhead due to sharding.​
     #[arg(long, default_value_t = 0.001)]
     eps: f64,
-    /// Always use the low-mem peel-by-signature algorithm (slightly slower).
+    /// Always use the low-mem peel-by-signature algorithm (slightly slower).​
     #[arg(long)]
     low_mem: bool,
-    /// Always use the high-mem peel-by-signature algorithm (slightly faster).
+    /// Always use the high-mem peel-by-signature algorithm (slightly faster).​
     #[arg(long, conflicts_with = "low_mem")]
     high_mem: bool,
-    /// Do not use sharding.
+    /// Do not use sharding.​
     #[arg(long)]
     no_shards: bool,
     /// Use slower edge logic reducing the probability of duplicate arcs for big
-    /// shards.
+    /// shards.​
     #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
     full_sigs: bool,
-    /// Use 3-hypergraphs.
+    /// Use 3-hypergraphs.​
     #[cfg(feature = "mwhc")]
     #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
     mwhc: bool,

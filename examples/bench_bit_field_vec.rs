@@ -17,16 +17,16 @@ use value_traits::slices::*;
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks bit-field vectors", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// The width of the elements of the vector.
+    /// The width of the elements of the vector.​
     width: usize,
-    /// The base-2 logarithm of the length of the vector.
+    /// The base-2 logarithm of the length of the vector.​
     log2_size: usize,
 
-    /// The number of test repetitions.
+    /// The number of test repetitions.​
     #[arg(short, long, default_value = "10")]
     repeats: usize,
 
-    /// The number of elements to get and set.
+    /// The number of elements to get and set.​
     #[arg(short, long, default_value = "10000000")]
     n: usize,
 }

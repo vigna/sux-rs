@@ -39,36 +39,36 @@ fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
 #[derive(Parser, Debug)]
 #[command(about = "Benchmark VFilter with strings or 64-bit integers", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// The maximum number strings to use from the file, or the number of 64-bit keys.
+    /// The maximum number strings to use from the file, or the number of 64-bit keys.​
     n: usize,
-    /// A name for the ε-serde serialized filter.
+    /// A name for the ε-serde serialized filter.​
     func: String,
-    /// The number of bits of the hashes used by the filter.
+    /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]
     bits: u32,
     #[arg(short = 'f', long)]
-    /// A file containing UTF-8 keys, one per line. If not specified, the 64-bit keys [0..n) are used.
+    /// A file containing UTF-8 keys, one per line. If not specified, the 64-bit keys [0..n) are used.​
     filename: Option<String>,
-    /// The number of repetitions.
+    /// The number of repetitions.​
     #[arg(short, long, default_value = "5")]
     repeats: usize,
-    /// Whether the file is compressed with zstd.
+    /// Whether the file is compressed with zstd.​
     #[arg(short, long)]
     zstd: bool,
-    /// Use 64-bit signatures.
+    /// Use 64-bit signatures.​
     #[arg(long)]
     sig64: bool,
-    /// Do not use sharding.
+    /// Do not use sharding.​
     #[arg(long)]
     no_shards: bool,
-    /// Use unaligned reads.
+    /// Use unaligned reads.​
     #[arg(long)]
     unaligned: bool,
     /// Use slower edge logic reducing the probability of duplicate arcs for big
-    /// shards.
+    /// shards.​
     #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
     full_sigs: bool,
-    /// Use 3-hypergraphs.
+    /// Use 3-hypergraphs.​
     #[cfg(feature = "mwhc")]
     #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
     mwhc: bool,
