@@ -345,12 +345,11 @@ impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>> Se
             let inventory_left =
                 *self.inventory.as_ref().get_unchecked(inventory_index_left) as usize;
 
-            let block_right =
-                *self
-                    .inventory
-                    .as_ref()
-                    .get_unchecked(inventory_index_left + 1) as usize
-                    / 64;
+            let block_right = *self
+                .inventory
+                .as_ref()
+                .get_unchecked(inventory_index_left + 1) as usize
+                / 64;
             let mut block_left = inventory_left / 64;
             let span = block_right / 4 - block_left / 4;
 
@@ -376,8 +375,7 @@ impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>> Se
                     let rank_in_superblock =
                         rank - counts.get_unchecked(count_left).absolute as usize;
 
-                    let rank_in_superblock_step_16 =
-                        rank_in_superblock as u64 * ONES_STEP_16;
+                    let rank_in_superblock_step_16 = rank_in_superblock as u64 * ONES_STEP_16;
 
                     let first = *subinv_ref.get_unchecked(subinv_pos);
                     let second = *subinv_ref.get_unchecked(subinv_pos + 1);
@@ -400,8 +398,7 @@ impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>> Se
                     count_left = block_left / Rank9::<B, C>::WORDS_PER_BLOCK;
                     let rank_in_superblock =
                         rank - counts.get_unchecked(count_left).absolute as usize;
-                    let rank_in_superblock_step_16 =
-                        rank_in_superblock as u64 * ONES_STEP_16;
+                    let rank_in_superblock_step_16 = rank_in_superblock as u64 * ONES_STEP_16;
 
                     let first = *subinv_ref.get_unchecked(subinv_pos);
                     let second = *subinv_ref.get_unchecked(subinv_pos + 1);
@@ -450,8 +447,7 @@ impl<B: AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>> Se
                         + inventory_left;
                 }
                 _ => {
-                    return *subinv_ref
-                        .get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize;
+                    return *subinv_ref.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize;
                 }
             }
 

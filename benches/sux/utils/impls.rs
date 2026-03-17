@@ -2,9 +2,7 @@ use mem_dbg::{MemDbg, MemSize};
 use sux::bits::BitVec;
 use sux::rank_sel::{Rank9, RankSmall};
 use sux::rank_sel::{Select9, SelectAdapt, SelectAdaptConst, SelectSmall};
-use sux::traits::{
-    AddNumBits, BitLength, NumBits, Select, SelectHinted, SelectUnchecked,
-};
+use sux::traits::{AddNumBits, BitLength, NumBits, Select, SelectHinted, SelectUnchecked};
 
 use super::Build;
 

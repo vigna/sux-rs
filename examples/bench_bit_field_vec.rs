@@ -38,7 +38,7 @@ pub fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let mut a = BitFieldVec::<usize>::new(args.width, 1 << args.log2_size);
+    let mut a = BitFieldVec::<Vec<usize>>::new(args.width, 1 << args.log2_size);
     let mask = (1 << args.log2_size) - 1;
 
     let mut pl = ProgressLogger::default();

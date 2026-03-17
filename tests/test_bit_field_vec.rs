@@ -50,13 +50,12 @@ fn test_bit_field_vec_apply_param<W: Word + PrimitiveNumberAs<u64>>()
 where
     u64: PrimitiveNumberAs<W>,
 {
-
     for bit_width in 0..W::BITS as usize {
         let n = 100;
         let u = W::ONE << (bit_width.saturating_sub(1).min(60) as u32);
         let mut rng = SmallRng::seed_from_u64(0);
 
-        let mut cp = BitFieldVec::<W>::new(bit_width, n);
+        let mut cp = BitFieldVec::<Vec<W>>::new(bit_width, n);
         for _ in 0..10 {
             let values = (0..n)
                 .map(|_| rng.random_range(0u64..u.as_to()).as_to())
@@ -93,13 +92,12 @@ fn test_param<W: Word + PrimitiveNumberAs<u64>>()
 where
     u64: PrimitiveNumberAs<W>,
 {
-
     for bit_width in 0..W::BITS as usize {
         let n = 100;
         let u = W::ONE << (bit_width.saturating_sub(1).min(60) as u32);
         let mut rng = SmallRng::seed_from_u64(0);
 
-        let mut v = BitFieldVec::<W>::new(bit_width, n);
+        let mut v = BitFieldVec::<Vec<W>>::new(bit_width, n);
         assert_eq!(v.bit_width(), bit_width);
         assert_eq!(
             v.mask(),
@@ -157,7 +155,7 @@ where
             }
 
             let (b, w, l) = v.clone().into_raw_parts();
-            assert_eq!(unsafe { BitFieldVec::<W>::from_raw_parts(b, w, l) }, v);
+            assert_eq!(unsafe { BitFieldVec::<Vec<W>>::from_raw_parts(b, w, l) }, v);
         }
     }
 }
@@ -168,7 +166,6 @@ where
     Atomic<W>: PrimitiveAtomicInteger,
 {
     use sux::traits::bit_field_slice::{AtomicBitFieldSlice, AtomicBitWidth};
-
 
     for bit_width in 0..W::BITS as usize {
         let n: usize = 100;
@@ -209,7 +206,7 @@ where
             }
         }
 
-        let w: BitFieldVec<W> = v.into();
+        let w: BitFieldVec<Vec<W>> = v.into();
         let x = w.clone();
         let y: AtomicBitFieldVec<W> = x.into();
         let z: AtomicBitFieldVec<W> = w.into();
@@ -228,7 +225,7 @@ where
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn test_clear() {
-    let mut b = BitFieldVec::<usize, _>::new(50, 10);
+    let mut b = BitFieldVec::<Vec<usize>>::new(50, 10);
     for i in 0..10 {
         b.set_value(i, i);
     }
@@ -239,7 +236,7 @@ fn test_clear() {
 #[test]
 fn test_usize() {
     const BITS: usize = core::mem::size_of::<usize>() * 8;
-    let mut c = BitFieldVec::<usize>::new(BITS, 4);
+    let mut c = BitFieldVec::<Vec<usize>>::new(BITS, 4);
     c.set_value(0, -1_isize as usize);
     c.set_value(1, 1234567);
     c.set_value(2, 0);
@@ -252,7 +249,7 @@ fn test_usize() {
 
 #[test]
 fn test_bit_width_zero() {
-    let c = BitFieldVec::<usize>::new(0, 1000);
+    let c = BitFieldVec::<Vec<usize>>::new(0, 1000);
     for i in 0..c.len() {
         assert_eq!(c.index_value(i), 0);
     }
@@ -265,15 +262,15 @@ fn test_from_slice() -> Result<()> {
         c.set_value(i, i)
     }
 
-    let s = BitFieldVec::<usize>::from_slice(&c)?;
+    let s = BitFieldVec::<Vec<usize>>::from_slice(&c)?;
     for i in 0..c.len() {
         assert_eq!({ s.index_value(i) }, c.index_value(i));
     }
-    let s = BitFieldVec::<u16>::from_slice(&c)?;
+    let s = BitFieldVec::<Vec<u16>>::from_slice(&c)?;
     for i in 0..c.len() {
         assert_eq!(s.index_value(i) as usize, c.index_value(i));
     }
-    assert!(BitFieldVec::<u8>::from_slice(&c).is_err());
+    assert!(BitFieldVec::<Vec<u8>>::from_slice(&c).is_err());
     Ok(())
 }
 
@@ -339,7 +336,7 @@ fn test_unaligned() {
 #[should_panic]
 #[test]
 fn test_unaligned_unchecked_59() {
-    let c = BitFieldVec::<usize, _>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
     assert_eq!(unsafe { c.get_unaligned_unchecked(0) }, 0);
 }
 
@@ -347,7 +344,7 @@ fn test_unaligned_unchecked_59() {
 #[should_panic]
 #[test]
 fn test_unaligned_unchecked_61() {
-    let c = BitFieldVec::<usize, _>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
     assert_eq!(unsafe { c.get_unaligned_unchecked(0) }, 0);
 }
 
@@ -355,7 +352,7 @@ fn test_unaligned_unchecked_61() {
 #[should_panic]
 #[test]
 fn test_unaligned_unchecked_62() {
-    let c = BitFieldVec::<usize, _>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
     assert_eq!(unsafe { c.get_unaligned_unchecked(0) }, 0);
 }
 
@@ -363,7 +360,7 @@ fn test_unaligned_unchecked_62() {
 #[should_panic]
 #[test]
 fn test_unaligned_unchecked_63() {
-    let c = BitFieldVec::<usize, _>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
     assert_eq!(unsafe { c.get_unaligned_unchecked(0) }, 0);
 }
 
@@ -372,35 +369,35 @@ fn test_unaligned_unchecked_63() {
 #[should_panic]
 #[test]
 fn test_unaligned_unchecked_no_padding() {
-    let c = BitFieldVec::<usize, _>::new(17, 2);
+    let c = BitFieldVec::<Vec<usize>>::new(17, 2);
     assert_eq!(unsafe { c.get_unaligned_unchecked(1) }, 0);
 }
 
 #[should_panic]
 #[test]
 fn test_unaligned_59() {
-    let c = BitFieldVec::<usize, _>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
     assert_eq!(c.get_unaligned(0), 0);
 }
 
 #[should_panic]
 #[test]
 fn test_unaligned_61() {
-    let c = BitFieldVec::<usize, _>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
     assert_eq!(c.get_unaligned(0), 0);
 }
 
 #[should_panic]
 #[test]
 fn test_unaligned_62() {
-    let c = BitFieldVec::<usize, _>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
     assert_eq!(c.get_unaligned(0), 0);
 }
 
 #[should_panic]
 #[test]
 fn test_unaligned_63() {
-    let c = BitFieldVec::<usize, _>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
     assert_eq!(c.get_unaligned(0), 0);
 }
 
@@ -408,27 +405,27 @@ fn test_unaligned_63() {
 #[should_panic]
 #[test]
 fn test_unaligned_no_padding() {
-    let c = BitFieldVec::<usize, _>::new(17, 2);
+    let c = BitFieldVec::<Vec<usize>>::new(17, 2);
     assert_eq!(c.get_unaligned(1), 0);
 }
 
 #[test]
 fn test_get_addr() {
-    let c = BitFieldVec::<usize, _>::new(3, 100);
+    let c = BitFieldVec::<Vec<usize>>::new(3, 100);
     let begin_addr = c.addr_of(0) as usize;
     assert_eq!(c.addr_of(50) as usize - begin_addr, 16);
 
-    let c = BitFieldVec::<u16, _>::new(3, 100);
+    let c = BitFieldVec::<Vec<u16>>::new(3, 100);
     let begin_addr = c.addr_of(0) as usize;
     assert_eq!(c.addr_of(50) as usize - begin_addr, 18);
 }
 
 #[test]
 fn test_eq() {
-    let mut b = BitFieldVec::<usize>::new(3, 10);
-    let c = BitFieldVec::<usize>::new(3, 9);
+    let mut b = BitFieldVec::<Vec<usize>>::new(3, 10);
+    let c = BitFieldVec::<Vec<usize>>::new(3, 9);
     assert_ne!(b, c);
-    let mut c = BitFieldVec::<usize>::new(3, 10);
+    let mut c = BitFieldVec::<Vec<usize>>::new(3, 10);
     assert_eq!(b, c);
 
     b.push(3);
@@ -442,7 +439,7 @@ fn test_eq() {
         assert_eq!(b, c);
     }
 
-    let c: BitFieldVec<usize, Box<[usize]>> = c.into();
+    let c: BitFieldVec<Box<[usize]>> = c.into();
     assert_eq!(b, c);
     let (bits, w, l) = c.into_raw_parts();
     let d = unsafe { BitFieldVec::from_raw_parts(bits.as_ref(), w, l) };
@@ -452,7 +449,7 @@ fn test_eq() {
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn test_reset() {
-    let mut b = BitFieldVec::<usize, _>::new(50, 10);
+    let mut b = BitFieldVec::<Vec<usize>>::new(50, 10);
     for i in 0..10 {
         b.set_value(i, i);
     }
@@ -475,7 +472,7 @@ fn test_reset() {
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn test_atomic_reset() {
-    let mut b = AtomicBitFieldVec::<usize, _>::new(50, 10);
+    let mut b = AtomicBitFieldVec::<usize>::new(50, 10);
     for i in 0..10 {
         b.set_atomic(i, 1, Ordering::Relaxed);
     }
@@ -498,7 +495,7 @@ fn test_atomic_reset() {
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn test_set_len() {
-    let mut b = BitFieldVec::<usize, _>::new(50, 10);
+    let mut b = BitFieldVec::<Vec<usize>>::new(50, 10);
     unsafe {
         b.set_len(5);
     }
@@ -509,38 +506,38 @@ fn test_set_len() {
 #[test]
 fn test_from() {
     // Vec to atomic vec
-    let mut b = BitFieldVec::<usize, Vec<usize>>::new(50, 10);
+    let mut b = BitFieldVec::<Vec<usize>>::new(50, 10);
     for i in 0..10 {
         b.set_value(i, i);
     }
     let b: AtomicBitFieldVec<usize, Vec<AtomicUsize>> = b.into();
-    let b: BitFieldVec<usize, Vec<usize>> = b.into();
+    let b: BitFieldVec<Vec<usize>> = b.into();
     for i in 0..10 {
         assert_eq!(b.index_value(i), i);
     }
 
     // Boxed slice to atomic boxed slice
     let bits = vec![0; 10].into_boxed_slice();
-    let mut b = unsafe { BitFieldVec::<usize, Box<[usize]>>::from_raw_parts(bits, 50, 10) };
+    let mut b = unsafe { BitFieldVec::<Box<[usize]>>::from_raw_parts(bits, 50, 10) };
     for i in 0..10 {
         b.set_value(i, i);
     }
     let b: AtomicBitFieldVec<usize, Box<[AtomicUsize]>> = b.into();
-    let b: BitFieldVec<usize, Box<[usize]>> = b.into();
+    let b: BitFieldVec<Box<[usize]>> = b.into();
     for i in 0..10 {
         assert_eq!(b.index_value(i), i);
     }
 
     // Reference to atomic reference
     let bits = vec![0; 10].into_boxed_slice();
-    let mut b = unsafe { BitFieldVec::<usize, Box<[usize]>>::from_raw_parts(bits, 50, 10) };
+    let mut b = unsafe { BitFieldVec::<Box<[usize]>>::from_raw_parts(bits, 50, 10) };
     for i in 0..10 {
         b.set_value(i, i);
     }
     let (bits, w, l) = b.into_raw_parts();
-    let b = unsafe { BitFieldVec::<usize, &[usize]>::from_raw_parts(bits.as_ref(), w, l) };
+    let b = unsafe { BitFieldVec::<&[usize]>::from_raw_parts(bits.as_ref(), w, l) };
     if let Result::<AtomicBitFieldVec<usize, &[AtomicUsize]>, _>::Ok(b) = b.try_into() {
-        let b: BitFieldVec<usize, &[usize]> = b.into();
+        let b: BitFieldVec<&[usize]> = b.into();
         for i in 0..10 {
             assert_eq!(b.index_value(i), i);
         }
@@ -548,25 +545,24 @@ fn test_from() {
 
     // Mutable reference to mutable reference
     let mut bits = vec![0; 10].into_boxed_slice();
-    let mut b =
-        unsafe { BitFieldVec::<usize, &mut [usize]>::from_raw_parts(bits.as_mut(), 50, 10) };
+    let mut b = unsafe { BitFieldVec::<&mut [usize]>::from_raw_parts(bits.as_mut(), 50, 10) };
     for i in 0..10 {
         b.set_value(i, i);
     }
     if let Result::<AtomicBitFieldVec<usize, &mut [AtomicUsize]>, _>::Ok(b) = b.try_into() {
-        let b: BitFieldVec<usize, &mut [usize]> = b.into();
+        let b: BitFieldVec<&mut [usize]> = b.into();
         for i in 0..10 {
             assert_eq!(b.index_value(i), i);
         }
     }
 
     // Vec to boxed slice
-    let mut b = BitFieldVec::<usize, Vec<usize>>::new(50, 10);
+    let mut b = BitFieldVec::<Vec<usize>>::new(50, 10);
     for i in 0..10 {
         b.set_value(i, i);
     }
-    let b: BitFieldVec<usize, Box<[usize]>> = b.into();
-    let b: BitFieldVec<usize, Vec<usize>> = b.into();
+    let b: BitFieldVec<Box<[usize]>> = b.into();
+    let b: BitFieldVec<Vec<usize>> = b.into();
     for i in 0..10 {
         assert_eq!(b.index_value(i), i);
     }
@@ -597,7 +593,7 @@ fn test_macro() {
 
 #[test]
 fn test_slice() {
-    let mut b = BitFieldVec::<u64>::new(6, 50);
+    let mut b = BitFieldVec::<Vec<u64>>::new(6, 50);
 
     assert_eq!(b.as_slice(), vec![0; 5]);
 
@@ -710,7 +706,7 @@ fn test_iter_double_ended() {
     assert_eq!(iter.next(), None);
 
     // empty vector
-    let b = BitFieldVec::<usize>::new(7, 0);
+    let b = BitFieldVec::<Vec<usize>>::new(7, 0);
     let mut iter = b.into_iter();
     assert_eq!(iter.next_back(), None);
 
@@ -727,12 +723,93 @@ fn test_iter_double_ended() {
         } else {
             (1usize << bit_width) - 1
         };
-        let mut bfv = BitFieldVec::<usize>::new(bit_width, n);
+        let mut bfv = BitFieldVec::<Vec<usize>>::new(bit_width, n);
         for i in 0..n {
             bfv.set_value(i, i & mask);
         }
         let rev: Vec<_> = bfv.into_iter().rev().collect();
         let expected: Vec<_> = (0..n).rev().map(|i| i & mask).collect();
         assert_eq!(rev, expected, "Failed for bit_width={bit_width}");
+    }
+}
+
+#[cfg(feature = "epserde")]
+#[test]
+fn test_epserde() {
+    use epserde::prelude::Aligned64;
+    use epserde::utils::AlignedCursor;
+
+    macro_rules! test_epserde_word {
+        ($W:ty) => {{
+            let n = 100;
+            for bit_width in 0..=<$W>::BITS as usize {
+                let mut bfv = BitFieldVec::<Vec<$W>>::new(bit_width, n);
+                let mask: $W = if bit_width == 0 {
+                    0
+                } else {
+                    <$W>::MAX >> (<$W>::BITS as usize - bit_width)
+                };
+                for i in 0..n {
+                    bfv.set_value(i, (i as $W) & mask);
+                }
+
+                let mut cursor = <AlignedCursor<Aligned64>>::new();
+                unsafe {
+                    use epserde::ser::Serialize;
+                    bfv.serialize(&mut cursor).expect("Could not serialize");
+                }
+
+                let len = cursor.len();
+                cursor.set_position(0);
+                let bfv2 = unsafe {
+                    use epserde::deser::Deserialize;
+                    <BitFieldVec<Vec<$W>>>::read_mem(&mut cursor, len)
+                        .expect("Could not deserialize")
+                };
+                let bfv2 = bfv2.uncase();
+
+                assert_eq!(bfv.len(), bfv2.len());
+                assert_eq!(bfv.bit_width(), bfv2.bit_width());
+                for i in 0..n {
+                    assert_eq!(
+                        bfv.get_value(i),
+                        bfv2.get_value(i),
+                        "Mismatch at index {i}, bit_width={bit_width}, word={}",
+                        stringify!($W)
+                    );
+                }
+            }
+        }};
+    }
+
+    test_epserde_word!(u8);
+    test_epserde_word!(u16);
+    test_epserde_word!(u32);
+    test_epserde_word!(u64);
+
+    // Also test Box<[W]> backend (the deserialization target type)
+    let mut bfv = BitFieldVec::<Vec<u32>>::new(12, 50);
+    for i in 0..50 {
+        bfv.set_value(i, (i as u32) & 0xFFF);
+    }
+    let bfv: BitFieldVec<Box<[u32]>> = bfv.into();
+
+    let mut cursor = <AlignedCursor<Aligned64>>::new();
+    unsafe {
+        use epserde::ser::Serialize;
+        bfv.serialize(&mut cursor).expect("Could not serialize");
+    }
+
+    let len = cursor.len();
+    cursor.set_position(0);
+    let bfv2 = unsafe {
+        use epserde::deser::Deserialize;
+        <BitFieldVec<Box<[u32]>>>::read_mem(&mut cursor, len).expect("Could not deserialize")
+    };
+    let bfv2 = bfv2.uncase();
+
+    assert_eq!(bfv.len(), bfv2.len());
+    for i in 0..50 {
+        assert_eq!(bfv.get_value(i), bfv2.get_value(i));
     }
 }

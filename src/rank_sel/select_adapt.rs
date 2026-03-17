@@ -18,8 +18,8 @@ use std::{
 use crate::{
     prelude::{BitCount, BitLength, Select, SelectHinted},
     traits::{
-        NumBits, Rank, RankHinted, RankUnchecked, RankZero, SelectUnchecked,
-        SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word, WordType,
+        NumBits, Rank, RankHinted, RankUnchecked, RankZero, SelectUnchecked, SelectZero,
+        SelectZeroHinted, SelectZeroUnchecked, Word, WordType,
     },
 };
 
@@ -274,8 +274,7 @@ pub(super) const MAX_INVENTORY_BITS: usize = usize::MAX >> 2;
 
 /// log₂ of the number of `u16` values that fit in one `usize`
 /// (2 on 64-bit, 1 on 32-bit).
-pub(super) const LOG2_U16_PER_USIZE: usize =
-    (usize::BITS / 16).ilog2() as usize;
+pub(super) const LOG2_U16_PER_USIZE: usize = (usize::BITS / 16).ilog2() as usize;
 
 /// Number of `u32` values that fit in one `usize`
 /// (2 on 64-bit, 1 on 32-bit).
@@ -288,8 +287,7 @@ pub(super) const U32_PER_USIZE: usize = (usize::BITS / 32) as usize;
 ///
 /// Defined as 6 + log₂(`usize::BITS`), giving 12 on 64-bit and
 /// 11 on 32-bit. This ensures the same space overhead on both platforms.
-pub(super) const DEFAULT_LOG2_ONES_PER_INVENTORY: usize =
-    6 + usize::BITS.ilog2() as usize;
+pub(super) const DEFAULT_LOG2_ONES_PER_INVENTORY: usize = 6 + usize::BITS.ilog2() as usize;
 
 /// Panics if the bit vector length exceeds [`MAX_INVENTORY_BITS`].
 #[inline]
@@ -579,8 +577,8 @@ where
         // A u64 for the inventory, and words_per_inventory for the subinventory
         let words_per_inventory = words_per_subinventory + 1;
 
-        let log2_ones_per_sub16 =
-            log2_ones_per_inventory.saturating_sub(log2_words_per_subinventory + LOG2_U16_PER_USIZE);
+        let log2_ones_per_sub16 = log2_ones_per_inventory
+            .saturating_sub(log2_words_per_subinventory + LOG2_U16_PER_USIZE);
         let ones_per_sub16 = 1 << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
@@ -785,8 +783,7 @@ where
                         #[cfg(target_pointer_width = "64")]
                         SpanType::U64 => {
                             if subinventory_idx < words_per_subinventory {
-                                inventory[start_inv_idx + 1 + subinventory_idx] =
-                                    bit_index;
+                                inventory[start_inv_idx + 1 + subinventory_idx] = bit_index;
                                 subinventory_idx += 1;
                             } else {
                                 assert!(spilled < spill_size);
@@ -845,8 +842,8 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + BitLength + SelectHinted, I: AsRef<[usize]>>
-    SelectUnchecked for SelectAdapt<B, I>
+impl<B: WordType + AsRef<[B::Word]> + BitLength + SelectHinted, I: AsRef<[usize]>> SelectUnchecked
+    for SelectAdapt<B, I>
 where
     B::Word: Word + SelectInWord,
 {
@@ -885,7 +882,8 @@ where
                 .get()
                     - inventory_rank;
                 let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span, self.log2_ones_per_sub16);
-                let hint_pos = if subrank >> log2_ones_per_sub32 < (words_per_subinventory - 1) * U32_PER_USIZE
+                let hint_pos = if subrank >> log2_ones_per_sub32
+                    < (words_per_subinventory - 1) * U32_PER_USIZE
                 {
                     let u32s = inventory
                         .get_unchecked(inventory_start_pos + 2..)
@@ -906,7 +904,8 @@ where
 
                     inventory_rank
                         + *spilled_u32s.get_unchecked(
-                            (subrank >> log2_ones_per_sub32) - (words_per_subinventory - 1) * U32_PER_USIZE,
+                            (subrank >> log2_ones_per_sub32)
+                                - (words_per_subinventory - 1) * U32_PER_USIZE,
                         ) as usize
                 };
                 let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
@@ -932,8 +931,8 @@ where
     }
 }
 
-impl<B: WordType + SelectHinted + AsRef<[B::Word]> + NumBits, I: AsRef<[usize]>>
-    Select for SelectAdapt<B, I>
+impl<B: WordType + SelectHinted + AsRef<[B::Word]> + NumBits, I: AsRef<[usize]>> Select
+    for SelectAdapt<B, I>
 where
     B::Word: Word + SelectInWord,
 {

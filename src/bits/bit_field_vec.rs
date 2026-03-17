@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Vectors of bit fields of fixed width (AKA “compact arrays“, “bit array“,
+//! Vectors of bit fields of fixed width (AKA "compact arrays", "bit array",
 //! etc.)
 //!
 //! Elements are stored contiguously, with no padding bits (in particular,
@@ -42,8 +42,8 @@
 //! part of the [`SliceByValueMut`] trait, and thus returns an iterator over
 //! elements implementing [`SliceByValueMut`]; the elements, however, implement
 //! also [`BitFieldSliceMut`], and you can use this property by adding the bound
-//! `for<'a> BitFieldSliceMut<W, ChunksMut<'a>: Iterator<Item:
-//! BitFieldSliceMut<W>>>`.
+//! `for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item:
+//! BitFieldSliceMut>>`.
 //!
 //! Nothing is assumed about the content of the backend outside the
 //! bits of the vector. Moreover, the content of the backend outside of the
@@ -70,14 +70,14 @@
 //! # use bit_field_slice::*;
 //! # use value_traits::slices::*;
 //! // Bit field vector of bit width 5 and length 10, all entries set to zero
-//! let mut b = <BitFieldVec<usize>>::new(5, 10);
+//! let mut b = <BitFieldVec<Vec<usize>>>::new(5, 10);
 //! assert_eq!(b.len(), 10);
 //! assert_eq!(b.bit_width(), 5);
 //! b.set_value(0, 3);
 //! assert_eq!(b.index_value(0), 3);
 //!
 //! // Empty bit field vector of bit width 20 with capacity 10
-//! let mut b = <BitFieldVec<usize>>::with_capacity(20, 10);
+//! let mut b = <BitFieldVec<Vec<usize>>>::with_capacity(20, 10);
 //! assert_eq!(b.len(), 0);
 //! assert_eq!(b.bit_width(), 20);
 //! b.push(20);
@@ -106,6 +106,7 @@ use crate::utils::{
 use crate::{panic_if_out_of_bounds, panic_if_value};
 use anyhow::{Result, bail};
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic, PrimitiveAtomicInteger};
+use num_primitive::{PrimitiveInteger, PrimitiveNumber};
 
 use mem_dbg::*;
 #[cfg(feature = "rayon")]
@@ -156,7 +157,7 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 #[macro_export]
 macro_rules! bit_field_vec {
     ($w:expr) => {
-        $crate::bits::BitFieldVec::<$crate::traits::PlatformWord, _>::new($w, 0)
+        <$crate::bits::BitFieldVec>::new($w, 0)
     };
     ($w:expr; $n:expr; $v:expr) => {
         compile_error!(
@@ -165,7 +166,7 @@ macro_rules! bit_field_vec {
     };
     ($w:expr => $v:expr; $n:expr) => {
         {
-            let mut bit_field_vec = $crate::bits::BitFieldVec::<$crate::traits::PlatformWord, _>::with_capacity($w, $n);
+            let mut bit_field_vec = <$crate::bits::BitFieldVec>::with_capacity($w, $n);
             // Force type
             let v: $crate::traits::PlatformWord = $v;
             bit_field_vec.resize($n, v);
@@ -174,7 +175,7 @@ macro_rules! bit_field_vec {
     };
     ($w:expr; $($x:expr),+ $(,)?) => {
         {
-            let mut b = $crate::bits::BitFieldVec::<$crate::traits::PlatformWord, _>::with_capacity($w, [$($x),+].len());
+            let mut b = <$crate::bits::BitFieldVec>::with_capacity($w, [$($x),+].len());
             $(
                 // Force type
                 let x: $crate::traits::PlatformWord = $x;
@@ -185,23 +186,31 @@ macro_rules! bit_field_vec {
     };
 }
 
-/// A vector of bit fields of fixed width (AKA “compact array“, “bit array“,
+/// A vector of bit fields of fixed width (AKA "compact array", "bit array",
 /// etc.).
 ///
 /// See the [module documentation](crate::bits) for more details.
 #[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
-#[value_traits_subslices(bound = "B: AsRef<[W]>")]
+#[value_traits_subslices(bound = "B: AsRef<[B::Word]>")]
+#[value_traits_subslices(bound = "B::Word: Word")]
 #[derive(value_traits::SubslicesMut)]
-#[value_traits_subslices_mut(bound = "B: AsRef<[W]> + AsMut<[W]>")]
+#[value_traits_subslices_mut(bound = "B: AsRef<[B::Word]> + AsMut<[B::Word]>")]
+#[value_traits_subslices_mut(bound = "B::Word: Word")]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(
+    feature = "epserde",
+    epserde(bound(
+        deser = "for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: WordType<Word = B::Word>"
+    ))
+)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct BitFieldVec<W: Word = PlatformWord, B = Vec<W>> {
+pub struct BitFieldVec<B: WordType = Vec<PlatformWord>> {
     /// The underlying storage.
     bits: B,
     /// The bit width of the values stored in the vector.
     bit_width: usize,
     /// A mask with its lowest `bit_width` bits set to one.
-    mask: W,
+    mask: B::Word,
     /// The length of the vector.
     len: usize,
 }
@@ -218,7 +227,10 @@ fn mask<W: Word>(bit_width: usize) -> W {
     }
 }
 
-impl<W: Word, B> BitFieldVec<W, B> {
+impl<B: WordType> BitFieldVec<B>
+where
+    B::Word: Word,
+{
     /// # Safety
     /// `len` * `bit_width` must be between 0 (included) and the number of
     /// bits in `bits` (included).
@@ -243,7 +255,10 @@ impl<W: Word, B> BitFieldVec<W, B> {
     /// This is unsafe because it's the caller's responsibility to ensure
     /// that the length is compatible with the modified bits.
     #[inline(always)]
-    pub unsafe fn map<W2: Word, B2>(self, f: impl FnOnce(B) -> B2) -> BitFieldVec<W2, B2> {
+    pub unsafe fn map<B2: WordType>(self, f: impl FnOnce(B) -> B2) -> BitFieldVec<B2>
+    where
+        B2::Word: Word,
+    {
         BitFieldVec {
             bits: f(self.bits),
             bit_width: self.bit_width,
@@ -253,15 +268,18 @@ impl<W: Word, B> BitFieldVec<W, B> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
+impl<B: WordType + AsRef<[B::Word]>> BitFieldVec<B>
+where
+    B::Word: Word,
+{
     /// Gets the address of the item storing (the first part of)
     /// the element of given index.
     ///
     /// This method is mainly useful for manually prefetching
     /// parts of the data structure.
-    pub fn addr_of(&self, index: usize) -> *const W {
+    pub fn addr_of(&self, index: usize) -> *const B::Word {
         let start_bit = index * self.bit_width;
-        let word_index = start_bit / W::BITS as usize;
+        let word_index = start_bit / B::Word::BITS as usize;
         (&self.bits.as_ref()[word_index]) as *const _
     }
 
@@ -279,8 +297,8 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     /// # Panics
     ///
     /// This method will panic if the constraints above are not respected.
-    pub fn get_unaligned(&self, index: usize) -> W {
-        let bits = W::BITS as usize;
+    pub fn get_unaligned(&self, index: usize) -> B::Word {
+        let bits = B::Word::BITS as usize;
         assert!(
             self.bit_width <= bits - 8 + 2
                 || self.bit_width == bits - 8 + 4
@@ -288,7 +306,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
         );
         panic_if_out_of_bounds!(index, self.len);
         assert!(
-            (index * self.bit_width) / size_of::<W>() + size_of::<W>()
+            (index * self.bit_width) / size_of::<B::Word>() + size_of::<B::Word>()
                 <= std::mem::size_of_val(self.bits.as_ref())
         );
         unsafe { self.get_unaligned_unchecked(index) }
@@ -306,8 +324,8 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
     ///
     /// This method will panic in debug mode if the safety constraints are not
     /// respected.
-    pub unsafe fn get_unaligned_unchecked(&self, index: usize) -> W {
-        let bits = W::BITS as usize;
+    pub unsafe fn get_unaligned_unchecked(&self, index: usize) -> B::Word {
+        let bits = B::Word::BITS as usize;
         debug_assert!(
             self.bit_width <= bits - 8 + 2
                 || self.bit_width == bits - 8 + 4
@@ -316,16 +334,16 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
         let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
         let start_bit = index * self.bit_width;
         debug_assert!(
-            start_bit / size_of::<W>() + size_of::<W>()
+            start_bit / size_of::<B::Word>() + size_of::<B::Word>()
                 <= std::mem::size_of_val(self.bits.as_ref())
         );
-        let ptr = unsafe { base_ptr.add(start_bit / 8) } as *const W;
+        let ptr = unsafe { base_ptr.add(start_bit / 8) } as *const B::Word;
         let word = unsafe { core::ptr::read_unaligned(ptr) };
         (word >> (start_bit % 8)) & self.mask
     }
 
-    /// Returns the backend of the vector as a slice of `W`.
-    pub fn as_slice(&self) -> &[W] {
+    /// Returns the backend of the vector as a slice of words.
+    pub fn as_slice(&self) -> &[B::Word] {
         self.bits.as_ref()
     }
 }
@@ -336,7 +354,7 @@ impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
 /// of the iteration will be shorter.
 ///
 /// This struct is created by the
-/// [`try_chunks_mut`](crate::bits::bit_field_vec::BitFieldVec#impl-BitFieldSliceMut<W>-for-BitFieldVec<W,+B>)
+/// [`try_chunks_mut`](crate::bits::bit_field_vec::BitFieldVec#impl-BitFieldSliceMut-for-BitFieldVec<B>)
 /// method.
 pub struct ChunksMut<'a, W: Word> {
     remaining: usize,
@@ -346,7 +364,7 @@ pub struct ChunksMut<'a, W: Word> {
 }
 
 impl<'a, W: Word> Iterator for ChunksMut<'a, W> {
-    type Item = BitFieldVec<W, &'a mut [W]>;
+    type Item = BitFieldVec<&'a mut [W]>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -369,9 +387,9 @@ impl<'a, W: Word> FusedIterator for ChunksMut<'a, W> where
 {
 }
 
-impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {}
+impl<B: WordType + AsRef<[B::Word]>> BitFieldVec<B> where B::Word: Word {}
 
-impl<W: Word> BitFieldVec<W, Vec<W>> {
+impl<W: Word> BitFieldVec<Vec<W>> {
     /// Creates a new zero-initialized vector of given bit width and length.
     pub fn new(bit_width: usize, len: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
@@ -447,9 +465,9 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     ///
     /// Returns an error if the bit width of the values in `slice` is larger than
     /// `W::BITS`.
-    pub fn from_slice<SW>(slice: &impl BitFieldSlice<SW>) -> Result<Self>
+    pub fn from_slice<S: BitFieldSlice>(slice: &S) -> Result<Self>
     where
-        SW: Word + num_primitive::PrimitiveNumberAs<W>,
+        S::Value: Word + num_primitive::PrimitiveNumberAs<W>,
     {
         let mut max_len: usize = 0;
         for i in 0..slice.len() {
@@ -517,25 +535,35 @@ impl<W: Word> BitFieldVec<W, Vec<W>> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldVec<W, B> {}
+impl<B: WordType + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldVec<B> where B::Word: Word {}
 
-impl<W: Word, T> BitWidth<W> for BitFieldVec<W, T> {
+impl<B: WordType> WordType for BitFieldVec<B> {
+    type Word = B::Word;
+}
+
+impl<B: WordType> BitWidth for BitFieldVec<B>
+where
+    B::Word: Word,
+{
     #[inline(always)]
     fn bit_width(&self) -> usize {
-        debug_assert!(self.bit_width <= W::BITS as usize);
+        debug_assert!(self.bit_width <= B::Word::BITS as usize);
         self.bit_width
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> SliceByValue for BitFieldVec<W, B> {
-    type Value = W;
+impl<B: WordType + AsRef<[B::Word]>> SliceByValue for BitFieldVec<B>
+where
+    B::Word: Word,
+{
+    type Value = B::Word;
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
     }
 
-    unsafe fn get_value_unchecked(&self, index: usize) -> W {
-        let bits = W::BITS as usize;
+    unsafe fn get_value_unchecked(&self, index: usize) -> B::Word {
+        let bits = B::Word::BITS as usize;
         let pos = index * self.bit_width;
         let word_index = pos / bits;
         let bit_index = pos % bits;
@@ -553,44 +581,48 @@ impl<W: Word, B: AsRef<[W]>> SliceByValue for BitFieldVec<W, B> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> BitFieldSlice<W> for BitFieldVec<W, B> {
-    fn as_slice(&self) -> &[W] {
+impl<B: WordType + AsRef<[B::Word]>> BitFieldSlice for BitFieldVec<B>
+where
+    B::Word: Word,
+{
+    fn as_slice(&self) -> &[Self::Value] {
         self.bits.as_ref()
     }
 }
 
-impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> BitFieldSliceMut<W> for BitFieldVec<W, B> {
-    #[inline(always)]
-    fn mask(&self) -> W {
-        self.mask
-    }
+impl<B: WordType + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldSliceMut for BitFieldVec<B>
+where
+    B::Word: Word,
+{
     fn reset(&mut self) {
         let bit_len = self.len * self.bit_width;
-        let full_words = bit_len / W::BITS as usize;
-        let residual = bit_len % W::BITS as usize;
+        let full_words = bit_len / B::Word::BITS as usize;
+        let residual = bit_len % B::Word::BITS as usize;
         let bits = self.bits.as_mut();
-        bits[..full_words].iter_mut().for_each(|x| *x = W::ZERO);
+        bits[..full_words]
+            .iter_mut()
+            .for_each(|x| *x = B::Word::ZERO);
         if residual != 0 {
-            bits[full_words] &= W::MAX << residual;
+            bits[full_words] &= B::Word::MAX << residual;
         }
     }
 
     #[cfg(feature = "rayon")]
     fn par_reset(&mut self) {
         let bit_len = self.len * self.bit_width;
-        let full_words = bit_len / W::BITS as usize;
-        let residual = bit_len % W::BITS as usize;
+        let full_words = bit_len / B::Word::BITS as usize;
+        let residual = bit_len % B::Word::BITS as usize;
         let bits = self.bits.as_mut();
         bits[..full_words]
             .par_iter_mut()
             .with_min_len(RAYON_MIN_LEN)
-            .for_each(|x| *x = W::ZERO);
+            .for_each(|x| *x = B::Word::ZERO);
         if residual != 0 {
-            bits[full_words] &= W::MAX << residual;
+            bits[full_words] &= B::Word::MAX << residual;
         }
     }
 
-    fn as_mut_slice(&mut self) -> &mut [W] {
+    fn as_mut_slice(&mut self) -> &mut [B::Word] {
         self.bits.as_mut()
     }
 }
@@ -618,9 +650,12 @@ impl<W: Word> core::fmt::Display for ChunksMutError<W> {
 
 impl<W: Word> std::error::Error for ChunksMutError<W> {}
 
-impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> {
+impl<B: WordType + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueMut for BitFieldVec<B>
+where
+    B::Word: Word,
+{
     #[inline(always)]
-    fn set_value(&mut self, index: usize, value: W) {
+    fn set_value(&mut self, index: usize, value: B::Word) {
         panic_if_out_of_bounds!(index, self.len);
         panic_if_value!(value, self.mask, self.bit_width);
         unsafe {
@@ -628,9 +663,8 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
         }
     }
 
-    unsafe fn set_value_unchecked(&mut self, index: usize, value: W) {
-
-        let bits = W::BITS as usize;
+    unsafe fn set_value_unchecked(&mut self, index: usize, value: B::Word) {
+        let bits = B::Word::BITS as usize;
         let pos = index * self.bit_width;
         let word_index = pos / bits;
         let bit_index = pos % bits;
@@ -644,7 +678,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
                 *data.get_unchecked_mut(word_index) = word;
             } else {
                 let mut word = *data.get_unchecked_mut(word_index);
-                word &= (W::ONE << bit_index) - W::ONE;
+                word &= (B::Word::ONE << bit_index) - B::Word::ONE;
                 word |= value << bit_index;
                 *data.get_unchecked_mut(word_index) = word;
 
@@ -656,15 +690,14 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
         }
     }
 
-    fn replace_value(&mut self, index: usize, value: W) -> W {
+    fn replace_value(&mut self, index: usize, value: B::Word) -> B::Word {
         panic_if_out_of_bounds!(index, self.len);
         panic_if_value!(value, self.mask, self.bit_width);
         unsafe { self.replace_value_unchecked(index, value) }
     }
 
-    unsafe fn replace_value_unchecked(&mut self, index: usize, value: W) -> W {
-
-        let bits = W::BITS as usize;
+    unsafe fn replace_value_unchecked(&mut self, index: usize, value: B::Word) -> B::Word {
+        let bits = B::Word::BITS as usize;
         let pos = index * self.bit_width;
         let word_index = pos / bits;
         let bit_index = pos % bits;
@@ -681,7 +714,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
             } else {
                 let mut word = *data.get_unchecked_mut(word_index);
                 let mut old_value = word >> bit_index;
-                word &= (W::ONE << bit_index) - W::ONE;
+                word &= (B::Word::ONE << bit_index) - B::Word::ONE;
                 word |= value << bit_index;
                 *data.get_unchecked_mut(word_index) = word;
 
@@ -712,7 +745,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
         let bit_len = len * bit_width;
         let src_pos = from * self.bit_width;
         let dst_pos = to * dst.bit_width;
-        let bits = W::BITS as usize;
+        let bits = B::Word::BITS as usize;
         let src_bit = src_pos % bits;
         let dst_bit = dst_pos % bits;
         let src_first_word = src_pos / bits;
@@ -723,13 +756,13 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
         let dest = dst.bits.as_mut();
 
         if src_first_word == src_last_word && dst_first_word == dst_last_word {
-            let mask = W::MAX >> (bits - bit_len);
+            let mask = B::Word::MAX >> (bits - bit_len);
             let word = (source[src_first_word] >> src_bit) & mask;
             dest[dst_first_word] &= !(mask << dst_bit);
             dest[dst_first_word] |= word << dst_bit;
         } else if src_first_word == src_last_word {
             // dst_first_word != dst_last_word
-            let mask = W::MAX >> (bits - bit_len);
+            let mask = B::Word::MAX >> (bits - bit_len);
             let word = (source[src_first_word] >> src_bit) & mask;
             dest[dst_first_word] &= !(mask << dst_bit);
             dest[dst_first_word] |= (word & mask) << dst_bit;
@@ -737,7 +770,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
             dest[dst_last_word] |= (word & mask) >> (bits - dst_bit);
         } else if dst_first_word == dst_last_word {
             // src_first_word != src_last_word
-            let mask = W::MAX >> (bits - bit_len);
+            let mask = B::Word::MAX >> (bits - bit_len);
             let word = ((source[src_first_word] >> src_bit)
                 | (source[src_last_word] << (bits - src_bit)))
                 & mask;
@@ -745,7 +778,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
             dest[dst_first_word] |= word << dst_bit;
         } else if src_bit == dst_bit {
             // src_first_word != src_last_word && dst_first_word != dst_last_word
-            let mask = W::MAX << dst_bit;
+            let mask = B::Word::MAX << dst_bit;
             dest[dst_first_word] &= !mask;
             dest[dst_first_word] |= source[src_first_word] & mask;
 
@@ -753,14 +786,14 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
                 .copy_from_slice(&source[(1 + src_first_word)..src_last_word]);
 
             let residual = bit_len - (bits - src_bit) - (dst_last_word - dst_first_word - 1) * bits;
-            let mask = W::MAX >> (bits - residual);
+            let mask = B::Word::MAX >> (bits - residual);
             dest[dst_last_word] &= !mask;
             dest[dst_last_word] |= source[src_last_word] & mask;
         } else if src_bit < dst_bit {
             // src_first_word != src_last_word && dst_first_word !=
             // dst_last_word
-            let dst_mask = W::MAX << dst_bit;
-            let src_mask = W::MAX << src_bit;
+            let dst_mask = B::Word::MAX << dst_bit;
+            let src_mask = B::Word::MAX << src_bit;
             let shift = dst_bit - src_bit;
             dest[dst_first_word] &= !dst_mask;
             dest[dst_first_word] |= (source[src_first_word] & src_mask) << shift;
@@ -771,14 +804,14 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
                 word = source[src_first_word + i] >> (bits - shift);
             }
             let residual = bit_len - (bits - dst_bit) - (dst_last_word - dst_first_word - 1) * bits;
-            let mask = W::MAX >> (bits - residual);
+            let mask = B::Word::MAX >> (bits - residual);
             dest[dst_last_word] &= !mask;
             dest[dst_last_word] |= (word | (source[src_last_word] << shift)) & mask;
         } else {
             // src_first_word != src_last_word && dst_first_word !=
             // dst_last_word && src_bit > dst_bit
-            let dst_mask = W::MAX << dst_bit;
-            let src_mask = W::MAX << src_bit;
+            let dst_mask = B::Word::MAX << dst_bit;
+            let src_mask = B::Word::MAX << src_bit;
             let shift = src_bit - dst_bit;
             dest[dst_first_word] &= !dst_mask;
             dest[dst_first_word] |= (source[src_first_word] & src_mask) >> shift;
@@ -795,7 +828,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
             word |= source[src_last_word] << (bits - shift);
 
             let residual = bit_len - (bits - dst_bit) - (dst_last_word - dst_first_word - 1) * bits;
-            let mask = W::MAX >> (bits - residual);
+            let mask = B::Word::MAX >> (bits - residual);
             dest[dst_last_word] &= !mask;
             dest[dst_last_word] |= word & mask;
         }
@@ -816,13 +849,13 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
         if bit_width == 0 {
             return;
         }
-        let mask = self.mask();
+        let mask = self.mask;
         let number_of_words: usize = self.bits.as_ref().len();
         let last_word_idx = number_of_words.saturating_sub(1);
 
-        let bits = W::BITS as usize;
-        let mut write_buffer: W = W::ZERO;
-        let mut read_buffer: W = *unsafe { self.bits.as_ref().get_unchecked(0) };
+        let bits = B::Word::BITS as usize;
+        let mut write_buffer: B::Word = B::Word::ZERO;
+        let mut read_buffer: B::Word = *unsafe { self.bits.as_ref().get_unchecked(0) };
 
         // specialized case because it's much faster
         if bit_width.is_power_of_two() {
@@ -835,7 +868,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
 
             for read_idx in 1..number_of_words {
                 // pre-load the next word so it loads while we parse the buffer
-                let next_word: W = *unsafe { self.bits.as_ref().get_unchecked(read_idx) };
+                let next_word: B::Word = *unsafe { self.bits.as_ref().get_unchecked(read_idx) };
 
                 // parse as much as we can from the buffer
                 loop {
@@ -856,10 +889,10 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
                     bits_in_buffer = next_bits_in_buffer;
                 }
 
-                debug_assert_eq!(read_buffer, W::ZERO);
+                debug_assert_eq!(read_buffer, B::Word::ZERO);
                 *unsafe { self.bits.as_mut().get_unchecked_mut(read_idx - 1) } = write_buffer;
                 read_buffer = next_word;
-                write_buffer = W::ZERO;
+                write_buffer = B::Word::ZERO;
                 bits_in_buffer = 0;
             }
 
@@ -897,7 +930,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
                 // We retrieve the value from the current word.
                 let offset = global_bit_index - lower_word_limit;
                 global_bit_index += bit_width;
-                let element = self.mask() & (read_buffer >> offset);
+                let element = self.mask & (read_buffer >> offset);
 
                 // We apply the function to the element.
                 let new_element = f(element);
@@ -909,13 +942,13 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
             // We retrieve the next word from the bitvec.
             let next_word = *unsafe { self.bits.as_ref().get_unchecked(word_number + 1) };
 
-            let mut new_write_buffer = W::ZERO;
+            let mut new_write_buffer = B::Word::ZERO;
             if upper_word_limit != global_bit_index {
                 let remainder = upper_word_limit - global_bit_index;
                 let offset = global_bit_index - lower_word_limit;
                 // We compose the element from the remaining elements in the
                 // current word and the elements in the next word.
-                let element = ((read_buffer >> offset) | (next_word << remainder)) & self.mask();
+                let element = ((read_buffer >> offset) | (next_word << remainder)) & self.mask;
                 global_bit_index += bit_width;
 
                 // We apply the function to the element.
@@ -940,7 +973,7 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
         // We iterate across the elements in the word.
         while offset < self.len() * bit_width - global_bit_index {
             // We retrieve the value from the current word.
-            let element = self.mask() & (read_buffer >> offset);
+            let element = self.mask & (read_buffer >> offset);
 
             // We apply the function to the element.
             let new_element = f(element);
@@ -954,11 +987,11 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
     }
 
     type ChunksMut<'a>
-        = ChunksMut<'a, W>
+        = ChunksMut<'a, B::Word>
     where
         Self: 'a;
 
-    type ChunksMutError = ChunksMutError<W>;
+    type ChunksMutError = ChunksMutError<B::Word>;
 
     /// # Errors
     ///
@@ -968,10 +1001,10 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
     fn try_chunks_mut(
         &mut self,
         chunk_size: usize,
-    ) -> Result<Self::ChunksMut<'_>, ChunksMutError<W>> {
+    ) -> Result<Self::ChunksMut<'_>, ChunksMutError<B::Word>> {
         let len = self.len();
         let bit_width = self.bit_width();
-        let bits = W::BITS as usize;
+        let bits = B::Word::BITS as usize;
         if len <= chunk_size || (chunk_size * bit_width) % bits == 0 {
             // chunks_mut panics with chunk_size 0, so use 1 when the
             // product is zero (bit_width == 0); the iterator will yield
@@ -998,27 +1031,30 @@ impl<W: Word, B: AsRef<[W]> + AsMut<[W]>> SliceByValueMut for BitFieldVec<W, B> 
 
 /// An [`UncheckedIterator`] over the values of a [`BitFieldVec`].
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct BitFieldVecUncheckedIter<'a, W, B>
+pub struct BitFieldVecUncheckedIter<'a, B: WordType>
 where
-    W: Word,
+    B::Word: Word,
 {
-    vec: &'a BitFieldVec<W, B>,
+    vec: &'a BitFieldVec<B>,
     word_index: usize,
-    window: W,
+    window: B::Word,
     fill: usize,
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIter<'a, W, B> {
-    fn new(vec: &'a BitFieldVec<W, B>, index: usize) -> Self {
+impl<'a, B: WordType + AsRef<[B::Word]>> BitFieldVecUncheckedIter<'a, B>
+where
+    B::Word: Word,
+{
+    fn new(vec: &'a BitFieldVec<B>, index: usize) -> Self {
         if index > vec.len() {
             panic!("Start index out of bounds: {} > {}", index, vec.len());
         }
-        let bits = W::BITS as usize;
+        let bits = B::Word::BITS as usize;
         let (fill, word_index);
         let window = if index == vec.len() {
             word_index = 0;
             fill = 0;
-            W::ZERO
+            B::Word::ZERO
         } else {
             let bit_offset = index * vec.bit_width;
             let bit_index = bit_offset % bits;
@@ -1039,11 +1075,13 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedIter<'a, W, B> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
-    for BitFieldVecUncheckedIter<'_, W, B>
+impl<B: WordType + AsRef<[B::Word]>> crate::traits::UncheckedIterator
+    for BitFieldVecUncheckedIter<'_, B>
+where
+    B::Word: Word,
 {
-    type Item = W;
-    unsafe fn next_unchecked(&mut self) -> W {
+    type Item = B::Word;
+    unsafe fn next_unchecked(&mut self) -> B::Word {
         let bit_width = self.vec.bit_width;
 
         if self.fill >= bit_width {
@@ -1059,14 +1097,17 @@ impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
         let res = (res | (self.window << self.fill)) & self.vec.mask;
         let used = bit_width - self.fill;
         self.window >>= used;
-        self.fill = W::BITS as usize - used; // not in a loop
+        self.fill = B::Word::BITS as usize - used; // not in a loop
         res
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedIterator for &'a BitFieldVec<W, B> {
-    type Item = W;
-    type IntoUncheckedIter = BitFieldVecUncheckedIter<'a, W, B>;
+impl<'a, B: WordType + AsRef<[B::Word]>> IntoUncheckedIterator for &'a BitFieldVec<B>
+where
+    B::Word: Word,
+{
+    type Item = B::Word;
+    type IntoUncheckedIter = BitFieldVecUncheckedIter<'a, B>;
     fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter {
         BitFieldVecUncheckedIter::new(self, from)
     }
@@ -1074,25 +1115,31 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedIterator for &'a BitFieldVec<W, B>
 
 /// An [`UncheckedIterator`] moving backwards over the values of a [`BitFieldVec`].
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct BitFieldVecUncheckedBackIter<'a, W: Word, B> {
-    vec: &'a BitFieldVec<W, B>,
+pub struct BitFieldVecUncheckedBackIter<'a, B: WordType>
+where
+    B::Word: Word,
+{
+    vec: &'a BitFieldVec<B>,
     word_index: usize,
-    window: W,
+    window: B::Word,
     fill: usize,
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedBackIter<'a, W, B> {
-    fn new(vec: &'a BitFieldVec<W, B>, index: usize) -> Self {
+impl<'a, B: WordType + AsRef<[B::Word]>> BitFieldVecUncheckedBackIter<'a, B>
+where
+    B::Word: Word,
+{
+    fn new(vec: &'a BitFieldVec<B>, index: usize) -> Self {
         if index > vec.len() {
             panic!("Start index out of bounds: {} > {}", index, vec.len());
         }
-        let bits = W::BITS as usize;
+        let bits = B::Word::BITS as usize;
         let (word_index, fill);
 
         let window = if index == 0 {
             word_index = 0;
             fill = 0;
-            W::ZERO
+            B::Word::ZERO
         } else {
             // We have to handle the case of zero bit width
             let bit_offset = (index * vec.bit_width).saturating_sub(1);
@@ -1114,11 +1161,13 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecUncheckedBackIter<'a, W, B> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
-    for BitFieldVecUncheckedBackIter<'_, W, B>
+impl<B: WordType + AsRef<[B::Word]>> crate::traits::UncheckedIterator
+    for BitFieldVecUncheckedBackIter<'_, B>
+where
+    B::Word: Word,
 {
-    type Item = W;
-    unsafe fn next_unchecked(&mut self) -> W {
+    type Item = B::Word;
+    unsafe fn next_unchecked(&mut self) -> B::Word {
         let bit_width = self.vec.bit_width;
 
         if self.fill >= bit_width {
@@ -1131,16 +1180,19 @@ impl<W: Word, B: AsRef<[W]>> crate::traits::UncheckedIterator
         self.word_index -= 1;
         self.window = *unsafe { self.vec.bits.as_ref().get_unchecked(self.word_index) };
         let used = bit_width - self.fill;
-        res = ((res << used) | (self.window >> (W::BITS as usize - used))) & self.vec.mask; // not in a loop
+        res = ((res << used) | (self.window >> (B::Word::BITS as usize - used))) & self.vec.mask; // not in a loop
         self.window <<= used;
-        self.fill = W::BITS as usize - used;
+        self.fill = B::Word::BITS as usize - used;
         res
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedBackIterator for &'a BitFieldVec<W, B> {
-    type Item = W;
-    type IntoUncheckedIterBack = BitFieldVecUncheckedBackIter<'a, W, B>;
+impl<'a, B: WordType + AsRef<[B::Word]>> IntoUncheckedBackIterator for &'a BitFieldVec<B>
+where
+    B::Word: Word,
+{
+    type Item = B::Word;
+    type IntoUncheckedIterBack = BitFieldVecUncheckedBackIter<'a, B>;
 
     fn into_unchecked_iter_back(self) -> Self::IntoUncheckedIterBack {
         BitFieldVecUncheckedBackIter::new(self, self.len())
@@ -1153,16 +1205,19 @@ impl<'a, W: Word, B: AsRef<[W]>> IntoUncheckedBackIterator for &'a BitFieldVec<W
 
 /// An [`Iterator`] over the values of a [`BitFieldVec`].
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct BitFieldVecIter<'a, W, B>
+pub struct BitFieldVecIter<'a, B: WordType>
 where
-    W: Word,
+    B::Word: Word,
 {
-    unchecked: BitFieldVecUncheckedIter<'a, W, B>,
+    unchecked: BitFieldVecUncheckedIter<'a, B>,
     range: core::ops::Range<usize>,
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIter<'a, W, B> {
-    fn new(vec: &'a BitFieldVec<W, B>, from: usize) -> Self {
+impl<'a, B: WordType + AsRef<[B::Word]>> BitFieldVecIter<'a, B>
+where
+    B::Word: Word,
+{
+    fn new(vec: &'a BitFieldVec<B>, from: usize) -> Self {
         let len = vec.len();
         if from > len {
             panic!("Start index out of bounds: {} > {}", from, len);
@@ -1174,8 +1229,11 @@ impl<'a, W: Word, B: AsRef<[W]>> BitFieldVecIter<'a, W, B> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIter<'_, W, B> {
-    type Item = W;
+impl<B: WordType + AsRef<[B::Word]>> Iterator for BitFieldVecIter<'_, B>
+where
+    B::Word: Word,
+{
+    type Item = B::Word;
     fn next(&mut self) -> Option<Self::Item> {
         if self.range.is_empty() {
             return None;
@@ -1192,14 +1250,17 @@ impl<W: Word, B: AsRef<[W]>> Iterator for BitFieldVecIter<'_, W, B> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> ExactSizeIterator for BitFieldVecIter<'_, W, B> {
+impl<B: WordType + AsRef<[B::Word]>> ExactSizeIterator for BitFieldVecIter<'_, B>
+where
+    B::Word: Word,
+{
     #[inline(always)]
     fn len(&self) -> usize {
         self.range.len()
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> FusedIterator for BitFieldVecIter<'_, W, B> {}
+impl<B: WordType + AsRef<[B::Word]>> FusedIterator for BitFieldVecIter<'_, B> where B::Word: Word {}
 
 /// This implements iteration from the end, but it's slower than the forward iteration
 /// as here we do a random access, while in the forward iterator we do a sequential access
@@ -1207,7 +1268,10 @@ impl<W: Word, B: AsRef<[W]>> FusedIterator for BitFieldVecIter<'_, W, B> {}
 ///
 /// If needed we could also keep a buffer from the end, but the logic would be more complex
 /// and potentially slower.
-impl<W: Word, B: AsRef<[W]>> DoubleEndedIterator for BitFieldVecIter<'_, W, B> {
+impl<B: WordType + AsRef<[B::Word]>> DoubleEndedIterator for BitFieldVecIter<'_, B>
+where
+    B::Word: Word,
+{
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.range.is_empty() {
             return None;
@@ -1221,15 +1285,19 @@ impl<W: Word, B: AsRef<[W]>> DoubleEndedIterator for BitFieldVecIter<'_, W, B> {
 
 /// Equality between bit-field vectors requires that the word is the same, the
 /// bit width is the same, and the content is the same.
-impl<W: Word, B: AsRef<[W]>, C: AsRef<[W]>> PartialEq<BitFieldVec<W, C>> for BitFieldVec<W, B> {
-    fn eq(&self, other: &BitFieldVec<W, C>) -> bool {
+impl<B: WordType + AsRef<[B::Word]>, C: WordType<Word = B::Word> + AsRef<[B::Word]>>
+    PartialEq<BitFieldVec<C>> for BitFieldVec<B>
+where
+    B::Word: Word,
+{
+    fn eq(&self, other: &BitFieldVec<C>) -> bool {
         if self.bit_width() != other.bit_width() {
             return false;
         }
         if self.len() != other.len() {
             return false;
         }
-        let bits = W::BITS as usize;
+        let bits = B::Word::BITS as usize;
         let bit_len = self.len() * self.bit_width();
         if self.bits.as_ref()[..bit_len / bits] != other.bits.as_ref()[..bit_len / bits] {
             return false;
@@ -1239,28 +1307,34 @@ impl<W: Word, B: AsRef<[W]>, C: AsRef<[W]>> PartialEq<BitFieldVec<W, C>> for Bit
         residual == 0
             || (self.bits.as_ref()[bit_len / bits] ^ other.bits.as_ref()[bit_len / bits])
                 << (bits - residual)
-                == W::ZERO
+                == B::Word::ZERO
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> IntoIterator for &'a BitFieldVec<W, B> {
-    type Item = W;
-    type IntoIter = BitFieldVecIter<'a, W, B>;
+impl<'a, B: WordType + AsRef<[B::Word]>> IntoIterator for &'a BitFieldVec<B>
+where
+    B::Word: Word,
+{
+    type Item = B::Word;
+    type IntoIter = BitFieldVecIter<'a, B>;
 
     fn into_iter(self) -> Self::IntoIter {
         BitFieldVecIter::new(self, 0)
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> IntoIteratorFrom for &'a BitFieldVec<W, B> {
-    type IntoIterFrom = BitFieldVecIter<'a, W, B>;
+impl<'a, B: WordType + AsRef<[B::Word]>> IntoIteratorFrom for &'a BitFieldVec<B>
+where
+    B::Word: Word,
+{
+    type IntoIterFrom = BitFieldVecIter<'a, B>;
 
     fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
         BitFieldVecIter::new(self, from)
     }
 }
 
-impl<W: Word> core::iter::Extend<W> for BitFieldVec<W, Vec<W>> {
+impl<W: Word> core::iter::Extend<W> for BitFieldVec<Vec<W>> {
     fn extend<T: IntoIterator<Item = W>>(&mut self, iter: T) {
         for value in iter {
             self.push(value);
@@ -1268,17 +1342,20 @@ impl<W: Word> core::iter::Extend<W> for BitFieldVec<W, Vec<W>> {
     }
 }
 
-impl<W: Word, B: AsRef<[W]>> BitFieldVec<W, B> {
-    pub fn iter_from(&self, from: usize) -> BitFieldVecIter<'_, W, B> {
+impl<B: WordType + AsRef<[B::Word]>> BitFieldVec<B>
+where
+    B::Word: Word,
+{
+    pub fn iter_from(&self, from: usize) -> BitFieldVecIter<'_, B> {
         BitFieldVecIter::new(self, from)
     }
 
-    pub fn iter(&self) -> BitFieldVecIter<'_, W, B> {
+    pub fn iter(&self) -> BitFieldVecIter<'_, B> {
         self.iter_from(0)
     }
 }
-/// A tentatively thread-safe vector of bit fields of fixed width (AKA “compact arrays“,
-/// “bit array“, etc.)
+/// A tentatively thread-safe vector of bit fields of fixed width (AKA "compact arrays",
+/// "bit array", etc.)
 ///
 /// This implementation provides some concurrency guarantees, albeit not
 /// full-fledged thread safety: more precisely, we can guarantee thread-safety
@@ -1352,6 +1429,10 @@ where
     }
 }
 
+impl<W: Word + AtomicPrimitive, B> WordType for AtomicBitFieldVec<W, B> {
+    type Word = W;
+}
+
 impl<W: Word + AtomicPrimitive, B> AtomicBitWidth for AtomicBitFieldVec<W, B> {
     #[inline(always)]
     fn atomic_bit_width(&self) -> usize {
@@ -1423,7 +1504,6 @@ where
 
     #[inline]
     unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering) {
-
         unsafe {
             let wbits = W::BITS as usize;
             debug_assert!(self.bit_width <= wbits);
@@ -1525,9 +1605,7 @@ where
 
 // Conversions
 
-impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, Vec<W::Atomic>>>
-    for BitFieldVec<W, Vec<W>>
-{
+impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, Vec<W::Atomic>>> for BitFieldVec<Vec<W>> {
     #[inline]
     fn from(value: AtomicBitFieldVec<W, Vec<W::Atomic>>) -> Self {
         BitFieldVec {
@@ -1540,7 +1618,7 @@ impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, Vec<W::Atomic>>>
 }
 
 impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, Box<[W::Atomic]>>>
-    for BitFieldVec<W, Box<[W]>>
+    for BitFieldVec<Box<[W]>>
 {
     #[inline]
     fn from(value: AtomicBitFieldVec<W, Box<[W::Atomic]>>) -> Self {
@@ -1555,7 +1633,7 @@ impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, Box<[W::Atomic]>>>
 }
 
 impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, &'a [W::Atomic]>>
-    for BitFieldVec<W, &'a [W]>
+    for BitFieldVec<&'a [W]>
 {
     #[inline]
     fn from(value: AtomicBitFieldVec<W, &'a [W::Atomic]>) -> Self {
@@ -1569,7 +1647,7 @@ impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, &'a [W::Atomic]>>
 }
 
 impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, &'a mut [W::Atomic]>>
-    for BitFieldVec<W, &'a mut [W]>
+    for BitFieldVec<&'a mut [W]>
 {
     #[inline]
     fn from(value: AtomicBitFieldVec<W, &'a mut [W::Atomic]>) -> Self {
@@ -1582,11 +1660,9 @@ impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<W, &'a mut [W::Atomic
     }
 }
 
-impl<W: Word + AtomicPrimitive> From<BitFieldVec<W, Vec<W>>>
-    for AtomicBitFieldVec<W, Vec<W::Atomic>>
-{
+impl<W: Word + AtomicPrimitive> From<BitFieldVec<Vec<W>>> for AtomicBitFieldVec<W, Vec<W::Atomic>> {
     #[inline]
-    fn from(value: BitFieldVec<W, Vec<W>>) -> Self {
+    fn from(value: BitFieldVec<Vec<W>>) -> Self {
         AtomicBitFieldVec {
             bits: transmute_vec_into_atomic(value.bits),
 
@@ -1597,11 +1673,11 @@ impl<W: Word + AtomicPrimitive> From<BitFieldVec<W, Vec<W>>>
     }
 }
 
-impl<W: Word + AtomicPrimitive> From<BitFieldVec<W, Box<[W]>>>
+impl<W: Word + AtomicPrimitive> From<BitFieldVec<Box<[W]>>>
     for AtomicBitFieldVec<W, Box<[W::Atomic]>>
 {
     #[inline]
-    fn from(value: BitFieldVec<W, Box<[W]>>) -> Self {
+    fn from(value: BitFieldVec<Box<[W]>>) -> Self {
         AtomicBitFieldVec {
             bits: transmute_boxed_slice_into_atomic(value.bits),
             len: value.len,
@@ -1611,13 +1687,13 @@ impl<W: Word + AtomicPrimitive> From<BitFieldVec<W, Box<[W]>>>
     }
 }
 
-impl<'a, W: Word + AtomicPrimitive> TryFrom<BitFieldVec<W, &'a [W]>>
+impl<'a, W: Word + AtomicPrimitive> TryFrom<BitFieldVec<&'a [W]>>
     for AtomicBitFieldVec<W, &'a [W::Atomic]>
 {
     type Error = CannotCastToAtomicError<W>;
 
     #[inline]
-    fn try_from(value: BitFieldVec<W, &'a [W]>) -> Result<Self, Self::Error> {
+    fn try_from(value: BitFieldVec<&'a [W]>) -> Result<Self, Self::Error> {
         if core::mem::align_of::<W::Atomic>() != core::mem::align_of::<W>() {
             return Err(CannotCastToAtomicError::default());
         }
@@ -1630,13 +1706,13 @@ impl<'a, W: Word + AtomicPrimitive> TryFrom<BitFieldVec<W, &'a [W]>>
     }
 }
 
-impl<'a, W: Word + AtomicPrimitive> TryFrom<BitFieldVec<W, &'a mut [W]>>
+impl<'a, W: Word + AtomicPrimitive> TryFrom<BitFieldVec<&'a mut [W]>>
     for AtomicBitFieldVec<W, &'a mut [W::Atomic]>
 {
     type Error = CannotCastToAtomicError<W>;
 
     #[inline]
-    fn try_from(value: BitFieldVec<W, &'a mut [W]>) -> Result<Self, Self::Error> {
+    fn try_from(value: BitFieldVec<&'a mut [W]>) -> Result<Self, Self::Error> {
         if core::mem::align_of::<W::Atomic>() != core::mem::align_of::<W>() {
             return Err(CannotCastToAtomicError::default());
         }
@@ -1649,8 +1725,8 @@ impl<'a, W: Word + AtomicPrimitive> TryFrom<BitFieldVec<W, &'a mut [W]>>
     }
 }
 
-impl<W: Word> From<BitFieldVec<W, Vec<W>>> for BitFieldVec<W, Box<[W]>> {
-    fn from(value: BitFieldVec<W, Vec<W>>) -> Self {
+impl<W: Word> From<BitFieldVec<Vec<W>>> for BitFieldVec<Box<[W]>> {
+    fn from(value: BitFieldVec<Vec<W>>) -> Self {
         BitFieldVec {
             bits: value.bits.into_boxed_slice(),
             len: value.len,
@@ -1660,8 +1736,8 @@ impl<W: Word> From<BitFieldVec<W, Vec<W>>> for BitFieldVec<W, Box<[W]>> {
     }
 }
 
-impl<W: Word> From<BitFieldVec<W, Box<[W]>>> for BitFieldVec<W, Vec<W>> {
-    fn from(value: BitFieldVec<W, Box<[W]>>) -> Self {
+impl<W: Word> From<BitFieldVec<Box<[W]>>> for BitFieldVec<Vec<W>> {
+    fn from(value: BitFieldVec<Box<[W]>>) -> Self {
         BitFieldVec {
             bits: value.bits.into_vec(),
             len: value.len,
@@ -1671,25 +1747,37 @@ impl<W: Word> From<BitFieldVec<W, Box<[W]>>> for BitFieldVec<W, Vec<W>> {
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueGat<'a> for BitFieldVec<W, B> {
-    type Item = W;
-    type Iter = BitFieldVecIter<'a, W, B>;
+impl<'a, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueGat<'a>
+    for BitFieldVec<B>
+where
+    B::Word: Word,
+{
+    type Item = B::Word;
+    type Iter = BitFieldVecIter<'a, B>;
 }
 
-impl<W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValue for BitFieldVec<W, B> {
+impl<B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValue for BitFieldVec<B>
+where
+    B::Word: Word,
+{
     fn iter_value(&self) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
         self.iter_from(0)
     }
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFromGat<'a>
-    for BitFieldVec<W, B>
+impl<'a, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueFromGat<'a>
+    for BitFieldVec<B>
+where
+    B::Word: Word,
 {
-    type Item = W;
-    type IterFrom = BitFieldVecIter<'a, W, B>;
+    type Item = B::Word;
+    type IterFrom = BitFieldVecIter<'a, B>;
 }
 
-impl<W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFrom for BitFieldVec<W, B> {
+impl<B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueFrom for BitFieldVec<B>
+where
+    B::Word: Word,
+{
     fn iter_value_from(
         &self,
         from: usize,
@@ -1698,30 +1786,38 @@ impl<W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFrom for BitField
     }
 }
 
-impl<'a, 'b, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueGat<'a>
-    for BitFieldVecSubsliceImpl<'b, W, B>
+impl<'a, 'b, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueGat<'a>
+    for BitFieldVecSubsliceImpl<'b, B>
+where
+    B::Word: Word,
 {
-    type Item = W;
-    type Iter = BitFieldVecIter<'a, W, B>;
+    type Item = B::Word;
+    type Iter = BitFieldVecIter<'a, B>;
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValue
-    for BitFieldVecSubsliceImpl<'a, W, B>
+impl<'a, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValue
+    for BitFieldVecSubsliceImpl<'a, B>
+where
+    B::Word: Word,
 {
     fn iter_value(&self) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
         self.slice.iter_from(0)
     }
 }
 
-impl<'a, 'b, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFromGat<'a>
-    for BitFieldVecSubsliceImpl<'b, W, B>
+impl<'a, 'b, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueFromGat<'a>
+    for BitFieldVecSubsliceImpl<'b, B>
+where
+    B::Word: Word,
 {
-    type Item = W;
-    type IterFrom = BitFieldVecIter<'a, W, B>;
+    type Item = B::Word;
+    type IterFrom = BitFieldVecIter<'a, B>;
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFrom
-    for BitFieldVecSubsliceImpl<'a, W, B>
+impl<'a, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueFrom
+    for BitFieldVecSubsliceImpl<'a, B>
+where
+    B::Word: Word,
 {
     fn iter_value_from(
         &self,
@@ -1731,30 +1827,38 @@ impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFrom
     }
 }
 
-impl<'a, 'b, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueGat<'a>
-    for BitFieldVecSubsliceImplMut<'b, W, B>
+impl<'a, 'b, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueGat<'a>
+    for BitFieldVecSubsliceImplMut<'b, B>
+where
+    B::Word: Word,
 {
-    type Item = W;
-    type Iter = BitFieldVecIter<'a, W, B>;
+    type Item = B::Word;
+    type Iter = BitFieldVecIter<'a, B>;
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValue
-    for BitFieldVecSubsliceImplMut<'a, W, B>
+impl<'a, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValue
+    for BitFieldVecSubsliceImplMut<'a, B>
+where
+    B::Word: Word,
 {
     fn iter_value(&self) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
         self.slice.iter_from(0)
     }
 }
 
-impl<'a, 'b, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFromGat<'a>
-    for BitFieldVecSubsliceImplMut<'b, W, B>
+impl<'a, 'b, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueFromGat<'a>
+    for BitFieldVecSubsliceImplMut<'b, B>
+where
+    B::Word: Word,
 {
-    type Item = W;
-    type IterFrom = BitFieldVecIter<'a, W, B>;
+    type Item = B::Word;
+    type IterFrom = BitFieldVecIter<'a, B>;
 }
 
-impl<'a, W: Word, B: AsRef<[W]>> value_traits::iter::IterateByValueFrom
-    for BitFieldVecSubsliceImplMut<'a, W, B>
+impl<'a, B: WordType + AsRef<[B::Word]>> value_traits::iter::IterateByValueFrom
+    for BitFieldVecSubsliceImplMut<'a, B>
+where
+    B::Word: Word,
 {
     fn iter_value_from(
         &self,
@@ -1770,7 +1874,7 @@ mod tests {
 
     #[test]
     fn test_with_capacity() {
-        let mut b = BitFieldVec::<PlatformWord, _>::with_capacity(10, 100);
+        let mut b = BitFieldVec::<Vec<PlatformWord>>::with_capacity(10, 100);
         let capacity = b.bits.capacity();
         for _ in 0..100 {
             b.push(0);
@@ -1778,13 +1882,18 @@ mod tests {
         assert_eq!(b.bits.capacity(), capacity);
     }
 
-    fn copy<W: Word, B: AsRef<[W]>, C: AsRef<[W]> + AsMut<[W]>>(
-        source: &BitFieldVec<W, B>,
+    fn copy<
+        B: WordType + AsRef<[B::Word]>,
+        C: WordType<Word = B::Word> + AsRef<[B::Word]> + AsMut<[B::Word]>,
+    >(
+        source: &BitFieldVec<B>,
         from: usize,
-        dest: &mut BitFieldVec<W, C>,
+        dest: &mut BitFieldVec<C>,
         to: usize,
         len: usize,
-    ) {
+    ) where
+        B::Word: Word,
+    {
         let len = Ord::min(Ord::min(len, dest.len - to), source.len - from);
         for i in 0..len {
             dest.set_value(to + i, source.index_value(from + i));

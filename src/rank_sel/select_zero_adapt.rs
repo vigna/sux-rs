@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use super::{Inventory, SpanType, assert_inventory_length, LOG2_U16_PER_USIZE, U32_PER_USIZE};
+use super::{Inventory, LOG2_U16_PER_USIZE, SpanType, U32_PER_USIZE, assert_inventory_length};
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
@@ -19,8 +19,8 @@ use std::{
 use crate::{
     prelude::{BitCount, BitLength, SelectZeroHinted},
     traits::{
-        NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
-        SelectUnchecked, SelectZero, SelectZeroUnchecked, Word, WordType,
+        NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted, SelectUnchecked,
+        SelectZero, SelectZeroUnchecked, Word, WordType,
     },
 };
 
@@ -376,8 +376,8 @@ where
         // A u64 for the inventory, and words_per_inventory for the subinventory
         let words_per_inventory = words_per_subinventory + 1;
 
-        let log2_ones_per_sub16 =
-            log2_ones_per_inventory.saturating_sub(log2_words_per_subinventory + LOG2_U16_PER_USIZE);
+        let log2_ones_per_sub16 = log2_ones_per_inventory
+            .saturating_sub(log2_words_per_subinventory + LOG2_U16_PER_USIZE);
         let ones_per_sub16 = 1 << log2_ones_per_sub16;
         let ones_per_sub16_mask = ones_per_sub16 - 1;
 
@@ -641,8 +641,8 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]> + BitLength + SelectZeroHinted, I: AsRef<[usize]>> SelectZeroUnchecked
-    for SelectZeroAdapt<B, I>
+impl<B: WordType + AsRef<[B::Word]> + BitLength + SelectZeroHinted, I: AsRef<[usize]>>
+    SelectZeroUnchecked for SelectZeroAdapt<B, I>
 where
     B::Word: Word + SelectInWord,
 {
@@ -683,7 +683,9 @@ where
                 .get()
                     - inventory_rank;
                 let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span, self.log2_ones_per_sub16);
-                let hint_pos = if subrank >> log2_ones_per_sub32 < (words_per_subinventory - 1) * U32_PER_USIZE {
+                let hint_pos = if subrank >> log2_ones_per_sub32
+                    < (words_per_subinventory - 1) * U32_PER_USIZE
+                {
                     let u32s = inventory
                         .get_unchecked(inventory_start_pos + 2..)
                         .align_to::<u32>()
@@ -691,7 +693,8 @@ where
 
                     inventory_rank + *u32s.get_unchecked(subrank >> log2_ones_per_sub32) as usize
                 } else {
-                    let start_spill_idx = *inventory.get_unchecked(inventory_start_pos + 1) as usize;
+                    let start_spill_idx =
+                        *inventory.get_unchecked(inventory_start_pos + 1) as usize;
 
                     let spilled_u32s = self
                         .spill
@@ -702,7 +705,8 @@ where
 
                     inventory_rank
                         + *spilled_u32s.get_unchecked(
-                            (subrank >> log2_ones_per_sub32) - (words_per_subinventory - 1) * U32_PER_USIZE,
+                            (subrank >> log2_ones_per_sub32)
+                                - (words_per_subinventory - 1) * U32_PER_USIZE,
                         ) as usize
                 };
                 let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
@@ -721,7 +725,8 @@ where
                 }
                 return *inventory.get_unchecked(inventory_start_pos + 1 + subrank) as usize;
             }
-            let spill_idx = { *inventory.get_unchecked(inventory_start_pos + 1) as usize } + subrank
+            let spill_idx = { *inventory.get_unchecked(inventory_start_pos + 1) as usize }
+                + subrank
                 - words_per_subinventory;
             debug_assert!(spill_idx < self.spill.as_ref().len());
             *self.spill.as_ref().get_unchecked(spill_idx) as usize

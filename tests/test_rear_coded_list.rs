@@ -10,7 +10,7 @@
 use lender::{IntoLender, Lending};
 use sux::dict::RearCodedListBuilder;
 
-#[cfg(feature = "epserde")]
+#[cfg(feature = "mmap")]
 mod tests {
     use anyhow::Result;
     use epserde::deser::Deserialize;
