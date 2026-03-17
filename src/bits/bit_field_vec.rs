@@ -1374,11 +1374,9 @@ where
     ))
 )]
 #[delegate(crate::traits::rank_sel::WordType, target = "bits")]
-pub struct AtomicBitFieldVec<B: WordType = Vec<Atomic<usize>>>
-where
-    B::Word: PrimitiveAtomic,
-    <B::Word as PrimitiveAtomic>::Value: Word,
-{
+pub struct AtomicBitFieldVec<
+    B: WordType<Word: PrimitiveAtomicInteger<Value: Word>> = Vec<Atomic<usize>>,
+> {
     /// The underlying storage.
     bits: B,
     /// The bit width of the values stored in the vector.
@@ -1389,11 +1387,7 @@ where
     len: usize,
 }
 
-impl<B: WordType> AtomicBitFieldVec<B>
-where
-    B::Word: PrimitiveAtomic,
-    <B::Word as PrimitiveAtomic>::Value: Word,
-{
+impl<B: WordType<Word: PrimitiveAtomicInteger<Value: Word>>> AtomicBitFieldVec<B> {
     /// # Safety
     /// `len` * `bit_width` must be between 0 (included) and the number of
     /// bits in `bits` (included).
@@ -1419,10 +1413,8 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> AtomicBitFieldVec<B>
-where
-    B::Word: PrimitiveAtomic,
-    <B::Word as PrimitiveAtomic>::Value: Word,
+impl<B: WordType<Word: PrimitiveAtomicInteger<Value: Word>> + AsRef<[B::Word]>>
+    AtomicBitFieldVec<B>
 {
     /// Returns the backend of the `AtomicBitFieldVec` as a slice of atomic words.
     pub fn as_slice(&self) -> &[B::Word] {
@@ -1430,10 +1422,7 @@ where
     }
 }
 
-impl<A: PrimitiveAtomic> AtomicBitFieldVec<Vec<A>>
-where
-    A::Value: Word,
-{
+impl<A: PrimitiveAtomicInteger<Value: Word>> AtomicBitFieldVec<Vec<A>> {
     pub fn new(bit_width: usize, len: usize) -> AtomicBitFieldVec<Vec<A>> {
         // we need at least two words to avoid branches in the gets
         let n_of_words = Ord::max(1, (len * bit_width).div_ceil(A::Value::BITS as usize));
@@ -1446,10 +1435,8 @@ where
     }
 }
 
-impl<B: WordType> AtomicBitWidth for AtomicBitFieldVec<B>
-where
-    B::Word: PrimitiveAtomic,
-    <B::Word as PrimitiveAtomic>::Value: Word,
+impl<B: WordType<Word: PrimitiveAtomicInteger<Value: Word>>> AtomicBitWidth
+    for AtomicBitFieldVec<B>
 {
     #[inline(always)]
     fn atomic_bit_width(&self) -> usize {
@@ -1458,11 +1445,8 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> SliceByValue for AtomicBitFieldVec<B>
-where
-    B::Word: PrimitiveAtomicInteger,
-    <B::Word as PrimitiveAtomic>::Value: Word,
-    Self: AtomicBitFieldSlice<<B::Word as PrimitiveAtomic>::Value>,
+impl<B: WordType<Word: PrimitiveAtomicInteger<Value: Word>> + AsRef<[B::Word]>> SliceByValue
+    for AtomicBitFieldVec<B>
 {
     type Value = <B::Word as PrimitiveAtomic>::Value;
 
@@ -1476,11 +1460,8 @@ where
     }
 }
 
-impl<B: WordType + AsRef<[B::Word]>> AtomicBitFieldSlice<<B::Word as PrimitiveAtomic>::Value>
-    for AtomicBitFieldVec<B>
-where
-    B::Word: PrimitiveAtomicInteger,
-    <B::Word as PrimitiveAtomic>::Value: Word,
+impl<B: WordType<Word: PrimitiveAtomicInteger<Value: Word>> + AsRef<[B::Word]>>
+    AtomicBitFieldSlice<<B::Word as PrimitiveAtomic>::Value> for AtomicBitFieldVec<B>
 {
     #[inline]
     fn len(&self) -> usize {
@@ -1645,7 +1626,9 @@ where
 
 // Conversions
 
-impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<Vec<W::Atomic>>> for BitFieldVec<Vec<W>> {
+impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicInteger>>
+    From<AtomicBitFieldVec<Vec<W::Atomic>>> for BitFieldVec<Vec<W>>
+{
     #[inline]
     fn from(value: AtomicBitFieldVec<Vec<W::Atomic>>) -> Self {
         BitFieldVec {
@@ -1657,8 +1640,10 @@ impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<Vec<W::Atomic>>> for BitF
     }
 }
 
-impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<Box<[W::Atomic]>>>
-    for BitFieldVec<Box<[W]>>
+impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicInteger>>
+    From<AtomicBitFieldVec<Box<[W::Atomic]>>> for BitFieldVec<Box<[W]>>
+where
+    W::Atomic: PrimitiveAtomicInteger,
 {
     #[inline]
     fn from(value: AtomicBitFieldVec<Box<[W::Atomic]>>) -> Self {
@@ -1672,8 +1657,8 @@ impl<W: Word + AtomicPrimitive> From<AtomicBitFieldVec<Box<[W::Atomic]>>>
     }
 }
 
-impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<&'a [W::Atomic]>>
-    for BitFieldVec<&'a [W]>
+impl<'a, W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicInteger>>
+    From<AtomicBitFieldVec<&'a [W::Atomic]>> for BitFieldVec<&'a [W]>
 {
     #[inline]
     fn from(value: AtomicBitFieldVec<&'a [W::Atomic]>) -> Self {
@@ -1686,8 +1671,8 @@ impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<&'a [W::Atomic]>>
     }
 }
 
-impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<&'a mut [W::Atomic]>>
-    for BitFieldVec<&'a mut [W]>
+impl<'a, W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicInteger>>
+    From<AtomicBitFieldVec<&'a mut [W::Atomic]>> for BitFieldVec<&'a mut [W]>
 {
     #[inline]
     fn from(value: AtomicBitFieldVec<&'a mut [W::Atomic]>) -> Self {
@@ -1700,7 +1685,9 @@ impl<'a, W: Word + AtomicPrimitive> From<AtomicBitFieldVec<&'a mut [W::Atomic]>>
     }
 }
 
-impl<W: Word + AtomicPrimitive> From<BitFieldVec<Vec<W>>> for AtomicBitFieldVec<Vec<W::Atomic>> {
+impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicInteger>> From<BitFieldVec<Vec<W>>>
+    for AtomicBitFieldVec<Vec<W::Atomic>>
+{
     #[inline]
     fn from(value: BitFieldVec<Vec<W>>) -> Self {
         AtomicBitFieldVec {
@@ -1713,7 +1700,7 @@ impl<W: Word + AtomicPrimitive> From<BitFieldVec<Vec<W>>> for AtomicBitFieldVec<
     }
 }
 
-impl<W: Word + AtomicPrimitive> From<BitFieldVec<Box<[W]>>>
+impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicInteger>> From<BitFieldVec<Box<[W]>>>
     for AtomicBitFieldVec<Box<[W::Atomic]>>
 {
     #[inline]
@@ -1727,7 +1714,7 @@ impl<W: Word + AtomicPrimitive> From<BitFieldVec<Box<[W]>>>
     }
 }
 
-impl<'a, W: Word + AtomicPrimitive> TryFrom<BitFieldVec<&'a [W]>>
+impl<'a, W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicInteger>> TryFrom<BitFieldVec<&'a [W]>>
     for AtomicBitFieldVec<&'a [W::Atomic]>
 {
     type Error = CannotCastToAtomicError<W>;
@@ -1746,8 +1733,8 @@ impl<'a, W: Word + AtomicPrimitive> TryFrom<BitFieldVec<&'a [W]>>
     }
 }
 
-impl<'a, W: Word + AtomicPrimitive> TryFrom<BitFieldVec<&'a mut [W]>>
-    for AtomicBitFieldVec<&'a mut [W::Atomic]>
+impl<'a, W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicInteger>>
+    TryFrom<BitFieldVec<&'a mut [W]>> for AtomicBitFieldVec<&'a mut [W::Atomic]>
 {
     type Error = CannotCastToAtomicError<W>;
 
