@@ -1463,7 +1463,7 @@ impl<B: Backend<Word: PrimitiveAtomicInteger<Value: Word>> + AsRef<[B::Word]>> S
 }
 
 impl<B: Backend<Word: PrimitiveAtomicInteger<Value: Word>> + AsRef<[B::Word]>>
-    AtomicBitFieldSlice<<B::Word as PrimitiveAtomic>::Value> for AtomicBitFieldVec<B>
+    AtomicBitFieldSlice<B::Word> for AtomicBitFieldVec<B>
 {
     #[inline]
     fn len(&self) -> usize {
