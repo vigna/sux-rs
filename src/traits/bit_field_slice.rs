@@ -103,7 +103,7 @@ pub trait BitFieldSlice: SliceByValue + BitWidth {
 ///
 /// Note that this trait does **not** require `Value: Word` in its supertrait
 /// bounds; individual implementations or callers that need [`Word`] operations
-/// (e.g., [`mask`](BitFieldSliceMut::mask)) must add the bound themselves. This
+/// (e.g., [`mask`]) must add the bound themselves. This
 /// avoids a Rust trait-solver limitation (E0284) with higher-ranked bounds.
 #[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
 pub trait BitFieldSliceMut: BitFieldSlice + SliceByValueMut {

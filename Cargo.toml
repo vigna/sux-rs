@@ -58,6 +58,7 @@ fallible-iterator = "0.3.0"
 [dev-dependencies]
 criterion = { version = "0.8.1", default-features = false, features = ["html_reports", "plotters", "cargo_bench_support"] }
 clap = { version = "4.4.18", features = ["derive"] }
+rand_distr = "0.6"
 
 [features]
 default = ["rayon", "flate2", "zstd"]
@@ -94,7 +95,7 @@ debug-assertions = false # Enables debug assertions.
 opt-level = 3            # like --release
 lto = "fat"              # Full LTO
 overflow-checks = false  # Disable integer overflow checks.
-debug = false            # Include debug info.
+debug = true             # Include debug info.
 debug-assertions = false # Enables debug assertions.
 codegen-units = 1        # slower compile times, but maybe better perf
 
@@ -151,4 +152,8 @@ harness = false
 
 [[bench]]
 name = "bench_elias_fano_iter"
+harness = false
+
+[[bench]]
+name = "bench_comp_int_list"
 harness = false

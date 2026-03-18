@@ -28,7 +28,7 @@
 //!
 //! More generally, the underlying type must satisfy the trait [`Word`] for
 //! [`BitFieldVec`], while for [`AtomicBitFieldVec`] it must satisfy
-//! [`PrimitiveAtomic`](atomic_primitive::PrimitiveAtomic) with a
+//! [`PrimitiveAtomic`] with a
 //! [`Value`](atomic_primitive::PrimitiveAtomic::Value) satisfying [`Word`].
 //! A blanket implementation exposes slices of elements of type `W` as bit-field
 //! vectors of width `W::BITS`, analogously for atomic types `A`.

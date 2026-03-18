@@ -53,7 +53,7 @@
 //! ```
 //!
 //! The [`bit_vec!`](macro@crate::bits::bit_vec) macro and
-//! [`FromIterator`](core::iter::FromIterator) / [`Extend`] do not need
+//! [`FromIterator`] / [`Extend`] do not need
 //! annotations because the word type is determined by the output context.
 //!
 //! # Examples

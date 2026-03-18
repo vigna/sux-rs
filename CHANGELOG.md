@@ -1,5 +1,17 @@
 # Change Log
 
+## [0.14.0]
+
+### New
+
+- Everything. While the basic ideas, traits and structures remain the same, this
+  is a major rewrite, and the API is not compatible with the previous version.
+  We might release bug fixes in the 0.13 branch, but no new features. Most
+  structures which were requiring to specify the underlying word type and a
+  backend now just require a backend, as backends have to implement the
+  `Backend` trait which provides the necessary information. We suggest to use
+  your favorite AI tool to handle the transition.
+
 ## [0.13.1] - 2026-03-07
 
 ### Changed

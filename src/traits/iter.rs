@@ -91,6 +91,16 @@ impl<'a, T> IntoIteratorFrom for &'a Box<[T]> {
     }
 }
 
+impl<'a, T: Copy> UncheckedIterator for std::iter::Skip<std::slice::Iter<'a, T>> {
+    type Item = T;
+
+    #[inline(always)]
+    unsafe fn next_unchecked(&mut self) -> T {
+        // SAFETY: caller guarantees there is a next item
+        *unsafe { self.next().unwrap_unchecked() }
+    }
+}
+
 /// A trait for iterating over values very quickly and very unsafely.
 ///
 /// The purpose of this trait is to allow cheap parallel iteration over multiple
