@@ -1,4 +1,4 @@
-use sux::dict::CompIntListBuilder;
+use sux::list::CompIntListBuilder;
 use sux::prelude::*;
 use value_traits::slices::SliceByValue;
 

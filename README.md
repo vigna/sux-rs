@@ -204,4 +204,4 @@ Union nor the Italian MUR can be held responsible for them
 [`deko`]: https://crates.io/crates/deko/
 [`lenders`]: https://docs.rs/sux/latest/sux/utils/lenders/
 [signed index functions]: https://docs.rs/sux/latest/sux/dict/signed_vfunc/struct.SignedVFunc.html
-[Compressed lists of integers]: https://docs.rs/sux/latest/sux/dict/comp_int_list/struct.CompIntList.html
+[Compressed lists of integers]: https://docs.rs/sux/latest/sux/list/comp_int_list/struct.CompIntList.html

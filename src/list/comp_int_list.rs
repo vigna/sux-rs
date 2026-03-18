@@ -23,7 +23,7 @@
 //! # Examples
 //!
 //! ```rust
-//! use sux::dict::comp_int_list::CompIntList;
+//! use sux::list::comp_int_list::CompIntList;
 //! use value_traits::slices::SliceByValue;
 //!
 //! let values = vec![1u64, 3, 7, 42, 100];
@@ -51,7 +51,7 @@ use crate::utils::PrimitiveUnsignedExt;
 /// # Examples
 ///
 /// ```rust
-/// use sux::dict::comp_int_list::CompIntListBuilder;
+/// use sux::list::comp_int_list::CompIntListBuilder;
 /// use value_traits::slices::SliceByValue;
 ///
 /// let mut builder = CompIntListBuilder::new();
@@ -182,7 +182,7 @@ impl<V: Word> CompIntList<V> {
     /// # Examples
     ///
     /// ```rust
-    /// use sux::dict::comp_int_list::CompIntList;
+    /// use sux::list::comp_int_list::CompIntList;
     /// use value_traits::slices::SliceByValue;
     ///
     /// let ef = CompIntList::new(vec![1u64, 5, 10]);
