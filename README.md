@@ -25,7 +25,7 @@ from [the DSI Utilities] and new structures.
 - support for [signed index functions];
 - [partial arrays], that is, “arrays with holes”, implemented using ranking or
   Elias–Fano;
-- [Compressed lists of integers].
+- [lists] (e.g., [compressed lists of integers]).
 
 The focus is on performance (e.g., there are unchecked versions of all methods
 and support for [unaligned access]) and on flexible composability (e.g., you can
@@ -204,4 +204,5 @@ Union nor the Italian MUR can be held responsible for them
 [`deko`]: https://crates.io/crates/deko/
 [`lenders`]: https://docs.rs/sux/latest/sux/utils/lenders/
 [signed index functions]: https://docs.rs/sux/latest/sux/dict/signed_vfunc/struct.SignedVFunc.html
-[Compressed lists of integers]: https://docs.rs/sux/latest/sux/list/comp_int_list/struct.CompIntList.html
+[lists]: https://docs.rs/sux/latest/sux/list/index.html
+[compressed lists of integers]: https://docs.rs/sux/latest/sux/list/comp_int_list/struct.CompIntList.html

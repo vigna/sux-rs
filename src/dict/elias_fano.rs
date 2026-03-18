@@ -11,9 +11,9 @@
 //!
 //! Given a monotone sequence 0 ≤ *x*₀ ≤ *x*₁ ≤ ... ≤ *x*<sub>*n* – 1</sub> ≤
 //! *u*, where *u* is a given upper bound, the Elias–Fano representation makes
-//! it possible to store the sequence using at most 2 + lg(*u*/*n*) bits per
+//! it possible to store the sequence using at most 2 + log₂(*u*/*n*) bits per
 //! element, which is very close to the information-theoretical lower bound ≈ lg
-//! *e* + lg(*u*/*n*) when *n* is much smaller than *u*. A typical example is a
+//! *e* + log₂(*u*/*n*) when *n* is much smaller than *u*. A typical example is a
 //! list of pointers into records of a large file: instead of using, for each
 //! pointer, a number of bits sufficient to express the length of the file, the
 //! Elias–Fano representation makes it possible to use, for each pointer, a
@@ -42,7 +42,7 @@
 //! Springer, 2008.
 //!
 //! The elements of the sequence are recorded by storing separately the lower
-//! *s* = ⌊lg(*u*/*n*)⌋ bits and the remaining upper bits. The lower bits are
+//! *s* = ⌊log₂(*u*/*n*)⌋ bits and the remaining upper bits. The lower bits are
 //! stored contiguously, whereas the upper bits are stored in an array of *n* +
 //! ⌊*u* / 2<sup>*s*</sup>⌋ bits by setting, for each 0 ≤ *i* < *n*, the bit of
 //! index ⌊*x*<sub>*i*</sub> / 2<sup>*s*</sup>⌋ + *i*; the value can then be
