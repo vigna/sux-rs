@@ -20,6 +20,7 @@ pub mod array;
 pub mod bits;
 pub mod dict;
 pub mod func;
+pub mod list;
 pub mod rank_sel;
 pub mod traits;
 pub mod utils;
@@ -39,6 +40,7 @@ pub mod prelude {
     pub use crate::bits::*;
     pub use crate::dict::*;
     pub use crate::func::*;
+    pub use crate::list::*;
     pub use crate::rank_sel::*;
     pub use crate::rank_small;
     pub use crate::traits::bit_field_slice;
