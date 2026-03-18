@@ -44,10 +44,10 @@
 //! a slice of bits with a slice of a primitive integer type of the same width.
 //!
 #![allow(clippy::result_unit_err)]
-use atomic_primitive::{AtomicPrimitive, PrimitiveAtomicInteger};
+use atomic_primitive::PrimitiveAtomicInteger;
 use core::sync::atomic::Ordering;
 use impl_tools::autoimpl;
-use num_primitive::{PrimitiveNumberAs, PrimitiveUnsigned};
+use num_primitive::{PrimitiveInteger, PrimitiveNumberAs, PrimitiveUnsigned};
 #[cfg(feature = "rayon")]
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
@@ -171,9 +171,9 @@ impl<A: PrimitiveAtomicInteger, const N: usize> AtomicBitWidth for [A; N] {
 /// Different implementations might provide different atomicity guarantees. See
 /// [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec) for an example.
 #[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
-pub trait AtomicBitFieldSlice<W: Word + AtomicPrimitive>: AtomicBitWidth
+pub trait AtomicBitFieldSlice<A: PrimitiveAtomicInteger>: AtomicBitWidth
 where
-    W::Atomic: PrimitiveAtomicInteger,
+    A::Value: Word,
 {
     /// See [`slice::len`].
     fn len(&self) -> usize;
@@ -188,13 +188,13 @@ where
     /// # Safety
     /// `index` must be in [0..[len](SliceByValue::len)).
     /// No bound or bit-width check is performed.
-    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> W;
+    unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> A::Value;
 
     /// Returns the value at the specified index.
     ///
     /// # Panics
     /// May panic if the index is not in [0..[len](SliceByValue::len))
-    fn get_atomic(&self, index: usize, order: Ordering) -> W {
+    fn get_atomic(&self, index: usize, order: Ordering) -> A::Value {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_atomic_unchecked(index, order) }
     }
@@ -206,20 +206,20 @@ where
     /// - `value` must fit within [`BitWidth::bit_width`] bits.
     ///
     /// No bound or bit-width check is performed.
-    unsafe fn set_atomic_unchecked(&self, index: usize, value: W, order: Ordering);
+    unsafe fn set_atomic_unchecked(&self, index: usize, value: A::Value, order: Ordering);
 
     /// Sets the element of the slice at the specified index.
     ///
     /// May panic if the index is not in [0..[len](SliceByValue::len))
     /// or the value does not fit in [`AtomicBitWidth::atomic_bit_width`] bits.
-    fn set_atomic(&self, index: usize, value: W, order: Ordering) {
+    fn set_atomic(&self, index: usize, value: A::Value, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len());
         let bw = self.atomic_bit_width();
 
         let mask = if bw == 0 {
-            W::ZERO
+            A::Value::ZERO
         } else {
-            W::MAX >> (W::BITS - bw as u32)
+            A::Value::MAX >> (A::Value::BITS - bw as u32)
         };
         panic_if_value!(value, mask, bw);
         unsafe {
@@ -343,9 +343,9 @@ impl<W: Word, const N: usize> BitFieldSliceMut for [W; N] {
 // `impl<W> ... for [W::Atomic]` — Rust can't resolve methods on
 // `[W::Atomic]` because it cannot infer W from the projection.
 
-impl<A: PrimitiveAtomicInteger> AtomicBitFieldSlice<A::Value> for [A]
+impl<A: PrimitiveAtomicInteger> AtomicBitFieldSlice<A> for [A]
 where
-    A::Value: Word + AtomicPrimitive<Atomic = A>,
+    A::Value: Word,
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -380,9 +380,9 @@ where
     }
 }
 
-impl<A: PrimitiveAtomicInteger> AtomicBitFieldSlice<A::Value> for Vec<A>
+impl<A: PrimitiveAtomicInteger> AtomicBitFieldSlice<A> for Vec<A>
 where
-    A::Value: Word + AtomicPrimitive<Atomic = A>,
+    A::Value: Word,
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -417,9 +417,9 @@ where
     }
 }
 
-impl<A: PrimitiveAtomicInteger, const N: usize> AtomicBitFieldSlice<A::Value> for [A; N]
+impl<A: PrimitiveAtomicInteger, const N: usize> AtomicBitFieldSlice<A> for [A; N]
 where
-    A::Value: Word + AtomicPrimitive<Atomic = A>,
+    A::Value: Word,
 {
     #[inline(always)]
     fn len(&self) -> usize {
