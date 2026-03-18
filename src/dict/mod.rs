@@ -25,5 +25,5 @@ pub use signed_vfunc::{BitSignedVFunc, SignedVFunc};
 pub mod vfilter;
 pub use vfilter::VFilter;
 
-pub mod ef_list;
-pub use ef_list::{EfList, EfListBuilder};
+pub mod comp_int_list;
+pub use comp_int_list::{CompIntList, CompIntListBuilder};

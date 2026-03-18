@@ -7,7 +7,7 @@
 //! A compact list of strictly positive integers based on
 //! [Elias–Fano](crate::dict::EliasFano) delimiters.
 //!
-//! Given a list of strictly positive integers, the [`EfList`] stores them by
+//! Given a list of strictly positive integers, the [`CompIntList`] stores them by
 //! concatenating their binary representations with the most significant bit
 //! removed (since it is always 1). The boundaries between these
 //! variable-length representations are recorded as cumulative bit positions
@@ -23,17 +23,17 @@
 //! # Examples
 //!
 //! ```rust
-//! use sux::dict::ef_list::EfList;
+//! use sux::dict::comp_int_list::CompIntList;
 //! use value_traits::slices::SliceByValue;
 //!
 //! let values = vec![1u64, 3, 7, 42, 100];
-//! let ef_list = EfList::new(values);
+//! let list = CompIntList::new(values);
 //!
-//! assert_eq!(ef_list.index_value(0), 1);
-//! assert_eq!(ef_list.index_value(1), 3);
-//! assert_eq!(ef_list.index_value(2), 7);
-//! assert_eq!(ef_list.index_value(3), 42);
-//! assert_eq!(ef_list.index_value(4), 100);
+//! assert_eq!(list.index_value(0), 1);
+//! assert_eq!(list.index_value(1), 3);
+//! assert_eq!(list.index_value(2), 7);
+//! assert_eq!(list.index_value(3), 42);
+//! assert_eq!(list.index_value(4), 100);
 //! ```
 
 use mem_dbg::*;
@@ -42,38 +42,37 @@ use value_traits::slices::SliceByValue;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EfSeq;
 use crate::traits::bit_field_slice::Word;
-use crate::traits::indexed_dict::IndexedSeq;
 use crate::utils::PrimitiveUnsignedExt;
 
-/// Builder for creating an [`EfList`].
+/// Builder for creating a [`CompIntList`].
 ///
 /// Values must be strictly positive and are pushed one at a time.
 ///
 /// # Examples
 ///
 /// ```rust
-/// use sux::dict::ef_list::EfListBuilder;
+/// use sux::dict::comp_int_list::CompIntListBuilder;
 /// use value_traits::slices::SliceByValue;
 ///
-/// let mut builder = EfListBuilder::new();
+/// let mut builder = CompIntListBuilder::new();
 /// builder.push(1u64);
 /// builder.push(3);
 /// builder.push(7);
 /// builder.push(42);
 ///
-/// let ef_list = builder.build();
-/// assert_eq!(ef_list.index_value(0), 1);
-/// assert_eq!(ef_list.index_value(3), 42);
+/// let list = builder.build();
+/// assert_eq!(list.index_value(0), 1);
+/// assert_eq!(list.index_value(3), 42);
 /// ```
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct EfListBuilder<V: Word = u64> {
+pub struct CompIntListBuilder<V: Word = u64> {
     values: Vec<V>,
 }
 
-impl<V: Word> EfListBuilder<V> {
+impl<V: Word> CompIntListBuilder<V> {
     /// Creates a new empty builder.
     pub fn new() -> Self {
-        EfListBuilder { values: vec![] }
+        CompIntListBuilder { values: vec![] }
     }
 
     /// Pushes a strictly positive value.
@@ -82,12 +81,12 @@ impl<V: Word> EfListBuilder<V> {
     ///
     /// Panics if `value` is zero.
     pub fn push(&mut self, value: V) {
-        assert!(value > V::ZERO, "EfList requires strictly positive values");
+        assert!(value > V::ZERO, "CompIntList requires strictly positive values");
         self.values.push(value);
     }
 
-    /// Builds the [`EfList`].
-    pub fn build(self) -> EfList<V> {
+    /// Builds the [`CompIntList`].
+    pub fn build(self) -> CompIntList<V> {
         let values = self.values;
         let n = values.len();
 
@@ -119,12 +118,12 @@ impl<V: Word> EfListBuilder<V> {
             if width > 0 {
                 // Strip the MSB: keep only the low `width` bits
                 let bits = v ^ (V::ONE << width);
-                EfList::<V>::write_bits(&mut data, bit_pos, bits, width);
+                CompIntList::<V>::write_bits(&mut data, bit_pos, bits, width);
             }
             bit_pos += width;
         }
 
-        EfList {
+        CompIntList {
             n,
             delimiters,
             data: data.into_boxed_slice(),
@@ -132,13 +131,13 @@ impl<V: Word> EfListBuilder<V> {
     }
 }
 
-impl<V: Word> Default for EfListBuilder<V> {
+impl<V: Word> Default for CompIntListBuilder<V> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<V: Word> Extend<V> for EfListBuilder<V> {
+impl<V: Word> Extend<V> for CompIntListBuilder<V> {
     fn extend<I: IntoIterator<Item = V>>(&mut self, iter: I) {
         for v in iter {
             self.push(v);
@@ -150,28 +149,31 @@ impl<V: Word> Extend<V> for EfListBuilder<V> {
 ///
 /// Values are stored by concatenating their binary representations with the
 /// most significant bit removed. The boundaries between values are recorded
-/// in an [`EfSeq`] (Elias–Fano sequence), enabling efficient random access.
+/// in a [`SliceByValue<Value = u64>`] (by default an [Elias–Fano
+/// sequence](EfSeq)), enabling efficient random access.
 ///
-/// Use [`EfListBuilder`] for incremental construction, or [`EfList::new`]
-/// to build from an iterator directly.
+/// Use [`CompIntListBuilder`] for incremental construction, or [`CompIntList::new`]
+/// to build from an iterator directly. After construction, the delimiter
+/// structure can be replaced using [`map_delimiters`](CompIntList::map_delimiters).
 ///
 /// # Type Parameters
 ///
 /// - `V`: The value type. Must be a [`Word`] type. Defaults to `u64`.
+/// - `D`: The delimiter structure. Must implement `SliceByValue<Value = u64>`.
+///   Defaults to [`EfSeq`].
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct EfList<V: Word = u64> {
+pub struct CompIntList<V: Word = u64, D: SliceByValue<Value = u64> = EfSeq> {
     /// Number of stored values.
     n: usize,
-    /// Elias–Fano structure storing `n + 1` cumulative bit-position
-    /// delimiters.
-    delimiters: EfSeq,
+    /// Structure storing `n + 1` cumulative bit-position delimiters.
+    delimiters: D,
     /// Concatenated binary representations (MSB removed), backed by
     /// `V`-sized words.
     data: Box<[V]>,
 }
 
-impl<V: Word> EfList<V> {
-    /// Creates a new `EfList` from an iterator of strictly positive values.
+impl<V: Word> CompIntList<V> {
+    /// Creates a new `CompIntList` from an iterator of strictly positive values.
     ///
     /// # Panics
     ///
@@ -180,15 +182,15 @@ impl<V: Word> EfList<V> {
     /// # Examples
     ///
     /// ```rust
-    /// use sux::dict::ef_list::EfList;
+    /// use sux::dict::comp_int_list::CompIntList;
     /// use value_traits::slices::SliceByValue;
     ///
-    /// let ef = EfList::new(vec![1u64, 5, 10]);
+    /// let ef = CompIntList::new(vec![1u64, 5, 10]);
     /// assert_eq!(ef.len(), 3);
     /// assert_eq!(ef.index_value(1), 5);
     /// ```
     pub fn new(values: impl IntoIterator<Item = V>) -> Self {
-        let mut builder = EfListBuilder::new();
+        let mut builder = CompIntListBuilder::new();
         builder.extend(values);
         builder.build()
     }
@@ -205,6 +207,31 @@ impl<V: Word> EfList<V> {
         if bit_idx + width > v_bits {
             data[word_idx + 1] |= value >> (v_bits - bit_idx);
         }
+    }
+}
+
+impl<V: Word, D: SliceByValue<Value = u64>> CompIntList<V, D> {
+    /// Replaces the delimiter structure.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it is not possible to guarantee that the
+    /// new delimiters return the same values as the old ones.
+    pub unsafe fn map_delimiters<F, D2>(self, func: F) -> CompIntList<V, D2>
+    where
+        F: FnOnce(D) -> D2,
+        D2: SliceByValue<Value = u64>,
+    {
+        CompIntList {
+            n: self.n,
+            delimiters: func(self.delimiters),
+            data: self.data,
+        }
+    }
+
+    /// Returns the underlying delimiter structure.
+    pub fn into_inner(self) -> D {
+        self.delimiters
     }
 
     /// Reads `width` bits from `data` starting at bit position `start`.
@@ -232,7 +259,7 @@ impl<V: Word> EfList<V> {
     }
 }
 
-impl<V: Word> SliceByValue for EfList<V> {
+impl<V: Word, D: SliceByValue<Value = u64>> SliceByValue for CompIntList<V, D> {
     type Value = V;
 
     #[inline(always)]
@@ -242,8 +269,8 @@ impl<V: Word> SliceByValue for EfList<V> {
 
     #[inline(always)]
     unsafe fn get_value_unchecked(&self, index: usize) -> V {
-        let start = unsafe { IndexedSeq::get_unchecked(&self.delimiters, index) } as usize;
-        let end = unsafe { IndexedSeq::get_unchecked(&self.delimiters, index + 1) } as usize;
+        let start = unsafe { self.delimiters.get_value_unchecked(index) } as usize;
+        let end = unsafe { self.delimiters.get_value_unchecked(index + 1) } as usize;
         let width = end - start;
 
         if width == 0 {
