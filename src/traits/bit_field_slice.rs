@@ -40,7 +40,9 @@
 //!
 //! We provide implementations for vectors and slices of all primitive atomic
 //! and non-atomic unsigned integer types that view their elements as values
-//! with a bit width equal to that of the type.
+//! with a bit width equal to that of the type. It is thus trivial to replace
+//! a slice of bits with a slice of a primitive integer type of the same width.
+//!
 #![allow(clippy::result_unit_err)]
 use atomic_primitive::{AtomicPrimitive, PrimitiveAtomicInteger};
 use core::sync::atomic::Ordering;
