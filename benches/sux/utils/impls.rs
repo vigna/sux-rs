@@ -73,18 +73,21 @@ select_adapt_const_wrapper!(SelectAdaptConst1, 1);
 select_adapt_const_wrapper!(SelectAdaptConst2, 2);
 select_adapt_const_wrapper!(SelectAdaptConst3, 3);
 
-impl Build<BitVec> for Select9 {
-    fn new(bits: BitVec) -> Self {
+impl Build<BitVec<Vec<u64>>> for Select9<Rank9<BitVec<Vec<u64>>>> {
+    fn new(bits: BitVec<Vec<u64>>) -> Self {
         Select9::new(Rank9::new(bits))
     }
 }
 
-impl Build<BitVec> for Rank9 {
-    fn new(bits: BitVec) -> Self {
+impl Build<BitVec<Vec<u64>>> for Rank9<BitVec<Vec<u64>>> {
+    fn new(bits: BitVec<Vec<u64>>) -> Self {
         Rank9::new(bits)
     }
 }
 
+// These RankSmall variants require 64-bit words; on 32-bit platforms
+// usize is 32 bits and would fail the compile-time word-size assert.
+#[cfg(target_pointer_width = "64")]
 macro_rules! impl_build_rank_small {
     ($($a:literal, $b:literal);+ $(;)?) => {
         $(
@@ -102,6 +105,7 @@ macro_rules! impl_build_rank_small {
     };
 }
 
+#[cfg(target_pointer_width = "64")]
 impl_build_rank_small!(
     2, 9;
     1, 9;
@@ -109,3 +113,28 @@ impl_build_rank_small!(
     1, 11;
     3, 13;
 );
+
+// 32-bit word variants (RankSmall<1,7> and RankSmall<1,8>): always available.
+impl Build<BitVec<Vec<u32>>> for RankSmall<1, 7, BitVec<Vec<u32>>> {
+    fn new(bits: BitVec<Vec<u32>>) -> Self {
+        <Self>::new(bits)
+    }
+}
+
+impl Build<BitVec<Vec<u32>>> for RankSmall<1, 8, BitVec<Vec<u32>>> {
+    fn new(bits: BitVec<Vec<u32>>) -> Self {
+        <Self>::new(bits)
+    }
+}
+
+impl Build<BitVec<Vec<u32>>> for SelectSmall<1, 7, RankSmall<1, 7, BitVec<Vec<u32>>>> {
+    fn new(bits: BitVec<Vec<u32>>) -> Self {
+        <Self>::new(<RankSmall<1, 7, BitVec<Vec<u32>>>>::new(bits))
+    }
+}
+
+impl Build<BitVec<Vec<u32>>> for SelectSmall<1, 8, RankSmall<1, 8, BitVec<Vec<u32>>>> {
+    fn new(bits: BitVec<Vec<u32>>) -> Self {
+        <Self>::new(<RankSmall<1, 8, BitVec<Vec<u32>>>>::new(bits))
+    }
+}

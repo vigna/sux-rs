@@ -3,13 +3,13 @@
 interactive HTML visualization.
 
 Usage:
-    cargo bench --bench bench_select_in_word 2>&1 | python3 python/plot_select_in_word.py
+    cargo bench --bench bench_select_in_word 2>&1 | python3 python/plot_select_in_word.py > out.html
     # or from a file:
-    python3 python/plot_select_in_word.py bench_output.txt
+    python3 python/plot_select_in_word.py bench_output.txt > out.html
 
 The script reads from a file argument or stdin, extracts the estimate
 (middle value) from each ``time: [low estimate high]`` line, and writes
-``select_in_word.html`` in the current directory.
+the HTML to stdout.
 """
 
 import re
@@ -101,9 +101,10 @@ HTML_TEMPLATE = """\
 const DATA = {data_json};
 
 const WORD_ORDER = ['u8', 'u16', 'u32', 'u64', 'u128'];
+// Tableau 10 — maximally distinct categorical palette.
 const COLORS = [
-  '#4a7cff', '#ff6b6b', '#51cf66', '#fcc419', '#cc5de8',
-  '#20c997', '#ff922b', '#868e96', '#e64980', '#15aabf',
+  '#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f',
+  '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#bab0ab',
 ];
 
 let chart = null;
@@ -223,10 +224,8 @@ def main():
 
     html = HTML_TEMPLATE.format(data_json=json.dumps(data, indent=2))
 
-    out = "select_in_word.html"
-    with open(out, "w") as f:
-        f.write(html)
-    print(f"Wrote {out} with {len(data)} benchmarks.", file=sys.stderr)
+    sys.stdout.write(html)
+    print(f"{len(data)} benchmarks.", file=sys.stderr)
 
 
 if __name__ == "__main__":

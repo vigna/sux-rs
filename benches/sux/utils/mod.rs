@@ -4,6 +4,7 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 use sux::bits::BitVec;
+use sux::traits::bit_field_slice::Word;
 use sux::traits::{BitCount, BitLength, Rank, Select};
 
 mod impls;
@@ -13,12 +14,12 @@ pub trait Build<B> {
     fn new(bits: B) -> Self;
 }
 
-pub fn create_bitvec(
+pub fn create_bitvec<W: Word>(
     rng: &mut SmallRng,
     len: u64,
     density: f64,
     uniform: bool,
-) -> (u64, u64, BitVec) {
+) -> (u64, u64, BitVec<Vec<W>>) {
     let (density0, density1) = if uniform {
         (density, density)
     } else {
@@ -31,21 +32,21 @@ pub fn create_bitvec(
     let first_half = loop {
         let b = (0..len1)
             .map(|_| rng.random_bool(density0))
-            .collect::<BitVec>();
+            .collect::<BitVec<Vec<W>>>();
         if b.count_ones() > 0 {
             break b;
         }
     };
     let second_half = (0..len2)
         .map(|_| rng.random_bool(density1))
-        .collect::<BitVec>();
+        .collect::<BitVec<Vec<W>>>();
     let num_ones_second_half = second_half.count_ones() as u64;
     let num_ones_first_half = first_half.count_ones() as u64;
 
     let bits = first_half
         .into_iter()
         .chain(&second_half)
-        .collect::<BitVec>();
+        .collect::<BitVec<Vec<W>>>();
 
     (num_ones_first_half, num_ones_second_half, bits)
 }
@@ -86,7 +87,7 @@ pub fn random_rank(rng: &mut SmallRng, first_half: u64, second_half: u64) -> u64
     }
 }
 
-fn bench_inner<S: Build<BitVec> + MemDbg + BitLength>(
+fn bench_inner<W: Word, S: Build<BitVec<Vec<W>>> + MemDbg + BitLength>(
     c: &mut Criterion,
     name: &str,
     lengths: &[u64],
@@ -106,7 +107,7 @@ fn bench_inner<S: Build<BitVec> + MemDbg + BitLength>(
     for &len in lengths {
         for &density in densities {
             let (num_ones_first_half, num_ones_second_half, bits) =
-                create_bitvec(&mut rng, len, density, uniform);
+                create_bitvec::<W>(&mut rng, len, density, uniform);
             let s: S = S::new(bits);
             mem_costs.push((len, density, mem_cost(&s)));
             group.bench_function(
@@ -124,26 +125,26 @@ fn bench_inner<S: Build<BitVec> + MemDbg + BitLength>(
     write_mem_costs(&name, &mem_costs);
 }
 
-pub fn bench_select<S: Build<BitVec> + Select + MemDbg + BitLength>(
+pub fn bench_select<W: Word, S: Build<BitVec<Vec<W>>> + Select + MemDbg + BitLength>(
     c: &mut Criterion,
     name: &str,
     lengths: &[u64],
     densities: &[f64],
     uniform: bool,
 ) {
-    bench_inner::<S>(c, name, lengths, densities, uniform, |s, r| unsafe {
+    bench_inner::<W, S>(c, name, lengths, densities, uniform, |s, r| unsafe {
         s.select_unchecked(r)
     });
 }
 
-pub fn bench_rank<R: Build<BitVec> + Rank + MemDbg + BitLength>(
+pub fn bench_rank<W: Word, R: Build<BitVec<Vec<W>>> + Rank + MemDbg + BitLength>(
     c: &mut Criterion,
     name: &str,
     lengths: &[u64],
     densities: &[f64],
     uniform: bool,
 ) {
-    bench_inner::<R>(c, name, lengths, densities, uniform, |s, r| unsafe {
+    bench_inner::<W, R>(c, name, lengths, densities, uniform, |s, r| unsafe {
         s.rank_unchecked(r)
     });
 }
