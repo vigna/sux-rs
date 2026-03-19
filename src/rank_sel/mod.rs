@@ -16,9 +16,8 @@
 //! next structure in the chain, and also implement [`Deref`](core::ops::Deref)
 //! with the next structure as target.
 
-//! A few of the structures in module are based on _broadword programming_ and
-//! have been described by Sebastiano Vigna in “[Broadword Implementation of
-//! Rank/Select
+//! A few of the structures in module have been described by Sebastiano Vigna in
+//! “[Broadword Implementation of Rank/Select
 //! Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
 //! _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
 //! 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
