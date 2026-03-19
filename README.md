@@ -139,11 +139,11 @@ cargo bench --bench sux -- --help
 to see the available tests. For example, with
 
 ```bash
-cargo bench --bench sux -- Rank9 -d 0.5 -r 1 -l 100000,1000000,10000000
+cargo bench --bench sux -- Rank9 -d 0.5 -l 100000,1000000,10000000
 ```
 
-you can test the [`Rank9`] structure with a density of 0.5, using one test
-repetition, on a few bit sizes. Afterwards, you can generate an SVG plot and CSV
+you can test the [`Rank9`] structure with a density of 0.5 on a few bit sizes.
+Afterwards, you can generate an SVG plot and CSV
 data in the `plots` directory with
 
 ```bash
@@ -159,7 +159,7 @@ By specifying multiple structures (using also substring matching), you can
 compare the behavior of different structures. For example,
 
 ```bash
-cargo bench --bench sux -- SelectSmall SelectAdapt0 -d 0.5 -r 1 -l 100000,1000000,10000000
+cargo bench --bench sux -- SelectSmall SelectAdapt0 -d 0.5 -l 100000,1000000,10000000
 ```
 
 will test all variants of [`SelectSmall`] against a [`SelectAdapt`] with one (2⁰)

@@ -2,102 +2,76 @@ use mem_dbg::{MemDbg, MemSize};
 use sux::bits::BitVec;
 use sux::rank_sel::{Rank9, RankSmall};
 use sux::rank_sel::{Select9, SelectAdapt, SelectAdaptConst, SelectSmall};
-use sux::traits::{AddNumBits, BitLength, NumBits, Select, SelectHinted, SelectUnchecked};
+use sux::traits::{AddNumBits, BitLength, NumBits, Select, SelectUnchecked};
 
 use super::Build;
 
-macro_rules! impl_select_adapt {
-    ($name:ident, $subinv: literal) => {
-        #[derive(Debug, Clone, MemDbg, MemSize)]
-        #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-        pub struct $name<B> {
-            inner: SelectAdapt<B>,
-        }
-
-        impl Build<BitVec> for $name<AddNumBits<BitVec>> {
-            fn new(bits: BitVec) -> Self {
-                let bits: AddNumBits<_> = bits.into();
-                Self {
-                    inner: SelectAdapt::new(bits, $subinv),
-                }
-            }
-        }
-        impl<B: BitLength + SelectHinted> BitLength for $name<B> {
-            fn len(&self) -> usize {
-                self.inner.len()
-            }
-        }
-        impl NumBits for $name<AddNumBits<BitVec>> {
-            fn num_ones(&self) -> usize {
-                self.inner.num_ones()
-            }
-        }
-        impl SelectUnchecked for $name<AddNumBits<BitVec>> {
-            unsafe fn select_unchecked(&self, rank: usize) -> usize {
-                unsafe { self.inner.select_unchecked(rank) }
-            }
-        }
-        impl Select for $name<AddNumBits<BitVec>> {
-            fn select(&self, rank: usize) -> Option<usize> {
-                self.inner.select(rank)
-            }
-        }
-    };
-}
-
-impl_select_adapt!(SelectAdapt0, 0);
-impl_select_adapt!(SelectAdapt1, 1);
-impl_select_adapt!(SelectAdapt2, 2);
-impl_select_adapt!(SelectAdapt3, 3);
-
-// Default value
 const LOG2_ONES_PER_INVENTORY: usize = 12;
 
-macro_rules! impl_select_adapt_const {
-    ($name:ident, $subinv: literal) => {
-        #[derive(Debug, Clone, MemDbg, MemSize)]
-        #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-        pub struct $name<B> {
-            inner: SelectAdaptConst<B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, $subinv>,
-        }
-
-        impl Build<BitVec> for $name<AddNumBits<BitVec>> {
-            fn new(bits: BitVec) -> Self {
-                let bits: AddNumBits<_> = bits.into();
-                Self {
-                    inner: SelectAdaptConst::<_, _, LOG2_ONES_PER_INVENTORY, $subinv>::new(bits),
-                }
-            }
-        }
-        impl<B: BitLength + SelectHinted> BitLength for $name<B> {
+/// Forward [`BitLength`], [`NumBits`], [`SelectUnchecked`], and [`Select`]
+/// to field `.0` of a newtype wrapper.
+macro_rules! forward_select {
+    ($name:ident) => {
+        impl BitLength for $name {
             fn len(&self) -> usize {
-                self.inner.len()
+                self.0.len()
             }
         }
-        impl NumBits for $name<AddNumBits<BitVec>> {
+        impl NumBits for $name {
             fn num_ones(&self) -> usize {
-                self.inner.num_ones()
+                self.0.num_ones()
             }
         }
-        impl SelectUnchecked for $name<AddNumBits<BitVec>> {
+        impl SelectUnchecked for $name {
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
-                unsafe { self.inner.select_unchecked(rank) }
+                unsafe { self.0.select_unchecked(rank) }
             }
         }
-        impl Select for $name<AddNumBits<BitVec>> {
+        impl Select for $name {
             fn select(&self, rank: usize) -> Option<usize> {
-                self.inner.select(rank)
+                self.0.select(rank)
             }
         }
     };
 }
 
-impl_select_adapt_const!(SelectAdaptConst0, 0);
-impl_select_adapt_const!(SelectAdaptConst1, 1);
-impl_select_adapt_const!(SelectAdaptConst2, 2);
-impl_select_adapt_const!(SelectAdaptConst3, 3);
+macro_rules! select_adapt_wrapper {
+    ($name:ident, $subinv:literal) => {
+        #[derive(MemDbg, MemSize)]
+        pub struct $name(SelectAdapt<AddNumBits<BitVec>>);
+        impl Build<BitVec> for $name {
+            fn new(bits: BitVec) -> Self {
+                Self(SelectAdapt::new(bits.into(), $subinv))
+            }
+        }
+        forward_select!($name);
+    };
+}
+
+macro_rules! select_adapt_const_wrapper {
+    ($name:ident, $subinv:literal) => {
+        #[derive(MemDbg, MemSize)]
+        pub struct $name(
+            SelectAdaptConst<AddNumBits<BitVec>, Box<[usize]>, LOG2_ONES_PER_INVENTORY, $subinv>,
+        );
+        impl Build<BitVec> for $name {
+            fn new(bits: BitVec) -> Self {
+                Self(SelectAdaptConst::<_, _, LOG2_ONES_PER_INVENTORY, $subinv>::new(bits.into()))
+            }
+        }
+        forward_select!($name);
+    };
+}
+
+select_adapt_wrapper!(SelectAdapt0, 0);
+select_adapt_wrapper!(SelectAdapt1, 1);
+select_adapt_wrapper!(SelectAdapt2, 2);
+select_adapt_wrapper!(SelectAdapt3, 3);
+
+select_adapt_const_wrapper!(SelectAdaptConst0, 0);
+select_adapt_const_wrapper!(SelectAdaptConst1, 1);
+select_adapt_const_wrapper!(SelectAdaptConst2, 2);
+select_adapt_const_wrapper!(SelectAdaptConst3, 3);
 
 impl Build<BitVec> for Select9 {
     fn new(bits: BitVec) -> Self {
@@ -111,62 +85,27 @@ impl Build<BitVec> for Rank9 {
     }
 }
 
-impl Build<BitVec> for RankSmall<2, 9> {
-    fn new(bits: BitVec) -> Self {
-        RankSmall::<2, 9>::new(bits)
-    }
+macro_rules! impl_build_rank_small {
+    ($($a:literal, $b:literal);+ $(;)?) => {
+        $(
+            impl Build<BitVec> for RankSmall<$a, $b> {
+                fn new(bits: BitVec) -> Self {
+                    RankSmall::<$a, $b>::new(bits)
+                }
+            }
+            impl Build<BitVec> for SelectSmall<$a, $b, RankSmall<$a, $b>> {
+                fn new(bits: BitVec) -> Self {
+                    SelectSmall::<$a, $b, _>::new(RankSmall::<$a, $b>::new(bits))
+                }
+            }
+        )+
+    };
 }
 
-impl Build<BitVec> for RankSmall<1, 9> {
-    fn new(bits: BitVec) -> Self {
-        RankSmall::<1, 9>::new(bits)
-    }
-}
-
-impl Build<BitVec> for RankSmall<1, 10> {
-    fn new(bits: BitVec) -> Self {
-        RankSmall::<1, 10>::new(bits)
-    }
-}
-
-impl Build<BitVec> for RankSmall<1, 11> {
-    fn new(bits: BitVec) -> Self {
-        RankSmall::<1, 11>::new(bits)
-    }
-}
-
-impl Build<BitVec> for RankSmall<3, 13> {
-    fn new(bits: BitVec) -> Self {
-        RankSmall::<3, 13>::new(bits)
-    }
-}
-
-impl Build<BitVec> for SelectSmall<2, 9, RankSmall<2, 9>> {
-    fn new(bits: BitVec) -> Self {
-        SelectSmall::<2, 9, _>::new(RankSmall::<2, 9>::new(bits))
-    }
-}
-
-impl Build<BitVec> for SelectSmall<1, 9, RankSmall<1, 9>> {
-    fn new(bits: BitVec) -> Self {
-        SelectSmall::<1, 9, _>::new(RankSmall::<1, 9>::new(bits))
-    }
-}
-
-impl Build<BitVec> for SelectSmall<1, 10, RankSmall<1, 10>> {
-    fn new(bits: BitVec) -> Self {
-        SelectSmall::<1, 10, _>::new(RankSmall::<1, 10>::new(bits))
-    }
-}
-
-impl Build<BitVec> for SelectSmall<1, 11, RankSmall<1, 11>> {
-    fn new(bits: BitVec) -> Self {
-        SelectSmall::<1, 11, _>::new(RankSmall::<1, 11>::new(bits))
-    }
-}
-
-impl Build<BitVec> for SelectSmall<3, 13, RankSmall<3, 13>> {
-    fn new(bits: BitVec) -> Self {
-        SelectSmall::<3, 13, _>::new(RankSmall::<3, 13>::new(bits))
-    }
-}
+impl_build_rank_small!(
+    2, 9;
+    1, 9;
+    1, 10;
+    1, 11;
+    3, 13;
+);

@@ -71,7 +71,15 @@ fn test_u128() {
     check(1u128, vec![1; 100]);
     // Values beyond u64 range
     let big = (1u128 << 100) + 42;
-    check(1u128, vec![(1u128 << 64) + 1, (1u128 << 100) + 12345, u128::MAX - 1, u128::MAX]);
+    check(
+        1u128,
+        vec![
+            (1u128 << 64) + 1,
+            (1u128 << 100) + 12345,
+            u128::MAX - 1,
+            u128::MAX,
+        ],
+    );
     check(1u128, vec![big, big, big, 1, 1]);
     check(1u128, vec![(1u128 << 120) + 999]);
 }

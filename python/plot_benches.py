@@ -15,11 +15,11 @@ Usage
 First, run the benchmarks.  The ``sux`` benchmark binary has its own CLI
 (see ``cargo bench --bench sux -- --help``); typical invocations::
 
-    # Benchmark Rank9 at density 0.5, 5 repetitions, six default lengths
-    cargo bench --bench sux -- Rank9 -d 0.5 -r 5
+    # Benchmark Rank9 at density 0.5
+    cargo bench --bench sux -- Rank9 -d 0.5
 
     # Compare several select structures
-    cargo bench --bench sux -- SelectSmall SelectAdapt0 -d 0.5 -r 1 \\
+    cargo bench --bench sux -- SelectSmall SelectAdapt0 -d 0.5 \\
         -l 100000,1000000,10000000
 
 Then generate plots::
@@ -41,14 +41,13 @@ stored in a two-level directory structure::
 
     target/criterion/
     └── <StructureName>/          # e.g. "Rank9", "SelectAdapt0"
-        ├── <size>_<density>_<rep>/   # e.g. "1000000_0.5_0"
+        ├── <size>_<density>/     # e.g. "1000000_0.5"
         │   └── new/
         │       └── estimates.json    # ← this script reads mean.point_estimate
-        ├── mem_cost.csv              # written by the benchmark (for --pareto)
+        ├── mem_cost.json             # written by the benchmark (for --pareto)
         └── ...
 
-Each parameter directory name encodes ``size_density_repetition``.
-Repetitions are averaged per (size, density) pair.
+Each parameter directory name encodes ``size_density``.
 
 What it produces
 ----------------
@@ -85,29 +84,39 @@ def load_criterion_benches(base_path, load_mem_cost=False):
     benches_list = []
 
     for dir in sorted([d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]):
-        run_name = dir.split("_")
-        data = {}
-
-        data["size"] = int(run_name[0], 10)
-        data["dense"] = float(run_name[1])
-        data["rep"] = int(run_name[2], 10)
+        parts = dir.split("_")
+        # Parameter directories are named "<size>_<density>".
+        if len(parts) < 2:
+            continue
+        try:
+            size = int(parts[0], 10)
+            dense = float(parts[1])
+        except (ValueError, IndexError):
+            continue
 
         path = os.path.join(base_path, dir, "new/estimates.json")
+        if not os.path.exists(path):
+            continue
         with open(path, "r") as f:
             estimates = json.load(f)
-            data["time"] = estimates["mean"]["point_estimate"]
-        benches_list.append(data)
+        benches_list.append({
+            "size": size,
+            "dense": dense,
+            "time": estimates["mean"]["point_estimate"],
+        })
 
     benches_df = pd.DataFrame(benches_list)
-
-    benches_df = benches_df.groupby(
-        ["size", "dense"], as_index=False)["time"].mean()
+    if benches_df.empty:
+        return benches_df
 
     if load_mem_cost:
-        mem_cost_df = pd.read_csv(
-            os.path.join(base_path, "mem_cost.csv"), header=None, names=["size", "dense", "mem_cost"])
-        benches_df = pd.merge(benches_df, mem_cost_df,
-                              how="left", on=["size", "dense"])
+        mem_json = os.path.join(base_path, "mem_cost.json")
+        if os.path.exists(mem_json):
+            with open(mem_json, "r") as f:
+                mem_data = json.load(f)
+            mem_cost_df = pd.DataFrame(mem_data)
+            benches_df = pd.merge(benches_df, mem_cost_df,
+                                  how="left", on=["size", "dense"])
 
     benches_df = benches_df.sort_values(by="size", ignore_index=True)
     return benches_df
@@ -119,7 +128,7 @@ def compare_benches(benches, plots_dir, nonuniform):
                            sharex=True, sharey=True, squeeze=False)
     fig.set_size_inches(10, 5)
     fig.text(0.5, -0.02, 'size [num of bits]', ha='center', va='center')
-    fig.text(-0.01, 0.5, f'time [ns/op]', ha='center',
+    fig.text(-0.01, 0.5, 'time [ns/op]', ha='center',
              va='center', rotation='vertical')
 
     for i, (bench, bench_name) in enumerate(benches):
@@ -216,7 +225,6 @@ def draw_pareto_front(benches, plots_dir, op_type, density=0.5):
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
-    plt.draw_all()
     plt.savefig(os.path.join(plots_dir, "pareto.svg"), format="svg", dpi=250, bbox_inches="tight")
     plt.close(fig)
 
