@@ -266,18 +266,18 @@ impl<B> BitVec<B> {
         Self { bits, len }
     }
 
+    /// Returns the backend and the length in bits, consuming this bit vector.
     #[inline(always)]
     pub fn into_raw_parts(self) -> (B, usize) {
         (self.bits, self.len)
     }
 
-    #[inline(always)]
-    /// Modify the bit vector in place.
-    ///
+    /// Replaces the backend by applying a function, consuming this bit vector.
     ///
     /// # Safety
-    /// This is unsafe because it's the caller's responsibility to ensure that
-    /// that the length is compatible with the modified bits.
+    /// The caller must ensure that the length is compatible with the new
+    /// backend.
+    #[inline(always)]
     pub unsafe fn map<B2>(self, f: impl FnOnce(B) -> B2) -> BitVec<B2> {
         BitVec {
             bits: f(self.bits),
@@ -538,6 +538,7 @@ impl<B> AtomicBitVec<B> {
     pub const unsafe fn from_raw_parts(bits: B, len: usize) -> Self {
         Self { bits, len }
     }
+    /// Returns the backend and the length in bits, consuming this bit vector.
     #[inline(always)]
     pub fn into_raw_parts(self) -> (B, usize) {
         (self.bits, self.len)

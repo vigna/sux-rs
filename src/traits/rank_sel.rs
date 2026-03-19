@@ -82,6 +82,17 @@ pub trait NumBits: BitLength {
 }
 
 /// Ranking over a bit vector.
+///
+/// # Examples
+///
+/// ```rust
+/// use sux::prelude::*;
+///
+/// let rank9 = Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]);
+/// assert_eq!(rank9.rank(0), 0);
+/// assert_eq!(rank9.rank(4), 3);
+/// assert_eq!(rank9.rank(8), 5);
+/// ```
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait Rank: BitLength + NumBits + RankUnchecked {
@@ -100,6 +111,11 @@ pub trait Rank: BitLength + NumBits + RankUnchecked {
     }
 }
 
+/// Rank over a bit vector without bounds checks.
+///
+/// This is the unchecked counterpart of [`Rank`], providing the core
+/// [`rank_unchecked`](RankUnchecked::rank_unchecked) operation. Use [`Rank`]
+/// for a checked version that verifies the position is within bounds.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait RankUnchecked {
@@ -214,6 +230,10 @@ pub trait RankHinted {
 }
 
 /// Selection over a bit vector without bound checks.
+///
+/// This is the unchecked counterpart of [`Select`], providing the core
+/// [`select_unchecked`](SelectUnchecked::select_unchecked) operation. Use [`Select`]
+/// for a checked version that verifies that there is a one of the given rank.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait SelectUnchecked {
@@ -226,6 +246,18 @@ pub trait SelectUnchecked {
 }
 
 /// Selection over a bit vector.
+///
+/// # Examples
+///
+/// ```rust
+/// use sux::prelude::*;
+///
+/// let sel = SelectAdapt::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1], 1);
+/// assert_eq!(sel.select(0), Some(0));
+/// assert_eq!(sel.select(2), Some(3));
+/// assert_eq!(sel.select(4), Some(7));
+/// assert_eq!(sel.select(5), None);
+/// ```
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait Select: SelectUnchecked + NumBits {
@@ -253,6 +285,18 @@ pub trait SelectZeroUnchecked {
 }
 
 /// Selection of zeros over a bit vector.
+///
+/// # Examples
+///
+/// ```rust
+/// use sux::prelude::*;
+///
+/// let sel = SelectZeroAdapt::new(Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]), 0);
+/// assert_eq!(sel.select_zero(0), Some(1));
+/// assert_eq!(sel.select_zero(1), Some(4));
+/// assert_eq!(sel.select_zero(2), Some(6));
+/// assert_eq!(sel.select_zero(3), None);
+/// ```
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait SelectZero: SelectZeroUnchecked + NumBits {

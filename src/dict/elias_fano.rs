@@ -115,6 +115,16 @@ pub type EfSeqDict = EliasFano<
 /// you add both structures, you will have an [`IndexedDict`] with [`Succ`] and
 /// [`Pred`].
 ///
+/// # Type Parameters
+///
+/// - `V`: The value type (e.g., `u64`). Must implement [`Word`].
+/// - `H`: The higher-bits storage. Defaults to
+///   [`BitVec<Box<[usize]>>`](crate::bits::BitVec). Enriching this with
+///   selection structures enables [`IndexedSeq`] and/or successor/predecessor
+///   queries.
+/// - `L`: The lower-bits storage. Defaults to
+///   [`BitFieldVec<Box<[V]>>`](crate::bits::BitFieldVec).
+///
 /// # Bound Checks for Successor and Predecessor Queries
 ///
 /// The unchecked version of successor and predecessor queries (i.e.,
@@ -254,7 +264,6 @@ pub type EfSeqDict = EliasFano<
 /// assert_eq!(ef.get(0), 0);
 /// assert_eq!(ef.get(1), 2);
 /// ```
-
 #[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

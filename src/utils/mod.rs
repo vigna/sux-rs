@@ -7,6 +7,19 @@
  */
 
 //! Utility traits and implementations.
+//!
+//! This module provides several support facilities:
+//!
+//! - [`lenders`]: lending iterators over lines of (possibly compressed) files.
+//! - [`sig_store`]: signature storage for static functions and filters.
+//! - [`fair_chunks`]: splitting ranges into balanced chunks.
+//! - [`mod2_sys`]: linear system solving over **F**₂.
+//! - [`select_in_word`]: select-in-word primitives.
+//! - [`Mwc192`]: a multiply-with-carry pseudo-random number generator.
+//! - [`transmute_vec_into_atomic`] / [`transmute_vec_from_atomic`]: safe
+//!   transmutation between non-atomic and atomic vectors.
+//! - [`prefetch_index`]: cache-line prefetching for indexed data structures.
+
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic};
 use num_primitive::PrimitiveUnsigned;
 
@@ -119,6 +132,8 @@ pub fn transmute_boxed_slice_from_atomic<A: PrimitiveAtomic>(b: Box<[A]>) -> Box
     unsafe { Box::from_raw(b.as_mut() as *mut [A] as *mut [A::Value]) }
 }
 
+/// A multiply-with-carry pseudo-random number generator with 192 bits of
+/// state.
 pub struct Mwc192 {
     x: u64,
     y: u64,

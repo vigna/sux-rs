@@ -232,6 +232,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
         Self::LOG2_ONES_PER_SUB16.saturating_sub((span >> 15).ilog2() as usize + 1)
     }
 
+    /// Returns the underlying bit vector, consuming this structure.
     pub fn into_inner(self) -> B {
         self.bits
     }

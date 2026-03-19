@@ -249,16 +249,18 @@ where
         }
     }
 
+    /// Returns the backend, the bit width, and the length, consuming this
+    /// vector.
     #[inline(always)]
     pub fn into_raw_parts(self) -> (B, usize, usize) {
         (self.bits, self.bit_width, self.len)
     }
 
-    /// Modifies the bit field in place.
+    /// Replaces the backend by applying a function, consuming this vector.
     ///
     /// # Safety
-    /// This is unsafe because it's the caller's responsibility to ensure
-    /// that the length is compatible with the modified bits.
+    /// The caller must ensure that the length is compatible with the new
+    /// backend.
     #[inline(always)]
     pub unsafe fn map<B2: Backend>(self, f: impl FnOnce(B) -> B2) -> BitFieldVec<B2>
     where
@@ -1403,6 +1405,8 @@ impl<B: Backend<Word: PrimitiveAtomicInteger<Value: Word>>> AtomicBitFieldVec<B>
         }
     }
 
+    /// Returns the backend, the bit width, and the length, consuming this
+    /// vector.
     #[inline(always)]
     pub fn into_raw_parts(self) -> (B, usize, usize) {
         (self.bits, self.bit_width, self.len)

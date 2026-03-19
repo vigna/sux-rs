@@ -174,6 +174,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     const SUBBLOCK_BIT_SIZE: usize =
         Self::BLOCK_BIT_SIZE / (Self::WORDS_PER_BLOCK / Self::WORDS_PER_SUBBLOCK);
 
+    /// Returns the underlying rank-small structure, consuming this structure.
     pub fn into_inner(self) -> C {
         self.small_counters
     }

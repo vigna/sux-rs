@@ -130,6 +130,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// assert_eq!(rank_small[5], true);
 /// assert_eq!(rank_small[6], false);
 /// assert_eq!(rank_small[7], true);
+/// ```
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -598,6 +599,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2>
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
     RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
+    /// Returns the underlying bit vector, consuming this structure.
     pub fn into_inner(self) -> B {
         self.bits
     }
