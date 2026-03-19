@@ -19,11 +19,9 @@ use std::hint::black_box;
 
 const NUM_VALUES: usize = 1024;
 
-#[inline(always)]
-fn broadword_select_u8(word: u8, rank: usize) -> usize {
-    let index = word as usize | (rank << 8);
-    SELECT_IN_BYTE[index] as usize
-}
+// ──────────────────────────────────────────────────────────────────────
+// Broadword select implementations
+// ──────────────────────────────────────────────────────────────────────
 
 #[inline(always)]
 fn broadword_select_u16(word: u16, rank: usize) -> usize {
@@ -106,7 +104,7 @@ fn broadword_select_u128(word: u128, rank: usize) -> usize {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Popcount select implementations (byte-scanning with POPCOUNT table)
+// Popcount-based select implementations (byte-scanning with POPCOUNT table)
 // ──────────────────────────────────────────────────────────────────────
 
 /// Check byte at index `$idx`: if the remaining rank falls within this byte,
@@ -377,13 +375,11 @@ macro_rules! bench_one {
 fn bench_broadword(c: &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(0);
 
-    let u8_pairs = gen_pairs!(rng, u8);
     let u16_pairs = gen_pairs!(rng, u16);
     let u32_pairs = gen_pairs!(rng, u32);
     let u64_pairs = gen_pairs!(rng, u64);
     let u128_pairs = gen_pairs!(rng, u128);
 
-    bench_one!(c, "broadword_u8", u8_pairs, broadword_select_u8);
     bench_one!(c, "broadword_u16", u16_pairs, broadword_select_u16);
     bench_one!(c, "broadword_u32", u32_pairs, broadword_select_u32);
     bench_one!(c, "broadword_u64", u64_pairs, broadword_select_u64);
@@ -451,12 +447,7 @@ criterion_group!(
     bench_bmi
 );
 #[cfg(not(target_feature = "bmi2"))]
-criterion_group!(
-    benches,
-    bench_broadword,
-    bench_popcount,
-    bench_cancellation
-);
+criterion_group!(benches, bench_broadword, bench_popcount, bench_cancellation);
 criterion_main!(benches);
 
 // ──────────────────────────────────────────────────────────────────────

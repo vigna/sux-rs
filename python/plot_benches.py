@@ -1,4 +1,66 @@
 #!/usr/bin/env python3
+"""Plot benchmark results for the sux rank/select structures.
+
+This script reads criterion's JSON output (stored under
+``target/criterion/``) and produces comparison plots for the rank and
+select structures benchmarked by ``benches/sux/``.
+
+Prerequisites
+-------------
+- Python 3.8+
+- matplotlib, pandas, numpy (``pip install matplotlib pandas numpy``)
+
+Usage
+-----
+First, run the benchmarks.  The ``sux`` benchmark binary has its own CLI
+(see ``cargo bench --bench sux -- --help``); typical invocations::
+
+    # Benchmark Rank9 at density 0.5, 5 repetitions, six default lengths
+    cargo bench --bench sux -- Rank9 -d 0.5 -r 5
+
+    # Compare several select structures
+    cargo bench --bench sux -- SelectSmall SelectAdapt0 -d 0.5 -r 1 \\
+        -l 100000,1000000,10000000
+
+Then generate plots::
+
+    python3 python/plot_benches.py \\
+        --benches-path ./target/criterion/ \\
+        --plot-dir plots
+
+    # Include Pareto-front plots (time vs. memory overhead):
+    python3 python/plot_benches.py \\
+        --benches-path ./target/criterion/ \\
+        --plot-dir plots \\
+        --pareto
+
+Criterion directory layout
+--------------------------
+The ``sux`` benchmark uses criterion *benchmark groups*, so results are
+stored in a two-level directory structure::
+
+    target/criterion/
+    └── <StructureName>/          # e.g. "Rank9", "SelectAdapt0"
+        ├── <size>_<density>_<rep>/   # e.g. "1000000_0.5_0"
+        │   └── new/
+        │       └── estimates.json    # ← this script reads mean.point_estimate
+        ├── mem_cost.csv              # written by the benchmark (for --pareto)
+        └── ...
+
+Each parameter directory name encodes ``size_density_repetition``.
+Repetitions are averaged per (size, density) pair.
+
+What it produces
+----------------
+- ``plots/plot.svg`` — line plots of time (ns/op) vs. bit-vector size,
+  one subplot per density.  Each structure is a separate line/color.
+  Structures are added incrementally: each benchmark group you run is
+  overlaid on the previous ones.
+- ``plots/csv/<StructureName>.csv`` — raw data for each structure.
+- ``plots/pareto_<density>.svg`` (with ``--pareto``) — Pareto front of
+  time vs. memory overhead at a given density, one line per size.
+
+"""
 
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
@@ -9,7 +71,6 @@ import math
 import pandas as pd
 import numpy as np
 import argparse
-import os
 
 # colors = plt.cm.tab20(np.linspace(0, 1, 30))
 colors = ["#8FBC8F", "#4682B4", "#DDA0DD", "#CD5C5C", "#F4A460",
