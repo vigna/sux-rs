@@ -58,7 +58,7 @@ use crate::{debug_assert_bounds, panic_if_out_of_bounds, panic_if_value};
 
 /// A derived trait that the types used as a parameter for [`BitFieldSlice`] must satisfy.
 /// To be usable in an [`AtomicBitFieldSlice`], the type must also implement
-/// [`AtomicPrimitive`].
+/// [`AtomicPrimitive`](atomic_primitive::AtomicPrimitive).
 pub trait Word: PrimitiveUnsigned + PrimitiveNumberAs<u128> {
     const ZERO: Self;
     const ONE: Self;

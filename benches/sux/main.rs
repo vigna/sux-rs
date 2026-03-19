@@ -188,7 +188,7 @@ struct Cli {
     /// are always available.
     ///
     /// The integer after SelectAdapt/SelectAdaptConst is the base-2
-    /// logarithm of the maximum number of usize's per subinventory.
+    /// logarithm of the maximum number of usize per subinventory.
     /// CompareAdaptConst compares a SelectAdaptConst with default
     /// constants to a SelectAdapt with the same parameters.​
     #[arg(num_args = 1..)]
