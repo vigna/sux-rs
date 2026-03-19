@@ -17,7 +17,7 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 
-const NUM_VALUES: usize = 128;
+const NUM_VALUES: usize = 1024;
 
 #[inline(always)]
 fn broadword_select_u8(word: u8, rank: usize) -> usize {
@@ -115,8 +115,7 @@ macro_rules! popcount_check_byte {
     ($bytes:expr, $remaining:ident, $idx:expr) => {
         let ones = POPCOUNT[$bytes[$idx] as usize] as usize;
         if $remaining < ones {
-            return $idx * 8
-                + SELECT_IN_BYTE[$bytes[$idx] as usize | ($remaining << 8)] as usize;
+            return $idx * 8 + SELECT_IN_BYTE[$bytes[$idx] as usize | ($remaining << 8)] as usize;
         }
         $remaining -= ones;
     };
@@ -182,6 +181,122 @@ fn popcount_select_u128(word: u128, rank: usize) -> usize {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// Popcount2 select: split word in half via count_ones, then byte-scan
+// ──────────────────────────────────────────────────────────────────────
+
+#[inline(always)]
+fn popcount2_select_u64(word: u64, rank: usize) -> usize {
+    let bytes = word.to_le_bytes();
+    let lower_ones = (word as u32).count_ones() as usize;
+    if rank < lower_ones {
+        let mut remaining = rank;
+        popcount_check_byte!(bytes, remaining, 0);
+        popcount_check_byte!(bytes, remaining, 1);
+        popcount_check_byte!(bytes, remaining, 2);
+        24 + SELECT_IN_BYTE[bytes[3] as usize | (remaining << 8)] as usize
+    } else {
+        let mut remaining = rank - lower_ones;
+        popcount_check_byte!(bytes, remaining, 4);
+        popcount_check_byte!(bytes, remaining, 5);
+        popcount_check_byte!(bytes, remaining, 6);
+        56 + SELECT_IN_BYTE[bytes[7] as usize | (remaining << 8)] as usize
+    }
+}
+
+#[inline(always)]
+fn popcount2_select_u128(word: u128, rank: usize) -> usize {
+    let bytes = word.to_le_bytes();
+    let lower_ones = (word as u64).count_ones() as usize;
+    if rank < lower_ones {
+        let mut remaining = rank;
+        popcount_check_byte!(bytes, remaining, 0);
+        popcount_check_byte!(bytes, remaining, 1);
+        popcount_check_byte!(bytes, remaining, 2);
+        popcount_check_byte!(bytes, remaining, 3);
+        popcount_check_byte!(bytes, remaining, 4);
+        popcount_check_byte!(bytes, remaining, 5);
+        popcount_check_byte!(bytes, remaining, 6);
+        56 + SELECT_IN_BYTE[bytes[7] as usize | (remaining << 8)] as usize
+    } else {
+        let mut remaining = rank - lower_ones;
+        popcount_check_byte!(bytes, remaining, 8);
+        popcount_check_byte!(bytes, remaining, 9);
+        popcount_check_byte!(bytes, remaining, 10);
+        popcount_check_byte!(bytes, remaining, 11);
+        popcount_check_byte!(bytes, remaining, 12);
+        popcount_check_byte!(bytes, remaining, 13);
+        popcount_check_byte!(bytes, remaining, 14);
+        120 + SELECT_IN_BYTE[bytes[15] as usize | (remaining << 8)] as usize
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Popcount3 select (u128 only): two-level decision tree via count_ones
+// ──────────────────────────────────────────────────────────────────────
+
+#[inline(always)]
+fn popcount3_select_u128(word: u128, rank: usize) -> usize {
+    let bytes = word.to_le_bytes();
+    let lower_ones = (word as u64).count_ones() as usize;
+    if rank < lower_ones {
+        let lower32_ones = (word as u32).count_ones() as usize;
+        if rank < lower32_ones {
+            let mut remaining = rank;
+            popcount_check_byte!(bytes, remaining, 0);
+            popcount_check_byte!(bytes, remaining, 1);
+            popcount_check_byte!(bytes, remaining, 2);
+            24 + SELECT_IN_BYTE[bytes[3] as usize | (remaining << 8)] as usize
+        } else {
+            let mut remaining = rank - lower32_ones;
+            popcount_check_byte!(bytes, remaining, 4);
+            popcount_check_byte!(bytes, remaining, 5);
+            popcount_check_byte!(bytes, remaining, 6);
+            56 + SELECT_IN_BYTE[bytes[7] as usize | (remaining << 8)] as usize
+        }
+    } else {
+        let upper = (word >> 64) as u64;
+        let upper_lower32_ones = (upper as u32).count_ones() as usize;
+        let remaining_rank = rank - lower_ones;
+        if remaining_rank < upper_lower32_ones {
+            let mut remaining = remaining_rank;
+            popcount_check_byte!(bytes, remaining, 8);
+            popcount_check_byte!(bytes, remaining, 9);
+            popcount_check_byte!(bytes, remaining, 10);
+            88 + SELECT_IN_BYTE[bytes[11] as usize | (remaining << 8)] as usize
+        } else {
+            let mut remaining = remaining_rank - upper_lower32_ones;
+            popcount_check_byte!(bytes, remaining, 12);
+            popcount_check_byte!(bytes, remaining, 13);
+            popcount_check_byte!(bytes, remaining, 14);
+            120 + SELECT_IN_BYTE[bytes[15] as usize | (remaining << 8)] as usize
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Cancellation select: cancel lowest bits via x &= x - 1, then trailing_zeros
+// ──────────────────────────────────────────────────────────────────────
+
+macro_rules! impl_cancellation_select {
+    ($name:ident, $ty:ty) => {
+        #[inline(always)]
+        fn $name(word: $ty, rank: usize) -> usize {
+            let mut x = word;
+            for _ in 0..rank {
+                x &= x - 1;
+            }
+            x.trailing_zeros() as usize
+        }
+    };
+}
+
+impl_cancellation_select!(cancellation_select_u8, u8);
+impl_cancellation_select!(cancellation_select_u16, u16);
+impl_cancellation_select!(cancellation_select_u32, u32);
+impl_cancellation_select!(cancellation_select_u64, u64);
+impl_cancellation_select!(cancellation_select_u128, u128);
+
+// ──────────────────────────────────────────────────────────────────────
 // BMI2 select implementations (using x86_64 PDEP)
 // ──────────────────────────────────────────────────────────────────────
 
@@ -244,6 +359,21 @@ macro_rules! gen_pairs {
     }};
 }
 
+/// Bench a single select call per iteration, cycling through `$pairs`.
+macro_rules! bench_one {
+    ($c:expr, $name:expr, $pairs:expr, $func:expr) => {
+        let pairs = &$pairs;
+        let mut i = 0usize;
+        $c.bench_function($name, |b| {
+            b.iter(|| {
+                let (v, r) = pairs[i % NUM_VALUES];
+                i = i.wrapping_add(1);
+                black_box($func(v, r))
+            })
+        });
+    };
+}
+
 fn bench_broadword(c: &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(0);
 
@@ -253,45 +383,11 @@ fn bench_broadword(c: &mut Criterion) {
     let u64_pairs = gen_pairs!(rng, u64);
     let u128_pairs = gen_pairs!(rng, u128);
 
-    c.bench_function("broadword_u8", |b| {
-        b.iter(|| {
-            for &(v, r) in &u8_pairs {
-                black_box(broadword_select_u8(v, r));
-            }
-        })
-    });
-
-    c.bench_function("broadword_u16", |b| {
-        b.iter(|| {
-            for &(v, r) in &u16_pairs {
-                black_box(broadword_select_u16(v, r));
-            }
-        })
-    });
-
-    c.bench_function("broadword_u32", |b| {
-        b.iter(|| {
-            for &(v, r) in &u32_pairs {
-                black_box(broadword_select_u32(v, r));
-            }
-        })
-    });
-
-    c.bench_function("broadword_u64", |b| {
-        b.iter(|| {
-            for &(v, r) in &u64_pairs {
-                black_box(broadword_select_u64(v, r));
-            }
-        })
-    });
-
-    c.bench_function("broadword_u128", |b| {
-        b.iter(|| {
-            for &(v, r) in &u128_pairs {
-                black_box(broadword_select_u128(v, r));
-            }
-        })
-    });
+    bench_one!(c, "broadword_u8", u8_pairs, broadword_select_u8);
+    bench_one!(c, "broadword_u16", u16_pairs, broadword_select_u16);
+    bench_one!(c, "broadword_u32", u32_pairs, broadword_select_u32);
+    bench_one!(c, "broadword_u64", u64_pairs, broadword_select_u64);
+    bench_one!(c, "broadword_u128", u128_pairs, broadword_select_u128);
 }
 
 fn bench_popcount(c: &mut Criterion) {
@@ -303,45 +399,30 @@ fn bench_popcount(c: &mut Criterion) {
     let u64_pairs = gen_pairs!(rng, u64);
     let u128_pairs = gen_pairs!(rng, u128);
 
-    c.bench_function("popcount_u8", |b| {
-        b.iter(|| {
-            for &(v, r) in &u8_pairs {
-                black_box(popcount_select_u8(v, r));
-            }
-        })
-    });
+    bench_one!(c, "popcount_u8", u8_pairs, popcount_select_u8);
+    bench_one!(c, "popcount_u16", u16_pairs, popcount_select_u16);
+    bench_one!(c, "popcount_u32", u32_pairs, popcount_select_u32);
+    bench_one!(c, "popcount_u64", u64_pairs, popcount_select_u64);
+    bench_one!(c, "popcount_u128", u128_pairs, popcount_select_u128);
+    bench_one!(c, "popcount2_u64", u64_pairs, popcount2_select_u64);
+    bench_one!(c, "popcount2_u128", u128_pairs, popcount2_select_u128);
+    bench_one!(c, "popcount3_u128", u128_pairs, popcount3_select_u128);
+}
 
-    c.bench_function("popcount_u16", |b| {
-        b.iter(|| {
-            for &(v, r) in &u16_pairs {
-                black_box(popcount_select_u16(v, r));
-            }
-        })
-    });
+fn bench_cancellation(c: &mut Criterion) {
+    let mut rng = SmallRng::seed_from_u64(0);
 
-    c.bench_function("popcount_u32", |b| {
-        b.iter(|| {
-            for &(v, r) in &u32_pairs {
-                black_box(popcount_select_u32(v, r));
-            }
-        })
-    });
+    let u8_pairs = gen_pairs!(rng, u8);
+    let u16_pairs = gen_pairs!(rng, u16);
+    let u32_pairs = gen_pairs!(rng, u32);
+    let u64_pairs = gen_pairs!(rng, u64);
+    let u128_pairs = gen_pairs!(rng, u128);
 
-    c.bench_function("popcount_u64", |b| {
-        b.iter(|| {
-            for &(v, r) in &u64_pairs {
-                black_box(popcount_select_u64(v, r));
-            }
-        })
-    });
-
-    c.bench_function("popcount_u128", |b| {
-        b.iter(|| {
-            for &(v, r) in &u128_pairs {
-                black_box(popcount_select_u128(v, r));
-            }
-        })
-    });
+    bench_one!(c, "cancellation_u8", u8_pairs, cancellation_select_u8);
+    bench_one!(c, "cancellation_u16", u16_pairs, cancellation_select_u16);
+    bench_one!(c, "cancellation_u32", u32_pairs, cancellation_select_u32);
+    bench_one!(c, "cancellation_u64", u64_pairs, cancellation_select_u64);
+    bench_one!(c, "cancellation_u128", u128_pairs, cancellation_select_u128);
 }
 
 #[cfg(target_feature = "bmi2")]
@@ -354,51 +435,28 @@ fn bench_bmi(c: &mut Criterion) {
     let u64_pairs = gen_pairs!(rng, u64);
     let u128_pairs = gen_pairs!(rng, u128);
 
-    c.bench_function("bmi_u8", |b| {
-        b.iter(|| {
-            for &(v, r) in &u8_pairs {
-                black_box(bmi_select_u8(v, r));
-            }
-        })
-    });
-
-    c.bench_function("bmi_u16", |b| {
-        b.iter(|| {
-            for &(v, r) in &u16_pairs {
-                black_box(bmi_select_u16(v, r));
-            }
-        })
-    });
-
-    c.bench_function("bmi_u32", |b| {
-        b.iter(|| {
-            for &(v, r) in &u32_pairs {
-                black_box(bmi_select_u32(v, r));
-            }
-        })
-    });
-
-    c.bench_function("bmi_u64", |b| {
-        b.iter(|| {
-            for &(v, r) in &u64_pairs {
-                black_box(bmi_select_u64(v, r));
-            }
-        })
-    });
-
-    c.bench_function("bmi_u128", |b| {
-        b.iter(|| {
-            for &(v, r) in &u128_pairs {
-                black_box(bmi_select_u128(v, r));
-            }
-        })
-    });
+    bench_one!(c, "bmi_u8", u8_pairs, bmi_select_u8);
+    bench_one!(c, "bmi_u16", u16_pairs, bmi_select_u16);
+    bench_one!(c, "bmi_u32", u32_pairs, bmi_select_u32);
+    bench_one!(c, "bmi_u64", u64_pairs, bmi_select_u64);
+    bench_one!(c, "bmi_u128", u128_pairs, bmi_select_u128);
 }
 
 #[cfg(target_feature = "bmi2")]
-criterion_group!(benches, bench_broadword, bench_popcount, bench_bmi);
+criterion_group!(
+    benches,
+    bench_broadword,
+    bench_popcount,
+    bench_cancellation,
+    bench_bmi
+);
 #[cfg(not(target_feature = "bmi2"))]
-criterion_group!(benches, bench_broadword, bench_popcount);
+criterion_group!(
+    benches,
+    bench_broadword,
+    bench_popcount,
+    bench_cancellation
+);
 criterion_main!(benches);
 
 // ──────────────────────────────────────────────────────────────────────
@@ -407,22 +465,14 @@ criterion_main!(benches);
 
 #[allow(clippy::all)]
 const POPCOUNT: [u8; 256] = [
-    0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
-    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
-    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
-    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
-    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
-    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-    4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
+    0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
 ];
 
 #[allow(clippy::all)]
