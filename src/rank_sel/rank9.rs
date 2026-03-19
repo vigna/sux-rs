@@ -33,7 +33,7 @@ use std::ops::Index;
 /// first relative counter is stored implicitly using zero extension, so eight
 /// 9-bit counters can be stored in just 64 bits. Moreover, absolute and
 /// relative counters are interleaved. These two ideas make it possible to rank
-/// using a most two cache misses and no tests or loops.
+/// using at most two cache misses and no tests or loops.
 ///
 /// This structure has been described by Sebastiano Vigna in “[Broadword
 /// Implementation of Rank/Select
@@ -43,6 +43,11 @@ use std::ops::Index;
 /// Springer, 2008.
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
+///
+/// # Type Parameters
+///
+/// - `B`: The backend bit vector. Defaults to [`BitVec`](crate::bits::BitVec).
+/// - `C`: The counter storage. Defaults to `Box<[BlockCounters]>`.
 ///
 /// # Examples
 ///
@@ -135,6 +140,7 @@ impl BlockCounters {
 impl<B, C> Rank9<B, C> {
     pub(super) const WORDS_PER_BLOCK: usize = 8;
 
+    /// Returns the underlying bit vector, consuming this structure.
     pub fn into_inner(self) -> B {
         self.bits
     }
@@ -274,6 +280,7 @@ where
     /// let rank9 = Rank9::new(bv);
     /// // This is safe as there is at least one unused bit
     /// assert_eq!(unsafe { rank9.rank_unchecked(8) }, rank9.num_ones());
+    /// ```
     #[inline(always)]
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
         debug_assert!(pos < self.bits.len().next_multiple_of(64));

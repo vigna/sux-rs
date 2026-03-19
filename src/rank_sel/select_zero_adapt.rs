@@ -184,6 +184,7 @@ impl<B, I> Deref for SelectZeroAdapt<B, I> {
 }
 
 impl<B, I> SelectZeroAdapt<B, I> {
+    /// Returns the underlying bit vector, consuming this structure.
     pub fn into_inner(self) -> B {
         self.bits
     }
@@ -325,7 +326,7 @@ where
     /// * `bits`: A bit vector.
     ///
     /// * `log2_ones_per_inventory`: The base-2 logarithm of the distance
-    ///   between two indexed ones.
+    ///   between two indexed zeros.
     ///
     /// * `max_log2_words_per_subinventory`: The base-2 logarithm of the maximum
     ///   number [*M*](SelectZeroAdapt) of 64-bit words in each subinventory.

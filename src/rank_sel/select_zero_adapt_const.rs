@@ -215,6 +215,7 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENT
         Self::LOG2_ONES_PER_SUB16.saturating_sub((span >> 15).ilog2() as usize + 1)
     }
 
+    /// Returns the underlying bit vector, consuming this structure.
     pub fn into_inner(self) -> B {
         self.bits
     }
@@ -264,7 +265,7 @@ impl<
 where
     B::Word: Word + SelectInWord,
 {
-    /// Creates a new selection structure over a [`SelectZeroHinted`] with a specified
+    /// Creates a new selection structure over a bit vector with a specified
     /// distance between indexed zeros.
     ///
     /// # Panics

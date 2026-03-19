@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+//! Utilities for selecting bits in a word.
+
 /// Select the i-th 1-bit or 0-bit in a word of memory.
 /// ```
 /// use sux::utils::SelectInWord;
@@ -238,7 +240,7 @@ macro_rules! impl_usize {
         impl SelectInWord for usize {
             #[inline(always)]
             fn select_in_word(&self, rank: usize) -> usize {
-                (*self as $ty).select_in_word(rank) as usize
+                (*self as $ty).select_in_word(rank)
             }
         }
     };

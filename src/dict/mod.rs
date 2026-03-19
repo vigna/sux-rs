@@ -6,6 +6,24 @@
  */
 
 //! Indexed dictionaries.
+//!
+//! An indexed dictionary maps integer indices to values, supporting both
+//! random access and predecessor/successor queries. The main structures are:
+//!
+//! - [`EliasFano`]: A compact representation of monotone integer sequences,
+//!   supporting efficient access, successor, and predecessor queries.
+//! - [`RearCodedListStr`] / [`RearCodedListSliceU8`]: Prefix-compressed
+//!   immutable lists of strings or byte sequences with random access.
+//! - [`MappedRearCodedListStr`] / [`MappedRearCodedListSliceU8`]: Rear-coded
+//!   lists with element reordering for better compression.
+//! - [`SignedVFunc`] / [`BitSignedVFunc`]:
+//!   Index functions verified by hash signatures, returning `None` on mismatch.
+//! - [`VFilter`]: Static filters (approximate membership structures) based on
+//!   hash comparison.
+//! - [`SliceSeq`]: Adapters exposing slice references as indexed sequences.
+//!
+//! These structures implement traits from the
+//! [`indexed_dict`](crate::traits::indexed_dict) module.
 
 pub mod elias_fano;
 pub use elias_fano::{EliasFano, EliasFanoBuilder, EliasFanoConcurrentBuilder};
@@ -24,4 +42,3 @@ pub use signed_vfunc::{BitSignedVFunc, SignedVFunc};
 
 pub mod vfilter;
 pub use vfilter::VFilter;
-

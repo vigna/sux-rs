@@ -132,6 +132,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     const SUPERBLOCK_BIT_SIZE: usize = usize::MAX;
     const BLOCK_BIT_SIZE: usize = 1 << COUNTER_WIDTH;
 
+    /// Returns the underlying rank-small structure, consuming this structure.
     pub fn into_inner(self) -> C {
         self.small_counters
     }

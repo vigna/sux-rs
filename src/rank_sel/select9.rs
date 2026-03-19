@@ -80,6 +80,12 @@ use std::ops::{Deref, Index};
 /// This structure forwards several traits and [`Deref`]'s to its inner
 /// [`Rank9`].
 ///
+/// # Type Parameters
+///
+/// - `R`: The underlying [`Rank9`] structure. Defaults to
+///    a default [`Rank9`](super::Rank9).
+/// - `I`: The inventory storage. Defaults to `Box<[u64]>`.
+///
 /// # Examples
 ///
 /// ```rust
@@ -116,7 +122,6 @@ use std::ops::{Deref, Index};
 /// assert_eq!(select9[6], false);
 /// assert_eq!(select9[7], true);
 /// ```
-
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -149,6 +154,7 @@ impl<B: Backend + AsRef<[B::Word]>, C, I> AsRef<[B::Word]> for Select9<Rank9<B, 
 }
 
 impl<R, I> Select9<R, I> {
+    /// Returns the underlying rank structure, consuming this structure.
     pub fn into_inner(self) -> R {
         self.rank9
     }

@@ -54,6 +54,12 @@ use std::ops::Index;
 /// [`SelectAdaptConst`](super::SelectAdaptConst) provides similar functionality
 /// but with const parameters.
 ///
+/// # Type Parameters
+///
+/// - `B`: The underlying bit vector (possibly wrapped in rank/select
+///   structures).
+/// - `I`: The inventory storage. Defaults to `Box<[usize]>`.
+///
 /// # Implementation Details
 ///
 /// The structure is based on a first-level inventory and a second-level
@@ -224,7 +230,6 @@ use std::ops::Index;
 /// assert_eq!(rank9_sel[6], false);
 /// assert_eq!(rank9_sel[7], true);
 /// ```
-
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -385,6 +390,7 @@ impl SpanType {
 }
 
 impl<B, I> SelectAdapt<B, I> {
+    /// Returns the underlying bit vector, consuming this structure.
     pub fn into_inner(self) -> B {
         self.bits
     }
