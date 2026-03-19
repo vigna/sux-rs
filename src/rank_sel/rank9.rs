@@ -151,11 +151,10 @@ impl<B, C> Rank9<B, C> {
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<B1>(self, f: impl FnOnce(B) -> B1) -> Rank9<B1, C>
-    where
-        B1: Backend + AsRef<[B1::Word]> + BitLength,
-        B1::Word: Word,
-    {
+    pub unsafe fn map<B1: Backend<Word: Word> + AsRef<[B1::Word]> + BitLength>(
+        self,
+        f: impl FnOnce(B) -> B1,
+    ) -> Rank9<B1, C> {
         Rank9 {
             bits: f(self.bits),
             counts: self.counts,
@@ -174,10 +173,7 @@ impl<B: BitLength, C> Rank9<B, C> {
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]> + BitLength> Rank9<B, Box<[BlockCounters]>>
-where
-    B::Word: Word,
-{
+impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength> Rank9<B, Box<[BlockCounters]>> {
     /// Creates a new Rank9 structure from a given bit vector.
     ///
     /// # Panics
@@ -247,10 +243,8 @@ impl<B: BitLength, C: AsRef<[BlockCounters]>> BitCount for Rank9<B, C> {
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked
+impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked
     for Rank9<B, C>
-where
-    B::Word: Word,
 {
     /// # Safety
     ///
@@ -311,12 +305,13 @@ where
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> Rank for Rank9<B, C> where
-    B::Word: Word
+impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> Rank
+    for Rank9<B, C>
 {
 }
-impl<B: Backend + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> RankZero for Rank9<B, C> where
-    B::Word: Word
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> RankZero
+    for Rank9<B, C>
 {
 }
 

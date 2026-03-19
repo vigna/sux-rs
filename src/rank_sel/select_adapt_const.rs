@@ -243,10 +243,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectAdaptConst<C, I>
-    where
-        C: SelectHinted,
-    {
+    pub unsafe fn map<C: SelectHinted>(self, f: impl FnOnce(B) -> C) -> SelectAdaptConst<C, I> {
         SelectAdaptConst {
             bits: f(self.bits),
             inventory: self.inventory,
@@ -275,12 +272,10 @@ impl<
 }
 
 impl<
-    B: Backend + AsRef<[B::Word]> + BitCount,
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount,
     const LOG2_ONES_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectAdaptConst<B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
-where
-    B::Word: Word + SelectInWord,
 {
     /// Creates a new selection structure over a [`SelectHinted`] with a specified
     /// distance between indexed ones.
@@ -555,13 +550,11 @@ where
 }
 
 impl<
-    B: Backend + AsRef<[B::Word]> + BitLength + SelectHinted,
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength + SelectHinted,
     I: AsRef<[usize]>,
     const LOG2_ONES_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectUnchecked for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
-where
-    B::Word: Word + SelectInWord,
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         unsafe {
@@ -646,13 +639,11 @@ where
 }
 
 impl<
-    B: Backend + AsRef<[B::Word]> + NumBits + SelectHinted,
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + NumBits + SelectHinted,
     I: AsRef<[usize]>,
     const LOG2_ONES_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > Select for SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
-where
-    B::Word: Word + SelectInWord,
 {
 }
 

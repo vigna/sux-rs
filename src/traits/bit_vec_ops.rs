@@ -382,10 +382,7 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for ZerosIter<'_, W, B> {
 
 impl<W: Word, B: ?Sized + AsRef<[W]>> FusedIterator for ZerosIter<'_, W, B> {}
 
-impl<A: PrimitiveAtomic, T: ?Sized + AsRef<[A]> + BitLength> AtomicBitVecOps<A> for T where
-    A::Value: Word
-{
-}
+impl<A: PrimitiveAtomic<Value: Word>, T: ?Sized + AsRef<[A]> + BitLength> AtomicBitVecOps<A> for T {}
 
 /// Operations on atomic bit vectors.
 ///
@@ -393,10 +390,7 @@ impl<A: PrimitiveAtomic, T: ?Sized + AsRef<[A]> + BitLength> AtomicBitVecOps<A> 
 /// This avoids method-resolution ambiguity with [`BitVecOpsMut`], because
 /// [`PrimitiveAtomic`] is only implemented for atomic types, so the compiler can
 /// definitively rule out non-atomic backends.
-pub trait AtomicBitVecOps<A: PrimitiveAtomic>: AsRef<[A]> + BitLength
-where
-    A::Value: Word,
-{
+pub trait AtomicBitVecOps<A: PrimitiveAtomic<Value: Word>>: AsRef<[A]> + BitLength {
     /// Returns true if the bit of given index is set.
     ///
     /// This method performs a single atomic operation with the given memory
@@ -654,10 +648,7 @@ pub struct AtomicBitIter<'a, A, B: ?Sized> {
     _phantom: PhantomData<A>,
 }
 
-impl<'a, A: PrimitiveAtomic, B: ?Sized + AsRef<[A]>> AtomicBitIter<'a, A, B>
-where
-    A::Value: Word,
-{
+impl<'a, A: PrimitiveAtomic<Value: Word>, B: ?Sized + AsRef<[A]>> AtomicBitIter<'a, A, B> {
     pub fn new(bits: &'a B, len: usize) -> Self {
         debug_assert!(len <= bits.as_ref().len() * A::Value::BITS as usize);
         AtomicBitIter {
@@ -669,10 +660,7 @@ where
     }
 }
 
-impl<A: PrimitiveAtomic, B: ?Sized + AsRef<[A]>> Iterator for AtomicBitIter<'_, A, B>
-where
-    A::Value: Word,
-{
+impl<A: PrimitiveAtomic<Value: Word>, B: ?Sized + AsRef<[A]>> Iterator for AtomicBitIter<'_, A, B> {
     type Item = bool;
     fn next(&mut self) -> Option<bool> {
         if self.next_bit_pos == self.len {
@@ -693,16 +681,15 @@ where
     }
 }
 
-impl<A: PrimitiveAtomic, B: ?Sized + AsRef<[A]>> ExactSizeIterator for AtomicBitIter<'_, A, B>
-where
-    A::Value: Word,
+impl<A: PrimitiveAtomic<Value: Word>, B: ?Sized + AsRef<[A]>> ExactSizeIterator
+    for AtomicBitIter<'_, A, B>
 {
     fn len(&self) -> usize {
         self.len - self.next_bit_pos
     }
 }
 
-impl<A: PrimitiveAtomic, B: ?Sized + AsRef<[A]>> FusedIterator for AtomicBitIter<'_, A, B> where
-    A::Value: Word
+impl<A: PrimitiveAtomic<Value: Word>, B: ?Sized + AsRef<[A]>> FusedIterator
+    for AtomicBitIter<'_, A, B>
 {
 }

@@ -197,14 +197,12 @@ macro_rules! impl_rank_small_sel {
     ($NUM_U32S: tt; $COUNTER_WIDTH: literal; $W: ty) => {
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + Backend
+                + Backend<Word: Word + SelectInWord>
                 + AsRef<[C::Word]>
                 + BitLength
                 + NumBits
                 + SelectHinted,
         > SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
-        where
-            C::Word: Word + SelectInWord,
         {
             /// Creates a new selection structure with eight [`RankSmall`]
             /// blocks per inventory an average.
@@ -287,14 +285,12 @@ macro_rules! impl_rank_small_sel {
 
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + Backend
+                + Backend<Word: Word + SelectInWord>
                 + AsRef<[C::Word]>
                 + BitLength
                 + NumBits
                 + SelectHinted,
         > SelectUnchecked for SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
-        where
-            C::Word: Word + SelectInWord,
         {
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
                 unsafe {
@@ -395,22 +391,24 @@ macro_rules! impl_rank_small_sel {
 
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + Backend
+                + Backend<Word: Word + SelectInWord>
                 + AsRef<[C::Word]>
                 + BitLength
                 + NumBits
                 + SelectHinted,
         > Select for SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
-        where
-            C::Word: Word + SelectInWord,
         {
         }
     };
 }
 
-impl<C: SmallCounters<2, 9> + Backend + AsRef<[C::Word]> + BitLength + NumBits> SelectSmall<2, 9, C>
-where
-    C::Word: Word + SelectInWord,
+impl<
+    C: SmallCounters<2, 9>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits,
+> SelectSmall<2, 9, C>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -452,10 +450,14 @@ where
     }
 }
 
-impl<C: SmallCounters<1, 9> + Backend + AsRef<[C::Word]> + BitLength + NumBits + SelectHinted>
-    SelectSmall<1, 9, C>
-where
-    C::Word: Word + SelectInWord,
+impl<
+    C: SmallCounters<1, 9>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits
+        + SelectHinted,
+> SelectSmall<1, 9, C>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -491,10 +493,14 @@ where
     }
 }
 
-impl<C: SmallCounters<1, 10> + Backend + AsRef<[C::Word]> + BitLength + NumBits + SelectHinted>
-    SelectSmall<1, 10, C>
-where
-    C::Word: Word + SelectInWord,
+impl<
+    C: SmallCounters<1, 10>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits
+        + SelectHinted,
+> SelectSmall<1, 10, C>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -530,10 +536,14 @@ where
     }
 }
 
-impl<C: SmallCounters<1, 11> + Backend + AsRef<[C::Word]> + BitLength + NumBits + SelectHinted>
-    SelectSmall<1, 11, C>
-where
-    C::Word: Word + SelectInWord,
+impl<
+    C: SmallCounters<1, 11>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits
+        + SelectHinted,
+> SelectSmall<1, 11, C>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -569,10 +579,14 @@ where
     }
 }
 
-impl<C: SmallCounters<3, 13> + Backend + AsRef<[C::Word]> + BitLength + NumBits + SelectHinted>
-    SelectSmall<3, 13, C>
-where
-    C::Word: Word + SelectInWord,
+impl<
+    C: SmallCounters<3, 13>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits
+        + SelectHinted,
+> SelectSmall<3, 13, C>
 {
     unsafe fn complete_select(
         &self,
@@ -613,9 +627,13 @@ where
     }
 }
 
-impl<C: SmallCounters<1, 7> + Backend + AsRef<[C::Word]> + BitLength + NumBits> SelectSmall<1, 7, C>
-where
-    C::Word: Word + SelectInWord,
+impl<
+    C: SmallCounters<1, 7>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits,
+> SelectSmall<1, 7, C>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -651,10 +669,14 @@ where
     }
 }
 
-impl<C: SmallCounters<1, 8> + Backend + AsRef<[C::Word]> + BitLength + NumBits + SelectHinted>
-    SelectSmall<1, 8, C>
-where
-    C::Word: Word + SelectInWord,
+impl<
+    C: SmallCounters<1, 8>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits
+        + SelectHinted,
+> SelectSmall<1, 8, C>
 {
     #[inline(always)]
     unsafe fn complete_select(

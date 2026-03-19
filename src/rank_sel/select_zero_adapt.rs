@@ -205,10 +205,7 @@ impl<B, I> SelectZeroAdapt<B, I> {
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectZeroAdapt<C, I>
-    where
-        C: SelectZeroHinted,
-    {
+    pub unsafe fn map<C: SelectZeroHinted>(self, f: impl FnOnce(B) -> C) -> SelectZeroAdapt<C, I> {
         SelectZeroAdapt {
             bits: f(self.bits),
             inventory: self.inventory,
@@ -235,9 +232,8 @@ impl<B: BitLength, C> SelectZeroAdapt<B, C> {
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]> + BitCount> SelectZeroAdapt<B, Box<[usize]>>
-where
-    B::Word: Word + SelectInWord,
+impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
+    SelectZeroAdapt<B, Box<[usize]>>
 {
     /// Creates a new selection structure over a bit vector using a
     /// [default target inventory
@@ -642,10 +638,10 @@ where
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]> + BitLength + SelectZeroHinted, I: AsRef<[usize]>>
-    SelectZeroUnchecked for SelectZeroAdapt<B, I>
-where
-    B::Word: Word + SelectInWord,
+impl<
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength + SelectZeroHinted,
+    I: AsRef<[usize]>,
+> SelectZeroUnchecked for SelectZeroAdapt<B, I>
 {
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
         unsafe {
@@ -733,10 +729,10 @@ where
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]> + NumBits + SelectZeroHinted, I: AsRef<[usize]>> SelectZero
-    for SelectZeroAdapt<B, I>
-where
-    B::Word: Word + SelectInWord,
+impl<
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + NumBits + SelectZeroHinted,
+    I: AsRef<[usize]>,
+> SelectZero for SelectZeroAdapt<B, I>
 {
 }
 

@@ -226,10 +226,10 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENT
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectZeroAdaptConst<C, I>
-    where
-        C: SelectZeroHinted,
-    {
+    pub unsafe fn map<C: SelectZeroHinted>(
+        self,
+        f: impl FnOnce(B) -> C,
+    ) -> SelectZeroAdaptConst<C, I> {
         SelectZeroAdaptConst {
             bits: f(self.bits),
             inventory: self.inventory,
@@ -258,12 +258,10 @@ impl<
 }
 
 impl<
-    B: Backend + AsRef<[B::Word]> + BitCount,
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectZeroAdaptConst<B, Box<[usize]>, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
-where
-    B::Word: Word + SelectInWord,
 {
     /// Creates a new selection structure over a bit vector with a specified
     /// distance between indexed zeros.
@@ -543,14 +541,12 @@ where
 }
 
 impl<
-    B: Backend + AsRef<[B::Word]> + BitLength + SelectZeroHinted,
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength + SelectZeroHinted,
     I: AsRef<[usize]>,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectZeroUnchecked
     for SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
-where
-    B::Word: Word + SelectInWord,
 {
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
         unsafe {
@@ -639,13 +635,11 @@ where
 }
 
 impl<
-    B: Backend + AsRef<[B::Word]> + NumBits + SelectZeroHinted,
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + NumBits + SelectZeroHinted,
     I: AsRef<[usize]>,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectZero for SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
-where
-    B::Word: Word + SelectInWord,
 {
 }
 
