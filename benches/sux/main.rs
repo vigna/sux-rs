@@ -5,23 +5,38 @@ use std::fmt;
 use bench_select::compare_adapt_const;
 use clap::{Parser, ValueEnum};
 use criterion::Criterion;
+use sux::bits::BitVec;
 use sux::rank_sel::*;
 use utils::*;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 enum RankSel {
     Rank9,
+    #[cfg(target_pointer_width = "64")]
     RankSmall0,
+    #[cfg(target_pointer_width = "64")]
     RankSmall1,
+    #[cfg(target_pointer_width = "64")]
     RankSmall2,
+    #[cfg(target_pointer_width = "64")]
     RankSmall3,
+    #[cfg(target_pointer_width = "64")]
     RankSmall4,
     Select9,
+    #[cfg(target_pointer_width = "64")]
     SelectSmall0,
+    #[cfg(target_pointer_width = "64")]
     SelectSmall1,
+    #[cfg(target_pointer_width = "64")]
     SelectSmall2,
+    #[cfg(target_pointer_width = "64")]
     SelectSmall3,
+    #[cfg(target_pointer_width = "64")]
     SelectSmall4,
+    RankSmall5,
+    RankSmall6,
+    SelectSmall5,
+    SelectSmall6,
     SelectAdapt0,
     SelectAdapt1,
     SelectAdapt2,
@@ -43,61 +58,97 @@ impl RankSel {
     fn benchmark(&self, c: &mut Criterion, lengths: &[u64], densities: &[f64], uniform: bool) {
         let name = self.to_string();
         match self {
-            Self::Rank9 => bench_rank::<Rank9>(c, &name, lengths, densities, uniform),
+            // Rank9/Select9: fixed u64 backend (always 64-bit words).
+            Self::Rank9 => {
+                bench_rank::<u64, Rank9<BitVec<Vec<u64>>>>(c, &name, lengths, densities, uniform)
+            }
+            Self::Select9 => bench_select::<u64, Select9<Rank9<BitVec<Vec<u64>>>>>(
+                c, &name, lengths, densities, uniform,
+            ),
+            // RankSmall/SelectSmall: platform-adapted (usize backend).
+            // On 64-bit platforms usize == u64, matching the required word size.
+            // These variants are not available on 32-bit platforms because the
+            // benchmarked RankSmall configurations all require 64-bit words.
+            #[cfg(target_pointer_width = "64")]
             Self::RankSmall0 => {
-                bench_rank::<RankSmall<2, 9>>(c, &name, lengths, densities, uniform)
+                bench_rank::<usize, RankSmall<2, 9>>(c, &name, lengths, densities, uniform)
             }
+            #[cfg(target_pointer_width = "64")]
             Self::RankSmall1 => {
-                bench_rank::<RankSmall<1, 9>>(c, &name, lengths, densities, uniform)
+                bench_rank::<usize, RankSmall<1, 9>>(c, &name, lengths, densities, uniform)
             }
+            #[cfg(target_pointer_width = "64")]
             Self::RankSmall2 => {
-                bench_rank::<RankSmall<1, 10>>(c, &name, lengths, densities, uniform)
+                bench_rank::<usize, RankSmall<1, 10>>(c, &name, lengths, densities, uniform)
             }
+            #[cfg(target_pointer_width = "64")]
             Self::RankSmall3 => {
-                bench_rank::<RankSmall<1, 11>>(c, &name, lengths, densities, uniform)
+                bench_rank::<usize, RankSmall<1, 11>>(c, &name, lengths, densities, uniform)
             }
+            #[cfg(target_pointer_width = "64")]
             Self::RankSmall4 => {
-                bench_rank::<RankSmall<3, 13>>(c, &name, lengths, densities, uniform)
+                bench_rank::<usize, RankSmall<3, 13>>(c, &name, lengths, densities, uniform)
             }
-            Self::Select9 => bench_select::<Select9>(c, &name, lengths, densities, uniform),
+            #[cfg(target_pointer_width = "64")]
             Self::SelectSmall0 => {
-                bench_select::<SelectSmall<2, 9, _>>(c, &name, lengths, densities, uniform)
+                bench_select::<usize, SelectSmall<2, 9, _>>(c, &name, lengths, densities, uniform)
             }
+            #[cfg(target_pointer_width = "64")]
             Self::SelectSmall1 => {
-                bench_select::<SelectSmall<1, 9, _>>(c, &name, lengths, densities, uniform)
+                bench_select::<usize, SelectSmall<1, 9, _>>(c, &name, lengths, densities, uniform)
             }
+            #[cfg(target_pointer_width = "64")]
             Self::SelectSmall2 => {
-                bench_select::<SelectSmall<1, 10, _>>(c, &name, lengths, densities, uniform)
+                bench_select::<usize, SelectSmall<1, 10, _>>(c, &name, lengths, densities, uniform)
             }
+            #[cfg(target_pointer_width = "64")]
             Self::SelectSmall3 => {
-                bench_select::<SelectSmall<1, 11, _>>(c, &name, lengths, densities, uniform)
+                bench_select::<usize, SelectSmall<1, 11, _>>(c, &name, lengths, densities, uniform)
             }
+            #[cfg(target_pointer_width = "64")]
             Self::SelectSmall4 => {
-                bench_select::<SelectSmall<3, 13, _>>(c, &name, lengths, densities, uniform)
+                bench_select::<usize, SelectSmall<3, 13, _>>(c, &name, lengths, densities, uniform)
             }
+            // RankSmall/SelectSmall 32-bit word variants (always available).
+            Self::RankSmall5 => bench_rank::<u32, RankSmall<1, 7, BitVec<Vec<u32>>>>(
+                c, &name, lengths, densities, uniform,
+            ),
+            Self::RankSmall6 => bench_rank::<u32, RankSmall<1, 8, BitVec<Vec<u32>>>>(
+                c, &name, lengths, densities, uniform,
+            ),
+            Self::SelectSmall5 => bench_select::<
+                u32,
+                SelectSmall<1, 7, RankSmall<1, 7, BitVec<Vec<u32>>>>,
+            >(c, &name, lengths, densities, uniform),
+            Self::SelectSmall6 => bench_select::<
+                u32,
+                SelectSmall<1, 8, RankSmall<1, 8, BitVec<Vec<u32>>>>,
+            >(c, &name, lengths, densities, uniform),
+            // SelectAdapt/SelectAdaptConst: platform-adapted (usize backend,
+            // inventory is Box<[usize]>).
             Self::SelectAdapt0 => {
-                bench_select::<SelectAdapt0>(c, &name, lengths, densities, uniform)
+                bench_select::<usize, SelectAdapt0>(c, &name, lengths, densities, uniform)
             }
             Self::SelectAdapt1 => {
-                bench_select::<SelectAdapt1>(c, &name, lengths, densities, uniform)
+                bench_select::<usize, SelectAdapt1>(c, &name, lengths, densities, uniform)
             }
             Self::SelectAdapt2 => {
-                bench_select::<SelectAdapt2>(c, &name, lengths, densities, uniform)
+                bench_select::<usize, SelectAdapt2>(c, &name, lengths, densities, uniform)
             }
             Self::SelectAdapt3 => {
-                bench_select::<SelectAdapt3>(c, &name, lengths, densities, uniform)
+                bench_select::<usize, SelectAdapt3>(c, &name, lengths, densities, uniform)
             }
             Self::SelectAdaptConst0 => {
-                bench_select::<SelectAdaptConst0>(c, &name, lengths, densities, uniform)
+                bench_select::<usize, SelectAdaptConst0>(c, &name, lengths, densities, uniform)
             }
             Self::SelectAdaptConst1 => {
-                bench_select::<SelectAdaptConst1>(c, &name, lengths, densities, uniform)
+                bench_select::<usize, SelectAdaptConst1>(c, &name, lengths, densities, uniform)
             }
             Self::SelectAdaptConst2 => {
-                bench_select::<SelectAdaptConst2>(c, &name, lengths, densities, uniform)
+                bench_select::<usize, SelectAdaptConst2>(c, &name, lengths, densities, uniform)
             }
             Self::SelectAdaptConst3 => {
-                bench_select::<SelectAdaptConst3>(c, &name, lengths, densities, uniform)
+                bench_select::<usize, SelectAdaptConst3>(c, &name, lengths, densities, uniform)
             }
             Self::CompareAdaptConst => compare_adapt_const(c, lengths, densities, uniform),
         }
@@ -123,19 +174,21 @@ struct Cli {
     exact: bool,
     /// The rank/select structures to benchmark.
     ///
-    /// Rank9, Select9,
-    /// RankSmall0, RankSmall1, RankSmall2, RankSmall3, RankSmall4,
-    /// SelectSmall0, SelectSmall1, SelectSmall2, SelectSmall3, SelectSmall4,
-    /// SelectAdapt0, SelectAdapt1, SelectAdapt2, SelectAdapt3,
-    /// SelectAdaptConst0, SelectAdaptConst1, SelectAdaptConst2, SelectAdaptConst3,
-    /// CompareAdaptConst
+    /// Rank9 (64-bit), Select9 (64-bit),
+    /// RankSmall0–4 (64-bit), RankSmall5–6 (32-bit),
+    /// SelectSmall0–4 (64-bit), SelectSmall5–6 (32-bit),
+    /// SelectAdapt0–3 (usize), SelectAdaptConst0–3 (usize),
+    /// CompareAdaptConst (usize)
     ///
     /// Without --exact, arguments are matched as case-insensitive
     /// substrings; for example, 'rank' matches all rank structures.
-    /// The integer after RankSmall/SelectSmall is the index to the
-    /// rank_small! macro;
-    /// the integer after SelectAdapt/SelectAdaptConst is the number
-    /// of u64s per subinventory;
+    /// RankSmall/SelectSmall 0–4 use 64-bit words (rank_small! macro
+    /// indices 0–4) and are only available on 64-bit platforms;
+    /// 5 and 6 use 32-bit words (rank_small! u32 indices 0–1) and
+    /// are always available.
+    ///
+    /// The integer after SelectAdapt/SelectAdaptConst is the base-2
+    /// logarithm of the maximum number of usize's per subinventory.
     /// CompareAdaptConst compares a SelectAdaptConst with default
     /// constants to a SelectAdapt with the same parameters.​
     #[arg(num_args = 1..)]

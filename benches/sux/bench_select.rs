@@ -4,6 +4,7 @@ use crate::utils::*;
 use criterion::{BenchmarkId, Criterion, Throughput};
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
+use sux::bits::BitVec;
 use sux::rank_sel::SelectAdapt;
 use sux::rank_sel::SelectAdaptConst;
 use sux::traits::AddNumBits;
@@ -22,7 +23,7 @@ pub fn compare_adapt_const(c: &mut Criterion, lens: &[u64], densities: &[f64], u
     let mut bitvecs = Vec::new();
     for &len in lens {
         for &density in densities {
-            let (nof, nos, bits) = create_bitvec(&mut rng, len, density, uniform);
+            let (nof, nos, bits) = create_bitvec::<usize>(&mut rng, len, density, uniform);
             bitvecs.push((len, density, nof, nos, bits));
         }
     }
@@ -38,9 +39,9 @@ pub fn compare_adapt_const(c: &mut Criterion, lens: &[u64], densities: &[f64], u
         let mut rng = SmallRng::seed_from_u64(0);
         let mut mem_costs = Vec::new();
         for (len, density, nof, nos, bits) in &bitvecs {
-            let bits: AddNumBits<_> = bits.clone().into();
+            let bits: AddNumBits<BitVec> = bits.clone().into();
             let sel: SelectAdaptConst<
-                AddNumBits<_>,
+                AddNumBits<BitVec>,
                 Box<[usize]>,
                 LOG2_ONES_PER_INVENTORY,
                 LOG2_WORDS_PER_SUBINVENTORY,
@@ -71,7 +72,7 @@ pub fn compare_adapt_const(c: &mut Criterion, lens: &[u64], densities: &[f64], u
         let mut rng = SmallRng::seed_from_u64(0);
         let mut mem_costs = Vec::new();
         for (len, density, nof, nos, bits) in &bitvecs {
-            let bits: AddNumBits<_> = bits.clone().into();
+            let bits: AddNumBits<BitVec> = bits.clone().into();
             let sel =
                 SelectAdapt::with_inv(bits, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY);
             mem_costs.push((*len, *density, mem_cost(&sel)));
