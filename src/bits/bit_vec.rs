@@ -382,10 +382,7 @@ impl<W: Word> BitVec<Vec<W>> {
 }
 
 impl<W: Word> Extend<bool> for BitVec<Vec<W>> {
-    fn extend<T>(&mut self, i: T)
-    where
-        T: IntoIterator<Item = bool>,
-    {
+    fn extend<T: IntoIterator<Item = bool>>(&mut self, i: T) {
         for b in i {
             self.push(b);
         }
@@ -400,11 +397,11 @@ impl<W: Word> FromIterator<bool> for BitVec<Vec<W>> {
     }
 }
 
-impl<B: AsRef<[usize]>> BitVec<B> {
-    /// Returns an owned copy of the bit vector.
-    pub fn to_owned(&self) -> BitVec {
+impl<B: ToOwned> BitVec<B> {
+    /// Returns a copy of this bit vector with an owned backend.
+    pub fn to_owned(&self) -> BitVec<<B as ToOwned>::Owned> {
         BitVec {
-            bits: self.bits.as_ref().to_owned(),
+            bits: self.bits.to_owned(),
             len: self.len,
         }
     }
@@ -417,10 +414,7 @@ impl<B> BitLength for BitVec<B> {
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]>> BitCount for BitVec<B>
-where
-    B::Word: Word,
-{
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitCount for BitVec<B> {
     fn count_ones(&self) -> usize {
         let bits_per_word = B::Word::BITS as usize;
         let full_words = self.len() / bits_per_word;
@@ -437,11 +431,8 @@ where
     }
 }
 
-impl<B, C> PartialEq<BitVec<C>> for BitVec<B>
-where
-    B: Backend + AsRef<[B::Word]>,
-    B::Word: Word,
-    C: Backend<Word = B::Word> + AsRef<[B::Word]>,
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>, C: Backend<Word = B::Word> + AsRef<[B::Word]>>
+    PartialEq<BitVec<C>> for BitVec<B>
 {
     fn eq(&self, other: &BitVec<C>) -> bool {
         let len = self.len();
@@ -462,18 +453,9 @@ where
     }
 }
 
-impl<B> Eq for BitVec<B>
-where
-    B: Backend + AsRef<[B::Word]>,
-    B::Word: Word,
-{
-}
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> Eq for BitVec<B> {}
 
-impl<B> Index<usize> for BitVec<B>
-where
-    B: Backend + AsRef<[B::Word]>,
-    B::Word: Word,
-{
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> Index<usize> for BitVec<B> {
     type Output = bool;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -484,11 +466,7 @@ where
     }
 }
 
-impl<'a, B> IntoIterator for &'a BitVec<B>
-where
-    B: Backend + AsRef<[B::Word]>,
-    B::Word: Word,
-{
+impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoIterator for &'a BitVec<B> {
     type IntoIter = BitIter<'a, B::Word, B>;
     type Item = bool;
 
@@ -497,11 +475,7 @@ where
     }
 }
 
-impl<B> fmt::Display for BitVec<B>
-where
-    B: Backend + AsRef<[B::Word]>,
-    B::Word: Word,
-{
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> fmt::Display for BitVec<B> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[")?;
         for b in self {
@@ -545,12 +519,7 @@ impl<B> AtomicBitVec<B> {
     }
 }
 
-impl<B> AtomicBitVec<B>
-where
-    B: Backend + From<Vec<B::Word>>,
-    B::Word: PrimitiveAtomic,
-    <B::Word as PrimitiveAtomic>::Value: Word,
-{
+impl<B: Backend<Word: PrimitiveAtomic<Value: Word>> + From<Vec<B::Word>>> AtomicBitVec<B> {
     /// Creates a new atomic bit vector of length `len` initialized to `false`.
     pub fn new(len: usize) -> Self {
         Self::with_value(len, false)
@@ -589,11 +558,8 @@ impl<B: Backend> Backend for AtomicBitVec<B> {
     type Word = B::Word;
 }
 
-impl<B> BitCount for AtomicBitVec<B>
-where
-    B: Backend + AsRef<[B::Word]>,
-    B::Word: PrimitiveAtomic,
-    <B::Word as PrimitiveAtomic>::Value: Word,
+impl<B: Backend<Word: PrimitiveAtomic<Value: Word>> + AsRef<[B::Word]>> BitCount
+    for AtomicBitVec<B>
 {
     fn count_ones(&self) -> usize {
         let bits_per_word = <B::Word as PrimitiveAtomic>::Value::BITS as usize;
@@ -616,11 +582,8 @@ where
     }
 }
 
-impl<B> Index<usize> for AtomicBitVec<B>
-where
-    B: Backend + AsRef<[B::Word]>,
-    B::Word: PrimitiveAtomic,
-    <B::Word as PrimitiveAtomic>::Value: Word,
+impl<B: Backend<Word: PrimitiveAtomic<Value: Word>> + AsRef<[B::Word]>> Index<usize>
+    for AtomicBitVec<B>
 {
     type Output = bool;
 
@@ -633,11 +596,8 @@ where
     }
 }
 
-impl<'a, B> IntoIterator for &'a AtomicBitVec<B>
-where
-    B: Backend + AsRef<[B::Word]>,
-    B::Word: PrimitiveAtomic,
-    <B::Word as PrimitiveAtomic>::Value: Word,
+impl<'a, B: Backend<Word: PrimitiveAtomic<Value: Word>> + AsRef<[B::Word]>> IntoIterator
+    for &'a AtomicBitVec<B>
 {
     type IntoIter = AtomicBitIter<'a, B::Word, B>;
     type Item = bool;
@@ -765,20 +725,14 @@ impl<W: Word, B: AsMut<[W]>> AsMut<[W]> for BitVec<B> {
     }
 }
 
-impl<B: Backend> AsRef<[B::Word]> for AtomicBitVec<B>
-where
-    B: AsRef<[B::Word]>,
-{
+impl<B: Backend + AsRef<[B::Word]>> AsRef<[B::Word]> for AtomicBitVec<B> {
     #[inline(always)]
     fn as_ref(&self) -> &[B::Word] {
         self.bits.as_ref()
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]>> RankHinted for BitVec<B>
-where
-    B::Word: Word,
-{
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> RankHinted for BitVec<B> {
     #[inline(always)]
     unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
         let bits_per_word = B::Word::BITS as usize;
@@ -806,10 +760,7 @@ where
 
 // SelectHinted and SelectZeroHinted for BitVec.
 
-impl<B: Backend + AsRef<[B::Word]>> SelectHinted for BitVec<B>
-where
-    B::Word: Word + SelectInWord,
-{
+impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectHinted for BitVec<B> {
     unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
         let bits_per_word = B::Word::BITS as usize;
         let mut word_index = hint_pos / bits_per_word;
@@ -829,10 +780,7 @@ where
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]>> SelectZeroHinted for BitVec<B>
-where
-    B::Word: Word + SelectInWord,
-{
+impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted for BitVec<B> {
     unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
         let bits_per_word = B::Word::BITS as usize;
         let mut word_index = hint_pos / bits_per_word;
