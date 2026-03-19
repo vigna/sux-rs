@@ -15,6 +15,7 @@ from [the DSI Utilities] and new structures.
 
 ## Highlights
 
+- Support for 32-bit and 64-bit architectures;
 - [bit vectors and bit-field vectors];
 - several structures for [rank and selection] with different tradeoffs;
 - [indexed dictionaries], including an implementation of the popular [Elias–Fano
@@ -29,8 +30,26 @@ from [the DSI Utilities] and new structures.
 
 The focus is on performance (e.g., there are unchecked versions of all methods
 and support for [unaligned access]) and on flexible composability (e.g., you can
-fine-tune your Elias–Fano instance by choosing different types of internal
-indices, and whether to index zeros or ones).
+fine-tune your [`EliasFano`] instance by choosing different types of internal
+indices, and whether to index zeros or ones). Whenever possible, there are
+mapping methods that replace an underlying structure with another one, provided
+it is compatible.
+
+This crate does not provide high-level genericity on bit vectors: [bit vectors
+operations] on words of type `W` are based on a combination of the [`BitLength`]
+trait, which provides the bit length, and on [`AsRef<W>`]/[`AsMut<W>`], which
+provide access to the underlying data. This approach makes it possible to use
+any structure that implements these traits as a bit vector, and to implement
+your own bit vector if you need specific features (e.g., support for unaligned
+access).
+
+To make rank/select structures composable, we parameterize them with a _backend_
+that needs to implement the [`Backend`] trait, which provides only the backend
+word as an associated type [`Word`]. Implementation can than use [`BitLength`]
+and [`AsRef<Self::Word>`]/[`AsMut<Self::Word>`] to access the backend using bit
+operations. Bit vectors and structures delegate these traits to their backend,
+so you can use any structure that implements the [`Backend`] trait as a backend
+for (further) rank/select structures.
 
 ## ε-serde Support
 
@@ -78,26 +97,6 @@ usage and debugging memory-related issues. For example, this is the output of
     8  B   0.00% ├╴u: usize
     8  B   0.00% ╰╴l: usize
 ```
-
-## Composability, functoriality, and performance
-
-The design of this crate tries to satisfy the following principles:
-
-- High performance: all implementations try to be as fast as possible (we
-  try to minimize cache misses, then tests, and then instructions).
-- Composability: all structures are designed to be easily composed with each
-  other; structures are built on top of other structures, which
-  can be extracted with the usual `into_inner` idiom.
-- Zero-cost abstraction: all structures forward conditionally
-  `AsRef<[usize]>`, [`BitLength`], and all ranking/selection non-implemented
-  methods on the underlying structures.
-- Functoriality: whenever possible, there are mapping methods that replace an
-  underlying structure with another one, provided it is compatible.
-
-What this crate does not provide:
-
-- High genericity on bit vectors: [bit vectors operations] are based on the
-  rather concrete trait combination `AsRef<[usize]>` + [`BitLength`].
 
 ## Binaries
 
@@ -206,3 +205,9 @@ Union nor the Italian MUR can be held responsible for them
 [signed index functions]: https://docs.rs/sux/latest/sux/dict/signed_vfunc/struct.SignedVFunc.html
 [lists]: https://docs.rs/sux/latest/sux/list/index.html
 [compressed lists of integers]: https://docs.rs/sux/latest/sux/list/comp_int_list/struct.CompIntList.html
+[`AsRef<W>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
+[`AsMut<W>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
+[`AsRef<Self::Word>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
+[`AsMut<Self::Word>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
+[`Word`]: https://docs.rs/sux/latest/sux/traits/backend/trait.Backend.html#associatedtype.Word
+[`Backend`]: https://docs.rs/sux/latest/sux/traits/backend/trait.Backend.html

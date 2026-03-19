@@ -19,9 +19,10 @@
 //! types (`Vec<W>`, `Box<[W]>`, memory-mapped slices, etc.). They also
 //! implement the [`Backend`] trait themselves by delegation.
 //!
-//!  In particular, any
-//! [rank/select structure](crate::rank_sel) is a [`Backend`] and can be used as
-//! the backend of further structures.
+//! In particular, any [rank/select structure](crate::rank_sel) requires a
+//! [`Backend`] and is a [`Backend`](crate::traits::Backend) itself by
+//! delegation, so that every structure can be used as the backend of a further
+//! structure.
 
 pub mod bit_field_vec;
 pub use bit_field_vec::*;
