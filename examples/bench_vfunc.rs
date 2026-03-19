@@ -134,8 +134,9 @@ where
         });
     } else {
         // No filename
-        let func =
-            unsafe { VFunc::<usize, usize, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
+        let func = unsafe {
+            VFunc::<usize, usize, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func)
+        }?;
         bench(args.n, args.repeats, || {
             let mut key: usize = 0;
             if args.unaligned {

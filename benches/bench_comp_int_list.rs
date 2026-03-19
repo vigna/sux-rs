@@ -126,9 +126,7 @@ type EfSeq9 = EliasFano<u64, Select9<Rank9<BitVec<Box<[usize]>>>>>;
 
 fn to_select9_delimiters(list: CompIntList) -> CompIntList<u64, EfSeq9> {
     unsafe {
-        list.map_delimiters(|ef| {
-            ef.map_high_bits(|h| Select9::new(Rank9::new(h.into_inner())))
-        })
+        list.map_delimiters(|ef| ef.map_high_bits(|h| Select9::new(Rank9::new(h.into_inner()))))
     }
 }
 

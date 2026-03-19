@@ -646,8 +646,7 @@ where
         Option<AnyShardStore<S, W>>,
     )> {
         let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
-        let new_data =
-            |bit_width, len| BitFieldVec::<Vec<W>>::new_unaligned(bit_width, len).into();
+        let new_data = |bit_width, len| BitFieldVec::<Vec<W>>::new_unaligned(bit_width, len).into();
 
         self.build_loop(keys, values, None, &get_val, new_data, keep_store, pl)
     }
@@ -792,7 +791,8 @@ where
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<SignedVFunc<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>> {
+    ) -> anyhow::Result<SignedVFunc<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>>
+    {
         let (func, store) =
             self._try_build_func(keys, FromCloneableIntoIterator::from(0..), true, pl)?;
 
@@ -868,8 +868,7 @@ where
         let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
             W::as_from(mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
         };
-        let new_data =
-            |bit_width, len| BitFieldVec::<Vec<W>>::new_unaligned(bit_width, len).into();
+        let new_data = |bit_width, len| BitFieldVec::<Vec<W>>::new_unaligned(bit_width, len).into();
 
         Ok(VFilter {
             func: self

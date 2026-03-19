@@ -1,28 +1,13 @@
-use criterion::{BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, Throughput};
 use mem_dbg::{MemDbg, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
-use std::fs::create_dir_all;
 use std::hint::black_box;
-use std::io::Write;
 use sux::bits::BitVec;
 use sux::traits::{BitCount, BitLength, Rank, Select};
 
 mod impls;
 pub use impls::*;
-
-pub const LENS: [u64; 6] = [
-    1_000_000,
-    4_000_000,
-    16_000_000,
-    64_000_000,
-    256_000_000,
-    1_024_000_000,
-];
-
-pub const DENSITIES: [f64; 3] = [0.1, 0.5, 0.9];
-
-pub const REPS: usize = 5;
 
 pub trait Build<B> {
     fn new(bits: B) -> Self;
@@ -40,15 +25,8 @@ pub fn create_bitvec(
         (density * 0.01, density * 0.99)
     };
 
-    let len1;
-    let len2;
-    if len % 2 == 0 {
-        len1 = len / 2;
-        len2 = len / 2;
-    } else {
-        len1 = len / 2 + 1;
-        len2 = len / 2;
-    }
+    let len1 = len.div_ceil(2);
+    let len2 = len / 2;
 
     let first_half = loop {
         let b = (0..len1)
@@ -72,37 +50,35 @@ pub fn create_bitvec(
     (num_ones_first_half, num_ones_second_half, bits)
 }
 
-/// Returns the memory cost of the struct in percentage.
-/// Depends on the length of underlying bit vector and the total memory size of the struct.
-pub fn mem_cost(benched_struct: impl MemDbg + BitLength) -> f64 {
-    (((benched_struct.mem_size(SizeFlags::default()) * 8 - benched_struct.len()) * 100) as f64)
-        / (benched_struct.len() as f64)
+/// Returns the memory overhead of a structure as a percentage of the
+/// bit-vector length.
+pub fn mem_cost(benched_struct: &(impl MemDbg + BitLength)) -> f64 {
+    ((benched_struct.mem_size(SizeFlags::default()) * 8 - benched_struct.len()) * 100) as f64
+        / benched_struct.len() as f64
 }
 
-/// Save the memory cost of a struct to a CSV file.
-pub fn save_mem_cost<B: Build<BitVec> + MemDbg + BitLength>(
-    name: &str,
-    lens: &[u64],
-    densities: &[f64],
-    uniform: bool,
-) {
-    create_dir_all(format!("target/criterion/{}/", name)).unwrap();
-    let mut file =
-        std::fs::File::create(format!("target/criterion/{}/mem_cost.csv", name)).unwrap();
-    let mut rng = SmallRng::seed_from_u64(0);
-    for len in lens {
-        for density in densities {
-            let (_, _, bits) = create_bitvec(&mut rng, *len, *density, uniform);
-
-            let sel: B = B::new(bits);
-            let mem_cost = mem_cost(sel);
-            writeln!(file, "{},{},{}", len, density, mem_cost).unwrap();
-        }
-    }
+/// Writes memory-overhead data as JSON into criterion's output directory
+/// at `target/criterion/<name>/mem_cost.json`.
+pub fn write_mem_costs(name: &str, mem_costs: &[(u64, f64, f64)]) {
+    let dir = format!("target/criterion/{}", name);
+    std::fs::create_dir_all(&dir).unwrap();
+    let entries: Vec<String> = mem_costs
+        .iter()
+        .map(|(size, dense, mc)| {
+            format!(
+                "  {{\"size\": {}, \"dense\": {}, \"mem_cost\": {:.6}}}",
+                size, dense, mc
+            )
+        })
+        .collect();
+    let json = format!("[\n{}\n]\n", entries.join(",\n"));
+    std::fs::write(format!("{}/mem_cost.json", dir), json).unwrap();
 }
 
+/// Returns a random rank distributed proportionally to the density in
+/// each half of the bit vector.
 #[inline(always)]
-pub fn non_uniform(rng: &mut SmallRng, first_half: u64, second_half: u64) -> u64 {
+pub fn random_rank(rng: &mut SmallRng, first_half: u64, second_half: u64) -> u64 {
     if rng.random_bool(0.5) {
         ((rng.random::<u64>() as u128).wrapping_mul(first_half as u128) >> 64) as u64
     } else {
@@ -110,78 +86,64 @@ pub fn non_uniform(rng: &mut SmallRng, first_half: u64, second_half: u64) -> u64
     }
 }
 
+fn bench_inner<S: Build<BitVec> + MemDbg + BitLength>(
+    c: &mut Criterion,
+    name: &str,
+    lengths: &[u64],
+    densities: &[f64],
+    uniform: bool,
+    op: impl Fn(&S, usize) -> usize,
+) {
+    let name = if uniform {
+        name.to_string()
+    } else {
+        format!("{}_nonuniform", name)
+    };
+    let mut group = c.benchmark_group(&name);
+    group.throughput(Throughput::Elements(1));
+    let mut rng = SmallRng::seed_from_u64(0);
+    let mut mem_costs = Vec::new();
+    for &len in lengths {
+        for &density in densities {
+            let (num_ones_first_half, num_ones_second_half, bits) =
+                create_bitvec(&mut rng, len, density, uniform);
+            let s: S = S::new(bits);
+            mem_costs.push((len, density, mem_cost(&s)));
+            group.bench_function(
+                BenchmarkId::from_parameter(format!("{}_{}", len, density)),
+                |b| {
+                    b.iter(|| {
+                        let r = random_rank(&mut rng, num_ones_first_half, num_ones_second_half);
+                        black_box(op(&s, r as usize))
+                    })
+                },
+            );
+        }
+    }
+    group.finish();
+    write_mem_costs(&name, &mem_costs);
+}
+
 pub fn bench_select<S: Build<BitVec> + Select + MemDbg + BitLength>(
     c: &mut Criterion,
     name: &str,
     lengths: &[u64],
     densities: &[f64],
-    repeats: usize,
     uniform: bool,
 ) {
-    let name = if !uniform {
-        format!("{}_nonuniform", name)
-    } else {
-        name.to_string()
-    };
-    let mut bench_group = c.benchmark_group(&name);
-    let mut rng = SmallRng::seed_from_u64(0);
-    for len in lengths {
-        for density in densities {
-            // possible repetitions
-            for i in 0..repeats {
-                let (num_ones_first_half, num_ones_second_half, bits) =
-                    create_bitvec(&mut rng, *len, *density, uniform);
-
-                let sel: S = S::new(bits);
-                let mut routine = || {
-                    let r = non_uniform(&mut rng, num_ones_first_half, num_ones_second_half);
-                    black_box(unsafe { sel.select_unchecked(r as usize) });
-                };
-                bench_group.bench_function(
-                    BenchmarkId::from_parameter(format!("{}_{}_{}", *len, *density, i)),
-                    |b| b.iter(&mut routine),
-                );
-            }
-        }
-    }
-    bench_group.finish();
-    save_mem_cost::<S>(&name, lengths, densities, uniform);
+    bench_inner::<S>(c, name, lengths, densities, uniform, |s, r| unsafe {
+        s.select_unchecked(r)
+    });
 }
 
 pub fn bench_rank<R: Build<BitVec> + Rank + MemDbg + BitLength>(
     c: &mut Criterion,
     name: &str,
-    lens: &[u64],
+    lengths: &[u64],
     densities: &[f64],
-    reps: usize,
     uniform: bool,
 ) {
-    let name = if !uniform {
-        format!("{}_nonuniform", name)
-    } else {
-        name.to_string()
-    };
-    let mut bench_group = c.benchmark_group(&name);
-    let mut rng = SmallRng::seed_from_u64(0);
-    for len in lens {
-        for density in densities {
-            // possible repetitions
-            for i in 0..reps {
-                let (num_ones_first_half, num_ones_second_half, bits) =
-                    create_bitvec(&mut rng, *len, *density, uniform);
-
-                let sel: R = R::new(bits);
-                let mut routine = || {
-                    let r = non_uniform(&mut rng, num_ones_first_half, num_ones_second_half);
-                    black_box(unsafe { sel.rank_unchecked(r as usize) });
-                };
-                bench_group.bench_function(
-                    BenchmarkId::from_parameter(format!("{}_{}_{}", *len, *density, i)),
-                    |b| b.iter(&mut routine),
-                );
-            }
-        }
-    }
-    bench_group.finish();
-    save_mem_cost::<R>(&name, lens, densities, uniform);
+    bench_inner::<R>(c, name, lengths, densities, uniform, |s, r| unsafe {
+        s.rank_unchecked(r)
+    });
 }
