@@ -32,11 +32,6 @@ enum RankSel {
     SelectAdaptConst1,
     SelectAdaptConst2,
     SelectAdaptConst3,
-    SimpleSelect0,
-    SimpleSelect1,
-    SimpleSelect2,
-    SimpleSelect3,
-    AdaptConst,
     CompareAdaptConst,
 }
 
