@@ -36,32 +36,42 @@ impl SelectInWord for u8 {
     }
 }
 
+macro_rules! popcount_check_byte {
+    ($bytes:expr, $remaining:ident, $idx:expr) => {
+        let ones = POPCOUNT[$bytes[$idx] as usize] as usize;
+        if $remaining < ones {
+            return $idx * 8 + SELECT_IN_BYTE[$bytes[$idx] as usize | ($remaining << 8)] as usize;
+        }
+        $remaining -= ones;
+    };
+}
+
+#[allow(clippy::all)]
+const POPCOUNT: [u8; 256] = [
+    0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
+];
+
 impl SelectInWord for u16 {
     #[inline(always)]
     fn select_in_word(&self, rank: usize) -> usize {
+        debug_assert!(rank < self.count_ones() as _);
         #[cfg(target_feature = "bmi2")]
         {
             (*self as u64).select_in_word(rank)
         }
         #[cfg(not(target_feature = "bmi2"))]
         {
-            const ONES_STEP_1: u16 = 0x1111;
-            const ONES_STEP_2: u16 = 0x0101;
-            const LAMBDAS_STEP_2: u16 = 0x80 * ONES_STEP_2;
-
-            let mut s = *self;
-            s = s - ((s & (0xA * ONES_STEP_1)) >> 1);
-            s = (s & (0x3 * ONES_STEP_1)) + ((s >> 2) & (0x3 * ONES_STEP_1));
-            s = (s + (s >> 4)) & (0xF * ONES_STEP_2);
-            let byte_sums: u16 = s.wrapping_mul(ONES_STEP_2);
-
-            let rank_step_8: u16 = rank as u16 * ONES_STEP_2;
-            let geq_rank_step_8: u16 =
-                ((rank_step_8 | LAMBDAS_STEP_2) - byte_sums) & LAMBDAS_STEP_2;
-            let place = (geq_rank_step_8.count_ones() * 8) as usize;
-            let byte_rank: u16 = rank as u16 - (((byte_sums << 8) >> place) & 0xFF_u16);
-            let index = ((*self >> place) & 0xFF) | (byte_rank << 8);
-            place + SELECT_IN_BYTE[index as usize] as usize
+            let bytes = self.to_le_bytes();
+            let mut remaining = rank;
+            popcount_check_byte!(bytes, remaining, 0);
+            8 + SELECT_IN_BYTE[bytes[1] as usize | (remaining << 8)] as usize
         }
     }
 }
@@ -69,29 +79,19 @@ impl SelectInWord for u16 {
 impl SelectInWord for u32 {
     #[inline(always)]
     fn select_in_word(&self, rank: usize) -> usize {
+        debug_assert!(rank < self.count_ones() as _);
         #[cfg(target_feature = "bmi2")]
         {
             (*self as u64).select_in_word(rank)
         }
         #[cfg(not(target_feature = "bmi2"))]
         {
-            const ONES_STEP_2: u32 = 0x11111111;
-            const ONES_STEP_4: u32 = 0x01010101;
-            const LAMBDAS_STEP_4: u32 = 0x80 * ONES_STEP_4;
-
-            let mut s = *self;
-            s = s - ((s & (0xA * ONES_STEP_2)) >> 1);
-            s = (s & (0x3 * ONES_STEP_2)) + ((s >> 2) & (0x3 * ONES_STEP_2));
-            s = (s + (s >> 4)) & (0xF * ONES_STEP_4);
-            let byte_sums: u32 = s.wrapping_mul(ONES_STEP_4);
-
-            let rank_step_8: u32 = rank as u32 * ONES_STEP_4;
-            let geq_rank_step_8: u32 =
-                ((rank_step_8 | LAMBDAS_STEP_4) - byte_sums) & LAMBDAS_STEP_4;
-            let place = (geq_rank_step_8.count_ones() * 8) as usize;
-            let byte_rank: u32 = rank as u32 - (((byte_sums << 8) >> place) & 0xFF_u32);
-            let index = ((*self >> place) & 0xFF) | (byte_rank << 8);
-            place + SELECT_IN_BYTE[index as usize] as usize
+            let bytes = self.to_le_bytes();
+            let mut remaining = rank;
+            popcount_check_byte!(bytes, remaining, 0);
+            popcount_check_byte!(bytes, remaining, 1);
+            popcount_check_byte!(bytes, remaining, 2);
+            24 + SELECT_IN_BYTE[bytes[3] as usize | (remaining << 8)] as usize
         }
     }
 }
@@ -109,23 +109,21 @@ impl SelectInWord for u64 {
         }
         #[cfg(not(target_feature = "bmi2"))]
         {
-            const ONES_STEP_4: u64 = 0x1111111111111111;
-            const ONES_STEP_8: u64 = 0x0101010101010101;
-            const LAMBDAS_STEP_8: u64 = 0x80 * ONES_STEP_8;
-
-            let mut s = *self;
-            s = s - ((s & (0xA * ONES_STEP_4)) >> 1);
-            s = (s & (0x3 * ONES_STEP_4)) + ((s >> 2) & (0x3 * ONES_STEP_4));
-            s = (s + (s >> 4)) & (0xF * ONES_STEP_8);
-            let byte_sums: u64 = s.wrapping_mul(ONES_STEP_8);
-
-            let rank_step_8: u64 = rank as u64 * ONES_STEP_8;
-            let geq_rank_step_8: u64 =
-                ((rank_step_8 | LAMBDAS_STEP_8) - byte_sums) & LAMBDAS_STEP_8;
-            let place = (geq_rank_step_8.count_ones() * 8) as usize;
-            let byte_rank: u64 = rank as u64 - (((byte_sums << 8) >> place) & 0xFF_u64);
-            let index = ((*self >> place) & 0xFF) | (byte_rank << 8);
-            place + SELECT_IN_BYTE[index as usize] as usize
+            let bytes = self.to_le_bytes();
+            let lower_ones = (*self as u32).count_ones() as usize;
+            if rank < lower_ones {
+                let mut remaining = rank;
+                popcount_check_byte!(bytes, remaining, 0);
+                popcount_check_byte!(bytes, remaining, 1);
+                popcount_check_byte!(bytes, remaining, 2);
+                24 + SELECT_IN_BYTE[bytes[3] as usize | (remaining << 8)] as usize
+            } else {
+                let mut remaining = rank - lower_ones;
+                popcount_check_byte!(bytes, remaining, 4);
+                popcount_check_byte!(bytes, remaining, 5);
+                popcount_check_byte!(bytes, remaining, 6);
+                56 + SELECT_IN_BYTE[bytes[7] as usize | (remaining << 8)] as usize
+            }
         }
     }
 }
@@ -145,24 +143,56 @@ impl SelectInWord for u128 {
         }
         #[cfg(not(target_feature = "bmi2"))]
         {
-            const ONES_STEP_8: u128 = 0x11111111111111111111111111111111;
-            const ONES_STEP_16: u128 = 0x01010101010101010101010101010101;
-            const LAMBDAS_STEP_16: u128 = 0x80 * ONES_STEP_16;
-
-            let mut s = *self;
-            s = s - ((s & (0xA * ONES_STEP_8)) >> 1);
-            s = (s & (0x3 * ONES_STEP_8)) + ((s >> 2) & (0x3 * ONES_STEP_8));
-            s = (s + (s >> 4)) & (0xF * ONES_STEP_16);
-            let byte_sums: u128 = s.wrapping_mul(ONES_STEP_16);
-
-            let rank_step_8: u128 = rank as u128 * ONES_STEP_16;
-            let geq_rank_step_8: u128 =
-                ((rank_step_8 | LAMBDAS_STEP_16) - byte_sums) & LAMBDAS_STEP_16;
-            let place = (geq_rank_step_8.count_ones() * 8) as usize;
-            let byte_rank: u128 = rank as u128 - (((byte_sums << 8) >> place) & 0xFF_u128);
-            let index = ((*self >> place) & 0xFF) | (byte_rank << 8);
-            place + SELECT_IN_BYTE[index as usize] as usize
+            let bytes = self.to_le_bytes();
+            let lower_ones = (*self as u64).count_ones() as usize;
+            if rank < lower_ones {
+                let lower_lower_ones = (*self as u32).count_ones() as usize;
+                if rank < lower_lower_ones {
+                    let mut remaining = rank;
+                    popcount_check_byte!(bytes, remaining, 0);
+                    popcount_check_byte!(bytes, remaining, 1);
+                    popcount_check_byte!(bytes, remaining, 2);
+                    24 + SELECT_IN_BYTE[bytes[3] as usize | (remaining << 8)] as usize
+                } else {
+                    let mut remaining = rank - lower_lower_ones;
+                    popcount_check_byte!(bytes, remaining, 4);
+                    popcount_check_byte!(bytes, remaining, 5);
+                    popcount_check_byte!(bytes, remaining, 6);
+                    56 + SELECT_IN_BYTE[bytes[7] as usize | (remaining << 8)] as usize
+                }
+            } else {
+                let upper = (*self >> 64) as u64;
+                let upper_lower_ones = (upper as u32).count_ones() as usize;
+                let remaining_in_upper = rank - lower_ones;
+                if remaining_in_upper < upper_lower_ones {
+                    let mut remaining = remaining_in_upper;
+                    popcount_check_byte!(bytes, remaining, 8);
+                    popcount_check_byte!(bytes, remaining, 9);
+                    popcount_check_byte!(bytes, remaining, 10);
+                    88 + SELECT_IN_BYTE[bytes[11] as usize | (remaining << 8)] as usize
+                } else {
+                    let mut remaining = remaining_in_upper - upper_lower_ones;
+                    popcount_check_byte!(bytes, remaining, 12);
+                    popcount_check_byte!(bytes, remaining, 13);
+                    popcount_check_byte!(bytes, remaining, 14);
+                    120 + SELECT_IN_BYTE[bytes[15] as usize | (remaining << 8)] as usize
+                }
+            }
         }
+    }
+}
+
+#[cfg(target_pointer_width = "16")]
+type Usize = u16;
+#[cfg(target_pointer_width = "32")]
+type Usize = u32;
+#[cfg(target_pointer_width = "64")]
+type Usize = u64;
+
+impl SelectInWord for usize {
+    #[inline(always)]
+    fn select_in_word(&self, rank: usize) -> usize {
+        (*self as Usize).select_in_word(rank)
     }
 }
 
@@ -233,19 +263,3 @@ const SELECT_IN_BYTE: [u8; 2048] = [
     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 7,
 ];
-
-macro_rules! impl_usize {
-    ($ty:ty, $pw:literal) => {
-        #[cfg(target_pointer_width = $pw)]
-        impl SelectInWord for usize {
-            #[inline(always)]
-            fn select_in_word(&self, rank: usize) -> usize {
-                (*self as $ty).select_in_word(rank)
-            }
-        }
-    };
-}
-
-impl_usize!(u16, "16");
-impl_usize!(u32, "32");
-impl_usize!(u64, "64");
