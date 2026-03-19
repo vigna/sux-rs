@@ -175,10 +175,10 @@ impl<R: BitLength, I> Select9<R, I> {
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>>
-    Select9<Rank9<B, C>, Box<[u64]>>
-where
-    B::Word: Word + SelectInWord,
+impl<
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength,
+    C: AsRef<[BlockCounters]>,
+> Select9<Rank9<B, C>, Box<[u64]>>
 {
     /// Creates a new Select9 structure.
     ///
@@ -356,10 +356,11 @@ impl<R: BitLength, I> Deref for Select9<R, I> {
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>>
-    SelectUnchecked for Select9<Rank9<B, C>, I>
-where
-    B::Word: Word + SelectInWord,
+impl<
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength,
+    C: AsRef<[BlockCounters]>,
+    I: AsRef<[u64]>,
+> SelectUnchecked for Select9<Rank9<B, C>, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         unsafe {
@@ -497,9 +498,10 @@ where
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>, I: AsRef<[u64]>> Select
-    for Select9<Rank9<B, C>, I>
-where
-    B::Word: Word + SelectInWord,
+impl<
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength,
+    C: AsRef<[BlockCounters]>,
+    I: AsRef<[u64]>,
+> Select for Select9<Rank9<B, C>, I>
 {
 }

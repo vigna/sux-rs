@@ -171,10 +171,7 @@ impl<A: PrimitiveAtomicInteger, const N: usize> AtomicBitWidth for [A; N] {
 /// Different implementations might provide different atomicity guarantees. See
 /// [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec) for an example.
 #[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
-pub trait AtomicBitFieldSlice<A: PrimitiveAtomicInteger>: AtomicBitWidth
-where
-    A::Value: Word,
-{
+pub trait AtomicBitFieldSlice<A: PrimitiveAtomicInteger<Value: Word>>: AtomicBitWidth {
     /// See [`slice::len`].
     fn len(&self) -> usize;
 
@@ -343,10 +340,7 @@ impl<W: Word, const N: usize> BitFieldSliceMut for [W; N] {
 // `impl<W> ... for [W::Atomic]` — Rust can't resolve methods on
 // `[W::Atomic]` because it cannot infer W from the projection.
 
-impl<A: PrimitiveAtomicInteger> AtomicBitFieldSlice<A> for [A]
-where
-    A::Value: Word,
-{
+impl<A: PrimitiveAtomicInteger<Value: Word>> AtomicBitFieldSlice<A> for [A] {
     #[inline(always)]
     fn len(&self) -> usize {
         <[A]>::len(self)
@@ -380,10 +374,7 @@ where
     }
 }
 
-impl<A: PrimitiveAtomicInteger> AtomicBitFieldSlice<A> for Vec<A>
-where
-    A::Value: Word,
-{
+impl<A: PrimitiveAtomicInteger<Value: Word>> AtomicBitFieldSlice<A> for Vec<A> {
     #[inline(always)]
     fn len(&self) -> usize {
         Vec::len(self)
@@ -417,10 +408,7 @@ where
     }
 }
 
-impl<A: PrimitiveAtomicInteger, const N: usize> AtomicBitFieldSlice<A> for [A; N]
-where
-    A::Value: Word,
-{
+impl<A: PrimitiveAtomicInteger<Value: Word>, const N: usize> AtomicBitFieldSlice<A> for [A; N] {
     #[inline(always)]
     fn len(&self) -> usize {
         N

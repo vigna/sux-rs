@@ -411,10 +411,7 @@ impl<B, I> SelectAdapt<B, I> {
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<C>(self, f: impl FnOnce(B) -> C) -> SelectAdapt<C, I>
-    where
-        C: SelectHinted,
-    {
+    pub unsafe fn map<C: SelectHinted>(self, f: impl FnOnce(B) -> C) -> SelectAdapt<C, I> {
         SelectAdapt {
             bits: f(self.bits),
             inventory: self.inventory,
@@ -441,9 +438,8 @@ impl<B: BitLength, C> SelectAdapt<B, C> {
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]> + BitCount> SelectAdapt<B, Box<[usize]>>
-where
-    B::Word: Word + SelectInWord,
+impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
+    SelectAdapt<B, Box<[usize]>>
 {
     /// Creates a new selection structure over a bit vector using a
     /// [default target inventory
@@ -848,10 +844,10 @@ where
     }
 }
 
-impl<B: Backend + AsRef<[B::Word]> + BitLength + SelectHinted, I: AsRef<[usize]>> SelectUnchecked
-    for SelectAdapt<B, I>
-where
-    B::Word: Word + SelectInWord,
+impl<
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength + SelectHinted,
+    I: AsRef<[usize]>,
+> SelectUnchecked for SelectAdapt<B, I>
 {
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         unsafe {
@@ -935,10 +931,10 @@ where
     }
 }
 
-impl<B: Backend + SelectHinted + AsRef<[B::Word]> + NumBits, I: AsRef<[usize]>> Select
-    for SelectAdapt<B, I>
-where
-    B::Word: Word + SelectInWord,
+impl<
+    B: Backend<Word: Word + SelectInWord> + SelectHinted + AsRef<[B::Word]> + NumBits,
+    I: AsRef<[usize]>,
+> Select for SelectAdapt<B, I>
 {
 }
 

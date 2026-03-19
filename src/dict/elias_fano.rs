@@ -319,10 +319,7 @@ impl<V, H, L> EliasFano<V, H, L> {
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new high bits are identical to the old ones as a bit vector.
-    pub unsafe fn map_high_bits<F, H2>(self, func: F) -> EliasFano<V, H2, L>
-    where
-        F: FnOnce(H) -> H2,
-    {
+    pub unsafe fn map_high_bits<H2>(self, func: impl FnOnce(H) -> H2) -> EliasFano<V, H2, L> {
         EliasFano {
             n: self.n,
             u: self.u,
@@ -338,10 +335,7 @@ impl<V, H, L> EliasFano<V, H, L> {
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new low bits are identical to the old ones as a vector.
-    pub unsafe fn map_low_bits<F, L2>(self, func: F) -> EliasFano<V, H, L2>
-    where
-        F: FnOnce(L) -> L2,
-    {
+    pub unsafe fn map_low_bits<F, L2>(self, func: impl FnOnce(L) -> L2) -> EliasFano<V, H, L2> {
         EliasFano {
             n: self.n,
             u: self.u,

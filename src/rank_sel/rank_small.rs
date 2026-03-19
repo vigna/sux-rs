@@ -420,7 +420,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
 
 macro_rules! impl_rank_small {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $W: ty) => {
-        impl<B: Backend + AsRef<[B::Word]> + BitLength + RankHinted>
+        impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength + RankHinted>
             RankSmall<
                 $NUM_U32S,
                 $COUNTER_WIDTH,
@@ -428,8 +428,6 @@ macro_rules! impl_rank_small {
                 Box<[u64]>,
                 Box<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
             >
-        where
-            B::Word: crate::traits::Word,
         {
             /// Creates a new RankSmall structure from a given bit vector.
             ///
@@ -502,12 +500,10 @@ macro_rules! impl_rank_small {
             }
         }
         impl<
-            B: Backend + AsRef<[B::Word]> + BitLength + RankHinted,
+            B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength + RankHinted,
             C1: AsRef<[u64]>,
             C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
         > RankUnchecked for RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
-        where
-            B::Word: crate::traits::Word,
         {
             #[inline(always)]
             unsafe fn rank_unchecked(&self, pos: usize) -> usize {
@@ -572,14 +568,14 @@ impl_rank_small!(1; 8; u32);
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> Rank
     for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 where
-    RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>: BitLength + NumBits + RankUnchecked,
+    Self: BitLength + NumBits + RankUnchecked,
 {
 }
 
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> RankZero
     for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 where
-    RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>: Rank,
+    Self: Rank,
 {
 }
 
@@ -610,13 +606,10 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<B1>(
+    pub unsafe fn map<B1: BitLength>(
         self,
         f: impl FnOnce(B) -> B1,
-    ) -> RankSmall<NUM_U32S, COUNTER_WIDTH, B1, C1, C2>
-    where
-        B1: BitLength,
-    {
+    ) -> RankSmall<NUM_U32S, COUNTER_WIDTH, B1, C1, C2> {
         RankSmall {
             bits: f(self.bits),
             upper_counts: self.upper_counts,

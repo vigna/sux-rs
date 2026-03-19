@@ -202,10 +202,7 @@ impl AsU128 for EmptyVal {
     }
 }
 
-impl<V: BinSafe + BitXor> BitXor<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V>
-where
-    V::Output: BinSafe,
-{
+impl<V: BinSafe + BitXor<Output: BinSafe>> BitXor<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V> {
     type Output = SigVal<[u64; 1], V::Output>;
 
     fn bitxor(self, rhs: SigVal<[u64; 1], V>) -> Self::Output {
@@ -216,10 +213,7 @@ where
     }
 }
 
-impl<V: BinSafe + BitXor> BitXor<SigVal<[u64; 2], V>> for SigVal<[u64; 2], V>
-where
-    V::Output: BinSafe,
-{
+impl<V: BinSafe + BitXor<Output: BinSafe>> BitXor<SigVal<[u64; 2], V>> for SigVal<[u64; 2], V> {
     type Output = SigVal<[u64; 2], V::Output>;
 
     fn bitxor(self, rhs: SigVal<[u64; 2], V>) -> Self::Output {

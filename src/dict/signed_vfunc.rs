@@ -37,10 +37,8 @@ impl<
     D: SliceByValue<Value = W>,
     S: Sig,
     E: ShardEdge<S, 3>,
-    H: SliceByValue,
+    H: SliceByValue<Value: PrimitiveNumber>,
 > SignedVFunc<VFunc<T, W, D, S, E>, H>
-where
-    H::Value: PrimitiveNumber,
 {
     /// Returns the index of a key associated with the given signature, if there
     /// was such a key in the list provided at construction time; otherwise,
@@ -121,10 +119,8 @@ impl<
     D: SliceByValue<Value = W>,
     S: Sig,
     E: ShardEdge<S, 3>,
-    H: SliceByValue,
+    H: SliceByValue<Value: PrimitiveNumber>,
 > BitSignedVFunc<VFunc<T, W, D, S, E>, H>
-where
-    H::Value: PrimitiveNumber,
 {
     /// Returns the index of a key associated with the given signature, if there
     /// was such a key in the list provided at construction time; otherwise,
@@ -180,10 +176,13 @@ where
     }
 }
 
-impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>, H: SliceByValue>
-    BitSignedVFunc<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>, H>
-where
-    H::Value: PrimitiveNumber,
+impl<
+    T: ?Sized + ToSig<S>,
+    W: Word + BinSafe,
+    S: Sig,
+    E: ShardEdge<S, 3>,
+    H: SliceByValue<Value: PrimitiveNumber>,
+> BitSignedVFunc<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>, H>
 {
     /// Returns the index of a key associated with the given signature, if there
     /// was such a key in the list provided at construction time; otherwise,

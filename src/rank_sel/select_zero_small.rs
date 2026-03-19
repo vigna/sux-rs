@@ -155,14 +155,12 @@ macro_rules! impl_select_zero_small {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $W: ty) => {
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + Backend
+                + Backend<Word: Word + SelectInWord>
                 + AsRef<[C::Word]>
                 + BitLength
                 + NumBits
                 + SelectZeroHinted,
         > SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
-        where
-            C::Word: Word + SelectInWord,
         {
             /// Creates a new selection structure with eight [`RankSmall`]
             /// blocks per inventory an average.
@@ -247,14 +245,12 @@ macro_rules! impl_select_zero_small {
 
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + Backend
+                + Backend<Word: Word + SelectInWord>
                 + AsRef<[C::Word]>
                 + BitLength
                 + NumBits
                 + SelectZeroHinted,
         > SelectZeroUnchecked for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
-        where
-            C::Word: Word + SelectInWord,
         {
             /// # Safety
             ///
@@ -362,23 +358,24 @@ macro_rules! impl_select_zero_small {
 
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + Backend
+                + Backend<Word: Word + SelectInWord>
                 + AsRef<[C::Word]>
                 + BitLength
                 + NumBits
                 + SelectZeroHinted,
         > SelectZero for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
-        where
-            C::Word: Word + SelectInWord,
         {
         }
     };
 }
 
-impl<C: SmallCounters<2, 9> + Backend + AsRef<[C::Word]> + BitLength + NumBits>
-    SelectZeroSmall<2, 9, C>
-where
-    C::Word: Word + SelectInWord,
+impl<
+    C: SmallCounters<2, 9>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits,
+> SelectZeroSmall<2, 9, C>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -432,10 +429,14 @@ where
     }
 }
 
-impl<C: SmallCounters<1, 9> + Backend + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
-    SelectZeroSmall<1, 9, C>
-where
-    C::Word: Word + SelectInWord,
+impl<
+    C: SmallCounters<1, 9>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits
+        + SelectZeroHinted,
+> SelectZeroSmall<1, 9, C>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -475,10 +476,14 @@ where
     }
 }
 
-impl<C: SmallCounters<1, 10> + Backend + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
-    SelectZeroSmall<1, 10, C>
-where
-    C::Word: Word + SelectInWord,
+impl<
+    C: SmallCounters<1, 10>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits
+        + SelectZeroHinted,
+> SelectZeroSmall<1, 10, C>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -518,10 +523,14 @@ where
     }
 }
 
-impl<C: SmallCounters<1, 11> + Backend + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
-    SelectZeroSmall<1, 11, C>
-where
-    C::Word: Word + SelectInWord,
+impl<
+    C: SmallCounters<1, 11>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits
+        + SelectZeroHinted,
+> SelectZeroSmall<1, 11, C>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -561,10 +570,14 @@ where
     }
 }
 
-impl<C: SmallCounters<3, 13> + Backend + AsRef<[C::Word]> + BitLength + NumBits + SelectZeroHinted>
-    SelectZeroSmall<3, 13, C>
-where
-    C::Word: Word + SelectInWord,
+impl<
+    C: SmallCounters<3, 13>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits
+        + SelectZeroHinted,
+> SelectZeroSmall<3, 13, C>
 {
     unsafe fn complete_select(
         &self,

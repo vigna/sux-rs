@@ -1437,7 +1437,7 @@ impl<
     fn par_solve<
         'b,
         V: BinSafe,
-        I: IntoIterator<Item = Arc<Vec<SigVal<S, V>>>> + Send,
+        I: IntoIterator<IntoIter: Send, Item = Arc<Vec<SigVal<S, V>>>> + Send,
         SS: Fn(&Self, usize, Arc<Vec<SigVal<S, V>>>, ShardData<'b, D>, &mut P) -> Result<(), ()>
             + Send
             + Sync
@@ -1453,7 +1453,6 @@ impl<
         pl: &mut P,
     ) -> Result<(), SolveError>
     where
-        I::IntoIter: Send,
         SigVal<S, V>: RadixKey,
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
