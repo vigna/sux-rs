@@ -83,9 +83,9 @@ impl SelectInWord for u32 {
         debug_assert!(rank < self.count_ones() as _);
         #[cfg(target_feature = "bmi2")]
         {
-            #[cfg(not(target_pointer_width = "64"))]
+            #[cfg(target_arch = "x86")]
             use core::arch::x86::_pdep_u32;
-            #[cfg(target_pointer_width = "64")]
+            #[cfg(target_arch = "x86_64")]
             use core::arch::x86_64::_pdep_u32;
             let mask = 1 << rank;
             let one = unsafe { _pdep_u32(mask, *self) };
@@ -107,15 +107,21 @@ impl SelectInWord for u64 {
     #[inline(always)]
     fn select_in_word(&self, rank: usize) -> usize {
         debug_assert!(rank < self.count_ones() as _);
-        #[cfg(target_feature = "bmi2")]
+        #[cfg(all(target_feature = "bmi2", target_arch = "x86_64"))]
         {
-            #[cfg(not(target_pointer_width = "64"))]
-            use core::arch::x86::_pdep_u64;
-            #[cfg(target_pointer_width = "64")]
             use core::arch::x86_64::_pdep_u64;
             let mask = 1 << rank;
             let one = unsafe { _pdep_u64(mask, *self) };
             one.trailing_zeros() as usize
+        }
+        #[cfg(all(target_feature = "bmi2", not(target_arch = "x86_64")))]
+        {
+            let lower_ones = (*self as u32).count_ones() as usize;
+            if rank < lower_ones {
+                (*self as u32).select_in_word(rank)
+            } else {
+                32 + ((*self >> 32) as u32).select_in_word(rank - lower_ones)
+            }
         }
         #[cfg(not(target_feature = "bmi2"))]
         {
