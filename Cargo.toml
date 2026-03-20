@@ -56,7 +56,7 @@ jiff = "0.2.15"
 fallible-iterator = "0.3.0"
 
 [dev-dependencies]
-criterion = { version = "0.8.1", default-features = false, features = ["html_reports", "plotters", "cargo_bench_support"] }
+criterion = { version = "0.7.0", default-features = false, features = ["html_reports", "plotters", "cargo_bench_support"] }
 clap = { version = "4.4.18", features = ["derive", "wrap_help"] }
 rand_distr = "0.6"
 
