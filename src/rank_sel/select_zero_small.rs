@@ -41,11 +41,12 @@ use std::ops::Index;
 /// # Examples
 ///
 /// ```rust
-/// use sux::{bit_vec, rank_small};
-/// use sux::rank_sel::{SelectSmall, SelectZeroSmall};
-/// use sux::traits::{Select, SelectZero};
-///
-/// let bits = bit_vec![u64: 0, 1, 0, 0, 1, 0, 1, 0];
+/// # #[cfg(target_pointer_width = "64")]
+/// # {
+/// # use sux::{bit_vec, rank_small};
+/// # use sux::rank_sel::{SelectSmall, SelectZeroSmall};
+/// # use sux::traits::{Select, SelectZero};
+/// let bits = bit_vec![0, 1, 0, 0, 1, 0, 1, 0];
 /// let rank_small = rank_small![1; bits];
 /// let sel = SelectZeroSmall::<1, 9, _>::new(rank_small);
 ///
@@ -71,6 +72,7 @@ use std::ops::Index;
 /// assert_eq!(sel.select(1), Some(4));
 /// assert_eq!(sel.select(2), Some(6));
 /// assert_eq!(sel.select(3), None);
+/// # }
 /// ```
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]

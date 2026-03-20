@@ -52,9 +52,10 @@ use std::ops::Index;
 /// # Examples
 ///
 /// ```rust
-/// use sux::bit_vec;
-/// use sux::prelude::{Rank, Rank9};
-///
+/// # #[cfg(target_pointer_width = "64")]
+/// # {
+/// # use sux::bit_vec;
+/// # use sux::prelude::{Rank, Rank9};
 /// let rank9 = Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]);
 /// assert_eq!(rank9.rank(0), 0);
 /// assert_eq!(rank9.rank(1), 1);
@@ -75,6 +76,7 @@ use std::ops::Index;
 /// assert_eq!(rank9[5], true);
 /// assert_eq!(rank9[6], false);
 /// assert_eq!(rank9[7], true);
+/// # }
 /// ```
 
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
@@ -259,8 +261,9 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCount
     /// # Example
     ///
     /// ```rust
-    /// use sux::prelude::*;
-    ///
+    /// # #[cfg(target_pointer_width = "64")]
+    /// # {
+    /// # use sux::prelude::*;
     /// let rank9 = Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]);
     /// // This is safe as there are several unused bits
     /// assert_eq!(unsafe { rank9.rank_unchecked(8) }, rank9.num_ones());
@@ -274,6 +277,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCount
     /// let rank9 = Rank9::new(bv);
     /// // This is safe as there is at least one unused bit
     /// assert_eq!(unsafe { rank9.rank_unchecked(8) }, rank9.num_ones());
+    /// # }
     /// ```
     #[inline(always)]
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {

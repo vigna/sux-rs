@@ -104,10 +104,9 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 ///
 /// ```rust
 ///
-/// use sux::{bit_vec,rank_small};
-/// use sux::traits::{Rank, Select};
-/// use sux::rank_sel::SelectAdapt;
-///
+/// # use sux::{bit_vec,rank_small};
+/// # use sux::traits::{Rank, Select};
+/// # use sux::rank_sel::SelectAdapt;
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![0; bits];
 ///
@@ -199,7 +198,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B> Deref
 /// # Examples
 ///
 /// ```rust
-/// use sux::{prelude::Rank,bit_vec,rank_small};
+/// # use sux::{prelude::Rank,bit_vec,rank_small};
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![0; bits];
 ///
@@ -243,6 +242,7 @@ macro_rules! rank_small {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Block32Counters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     pub(super) absolute: u32,
+    #[cfg_attr(feature = "serde", serde(with = "serde_arrays"))]
     pub(super) relative: [u32; NUM_U32S],
 }
 

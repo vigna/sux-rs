@@ -57,9 +57,8 @@ use crate::utils::PrimitiveUnsignedExt;
 /// # Examples
 ///
 /// ```rust
-/// use sux::list::comp_int_list::CompIntListBuilder;
-/// use value_traits::slices::SliceByValue;
-///
+/// # use sux::list::comp_int_list::CompIntListBuilder;
+/// # use value_traits::slices::SliceByValue;
 /// let mut builder = CompIntListBuilder::new(1u64);
 /// builder.push(1);
 /// builder.push(3);
@@ -74,9 +73,8 @@ use crate::utils::PrimitiveUnsignedExt;
 /// Using [`extend`](Extend::extend) to add values from an iterator:
 ///
 /// ```rust
-/// use sux::list::comp_int_list::CompIntListBuilder;
-/// use value_traits::slices::SliceByValue;
-///
+/// # use sux::list::comp_int_list::CompIntListBuilder;
+/// # use value_traits::slices::SliceByValue;
 /// let mut builder = CompIntListBuilder::new(0u64);
 /// builder.extend(0..10);
 ///
@@ -171,9 +169,8 @@ impl<V: Word> CompIntListBuilder<V> {
 /// # Examples
 ///
 /// ```rust
-/// use sux::list::comp_int_list::CompIntListBuilder;
-/// use value_traits::slices::SliceByValue;
-///
+/// # use sux::list::comp_int_list::CompIntListBuilder;
+///  # use value_traits::slices::SliceByValue;
 /// let mut builder = CompIntListBuilder::new(0u64);
 /// builder.extend(0..10);
 ///
@@ -231,9 +228,8 @@ impl<V: Word> CompIntList<V> {
     /// # Examples
     ///
     /// ```rust
-    /// use sux::list::comp_int_list::CompIntList;
-    /// use value_traits::slices::SliceByValue;
-    ///
+    /// # use sux::list::comp_int_list::CompIntList;
+    /// # use value_traits::slices::SliceByValue;
     /// let ef = CompIntList::new(1, vec![1u64, 5, 10]);
     /// assert_eq!(ef.len(), 3);
     /// assert_eq!(ef.index_value(1), 5);

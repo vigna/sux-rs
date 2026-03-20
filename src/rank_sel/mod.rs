@@ -65,6 +65,8 @@
 //! [`NumBits`](crate::traits::NumBits), so we can just use it:
 //!
 //! ```rust
+//! # #[cfg(target_pointer_width = "64")]
+//! # {
 //! use sux::{bit_vec, rank_small};
 //! use sux::rank_sel::{Rank9, SelectAdapt};
 //! use sux::traits::{Rank, Select};
@@ -78,6 +80,7 @@
 //! assert!(sel_rank9[1]);
 //!
 //! let sel_rank_small = unsafe { sel_rank9.map(|x| rank_small![4; x.into_inner()]) };
+//! # }
 //! ```
 //!
 //! Note how [`SelectAdapt`] forwards not only [`Rank`](crate::traits::Rank) but

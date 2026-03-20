@@ -25,8 +25,8 @@ use crate::traits::{Succ, SuccUnchecked};
 /// # Example
 ///
 /// ```rust
-/// use sux::prelude::*;
-/// use sux::utils::FairChunks;
+/// # use sux::prelude::*;
+/// # use sux::utils::FairChunks;
 /// // The weights of our elements
 /// let weights = [
 ///     15u64, 27, 20, 26,  4, 22, 10, 25, 7, 13,  0, 11, 5, 28, 23,

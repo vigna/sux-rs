@@ -9,8 +9,7 @@
 
 /// Select the i-th 1-bit or 0-bit in a word of memory.
 /// ```
-/// use sux::utils::SelectInWord;
-///
+/// # use sux::utils::SelectInWord;
 /// assert_eq!(0b1_u64.select_in_word(0), 0);
 /// assert_eq!(0b11_u64.select_in_word(1), 1);
 /// assert_eq!(0b101_u64.select_in_word(1), 2);
