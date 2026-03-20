@@ -1530,6 +1530,8 @@ impl<
                                         }
                                     }
 
+                                    // The second conjunct is always true on 32-bit platforms
+                                    #[allow(clippy::absurd_extreme_comparisons)]
                                     if TypeId::of::<E::LocalSig>() != TypeId::of::<S>()
                                         && self.num_keys > Self::MAX_NO_LOCAL_SIG_CHECK
                                     {
