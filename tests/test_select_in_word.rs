@@ -68,7 +68,9 @@ fn test_select_in_word_u16() {
 #[test]
 fn test_select_in_word_u32() {
     let mut values: Vec<u32> = vec![
-        0, 1, 2,
+        0,
+        1,
+        2,
         0x8000_0000,
         u32::MAX,
         0xAAAA_AAAA,
@@ -94,7 +96,9 @@ fn test_select_in_word_u32() {
 #[test]
 fn test_select_in_word_u64() {
     let mut values: Vec<u64> = vec![
-        0, 1, 2,
+        0,
+        1,
+        2,
         0x8000_0000_0000_0000,
         u64::MAX,
         0xAAAA_AAAA_AAAA_AAAA,
@@ -120,7 +124,9 @@ fn test_select_in_word_u64() {
 #[test]
 fn test_select_in_word_u128() {
     let mut values: Vec<u128> = vec![
-        0, 1, 2,
+        0,
+        1,
+        2,
         1u128 << 127,
         u128::MAX,
         0xAAAA_AAAA_AAAA_AAAA_AAAA_AAAA_AAAA_AAAA,
@@ -146,7 +152,9 @@ fn test_select_in_word_u128() {
 #[test]
 fn test_select_in_word_usize() {
     let mut values: Vec<usize> = vec![
-        0, 1, 2,
+        0,
+        1,
+        2,
         1usize << (usize::BITS - 1),
         usize::MAX,
         0x5555_5555_5555_5555usize,
