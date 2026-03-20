@@ -106,7 +106,8 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// # Examples
 ///
 /// ```rust
-///
+/// # #[cfg(target_pointer_width = "64")]
+/// # {
 /// # use sux::{bit_vec,rank_small};
 /// # use sux::traits::{Rank, Select};
 /// # use sux::rank_sel::SelectAdapt;
@@ -132,6 +133,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// assert_eq!(rank_small[5], true);
 /// assert_eq!(rank_small[6], false);
 /// assert_eq!(rank_small[7], true);
+/// # }
 /// ```
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
