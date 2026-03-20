@@ -141,7 +141,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
     SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, C, I, O>
 {
-    /// Returns the number of bits in the bit vector.
+    /// Returns the number of bits in the underlying bit vector.
     ///
     /// This method is equivalent to [`BitLength::len`], but it is provided to
     /// reduce ambiguity in method resolution.

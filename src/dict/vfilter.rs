@@ -28,7 +28,7 @@ use std::ops::Index;
 /// [`contains_unaligned`](VFilter::contains_unaligned) might be faster.
 ///
 /// Please read the [`VFunc`] documentation for more information about the space
-/// usage and the ways in which a filter can be built. A construction time you
+/// usage and the ways in which a filter can be built. At construction time you
 /// have to choose a number *b* of hash bits per key, and the filter precision
 /// (false-positive rate) will be 2⁻*ᵇ*. For values of *b* that correspond to
 /// the size of an unsigned type, you can use a boxed slice as a backend.

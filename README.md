@@ -195,7 +195,7 @@ Union nor the Italian MUR can be held responsible for them.
 [`SelectAdapt`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectAdapt.html
 [static functions]: https://docs.rs/sux/latest/sux/func/vfunc/struct.VFunc.html
 [static filters]: https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html
-[Partial arrays]: https://docs.rs/sux/latest/sux/array/struct.PartialArray.html
+[partial arrays]: https://docs.rs/sux/latest/sux/array/struct.PartialArray.html
 [bit vectors operations]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
 [unaligned access]: https://docs.rs/sux/latest/sux/bits/bit_field_vec/struct.BitFieldVec.html#method.get_unaligned
 [`value-traits`]: https://crates.io/crates/value-traits
