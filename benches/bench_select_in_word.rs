@@ -301,24 +301,33 @@ impl_cancellation_select!(cancellation_select_u128, u128);
 #[cfg(target_feature = "bmi2")]
 #[inline(always)]
 fn bmi_select_u8(word: u8, rank: usize) -> usize {
-    bmi_select_u64(word as u64, rank)
+    bmi_select_u32(word as u32, rank)
 }
 
 #[cfg(target_feature = "bmi2")]
 #[inline(always)]
 fn bmi_select_u16(word: u16, rank: usize) -> usize {
-    bmi_select_u64(word as u64, rank)
+    bmi_select_u32(word as u32, rank)
 }
 
 #[cfg(target_feature = "bmi2")]
 #[inline(always)]
 fn bmi_select_u32(word: u32, rank: usize) -> usize {
-    bmi_select_u64(word as u64, rank)
+    #[cfg(not(target_pointer_width = "64"))]
+    use core::arch::x86::_pdep_u32;
+    #[cfg(target_pointer_width = "64")]
+    use core::arch::x86_64::_pdep_u32;
+    let mask = 1u32 << rank;
+    let one = unsafe { _pdep_u32(mask, word) };
+    one.trailing_zeros() as usize
 }
 
 #[cfg(target_feature = "bmi2")]
 #[inline(always)]
 fn bmi_select_u64(word: u64, rank: usize) -> usize {
+    #[cfg(not(target_pointer_width = "64"))]
+    use core::arch::x86::_pdep_u64;
+    #[cfg(target_pointer_width = "64")]
     use core::arch::x86_64::_pdep_u64;
     let mask = 1u64 << rank;
     let one = unsafe { _pdep_u64(mask, word) };
