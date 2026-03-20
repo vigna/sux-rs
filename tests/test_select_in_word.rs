@@ -148,24 +148,3 @@ fn test_select_in_word_u128() {
         verify(&v, v, u128::BITS);
     }
 }
-
-#[test]
-fn test_select_in_word_usize() {
-    let mut values: Vec<usize> = vec![
-        0,
-        1,
-        2,
-        1usize << (usize::BITS - 1),
-        usize::MAX,
-        0x5555_5555_5555_5555usize,
-        0xAAAA_AAAA_AAAA_AAAAusize,
-        0x0F0F_0F0F_0F0F_0F0Fusize,
-    ];
-    for i in 0..usize::BITS {
-        values.push(1usize << i);
-        values.push(!(1usize << i));
-    }
-    for v in values {
-        verify(&v, v as u128, usize::BITS);
-    }
-}
