@@ -109,7 +109,7 @@ use crate::{
     },
 };
 use ambassador::Delegate;
-use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic};
+use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic, PrimitiveAtomicUnsigned};
 #[allow(unused_imports)] // this is in the std prelude but not in no_std!
 use core::borrow::BorrowMut;
 use core::fmt;
@@ -486,10 +486,11 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> fmt::Display for BitVec<B> {
     }
 }
 
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemDbg, MemSize, Delegate)]
 /// A thread-safe bit vector.
 ///
 /// See the [module documentation](mod@crate::bits::bit_vec) for details.
+#[delegate(crate::traits::Backend, target = "bits")]
 pub struct AtomicBitVec<B = Box<[Atomic<usize>]>> {
     bits: B,
     len: usize,
@@ -519,7 +520,7 @@ impl<B> AtomicBitVec<B> {
     }
 }
 
-impl<B: Backend<Word: PrimitiveAtomic<Value: Word>> + From<Vec<B::Word>>> AtomicBitVec<B> {
+impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + From<Vec<B::Word>>> AtomicBitVec<B> {
     /// Creates a new atomic bit vector of length `len` initialized to `false`.
     pub fn new(len: usize) -> Self {
         Self::with_value(len, false)
@@ -554,11 +555,7 @@ impl<B> BitLength for AtomicBitVec<B> {
     }
 }
 
-impl<B: Backend> Backend for AtomicBitVec<B> {
-    type Word = B::Word;
-}
-
-impl<B: Backend<Word: PrimitiveAtomic<Value: Word>> + AsRef<[B::Word]>> BitCount
+impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>> BitCount
     for AtomicBitVec<B>
 {
     fn count_ones(&self) -> usize {
@@ -582,7 +579,7 @@ impl<B: Backend<Word: PrimitiveAtomic<Value: Word>> + AsRef<[B::Word]>> BitCount
     }
 }
 
-impl<B: Backend<Word: PrimitiveAtomic<Value: Word>> + AsRef<[B::Word]>> Index<usize>
+impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>> Index<usize>
     for AtomicBitVec<B>
 {
     type Output = bool;
@@ -596,7 +593,7 @@ impl<B: Backend<Word: PrimitiveAtomic<Value: Word>> + AsRef<[B::Word]>> Index<us
     }
 }
 
-impl<'a, B: Backend<Word: PrimitiveAtomic<Value: Word>> + AsRef<[B::Word]>> IntoIterator
+impl<'a, B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>> IntoIterator
     for &'a AtomicBitVec<B>
 {
     type IntoIter = AtomicBitIter<'a, B::Word, B>;

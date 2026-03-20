@@ -14,6 +14,10 @@ pub mod bit_field_slice;
 use std::{rc::Rc, sync::Arc};
 
 use ambassador::delegatable_trait;
+#[allow(unused_imports)]
+use atomic_primitive::PrimitiveAtomicUnsigned;
+#[allow(unused_imports)]
+use crate::bits::bit_vec::BitVec;
 pub use bit_field_slice::*;
 
 pub mod indexed_dict;
@@ -77,23 +81,29 @@ impl_word!(u8, u16, u32, u64, u128, usize);
 /// B: Backend<Word: Word> + AsRef<[B::Word]>
 /// ```
 ///
-/// where an analogous atomic backend satisfies
+/// whereas an analogous atomic backend satisfies
 ///
 /// ```ignore
 /// B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>
 /// ```
 ///
-/// Bit-based backends satisfy also the [`BitLength`] trait, which specifies
-/// the number of valid bits in the backend.
+/// Bit-based backends satisfy also the [`BitLength`] trait, which specifies the
+/// number of valid bits in the backend. For example, [`BitVec`]'s only
+/// parameter is a word-based backend, but [`BitVec`] itself is a bit-based
+/// backend, and thus it implements [`BitLength`] and delegates [`Backend`],
+/// [`AsRef`] and [`AsMut`] to its word-based backend.
 ///
 /// Note that *traits* manipulating backends such as [`BitVecOps`] do not use
 /// this trait, but are rather parametrized by a word type `W`, and extend
-/// traits such as [`AsRef<W>`] as needed.
-/// 
+/// traits such as [`AsRef<[W]>`] as needed.
+///
 /// However, *types* with a backend need this trait to avoid a redundant
 /// specification of the word type in isolation and as part of the backend. If
 /// we did not have this trait to specify the word type, we would need to write
-/// something like `BitVec<u64, Vec<u64>>`.
+/// something like `BitVec<u64, Vec<u64>>`, because there is no way to infer `W`
+/// from `Vec<W>` when `Vec<W>` is an opaque type parameter, and in an `impl`
+/// block a syntax like `impl<W, B: AsRef<[W]>>` will not compile unless the
+/// type (or the implemented trait) contains `W`.
 ///
 /// This trait is delegated by every [rank/select structure](crate::rank_sel) to
 /// its backend (an inner field) together with [`AsRef`] and [`BitLength`] so
@@ -105,14 +115,15 @@ impl_word!(u8, u16, u32, u64, u128, usize);
 /// wrappers.
 ///
 /// [`AsRef`]: core::convert::AsRef
-/// [`AsRef<W>`]: core::convert::AsRef
+/// [`AsRef<[W]>`]: core::convert::AsRef
 /// [`AsMut`]: core::convert::AsMut
 /// [`Backend::Word`]: Self::Word
-/// [`BitVec<Vec<usize>>`]: crate::bits::BitVec
+/// [`BitVec<Vec<usize>>`]: BitVec
 /// [`Word`]: crate::traits::Word
 /// [`BitLength`]: crate::traits::BitLength
+/// [`BitVec`]: BitVec
 /// [`BitVecOps`]: crate::traits::BitVecOps
-/// [`PrimitiveAtomicUnsigned`]: atomic_primitive::PrimitiveAtomicUnsigned
+/// [`PrimitiveAtomicUnsigned`]: PrimitiveAtomicUnsigned
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>, Rc<T>, Arc<T>)]
 #[delegatable_trait]
 pub trait Backend {

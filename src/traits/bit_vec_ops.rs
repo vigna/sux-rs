@@ -39,7 +39,7 @@
 
 use crate::traits::BitLength;
 use crate::traits::Word;
-use atomic_primitive::PrimitiveAtomic;
+use atomic_primitive::PrimitiveAtomicUnsigned;
 use mem_dbg::{MemDbg, MemSize};
 use num_primitive::PrimitiveInteger;
 use std::{iter::FusedIterator, marker::PhantomData, sync::atomic::Ordering};
@@ -382,15 +382,18 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for ZerosIter<'_, W, B> {
 
 impl<W: Word, B: ?Sized + AsRef<[W]>> FusedIterator for ZerosIter<'_, W, B> {}
 
-impl<A: PrimitiveAtomic<Value: Word>, T: ?Sized + AsRef<[A]> + BitLength> AtomicBitVecOps<A> for T {}
+impl<A: PrimitiveAtomicUnsigned<Value: Word>, T: ?Sized + AsRef<[A]> + BitLength> AtomicBitVecOps<A>
+    for T
+{
+}
 
 /// Operations on atomic bit vectors.
 ///
 /// Parameterized by the atomic type `A` (e.g., `AtomicU64`), not the word type.
 /// This avoids method-resolution ambiguity with [`BitVecOpsMut`], because
-/// [`PrimitiveAtomic`] is only implemented for atomic types, so the compiler can
+/// [`PrimitiveAtomicUnsigned`] is only implemented for atomic types, so the compiler can
 /// definitively rule out non-atomic backends.
-pub trait AtomicBitVecOps<A: PrimitiveAtomic<Value: Word>>: AsRef<[A]> + BitLength {
+pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> + BitLength {
     /// Returns true if the bit of given index is set.
     ///
     /// This method performs a single atomic operation with the given memory
@@ -648,7 +651,7 @@ pub struct AtomicBitIter<'a, A, B: ?Sized> {
     _phantom: PhantomData<A>,
 }
 
-impl<'a, A: PrimitiveAtomic<Value: Word>, B: ?Sized + AsRef<[A]>> AtomicBitIter<'a, A, B> {
+impl<'a, A: PrimitiveAtomicUnsigned<Value: Word>, B: ?Sized + AsRef<[A]>> AtomicBitIter<'a, A, B> {
     pub fn new(bits: &'a B, len: usize) -> Self {
         debug_assert!(len <= bits.as_ref().len() * A::Value::BITS as usize);
         AtomicBitIter {
@@ -660,7 +663,9 @@ impl<'a, A: PrimitiveAtomic<Value: Word>, B: ?Sized + AsRef<[A]>> AtomicBitIter<
     }
 }
 
-impl<A: PrimitiveAtomic<Value: Word>, B: ?Sized + AsRef<[A]>> Iterator for AtomicBitIter<'_, A, B> {
+impl<A: PrimitiveAtomicUnsigned<Value: Word>, B: ?Sized + AsRef<[A]>> Iterator
+    for AtomicBitIter<'_, A, B>
+{
     type Item = bool;
     fn next(&mut self) -> Option<bool> {
         if self.next_bit_pos == self.len {
@@ -681,7 +686,7 @@ impl<A: PrimitiveAtomic<Value: Word>, B: ?Sized + AsRef<[A]>> Iterator for Atomi
     }
 }
 
-impl<A: PrimitiveAtomic<Value: Word>, B: ?Sized + AsRef<[A]>> ExactSizeIterator
+impl<A: PrimitiveAtomicUnsigned<Value: Word>, B: ?Sized + AsRef<[A]>> ExactSizeIterator
     for AtomicBitIter<'_, A, B>
 {
     fn len(&self) -> usize {
@@ -689,7 +694,7 @@ impl<A: PrimitiveAtomic<Value: Word>, B: ?Sized + AsRef<[A]>> ExactSizeIterator
     }
 }
 
-impl<A: PrimitiveAtomic<Value: Word>, B: ?Sized + AsRef<[A]>> FusedIterator
+impl<A: PrimitiveAtomicUnsigned<Value: Word>, B: ?Sized + AsRef<[A]>> FusedIterator
     for AtomicBitIter<'_, A, B>
 {
 }
