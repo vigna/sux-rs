@@ -98,7 +98,6 @@
 //! assert_eq!(b.index_value(4), 1);
 //! ```
 
-use crate::RAYON_MIN_LEN;
 use crate::prelude::{bit_field_slice::*, *};
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::{Backend, Word};
@@ -598,7 +597,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldSlice
         let bits = self.bits.as_mut();
         bits[..full_words]
             .par_iter_mut()
-            .with_min_len(RAYON_MIN_LEN)
+            .with_min_len(crate::RAYON_MIN_LEN)
             .for_each(|x| *x = B::Word::ZERO);
         if residual != 0 {
             bits[full_words] &= B::Word::MAX << residual;
@@ -1552,7 +1551,7 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
         let bits = self.bits.as_ref();
         bits[..full_words]
             .par_iter()
-            .with_min_len(RAYON_MIN_LEN)
+            .with_min_len(crate::RAYON_MIN_LEN)
             .for_each(|x| x.store(<B::Word as PrimitiveAtomic>::Value::ZERO, ordering));
         if residual != 0 {
             bits[full_words].fetch_and(
