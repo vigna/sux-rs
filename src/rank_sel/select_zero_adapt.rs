@@ -56,6 +56,8 @@ use std::ops::Index;
 ///
 /// # Examples
 /// ```rust
+/// # #[cfg(target_pointer_width = "64")]
+/// # {
 /// # use sux::bit_vec;
 /// # use sux::traits::{Rank, SelectZero, SelectZeroUnchecked, AddNumBits};
 /// # use sux::rank_sel::{SelectZeroAdapt, Rank9};
@@ -139,6 +141,7 @@ use std::ops::Index;
 /// assert_eq!(rank9_sel[5], false);
 /// assert_eq!(rank9_sel[6], true);
 /// assert_eq!(rank9_sel[7], false);
+/// # }
 /// ```
 
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]

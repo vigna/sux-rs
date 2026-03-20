@@ -89,6 +89,11 @@ fn test_rank_small_1_u32() {
 }
 
 #[test]
+fn test_rank_small_2_u32() {
+    test_rank_small![2, u32 ; u32];
+}
+
+#[test]
 fn test_rank_small_map() {
     let bits = bit_vec![u64: 0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
     let rank_small = rank_small![2; bits];

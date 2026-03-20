@@ -146,6 +146,8 @@ use std::ops::Index;
 ///
 /// # Examples
 /// ```rust
+/// # #[cfg(target_pointer_width = "64")]
+/// # {
 /// # use sux::bit_vec;
 /// # use sux::traits::{Rank, Select, SelectUnchecked, AddNumBits};
 /// # use sux::rank_sel::{SelectAdapt, Rank9};
@@ -229,6 +231,7 @@ use std::ops::Index;
 /// assert_eq!(rank9_sel[5], true);
 /// assert_eq!(rank9_sel[6], false);
 /// assert_eq!(rank9_sel[7], true);
+/// # }
 /// ```
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]

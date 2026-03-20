@@ -635,6 +635,66 @@ impl_select_zero_small!(1; 11; u64);
 impl_select_zero_small!(3; 13; u64);
 
 impl<
+    C: SmallCounters<2, 8>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits,
+> SelectZeroSmall<2, 8, C>
+{
+    #[inline(always)]
+    unsafe fn complete_select(
+        &self,
+        block_count: &Block32Counters<2, 8>,
+        mut hint_pos: usize,
+        rank: usize,
+        hint_rank: usize,
+    ) -> usize {
+        const ONES_STEP_8: u64 = (1_u64 << 0)
+            | (1_u64 << 8)
+            | (1_u64 << 16)
+            | (1_u64 << 24)
+            | (1_u64 << 32)
+            | (1_u64 << 40)
+            | (1_u64 << 48);
+        const MSBS_STEP_8: u64 = 0x80_u64 * ONES_STEP_8;
+        const SUBBLOCK_BIT_SIZE: u64 =
+            u32::BITS as u64 * RankSmall::<2, 8>::WORDS_PER_SUBBLOCK as u64;
+        const POS_STEP_8: u64 = (SUBBLOCK_BIT_SIZE << (6 * 8))
+            | ((2 * SUBBLOCK_BIT_SIZE) << (5 * 8))
+            | ((3 * SUBBLOCK_BIT_SIZE) << (4 * 8))
+            | ((4 * SUBBLOCK_BIT_SIZE) << (3 * 8))
+            | ((5 * SUBBLOCK_BIT_SIZE) << (2 * 8))
+            | ((6 * SUBBLOCK_BIT_SIZE) << 8)
+            | (7 * SUBBLOCK_BIT_SIZE);
+
+        macro_rules! ULEQ_STEP_8 {
+            ($x:ident, $y:ident) => {
+                (((((($y) | MSBS_STEP_8) - (($x) & !MSBS_STEP_8)) | ($x ^ $y)) ^ ($x & !$y))
+                    & MSBS_STEP_8)
+            };
+        }
+
+        let rank_in_block = rank - hint_rank;
+        let rank_in_block_step_8 = rank_in_block as u64 * ONES_STEP_8;
+        let relative = POS_STEP_8 - block_count.all_rel();
+        let offset_in_block = ULEQ_STEP_8!(relative, rank_in_block_step_8).count_ones() as usize;
+
+        let rank_in_word = rank_in_block
+            - (offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block));
+        hint_pos += offset_in_block * (SUBBLOCK_BIT_SIZE as usize);
+
+        hint_pos
+            + (!*unsafe {
+                self.small_counters
+                    .as_ref()
+                    .get_unchecked(hint_pos / C::Word::BITS as usize)
+            })
+            .select_in_word(rank_in_word)
+    }
+}
+
+impl<
     C: SmallCounters<1, 7>
         + Backend<Word: Word + SelectInWord>
         + AsRef<[C::Word]>
@@ -729,6 +789,7 @@ impl<
 }
 
 // 32-bit word variants
+impl_select_zero_small!(2; 8; u32);
 impl_select_zero_small!(1; 7; u32);
 impl_select_zero_small!(1; 8; u32);
 
