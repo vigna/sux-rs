@@ -89,8 +89,10 @@ use std::ops::{Deref, Index};
 /// # Examples
 ///
 /// ```rust
-/// use sux::bit_vec;
-/// use sux::prelude::{Rank, Rank9, Select, Select9};
+/// # #[cfg(target_pointer_width = "64")]
+/// # {
+/// # use sux::bit_vec;
+/// # use sux::prelude::{Rank, Rank9, Select, Select9};
 /// // A Select9 structure is built on a Rank9 structure
 /// let select9 = Select9::new(Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]));
 ///
@@ -121,6 +123,7 @@ use std::ops::{Deref, Index};
 /// assert_eq!(select9[5], true);
 /// assert_eq!(select9[6], false);
 /// assert_eq!(select9[7], true);
+/// # }
 /// ```
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]

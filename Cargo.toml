@@ -47,6 +47,7 @@ deko = { version = "0.6.0", optional = true }
 thread-priority = { version = "3.0.0", optional = true }
 value-traits = "0.2.0"
 serde = { version =  "1.0.225", optional = true, features = ["derive"] }
+serde_arrays = { version = "0.1.0", optional = true }
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 
 # Fuzz
@@ -75,7 +76,7 @@ no_logging = [
 ] # Disable logging for binaries that build functions and filters (for benchmarking)
 rayon = ["dep:rayon", "dep:thread-priority"]
 deko = ["dep:deko"]
-serde = ["dep:serde"]
+serde = ["dep:serde", "dep:serde_arrays"]
 epserde = ["dep:epserde"]
 mmap = ["epserde/mmap"]
 

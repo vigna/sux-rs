@@ -151,9 +151,10 @@ pub struct BitVec<B = Vec<usize>> {
 /// # Examples
 ///
 /// ```rust
-/// use sux::prelude::*;
-/// use sux::traits::BitVecOps;
-///
+/// # #[cfg(target_pointer_width = "64")]
+/// # {
+/// # use sux::prelude::*;
+/// # use sux::traits::BitVecOps;
 /// // Empty bit vector
 /// let b = bit_vec![];
 /// assert_eq!(b.len(), 0);
@@ -185,10 +186,11 @@ pub struct BitVec<B = Vec<usize>> {
 /// assert_eq!(b[5], false);
 ///
 /// // With explicit word type (useful for cross-platform code)
-/// let b = bit_vec![u64: 0, 1, 0, 1];
+/// let b = bit_vec![0, 1, 0, 1];
 /// assert_eq!(b.len(), 4);
-/// let b = bit_vec![u64: false; 10];
+/// let b = bit_vec![false; 10];
 /// assert_eq!(b.len(), 10);
+/// # }
 /// ```
 #[macro_export]
 macro_rules! bit_vec {

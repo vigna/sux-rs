@@ -71,8 +71,7 @@ pub struct PartialArrayBuilder<T, B> {
 /// # Examples
 ///
 /// ```rust
-/// use sux::array::partial_array;
-///
+/// # use sux::array::partial_array;
 /// let mut builder = partial_array::new_dense(10);
 /// builder.set(1, "foo");
 /// builder.set(2, "hello");
@@ -143,8 +142,7 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 /// # Examples
 ///
 /// ```rust
-/// use sux::array::partial_array;
-///
+/// # use sux::array::partial_array;
 /// let mut builder = partial_array::new_sparse(10, 3);
 /// builder.set(1, "foo");
 /// builder.set(2, "hello");
@@ -280,7 +278,7 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
     /// # Examples
     ///
     /// ```rust
-    /// use sux::array::partial_array;
+    /// # use sux::array::partial_array;
     /// let mut builder = partial_array::new_dense(10);
     /// builder.set(5, 42);
     ///
@@ -340,7 +338,7 @@ impl<T, D: Backend<Word = usize> + AsRef<[usize]>, V: AsRef<[T]>>
     /// # Examples
     ///
     /// ```rust
-    /// use sux::array::partial_array;
+    /// # use sux::array::partial_array;
     /// let mut builder = partial_array::new_sparse(10, 1);
     /// builder.set(5, 42);
     ///

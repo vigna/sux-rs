@@ -1087,8 +1087,7 @@ impl<I: ?Sized + AsRef<[u8]>, const SORTED: bool> RearCodedListBuilder<I, SORTED
     /// # Examples
     ///
     /// ```rust
-    /// use sux::dict::RearCodedListBuilder;
-    ///
+    /// # use sux::dict::RearCodedListBuilder;
     /// // For sorted lists
     /// let mut rclb = RearCodedListBuilder::<str, true>::new(4);
     /// rclb.push("aa");

@@ -53,11 +53,12 @@ use std::ops::Index;
 /// # Examples
 ///
 /// ```rust
-/// use sux::{rank_small, bit_vec};
-/// use sux::rank_sel::{SelectSmall, SelectZeroSmall};
-/// use sux::traits::{Rank, Select, SelectZero};
-///
-/// let bits = bit_vec![u64: 1, 0, 1, 1, 0, 1, 0, 1];
+/// # #[cfg(target_pointer_width = "64")]
+/// # {
+/// # use sux::{rank_small, bit_vec};
+/// # use sux::rank_sel::{SelectSmall, SelectZeroSmall};
+/// # use sux::traits::{Rank, Select, SelectZero};
+/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![1; bits];
 /// // Note that at present the compiler cannot infer const parameters
 /// let sel = SelectSmall::<1, 9, _>::new(rank_small);
@@ -105,6 +106,7 @@ use std::ops::Index;
 /// assert_eq!(sel.select_zero(1), Some(4));
 /// assert_eq!(sel.select_zero(2), Some(6));
 /// assert_eq!(sel.select_zero(3), None);
+/// # }
 /// ```
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]

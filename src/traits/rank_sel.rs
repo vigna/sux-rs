@@ -86,12 +86,14 @@ pub trait NumBits: BitLength {
 /// # Examples
 ///
 /// ```rust
-/// use sux::prelude::*;
-///
+/// # #[cfg(target_pointer_width = "64")]
+/// # {
+/// # use sux::prelude::*;
 /// let rank9 = Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]);
 /// assert_eq!(rank9.rank(0), 0);
 /// assert_eq!(rank9.rank(4), 3);
 /// assert_eq!(rank9.rank(8), 5);
+/// # }
 /// ```
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
@@ -140,7 +142,7 @@ pub trait RankUnchecked {
     ///
     /// For example, take the following for loop:
     /// ```
-    /// use sux::prelude::RankUnchecked;
+    /// # use sux::prelude::RankUnchecked;
     /// fn query_all(rank: &impl RankUnchecked, positions: &[usize]) {
     ///    for i in 0..positions.len() {
     ///        let r = unsafe { rank.rank_unchecked(positions[i]) };
@@ -151,7 +153,7 @@ pub trait RankUnchecked {
     /// By prefetching cache lines some iterations ahead, we can make sure that
     /// they are already loaded in memory by the time we get to that loop iteration:
     /// ```
-    /// use sux::prelude::RankUnchecked;
+    /// # use sux::prelude::RankUnchecked;
     /// fn query_all(rank: &impl RankUnchecked, positions: &[usize]) {
     ///    for i in 0..positions.len() {
     ///        rank.prefetch(positions[(i + 32).min(positions.len() - 1)]);
@@ -250,8 +252,7 @@ pub trait SelectUnchecked {
 /// # Examples
 ///
 /// ```rust
-/// use sux::prelude::*;
-///
+/// # use sux::prelude::*;
 /// // SelectAdapt needs NumBits
 /// let bits: AddNumBits<_> = bit_vec![1, 0, 1, 1, 0, 1, 0, 1].into();
 /// let sel = SelectAdapt::new(bits, 1);
@@ -291,13 +292,15 @@ pub trait SelectZeroUnchecked {
 /// # Examples
 ///
 /// ```rust
-/// use sux::prelude::*;
-///
+/// # #[cfg(target_pointer_width = "64")]
+/// # {
+/// # use sux::prelude::*;
 /// let sel = SelectZeroAdapt::new(Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]), 0);
 /// assert_eq!(sel.select_zero(0), Some(1));
 /// assert_eq!(sel.select_zero(1), Some(4));
 /// assert_eq!(sel.select_zero(2), Some(6));
 /// assert_eq!(sel.select_zero(3), None);
+/// # }
 /// ```
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]

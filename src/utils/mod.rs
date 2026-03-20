@@ -237,8 +237,7 @@ pub trait PrimitiveUnsignedExt {
     /// This is one for zero; otherwise, it is equal to `ilog2(self) + 1`.
     ///
     /// ```
-    /// use sux::utils::PrimitiveUnsignedExt;
-    ///
+    /// # use sux::utils::PrimitiveUnsignedExt;
     /// assert_eq!(0_u64.bit_len(), 1);
     /// assert_eq!(1_u64.bit_len(), 1);
     /// assert_eq!(2_u64.bit_len(), 2);

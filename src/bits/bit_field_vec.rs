@@ -133,9 +133,9 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 /// # Examples
 ///
 /// ```
-/// use sux::prelude::*;
-/// use bit_field_slice::*;
-/// use value_traits::slices::*;
+/// # use sux::prelude::*;
+/// # use bit_field_slice::*;
+/// # use value_traits::slices::*;
 /// // Empty bit field vector of bit width 5
 /// let b = bit_field_vec![5];
 /// assert_eq!(b.len(), 0);

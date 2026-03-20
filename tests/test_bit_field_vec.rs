@@ -15,7 +15,6 @@ use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngExt, SeedableRng};
-use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
 use sux::traits::Word;
 
@@ -474,6 +473,8 @@ fn test_reset() {
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn test_atomic_reset() {
+    use std::sync::atomic::AtomicUsize;
+
     let mut b = AtomicBitFieldVec::<Vec<AtomicUsize>>::new(50, 10);
     for i in 0..10 {
         b.set_atomic(i, 1, Ordering::Relaxed);
@@ -507,6 +508,7 @@ fn test_set_len() {
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn test_from() {
+    use std::sync::atomic::AtomicUsize;
     // Vec to atomic vec
     let mut b = BitFieldVec::<Vec<usize>>::new(50, 10);
     for i in 0..10 {
