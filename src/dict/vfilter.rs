@@ -111,7 +111,7 @@ where
         self.func.num_keys == 0
     }
 
-    /// Returns the number bits of the hash associated with keys.
+    /// Returns the number of bits of the hash associated with keys.
     ///
     /// The filter precision (false-positive rate) is 2<sup>-`hash_bits`</sup>.
     pub const fn hash_bits(&self) -> u32 {

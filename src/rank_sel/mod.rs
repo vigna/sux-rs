@@ -13,10 +13,10 @@
 //! mix-and-match approach. There is a base class, usually
 //! [`BitVec`](crate::bits::bit_vec::BitVec), over which different structures
 //! can be layered. Each structure forwards traits it does not implement to the
-//! next structure in the chain, and also implement [`Deref`](core::ops::Deref)
+//! next structure in the chain, and also implements [`Deref`](core::ops::Deref)
 //! with the next structure as target.
 
-//! A few of the structures in module have been described by Sebastiano Vigna in
+//! A few of the structures in this module have been described by Sebastiano Vigna in
 //! “[Broadword Implementation of Rank/Select
 //! Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
 //! _Proc. of the 7th International Workshop on Experimental Algorithms, WEA

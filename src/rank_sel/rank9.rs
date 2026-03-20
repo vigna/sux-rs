@@ -265,7 +265,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCount
     /// // This is safe as there are several unused bits
     /// assert_eq!(unsafe { rank9.rank_unchecked(8) }, rank9.num_ones());
     ///
-    /// // The same call would not be legal where
+    /// // The same call would not be legal here
     /// let rank9 = Rank9::new(BitVec::<Vec<u64>>::new(usize::BITS as usize));
     /// // But we can ensure that an unused bit is present
     /// let mut bv = BitVec::<Vec<u64>>::new(usize::BITS as usize);

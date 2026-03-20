@@ -55,7 +55,7 @@
 //!   Filter do not have this problem as local signatures can be deduplicated
 //!   without affecting the semantics of the filter.
 //!
-//! - `Mwhc3Shards` with 128-bit signatures (requires the `mwhc`feature): this
+//! - `Mwhc3Shards` with 128-bit signatures (requires the `mwhc` feature): this
 //!   choice gives much worse overhead (23%) but can be sharded very finely.
 //!   With ε = 0.01 (and thus 24% space overhead) sharding can already happen at
 //!   very small sizes, providing the fastest parallel construction. Query speed
@@ -141,14 +141,14 @@ pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send 
     ///  [`SigStore`](crate::utils::SigStore) by using the same number of
     /// buckets.
     ///
-    /// After this call, [`shard_high_bits`](ShardEdge::shard_high_bits) will
-    /// and [`num_shards`](ShardEdge::num_shards) contain sharding information.
+    /// After this call, [`shard_high_bits`](ShardEdge::shard_high_bits)
+    /// and [`num_shards`](ShardEdge::num_shards) will contain sharding information.
     fn set_up_shards(&mut self, n: usize, eps: f64);
 
     /// Sets up the edge logic for the given number of keys and maximum shard
     /// size.
     ///
-    /// This methods must be called after
+    /// This method must be called after
     /// [`set_up_shards`](ShardEdge::set_up_shards), albeit some no-sharding
     /// implementation might not require it. It returns the expansion factor and
     /// whether the graph will need [lazy Gaussian
@@ -258,7 +258,7 @@ mod mwhc {
     /// [ε-cost sharded](https://arxiv.org/abs/2503.18397) 3-hypergraph [MWHC
     /// construction](https://doi.org/10.1093/comjnl/39.6.547).
     ///
-    /// This construction uses uses ε-cost sharding (“[ε-Cost Sharding: Scaling
+    /// This construction uses ε-cost sharding (“[ε-Cost Sharding: Scaling
     /// Hypergraph-Based Static Functions and Filters to Trillions of
     /// Keys](https://arxiv.org/abs/2503.18397)”) to shard keys and then random
     /// peelable 3-hypergraphs on sharded keys, giving a 23% space overhead.
@@ -1037,7 +1037,7 @@ mod fuse {
 
     fn edge_2_big(
         shard: usize,
-        shard_high_bits: u32,
+        shard_bits_shift: u32,
         log2_seg_size: u32,
         l: u32,
         sig: [u64; 2],
@@ -1046,7 +1046,7 @@ mod fuse {
         let start = (shard * (l as usize + 2)) << log2_seg_size;
         let v0 = start
             + fixed_point_inv_128!(
-                sig[0].rotate_right(shard_high_bits).rotate_right(1),
+                sig[0].rotate_right(shard_bits_shift).rotate_right(1),
                 (l as u64) << log2_seg_size
             );
 

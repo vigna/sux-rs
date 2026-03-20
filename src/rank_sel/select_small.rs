@@ -205,13 +205,13 @@ macro_rules! impl_rank_small_sel {
         > SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             /// Creates a new selection structure with eight [`RankSmall`]
-            /// blocks per inventory an average.
+            /// blocks per inventory on average.
             pub fn new(small_counters: C) -> Self {
                 Self::with_inv(small_counters, 8)
             }
 
             /// Creates a new selection structure with a given number of
-            /// [`RankSmall`] blocks per inventory an average.
+            /// [`RankSmall`] blocks per inventory on average.
             pub fn with_inv(small_counters: C, blocks_per_inv: usize) -> Self {
                 let num_bits = small_counters.len();
                 let num_ones = small_counters.num_ones();

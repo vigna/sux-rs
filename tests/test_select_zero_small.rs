@@ -68,6 +68,51 @@ fn test_rank_small4() {
     test!(3; 13);
 }
 
+macro_rules! test_u32 {
+    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
+        let mut rng = SmallRng::seed_from_u64(0);
+        let density = 0.5;
+        let lens = (1..1000)
+            .chain((1000..10000).step_by(100))
+            .chain([1 << 18]);
+        for len in lens {
+            let bits = (0..len)
+                .map(|_| rng.random_bool(density))
+                .collect::<BitVec<Vec<u32>>>();
+            let rank_small_sel = SelectZeroSmall::<$NUM_U32S, $COUNTER_WIDTH, _>::new(RankSmall::<
+                $NUM_U32S,
+                $COUNTER_WIDTH,
+                _,
+            >::new(
+                bits.clone(),
+            ));
+
+            let zeros = bits.len() - bits.count_ones();
+            let mut pos = Vec::with_capacity(zeros);
+            for i in 0..len {
+                if !bits[i] {
+                    pos.push(i);
+                }
+            }
+
+            for (i, &p) in pos.iter().enumerate() {
+                assert_eq!(rank_small_sel.select_zero(i), Some(p));
+            }
+            assert_eq!(rank_small_sel.select_zero(zeros + 1), None);
+        }
+    };
+}
+
+#[test]
+fn test_rank_small0_u32() {
+    test_u32!(1; 7);
+}
+
+#[test]
+fn test_rank_small1_u32() {
+    test_u32!(1; 8);
+}
+
 #[test]
 fn test_empty() {
     let bits = BitVec::<Vec<u64>>::new(0);

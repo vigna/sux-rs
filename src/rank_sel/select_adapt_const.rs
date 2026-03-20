@@ -44,20 +44,20 @@ use std::ops::Index;
 
 /// A const-based version of [`SelectAdapt`](super::SelectAdapt).
 ///
-/// The code of this structure is essentially the same of
+/// The code of this structure is essentially the same as
 /// [`SelectAdapt`](super::SelectAdapt), with the important difference that the
 /// parameters of the constructor
 /// [`SelectAdapt::with_inv`](super::SelectAdapt::with_inv) are now compile-time
 /// constants. This allows further optimization, leading to a speedup of about
 /// 5% (but your mileage may vary). However, the structure is no longer adaptive
 /// to the density of the bit vector, so you must be able to know the density in
-/// advance (as it happens, for examples, for the high bits of the [Elias-Fano
+/// advance (as it happens, for example, for the high bits of the [Elias-Fano
 /// representation of monotone sequences](crate::dict::EliasFano)). Moreover,
 /// `LOG2_WORDS_PER_SUBINVENTORY` is no longer a maximum value, but rather an
 /// exact value.
 ///
 /// The default parameters are a good choice for a low-space structure on a bit
-/// vector of density 0.5. A more detailed discussion of the parameter can be
+/// vector of density 0.5. A more detailed discussion of the parameters can be
 /// found in the documentation of [`SelectAdapt`](super::SelectAdapt).
 ///
 /// [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst) is a variant of this
@@ -277,8 +277,7 @@ impl<
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectAdaptConst<B, Box<[usize]>, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
-    /// Creates a new selection structure over a [`SelectHinted`] with a specified
-    /// distance between indexed ones.
+    /// Creates a new selection structure over a bit vector.
     ///
     /// # Panics
     ///

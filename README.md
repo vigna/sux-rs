@@ -45,7 +45,7 @@ access).
 
 To make rank/select structures composable, we parameterize them with a _backend_
 that needs to implement the [`Backend`] trait, which provides only the backend
-word as an associated type [`Word`]. Implementation can than use [`BitLength`]
+word as an associated type [`Word`]. Implementations can then use [`BitLength`]
 and [`AsRef<Self::Word>`]/[`AsMut<Self::Word>`] to access the backend using bit
 operations. Bit vectors and structures delegate these traits to their backend,
 so you can use any structure that implements the [`Backend`] trait as a backend
@@ -175,7 +175,7 @@ the NRRP MUR program funded by the EU - NGEU, and by project ANR COREGRAPHIE,
 grant ANR-20-CE23-0002 of the French Agence Nationale de la Recherche. Views and
 opinions expressed are however those of the authors only and do not necessarily
 reflect those of the European Union or the Italian MUR. Neither the European
-Union nor the Italian MUR can be held responsible for them
+Union nor the Italian MUR can be held responsible for them.
 
 [bit vectors and bit-field vectors]: https://docs.rs/sux/latest/sux/bits/index.html
 [rank and selection]: https://docs.rs/sux/latest/sux/rank_sel/index.html

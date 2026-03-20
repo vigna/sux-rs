@@ -59,9 +59,9 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// at the expense of a high-level additional list of 64-bit counters that
 /// contain the actual absolute cumulative counts for each block of 2³² bits.
 /// Since in most applications these counters will be very few, their additional
-/// space in negligible, and they will usually accessed without cache misses.
+/// space is negligible, and they will usually be accessed without cache misses.
 ///
-/// The [`RankSmall`] variants are parameterized by the number of 32-bit word
+/// The [`RankSmall`] variants are parameterized by the number of 32-bit words
 /// per block and by the size of the relative counters. Only certain
 /// combinations are possible, and to simplify construction we provide a
 /// [`rank_small`](crate::rank_small) macro that selects the correct
@@ -84,7 +84,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 ///   space.
 ///
 /// The first structure is a space-savvy version of [`Rank9`](super::Rank9),
-/// while the other ones provide increasing less space usage at the expense of
+/// while the other ones provide increasingly less space usage at the expense of
 /// slower operations.
 ///
 /// For each combination there are corresponding selection structures

@@ -214,6 +214,25 @@ fn test_zero_bytes() {
     }
 }
 
+/// `lender_from(len)` panics when `len` is a multiple of `ratio` because `block
+/// = len / ratio` is out of bounds for the pointers array. The lender should
+/// return an empty sequence instead.
+#[test]
+fn test_lender_from_at_len_multiple_of_ratio() {
+    use lender::Lender;
+    // ratio = 4 and 4 strings => len == 4, which is a multiple of ratio
+    let mut builder = RearCodedListBuilder::<str, true>::new(4);
+    builder.push("a");
+    builder.push("b");
+    builder.push("c");
+    builder.push("d");
+    let rcl = builder.build();
+    assert_eq!(rcl.len(), 4);
+    // lender_from(len) should yield an empty lender, not panic
+    let mut lender = rcl.lender_from(rcl.len());
+    assert!(lender.next().is_none());
+}
+
 #[cfg(feature = "epserde")]
 #[test]
 fn test_ser_str() -> anyhow::Result<()> {

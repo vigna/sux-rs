@@ -581,7 +581,7 @@ where
     /// Builds a new filter using a `Box<[W]>` to store values.
     ///
     /// Since values are stored in a boxed slice access is particularly fast, but
-    /// the number of bits of the hashes will be  exactly the bit width of the
+    /// the number of bits of the hashes will be exactly the bit width of the
     /// unsigned type `W`.
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,

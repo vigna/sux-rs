@@ -111,6 +111,7 @@ pub struct MappedRearCodedList<
     map: Q,
 }
 
+/// A mapped rear-coded list of byte sequences.
 pub type MappedRearCodedListSliceU8<const SORTED: bool = true> =
     MappedRearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, BitFieldVec<Box<[usize]>>, SORTED>;
 /// A mapped rear-coded list of strings.
@@ -147,6 +148,7 @@ impl<
         Self { rcl, map }
     }
 
+    /// Returns the rear-coded list and the mapping, consuming this structure.
     pub fn into_parts(self) -> (RearCodedList<I, O, D, P, SORTED>, Q) {
         (self.rcl, self.map)
     }
