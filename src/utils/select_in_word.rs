@@ -36,6 +36,7 @@ impl SelectInWord for u8 {
     }
 }
 
+#[cfg(not(target_feature = "bmi2"))]
 macro_rules! popcount_check_byte {
     ($bytes:expr, $remaining:ident, $idx:expr) => {
         let ones = POPCOUNT[$bytes[$idx] as usize] as usize;
@@ -46,7 +47,7 @@ macro_rules! popcount_check_byte {
     };
 }
 
-#[allow(clippy::all)]
+#[cfg(not(target_feature = "bmi2"))]
 const POPCOUNT: [u8; 256] = [
     0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
     1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
