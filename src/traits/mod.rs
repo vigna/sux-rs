@@ -11,6 +11,8 @@
 //! See the discussion in [`bit_field_slice`] about the re-export of its traits.
 
 pub mod bit_field_slice;
+use std::{rc::Rc, sync::Arc};
+
 use ambassador::delegatable_trait;
 pub use bit_field_slice::*;
 
@@ -56,30 +58,65 @@ impl_word!(u8, u16, u32, u64, u128, usize);
 
 /// The basic trait defining backends.
 ///
-/// Backends are types that can be seen as slices of words. The type of the word
-/// is given by the [`Word`](Self::Word) associated type. They make it possible
-/// to write generic code that can work with any backend by providing the word
-/// type.
+/// Backends are types used as underlying storage by other types. Backends are
+/// made of contiguous sequences of words, and the type of such words is given
+/// by the [`Backend::Word`] associated type.
+///
+/// For example, the type `BitVec<Vec<usize>>` represents a bit vector using a
+/// vector of `usize` as its backend.
+///
+/// This trait provides no methods: access to the underlying data is provided by
+/// other traits, such as [`AsRef`] or [`AsMut`]. Moreover, the [`Backend::Word`]
+/// associated type is usually bound with an appropriate trait such as [`Word`] or
+/// [`PrimitiveAtomicUnsigned`].
+///
+/// For example, the typical read-only word-based backend `B` for bit vectors
+/// and vectors of bit fields satisfies the bound
+///
+/// ```ignore
+/// B: Backend<Word: Word> + AsRef<[B::Word]>
+/// ```
+///
+/// where an analogous atomic backend satisfies
+///
+/// ```ignore
+/// B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>
+/// ```
+///
+/// Bit-based backends satisfy also the [`BitLength`] trait, which specifies
+/// the number of valid bits in the backend.
+///
+/// Note that *traits* manipulating backends such as [`BitVecOps`] do not use
+/// this trait, but are rather parametrized by a word type `W`, and extend
+/// traits such as [`AsRef<W>`] as needed.
+/// 
+/// However, *types* with a backend need this trait to avoid a redundant
+/// specification of the word type in isolation and as part of the backend. If
+/// we did not have this trait to specify the word type, we would need to write
+/// something like `BitVec<u64, Vec<u64>>`.
 ///
 /// This trait is delegated by every [rank/select structure](crate::rank_sel) to
-/// its backend (an inner field): as a result, every structure can be used as
-/// the backend of a further structure.
+/// its backend (an inner field) together with [`AsRef`] and [`BitLength`] so
+/// that, for example, a rank/select structure can be used as a backend for
+/// another structure without any boilerplate.
 ///
-/// Usually, this trait is coupled with [`AsRef<[<Self as
-/// Backend>::Word]>`](core::convert::AsRef) or [`AsMut<[<Self as
-/// Backend>::Word]>`](core::convert::AsMut) to allow access to the underlying
-/// slice of words, but this is not strictly required (see, e.g., the
-/// [`BitWidth`] trait).
+/// We implement this trait for slices, vectors, and arrays; moreover, we
+/// delegate it automatically to references, boxed types, and reference-counted
+/// wrappers.
 ///
-/// We implement this trait for slices, vectors, and arrays; moreover,
-/// we delegate it automatically to references and boxed types.
-#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+/// [`AsRef`]: core::convert::AsRef
+/// [`AsRef<W>`]: core::convert::AsRef
+/// [`AsMut`]: core::convert::AsMut
+/// [`Backend::Word`]: Self::Word
+/// [`BitVec<Vec<usize>>`]: crate::bits::BitVec
+/// [`Word`]: crate::traits::Word
+/// [`BitLength`]: crate::traits::BitLength
+/// [`BitVecOps`]: crate::traits::BitVecOps
+/// [`PrimitiveAtomicUnsigned`]: atomic_primitive::PrimitiveAtomicUnsigned
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>, Rc<T>, Arc<T>)]
 #[delegatable_trait]
 pub trait Backend {
     /// The word type used by this backend.
-    ///
-    /// Since we have backends based on both atomic and non-atomic primitive
-    /// types, we do not require the word type to implement any specific trait.
     type Word;
 }
 
