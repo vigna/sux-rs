@@ -14,15 +14,16 @@
 //! [`bit_field_vec!`](crate::bit_field_vec) macros provide convenient
 //! construction.
 //!
-//! Bit vectors and bit-field vectors are parameterized by a
-//! [`Backend`](crate::traits::Backend), which abstracts over different storage
-//! types (`Vec<W>`, `Box<[W]>`, memory-mapped slices, etc.). They also
-//! implement the [`Backend`] trait themselves by delegation.
+//! Bit vectors and bit-field vectors are parameterized by a [`Backend`], which
+//! abstracts over different storage types (`Vec<W>`, `Box<[W]>`, memory-mapped
+//! slices, etc.). They also implement the [`Backend`] trait themselves by
+//! delegation.
 //!
 //! In particular, any [rank/select structure](crate::rank_sel) requires a
-//! [`Backend`] and is a [`Backend`](crate::traits::Backend) itself by
-//! delegation, so that every structure can be used as the backend of a further
-//! structure.
+//! [`Backend`] and is a [`Backend`] itself by delegation, so that every
+//! structure can be used as the backend of a further structure.
+//!
+//! [`Backend`]: crate::traits::Backend
 
 pub mod bit_field_vec;
 pub use bit_field_vec::*;
