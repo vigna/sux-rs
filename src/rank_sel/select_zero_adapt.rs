@@ -291,7 +291,6 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
         max_log2_words_per_subinventory: usize,
     ) -> Self {
         assert_inventory_length(bits.len());
-        // TODO: is this necessary? (everywhere)
         let num_bits = max(1usize, bits.len());
         let num_ones = bits.count_zeros();
 

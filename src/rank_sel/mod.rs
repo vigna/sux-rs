@@ -15,7 +15,7 @@
 //! can be layered. Each structure forwards traits it does not implement to the
 //! next structure in the chain, and also implements [`Deref`](core::ops::Deref)
 //! with the next structure as target.
-
+//!
 //! A few of the structures in this module have been described by Sebastiano Vigna in
 //! “[Broadword Implementation of Rank/Select
 //! Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
@@ -94,7 +94,7 @@
 //!
 //! Some structures depend on the internals of others, and thus cannot be
 //! composed freely: for example, a [`Select9`] must necessarily wrap a
-//! [`Rank9`]. In general, in any case, we suggest embedding structure in the
+//! [`Rank9`]. In general, in any case, we suggest embedding structures in the
 //! order rank, select, and zero select, from inner to outer, because ranking
 //! structures usually implement [`NumBits`](crate::traits::NumBits).
 
