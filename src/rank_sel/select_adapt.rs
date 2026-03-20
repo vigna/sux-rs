@@ -82,7 +82,7 @@ use std::ops::Index;
 /// vectors as less than *M* subinventory words per inventory might be used.
 ///
 /// Given a specific indexed one in the inventory, if the distance to the next
-/// indexed one is smaller than 2¹⁶ we use the *M* words associated to the
+/// indexed one is at most 2¹⁶ we use the *M* words associated to the
 /// subinventory to store 4*M* 16-bit integers, representing the offsets of
 /// regularly spaced ones inside the inventory.
 ///
@@ -97,14 +97,14 @@ use std::ops::Index;
 /// additional words in a spill buffer to store exactly the position of every
 /// bit in the subinventory using 64-bit integers.
 ///
-/// Note that is is possible to build pathological cases  (e.g., half of the bit
+/// Note that it is possible to build pathological cases (e.g., half of the bit
 /// vector extremely dense, half of the vector extremely sparse) in which the
 /// structure has a different performance depending on the selected bit. In
 /// these cases, [`Select9`](super::Select9) might be a better choice.
 ///
 /// In the 16-bit case, the average distance between two ones indexed by the
 /// subinventories is *L*/4*M*, (again, the actual value might be twice as large
-/// because of rounding). However, the worst-case distance might as high as
+/// because of rounding). However, the worst-case distance might be as high as
 /// 2¹⁶/4*M*, as we use 4*M* 16-bit integers until the width of the inventory
 /// span makes it possible. Within this range, we perform a sequential broadword
 /// search, which has a linear cost. In the 32-bit case, the average distance
@@ -115,9 +115,9 @@ use std::ops::Index;
 /// The value *L* should be chosen so that the distance between two indexed ones
 /// in the inventory is always smaller than 2¹⁶. The [default suggested
 /// value](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) is a reasonable choice
-/// for vectors that reasonably uniform, but smaller values can be used for more
+/// for vectors that are reasonably uniform, but smaller values can be used for more
 /// irregular vectors, at the cost of a larger space occupancy. Moreover, a
-/// smaller value of *L* might be provide faster selection in exchange for more
+/// smaller value of *L* might provide faster selection in exchange for more
 /// space occupancy for small vectors (a few million bits), as the inventory
 /// would still fit the cache. Note that halving (or doubling) at the same time
 /// the value of *L* and *M* will give a structure with essentially the same
@@ -127,8 +127,8 @@ use std::ops::Index;
 /// space occupancy, but values resulting in linear searches shorter than a
 /// couple of words will not generally improve performance; moreover,
 /// interleaving inventories is not useful if *M* is so large that the
-/// subinventory takes several cache lines. For example, using [default value
-/// for *L*](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) a reasonable choice for
+/// subinventory takes several cache lines. For example, using [the default value
+/// for *L*](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN), a reasonable choice for
 /// *M* is between 4 and 32, corresponding to worst-case linear searches between
 /// 1024 and 128 bits, typical choices being 8 and 16 (note that the
 /// constructors take the base-2 logarithm of *M*).

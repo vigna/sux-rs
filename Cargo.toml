@@ -5,7 +5,7 @@ authors = [
 	"Sebastiano Vigna <sebastiano.vigna@unimi.it>",
 ]
 description = "A pure Rust implementation of succinct and compressed data structures"
-version = "0.13.1"
+version = "0.14.0"
 edition = "2024"
 repository = "https://github.com/vigna/sux-rs"
 license = "Apache-2.0 OR LGPL-2.1-or-later"
@@ -88,7 +88,7 @@ opt-level = 3 # like --release
 #lto = "fat"              # Full LTO
 debug = true             # Include debug info.
 overflow-checks = false  # Disable integer overflow checks.
-debug-assertions = false # Enables debug assertions.
+debug-assertions = false # Disable debug assertions.
 #codegen-units = 1        # slower compile times, but maybe better perf
 
 [profile.bench]
@@ -96,7 +96,7 @@ opt-level = 3            # like --release
 lto = "fat"              # Full LTO
 overflow-checks = false  # Disable integer overflow checks.
 debug = true             # Include debug info.
-debug-assertions = false # Enables debug assertions.
+debug-assertions = false # Disable debug assertions.
 codegen-units = 1        # slower compile times, but maybe better perf
 
 [lib]

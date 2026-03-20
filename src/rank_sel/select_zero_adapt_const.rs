@@ -243,9 +243,9 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENT
 impl<
     B: BitLength,
     C,
-    const LOG2_ONES_PER_INVENTORY: usize,
+    const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
-> SelectZeroAdaptConst<B, C, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+> SelectZeroAdaptConst<B, C, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
     /// Returns the number of bits in the bit vector.
     ///

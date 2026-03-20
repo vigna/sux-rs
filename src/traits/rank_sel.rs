@@ -252,7 +252,9 @@ pub trait SelectUnchecked {
 /// ```rust
 /// use sux::prelude::*;
 ///
-/// let sel = SelectAdapt::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1], 1);
+/// // SelectAdapt needs NumBits
+/// let bits: AddNumBits<_> = bit_vec![1, 0, 1, 1, 0, 1, 0, 1].into();
+/// let sel = SelectAdapt::new(bits, 1);
 /// assert_eq!(sel.select(0), Some(0));
 /// assert_eq!(sel.select(2), Some(3));
 /// assert_eq!(sel.select(4), Some(7));

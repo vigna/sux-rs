@@ -40,7 +40,7 @@ type DenseIndex = Rank9<BitVec<Box<[u64]>>>;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SparseIndex<D> {
     ef: EliasFano<u64, SelectZeroAdaptConst<BitVec<D>, Box<[usize]>, 12, 3>>,
-    /// self.ef should be not be queried for values >= self.first_invalid_position
+    /// self.ef should not be queried for values >= self.first_invalid_position
     first_invalid_pos: usize,
 }
 
@@ -62,7 +62,7 @@ pub struct PartialArrayBuilder<T, B> {
 /// Creates a new builder for a dense partial array of the given length.
 ///
 /// A dense partial array stores a bit vector of the given length to mark
-/// which positions contain values, and use ranking on this bit vector to
+/// which positions contain values, and uses ranking on this bit vector to
 /// map positions to indices in a contiguous value array.
 ///
 /// If your set of values is really sparse, consider using a

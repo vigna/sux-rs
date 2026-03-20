@@ -353,7 +353,7 @@ impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, 
 
         let mut block_idx = block_idx.unwrap_err();
         if block_idx == 0 || block_idx > self.pointers.as_ref().len() {
-            // the string is before the first block
+            // the string is outside the range of the list
             return None;
         }
         block_idx -= 1;
@@ -380,7 +380,7 @@ impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, 
             result.extend_from_slice(&data[..to_copy]);
             data = &data[to_copy..];
 
-            match memcmp_rust(string, &result) {
+            match memcmp(string, &result) {
                 core::cmp::Ordering::Greater => {}
                 core::cmp::Ordering::Equal => return Some(block_idx * self.ratio + idx + 1),
                 core::cmp::Ordering::Less => return None,
@@ -545,6 +545,20 @@ where
     /// Creates a new lender over the rear-coded list starting from the given
     /// position.
     pub fn new_from(rcl: &'a RearCodedList<I, O, D, P, SORTED>, from: usize) -> Self {
+        if from >= rcl.len() {
+            assert!(
+                from == rcl.len(),
+                "Index out of bounds: {} > {}",
+                from,
+                rcl.len()
+            );
+            return Lend {
+                rcl,
+                data: &rcl.data.as_ref()[..0],
+                buffer: Vec::new(),
+                index: from,
+            };
+        }
         let block = from / rcl.ratio;
         let offset = from % rcl.ratio;
         let start = rcl.pointers.as_ref()[block];
@@ -842,18 +856,6 @@ fn memcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
     string.len().cmp(&data.len())
 }
 
-#[inline(always)]
-/// Like memcmp, but both string are Rust strings.
-fn memcmp_rust(string: &[u8], other: &[u8]) -> core::cmp::Ordering {
-    for (a, b) in string.iter().zip(other.iter()) {
-        let ord = a.cmp(b);
-        if ord != core::cmp::Ordering::Equal {
-            return ord;
-        }
-    }
-    string.len().cmp(&other.len())
-}
-
 impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
     /// Creates a builder for a rear-coded list with a block size of `ratio`.
     pub fn new(ratio: usize) -> Self {
@@ -1120,7 +1122,6 @@ fn longest_common_prefix(a: &[u8], b: &[u8]) -> (usize, core::cmp::Ordering) {
     let min_len = a.len().min(b.len());
     // normal lcp computation
     let mut i = 0;
-    // we purposely don't do early stopping so it can be vectorized
     while i < min_len && a[i] == b[i] {
         i += 1;
     }
@@ -1980,11 +1981,11 @@ mod tests {
 
     #[test]
     fn test_memcmp_rust() {
-        assert_eq!(memcmp_rust(b"abc", b"abc"), core::cmp::Ordering::Equal);
-        assert_eq!(memcmp_rust(b"abc", b"abd"), core::cmp::Ordering::Less);
-        assert_eq!(memcmp_rust(b"abd", b"abc"), core::cmp::Ordering::Greater);
-        assert_eq!(memcmp_rust(b"ab", b"abc"), core::cmp::Ordering::Less);
-        assert_eq!(memcmp_rust(b"abc", b"ab"), core::cmp::Ordering::Greater);
+        assert_eq!(memcmp(b"abc", b"abc"), core::cmp::Ordering::Equal);
+        assert_eq!(memcmp(b"abc", b"abd"), core::cmp::Ordering::Less);
+        assert_eq!(memcmp(b"abd", b"abc"), core::cmp::Ordering::Greater);
+        assert_eq!(memcmp(b"ab", b"abc"), core::cmp::Ordering::Less);
+        assert_eq!(memcmp(b"abc", b"ab"), core::cmp::Ordering::Greater);
     }
 
     #[test]

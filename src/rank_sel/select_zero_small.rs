@@ -163,7 +163,7 @@ macro_rules! impl_select_zero_small {
         > SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
             /// Creates a new selection structure with eight [`RankSmall`]
-            /// blocks per inventory an average.
+            /// blocks per inventory on average.
             pub fn new(small_counters: C) -> Self {
                 Self::with_inv(small_counters, 8)
             }
@@ -228,8 +228,6 @@ macro_rules! impl_select_zero_small {
                 } else {
                     inventory_begin.push(small_counters.as_ref().len() as usize);
                 }
-
-                // assert_eq!(inventory.len(), inventory_size + 1);
 
                 let inventory = inventory.into_boxed_slice();
                 let inventory_begin = inventory_begin.into_boxed_slice();
@@ -627,11 +625,110 @@ impl<
     }
 }
 
+// 64-bit word variants
 impl_select_zero_small!(2; 9; u64);
 impl_select_zero_small!(1; 9; u64);
 impl_select_zero_small!(1; 10; u64);
 impl_select_zero_small!(1; 11; u64);
 impl_select_zero_small!(3; 13; u64);
+
+impl<
+    C: SmallCounters<1, 7>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits,
+> SelectZeroSmall<1, 7, C>
+{
+    #[inline(always)]
+    unsafe fn complete_select(
+        &self,
+        block_count: &Block32Counters<1, 7>,
+        mut hint_pos: usize,
+        rank: usize,
+        hint_rank: usize,
+    ) -> usize {
+        const ONES_STEP_7: u64 = (1_u64 << 0) | (1_u64 << 7) | (1_u64 << 14);
+        const MSBS_STEP_7: u64 = 0x40_u64 * ONES_STEP_7;
+        const SUBBLOCK_BIT_SIZE: u64 =
+            u32::BITS as u64 * RankSmall::<1, 7>::WORDS_PER_SUBBLOCK as u64;
+        const POS_STEP_7: u64 =
+            (SUBBLOCK_BIT_SIZE << 14) | ((2 * SUBBLOCK_BIT_SIZE) << 7) | (3 * SUBBLOCK_BIT_SIZE);
+
+        macro_rules! ULEQ_STEP_7 {
+            ($x:ident, $y:ident) => {
+                (((((($y) | MSBS_STEP_7) - (($x) & !MSBS_STEP_7)) | ($x ^ $y)) ^ ($x & !$y))
+                    & MSBS_STEP_7)
+            };
+        }
+
+        let rank_in_block = rank - hint_rank;
+        let rank_in_block_step_7 = rank_in_block as u64 * ONES_STEP_7;
+        let relative = POS_STEP_7 - block_count.all_rel();
+        let offset_in_block = ULEQ_STEP_7!(relative, rank_in_block_step_7).count_ones() as usize;
+
+        let rank_in_word = rank_in_block
+            - (offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block));
+        hint_pos += offset_in_block * (SUBBLOCK_BIT_SIZE as usize);
+
+        hint_pos
+            + (!*unsafe {
+                self.small_counters
+                    .as_ref()
+                    .get_unchecked(hint_pos / C::Word::BITS as usize)
+            })
+            .select_in_word(rank_in_word)
+    }
+}
+
+impl<
+    C: SmallCounters<1, 8>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits
+        + SelectZeroHinted,
+> SelectZeroSmall<1, 8, C>
+{
+    #[inline(always)]
+    unsafe fn complete_select(
+        &self,
+        block_count: &Block32Counters<1, 8>,
+        mut hint_pos: usize,
+        rank: usize,
+        mut hint_rank: usize,
+    ) -> usize {
+        const ONES_STEP_8: u64 = (1_u64 << 0) | (1_u64 << 8) | (1_u64 << 16);
+        const MSBS_STEP_8: u64 = 0x80_u64 * ONES_STEP_8;
+        const SUBBLOCK_BIT_SIZE: u64 =
+            u32::BITS as u64 * RankSmall::<1, 8>::WORDS_PER_SUBBLOCK as u64;
+        const POS_STEP_8: u64 =
+            (SUBBLOCK_BIT_SIZE << 16) | ((2 * SUBBLOCK_BIT_SIZE) << 8) | (3 * SUBBLOCK_BIT_SIZE);
+
+        macro_rules! ULEQ_STEP_8 {
+            ($x:ident, $y:ident) => {
+                (((((($y) | MSBS_STEP_8) - (($x) & !MSBS_STEP_8)) | ($x ^ $y)) ^ ($x & !$y))
+                    & MSBS_STEP_8)
+            };
+        }
+
+        let rank_in_block = rank - hint_rank;
+        let rank_in_block_step_8 = rank_in_block as u64 * ONES_STEP_8;
+        let relative = POS_STEP_8 - block_count.all_rel();
+
+        let offset_in_block = ULEQ_STEP_8!(relative, rank_in_block_step_8).count_ones() as usize;
+
+        hint_pos += offset_in_block * (SUBBLOCK_BIT_SIZE as usize);
+        hint_rank +=
+            offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
+
+        unsafe { self.select_zero_hinted(rank, hint_pos, hint_rank) }
+    }
+}
+
+// 32-bit word variants
+impl_select_zero_small!(1; 7; u32);
+impl_select_zero_small!(1; 8; u32);
 
 /// A trait providing the semantics of
 /// [`partition_point`](slice::partition_point), but using a linear search.
