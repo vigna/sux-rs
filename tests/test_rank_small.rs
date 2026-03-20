@@ -10,7 +10,7 @@ use sux::prelude::*;
 use sux::traits::BitVecOps;
 
 macro_rules! test_rank_small {
-    ($($n: tt),+ ; $W: ty) => {
+    ($W:tt : $n:tt) => {
         let mut rng = SmallRng::seed_from_u64(0);
         let lens = (1..1000)
             .chain((10_000..100_000).step_by(1000))
@@ -20,7 +20,7 @@ macro_rules! test_rank_small {
             let bits = (0..len)
                 .map(|_| rng.random_bool(density))
                 .collect::<BitVec<Vec<$W>>>();
-            let rank_small = rank_small![$($n),+ ; bits.clone()];
+            let rank_small = rank_small![$W : $n ; bits.clone()];
 
             let mut ranks = Vec::with_capacity(len);
             let mut r = 0;
@@ -48,8 +48,8 @@ macro_rules! test_rank_small {
             );
         }
     };
-    ($n: tt) => {
-        test_rank_small![$n; u64];
+    ($n:tt) => {
+        test_rank_small![u64 : $n];
     };
 }
 
@@ -80,23 +80,18 @@ fn test_rank_small4() {
 
 #[test]
 fn test_rank_small_0_u32() {
-    test_rank_small![0, u32 ; u32];
+    test_rank_small![u32 : 0];
 }
 
 #[test]
 fn test_rank_small_1_u32() {
-    test_rank_small![1, u32 ; u32];
-}
-
-#[test]
-fn test_rank_small_2_u32() {
-    test_rank_small![2, u32 ; u32];
+    test_rank_small![u32 : 1];
 }
 
 #[test]
 fn test_rank_small_map() {
     let bits = bit_vec![u64: 0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
-    let rank_small = rank_small![2; bits];
+    let rank_small = rank_small![u64: 2; bits];
     let rank_small_sel = unsafe {
         rank_small.map(|b| {
             let b: AddNumBits<_> = b.into();

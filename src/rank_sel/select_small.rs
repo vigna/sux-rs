@@ -254,7 +254,7 @@ macro_rules! impl_rank_small_sel {
                             let in_word_index = word.select_in_word(next_quantum - past_ones);
                             let in_superblock_index = i * bits_per_word + in_word_index;
                             if first {
-                                inventory_begin.push(inventory.len() as usize);
+                                inventory_begin.push(inventory.len());
                                 first = false;
                             }
                             inventory.push(in_superblock_index as u32);
@@ -268,9 +268,9 @@ macro_rules! impl_rank_small_sel {
 
                 if inventory.is_empty() {
                     inventory.push(0);
-                    inventory_begin.push(0 as usize);
+                    inventory_begin.push(0);
                 } else {
-                    inventory_begin.push(small_counters.as_ref().len() as usize);
+                    inventory_begin.push(small_counters.as_ref().len());
                 }
 
                 let inventory = inventory.into_boxed_slice();
@@ -347,9 +347,13 @@ macro_rules! impl_rank_small_sel {
 
                     let last_block_idx;
                     if inv_idx + 1 < inventory.len() {
+                        // linear_partition_point returns the first index where
+                        // the predicate is false; subtracting 1 gives the last
+                        // superblock whose inventory start is <= inv_idx + 1,
+                        // i.e., the superblock containing inventory[inv_idx + 1].
                         let next_inv_upper_block_idx = inventory_begin
                             .linear_partition_point(|&x| x as usize <= inv_idx + 1)
-                            - 1; // TODO: +1?
+                            - 1;
                         last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
                             let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize
                                 + upper_block_idx * Self::SUPERBLOCK_BIT_SIZE;
@@ -359,10 +363,9 @@ macro_rules! impl_rank_small_sel {
                                 * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
                         };
                     } else {
-                        // TODO
-                        // Since we use 32-bit entries, we cannot add a sentinel
-                        // with value given by the number of bits. Thus, we must
-                        // handle the case in which inv_idx is the last
+                        // Since we use 32-bit inventory entries, we cannot add
+                        // a sentinel with value equal to the number of bits
+                        // (which may exceed 2^32). Thus, we handle the last
                         // inventory entry as a special case.
                         last_block_idx = self.len().div_ceil(Self::BLOCK_BIT_SIZE);
                     }
@@ -590,6 +593,7 @@ impl<
         + SelectHinted,
 > SelectSmall<3, 13, C>
 {
+    #[inline(always)]
     unsafe fn complete_select(
         &self,
         block_count: &Block32Counters<3, 13>,
@@ -678,48 +682,6 @@ impl<
 }
 
 impl<
-    C: SmallCounters<1, 7>
-        + Backend<Word: Word + SelectInWord>
-        + AsRef<[C::Word]>
-        + BitLength
-        + NumBits,
-> SelectSmall<1, 7, C>
-{
-    #[inline(always)]
-    unsafe fn complete_select(
-        &self,
-        block_count: &Block32Counters<1, 7>,
-        mut hint_pos: usize,
-        rank: usize,
-        hint_rank: usize,
-    ) -> usize {
-        const ONES_STEP_7: u64 = (1_u64 << 0) | (1_u64 << 7) | (1_u64 << 14);
-        const MSBS_STEP_7: u64 = 0x40_u64 * ONES_STEP_7;
-        macro_rules! ULEQ_STEP_7 {
-            ($x:ident, $y:ident) => {
-                (((((($y) | MSBS_STEP_7) - (($x) & !MSBS_STEP_7)) | ($x ^ $y)) ^ ($x & !$y))
-                    & MSBS_STEP_7)
-            };
-        }
-
-        let rank_in_block = rank - hint_rank;
-        let rank_in_block_step_7 = rank_in_block as u64 * ONES_STEP_7;
-        let relative = block_count.all_rel();
-        let offset_in_block = ULEQ_STEP_7!(relative, rank_in_block_step_7).count_ones() as usize;
-
-        let rank_in_word = rank_in_block - block_count.rel(offset_in_block);
-        hint_pos += offset_in_block * Self::SUBBLOCK_BIT_SIZE;
-
-        hint_pos
-            + unsafe {
-                self.as_ref()
-                    .get_unchecked(hint_pos / C::Word::BITS as usize)
-                    .select_in_word(rank_in_word)
-            }
-    }
-}
-
-impl<
     C: SmallCounters<1, 8>
         + Backend<Word: Word + SelectInWord>
         + AsRef<[C::Word]>
@@ -770,7 +732,6 @@ impl_rank_small_sel!(3; 13; u64);
 
 // 32-bit word variants
 impl_rank_small_sel!(2; 8; u32);
-impl_rank_small_sel!(1; 7; u32);
 impl_rank_small_sel!(1; 8; u32);
 
 /// A trait providing the semantics of

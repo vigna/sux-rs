@@ -67,26 +67,32 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// [`rank_small`](crate::rank_small) macro that selects the correct
 /// combination.
 ///
-/// Presently we support the following combinations for 64-bit words:
+/// Presently we support the following combinations for `u64` words:
 ///
-/// - `rank_small![0; -]` (builds `RankSmall<2, 9>`): 18.75% additional space,
-///   speed slightly slower than [`Rank9`](super::Rank9).
-/// - `rank_small![1; -]` (builds `RankSmall<1, 9>`): 12.5% additional space.
-/// - `rank_small![2; -]` (builds `RankSmall<1, 10>`): 6.25% additional space.
-/// - `rank_small![3; -]` (builds `RankSmall<1, 11>`): 3.125% additional space.
-/// - `rank_small![4; -]` (builds `RankSmall<3, 13>`): 1.56% additional space.
-///
-/// And the following for 32-bit words:
-///
-/// - `rank_small![0, u32; -]` (builds `RankSmall<2, 8>`): 37.5% additional
-///   space; a 32-bit analogue of `RankSmall<2, 9>` with 8 subblocks of one
-///   word each, so rank requires only a single popcount.
-/// - `rank_small![1, u32; -]` (builds `RankSmall<1, 7>`): 12.5% additional
+/// - `rank_small![u64: 0; -]` (builds `RankSmall<2, 9>`): 18.75% additional
+///   space, speed slightly slower than [`Rank9`](super::Rank9).
+/// - `rank_small![u64: 1; -]` (builds `RankSmall<1, 9>`): 12.5% additional
 ///   space.
-/// - `rank_small![2, u32; -]` (builds `RankSmall<1, 8>`): 6.25% additional
+/// - `rank_small![u64: 2; -]` (builds `RankSmall<1, 10>`): 6.25% additional
+///   space.
+/// - `rank_small![u64: 3; -]` (builds `RankSmall<1, 11>`): 3.125% additional
+///   space.
+/// - `rank_small![u64: 4; -]` (builds `RankSmall<3, 13>`): 1.56% additional
 ///   space.
 ///
-/// The first structure is a space-savvy version of [`Rank9`](super::Rank9),
+/// And the following for `u32` words (same layout as the corresponding `u64`
+/// variant):
+///
+/// - `rank_small![u32: 0; -]` (builds `RankSmall<2, 8>`): 37.5% additional
+///   space.
+/// - `rank_small![u32: 1; -]` (builds `RankSmall<1, 8>`): 25% additional
+///   space.
+///
+/// The word type can be omitted, in which case it defaults to `usize` (the
+/// platform word size); for example, `rank_small![0; bits]` builds
+/// `RankSmall<2, 9>` on 64-bit and `RankSmall<2, 8>` on 32-bit.
+///
+/// `RankSmall<2, 9>` is a space-savvy version of [`Rank9`](super::Rank9),
 /// while the other ones provide increasingly less space usage at the expense of
 /// slower operations.
 ///
@@ -106,11 +112,8 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// # Examples
 ///
 /// ```rust
-/// # #[cfg(target_pointer_width = "64")]
-/// # {
 /// # use sux::{bit_vec,rank_small};
-/// # use sux::traits::{Rank, Select};
-/// # use sux::rank_sel::SelectAdapt;
+/// # use sux::traits::Rank;
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![0; bits];
 ///
@@ -133,7 +136,6 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// assert_eq!(rank_small[5], true);
 /// assert_eq!(rank_small[6], false);
 /// assert_eq!(rank_small[7], true);
-/// # }
 /// ```
 #[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
@@ -183,63 +185,81 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B> Deref
 /// A convenient macro to build a [`RankSmall`] structure with the correct
 /// parameters.
 ///
-/// 64-bit word variants:
+/// The syntax is `rank_small![W: n; bits]`, where `W` is the word type
+/// (`u64`, `u32`, or `usize`) and `n` is the variant index. If `W:` is
+/// omitted, it defaults to `usize`, which is the platform word size.
 ///
-/// - `rank_small![0; -]` (builds `RankSmall<2, 9>`): 18.75% additional space,
-///   speed slightly slower than [`Rank9`](super::Rank9).
-/// - `rank_small![1; -]` (builds `RankSmall<1, 9>`): 12.5% additional space.
-/// - `rank_small![2; -]` (builds `RankSmall<1, 10>`): 6.25% additional space.
-/// - `rank_small![3; -]` (builds `RankSmall<1, 11>`): 3.125% additional
-///   space.
-/// - `rank_small![4; -]` (builds `RankSmall<3, 13>`): 1.56% additional space.
+/// Variants 0 and 1 are available for both 64-bit and 32-bit words, with
+/// the same layout (see the table in the [`RankSmall`] documentation).
+/// Variants 2–4 are available only for 64-bit words.
 ///
-/// 32-bit word variants:
+/// `u64` variants:
 ///
-/// - `rank_small![0, u32; -]` (builds `RankSmall<2, 8>`): 37.5% additional
+/// - `rank_small![u64: 0; -]` (builds `RankSmall<2, 9>`): 18.75% additional
+///   space, speed slightly slower than [`Rank9`](super::Rank9).
+/// - `rank_small![u64: 1; -]` (builds `RankSmall<1, 9>`): 12.5% additional
 ///   space.
-/// - `rank_small![1, u32; -]` (builds `RankSmall<1, 7>`): 12.5% additional
+/// - `rank_small![u64: 2; -]` (builds `RankSmall<1, 10>`): 6.25% additional
 ///   space.
-/// - `rank_small![2, u32; -]` (builds `RankSmall<1, 8>`): 6.25% additional
+/// - `rank_small![u64: 3; -]` (builds `RankSmall<1, 11>`): 3.125% additional
 ///   space.
+/// - `rank_small![u64: 4; -]` (builds `RankSmall<3, 13>`): 1.56% additional
+///   space.
+///
+/// `u32` variants:
+///
+/// - `rank_small![u32: 0; -]` (builds `RankSmall<2, 8>`): 37.5% additional
+///   space (same layout as `RankSmall<2, 9>`).
+/// - `rank_small![u32: 1; -]` (builds `RankSmall<1, 8>`): 25% additional
+///   space (same layout as `RankSmall<1, 9>`).
 ///
 /// # Examples
 ///
 /// ```rust
-/// # #[cfg(target_pointer_width = "64")]
-/// # {
 /// # use sux::{prelude::Rank,bit_vec,rank_small};
-/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
-/// let rank_small = rank_small![0; bits];
+/// let bits = bit_vec![u32: 1, 0, 1, 1, 0, 1, 0, 1];
+/// let rank_small = rank_small![u32: 0; bits];
 ///
 /// assert_eq!(rank_small.rank(0), 0);
 /// assert_eq!(rank_small.rank(1), 1);
-/// # }
 /// ```
 #[macro_export]
 macro_rules! rank_small {
-    (0 ; $bits: expr) => {
+    // Explicit u64 variants
+    (u64 : 0 ; $bits:expr) => {
         $crate::prelude::RankSmall::<2, 9, _, _, _>::new($bits)
     };
-    (1 ; $bits: expr) => {
+    (u64 : 1 ; $bits:expr) => {
         $crate::prelude::RankSmall::<1, 9, _, _, _>::new($bits)
     };
-    (2 ; $bits: expr) => {
+    (u64 : 2 ; $bits:expr) => {
         $crate::prelude::RankSmall::<1, 10, _, _, _>::new($bits)
     };
-    (3 ; $bits: expr) => {
+    (u64 : 3 ; $bits:expr) => {
         $crate::prelude::RankSmall::<1, 11, _, _, _>::new($bits)
     };
-    (4 ; $bits: expr) => {
+    (u64 : 4 ; $bits:expr) => {
         $crate::prelude::RankSmall::<3, 13, _, _, _>::new($bits)
     };
-    (0, u32 ; $bits: expr) => {
+    // Explicit u32 variants
+    (u32 : 0 ; $bits:expr) => {
         $crate::prelude::RankSmall::<2, 8, _, _, _>::new($bits)
     };
-    (1, u32 ; $bits: expr) => {
-        $crate::prelude::RankSmall::<1, 7, _, _, _>::new($bits)
-    };
-    (2, u32 ; $bits: expr) => {
+    (u32 : 1 ; $bits:expr) => {
         $crate::prelude::RankSmall::<1, 8, _, _, _>::new($bits)
+    };
+    // Explicit usize: forward to platform word type
+    (usize : $n:tt ; $bits:expr) => {
+        {
+            #[cfg(target_pointer_width = "64")]
+            { $crate::rank_small![u64 : $n ; $bits] }
+            #[cfg(not(target_pointer_width = "64"))]
+            { $crate::rank_small![u32 : $n ; $bits] }
+        }
+    };
+    // Default (no type prefix): forward as usize
+    ($n:tt ; $bits:expr) => {
+        $crate::rank_small![usize : $n ; $bits]
     };
 }
 
@@ -348,23 +368,6 @@ impl Block32Counters<2, 8> {
     }
 }
 
-impl Block32Counters<1, 7> {
-    #[inline(always)]
-    pub fn all_rel(&self) -> u64 {
-        self.relative[0] as u64
-    }
-
-    #[inline(always)]
-    pub fn rel(&self, word: usize) -> usize {
-        (self.relative[0] as usize >> (7 * (word ^ 3))) & ((1 << 7) - 1)
-    }
-
-    #[inline(always)]
-    pub fn set_rel(&mut self, word: usize, counter: usize) {
-        self.relative[0] |= (counter as u32) << (7 * (word ^ 3));
-    }
-}
-
 impl Block32Counters<1, 8> {
     #[inline(always)]
     pub fn all_rel(&self) -> u64 {
@@ -439,7 +442,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
     /// Log2 of the word bit width for this variant: u32 variants (CW ≤ 8)
     /// use 5, u64 variants (CW ≥ 9) use 6.
     pub(super) const WORD_BIT_LOG2: usize = match COUNTER_WIDTH {
-        7 | 8 => 5,
+        8 => 5,
         _ => 6,
     };
     pub(super) const WORDS_PER_BLOCK: usize = 1 << (COUNTER_WIDTH - Self::WORD_BIT_LOG2);
@@ -596,7 +599,6 @@ impl_rank_small!(3; 13; u64);
 
 // 32-bit word variants
 impl_rank_small!(2; 8; u32);
-impl_rank_small!(1; 7; u32);
 impl_rank_small!(1; 8; u32);
 
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> Rank
@@ -719,13 +721,10 @@ mod tests {
         let bits32 =
             unsafe { BitVec::from_raw_parts(vec![!1u32; 1 << 10], (1 << 10) * u32::BITS as usize) };
 
-        let rank_small = rank_small![0, u32; bits32.clone()];
+        let rank_small = rank_small![u32: 0; bits32.clone()];
         assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
 
-        let rank_small = rank_small![1, u32; bits32.clone()];
-        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
-
-        let rank_small = rank_small![2, u32; bits32.clone()];
+        let rank_small = rank_small![u32: 1; bits32.clone()];
         assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
     }
 }

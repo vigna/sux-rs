@@ -86,7 +86,7 @@ fn test_w_rank9() {
         let select = SelectAdaptConst::<_, _, INV, SUB>::new(Rank9::new(bits.clone()));
         #[cfg(not(target_pointer_width = "64"))]
         let select =
-            SelectAdaptConst::<_, _, INV, SUB>::new(RankSmall::<1, 7, _>::new(bits.clone()));
+            SelectAdaptConst::<_, _, INV, SUB>::new(RankSmall::<2, 8, _>::new(bits.clone()));
 
         let ones = select.num_ones();
         let mut pos = Vec::with_capacity(ones);
@@ -210,7 +210,7 @@ fn test_map() {
     #[cfg(target_pointer_width = "64")]
     let rank_sel = unsafe { sel.map(Rank9::new) };
     #[cfg(not(target_pointer_width = "64"))]
-    let rank_sel = unsafe { sel.map(RankSmall::<1, 7, _>::new) };
+    let rank_sel = unsafe { sel.map(RankSmall::<2, 8, _>::new) };
     assert_eq!(rank_sel.rank(0), 0);
     assert_eq!(rank_sel.rank(1), 0);
     assert_eq!(rank_sel.rank(2), 1);

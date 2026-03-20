@@ -102,17 +102,12 @@ macro_rules! test_u32 {
 }
 
 #[test]
-fn test_rank_small0_u32() {
+fn test_rank_small_0_u32() {
     test_u32!(2; 8);
 }
 
 #[test]
-fn test_rank_small1_u32() {
-    test_u32!(1; 7);
-}
-
-#[test]
-fn test_rank_small2_u32() {
+fn test_rank_small_1_u32() {
     test_u32!(1; 8);
 }
 

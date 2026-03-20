@@ -37,7 +37,6 @@ use std::ops::Index;
 /// A version of [`SelectSmall`] implementing [selection on
 /// zeros](crate::traits::SelectZero).
 ///
-///
 /// # Examples
 ///
 /// ```rust
@@ -118,6 +117,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O> Deref
 {
     type Target = C;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.small_counters
     }
@@ -311,9 +311,13 @@ macro_rules! impl_select_zero_small {
 
                 let last_block_idx;
                 if inv_idx + 1 < inventory.len() {
+                    // linear_partition_point returns the first index where
+                    // the predicate is false; subtracting 1 gives the last
+                    // superblock whose inventory start is <= inv_idx + 1,
+                    // i.e., the superblock containing inventory[inv_idx + 1].
                     let next_inv_upper_block_idx = inventory_begin
                         .linear_partition_point(|_, &x| x as usize <= inv_idx + 1)
-                        - 1; // TODO: +1?
+                        - 1;
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
                         let next_inv_pos = *unsafe { inventory.get_unchecked(inv_idx + 1) }
                             as usize
@@ -323,10 +327,9 @@ macro_rules! impl_select_zero_small {
                         (upper_block_idx + 1) * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
                     };
                 } else {
-                    // TODO
-                    // Since we use 32-bit entries, we cannot add a sentinel
-                    // with value given by the number of bits. Thus, we must
-                    // handle the case in which inv_idx is the last
+                    // Since we use 32-bit inventory entries, we cannot add
+                    // a sentinel with value equal to the number of bits
+                    // (which may exceed 2^32). Thus, we handle the last
                     // inventory entry as a special case.
                     last_block_idx = self.len().div_ceil(Self::BLOCK_BIT_SIZE);
                 }
@@ -579,6 +582,7 @@ impl<
         + SelectZeroHinted,
 > SelectZeroSmall<3, 13, C>
 {
+    #[inline(always)]
     unsafe fn complete_select(
         &self,
         block_count: &Block32Counters<3, 13>,
@@ -695,55 +699,6 @@ impl<
 }
 
 impl<
-    C: SmallCounters<1, 7>
-        + Backend<Word: Word + SelectInWord>
-        + AsRef<[C::Word]>
-        + BitLength
-        + NumBits,
-> SelectZeroSmall<1, 7, C>
-{
-    #[inline(always)]
-    unsafe fn complete_select(
-        &self,
-        block_count: &Block32Counters<1, 7>,
-        mut hint_pos: usize,
-        rank: usize,
-        hint_rank: usize,
-    ) -> usize {
-        const ONES_STEP_7: u64 = (1_u64 << 0) | (1_u64 << 7) | (1_u64 << 14);
-        const MSBS_STEP_7: u64 = 0x40_u64 * ONES_STEP_7;
-        const SUBBLOCK_BIT_SIZE: u64 =
-            u32::BITS as u64 * RankSmall::<1, 7>::WORDS_PER_SUBBLOCK as u64;
-        const POS_STEP_7: u64 =
-            (SUBBLOCK_BIT_SIZE << 14) | ((2 * SUBBLOCK_BIT_SIZE) << 7) | (3 * SUBBLOCK_BIT_SIZE);
-
-        macro_rules! ULEQ_STEP_7 {
-            ($x:ident, $y:ident) => {
-                (((((($y) | MSBS_STEP_7) - (($x) & !MSBS_STEP_7)) | ($x ^ $y)) ^ ($x & !$y))
-                    & MSBS_STEP_7)
-            };
-        }
-
-        let rank_in_block = rank - hint_rank;
-        let rank_in_block_step_7 = rank_in_block as u64 * ONES_STEP_7;
-        let relative = POS_STEP_7 - block_count.all_rel();
-        let offset_in_block = ULEQ_STEP_7!(relative, rank_in_block_step_7).count_ones() as usize;
-
-        let rank_in_word = rank_in_block
-            - (offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block));
-        hint_pos += offset_in_block * (SUBBLOCK_BIT_SIZE as usize);
-
-        hint_pos
-            + (!*unsafe {
-                self.small_counters
-                    .as_ref()
-                    .get_unchecked(hint_pos / C::Word::BITS as usize)
-            })
-            .select_in_word(rank_in_word)
-    }
-}
-
-impl<
     C: SmallCounters<1, 8>
         + Backend<Word: Word + SelectInWord>
         + AsRef<[C::Word]>
@@ -790,12 +745,11 @@ impl<
 
 // 32-bit word variants
 impl_select_zero_small!(2; 8; u32);
-impl_select_zero_small!(1; 7; u32);
 impl_select_zero_small!(1; 8; u32);
 
 /// A trait providing the semantics of
 /// [`partition_point`](slice::partition_point), but using a linear search.
-trait LinearPartitionPointExt<T>: AsRef<[T]> {
+trait LinearPartitionPointWithIndexExt<T>: AsRef<[T]> {
     fn linear_partition_point<P>(&self, mut pred: P) -> usize
     where
         P: FnMut(usize, &T) -> bool,
@@ -809,4 +763,4 @@ trait LinearPartitionPointExt<T>: AsRef<[T]> {
     }
 }
 
-impl<T> LinearPartitionPointExt<T> for [T] {}
+impl<T> LinearPartitionPointWithIndexExt<T> for [T] {}
