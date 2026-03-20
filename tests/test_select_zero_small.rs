@@ -72,9 +72,7 @@ macro_rules! test_u32 {
     ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         let mut rng = SmallRng::seed_from_u64(0);
         let density = 0.5;
-        let lens = (1..1000)
-            .chain((1000..10000).step_by(100))
-            .chain([1 << 18]);
+        let lens = (1..1000).chain((1000..10000).step_by(100)).chain([1 << 18]);
         for len in lens {
             let bits = (0..len)
                 .map(|_| rng.random_bool(density))
