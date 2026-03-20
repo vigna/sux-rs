@@ -13,11 +13,11 @@
 pub mod bit_field_slice;
 use std::{rc::Rc, sync::Arc};
 
+#[allow(unused_imports)]
+use crate::bits::bit_vec::BitVec;
 use ambassador::delegatable_trait;
 #[allow(unused_imports)]
 use atomic_primitive::PrimitiveAtomicUnsigned;
-#[allow(unused_imports)]
-use crate::bits::bit_vec::BitVec;
 pub use bit_field_slice::*;
 
 pub mod indexed_dict;
