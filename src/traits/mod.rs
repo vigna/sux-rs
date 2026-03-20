@@ -22,10 +22,37 @@ pub mod iter;
 pub use iter::*;
 
 pub mod rank_sel;
+use num_primitive::PrimitiveUnsigned;
 pub use rank_sel::*;
 
 pub mod bit_vec_ops;
 pub use bit_vec_ops::*;
+
+/// A trait for primitive types that can be used in
+/// [backends](crate::traits::Backend).
+///
+/// This trait is equivalent to [`PrimitiveUnsigned`], but it has a shorter name
+/// and provides constants [`ZERO`](Self::ZERO) and [`ONE`](Self::ONE), which
+/// avoid a dependency on the
+/// [`num-traits`](https://crates.io/crates/num-traits) crate.
+pub trait Word: PrimitiveUnsigned {
+    const ZERO: Self;
+    const ONE: Self;
+}
+
+// Note: once we can switch to a more recent num-primitive,
+// we will be able to use CONST[0] and CONST[1] to define ZERO and ONE
+// and we will be able to remove this macro.
+macro_rules! impl_word {
+    ($($ty:ty),*) => {
+        $(impl Word for $ty {
+            const ZERO: Self = 0;
+            const ONE: Self = 1;
+        })*
+    };
+}
+
+impl_word!(u8, u16, u32, u64, u128, usize);
 
 /// The basic trait defining backends.
 ///

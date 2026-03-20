@@ -51,7 +51,7 @@
 //! nondecreasing).
 
 use crate::prelude::{indexed_dict::*, *};
-use crate::traits::{AtomicBitVecOps, BitVecOpsMut, bit_field_slice::*};
+use crate::traits::{AtomicBitVecOps, BitVecOpsMut, Word, bit_field_slice::*};
 use crate::utils::SelectInWord;
 use core::sync::atomic::Ordering;
 use mem_dbg::*;

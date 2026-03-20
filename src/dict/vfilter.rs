@@ -8,7 +8,7 @@
 use crate::bits::BitFieldVec;
 use crate::func::mix64;
 use crate::func::{VFunc, shard_edge::ShardEdge};
-use crate::traits::bit_field_slice::*;
+use crate::traits::{Word, bit_field_slice::*};
 use crate::utils::{BinSafe, Sig, ToSig};
 use mem_dbg::*;
 use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
