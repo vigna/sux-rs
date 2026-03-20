@@ -44,36 +44,16 @@
 //! a slice of bits with a slice of a primitive integer type of the same width.
 //!
 #![allow(clippy::result_unit_err)]
-use atomic_primitive::PrimitiveAtomicInteger;
+use crate::{debug_assert_bounds, panic_if_out_of_bounds, panic_if_value, traits::Word};
+use atomic_primitive::PrimitiveAtomicUnsigned;
 use core::sync::atomic::Ordering;
 use impl_tools::autoimpl;
-use num_primitive::{PrimitiveInteger, PrimitiveNumberAs, PrimitiveUnsigned};
+use num_primitive::PrimitiveInteger;
 #[cfg(feature = "rayon")]
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
 use value_traits::slices::{SliceByValue, SliceByValueMut};
-
-use crate::{debug_assert_bounds, panic_if_out_of_bounds, panic_if_value};
-
-/// A derived trait that the types used as a parameter for [`BitFieldSlice`] must satisfy.
-/// To be usable in an [`AtomicBitFieldSlice`], the type must also implement
-/// [`AtomicPrimitive`](atomic_primitive::AtomicPrimitive).
-pub trait Word: PrimitiveUnsigned + PrimitiveNumberAs<u128> {
-    const ZERO: Self;
-    const ONE: Self;
-}
-
-macro_rules! impl_word {
-    ($($ty:ty),*) => {
-        $(impl Word for $ty {
-            const ZERO: Self = 0;
-            const ONE: Self = 1;
-        })*
-    };
-}
-
-impl_word!(u8, u16, u32, u64, u128, usize);
 
 /// Common method for [`BitFieldSlice`], [`BitFieldSliceMut`], and
 /// [`AtomicBitFieldSlice`].
@@ -134,9 +114,9 @@ pub fn mask<W: Word>(bit_width: usize) -> W {
 /// Bit width for atomic slices.
 ///
 /// This trait is separate from [`BitWidth`] because a blanket impl
-/// `impl<A: PrimitiveAtomicInteger> BitWidth<A> for [A]` would conflict
+/// `impl<A: PrimitiveAtomicUnsigned> BitWidth<A> for [A]` would conflict
 /// with `impl<W: Word> BitWidth<W> for [W]` — the compiler cannot prove
-/// that [`Word`] and [`PrimitiveAtomicInteger`] are disjoint. A dedicated
+/// that [`Word`] and [`PrimitiveAtomicUnsigned`] are disjoint. A dedicated
 /// trait sidesteps the overlap entirely.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait AtomicBitWidth {
@@ -144,21 +124,21 @@ pub trait AtomicBitWidth {
     fn atomic_bit_width(&self) -> usize;
 }
 
-impl<A: PrimitiveAtomicInteger> AtomicBitWidth for [A] {
+impl<A: PrimitiveAtomicUnsigned> AtomicBitWidth for [A] {
     #[inline(always)]
     fn atomic_bit_width(&self) -> usize {
         A::BITS as usize
     }
 }
 
-impl<A: PrimitiveAtomicInteger> AtomicBitWidth for Vec<A> {
+impl<A: PrimitiveAtomicUnsigned> AtomicBitWidth for Vec<A> {
     #[inline(always)]
     fn atomic_bit_width(&self) -> usize {
         A::BITS as usize
     }
 }
 
-impl<A: PrimitiveAtomicInteger, const N: usize> AtomicBitWidth for [A; N] {
+impl<A: PrimitiveAtomicUnsigned, const N: usize> AtomicBitWidth for [A; N] {
     #[inline(always)]
     fn atomic_bit_width(&self) -> usize {
         A::BITS as usize
@@ -171,7 +151,7 @@ impl<A: PrimitiveAtomicInteger, const N: usize> AtomicBitWidth for [A; N] {
 /// Different implementations might provide different atomicity guarantees. See
 /// [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec) for an example.
 #[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
-pub trait AtomicBitFieldSlice<A: PrimitiveAtomicInteger<Value: Word>>: AtomicBitWidth {
+pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBitWidth {
     /// See [`slice::len`].
     fn len(&self) -> usize;
 
@@ -340,7 +320,7 @@ impl<W: Word, const N: usize> BitFieldSliceMut for [W; N] {
 // `impl<W> ... for [W::Atomic]` — Rust can't resolve methods on
 // `[W::Atomic]` because it cannot infer W from the projection.
 
-impl<A: PrimitiveAtomicInteger<Value: Word>> AtomicBitFieldSlice<A> for [A] {
+impl<A: PrimitiveAtomicUnsigned<Value: Word>> AtomicBitFieldSlice<A> for [A] {
     #[inline(always)]
     fn len(&self) -> usize {
         <[A]>::len(self)
@@ -374,7 +354,7 @@ impl<A: PrimitiveAtomicInteger<Value: Word>> AtomicBitFieldSlice<A> for [A] {
     }
 }
 
-impl<A: PrimitiveAtomicInteger<Value: Word>> AtomicBitFieldSlice<A> for Vec<A> {
+impl<A: PrimitiveAtomicUnsigned<Value: Word>> AtomicBitFieldSlice<A> for Vec<A> {
     #[inline(always)]
     fn len(&self) -> usize {
         Vec::len(self)
@@ -408,7 +388,7 @@ impl<A: PrimitiveAtomicInteger<Value: Word>> AtomicBitFieldSlice<A> for Vec<A> {
     }
 }
 
-impl<A: PrimitiveAtomicInteger<Value: Word>, const N: usize> AtomicBitFieldSlice<A> for [A; N] {
+impl<A: PrimitiveAtomicUnsigned<Value: Word>, const N: usize> AtomicBitFieldSlice<A> for [A; N] {
     #[inline(always)]
     fn len(&self) -> usize {
         N

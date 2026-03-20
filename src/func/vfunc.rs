@@ -9,7 +9,7 @@ use std::borrow::Borrow;
 use super::shard_edge::FuseLge3Shards;
 use crate::bits::BitFieldVec;
 use crate::func::shard_edge::ShardEdge;
-use crate::traits::bit_field_slice::*;
+use crate::traits::Word;
 use crate::utils::*;
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;

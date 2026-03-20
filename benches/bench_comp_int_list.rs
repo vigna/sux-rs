@@ -4,7 +4,7 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 use sux::prelude::*;
-use sux::traits::bit_field_slice::Word;
+use sux::traits::Word;
 use value_traits::slices::SliceByValue;
 
 const SMALL: usize = 1 << 20;

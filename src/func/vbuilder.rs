@@ -10,8 +10,8 @@
 use crate::bits::*;
 use crate::dict::{BitSignedVFunc, SignedVFunc, VFilter};
 use crate::func::{shard_edge::ShardEdge, *};
-use crate::traits::BitVecOpsMut;
-use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut, Word};
+use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut};
+use crate::traits::{BitVecOpsMut, Word};
 use crate::utils::*;
 use derivative::Derivative;
 use derive_setters::*;

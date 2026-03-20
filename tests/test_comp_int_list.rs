@@ -1,6 +1,6 @@
 use sux::list::CompIntListBuilder;
 use sux::prelude::*;
-use sux::traits::bit_field_slice::Word;
+use sux::traits::Word;
 use value_traits::slices::SliceByValue;
 
 /// Converts a `CompIntList` with default (EfSeq) delimiters to one backed by

@@ -7,7 +7,8 @@
 
 use anyhow::Ok;
 use anyhow::Result;
-use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic, PrimitiveAtomicInteger};
+use atomic_primitive::PrimitiveAtomicUnsigned;
+use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic};
 use bit_field_slice::*;
 use core::sync::atomic::Ordering;
 use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
@@ -16,6 +17,7 @@ use rand::seq::SliceRandom;
 use rand::{RngExt, SeedableRng};
 use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
+use sux::traits::Word;
 
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
@@ -163,7 +165,7 @@ where
 fn test_atomic_param<W: Word + AtomicPrimitive + PrimitiveNumberAs<u64>>()
 where
     u64: PrimitiveNumberAs<W>,
-    Atomic<W>: PrimitiveAtomicInteger,
+    Atomic<W>: PrimitiveAtomicUnsigned,
 {
     use sux::traits::bit_field_slice::{AtomicBitFieldSlice, AtomicBitWidth};
 

@@ -38,7 +38,7 @@
 //! [`AtomicBitVec`](crate::bits::AtomicBitVec).
 
 use crate::traits::BitLength;
-use crate::traits::bit_field_slice::Word;
+use crate::traits::Word;
 use atomic_primitive::PrimitiveAtomic;
 use mem_dbg::{MemDbg, MemSize};
 use num_primitive::PrimitiveInteger;

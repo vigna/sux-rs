@@ -45,7 +45,7 @@ use value_traits::slices::SliceByValue;
 
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EfSeq;
-use crate::traits::bit_field_slice::Word;
+use crate::traits::Word;
 use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 use crate::utils::PrimitiveUnsignedExt;
 

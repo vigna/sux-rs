@@ -4,7 +4,7 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 use sux::bits::BitVec;
-use sux::traits::bit_field_slice::Word;
+use sux::traits::Word;
 use sux::traits::{BitCount, BitLength, Rank, Select};
 
 mod impls;
