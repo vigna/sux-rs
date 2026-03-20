@@ -78,9 +78,12 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 ///
 /// And the following for 32-bit words:
 ///
-/// - `rank_small![0, u32; -]` (builds `RankSmall<1, 7>`): 12.5% additional
+/// - `rank_small![0, u32; -]` (builds `RankSmall<2, 8>`): 37.5% additional
+///   space; a 32-bit analogue of `RankSmall<2, 9>` with 8 subblocks of one
+///   word each, so rank requires only a single popcount.
+/// - `rank_small![1, u32; -]` (builds `RankSmall<1, 7>`): 12.5% additional
 ///   space.
-/// - `rank_small![1, u32; -]` (builds `RankSmall<1, 8>`): 6.25% additional
+/// - `rank_small![2, u32; -]` (builds `RankSmall<1, 8>`): 6.25% additional
 ///   space.
 ///
 /// The first structure is a space-savvy version of [`Rank9`](super::Rank9),
@@ -190,20 +193,25 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B> Deref
 ///
 /// 32-bit word variants:
 ///
-/// - `rank_small![0, u32; -]` (builds `RankSmall<1, 7>`): 12.5% additional
+/// - `rank_small![0, u32; -]` (builds `RankSmall<2, 8>`): 37.5% additional
 ///   space.
-/// - `rank_small![1, u32; -]` (builds `RankSmall<1, 8>`): 6.25% additional
+/// - `rank_small![1, u32; -]` (builds `RankSmall<1, 7>`): 12.5% additional
+///   space.
+/// - `rank_small![2, u32; -]` (builds `RankSmall<1, 8>`): 6.25% additional
 ///   space.
 ///
 /// # Examples
 ///
 /// ```rust
+/// # #[cfg(target_pointer_width = "64")]
+/// # {
 /// # use sux::{prelude::Rank,bit_vec,rank_small};
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![0; bits];
 ///
 /// assert_eq!(rank_small.rank(0), 0);
 /// assert_eq!(rank_small.rank(1), 1);
+/// # }
 /// ```
 #[macro_export]
 macro_rules! rank_small {
@@ -223,9 +231,12 @@ macro_rules! rank_small {
         $crate::prelude::RankSmall::<3, 13, _, _, _>::new($bits)
     };
     (0, u32 ; $bits: expr) => {
-        $crate::prelude::RankSmall::<1, 7, _, _, _>::new($bits)
+        $crate::prelude::RankSmall::<2, 8, _, _, _>::new($bits)
     };
     (1, u32 ; $bits: expr) => {
+        $crate::prelude::RankSmall::<1, 7, _, _, _>::new($bits)
+    };
+    (2, u32 ; $bits: expr) => {
         $crate::prelude::RankSmall::<1, 8, _, _, _>::new($bits)
     };
 }
@@ -313,6 +324,25 @@ impl Block32Counters<1, 11> {
     #[inline(always)]
     pub fn set_rel(&mut self, word: usize, counter: usize) {
         self.relative[0] |= (counter as u32) << (11 * (word ^ 3));
+    }
+}
+
+impl Block32Counters<2, 8> {
+    #[inline(always)]
+    pub fn all_rel(&self) -> u64 {
+        unsafe { read_unaligned(addr_of!(self.relative) as *const u64) }
+    }
+
+    #[inline(always)]
+    pub fn rel(&self, word: usize) -> usize {
+        ((self.all_rel() >> (8 * (word ^ 7))) & ((1 << 8) - 1)) as usize
+    }
+
+    #[inline(always)]
+    pub fn set_rel(&mut self, word: usize, counter: usize) {
+        let mut packed = unsafe { read_unaligned(addr_of!(self.relative) as *const u64) };
+        packed |= (counter as u64) << (8 * (word ^ 7));
+        unsafe { write_unaligned(addr_of_mut!(self.relative) as *mut u64, packed) };
     }
 }
 
@@ -563,6 +593,7 @@ impl_rank_small!(1; 11; u64);
 impl_rank_small!(3; 13; u64);
 
 // 32-bit word variants
+impl_rank_small!(2; 8; u32);
 impl_rank_small!(1; 7; u32);
 impl_rank_small!(1; 8; u32);
 
@@ -690,6 +721,9 @@ mod tests {
         assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
 
         let rank_small = rank_small![1, u32; bits32.clone()];
+        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
+
+        let rank_small = rank_small![2, u32; bits32.clone()];
         assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
     }
 }
