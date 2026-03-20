@@ -247,7 +247,7 @@ impl<
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectZeroAdaptConst<B, C, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
-    /// Returns the number of bits in the bit vector.
+    /// Returns the number of bits in the underlying bit vector.
     ///
     /// This method is equivalent to [`BitLength::len`], but it is provided to
     /// reduce ambiguity in method resolution.

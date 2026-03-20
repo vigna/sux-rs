@@ -60,7 +60,7 @@ pub trait BitCount: BitLength {
 ///
 /// The methods in this trait compute the number of ones or zeros
 /// in a bit vector (possibly underlying a succinct data structure)
-/// in constant time. If you can be contented with a potentially
+/// in constant time. If you can be content with a potentially
 /// expensive computation, use [`BitCount`].
 ///
 /// If you need to implement this trait on a structure that already
@@ -69,11 +69,11 @@ pub trait BitCount: BitLength {
 #[delegatable_trait]
 pub trait NumBits: BitLength {
     /// Returns the number of ones in the underlying bit vector
-    /// in constant time. If you can be contented with a potentially
+    /// in constant time. If you can be content with a potentially
     /// expensive computation, use [`BitCount::count_ones`].
     fn num_ones(&self) -> usize;
     /// Returns the number of zeros in the underlying bit vector
-    /// in constant time. If you can be contented with a potentially
+    /// in constant time. If you can be content with a potentially
     /// expensive computation, use [`BitCount::count_zeros`].
     #[inline(always)]
     fn num_zeros(&self) -> usize {
@@ -193,7 +193,7 @@ pub trait RankZero: Rank {
     /// `pos` must be between 0 and the [length of the underlying bit
     /// vector](`BitLength::len`) (excluded).
     ///
-    /// Some implementation might consider the length as a valid argument.
+    /// Some implementation might accept the length as a valid argument.
     unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
         pos - unsafe { self.rank_unchecked(pos) }
     }
@@ -225,7 +225,7 @@ pub trait RankHinted {
     /// `hint_rank` must be the number of ones in the underlying bit vector
     /// before the bit at the start of word `hint_pos`.
     ///
-    /// Some implementation might consider the length as a valid argument.
+    /// Some implementation might accept the length as a valid argument.
     unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize;
 }
 

@@ -240,6 +240,7 @@ macro_rules! rank_small {
     repr(C),
     epserde(zero_copy)
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Block32Counters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     pub(super) absolute: u32,
     pub(super) relative: [u32; NUM_U32S],
@@ -582,7 +583,7 @@ where
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2>
     RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
-    /// Returns the number of bits in the bit vector.
+    /// Returns the number of bits in the underlying bit vector.
     ///
     /// This method is equivalent to [`BitLength::len`], but it is provided to
     /// reduce ambiguity in method resolution.

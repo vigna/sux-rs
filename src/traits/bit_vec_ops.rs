@@ -602,8 +602,6 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     /// [`BitCount::count_ones`](`crate::traits::BitCount::count_ones`).
     #[cfg(feature = "rayon")]
     fn par_count_ones(&self) -> usize {
-        use crate::RAYON_MIN_LEN;
-
         let bits_per_word = A::Value::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;

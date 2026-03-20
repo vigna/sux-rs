@@ -282,7 +282,7 @@ bit_field_slice::*` to use the traits.
 
 ### Fixed
 
-- `cargo bench` now build its targets correctly.
+- `cargo bench` now builds its targets correctly.
 
 ## [0.7.3]
 

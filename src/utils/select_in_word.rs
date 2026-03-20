@@ -65,7 +65,7 @@ impl SelectInWord for u16 {
         debug_assert!(rank < self.count_ones() as _);
         #[cfg(target_feature = "bmi2")]
         {
-            (*self as u64).select_in_word(rank)
+            (*self as u32).select_in_word(rank)
         }
         #[cfg(not(target_feature = "bmi2"))]
         {
@@ -83,7 +83,13 @@ impl SelectInWord for u32 {
         debug_assert!(rank < self.count_ones() as _);
         #[cfg(target_feature = "bmi2")]
         {
-            (*self as u64).select_in_word(rank)
+            #[cfg(not(target_pointer_width = "64"))]
+            use core::arch::x86::_pdep_u32;
+            #[cfg(target_pointer_width = "64")]
+            use core::arch::x86_64::_pdep_u32;
+            let mask = 1 << rank;
+            let one = unsafe { _pdep_u32(mask, *self) };
+            one.trailing_zeros() as usize
         }
         #[cfg(not(target_feature = "bmi2"))]
         {
@@ -103,6 +109,9 @@ impl SelectInWord for u64 {
         debug_assert!(rank < self.count_ones() as _);
         #[cfg(target_feature = "bmi2")]
         {
+            #[cfg(not(target_pointer_width = "64"))]
+            use core::arch::x86::_pdep_u64;
+            #[cfg(target_pointer_width = "64")]
             use core::arch::x86_64::_pdep_u64;
             let mask = 1 << rank;
             let one = unsafe { _pdep_u64(mask, *self) };
