@@ -68,6 +68,9 @@ use crate::utils::PrimitiveUnsignedExt;
 #[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct CompIntList<V: Word = usize, D: SliceByValue<Value = u64> = EfSeq<u64>> {
     /// Number of stored values.
+    ///
+    /// Note that this is identical to `delimiters.len() - 1`, but we have no
+    /// guarantee that calling `delimiters.len()` is O(1).
     n: usize,
     /// Lower bound on the values.
     min: V,
