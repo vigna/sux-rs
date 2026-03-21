@@ -65,9 +65,17 @@ fn test_zeros() {
     check(vec![0, 1, 0, 2, 0, 3]);
 }
 
+#[cfg(target_pointer_width = "64")]
 #[test]
 fn test_large_values() {
     check(vec![1 << 40, 1 << 50, 1 << 60]);
+    check(vec![usize::MAX / 4, usize::MAX / 4]);
+}
+
+#[cfg(target_pointer_width = "32")]
+#[test]
+fn test_large_values() {
+    check(vec![1 << 10, 1 << 20, 1 << 30]);
     check(vec![usize::MAX / 4, usize::MAX / 4]);
 }
 
