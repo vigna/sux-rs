@@ -159,5 +159,9 @@ name = "bench_comp_int_list"
 harness = false
 
 [[bench]]
+name = "bench_prefix_sum_int_list"
+harness = false
+
+[[bench]]
 name = "bench_select_in_word"
 harness = false

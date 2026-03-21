@@ -250,7 +250,7 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// # use sux::traits::{Types,IndexedSeq};
 ///
 /// // Convenience constructor that iterates over a slice
-/// let mut ef: EliasFano = vec![0u64, 2, 8, 10].into();
+/// let mut ef: EliasFano = vec![0, 2, 8, 10].into();
 /// // Add a selection structure for ones (implements IndexedSeq)
 /// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
 ///
@@ -259,7 +259,7 @@ pub type EfSeqDict<V = usize> = EliasFano<
 ///
 /// let mut efb = EliasFanoBuilder::new(4, 10u64);
 /// // Add values using an iterator
-/// efb.extend(vec![0u64, 2, 8, 10]);
+/// efb.extend(vec![0, 2, 8, 10]);
 /// let ef = efb.build();
 /// // Add a selection structure for ones (implements IndexedSeq)
 /// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
