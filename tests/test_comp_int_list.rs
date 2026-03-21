@@ -1,4 +1,3 @@
-use sux::list::CompIntListBuilder;
 use sux::prelude::*;
 use sux::traits::Word;
 use value_traits::slices::SliceByValue;
@@ -22,13 +21,13 @@ fn to_vec_delimiters<V: Word>(list: CompIntList<V>) -> CompIntList<V, Vec<u64>> 
 /// every element is read back correctly—first with EfSeq delimiters, then
 /// with Vec<u64> delimiters.
 fn check<V: Word>(min: V, values: Vec<V>) {
-    let list = CompIntList::new(min, values.clone());
+    let list = CompIntList::new(min, &values);
     assert_eq!(list.len(), values.len());
     for (i, &v) in values.iter().enumerate() {
         assert_eq!(list.index_value(i), v, "EfSeq: mismatch at index {i}");
     }
 
-    let vec_list = to_vec_delimiters(CompIntList::new(min, values.clone()));
+    let vec_list = to_vec_delimiters(CompIntList::new(min, &values));
     assert_eq!(vec_list.len(), values.len());
     for (i, &v) in values.iter().enumerate() {
         assert_eq!(vec_list.index_value(i), v, "Vec: mismatch at index {i}");
@@ -98,52 +97,14 @@ fn test_min_offset() {
 
 #[test]
 fn test_empty() {
-    let ef = CompIntList::<u64>::new(0, Vec::new());
-    assert_eq!(ef.len(), 0);
-    assert!(ef.is_empty());
+    let empty: Vec<u64> = vec![];
+    let list = CompIntList::<u64>::new(0, &empty);
+    assert_eq!(list.len(), 0);
+    assert!(list.is_empty());
 
-    let vec_list = to_vec_delimiters(CompIntList::<u64>::new(0, Vec::new()));
+    let vec_list = to_vec_delimiters(CompIntList::<u64>::new(0, &empty));
     assert_eq!(vec_list.len(), 0);
     assert!(vec_list.is_empty());
-}
-
-// ────────────────────── builder tests ──────────────────────
-
-#[test]
-fn test_builder_push() {
-    let mut builder = CompIntListBuilder::new(1u64);
-    builder.push(1);
-    builder.push(3);
-    builder.push(7);
-    builder.push(42);
-    builder.push(100);
-
-    let ef = builder.build();
-    assert_eq!(ef.len(), 5);
-    assert_eq!(ef.index_value(0), 1);
-    assert_eq!(ef.index_value(2), 7);
-    assert_eq!(ef.index_value(4), 100);
-}
-
-#[test]
-fn test_builder_extend() {
-    let mut builder = CompIntListBuilder::new(1u32);
-    builder.push(1);
-    builder.extend([2u32, 3, 4, 5]);
-
-    let ef = builder.build();
-    assert_eq!(ef.len(), 5);
-    for i in 0..5 {
-        assert_eq!(ef.index_value(i), (i + 1) as u32);
-    }
-}
-
-#[test]
-fn test_builder_empty() {
-    let builder = CompIntListBuilder::<u64>::new(0);
-    let ef = builder.build();
-    assert_eq!(ef.len(), 0);
-    assert!(ef.is_empty());
 }
 
 // ────────────────────── panic tests ──────────────────────
@@ -151,13 +112,6 @@ fn test_builder_empty() {
 #[test]
 #[should_panic(expected = "lower bound")]
 fn test_value_below_min_panics() {
-    CompIntList::new(1, vec![0u64, 1, 2]);
-}
-
-#[test]
-#[should_panic(expected = "lower bound")]
-fn test_builder_below_min_panics() {
-    let mut builder = CompIntListBuilder::new(10u64);
-    builder.push(10);
-    builder.push(9);
+    let values = vec![0u64, 1, 2];
+    CompIntList::new(1, &values);
 }

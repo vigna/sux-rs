@@ -31,7 +31,7 @@
 //! use value_traits::slices::SliceByValue;
 //!
 //! let values = vec![1u64, 3, 7, 42, 100];
-//! let list = CompIntList::new(1, values);
+//! let list = CompIntList::new(1, &values);
 //!
 //! assert_eq!(list.index_value(0), 1);
 //! assert_eq!(list.index_value(1), 3);
@@ -49,144 +49,6 @@ use crate::traits::Word;
 use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 use crate::utils::PrimitiveUnsignedExt;
 
-/// Builder for creating a [`CompIntList`].
-///
-/// Values must be not less than the lower bound `min` specified at
-/// construction time, and are pushed one at a time.
-///
-/// # Examples
-///
-/// ```rust
-/// # use sux::list::comp_int_list::CompIntListBuilder;
-/// # use value_traits::slices::SliceByValue;
-/// let mut builder = CompIntListBuilder::new(1u64);
-/// builder.push(1);
-/// builder.push(3);
-/// builder.push(7);
-/// builder.push(42);
-///
-/// let list = builder.build();
-/// assert_eq!(list.index_value(0), 1);
-/// assert_eq!(list.index_value(3), 42);
-/// ```
-///
-/// Using [`extend`](Extend::extend) to add values from an iterator:
-///
-/// ```rust
-/// # use sux::list::comp_int_list::CompIntListBuilder;
-/// # use value_traits::slices::SliceByValue;
-/// let mut builder = CompIntListBuilder::new(0u64);
-/// builder.extend(0..10);
-///
-/// let list = builder.build();
-/// assert_eq!(list.len(), 10);
-/// assert_eq!(list.index_value(0), 0);
-/// assert_eq!(list.index_value(9), 9);
-/// ```
-#[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct CompIntListBuilder<V: Word = u64> {
-    min: V,
-    values: Vec<V>,
-}
-
-impl<V: Word> CompIntListBuilder<V> {
-    /// Creates a new empty builder with the given lower bound.
-    ///
-    /// All values pushed into this builder must be not less than `min`.
-    pub fn new(min: V) -> Self {
-        CompIntListBuilder {
-            min,
-            values: vec![],
-        }
-    }
-
-    /// Pushes a value not less than the lower bound.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `value` is less than `min`.
-    pub fn push(&mut self, value: V) {
-        assert!(
-            value >= self.min,
-            "CompIntList: value must be >= the lower bound"
-        );
-        self.values.push(value);
-    }
-
-    /// Builds the [`CompIntList`].
-    pub fn build(self) -> CompIntList<V> {
-        let values = self.values;
-        let min = self.min;
-        let n = values.len();
-
-        // Compute total bits needed (values stored as v - min + 1)
-        let mut total_bits: u64 = 0;
-        for &v in &values {
-            let offset = v - min + V::ONE;
-            total_bits += (offset.bit_len() - 1) as u64;
-        }
-
-        // Build delimiters: n + 1 cumulative bit positions
-        let mut efb = EliasFanoBuilder::new(n + 1, total_bits);
-        let mut pos: u64 = 0;
-        // SAFETY: pos = 0 is ≤ total_bits and is the first push
-        unsafe { efb.push_unchecked(0u64) };
-        for &v in &values {
-            let offset = v - min + V::ONE;
-            pos += (offset.bit_len() - 1) as u64;
-            // SAFETY: pos is non-decreasing and ≤ total_bits
-            unsafe { efb.push_unchecked(pos) };
-        }
-        let delimiters = efb.build_with_seq();
-
-        // Build data: pack the MSB-removed representations.
-        // We always allocate at least one word so that read_bits
-        // can safely access data[0] even when all widths are zero.
-        let n_words = (total_bits as usize).div_ceil(V::BITS as usize) + 1;
-        let mut data = vec![V::ZERO; n_words];
-
-        let mut bit_pos = 0usize;
-        for &v in &values {
-            let offset = v - min + V::ONE;
-            let width = (offset.bit_len() - 1) as usize;
-            if width > 0 {
-                // Strip the MSB: keep only the low `width` bits
-                let bits = offset ^ (V::ONE << width);
-                CompIntList::<V>::write_bits(&mut data, bit_pos, bits, width);
-            }
-            bit_pos += width;
-        }
-
-        CompIntList {
-            n,
-            min,
-            delimiters,
-            data: data.into_boxed_slice(),
-        }
-    }
-}
-
-/// # Examples
-///
-/// ```rust
-/// # use sux::list::comp_int_list::CompIntListBuilder;
-///  # use value_traits::slices::SliceByValue;
-/// let mut builder = CompIntListBuilder::new(0u64);
-/// builder.extend(0..10);
-///
-/// let list = builder.build();
-/// assert_eq!(list.len(), 10);
-/// assert_eq!(list.index_value(0), 0);
-/// assert_eq!(list.index_value(9), 9);
-/// ```
-impl<V: Word> Extend<V> for CompIntListBuilder<V> {
-    fn extend<I: IntoIterator<Item = V>>(&mut self, iter: I) {
-        for v in iter {
-            self.push(v);
-        }
-    }
-}
-
 /// A compact list of integers not less than a given lower bound.
 ///
 /// Each value *x* is stored as *x* − `min` + 1 (a strictly positive integer)
@@ -195,9 +57,8 @@ impl<V: Word> Extend<V> for CompIntListBuilder<V> {
 /// [`SliceByValue<Value = u64>`] (by default an [Elias–Fano
 /// sequence](EfSeq)), enabling efficient random access.
 ///
-/// Use [`CompIntListBuilder`] for incremental construction, or [`CompIntList::new`]
-/// to build from an iterator directly. After construction, the delimiter
-/// structure can be replaced using [`map_delimiters`](CompIntList::map_delimiters).
+/// After construction, the delimiter structure can be replaced using
+/// [`map_delimiters`](CompIntList::map_delimiters).
 ///
 /// # Type Parameters
 ///
@@ -205,7 +66,7 @@ impl<V: Word> Extend<V> for CompIntListBuilder<V> {
 /// - `D`: The delimiter structure. Must implement `SliceByValue<Value = u64>`.
 ///   Defaults to [`EfSeq`].
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct CompIntList<V: Word = u64, D: SliceByValue<Value = u64> = EfSeq> {
+pub struct CompIntList<V: Word = usize, D: SliceByValue<Value = V> = EfSeq<V>> {
     /// Number of stored values.
     n: usize,
     /// Lower bound on the values.
@@ -218,8 +79,12 @@ pub struct CompIntList<V: Word = u64, D: SliceByValue<Value = u64> = EfSeq> {
 }
 
 impl<V: Word> CompIntList<V> {
-    /// Creates a new `CompIntList` from a lower bound and an iterator of
-    /// values not less than `min`.
+    /// Creates a new `CompIntList` from a lower bound and a reference to a
+    /// collection of values not less than `min`.
+    ///
+    /// The collection is iterated twice: once to compute statistics (element
+    /// count and total bit length), and once to build the delimiter and data
+    /// structures.
     ///
     /// # Panics
     ///
@@ -230,14 +95,56 @@ impl<V: Word> CompIntList<V> {
     /// ```rust
     /// # use sux::list::comp_int_list::CompIntList;
     /// # use value_traits::slices::SliceByValue;
-    /// let ef = CompIntList::new(1, vec![1u64, 5, 10]);
-    /// assert_eq!(ef.len(), 3);
-    /// assert_eq!(ef.index_value(1), 5);
+    /// let values = vec![1u64, 5, 10];
+    /// let list = CompIntList::new(1, &values);
+    /// assert_eq!(list.len(), 3);
+    /// assert_eq!(list.index_value(1), 5);
     /// ```
-    pub fn new(min: V, values: impl IntoIterator<Item = V>) -> Self {
-        let mut builder = CompIntListBuilder::new(min);
-        builder.extend(values);
-        builder.build()
+    pub fn new<I: ?Sized>(min: V, values: &I) -> Self
+    where
+        for<'a> &'a I: IntoIterator<Item = &'a V>,
+    {
+        // First pass: count elements and total bits
+        let mut n = 0usize;
+        let mut total_bits = 0u64;
+        for &v in values {
+            assert!(v >= min, "CompIntList: value must be >= the lower bound");
+            let offset = v - min + V::ONE;
+            total_bits += (offset.bit_len() - 1) as u64;
+            n += 1;
+        }
+
+        // Second pass: build delimiters and pack data
+        let mut efb = EliasFanoBuilder::new(n + 1, total_bits);
+        let mut pos = 0u64;
+        // SAFETY: pos = 0 ≤ total_bits and is the first push
+        unsafe { efb.push_unchecked(0u64) };
+
+        // Allocate data buffer (at least one word for safe two-word reads)
+        let n_words = (total_bits as usize).div_ceil(V::BITS as usize) + 1;
+        let mut data = vec![V::ZERO; n_words];
+        let mut bit_pos = 0usize;
+
+        for &v in values {
+            let offset = v - min + V::ONE;
+            let width = (offset.bit_len() - 1) as usize;
+            if width > 0 {
+                let bits = offset ^ (V::ONE << width);
+                Self::write_bits(&mut data, bit_pos, bits, width);
+            }
+            bit_pos += width;
+            pos += width as u64;
+            // SAFETY: pos is non-decreasing and ≤ total_bits
+            unsafe { efb.push_unchecked(pos) };
+        }
+        let delimiters = efb.build_with_seq();
+
+        CompIntList {
+            n,
+            min,
+            delimiters,
+            data: data.into_boxed_slice(),
+        }
     }
 
     /// Writes `width` low bits of `value` into `data` starting at bit

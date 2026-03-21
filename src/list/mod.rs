@@ -13,4 +13,7 @@
 //! [`SliceByValue`](value_traits::slices::SliceByValue).
 
 pub mod comp_int_list;
-pub use comp_int_list::{CompIntList, CompIntListBuilder};
+pub use comp_int_list::CompIntList;
+
+pub mod prefix_sum_int_list;
+pub use prefix_sum_int_list::PrefixSumIntList;

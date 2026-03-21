@@ -180,7 +180,7 @@ fn test_succ_pred_delegation() {
 #[test]
 fn test_succ_pred_empty() {
     // Create empty Elias-Fano
-    let efb = EliasFanoBuilder::new(0, 0);
+    let efb = EliasFanoBuilder::new(0u64, 0u64);
     let ef = efb.build_with_seq_and_dict();
 
     // Succ and pred on empty should return None
