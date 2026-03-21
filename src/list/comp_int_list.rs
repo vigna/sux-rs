@@ -62,11 +62,11 @@ use crate::utils::PrimitiveUnsignedExt;
 ///
 /// # Type Parameters
 ///
-/// - `V`: The value type. Must be a [`Word`] type. Defaults to `u64`.
+/// - `V`: The value type. Must be a [`Word`] type. Defaults to `usize`.
 /// - `D`: The delimiter structure. Must implement `SliceByValue<Value = u64>`.
-///   Defaults to [`EfSeq`].
+///   Defaults to [`EfSeq<u64>`](EfSeq).
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct CompIntList<V: Word = usize, D: SliceByValue<Value = V> = EfSeq<V>> {
+pub struct CompIntList<V: Word = usize, D: SliceByValue<Value = u64> = EfSeq<u64>> {
     /// Number of stored values.
     n: usize,
     /// Lower bound on the values.
@@ -105,8 +105,8 @@ impl<V: Word> CompIntList<V> {
         for<'a> &'a I: IntoIterator<Item = &'a V>,
     {
         // First pass: count elements and total bits
-        let mut n = 0usize;
-        let mut total_bits = 0u64;
+        let mut n = 0;
+        let mut total_bits = 0;
         for &v in values {
             assert!(v >= min, "CompIntList: value must be >= the lower bound");
             let offset = v - min + V::ONE;
@@ -116,22 +116,20 @@ impl<V: Word> CompIntList<V> {
 
         // Second pass: build delimiters and pack data
         let mut efb = EliasFanoBuilder::new(n + 1, total_bits);
-        let mut pos = 0u64;
+        let mut pos = 0;
         // SAFETY: pos = 0 ≤ total_bits and is the first push
-        unsafe { efb.push_unchecked(0u64) };
+        unsafe { efb.push_unchecked(0) };
 
         // Allocate data buffer (at least one word for safe two-word reads)
-        let n_words = (total_bits as usize).div_ceil(V::BITS as usize) + 1;
+        let n_words = total_bits.div_ceil(V::BITS as u64) as usize + 1;
         let mut data = vec![V::ZERO; n_words];
-        let mut bit_pos = 0usize;
+        let mut bit_pos = 0;
 
         for &v in values {
             let offset = v - min + V::ONE;
             let width = (offset.bit_len() - 1) as usize;
-            if width > 0 {
-                let bits = offset ^ (V::ONE << width);
-                Self::write_bits(&mut data, bit_pos, bits, width);
-            }
+            let bits = offset ^ (V::ONE << width);
+            Self::write_bits(&mut data, bit_pos, bits, width);
             bit_pos += width;
             pos += width as u64;
             // SAFETY: pos is non-decreasing and ≤ total_bits
@@ -193,7 +191,7 @@ impl<V: Word, D: SliceByValue<Value = u64>> CompIntList<V, D> {
     ///
     /// - `start + width` must not exceed the total number of bits in `data`.
     /// - `width` must be less than `V::BITS`.
-    #[inline(always)]
+    #[inline]
     unsafe fn read_bits(data: &[V], start: usize, width: usize) -> V {
         let v_bits = V::BITS as usize;
         let word_idx = start / v_bits;
@@ -224,7 +222,7 @@ where
         self.n
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn get_value_unchecked(&self, index: usize) -> V {
         let mut iter = (&self.delimiters).into_iter_from(index);
         let start = unsafe { iter.next_unchecked() } as usize;

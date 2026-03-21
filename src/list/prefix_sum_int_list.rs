@@ -60,10 +60,10 @@ use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 ///
 /// # Type Parameters
 ///
-/// - `V`: The value type. Must be a [`Word`] type. Defaults to `u64`. The
+/// - `V`: The value type. Must be a [`Word`] type. Defaults to `usize`. The
 ///   caller must ensure that the prefix sums do not overflow `V`.
 /// - `D`: The prefix-sum structure. Must implement `SliceByValue<Value = V>`.
-///   Defaults to [`EfSeq`].
+///   Defaults to [`EfSeq<V>`](EfSeq).
 #[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct PrefixSumIntList<V: Word = usize, D: SliceByValue<Value = V> = EfSeq<V>> {
     /// Number of stored values.
@@ -72,7 +72,7 @@ pub struct PrefixSumIntList<V: Word = usize, D: SliceByValue<Value = V> = EfSeq<
     prefix_sums: D,
 }
 
-impl<V: Word + From<u64>> PrefixSumIntList<V> {
+impl<V: Word> PrefixSumIntList<V> {
     /// Creates a new `PrefixSumIntList` from a reference to a collection of
     /// nonnegative values.
     ///
@@ -99,13 +99,13 @@ impl<V: Word + From<u64>> PrefixSumIntList<V> {
         for<'a> &'a I: IntoIterator<Item = &'a V>,
     {
         // First pass: count elements and total sum
-        let mut n = 0usize;
+        let mut n = 0;
         let mut total = V::ZERO;
         for &v in values {
             n += 1;
-            let old_total = total;
-            total = total + v;
-            assert!(total >= old_total, "PrefixSumIntList: prefix sum overflow");
+            total = total
+                .checked_add(v)
+                .expect("PrefixSumIntList: prefix sum overflow");
         }
 
         // Second pass: build prefix sums in Elias–Fano
@@ -114,6 +114,7 @@ impl<V: Word + From<u64>> PrefixSumIntList<V> {
         // SAFETY: prefix = 0 ≤ total and is the first push
         unsafe { efb.push_unchecked(prefix) };
         for &v in values {
+            // Cannot overflow
             prefix = prefix + v;
             // SAFETY: prefix is non-decreasing and ≤ total
             unsafe { efb.push_unchecked(prefix) };
@@ -160,9 +161,9 @@ where
     /// # Panics
     ///
     /// Panics if `i > self.len()`.
+    #[inline(always)]
     pub fn prefix_sum(&self, i: usize) -> V {
-        assert!(i <= self.n, "index out of bounds: {i} > {}", self.n);
-        unsafe { self.prefix_sum_unchecked(i) }
+        self.prefix_sums.index_value(i)
     }
 
     /// Returns the prefix sum up to (excluded) index `i` without bounds
@@ -173,8 +174,7 @@ where
     /// `i` must be in `0..=self.len()`.
     #[inline(always)]
     pub unsafe fn prefix_sum_unchecked(&self, i: usize) -> V {
-        let mut iter = (&self.prefix_sums).into_iter_from(i);
-        unsafe { iter.next_unchecked() }
+        unsafe { self.prefix_sums.get_value_unchecked(i) }
     }
 }
 
@@ -190,7 +190,7 @@ where
         self.n
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn get_value_unchecked(&self, index: usize) -> V {
         let mut iter = (&self.prefix_sums).into_iter_from(index);
         let start = unsafe { iter.next_unchecked() };

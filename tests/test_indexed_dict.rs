@@ -83,7 +83,7 @@ fn test_indexed_seq_various_types() {
 // Tests for Succ and Pred using EliasFano
 #[test]
 fn test_succ_with_elias_fano() {
-    let values = [10u64, 20, 30, 40, 50];
+    let values = [10usize, 20, 30, 40, 50];
     let mut efb = EliasFanoBuilder::new(values.len(), *values.last().unwrap());
     efb.extend(values);
     let ef = efb.build_with_seq_and_dict();
@@ -180,7 +180,7 @@ fn test_succ_pred_delegation() {
 #[test]
 fn test_succ_pred_empty() {
     // Create empty Elias-Fano
-    let efb = EliasFanoBuilder::new(0u64, 0u64);
+    let efb = EliasFanoBuilder::new(0, 0u64);
     let ef = efb.build_with_seq_and_dict();
 
     // Succ and pred on empty should return None
