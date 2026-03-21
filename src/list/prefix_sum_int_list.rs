@@ -43,10 +43,10 @@
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;
 
-use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EfSeq;
-use crate::traits::Word;
+use crate::dict::{EliasFano, EliasFanoBuilder};
 use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
+use crate::traits::{SelectUnchecked, Word};
 
 /// A compact list of nonnegative integers based on prefix sums.
 ///
@@ -54,6 +54,9 @@ use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 /// prefix sums held in a [`SliceByValue<Value = V>`] (by default an
 /// [Elias–Fano sequence](EfSeq)). Recovering the *i*-th value requires two
 /// accesses to the prefix-sum structure.
+///
+/// The structure provides also [direct access to the prefix
+/// sums](PrefixSumIntList::prefix_sum).
 ///
 /// After construction, the prefix-sum structure can be replaced using
 /// [`map_prefix_sums`](PrefixSumIntList::map_prefix_sums).
@@ -67,6 +70,9 @@ use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 #[derive(Debug, Clone, MemDbg, MemSize)]
 pub struct PrefixSumIntList<V: Word = usize, D: SliceByValue<Value = V> = EfSeq<V>> {
     /// Number of stored values.
+    ///
+    /// Note that this is identical to `prefix_sums.len() - 1`, but we have no
+    /// guarantee that calling `prefix_sums.len()` is O(1).
     n: usize,
     /// Structure storing `n + 1` monotone prefix sums.
     prefix_sums: D,
@@ -115,13 +121,56 @@ impl<V: Word> PrefixSumIntList<V> {
         unsafe { efb.push_unchecked(prefix) };
         for &v in values {
             // Cannot overflow
-            prefix = prefix + v;
+            prefix += v;
             // SAFETY: prefix is non-decreasing and ≤ total
             unsafe { efb.push_unchecked(prefix) };
         }
         let prefix_sums = efb.build_with_seq();
 
         PrefixSumIntList { n, prefix_sums }
+    }
+}
+
+/// Creates a `PrefixSumIntList` from an existing Elias—Fano structure.
+impl<V: Word, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = V>>
+    From<EliasFano<V, H, L>> for PrefixSumIntList<V, EliasFano<V, H, L>>
+{
+    fn from(elias_fano: EliasFano<V, H, L>) -> Self {
+        PrefixSumIntList {
+            n: elias_fano.len() - 1,
+            prefix_sums: elias_fano,
+        }
+    }
+}
+
+impl<V: Word, D: SliceByValue<Value = V>> PrefixSumIntList<V, D> {
+    /// Creates a `PrefixSumIntList` from an existing prefix-sum structure.
+    ///
+    /// The structure must contain at least one element (the initial zero),
+    /// its first element must be zero, and its values must be monotonically
+    /// nondecreasing.
+    ///
+    /// Returns an error string if any of these conditions is violated.
+    pub fn try_from_prefix_sums(prefix_sums: D) -> Result<Self, &'static str> {
+        let len = prefix_sums.len();
+        if len == 0 {
+            return Err("PrefixSumIntList: prefix-sum sequence must be non-empty");
+        }
+        let mut prev = prefix_sums.index_value(0);
+        if prev != V::ZERO {
+            return Err("PrefixSumIntList: first element must be zero");
+        }
+        for i in 1..len {
+            let cur = prefix_sums.index_value(i);
+            if cur < prev {
+                return Err("PrefixSumIntList: values must be monotonically nondecreasing");
+            }
+            prev = cur;
+        }
+        Ok(PrefixSumIntList {
+            n: len - 1,
+            prefix_sums,
+        })
     }
 }
 
