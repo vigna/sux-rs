@@ -4,42 +4,45 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 use sux::prelude::*;
-use sux::traits::Word;
 use value_traits::slices::SliceByValue;
 
 const SMALL: usize = 1 << 20;
 const LARGE: usize = 1 << 30;
 
-/// Builds a `CompIntList` of `n` elements drawn from a geometric
+/// Builds a `PrefixSumIntList` of `n` elements drawn from a geometric
 /// distribution: each value is `trailing_zeros(random_u64())`,
 /// giving values in [0 . . 63] with *P*(*k*) = 2⁻*ᴷ*.
-fn build_geometric(n: usize) -> CompIntList<u64> {
-    let mut rng = SmallRng::seed_from_u64(0);
-    let values: Vec<u64> = (0..n)
-        .map(|_| {
-            let r: u64 = rng.random();
-            r.trailing_zeros() as u64
-        })
-        .collect();
-    CompIntList::new(0, &values)
+fn build_geometric(n: usize) -> PrefixSumIntList {
+    let values: Vec<usize> = {
+        let mut rng = SmallRng::seed_from_u64(0);
+        (0..n)
+            .map(|_| {
+                let r: u64 = rng.random();
+                r.trailing_zeros() as usize
+            })
+            .collect()
+    };
+    PrefixSumIntList::new(&values)
 }
 
-/// Builds a `CompIntList` of `n` elements drawn from a Zipf distribution
+/// Builds a `PrefixSumIntList` of `n` elements drawn from a Zipf distribution
 /// on the first billion integers with exponent 1 (≈1/*x*).
-fn build_zipf(n: usize) -> CompIntList<u64> {
-    let mut rng = SmallRng::seed_from_u64(42);
-    let distr = rand_distr::Zipf::new(1E9_f64, 1.0).unwrap();
-    let values: Vec<u64> = (0..n)
-        .map(|_| {
-            let x: f64 = distr.sample(&mut rng);
-            x as u64 - 1
-        })
-        .collect();
-    CompIntList::new(0, &values)
+fn build_zipf(n: usize) -> PrefixSumIntList {
+    let values: Vec<usize> = {
+        let mut rng = SmallRng::seed_from_u64(42);
+        let distr = rand_distr::Zipf::new(1E9_f64, 1.0).unwrap();
+        (0..n)
+            .map(|_| {
+                let x: f64 = distr.sample(&mut rng);
+                x as usize - 1
+            })
+            .collect()
+    };
+    PrefixSumIntList::new(&values)
 }
 
 fn bench_geometric(c: &mut Criterion) {
-    let mut group = c.benchmark_group("comp_int_list_ef_geom");
+    let mut group = c.benchmark_group("prefix_sum_int_list_ef_geom");
     for &(label, n) in &[("2^20", SMALL), ("2^30", LARGE)] {
         let list = build_geometric(n);
         let mask = (n - 1) as u64;
@@ -57,7 +60,7 @@ fn bench_geometric(c: &mut Criterion) {
 }
 
 fn bench_zipf(c: &mut Criterion) {
-    let mut group = c.benchmark_group("comp_int_list_ef_zipf");
+    let mut group = c.benchmark_group("prefix_sum_int_list_ef_zipf");
     for &(label, n) in &[("2^20", SMALL), ("2^30", LARGE)] {
         let list = build_zipf(n);
         let mask = (n - 1) as u64;
@@ -74,9 +77,9 @@ fn bench_zipf(c: &mut Criterion) {
     group.finish();
 }
 
-fn to_vec_delimiters<V: Word>(list: CompIntList<V>) -> CompIntList<V, Vec<u64>> {
+fn to_vec_prefix_sums(list: PrefixSumIntList) -> PrefixSumIntList<usize, Vec<usize>> {
     unsafe {
-        list.map_delimiters(|d| {
+        list.map_prefix_sums(|d| {
             let n = d.len();
             let mut v = Vec::with_capacity(n);
             for i in 0..n {
@@ -88,9 +91,9 @@ fn to_vec_delimiters<V: Word>(list: CompIntList<V>) -> CompIntList<V, Vec<u64>> 
 }
 
 fn bench_geometric_vec(c: &mut Criterion) {
-    let mut group = c.benchmark_group("comp_int_list_vec_geom");
+    let mut group = c.benchmark_group("prefix_sum_int_list_vec_geom");
     for &(label, n) in &[("2^20", SMALL), ("2^30", LARGE)] {
-        let list = to_vec_delimiters(build_geometric(n));
+        let list = to_vec_prefix_sums(build_geometric(n));
         let mask = (n - 1) as u64;
         let mut rng = SmallRng::seed_from_u64(1);
 
@@ -106,9 +109,9 @@ fn bench_geometric_vec(c: &mut Criterion) {
 }
 
 fn bench_zipf_vec(c: &mut Criterion) {
-    let mut group = c.benchmark_group("comp_int_list_vec_zipf");
+    let mut group = c.benchmark_group("prefix_sum_int_list_vec_zipf");
     for &(label, n) in &[("2^20", SMALL), ("2^30", LARGE)] {
-        let list = to_vec_delimiters(build_zipf(n));
+        let list = to_vec_prefix_sums(build_zipf(n));
         let mask = (n - 1) as u64;
         let mut rng = SmallRng::seed_from_u64(1);
 
@@ -123,18 +126,20 @@ fn bench_zipf_vec(c: &mut Criterion) {
     group.finish();
 }
 
-type EfSeq9 = EliasFano<u64, Select9<Rank9<BitVec<Box<[usize]>>>>>;
+type EfSeq9 = EliasFano<usize, Select9<Rank9<BitVec<Box<[usize]>>>>>;
 
-fn to_select9_delimiters(list: CompIntList<u64>) -> CompIntList<u64, EfSeq9> {
+fn to_select9_prefix_sums(list: PrefixSumIntList) -> PrefixSumIntList<usize, EfSeq9> {
     unsafe {
-        list.map_delimiters(|ef| ef.map_high_bits(|h| Select9::new(Rank9::new(h.into_inner()))))
+        list.map_prefix_sums(|ef| {
+            ef.map_high_bits(|h| Select9::new(Rank9::new(h.into_inner())))
+        })
     }
 }
 
 fn bench_geometric_ef9(c: &mut Criterion) {
-    let mut group = c.benchmark_group("comp_int_list_ef9_geom");
+    let mut group = c.benchmark_group("prefix_sum_int_list_ef9_geom");
     for &(label, n) in &[("2^20", SMALL), ("2^30", LARGE)] {
-        let list = to_select9_delimiters(build_geometric(n));
+        let list = to_select9_prefix_sums(build_geometric(n));
         let mask = (n - 1) as u64;
         let mut rng = SmallRng::seed_from_u64(1);
 
@@ -150,9 +155,9 @@ fn bench_geometric_ef9(c: &mut Criterion) {
 }
 
 fn bench_zipf_ef9(c: &mut Criterion) {
-    let mut group = c.benchmark_group("comp_int_list_ef9_zipf");
+    let mut group = c.benchmark_group("prefix_sum_int_list_ef9_zipf");
     for &(label, n) in &[("2^20", SMALL), ("2^30", LARGE)] {
-        let list = to_select9_delimiters(build_zipf(n));
+        let list = to_select9_prefix_sums(build_zipf(n));
         let mask = (n - 1) as u64;
         let mut rng = SmallRng::seed_from_u64(1);
 
