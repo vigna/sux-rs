@@ -56,7 +56,7 @@ use crate::utils::SelectInWord;
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomicUnsigned};
 use core::sync::atomic::Ordering;
 use mem_dbg::*;
-use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
+use num_primitive::PrimitiveNumberAs;
 use std::borrow::Borrow;
 use std::iter::FusedIterator;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
@@ -1486,7 +1486,7 @@ where
         self.index -= 1;
         let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
         let low = unsafe { self.low_bits.next_unchecked() };
-        V::from(high_bits as u64) << self.ef.l | low
+        V::as_from(high_bits) << self.ef.l | low
     }
 }
 
@@ -1530,7 +1530,7 @@ where
         let bit_idx = unsafe { *words.get_unchecked(word_idx) }.trailing_zeros() as usize;
         let high_bits = (word_idx * usize::BITS as usize) + bit_idx;
         let low = unsafe { self.ef.low_bits.get_value_unchecked(0) };
-        Some(V::from(high_bits as u64) << self.ef.l | low)
+        Some(V::as_from(high_bits) << self.ef.l | low)
     }
 
     #[inline(always)]
@@ -1635,7 +1635,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
         let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
         self.index += 1;
         self.index_in_word += 1;
-        Some((V::from(high_bits as u64) << self.ef.l) | low)
+        Some((V::as_from(high_bits) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1665,7 +1665,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
         let bit_idx = usize::BITS as usize - 1 - word.leading_zeros() as usize;
         let high_bits = (word_idx * usize::BITS as usize) + bit_idx - (self.ef.n - 1);
         let low = unsafe { self.ef.low_bits.get_value_unchecked(self.ef.n - 1) };
-        Some((V::from(high_bits as u64) << self.ef.l) | low)
+        Some((V::as_from(high_bits) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1685,7 +1685,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
             let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
             self.index += 1;
             self.index_in_word += 1;
-            accum = f(accum, (V::from(high_bits as u64) << self.ef.l) | low);
+            accum = f(accum, (V::as_from(high_bits) << self.ef.l) | low);
         }
         accum
     }
@@ -1731,7 +1731,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
         let bit_idx = self.window.select_in_word(self.index_in_word);
         let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
         let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
-        Some((V::from(high_bits as u64) << self.ef.l) | low)
+        Some((V::as_from(high_bits) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1759,7 +1759,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
         let bit_idx = unsafe { *words.get_unchecked(word_idx) }.trailing_zeros() as usize;
         let high_bits = (word_idx * usize::BITS as usize) + bit_idx;
         let low = unsafe { self.ef.low_bits.get_value_unchecked(0) };
-        Some((V::from(high_bits as u64) << self.ef.l) | low)
+        Some((V::as_from(high_bits) << self.ef.l) | low)
     }
 
     #[inline(always)]
@@ -1779,7 +1779,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
             let bit_idx = self.window.select_in_word(self.index_in_word);
             let high_bits = (self.word_idx * usize::BITS as usize) + bit_idx - self.index;
             let low = unsafe { self.ef.low_bits.get_value_unchecked(self.index) };
-            accum = f(accum, (V::from(high_bits as u64) << self.ef.l) | low);
+            accum = f(accum, (V::as_from(high_bits) << self.ef.l) | low);
         }
         accum
     }
@@ -1874,7 +1874,7 @@ impl<V: Word + PrimitiveNumberAs<usize>> EliasFanoBuilder<V> {
     ///
     /// When any of the underlying structures would exceed `usize` in length.
     pub fn new(n: usize, u: V) -> Self {
-        let n_as_v = V::from(n as u64);
+        let n_as_v = V::as_from(n);
         let l = if n > 0 && u >= n_as_v {
             (u / n_as_v).ilog2() as usize
         } else {
@@ -2082,8 +2082,11 @@ where
     /// - All values must be smaller than or equal to `u`.
     /// - All indices must be smaller than `n`.
     /// - You must call this function exactly `n` times.
-    pub unsafe fn set(&self, index: usize, value: u64) {
-        let low = value & ((V::ONE << self.l) - 1);
+    pub unsafe fn set(&self, index: usize, value: V)
+    where
+        V: PrimitiveNumberAs<usize>,
+    {
+        let low = value & ((V::ONE << self.l) - V::ONE);
         // Note that the concurrency guarantees of BitFieldVec
         // are sufficient for us.
         unsafe {
@@ -2091,7 +2094,7 @@ where
                 .set_atomic_unchecked(index, low, Ordering::Relaxed)
         };
 
-        let high = ((value >> self.l) as usize) + index;
+        let high = (value >> self.l).as_to::<usize>() + index;
         self.high_bits.set(high, true, Ordering::Relaxed);
     }
 

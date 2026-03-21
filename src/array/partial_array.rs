@@ -156,16 +156,16 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 /// ```
 ///
 /// Note that you must specify the number of values in advance.
-pub fn new_sparse<T>(len: usize, num_values: usize) -> PartialArrayBuilder<T, EliasFanoBuilder> {
+pub fn new_sparse<T>(len: usize, num_values: usize) -> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
     PartialArrayBuilder {
-        builder: EliasFanoBuilder::new(num_values, len as u64),
+        builder: EliasFanoBuilder::<u64>::new(num_values, len as u64),
         values: vec![],
         len,
         min_next_pos: 0,
     }
 }
 
-impl<T> PartialArrayBuilder<T, EliasFanoBuilder> {
+impl<T> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
     /// Sets a value at the given position.
     ///
     /// The provided position must be greater than the last position
@@ -218,7 +218,7 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 ///
 /// Position must be in strictly increasing order. The first returned
 /// position must be greater than the last position set.
-impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder> {
+impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
     fn extend<I: IntoIterator<Item = (usize, T)>>(&mut self, iter: I) {
         for (pos, val) in iter {
             self.set(pos, val);

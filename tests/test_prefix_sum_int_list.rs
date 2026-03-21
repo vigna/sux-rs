@@ -3,7 +3,7 @@ use value_traits::slices::SliceByValue;
 
 /// Converts a `PrefixSumIntList` with default (EfSeq) prefix sums to one
 /// backed by `Vec<u64>`, for testing with a different backend.
-fn to_vec_backend(list: PrefixSumIntList) -> PrefixSumIntList<u64, Vec<u64>> {
+fn to_vec_backend(list: PrefixSumIntList) -> PrefixSumIntList<usize, Vec<usize>> {
     unsafe {
         list.map_prefix_sums(|d| {
             let n = d.len();
@@ -18,15 +18,15 @@ fn to_vec_backend(list: PrefixSumIntList) -> PrefixSumIntList<u64, Vec<u64>> {
 
 /// Builds a `PrefixSumIntList`, then verifies every element and prefix sum—
 /// first with EfSeq backend, then with Vec<u64> backend.
-fn check(values: Vec<u64>) {
-    let list = PrefixSumIntList::<u64>::new(&values);
+fn check(values: Vec<usize>) {
+    let list = PrefixSumIntList::new(&values);
     assert_eq!(list.len(), values.len());
     for (i, &v) in values.iter().enumerate() {
         assert_eq!(list.index_value(i), v, "EfSeq: value mismatch at index {i}");
     }
 
     // Check prefix sums
-    let mut prefix = 0u64;
+    let mut prefix = 0;
     assert_eq!(list.prefix_sum(0), 0);
     for (i, &v) in values.iter().enumerate() {
         prefix += v;
@@ -39,7 +39,7 @@ fn check(values: Vec<u64>) {
     }
 
     // Check with Vec<u64> backend
-    let vec_list = to_vec_backend(PrefixSumIntList::<u64>::new(&values));
+    let vec_list = to_vec_backend(PrefixSumIntList::<usize>::new(&values));
     assert_eq!(vec_list.len(), values.len());
     for (i, &v) in values.iter().enumerate() {
         assert_eq!(
@@ -56,7 +56,7 @@ fn check(values: Vec<u64>) {
 fn test_basic() {
     check(vec![3, 1, 4, 1, 5, 9, 2, 6]);
     check(vec![1, 2, 3, 4, 5, 6, 7]);
-    check(vec![42, 1000, 123456, u64::MAX / 4]);
+    check(vec![42, 1000, 123456, usize::MAX / 4]);
 }
 
 #[test]
@@ -67,8 +67,8 @@ fn test_zeros() {
 
 #[test]
 fn test_large_values() {
-    check(vec![1u64 << 40, 1 << 50, 1 << 60]);
-    check(vec![u64::MAX / 4, u64::MAX / 4]);
+    check(vec![1 << 40, 1 << 50, 1 << 60]);
+    check(vec![usize::MAX / 4, usize::MAX / 4]);
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn test_constant() {
 fn test_single() {
     check(vec![0]);
     check(vec![1]);
-    check(vec![u64::MAX / 2]);
+    check(vec![usize::MAX / 2]);
 }
 
 #[test]
@@ -94,13 +94,13 @@ fn test_range() {
 
 #[test]
 fn test_empty() {
-    let empty: Vec<u64> = vec![];
-    let list = PrefixSumIntList::<u64>::new(&empty);
+    let empty: Vec<usize> = vec![];
+    let list = PrefixSumIntList::new(&empty);
     assert_eq!(list.len(), 0);
     assert!(list.is_empty());
     assert_eq!(list.prefix_sum(0), 0);
 
-    let vec_list = to_vec_backend(PrefixSumIntList::<u64>::new(&empty));
+    let vec_list = to_vec_backend(PrefixSumIntList::new(&empty));
     assert_eq!(vec_list.len(), 0);
     assert!(vec_list.is_empty());
 }
@@ -110,7 +110,7 @@ fn test_empty() {
 #[test]
 #[should_panic(expected = "index out of bounds")]
 fn test_prefix_sum_out_of_bounds() {
-    let values = vec![1u64, 2, 3];
-    let list = PrefixSumIntList::<u64>::new(&values);
+    let values = vec![1usize, 2, 3];
+    let list = PrefixSumIntList::new(&values);
     list.prefix_sum(4); // n = 3, max valid is 3
 }

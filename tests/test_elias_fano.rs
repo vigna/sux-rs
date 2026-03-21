@@ -239,7 +239,7 @@ fn test_too_large() {
 #[test]
 #[should_panic]
 fn test_from_non_monotone() {
-    let _ef: EliasFano = vec![1u64, 0].into();
+    let _ef: EliasFano = vec![1, 0].into();
 }
 
 #[test]

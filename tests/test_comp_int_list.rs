@@ -3,7 +3,7 @@ use sux::traits::Word;
 use value_traits::slices::SliceByValue;
 
 /// Converts a `CompIntList` with default (EfSeq) delimiters to one backed by
-/// `Vec<u64>`, for testing with a different delimiter type.
+/// `Vec<usize>`, for testing with a different delimiter type.
 fn to_vec_delimiters<V: Word>(list: CompIntList<V>) -> CompIntList<V, Vec<u64>> {
     unsafe {
         list.map_delimiters(|d| {
@@ -19,7 +19,7 @@ fn to_vec_delimiters<V: Word>(list: CompIntList<V>) -> CompIntList<V, Vec<u64>> 
 
 /// Builds a `CompIntList` with the given `min` and `values`, then verifies
 /// every element is read back correctly—first with EfSeq delimiters, then
-/// with Vec<u64> delimiters.
+/// with Vec<usize> delimiters.
 fn check<V: Word>(min: V, values: Vec<V>) {
     let list = CompIntList::new(min, &values);
     assert_eq!(list.len(), values.len());
@@ -68,7 +68,7 @@ fn test_u128() {
     check(1u128, (0..127).map(|k| 1u128 << k).collect());
     check(1u128, vec![u128::MAX]);
     check(1u128, vec![1; 100]);
-    // Values beyond u64 range
+    // Values beyond usize range
     let big = (1u128 << 100) + 42;
     check(
         1u128,
@@ -87,22 +87,22 @@ fn test_u128() {
 
 #[test]
 fn test_min_offset() {
-    check(0u64, vec![0, 1, 2, 3, 100, u64::MAX - 1]);
-    check(100u64, vec![100, 101, 200, 1000]);
+    check(0usize, vec![0, 1, 2, 3, 100, usize::MAX - 1]);
+    check(100usize, vec![100, 101, 200, 1000]);
     // All values equal to min (zero-width storage)
-    check(42u64, vec![42; 5]);
+    check(42usize, vec![42; 5]);
 }
 
 // ────────────────────── empty / single ──────────────────────
 
 #[test]
 fn test_empty() {
-    let empty: Vec<u64> = vec![];
-    let list = CompIntList::<u64>::new(0, &empty);
+    let empty: Vec<usize> = vec![];
+    let list = CompIntList::new(0, &empty);
     assert_eq!(list.len(), 0);
     assert!(list.is_empty());
 
-    let vec_list = to_vec_delimiters(CompIntList::<u64>::new(0, &empty));
+    let vec_list = to_vec_delimiters(CompIntList::new(0, &empty));
     assert_eq!(vec_list.len(), 0);
     assert!(vec_list.is_empty());
 }
@@ -112,6 +112,6 @@ fn test_empty() {
 #[test]
 #[should_panic(expected = "lower bound")]
 fn test_value_below_min_panics() {
-    let values = vec![0u64, 1, 2];
+    let values = vec![0usize, 1, 2];
     CompIntList::new(1, &values);
 }
