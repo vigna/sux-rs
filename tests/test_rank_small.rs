@@ -89,6 +89,51 @@ fn test_rank_small_1_u32() {
 }
 
 #[test]
+fn test_rank_small_last_u64() {
+    let bits =
+        unsafe { BitVec::from_raw_parts(vec![!1u64; 1 << 10], (1 << 10) * u64::BITS as usize) };
+
+    let rank_small = rank_small![u64: 0; bits.clone()];
+    assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
+
+    let rank_small = rank_small![u64: 1; bits.clone()];
+    assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
+
+    let rank_small = rank_small![u64: 2; bits.clone()];
+    assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
+
+    let rank_small = rank_small![u64: 3; bits.clone()];
+    assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
+
+    let rank_small = rank_small![u64: 4; bits.clone()];
+    assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
+}
+
+#[test]
+fn test_rank_small_last_u32() {
+    let bits32 =
+        unsafe { BitVec::from_raw_parts(vec![!1u32; 1 << 10], (1 << 10) * u32::BITS as usize) };
+
+    let rank_small = rank_small![u32: 0; bits32.clone()];
+    assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
+
+    let rank_small = rank_small![u32: 1; bits32.clone()];
+    assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
+
+    let rank_small = rank_small![u32: 2; bits32.clone()];
+    assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
+
+    let rank_small = rank_small![u32: 3; bits32.clone()];
+    assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
+
+    let rank_small = rank_small![u32: 4; bits32.clone()];
+    assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
+
+    let rank_small = rank_small![u32: 5; bits32.clone()];
+    assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
+}
+
+#[test]
 fn test_rank_small_map() {
     let bits = bit_vec![u64: 0, 1, 0, 1, 1, 0, 1, 0, 0, 1];
     let rank_small = rank_small![u64: 2; bits];
@@ -110,7 +155,7 @@ fn test_rank_small_map() {
 #[test]
 fn test_rank_small_empty() {
     let bits = BitVec::<Vec<u64>>::new(0);
-    let rank_small = RankSmall::<2, 9, _>::new(bits);
+    let rank_small = RankSmall::<64, 2, 9, _>::new(bits);
 
     assert_eq!(rank_small.len(), 0);
     let inner = rank_small.into_inner();
@@ -128,7 +173,7 @@ fn test_rank_small_large() {
             bits.set(i, true);
         };
     }
-    let rank_small = RankSmall::<2, 9, _>::new(bits.clone());
+    let rank_small = RankSmall::<64, 2, 9, _>::new(bits.clone());
     for i in (0..bits.len()).step_by(5) {
         assert_eq!(rank_small.rank(i), i.div_ceil(5));
     }

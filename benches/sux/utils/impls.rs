@@ -91,14 +91,14 @@ impl Build<BitVec<Vec<u64>>> for Rank9<BitVec<Vec<u64>>> {
 macro_rules! impl_build_rank_small {
     ($($a:literal, $b:literal);+ $(;)?) => {
         $(
-            impl Build<BitVec> for RankSmall<$a, $b> {
+            impl Build<BitVec> for RankSmall<64, $a, $b> {
                 fn new(bits: BitVec) -> Self {
-                    RankSmall::<$a, $b>::new(bits)
+                    RankSmall::<64, $a, $b>::new(bits)
                 }
             }
-            impl Build<BitVec> for SelectSmall<$a, $b, RankSmall<$a, $b>> {
+            impl Build<BitVec> for SelectSmall<$a, $b, RankSmall<64, $a, $b>> {
                 fn new(bits: BitVec) -> Self {
-                    SelectSmall::<$a, $b, _>::new(RankSmall::<$a, $b>::new(bits))
+                    SelectSmall::<$a, $b, _>::new(RankSmall::<64, $a, $b>::new(bits))
                 }
             }
         )+
@@ -114,27 +114,27 @@ impl_build_rank_small!(
     3, 13;
 );
 
-// 32-bit word variants (RankSmall<1,7> and RankSmall<1,8>): always available.
-impl Build<BitVec<Vec<u32>>> for RankSmall<1, 7, BitVec<Vec<u32>>> {
+// 32-bit word variants (RankSmall<32,1,7> and RankSmall<32,1,8>): always available.
+impl Build<BitVec<Vec<u32>>> for RankSmall<32, 1, 7, BitVec<Vec<u32>>> {
     fn new(bits: BitVec<Vec<u32>>) -> Self {
         <Self>::new(bits)
     }
 }
 
-impl Build<BitVec<Vec<u32>>> for RankSmall<1, 8, BitVec<Vec<u32>>> {
+impl Build<BitVec<Vec<u32>>> for RankSmall<32, 1, 8, BitVec<Vec<u32>>> {
     fn new(bits: BitVec<Vec<u32>>) -> Self {
         <Self>::new(bits)
     }
 }
 
-impl Build<BitVec<Vec<u32>>> for SelectSmall<1, 7, RankSmall<1, 7, BitVec<Vec<u32>>>> {
+impl Build<BitVec<Vec<u32>>> for SelectSmall<1, 7, RankSmall<32, 1, 7, BitVec<Vec<u32>>>> {
     fn new(bits: BitVec<Vec<u32>>) -> Self {
-        <Self>::new(<RankSmall<1, 7, BitVec<Vec<u32>>>>::new(bits))
+        <Self>::new(<RankSmall<32, 1, 7, BitVec<Vec<u32>>>>::new(bits))
     }
 }
 
-impl Build<BitVec<Vec<u32>>> for SelectSmall<1, 8, RankSmall<1, 8, BitVec<Vec<u32>>>> {
+impl Build<BitVec<Vec<u32>>> for SelectSmall<1, 8, RankSmall<32, 1, 8, BitVec<Vec<u32>>>> {
     fn new(bits: BitVec<Vec<u32>>) -> Self {
-        <Self>::new(<RankSmall<1, 8, BitVec<Vec<u32>>>>::new(bits))
+        <Self>::new(<RankSmall<32, 1, 8, BitVec<Vec<u32>>>>::new(bits))
     }
 }

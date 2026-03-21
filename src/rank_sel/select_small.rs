@@ -59,7 +59,7 @@ use std::ops::Index;
 /// # use sux::rank_sel::{SelectSmall, SelectZeroSmall};
 /// # use sux::traits::{Rank, Select, SelectZero};
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
-/// let rank_small = rank_small![1; bits];
+/// let rank_small = rank_small![u64: 1; bits];
 /// // Note that at present the compiler cannot infer const parameters
 /// let sel = SelectSmall::<1, 9, _>::new(rank_small);
 ///
@@ -170,11 +170,13 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     const SUPERBLOCK_BIT_SIZE: usize = 1 << 32;
     #[cfg(not(target_pointer_width = "64"))]
     const SUPERBLOCK_BIT_SIZE: usize = usize::MAX;
-    const WORDS_PER_BLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_BLOCK;
-    const WORDS_PER_SUBBLOCK: usize = RankSmall::<NUM_U32S, COUNTER_WIDTH>::WORDS_PER_SUBBLOCK;
     const BLOCK_BIT_SIZE: usize = 1 << COUNTER_WIDTH;
-    const SUBBLOCK_BIT_SIZE: usize =
-        Self::BLOCK_BIT_SIZE / (Self::WORDS_PER_BLOCK / Self::WORDS_PER_SUBBLOCK);
+    const NUM_SUBBLOCKS: usize = match NUM_U32S {
+        1 => 4,
+        2 | 3 => 8,
+        _ => panic!("Unsupported number of u32s"),
+    };
+    const SUBBLOCK_BIT_SIZE: usize = Self::BLOCK_BIT_SIZE / Self::NUM_SUBBLOCKS;
 
     /// Returns the underlying rank-small structure, consuming this structure.
     pub fn into_inner(self) -> C {
@@ -196,7 +198,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
 }
 
 macro_rules! impl_rank_small_sel {
-    ($NUM_U32S: tt; $COUNTER_WIDTH: literal; $W: ty) => {
+    ($NUM_U32S: tt; $COUNTER_WIDTH: literal) => {
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
                 + Backend<Word: Word + SelectInWord>
@@ -723,16 +725,15 @@ impl<
     }
 }
 
-// 64-bit word variants
-impl_rank_small_sel!(2; 9; u64);
-impl_rank_small_sel!(1; 9; u64);
-impl_rank_small_sel!(1; 10; u64);
-impl_rank_small_sel!(1; 11; u64);
-impl_rank_small_sel!(3; 13; u64);
-
-// 32-bit word variants
-impl_rank_small_sel!(2; 8; u32);
-impl_rank_small_sel!(1; 8; u32);
+// One invocation per unique (NUM_U32S, COUNTER_WIDTH) pair.
+// The impl is generic over C, so it covers both u32 and u64 backends.
+impl_rank_small_sel!(2; 9);
+impl_rank_small_sel!(1; 9);
+impl_rank_small_sel!(1; 10);
+impl_rank_small_sel!(1; 11);
+impl_rank_small_sel!(3; 13);
+impl_rank_small_sel!(2; 8);
+impl_rank_small_sel!(1; 8);
 
 /// A trait providing the semantics of
 /// [`partition_point`](slice::partition_point), but using a linear search.

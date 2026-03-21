@@ -61,47 +61,59 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// Since in most applications these counters will be very few, their additional
 /// space is negligible, and they will usually be accessed without cache misses.
 ///
+/// An associated family of selection structures is provided by
+/// [`SelectSmall`](crate::rank_sel::SelectSmall) and
+/// [`SelectZeroSmall`](crate::rank_sel::SelectZeroSmall)
+///
 /// The [`RankSmall`] variants are parameterized by the number of 32-bit words
 /// per block and by the size of the relative counters. Only certain
 /// combinations are possible, and to simplify construction we provide a
 /// [`rank_small`](crate::rank_small) macro that selects the correct
 /// combination.
 ///
+/// The first const generic parameter `WORD_BITS` (32 or 64) specifies the
+/// word size; the remaining parameters `NUM_U32S` and `COUNTER_WIDTH` define
+/// the counter layout. The same `(NUM_U32S, COUNTER_WIDTH)` pair can be used
+/// with both word sizes (with the exception of `(2, 8)` and `(2, 9)`, which
+/// are word-size-specific).
+///
 /// Presently we support the following combinations for `u64` words:
 ///
-/// - `rank_small![u64: 0; -]` (builds `RankSmall<2, 9>`): 18.75% additional
-///   space, speed slightly slower than [`Rank9`](super::Rank9).
-/// - `rank_small![u64: 1; -]` (builds `RankSmall<1, 9>`): 12.5% additional
-///   space.
-/// - `rank_small![u64: 2; -]` (builds `RankSmall<1, 10>`): 6.25% additional
-///   space.
-/// - `rank_small![u64: 3; -]` (builds `RankSmall<1, 11>`): 3.125% additional
-///   space.
-/// - `rank_small![u64: 4; -]` (builds `RankSmall<3, 13>`): 1.56% additional
-///   space.
+/// - `rank_small![u64: 0; -]` (builds `RankSmall<64, 2, 9>`): 18.75%
+///   additional space, speed slightly slower than [`Rank9`](super::Rank9).
+/// - `rank_small![u64: 1; -]` (builds `RankSmall<64, 1, 9>`): 12.5%
+///   additional space.
+/// - `rank_small![u64: 2; -]` (builds `RankSmall<64, 1, 10>`): 6.25%
+///   additional space.
+/// - `rank_small![u64: 3; -]` (builds `RankSmall<64, 1, 11>`): 3.125%
+///   additional space.
+/// - `rank_small![u64: 4; -]` (builds `RankSmall<64, 3, 13>`): 1.56%
+///   additional space.
 ///
-/// And the following for `u32` words (same layout as the corresponding `u64`
-/// variant):
+/// And the following for `u32` words:
 ///
-/// - `rank_small![u32: 0; -]` (builds `RankSmall<2, 8>`): 37.5% additional
-///   space.
-/// - `rank_small![u32: 1; -]` (builds `RankSmall<1, 8>`): 25% additional
-///   space.
+/// - `rank_small![u32: 0; -]` (builds `RankSmall<32, 2, 8>`): 37.5%
+///   additional space.
+/// - `rank_small![u32: 1; -]` (builds `RankSmall<32, 1, 8>`): 25%
+///   additional space.
+/// - `rank_small![u32: 2; -]` (builds `RankSmall<32, 1, 9>`): 12.5%
+///   additional space; same counter layout as `RankSmall<64, 1, 9>`.
+/// - `rank_small![u32: 3; -]` (builds `RankSmall<32, 1, 10>`): 6.25%
+///   additional space; same counter layout as `RankSmall<64, 1, 10>`.
+/// - `rank_small![u32: 4; -]` (builds `RankSmall<32, 1, 11>`): 3.125%
+///   additional space; same counter layout as `RankSmall<64, 1, 11>`.
+/// - `rank_small![u32: 5; -]` (builds `RankSmall<32, 3, 13>`): 1.56%
+///   additional space; same counter layout as `RankSmall<64, 3, 13>`.
 ///
-/// The word type can be omitted, in which case it defaults to `usize` (the
-/// platform word size); for example, `rank_small![0; bits]` builds
-/// `RankSmall<2, 9>` on 64-bit and `RankSmall<2, 8>` on 32-bit.
+/// The word type can be omitted, in which case it defaults to `usize`;
+/// the numbering mirrors the `u64` variants (see the
+/// [`rank_small`](crate::rank_small) macro documentation).
 ///
-/// `RankSmall<2, 9>` is a space-savvy version of [`Rank9`](super::Rank9),
-/// while the other ones provide increasingly less space usage at the expense of
-/// slower operations.
+/// `RankSmall<64, 2, 9>` and `RankSmall<32, 2, 8>` (selector 0) work like
+/// [`Rank9`](super::Rank9), while the other variants provide increasingly less
+/// space usage at the expense of slower operations.
 ///
-/// For each combination there are corresponding selection structures
-/// [`SelectSmall`](crate::rank_sel::SelectSmall) and
-/// [`SelectZeroSmall`](crate::rank_sel::SelectZeroSmall) that can be used to
-/// perform selection operations.
-///
-/// `RankSmall<1, 11>` is similar to
+/// `RankSmall<64, 1, 11>` and `RankSmall<32, 1, 11>` are similar to
 /// [`poppy`](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15),
 /// but instead of storing counters and rebuilding cumulative counters on the
 /// fly it stores the cumulative counters directly using implicit zero
@@ -151,6 +163,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
 pub struct RankSmall<
+    const WORD_BITS: usize,
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
     B = BitVec,
@@ -163,8 +176,14 @@ pub struct RankSmall<
     pub(super) num_ones: usize,
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: Backend + AsRef<[B::Word]>, C1, C2>
-    AsRef<[B::Word]> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<
+    const WORD_BITS: usize,
+    const NUM_U32S: usize,
+    const COUNTER_WIDTH: usize,
+    B: Backend + AsRef<[B::Word]>,
+    C1,
+    C2,
+> AsRef<[B::Word]> for RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn as_ref(&self) -> &[B::Word] {
@@ -172,8 +191,8 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: Backend + AsRef<[B::W
     }
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B> Deref
-    for RankSmall<NUM_U32S, COUNTER_WIDTH, B>
+impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, B> Deref
+    for RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B>
 {
     type Target = B;
 
@@ -187,79 +206,139 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B> Deref
 ///
 /// The syntax is `rank_small![W: n; bits]`, where `W` is the word type
 /// (`u64`, `u32`, or `usize`) and `n` is the variant index. If `W:` is
-/// omitted, it defaults to `usize`, which is the platform word size.
+/// omitted, it defaults to `usize`.
 ///
-/// Variants 0 and 1 are available for both 64-bit and 32-bit words, with
-/// the same layout (see the table in the [`RankSmall`] documentation).
-/// Variants 2–4 are available only for 64-bit words.
+/// `u64` variants (0–4):
 ///
-/// `u64` variants:
+/// - `rank_small![u64: 0; -]` → `RankSmall<64, 2, 9>` (18.75%)
+/// - `rank_small![u64: 1; -]` → `RankSmall<64, 1, 9>` (12.5%)
+/// - `rank_small![u64: 2; -]` → `RankSmall<64, 1, 10>` (6.25%)
+/// - `rank_small![u64: 3; -]` → `RankSmall<64, 1, 11>` (3.125%)
+/// - `rank_small![u64: 4; -]` → `RankSmall<64, 3, 13>` (1.56%)
 ///
-/// - `rank_small![u64: 0; -]` (builds `RankSmall<2, 9>`): 18.75% additional
-///   space, speed slightly slower than [`Rank9`](super::Rank9).
-/// - `rank_small![u64: 1; -]` (builds `RankSmall<1, 9>`): 12.5% additional
-///   space.
-/// - `rank_small![u64: 2; -]` (builds `RankSmall<1, 10>`): 6.25% additional
-///   space.
-/// - `rank_small![u64: 3; -]` (builds `RankSmall<1, 11>`): 3.125% additional
-///   space.
-/// - `rank_small![u64: 4; -]` (builds `RankSmall<3, 13>`): 1.56% additional
-///   space.
+/// `u32` variants (0–5):
 ///
-/// `u32` variants:
+/// - `rank_small![u32: 0; -]` → `RankSmall<32, 2, 8>` (37.5%)
+/// - `rank_small![u32: 1; -]` → `RankSmall<32, 1, 8>` (25%)
+/// - `rank_small![u32: 2; -]` → `RankSmall<32, 1, 9>` (12.5%)
+/// - `rank_small![u32: 3; -]` → `RankSmall<32, 1, 10>` (6.25%)
+/// - `rank_small![u32: 4; -]` → `RankSmall<32, 1, 11>` (3.125%)
+/// - `rank_small![u32: 5; -]` → `RankSmall<32, 3, 13>` (1.56%)
 ///
-/// - `rank_small![u32: 0; -]` (builds `RankSmall<2, 8>`): 37.5% additional
-///   space (same layout as `RankSmall<2, 9>`).
-/// - `rank_small![u32: 1; -]` (builds `RankSmall<1, 8>`): 25% additional
-///   space (same layout as `RankSmall<1, 9>`).
+/// Default / `usize` variants — the index represents the rank in the
+/// space-usage ordering for the platform's word size (0 = fastest, single
+/// popcount). `WORD_BITS` is `usize::BITS`.
+///
+/// | Index | 64-bit | 32-bit |
+/// |-------|--------|--------|
+/// | 0 | `<64, 2, 9>` (18.75%) | `<32, 2, 8>` (37.5%) |
+/// | 1 | `<64, 1, 9>` (12.5%) | `<32, 1, 8>` (25%) |
+/// | 2 | `<64, 1, 10>` (6.25%) | `<32, 1, 9>` (12.5%) |
+/// | 3 | `<64, 1, 11>` (3.125%) | `<32, 1, 10>` (6.25%) |
+/// | 4 | `<64, 3, 13>` (1.56%) | `<32, 1, 11>` (3.125%) |
+/// | 5 | — | `<32, 3, 13>` (1.56%) |
 ///
 /// # Examples
 ///
 /// ```rust
 /// # use sux::{prelude::Rank,bit_vec,rank_small};
+/// // Explicit word size
 /// let bits = bit_vec![u32: 1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![u32: 0; bits];
-///
 /// assert_eq!(rank_small.rank(0), 0);
-/// assert_eq!(rank_small.rank(1), 1);
+///
+/// // Platform word size (works on both 32-bit and 64-bit)
+/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let rank_small = rank_small![0; bits];
+/// assert_eq!(rank_small.rank(0), 0);
 /// ```
 #[macro_export]
 macro_rules! rank_small {
     // Explicit u64 variants
     (u64 : 0 ; $bits:expr) => {
-        $crate::prelude::RankSmall::<2, 9, _, _, _>::new($bits)
+        $crate::prelude::RankSmall::<64, 2, 9, _, _, _>::new($bits)
     };
     (u64 : 1 ; $bits:expr) => {
-        $crate::prelude::RankSmall::<1, 9, _, _, _>::new($bits)
+        $crate::prelude::RankSmall::<64, 1, 9, _, _, _>::new($bits)
     };
     (u64 : 2 ; $bits:expr) => {
-        $crate::prelude::RankSmall::<1, 10, _, _, _>::new($bits)
+        $crate::prelude::RankSmall::<64, 1, 10, _, _, _>::new($bits)
     };
     (u64 : 3 ; $bits:expr) => {
-        $crate::prelude::RankSmall::<1, 11, _, _, _>::new($bits)
+        $crate::prelude::RankSmall::<64, 1, 11, _, _, _>::new($bits)
     };
     (u64 : 4 ; $bits:expr) => {
-        $crate::prelude::RankSmall::<3, 13, _, _, _>::new($bits)
+        $crate::prelude::RankSmall::<64, 3, 13, _, _, _>::new($bits)
     };
-    // Explicit u32 variants
+    // Explicit u32 variants (ordered by decreasing overhead)
     (u32 : 0 ; $bits:expr) => {
-        $crate::prelude::RankSmall::<2, 8, _, _, _>::new($bits)
+        $crate::prelude::RankSmall::<32, 2, 8, _, _, _>::new($bits)
     };
     (u32 : 1 ; $bits:expr) => {
-        $crate::prelude::RankSmall::<1, 8, _, _, _>::new($bits)
+        $crate::prelude::RankSmall::<32, 1, 8, _, _, _>::new($bits)
     };
-    // Explicit usize: forward to platform word type
-    (usize : $n:tt ; $bits:expr) => {
+    (u32 : 2 ; $bits:expr) => {
+        $crate::prelude::RankSmall::<32, 1, 9, _, _, _>::new($bits)
+    };
+    (u32 : 3 ; $bits:expr) => {
+        $crate::prelude::RankSmall::<32, 1, 10, _, _, _>::new($bits)
+    };
+    (u32 : 4 ; $bits:expr) => {
+        $crate::prelude::RankSmall::<32, 1, 11, _, _, _>::new($bits)
+    };
+    (u32 : 5 ; $bits:expr) => {
+        $crate::prelude::RankSmall::<32, 3, 13, _, _, _>::new($bits)
+    };
+    // Default / usize: the index represents the rank in the space-usage
+    // ordering for the platform's word size. Index 0 is always the fastest
+    // variant (single popcount). WORD_BITS is { usize::BITS as usize }.
+    (0 ; $bits:expr) => {
         {
             #[cfg(target_pointer_width = "64")]
-            { $crate::rank_small![u64 : $n ; $bits] }
+            { $crate::prelude::RankSmall::<{ usize::BITS as usize }, 2, 9, _, _, _>::new($bits) }
             #[cfg(not(target_pointer_width = "64"))]
-            { $crate::rank_small![u32 : $n ; $bits] }
+            { $crate::prelude::RankSmall::<{ usize::BITS as usize }, 2, 8, _, _, _>::new($bits) }
         }
     };
-    // Default (no type prefix): forward as usize
-    ($n:tt ; $bits:expr) => {
-        $crate::rank_small![usize : $n ; $bits]
+    (1 ; $bits:expr) => {
+        {
+            #[cfg(target_pointer_width = "64")]
+            { $crate::prelude::RankSmall::<{ usize::BITS as usize }, 1, 9, _, _, _>::new($bits) }
+            #[cfg(not(target_pointer_width = "64"))]
+            { $crate::prelude::RankSmall::<{ usize::BITS as usize }, 1, 8, _, _, _>::new($bits) }
+        }
+    };
+    (2 ; $bits:expr) => {
+        {
+            #[cfg(target_pointer_width = "64")]
+            { $crate::prelude::RankSmall::<{ usize::BITS as usize }, 1, 10, _, _, _>::new($bits) }
+            #[cfg(not(target_pointer_width = "64"))]
+            { $crate::prelude::RankSmall::<{ usize::BITS as usize }, 1, 9, _, _, _>::new($bits) }
+        }
+    };
+    (3 ; $bits:expr) => {
+        {
+            #[cfg(target_pointer_width = "64")]
+            { $crate::prelude::RankSmall::<{ usize::BITS as usize }, 1, 11, _, _, _>::new($bits) }
+            #[cfg(not(target_pointer_width = "64"))]
+            { $crate::prelude::RankSmall::<{ usize::BITS as usize }, 1, 10, _, _, _>::new($bits) }
+        }
+    };
+    (4 ; $bits:expr) => {
+        {
+            #[cfg(target_pointer_width = "64")]
+            { $crate::prelude::RankSmall::<{ usize::BITS as usize }, 3, 13, _, _, _>::new($bits) }
+            #[cfg(not(target_pointer_width = "64"))]
+            { $crate::prelude::RankSmall::<{ usize::BITS as usize }, 1, 11, _, _, _>::new($bits) }
+        }
+    };
+    // 32-bit only: one more variant than 64-bit
+    (5 ; $bits:expr) => {
+        $crate::prelude::RankSmall::<{ usize::BITS as usize }, 3, 13, _, _, _>::new($bits)
+    };
+    // Explicit usize prefix: forward to the bare-number arms
+    (usize : $n:tt ; $bits:expr) => {
+        $crate::rank_small![$n ; $bits]
     };
 }
 
@@ -436,14 +515,14 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize> Default
     }
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
-    RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
+    RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
-    /// Log2 of the word bit width for this variant: u32 variants (CW ≤ 8)
-    /// use 5, u64 variants (CW ≥ 9) use 6.
-    pub(super) const WORD_BIT_LOG2: usize = match COUNTER_WIDTH {
-        8 => 5,
-        _ => 6,
+    /// Log2 of the word bit width for this variant.
+    pub(super) const WORD_BIT_LOG2: usize = match WORD_BITS {
+        32 => 5,
+        64 => 6,
+        _ => panic!("Unsupported word size"),
     };
     pub(super) const WORDS_PER_BLOCK: usize = 1 << (COUNTER_WIDTH - Self::WORD_BIT_LOG2);
     pub(super) const WORDS_PER_SUBBLOCK: usize = match NUM_U32S {
@@ -455,9 +534,10 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
 }
 
 macro_rules! impl_rank_small {
-    ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $W: ty) => {
+    ($WORD_BITS: literal; $NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength + RankHinted>
             RankSmall<
+                $WORD_BITS,
                 $NUM_U32S,
                 $COUNTER_WIDTH,
                 B,
@@ -471,15 +551,17 @@ macro_rules! impl_rank_small {
             pub fn new(bits: B) -> Self {
                 const {
                     assert!(
-                        size_of::<B::Word>() == size_of::<$W>(),
+                        size_of::<B::Word>() * 8 == $WORD_BITS,
                         concat!(
                             "RankSmall<",
+                            stringify!($WORD_BITS),
+                            ", ",
                             stringify!($NUM_U32S),
                             ", ",
                             stringify!($COUNTER_WIDTH),
                             "> requires ",
-                            stringify!($W),
-                            "-sized words"
+                            stringify!($WORD_BITS),
+                            "-bit words"
                         )
                     )
                 }
@@ -496,7 +578,7 @@ macro_rules! impl_rank_small {
                 let mut upper_count: usize = 0;
 
                 // Superblock boundary: number of words per 2^32 bits
-                let words_per_superblock = 1usize << (32 - <$W>::BITS.ilog2());
+                let words_per_superblock = 1usize << (32 - Self::WORD_BIT_LOG2);
 
                 for i in (0..num_words).step_by(Self::WORDS_PER_BLOCK) {
                     if i % words_per_superblock == 0 {
@@ -539,7 +621,7 @@ macro_rules! impl_rank_small {
             B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength + RankHinted,
             C1: AsRef<[u64]>,
             C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
-        > RankUnchecked for RankSmall<$NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
+        > RankUnchecked for RankSmall<$WORD_BITS, $NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
         {
             #[inline(always)]
             unsafe fn rank_unchecked(&self, pos: usize) -> usize {
@@ -550,7 +632,7 @@ macro_rules! impl_rank_small {
                     let block = word_pos / Self::WORDS_PER_BLOCK;
                     let offset = (word_pos % Self::WORDS_PER_BLOCK) / Self::WORDS_PER_SUBBLOCK;
                     let counts = self.counts.as_ref().get_unchecked(block);
-                    let words_per_superblock = 1usize << (32 - B::Word::BITS.ilog2());
+                    let words_per_superblock = 1usize << (32 - Self::WORD_BIT_LOG2);
                     let upper_count = self
                         .upper_counts
                         .as_ref()
@@ -591,32 +673,42 @@ macro_rules! impl_rank_small {
 }
 
 // 64-bit word variants
-impl_rank_small!(2; 9; u64);
-impl_rank_small!(1; 9; u64);
-impl_rank_small!(1; 10; u64);
-impl_rank_small!(1; 11; u64);
-impl_rank_small!(3; 13; u64);
+impl_rank_small!(64; 2; 9);
+impl_rank_small!(64; 1; 9);
+impl_rank_small!(64; 1; 10);
+impl_rank_small!(64; 1; 11);
+impl_rank_small!(64; 3; 13);
 
 // 32-bit word variants
-impl_rank_small!(2; 8; u32);
-impl_rank_small!(1; 8; u32);
+impl_rank_small!(32; 2; 8);
+impl_rank_small!(32; 1; 8);
+impl_rank_small!(32; 1; 9);
+impl_rank_small!(32; 1; 10);
+impl_rank_small!(32; 1; 11);
+impl_rank_small!(32; 3; 13);
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> Rank
-    for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> Rank
+    for RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 where
     Self: BitLength + NumBits + RankUnchecked,
 {
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> RankZero
-    for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> RankZero
+    for RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 where
     Self: Rank,
 {
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2>
-    RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<
+    const WORD_BITS: usize,
+    const NUM_U32S: usize,
+    const COUNTER_WIDTH: usize,
+    B: BitLength,
+    C1,
+    C2,
+> RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     /// Returns the number of bits in the underlying bit vector.
     ///
@@ -628,8 +720,8 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2>
     }
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
-    RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
+    RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     /// Returns the underlying bit vector, consuming this structure.
     pub fn into_inner(self) -> B {
@@ -645,7 +737,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
     pub unsafe fn map<B1: BitLength>(
         self,
         f: impl FnOnce(B) -> B1,
-    ) -> RankSmall<NUM_U32S, COUNTER_WIDTH, B1, C1, C2> {
+    ) -> RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B1, C1, C2> {
         RankSmall {
             bits: f(self.bits),
             upper_counts: self.upper_counts,
@@ -655,8 +747,14 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
     }
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> NumBits
-    for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<
+    const WORD_BITS: usize,
+    const NUM_U32S: usize,
+    const COUNTER_WIDTH: usize,
+    B: BitLength,
+    C1,
+    C2,
+> NumBits for RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn num_ones(&self) -> usize {
@@ -664,8 +762,14 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> Nu
     }
 }
 
-impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> BitCount
-    for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+impl<
+    const WORD_BITS: usize,
+    const NUM_U32S: usize,
+    const COUNTER_WIDTH: usize,
+    B: BitLength,
+    C1,
+    C2,
+> BitCount for RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn count_ones(&self) -> usize {
@@ -674,12 +778,14 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, B: BitLength, C1, C2> Bi
 }
 
 impl<
+    const WORD_BITS: usize,
     const NUM_U32S: usize,
     const COUNTER_WIDTH: usize,
     B,
     C1: AsRef<[u64]>,
     C2: AsRef<[Block32Counters<NUM_U32S, COUNTER_WIDTH>]>,
-> SmallCounters<NUM_U32S, COUNTER_WIDTH> for RankSmall<NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+> SmallCounters<NUM_U32S, COUNTER_WIDTH>
+    for RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     #[inline(always)]
     fn upper_counts(&self) -> &[u64] {
@@ -692,39 +798,3 @@ impl<
     }
 }
 
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    #[test]
-    fn test_last() {
-        let bits =
-            unsafe { BitVec::from_raw_parts(vec![!1u64; 1 << 10], (1 << 10) * u64::BITS as usize) };
-
-        let rank_small = rank_small![0; bits.clone()];
-        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
-
-        let rank_small = rank_small![1; bits.clone()];
-        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
-
-        let rank_small = rank_small![2; bits.clone()];
-        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
-
-        let rank_small = rank_small![3; bits.clone()];
-        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
-
-        let rank_small = rank_small![4; bits.clone()];
-        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
-
-        // u32 word variants
-        let bits32 =
-            unsafe { BitVec::from_raw_parts(vec![!1u32; 1 << 10], (1 << 10) * u32::BITS as usize) };
-
-        let rank_small = rank_small![u32: 0; bits32.clone()];
-        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
-
-        let rank_small = rank_small![u32: 1; bits32.clone()];
-        assert_eq!(rank_small.rank(rank_small.len()), rank_small.num_ones());
-    }
-}

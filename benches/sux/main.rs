@@ -71,23 +71,23 @@ impl RankSel {
             // benchmarked RankSmall configurations all require 64-bit words.
             #[cfg(target_pointer_width = "64")]
             Self::RankSmall0 => {
-                bench_rank::<usize, RankSmall<2, 9>>(c, &name, lengths, densities, uniform)
+                bench_rank::<usize, RankSmall<64, 2, 9>>(c, &name, lengths, densities, uniform)
             }
             #[cfg(target_pointer_width = "64")]
             Self::RankSmall1 => {
-                bench_rank::<usize, RankSmall<1, 9>>(c, &name, lengths, densities, uniform)
+                bench_rank::<usize, RankSmall<64, 1, 9>>(c, &name, lengths, densities, uniform)
             }
             #[cfg(target_pointer_width = "64")]
             Self::RankSmall2 => {
-                bench_rank::<usize, RankSmall<1, 10>>(c, &name, lengths, densities, uniform)
+                bench_rank::<usize, RankSmall<64, 1, 10>>(c, &name, lengths, densities, uniform)
             }
             #[cfg(target_pointer_width = "64")]
             Self::RankSmall3 => {
-                bench_rank::<usize, RankSmall<1, 11>>(c, &name, lengths, densities, uniform)
+                bench_rank::<usize, RankSmall<64, 1, 11>>(c, &name, lengths, densities, uniform)
             }
             #[cfg(target_pointer_width = "64")]
             Self::RankSmall4 => {
-                bench_rank::<usize, RankSmall<3, 13>>(c, &name, lengths, densities, uniform)
+                bench_rank::<usize, RankSmall<64, 3, 13>>(c, &name, lengths, densities, uniform)
             }
             #[cfg(target_pointer_width = "64")]
             Self::SelectSmall0 => {
@@ -110,19 +110,19 @@ impl RankSel {
                 bench_select::<usize, SelectSmall<3, 13, _>>(c, &name, lengths, densities, uniform)
             }
             // RankSmall/SelectSmall 32-bit word variants (always available).
-            Self::RankSmall5 => bench_rank::<u32, RankSmall<1, 7, BitVec<Vec<u32>>>>(
+            Self::RankSmall5 => bench_rank::<u32, RankSmall<32, 1, 7, BitVec<Vec<u32>>>>(
                 c, &name, lengths, densities, uniform,
             ),
-            Self::RankSmall6 => bench_rank::<u32, RankSmall<1, 8, BitVec<Vec<u32>>>>(
+            Self::RankSmall6 => bench_rank::<u32, RankSmall<32, 1, 8, BitVec<Vec<u32>>>>(
                 c, &name, lengths, densities, uniform,
             ),
             Self::SelectSmall5 => bench_select::<
                 u32,
-                SelectSmall<1, 7, RankSmall<1, 7, BitVec<Vec<u32>>>>,
+                SelectSmall<1, 7, RankSmall<32, 1, 7, BitVec<Vec<u32>>>>,
             >(c, &name, lengths, densities, uniform),
             Self::SelectSmall6 => bench_select::<
                 u32,
-                SelectSmall<1, 8, RankSmall<1, 8, BitVec<Vec<u32>>>>,
+                SelectSmall<1, 8, RankSmall<32, 1, 8, BitVec<Vec<u32>>>>,
             >(c, &name, lengths, densities, uniform),
             // SelectAdapt/SelectAdaptConst: platform-adapted (usize backend,
             // inventory is Box<[usize]>).
