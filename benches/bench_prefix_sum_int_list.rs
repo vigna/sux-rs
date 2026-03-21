@@ -130,9 +130,7 @@ type EfSeq9 = EliasFano<usize, Select9<Rank9<BitVec<Box<[usize]>>>>>;
 
 fn to_select9_prefix_sums(list: PrefixSumIntList) -> PrefixSumIntList<usize, EfSeq9> {
     unsafe {
-        list.map_prefix_sums(|ef| {
-            ef.map_high_bits(|h| Select9::new(Rank9::new(h.into_inner())))
-        })
+        list.map_prefix_sums(|ef| ef.map_high_bits(|h| Select9::new(Rank9::new(h.into_inner()))))
     }
 }
 

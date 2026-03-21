@@ -156,7 +156,10 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 /// ```
 ///
 /// Note that you must specify the number of values in advance.
-pub fn new_sparse<T>(len: usize, num_values: usize) -> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
+pub fn new_sparse<T>(
+    len: usize,
+    num_values: usize,
+) -> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
     PartialArrayBuilder {
         builder: EliasFanoBuilder::<u64>::new(num_values, len as u64),
         values: vec![],
