@@ -46,7 +46,7 @@ use std::ops::Index;
 /// # use sux::rank_sel::{SelectSmall, SelectZeroSmall};
 /// # use sux::traits::{Select, SelectZero};
 /// let bits = bit_vec![0, 1, 0, 0, 1, 0, 1, 0];
-/// let rank_small = rank_small![1; bits];
+/// let rank_small = rank_small![u64: 1; bits];
 /// let sel = SelectZeroSmall::<1, 9, _>::new(rank_small);
 ///
 /// assert_eq!(sel.select_zero(0), Some(0));
@@ -154,7 +154,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
 }
 
 macro_rules! impl_select_zero_small {
-    ($NUM_U32S: literal; $COUNTER_WIDTH: literal; $W: ty) => {
+    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
                 + Backend<Word: Word + SelectInWord>
@@ -396,8 +396,7 @@ impl<
             | (1_u64 << 45)
             | (1_u64 << 54);
         const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
-        const SUBBLOCK_BIT_SIZE: u64 =
-            u64::BITS as u64 * RankSmall::<2, 9>::WORDS_PER_SUBBLOCK as u64;
+        const SUBBLOCK_BIT_SIZE: u64 = (1u64 << 9) / 8;
         const POS_STEP_9: u64 = (SUBBLOCK_BIT_SIZE << (6 * 9))
             | ((2 * SUBBLOCK_BIT_SIZE) << (5 * 9))
             | ((3 * SUBBLOCK_BIT_SIZE) << (4 * 9))
@@ -451,8 +450,7 @@ impl<
     ) -> usize {
         const ONES_STEP_9: u64 = (1_u64 << 0) | (1_u64 << 9) | (1_u64 << 18);
         const MSBS_STEP_9: u64 = 0x100_u64 * ONES_STEP_9;
-        const SUBBLOCK_BIT_SIZE: u64 =
-            u64::BITS as u64 * RankSmall::<1, 9>::WORDS_PER_SUBBLOCK as u64;
+        const SUBBLOCK_BIT_SIZE: u64 = (1u64 << 9) / 4;
         // We cannot put this const together with the rest because we need
         // to use it for defining POS_STEP_9.
         const POS_STEP_9: u64 =
@@ -500,8 +498,7 @@ impl<
         const MSBS_STEP_10: u64 = 0x200_u64 * ONES_STEP_10;
         // We cannot put this const together with the rest because we need
         // to use it for defining POS_STEP_10.
-        const SUBBLOCK_BIT_SIZE: u64 =
-            u64::BITS as u64 * RankSmall::<1, 10>::WORDS_PER_SUBBLOCK as u64;
+        const SUBBLOCK_BIT_SIZE: u64 = (1u64 << 10) / 4;
         const POS_STEP_10: u64 =
             (SUBBLOCK_BIT_SIZE << 20) | ((2 * SUBBLOCK_BIT_SIZE) << 10) | (3 * SUBBLOCK_BIT_SIZE);
 
@@ -547,8 +544,7 @@ impl<
         const MSBS_STEP_11: u64 = 0x400_u64 * ONES_STEP_11;
         // We cannot put this const together with the rest because we need
         // to use it for defining POS_STEP_11.
-        const SUBBLOCK_BIT_SIZE: u64 =
-            u64::BITS as u64 * RankSmall::<1, 11>::WORDS_PER_SUBBLOCK as u64;
+        const SUBBLOCK_BIT_SIZE: u64 = (1u64 << 11) / 4;
         const POS_STEP_11: u64 =
             (SUBBLOCK_BIT_SIZE << 22) | ((2 * SUBBLOCK_BIT_SIZE) << 11) | (3 * SUBBLOCK_BIT_SIZE);
 
@@ -600,8 +596,7 @@ impl<
         const MSBS_STEP_13: u128 = 0x1000_u128 * ONES_STEP_13;
         // We cannot put this const together with the rest because we need
         // to use it for defining POS_STEP_13.
-        const SUBBLOCK_BIT_SIZE: u64 =
-            u64::BITS as u64 * RankSmall::<3, 13>::WORDS_PER_SUBBLOCK as u64;
+        const SUBBLOCK_BIT_SIZE: u64 = (1u64 << 13) / 8;
         const POS_STEP_13: u128 = ((SUBBLOCK_BIT_SIZE as u128) << 78)
             | ((2 * (SUBBLOCK_BIT_SIZE as u128)) << 65)
             | ((3 * (SUBBLOCK_BIT_SIZE as u128)) << 52)
@@ -632,11 +627,13 @@ impl<
 }
 
 // 64-bit word variants
-impl_select_zero_small!(2; 9; u64);
-impl_select_zero_small!(1; 9; u64);
-impl_select_zero_small!(1; 10; u64);
-impl_select_zero_small!(1; 11; u64);
-impl_select_zero_small!(3; 13; u64);
+// One invocation per unique (NUM_U32S, COUNTER_WIDTH) pair.
+// The impl is generic over C, so it covers both u32 and u64 backends.
+impl_select_zero_small!(2; 9);
+impl_select_zero_small!(1; 9);
+impl_select_zero_small!(1; 10);
+impl_select_zero_small!(1; 11);
+impl_select_zero_small!(3; 13);
 
 impl<
     C: SmallCounters<2, 8>
@@ -662,8 +659,7 @@ impl<
             | (1_u64 << 40)
             | (1_u64 << 48);
         const MSBS_STEP_8: u64 = 0x80_u64 * ONES_STEP_8;
-        const SUBBLOCK_BIT_SIZE: u64 =
-            u32::BITS as u64 * RankSmall::<2, 8>::WORDS_PER_SUBBLOCK as u64;
+        const SUBBLOCK_BIT_SIZE: u64 = (1u64 << 8) / 8;
         const POS_STEP_8: u64 = (SUBBLOCK_BIT_SIZE << (6 * 8))
             | ((2 * SUBBLOCK_BIT_SIZE) << (5 * 8))
             | ((3 * SUBBLOCK_BIT_SIZE) << (4 * 8))
@@ -717,8 +713,7 @@ impl<
     ) -> usize {
         const ONES_STEP_8: u64 = (1_u64 << 0) | (1_u64 << 8) | (1_u64 << 16);
         const MSBS_STEP_8: u64 = 0x80_u64 * ONES_STEP_8;
-        const SUBBLOCK_BIT_SIZE: u64 =
-            u32::BITS as u64 * RankSmall::<1, 8>::WORDS_PER_SUBBLOCK as u64;
+        const SUBBLOCK_BIT_SIZE: u64 = (1u64 << 8) / 4;
         const POS_STEP_8: u64 =
             (SUBBLOCK_BIT_SIZE << 16) | ((2 * SUBBLOCK_BIT_SIZE) << 8) | (3 * SUBBLOCK_BIT_SIZE);
 
@@ -744,8 +739,8 @@ impl<
 }
 
 // 32-bit word variants
-impl_select_zero_small!(2; 8; u32);
-impl_select_zero_small!(1; 8; u32);
+impl_select_zero_small!(2; 8);
+impl_select_zero_small!(1; 8);
 
 /// A trait providing the semantics of
 /// [`partition_point`](slice::partition_point), but using a linear search.

@@ -52,33 +52,33 @@ impl Struct for Rank9 {
     }
 }
 
-impl Struct for RankSmall<2, 9> {
+impl Struct for RankSmall<64, 2, 9> {
     fn build(bits: BitVec) -> Self {
-        RankSmall::<2, 9>::new(bits)
+        RankSmall::<64, 2, 9>::new(bits)
     }
 }
 
-impl Struct for RankSmall<1, 9> {
+impl Struct for RankSmall<64, 1, 9> {
     fn build(bits: BitVec) -> Self {
-        RankSmall::<1, 9>::new(bits)
+        RankSmall::<64, 1, 9>::new(bits)
     }
 }
 
-impl Struct for RankSmall<1, 10> {
+impl Struct for RankSmall<64, 1, 10> {
     fn build(bits: BitVec) -> Self {
-        RankSmall::<1, 10>::new(bits)
+        RankSmall::<64, 1, 10>::new(bits)
     }
 }
 
-impl Struct for RankSmall<1, 11> {
+impl Struct for RankSmall<64, 1, 11> {
     fn build(bits: BitVec) -> Self {
-        RankSmall::<1, 11>::new(bits)
+        RankSmall::<64, 1, 11>::new(bits)
     }
 }
 
-impl Struct for RankSmall<3, 13> {
+impl Struct for RankSmall<64, 3, 13> {
     fn build(bits: BitVec) -> Self {
-        RankSmall::<3, 13>::new(bits)
+        RankSmall::<64, 3, 13>::new(bits)
     }
 }
 
@@ -160,19 +160,19 @@ fn main() {
             mem_usage::<Rank9>(args.len, args.density, uniform, "Rank9");
         }
         StructType::RankSmall0 => {
-            mem_usage::<RankSmall<2, 9>>(args.len, args.density, uniform, "RankSmall0");
+            mem_usage::<RankSmall<64, 2, 9>>(args.len, args.density, uniform, "RankSmall0");
         }
         StructType::RankSmall1 => {
-            mem_usage::<RankSmall<1, 9>>(args.len, args.density, uniform, "RankSmall1");
+            mem_usage::<RankSmall<64, 1, 9>>(args.len, args.density, uniform, "RankSmall1");
         }
         StructType::RankSmall2 => {
-            mem_usage::<RankSmall<1, 10>>(args.len, args.density, uniform, "RankSmall2");
+            mem_usage::<RankSmall<64, 1, 10>>(args.len, args.density, uniform, "RankSmall2");
         }
         StructType::RankSmall3 => {
-            mem_usage::<RankSmall<1, 11>>(args.len, args.density, uniform, "RankSmall3");
+            mem_usage::<RankSmall<64, 1, 11>>(args.len, args.density, uniform, "RankSmall3");
         }
         StructType::RankSmall4 => {
-            mem_usage::<RankSmall<3, 13>>(args.len, args.density, uniform, "RankSmall4");
+            mem_usage::<RankSmall<64, 3, 13>>(args.len, args.density, uniform, "RankSmall4");
         }
     }
 }
