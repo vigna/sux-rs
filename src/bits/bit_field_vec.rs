@@ -1809,6 +1809,80 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
     }
 }
 
+/// A transparent wrapper around [`BitFieldVec`] that implements [`SliceByValue`]
+/// using unaligned reads.
+///
+/// This wrapper delegates [`SliceByValue::get_value_unchecked`] to
+/// [`BitFieldVec::get_unaligned_unchecked`], which can be faster for random
+/// access patterns.
+///
+/// # Safety
+///
+/// The backing storage must have sufficient padding at the end so that
+/// unaligned reads do not access memory outside the allocation.
+#[derive(Debug, Clone, MemDbg, MemSize)]
+pub struct UnalignedBitFieldVec<B: Backend<Word: Word> = Vec<usize>>(BitFieldVec<B>);
+
+impl<B: Backend<Word: Word>> UnalignedBitFieldVec<B> {
+    /// Returns a reference to the inner [`BitFieldVec`].
+    pub fn inner(&self) -> &BitFieldVec<B> {
+        &self.0
+    }
+
+    /// Consumes the wrapper and returns the inner [`BitFieldVec`].
+    pub fn into_inner(self) -> BitFieldVec<B> {
+        self.0
+    }
+}
+
+impl<W: Word> From<BitFieldVec<Box<[W]>>> for UnalignedBitFieldVec<Box<[W]>> {
+    fn from(bfv: BitFieldVec<Box<[W]>>) -> Self {
+        let (bits, bit_width, len) = bfv.into_raw_parts();
+        let mut v = bits.into_vec();
+        v.push(W::ZERO); // Add padding word for unaligned reads
+        Self(unsafe { BitFieldVec::from_raw_parts(v.into_boxed_slice(), bit_width, len) })
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> SliceByValue for UnalignedBitFieldVec<B> {
+    type Value = B::Word;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        SliceByValue::len(&self.0)
+    }
+
+    #[inline(always)]
+    unsafe fn get_value_unchecked(&self, index: usize) -> B::Word {
+        unsafe { self.0.get_unaligned_unchecked(index) }
+    }
+}
+
+impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedIterator
+    for &'a UnalignedBitFieldVec<B>
+{
+    type Item = B::Word;
+    type IntoUncheckedIter = BitFieldVecUncheckedIter<'a, B>;
+    fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter {
+        BitFieldVecUncheckedIter::new(&self.0, from)
+    }
+}
+
+impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedBackIterator
+    for &'a UnalignedBitFieldVec<B>
+{
+    type Item = B::Word;
+    type IntoUncheckedIterBack = BitFieldVecUncheckedBackIter<'a, B>;
+
+    fn into_unchecked_iter_back(self) -> Self::IntoUncheckedIterBack {
+        BitFieldVecUncheckedBackIter::new(&self.0, SliceByValue::len(&self.0))
+    }
+
+    fn into_unchecked_iter_back_from(self, from: usize) -> Self::IntoUncheckedIterBack {
+        BitFieldVecUncheckedBackIter::new(&self.0, from)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
