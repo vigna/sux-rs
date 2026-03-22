@@ -9,7 +9,7 @@
 
 use std::iter::FusedIterator;
 
-use crate::traits::{Succ, SuccUnchecked};
+use crate::traits::{IndexedSeq, Succ, SuccUnchecked};
 
 /// An iterator returning fair chunks.
 ///
@@ -134,7 +134,7 @@ impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> FairChunks<I> {
     }
 }
 
-impl<I: for<'a> Succ<Input = u64, Output<'a> = u64>> FairChunks<I> {
+impl<I: for<'a> Succ<Input = u64, Output<'a> = u64> + IndexedSeq> FairChunks<I> {
     /// Creates a fair chunk iterator using a structure supporting successor
     /// queries.
     ///
