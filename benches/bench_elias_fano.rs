@@ -96,7 +96,7 @@ macro_rules! bench_ef {
                     let mut ctr = 0usize;
                     b.iter(|| {
                         let $q = queries[ctr & QUERY_MASK];
-                        ctr += 1;
+                        ctr = ctr.wrapping_add(1);
                         let $ef = &ef;
                         black_box($op)
                     })
@@ -108,7 +108,7 @@ macro_rules! bench_ef {
                     let mut ctr = 0usize;
                     b.iter(|| {
                         let $q = queries[ctr & QUERY_MASK];
-                        ctr += 1;
+                        ctr = ctr.wrapping_add(1);
                         let $ef = &ef;
                         black_box($op)
                     })
@@ -129,7 +129,7 @@ macro_rules! bench_ef {
                     let mut ctr = 0usize;
                     b.iter(|| {
                         let $q = queries[ctr & QUERY_MASK];
-                        ctr += 1;
+                        ctr = ctr.wrapping_add(1);
                         let $ef = &ef;
                         black_box($op)
                     })
@@ -141,7 +141,7 @@ macro_rules! bench_ef {
                     let mut ctr = 0usize;
                     b.iter(|| {
                         let $q = queries[ctr & QUERY_MASK];
-                        ctr += 1;
+                        ctr = ctr.wrapping_add(1);
                         let $ef = &ef;
                         black_box($op)
                     })
