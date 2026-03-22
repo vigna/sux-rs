@@ -230,7 +230,7 @@ def draw_pareto_front(benches, plots_dir, op_type, density=0.5):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Plot benchmark results.')
+    parser = argparse.ArgumentParser(description='Plot rank/select benchmark results: see the docs in the file for details.')
 
     group1 = parser.add_argument_group()
 
