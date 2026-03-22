@@ -131,10 +131,6 @@ name = "bench_rank9"
 required-features = ["cli"]
 
 [[example]]
-name = "bench_elias_fano"
-required-features = ["cli"]
-
-[[example]]
 name = "bench_rear_coded_list"
 required-features = ["cli"]
 
@@ -148,6 +144,10 @@ required-features = ["epserde", "clap"]
 
 [[bench]]
 name = "sux"
+harness = false
+
+[[bench]]
+name = "bench_elias_fano"
 harness = false
 
 [[bench]]

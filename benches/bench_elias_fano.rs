@@ -1,0 +1,183 @@
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
+use std::hint::black_box;
+use sux::prelude::*;
+use sux::traits::{IndexedSeq, Pred, PredUnchecked, Succ, SuccUnchecked};
+
+const NUM_QUERIES: usize = 1_000_000;
+
+/// (n, l) pairs: element count (power of 2) and desired number of lower bits.
+/// The upper bound u = 2^l · n is chosen so that l = floor(log₂(u/n)).
+const CONFIGS: &[(usize, usize)] = &[
+    (1 << 20, 2),
+    (1 << 20, 4),
+    (1 << 20, 8),
+    (1 << 30, 2),
+    (1 << 30, 4),
+    (1 << 30, 8),
+];
+
+fn n_label(n: usize) -> &'static str {
+    if n == 1 << 20 { "1M" } else { "1G" }
+}
+
+type EfAligned = EliasFano<
+    u64,
+    SelectZeroAdaptConst<
+        SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>,
+        Box<[usize]>,
+        12,
+        3,
+    >,
+>;
+
+/// Build an Elias–Fano structure with `n` elements and `l` lower bits.
+/// Returns the structure and the first/last values in the monotone sequence.
+fn build_ef(n: usize, l: usize) -> (EfAligned, u64, u64) {
+    let u = (1u64 << l) * n as u64;
+    let mut rng = SmallRng::seed_from_u64(0);
+    let mut values: Vec<u64> = (0..n).map(|_| rng.random_range(0..u)).collect();
+    values.sort_unstable();
+
+    let first = values[0];
+    let last = values[n - 1];
+
+    let mut builder = EliasFanoBuilder::new(n, u);
+    for &v in &values {
+        builder.push(v);
+    }
+    drop(values);
+
+    let ef = unsafe {
+        builder
+            .build()
+            .map_high_bits(|h| SelectZeroAdaptConst::new(SelectAdaptConst::new(h)))
+    };
+    (ef, first, last)
+}
+
+/// Generate `NUM_QUERIES` random indices in [0, n) using bit masking.
+fn gen_indices(n: usize) -> Vec<usize> {
+    let mask = n - 1; // n is a power of 2
+    let mut rng = SmallRng::seed_from_u64(1);
+    (0..NUM_QUERIES)
+        .map(|_| rng.random::<u64>() as usize & mask)
+        .collect()
+}
+
+/// Generate `NUM_QUERIES` random values suitable for succ/pred queries.
+/// All values are in [first, u/2), well within the valid range.
+fn gen_values(n: usize, l: usize, first: u64) -> Vec<u64> {
+    let u = (1u64 << l) * n as u64;
+    let mask = (u >> 1) - 1;
+    let mut rng = SmallRng::seed_from_u64(2);
+    (0..NUM_QUERIES)
+        .map(|_| (rng.random::<u64>() & mask).max(first))
+        .collect()
+}
+
+/// Benchmarks for index-based operations (get, get_unchecked).
+/// Builds aligned, benchmarks it, converts to unaligned, benchmarks that.
+macro_rules! bench_ef {
+    (index, $fn_name:ident, $group_name:expr, |$ef:ident, $q:ident| $op:expr) => {
+        fn $fn_name(c: &mut Criterion) {
+            let mut group = c.benchmark_group($group_name);
+            for &(n, l) in CONFIGS {
+                let (ef, _, _) = build_ef(n, l);
+                let queries = gen_indices(n);
+                let param = format!("{}/l={}", n_label(n), l);
+
+                group.bench_function(BenchmarkId::new("aligned", &param), |b| {
+                    b.iter(|| {
+                        for &$q in &queries {
+                            let $ef = &ef;
+                            black_box($op);
+                        }
+                    })
+                });
+
+                let ef = unsafe { ef.map_low_bits(|l| UnalignedBitFieldVec::try_from(l).unwrap()) };
+
+                group.bench_function(BenchmarkId::new("unaligned", &param), |b| {
+                    b.iter(|| {
+                        for &$q in &queries {
+                            let $ef = &ef;
+                            black_box($op);
+                        }
+                    })
+                });
+            }
+            group.finish();
+        }
+    };
+    (value, $fn_name:ident, $group_name:expr, |$ef:ident, $q:ident| $op:expr) => {
+        fn $fn_name(c: &mut Criterion) {
+            let mut group = c.benchmark_group($group_name);
+            for &(n, l) in CONFIGS {
+                let (ef, first, _) = build_ef(n, l);
+                let queries = gen_values(n, l, first);
+                let param = format!("{}/l={}", n_label(n), l);
+
+                group.bench_function(BenchmarkId::new("aligned", &param), |b| {
+                    b.iter(|| {
+                        for &$q in &queries {
+                            let $ef = &ef;
+                            black_box($op);
+                        }
+                    })
+                });
+
+                let ef = unsafe { ef.map_low_bits(|l| UnalignedBitFieldVec::try_from(l).unwrap()) };
+
+                group.bench_function(BenchmarkId::new("unaligned", &param), |b| {
+                    b.iter(|| {
+                        for &$q in &queries {
+                            let $ef = &ef;
+                            black_box($op);
+                        }
+                    })
+                });
+            }
+            group.finish();
+        }
+    };
+}
+
+bench_ef!(
+    index,
+    bench_get_unchecked,
+    "ef_get_unchecked",
+    |ef, i| unsafe { IndexedSeq::get_unchecked(ef, i) }
+);
+
+bench_ef!(index, bench_get, "ef_get", |ef, i| IndexedSeq::get(ef, i));
+
+bench_ef!(
+    value,
+    bench_succ_unchecked,
+    "ef_succ_unchecked",
+    |ef, v| unsafe { SuccUnchecked::succ_unchecked::<false>(ef, v) }
+);
+
+bench_ef!(value, bench_succ, "ef_succ", |ef, v| Succ::succ(ef, v));
+
+bench_ef!(
+    value,
+    bench_pred_unchecked,
+    "ef_pred_unchecked",
+    |ef, v| unsafe { PredUnchecked::pred_unchecked::<false>(ef, v) }
+);
+
+bench_ef!(value, bench_pred, "ef_pred", |ef, v| Pred::pred(ef, v));
+
+criterion_group!(
+    benches,
+    bench_get_unchecked,
+    bench_get,
+    bench_succ_unchecked,
+    bench_succ,
+    bench_pred_unchecked,
+    bench_pred,
+);
+criterion_main!(benches);
