@@ -5,17 +5,21 @@ use std::hint::black_box;
 use sux::prelude::*;
 use sux::traits::{IndexedSeq, Pred, PredUnchecked, Succ, SuccUnchecked};
 
-const NUM_QUERIES: usize = 1_000_000;
+/// Number of pregenerated queries (must be a power of 2 for masking).
+const NUM_QUERIES: usize = 1 << 20;
+const QUERY_MASK: usize = NUM_QUERIES - 1;
 
 /// (n, l) pairs: element count (power of 2) and desired number of lower bits.
-/// The upper bound u = 2^l · n is chosen so that l = floor(log₂(u/n)).
+/// The upper bound u = 2^l * n is chosen so that l = floor(log₂(u/n)).
 const CONFIGS: &[(usize, usize)] = &[
     (1 << 20, 2),
     (1 << 20, 4),
     (1 << 20, 8),
+    (1 << 20, 16),
     (1 << 30, 2),
     (1 << 30, 4),
     (1 << 30, 8),
+    (1 << 30, 16),
 ];
 
 fn n_label(n: usize) -> &'static str {
@@ -77,8 +81,8 @@ fn gen_values(n: usize, l: usize, first: u64) -> Vec<u64> {
         .collect()
 }
 
-/// Benchmarks for index-based operations (get, get_unchecked).
-/// Builds aligned, benchmarks it, converts to unaligned, benchmarks that.
+/// Each benchmark iteration performs a single operation, cycling through
+/// the pregenerated query array using a counter and masking.
 macro_rules! bench_ef {
     (index, $fn_name:ident, $group_name:expr, |$ef:ident, $q:ident| $op:expr) => {
         fn $fn_name(c: &mut Criterion) {
@@ -89,22 +93,24 @@ macro_rules! bench_ef {
                 let param = format!("{}/l={}", n_label(n), l);
 
                 group.bench_function(BenchmarkId::new("aligned", &param), |b| {
+                    let mut ctr = 0usize;
                     b.iter(|| {
-                        for &$q in &queries {
-                            let $ef = &ef;
-                            black_box($op);
-                        }
+                        let $q = queries[ctr & QUERY_MASK];
+                        ctr += 1;
+                        let $ef = &ef;
+                        black_box($op)
                     })
                 });
 
                 let ef = unsafe { ef.map_low_bits(|l| UnalignedBitFieldVec::try_from(l).unwrap()) };
 
                 group.bench_function(BenchmarkId::new("unaligned", &param), |b| {
+                    let mut ctr = 0usize;
                     b.iter(|| {
-                        for &$q in &queries {
-                            let $ef = &ef;
-                            black_box($op);
-                        }
+                        let $q = queries[ctr & QUERY_MASK];
+                        ctr += 1;
+                        let $ef = &ef;
+                        black_box($op)
                     })
                 });
             }
@@ -120,22 +126,24 @@ macro_rules! bench_ef {
                 let param = format!("{}/l={}", n_label(n), l);
 
                 group.bench_function(BenchmarkId::new("aligned", &param), |b| {
+                    let mut ctr = 0usize;
                     b.iter(|| {
-                        for &$q in &queries {
-                            let $ef = &ef;
-                            black_box($op);
-                        }
+                        let $q = queries[ctr & QUERY_MASK];
+                        ctr += 1;
+                        let $ef = &ef;
+                        black_box($op)
                     })
                 });
 
                 let ef = unsafe { ef.map_low_bits(|l| UnalignedBitFieldVec::try_from(l).unwrap()) };
 
                 group.bench_function(BenchmarkId::new("unaligned", &param), |b| {
+                    let mut ctr = 0usize;
                     b.iter(|| {
-                        for &$q in &queries {
-                            let $ef = &ef;
-                            black_box($op);
-                        }
+                        let $q = queries[ctr & QUERY_MASK];
+                        ctr += 1;
+                        let $ef = &ef;
+                        black_box($op)
                     })
                 });
             }
