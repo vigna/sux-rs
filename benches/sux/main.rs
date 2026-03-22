@@ -217,10 +217,15 @@ struct Cli {
     /// substrings; for example, 'ranksmall32' matches all 32-bit
     /// RankSmall variants.
     ///
-    /// The integer after SelectAdapt/SelectAdaptConst is the base-2
-    /// logarithm of the maximum number of usize per subinventory.
-    /// CompareAdaptConst compares a SelectAdaptConst with default
-    /// constants to a SelectAdapt with the same parameters.​
+    /// Available structures:
+    ///   Rank9, Select9,
+    ///   RankSmall64-0..4 (64-bit, requires 64-bit platform),
+    ///   SelectSmall64-0..4 (64-bit),
+    ///   RankSmall32-0..5 (32-bit),
+    ///   SelectSmall32-0..5 (32-bit),
+    ///   SelectAdapt0..3 (log2 max words per subinventory),
+    ///   SelectAdaptConst0..3,
+    ///   CompareAdaptConst.​
     #[arg(num_args = 1..)]
     rank_sel_struct: Vec<String>,
     /// Passed by cargo bench; ignored.​
