@@ -175,6 +175,20 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// [`PredUnchecked`], [`Succ`], and [`Pred`] that return an iterator starting
 /// from the successor or predecessor of a given value.
 ///
+/// # Unaligned access
+///
+/// This structure can use [unaligned access](BitFieldVec::get_unaligned) to
+/// retrieve the lower bits. On some architectures this provides a mild
+/// performance improvements. To use unaligned access you have to remap the low bits.
+/// For example,
+///
+/// ```ignore
+/// let ef = unsafe { ef.map_low_bits(|l| UnalignedBitFieldVec::try_from(l).unwrap() };
+/// ```
+///
+/// See the [`UnalignedBitFieldVec`] documentation for more details and caveats
+/// about unaligned access.
+///
 /// # Examples
 ///
 /// Using convenience builders:
