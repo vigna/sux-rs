@@ -1835,12 +1835,36 @@ impl<B: Backend<Word: Word>> UnalignedBitFieldVec<B> {
     }
 }
 
-impl<W: Word> From<BitFieldVec<Box<[W]>>> for UnalignedBitFieldVec<Box<[W]>> {
-    fn from(bfv: BitFieldVec<Box<[W]>>) -> Self {
-        let (bits, bit_width, len) = bfv.into_raw_parts();
-        let mut v = bits.into_vec();
+impl<W: Word> TryFrom<BitFieldVec<Box<[W]>>> for UnalignedBitFieldVec<Box<[W]>> {
+    type Error = String;
+
+    /// Converts a [`BitFieldVec`] into an [`UnalignedBitFieldVec`], adding a
+    /// padding word at the end.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bit width does not satisfy the constraints of
+    /// [`BitFieldVec::get_unaligned_unchecked`]: it must be at most
+    /// `W::BITS - 6`, or exactly `W::BITS - 4`, or exactly `W::BITS`.
+    fn try_from(bfv: BitFieldVec<Box<[W]>>) -> Result<Self, Self::Error> {
+        let bits = W::BITS as usize;
+        let bw = bfv.bit_width();
+        if !(bw <= bits - 8 + 2 || bw == bits - 8 + 4 || bw == bits) {
+            return Err(format!(
+                "bit width {} does not satisfy the constraints for unaligned reads \
+                 (must be <= {}, or == {}, or == {})",
+                bw,
+                bits - 8 + 2,
+                bits - 8 + 4,
+                bits,
+            ));
+        }
+        let (raw_bits, bit_width, len) = bfv.into_raw_parts();
+        let mut v = raw_bits.into_vec();
         v.push(W::ZERO); // Add padding word for unaligned reads
-        Self(unsafe { BitFieldVec::from_raw_parts(v.into_boxed_slice(), bit_width, len) })
+        Ok(Self(unsafe {
+            BitFieldVec::from_raw_parts(v.into_boxed_slice(), bit_width, len)
+        }))
     }
 }
 

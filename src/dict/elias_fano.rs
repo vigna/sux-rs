@@ -1866,7 +1866,7 @@ pub struct EliasFanoBuilder<V: Word = usize> {
     count: usize,
 }
 
-impl<V: Word + PrimitiveNumberAs<usize>> EliasFanoBuilder<V> {
+impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
     /// Creates a builder for an [`EliasFano`] containing
     /// `n` numbers smaller than or equal to `u`.
     ///
@@ -1874,9 +1874,11 @@ impl<V: Word + PrimitiveNumberAs<usize>> EliasFanoBuilder<V> {
     ///
     /// When any of the underlying structures would exceed `usize` in length.
     pub fn new(n: usize, u: V) -> Self {
-        let n_as_v = V::as_from(n);
-        let l = if n > 0 && u >= n_as_v {
-            (u / n_as_v).ilog2() as usize
+        let n_u128 = n as u128;
+        let u_u128: u128 = u.as_to();
+        let l = if n_u128 > 0 && u_u128 >= n_u128 {
+            // This is equal to ⌊log₂(u / n)⌋
+            (u_u128 / n_u128).ilog2() as usize
         } else {
             0
         };
@@ -1886,7 +1888,7 @@ impl<V: Word + PrimitiveNumberAs<usize>> EliasFanoBuilder<V> {
             .checked_add(1)
             .unwrap_or_else(|| panic!("n ({n}) is too large"))
             .checked_add(u_high)
-            .unwrap_or_else(|| panic!("n ({n}) and/or u is too large"));
+            .unwrap_or_else(|| panic!("n ({n}) and/or u {u} is too large"));
         Self {
             n,
             u,
@@ -2061,17 +2063,25 @@ where
         let n_u128 = n as u128;
         let u_u128: u128 = u.as_to();
         let l = if n_u128 > 0 && u_u128 >= n_u128 {
+            // This is equal to ⌊log₂(u / n)⌋
             (u_u128 / n_u128).ilog2() as usize
         } else {
             0
         };
+
+        let u_high: usize = (u >> l).try_into().unwrap_or(usize::MAX);
+        let num_high_bits = n
+            .checked_add(1)
+            .unwrap_or_else(|| panic!("n ({n}) is too large"))
+            .checked_add(u_high)
+            .unwrap_or_else(|| panic!("n ({n}) and/or u ({u}) is too large"));
 
         Self {
             n,
             u,
             l,
             low_bits: AtomicBitFieldVec::<Vec<Atomic<V>>>::new(l, n),
-            high_bits: AtomicBitVec::new(n + TryInto::<usize>::try_into(u_u128 >> l).unwrap() + 1),
+            high_bits: AtomicBitVec::new(num_high_bits),
         }
     }
 
