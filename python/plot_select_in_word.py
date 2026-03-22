@@ -2,19 +2,19 @@
 """Parse criterion benchmark output for select-in-word and generate an
 interactive HTML visualization.
 
-Usage:
-    cargo bench --bench bench_select_in_word 2>&1 | python3 python/plot_select_in_word.py > out.html
-    # or from a file:
-    python3 python/plot_select_in_word.py bench_output.txt > out.html
+Reads from stdin (pipe) or from a file given as argument.
 
-The script reads from a file argument or stdin, extracts the estimate
-(middle value) from each ``time: [low estimate high]`` line, and writes
-the HTML to stdout.
+  cargo bench --bench bench_select_in_word | python3 python/plot_select_in_word.py > out.html
+
+Or from a file:
+
+  python3 python/plot_select_in_word.py bench_output.txt > out.html
 """
 
+import argparse
+import json
 import re
 import sys
-import json
 
 # ── Parse ────────────────────────────────────────────────────────────
 
@@ -206,21 +206,25 @@ render();
 
 
 def main():
-    if len(sys.argv) > 1:
-        with open(sys.argv[1]) as f:
-            lines = f.readlines()
-    else:
-        lines = sys.stdin.readlines()
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "input",
+        nargs="?",
+        type=argparse.FileType("r"),
+        default=sys.stdin,
+        help="benchmark output file (default: stdin)",
+    )
+    args = parser.parse_args()
 
-    entries = parse(lines)
+    entries = parse(args.input.readlines())
     if not entries:
         print("No benchmark results found in input.", file=sys.stderr)
         sys.exit(1)
 
-    data = [
-        {"technique": t, "word": w, "time_ns": round(v, 4)}
-        for t, w, v in entries
-    ]
+    data = [{"technique": t, "word": w, "time_ns": round(v, 4)} for t, w, v in entries]
 
     html = HTML_TEMPLATE.format(data_json=json.dumps(data, indent=2))
 

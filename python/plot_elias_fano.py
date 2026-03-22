@@ -2,23 +2,29 @@
 """Parse criterion benchmark output for Elias-Fano and generate an
 interactive HTML visualization.
 
-Usage:
-    cargo bench --bench bench_elias_fano 2>&1 | python3 python/plot_elias_fano.py > out.html
-    # or from a file:
-    python3 python/plot_elias_fano.py bench_output.txt > out.html
+Reads from stdin (pipe) or from a file given as argument.
 
-All dimensions (operation, size, l, backend) are multi-selectable.
-Colors encode l (hue) and backend (shade), with opacity for size.
+  cargo bench --bench bench_elias_fano | python3 python/plot_elias_fano.py > out.html
+
+Or from a file:
+
+  python3 python/plot_elias_fano.py bench_output.txt > out.html
 """
 
 import argparse
+import json
 import re
 import sys
-import json
 
 # ── Parse ────────────────────────────────────────────────────────────
 
-UNIT_TO_NS = {"ps": 0.001, "ns": 1.0, "\u00b5s": 1000.0, "us": 1000.0, "ms": 1_000_000.0}
+UNIT_TO_NS = {
+    "ps": 0.001,
+    "ns": 1.0,
+    "\u00b5s": 1000.0,
+    "us": 1000.0,
+    "ms": 1_000_000.0,
+}
 
 SINGLE_RE = re.compile(
     r"^(\S+)\s+time:\s+\["
@@ -61,11 +67,7 @@ def parse(lines):
             i += 1
             continue
 
-        if (
-            "/" in line
-            and not line.startswith("Benchmarking")
-            and i + 1 < len(lines)
-        ):
+        if "/" in line and not line.startswith("Benchmarking") and i + 1 < len(lines):
             tm = TIME_RE.search(lines[i + 1])
             if tm:
                 raw[line] = float(tm.group(1)) * UNIT_TO_NS[tm.group(2)]
@@ -335,8 +337,8 @@ render();
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Parse criterion benchmark output for Elias-Fano "
-        "and generate an interactive HTML visualization.",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "input",

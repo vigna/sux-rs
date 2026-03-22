@@ -65,6 +65,11 @@
 //! prefetch parts of the data structure, or read values using unaligned read,
 //! when the bit width makes it possible.
 //!
+//! The wrapper [`UnalignedBitFieldVec`] implements [`SliceByValue`] using
+//! unaligned reads and delegates all iterator methods. It can be just plugged
+//! in place of a normal [`BitFieldVec`] when the trait bounds is
+//! [`SliceByValue`].
+//!
 //! # Examples
 //!
 //! ```
@@ -1815,6 +1820,14 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
 /// This wrapper delegates [`SliceByValue::get_value_unchecked`] to
 /// [`BitFieldVec::get_unaligned_unchecked`], which can be faster for random
 /// access patterns.
+///
+/// A convenience
+/// [`TryFrom`](#impl-TryFrom<BitFieldVec<Box<%5BW%5D>>>-for-UnalignedBitFieldVec<Box<%5BW%5D>>)
+/// implementation converts a [`BitFieldVec`] into an [`UnalignedBitFieldVec`]
+/// after adding a padding word at the end, which is required for unaligned
+/// reads to work correctly. The conversion will fail if the bit width does not
+/// satisfy the constraints of [`BitFieldVec::get_unaligned_unchecked`]. You can
+/// recover the original [`BitFieldVec`] using [`into_inner`](Self::into_inner).
 ///
 /// # Safety
 ///
