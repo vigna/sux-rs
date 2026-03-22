@@ -183,7 +183,7 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// For example,
 ///
 /// ```ignore
-/// let ef = unsafe { ef.map_low_bits(|l| UnalignedBitFieldVec::try_from(l).unwrap() };
+/// let ef = unsafe { ef.map_low_bits(|l| UnalignedBitFieldVec::try_from(l).unwrap()) };
 /// ```
 ///
 /// See the [`UnalignedBitFieldVec`] documentation for more details and caveats
@@ -294,6 +294,10 @@ pub struct EliasFano<V = usize, H = BitVec<Box<[usize]>>, L = BitFieldVec<Box<[V
     u: V,
     /// The number of lower bits.
     l: usize,
+    /// The first value in the sequence, or `V::MAX` if the sequence is empty.
+    first_val: V,
+    /// The last value in the sequence, or `V::MIN` if the sequence is empty.
+    last_val: V,
     /// The lower-bits array.
     low_bits: L,
     /// The higher-bits array.
@@ -302,9 +306,18 @@ pub struct EliasFano<V = usize, H = BitVec<Box<[usize]>>, L = BitFieldVec<Box<[V
 
 impl<V, H, L> EliasFano<V, H, L> {
     /// Returns the parts composing the structure (number of elements, upper
-    /// bound, number of lower bits, low bits, high bits).
-    pub fn into_parts(self) -> (usize, V, usize, L, H) {
-        (self.n, self.u, self.l, self.low_bits, self.high_bits)
+    /// bound, number of lower bits, low bits, high bits, first value, last
+    /// value).
+    pub fn into_parts(self) -> (usize, V, usize, L, H, V, V) {
+        (
+            self.n,
+            self.u,
+            self.l,
+            self.low_bits,
+            self.high_bits,
+            self.first_val,
+            self.last_val,
+        )
     }
 
     /// Estimate the size of an instance.
@@ -341,6 +354,8 @@ impl<V, H, L> EliasFano<V, H, L> {
             n: self.n,
             u: self.u,
             l: self.l,
+            first_val: self.first_val,
+            last_val: self.last_val,
             low_bits: self.low_bits,
             high_bits: func(self.high_bits),
         }
@@ -357,6 +372,8 @@ impl<V, H, L> EliasFano<V, H, L> {
             n: self.n,
             u: self.u,
             l: self.l,
+            first_val: self.first_val,
+            last_val: self.last_val,
             low_bits: func(self.low_bits),
             high_bits: self.high_bits,
         }
@@ -388,6 +405,16 @@ impl<
             let low_bits = self.low_bits.get_value_unchecked(index);
             (high_bits << self.l) | low_bits
         }
+    }
+
+    #[inline]
+    fn first_val(&self) -> Option<V> {
+        (self.n != 0).then_some(self.first_val)
+    }
+
+    #[inline]
+    fn last_val(&self) -> Option<V> {
+        (self.n != 0).then_some(self.last_val)
     }
 }
 
@@ -833,12 +860,77 @@ where
 
 impl<
     V: Word + PrimitiveNumberAs<usize>,
-    H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked,
+    H: AsRef<[usize]> + SelectZeroUnchecked,
     L: SliceByValue<Value = V>,
 > Succ for EliasFano<V, H, L>
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
 {
+    #[inline]
+    fn succ(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
+        if self.n == 0 || *value.borrow() > self.last_val {
+            None
+        } else {
+            Some(unsafe { self.succ_unchecked::<false>(value) })
+        }
+    }
+
+    #[inline]
+    fn succ_strict(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
+        if *value.borrow() >= self.last_val {
+            None
+        } else {
+            Some(unsafe { self.succ_unchecked::<true>(value) })
+        }
+    }
+
+    #[inline]
+    fn iter_from_succ(
+        &self,
+        value: impl Borrow<V>,
+    ) -> Option<(usize, <Self as SuccUnchecked>::Iter<'_>)> {
+        if self.n == 0 || *value.borrow() > self.last_val {
+            None
+        } else {
+            Some(unsafe { self.iter_from_succ_unchecked::<false>(value) })
+        }
+    }
+
+    #[inline]
+    fn iter_from_succ_strict(
+        &self,
+        value: impl Borrow<V>,
+    ) -> Option<(usize, <Self as SuccUnchecked>::Iter<'_>)> {
+        if *value.borrow() >= self.last_val {
+            None
+        } else {
+            Some(unsafe { self.iter_from_succ_unchecked::<true>(value) })
+        }
+    }
+
+    #[inline]
+    fn iter_bidi_from_succ(
+        &self,
+        value: impl Borrow<V>,
+    ) -> Option<(usize, <Self as SuccUnchecked>::BidiIter<'_>)> {
+        if self.n == 0 || *value.borrow() > self.last_val {
+            None
+        } else {
+            Some(unsafe { self.iter_bidi_from_succ_unchecked::<false>(value) })
+        }
+    }
+
+    #[inline]
+    fn iter_bidi_from_succ_strict(
+        &self,
+        value: impl Borrow<V>,
+    ) -> Option<(usize, <Self as SuccUnchecked>::BidiIter<'_>)> {
+        if *value.borrow() >= self.last_val {
+            None
+        } else {
+            Some(unsafe { self.iter_bidi_from_succ_unchecked::<true>(value) })
+        }
+    }
 }
 
 impl<
@@ -1059,12 +1151,77 @@ where
 
 impl<
     V: Word + PrimitiveNumberAs<usize>,
-    H: AsRef<[usize]> + SelectUnchecked + SelectZeroUnchecked,
+    H: AsRef<[usize]> + SelectZeroUnchecked,
     L: SliceByValue<Value = V>,
 > Pred for EliasFano<V, H, L>
 where
     for<'b> &'b L: IntoUncheckedBackIterator<Item = V>,
 {
+    #[inline]
+    fn pred(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
+        if self.n == 0 || *value.borrow() < self.first_val {
+            None
+        } else {
+            Some(unsafe { self.pred_unchecked::<false>(value) })
+        }
+    }
+
+    #[inline]
+    fn pred_strict(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
+        if *value.borrow() <= self.first_val {
+            None
+        } else {
+            Some(unsafe { self.pred_unchecked::<true>(value) })
+        }
+    }
+
+    #[inline]
+    fn iter_back_from_pred(
+        &self,
+        value: impl Borrow<V>,
+    ) -> Option<(usize, <Self as PredUnchecked>::BackIter<'_>)> {
+        if self.n == 0 || *value.borrow() < self.first_val {
+            None
+        } else {
+            Some(unsafe { self.iter_back_from_pred_unchecked::<false>(value) })
+        }
+    }
+
+    #[inline]
+    fn iter_back_from_pred_strict(
+        &self,
+        value: impl Borrow<V>,
+    ) -> Option<(usize, <Self as PredUnchecked>::BackIter<'_>)> {
+        if *value.borrow() <= self.first_val {
+            None
+        } else {
+            Some(unsafe { self.iter_back_from_pred_unchecked::<true>(value) })
+        }
+    }
+
+    #[inline]
+    fn iter_bidi_from_pred(
+        &self,
+        value: impl Borrow<V>,
+    ) -> Option<(usize, <Self as PredUnchecked>::BidiIter<'_>)> {
+        if self.n == 0 || *value.borrow() < self.first_val {
+            None
+        } else {
+            Some(unsafe { self.iter_bidi_from_pred_unchecked::<false>(value) })
+        }
+    }
+
+    #[inline]
+    fn iter_bidi_from_pred_strict(
+        &self,
+        value: impl Borrow<V>,
+    ) -> Option<(usize, <Self as PredUnchecked>::BidiIter<'_>)> {
+        if *value.borrow() <= self.first_val {
+            None
+        } else {
+            Some(unsafe { self.iter_bidi_from_pred_unchecked::<true>(value) })
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -1876,7 +2033,8 @@ pub struct EliasFanoBuilder<V: Word = usize> {
     l: usize,
     low_bits: BitFieldVec<Vec<V>>,
     high_bits: BitVec,
-    last_value: V,
+    first_val: V,
+    last_val: V,
     count: usize,
 }
 
@@ -1909,7 +2067,8 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
             l,
             low_bits: BitFieldVec::<Vec<V>>::new(l, n),
             high_bits: BitVec::new(num_high_bits),
-            last_value: V::ZERO,
+            first_val: V::MAX,
+            last_val: V::MIN,
             count: 0,
         }
     }
@@ -1925,7 +2084,7 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
         if value > self.u {
             panic!("Value too large");
         }
-        if value < self.last_value {
+        if value < self.last_val {
             panic!("The values provided are not monotone");
         }
         unsafe {
@@ -1945,8 +2104,11 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
         let high = high + self.count;
         self.high_bits.set(high, true);
 
+        if self.count == 0 {
+            self.first_val = value;
+        }
         self.count += 1;
-        self.last_value = value;
+        self.last_val = value;
     }
 
     /// Returns the number of values added so far.
@@ -1977,6 +2139,8 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
             n: self.n,
             u: self.u,
             l: self.l,
+            first_val: self.first_val,
+            last_val: self.last_val,
             low_bits: self.low_bits.into(),
             // SAFETY: n is the number of ones in the high_bits
             high_bits,
@@ -2137,10 +2301,43 @@ where
         let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
         let low_bits: BitFieldVec<Vec<V>> = self.low_bits.into();
         let low_bits: BitFieldVec<Box<[V]>> = low_bits.into();
+
+        let (first_val, last_val) = if self.n == 0 {
+            (V::MAX, V::MIN)
+        } else {
+            let words = high_bits.as_ref();
+
+            // First 1-bit position → high part of first value.
+            let mut w = 0;
+            while unsafe { *words.get_unchecked(w) } == 0 {
+                w += 1;
+            }
+            let first_high = w * usize::BITS as usize
+                + unsafe { *words.get_unchecked(w) }.trailing_zeros() as usize;
+            let first_low = unsafe { low_bits.get_value_unchecked(0) };
+            let first = (V::as_from(first_high) << self.l) | first_low;
+
+            // Last 1-bit position → high part of last value.
+            let mut w = words.len() - 1;
+            while unsafe { *words.get_unchecked(w) } == 0 {
+                w -= 1;
+            }
+            let last_high = w * usize::BITS as usize + usize::BITS as usize
+                - 1
+                - unsafe { *words.get_unchecked(w) }.leading_zeros() as usize
+                - (self.n - 1);
+            let last_low = unsafe { low_bits.get_value_unchecked(self.n - 1) };
+            let last = (V::as_from(last_high) << self.l) | last_low;
+
+            (first, last)
+        };
+
         EliasFano {
             n: self.n,
             u: self.u,
             l: self.l,
+            first_val,
+            last_val,
             low_bits,
             high_bits,
         }
