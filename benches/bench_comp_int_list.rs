@@ -123,57 +123,11 @@ fn bench_zipf_vec(c: &mut Criterion) {
     group.finish();
 }
 
-type EfSeq9 = EliasFano<u64, Select9<Rank9<BitVec<Box<[usize]>>>>>;
-
-fn to_select9_delimiters(list: CompIntList<u64>) -> CompIntList<u64, EfSeq9> {
-    unsafe {
-        list.map_delimiters(|ef| ef.map_high_bits(|h| Select9::new(Rank9::new(h.into_inner()))))
-    }
-}
-
-fn bench_geometric_ef9(c: &mut Criterion) {
-    let mut group = c.benchmark_group("comp_int_list_ef9_geom");
-    for &(label, n) in &[("2^20", SMALL), ("2^30", LARGE)] {
-        let list = to_select9_delimiters(build_geometric(n));
-        let mask = (n - 1) as u64;
-        let mut rng = SmallRng::seed_from_u64(1);
-
-        group.bench_function(BenchmarkId::from_parameter(label), |b| {
-            b.iter(|| {
-                let index = (rng.random::<u64>() & mask) as usize;
-                black_box(list.index_value(index))
-            })
-        });
-    }
-
-    group.finish();
-}
-
-fn bench_zipf_ef9(c: &mut Criterion) {
-    let mut group = c.benchmark_group("comp_int_list_ef9_zipf");
-    for &(label, n) in &[("2^20", SMALL), ("2^30", LARGE)] {
-        let list = to_select9_delimiters(build_zipf(n));
-        let mask = (n - 1) as u64;
-        let mut rng = SmallRng::seed_from_u64(1);
-
-        group.bench_function(BenchmarkId::from_parameter(label), |b| {
-            b.iter(|| {
-                let index = (rng.random::<u64>() & mask) as usize;
-                black_box(list.index_value(index))
-            })
-        });
-    }
-
-    group.finish();
-}
-
 criterion_group!(
     benches,
     bench_geometric,
     bench_zipf,
     bench_geometric_vec,
     bench_zipf_vec,
-    bench_geometric_ef9,
-    bench_zipf_ef9
 );
 criterion_main!(benches);

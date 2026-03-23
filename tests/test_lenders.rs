@@ -9,7 +9,7 @@ use std::io::Cursor;
 #[cfg(feature = "flate2")]
 use std::io::Write;
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use fallible_iterator::{FallibleIterator, IntoFallibleIterator};
 #[cfg(feature = "flate2")]
 use flate2::write::GzEncoder;
@@ -73,6 +73,8 @@ fn test_line_lender() -> Result<()> {
 #[cfg(feature = "zstd")]
 #[test]
 fn test_zstd_line_lender() -> Result<()> {
+    use anyhow::Context;
+
     let mut buf = Cursor::new(
         zstd::stream::encode_all(Cursor::new(b"foo\nbar\nbaz\n"), 1).context("Could not encode")?,
     );
@@ -93,6 +95,8 @@ fn test_zstd_line_lender() -> Result<()> {
 #[cfg(feature = "flate2")]
 #[test]
 fn test_gzip_line_lender() -> Result<()> {
+    use anyhow::Context;
+
     let mut encoder = GzEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(b"foo\nbar\nbaz\n")?;
     let mut buf = Cursor::new(encoder.finish().context("Could not encode")?);
