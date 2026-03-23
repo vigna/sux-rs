@@ -163,7 +163,7 @@ fn test_rank_small_empty() {
     assert_eq!(inner.len(), 0);
 }
 
-#[cfg(feature = "slow_tests")]
+#[cfg(all(feature = "slow_tests", target_pointer_width = "64"))]
 #[test]
 fn test_rank_small_large() {
     use sux::traits::BitVecOpsMut;
