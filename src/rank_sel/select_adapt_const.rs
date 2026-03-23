@@ -6,11 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use super::{
-    DEFAULT_LOG2_ONES_PER_INVENTORY, Inventory, LOG2_U16_PER_USIZE, SpanType, U32_PER_USIZE,
-    assert_inventory_length,
-};
-use crate::utils::SelectInWord;
+use super::{Inventory, LOG2_U16_PER_USIZE, SpanType, U32_PER_USIZE, assert_inventory_length};
+use crate::{rank_sel::select_adapt, utils::SelectInWord};
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
 use num_primitive::PrimitiveInteger;
@@ -56,9 +53,10 @@ use std::ops::Index;
 /// `LOG2_WORDS_PER_SUBINVENTORY` is no longer a maximum value, but rather an
 /// exact value.
 ///
-/// The default parameters are a good choice for a low-space structure on a bit
-/// vector of density 0.5. A more detailed discussion of the parameters can be
-/// found in the documentation of [`SelectAdapt`](super::SelectAdapt).
+/// The default parameters correspond to the [`SelectAdapt`](super::SelectAdapt)
+/// default values for a bit vector of density 0.5. A more detailed discussion of
+/// the parameters can be found in the documentation of
+/// [`SelectAdapt`](super::SelectAdapt).
 ///
 /// [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst) is a variant of this
 /// structure that provides the same functionality for zero bits.
@@ -183,8 +181,12 @@ use std::ops::Index;
 pub struct SelectAdaptConst<
     B,
     I = Box<[usize]>,
-    const LOG2_ONES_PER_INVENTORY: usize = DEFAULT_LOG2_ONES_PER_INVENTORY,
-    const LOG2_WORDS_PER_SUBINVENTORY: usize = 3,
+    const LOG2_ONES_PER_INVENTORY: usize = {
+        select_adapt::DEFAULT_TARGET_INVENTORY_SPAN.ilog2() as usize - 1
+    },
+    const LOG2_WORDS_PER_SUBINVENTORY: usize = {
+        select_adapt::DEFAULT_LOG2_WORDS_PER_SUBINVENTORY
+    },
 > {
     bits: B,
     inventory: I,
@@ -218,6 +220,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
 impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
     SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
+    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
     const LOG2_ONES_PER_SUB16: usize =
         LOG2_ONES_PER_INVENTORY.saturating_sub(LOG2_WORDS_PER_SUBINVENTORY + LOG2_U16_PER_USIZE);
     const ONES_PER_SUB16_MASK: usize = (1 << Self::LOG2_ONES_PER_SUB16) - 1;
@@ -227,7 +230,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
     /// Computes adaptively the number of 32-bit subinventory entries
     #[inline(always)]
     const fn log2_ones_per_sub32(span: usize) -> usize {
-        debug_assert!(span >= 1 << 16);
+        debug_assert!(span > 1 << 16);
         // Since span >= 2^16, (span >> 15).ilog2() >= 0, which implies in any case
         // at least doubling the frequency of the subinventory with respect to the
         // 16-bit case, unless log2_ones_per_u16 = 0, that is, we are recording the
@@ -246,15 +249,16 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<C: SelectHinted>(self, f: impl FnOnce(B) -> C) -> SelectAdaptConst<C, I> {
+    pub unsafe fn map<C: SelectHinted>(
+        self,
+        f: impl FnOnce(B) -> C,
+    ) -> SelectAdaptConst<C, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY> {
         SelectAdaptConst {
             bits: f(self.bits),
             inventory: self.inventory,
             spill: self.spill,
         }
     }
-
-    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
 }
 
 impl<

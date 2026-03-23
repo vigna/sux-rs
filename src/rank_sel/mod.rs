@@ -98,7 +98,7 @@
 //! order rank, select, and zero select, from inner to outer, because ranking
 //! structures usually implement [`NumBits`](crate::traits::NumBits).
 
-mod select_adapt;
+pub mod select_adapt;
 pub use select_adapt::*;
 
 mod select_zero_adapt;
