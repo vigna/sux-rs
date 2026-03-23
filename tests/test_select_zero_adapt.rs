@@ -194,7 +194,7 @@ fn test_non_uniform() {
 
             let bits = first_half
                 .into_iter()
-                .chain(second_half.into_iter())
+                .chain(&second_half)
                 .collect::<BitVec>();
 
             assert_eq!(
@@ -236,7 +236,7 @@ fn test_map() {
     assert_eq!(rank_sel.rank(2), 1);
     assert_eq!(rank_sel.rank(10), 5);
 
-    let rank_seol01 = unsafe { rank_sel.map(|b| SelectZeroAdapt::<_, _>::new(b)) };
+    let rank_seol01 = unsafe { rank_sel.map(SelectZeroAdapt::<_, _>::new) };
     assert_eq!(rank_seol01.select_zero(0), Some(0));
     assert_eq!(rank_seol01.select_zero(1), Some(2));
     assert_eq!(rank_seol01.select_zero(2), Some(5));

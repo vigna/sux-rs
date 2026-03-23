@@ -231,7 +231,7 @@ fn test_non_uniform() {
 
             let bits = first_half
                 .into_iter()
-                .chain(second_half.into_iter())
+                .chain(&second_half)
                 .collect::<BitVec<Vec<u64>>>();
 
             assert_eq!(
