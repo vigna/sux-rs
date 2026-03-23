@@ -86,7 +86,7 @@ use std::ops::Index;
 /// respect to the target space occupancy.
 ///
 /// For example, using [the default value of
-/// *L*](DEFAULT_TARGET_INVENTORY_SPAN) and [the default value of
+/// *L*](default_target_inventory_span) and [the default value of
 /// *M*](DEFAULT_LOG2_WORDS_PER_SUBINVENTORY), the space occupancy
 /// is between 7% and 14% on 64-bit platforms and twice that on 32-bit
 /// platforms. The space might be smaller for very sparse vectors as less than
@@ -138,7 +138,7 @@ use std::ops::Index;
 /// irregularities in the distribution of ones. Moreover, given the default
 /// value for *M*, the worst-case linear search after reading the inventory
 /// should be on few words. The [default suggested
-/// value](DEFAULT_TARGET_INVENTORY_SPAN) is a reasonable choice modeled on a
+/// value](default_target_inventory_span) is a reasonable choice modeled on a
 /// maximum of four words in the linear search for vectors with uniform density.
 ///
 /// Note that doubling *M* and *L* reduces space occupancy (because of the
@@ -307,14 +307,17 @@ impl<B, I> Deref for SelectAdapt<B, I> {
 /// aligned, and they contain an additional word).
 pub const DEFAULT_LOG2_WORDS_PER_SUBINVENTORY: usize = 3;
 
-/// The default target inventory span.
+/// Returns the default target inventory span for a given
+/// `log2_words_per_subinventory`.
 ///
-/// This value is defined by requesting that in vectors with uniform density
+/// The value is defined by requesting that in vectors with uniform density
 /// the worst-case linear search is on four words. This requires *T* / (*M* ·
-/// `usize::BITS` / 16) = 4 · `usize::BITS`, where *T* is the target inventory span and *M* is
-/// the default number of words per subinventory. Solving for *T* gives the value defined here.
-pub const DEFAULT_TARGET_INVENTORY_SPAN: usize =
-    ((usize::BITS as usize * usize::BITS as usize) / 4) << DEFAULT_LOG2_WORDS_PER_SUBINVENTORY;
+/// `usize::BITS` / 16) = 4 · `usize::BITS`, where *T* is the target inventory
+/// span and *M* = 2^`log2_words_per_subinventory`. Solving for *T* gives
+/// *M* · `usize::BITS`² / 4.
+pub const fn default_target_inventory_span(log2_words_per_subinventory: usize) -> usize {
+    ((usize::BITS as usize * usize::BITS as usize) / 4) << log2_words_per_subinventory
+}
 
 /// Maximum bit-vector length supported by the inventory encoding.
 ///
@@ -507,7 +510,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     pub fn new(bits: B) -> Self {
         Self::with_span(
             bits,
-            DEFAULT_TARGET_INVENTORY_SPAN,
+            default_target_inventory_span(DEFAULT_LOG2_WORDS_PER_SUBINVENTORY),
             DEFAULT_LOG2_WORDS_PER_SUBINVENTORY,
         )
     }
@@ -521,10 +524,12 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     ///
     /// * `target_inventory_span`: The target span [*L*](SelectAdapt) of a
     ///   first-level inventory entry. The actual span might be smaller by a
-    ///   factor of 2.
+    ///   factor of 2. The suggested value is
+    ///   [`default_target_inventory_span(max_log2_words_per_subinv)`](default_target_inventory_span).
     ///
     /// * `max_log2_words_per_subinv`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectAdapt) of `usize` in each subinventory.
+    ///   number [*M*](SelectAdapt) of `usize` in each subinventory. The
+    ///   suggested value is [`DEFAULT_LOG2_WORDS_PER_SUBINVENTORY`].
     ///
     /// See the [documentation](SelectAdapt) for details on how to choose these
     /// parameters.
@@ -575,7 +580,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     ///   frequency.
     ///
     /// * `max_log2_words_per_subinventory`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectAdapt) of `usize` in each subinventory.
+    ///   number [*M*](SelectAdapt) of `usize` in each subinventory. The
+    ///   suggested value is [`DEFAULT_LOG2_WORDS_PER_SUBINVENTORY`].
     ///
     /// See the [documentation](SelectAdapt) for details on how to choose these
     /// parameters.

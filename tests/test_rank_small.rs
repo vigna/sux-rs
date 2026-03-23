@@ -141,7 +141,7 @@ fn test_rank_small_map() {
     let rank_small_sel = unsafe {
         rank_small.map(|b| {
             let b: AddNumBits<_> = b.into();
-            SelectAdapt::with_span(b, select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 2)
+            SelectAdapt::with_span(b, select_adapt::default_target_inventory_span(2), 2)
         })
     };
     assert_eq!(rank_small_sel.rank(0), 0);
