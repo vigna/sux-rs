@@ -284,6 +284,7 @@ function buildChart() {{
           label: parts.join(' '),
           data,
           backgroundColor: barColor(l, bk, size),
+          skipNull: true,
         }});
       }}
     }}
@@ -302,7 +303,6 @@ function render() {{
     data: {{ labels: cfg.labels, datasets: cfg.datasets }},
     options: {{
       responsive: true,
-      skipNull: true,
       plugins: {{
         tooltip: {{
           callbacks: {{

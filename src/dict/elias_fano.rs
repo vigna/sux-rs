@@ -136,16 +136,11 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// versions because in applications it is quite common to have a guarantee that
 /// the successor or predecessor of a value exists.
 ///
-/// The checked versions (i.e., [`Succ`] and [`Pred`]) need to know the
-/// last/first element, respectively, to be able to return `None` when the
-/// successor or predecessor do not exist. To do so, they must check for the
-/// empty list and retrieve the last/first element using `get_unchecked`, which
-/// is relatively expensive and requires [`SelectUnchecked`] on the high bits.
-///
-/// However, it is often the case that the caller already knows that the list is
-/// not empty; at that point, storing the last/first element locally and calling
-/// the unchecked version after the proper existence check (if necessary) will
-/// improve performance.
+/// The checked versions (i.e., [`Succ`] and [`Pred`]) use the cached
+/// first and last values stored in the structure to determine whether the
+/// requested successor or predecessor exists. This makes the bounds check
+/// essentially free and does not require [`SelectUnchecked`] on the high
+/// bits.
 ///
 /// # Iterators
 ///
@@ -307,7 +302,8 @@ pub struct EliasFano<V = usize, H = BitVec<Box<[usize]>>, L = BitFieldVec<Box<[V
 impl<V, H, L> EliasFano<V, H, L> {
     /// Returns the parts composing the structure (number of elements, upper
     /// bound, number of lower bits, low bits, high bits, first value, last
-    /// value).
+    /// value). For an empty sequence, first value is `V::MAX` and last value
+    /// is `V::MIN`.
     pub fn into_parts(self) -> (usize, V, usize, L, H, V, V) {
         (
             self.n,

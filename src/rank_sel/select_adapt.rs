@@ -64,8 +64,9 @@ use std::ops::Index;
 ///
 /// # Type Parameters
 ///
-/// - `B`: The underlying bit vector (possibly wrapped in rank/select
-///   structures).
+/// - `B`: The bit-based [backend](Backend) (usually a
+///   [bit vector](crate::bits::BitVec), possibly wrapped in
+///   rank/select structures).
 /// - `I`: The inventory storage. Defaults to `Box<[usize]>`.
 ///
 /// # Implementation Details
@@ -150,18 +151,18 @@ use std::ops::Index;
 /// couple of words will not generally improve performance.
 ///
 /// Given the strong dependency on architectural issues, and the different
-/// impact of these choices on small or large bit vectors, changing this values
+/// impact of these choices on small or large bit vectors, changing these values
 /// should be based on extensive experiments on the target architecture and the
 /// expected use cases.
 ///
 /// # Maximum bit-vector length
 ///
-/// The inventory encodes positions in the top bits of each
-/// [`usize`] entry, leaving `usize::BITS - 2` bits for
-/// the actual position. On 32-bit platforms this limits the bit vector
-/// length to 2³⁰ − 1 (about 1 billion bits); on 64-bit platforms the
-/// limit is 2⁶² − 1. The constructor panics if the bit vector exceeds
-/// this limit.
+/// The inventory encodes positions in the top bits of each [`usize`]
+/// entry. On 64-bit platforms, 2 bits encode the span type, leaving 62
+/// position bits (limit 2⁶² − 1). On 32-bit platforms, only 1 bit is
+/// needed (there is no 64-bit span case), leaving 31 position bits
+/// (limit 2³¹ − 1, about 2 billion bits). The constructor panics if the
+/// bit vector exceeds this limit.
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
@@ -315,10 +316,16 @@ pub const DEFAULT_LOG2_WORDS_PER_SUBINVENTORY: usize = 3;
 pub const DEFAULT_TARGET_INVENTORY_SPAN: usize =
     ((usize::BITS as usize * usize::BITS as usize) / 4) << DEFAULT_LOG2_WORDS_PER_SUBINVENTORY;
 
-/// Maximum bit-vector length supported by the inventory encoding
-/// (`usize::BITS - 2` position bits) for the adaptive
-/// select family of implementations.
+/// Maximum bit-vector length supported by the inventory encoding.
+///
+/// On 64-bit platforms, 2 top bits encode the span type, leaving 62 position
+/// bits (limit 2⁶² − 1). On 32-bit platforms, only 1 top bit is needed
+/// (there is no 64-bit span case), leaving 31 position bits (limit
+/// 2³¹ − 1).
+#[cfg(target_pointer_width = "64")]
 pub(super) const MAX_INVENTORY_BITS: usize = usize::MAX >> 2;
+#[cfg(target_pointer_width = "32")]
+pub(super) const MAX_INVENTORY_BITS: usize = usize::MAX >> 1;
 
 /// log₂ of the number of `u16` values that fit in one `usize`
 /// (2 on 64-bit, 1 on 32-bit).
@@ -338,15 +345,15 @@ pub(super) fn assert_inventory_length(len: usize) {
     );
 }
 
-/// Convenience trait to handle the information packed in the two upper bits
+/// Convenience trait to handle the information packed in the upper bits
 /// of an inventory entry. It is used by all variants.
 ///
-/// The top 2 bits of each `usize` entry encode the span type
-/// ([`SpanType`]), leaving `usize::BITS - 2` bits for the actual
-/// position. On 64-bit platforms this allows positions up to 2⁶² − 1; on
-/// 32-bit platforms only up to 2³⁰ − 1 (about 1 billion). Constructors
-/// of all SelectAdapt variants assert that the bit vector length fits in
-/// this range.
+/// On 64-bit platforms, the top 2 bits of each `usize` entry encode the
+/// span type ([`SpanType`]), leaving 62 bits for the actual position
+/// (up to 2⁶² − 1). On 32-bit platforms, only 1 bit is needed (there is
+/// no 64-bit span case), leaving 31 position bits (up to 2³¹ − 1).
+/// Constructors of all SelectAdapt variants assert that the bit vector
+/// length fits in this range.
 pub(super) trait Inventory {
     fn is_u16_span(&self) -> bool;
     fn is_u32_span(&self) -> bool;
@@ -362,13 +369,22 @@ pub(super) trait Inventory {
 impl Inventory for usize {
     #[inline(always)]
     fn is_u16_span(&self) -> bool {
-        // This test is optimized for speed as it is the common case
+        // This test is optimized for speed as it is the common case.
+        // On 64-bit we check the top bit (the top two bits are 0x for U16);
+        // on 32-bit we also check the top bit (0 for U16, 1 for U32).
         *self >> (usize::BITS - 1) == 0
     }
 
+    #[cfg(target_pointer_width = "64")]
     #[inline(always)]
     fn is_u32_span(&self) -> bool {
         *self >> (usize::BITS - 2) == 2
+    }
+
+    #[cfg(target_pointer_width = "32")]
+    #[inline(always)]
+    fn is_u32_span(&self) -> bool {
+        *self >> (usize::BITS - 1) == 1
     }
 
     #[cfg(target_pointer_width = "64")]
@@ -391,9 +407,16 @@ impl Inventory for usize {
         *self |= 3 << (usize::BITS - 2);
     }
 
+    #[cfg(target_pointer_width = "64")]
     #[inline(always)]
     fn get(&self) -> usize {
         *self & (usize::MAX >> 2)
+    }
+
+    #[cfg(target_pointer_width = "32")]
+    #[inline(always)]
+    fn get(&self) -> usize {
+        *self & (usize::MAX >> 1)
     }
 }
 
@@ -480,7 +503,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³⁰ − 1 on 32-bit).
+    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
     pub fn new(bits: B) -> Self {
         Self::with_span(
             bits,
@@ -509,7 +532,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³⁰ − 1 on 32-bit).
+    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
     pub fn with_span(
         bits: B,
         target_inventory_span: usize,
@@ -560,7 +583,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³⁰ − 1 on 32-bit).
+    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
     pub fn with_inv(
         bits: B,
         log2_ones_per_inventory: usize,
@@ -608,7 +631,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³⁰ − 1 on 32-bit), or if
+    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit), or if
     /// `overhead_percentage` is not positive.
     pub fn with_overhead(
         bits: B,

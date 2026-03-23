@@ -279,7 +279,7 @@ impl<
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³⁰ − 1 on 32-bit).
+    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
     pub fn new(bits: B) -> Self {
         assert_inventory_length(bits.len());
         let num_ones = bits.count_ones();

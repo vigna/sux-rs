@@ -139,6 +139,7 @@ function buildByWord() {{
       return entry ? entry.time_ns : null;
     }}),
     backgroundColor: COLORS[i % COLORS.length],
+    skipNull: true,
   }}));
   return {{ labels: words, datasets }};
 }}
@@ -153,6 +154,7 @@ function buildByTech() {{
       return entry ? entry.time_ns : null;
     }}),
     backgroundColor: COLORS[i % COLORS.length],
+    skipNull: true,
   }}));
   return {{ labels: techniques, datasets }};
 }}
@@ -172,7 +174,6 @@ function render() {{
     data: cfg,
     options: {{
       responsive: true,
-      skipNull: true,
       plugins: {{
         tooltip: {{
           callbacks: {{
