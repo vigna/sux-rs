@@ -281,6 +281,8 @@ fn test_extremely_sparse() {
 #[cfg(feature = "slow_tests")]
 #[cfg(all(feature = "slow_tests", target_pointer_width = "64"))]
 mod test_large {
+    use super::*;
+
     #[test]
     fn test_extremely_sparse_and_large() {
         let num_words = 3 * (1 << 26) + 1;
