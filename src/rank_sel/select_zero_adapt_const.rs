@@ -194,7 +194,6 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENT
 impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
     SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
-    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
     const LOG2_ONES_PER_SUB16: usize =
         LOG2_ZEROS_PER_INVENTORY.saturating_sub(LOG2_WORDS_PER_SUBINVENTORY + LOG2_U16_PER_USIZE);
     const ONES_PER_SUB16_MASK: usize = (1 << Self::LOG2_ONES_PER_SUB16) - 1;
@@ -258,13 +257,7 @@ impl<
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectZeroAdaptConst<B, Box<[usize]>, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
-    /// Creates a new selection structure over a bit vector with a specified
-    /// distance between indexed zeros.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2^62 − 1 on 64-bit platforms, 2^30 − 1 on 32-bit).
+    /// See [`SelectAdaptConst::new`](super::SelectAdaptConst::new).
     pub fn new(bits: B) -> Self {
         assert_inventory_length(bits.len());
         let num_ones = bits.count_zeros();

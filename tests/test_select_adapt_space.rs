@@ -157,7 +157,7 @@ fn test_space_select_zero_adapt() {
         let sel = SelectZeroAdapt::new(bits.clone(), 3);
         let ov = overhead(&sel);
         let th = theoretical_overhead(
-            SelectZeroAdapt::<AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN,
+            select_adapt::DEFAULT_TARGET_INVENTORY_SPAN,
             3,
         );
         eprintln!(
@@ -176,7 +176,7 @@ fn test_space_select_zero_adapt() {
         let sel = SelectZeroAdapt::new(bits.clone(), 0);
         let ov = overhead(&sel);
         let th = theoretical_overhead(
-            SelectZeroAdapt::<AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN,
+            select_adapt::DEFAULT_TARGET_INVENTORY_SPAN,
             0,
         );
         eprintln!(
