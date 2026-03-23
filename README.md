@@ -209,5 +209,5 @@ Union nor the Italian MUR can be held responsible for them.
 [`AsMut<W>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
 [`AsRef<Self::Word>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
 [`AsMut<Self::Word>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
-[`Word`]: https://docs.rs/sux/latest/sux/traits/backend/trait.Backend.html#associatedtype.Word
-[`Backend`]: https://docs.rs/sux/latest/sux/traits/backend/trait.Backend.html
+[`Word`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html#associatedtype.Word
+[`Backend`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html

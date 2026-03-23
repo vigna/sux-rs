@@ -187,7 +187,7 @@ impl<B, I> SelectZeroAdapt<B, I> {
     #[inline(always)]
     const fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
         debug_assert!(span > 1 << 16);
-        // Since span >= 2^16, (span >> 15).ilog2() >= 0, which implies in any case
+        // Since span > 2^16, (span >> 15).ilog2() >= 0, which implies in any case
         // at least doubling the frequency of the subinventory with respect to the
         // 16-bit case, unless log2_ones_per_u16 = 0, that is, we are recording the
         // position of every one in the subinventory.

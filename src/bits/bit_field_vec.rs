@@ -67,7 +67,7 @@
 //!
 //! The wrapper [`UnalignedBitFieldVec`] implements [`SliceByValue`] using
 //! unaligned reads and delegates all iterator methods. It can be just plugged
-//! in place of a normal [`BitFieldVec`] when the trait bounds is
+//! in place of a normal [`BitFieldVec`] when the trait bound is
 //! [`SliceByValue`].
 //!
 //! # Examples

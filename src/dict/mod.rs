@@ -26,7 +26,9 @@
 //! [`indexed_dict`](crate::traits::indexed_dict) module.
 
 pub mod elias_fano;
-pub use elias_fano::{EliasFano, EliasFanoBuilder, EliasFanoConcurrentBuilder};
+pub use elias_fano::{
+    EfDict, EfSeq, EfSeqDict, EliasFano, EliasFanoBuilder, EliasFanoConcurrentBuilder,
+};
 
 pub mod rear_coded_list;
 pub use rear_coded_list::{RearCodedListBuilder, RearCodedListSliceU8, RearCodedListStr};

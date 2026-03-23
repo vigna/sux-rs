@@ -30,52 +30,52 @@ struct Args {
 }
 
 trait Struct {
-    fn build(bits: BitVec) -> Self;
+    fn build(bits: BitVec<Vec<u64>>) -> Self;
 }
-impl Struct for SelectAdapt<AddNumBits<BitVec>> {
-    fn build(bits: BitVec) -> Self {
+impl Struct for SelectAdapt<AddNumBits<BitVec<Vec<u64>>>> {
+    fn build(bits: BitVec<Vec<u64>>) -> Self {
         SelectAdapt::new(bits.into())
     }
 }
-impl Struct for Select9 {
-    fn build(bits: BitVec) -> Self {
-        Select9::new(Rank9::new(bits))
+impl Struct for Select9<Rank9<BitVec<Vec<u64>>>> {
+    fn build(bits: BitVec<Vec<u64>>) -> Self {
+        Select9::new(Rank9::<BitVec<Vec<u64>>>::new(bits))
     }
 }
 
-impl Struct for Rank9 {
-    fn build(bits: BitVec) -> Self {
-        Rank9::new(bits)
+impl Struct for Rank9<BitVec<Vec<u64>>> {
+    fn build(bits: BitVec<Vec<u64>>) -> Self {
+        Rank9::<BitVec<Vec<u64>>>::new(bits)
     }
 }
 
-impl Struct for RankSmall<64, 2, 9> {
-    fn build(bits: BitVec) -> Self {
-        RankSmall::<64, 2, 9>::new(bits)
+impl Struct for RankSmall<64, 2, 9, BitVec<Vec<u64>>> {
+    fn build(bits: BitVec<Vec<u64>>) -> Self {
+        RankSmall::<64, 2, 9, BitVec<Vec<u64>>>::new(bits)
     }
 }
 
-impl Struct for RankSmall<64, 1, 9> {
-    fn build(bits: BitVec) -> Self {
-        RankSmall::<64, 1, 9>::new(bits)
+impl Struct for RankSmall<64, 1, 9, BitVec<Vec<u64>>> {
+    fn build(bits: BitVec<Vec<u64>>) -> Self {
+        RankSmall::<64, 1, 9, BitVec<Vec<u64>>>::new(bits)
     }
 }
 
-impl Struct for RankSmall<64, 1, 10> {
-    fn build(bits: BitVec) -> Self {
-        RankSmall::<64, 1, 10>::new(bits)
+impl Struct for RankSmall<64, 1, 10, BitVec<Vec<u64>>> {
+    fn build(bits: BitVec<Vec<u64>>) -> Self {
+        RankSmall::<64, 1, 10, BitVec<Vec<u64>>>::new(bits)
     }
 }
 
-impl Struct for RankSmall<64, 1, 11> {
-    fn build(bits: BitVec) -> Self {
-        RankSmall::<64, 1, 11>::new(bits)
+impl Struct for RankSmall<64, 1, 11, BitVec<Vec<u64>>> {
+    fn build(bits: BitVec<Vec<u64>>) -> Self {
+        RankSmall::<64, 1, 11, BitVec<Vec<u64>>>::new(bits)
     }
 }
 
-impl Struct for RankSmall<64, 3, 13> {
-    fn build(bits: BitVec) -> Self {
-        RankSmall::<64, 3, 13>::new(bits)
+impl Struct for RankSmall<64, 3, 13, BitVec<Vec<u64>>> {
+    fn build(bits: BitVec<Vec<u64>>) -> Self {
+        RankSmall::<64, 3, 13, BitVec<Vec<u64>>>::new(bits)
     }
 }
 
@@ -107,19 +107,20 @@ fn mem_usage<S: Struct + MemSize + MemDbg + BitLength>(
     let first_half = loop {
         let b = (0..len / 2)
             .map(|_| rng.random_bool(density0))
-            .collect::<BitVec>();
+            .collect::<BitVec<Vec<u64>>>();
         if b.count_ones() > 0 {
             break b;
         }
     };
+
     let second_half = (0..len / 2)
         .map(|_| rng.random_bool(density1))
-        .collect::<BitVec>();
+        .collect::<BitVec<Vec<u64>>>();
 
     let bits = first_half
         .into_iter()
         .chain(&second_half)
-        .collect::<BitVec>();
+        .collect::<BitVec<Vec<u64>>>();
 
     let s = S::build(bits);
 
@@ -143,7 +144,7 @@ fn main() {
 
     match args.sel_type {
         StructType::SelectAdapt => {
-            mem_usage::<SelectAdapt<AddNumBits<BitVec>>>(
+            mem_usage::<SelectAdapt<AddNumBits<BitVec<Vec<u64>>>>>(
                 args.len,
                 args.density,
                 uniform,
@@ -151,25 +152,55 @@ fn main() {
             );
         }
         StructType::Select9 => {
-            mem_usage::<Select9>(args.len, args.density, uniform, "Select9");
+            mem_usage::<Select9<Rank9<BitVec<Vec<u64>>>>>(
+                args.len,
+                args.density,
+                uniform,
+                "Select9",
+            );
         }
         StructType::Rank9 => {
-            mem_usage::<Rank9>(args.len, args.density, uniform, "Rank9");
+            mem_usage::<Rank9<BitVec<Vec<u64>>>>(args.len, args.density, uniform, "Rank9");
         }
         StructType::RankSmall0 => {
-            mem_usage::<RankSmall<64, 2, 9>>(args.len, args.density, uniform, "RankSmall0");
+            mem_usage::<RankSmall<64, 2, 9, BitVec<Vec<u64>>>>(
+                args.len,
+                args.density,
+                uniform,
+                "RankSmall0",
+            );
         }
         StructType::RankSmall1 => {
-            mem_usage::<RankSmall<64, 1, 9>>(args.len, args.density, uniform, "RankSmall1");
+            mem_usage::<RankSmall<64, 1, 9, BitVec<Vec<u64>>>>(
+                args.len,
+                args.density,
+                uniform,
+                "RankSmall1",
+            );
         }
         StructType::RankSmall2 => {
-            mem_usage::<RankSmall<64, 1, 10>>(args.len, args.density, uniform, "RankSmall2");
+            mem_usage::<RankSmall<64, 1, 10, BitVec<Vec<u64>>>>(
+                args.len,
+                args.density,
+                uniform,
+                "RankSmall2",
+            );
         }
         StructType::RankSmall3 => {
-            mem_usage::<RankSmall<64, 1, 11>>(args.len, args.density, uniform, "RankSmall3");
+            mem_usage::<RankSmall<64, 1, 11, BitVec<Vec<u64>>>>(
+                args.len,
+                args.density,
+                uniform,
+                "RankSmall3",
+            );
         }
         StructType::RankSmall4 => {
-            mem_usage::<RankSmall<64, 3, 13>>(args.len, args.density, uniform, "RankSmall4");
+            mem_usage::<RankSmall<64, 3, 13, BitVec<Vec<u64>>>>(
+                args.len,
+                args.density,
+                uniform,
+                "RankSmall4",
+            );
         }
     }
 }

@@ -61,7 +61,8 @@ use std::borrow::Borrow;
 use std::iter::FusedIterator;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
-/// The default type for an Elias–Fano structure implementing an [`IndexedSeq`].
+/// The default type for an Elias–Fano structure implementing an [`IndexedSeq`],
+/// but not [`IndexedDict`], [`Succ`], or [`Pred`].
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
@@ -69,7 +70,7 @@ pub type EfSeq<V = usize> =
     EliasFano<V, SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
 
 /// The default type for an Elias–Fano structure implementing
-/// [`SuccUnchecked`] and [`PredUnchecked`].
+/// [`IndexedDict`], [`Succ`], and [`Pred`].
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
@@ -77,7 +78,7 @@ pub type EfDict<V = usize> =
     EliasFano<V, SelectZeroAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
 
 /// The default type for an Elias–Fano structure implementing an
-/// [`IndexedDict`], [`Succ`], and [`Pred`].
+/// [`IndexedSeq`], [`IndexedDict`], [`Succ`], and [`Pred`].
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or different selection structures altogether.
@@ -106,8 +107,7 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// [`build_with_dict`](EliasFanoBuilder::build_with_dict), or
 /// [`build_with_seq_and_dict`](EliasFanoBuilder::build_with_seq_and_dict) you
 /// will have access to the additional functionalities of an [`IndexedSeq`] or
-/// an [`IndexedDict`] with [`SuccUnchecked`] and [`PredUnchecked`], or both
-/// (and in that case, [`Succ`] and [`Pred`]).
+/// an [`IndexedDict`] with [`Succ`] and [`Pred`].
 ///
 /// It is also possible to manually enrich the base structure by calling
 /// [`EliasFano::map_high_bits`]. To use the structure as an [`IndexedSeq`] you
@@ -404,12 +404,12 @@ impl<
     }
 
     #[inline]
-    fn first_val(&self) -> Option<V> {
+    fn first_value(&self) -> Option<V> {
         (self.n != 0).then_some(self.first_val)
     }
 
     #[inline]
-    fn last_val(&self) -> Option<V> {
+    fn last_value(&self) -> Option<V> {
         (self.n != 0).then_some(self.last_val)
     }
 }
@@ -2148,8 +2148,8 @@ impl<V: Word + PrimitiveNumberAs<usize>> EliasFanoBuilder<V> {
     /// Builds an Elias–Fano structure with constant-time access, using
     /// default values.
     ///
-    /// The resulting structure implements [`IndexedSeq`], but not [`IndexedDict`],
-    /// [`Succ`], or [`Pred`].
+    /// The resulting structure implements [`IndexedSeq`], but not
+    /// [`IndexedDict`], [`Succ`], or [`Pred`].
     pub fn build_with_seq(self) -> EfSeq<V> {
         let ef = self.build();
         unsafe { ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new) }
@@ -2158,8 +2158,8 @@ impl<V: Word + PrimitiveNumberAs<usize>> EliasFanoBuilder<V> {
     /// Builds an Elias–Fano structure with constant-time successor and
     /// predecessor, using default values.
     ///
-    /// The resulting structure implements [`SuccUnchecked`] and
-    /// [`PredUnchecked`], but not [`IndexedSeq`].
+    /// The resulting structure implements [`IndexedDict`], [`Succ`], and
+    /// [`Pred`], but not [`IndexedSeq`].
     pub fn build_with_dict(self) -> EfDict<V> {
         let ef = self.build();
         unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new) }
@@ -2352,8 +2352,8 @@ where
     /// Builds an Elias–Fano structure with constant-time successor and
     /// predecessor, using default values.
     ///
-    /// The resulting structure implements [`SuccUnchecked`] and
-    /// [`PredUnchecked`], but not [`IndexedSeq`].
+    /// The resulting structure implements [`IndexedDict`], [`Succ`],
+    /// and [`Pred`], but not [`IndexedSeq`].
     pub fn build_with_dict(self) -> EfDict<V> {
         let ef = self.build();
         unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new) }

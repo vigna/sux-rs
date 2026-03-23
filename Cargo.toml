@@ -127,10 +127,6 @@ name = "bench_bit_field_vec"
 required-features = ["cli"]
 
 [[example]]
-name = "bench_rank9"
-required-features = ["cli"]
-
-[[example]]
 name = "bench_rear_coded_list"
 required-features = ["cli"]
 
