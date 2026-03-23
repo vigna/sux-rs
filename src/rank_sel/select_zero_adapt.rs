@@ -231,7 +231,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     pub fn new(bits: B) -> Self {
         Self::with_span(
             bits,
-            super::select_adapt::DEFAULT_TARGET_INVENTORY_SPAN,
+            super::select_adapt::default_target_inventory_span(
+                super::select_adapt::DEFAULT_LOG2_WORDS_PER_SUBINVENTORY,
+            ),
             super::select_adapt::DEFAULT_LOG2_WORDS_PER_SUBINVENTORY,
         )
     }

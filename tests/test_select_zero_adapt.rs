@@ -259,7 +259,8 @@ fn test_extremely_sparse() {
         .map(|b| !b)
         .collect::<BitVec>()
         .into();
-    let simple = SelectZeroAdapt::with_span(bits, select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 0);
+    let simple =
+        SelectZeroAdapt::with_span(bits, select_adapt::default_target_inventory_span(0), 0);
 
     assert_eq!(simple.count_zeros(), 4);
     assert_eq!(simple.select_zero(0), Some(len / 2));

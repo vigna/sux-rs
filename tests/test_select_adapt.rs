@@ -243,7 +243,7 @@ fn test_extremely_sparse() {
         .chain((0..len / 2).map(|_| false))
         .collect::<BitVec>()
         .into();
-    let simple = SelectAdapt::with_span(bits, select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 0);
+    let simple = SelectAdapt::with_span(bits, select_adapt::default_target_inventory_span(0), 0);
 
     assert_eq!(simple.count_ones(), 4);
     assert_eq!(simple.select(0), Some(len / 2));
