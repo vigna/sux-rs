@@ -291,11 +291,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
             ((1 + m) as f64 * usize::BITS as f64 * 100.0 / overhead_percentage) as usize;
         let min_span = m * (usize::BITS as usize * usize::BITS as usize) / 16;
 
-        Self::with_span(
-            bits,
-            target_span.max(min_span),
-            max_log2_words_per_subinv,
-        )
+        Self::with_span(bits, target_span.max(min_span), max_log2_words_per_subinv)
     }
 
     fn _new(
