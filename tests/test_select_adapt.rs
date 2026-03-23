@@ -8,6 +8,7 @@
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
+use sux::rank_sel::select_adapt;
 
 #[test]
 fn test() {
@@ -22,7 +23,7 @@ fn test() {
             .collect::<BitVec>()
             .into();
 
-        let select = SelectAdapt::new(bits.clone(), 3);
+        let select = SelectAdapt::new(bits.clone());
 
         let ones = select.num_ones();
         let mut pos = Vec::with_capacity(ones);
@@ -75,7 +76,7 @@ fn test_mult_usize() {
             .map(|_| rng.random_bool(density))
             .collect::<BitVec>()
             .into();
-        let select = SelectAdapt::new(bits.clone(), 3);
+        let select = SelectAdapt::new(bits.clone());
 
         let ones = bits.count_ones();
         let mut pos = Vec::with_capacity(ones);
@@ -95,7 +96,7 @@ fn test_mult_usize() {
 #[test]
 fn test_empty() {
     let bits: AddNumBits<BitVec> = BitVec::new(0).into();
-    let select = SelectAdapt::new(bits.clone(), 3);
+    let select = SelectAdapt::new(bits.clone());
     assert_eq!(select.count_ones(), 0);
     assert_eq!(select.len(), 0);
     assert_eq!(select.select(0), None);
@@ -110,7 +111,7 @@ fn test_empty() {
 fn test_ones() {
     let len = 300_000;
     let bits: AddNumBits<_> = (0..len).map(|_| true).collect::<BitVec>().into();
-    let select = SelectAdapt::new(bits, 3);
+    let select = SelectAdapt::new(bits);
     assert_eq!(select.count_ones(), len);
     assert_eq!(select.len(), len);
     for i in 0..len {
@@ -122,7 +123,7 @@ fn test_ones() {
 fn test_zeros() {
     let len = 300_000;
     let bits: AddNumBits<_> = (0..len).map(|_| false).collect::<BitVec>().into();
-    let select = SelectAdapt::new(bits, 3);
+    let select = SelectAdapt::new(bits);
     assert_eq!(select.count_ones(), 0);
     assert_eq!(select.len(), len);
     assert_eq!(select.select(0), None);
@@ -137,7 +138,7 @@ fn test_few_ones() {
                 .map(|i| i % (len / num_ones) == 0)
                 .collect::<BitVec>()
                 .into();
-            let select = SelectAdapt::new(bits, 3);
+            let select = SelectAdapt::new(bits);
             assert_eq!(select.count_ones(), num_ones);
             assert_eq!(select.len(), len);
             for i in 0..num_ones {
@@ -206,7 +207,7 @@ fn test_non_uniform() {
 
             let bits: AddNumBits<_> = bits.into();
 
-            let select = SelectAdapt::new(bits, 3);
+            let select = SelectAdapt::new(bits);
             for (i, &p) in pos.iter().enumerate() {
                 assert_eq!(select.select(i), Some(p));
             }
@@ -218,7 +219,7 @@ fn test_non_uniform() {
 #[test]
 fn test_map() {
     let bits: AddNumBits<_> = bit_vec![0, 1, 0, 1, 1, 0, 1, 0, 0, 1].into();
-    let sel = SelectAdapt::<_, _>::new(bits, 3);
+    let sel = SelectAdapt::<_, _>::new(bits);
     #[cfg(target_pointer_width = "64")]
     let rank_sel = unsafe { sel.map(RankSmall::<64, 1, 10, _>::new) };
     #[cfg(not(target_pointer_width = "64"))]
@@ -242,7 +243,7 @@ fn test_extremely_sparse() {
         .chain((0..len / 2).map(|_| false))
         .collect::<BitVec>()
         .into();
-    let simple = SelectAdapt::new(bits, 0);
+    let simple = SelectAdapt::with_span(bits, select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 0);
 
     assert_eq!(simple.count_ones(), 4);
     assert_eq!(simple.select(0), Some(len / 2));

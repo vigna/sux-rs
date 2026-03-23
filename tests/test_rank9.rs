@@ -61,7 +61,7 @@ fn test_map() {
     let rank9_sel = unsafe {
         rank9.map(|x| {
             let x: AddNumBits<_> = x.into();
-            SelectAdapt::new(x, 3)
+            SelectAdapt::new(x)
         })
     };
     assert_eq!(rank9_sel.rank(0), 0);

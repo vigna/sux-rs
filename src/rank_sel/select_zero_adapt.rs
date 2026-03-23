@@ -54,7 +54,7 @@ use std::ops::Index;
 /// # use sux::rank_sel::{SelectZeroAdapt, Rank9};
 /// // Standalone select
 /// let bits = bit_vec![0, 1, 0, 0, 1, 0, 1, 0];
-/// let select = SelectZeroAdapt::new(bits, 3);
+/// let select = SelectZeroAdapt::new(bits);
 ///
 /// // If the backend does not implement NumBits
 /// // we just get SelectZeroUnchecked
@@ -68,7 +68,7 @@ use std::ops::Index;
 ///
 /// // Let's add NumBits to the backend
 /// let bits: AddNumBits<_> = bit_vec![0, 1, 0, 0, 1, 0, 1, 0].into();
-/// let select = SelectZeroAdapt::new(bits, 3);
+/// let select = SelectZeroAdapt::new(bits);
 ///
 /// assert_eq!(select.select_zero(0), Some(0));
 /// assert_eq!(select.select_zero(1), Some(2));
@@ -103,7 +103,7 @@ use std::ops::Index;
 ///
 /// // Select over a Rank9 structure
 /// let rank9 = Rank9::new(sel_rank9.into_inner().into_inner());
-/// let rank9_sel = SelectZeroAdapt::new(rank9, 3);
+/// let rank9_sel = SelectZeroAdapt::new(rank9);
 ///
 /// assert_eq!(rank9_sel.select_zero(0), Some(0));
 /// assert_eq!(rank9_sel.select_zero(1), Some(2));
@@ -228,11 +228,11 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     SelectZeroAdapt<B, Box<[usize]>>
 {
     /// See [`SelectAdapt::new`](super::SelectAdapt::new).
-    pub fn new(bits: B, max_log2_words_per_subinv: usize) -> Self {
+    pub fn new(bits: B) -> Self {
         Self::with_span(
             bits,
             super::select_adapt::DEFAULT_TARGET_INVENTORY_SPAN,
-            max_log2_words_per_subinv,
+            super::select_adapt::DEFAULT_LOG2_WORDS_PER_SUBINVENTORY,
         )
     }
 
@@ -272,6 +272,29 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
             num_ones,
             log2_ones_per_inventory,
             max_log2_words_per_subinventory,
+        )
+    }
+
+    /// See [`SelectAdapt::with_overhead`](super::SelectAdapt::with_overhead).
+    pub fn with_overhead(
+        bits: B,
+        overhead_percentage: f64,
+        max_log2_words_per_subinv: usize,
+    ) -> Self {
+        assert!(
+            overhead_percentage > 0.0,
+            "overhead_percentage must be positive"
+        );
+        let m = 1usize << max_log2_words_per_subinv;
+
+        let target_span =
+            ((1 + m) as f64 * usize::BITS as f64 * 100.0 / overhead_percentage) as usize;
+        let min_span = m * (usize::BITS as usize * usize::BITS as usize) / 16;
+
+        Self::with_span(
+            bits,
+            target_span.max(min_span),
+            max_log2_words_per_subinv,
         )
     }
 

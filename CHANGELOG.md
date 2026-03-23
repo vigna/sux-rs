@@ -10,7 +10,9 @@
   structures which were requiring to specify the underlying word type and a
   backend now just require a backend, as backends have to implement the
   `Backend` trait which provides the necessary information. We suggest to use
-  your favorite AI tool to handle the transition.
+  your favorite AI tool to handle the transition. The new APIs emerged from
+  three years of experience with Rust and this library, and hopefully they
+  will be stable.
 
 ## [0.13.1] - 2026-03-07
 

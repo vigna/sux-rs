@@ -34,7 +34,7 @@
 //! use sux::traits::SelectUnchecked;
 //!
 //! let bv = bit_vec![0, 1, 0, 1, 1, 0, 1, 0];
-//! let select = SelectAdapt::new(bv, 3);
+//! let select = SelectAdapt::new(bv);
 //!
 //! assert_eq!(unsafe { select.select_unchecked(0) }, 1);
 //! ```
@@ -55,7 +55,7 @@
 //! use sux::traits::{AddNumBits, Select};
 //!
 //! let bv: AddNumBits<_> = bit_vec![0, 1, 0, 1, 1, 0, 1, 0].into();
-//! let select = SelectAdapt::new(bv, 3);
+//! let select = SelectAdapt::new(bv);
 //!
 //! assert_eq!(select.select(0), Some(1));
 //! ```
@@ -72,7 +72,7 @@
 //! use sux::traits::{Rank, Select};
 //!
 //! let bv = bit_vec![0, 1, 0, 1, 1, 0, 1, 0];
-//! let sel_rank9 = SelectAdapt::new(Rank9::new(bv), 3);
+//! let sel_rank9 = SelectAdapt::new(Rank9::new(bv));
 //!
 //! assert_eq!(sel_rank9.select(0), Some(1));
 //! assert_eq!(sel_rank9.rank(4), 2);

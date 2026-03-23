@@ -37,7 +37,7 @@ trait Struct {
 }
 impl Struct for SelectAdapt<AddNumBits<BitVec>> {
     fn build(bits: BitVec) -> Self {
-        SelectAdapt::new(bits.into(), 3)
+        SelectAdapt::new(bits.into())
     }
 }
 impl Struct for Select9 {
