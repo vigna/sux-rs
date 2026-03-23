@@ -50,8 +50,8 @@ use std::ops::Index;
 /// to the density of the bit vector, so you must be able to know the density in
 /// advance (as it happens, for example, for the high bits of the [Elias-Fano
 /// representation of monotone sequences](crate::dict::EliasFano)). Moreover,
-/// `LOG2_WORDS_PER_SUBINVENTORY` is no longer a maximum value, but rather an
-/// exact value.
+/// the const parameter `LOG2_WORDS_PER_SUBINVENTORY` is no longer a maximum
+/// value, but rather an exact value.
 ///
 /// The default parameters correspond to the [`SelectAdapt`](super::SelectAdapt)
 /// default values for a bit vector of density 0.5. A more detailed discussion of
@@ -60,15 +60,6 @@ use std::ops::Index;
 ///
 /// [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst) is a variant of this
 /// structure that provides the same functionality for zero bits.
-///
-/// # Maximum bit-vector length
-///
-/// The inventory encodes positions in the top bits of each
-/// [`usize`] entry, leaving `usize::BITS - 2` bits for
-/// the actual position. On 32-bit platforms this limits the bit vector
-/// length to 2^30 − 1 (about 1 billion bits); on 64-bit platforms the
-/// limit is 2^62 − 1. The constructor panics if the bit vector exceeds
-/// this limit.
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
@@ -220,7 +211,6 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
 impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
     SelectAdaptConst<B, I, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
-    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
     const LOG2_ONES_PER_SUB16: usize =
         LOG2_ONES_PER_INVENTORY.saturating_sub(LOG2_WORDS_PER_SUBINVENTORY + LOG2_U16_PER_USIZE);
     const ONES_PER_SUB16_MASK: usize = (1 << Self::LOG2_ONES_PER_SUB16) - 1;
@@ -289,7 +279,7 @@ impl<
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2^62 − 1 on 64-bit platforms, 2^30 − 1 on 32-bit).
+    /// (2⁶² − 1 on 64-bit platforms, 2³⁰ − 1 on 32-bit).
     pub fn new(bits: B) -> Self {
         assert_inventory_length(bits.len());
         let num_ones = bits.count_ones();

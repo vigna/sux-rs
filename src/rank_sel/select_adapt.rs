@@ -8,8 +8,8 @@
 
 //! Main module for the adaptive select family of data structures.
 //!
-//! Besides containing the main structure [`SelectAdapt`](SelectAdapt), this
-//! module also contains constants used by the variants
+//! Besides containing the main structure [`SelectAdapt`], this module also
+//! contains constants used by the variants
 //! [`SelectZeroAdapt`](super::SelectZeroAdapt),
 //! [`SelectAdaptConst`](super::SelectAdaptConst), and
 //! [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst).
@@ -85,8 +85,8 @@ use std::ops::Index;
 /// respect to the target space occupancy.
 ///
 /// For example, using [the default value of
-/// *L*](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) and [the default value of
-/// *M*](SelectAdapt::DEFAULT_LOG2_WORDS_PER_SUBINVENTORY), the space occupancy
+/// *L*](DEFAULT_TARGET_INVENTORY_SPAN) and [the default value of
+/// *M*](DEFAULT_LOG2_WORDS_PER_SUBINVENTORY), the space occupancy
 /// is between 7% and 14% on 64-bit platforms and twice that on 32-bit
 /// platforms. The space might be smaller for very sparse vectors as less than
 /// *M* subinventory words per inventory might be used.
@@ -137,14 +137,13 @@ use std::ops::Index;
 /// irregularities in the distribution of ones. Moreover, given the default
 /// value for *M*, the worst-case linear search after reading the inventory
 /// should be on few words. The [default suggested
-/// value](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) is a reasonable choice
-/// modeled on a maximum of four words in the linear search for vectors with
-/// uniform density.
+/// value](DEFAULT_TARGET_INVENTORY_SPAN) is a reasonable choice modeled on a
+/// maximum of four words in the linear search for vectors with uniform density.
 ///
 /// Note that doubling *M* and *L* reduces space occupancy (because of the
 /// plus-one in the space occupancy formula) and, in the 64-bit case, doubles
 /// the frequency of the second-level inventory, so there is no reason to choose
-/// a value of *M* smaller than *4*. Larger values might be useful in the
+/// a value of *M* smaller than 4. Larger values might be useful in the
 /// 64-bit case, but unlikely in the 32-bit case.
 ///
 /// Finally, combination of values resulting in linear searches shorter than a
@@ -311,10 +310,10 @@ pub const DEFAULT_LOG2_WORDS_PER_SUBINVENTORY: usize = 3;
 ///
 /// This value is defined by requesting that in vectors with uniform density
 /// the worst-case linear search is on four words. This requires *T* / (*M* ·
-/// `usize::BITS` / 16) = 4 · `usize::BITS`, where *T* is the target inventory span, and *M* is
+/// `usize::BITS` / 16) = 4 · `usize::BITS`, where *T* is the target inventory span and *M* is
 /// the default number of words per subinventory. Solving for *T* gives the value defined here.
 pub const DEFAULT_TARGET_INVENTORY_SPAN: usize =
-    (usize::BITS as usize * usize::BITS as usize) / 4 << DEFAULT_LOG2_WORDS_PER_SUBINVENTORY;
+    ((usize::BITS as usize * usize::BITS as usize) / 4) << DEFAULT_LOG2_WORDS_PER_SUBINVENTORY;
 
 /// Maximum bit-vector length supported by the inventory encoding
 /// (`usize::BITS - 2` position bits) for the adaptive

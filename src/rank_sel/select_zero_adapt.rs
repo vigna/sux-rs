@@ -178,8 +178,6 @@ impl<B, I> Deref for SelectZeroAdapt<B, I> {
 }
 
 impl<B, I> SelectZeroAdapt<B, I> {
-    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
-
     /// Returns the underlying bit vector, consuming this structure.
     pub fn into_inner(self) -> B {
         self.bits
@@ -229,51 +227,16 @@ impl<B: BitLength, C> SelectZeroAdapt<B, C> {
 impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     SelectZeroAdapt<B, Box<[usize]>>
 {
-    /// Creates a new selection structure over a bit vector using a
-    /// [default target inventory
-    /// span](SelectZeroAdapt::DEFAULT_TARGET_INVENTORY_SPAN).
-    ///
-    /// # Arguments
-    ///
-    /// * `bits`: A bit vector.
-    ///
-    /// * `max_log2_words_per_subinv`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectAdapt) of `usize` in each subinventory. The
-    ///   suggested value is 3, because it corresponds to the size of a cache
-    ///   line.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2^62 − 1 on 64-bit platforms, 2^30 − 1 on 32-bit).
+    /// See [`SelectAdapt::new`](super::SelectAdapt::new).
     pub fn new(bits: B, max_log2_words_per_subinv: usize) -> Self {
         Self::with_span(
             bits,
-            Self::DEFAULT_TARGET_INVENTORY_SPAN,
+            super::select_adapt::DEFAULT_TARGET_INVENTORY_SPAN,
             max_log2_words_per_subinv,
         )
     }
 
-    /// Creates a new selection structure over a bit vector with a specified
-    /// target inventory span.
-    ///
-    /// # Arguments
-    ///
-    /// * `bits`: A bit vector.
-    ///
-    /// * `target_inventory_span`: The target span [*L*](SelectZeroAdapt) of a
-    ///   first-level inventory entry. The actual span might be smaller by a
-    ///   factor of 2.
-    ///
-    /// * `max_log2_words_per_subinv`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectAdapt) of `usize` in each subinventory. The
-    ///   suggested value is 3, because it corresponds to the size of a cache
-    ///   line.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2^62 − 1 on 64-bit platforms, 2^30 − 1 on 32-bit).
+    /// See [`SelectAdapt::with_span`](super::SelectAdapt::with_span).
     pub fn with_span(
         bits: B,
         target_inventory_span: usize,
@@ -296,35 +259,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
         )
     }
 
-    /// Creates a new selection structure over a bit vector with a specified
-    /// distance between indexed zeros.
-    ///
-    /// This low-level constructor should be used with care, as the parameter
-    /// `log2_ones_per_inventory` is usually computed as the floor of the base-2
-    /// logarithm of ceiling of the target inventory span multiplied by the
-    /// density of zeros in the bit vector. Thus, this constructor makes sense
-    /// only if the density is known in advance.
-    ///
-    /// Unless you understand all the implications, it is preferable to use the
-    /// [standard constructor](SelectZeroAdapt::new).
-    ///
-    /// # Arguments
-    ///
-    /// * `bits`: A bit vector.
-    ///
-    /// * `log2_ones_per_inventory`: The base-2 logarithm of the distance
-    ///   between two indexed zeros.
-    ///
-    /// * `max_log2_words_per_subinventory`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectZeroAdapt) of 64-bit words in each subinventory.
-    ///   Increasing by one this value approximately doubles the space occupancy
-    ///   and halves the length of sequential broadword searches. Typical values
-    ///   are 3 and 4.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2^62 − 1 on 64-bit platforms, 2^30 − 1 on 32-bit).
+    /// See [`SelectAdapt::with_inv`](super::SelectAdapt::with_inv).
     pub fn with_inv(
         bits: B,
         log2_ones_per_inventory: usize,
