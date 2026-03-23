@@ -49,7 +49,7 @@ fn test_space_select_adapt() {
             .into();
 
         // SelectAdapt with M=8 (max_log2=3), default span 8192
-        let sel = SelectAdapt::new(bits.clone(), 3);
+        let sel = SelectAdapt::new(bits.clone());
         let ov = overhead(&sel);
         let th = theoretical_overhead(select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 3);
         eprintln!(
@@ -68,7 +68,7 @@ fn test_space_select_adapt() {
         );
 
         // SelectAdapt with M=1 (max_log2=0), default span 8192
-        let sel = SelectAdapt::new(bits.clone(), 0);
+        let sel = SelectAdapt::with_span(bits.clone(), select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 0);
         let ov = overhead(&sel);
         let th = theoretical_overhead(select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 0);
         eprintln!(
@@ -154,7 +154,7 @@ fn test_space_select_zero_adapt() {
             .collect::<BitVec>()
             .into();
 
-        let sel = SelectZeroAdapt::new(bits.clone(), 3);
+        let sel = SelectZeroAdapt::new(bits.clone());
         let ov = overhead(&sel);
         let th = theoretical_overhead(
             select_adapt::DEFAULT_TARGET_INVENTORY_SPAN,
@@ -173,7 +173,7 @@ fn test_space_select_zero_adapt() {
             "SelectZeroAdapt(M=3) d={density}: overhead {ov:.2}% > 3× theoretical {th:.2}%"
         );
 
-        let sel = SelectZeroAdapt::new(bits.clone(), 0);
+        let sel = SelectZeroAdapt::with_span(bits.clone(), select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 0);
         let ov = overhead(&sel);
         let th = theoretical_overhead(
             select_adapt::DEFAULT_TARGET_INVENTORY_SPAN,
@@ -244,4 +244,66 @@ fn test_space_select_zero_adapt_const() {
         );
         assert!(ov < 30.0, "overhead {ov:.2}% too high");
     }
+}
+
+#[test]
+fn test_with_overhead() {
+    let mut rng = SmallRng::seed_from_u64(0);
+
+    eprintln!(
+        "\n{:<40} {:>8} {:>8} {:>10}",
+        "Structure", "Density", "Target%", "Actual%"
+    );
+    eprintln!("{}", "-".repeat(70));
+
+    for density in [0.1, 0.5, 0.9] {
+        let bits: AddNumBits<_> = (0..LEN)
+            .map(|_| rng.random_bool(density))
+            .collect::<BitVec>()
+            .into();
+
+        for target in [3.0, 7.0, 15.0, 30.0] {
+            let sel = SelectAdapt::with_overhead(bits.clone(), target, 3);
+            let ov = overhead(&sel);
+            eprintln!(
+                "{:<40} {:>8.1} {:>7.0}% {:>9.2}%",
+                "SelectAdapt::with_overhead", density, target, ov
+            );
+            // Due to ilog2 rounding, actual overhead can be up to 2x the
+            // target. It should never exceed 3x (accounting for struct
+            // fields and spill).
+            assert!(
+                ov < target * 3.0,
+                "d={density} target={target}%: overhead {ov:.2}% > 3× target"
+            );
+
+            let sel_zero = SelectZeroAdapt::with_overhead(bits.clone(), target, 3);
+            let ov_zero = overhead(&sel_zero);
+            eprintln!(
+                "{:<40} {:>8.1} {:>7.0}% {:>9.2}%",
+                "SelectZeroAdapt::with_overhead", density, target, ov_zero
+            );
+            assert!(
+                ov_zero < target * 3.0,
+                "zero d={density} target={target}%: overhead {ov_zero:.2}% > 3× target"
+            );
+        }
+    }
+
+    // Verify the k_min cap: with a very high overhead request, the
+    // constructor should cap K so worst-case scan is at least 1 word.
+    // Build a dense vector and request 200% overhead.
+    let bits: AddNumBits<_> = (0..LEN)
+        .map(|_| rng.random_bool(0.5))
+        .collect::<BitVec>()
+        .into();
+
+    let sel_capped = SelectAdapt::with_overhead(bits.clone(), 200.0, 3);
+    let ov_capped = overhead(&sel_capped);
+    eprintln!("\nCapped case (target=200%): actual={ov_capped:.2}%");
+    // Should be significantly less than 200% due to the cap.
+    assert!(
+        ov_capped < 200.0,
+        "capped overhead {ov_capped:.2}% should be less than 200%"
+    );
 }

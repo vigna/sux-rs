@@ -174,7 +174,7 @@ use std::ops::Index;
 /// # use sux::rank_sel::{SelectAdapt, Rank9};
 /// // Standalone select
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
-/// let select = SelectAdapt::new(bits, 3);
+/// let select = SelectAdapt::new(bits);
 ///
 /// // If the backend does not implement NumBits
 /// // we just get SelectUnchecked
@@ -188,7 +188,7 @@ use std::ops::Index;
 ///
 /// // Let's add NumBits to the backend
 /// let bits: AddNumBits<_> = bit_vec![1, 0, 1, 1, 0, 1, 0, 1].into();
-/// let select = SelectAdapt::new(bits, 3);
+/// let select = SelectAdapt::new(bits);
 ///
 /// assert_eq!(select.select(0), Some(0));
 /// assert_eq!(select.select(1), Some(2));
@@ -223,7 +223,7 @@ use std::ops::Index;
 ///
 /// // Select over a Rank9 structure
 /// let rank9 = Rank9::new(sel_rank9.into_inner().into_inner());
-/// let rank9_sel = SelectAdapt::new(rank9, 3);
+/// let rank9_sel = SelectAdapt::new(rank9);
 ///
 /// assert_eq!(rank9_sel.select(0), Some(0));
 /// assert_eq!(rank9_sel.select(1), Some(2));
@@ -474,26 +474,18 @@ impl<B: BitLength, C> SelectAdapt<B, C> {
 impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     SelectAdapt<B, Box<[usize]>>
 {
-    /// Creates a new selection structure over a bit vector using a [default
-    /// target inventory span](DEFAULT_TARGET_INVENTORY_SPAN).
-    ///
-    /// # Arguments
-    ///
-    /// * `bits`: A bit vector.
-    ///
-    /// * `max_log2_words_per_subinv`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectAdapt) of `usize` in each subinventory. The
-    ///   suggested value is [`DEFAULT_LOG2_WORDS_PER_SUBINVENTORY`].
+    /// Creates a new selection structure over a bit vector using [default
+    /// values](SelectAdapt) for all parameters.
     ///
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
     /// (2⁶² − 1 on 64-bit platforms, 2³⁰ − 1 on 32-bit).
-    pub fn new(bits: B, max_log2_words_per_subinv: usize) -> Self {
+    pub fn new(bits: B) -> Self {
         Self::with_span(
             bits,
             DEFAULT_TARGET_INVENTORY_SPAN,
-            max_log2_words_per_subinv,
+            DEFAULT_LOG2_WORDS_PER_SUBINVENTORY,
         )
     }
 
@@ -582,6 +574,63 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
             log2_ones_per_inventory,
             max_log2_words_per_subinventory,
         )
+    }
+
+    /// Creates a new selection structure over a bit vector with a specified
+    /// target space overhead.
+    ///
+    /// The overhead is expressed as a percentage of the bit vector size. For
+    /// example, `overhead_percentage = 10.0` targets a selection structure
+    /// using about 10% of the bit vector size. The target inventory span *T*
+    /// is computed as (1 + *M*) · `usize::BITS` · 100 / `overhead_percentage`.
+    /// Note that, as explained in the [documentation](SelectAdapt), the
+    /// actual overhead might be up to twice the target overhead due to
+    /// rounding.
+    ///
+    /// If the requested overhead would result in a target span so small that
+    /// the worst-case linear search is less than one word, the target span is
+    /// increased to avoid wasting space.
+    ///
+    /// # Arguments
+    ///
+    /// * `bits`: A bit vector.
+    ///
+    /// * `overhead_percentage`: The target overhead as a percentage of the bit
+    ///   vector size.
+    ///
+    /// * `max_log2_words_per_subinv`: The base-2 logarithm of the maximum
+    ///   number [*M*](SelectAdapt) of `usize` in each subinventory. The
+    ///   suggested value is [`DEFAULT_LOG2_WORDS_PER_SUBINVENTORY`].
+    ///
+    /// See the [documentation](SelectAdapt) for details on how to choose these
+    /// parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
+    /// (2⁶² − 1 on 64-bit platforms, 2³⁰ − 1 on 32-bit), or if
+    /// `overhead_percentage` is not positive.
+    pub fn with_overhead(
+        bits: B,
+        overhead_percentage: f64,
+        max_log2_words_per_subinv: usize,
+    ) -> Self {
+        assert!(
+            overhead_percentage > 0.0,
+            "overhead_percentage must be positive"
+        );
+        let m = 1usize << max_log2_words_per_subinv;
+
+        // Target span from overhead: overhead% = (1+M) · usize::BITS / T · 100
+        // ⇒ T = (1+M) · usize::BITS · 100 / overhead%
+        let target_span =
+            ((1 + m) as f64 * usize::BITS as f64 * 100.0 / overhead_percentage) as usize;
+
+        // Ensure worst-case linear search is at least 1 word:
+        // T / (M · usize::BITS / 16) ≥ usize::BITS  ⇒  T ≥ M · usize::BITS² / 16
+        let min_span = m * (usize::BITS as usize * usize::BITS as usize) / 16;
+
+        Self::with_span(bits, target_span.max(min_span), max_log2_words_per_subinv)
     }
 
     fn _new(
@@ -977,7 +1026,7 @@ mod tests {
     fn test_max_length_panic() {
         let too_long = MAX_INVENTORY_BITS + 1;
         let bits = unsafe { BitVec::from_raw_parts(vec![0usize; 1], too_long) };
-        let _select = SelectAdapt::new(bits, 3);
+        let _select = SelectAdapt::new(bits);
     }
 }
 

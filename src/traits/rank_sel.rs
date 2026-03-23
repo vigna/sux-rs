@@ -255,7 +255,7 @@ pub trait SelectUnchecked {
 /// # use sux::prelude::*;
 /// // SelectAdapt needs NumBits
 /// let bits: AddNumBits<_> = bit_vec![1, 0, 1, 1, 0, 1, 0, 1].into();
-/// let sel = SelectAdapt::new(bits, 1);
+/// let sel = SelectAdapt::new(bits);
 /// assert_eq!(sel.select(0), Some(0));
 /// assert_eq!(sel.select(2), Some(3));
 /// assert_eq!(sel.select(4), Some(7));
@@ -295,7 +295,7 @@ pub trait SelectZeroUnchecked {
 /// # #[cfg(target_pointer_width = "64")]
 /// # {
 /// # use sux::prelude::*;
-/// let sel = SelectZeroAdapt::new(Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]), 0);
+/// let sel = SelectZeroAdapt::new(Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]));
 /// assert_eq!(sel.select_zero(0), Some(1));
 /// assert_eq!(sel.select_zero(1), Some(4));
 /// assert_eq!(sel.select_zero(2), Some(6));
