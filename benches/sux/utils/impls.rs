@@ -41,7 +41,11 @@ macro_rules! select_adapt_wrapper {
         pub struct $name(SelectAdapt<AddNumBits<BitVec>>);
         impl Build<BitVec> for $name {
             fn new(bits: BitVec) -> Self {
-                Self(SelectAdapt::new(bits.into(), $subinv))
+                Self(SelectAdapt::with_span(
+                    bits.into(),
+                    sux::rank_sel::select_adapt::default_target_inventory_span($subinv),
+                    $subinv,
+                ))
             }
         }
         forward_select!($name);
