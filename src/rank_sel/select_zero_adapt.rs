@@ -45,15 +45,6 @@ use std::ops::Index;
 /// A version of [`SelectAdapt`](super::SelectAdapt) implementing [selection on
 /// zeros](crate::traits::SelectZero).
 ///
-/// # Maximum bit-vector length
-///
-/// The inventory encodes positions in the top bits of each
-/// [`usize`] entry, leaving
-/// `usize::BITS - 2` bits for the actual position. On 32-bit
-/// platforms this limits the bit vector length to 2^30 − 1 (about 1
-/// billion bits); on 64-bit platforms the limit is 2^62 − 1. The
-/// constructor panics if the bit vector exceeds this limit.
-///
 /// # Examples
 /// ```rust
 /// # #[cfg(target_pointer_width = "64")]
@@ -187,6 +178,8 @@ impl<B, I> Deref for SelectZeroAdapt<B, I> {
 }
 
 impl<B, I> SelectZeroAdapt<B, I> {
+    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
+
     /// Returns the underlying bit vector, consuming this structure.
     pub fn into_inner(self) -> B {
         self.bits
@@ -195,7 +188,7 @@ impl<B, I> SelectZeroAdapt<B, I> {
     // Compute adaptively the number of 32-bit subinventory entries
     #[inline(always)]
     const fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
-        debug_assert!(span >= 1 << 16);
+        debug_assert!(span > 1 << 16);
         // Since span >= 2^16, (span >> 15).ilog2() >= 0, which implies in any case
         // at least doubling the frequency of the subinventory with respect to the
         // 16-bit case, unless log2_ones_per_u16 = 0, that is, we are recording the
@@ -220,8 +213,6 @@ impl<B, I> SelectZeroAdapt<B, I> {
             ones_per_sub16_mask: self.ones_per_sub16_mask,
         }
     }
-
-    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
 }
 
 impl<B: BitLength, C> SelectZeroAdapt<B, C> {
@@ -247,10 +238,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// * `bits`: A bit vector.
     ///
     /// * `max_log2_words_per_subinv`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectZeroAdapt) of 64-bit words in each subinventory.
-    ///   Increasing by one this value approximately doubles the space occupancy
-    ///   and halves the length of sequential broadword searches. Typical values
-    ///   are 3 and 4.
+    ///   number [*M*](SelectAdapt) of `usize` in each subinventory. The
+    ///   suggested value is 3, because it corresponds to the size of a cache
+    ///   line.
     ///
     /// # Panics
     ///
@@ -275,11 +265,10 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     ///   first-level inventory entry. The actual span might be smaller by a
     ///   factor of 2.
     ///
-    /// * `max_log2_words_per_subinventory`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectZeroAdapt) of 64-bit words in each subinventory.
-    ///   Increasing by one this value approximately doubles the space occupancy
-    ///   and halves the length of sequential broadword searches. Typical values
-    ///   are 3 and 4.
+    /// * `max_log2_words_per_subinv`: The base-2 logarithm of the maximum
+    ///   number [*M*](SelectAdapt) of `usize` in each subinventory. The
+    ///   suggested value is 3, because it corresponds to the size of a cache
+    ///   line.
     ///
     /// # Panics
     ///
@@ -294,8 +283,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
         let num_bits = max(1usize, bits.len());
         let num_ones = bits.count_zeros();
 
-        let log2_ones_per_inventory = (num_ones as u64 * target_inventory_span as u64)
-            .div_ceil(num_bits as u64)
+        let log2_ones_per_inventory = (num_ones as u128 * target_inventory_span as u128)
+            .div_ceil(num_bits as u128)
             .max(1)
             .ilog2() as usize;
 

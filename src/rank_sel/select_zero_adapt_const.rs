@@ -6,10 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use super::{
-    DEFAULT_LOG2_ONES_PER_INVENTORY, Inventory, LOG2_U16_PER_USIZE, SpanType, U32_PER_USIZE,
-    assert_inventory_length,
-};
+use super::{Inventory, LOG2_U16_PER_USIZE, SpanType, U32_PER_USIZE, assert_inventory_length};
+use crate::rank_sel::select_adapt;
 use crate::utils::SelectInWord;
 use crate::{
     prelude::{BitCount, BitLength},
@@ -46,15 +44,6 @@ use std::ops::Index;
 
 /// A version of [`SelectAdaptConst`](super::SelectAdaptConst) implementing
 /// [selection on zeros](crate::traits::SelectZero).
-///
-/// # Maximum bit-vector length
-///
-/// The inventory encodes positions in the top bits of each
-/// [`usize`] entry, leaving
-/// `usize::BITS - 2` bits for the actual position. On 32-bit
-/// platforms this limits the bit vector length to 2^30 − 1 (about 1
-/// billion bits); on 64-bit platforms the limit is 2^62 − 1. The
-/// constructor panics if the bit vector exceeds this limit.
 ///
 /// # Examples
 /// ```rust
@@ -165,8 +154,12 @@ use std::ops::Index;
 pub struct SelectZeroAdaptConst<
     B,
     I = Box<[usize]>,
-    const LOG2_ZEROS_PER_INVENTORY: usize = DEFAULT_LOG2_ONES_PER_INVENTORY,
-    const LOG2_WORDS_PER_SUBINVENTORY: usize = 3,
+    const LOG2_ZEROS_PER_INVENTORY: usize = {
+        select_adapt::DEFAULT_TARGET_INVENTORY_SPAN.ilog2() as usize - 1
+    },
+    const LOG2_WORDS_PER_SUBINVENTORY: usize = {
+        select_adapt::DEFAULT_LOG2_WORDS_PER_SUBINVENTORY
+    },
 > {
     bits: B,
     inventory: I,
@@ -201,6 +194,7 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENT
 impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTORY: usize>
     SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
+    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
     const LOG2_ONES_PER_SUB16: usize =
         LOG2_ZEROS_PER_INVENTORY.saturating_sub(LOG2_WORDS_PER_SUBINVENTORY + LOG2_U16_PER_USIZE);
     const ONES_PER_SUB16_MASK: usize = (1 << Self::LOG2_ONES_PER_SUB16) - 1;
@@ -210,7 +204,7 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENT
     // Compute adaptively the number of 32-bit subinventory entries
     #[inline(always)]
     const fn log2_ones_per_sub32(span: usize) -> usize {
-        debug_assert!(span >= 1 << 16);
+        debug_assert!(span > 1 << 16);
         // Since span >= 2^16, (span >> 15).ilog2() >= 0, which implies in any case
         // at least doubling the frequency of the subinventory with respect to the
         // 16-bit case, unless log2_ones_per_u16 = 0, that is, we are recording the
@@ -232,15 +226,13 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENT
     pub unsafe fn map<C: SelectZeroHinted>(
         self,
         f: impl FnOnce(B) -> C,
-    ) -> SelectZeroAdaptConst<C, I> {
+    ) -> SelectZeroAdaptConst<C, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY> {
         SelectZeroAdaptConst {
             bits: f(self.bits),
             inventory: self.inventory,
             spill: self.spill,
         }
     }
-
-    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
 }
 
 impl<

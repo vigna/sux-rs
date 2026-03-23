@@ -6,6 +6,14 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+//! Main module for the adaptive select family of data structures.
+//!
+//! Besides containing the main structure [`SelectAdapt`](SelectAdapt), this
+//! module also contains constants used by the variants
+//! [`SelectZeroAdapt`](super::SelectZeroAdapt),
+//! [`SelectAdaptConst`](super::SelectAdaptConst), and
+//! [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst).
+
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
@@ -62,84 +70,98 @@ use std::ops::Index;
 ///
 /// # Implementation Details
 ///
-/// The structure is based on a first-level inventory and a second-level
-/// subinventory. Similarly to [`Rank9`](super::Rank9), the two levels are
-/// interleaved to reduce the number of cache misses.
+/// The structure is based on an inventory and fixed-size subinventories, plus a
+/// spill buffer to handle adaptively extreme cases. Similarly to
+/// [`Rank9`](super::Rank9), the two levels are interleaved to reduce the number
+/// of cache misses.
 ///
 /// The inventory is sized so that the distance between two indexed ones is on
 /// average a given target value *L*. For each indexed one in the inventory (for
-/// which we use a [`usize`]), we allocate at most *M* (a power of 2)
-/// [`usize`]s for the subinventory. The relative target space occupancy
-/// of the selection structure is thus at most
-/// [`usize::BITS`] · (1 + *M*)/*L*. However, since the
-/// number of ones per inventory has to be a power of two, the _actual_ value of
-/// *L* might be smaller by a factor of 2, doubling the actual space occupancy
-/// with respect to the target space occupancy.
+/// which we use a [`usize`]), we allocate *M* (a power of 2) [`usize`]s for the
+/// subinventory. The relative target space occupancy of the selection structure
+/// is thus at most [`usize::BITS`] · (1 + *M*)/*L*. However, since the number
+/// of ones per inventory has to be a power of two, the _actual_ value of *L*
+/// might be smaller by a factor of 2, doubling the actual space occupancy with
+/// respect to the target space occupancy.
 ///
 /// For example, using [the default value of
-/// *L*](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) and *M* = 8, the space
-/// occupancy is between 7% and 14%. The space might be smaller for very sparse
-/// vectors as less than *M* subinventory words per inventory might be used.
+/// *L*](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) and [the default value of
+/// *M*](SelectAdapt::DEFAULT_LOG2_WORDS_PER_SUBINVENTORY), the space occupancy
+/// is between 7% and 14% on 64-bit platforms and twice that on 32-bit
+/// platforms. The space might be smaller for very sparse vectors as less than
+/// *M* subinventory words per inventory might be used.
 ///
 /// Given a specific indexed one in the inventory, if the distance to the next
 /// indexed one is at most 2¹⁶ we use the *M* words associated to the
 /// subinventory to store 4*M* 16-bit integers, representing the offsets of
-/// regularly spaced ones inside the inventory.
+/// regularly spaced ones inside the inventory. As a result, the average
+/// distance between two ones indexed by the subinventories is *L*/4*M*, (again,
+/// the actual value might be twice as large because of rounding). However, the
+/// worst-case distance might be as high as 2¹⁶/4*M*, as we use 4*M* 16-bit
+/// integers until the width of the inventory span makes it possible. On 32-bit
+/// platforms, in the considerations above you have to replace 4*M* with 2*M*.
 ///
 /// Otherwise, if the distance is smaller than or equal to 2³², we use the *M*
-/// words plus some additional words in a spill buffer to store the offsets of
+/// words plus some additional words in the spill buffer to store the offsets of
 /// regularly spaced ones inside the inventory using 32-bit integers (the first
 /// of the *M* words points inside the spill buffer). The number of such
 /// integers is chosen adaptively so that the average distance between two
-/// indexed ones is comparable to the worst case of a 16-bit subinventory.
+/// indexed ones is comparable to the worst case of a 16-bit subinventory (i.e.,
+/// 2¹⁶/4*M*)
+///
+/// Once we locate a starting position using the two-level inventory, we perform
+/// a sequential broadword search, which has a linear cost.
 ///
 /// Finally, if the distance is larger than 2³², we use the *M* words plus some
-/// additional words in a spill buffer to store exactly the position of every
-/// bit in the subinventory using 64-bit integers.
+/// additional words in the spill buffer to store exactly the position of every
+/// bit in the subinventory using 64-bit integers (this can happen only in the
+/// 64-bit case).
 ///
 /// Note that it is possible to build pathological cases (e.g., half of the bit
 /// vector extremely dense, half of the vector extremely sparse) in which the
 /// structure has a different performance depending on the selected bit. In
 /// these cases, [`Select9`](super::Select9) might be a better choice.
 ///
-/// In the 16-bit case, the average distance between two ones indexed by the
-/// subinventories is *L*/4*M*, (again, the actual value might be twice as large
-/// because of rounding). However, the worst-case distance might be as high as
-/// 2¹⁶/4*M*, as we use 4*M* 16-bit integers until the width of the inventory
-/// span makes it possible. Within this range, we perform a sequential broadword
-/// search, which has a linear cost. In the 32-bit case, the average distance
-/// between two ones is kept within 2¹⁶/4*M*.
-///
 /// # Choosing Parameters
 ///
-/// The value *L* should be chosen so that the distance between two indexed ones
-/// in the inventory is always smaller than 2¹⁶. The [default suggested
-/// value](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) is a reasonable choice
-/// for vectors that are reasonably uniform, but smaller values can be used for more
-/// irregular vectors, at the cost of a larger space occupancy. Moreover, a
-/// smaller value of *L* might provide faster selection in exchange for more
-/// space occupancy for small vectors (a few million bits), as the inventory
-/// would still fit the cache. Note that halving (or doubling) at the same time
-/// the value of *L* and *M* will give a structure with essentially the same
-/// space usage.
+/// The value *M* should almost always be 8, as it corresponds to the size of a
+/// cache line: the goal is to have tentatively a single cache miss when
+/// retrieving the inventory data. Note, however, that inventory entries
+/// comprise *M* + 1 words, and are not guaranteed to be aligned, so the actual
+/// number of consecutive cache lines touched can be up to 2. On some architectures,
+/// thus, one can consider lowering *M* to 4.
 ///
-/// The value *M* should be as high as possible, compatibly with the desired
-/// space occupancy, but values resulting in linear searches shorter than a
-/// couple of words will not generally improve performance; moreover,
-/// interleaving inventories is not useful if *M* is so large that the
-/// subinventory takes several cache lines. For example, using [the default value
-/// for *L*](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN), a reasonable choice for
-/// *M* is between 4 and 32, corresponding to worst-case linear searches between
-/// 1024 and 128 bits, typical choices being 8 and 16 (note that the
-/// constructors take the base-2 logarithm of *M*).
+/// The value *L* should be chosen so that the distance between two indexed ones
+/// in the inventory is (almost) always smaller than 2¹⁶, as that is the fast
+/// path; *L* has thus to be significantly smaller than 2¹⁶ to manage
+/// irregularities in the distribution of ones. Moreover, given the default
+/// value for *M*, the worst-case linear search after reading the inventory
+/// should be on few words. The [default suggested
+/// value](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN) is a reasonable choice
+/// modeled on a maximum of four words in the linear search for vectors with
+/// uniform density.
+///
+/// Note that doubling *M* and *L* reduces space occupancy (because of the
+/// plus-one in the space occupancy formula) and, in the 64-bit case, doubles
+/// the frequency of the second-level inventory, so there is no reason to choose
+/// a value of *M* smaller than *4*. Larger values might be useful in the
+/// 64-bit case, but unlikely in the 32-bit case.
+///
+/// Finally, combination of values resulting in linear searches shorter than a
+/// couple of words will not generally improve performance.
+///
+/// Given the strong dependency on architectural issues, and the different
+/// impact of these choices on small or large bit vectors, changing this values
+/// should be based on extensive experiments on the target architecture and the
+/// expected use cases.
 ///
 /// # Maximum bit-vector length
 ///
 /// The inventory encodes positions in the top bits of each
 /// [`usize`] entry, leaving `usize::BITS - 2` bits for
 /// the actual position. On 32-bit platforms this limits the bit vector
-/// length to 2^30 − 1 (about 1 billion bits); on 64-bit platforms the
-/// limit is 2^62 − 1. The constructor panics if the bit vector exceeds
+/// length to 2³⁰ − 1 (about 1 billion bits); on 64-bit platforms the
+/// limit is 2⁶² − 1. The constructor panics if the bit vector exceeds
 /// this limit.
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
@@ -275,6 +297,25 @@ impl<B, I> Deref for SelectAdapt<B, I> {
     }
 }
 
+/// The base-2 logarithm of the default number of `usize` in each
+/// subinventory.
+///
+/// This value is defined as 3 (e.g., *M* = 8 in the
+/// [documentation](SelectAdapt)), because it corresponds to the size of a
+/// cache line, and thus tentatively to a single cache miss when retrieving
+/// the inventory data (albeit inventory entries are not guaranteed to be
+/// aligned, and they contain an additional word).
+pub const DEFAULT_LOG2_WORDS_PER_SUBINVENTORY: usize = 3;
+
+/// The default target inventory span.
+///
+/// This value is defined by requesting that in vectors with uniform density
+/// the worst-case linear search is on four words. This requires *T* / (*M* ·
+/// `usize::BITS` / 16) = 4 · `usize::BITS`, where *T* is the target inventory span, and *M* is
+/// the default number of words per subinventory. Solving for *T* gives the value defined here.
+pub const DEFAULT_TARGET_INVENTORY_SPAN: usize =
+    (usize::BITS as usize * usize::BITS as usize) / 4 << DEFAULT_LOG2_WORDS_PER_SUBINVENTORY;
+
 /// Maximum bit-vector length supported by the inventory encoding
 /// (`usize::BITS - 2` position bits) for the adaptive
 /// select family of implementations.
@@ -287,15 +328,6 @@ pub(super) const LOG2_U16_PER_USIZE: usize = (usize::BITS / 16).ilog2() as usize
 /// Number of `u32` values that fit in one `usize`
 /// (2 on 64-bit, 1 on 32-bit).
 pub(super) const U32_PER_USIZE: usize = (usize::BITS / 32) as usize;
-
-/// Default value of `LOG2_ONES_PER_INVENTORY` for
-/// [`SelectAdaptConst`](super::SelectAdaptConst) and
-/// `LOG2_ZEROS_PER_INVENTORY` for
-/// [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst).
-///
-/// Defined as 6 + log₂(`usize::BITS`), giving 12 on 64-bit and
-/// 11 on 32-bit. This ensures the same space overhead on both platforms.
-pub(super) const DEFAULT_LOG2_ONES_PER_INVENTORY: usize = 6 + usize::BITS.ilog2() as usize;
 
 /// Panics if the bit vector length exceeds [`MAX_INVENTORY_BITS`].
 #[inline]
@@ -312,8 +344,8 @@ pub(super) fn assert_inventory_length(len: usize) {
 ///
 /// The top 2 bits of each `usize` entry encode the span type
 /// ([`SpanType`]), leaving `usize::BITS - 2` bits for the actual
-/// position. On 64-bit platforms this allows positions up to 2^62 − 1; on
-/// 32-bit platforms only up to 2^30 − 1 (about 1 billion). Constructors
+/// position. On 64-bit platforms this allows positions up to 2⁶² − 1; on
+/// 32-bit platforms only up to 2³⁰ − 1 (about 1 billion). Constructors
 /// of all SelectAdapt variants assert that the bit vector length fits in
 /// this range.
 pub(super) trait Inventory {
@@ -382,10 +414,10 @@ impl SpanType {
     pub fn from_span(x: usize) -> SpanType {
         match x {
             0..=0x10000 => SpanType::U16,
+            #[cfg(not(target_pointer_width = "64"))]
+            _ => SpanType::U32,
             #[cfg(target_pointer_width = "64")]
             0x10001..=0x100000000 => SpanType::U32,
-            #[cfg(not(target_pointer_width = "64"))]
-            0x10001.. => SpanType::U32,
             #[cfg(target_pointer_width = "64")]
             _ => SpanType::U64,
         }
@@ -401,13 +433,14 @@ impl<B, I> SelectAdapt<B, I> {
     // Compute adaptively the number of 32-bit subinventory entries
     #[inline(always)]
     const fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
-        debug_assert!(span >= 1 << 16);
-        // Since span >= 2^16, (span >> 15).ilog2() >= 0, which implies in any case
+        debug_assert!(span > 1 << 16);
+        // Since span > 2¹⁶, (span >> 15).ilog2() >= 0, which implies in any case
         // at least doubling the frequency of the subinventory with respect to the
         // 16-bit case, unless log2_ones_per_u16 = 0, that is, we are recording the
         // position of every one in the subinventory.
         log2_ones_per_sub16.saturating_sub((span >> 15).ilog2() as usize + 1)
     }
+
     /// Replaces the backend with a new one implementing [`SelectHinted`].
     ///
     /// # Safety
@@ -426,8 +459,6 @@ impl<B, I> SelectAdapt<B, I> {
             ones_per_sub16_mask: self.ones_per_sub16_mask,
         }
     }
-
-    pub const DEFAULT_TARGET_INVENTORY_SPAN: usize = 128 * usize::BITS as usize;
 }
 
 impl<B: BitLength, C> SelectAdapt<B, C> {
@@ -444,28 +475,25 @@ impl<B: BitLength, C> SelectAdapt<B, C> {
 impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     SelectAdapt<B, Box<[usize]>>
 {
-    /// Creates a new selection structure over a bit vector using a
-    /// [default target inventory
-    /// span](SelectAdapt::DEFAULT_TARGET_INVENTORY_SPAN).
+    /// Creates a new selection structure over a bit vector using a [default
+    /// target inventory span](DEFAULT_TARGET_INVENTORY_SPAN).
     ///
     /// # Arguments
     ///
     /// * `bits`: A bit vector.
     ///
     /// * `max_log2_words_per_subinv`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectAdapt) of 64-bit words in each subinventory.
-    ///   Increasing by one this value approximately doubles the space occupancy
-    ///   and halves the length of sequential broadword searches. Typical values
-    ///   are 3 and 4.
+    ///   number [*M*](SelectAdapt) of `usize` in each subinventory. The
+    ///   suggested value is [`DEFAULT_LOG2_WORDS_PER_SUBINVENTORY`].
     ///
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2^62 − 1 on 64-bit platforms, 2^30 − 1 on 32-bit).
+    /// (2⁶² − 1 on 64-bit platforms, 2³⁰ − 1 on 32-bit).
     pub fn new(bits: B, max_log2_words_per_subinv: usize) -> Self {
         Self::with_span(
             bits,
-            Self::DEFAULT_TARGET_INVENTORY_SPAN,
+            DEFAULT_TARGET_INVENTORY_SPAN,
             max_log2_words_per_subinv,
         )
     }
@@ -481,16 +509,16 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     ///   first-level inventory entry. The actual span might be smaller by a
     ///   factor of 2.
     ///
-    /// * `max_log2_words_per_subinventory`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectAdapt) of 64-bit words in each subinventory.
-    ///   Increasing by one this value approximately doubles the space occupancy
-    ///   and halves the length of sequential broadword searches. Typical values
-    ///   are 3 and 4.
+    /// * `max_log2_words_per_subinv`: The base-2 logarithm of the maximum
+    ///   number [*M*](SelectAdapt) of `usize` in each subinventory.
+    ///
+    /// See the [documentation](SelectAdapt) for details on how to choose these
+    /// parameters.
     ///
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2^62 − 1 on 64-bit platforms, 2^30 − 1 on 32-bit).
+    /// (2⁶² − 1 on 64-bit platforms, 2³⁰ − 1 on 32-bit).
     pub fn with_span(
         bits: B,
         target_inventory_span: usize,
@@ -500,8 +528,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
         let num_bits = max(1usize, bits.len());
         let num_ones = bits.count_ones();
 
-        let log2_ones_per_inventory = (num_ones as u64 * target_inventory_span as u64)
-            .div_ceil(num_bits as u64)
+        let log2_ones_per_inventory = (num_ones as u128 * target_inventory_span as u128)
+            .div_ceil(num_bits as u128)
             .max(1)
             .ilog2() as usize;
 
@@ -513,8 +541,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
         )
     }
 
-    /// Creates a new selection structure over a bit vector with a specified
-    /// distance between indexed ones.
+    /// Creates a new selection structure over a bit vector with an inventory
+    /// of specified frequency.
     ///
     /// This low-level constructor should be used with care, as the parameter
     /// `log2_ones_per_inventory` is usually computed as the floor of the base-2
@@ -529,19 +557,19 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     ///
     /// * `bits`: A bit vector.
     ///
-    /// * `log2_ones_per_inventory`: The base-2 logarithm of the distance
-    ///   between two indexed ones.
+    /// * `log2_ones_per_inventory`: The base-2 logarithm of the indexing
+    ///   frequency.
     ///
     /// * `max_log2_words_per_subinventory`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectAdapt) of 64-bit words in each subinventory.
-    ///   Increasing by one this value approximately doubles the space occupancy
-    ///   and halves the length of sequential broadword searches. Typical values
-    ///   are 3 and 4.
+    ///   number [*M*](SelectAdapt) of `usize` in each subinventory.
+    ///
+    /// See the [documentation](SelectAdapt) for details on how to choose these
+    /// parameters.
     ///
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2^62 − 1 on 64-bit platforms, 2^30 − 1 on 32-bit).
+    /// (2⁶² − 1 on 64-bit platforms, 2³⁰ − 1 on 32-bit).
     pub fn with_inv(
         bits: B,
         log2_ones_per_inventory: usize,

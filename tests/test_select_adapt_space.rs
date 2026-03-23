@@ -13,6 +13,7 @@ use mem_dbg::{MemSize, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
+use sux::rank_sel::select_adapt;
 
 const LEN: usize = 1_000_000;
 
@@ -50,10 +51,7 @@ fn test_space_select_adapt() {
         // SelectAdapt with M=8 (max_log2=3), default span 8192
         let sel = SelectAdapt::new(bits.clone(), 3);
         let ov = overhead(&sel);
-        let th = theoretical_overhead(
-            SelectAdapt::<AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN,
-            3,
-        );
+        let th = theoretical_overhead(select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 3);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10.2}% {:>10}",
             "SelectAdapt(M=3)",
@@ -72,10 +70,7 @@ fn test_space_select_adapt() {
         // SelectAdapt with M=1 (max_log2=0), default span 8192
         let sel = SelectAdapt::new(bits.clone(), 0);
         let ov = overhead(&sel);
-        let th = theoretical_overhead(
-            SelectAdapt::<AddNumBits<BitVec>>::DEFAULT_TARGET_INVENTORY_SPAN,
-            0,
-        );
+        let th = theoretical_overhead(select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 0);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10.2}% {:>10}",
             "SelectAdapt(M=0)",
