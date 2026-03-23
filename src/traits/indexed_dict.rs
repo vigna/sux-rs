@@ -111,8 +111,8 @@ pub trait IndexedSeq: Types {
 
     /// Returns the first value, or `None` if the dictionary is empty.
     ///
-    /// Equivalent to (and defined by default as) [`get(0)`](IndexedSeq::get),
-    /// but implementations may provide a more efficient method.
+    /// Equivalent to [`get(0)`](IndexedSeq::get), but implementations may
+    /// provide a more efficient method.
     fn first_val(&self) -> Option<Self::Output<'_>> {
         if self.is_empty() {
             None
@@ -123,9 +123,8 @@ pub trait IndexedSeq: Types {
 
     /// Returns the last value, or `None` if the dictionary is empty.
     ///
-    /// Equivalent to (and defined by default as) [`get(len -
-    /// 1)`](IndexedSeq::get), but implementations may provide a more efficient
-    /// method.
+    /// Equivalent to [`get(len - 1)`](IndexedSeq::get), but implementations
+    /// may provide a more efficient method.
     fn last_val(&self) -> Option<Self::Output<'_>> {
         if self.is_empty() {
             None
@@ -415,7 +414,7 @@ where
     /// The iterator's first [`next()`](Iterator::next) call returns the
     /// predecessor value itself; the first
     /// [`prev()`](crate::traits::BidiIterator::prev) call returns the element
-    /// before the predecessor.
+    /// after the predecessor.
     ///
     /// # Safety
     ///

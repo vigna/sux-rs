@@ -77,6 +77,9 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// with both word sizes (with the exception of `(2, 8)` and `(2, 9)`, which
 /// are word-size-specific).
 ///
+/// The type parameter `B` is a bit-based [backend](Backend); the remaining
+/// type parameter are internal and should always have their default values.
+///
 /// Presently we support the following combinations for `u64` words:
 ///
 /// - `rank_small![u64: 0; -]` (builds `RankSmall<64, 2, 9>`): 18.75%

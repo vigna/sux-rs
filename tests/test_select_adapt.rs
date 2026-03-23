@@ -304,3 +304,32 @@ fn test_sub32s_last_small() {
         assert_eq!(simple.select(ones + 1), None);
     }
 }
+
+/// Test that bit vectors exceeding 2^30 bits work (the limit is 2^31 - 1
+/// on 32-bit platforms thanks to the 1-bit span encoding, and 2^62 - 1 on
+/// 64-bit).
+#[cfg(feature = "slow_tests")]
+#[test]
+fn test_1_1_billion_bits() {
+    // 1.1 billion bits -- exceeds the old 2^30 ~ 1.07B limit.
+    let num_bits: usize = 1_100_000_000;
+    let num_words = num_bits.div_ceil(usize::BITS as usize);
+    let mut words = vec![0usize; num_words];
+    // Place a few ones: at position 0, middle, and near the end.
+    words[0] = 1;
+    words[num_words / 2] = 1;
+    words[num_words - 1] = 1;
+    let bits: AddNumBits<_> =
+        unsafe { BitVec::from_raw_parts(words.into_boxed_slice(), num_bits) }.into();
+
+    let sel = SelectAdapt::new(bits);
+    assert_eq!(sel.count_ones(), 3);
+    unsafe {
+        assert_eq!(sel.select_unchecked(0), 0);
+        assert_eq!(
+            sel.select_unchecked(1),
+            (num_words / 2) * usize::BITS as usize
+        );
+    }
+    assert_eq!(sel.select(3), None);
+}
