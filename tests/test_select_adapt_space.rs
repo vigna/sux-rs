@@ -68,7 +68,8 @@ fn test_space_select_adapt() {
         );
 
         // SelectAdapt with M=1 (max_log2=0), default span 8192
-        let sel = SelectAdapt::with_span(bits.clone(), select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 0);
+        let sel =
+            SelectAdapt::with_span(bits.clone(), select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 0);
         let ov = overhead(&sel);
         let th = theoretical_overhead(select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 0);
         eprintln!(
@@ -156,10 +157,7 @@ fn test_space_select_zero_adapt() {
 
         let sel = SelectZeroAdapt::new(bits.clone());
         let ov = overhead(&sel);
-        let th = theoretical_overhead(
-            select_adapt::DEFAULT_TARGET_INVENTORY_SPAN,
-            3,
-        );
+        let th = theoretical_overhead(select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 3);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10.2}% {:>10}",
             "SelectZeroAdapt(M=3)",
@@ -173,12 +171,13 @@ fn test_space_select_zero_adapt() {
             "SelectZeroAdapt(M=3) d={density}: overhead {ov:.2}% > 3× theoretical {th:.2}%"
         );
 
-        let sel = SelectZeroAdapt::with_span(bits.clone(), select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 0);
-        let ov = overhead(&sel);
-        let th = theoretical_overhead(
+        let sel = SelectZeroAdapt::with_span(
+            bits.clone(),
             select_adapt::DEFAULT_TARGET_INVENTORY_SPAN,
             0,
         );
+        let ov = overhead(&sel);
+        let th = theoretical_overhead(select_adapt::DEFAULT_TARGET_INVENTORY_SPAN, 0);
         eprintln!(
             "{:<30} {:>8.1} {:>9.2}% {:>10.2}% {:>10}",
             "SelectZeroAdapt(M=0)",
