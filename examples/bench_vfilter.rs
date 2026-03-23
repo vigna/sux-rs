@@ -18,6 +18,11 @@ use sux::{
     utils::{BinSafe, LineLender, Sig, ToSig, ZstdLineLender},
 };
 
+#[cfg(target_pointer_width = "64")]
+const INCR: usize = 0x9e3779b97f4a7c15;
+#[cfg(not(target_pointer_width = "64"))]
+const INCR: usize = 0x9e3779b9;
+
 fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
     let mut timings = Vec::with_capacity(repeats);
     for _ in 0..repeats {
@@ -177,7 +182,7 @@ where
         bench(args.n, args.repeats, || {
             let mut key: usize = 0;
             for _ in 0..args.n {
-                key = key.wrapping_add(0x9e3779b97f4a7c15);
+                key = key.wrapping_add(INCR);
                 std::hint::black_box(filter.contains(key));
             }
         });
@@ -237,12 +242,12 @@ where
             let mut key: usize = 0;
             if args.unaligned {
                 for _ in 0..args.n {
-                    key = key.wrapping_add(0x9e3779b97f4a7c15);
+                    key = key.wrapping_add(INCR);
                     std::hint::black_box(filter.contains_unaligned(key));
                 }
             } else {
                 for _ in 0..args.n {
-                    key = key.wrapping_add(0x9e3779b97f4a7c15);
+                    key = key.wrapping_add(INCR);
                     std::hint::black_box(filter.contains(key));
                 }
             }
