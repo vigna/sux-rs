@@ -113,7 +113,7 @@ pub trait IndexedSeq: Types {
     ///
     /// Equivalent to [`get(0)`](IndexedSeq::get), but implementations may
     /// provide a more efficient method.
-    fn first_val(&self) -> Option<Self::Output<'_>> {
+    fn first_value(&self) -> Option<Self::Output<'_>> {
         if self.is_empty() {
             None
         } else {
@@ -125,7 +125,7 @@ pub trait IndexedSeq: Types {
     ///
     /// Equivalent to [`get(len - 1)`](IndexedSeq::get), but implementations
     /// may provide a more efficient method.
-    fn last_val(&self) -> Option<Self::Output<'_>> {
+    fn last_value(&self) -> Option<Self::Output<'_>> {
         if self.is_empty() {
             None
         } else {
