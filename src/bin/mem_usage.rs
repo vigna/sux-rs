@@ -5,9 +5,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-#[cfg(not(target_pointer_width = "64"))]
-compile_error!("mem_usage requires a 64-bit platform");
-
 use clap::{Parser, ValueEnum};
 use mem_dbg::*;
 use rand::{RngExt, SeedableRng, rngs::SmallRng};
