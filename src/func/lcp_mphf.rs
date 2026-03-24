@@ -4,62 +4,157 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! LCP-based monotone minimal perfect hash function for strings.
+//! LCP-based monotone minimal perfect hash function for integer types.
 
 use crate::bits::BitFieldVec;
 use crate::func::VBuilder;
 use crate::func::VFunc;
 use crate::utils::*;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use dsi_progress_logger::ProgressLog;
 use lender::*;
 use mem_dbg::*;
+use num_primitive::PrimitiveInteger;
+use std::borrow::Borrow;
+use xxhash_rust::xxh3;
 
-/// A monotone minimal perfect hash function for lexicographically sorted
-/// strings, based on longest common prefixes (LCPs).
+/// A bit-level prefix of an integer, used as key for the LCP-to-bucket
+/// mapping.
 ///
-/// Given *n* strings in lexicographic order, the structure maps each string
-/// to its rank (0 to *n* − 1). Querying a string not in the original set
-/// returns an arbitrary value (same contract as [`VFunc`]).
+/// Stores the original integer value and a bit length. The [`ToSig`]
+/// implementation hashes only the top `bit_length` bits (by right-shifting
+/// to discard the rest) followed by the bit length, directly on the stack
+/// with no allocation.
+#[derive(Debug, Clone, Copy, MemDbg, MemSize)]
+#[mem_size_flat]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct IntBitPrefix<T: PrimitiveInteger> {
+    /// The original integer value.
+    value: T,
+    /// Number of significant leading bits.
+    bit_length: usize,
+}
+
+impl<T: PrimitiveInteger> IntBitPrefix<T> {
+    /// Creates a new integer bit prefix.
+    #[inline]
+    pub fn new(value: T, bit_length: usize) -> Self {
+        debug_assert!(bit_length <= T::BITS as usize);
+        Self { value, bit_length }
+    }
+
+    /// Returns the top `bit_length` bits, right-aligned (trailing bits
+    /// discarded).
+    #[inline]
+    fn significant_bits(&self) -> T {
+        if self.bit_length == 0 {
+            T::MIN // zero for unsigned types
+        } else {
+            self.value >> (T::BITS as usize - self.bit_length)
+        }
+    }
+}
+
+/// Returns a byte-slice view of a `PrimitiveInteger` value.
+#[inline]
+fn as_bytes<T: PrimitiveInteger>(val: &T) -> &[u8] {
+    unsafe { std::slice::from_raw_parts(val as *const T as *const u8, size_of::<T>()) }
+}
+
+impl<T: PrimitiveInteger> ToSig<[u64; 2]> for IntBitPrefix<T> {
+    #[inline]
+    fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
+        let k = key.borrow();
+        let sig = k.significant_bits();
+        let mut hasher = xxh3::Xxh3::with_seed(seed);
+        hasher.update(as_bytes(&sig));
+        hasher.update(&k.bit_length.to_ne_bytes());
+        let h = hasher.digest128();
+        [(h >> 64) as u64, h as u64]
+    }
+}
+
+impl<T: PrimitiveInteger> ToSig<[u64; 1]> for IntBitPrefix<T> {
+    #[inline]
+    fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
+        let k = key.borrow();
+        let sig = k.significant_bits();
+        let mut hasher = xxh3::Xxh3::with_seed(seed);
+        hasher.update(as_bytes(&sig));
+        hasher.update(&k.bit_length.to_ne_bytes());
+        [hasher.digest()]
+    }
+}
+
+/// Returns the number of leading bits shared by two integers of the same
+/// type, compared MSB-first (big-endian bit order).
+#[inline]
+fn lcp_bits<T: PrimitiveInteger>(a: T, b: T) -> usize {
+    (a ^ b).leading_zeros() as usize
+}
+
+/// Computes the log2 of bucket size from *n* using the LCP-MPHF formula.
+fn compute_log2_bucket_size(n: usize) -> usize {
+    if n <= 1 {
+        return 0;
+    }
+    let ln_n = (n as f64).ln();
+    let theoretical = 1.0 + 1.11 * f64::ln(2.0) + ln_n - (1.0 + ln_n).ln();
+    let theoretical = theoretical.ceil().max(1.0) as usize;
+    theoretical.next_power_of_two().ilog2() as usize
+}
+
+/// A monotone minimal perfect hash function for sorted integers, based on
+/// longest common bit-prefixes (LCPs).
 ///
-/// The strings are divided into buckets of size 2^*k*. For each bucket,
-/// the longest common byte prefix (LCP) shared by all strings in the
-/// bucket (and the last string of the previous bucket) is computed. The
-/// rank of a key is then reconstructed as `bucket * bucket_size + offset`,
-/// where the bucket is determined by the LCP and the offset is stored
-/// directly.
+/// Given *n* integers of type `T` in ascending order, the structure maps
+/// each integer to its rank (0 to *n* − 1). Querying an integer not in
+/// the original set returns an arbitrary value (same contract as
+/// [`VFunc`]).
+///
+/// The integers are divided into buckets of size 2^*k*. For each bucket,
+/// the longest common bit-prefix shared by all consecutive pairs within
+/// the bucket is computed (starting from the full bit width of the first
+/// key). The rank of a key is then reconstructed as
+/// `bucket * bucket_size + offset`, where the bucket is determined by the
+/// bit-prefix and the offset is stored directly.
 ///
 /// Internally, the structure contains two [`VFunc`]s:
-/// - `offset_lcp_length`: maps each key (`str`) to a packed value
-///   encoding the LCP length and the offset within the bucket;
-/// - `lcp2bucket`: maps each LCP byte prefix (`[u8]`) to its bucket
-///   index.
+/// - `offset_lcp_length`: maps each key (`T`) to a packed value encoding
+///   the LCP bit-length and the offset within the bucket;
+/// - `lcp2bucket`: maps each LCP bit-prefix ([`IntBitPrefix`]) to its
+///   bucket index.
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct LcpMinPerfHashFunc {
+pub struct LcpMinPerfHashFuncInt<T: PrimitiveInteger + ToSig<[u64; 2]>> {
     /// Number of keys.
     n: usize,
     /// Log2 of bucket size.
     log2_bucket_size: usize,
-    /// Maps each key to `(lcp_length << log2_bucket_size) | offset`.
-    offset_lcp_length: VFunc<str, usize, BitFieldVec<Box<[usize]>>>,
-    /// Maps each LCP byte prefix to its bucket index.
-    lcp2bucket: VFunc<[u8], usize, BitFieldVec<Box<[usize]>>>,
+    /// Maps each key to `(lcp_bit_length << log2_bucket_size) | offset`.
+    offset_lcp_length: VFunc<T, usize, BitFieldVec<Box<[usize]>>>,
+    /// Maps each LCP bit-prefix to its bucket index.
+    lcp2bucket: VFunc<IntBitPrefix<T>, usize, BitFieldVec<Box<[usize]>>>,
 }
 
-impl LcpMinPerfHashFunc {
+impl<T: PrimitiveInteger + ToSig<[u64; 2]>> LcpMinPerfHashFuncInt<T> {
     /// Returns the rank (0-based position) of the given key in the
     /// original sorted sequence.
     ///
     /// If the key was not in the original set, the result is arbitrary
     /// (same contract as [`VFunc::get`]).
     #[inline]
-    pub fn get(&self, key: &str) -> usize {
+    pub fn get(&self, key: T) -> usize
+    where
+        T: Copy,
+    {
         let packed = self.offset_lcp_length.get(key);
-        let lcp_length = packed >> self.log2_bucket_size;
+        let lcp_bit_length = packed >> self.log2_bucket_size;
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
-        let bucket = self.lcp2bucket.get(&key.as_bytes()[..lcp_length]);
+        let prefix = IntBitPrefix::new(key, lcp_bit_length);
+        let bucket = self.lcp2bucket.get(&prefix);
         (bucket << self.log2_bucket_size) + offset
     }
 
@@ -74,24 +169,321 @@ impl LcpMinPerfHashFunc {
     }
 }
 
-/// Returns the length of the longest common byte prefix of two byte slices.
-fn lcp_bytes(a: &[u8], b: &[u8]) -> usize {
-    a.iter().zip(b.iter()).take_while(|(x, y)| x == y).count()
+#[cfg(feature = "rayon")]
+impl<T> LcpMinPerfHashFuncInt<T>
+where
+    T: PrimitiveInteger
+        + ToSig<[u64; 2]>
+        + std::fmt::Debug
+        + Send
+        + Sync
+        + Copy
+        + Ord,
+{
+    /// Creates a new LCP-based monotone minimal perfect hash function for
+    /// integers.
+    ///
+    /// The keys must be provided in strictly increasing order.
+    ///
+    /// # Arguments
+    ///
+    /// * `keys`: a lender yielding `&T` references in sorted order.
+    ///
+    /// * `n`: the number of keys.
+    ///
+    /// * `pl`: a progress logger.
+    pub fn new(
+        mut keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        n: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        if n == 0 {
+            let empty_keys_t: Vec<T> = vec![];
+            let empty_keys_bp: Vec<IntBitPrefix<T>> = vec![];
+            let empty_vals: Vec<usize> = vec![];
+
+            let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
+                .try_build_func::<T, T>(
+                    FromSlice::new(&empty_keys_t),
+                    FromSlice::new(&empty_vals),
+                    pl,
+                )?;
+            let lcp2bucket = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
+                .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
+                    FromSlice::new(&empty_keys_bp),
+                    FromSlice::new(&empty_vals),
+                    pl,
+                )?;
+            return Ok(Self {
+                n: 0,
+                log2_bucket_size: 0,
+                offset_lcp_length,
+                lcp2bucket,
+            });
+        }
+
+        let log2_bs = compute_log2_bucket_size(n);
+        let bucket_size = 1usize << log2_bs;
+        let bucket_mask = bucket_size - 1;
+        let num_buckets = n.div_ceil(bucket_size);
+
+        // -- First pass: compute bit-level LCPs --
+
+        let mut lcp_bit_lengths: Vec<usize> = Vec::with_capacity(num_buckets);
+        let mut bucket_first_keys: Vec<T> = Vec::with_capacity(num_buckets);
+
+        let mut prev_key: Option<T> = None;
+        let mut curr_lcp_bits: usize = 0;
+        let mut i = 0usize;
+
+        while let Some(key) = keys.next()? {
+            let key: T = *key;
+
+            if let Some(prev) = prev_key {
+                if key <= prev {
+                    bail!(
+                        "Keys are not in strictly increasing order at \
+                         position {i}: {prev:?} >= {key:?}"
+                    );
+                }
+            }
+
+            let offset = i & bucket_mask;
+
+            if offset == 0 {
+                // First key of a new bucket.
+                if i > 0 {
+                    lcp_bit_lengths.push(curr_lcp_bits);
+                }
+                bucket_first_keys.push(key);
+                // Initialize to full bit width (integers have fixed
+                // width, so no prefix-freeness issue).
+                curr_lcp_bits = T::BITS as usize;
+            } else {
+                // Subsequent key: minimize LCP.
+                curr_lcp_bits = curr_lcp_bits.min(lcp_bits(key, prev_key.unwrap()));
+            }
+
+            prev_key = Some(key);
+            i += 1;
+        }
+
+        assert_eq!(i, n, "Expected {n} keys but got {i}");
+        lcp_bit_lengths.push(curr_lcp_bits);
+        assert_eq!(lcp_bit_lengths.len(), num_buckets);
+
+        // -- Build packed values --
+
+        let packed_values: Vec<usize> = (0..n)
+            .map(|idx| {
+                let bucket = idx >> log2_bs;
+                let offset = idx & bucket_mask;
+                (lcp_bit_lengths[bucket] << log2_bs) | offset
+            })
+            .collect();
+
+        // -- Build offset_lcp_length VFunc --
+
+        let keys = keys.rewind()?;
+
+        let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
+            .expected_num_keys(n)
+            .try_build_func::<T, T>(keys, FromSlice::new(&packed_values), pl)?;
+
+        // -- Build lcp2bucket VFunc --
+
+        let bit_prefixes: Vec<IntBitPrefix<T>> = (0..num_buckets)
+            .map(|b| {
+                IntBitPrefix::new(bucket_first_keys[b], lcp_bit_lengths[b])
+            })
+            .collect();
+
+        let bucket_indices: Vec<usize> = (0..num_buckets).collect();
+
+        let lcp2bucket = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
+            .expected_num_keys(num_buckets)
+            .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
+                FromSlice::new(&bit_prefixes),
+                FromSlice::new(&bucket_indices),
+                pl,
+            )?;
+
+        Ok(Self {
+            n,
+            log2_bucket_size: log2_bs,
+            offset_lcp_length,
+            lcp2bucket,
+        })
+    }
 }
 
-/// Computes the log2 of bucket size from *n* using the LCP-MPHF formula.
-fn log2_bucket_size(n: usize) -> usize {
-    if n <= 1 {
-        return 0;
+/// A bit-level prefix of a byte slice, used as key for the LCP-to-bucket
+/// mapping.
+///
+/// Holds the bytes and a bit length. The [`ToSig`] implementation hashes
+/// only the first `bit_length` bits, masking out unused bits in the last
+/// partial byte.
+#[derive(Debug, Clone, MemDbg, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct BitPrefix {
+    bytes: Vec<u8>,
+    bit_length: usize,
+}
+
+impl BitPrefix {
+    /// Creates a new bit prefix from a byte slice and a bit length.
+    ///
+    /// `bytes` must contain at least `ceil(bit_length / 8)` bytes.
+    pub fn new(bytes: &[u8], bit_length: usize) -> Self {
+        debug_assert!(bytes.len() * 8 >= bit_length);
+        let needed = bit_length.div_ceil(8);
+        Self {
+            bytes: bytes[..needed].to_vec(),
+            bit_length,
+        }
     }
-    let ln_n = (n as f64).ln();
-    let theoretical = 1.0 + 1.11 * f64::ln(2.0) + ln_n - (1.0 + ln_n).ln();
-    let theoretical = theoretical.ceil().max(1.0) as usize;
-    theoretical.next_power_of_two().ilog2() as usize
+}
+
+/// Feeds the significant bits of a [`BitPrefix`] into a [`Xxh3`] hasher:
+/// the full bytes, the masked partial byte (if any), and the bit length.
+/// Including the bit length distinguishes prefixes that differ only by
+/// trailing zero bits.
+#[inline]
+fn hash_bit_prefix(hasher: &mut xxh3::Xxh3, bp: &BitPrefix) {
+    let full_bytes = bp.bit_length / 8;
+    let extra_bits = bp.bit_length % 8;
+    hasher.update(&bp.bytes[..full_bytes]);
+    if extra_bits > 0 {
+        let mask = !((1u8 << (8 - extra_bits)) - 1);
+        hasher.update(&[bp.bytes[full_bytes] & mask]);
+    }
+    hasher.update(&bp.bit_length.to_ne_bytes());
+}
+
+impl ToSig<[u64; 2]> for BitPrefix {
+    #[inline]
+    fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
+        let mut hasher = xxh3::Xxh3::with_seed(seed);
+        hash_bit_prefix(&mut hasher, key.borrow());
+        let hash128 = hasher.digest128();
+        [(hash128 >> 64) as u64, hash128 as u64]
+    }
+}
+
+impl ToSig<[u64; 1]> for BitPrefix {
+    #[inline]
+    fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
+        let mut hasher = xxh3::Xxh3::with_seed(seed);
+        hash_bit_prefix(&mut hasher, key.borrow());
+        [hasher.digest()]
+    }
+}
+
+/// A monotone minimal perfect hash function for lexicographically sorted
+/// strings, based on longest common prefixes (LCPs).
+///
+/// Given *n* strings in lexicographic order, the structure maps each string
+/// to its rank (0 to *n* − 1). Querying a string not in the original set
+/// returns an arbitrary value (same contract as [`VFunc`]).
+///
+/// The strings are divided into buckets of size 2^*k*. For each bucket,
+/// the longest common bit-level prefix (LCP) shared by all consecutive
+/// pairs within the bucket is computed (starting from the full first key).
+/// A NUL sentinel byte is appended internally to ensure prefix-freeness.
+/// The rank of a key is then reconstructed as
+/// `bucket * bucket_size + offset`, where the bucket is determined by the
+/// LCP and the offset is stored directly.
+///
+/// Internally, the structure contains two [`VFunc`]s:
+/// - `offset_lcp_length`: maps each key (`str`) to a packed value
+///   encoding the LCP bit-length and the offset within the bucket;
+/// - `lcp2bucket`: maps each LCP bit-prefix ([`BitPrefix`]) to its bucket
+///   index.
+#[derive(Debug, MemDbg, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct LcpMinPerfHashFuncStr {
+    /// Number of keys.
+    n: usize,
+    /// Log2 of bucket size.
+    log2_bucket_size: usize,
+    /// Maps each key to `(lcp_bit_length << log2_bucket_size) | offset`.
+    offset_lcp_length: VFunc<str, usize, BitFieldVec<Box<[usize]>>>,
+    /// Maps each LCP bit-prefix to its bucket index.
+    lcp2bucket: VFunc<BitPrefix, usize, BitFieldVec<Box<[usize]>>>,
+}
+
+impl LcpMinPerfHashFuncStr {
+    /// Returns the rank (0-based position) of the given key in the
+    /// original sorted sequence.
+    ///
+    /// If the key was not in the original set, the result is arbitrary
+    /// (same contract as [`VFunc::get`]).
+    #[inline]
+    pub fn get(&self, key: &str) -> usize {
+        let packed = self.offset_lcp_length.get(key);
+        let lcp_bit_length = packed >> self.log2_bucket_size;
+        let offset = packed & ((1 << self.log2_bucket_size) - 1);
+        // Build the bit prefix for the lcp2bucket query. The key bytes
+        // plus a NUL sentinel provide enough bits. BitPrefix::new
+        // truncates to the needed bytes, but we need the sentinel in
+        // case the LCP extends past the key's own bytes.
+        let key_bytes = key.as_bytes();
+        let needed_bytes = lcp_bit_length.div_ceil(8);
+        // Avoid allocation: use the key bytes directly when the LCP
+        // fits within the key; only allocate when the sentinel byte is
+        // needed.
+        let bucket = if needed_bytes <= key_bytes.len() {
+            let prefix = BitPrefix::new(key_bytes, lcp_bit_length);
+            self.lcp2bucket.get(&prefix)
+        } else {
+            let mut extended = Vec::with_capacity(key_bytes.len() + 1);
+            extended.extend_from_slice(key_bytes);
+            extended.push(0);
+            let prefix = BitPrefix::new(&extended, lcp_bit_length);
+            self.lcp2bucket.get(&prefix)
+        };
+        (bucket << self.log2_bucket_size) + offset
+    }
+
+    /// Returns the number of keys.
+    pub const fn len(&self) -> usize {
+        self.n
+    }
+
+    /// Returns `true` if the function contains no keys.
+    pub const fn is_empty(&self) -> bool {
+        self.n == 0
+    }
+}
+
+/// Returns the number of leading bits that are identical in two byte
+/// slices, after appending a NUL sentinel byte to each. The sentinel
+/// ensures prefix-freeness: two distinct strings always differ within
+/// `min(a.len(), b.len()) * 8 + 8` bits.
+fn lcp_bits_sentineled(a: &[u8], b: &[u8]) -> usize {
+    let a_iter = a.iter().chain(std::iter::once(&0u8));
+    let b_iter = b.iter().chain(std::iter::once(&0u8));
+
+    let mut bits = 0;
+    for (&x, &y) in a_iter.zip(b_iter) {
+        if x == y {
+            bits += 8;
+        } else {
+            // Count matching leading bits in the first differing byte.
+            bits += (x ^ y).leading_zeros() as usize;
+            break;
+        }
+    }
+    bits
 }
 
 #[cfg(feature = "rayon")]
-impl LcpMinPerfHashFunc {
+impl LcpMinPerfHashFuncStr {
     /// Creates a new LCP-based monotone minimal perfect hash function.
     ///
     /// The keys must be provided in strictly increasing lexicographic
@@ -113,9 +505,8 @@ impl LcpMinPerfHashFunc {
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         if n == 0 {
-            // Build trivial empty VFuncs.
             let empty_keys_str: Vec<&str> = vec![];
-            let empty_keys_u8: Vec<&[u8]> = vec![];
+            let empty_keys_bp: Vec<BitPrefix> = vec![];
             let empty_vals: Vec<usize> = vec![];
 
             let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
@@ -125,8 +516,8 @@ impl LcpMinPerfHashFunc {
                     pl,
                 )?;
             let lcp2bucket = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
-                .try_build_func::<[u8], &[u8]>(
-                    FromSlice::new(&empty_keys_u8),
+                .try_build_func::<BitPrefix, BitPrefix>(
+                    FromSlice::new(&empty_keys_bp),
                     FromSlice::new(&empty_vals),
                     pl,
                 )?;
@@ -138,24 +529,27 @@ impl LcpMinPerfHashFunc {
             });
         }
 
-        let log2_bs = log2_bucket_size(n);
+        let log2_bs = compute_log2_bucket_size(n);
         let bucket_size = 1usize << log2_bs;
         let bucket_mask = bucket_size - 1;
         let num_buckets = n.div_ceil(bucket_size);
 
-        // -- First pass: compute LCPs --
+        // -- First pass: compute bit-level LCPs --
+        //
+        // For each bucket, the LCP is the minimum number of leading bits
+        // shared by all consecutive pairs WITHIN the bucket. The initial
+        // value is the bit-length of the first key (+ sentinel).
 
-        let mut lcp_lengths: Vec<usize> = Vec::with_capacity(num_buckets);
+        let mut lcp_bit_lengths: Vec<usize> = Vec::with_capacity(num_buckets);
         let mut bucket_first_strings: Vec<String> = Vec::with_capacity(num_buckets);
 
         let mut prev_key = String::new();
-        let mut curr_lcp_len: usize = 0;
+        let mut curr_lcp_bits: usize = 0;
         let mut i = 0usize;
 
         while let Some(key) = keys.next()? {
             let key: &str = key;
 
-            // Verify strictly increasing order.
             if i > 0 && key <= prev_key.as_str() {
                 bail!(
                     "Keys are not in strictly increasing lexicographic \
@@ -166,19 +560,17 @@ impl LcpMinPerfHashFunc {
             let offset = i & bucket_mask;
 
             if offset == 0 {
-                // Start of a new bucket.
+                // First key of a new bucket.
                 if i > 0 {
-                    // Finalize previous bucket.
-                    lcp_lengths.push(curr_lcp_len);
+                    lcp_bit_lengths.push(curr_lcp_bits);
                 }
                 bucket_first_strings.push(key.to_owned());
-                // LCP with the last key of the previous bucket.
-                // For bucket 0, prev_key is empty, so lcp_bytes returns 0.
-                curr_lcp_len = lcp_bytes(key.as_bytes(), prev_key.as_bytes());
+                // Initialize to full key bit-length (including sentinel).
+                curr_lcp_bits = (key.len() + 1) * 8;
             } else {
-                // Inside a bucket: track minimum LCP.
-                curr_lcp_len =
-                    curr_lcp_len.min(lcp_bytes(key.as_bytes(), prev_key.as_bytes()));
+                // Subsequent key: minimize LCP.
+                curr_lcp_bits =
+                    curr_lcp_bits.min(lcp_bits_sentineled(key.as_bytes(), prev_key.as_bytes()));
             }
 
             prev_key.clear();
@@ -187,19 +579,16 @@ impl LcpMinPerfHashFunc {
         }
 
         assert_eq!(i, n, "Expected {n} keys but got {i}");
+        lcp_bit_lengths.push(curr_lcp_bits);
+        assert_eq!(lcp_bit_lengths.len(), num_buckets);
 
-        // Finalize the last bucket.
-        lcp_lengths.push(curr_lcp_len);
-
-        assert_eq!(lcp_lengths.len(), num_buckets);
-
-        // -- Build packed values from LCP lengths --
+        // -- Build packed values --
 
         let packed_values: Vec<usize> = (0..n)
             .map(|idx| {
                 let bucket = idx >> log2_bs;
                 let offset = idx & bucket_mask;
-                (lcp_lengths[bucket] << log2_bs) | offset
+                (lcp_bit_lengths[bucket] << log2_bs) | offset
             })
             .collect();
 
@@ -212,17 +601,29 @@ impl LcpMinPerfHashFunc {
             .try_build_func::<str, str>(keys, FromSlice::new(&packed_values), pl)?;
 
         // -- Build lcp2bucket VFunc --
+        //
+        // Each bucket's LCP key is a BitPrefix: the first
+        // lcp_bit_lengths[b] bits of the sentineled first string.
 
-        let lcps: Vec<Vec<u8>> = (0..num_buckets)
-            .map(|b| bucket_first_strings[b].as_bytes()[..lcp_lengths[b]].to_vec())
+        let sentineled_first_strings: Vec<Vec<u8>> = bucket_first_strings
+            .iter()
+            .map(|s| {
+                let mut v = s.as_bytes().to_vec();
+                v.push(0);
+                v
+            })
             .collect();
-        let lcp_refs: Vec<&[u8]> = lcps.iter().map(|v| v.as_slice()).collect();
+
+        let bit_prefixes: Vec<BitPrefix> = (0..num_buckets)
+            .map(|b| BitPrefix::new(&sentineled_first_strings[b], lcp_bit_lengths[b]))
+            .collect();
+
         let bucket_indices: Vec<usize> = (0..num_buckets).collect();
 
         let lcp2bucket = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
             .expected_num_keys(num_buckets)
-            .try_build_func::<[u8], &[u8]>(
-                FromSlice::new(&lcp_refs),
+            .try_build_func::<BitPrefix, BitPrefix>(
+                FromSlice::new(&bit_prefixes),
                 FromSlice::new(&bucket_indices),
                 pl,
             )?;
