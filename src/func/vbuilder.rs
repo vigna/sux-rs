@@ -651,6 +651,71 @@ where
         self.build_loop(keys, values, None, &get_val, new_data, keep_store, pl)
     }
 
+    /// Builds a new VFunc by reusing an existing [`ShardStore`] with
+    /// remapped values.
+    ///
+    /// This avoids re-hashing the keys: the store already contains the
+    /// signatures from a previous build. A `get_val` closure transforms
+    /// each stored `SigVal` into the new output value.
+    ///
+    /// # Arguments
+    ///
+    /// * `seed` — the VFunc seed from the original build
+    ///   (`original_vfunc.seed`).
+    /// * `shard_edge` — the shard edge from the original build
+    ///   (`original_vfunc.shard_edge`); will be cloned internally.
+    /// * `num_keys` — the number of keys (same as the original build).
+    /// * `max_value` — the maximum new value (determines bit width).
+    /// * `shard_store` — the store returned by a previous
+    ///   `_try_build_func(..., keep_store = true, ...)` call.
+    /// * `get_val` — maps each `SigVal<E::LocalSig, V>` to the new
+    ///   output value `W`.
+    pub(crate) fn try_build_func_from_store<
+        T: ?Sized + ToSig<S>,
+        V: BinSafe + Default + Send + Sync,
+    >(
+        mut self,
+        seed: u64,
+        shard_edge: E,
+        num_keys: usize,
+        max_value: W,
+        shard_store: &mut impl ShardStore<S, V>,
+        get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
+    where
+        SigVal<S, V>: RadixKey,
+        SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
+        for<'a> ShardDataIter<'a, BitFieldVec<Box<[W]>>>: Send,
+        for<'a> <ShardDataIter<'a, BitFieldVec<Box<[W]>>> as Iterator>::Item: Send,
+    {
+        self.shard_edge = shard_edge;
+        self.num_keys = num_keys;
+        self.bit_width = max_value.as_u128().bit_len() as usize;
+        if self.bit_width == 0 {
+            self.bit_width = 1;
+        }
+
+        let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
+        (self.c, self.lge) = self.shard_edge.set_up_graphs(num_keys, max_shard);
+
+        pl.info(format_args!(
+            "Number of keys: {} Max value: {} Bit width: {}",
+            num_keys,
+            { let v: u128 = max_value.as_u128(); v },
+            self.bit_width,
+        ));
+
+        let data: BitFieldVec<Box<[W]>> = BitFieldVec::<Vec<W>>::new_unaligned(
+            self.bit_width,
+            self.shard_edge.num_vertices() * self.shard_edge.num_shards(),
+        )
+        .into();
+
+        self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
+            .map_err(Into::into)
+    }
+
     /// Builds a new function using a [bit-field vector](BitFieldVec) on words of
     /// the unsigned type `W` to store values.
     ///
