@@ -83,9 +83,7 @@ fn bench_int_query(c: &mut Criterion) {
 
         let total_bytes = func.mem_size(SizeFlags::default());
         let bits_per_key = total_bytes as f64 * 8.0 / n as f64;
-        eprintln!(
-            "LcpMmphfInt n={label}: {total_bytes} bytes, {bits_per_key:.2} bits/key"
-        );
+        eprintln!("LcpMmphfInt n={label}: {total_bytes} bytes, {bits_per_key:.2} bits/key");
 
         group.bench_function(BenchmarkId::from_parameter(label), |b| {
             let mut ctr = 0usize;
@@ -110,8 +108,7 @@ fn bench_str_construction(c: &mut Criterion) {
         group.bench_function(BenchmarkId::from_parameter(label), |b| {
             b.iter(|| {
                 let func: LcpMmphfStr =
-                    LcpMmphfStr::new(FromSlice::new(&keys), keys.len(), no_logging![])
-                        .unwrap();
+                    LcpMmphfStr::new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
                 black_box(&func);
             })
         });
@@ -140,9 +137,7 @@ fn bench_str_query(c: &mut Criterion) {
 
         let total_bytes = func.mem_size(SizeFlags::default());
         let bits_per_key = total_bytes as f64 * 8.0 / n as f64;
-        eprintln!(
-            "LcpMmphfStr n={label}: {total_bytes} bytes, {bits_per_key:.2} bits/key"
-        );
+        eprintln!("LcpMmphfStr n={label}: {total_bytes} bytes, {bits_per_key:.2} bits/key");
 
         group.bench_function(BenchmarkId::from_parameter(label), |b| {
             let mut ctr = 0usize;
