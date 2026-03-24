@@ -11,7 +11,7 @@ use std::borrow::Borrow;
 use super::shard_edge::FuseLge3Shards;
 use crate::bits::BitFieldVec;
 use crate::func::VFunc;
-use crate::func::shard_edge::{Fuse3NoShards, ShardEdge};
+use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
 use crate::utils::*;
 use mem_dbg::*;
 
@@ -31,7 +31,8 @@ use mem_dbg::*;
 ///
 /// If the distribution of output values is very skewed, this function will use
 /// much less space than a [`VFunc`]. The impact on query time is limited to the
-/// additional access to the long function.
+/// additional access to the long function; sometimes, the reduction in space
+/// can even lead to faster queries due to better cache locality.
 ///
 /// # References
 ///
@@ -43,36 +44,38 @@ use mem_dbg::*;
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VFunc2<T: ?Sized, S: Sig = [u64; 2], E: ShardEdge<S, 3> = FuseLge3Shards> {
-    /// First function: maps each key to a remapped index (r bits), or
-    /// `escape` for infrequent values. `None` when r = 0.
-    pub(crate) short: Option<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>>,
+    /// First function: maps each key to a remapped index (*r* bits), or
+    /// `escape` for infrequent values. When *r* = 0 this is an empty
+    /// VFunc that always returns 0 = `escape`, so the long function is
+    /// always queried.
+    pub(crate) short: VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>,
     /// Second function: maps escaped keys to their full value.
-    /// Uses Fuse3NoShards so the graph is sized for the small number of escaped
-    /// keys.
-    pub(crate) long: VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, Fuse3NoShards>,
-    /// Maps remapped indices (0..escape-1) back to actual values.
+    /// Uses Fuse3Shards so we do not have problems with a small number of
+    /// escaped keys.
+    pub(crate) long: VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, Fuse3Shards>,
+    /// Maps remapped indices (0 . . `escape` − 1) back to actual values.
     pub(crate) remap: Box<[usize]>,
-    /// The escape value (2^r - 1).
+    /// The escape value (2*ʳ* − 1). When *r* = 0, `escape` = 0 and the
+    /// short function always returns the escape.
     pub(crate) escape: usize,
 }
 
 impl<T: ?Sized + ToSig<S>, S: Sig, E: ShardEdge<S, 3>> VFunc2<T, S, E>
 where
-    Fuse3NoShards: ShardEdge<S, 3>,
+    Fuse3Shards: ShardEdge<S, 3>,
 {
     /// Retrieves the value for a key given its pre-computed signature.
     ///
     /// The signature must have been computed with the same seed as the
-    /// VFuncs inside (typically from a shared shard store).
+    /// [`VFunc`]'s inside (typically from a shared shard store).
     #[inline]
     pub fn get_by_sig(&self, sig: S) -> usize {
-        if let Some(ref short) = self.short {
-            let idx = short.get_by_sig(sig);
-            if idx != self.escape {
-                return self.remap[idx];
-            }
+        let idx = self.short.get_by_sig(sig);
+        if idx != self.escape {
+            self.remap[idx]
+        } else {
+            self.long.get_by_sig(sig)
         }
-        self.long.get_by_sig(sig)
     }
 
     /// Retrieves the value associated with the given key, or an arbitrary
@@ -82,13 +85,7 @@ where
     where
         E: ShardEdge<S, 3>,
     {
-        // Both VFuncs share the same seed; pick either.
-        let seed = if let Some(ref short) = self.short {
-            short.seed
-        } else {
-            self.long.seed
-        };
-        self.get_by_sig(T::to_sig(key.borrow(), seed))
+        self.get_by_sig(T::to_sig(key.borrow(), self.short.seed))
     }
 }
 
@@ -96,6 +93,7 @@ where
 use {
     crate::func::VBuilder,
     dsi_progress_logger::ProgressLog,
+    lender::*,
     rdst::RadixKey,
     std::ops::{BitXor, BitXorAssign},
 };
@@ -106,11 +104,62 @@ where
     T: ?Sized + ToSig<S> + std::fmt::Debug,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
-    Fuse3NoShards: ShardEdge<S, 3>,
+    Fuse3Shards: ShardEdge<S, 3>,
     SigVal<S, usize>: RadixKey,
     SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
-    SigVal<<Fuse3NoShards as ShardEdge<S, 3>>::LocalSig, usize>: BitXor + BitXorAssign,
+    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>: BitXor + BitXorAssign,
 {
+    /// Builds a [`VFunc2`] from keys and values.
+    ///
+    /// The keys must be provided as a rewindable lender. The values must
+    /// be provided as a rewindable lender of `usize`. Internally, a
+    /// temporary VFunc is built to populate the store, then the two-step
+    /// analysis is applied.
+    pub fn try_new<B: ?Sized + std::borrow::Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend usize>,
+        n: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<Self> {
+        Self::try_new_with_builder(keys, values, n, VBuilder::default(), pl)
+    }
+
+    /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`]
+    /// for the internal VFunc (e.g., offline construction or thread
+    /// control).
+    pub fn try_new_with_builder<B: ?Sized + std::borrow::Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend usize>,
+        n: usize,
+        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<Self> {
+        let (seed_vfunc, store) = builder
+            .expected_num_keys(n)
+            ._try_build_func::<T, B>(keys, values, true, pl)?;
+
+        let seed = seed_vfunc.seed;
+        let shard_edge = seed_vfunc.shard_edge;
+        let mut store = match store {
+            Some(AnyShardStore::Online(s)) => s,
+            _ => unreachable!("keep_store=true"),
+        };
+
+        Self::try_build_from_store::<usize>(seed, shard_edge, n, &mut store, &|v| v, pl)
+    }
+
     /// Builds a [`VFunc2`] from an existing shard store, applying a
     /// user-supplied `get_val` closure to extract the actual value from each
     /// store entry.
@@ -118,14 +167,19 @@ where
     /// # Arguments
     ///
     /// * `seed` – the seed used when hashing keys into the store.
+    ///
     /// * `shard_edge` – the shard/edge configuration matching the store.
+    ///
     /// * `n` – the total number of keys in the store.
+    ///
     /// * `store` – a mutable reference to the shard store populated during a
     ///   prior build.
+    ///
     /// * `get_val` – closure that extracts the actual value from the store's
     ///   packed value (e.g., `|v| v >> log2_bs` for LCP lengths).
+    ///
     /// * `pl` – a progress logger.
-    pub(crate) fn try_build_from_store<V: BinSafe + Default + Send + Sync + Copy>(
+    pub fn try_build_from_store<V: BinSafe + Default + Send + Sync + Copy>(
         seed: u64,
         shard_edge: E,
         n: usize,
@@ -136,7 +190,7 @@ where
     where
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
-        SigVal<<Fuse3NoShards as ShardEdge<S, 3>>::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, V>: BitXor + BitXorAssign,
     {
         // -- 1. Frequency analysis --
 
@@ -213,39 +267,36 @@ where
              {m} distinct values, max_value={max_value} ({w} bits)"
         ));
 
-        // -- 5. Build short VFunc (if r > 0) --
+        // -- 5. Build short VFunc --
+        // When r = 0, escape = 0 and the short function maps every key to
+        // 0 = escape, so the long function is always queried.
 
-        let short = if best_r > 0 {
-            pl.info(format_args!(
-                "Building key -> remapped index ({best_r} bits, escape={escape})..."
-            ));
-            let s = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
-                .try_build_func_from_store::<T, V>(
-                    seed,
-                    shard_edge,
-                    n,
-                    escape, // max value is escape
-                    store,
-                    &|_e, sig_val| {
-                        let val = get_val(sig_val.val);
-                        inv_map.get(&val).copied().unwrap_or(escape)
-                    },
-                    pl,
-                )?;
-            Some(s)
-        } else {
-            None
-        };
+        pl.info(format_args!(
+            "Building key -> remapped index ({best_r} bits, escape={escape})..."
+        ));
+        let short = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
+            .try_build_func_from_store::<T, V>(
+                seed,
+                shard_edge,
+                n,
+                escape,
+                store,
+                &|_e, sig_val| {
+                    let val = get_val(sig_val.val);
+                    inv_map.get(&val).copied().unwrap_or(escape)
+                },
+                pl,
+            )?;
 
         // -- 6. Build long VFunc (escaped keys only) --
 
         pl.info(format_args!(
             "Building key -> full value ({w} bits, escaped keys only)..."
         ));
-        let long = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, Fuse3NoShards>::default()
+        let long = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, Fuse3Shards>::default()
             .try_build_func_from_store_filtered::<T, V>(
                 seed,
-                Fuse3NoShards::default(),
+                Fuse3Shards::default(),
                 max_value,
                 store,
                 &|_e, sig_val| {

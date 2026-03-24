@@ -12,8 +12,8 @@ use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
 use sux::bits::BitFieldVec;
-use sux::func::lcp2_mmphf::*;
 use sux::func::lcp_mmphf::*;
+use sux::func::lcp2_mmphf::*;
 use sux::func::signed_lcp_mmphf::*;
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
@@ -110,8 +110,7 @@ fn build_single(
     match args.hash_type {
         None => {
             let lender = DekoBufLineLender::from_path(&args.filename)?;
-            let mmphf: LcpMmphfStr =
-                LcpMmphfStr::new_with_builder(lender, n, builder, pl)?;
+            let mmphf: LcpMmphfStr = LcpMmphfStr::new_with_builder(lender, n, builder, pl)?;
             if let Some(ref f) = args.func {
                 unsafe { mmphf.store(f) }?;
             }
@@ -123,15 +122,15 @@ fn build_single(
             while let Some(key) = FallibleLender::next(&mut lender)? {
                 keys.push(key.to_owned());
                 count += 1;
-                if count >= n { break; }
+                if count >= n {
+                    break;
+                }
             }
             let n = keys.len();
             macro_rules! build {
                 ($h:ty) => {{
                     let mmphf: SignedLcpMmphfStr<Box<[$h]>> =
-                        SignedLcpMmphfStr::new_with_builder(
-                            FromSlice::new(&keys), n, builder, pl,
-                        )?;
+                        SignedLcpMmphfStr::new_with_builder(FromSlice::new(&keys), n, builder, pl)?;
                     if let Some(ref f) = args.func {
                         unsafe { mmphf.store(f) }?;
                     }
@@ -159,8 +158,7 @@ fn build_two_step(
     match args.hash_type {
         None => {
             let lender = DekoBufLineLender::from_path(&args.filename)?;
-            let mmphf: Lcp2MmphfStr =
-                Lcp2MmphfStr::new_with_builder(lender, n, builder, pl)?;
+            let mmphf: Lcp2MmphfStr = Lcp2MmphfStr::new_with_builder(lender, n, builder, pl)?;
             if let Some(ref f) = args.func {
                 unsafe { mmphf.store(f) }?;
             }
@@ -172,7 +170,9 @@ fn build_two_step(
             while let Some(key) = FallibleLender::next(&mut lender)? {
                 keys.push(key.to_owned());
                 count += 1;
-                if count >= n { break; }
+                if count >= n {
+                    break;
+                }
             }
             let n = keys.len();
             macro_rules! build {

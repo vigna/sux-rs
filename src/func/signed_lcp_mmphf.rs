@@ -23,10 +23,10 @@
 //! aliases.
 
 use crate::bits::BitFieldVec;
-use crate::func::lcp2_mmphf::{Lcp2Mmphf, Lcp2MmphfInt};
 use crate::func::lcp_mmphf::{LcpMmphf, LcpMmphfInt};
+use crate::func::lcp2_mmphf::{Lcp2Mmphf, Lcp2MmphfInt};
 use crate::func::mix64;
-use crate::func::shard_edge::{Fuse3NoShards, FuseLge3Shards, ShardEdge};
+use crate::func::shard_edge::{Fuse3Shards, FuseLge3Shards, ShardEdge};
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::{PrimitiveInteger, PrimitiveNumber};
@@ -609,20 +609,30 @@ impl<
     E: ShardEdge<S, 3>,
 > SignedLcpMmphf<Lcp2MmphfInt<T, S, E>, H>
 where
-    Fuse3NoShards: ShardEdge<S, 3>,
+    Fuse3Shards: ShardEdge<S, 3>,
 {
     #[inline]
     pub fn get(&self, key: T) -> Option<usize> {
-        const { assert!(size_of::<H::Value>() <= size_of::<u64>()); }
+        const {
+            assert!(size_of::<H::Value>() <= size_of::<u64>());
+        }
         let rank = self.inner.get(key);
         let sig = T::to_sig(key, self.inner.offsets.seed);
         let shard_edge = &self.inner.offsets.shard_edge;
         let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)));
         let stored = self.hashes.get_value(rank)?.as_to::<u64>();
-        if stored == <H::Value>::as_from(expected).as_to::<u64>() { Some(rank) } else { None }
+        if stored == <H::Value>::as_from(expected).as_to::<u64>() {
+            Some(rank)
+        } else {
+            None
+        }
     }
-    pub const fn len(&self) -> usize { self.inner.len() }
-    pub const fn is_empty(&self) -> bool { self.inner.is_empty() }
+    pub const fn len(&self) -> usize {
+        self.inner.len()
+    }
+    pub const fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
 }
 
 #[cfg(feature = "rayon")]
@@ -632,18 +642,19 @@ where
     W: Word,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
-    Fuse3NoShards: ShardEdge<S, 3>,
+    Fuse3Shards: ShardEdge<S, 3>,
     SigVal<S, usize>: RadixKey,
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<<Fuse3NoShards as ShardEdge<S, 3>>::LocalSig, usize>:
+    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>:
         std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<W>,
 {
     pub fn new(
         keys: impl FallibleRewindableLender<
-                RewindError: std::error::Error + Send + Sync + 'static,
-                Error: std::error::Error + Send + Sync + 'static,
-            > + for<'lend> FallibleLending<'lend, Lend = &'lend T> + Clone,
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>
+        + Clone,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -655,9 +666,13 @@ where
         let mut keys = keys_for_hashes;
         for hash in hashes.iter_mut() {
             let key: T = *keys.next()?.unwrap();
-            *hash = mix64(shard_edge.edge_hash(shard_edge.local_sig(T::to_sig(key, seed)))).as_to::<W>();
+            *hash = mix64(shard_edge.edge_hash(shard_edge.local_sig(T::to_sig(key, seed))))
+                .as_to::<W>();
         }
-        Ok(Self { inner, hashes: hashes.into_boxed_slice() })
+        Ok(Self {
+            inner,
+            hashes: hashes.into_boxed_slice(),
+        })
     }
 }
 
@@ -668,20 +683,30 @@ impl<
     E: ShardEdge<S, 3>,
 > SignedLcpMmphf<Lcp2Mmphf<K, S, E>, H>
 where
-    Fuse3NoShards: ShardEdge<S, 3>,
+    Fuse3Shards: ShardEdge<S, 3>,
 {
     #[inline]
     pub fn get(&self, key: &K) -> Option<usize> {
-        const { assert!(size_of::<H::Value>() <= size_of::<u64>()); }
+        const {
+            assert!(size_of::<H::Value>() <= size_of::<u64>());
+        }
         let rank = self.inner.get(key);
         let sig = K::to_sig(key, self.inner.offsets.seed);
         let shard_edge = &self.inner.offsets.shard_edge;
         let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)));
         let stored = self.hashes.get_value(rank)?.as_to::<u64>();
-        if stored == <H::Value>::as_from(expected).as_to::<u64>() { Some(rank) } else { None }
+        if stored == <H::Value>::as_from(expected).as_to::<u64>() {
+            Some(rank)
+        } else {
+            None
+        }
     }
-    pub const fn len(&self) -> usize { self.inner.len() }
-    pub const fn is_empty(&self) -> bool { self.inner.is_empty() }
+    pub const fn len(&self) -> usize {
+        self.inner.len()
+    }
+    pub const fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
 }
 
 #[cfg(feature = "rayon")]
@@ -691,18 +716,19 @@ where
     W: Word,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
-    Fuse3NoShards: ShardEdge<S, 3>,
+    Fuse3Shards: ShardEdge<S, 3>,
     SigVal<S, usize>: RadixKey,
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<<Fuse3NoShards as ShardEdge<S, 3>>::LocalSig, usize>:
+    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>:
         std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<W>,
 {
     pub fn new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
-                RewindError: std::error::Error + Send + Sync + 'static,
-                Error: std::error::Error + Send + Sync + 'static,
-            > + for<'lend> FallibleLending<'lend, Lend = &'lend B> + Clone,
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
+        + Clone,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -715,8 +741,12 @@ where
         for hash in hashes.iter_mut() {
             let key = keys.next()?.unwrap();
             let k_ref: &K = <B as Borrow<K>>::borrow(key);
-            *hash = mix64(shard_edge.edge_hash(shard_edge.local_sig(K::to_sig(k_ref, seed)))).as_to::<W>();
+            *hash = mix64(shard_edge.edge_hash(shard_edge.local_sig(K::to_sig(k_ref, seed))))
+                .as_to::<W>();
         }
-        Ok(Self { inner, hashes: hashes.into_boxed_slice() })
+        Ok(Self {
+            inner,
+            hashes: hashes.into_boxed_slice(),
+        })
     }
 }

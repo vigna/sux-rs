@@ -12,16 +12,18 @@ use anyhow::Result;
 use clap::{ArgGroup, Parser, ValueEnum};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
+#[allow(unused_imports)]
 use lender::FallibleLender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::dict::SignedVFunc;
+use sux::func::vfunc2::VFunc2;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSlice, Word};
 use sux::utils::{
-    BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig,
+    BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, FromSlice, Sig, SigVal, ToSig,
 };
 
 #[derive(ValueEnum, Clone, Debug)]
@@ -92,6 +94,9 @@ struct Args {
     /// shards.​
     #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
     full_sigs: bool,
+    /// Use the two-step variant (less space for skewed distributions, slightly slower queries).​
+    #[arg(long, conflicts_with = "hash_type")]
+    two_step: bool,
     /// Sign the function using hashes of this type.​
     #[arg(long)]
     hash_type: Option<HashTypes>,
@@ -105,6 +110,10 @@ fn main() -> Result<()> {
     init_env_logger()?;
 
     let args = Args::parse();
+
+    if args.two_step {
+        return main_two_step(args);
+    }
 
     #[cfg(feature = "mwhc")]
     if args.mwhc {
@@ -271,6 +280,74 @@ where
             Some(HashTypes::U64) => {
                 n_save_sign!(u64, builder, n, args.func, pl)
             }
+        }
+    }
+
+    Ok(())
+}
+
+fn main_two_step(args: Args) -> Result<()> {
+    // VFunc2 currently requires [u64; 2] + FuseLge3Shards (default types).
+    // The S/E type dispatch could be added later if needed.
+
+    #[cfg(not(feature = "no_logging"))]
+    let mut pl = ProgressLogger::default();
+    #[cfg(feature = "no_logging")]
+    let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
+
+    let mut builder = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
+        .offline(args.offline)
+        .check_dups(args.check_dups)
+        .eps(args.eps);
+    if let Some(seed) = args.seed {
+        builder = builder.seed(seed);
+    }
+    if let Some(threads) = args.threads {
+        builder = builder.max_num_threads(threads);
+    }
+    if args.low_mem {
+        builder = builder.low_mem(true);
+    }
+    if args.high_mem {
+        builder = builder.low_mem(false);
+    }
+
+    if let Some(filename) = &args.filename {
+        let n = if let Some(n) = args.n {
+            n
+        } else {
+            pl.info(format_args!("Counting keys..."));
+            let mut lender = DekoBufLineLender::from_path(filename)?;
+            let mut count = 0usize;
+            while FallibleLender::next(&mut lender)?.is_some() {
+                count += 1;
+            }
+            pl.info(format_args!("Found {count} keys"));
+            count
+        };
+        let func: VFunc2<str> = VFunc2::try_new_with_builder(
+            DekoBufLineLender::from_path(filename)?.take(n),
+            FromCloneableIntoIterator::from(0_usize..),
+            n,
+            builder,
+            &mut pl,
+        )?;
+        if let Some(filename) = args.func {
+            unsafe { func.store(filename) }?;
+        }
+    } else {
+        let n = args.n.unwrap();
+        let keys: Vec<usize> = (0..n).collect();
+        let vals: Vec<usize> = (0..n).collect();
+        let func: VFunc2<usize> = VFunc2::try_new_with_builder(
+            FromSlice::new(&keys),
+            FromSlice::new(&vals),
+            n,
+            builder,
+            &mut pl,
+        )?;
+        if let Some(filename) = args.func {
+            unsafe { func.store(filename) }?;
         }
     }
 

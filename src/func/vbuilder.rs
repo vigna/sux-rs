@@ -692,9 +692,6 @@ where
         self.shard_edge = shard_edge;
         self.num_keys = num_keys;
         self.bit_width = max_value.as_u128().bit_len() as usize;
-        if self.bit_width == 0 {
-            self.bit_width = 1;
-        }
 
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
         (self.c, self.lge) = self.shard_edge.set_up_graphs(num_keys, max_shard);
@@ -777,9 +774,6 @@ where
 
         self.num_keys = num_keys;
         self.bit_width = max_value.as_u128().bit_len() as usize;
-        if self.bit_width == 0 {
-            self.bit_width = 1;
-        }
 
         // Configure the shard edge for the filtered key count and shard
         // distribution.

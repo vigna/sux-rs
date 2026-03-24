@@ -8,9 +8,10 @@
 
 //! Two-step LCP-based monotone minimal perfect hash functions.
 //!
-//! Compared to [`LcpMmphfInt`](super::LcpMmphfInt) / [`LcpMmphf`](super::LcpMmphf),
-//! these variants use a [`VFunc2`] for the LCP-length component, trading
-//! ≈3 extra random memory accesses per query for ≈20–35% less space.
+//! Compared to [`LcpMmphfInt`](super::LcpMmphfInt) /
+//! [`LcpMmphf`](super::LcpMmphf), these variants use a [`VFunc2`] for the
+//! LCP-length component, trading ≈3 extra independent random memory accesses
+//! per query for ≈20–35% less space.
 //!
 //! See [`Lcp2MmphfInt`], [`Lcp2MmphfStr`], and [`Lcp2MmphfSliceU8`].
 //!
@@ -24,7 +25,7 @@
 use crate::bits::BitFieldVec;
 use crate::func::VFunc;
 use crate::func::lcp_mmphf::{BitPrefix, IntBitPrefix, MAGIC_COOKIE, bit_prefix_sig};
-use crate::func::shard_edge::{Fuse3NoShards, FuseLge3Shards, ShardEdge};
+use crate::func::shard_edge::{Fuse3NoShards, Fuse3Shards, FuseLge3Shards, ShardEdge};
 use crate::func::vfunc2::VFunc2;
 use crate::utils::*;
 use mem_dbg::*;
@@ -89,7 +90,7 @@ pub struct Lcp2MmphfInt<T: PrimitiveInteger, S: Sig = [u64; 2], E: ShardEdge<S, 
 
 impl<T: PrimitiveInteger + ToSig<S>, S: Sig, E: ShardEdge<S, 3>> Lcp2MmphfInt<T, S, E>
 where
-    Fuse3NoShards: ShardEdge<S, 3>,
+    Fuse3Shards: ShardEdge<S, 3>,
 {
     #[inline]
     pub fn get(&self, key: T) -> usize
@@ -120,10 +121,10 @@ where
     T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
-    Fuse3NoShards: ShardEdge<S, 3>,
+    Fuse3Shards: ShardEdge<S, 3>,
     SigVal<S, usize>: RadixKey,
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<<Fuse3NoShards as ShardEdge<S, 3>>::LocalSig, usize>:
+    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>:
         std::ops::BitXor + std::ops::BitXorAssign,
 {
     pub fn new(
@@ -153,8 +154,9 @@ where
             let offsets = VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
                 .try_build_func::<T, T>(FromSlice::new(&ek), FromSlice::new(&ev), pl)?;
             let lcp_lengths = VFunc2 {
-                short: None,
-                long: VBuilder::<_, BitFieldVec<Box<[usize]>>, S, Fuse3NoShards>::default()
+                short: VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
+                    .try_build_func::<T, T>(FromSlice::new(&ek), FromSlice::new(&ev), pl)?,
+                long: VBuilder::<_, BitFieldVec<Box<[usize]>>, S, Fuse3Shards>::default()
                     .try_build_func::<T, T>(FromSlice::new(&ek), FromSlice::new(&ev), pl)?,
                 remap: Box::new([]),
                 escape: 0,
@@ -286,10 +288,7 @@ where
                 )?;
 
         let off_bits = offsets.data.mem_size(SizeFlags::default()) * 8;
-        let lcp_bits_total = (lcp_lengths
-            .short
-            .as_ref()
-            .map_or(0, |f| f.data.mem_size(SizeFlags::default()))
+        let lcp_bits_total = (lcp_lengths.short.data.mem_size(SizeFlags::default())
             + lcp_lengths.long.data.mem_size(SizeFlags::default())
             + lcp_lengths.remap.len() * std::mem::size_of::<usize>())
             * 8;
@@ -333,7 +332,7 @@ pub type Lcp2MmphfSliceU8<S = [u64; 2], E = FuseLge3Shards> = Lcp2Mmphf<[u8], S,
 
 impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, S: Sig, E: ShardEdge<S, 3>> Lcp2Mmphf<K, S, E>
 where
-    Fuse3NoShards: ShardEdge<S, 3>,
+    Fuse3Shards: ShardEdge<S, 3>,
 {
     #[inline]
     pub fn get(&self, key: &K) -> usize {
@@ -379,10 +378,10 @@ where
     K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
-    Fuse3NoShards: ShardEdge<S, 3>,
+    Fuse3Shards: ShardEdge<S, 3>,
     SigVal<S, usize>: RadixKey,
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<<Fuse3NoShards as ShardEdge<S, 3>>::LocalSig, usize>:
+    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>:
         std::ops::BitXor + std::ops::BitXorAssign,
 {
     pub fn new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
@@ -412,8 +411,9 @@ where
             let offsets = VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
                 .try_build_func::<K, &K>(FromSlice::new(&ek), FromSlice::new(&ev), pl)?;
             let lcp_lengths = VFunc2 {
-                short: None,
-                long: VBuilder::<_, BitFieldVec<Box<[usize]>>, S, Fuse3NoShards>::default()
+                short: VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
+                    .try_build_func::<K, &K>(FromSlice::new(&ek), FromSlice::new(&ev), pl)?,
+                long: VBuilder::<_, BitFieldVec<Box<[usize]>>, S, Fuse3Shards>::default()
                     .try_build_func::<K, &K>(FromSlice::new(&ek), FromSlice::new(&ev), pl)?,
                 remap: Box::new([]),
                 escape: 0,
@@ -549,10 +549,7 @@ where
                 )?;
 
         let off_bits = offsets.data.mem_size(SizeFlags::default()) * 8;
-        let lcp_bits_total = (lcp_lengths
-            .short
-            .as_ref()
-            .map_or(0, |f| f.data.mem_size(SizeFlags::default()))
+        let lcp_bits_total = (lcp_lengths.short.data.mem_size(SizeFlags::default())
             + lcp_lengths.long.data.mem_size(SizeFlags::default())
             + lcp_lengths.remap.len() * std::mem::size_of::<usize>())
             * 8;
