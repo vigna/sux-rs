@@ -61,15 +61,20 @@ impl<T: PrimitiveInteger> IntBitPrefix<T> {
         Self { value, bit_length }
     }
 
-    /// Returns the top `bit_length` bits, right-aligned (trailing bits
-    /// discarded).
+    /// Returns the value with the bottom `T::BITS - bit_length` bits
+    /// masked out. When `bit_length == 0` (shift by `T::BITS` would
+    /// overflow), returns `T::MIN`; this is harmless because the hash
+    /// includes `bit_length` for disambiguation.
+    ///
+    /// The `match` on `checked_shl` should compile to a branchless conditional
+    /// move.
     #[inline]
-    fn significant_bits(&self) -> T {
-        if self.bit_length == 0 {
-            T::MIN // zero for unsigned types
-        } else {
-            self.value >> (T::BITS as usize - self.bit_length)
-        }
+    fn masked_value(&self) -> T {
+        let mask = match T::MAX.checked_shl((T::BITS as u32) - self.bit_length as u32) {
+            Some(m) => m,
+            None => T::MIN,
+        };
+        self.value & mask
     }
 }
 
@@ -78,7 +83,7 @@ impl<T: PrimitiveInteger> IntBitPrefix<T> {
 /// Buffer must be at least `size_of::<T>() + size_of::<usize>()` bytes.
 #[inline]
 fn pack_int_bit_prefix<T: PrimitiveInteger>(bp: &IntBitPrefix<T>, buf: &mut [u8]) -> usize {
-    let val: T::Bytes = bp.significant_bits().to_ne_bytes();
+    let val: T::Bytes = bp.masked_value().to_ne_bytes();
     let val = val.borrow() as &[u8];
     let len = bp.bit_length.to_ne_bytes();
     let n = val.len() + len.len();
