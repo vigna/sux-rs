@@ -211,6 +211,7 @@ fn bench_str_query(c: &mut Criterion) {
                 ctr += 1;
                 let start = packed_offsets[idx] as usize;
                 let end = packed_offsets[idx + 1] as usize;
+                // SAFETY: packed_data was built from valid UTF-8 String data.
                 let q = unsafe { std::str::from_utf8_unchecked(&packed_data[start..end]) };
                 black_box(func.get(q))
             })

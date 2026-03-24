@@ -8,24 +8,27 @@
 
 //! LCP-based monotone minimal perfect hash function.
 //!
-//! We provide two variants:
-//!
-//! - [`LcpMinPerfHashFuncStr`]
+//! We provide two variants: [`LcpMinPerfHashFuncInt`] works with any
+//! primitive integer type, whereas [`LcpMinPerfHashFuncStr`] is for strings.
 
 use crate::bits::BitFieldVec;
-use crate::func::VBuilder;
 use crate::func::VFunc;
 use crate::func::shard_edge::{Fuse3NoShards, FuseLge3Shards, ShardEdge};
 use crate::utils::*;
-use anyhow::{Result, bail};
-use dsi_progress_logger::ProgressLog;
-use lender::*;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
-use rdst::RadixKey;
 use std::borrow::Borrow;
-use std::convert::Infallible;
 use xxhash_rust::xxh3;
+
+#[cfg(feature = "rayon")]
+use {
+    crate::func::VBuilder,
+    anyhow::{Result, bail},
+    dsi_progress_logger::ProgressLog,
+    lender::*,
+    rdst::RadixKey,
+    std::convert::Infallible,
+};
 
 /// A 128-bit [random](https://www.random.org/) magic cookie appended to strings
 /// to ensure prefix-freeness. Two distinct strings that are prefix-related will
@@ -39,8 +42,8 @@ static MAGIC_COOKIE: [u8; 16] = [
 /// mapping.
 ///
 /// Stores the original integer value and a bit length. The [`ToSig`]
-/// implementation hashes only the top `bit_length` bits (by right-shifting
-/// to discard the rest) followed by the bit length, directly on the stack
+/// implementation hashes only the top `bit_length` bits (by masking out
+/// the bottom bits) followed by the bit length, directly on the stack
 /// with no allocation.
 #[derive(Debug, Clone, Copy, MemDbg, MemSize)]
 #[mem_size_flat]
@@ -92,17 +95,6 @@ fn pack_int_bit_prefix<T: PrimitiveInteger>(bp: &IntBitPrefix<T>, buf: &mut [u8]
     n
 }
 
-impl<T: PrimitiveInteger> ToSig<[u64; 2]> for IntBitPrefix<T> {
-    #[inline]
-    fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
-        // 24 bytes covers u128 (16) + usize (8) on 64-bit.
-        let mut buf = [0u8; 24];
-        let n = pack_int_bit_prefix(key.borrow(), &mut buf);
-        let h = xxh3::xxh3_128_with_seed(&buf[..n], seed);
-        [(h >> 64) as u64, h as u64]
-    }
-}
-
 impl<T: PrimitiveInteger> ToSig<[u64; 1]> for IntBitPrefix<T> {
     #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
@@ -112,16 +104,18 @@ impl<T: PrimitiveInteger> ToSig<[u64; 1]> for IntBitPrefix<T> {
     }
 }
 
-// ── Helper functions ─────────────────────────────────────────────────
+// ── Helper functions (construction only) ─────────────────────────────
 
 /// Returns the number of leading bits shared by two integers of the same
 /// type, compared MSB-first (big-endian bit order).
+#[cfg(feature = "rayon")]
 #[inline(always)]
 fn lcp_bits<T: PrimitiveInteger>(a: T, b: T) -> usize {
     (a ^ b).leading_zeros() as usize
 }
 
 /// Computes the log2 of bucket size from *n* using the LCP-MPHF formula.
+#[cfg(feature = "rayon")]
 fn log2_bucket_size(n: usize) -> usize {
     if n <= 1 {
         return 0;
@@ -350,9 +344,6 @@ where
 }
 
 /// A bit-level prefix of a byte slice, used as key for the LCP-to-bucket
-/// mapping.
-///
-/// A bit-level prefix of a byte slice, used as key for the LCP-to-bucket
 /// mapping during construction.
 ///
 /// Holds an owned copy of the relevant bytes and a bit length. The
@@ -409,17 +400,6 @@ fn bit_prefix_sig(bytes: &[u8], bit_length: usize, seed: u64) -> [u64; 1] {
     let mut hasher = xxh3::Xxh3::with_seed(seed);
     hash_bit_prefix_raw(&mut hasher, bytes, bit_length);
     [hasher.digest()]
-}
-
-impl ToSig<[u64; 2]> for BitPrefix {
-    #[inline]
-    fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
-        let bp = key.borrow();
-        let mut hasher = xxh3::Xxh3::with_seed(seed);
-        hash_bit_prefix_raw(&mut hasher, &bp.bytes, bp.bit_length);
-        let h = hasher.digest128();
-        [(h >> 64) as u64, h as u64]
-    }
 }
 
 impl ToSig<[u64; 1]> for BitPrefix {
@@ -522,6 +502,7 @@ where
 /// Returns the byte position of the first mismatch between two byte
 /// slices, or the length of the shorter slice if one is a prefix of
 /// the other. Uses `chunks_exact` to enable SIMD auto-vectorization.
+#[cfg(feature = "rayon")]
 #[inline]
 fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
     let off = std::iter::zip(xs.chunks_exact(128), ys.chunks_exact(128))
@@ -533,6 +514,7 @@ fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
         .count()
 }
 
+#[cfg(feature = "rayon")]
 /// Returns the number of leading bits that are identical in two byte
 /// slices, after conceptually appending [`MAGIC_COOKIE`] to each. The
 /// cookie ensures prefix-freeness: two distinct strings that are
@@ -540,8 +522,10 @@ fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
 ///
 /// The implementation first compares the string bytes (using vectorized
 /// [`mismatch`]). If one string is a prefix of the other, it continues
-/// comparing the longer string's remaining bytes against the cookie
-/// byte by byte.
+/// comparing the shorter string's cookie extension against the longer
+/// string's remaining bytes (and then its cookie extension).
+///
+/// The two strings must be distinct (the constructor enforces this).
 fn lcp_bits_with_cookie(a: &[u8], b: &[u8]) -> usize {
     let min_len = a.len().min(b.len());
     let pos = mismatch(&a[..min_len], &b[..min_len]);
@@ -551,32 +535,32 @@ fn lcp_bits_with_cookie(a: &[u8], b: &[u8]) -> usize {
         return pos * 8 + (a[pos] ^ b[pos]).leading_zeros() as usize;
     }
 
-    // One string is a prefix of the other (or they're identical).
-    // The shorter string's continuation is the cookie; the longer
-    // string's continuation is its own bytes then the cookie.
+    // One string is a proper prefix of the other (they cannot be
+    // identical because the constructor enforces strict ordering).
     let (longer, shorter_len) = if a.len() >= b.len() {
         (a, b.len())
     } else {
         (b, a.len())
     };
 
-    // Compare the longer string's remaining bytes against the cookie.
+    debug_assert!(longer.len() > shorter_len);
+    let extra = longer.len() - shorter_len;
+
+    // Compare the shorter string's cookie extension (COOKIE[i])
+    // against the longer string's continuation: first its actual
+    // remaining bytes, then its own cookie extension (COOKIE[i - extra]).
     for (i, &cookie_byte) in MAGIC_COOKIE.iter().enumerate() {
-        let longer_byte = if shorter_len + i < longer.len() {
+        let longer_byte = if i < extra {
             longer[shorter_len + i]
         } else {
-            // Both sides are now in the cookie — they match.
-            // (This happens when the strings are identical.)
-            cookie_byte
+            MAGIC_COOKIE[i - extra]
         };
         if longer_byte != cookie_byte {
             return (shorter_len + i) * 8 + (longer_byte ^ cookie_byte).leading_zeros() as usize;
         }
     }
 
-    // Matched through the entire cookie — strings are identical
-    // (should not happen with distinct keys).
-    (min_len + MAGIC_COOKIE.len()) * 8
+    unreachable!("the magic cookie guarantees prefix-freeness for distinct strings")
 }
 
 #[cfg(feature = "rayon")]
@@ -643,7 +627,7 @@ where
         //
         // For each bucket, the LCP is the minimum number of leading bits
         // shared by all consecutive pairs WITHIN the bucket. The initial
-        // value is the bit-length of the first key (+ sentinel).
+        // value is the bit-length of the first key (+ cookie).
 
         let mut lcp_bit_lengths: Vec<usize> = Vec::with_capacity(num_buckets);
         let mut bucket_first_strings: Vec<String> = Vec::with_capacity(num_buckets);

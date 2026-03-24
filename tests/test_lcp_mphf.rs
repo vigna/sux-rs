@@ -268,3 +268,29 @@ fn test_unsorted_error_u64() {
     );
     assert!(result.is_err());
 }
+
+#[test]
+fn test_empty_str() -> Result<()> {
+    let keys: Vec<&str> = vec![];
+    let func = LcpMinPerfHashFuncStr::<[u64; 2], FuseLge3Shards>::new(
+        keys_lender(&keys),
+        0,
+        no_logging![],
+    )?;
+    assert_eq!(func.len(), 0);
+    assert!(func.is_empty());
+    Ok(())
+}
+
+#[test]
+fn test_empty_u64() -> Result<()> {
+    let keys: Vec<u64> = vec![];
+    let func = LcpMinPerfHashFuncInt::<_, [u64; 2], FuseLge3Shards>::new(
+        FromSlice::new(&keys),
+        0,
+        no_logging![],
+    )?;
+    assert_eq!(func.len(), 0);
+    assert!(func.is_empty());
+    Ok(())
+}
