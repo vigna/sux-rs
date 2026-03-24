@@ -113,6 +113,97 @@ impl<T: PrimitiveInteger> ToSig<[u64; 1]> for IntBitPrefix<T> {
     }
 }
 
+// ── Cloneable iterators for on-the-fly value computation ─────────────
+
+/// A `Clone` + `Iterator` yielding packed values on the fly.
+#[derive(Clone)]
+struct PackedValuesIter<'a> {
+    lcp_bit_lengths: &'a [usize],
+    log2_bs: usize,
+    bucket_mask: usize,
+    n: usize,
+    pos: usize,
+}
+
+impl<'a> PackedValuesIter<'a> {
+    fn new(lcp_bit_lengths: &'a [usize], log2_bs: usize, n: usize) -> Self {
+        Self {
+            lcp_bit_lengths,
+            log2_bs,
+            bucket_mask: (1 << log2_bs) - 1,
+            n,
+            pos: 0,
+        }
+    }
+}
+
+impl Iterator for PackedValuesIter<'_> {
+    type Item = usize;
+    fn next(&mut self) -> Option<usize> {
+        if self.pos < self.n {
+            let bucket = self.pos >> self.log2_bs;
+            let offset = self.pos & self.bucket_mask;
+            let val = (self.lcp_bit_lengths[bucket] << self.log2_bs) | offset;
+            self.pos += 1;
+            Some(val)
+        } else {
+            None
+        }
+    }
+}
+
+
+/// A `Clone` + `Iterator` yielding `IntBitPrefix<T>` on the fly.
+#[derive(Clone)]
+struct IntBitPrefixIter<'a, T: PrimitiveInteger + Copy> {
+    bucket_first_keys: &'a [T],
+    lcp_bit_lengths: &'a [usize],
+    pos: usize,
+}
+
+impl<T: PrimitiveInteger + Copy> Iterator for IntBitPrefixIter<'_, T> {
+    type Item = IntBitPrefix<T>;
+    fn next(&mut self) -> Option<IntBitPrefix<T>> {
+        if self.pos < self.bucket_first_keys.len() {
+            let bp = IntBitPrefix::new(
+                self.bucket_first_keys[self.pos],
+                self.lcp_bit_lengths[self.pos],
+            );
+            self.pos += 1;
+            Some(bp)
+        } else {
+            None
+        }
+    }
+}
+
+/// A `Clone` + `Iterator` yielding `BitPrefix` on the fly from
+/// pre-extended (string + cookie) byte slices.
+#[derive(Clone)]
+struct BitPrefixIter<'a> {
+    extended_strings: &'a [Vec<u8>],
+    lcp_bit_lengths: &'a [usize],
+    pos: usize,
+}
+
+impl Iterator for BitPrefixIter<'_> {
+    type Item = BitPrefix;
+    fn next(&mut self) -> Option<BitPrefix> {
+        if self.pos < self.extended_strings.len() {
+            let bp = BitPrefix::new(
+                &self.extended_strings[self.pos],
+                self.lcp_bit_lengths[self.pos],
+            );
+            self.pos += 1;
+            Some(bp)
+        } else {
+            None
+        }
+    }
+}
+
+// ── Helper functions ─────────────────────────────────────────────────
+
 /// Returns the number of leading bits shared by two integers of the same
 /// type, compared MSB-first (big-endian bit order).
 #[inline(always)]
@@ -304,38 +395,32 @@ where
         lcp_bit_lengths.push(curr_lcp_bits);
         assert_eq!(lcp_bit_lengths.len(), num_buckets);
 
-        // -- Build packed values --
-
-        let packed_values: Vec<usize> = (0..n)
-            .map(|idx| {
-                let bucket = idx >> log2_bs;
-                let offset = idx & bucket_mask;
-                (lcp_bit_lengths[bucket] << log2_bs) | offset
-            })
-            .collect();
-
         // -- Build offset_lcp_length VFunc --
 
         let keys = keys.rewind()?;
 
         let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
             .expected_num_keys(n)
-            .try_build_func::<T, T>(keys, FromSlice::new(&packed_values), pl)?;
+            .try_build_func::<T, T>(
+                keys,
+                FromCloneableIntoIterator::new(PackedValuesIter::new(
+                    &lcp_bit_lengths, log2_bs, n,
+                )),
+                pl,
+            )?;
 
         // -- Build lcp2bucket VFunc --
-
-        let bit_prefixes: Vec<IntBitPrefix<T>> = (0..num_buckets)
-            .map(|b| IntBitPrefix::new(bucket_first_keys[b], lcp_bit_lengths[b]))
-            .collect();
-
-        let bucket_indices: Vec<usize> = (0..num_buckets).collect();
 
         let lcp2bucket =
             VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
                 .expected_num_keys(num_buckets)
                 .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
-                    FromSlice::new(&bit_prefixes),
-                    FromSlice::new(&bucket_indices),
+                    FromCloneableIntoIterator::new(IntBitPrefixIter {
+                        bucket_first_keys: &bucket_first_keys,
+                        lcp_bit_lengths: &lcp_bit_lengths,
+                        pos: 0,
+                    }),
+                    FromCloneableIntoIterator::new(0..num_buckets),
                     pl,
                 )?;
 
@@ -681,28 +766,25 @@ where
         lcp_bit_lengths.push(curr_lcp_bits);
         assert_eq!(lcp_bit_lengths.len(), num_buckets);
 
-        // -- Build packed values --
-
-        let packed_values: Vec<usize> = (0..n)
-            .map(|idx| {
-                let bucket = idx >> log2_bs;
-                let offset = idx & bucket_mask;
-                (lcp_bit_lengths[bucket] << log2_bs) | offset
-            })
-            .collect();
-
         // -- Build offset_lcp_length VFunc --
 
         let keys = keys.rewind()?;
 
         let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
             .expected_num_keys(n)
-            .try_build_func::<str, str>(keys, FromSlice::new(&packed_values), pl)?;
+            .try_build_func::<str, str>(
+                keys,
+                FromCloneableIntoIterator::new(PackedValuesIter::new(
+                    &lcp_bit_lengths, log2_bs, n,
+                )),
+                pl,
+            )?;
 
         // -- Build lcp2bucket VFunc --
         //
         // Each bucket's LCP key is a BitPrefix: the first
-        // lcp_bit_lengths[b] bits of the sentineled first string.
+        // lcp_bit_lengths[b] bits of the first string extended with the
+        // magic cookie.
 
         let extended_first_strings: Vec<Vec<u8>> = bucket_first_strings
             .iter()
@@ -714,18 +796,16 @@ where
             })
             .collect();
 
-        let bit_prefixes: Vec<BitPrefix> = (0..num_buckets)
-            .map(|b| BitPrefix::new(&extended_first_strings[b], lcp_bit_lengths[b]))
-            .collect();
-
-        let bucket_indices: Vec<usize> = (0..num_buckets).collect();
-
         let lcp2bucket =
             VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
                 .expected_num_keys(num_buckets)
                 .try_build_func::<BitPrefix, BitPrefix>(
-                    FromSlice::new(&bit_prefixes),
-                    FromSlice::new(&bucket_indices),
+                    FromCloneableIntoIterator::new(BitPrefixIter {
+                        extended_strings: &extended_first_strings,
+                        lcp_bit_lengths: &lcp_bit_lengths,
+                        pos: 0,
+                    }),
+                    FromCloneableIntoIterator::new(0..num_buckets),
                     pl,
                 )?;
 
