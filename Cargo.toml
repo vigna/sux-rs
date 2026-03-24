@@ -170,3 +170,8 @@ harness = false
 name = "bench_lcp_mphf"
 harness = false
 required-features = ["rayon"]
+
+[[bench]]
+name = "bench_vfunc2"
+harness = false
+required-features = ["rayon"]

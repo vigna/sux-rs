@@ -17,10 +17,17 @@
 //!
 //! - [`VFunc`] is a generic static function.
 //!
+//! - [`VFunc2`] is a two-step static function that has better space Usage
+//!   in case the distribution of the output values is skewed.
+//!
 //! - [`LcpMmphfInt`]/[`LcpMmphf`] are *monotone minimal perfect hash
 //!   functions*—specialized static functions mapping keys in lexicographical
 //!   order to their lexicographical rank. See [`LcpMmphfStr`] and
 //!   [`LcpMmphfSliceU8`] for common instantiations.
+//!
+//! - [`Lcp2MmphfInt`]/[`Lcp2Mmphf`] are versions of
+//!   [`LcpMmphfInt`]/[`LcpMmphf`] that use a [`Vfunc2`] to reduce space usage, at
+//!   the cost of slightly slower queries.
 
 mod vfunc;
 pub use vfunc::*;
