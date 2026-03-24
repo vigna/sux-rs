@@ -684,7 +684,8 @@ where
     ///   `_try_build_func(…, keep_store = true, …)` call.
     ///
     /// * `get_val` — maps each [`SigVal<E::LocalSig, V>`](SigVal) to
-    ///   the new output value `W`.
+    ///   the new output value `W`. It is passed to
+    ///   [`try_build_from_shard_iter`](Self::try_build_from_shard_iter).
     pub(crate) fn try_build_func_with_store<
         T: ?Sized + ToSig<S>,
         V: BinSafe + Default + Send + Sync,
@@ -809,25 +810,21 @@ where
 
             match sig_store.into_shard_store(shard_edge.shard_high_bits()) {
                 Ok(shard_store) => {
-                    let max_shard =
-                        shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
-                    if max_shard as f64
-                        > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64
-                    {
+                    let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
+                    if max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64 {
                         // Shard too big — retry with a different seed.
                         pl.warn(format_args!(
                             "Max shard too big, trying again with a different seed..."
                         ));
                     } else {
-                        (self.c, self.lge) =
-                            shard_edge.set_up_graphs(num_keys, max_shard);
+                        (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
                         return Ok((seed, self.shard_edge, AnyShardStore::Online(shard_store)));
                     }
                 }
                 Err(e) => {
                     // Duplicate signature — retry.
                     if dup_count >= 3 {
-                        return Err(e.into());
+                        return Err(e);
                     }
                     pl.warn(format_args!(
                         "Duplicate signature, trying again with a different seed..."

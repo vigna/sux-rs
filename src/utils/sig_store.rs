@@ -982,15 +982,11 @@ fn write_binary<S: BinSafe + Sig, V: BinSafe>(
     writer.write_all(buf)
 }
 
-/// An enum that can hold either an online (in-memory) or offline (file-based)
 /// A [`ShardStore`] wrapper that applies a filter-map to each entry.
 ///
 /// Entries for which the closure returns `None` are excluded; those
 /// returning `Some(w)` are kept with the new value. The wrapper
 /// recomputes shard sizes on construction.
-///
-/// This is the Rust equivalent of Java's
-/// `BucketedHashStore.filter(predicate)`.
 pub struct FilteredShardStore<'a, SS, S: Sig + BinSafe, V: BinSafe, W: BinSafe, F> {
     inner: &'a mut SS,
     filter_map: F,
@@ -1061,7 +1057,7 @@ where
         }))
     }
 
-    fn into_iter(mut self) -> Self::ShardIntoIter {
+    fn into_iter(self) -> Self::ShardIntoIter {
         let filter_map = self.filter_map;
         // Materialize lazily — each shard is filtered on demand.
         let shards: Vec<_> = self
@@ -1085,6 +1081,7 @@ where
     }
 }
 
+/// An enum that can hold either an online (in-memory) or offline (file-based)
 /// [`ShardStore`].
 ///
 /// This type is used to return a shard store from construction methods without
