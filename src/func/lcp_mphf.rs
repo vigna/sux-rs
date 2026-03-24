@@ -352,9 +352,16 @@ where
 /// A bit-level prefix of a byte slice, used as key for the LCP-to-bucket
 /// mapping.
 ///
-/// Holds the bytes and a bit length. The [`ToSig`] implementation hashes
-/// only the first `bit_length` bits, masking out unused bits in the last
-/// partial byte.
+/// A bit-level prefix of a byte slice, used as key for the LCP-to-bucket
+/// mapping during construction.
+///
+/// Holds an owned copy of the relevant bytes and a bit length. The
+/// [`ToSig`] implementation hashes only the first `bit_length` bits,
+/// masking out unused bits in the last partial byte.
+///
+/// This type is used only at construction time (to build the `lcp2bucket`
+/// VFunc). At query time, signatures are computed directly from the key
+/// bytes via [`bit_prefix_sig`], avoiding any allocation.
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -367,6 +374,7 @@ impl BitPrefix {
     /// Creates a new bit prefix from a byte slice and a bit length.
     ///
     /// `bytes` must contain at least `ceil(bit_length / 8)` bytes.
+    #[inline]
     pub fn new(bytes: &[u8], bit_length: usize) -> Self {
         debug_assert!(bytes.len() * 8 >= bit_length);
         let needed = bit_length.div_ceil(8);
@@ -472,31 +480,29 @@ where
         let packed = self.offset_lcp_length.get(key);
         let lcp_bit_length = packed >> self.log2_bucket_size;
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
-        // Compute the lcp2bucket signature directly from the key bytes,
-        // without allocating a BitPrefix. The LCP may extend into the
-        // magic cookie (past the key's own bytes).
+        // Compute the lcp2bucket signature by streaming the key bytes
+        // and, if necessary, the magic cookie bytes into the hasher.
+        // No allocation or copying needed.
         let key_bytes = key.as_bytes();
-        let needed_bytes = lcp_bit_length.div_ceil(8);
         let seed = self.lcp2bucket.seed;
-        let sig = if needed_bytes <= key_bytes.len() {
-            // Fast path: LCP fits within the key — no cookie needed.
+
+        let sig = if lcp_bit_length <= key_bytes.len() * 8 {
+            // Fast path: LCP fits within the key bytes.
             bit_prefix_sig(key_bytes, lcp_bit_length, seed)
         } else {
-            // LCP extends into the cookie — build extended key on stack.
-            let cookie_bytes_needed = needed_bytes - key_bytes.len();
-            debug_assert!(cookie_bytes_needed <= MAGIC_COOKIE.len());
-            let mut buf = [0u8; 256 + MAGIC_COOKIE.len()];
-            if key_bytes.len() <= 256 {
-                buf[..key_bytes.len()].copy_from_slice(key_bytes);
-                buf[key_bytes.len()..key_bytes.len() + cookie_bytes_needed]
-                    .copy_from_slice(&MAGIC_COOKIE[..cookie_bytes_needed]);
-                bit_prefix_sig(&buf[..needed_bytes], lcp_bit_length, seed)
-            } else {
-                let mut extended = Vec::with_capacity(needed_bytes);
-                extended.extend_from_slice(key_bytes);
-                extended.extend_from_slice(&MAGIC_COOKIE[..cookie_bytes_needed]);
-                bit_prefix_sig(&extended, lcp_bit_length, seed)
+            // Rare: LCP extends into the cookie. Stream key then cookie.
+            let mut hasher = xxh3::Xxh3::with_seed(seed);
+            hasher.update(key_bytes);
+            let remaining_bits = lcp_bit_length - key_bytes.len() * 8;
+            let cookie_full = remaining_bits / 8;
+            hasher.update(&MAGIC_COOKIE[..cookie_full]);
+            let extra_bits = remaining_bits % 8;
+            if extra_bits > 0 {
+                let mask = !((1u8 << (8 - extra_bits)) - 1);
+                hasher.update(&[MAGIC_COOKIE[cookie_full] & mask]);
             }
+            hasher.update(&lcp_bit_length.to_ne_bytes());
+            [hasher.digest()]
         };
         let bucket = self.lcp2bucket.get_by_sig(sig);
         (bucket << self.log2_bucket_size) + offset
@@ -718,9 +724,14 @@ where
                 .expected_num_keys(num_buckets)
                 .try_build_func::<BitPrefix, BitPrefix>(
                     FromIntoFallibleLenderFactory::new(|| {
-                        Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..num_buckets).map(
-                            |b| BitPrefix::new(&extended_first_strings[b], lcp_bit_lengths[b]),
-                        )))
+                        Ok::<_, Infallible>(FromCloneableIntoIterator::new(
+                            (0..num_buckets).map(|b| {
+                                BitPrefix::new(
+                                    &extended_first_strings[b],
+                                    lcp_bit_lengths[b],
+                                )
+                            }),
+                        ))
                     })?,
                     FromIntoFallibleLenderFactory::new(|| {
                         Ok::<_, Infallible>(FromCloneableIntoIterator::new(0..num_buckets))
