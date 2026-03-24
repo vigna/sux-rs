@@ -9,15 +9,15 @@ use anyhow::Result;
 use dsi_progress_logger::no_logging;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
-use std::io::{BufReader, Cursor};
+use std::io::Cursor;
 use sux::func::shard_edge::FuseLge3Shards;
 use sux::func::{LcpMmphfInt, LcpMmphfStr};
 use sux::utils::{FromSlice, LineLender};
 
 /// Helper: build a `LineLender` from a slice of sorted string keys.
-fn keys_lender(keys: &[&str]) -> LineLender<BufReader<Cursor<Vec<u8>>>> {
+fn keys_lender(keys: &[&str]) -> LineLender<Cursor<Vec<u8>>> {
     let data = keys.join("\n");
-    LineLender::new(BufReader::new(Cursor::new(data.into_bytes())))
+    LineLender::new(Cursor::new(data.into_bytes()))
 }
 
 #[test]

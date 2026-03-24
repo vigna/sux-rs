@@ -1,6 +1,5 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use dsi_progress_logger::no_logging;
-use lender::*;
 use mem_dbg::{MemSize, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
@@ -41,7 +40,7 @@ fn gen_sorted_strings(n: usize) -> Vec<String> {
     strings.sort();
     strings.dedup();
     strings.truncate(n);
-    assert!(strings.len() == n);
+    assert_eq!(strings.len(), n);
     strings
 }
 
@@ -50,49 +49,6 @@ fn gen_query_indices(n: usize) -> Vec<usize> {
     (0..NUM_QUERIES)
         .map(|_| rng.random::<u64>() as usize % n)
         .collect()
-}
-
-// ── String lender from a Vec<String> ─────────────────────────────────
-//
-// Yields `&str` from a `Vec<String>`, rewindable, no extra allocation.
-
-struct StringVecLender<'a> {
-    strings: &'a [String],
-    pos: usize,
-}
-
-impl<'a> StringVecLender<'a> {
-    fn new(strings: &'a [String]) -> Self {
-        Self { strings, pos: 0 }
-    }
-}
-
-impl<'lend, 'a> FallibleLending<'lend> for StringVecLender<'a> {
-    type Lend = &'lend str;
-}
-
-impl<'a> FallibleLender for StringVecLender<'a> {
-    check_covariance_fallible!();
-    type Error = core::convert::Infallible;
-    fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
-        if self.pos < self.strings.len() {
-            let s = self.strings[self.pos].as_str();
-            self.pos += 1;
-            Ok(Some(s))
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-impl<'a> sux::utils::FallibleRewindableLender for StringVecLender<'a> {
-    type RewindError = core::convert::Infallible;
-    fn rewind(self) -> Result<Self, Self::RewindError> {
-        Ok(StringVecLender {
-            strings: self.strings,
-            pos: 0,
-        })
-    }
 }
 
 // ── Integer benchmarks ───────────────────────────────────────────────
@@ -128,7 +84,7 @@ fn bench_int_query(c: &mut Criterion) {
         let total_bytes = func.mem_size(SizeFlags::default());
         let bits_per_key = total_bytes as f64 * 8.0 / n as f64;
         eprintln!(
-            "LcpMinPerfHashFuncInt n={label}: {total_bytes} bytes, {bits_per_key:.2} bits/key"
+            "LcpMmphfInt n={label}: {total_bytes} bytes, {bits_per_key:.2} bits/key"
         );
 
         group.bench_function(BenchmarkId::from_parameter(label), |b| {
@@ -154,7 +110,7 @@ fn bench_str_construction(c: &mut Criterion) {
         group.bench_function(BenchmarkId::from_parameter(label), |b| {
             b.iter(|| {
                 let func: LcpMmphfStr =
-                    LcpMmphfStr::new(StringVecLender::new(&keys), keys.len(), no_logging![])
+                    LcpMmphfStr::new(FromSlice::new(&keys), keys.len(), no_logging![])
                         .unwrap();
                 black_box(&func);
             })
@@ -169,7 +125,7 @@ fn bench_str_query(c: &mut Criterion) {
     for &(n, label) in SIZES {
         let keys = gen_sorted_strings(n);
         let func: LcpMmphfStr =
-            LcpMmphfStr::new(StringVecLender::new(&keys), keys.len(), no_logging![]).unwrap();
+            LcpMmphfStr::new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
 
         // Pack query strings contiguously to avoid pointer-chasing
         // cache misses from heap-allocated String data.
@@ -185,7 +141,7 @@ fn bench_str_query(c: &mut Criterion) {
         let total_bytes = func.mem_size(SizeFlags::default());
         let bits_per_key = total_bytes as f64 * 8.0 / n as f64;
         eprintln!(
-            "LcpMinPerfHashFuncStr n={label}: {total_bytes} bytes, {bits_per_key:.2} bits/key"
+            "LcpMmphfStr n={label}: {total_bytes} bytes, {bits_per_key:.2} bits/key"
         );
 
         group.bench_function(BenchmarkId::from_parameter(label), |b| {
