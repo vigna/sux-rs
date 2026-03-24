@@ -33,6 +33,9 @@ pub use vbuilder::*;
 pub mod lcp_mmphf;
 pub use lcp_mmphf::*;
 
+pub mod signed_lcp_mmphf;
+pub use signed_lcp_mmphf::*;
+
 pub mod shard_edge;
 
 /// Avalanches bits using the finalization step of Austin Appleby's

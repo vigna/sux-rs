@@ -24,6 +24,7 @@ from [the DSI Utilities] and new structures.
 - new state-of-the-art structures for [static functions] and [static filters],
   scaling to trillions of keys, and providing very fast queries;
 - support for [signed index functions];
+- [monotone minimal perfect hash functions] based on longest common prefixes;
 - [partial arrays], that is, “arrays with holes”, implemented using ranking or
   Elias–Fano;
 - [lists] (e.g., [compressed lists of integers]).
@@ -194,6 +195,7 @@ Union nor the Italian MUR can be held responsible for them.
 [`SelectSmall`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectSmall.html
 [`SelectAdapt`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectAdapt.html
 [static functions]: https://docs.rs/sux/latest/sux/func/vfunc/struct.VFunc.html
+[monotone minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/lcp_mmphf/index.html
 [static filters]: https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html
 [partial arrays]: https://docs.rs/sux/latest/sux/array/struct.PartialArray.html
 [bit vectors operations]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
