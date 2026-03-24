@@ -12,6 +12,7 @@ use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
 use sux::bits::BitFieldVec;
+use sux::func::lcp2_mmphf::*;
 use sux::func::lcp_mmphf::*;
 use sux::func::signed_lcp_mmphf::*;
 use sux::init_env_logger;
@@ -55,6 +56,9 @@ struct Args {
     /// Use disk-based buckets to reduce memory usage at construction time.​
     #[arg(short, long)]
     offline: bool,
+    /// Use the two-step variant (less space, slightly slower queries).​
+    #[arg(long)]
+    two_step: bool,
     /// Sign the function using hashes of this type.​
     #[arg(long)]
     hash_type: Option<HashTypes>,
@@ -83,58 +87,110 @@ fn main() -> Result<()> {
         count
     };
 
-    // Configure the VBuilder for the main (offset_lcp_length) VFunc.
-    let mut builder = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
-        .offline(args.offline);
+    let mut builder = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default().offline(args.offline);
     if let Some(t) = args.threads {
         builder = builder.max_num_threads(t);
     }
 
+    if args.two_step {
+        build_two_step(&args, n, builder, &mut pl)
+    } else {
+        build_single(&args, n, builder, &mut pl)
+    }
+}
+
+// ── Single-packed variant (LcpMmphf) ────────────────────────────────
+
+fn build_single(
+    args: &Args,
+    n: usize,
+    builder: VBuilder<usize, BitFieldVec<Box<[usize]>>>,
+    pl: &mut (impl ProgressLog + Clone + Send + Sync),
+) -> Result<()> {
     match args.hash_type {
         None => {
             let lender = DekoBufLineLender::from_path(&args.filename)?;
             let mmphf: LcpMmphfStr =
-                LcpMmphfStr::new_with_builder(lender, n, builder, &mut pl)?;
-            if let Some(filename) = args.func {
-                unsafe { mmphf.store(filename) }?;
+                LcpMmphfStr::new_with_builder(lender, n, builder, pl)?;
+            if let Some(ref f) = args.func {
+                unsafe { mmphf.store(f) }?;
             }
         }
         Some(ref ht) => {
-            // Read keys into memory (Clone lender needed for hash pass).
             let mut keys: Vec<String> = Vec::with_capacity(n);
             let mut lender = DekoBufLineLender::from_path(&args.filename)?;
             let mut count = 0usize;
             while let Some(key) = FallibleLender::next(&mut lender)? {
                 keys.push(key.to_owned());
                 count += 1;
-                if count >= n {
-                    break;
-                }
+                if count >= n { break; }
             }
             let n = keys.len();
-
-            macro_rules! build_signed {
+            macro_rules! build {
                 ($h:ty) => {{
                     let mmphf: SignedLcpMmphfStr<Box<[$h]>> =
                         SignedLcpMmphfStr::new_with_builder(
-                            FromSlice::new(&keys),
-                            n,
-                            builder,
-                            &mut pl,
+                            FromSlice::new(&keys), n, builder, pl,
                         )?;
-                    if let Some(filename) = &args.func {
-                        unsafe { mmphf.store(filename) }?;
+                    if let Some(ref f) = args.func {
+                        unsafe { mmphf.store(f) }?;
                     }
                 }};
             }
             match ht {
-                HashTypes::U8 => build_signed!(u8),
-                HashTypes::U16 => build_signed!(u16),
-                HashTypes::U32 => build_signed!(u32),
-                HashTypes::U64 => build_signed!(u64),
+                HashTypes::U8 => build!(u8),
+                HashTypes::U16 => build!(u16),
+                HashTypes::U32 => build!(u32),
+                HashTypes::U64 => build!(u64),
             }
         }
     }
+    Ok(())
+}
 
+// ── Two-step variant (Lcp2Mmphf) ────────────────────────────────────
+
+fn build_two_step(
+    args: &Args,
+    n: usize,
+    builder: VBuilder<usize, BitFieldVec<Box<[usize]>>>,
+    pl: &mut (impl ProgressLog + Clone + Send + Sync),
+) -> Result<()> {
+    match args.hash_type {
+        None => {
+            let lender = DekoBufLineLender::from_path(&args.filename)?;
+            let mmphf: Lcp2MmphfStr =
+                Lcp2MmphfStr::new_with_builder(lender, n, builder, pl)?;
+            if let Some(ref f) = args.func {
+                unsafe { mmphf.store(f) }?;
+            }
+        }
+        Some(ref ht) => {
+            let mut keys: Vec<String> = Vec::with_capacity(n);
+            let mut lender = DekoBufLineLender::from_path(&args.filename)?;
+            let mut count = 0usize;
+            while let Some(key) = FallibleLender::next(&mut lender)? {
+                keys.push(key.to_owned());
+                count += 1;
+                if count >= n { break; }
+            }
+            let n = keys.len();
+            macro_rules! build {
+                ($h:ty) => {{
+                    let mmphf: SignedLcp2MmphfStr<Box<[$h]>> =
+                        SignedLcp2MmphfStr::new(FromSlice::new(&keys), n, pl)?;
+                    if let Some(ref f) = args.func {
+                        unsafe { mmphf.store(f) }?;
+                    }
+                }};
+            }
+            match ht {
+                HashTypes::U8 => build!(u8),
+                HashTypes::U16 => build!(u16),
+                HashTypes::U32 => build!(u32),
+                HashTypes::U64 => build!(u64),
+            }
+        }
+    }
     Ok(())
 }

@@ -702,7 +702,10 @@ where
         pl.info(format_args!(
             "Number of keys: {} Max value: {} Bit width: {}",
             num_keys,
-            { let v: u128 = max_value.as_u128(); v },
+            {
+                let v: u128 = max_value.as_u128();
+                v
+            },
             self.bit_width,
         ));
 
@@ -713,6 +716,96 @@ where
         .into();
 
         self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
+            .map_err(Into::into)
+    }
+
+    /// Like [`try_build_func_from_store`](Self::try_build_func_from_store),
+    /// but applies a filter-map to each store entry. Entries for which
+    /// `filter_map_val` returns `None` are excluded; those returning
+    /// `Some(w)` are kept with value `w`.
+    ///
+    /// The shard edge is set up from scratch for the filtered key count,
+    /// so no pre-configured `shard_edge` is needed.
+    pub(crate) fn try_build_func_from_store_filtered<
+        T: ?Sized + ToSig<S>,
+        V: BinSafe + Default + Send + Sync + Copy,
+    >(
+        mut self,
+        seed: u64,
+        shard_edge: E,
+        max_value: W,
+        shard_store: &mut impl ShardStore<S, V>,
+        filter_map_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> Option<W> + Send + Sync),
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
+    where
+        SigVal<S, V>: RadixKey,
+        SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
+        for<'a> ShardDataIter<'a, BitFieldVec<Box<[W]>>>: Send,
+        for<'a> <ShardDataIter<'a, BitFieldVec<Box<[W]>>> as Iterator>::Item: Send,
+    {
+        // Reuse the original shard edge — the shard structure is encoded
+        // in the signatures' high bits and must not change.
+        self.shard_edge = shard_edge;
+
+        // Collect filtered shards, replacing vals with the mapped values.
+        // Entries for which filter_map_val returns None are excluded.
+        let shard_edge = &mut self.shard_edge;
+        let mut filtered_shards: Vec<Arc<Vec<SigVal<S, W>>>> = Vec::new();
+        let mut num_keys = 0usize;
+        let mut max_shard = 0usize;
+
+        for shard in shard_store.iter() {
+            let filtered: Vec<SigVal<S, W>> = shard
+                .iter()
+                .filter_map(|sv| {
+                    let local_sig = shard_edge.local_sig(sv.sig);
+                    let local_sv = SigVal {
+                        sig: local_sig,
+                        val: sv.val,
+                    };
+                    filter_map_val(shard_edge, local_sv).map(|new_val| SigVal {
+                        sig: sv.sig,
+                        val: new_val,
+                    })
+                })
+                .collect();
+            num_keys += filtered.len();
+            max_shard = max_shard.max(filtered.len());
+            filtered_shards.push(Arc::new(filtered));
+        }
+
+        self.num_keys = num_keys;
+        self.bit_width = max_value.as_u128().bit_len() as usize;
+        if self.bit_width == 0 {
+            self.bit_width = 1;
+        }
+
+        // Configure the shard edge for the filtered key count and shard
+        // distribution.
+        shard_edge.set_up_shards(num_keys, self.eps);
+        (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
+
+        pl.info(format_args!(
+            "Number of keys: {} (filtered) Max value: {} Bit width: {}",
+            num_keys,
+            {
+                let v: u128 = max_value.as_u128();
+                v
+            },
+            self.bit_width,
+        ));
+
+        let data: BitFieldVec<Box<[W]>> = BitFieldVec::<Vec<W>>::new_unaligned(
+            self.bit_width,
+            shard_edge.num_vertices() * shard_edge.num_shards(),
+        )
+        .into();
+
+        // The filtered shards already have W values; use identity get_val.
+        let get_val = |_: &E, sv: SigVal<E::LocalSig, W>| sv.val;
+
+        self.try_build_from_shard_iter(seed, data, filtered_shards.into_iter(), &get_val, pl)
             .map_err(Into::into)
     }
 

@@ -1148,6 +1148,78 @@ mod fuse {
         }
     }
 
+    impl ShardEdge<[u64; 2], 3> for Fuse3NoShards {
+        type SortSigVal<V: BinSafe> = SigVal<[u64; 1], V>;
+        type LocalSig = [u64; 1];
+        type Vertex = u32;
+
+        fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
+
+        fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
+            let c = Self::c(n);
+            self.log2_seg_size = Fuse3NoShards::log2_seg_size(n);
+            let num_vertices = (c * n as f64).ceil() as u128;
+            assert!(
+                num_vertices <= Self::Vertex::MAX as u128 + 1,
+                "Fuse3NoShards does not support more than {} vertices, but you are requesting {num_vertices}",
+                Self::Vertex::MAX as u128 + 1
+            );
+
+            self.l = num_vertices
+                .div_ceil(1 << self.log2_seg_size)
+                .saturating_sub(2)
+                .max(1)
+                .try_into()
+                .unwrap();
+
+            (c, false)
+        }
+
+        #[inline(always)]
+        fn shard_high_bits(&self) -> u32 {
+            0
+        }
+
+        fn num_sort_keys(&self) -> usize {
+            self.l as usize
+        }
+
+        #[inline(always)]
+        fn sort_key(&self, sig: [u64; 2]) -> usize {
+            fixed_point_inv_128!(sig[1], self.l)
+        }
+
+        #[inline(always)]
+        fn edge_hash(&self, sig: [u64; 1]) -> u64 {
+            sig[0]
+        }
+
+        #[inline(always)]
+        fn shard(&self, _sig: [u64; 2]) -> usize {
+            0
+        }
+
+        #[inline(always)]
+        fn local_sig(&self, sig: [u64; 2]) -> Self::LocalSig {
+            [sig[1]]
+        }
+
+        #[inline(always)]
+        fn num_vertices(&self) -> usize {
+            (self.l as usize + 2) << self.log2_seg_size
+        }
+
+        #[inline(always)]
+        fn local_edge(&self, sig: Self::LocalSig) -> [usize; 3] {
+            edge_1(0, self.log2_seg_size, self.l, sig)
+        }
+
+        #[inline(always)]
+        fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
+            edge_1(0, self.log2_seg_size, self.l, [sig[1]])
+        }
+    }
+
     /// [ε-cost sharded](https://arxiv.org/abs/2503.18397)[fuse
     /// 3-hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38) without [lazy
     /// Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517).

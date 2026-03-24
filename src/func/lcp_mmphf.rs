@@ -44,7 +44,7 @@ use {
 /// to ensure prefix-freeness. Two distinct strings that are prefix-related will
 /// diverge within these bytes. The probability of a real string containing this
 /// exact sequence is 2⁻¹²⁸.
-static MAGIC_COOKIE: [u8; 16] = [
+pub(crate) static MAGIC_COOKIE: [u8; 16] = [
     0xb6, 0x16, 0x1a, 0x72, 0xb1, 0xc4, 0x50, 0x11, 0x19, 0x02, 0xc6, 0xda, 0x23, 0x5b, 0xea, 0xdc,
 ];
 
@@ -102,7 +102,10 @@ impl<T: PrimitiveInteger> IntBitPrefix<T> {
 /// for one-shot xxh3 hashing. Returns the number of bytes written.
 /// Buffer must be at least `size_of::<T>() + size_of::<usize>()` bytes.
 #[inline]
-fn pack_int_bit_prefix<T: PrimitiveInteger>(bp: &IntBitPrefix<T>, buf: &mut [u8]) -> usize {
+pub(crate) fn pack_int_bit_prefix<T: PrimitiveInteger>(
+    bp: &IntBitPrefix<T>,
+    buf: &mut [u8],
+) -> usize {
     let val: T::Bytes = bp.masked_value().to_ne_bytes();
     let val = val.borrow() as &[u8];
     let len = bp.bit_length.to_ne_bytes();
@@ -127,13 +130,13 @@ impl<T: PrimitiveInteger> ToSig<[u64; 1]> for IntBitPrefix<T> {
 /// type, compared MSB-first (big-endian bit order).
 #[cfg(feature = "rayon")]
 #[inline(always)]
-fn lcp_bits<T: PrimitiveInteger>(a: T, b: T) -> usize {
+pub(crate) fn lcp_bits<T: PrimitiveInteger>(a: T, b: T) -> usize {
     (a ^ b).leading_zeros() as usize
 }
 
 /// Computes the log2 of bucket size from *n*.
 #[cfg(feature = "rayon")]
-fn log2_bucket_size(n: usize) -> usize {
+pub(crate) fn log2_bucket_size(n: usize) -> usize {
     if n <= 1 {
         return 0;
     }
@@ -382,22 +385,22 @@ where
         pl.info(format_args!("Building key → (LCP length, offset) map..."));
         let keys = keys.rewind()?;
 
-        let (offset_lcp_length, store) = builder
-            .expected_num_keys(n)
-            ._try_build_func::<T, T>(
-                keys,
-                FromIntoFallibleLenderFactory::new(|| {
-                    Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
-                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                    })))
-                })?,
-                keep_store,
-                pl,
-            )?;
+        let (offset_lcp_length, store) = builder.expected_num_keys(n)._try_build_func::<T, T>(
+            keys,
+            FromIntoFallibleLenderFactory::new(|| {
+                Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
+                    (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                })))
+            })?,
+            keep_store,
+            pl,
+        )?;
 
         // -- Build lcp2bucket VFunc --
 
-        pl.info(format_args!("Building LCP prefix → bucket map ({num_buckets} buckets)..."));
+        pl.info(format_args!(
+            "Building LCP prefix → bucket map ({num_buckets} buckets)..."
+        ));
         let lcp2bucket =
             VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
                 .expected_num_keys(num_buckets)
@@ -415,9 +418,9 @@ where
                     pl,
                 )?;
 
-        let total_bits =
-            (offset_lcp_length.data.mem_size(SizeFlags::default()) +
-             lcp2bucket.data.mem_size(SizeFlags::default())) * 8;
+        let total_bits = (offset_lcp_length.data.mem_size(SizeFlags::default())
+            + lcp2bucket.data.mem_size(SizeFlags::default()))
+            * 8;
         pl.info(format_args!(
             "Actual bit cost per key: {:.2} ({total_bits} bits for {n} keys)",
             total_bits as f64 / n as f64
@@ -476,7 +479,7 @@ impl BitPrefix {
 /// length. Including the bit length distinguishes prefixes that differ
 /// only by trailing zero bits.
 #[inline]
-fn hash_bit_prefix_raw(hasher: &mut xxh3::Xxh3, bytes: &[u8], bit_length: usize) {
+pub(crate) fn hash_bit_prefix_raw(hasher: &mut xxh3::Xxh3, bytes: &[u8], bit_length: usize) {
     let full_bytes = bit_length / 8;
     let extra_bits = bit_length % 8;
     hasher.update(&bytes[..full_bytes]);
@@ -491,7 +494,7 @@ fn hash_bit_prefix_raw(hasher: &mut xxh3::Xxh3, bytes: &[u8], bit_length: usize)
 /// matching the [`BitPrefix`] `ToSig<[u64; 1]>` implementation but
 /// without allocating a `BitPrefix`.
 #[inline]
-fn bit_prefix_sig(bytes: &[u8], bit_length: usize, seed: u64) -> [u64; 1] {
+pub(crate) fn bit_prefix_sig(bytes: &[u8], bit_length: usize, seed: u64) -> [u64; 1] {
     let mut hasher = xxh3::Xxh3::with_seed(seed);
     hash_bit_prefix_raw(&mut hasher, bytes, bit_length);
     [hasher.digest()]
@@ -695,7 +698,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, S: Sig, E: ShardEdge<S, 3>> LcpMmphf<K,
 /// the other. Uses `chunks_exact` to enable SIMD auto-vectorization.
 #[cfg(feature = "rayon")]
 #[inline]
-fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
+pub(crate) fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
     let off = std::iter::zip(xs.chunks_exact(128), ys.chunks_exact(128))
         .take_while(|(x, y)| x == y)
         .count()
@@ -717,7 +720,7 @@ fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
 ///
 /// The two strings must be distinct (the constructor enforces this).
 #[cfg(feature = "rayon")]
-fn lcp_bits_with_cookie(a: &[u8], b: &[u8]) -> usize {
+pub(crate) fn lcp_bits_with_cookie(a: &[u8], b: &[u8]) -> usize {
     let min_len = a.len().min(b.len());
     let pos = mismatch(&a[..min_len], &b[..min_len]);
 
@@ -908,18 +911,16 @@ where
         pl.info(format_args!("Building key → (LCP length, offset) map..."));
         let keys = keys.rewind()?;
 
-        let (offset_lcp_length, store) = builder
-            .expected_num_keys(n)
-            ._try_build_func::<K, B>(
-                keys,
-                FromIntoFallibleLenderFactory::new(|| {
-                    Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
-                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                    })))
-                })?,
-                keep_store,
-                pl,
-            )?;
+        let (offset_lcp_length, store) = builder.expected_num_keys(n)._try_build_func::<K, B>(
+            keys,
+            FromIntoFallibleLenderFactory::new(|| {
+                Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
+                    (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                })))
+            })?,
+            keep_store,
+            pl,
+        )?;
 
         // -- Build lcp2bucket VFunc --
         //
@@ -927,7 +928,9 @@ where
         // lcp_bit_lengths[b] bits of the first key extended with the
         // magic cookie.
 
-        pl.info(format_args!("Building LCP prefix → bucket map ({num_buckets} buckets)..."));
+        pl.info(format_args!(
+            "Building LCP prefix → bucket map ({num_buckets} buckets)..."
+        ));
         let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
             .iter()
             .map(|k| {
@@ -955,9 +958,9 @@ where
                     pl,
                 )?;
 
-        let total_bits =
-            (offset_lcp_length.data.mem_size(SizeFlags::default()) +
-             lcp2bucket.data.mem_size(SizeFlags::default())) * 8;
+        let total_bits = (offset_lcp_length.data.mem_size(SizeFlags::default())
+            + lcp2bucket.data.mem_size(SizeFlags::default()))
+            * 8;
         pl.info(format_args!(
             "Actual bit cost per key: {:.2} ({total_bits} bits for {n} keys)",
             total_bits as f64 / n as f64
