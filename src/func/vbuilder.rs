@@ -629,7 +629,7 @@ where
     SigVal<S, W>: RadixKey,
     SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
 {
-    fn _try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
+    pub(crate) fn _try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,

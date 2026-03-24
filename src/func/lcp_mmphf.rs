@@ -190,19 +190,16 @@ fn log2_bucket_size(n: usize) -> usize {
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct LcpMmphfInt<
-    T: PrimitiveInteger + ToSig<S>,
-    S: Sig = [u64; 2],
-    E: ShardEdge<S, 3> = FuseLge3Shards,
-> {
+pub struct LcpMmphfInt<T: PrimitiveInteger, S = [u64; 2], E = FuseLge3Shards> {
     /// Number of keys.
-    n: usize,
+    pub(crate) n: usize,
     /// Log2 of bucket size.
-    log2_bucket_size: usize,
+    pub(crate) log2_bucket_size: usize,
     /// Maps each key to `(lcp_bit_length << log2_bucket_size) | offset`.
-    offset_lcp_length: VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>,
+    pub(crate) offset_lcp_length: VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>,
     /// Maps each LCP bit-prefix to its bucket index.
-    lcp2bucket: VFunc<IntBitPrefix<T>, usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>,
+    pub(crate) lcp2bucket:
+        VFunc<IntBitPrefix<T>, usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>,
 }
 
 impl<T: PrimitiveInteger + ToSig<S>, S: Sig, E: ShardEdge<S, 3>> LcpMmphfInt<T, S, E> {
@@ -260,13 +257,43 @@ where
     ///
     /// * `pl`: a progress logger.
     pub fn new(
-        mut keys: impl FallibleRewindableLender<
+        keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
+        Self::new_with_builder(keys, n, VBuilder::default(), pl)
+    }
+
+    /// Like [`new`](Self::new), but uses the given [`VBuilder`] to
+    /// configure the internal `offset_lcp_length` VFunc (e.g., for
+    /// offline construction or thread control).
+    pub fn new_with_builder(
+        keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        n: usize,
+        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        Self::new_inner(keys, n, builder, false, pl).map(|(mmphf, _)| mmphf)
+    }
+
+    /// Internal constructor accepting a [`VBuilder`] and optionally
+    /// returning the sig store.
+    pub(crate) fn new_inner(
+        mut keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        n: usize,
+        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        keep_store: bool,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<(Self, Option<AnyShardStore<S, usize>>)> {
         if n == 0 {
             let empty_keys_t: Vec<T> = vec![];
             let empty_keys_bp: Vec<IntBitPrefix<T>> = vec![];
@@ -285,18 +312,25 @@ where
                     FromSlice::new(&empty_vals),
                     pl,
                 )?;
-            return Ok(Self {
-                n: 0,
-                log2_bucket_size: 0,
-                offset_lcp_length,
-                lcp2bucket,
-            });
+            return Ok((
+                Self {
+                    n: 0,
+                    log2_bucket_size: 0,
+                    offset_lcp_length,
+                    lcp2bucket,
+                },
+                None,
+            ));
         }
 
         let log2_bs = log2_bucket_size(n);
         let bucket_size = 1usize << log2_bs;
         let bucket_mask = bucket_size - 1;
         let num_buckets = n.div_ceil(bucket_size);
+
+        pl.info(format_args!(
+            "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
+        ));
 
         // -- First pass: compute bit-level LCPs --
 
@@ -345,22 +379,25 @@ where
 
         // -- Build offset_lcp_length VFunc --
 
+        pl.info(format_args!("Building key → (LCP length, offset) map..."));
         let keys = keys.rewind()?;
 
-        let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
+        let (offset_lcp_length, store) = builder
             .expected_num_keys(n)
-            .try_build_func::<T, T>(
+            ._try_build_func::<T, T>(
                 keys,
                 FromIntoFallibleLenderFactory::new(|| {
                     Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
                         (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
                     })))
                 })?,
+                keep_store,
                 pl,
             )?;
 
         // -- Build lcp2bucket VFunc --
 
+        pl.info(format_args!("Building LCP prefix → bucket map ({num_buckets} buckets)..."));
         let lcp2bucket =
             VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
                 .expected_num_keys(num_buckets)
@@ -378,12 +415,23 @@ where
                     pl,
                 )?;
 
-        Ok(Self {
-            n,
-            log2_bucket_size: log2_bs,
-            offset_lcp_length,
-            lcp2bucket,
-        })
+        let total_bits =
+            (offset_lcp_length.data.mem_size(SizeFlags::default()) +
+             lcp2bucket.data.mem_size(SizeFlags::default())) * 8;
+        pl.info(format_args!(
+            "Actual bit cost per key: {:.2} ({total_bits} bits for {n} keys)",
+            total_bits as f64 / n as f64
+        ));
+
+        Ok((
+            Self {
+                n,
+                log2_bucket_size: log2_bs,
+                offset_lcp_length,
+                lcp2bucket,
+            },
+            store,
+        ))
     }
 }
 
@@ -517,15 +565,16 @@ impl ToSig<[u64; 1]> for BitPrefix {
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct LcpMmphf<K: ?Sized, S: Sig = [u64; 2], E: ShardEdge<S, 3> = FuseLge3Shards> {
+pub struct LcpMmphf<K: ?Sized, S = [u64; 2], E = FuseLge3Shards> {
     /// Number of keys.
-    n: usize,
+    pub(crate) n: usize,
     /// Log2 of bucket size.
-    log2_bucket_size: usize,
+    pub(crate) log2_bucket_size: usize,
     /// Maps each key to `(lcp_bit_length << log2_bucket_size) | offset`.
-    offset_lcp_length: VFunc<K, usize, BitFieldVec<Box<[usize]>>, S, E>,
+    pub(crate) offset_lcp_length: VFunc<K, usize, BitFieldVec<Box<[usize]>>, S, E>,
     /// Maps each LCP bit-prefix to its bucket index.
-    lcp2bucket: VFunc<BitPrefix, usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>,
+    pub(crate) lcp2bucket:
+        VFunc<BitPrefix, usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>,
 }
 
 /// A [`LcpMmphf`] for `str` keys.
@@ -732,13 +781,43 @@ where
     ///
     /// * `pl`: a progress logger.
     pub fn new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
-        mut keys: impl FallibleRewindableLender<
+        keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
+        Self::new_with_builder(keys, n, VBuilder::default(), pl)
+    }
+
+    /// Like [`new`](Self::new), but uses the given [`VBuilder`] to
+    /// configure the internal `offset_lcp_length` VFunc (e.g., for
+    /// offline construction or thread control).
+    pub fn new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        n: usize,
+        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        Self::new_inner(keys, n, builder, false, pl).map(|(mmphf, _)| mmphf)
+    }
+
+    /// Internal constructor accepting a [`VBuilder`] and optionally
+    /// returning the sig store.
+    pub(crate) fn new_inner<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
+        mut keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        n: usize,
+        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        keep_store: bool,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<(Self, Option<AnyShardStore<S, usize>>)> {
         if n == 0 {
             let empty_keys: Vec<&K> = vec![];
             let empty_keys_bp: Vec<BitPrefix> = vec![];
@@ -757,18 +836,25 @@ where
                     FromSlice::new(&empty_vals),
                     pl,
                 )?;
-            return Ok(Self {
-                n: 0,
-                log2_bucket_size: 0,
-                offset_lcp_length,
-                lcp2bucket,
-            });
+            return Ok((
+                Self {
+                    n: 0,
+                    log2_bucket_size: 0,
+                    offset_lcp_length,
+                    lcp2bucket,
+                },
+                None,
+            ));
         }
 
         let log2_bs = log2_bucket_size(n);
         let bucket_size = 1usize << log2_bs;
         let bucket_mask = bucket_size - 1;
         let num_buckets = n.div_ceil(bucket_size);
+
+        pl.info(format_args!(
+            "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
+        ));
 
         // -- First pass: compute bit-level LCPs --
         //
@@ -819,17 +905,19 @@ where
 
         // -- Build offset_lcp_length VFunc --
 
+        pl.info(format_args!("Building key → (LCP length, offset) map..."));
         let keys = keys.rewind()?;
 
-        let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
+        let (offset_lcp_length, store) = builder
             .expected_num_keys(n)
-            .try_build_func::<K, B>(
+            ._try_build_func::<K, B>(
                 keys,
                 FromIntoFallibleLenderFactory::new(|| {
                     Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
                         (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
                     })))
                 })?,
+                keep_store,
                 pl,
             )?;
 
@@ -839,6 +927,7 @@ where
         // lcp_bit_lengths[b] bits of the first key extended with the
         // magic cookie.
 
+        pl.info(format_args!("Building LCP prefix → bucket map ({num_buckets} buckets)..."));
         let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
             .iter()
             .map(|k| {
@@ -866,11 +955,22 @@ where
                     pl,
                 )?;
 
-        Ok(Self {
-            n,
-            log2_bucket_size: log2_bs,
-            offset_lcp_length,
-            lcp2bucket,
-        })
+        let total_bits =
+            (offset_lcp_length.data.mem_size(SizeFlags::default()) +
+             lcp2bucket.data.mem_size(SizeFlags::default())) * 8;
+        pl.info(format_args!(
+            "Actual bit cost per key: {:.2} ({total_bits} bits for {n} keys)",
+            total_bits as f64 / n as f64
+        ));
+
+        Ok((
+            Self {
+                n,
+                log2_bucket_size: log2_bs,
+                offset_lcp_length,
+                lcp2bucket,
+            },
+            store,
+        ))
     }
 }
