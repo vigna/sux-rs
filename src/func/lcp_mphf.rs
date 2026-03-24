@@ -26,6 +26,15 @@ use rdst::RadixKey;
 use std::borrow::Borrow;
 use xxhash_rust::xxh3;
 
+/// A 128-bit random magic cookie appended to strings to ensure
+/// prefix-freeness. Two distinct strings that are prefix-related will
+/// diverge within these bytes. The probability of a real string
+/// containing this exact sequence is 2⁻¹²⁸.
+static MAGIC_COOKIE: [u8; 16] = [
+    0xA3, 0x7B, 0x1F, 0xE4, 0x92, 0xD8, 0x56, 0xC0,
+    0x4D, 0x8A, 0xF7, 0x23, 0x6E, 0xB1, 0x09, 0x5C,
+];
+
 /// A bit-level prefix of an integer, used as key for the LCP-to-bucket
 /// mapping.
 ///
@@ -424,7 +433,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
 /// The strings are divided into buckets of size 2^*k*. For each bucket,
 /// the longest common bit-level prefix (LCP) shared by all consecutive
 /// pairs within the bucket is computed (starting from the full first key).
-/// A NUL sentinel byte is appended internally to ensure prefix-freeness.
+/// A 128-bit magic cookie is appended internally to ensure prefix-freeness.
 /// The rank of a key is then reconstructed as
 /// `bucket * bucket_size + offset`, where the bucket is determined by the
 /// LCP and the offset is stored directly.
@@ -464,24 +473,27 @@ where
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         // Compute the lcp2bucket signature directly from the key bytes,
         // without allocating a BitPrefix. The LCP may extend into the
-        // NUL sentinel (one byte past the key), so we need enough bytes.
+        // magic cookie (past the key's own bytes).
         let key_bytes = key.as_bytes();
         let needed_bytes = lcp_bit_length.div_ceil(8);
         let seed = self.lcp2bucket.seed;
         let sig = if needed_bytes <= key_bytes.len() {
+            // Fast path: LCP fits within the key — no cookie needed.
             bit_prefix_sig(key_bytes, lcp_bit_length, seed)
         } else {
-            // LCP extends into the sentinel — use a small stack buffer.
-            let mut buf = [0u8; 256];
-            if key_bytes.len() <= 255 {
+            // LCP extends into the cookie — build extended key on stack.
+            let cookie_bytes_needed = needed_bytes - key_bytes.len();
+            debug_assert!(cookie_bytes_needed <= MAGIC_COOKIE.len());
+            let mut buf = [0u8; 256 + MAGIC_COOKIE.len()];
+            if key_bytes.len() <= 256 {
                 buf[..key_bytes.len()].copy_from_slice(key_bytes);
-                // buf[key_bytes.len()] is already 0 (the sentinel)
+                buf[key_bytes.len()..key_bytes.len() + cookie_bytes_needed]
+                    .copy_from_slice(&MAGIC_COOKIE[..cookie_bytes_needed]);
                 bit_prefix_sig(&buf[..needed_bytes], lcp_bit_length, seed)
             } else {
-                // Extremely long key — fall back to allocation.
-                let mut extended = Vec::with_capacity(key_bytes.len() + 1);
+                let mut extended = Vec::with_capacity(needed_bytes);
                 extended.extend_from_slice(key_bytes);
-                extended.push(0);
+                extended.extend_from_slice(&MAGIC_COOKIE[..cookie_bytes_needed]);
                 bit_prefix_sig(&extended, lcp_bit_length, seed)
             }
         };
@@ -515,32 +527,50 @@ fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
 }
 
 /// Returns the number of leading bits that are identical in two byte
-/// slices, after appending a NUL sentinel byte to each. The sentinel
-/// ensures prefix-freeness: two distinct strings always differ within
-/// `min(a.len(), b.len()) * 8 + 8` bits.
-fn lcp_bits_sentineled(a: &[u8], b: &[u8]) -> usize {
+/// slices, after conceptually appending [`MAGIC_COOKIE`] to each. The
+/// cookie ensures prefix-freeness: two distinct strings that are
+/// prefix-related will diverge within the cookie bytes.
+///
+/// The implementation first compares the string bytes (using vectorized
+/// [`mismatch`]). If one string is a prefix of the other, it continues
+/// comparing the longer string's remaining bytes against the cookie
+/// byte by byte.
+fn lcp_bits_with_cookie(a: &[u8], b: &[u8]) -> usize {
     let min_len = a.len().min(b.len());
     let pos = mismatch(&a[..min_len], &b[..min_len]);
 
     if pos < min_len {
-        // Mismatch within the common part.
-        pos * 8 + (a[pos] ^ b[pos]).leading_zeros() as usize
-    } else if a.len() == b.len() {
-        // Identical bytes — sentinels (both 0) also match.
-        (min_len + 1) * 8
+        // Mismatch within the common part — fast path.
+        return pos * 8 + (a[pos] ^ b[pos]).leading_zeros() as usize;
+    }
+
+    // One string is a prefix of the other (or they're identical).
+    // The shorter string's continuation is the cookie; the longer
+    // string's continuation is its own bytes then the cookie.
+    let (longer, shorter_len) = if a.len() >= b.len() {
+        (a, b.len())
     } else {
-        // Shorter string's sentinel (0) vs longer string's next byte.
-        let next_byte = if a.len() > b.len() {
-            a[min_len]
+        (b, a.len())
+    };
+
+    // Compare the longer string's remaining bytes against the cookie.
+    for (i, &cookie_byte) in MAGIC_COOKIE.iter().enumerate() {
+        let longer_byte = if shorter_len + i < longer.len() {
+            longer[shorter_len + i]
         } else {
-            b[min_len]
+            // Both sides are now in the cookie — they match.
+            // (This happens when the strings are identical.)
+            cookie_byte
         };
-        if next_byte == 0 {
-            (min_len + 1) * 8
-        } else {
-            min_len * 8 + next_byte.leading_zeros() as usize
+        if longer_byte != cookie_byte {
+            return (shorter_len + i) * 8
+                + (longer_byte ^ cookie_byte).leading_zeros() as usize;
         }
     }
+
+    // Matched through the entire cookie — strings are identical
+    // (should not happen with distinct keys).
+    (min_len + MAGIC_COOKIE.len()) * 8
 }
 
 #[cfg(feature = "rayon")]
@@ -634,12 +664,12 @@ where
                     lcp_bit_lengths.push(curr_lcp_bits);
                 }
                 bucket_first_strings.push(key.to_owned());
-                // Initialize to full key bit-length (including sentinel).
-                curr_lcp_bits = (key.len() + 1) * 8;
+                // Initialize to full key bit-length (including cookie).
+                curr_lcp_bits = (key.len() + MAGIC_COOKIE.len()) * 8;
             } else {
                 // Subsequent key: minimize LCP.
                 curr_lcp_bits =
-                    curr_lcp_bits.min(lcp_bits_sentineled(key.as_bytes(), prev_key.as_bytes()));
+                    curr_lcp_bits.min(lcp_bits_with_cookie(key.as_bytes(), prev_key.as_bytes()));
             }
 
             prev_key.clear();
@@ -674,17 +704,18 @@ where
         // Each bucket's LCP key is a BitPrefix: the first
         // lcp_bit_lengths[b] bits of the sentineled first string.
 
-        let sentineled_first_strings: Vec<Vec<u8>> = bucket_first_strings
+        let extended_first_strings: Vec<Vec<u8>> = bucket_first_strings
             .iter()
             .map(|s| {
-                let mut v = s.as_bytes().to_vec();
-                v.push(0);
+                let mut v = Vec::with_capacity(s.len() + MAGIC_COOKIE.len());
+                v.extend_from_slice(s.as_bytes());
+                v.extend_from_slice(&MAGIC_COOKIE);
                 v
             })
             .collect();
 
         let bit_prefixes: Vec<BitPrefix> = (0..num_buckets)
-            .map(|b| BitPrefix::new(&sentineled_first_strings[b], lcp_bit_lengths[b]))
+            .map(|b| BitPrefix::new(&extended_first_strings[b], lcp_bit_lengths[b]))
             .collect();
 
         let bucket_indices: Vec<usize> = (0..num_buckets).collect();
