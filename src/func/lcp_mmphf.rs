@@ -6,12 +6,20 @@
 
 #![allow(clippy::type_complexity)]
 
-//! LCP-based monotone minimal perfect hash function.
+//! LCP-based monotone minimal perfect hash functions.
 //!
 //! We provide two variants: [`LcpMmphfInt`] works with any primitive integer
 //! type, whereas [`LcpMmphf`] works with any byte-sequence key type
 //! (`K: AsRef<[u8]>`). Type aliases [`LcpMmphfStr`] and [`LcpMmphfSliceU8`]
 //! are provided for convenience.
+//!
+//! # References
+//!
+//! Djamal Belazzougui, Paolo Boldi, Rasmus Pagh, and Sebastiano Vigna.
+//! [Monotone minimal perfect hashing: Searching a sorted table with O(1)
+//! accesses](https://dl.acm.org/doi/10.5555/1496770.1496856). In *Proceedings of
+//! the 20th Annual ACM-SIAM Symposium On Discrete Mathematics (SODA)*, pages
+//! 785−794, New York, 2009. ACM Press.
 
 use crate::bits::BitFieldVec;
 use crate::func::VFunc;
@@ -123,7 +131,7 @@ fn lcp_bits<T: PrimitiveInteger>(a: T, b: T) -> usize {
     (a ^ b).leading_zeros() as usize
 }
 
-/// Computes the log2 of bucket size from *n* using the LCP-MPHF formula.
+/// Computes the log2 of bucket size from *n*.
 #[cfg(feature = "rayon")]
 fn log2_bucket_size(n: usize) -> usize {
     if n <= 1 {
@@ -486,20 +494,20 @@ impl ToSig<[u64; 1]> for BitPrefix {
 /// # #[cfg(feature = "rayon")]
 /// # fn main() -> anyhow::Result<()> {
 /// # use dsi_progress_logger::no_logging;
-/// # use std::io::Cursor;
 /// # use sux::func::LcpMmphfStr;
-/// # use sux::utils::LineLender;
+/// # use sux::utils::FromSlice;
+/// let keys = vec![
+///     "alpha".to_owned(),
+///     "beta".to_owned(),
+///     "delta".to_owned(),
+///     "gamma".to_owned(),
+/// ];
 ///
-/// let keys = ["alpha", "beta", "delta", "gamma"];
-///
-/// let func: LcpMmphfStr = LcpMmphfStr::new(
-///     LineLender::new(Cursor::new(keys.join("\n"))),
-///     keys.len(),
-///     no_logging![],
-/// )?;
+/// let func: LcpMmphfStr =
+///     LcpMmphfStr::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 ///
 /// for (i, key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key), i);
+///     assert_eq!(func.get(key.as_str()), i);
 /// }
 /// # Ok(())
 /// # }
@@ -528,19 +536,20 @@ pub struct LcpMmphf<K: ?Sized, S: Sig = [u64; 2], E: ShardEdge<S, 3> = FuseLge3S
 /// # #[cfg(feature = "rayon")]
 /// # fn main() -> anyhow::Result<()> {
 /// # use dsi_progress_logger::no_logging;
-/// # use std::io::Cursor;
 /// # use sux::func::LcpMmphfStr;
-/// # use sux::utils::LineLender;
-/// let keys = ["alpha", "beta", "delta", "gamma"];
+/// # use sux::utils::FromSlice;
+/// let keys = vec![
+///     "alpha".to_owned(),
+///     "beta".to_owned(),
+///     "delta".to_owned(),
+///     "gamma".to_owned(),
+/// ];
 ///
-/// let func: LcpMmphfStr = LcpMmphfStr::new(
-///     LineLender::new(Cursor::new(keys.join("\n"))),
-///     keys.len(),
-///     no_logging![],
-/// )?;
+/// let func: LcpMmphfStr =
+///     LcpMmphfStr::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 ///
 /// for (i, key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key), i);
+///     assert_eq!(func.get(key.as_str()), i);
 /// }
 /// # Ok(())
 /// # }
@@ -647,7 +656,6 @@ fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
         .count()
 }
 
-#[cfg(feature = "rayon")]
 /// Returns the number of leading bits that are identical in two byte
 /// slices, after conceptually appending [`MAGIC_COOKIE`] to each. The
 /// cookie ensures prefix-freeness: two distinct strings that are
@@ -659,6 +667,7 @@ fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
 /// string's remaining bytes (and then its cookie extension).
 ///
 /// The two strings must be distinct (the constructor enforces this).
+#[cfg(feature = "rayon")]
 fn lcp_bits_with_cookie(a: &[u8], b: &[u8]) -> usize {
     let min_len = a.len().min(b.len());
     let pos = mismatch(&a[..min_len], &b[..min_len]);

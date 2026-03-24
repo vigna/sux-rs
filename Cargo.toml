@@ -165,3 +165,4 @@ harness = false
 [[bench]]
 name = "bench_lcp_mphf"
 harness = false
+required-features = ["rayon"]
