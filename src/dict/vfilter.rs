@@ -46,7 +46,7 @@ use std::ops::Index;
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct VFilter<W: Word + BinSafe, F> {
+pub struct VFilter<W, F> {
     pub(crate) func: F,
     pub(crate) filter_mask: W,
     pub(crate) hash_bits: u32,

@@ -30,7 +30,8 @@
 //!   this is the default choice. It shards keys using ε-cost sharding and
 //!   generates edges from 64-bit local signatures using a fuse 3-hypergraph
 //!   with a 10.5% (ε = 0.001) space overhead for key sets above a few million
-//!   keys. Below 800000 keys, it switches to lazy Gaussian elimination, which
+//!   keys. Below 800000 keys, it switches to [lazy Gaussian
+//!   elimination](https://doi.org/10.1016/j.ic.2020.104517), which
 //!   increases construction time but still contains space overhead to 12.5%.
 //!   Sharding makes parallelism possible above a few dozen million keys.
 //!   Depending on the amount of sharding, functions with more than a few dozen
@@ -39,13 +40,14 @@
 //!
 //! - [`FuseLge3NoShards`] with 64-bit signatures: this choice provides fast
 //!   queries on key sets of less than 3.8 billion keys. Construction, however,
-//!   cannot be parallelized. It generates edges using a fuse 3-hypergraph with
-//!   a 10.5% space overhead for key sets above a few million keys: the overhead
-//!   increases slightly for smaller key sets, but below 100000 keys we use lazy
-//!   Gaussian elimination to keep overhead within 12.5%. Above that threshold,
-//!   this logic is that of a standard fuse 3-hypergraph and thus mostly
-//!   equivalent to that described in [“Binary Fuse Filters: Fast and Smaller
-//!   Than Xor Filters”](https://doi.org/10.1145/3510449).
+//!   cannot be parallelized. It generates edges using a fuse 3-hypergraph with a
+//!   10.5% space overhead for key sets above a few million keys: the overhead
+//!   increases slightly for smaller key sets, but below 100000 keys we use [lazy
+//!   Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517) Gaussian
+//!   elimination to keep overhead within 12.5%. Above that threshold, this logic
+//!   is that of a standard fuse 3-hypergraph and thus mostly equivalent to that
+//!   described in [“Binary Fuse Filters: Fast and Smaller Than Xor
+//!   Filters”](https://doi.org/10.1145/3510449).
 //!
 //! - [`FuseLge3FullSigs`]: When building functions with more than a few dozen
 //!   billion keys, depending on the amount of sharding [`FuseLge3Shards`] might
@@ -54,6 +56,16 @@
 //!   signatures, which cannot lead to duplicates with overwhelming probability.
 //!   Filter do not have this problem as local signatures can be deduplicated
 //!   without affecting the semantics of the filter.
+//!
+//! - [`Fuse3Shards`] is like [`FuseLge3Shards`] but does not use
+//!   [lazy Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517),
+//!   so the construction on small datasets will be faster but the resulting
+//!   structure will be bigger (≈+10%).
+//!
+//! - [`Fuse3NoShards`] does not use sharding or [lazy Gaussian
+//!   elimination](https://doi.org/10.1016/j.ic.2020.104517) and thus is
+//!   mostly equivalent to [“Binary Fuse Filters: Fast and Smaller Than Xor
+//!   Filters”](https://doi.org/10.1145/3510449).
 //!
 //! - `Mwhc3Shards` with 128-bit signatures (requires the `mwhc` feature): this
 //!   choice gives much worse overhead (23%) but can be sharded very finely.
@@ -1133,6 +1145,184 @@ mod fuse {
         #[inline(always)]
         fn edge(&self, sig: [u64; 1]) -> [usize; 3] {
             edge_1(0, self.log2_seg_size, self.l, sig)
+        }
+    }
+
+    /// [ε-cost sharded](https://arxiv.org/abs/2503.18397)[fuse
+    /// 3-hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38) without [lazy
+    /// Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517).
+    ///
+    /// This variant uses the expansion factor from Table 1 (row "3-wise")
+    /// of "[Binary Fuse Filters: Fast and Smaller Than Xor
+    /// Filters](https://doi.org/10.1145/3510449)", which provides enough
+    /// expansion for peelability without Gaussian elimination.
+    ///
+    /// To keep the expansion factor near its asymptotic optimum (1.125),
+    /// shards are never smaller than 10⁶ keys. Below 10⁶ total keys, no
+    /// sharding occurs (single shard).
+    ///
+    /// Compared to [`FuseLge3Shards`], this variant avoids the expensive
+    /// Gaussian elimination fallback at the cost of slightly higher space
+    /// overhead for small shard sizes.
+    #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
+    #[mem_size_flat]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    pub struct Fuse3Shards {
+        shard_bits_shift: u32,
+        log2_seg_size: u32,
+        l: u32,
+    }
+
+    impl Default for Fuse3Shards {
+        fn default() -> Self {
+            Self {
+                shard_bits_shift: 63,
+                log2_seg_size: 0,
+                l: 0,
+            }
+        }
+    }
+
+    impl Display for Fuse3Shards {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "Fuse3 (shards, no LGE) Number of shards: 2^{} Segment size: 2^{} Number of segments: {}",
+                self.shard_high_bits(),
+                self.log2_seg_size,
+                self.l + 2
+            )
+        }
+    }
+
+    impl Fuse3Shards {
+        /// Minimum shard size. Shards are never smaller than this to keep
+        /// the expansion factor near its asymptotic optimum.
+        const MIN_SHARD: usize = 10_000_000;
+
+        /// Returns the expansion factor for fuse 3-hypergraphs.
+        ///
+        /// From Table 1 (3-wise) of "[Binary Fuse Filters: Fast and
+        /// Smaller Than Xor
+        /// Filters](https://doi.org/10.1145/3510449)".
+        fn c(n: usize) -> f64 {
+            let n = n.max(2) as f64;
+            0.875 + 0.25 * (1.0_f64).max((1e6_f64).ln() / n.ln())
+        }
+
+        const A: f64 = 0.41;
+        const B: f64 = -3.0;
+
+        /// Threshold above which the ε-cost sharding segment size formula
+        /// is used instead of the standard fuse formula.
+        const LARGE_SHARD_THRESHOLD: usize = 100_000_000;
+
+        /// Returns the log₂ of segment size for fuse 3-hypergraphs.
+        ///
+        /// Uses the standard fuse formula for shards up to
+        /// [`Self::LARGE_SHARD_THRESHOLD`], and the ε-cost sharding
+        /// formula from "[ε-Cost Sharding: Scaling Hypergraph-Based
+        /// Static Functions and Filters to Trillions of
+        /// Keys](https://arxiv.org/abs/2503.18397)" for larger shards.
+        fn log2_seg_size(n: usize) -> u32 {
+            let n = n.max(1) as f64;
+            if (n as usize) <= Self::LARGE_SHARD_THRESHOLD {
+                (n.ln() / (3.33_f64).ln() + 2.25).floor() as u32
+            } else {
+                (Self::A * n.ln() * n.ln().max(1.).ln() + Self::B).floor() as u32
+            }
+        }
+
+        /// Returns the maximum number of high bits for sharding the given
+        /// number of keys so that the probability of a duplicate edge in a
+        /// fuse graph is at most `eta`.
+        ///
+        /// From "[ε-Cost Sharding: Scaling Hypergraph-Based Static
+        /// Functions and Filters to Trillions of
+        /// Keys](https://arxiv.org/abs/2503.18397)".
+        fn dup_edge_high_bits(n: usize, c: f64, eta: f64) -> u32 {
+            let n = n as f64;
+            let subexpr =
+                (1. / (2. * Self::A)) * (-n / (2. * c * (1. - eta).ln()) - 2. * Self::B).log2();
+            (n.log2() - subexpr / (2.0_f64.ln() * lambert_w0(subexpr))).floor() as u32
+        }
+    }
+
+    impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
+        type SortSigVal<V: BinSafe> = LowSortSigVal<V>;
+        type LocalSig = [u64; 1];
+        type Vertex = u32;
+
+        fn set_up_shards(&mut self, n: usize, eps: f64) {
+            self.shard_bits_shift = 63
+                - if n <= Self::MIN_SHARD {
+                    // No sharding below the minimum shard size.
+                    0
+                } else {
+                    sharding_high_bits(n, eps)
+                        .min(Self::dup_edge_high_bits(n, 1.125, 0.001))
+                        .min((n / Self::MIN_SHARD).max(1).ilog2())
+                };
+        }
+
+        fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
+            let c = Self::c(max_shard);
+            self.log2_seg_size = Self::log2_seg_size(max_shard);
+
+            self.l = ((c * max_shard as f64).ceil() as usize)
+                .div_ceil(1 << self.log2_seg_size)
+                .saturating_sub(2)
+                .max(1)
+                .try_into()
+                .unwrap();
+
+            assert!(((self.l as usize + 2) << self.log2_seg_size) - 1 <= u32::MAX as usize);
+            (c, false) // false = no Gaussian elimination
+        }
+
+        #[inline(always)]
+        fn shard_high_bits(&self) -> u32 {
+            63 - self.shard_bits_shift
+        }
+
+        fn num_sort_keys(&self) -> usize {
+            self.l as usize
+        }
+
+        #[inline(always)]
+        fn sort_key(&self, sig: [u64; 2]) -> usize {
+            fixed_point_inv_128!(sig[1], self.l)
+        }
+
+        #[inline(always)]
+        fn edge_hash(&self, sig: Self::LocalSig) -> u64 {
+            sig[0]
+        }
+
+        #[inline(always)]
+        fn shard(&self, sig: [u64; 2]) -> usize {
+            (sig[0] >> self.shard_bits_shift >> 1) as usize
+        }
+
+        #[inline(always)]
+        fn num_vertices(&self) -> usize {
+            (self.l as usize + 2) << self.log2_seg_size
+        }
+
+        #[inline(always)]
+        fn local_sig(&self, sig: [u64; 2]) -> Self::LocalSig {
+            [sig[1]]
+        }
+
+        #[inline(always)]
+        fn local_edge(&self, local_sig: Self::LocalSig) -> [usize; 3] {
+            edge_1(0, self.log2_seg_size, self.l, local_sig)
+        }
+
+        #[inline(always)]
+        fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
+            edge_1(self.shard(sig), self.log2_seg_size, self.l, [sig[1]])
         }
     }
 
