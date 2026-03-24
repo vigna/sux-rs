@@ -70,7 +70,7 @@ impl<T: PrimitiveInteger> IntBitPrefix<T> {
     /// move.
     #[inline]
     fn masked_value(&self) -> T {
-        let mask = match T::MAX.checked_shl((T::BITS as u32) - self.bit_length as u32) {
+        let mask = match T::MAX.checked_shl(T::BITS - self.bit_length as u32) {
             Some(m) => m,
             None => T::MIN,
         };
@@ -724,14 +724,9 @@ where
                 .expected_num_keys(num_buckets)
                 .try_build_func::<BitPrefix, BitPrefix>(
                     FromIntoFallibleLenderFactory::new(|| {
-                        Ok::<_, Infallible>(FromCloneableIntoIterator::new(
-                            (0..num_buckets).map(|b| {
-                                BitPrefix::new(
-                                    &extended_first_strings[b],
-                                    lcp_bit_lengths[b],
-                                )
-                            }),
-                        ))
+                        Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..num_buckets).map(
+                            |b| BitPrefix::new(&extended_first_strings[b], lcp_bit_lengths[b]),
+                        )))
                     })?,
                     FromIntoFallibleLenderFactory::new(|| {
                         Ok::<_, Infallible>(FromCloneableIntoIterator::new(0..num_buckets))
