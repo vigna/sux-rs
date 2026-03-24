@@ -348,37 +348,50 @@ impl BitPrefix {
     }
 }
 
-/// Feeds the significant bits of a [`BitPrefix`] into a [`Xxh3`] hasher:
-/// the full bytes, the masked partial byte (if any), and the bit length.
-/// Including the bit length distinguishes prefixes that differ only by
-/// trailing zero bits.
+/// Feeds a bit prefix (given as raw bytes + bit length) into an [`Xxh3`]
+/// hasher: the full bytes, the masked partial byte (if any), and the bit
+/// length. Including the bit length distinguishes prefixes that differ
+/// only by trailing zero bits.
 #[inline]
-fn hash_bit_prefix(hasher: &mut xxh3::Xxh3, bp: &BitPrefix) {
-    let full_bytes = bp.bit_length / 8;
-    let extra_bits = bp.bit_length % 8;
-    hasher.update(&bp.bytes[..full_bytes]);
+fn hash_bit_prefix_raw(hasher: &mut xxh3::Xxh3, bytes: &[u8], bit_length: usize) {
+    let full_bytes = bit_length / 8;
+    let extra_bits = bit_length % 8;
+    hasher.update(&bytes[..full_bytes]);
     if extra_bits > 0 {
         let mask = !((1u8 << (8 - extra_bits)) - 1);
-        hasher.update(&[bp.bytes[full_bytes] & mask]);
+        hasher.update(&[bytes[full_bytes] & mask]);
     }
-    hasher.update(&bp.bit_length.to_ne_bytes());
+    hasher.update(&bit_length.to_ne_bytes());
+}
+
+/// Computes a `[u64; 2]` signature from raw bytes and a bit length,
+/// matching the [`BitPrefix`] `ToSig` implementation but without
+/// allocating a `BitPrefix`.
+#[inline]
+fn bit_prefix_sig(bytes: &[u8], bit_length: usize, seed: u64) -> [u64; 2] {
+    let mut hasher = xxh3::Xxh3::with_seed(seed);
+    hash_bit_prefix_raw(&mut hasher, bytes, bit_length);
+    let h = hasher.digest128();
+    [(h >> 64) as u64, h as u64]
 }
 
 impl ToSig<[u64; 2]> for BitPrefix {
     #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
+        let bp = key.borrow();
         let mut hasher = xxh3::Xxh3::with_seed(seed);
-        hash_bit_prefix(&mut hasher, key.borrow());
-        let hash128 = hasher.digest128();
-        [(hash128 >> 64) as u64, hash128 as u64]
+        hash_bit_prefix_raw(&mut hasher, &bp.bytes, bp.bit_length);
+        let h = hasher.digest128();
+        [(h >> 64) as u64, h as u64]
     }
 }
 
 impl ToSig<[u64; 1]> for BitPrefix {
     #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
+        let bp = key.borrow();
         let mut hasher = xxh3::Xxh3::with_seed(seed);
-        hash_bit_prefix(&mut hasher, key.borrow());
+        hash_bit_prefix_raw(&mut hasher, &bp.bytes, bp.bit_length);
         [hasher.digest()]
     }
 }
@@ -428,25 +441,30 @@ impl LcpMinPerfHashFuncStr {
         let packed = self.offset_lcp_length.get(key);
         let lcp_bit_length = packed >> self.log2_bucket_size;
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
-        // Build the bit prefix for the lcp2bucket query. The key bytes
-        // plus a NUL sentinel provide enough bits. BitPrefix::new
-        // truncates to the needed bytes, but we need the sentinel in
-        // case the LCP extends past the key's own bytes.
+        // Compute the lcp2bucket signature directly from the key bytes,
+        // without allocating a BitPrefix. The LCP may extend into the
+        // NUL sentinel (one byte past the key), so we need enough bytes.
         let key_bytes = key.as_bytes();
         let needed_bytes = lcp_bit_length.div_ceil(8);
-        // Avoid allocation: use the key bytes directly when the LCP
-        // fits within the key; only allocate when the sentinel byte is
-        // needed.
-        let bucket = if needed_bytes <= key_bytes.len() {
-            let prefix = BitPrefix::new(key_bytes, lcp_bit_length);
-            self.lcp2bucket.get(&prefix)
+        let seed = self.lcp2bucket.seed;
+        let sig = if needed_bytes <= key_bytes.len() {
+            bit_prefix_sig(key_bytes, lcp_bit_length, seed)
         } else {
-            let mut extended = Vec::with_capacity(key_bytes.len() + 1);
-            extended.extend_from_slice(key_bytes);
-            extended.push(0);
-            let prefix = BitPrefix::new(&extended, lcp_bit_length);
-            self.lcp2bucket.get(&prefix)
+            // LCP extends into the sentinel — use a small stack buffer.
+            let mut buf = [0u8; 256];
+            if key_bytes.len() <= 255 {
+                buf[..key_bytes.len()].copy_from_slice(key_bytes);
+                // buf[key_bytes.len()] is already 0 (the sentinel)
+                bit_prefix_sig(&buf[..needed_bytes], lcp_bit_length, seed)
+            } else {
+                // Extremely long key — fall back to allocation.
+                let mut extended = Vec::with_capacity(key_bytes.len() + 1);
+                extended.extend_from_slice(key_bytes);
+                extended.push(0);
+                bit_prefix_sig(&extended, lcp_bit_length, seed)
+            }
         };
+        let bucket = self.lcp2bucket.get_by_sig(sig);
         (bucket << self.log2_bucket_size) + offset
     }
 
@@ -461,25 +479,47 @@ impl LcpMinPerfHashFuncStr {
     }
 }
 
+/// Returns the byte position of the first mismatch between two byte
+/// slices, or the length of the shorter slice if one is a prefix of
+/// the other. Uses `chunks_exact` to enable SIMD auto-vectorization.
+#[inline]
+fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
+    let off = std::iter::zip(xs.chunks_exact(128), ys.chunks_exact(128))
+        .take_while(|(x, y)| x == y)
+        .count()
+        * 128;
+    off + std::iter::zip(&xs[off..], &ys[off..])
+        .take_while(|(x, y)| x == y)
+        .count()
+}
+
 /// Returns the number of leading bits that are identical in two byte
 /// slices, after appending a NUL sentinel byte to each. The sentinel
 /// ensures prefix-freeness: two distinct strings always differ within
 /// `min(a.len(), b.len()) * 8 + 8` bits.
 fn lcp_bits_sentineled(a: &[u8], b: &[u8]) -> usize {
-    let a_iter = a.iter().chain(std::iter::once(&0u8));
-    let b_iter = b.iter().chain(std::iter::once(&0u8));
+    let min_len = a.len().min(b.len());
+    let pos = mismatch(&a[..min_len], &b[..min_len]);
 
-    let mut bits = 0;
-    for (&x, &y) in a_iter.zip(b_iter) {
-        if x == y {
-            bits += 8;
+    if pos < min_len {
+        // Mismatch within the common part.
+        pos * 8 + (a[pos] ^ b[pos]).leading_zeros() as usize
+    } else if a.len() == b.len() {
+        // Identical bytes — sentinels (both 0) also match.
+        (min_len + 1) * 8
+    } else {
+        // Shorter string's sentinel (0) vs longer string's next byte.
+        let next_byte = if a.len() > b.len() {
+            a[min_len]
         } else {
-            // Count matching leading bits in the first differing byte.
-            bits += (x ^ y).leading_zeros() as usize;
-            break;
+            b[min_len]
+        };
+        if next_byte == 0 {
+            (min_len + 1) * 8
+        } else {
+            min_len * 8 + next_byte.leading_zeros() as usize
         }
     }
-    bits
 }
 
 #[cfg(feature = "rayon")]
