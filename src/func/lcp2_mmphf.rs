@@ -222,20 +222,23 @@ where
         pl.info(format_args!("Hashing keys..."));
         let keys = keys.rewind()?;
 
-        let (seed, shard_edge, store) = builder.expected_num_keys(n)
-            .try_populate_store::<T, T, usize>(
+        let (seed_vfunc, store) = builder.expected_num_keys(n)
+            ._try_build_func::<T, T>(
                 keys,
                 FromIntoFallibleLenderFactory::new(|| {
                     Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
                         (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
                     })))
                 })?,
+                true,
                 pl,
             )?;
 
+        let seed = seed_vfunc.seed;
+        let shard_edge = seed_vfunc.shard_edge;
         let mut store = match store {
-            AnyShardStore::Online(s) => s,
-            _ => unreachable!("try_populate_store returns Online"),
+            Some(AnyShardStore::Online(s)) => s,
+            _ => unreachable!("keep_store=true"),
         };
 
         // -- Offsets --
@@ -474,20 +477,23 @@ where
         pl.info(format_args!("Hashing keys..."));
         let keys = keys.rewind()?;
 
-        let (seed, shard_edge, store) = builder.expected_num_keys(n)
-            .try_populate_store::<K, B, usize>(
+        let (seed_vfunc, store) = builder.expected_num_keys(n)
+            ._try_build_func::<K, B>(
                 keys,
                 FromIntoFallibleLenderFactory::new(|| {
                     Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
                         (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
                     })))
                 })?,
+                true,
                 pl,
             )?;
 
+        let seed = seed_vfunc.seed;
+        let shard_edge = seed_vfunc.shard_edge;
         let mut store = match store {
-            AnyShardStore::Online(s) => s,
-            _ => unreachable!("try_populate_store returns Online"),
+            Some(AnyShardStore::Online(s)) => s,
+            _ => unreachable!("keep_store=true"),
         };
 
         pl.info(format_args!(

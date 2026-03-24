@@ -86,13 +86,13 @@ const LOG2_MAX_SHARDS: u32 = 16;
 ///
 /// # Building from stores
 ///
-/// The methods
-/// [`try_build_func_with_store`](VBuilder::try_build_func_with_store) and
-/// [`try_build_func_with_store_filtered`](VBuilder::try_build_func_with_store_filtered)
-/// build functions from a [`SigStore`] containing signatures and values. The
-/// store is expected to be already built, and the construction will fail if the
-/// store does not contain the expected signatures and values. They are useful
-/// when building compound functions such as [`VFunc2`] and [`LcpMmphf`].
+/// The method
+/// [`try_build_func_with_store`](VBuilder::try_build_func_with_store)
+/// builds a function from a [`ShardStore`] containing signatures and
+/// values. The store is expected to be already populated; the method
+/// recalculates sharding for the actual key count. It can be combined
+/// with [`FilteredShardStore`] to build from a filtered subset. This
+/// is used when building compound functions such as [`VFunc2`].
 ///
 /// # Examples
 ///
@@ -708,6 +708,9 @@ where
         self.num_keys = num_keys;
         self.bit_width = max_value.as_u128().bit_len() as usize;
 
+        // Recalculate sharding for the actual key count (may differ
+        // from the original if the store was filtered).
+        self.shard_edge.set_up_shards(num_keys, self.eps);
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
         (self.c, self.lge) = self.shard_edge.set_up_graphs(num_keys, max_shard);
 
@@ -728,93 +731,6 @@ where
         .into();
 
         self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
-            .map_err(Into::into)
-    }
-
-    /// Like [`try_build_func_with_store`](Self::try_build_func_with_store),
-    /// but applies a filter-map to each store entry. Entries for which
-    /// `filter_map_val` returns `None` are excluded; those returning
-    /// `Some(w)` are kept with value `w`.
-    ///
-    /// The shard edge is set up from scratch for the filtered key count,
-    /// so no pre-configured `shard_edge` is needed.
-    pub(crate) fn try_build_func_with_store_filtered<
-        T: ?Sized + ToSig<S>,
-        V: BinSafe + Default + Send + Sync + Copy,
-    >(
-        mut self,
-        seed: u64,
-        shard_edge: E,
-        max_value: W,
-        shard_store: &mut impl ShardStore<S, V>,
-        filter_map_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> Option<W> + Send + Sync),
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
-    where
-        SigVal<S, V>: RadixKey,
-        SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
-        for<'a> ShardDataIter<'a, BitFieldVec<Box<[W]>>>: Send,
-        for<'a> <ShardDataIter<'a, BitFieldVec<Box<[W]>>> as Iterator>::Item: Send,
-    {
-        // Reuse the original shard edge — the shard structure is encoded
-        // in the signatures' high bits and must not change.
-        self.shard_edge = shard_edge;
-
-        // Collect filtered shards, replacing vals with the mapped values.
-        // Entries for which filter_map_val returns None are excluded.
-        let shard_edge = &mut self.shard_edge;
-        let mut filtered_shards: Vec<Arc<Vec<SigVal<S, W>>>> = Vec::new();
-        let mut num_keys = 0usize;
-        let mut max_shard = 0usize;
-
-        for shard in shard_store.iter() {
-            let filtered: Vec<SigVal<S, W>> = shard
-                .iter()
-                .filter_map(|sv| {
-                    let local_sig = shard_edge.local_sig(sv.sig);
-                    let local_sv = SigVal {
-                        sig: local_sig,
-                        val: sv.val,
-                    };
-                    filter_map_val(shard_edge, local_sv).map(|new_val| SigVal {
-                        sig: sv.sig,
-                        val: new_val,
-                    })
-                })
-                .collect();
-            num_keys += filtered.len();
-            max_shard = max_shard.max(filtered.len());
-            filtered_shards.push(Arc::new(filtered));
-        }
-
-        self.num_keys = num_keys;
-        self.bit_width = max_value.as_u128().bit_len() as usize;
-
-        // Configure the shard edge for the filtered key count and shard
-        // distribution.
-        shard_edge.set_up_shards(num_keys, self.eps);
-        (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
-
-        pl.info(format_args!(
-            "Number of keys: {} (filtered) Max value: {} Bit width: {}",
-            num_keys,
-            {
-                let v: u128 = max_value.as_u128();
-                v
-            },
-            self.bit_width,
-        ));
-
-        let data: BitFieldVec<Box<[W]>> = BitFieldVec::<Vec<W>>::new_unaligned(
-            self.bit_width,
-            shard_edge.num_vertices() * shard_edge.num_shards(),
-        )
-        .into();
-
-        // The filtered shards already have W values; use identity get_val.
-        let get_val = |_: &E, sv: SigVal<E::LocalSig, W>| sv.val;
-
-        self.try_build_from_shard_iter(seed, data, filtered_shards.into_iter(), &get_val, pl)
             .map_err(Into::into)
     }
 
@@ -856,42 +772,73 @@ where
         }
 
         let mut prng = SmallRng::seed_from_u64(self.seed);
-        let seed = prng.random();
 
         pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
 
-        let mut sig_store = if self.offline {
-            todo!("offline store population not yet supported in try_populate_store")
-        } else {
-            sig_store::new_online::<S, V>(
+        let mut dup_count = 0u32;
+
+        loop {
+            let seed: u64 = prng.random();
+
+            let mut sig_store = sig_store::new_online::<S, V>(
                 self.log2_buckets,
                 LOG2_MAX_SHARDS,
                 self.expected_num_keys,
-            )?
-        };
+            )?;
 
-        pl.expected_updates(self.expected_num_keys);
-        pl.item_name("key");
-        pl.start(format!(
-            "Computing and storing {}-bit signatures in memory using seed 0x{seed:016x}...",
-            std::mem::size_of::<S>() * 8,
-        ));
+            pl.expected_updates(self.expected_num_keys);
+            pl.item_name("key");
+            pl.start(format!(
+                "Computing and storing {}-bit signatures in memory using seed 0x{seed:016x}...",
+                std::mem::size_of::<S>() * 8,
+            ));
 
-        while let Some(key) = keys.next()? {
-            pl.light_update();
-            let &maybe_val = values.next()?.expect("Not enough values");
-            sig_store.try_push(SigVal {
-                sig: T::to_sig(key.borrow(), seed),
-                val: maybe_val,
-            })?;
+            while let Some(key) = keys.next()? {
+                pl.light_update();
+                let &maybe_val = values.next()?.expect("Not enough values");
+                sig_store.try_push(SigVal {
+                    sig: T::to_sig(key.borrow(), seed),
+                    val: maybe_val,
+                })?;
+            }
+            pl.done();
+
+            let num_keys = sig_store.len();
+            let shard_edge = &mut self.shard_edge;
+            shard_edge.set_up_shards(num_keys, self.eps);
+
+            match sig_store.into_shard_store(shard_edge.shard_high_bits()) {
+                Ok(shard_store) => {
+                    let max_shard =
+                        shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
+                    if max_shard as f64
+                        > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64
+                    {
+                        // Shard too big — retry with a different seed.
+                        pl.warn(format_args!(
+                            "Max shard too big, trying again with a different seed..."
+                        ));
+                    } else {
+                        (self.c, self.lge) =
+                            shard_edge.set_up_graphs(num_keys, max_shard);
+                        return Ok((seed, self.shard_edge, AnyShardStore::Online(shard_store)));
+                    }
+                }
+                Err(e) => {
+                    // Duplicate signature — retry.
+                    if dup_count >= 3 {
+                        return Err(e.into());
+                    }
+                    pl.warn(format_args!(
+                        "Duplicate signature, trying again with a different seed..."
+                    ));
+                    dup_count += 1;
+                }
+            }
+
+            values = values.rewind()?;
+            keys = keys.rewind()?;
         }
-        pl.done();
-
-        let shard_edge = &mut self.shard_edge;
-        shard_edge.set_up_shards(sig_store.len(), self.eps);
-        let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
-
-        Ok((seed, self.shard_edge, AnyShardStore::Online(shard_store)))
     }
 
     /// Builds a new function using a [bit-field vector](BitFieldVec) on words of
