@@ -7,8 +7,10 @@ use sux::prelude::*;
 use sux::traits::Word;
 use value_traits::slices::SliceByValue;
 
-const SMALL: usize = 1 << 20;
-const LARGE: usize = 1 << 30;
+#[cfg(not(target_pointer_width = "64"))]
+const SIZES: [(&str, usize); 1] = [("2^20", 1 << 20)];
+#[cfg(target_pointer_width = "64")]
+const SIZES: [(&str, usize); 2] = [("2^20", 1 << 20), ("2^30", 1 << 30)];
 
 /// Builds a `CompIntList` of `n` elements drawn from a geometric
 /// distribution: each value is `trailing_zeros(random_u64())`,
@@ -40,7 +42,7 @@ fn build_zipf(n: usize) -> CompIntList<u64> {
 
 fn bench_geometric(c: &mut Criterion) {
     let mut group = c.benchmark_group("comp_int_list_ef_geom");
-    for &(label, n) in &[("2^20", SMALL), ("2^30", LARGE)] {
+    for &(label, n) in &SIZES {
         let list = build_geometric(n);
         let mask = (n - 1) as u64;
         let mut rng = SmallRng::seed_from_u64(1);
@@ -58,7 +60,7 @@ fn bench_geometric(c: &mut Criterion) {
 
 fn bench_zipf(c: &mut Criterion) {
     let mut group = c.benchmark_group("comp_int_list_ef_zipf");
-    for &(label, n) in &[("2^20", SMALL), ("2^30", LARGE)] {
+    for &(label, n) in &SIZES {
         let list = build_zipf(n);
         let mask = (n - 1) as u64;
         let mut rng = SmallRng::seed_from_u64(1);
@@ -89,7 +91,7 @@ fn to_vec_delimiters<V: Word>(list: CompIntList<V>) -> CompIntList<V, Vec<u64>> 
 
 fn bench_geometric_vec(c: &mut Criterion) {
     let mut group = c.benchmark_group("comp_int_list_vec_geom");
-    for &(label, n) in &[("2^20", SMALL), ("2^30", LARGE)] {
+    for &(label, n) in &SIZES {
         let list = to_vec_delimiters(build_geometric(n));
         let mask = (n - 1) as u64;
         let mut rng = SmallRng::seed_from_u64(1);
@@ -107,7 +109,7 @@ fn bench_geometric_vec(c: &mut Criterion) {
 
 fn bench_zipf_vec(c: &mut Criterion) {
     let mut group = c.benchmark_group("comp_int_list_vec_zipf");
-    for &(label, n) in &[("2^20", SMALL), ("2^30", LARGE)] {
+    for &(label, n) in &SIZES {
         let list = to_vec_delimiters(build_zipf(n));
         let mask = (n - 1) as u64;
         let mut rng = SmallRng::seed_from_u64(1);
