@@ -14,7 +14,7 @@ const SIZES: [(&str, usize); 2] = [("2^20", 1 << 20), ("2^30", 1 << 30)];
 
 /// Builds a `CompIntList` of `n` elements drawn from a geometric
 /// distribution: each value is `trailing_zeros(random_u64())`,
-/// giving values in [0 . . 63] with *P*(*k*) = 2⁻*ᴷ*.
+/// giving values in [0 . . 63] with *P*(*k*) = 2⁻*ᴷ*.
 fn build_geometric(n: usize) -> CompIntList<u64> {
     let mut rng = SmallRng::seed_from_u64(0);
     let values: Vec<u64> = (0..n)

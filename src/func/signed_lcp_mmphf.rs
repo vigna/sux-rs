@@ -23,9 +23,10 @@
 //! aliases.
 
 use crate::bits::BitFieldVec;
+use crate::func::lcp2_mmphf::{Lcp2Mmphf, Lcp2MmphfInt};
 use crate::func::lcp_mmphf::{LcpMmphf, LcpMmphfInt};
 use crate::func::mix64;
-use crate::func::shard_edge::{FuseLge3Shards, ShardEdge};
+use crate::func::shard_edge::{Fuse3NoShards, FuseLge3Shards, ShardEdge};
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::{PrimitiveInteger, PrimitiveNumber};
@@ -33,14 +34,8 @@ use value_traits::slices::SliceByValue;
 
 #[cfg(feature = "rayon")]
 use {
-    anyhow::Result,
-    crate::func::VBuilder,
-    crate::traits::Word,
-    dsi_progress_logger::ProgressLog,
-    lender::*,
-    num_primitive::PrimitiveNumberAs,
-    rdst::RadixKey,
-    std::borrow::Borrow,
+    crate::func::VBuilder, crate::traits::Word, anyhow::Result, dsi_progress_logger::ProgressLog,
+    lender::*, num_primitive::PrimitiveNumberAs, rdst::RadixKey, std::borrow::Borrow,
     value_traits::slices::SliceByValueMut,
 };
 
@@ -93,12 +88,8 @@ pub struct SignedLcpMmphf<F, H: SliceByValue> {
 /// # #[cfg(not(feature = "rayon"))]
 /// # fn main() {}
 /// ```
-pub type SignedLcpMmphfInt<
-    T,
-    H = Box<[u64]>,
-    S = [u64; 2],
-    E = FuseLge3Shards,
-> = SignedLcpMmphf<LcpMmphfInt<T, S, E>, H>;
+pub type SignedLcpMmphfInt<T, H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
+    SignedLcpMmphf<LcpMmphfInt<T, S, E>, H>;
 
 /// A [`SignedLcpMmphf`] wrapping a [`LcpMmphf`] for `str` keys.
 ///
@@ -129,11 +120,8 @@ pub type SignedLcpMmphfInt<
 /// # #[cfg(not(feature = "rayon"))]
 /// # fn main() {}
 /// ```
-pub type SignedLcpMmphfStr<
-    H = Box<[u64]>,
-    S = [u64; 2],
-    E = FuseLge3Shards,
-> = SignedLcpMmphf<LcpMmphf<str, S, E>, H>;
+pub type SignedLcpMmphfStr<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
+    SignedLcpMmphf<LcpMmphf<str, S, E>, H>;
 
 /// A [`SignedLcpMmphf`] wrapping a [`LcpMmphf`] for `[u8]` keys.
 ///
@@ -167,11 +155,8 @@ pub type SignedLcpMmphfStr<
 /// # #[cfg(not(feature = "rayon"))]
 /// # fn main() {}
 /// ```
-pub type SignedLcpMmphfSliceU8<
-    H = Box<[u64]>,
-    S = [u64; 2],
-    E = FuseLge3Shards,
-> = SignedLcpMmphf<LcpMmphf<[u8], S, E>, H>;
+pub type SignedLcpMmphfSliceU8<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
+    SignedLcpMmphf<LcpMmphf<[u8], S, E>, H>;
 
 // ── Integer impl ────────────────────────────────────────────────────
 
@@ -236,10 +221,10 @@ where
     /// hashes after building the inner MMPHF.
     pub fn new(
         keys: impl FallibleRewindableLender<
-                RewindError: std::error::Error + Send + Sync + 'static,
-                Error: std::error::Error + Send + Sync + 'static,
-            > + for<'lend> FallibleLending<'lend, Lend = &'lend T>
-            + Clone,
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>
+        + Clone,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -327,10 +312,10 @@ where
     /// inner MMPHF.
     pub fn new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
-                RewindError: std::error::Error + Send + Sync + 'static,
-                Error: std::error::Error + Send + Sync + 'static,
-            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
-            + Clone,
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
+        + Clone,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -341,10 +326,10 @@ where
     /// configure the internal `offset_lcp_length` VFunc.
     pub fn new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
-                RewindError: std::error::Error + Send + Sync + 'static,
-                Error: std::error::Error + Send + Sync + 'static,
-            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
-            + Clone,
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
+        + Clone,
         n: usize,
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -395,26 +380,16 @@ pub struct BitSignedLcpMmphf<F, H: SliceByValue> {
 // ── Type aliases ────────────────────────────────────────────────────
 
 /// A [`BitSignedLcpMmphf`] wrapping a [`LcpMmphfInt`].
-pub type BitSignedLcpMmphfInt<
-    T,
-    H = BitFieldVec<Box<[usize]>>,
-    S = [u64; 2],
-    E = FuseLge3Shards,
-> = BitSignedLcpMmphf<LcpMmphfInt<T, S, E>, H>;
+pub type BitSignedLcpMmphfInt<T, H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
+    BitSignedLcpMmphf<LcpMmphfInt<T, S, E>, H>;
 
 /// A [`BitSignedLcpMmphf`] wrapping a [`LcpMmphf`] for `str` keys.
-pub type BitSignedLcpMmphfStr<
-    H = BitFieldVec<Box<[usize]>>,
-    S = [u64; 2],
-    E = FuseLge3Shards,
-> = BitSignedLcpMmphf<LcpMmphf<str, S, E>, H>;
+pub type BitSignedLcpMmphfStr<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
+    BitSignedLcpMmphf<LcpMmphf<str, S, E>, H>;
 
 /// A [`BitSignedLcpMmphf`] wrapping a [`LcpMmphf`] for `[u8]` keys.
-pub type BitSignedLcpMmphfSliceU8<
-    H = BitFieldVec<Box<[usize]>>,
-    S = [u64; 2],
-    E = FuseLge3Shards,
-> = BitSignedLcpMmphf<LcpMmphf<[u8], S, E>, H>;
+pub type BitSignedLcpMmphfSliceU8<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
+    BitSignedLcpMmphf<LcpMmphf<[u8], S, E>, H>;
 
 // ── Integer impl ────────────────────────────────────────────────────
 
@@ -443,11 +418,7 @@ impl<
         let shard_edge = &self.inner.offset_lcp_length.shard_edge;
         let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))) & self.hash_mask;
         let stored = self.hashes.get_value(rank)?.as_to::<u64>();
-        if stored == expected {
-            Some(rank)
-        } else {
-            None
-        }
+        if stored == expected { Some(rank) } else { None }
     }
 
     /// Returns the number of keys.
@@ -479,10 +450,10 @@ where
     /// 2<sup>−`hash_width`</sup>.
     pub fn new(
         keys: impl FallibleRewindableLender<
-                RewindError: std::error::Error + Send + Sync + 'static,
-                Error: std::error::Error + Send + Sync + 'static,
-            > + for<'lend> FallibleLending<'lend, Lend = &'lend T>
-            + Clone,
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>
+        + Clone,
         n: usize,
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -505,8 +476,8 @@ where
         for i in 0..n {
             let key: T = *keys.next()?.unwrap();
             let sig = T::to_sig(key, seed);
-            let h = (mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))) & hash_mask)
-                .as_to::<H>();
+            let h =
+                (mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))) & hash_mask).as_to::<H>();
             hashes.set_value(i, h);
         }
 
@@ -545,11 +516,7 @@ impl<
         let shard_edge = &self.inner.offset_lcp_length.shard_edge;
         let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))) & self.hash_mask;
         let stored = self.hashes.get_value(rank)?.as_to::<u64>();
-        if stored == expected {
-            Some(rank)
-        } else {
-            None
-        }
+        if stored == expected { Some(rank) } else { None }
     }
 
     /// Returns the number of keys.
@@ -581,10 +548,10 @@ where
     /// 2<sup>−`hash_width`</sup>.
     pub fn new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
-                RewindError: std::error::Error + Send + Sync + 'static,
-                Error: std::error::Error + Send + Sync + 'static,
-            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
-            + Clone,
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
+        + Clone,
         n: usize,
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -618,5 +585,138 @@ where
             hashes,
             hash_mask,
         })
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Type aliases and impls for Lcp2Mmphf (two-step variant)
+// ═══════════════════════════════════════════════════════════════════
+
+/// A [`SignedLcpMmphf`] wrapping a [`Lcp2MmphfInt`].
+pub type SignedLcp2MmphfInt<T, H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
+    SignedLcpMmphf<Lcp2MmphfInt<T, S, E>, H>;
+/// A [`SignedLcpMmphf`] wrapping a [`Lcp2Mmphf`] for `str` keys.
+pub type SignedLcp2MmphfStr<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
+    SignedLcpMmphf<Lcp2Mmphf<str, S, E>, H>;
+/// A [`SignedLcpMmphf`] wrapping a [`Lcp2Mmphf`] for `[u8]` keys.
+pub type SignedLcp2MmphfSliceU8<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
+    SignedLcpMmphf<Lcp2Mmphf<[u8], S, E>, H>;
+
+impl<
+    T: PrimitiveInteger + ToSig<S> + Copy,
+    H: SliceByValue<Value: PrimitiveNumber>,
+    S: Sig,
+    E: ShardEdge<S, 3>,
+> SignedLcpMmphf<Lcp2MmphfInt<T, S, E>, H>
+where
+    Fuse3NoShards: ShardEdge<S, 3>,
+{
+    #[inline]
+    pub fn get(&self, key: T) -> Option<usize> {
+        const { assert!(size_of::<H::Value>() <= size_of::<u64>()); }
+        let rank = self.inner.get(key);
+        let sig = T::to_sig(key, self.inner.offsets.seed);
+        let shard_edge = &self.inner.offsets.shard_edge;
+        let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)));
+        let stored = self.hashes.get_value(rank)?.as_to::<u64>();
+        if stored == <H::Value>::as_from(expected).as_to::<u64>() { Some(rank) } else { None }
+    }
+    pub const fn len(&self) -> usize { self.inner.len() }
+    pub const fn is_empty(&self) -> bool { self.inner.is_empty() }
+}
+
+#[cfg(feature = "rayon")]
+impl<T, W, S, E> SignedLcpMmphf<Lcp2MmphfInt<T, S, E>, Box<[W]>>
+where
+    T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
+    W: Word,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    Fuse3NoShards: ShardEdge<S, 3>,
+    SigVal<S, usize>: RadixKey,
+    SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<<Fuse3NoShards as ShardEdge<S, 3>>::LocalSig, usize>:
+        std::ops::BitXor + std::ops::BitXorAssign,
+    u64: PrimitiveNumberAs<W>,
+{
+    pub fn new(
+        keys: impl FallibleRewindableLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend T> + Clone,
+        n: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        let keys_for_hashes = keys.clone();
+        let inner = Lcp2MmphfInt::new(keys, n, pl)?;
+        let seed = inner.offsets.seed;
+        let shard_edge: &E = &inner.offsets.shard_edge;
+        let mut hashes = vec![W::MIN; n];
+        let mut keys = keys_for_hashes;
+        for hash in hashes.iter_mut() {
+            let key: T = *keys.next()?.unwrap();
+            *hash = mix64(shard_edge.edge_hash(shard_edge.local_sig(T::to_sig(key, seed)))).as_to::<W>();
+        }
+        Ok(Self { inner, hashes: hashes.into_boxed_slice() })
+    }
+}
+
+impl<
+    K: ?Sized + AsRef<[u8]> + ToSig<S>,
+    H: SliceByValue<Value: PrimitiveNumber>,
+    S: Sig,
+    E: ShardEdge<S, 3>,
+> SignedLcpMmphf<Lcp2Mmphf<K, S, E>, H>
+where
+    Fuse3NoShards: ShardEdge<S, 3>,
+{
+    #[inline]
+    pub fn get(&self, key: &K) -> Option<usize> {
+        const { assert!(size_of::<H::Value>() <= size_of::<u64>()); }
+        let rank = self.inner.get(key);
+        let sig = K::to_sig(key, self.inner.offsets.seed);
+        let shard_edge = &self.inner.offsets.shard_edge;
+        let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)));
+        let stored = self.hashes.get_value(rank)?.as_to::<u64>();
+        if stored == <H::Value>::as_from(expected).as_to::<u64>() { Some(rank) } else { None }
+    }
+    pub const fn len(&self) -> usize { self.inner.len() }
+    pub const fn is_empty(&self) -> bool { self.inner.is_empty() }
+}
+
+#[cfg(feature = "rayon")]
+impl<K, W, S, E> SignedLcpMmphf<Lcp2Mmphf<K, S, E>, Box<[W]>>
+where
+    K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
+    W: Word,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    Fuse3NoShards: ShardEdge<S, 3>,
+    SigVal<S, usize>: RadixKey,
+    SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<<Fuse3NoShards as ShardEdge<S, 3>>::LocalSig, usize>:
+        std::ops::BitXor + std::ops::BitXorAssign,
+    u64: PrimitiveNumberAs<W>,
+{
+    pub fn new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
+        keys: impl FallibleRewindableLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B> + Clone,
+        n: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        let keys_for_hashes = keys.clone();
+        let inner = Lcp2Mmphf::new(keys, n, pl)?;
+        let seed = inner.offsets.seed;
+        let shard_edge: &E = &inner.offsets.shard_edge;
+        let mut hashes = vec![W::MIN; n];
+        let mut keys = keys_for_hashes;
+        for hash in hashes.iter_mut() {
+            let key = keys.next()?.unwrap();
+            let k_ref: &K = <B as Borrow<K>>::borrow(key);
+            *hash = mix64(shard_edge.edge_hash(shard_edge.local_sig(K::to_sig(k_ref, seed)))).as_to::<W>();
+        }
+        Ok(Self { inner, hashes: hashes.into_boxed_slice() })
     }
 }

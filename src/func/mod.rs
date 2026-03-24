@@ -25,6 +25,9 @@
 mod vfunc;
 pub use vfunc::*;
 
+pub mod vfunc2;
+pub use vfunc2::*;
+
 #[cfg(feature = "rayon")]
 mod vbuilder;
 #[cfg(feature = "rayon")]
@@ -32,6 +35,9 @@ pub use vbuilder::*;
 
 pub mod lcp_mmphf;
 pub use lcp_mmphf::*;
+
+pub mod lcp2_mmphf;
+pub use lcp2_mmphf::*;
 
 pub mod signed_lcp_mmphf;
 pub use signed_lcp_mmphf::*;

@@ -29,7 +29,11 @@ fn test_str_small() -> Result<()> {
         SignedLcpMmphfStr::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 
     for (i, key) in keys.iter().enumerate() {
-        assert_eq!(func.get(key.as_str()), Some(i), "key {key:?} at position {i}");
+        assert_eq!(
+            func.get(key.as_str()),
+            Some(i),
+            "key {key:?} at position {i}"
+        );
     }
     assert_eq!(func.get("not_a_key"), None);
     assert_eq!(func.get(""), None);
@@ -39,8 +43,7 @@ fn test_str_small() -> Result<()> {
 #[test]
 fn test_str_single() -> Result<()> {
     let keys = vec!["hello".to_owned()];
-    let func: SignedLcpMmphfStr =
-        SignedLcpMmphfStr::new(FromSlice::new(&keys), 1, no_logging![])?;
+    let func: SignedLcpMmphfStr = SignedLcpMmphfStr::new(FromSlice::new(&keys), 1, no_logging![])?;
     assert_eq!(func.get("hello"), Some(0));
     assert_eq!(func.get("world"), None);
     assert_eq!(func.len(), 1);
@@ -51,8 +54,7 @@ fn test_str_single() -> Result<()> {
 #[test]
 fn test_str_empty() -> Result<()> {
     let keys: Vec<String> = vec![];
-    let func: SignedLcpMmphfStr =
-        SignedLcpMmphfStr::new(FromSlice::new(&keys), 0, no_logging![])?;
+    let func: SignedLcpMmphfStr = SignedLcpMmphfStr::new(FromSlice::new(&keys), 0, no_logging![])?;
     assert_eq!(func.len(), 0);
     assert!(func.is_empty());
     assert_eq!(func.get("anything"), None);
