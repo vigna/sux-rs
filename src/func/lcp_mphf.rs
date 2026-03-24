@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+#![allow(clippy::type_complexity)]
+
 //! LCP-based monotone minimal perfect hash function for integer types.
 
 use crate::bits::BitFieldVec;
@@ -155,7 +157,7 @@ impl<T: PrimitiveInteger + ToSig<[u64; 2]>> LcpMinPerfHashFuncInt<T> {
         let lcp_bit_length = packed >> self.log2_bucket_size;
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         let prefix = IntBitPrefix::new(key, lcp_bit_length);
-        let bucket = self.lcp2bucket.get(&prefix);
+        let bucket = self.lcp2bucket.get(prefix);
         (bucket << self.log2_bucket_size) + offset
     }
 
@@ -173,13 +175,7 @@ impl<T: PrimitiveInteger + ToSig<[u64; 2]>> LcpMinPerfHashFuncInt<T> {
 #[cfg(feature = "rayon")]
 impl<T> LcpMinPerfHashFuncInt<T>
 where
-    T: PrimitiveInteger
-        + ToSig<[u64; 2]>
-        + std::fmt::Debug
-        + Send
-        + Sync
-        + Copy
-        + Ord,
+    T: PrimitiveInteger + ToSig<[u64; 2]> + std::fmt::Debug + Send + Sync + Copy + Ord,
 {
     /// Creates a new LCP-based monotone minimal perfect hash function for
     /// integers.
@@ -212,8 +208,9 @@ where
                     FromSlice::new(&empty_vals),
                     pl,
                 )?;
-            let lcp2bucket = VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
-                .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
+            let lcp2bucket =
+                VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
+                    .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
                     FromSlice::new(&empty_keys_bp),
                     FromSlice::new(&empty_vals),
                     pl,
@@ -297,9 +294,7 @@ where
         // -- Build lcp2bucket VFunc --
 
         let bit_prefixes: Vec<IntBitPrefix<T>> = (0..num_buckets)
-            .map(|b| {
-                IntBitPrefix::new(bucket_first_keys[b], lcp_bit_lengths[b])
-            })
+            .map(|b| IntBitPrefix::new(bucket_first_keys[b], lcp_bit_lengths[b]))
             .collect();
 
         let bucket_indices: Vec<usize> = (0..num_buckets).collect();
@@ -559,10 +554,10 @@ impl LcpMinPerfHashFuncStr {
             let lcp2bucket =
                 VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
                     .try_build_func::<BitPrefix, BitPrefix>(
-                        FromSlice::new(&empty_keys_bp),
-                        FromSlice::new(&empty_vals),
-                        pl,
-                    )?;
+                    FromSlice::new(&empty_keys_bp),
+                    FromSlice::new(&empty_vals),
+                    pl,
+                )?;
             return Ok(Self {
                 n: 0,
                 log2_bucket_size: 0,

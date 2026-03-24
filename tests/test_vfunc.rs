@@ -14,7 +14,7 @@ use sux::{
     bits::BitFieldVec,
     func::{
         VBuilder,
-        shard_edge::{FuseLge3FullSigs, FuseLge3NoShards, FuseLge3Shards, ShardEdge},
+        shard_edge::{Fuse3NoShards, FuseLge3FullSigs, FuseLge3NoShards, FuseLge3Shards, ShardEdge},
     },
     utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
 };
@@ -63,6 +63,8 @@ fn test_vfunc_lge() -> Result<()> {
     _test_vfunc::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], true, false)?;
     _test_vfunc::<[u64; 1], FuseLge3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
     _test_vfunc::<[u64; 1], FuseLge3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
+    _test_vfunc::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
+    _test_vfunc::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
     Ok(())
 }
 
@@ -78,6 +80,8 @@ fn test_vfunc_peeling_by_sig_vals() -> Result<()> {
     _test_vfunc::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, true)?;
     _test_vfunc::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, false)?;
     _test_vfunc::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, true)?;
+    _test_vfunc::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, false)?;
+    _test_vfunc::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, true)?;
     Ok(())
 }
 
@@ -137,6 +141,8 @@ fn test_vfilter_lge() -> Result<()> {
     _test_vfilter::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], true, false)?;
     _test_vfilter::<[u64; 1], FuseLge3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
     _test_vfilter::<[u64; 1], FuseLge3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
+    _test_vfilter::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
+    _test_vfilter::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
     Ok(())
 }
 
@@ -152,6 +158,8 @@ fn test_vfilter_peeling_by_sig_vals() -> Result<()> {
     _test_vfilter::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, true)?;
     _test_vfilter::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, false)?;
     _test_vfilter::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, true)?;
+    _test_vfilter::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, false)?;
+    _test_vfilter::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, true)?;
     Ok(())
 }
 
