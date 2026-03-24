@@ -5,8 +5,7 @@ use mem_dbg::{MemSize, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
-use sux::func::shard_edge::FuseLge3Shards;
-use sux::func::{LcpMinPerfHashFuncInt, LcpMinPerfHashFuncStr};
+use sux::func::{LcpMmphfInt, LcpMmphfStr};
 use sux::utils::FromSlice;
 
 /// Number of pregenerated queries (must be a power of 2 for masking).
@@ -106,12 +105,8 @@ fn bench_int_construction(c: &mut Criterion) {
         let keys = gen_sorted_u64(n);
         group.bench_function(BenchmarkId::from_parameter(label), |b| {
             b.iter(|| {
-                let func = LcpMinPerfHashFuncInt::<_, [u64; 2], FuseLge3Shards>::new(
-                    FromSlice::new(&keys),
-                    keys.len(),
-                    no_logging![],
-                )
-                .unwrap();
+                let func: LcpMmphfInt<u64> =
+                    LcpMmphfInt::new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
                 black_box(&func);
             })
         });
@@ -124,12 +119,8 @@ fn bench_int_query(c: &mut Criterion) {
 
     for &(n, label) in SIZES {
         let keys = gen_sorted_u64(n);
-        let func = LcpMinPerfHashFuncInt::<_, [u64; 2], FuseLge3Shards>::new(
-            FromSlice::new(&keys),
-            keys.len(),
-            no_logging![],
-        )
-        .unwrap();
+        let func: LcpMmphfInt<u64> =
+            LcpMmphfInt::new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
 
         let query_indices = gen_query_indices(n);
         let queries: Vec<u64> = query_indices.iter().map(|&i| keys[i]).collect();
@@ -162,12 +153,9 @@ fn bench_str_construction(c: &mut Criterion) {
         let keys = gen_sorted_strings(n);
         group.bench_function(BenchmarkId::from_parameter(label), |b| {
             b.iter(|| {
-                let func = LcpMinPerfHashFuncStr::<[u64; 2], FuseLge3Shards>::new(
-                    StringVecLender::new(&keys),
-                    keys.len(),
-                    no_logging![],
-                )
-                .unwrap();
+                let func: LcpMmphfStr =
+                    LcpMmphfStr::new(StringVecLender::new(&keys), keys.len(), no_logging![])
+                        .unwrap();
                 black_box(&func);
             })
         });
@@ -180,12 +168,8 @@ fn bench_str_query(c: &mut Criterion) {
 
     for &(n, label) in SIZES {
         let keys = gen_sorted_strings(n);
-        let func = LcpMinPerfHashFuncStr::<[u64; 2], FuseLge3Shards>::new(
-            StringVecLender::new(&keys),
-            keys.len(),
-            no_logging![],
-        )
-        .unwrap();
+        let func: LcpMmphfStr =
+            LcpMmphfStr::new(StringVecLender::new(&keys), keys.len(), no_logging![]).unwrap();
 
         // Pack query strings contiguously to avoid pointer-chasing
         // cache misses from heap-allocated String data.

@@ -17,9 +17,10 @@
 //!
 //! - [`VFunc`] is a generic static function.
 //!
-//! - [`LcpMinPerfHashFuncInt`]/[`LcpMinPerfHashFuncStr`] are specialized static
-//!   function mapping keys in lexicographical order to their lexicographical
-//!   rank.
+//! - [`LcpMmphfInt`]/[`LcpMmphf`] are *monotone minimal perfect hash
+//!   functions*—specialized static functions mapping keys in lexicographical
+//!   order to their lexicographical rank. See [`LcpMmphfStr`] and
+//!   [`LcpMmphfSliceU8`] for common instantiations.
 
 mod vfunc;
 pub use vfunc::*;
@@ -29,8 +30,8 @@ mod vbuilder;
 #[cfg(feature = "rayon")]
 pub use vbuilder::*;
 
-mod lcp_mphf;
-pub use lcp_mphf::*;
+pub mod lcp_mmphf;
+pub use lcp_mmphf::*;
 
 pub mod shard_edge;
 
