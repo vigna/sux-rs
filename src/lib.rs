@@ -25,6 +25,9 @@ pub mod rank_sel;
 pub mod traits;
 pub mod utils;
 
+#[cfg(feature = "cli")]
+pub mod cli;
+
 #[cfg(feature = "fuzz")]
 pub mod fuzz;
 

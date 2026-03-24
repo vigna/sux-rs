@@ -167,11 +167,11 @@ name = "bench_select_in_word"
 harness = false
 
 [[bench]]
-name = "bench_lcp_mphf"
+name = "bench_lcp_mmphf"
 harness = false
 required-features = ["rayon"]
 
 [[bench]]
-name = "bench_vfunc2"
+name = "bench_vfunc"
 harness = false
 required-features = ["rayon"]

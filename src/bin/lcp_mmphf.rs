@@ -4,39 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::fmt::Display;
-
 use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
-use sux::bits::BitFieldVec;
-use sux::func::lcp_mmphf::*;
+use sux::cli::{BuilderArgs, HashTypes};
 use sux::func::lcp2_mmphf::*;
+use sux::func::lcp_mmphf::*;
 use sux::func::signed_lcp_mmphf::*;
 use sux::init_env_logger;
-use sux::prelude::VBuilder;
 use sux::utils::{DekoBufLineLender, FromSlice};
-
-#[derive(clap::ValueEnum, Clone, Debug)]
-enum HashTypes {
-    U8,
-    U16,
-    U32,
-    U64,
-}
-
-impl Display for HashTypes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            HashTypes::U8 => write!(f, "u8"),
-            HashTypes::U16 => write!(f, "u16"),
-            HashTypes::U32 => write!(f, "u32"),
-            HashTypes::U64 => write!(f, "u64"),
-        }
-    }
-}
 
 #[derive(Parser, Debug)]
 #[command(about = "Creates a (possibly signed) LCP-based monotone minimal perfect hash function \
@@ -50,18 +28,14 @@ struct Args {
     /// The number of keys (if not given, a counting pass is performed).​
     #[arg(short, long)]
     n: Option<usize>,
-    /// Use this number of threads.​
-    #[arg(short, long)]
-    threads: Option<usize>,
-    /// Use disk-based buckets to reduce memory usage at construction time.​
-    #[arg(short, long)]
-    offline: bool,
     /// Use the two-step variant (less space, slightly slower queries).​
     #[arg(long)]
     two_step: bool,
     /// Sign the function using hashes of this type.​
     #[arg(long)]
     hash_type: Option<HashTypes>,
+    #[clap(flatten)]
+    builder: BuilderArgs,
 }
 
 fn main() -> Result<()> {
@@ -73,7 +47,6 @@ fn main() -> Result<()> {
     #[cfg(feature = "no_logging")]
     let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
 
-    // Count keys if -n was not given.
     let n = if let Some(n) = args.n {
         n
     } else {
@@ -87,10 +60,7 @@ fn main() -> Result<()> {
         count
     };
 
-    let mut builder = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default().offline(args.offline);
-    if let Some(t) = args.threads {
-        builder = builder.max_num_threads(t);
-    }
+    let builder = args.builder.to_builder();
 
     if args.two_step {
         build_two_step(&args, n, builder, &mut pl)
@@ -99,38 +69,30 @@ fn main() -> Result<()> {
     }
 }
 
-// ── Single-packed variant (LcpMmphf) ────────────────────────────────
-
 fn build_single(
     args: &Args,
     n: usize,
-    builder: VBuilder<usize, BitFieldVec<Box<[usize]>>>,
+    builder: sux::func::VBuilder<usize, sux::bits::BitFieldVec<Box<[usize]>>>,
     pl: &mut (impl ProgressLog + Clone + Send + Sync),
 ) -> Result<()> {
     match args.hash_type {
         None => {
             let lender = DekoBufLineLender::from_path(&args.filename)?;
-            let mmphf: LcpMmphfStr = LcpMmphfStr::new_with_builder(lender, n, builder, pl)?;
+            let mmphf: LcpMmphfStr =
+                LcpMmphfStr::try_new_with_builder(lender, n, builder, pl)?;
             if let Some(ref f) = args.func {
                 unsafe { mmphf.store(f) }?;
             }
         }
         Some(ref ht) => {
-            let mut keys: Vec<String> = Vec::with_capacity(n);
-            let mut lender = DekoBufLineLender::from_path(&args.filename)?;
-            let mut count = 0usize;
-            while let Some(key) = FallibleLender::next(&mut lender)? {
-                keys.push(key.to_owned());
-                count += 1;
-                if count >= n {
-                    break;
-                }
-            }
+            let keys = read_keys(&args.filename, n)?;
             let n = keys.len();
             macro_rules! build {
                 ($h:ty) => {{
                     let mmphf: SignedLcpMmphfStr<Box<[$h]>> =
-                        SignedLcpMmphfStr::new_with_builder(FromSlice::new(&keys), n, builder, pl)?;
+                        SignedLcpMmphfStr::try_new_with_builder(
+                            FromSlice::new(&keys), n, builder, pl,
+                        )?;
                     if let Some(ref f) = args.func {
                         unsafe { mmphf.store(f) }?;
                     }
@@ -147,38 +109,28 @@ fn build_single(
     Ok(())
 }
 
-// ── Two-step variant (Lcp2Mmphf) ────────────────────────────────────
-
 fn build_two_step(
     args: &Args,
     n: usize,
-    builder: VBuilder<usize, BitFieldVec<Box<[usize]>>>,
+    builder: sux::func::VBuilder<usize, sux::bits::BitFieldVec<Box<[usize]>>>,
     pl: &mut (impl ProgressLog + Clone + Send + Sync),
 ) -> Result<()> {
     match args.hash_type {
         None => {
             let lender = DekoBufLineLender::from_path(&args.filename)?;
-            let mmphf: Lcp2MmphfStr = Lcp2MmphfStr::new_with_builder(lender, n, builder, pl)?;
+            let mmphf: Lcp2MmphfStr =
+                Lcp2MmphfStr::try_new_with_builder(lender, n, builder, pl)?;
             if let Some(ref f) = args.func {
                 unsafe { mmphf.store(f) }?;
             }
         }
         Some(ref ht) => {
-            let mut keys: Vec<String> = Vec::with_capacity(n);
-            let mut lender = DekoBufLineLender::from_path(&args.filename)?;
-            let mut count = 0usize;
-            while let Some(key) = FallibleLender::next(&mut lender)? {
-                keys.push(key.to_owned());
-                count += 1;
-                if count >= n {
-                    break;
-                }
-            }
+            let keys = read_keys(&args.filename, n)?;
             let n = keys.len();
             macro_rules! build {
                 ($h:ty) => {{
                     let mmphf: SignedLcp2MmphfStr<Box<[$h]>> =
-                        SignedLcp2MmphfStr::new(FromSlice::new(&keys), n, pl)?;
+                        SignedLcp2MmphfStr::try_new(FromSlice::new(&keys), n, pl)?;
                     if let Some(ref f) = args.func {
                         unsafe { mmphf.store(f) }?;
                     }
@@ -193,4 +145,19 @@ fn build_two_step(
         }
     }
     Ok(())
+}
+
+/// Reads keys into memory (needed for Clone lender in signed variants).
+fn read_keys(filename: &str, max_n: usize) -> Result<Vec<String>> {
+    let mut keys = Vec::new();
+    let mut lender = DekoBufLineLender::from_path(filename)?;
+    let mut count = 0usize;
+    while let Some(key) = FallibleLender::next(&mut lender)? {
+        keys.push(key.to_owned());
+        count += 1;
+        if count >= max_n {
+            break;
+        }
+    }
+    Ok(keys)
 }

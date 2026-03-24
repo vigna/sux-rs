@@ -180,7 +180,7 @@ pub(crate) fn log2_bucket_size(n: usize) -> usize {
 /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
 ///
 /// let func: LcpMmphfInt<u64> =
-///     LcpMmphfInt::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+///     LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 ///
 /// for (i, &key) in keys.iter().enumerate() {
 ///     assert_eq!(func.get(key), i);
@@ -259,7 +259,7 @@ where
     /// * `n`: the number of keys.
     ///
     /// * `pl`: a progress logger.
-    pub fn new(
+    pub fn try_new(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -267,13 +267,13 @@ where
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::new_with_builder(keys, n, VBuilder::default(), pl)
+        Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
     }
 
-    /// Like [`new`](Self::new), but uses the given [`VBuilder`] to
+    /// Like [`new`](Self::try_new), but uses the given [`VBuilder`] to
     /// configure the internal `offset_lcp_length` VFunc (e.g., for
     /// offline construction or thread control).
-    pub fn new_with_builder(
+    pub fn try_new_with_builder(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -282,12 +282,12 @@ where
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::new_inner(keys, n, builder, false, pl).map(|(mmphf, _)| mmphf)
+        Self::try_new_inner(keys, n, builder, false, pl).map(|(mmphf, _)| mmphf)
     }
 
     /// Internal constructor accepting a [`VBuilder`] and optionally
     /// returning the sig store.
-    pub(crate) fn new_inner(
+    pub(crate) fn try_new_inner(
         mut keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -555,7 +555,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
 /// ];
 ///
 /// let func: LcpMmphfStr =
-///     LcpMmphfStr::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+///     LcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 ///
 /// for (i, key) in keys.iter().enumerate() {
 ///     assert_eq!(func.get(key.as_str()), i);
@@ -598,7 +598,7 @@ pub struct LcpMmphf<K: ?Sized, S = [u64; 2], E = FuseLge3Shards> {
 /// ];
 ///
 /// let func: LcpMmphfStr =
-///     LcpMmphfStr::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+///     LcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 ///
 /// for (i, key) in keys.iter().enumerate() {
 ///     assert_eq!(func.get(key.as_str()), i);
@@ -627,7 +627,7 @@ pub type LcpMmphfStr<S = [u64; 2], E = FuseLge3Shards> = LcpMmphf<str, S, E>;
 ///     b"gamma".to_vec(),
 /// ];
 ///
-/// let func: LcpMmphfSliceU8 = LcpMmphfSliceU8::new(
+/// let func: LcpMmphfSliceU8 = LcpMmphfSliceU8::try_new(
 ///     FromSlice::new(&keys),
 ///     keys.len(),
 ///     no_logging![],
@@ -783,7 +783,7 @@ where
     /// * `n`: the number of keys.
     ///
     /// * `pl`: a progress logger.
-    pub fn new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
+    pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -791,13 +791,13 @@ where
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::new_with_builder(keys, n, VBuilder::default(), pl)
+        Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
     }
 
-    /// Like [`new`](Self::new), but uses the given [`VBuilder`] to
+    /// Like [`new`](Self::try_new), but uses the given [`VBuilder`] to
     /// configure the internal `offset_lcp_length` VFunc (e.g., for
     /// offline construction or thread control).
-    pub fn new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
+    pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -806,12 +806,12 @@ where
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::new_inner(keys, n, builder, false, pl).map(|(mmphf, _)| mmphf)
+        Self::try_new_inner(keys, n, builder, false, pl).map(|(mmphf, _)| mmphf)
     }
 
     /// Internal constructor accepting a [`VBuilder`] and optionally
     /// returning the sig store.
-    pub(crate) fn new_inner<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
+    pub(crate) fn try_new_inner<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         mut keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,

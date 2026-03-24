@@ -62,7 +62,7 @@ use {
 /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
 ///
 /// let func: Lcp2MmphfInt<u64> =
-///     Lcp2MmphfInt::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+///     Lcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 ///
 /// for (i, &key) in keys.iter().enumerate() {
 ///     assert_eq!(func.get(key), i);
@@ -127,7 +127,7 @@ where
     SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>:
         std::ops::BitXor + std::ops::BitXorAssign,
 {
-    pub fn new(
+    pub fn try_new(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -135,10 +135,10 @@ where
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::new_with_builder(keys, n, VBuilder::default(), pl)
+        Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
     }
 
-    pub fn new_with_builder(
+    pub fn try_new_with_builder(
         mut keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -218,26 +218,24 @@ where
         assert_eq!(i, n, "Expected {n} keys but got {i}");
         lcp_bit_lengths.push(curr_lcp_bits);
 
-        // -- Build from shared store --
+        // -- Populate shared store (no solve) --
         pl.info(format_args!("Hashing keys..."));
         let keys = keys.rewind()?;
 
-        let (seed_vfunc, store) = builder.expected_num_keys(n)._try_build_func::<T, T>(
-            keys,
-            FromIntoFallibleLenderFactory::new(|| {
-                Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
-                    (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                })))
-            })?,
-            true,
-            pl,
-        )?;
+        let (seed, shard_edge, store) = builder.expected_num_keys(n)
+            .try_populate_store::<T, T, usize>(
+                keys,
+                FromIntoFallibleLenderFactory::new(|| {
+                    Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
+                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                    })))
+                })?,
+                pl,
+            )?;
 
-        let seed = seed_vfunc.seed;
-        let shard_edge = seed_vfunc.shard_edge;
         let mut store = match store {
-            Some(AnyShardStore::Online(s)) => s,
-            _ => unreachable!("keep_store=true with online store"),
+            AnyShardStore::Online(s) => s,
+            _ => unreachable!("try_populate_store returns Online"),
         };
 
         // -- Offsets --
@@ -245,7 +243,7 @@ where
             "Building key → offset map ({log2_bs} bits)..."
         ));
         let offsets = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
-            .try_build_func_from_store::<T, usize>(
+            .try_build_func_with_store::<T, usize>(
                 seed,
                 shard_edge,
                 n,
@@ -384,7 +382,7 @@ where
     SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>:
         std::ops::BitXor + std::ops::BitXorAssign,
 {
-    pub fn new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
+    pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -392,10 +390,10 @@ where
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::new_with_builder(keys, n, VBuilder::default(), pl)
+        Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
     }
 
-    pub fn new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
+    pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         mut keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -476,29 +474,27 @@ where
         pl.info(format_args!("Hashing keys..."));
         let keys = keys.rewind()?;
 
-        let (seed_vfunc, store) = builder.expected_num_keys(n)._try_build_func::<K, B>(
-            keys,
-            FromIntoFallibleLenderFactory::new(|| {
-                Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
-                    (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                })))
-            })?,
-            true,
-            pl,
-        )?;
+        let (seed, shard_edge, store) = builder.expected_num_keys(n)
+            .try_populate_store::<K, B, usize>(
+                keys,
+                FromIntoFallibleLenderFactory::new(|| {
+                    Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
+                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                    })))
+                })?,
+                pl,
+            )?;
 
-        let seed = seed_vfunc.seed;
-        let shard_edge = seed_vfunc.shard_edge;
         let mut store = match store {
-            Some(AnyShardStore::Online(s)) => s,
-            _ => unreachable!("keep_store=true with online store"),
+            AnyShardStore::Online(s) => s,
+            _ => unreachable!("try_populate_store returns Online"),
         };
 
         pl.info(format_args!(
             "Building key → offset map ({log2_bs} bits)..."
         ));
         let offsets = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
-            .try_build_func_from_store::<K, usize>(
+            .try_build_func_with_store::<K, usize>(
                 seed,
                 shard_edge,
                 n,

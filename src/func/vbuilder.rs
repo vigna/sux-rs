@@ -13,6 +13,7 @@ use crate::func::{shard_edge::ShardEdge, *};
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut};
 use crate::traits::{BitVecOpsMut, Word};
 use crate::utils::*;
+use core::error::Error;
 use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
@@ -74,7 +75,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// The type of the keys of the resulting filter or function will be the type of
 /// the elements of the [`FallibleRewindableLender`].
 ///
-/// # Signed Index Functions
+/// # Signed index functions
 ///
 /// The methods [`try_build_sig_index`](VBuilder::try_build_sig_index) and
 /// [`try_build_bit_sig_index`](VBuilder::try_build_bit_sig_index) build index
@@ -82,6 +83,16 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// they associate hashes to keys, so the result of the index function can be
 /// checked. See the documentation of the
 /// [`signed_vfunc`](crate::dict::signed_vfunc) module for more details.
+///
+/// # Building from stores
+///
+/// The methods
+/// [`try_build_func_with_store`](VBuilder::try_build_func_with_store) and
+/// [`try_build_func_with_store_filtered`](VBuilder::try_build_func_with_store_filtered)
+/// build functions from a [`SigStore`] containing signatures and values. The
+/// store is expected to be already built, and the construction will fail if the
+/// store does not contain the expected signatures and values. They are useful
+/// when building compound functions such as [`VFunc2`] and [`LcpMmphf`].
 ///
 /// # Examples
 ///
@@ -112,7 +123,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
 /// }
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), Box<dyn Error>>(())
 /// ```
 ///
 /// Alternatively we can use the bit-field vector backend, that will use
@@ -134,7 +145,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
 /// }
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), Box<dyn Error>>(())
 /// ```
 ///
 /// Since the numbers are small, we can also try to use a fixed-size output:
@@ -158,7 +169,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
 /// }
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), Box<dyn Error>>(())
 /// ```
 ///
 ///
@@ -180,7 +191,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// for i in 0..100 {
 ///    assert!(func[i]);
 /// }
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), Box<dyn Error>>(())
 /// ```
 ///
 /// Since the keys are very few, we can switch to 64-bit signatures, and no
@@ -201,7 +212,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// for i in 0..100 {
 ///    assert!(func[i]);
 /// }
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), Box<dyn Error>>(())
 /// ```
 
 #[derive(Setters, Debug, Derivative)]
@@ -549,12 +560,12 @@ where
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
         keys: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         values: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, Box<[W]>, S, E>>
@@ -586,8 +597,8 @@ where
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
         keys: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>>
@@ -632,12 +643,12 @@ where
     pub(crate) fn _try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
         keys: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         values: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         keep_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -651,26 +662,30 @@ where
         self.build_loop(keys, values, None, &get_val, new_data, keep_store, pl)
     }
 
-    /// Builds a new VFunc by reusing an existing [`ShardStore`] with
+    /// Builds a new function by reusing an existing [`ShardStore`] with
     /// remapped values.
     ///
     /// This avoids re-hashing the keys: the store already contains the
     /// signatures from a previous build. A `get_val` closure transforms
-    /// each stored `SigVal` into the new output value.
+    /// each stored [`SigVal`] into the new output value.
     ///
     /// # Arguments
     ///
-    /// * `seed` — the VFunc seed from the original build
-    ///   (`original_vfunc.seed`).
-    /// * `shard_edge` — the shard edge from the original build
-    ///   (`original_vfunc.shard_edge`); will be cloned internally.
-    /// * `num_keys` — the number of keys (same as the original build).
+    /// * `seed` — the seed from the [`VFunc`] that was built when the
+    ///   store was populated.
+    ///
+    /// * `shard_edge` — the shard edge from that same [`VFunc`].
+    ///
+    /// * `num_keys` — the number of keys in the store.
+    ///
     /// * `max_value` — the maximum new value (determines bit width).
-    /// * `shard_store` — the store returned by a previous
-    ///   `_try_build_func(..., keep_store = true, ...)` call.
-    /// * `get_val` — maps each `SigVal<E::LocalSig, V>` to the new
-    ///   output value `W`.
-    pub(crate) fn try_build_func_from_store<
+    ///
+    /// * `shard_store` — the store kept from a previous
+    ///   `_try_build_func(…, keep_store = true, …)` call.
+    ///
+    /// * `get_val` — maps each [`SigVal<E::LocalSig, V>`](SigVal) to
+    ///   the new output value `W`.
+    pub(crate) fn try_build_func_with_store<
         T: ?Sized + ToSig<S>,
         V: BinSafe + Default + Send + Sync,
     >(
@@ -716,14 +731,14 @@ where
             .map_err(Into::into)
     }
 
-    /// Like [`try_build_func_from_store`](Self::try_build_func_from_store),
+    /// Like [`try_build_func_with_store`](Self::try_build_func_with_store),
     /// but applies a filter-map to each store entry. Entries for which
     /// `filter_map_val` returns `None` are excluded; those returning
     /// `Some(w)` are kept with value `w`.
     ///
     /// The shard edge is set up from scratch for the filtered key count,
     /// so no pre-configured `shard_edge` is needed.
-    pub(crate) fn try_build_func_from_store_filtered<
+    pub(crate) fn try_build_func_with_store_filtered<
         T: ?Sized + ToSig<S>,
         V: BinSafe + Default + Send + Sync + Copy,
     >(
@@ -803,6 +818,82 @@ where
             .map_err(Into::into)
     }
 
+    /// Populates a shard store from keys and values without solving.
+    ///
+    /// **Note:** the store-population logic here must stay aligned with
+    /// the corresponding code in [`try_seed`](Self::try_seed).
+    ///
+    /// This is the first half of what `_try_build_func` does: it hashes
+    /// the keys, pushes them into a store, converts to a shard store, and
+    /// sets up the shard edge. The store can then be passed to
+    /// [`try_build_func_with_store`](Self::try_build_func_with_store) or
+    /// [`VFunc2::try_build_from_store`](super::vfunc2::VFunc2::try_build_from_store)
+    /// for one or more solve steps with different value mappings.
+    ///
+    /// Returns `(seed, configured_shard_edge, shard_store)`.
+    pub(crate) fn try_populate_store<
+        T: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<T>,
+        V: BinSafe + Default + Send + Sync + Ord + AsU128,
+    >(
+        mut self,
+        mut keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        mut values: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend V>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<(u64, E, AnyShardStore<S, V>)>
+    where
+        SigVal<S, V>: RadixKey,
+    {
+        if let Some(expected_num_keys) = self.expected_num_keys {
+            self.shard_edge.set_up_shards(expected_num_keys, self.eps);
+            self.log2_buckets = self.shard_edge.shard_high_bits();
+        }
+
+        let mut prng = SmallRng::seed_from_u64(self.seed);
+        let seed = prng.random();
+
+        pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
+
+        let mut sig_store = if self.offline {
+            todo!("offline store population not yet supported in try_populate_store")
+        } else {
+            sig_store::new_online::<S, V>(
+                self.log2_buckets,
+                LOG2_MAX_SHARDS,
+                self.expected_num_keys,
+            )?
+        };
+
+        pl.expected_updates(self.expected_num_keys);
+        pl.item_name("key");
+        pl.start(format!(
+            "Computing and storing {}-bit signatures in memory using seed 0x{seed:016x}...",
+            std::mem::size_of::<S>() * 8,
+        ));
+
+        while let Some(key) = keys.next()? {
+            pl.light_update();
+            let &maybe_val = values.next()?.expect("Not enough values");
+            sig_store.try_push(SigVal {
+                sig: T::to_sig(key.borrow(), seed),
+                val: maybe_val,
+            })?;
+        }
+        pl.done();
+
+        let shard_edge = &mut self.shard_edge;
+        shard_edge.set_up_shards(sig_store.len(), self.eps);
+        let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
+
+        Ok((seed, self.shard_edge, AnyShardStore::Online(shard_store)))
+    }
+
     /// Builds a new function using a [bit-field vector](BitFieldVec) on words of
     /// the unsigned type `W` to store values.
     ///
@@ -814,12 +905,12 @@ where
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         self,
         keys: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         values: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>> {
@@ -851,8 +942,8 @@ where
     >(
         self,
         keys: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -939,8 +1030,8 @@ where
     >(
         self,
         keys: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<SignedVFunc<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>>
@@ -1008,8 +1099,8 @@ where
     pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         mut self,
         keys: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         filter_bits: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -1078,12 +1169,12 @@ impl<
     >(
         &mut self,
         mut keys: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         mut values: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend V>,
         bit_width: Option<usize>,
         get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
@@ -1243,14 +1334,14 @@ impl<
         mut sig_store: SS,
         keys: &mut (
                  impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
              ),
         values: &mut (
                  impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend V>
              ),
         bit_width: Option<usize>,
@@ -1265,6 +1356,8 @@ impl<
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
+        // Note: the store-population logic below must stay aligned with
+        // the corresponding code in `try_populate_store`.
         let shard_edge = &mut self.shard_edge;
 
         pl.expected_updates(self.expected_num_keys);

@@ -6,6 +6,8 @@
 
 #![allow(clippy::type_complexity)]
 
+#[cfg(feature = "rayon")]
+use core::error::Error;
 use std::borrow::Borrow;
 
 use super::shard_edge::FuseLge3Shards;
@@ -117,12 +119,12 @@ where
     /// analysis is applied.
     pub fn try_new<B: ?Sized + std::borrow::Borrow<T>>(
         keys: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         values: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend usize>,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -135,26 +137,24 @@ where
     /// control).
     pub fn try_new_with_builder<B: ?Sized + std::borrow::Borrow<T>>(
         keys: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         values: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend usize>,
         n: usize,
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self> {
-        let (seed_vfunc, store) = builder
+        let (seed, shard_edge, store) = builder
             .expected_num_keys(n)
-            ._try_build_func::<T, B>(keys, values, true, pl)?;
+            .try_populate_store::<T, B, usize>(keys, values, pl)?;
 
-        let seed = seed_vfunc.seed;
-        let shard_edge = seed_vfunc.shard_edge;
         let mut store = match store {
-            Some(AnyShardStore::Online(s)) => s,
-            _ => unreachable!("keep_store=true"),
+            AnyShardStore::Online(s) => s,
+            _ => unreachable!("try_populate_store returns Online"),
         };
 
         Self::try_build_from_store::<usize>(seed, shard_edge, n, &mut store, &|v| v, pl)
@@ -275,7 +275,7 @@ where
             "Building key -> remapped index ({best_r} bits, escape={escape})..."
         ));
         let short = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
-            .try_build_func_from_store::<T, V>(
+            .try_build_func_with_store::<T, V>(
                 seed,
                 shard_edge,
                 n,
@@ -294,7 +294,7 @@ where
             "Building key -> full value ({w} bits, escaped keys only)..."
         ));
         let long = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, Fuse3Shards>::default()
-            .try_build_func_from_store_filtered::<T, V>(
+            .try_build_func_with_store_filtered::<T, V>(
                 seed,
                 Fuse3Shards::default(),
                 max_value,
