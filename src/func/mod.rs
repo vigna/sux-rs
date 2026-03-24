@@ -25,6 +25,11 @@ mod vbuilder;
 #[cfg(feature = "rayon")]
 pub use vbuilder::*;
 
+#[cfg(feature = "rayon")]
+mod lcp_mphf;
+#[cfg(feature = "rayon")]
+pub use lcp_mphf::*;
+
 pub mod shard_edge;
 
 /// Avalanches bits using the finalization step of Austin Appleby's
