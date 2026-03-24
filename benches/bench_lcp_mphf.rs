@@ -10,7 +10,7 @@ use sux::func::{LcpMinPerfHashFuncInt, LcpMinPerfHashFuncStr};
 use sux::utils::FromSlice;
 
 /// Number of pregenerated queries (must be a power of 2 for masking).
-const NUM_QUERIES: usize = 1 << 20;
+const NUM_QUERIES: usize = 1 << 24;
 const QUERY_MASK: usize = NUM_QUERIES - 1;
 
 const SIZES: &[(usize, &str)] = &[(1_000_000, "1M"), (100_000_000, "100M")];
@@ -174,11 +174,20 @@ fn bench_str_query(c: &mut Criterion) {
     for &(n, label) in SIZES {
         let keys = gen_sorted_strings(n);
         let func =
-            LcpMinPerfHashFuncStr::<[u64; 2], FuseLge3Shards>::new(StringVecLender::new(&keys), keys.len(), no_logging![])
-                .unwrap();
+            LcpMinPerfHashFuncStr::<[u64; 2], FuseLge3Shards>::new(
+                StringVecLender::new(&keys), keys.len(), no_logging![],
+            ).unwrap();
 
+        // Pack query strings contiguously to avoid pointer-chasing
+        // cache misses from heap-allocated String data.
         let query_indices = gen_query_indices(n);
-        let query_strs: Vec<&str> = query_indices.iter().map(|&i| keys[i].as_str()).collect();
+        let mut packed_data = Vec::new();
+        let mut packed_offsets = Vec::with_capacity(NUM_QUERIES + 1);
+        packed_offsets.push(0u32);
+        for &i in &query_indices {
+            packed_data.extend_from_slice(keys[i].as_bytes());
+            packed_offsets.push(packed_data.len() as u32);
+        }
 
         let total_bytes = func.mem_size(SizeFlags::default());
         let bits_per_key = total_bytes as f64 * 8.0 / n as f64;
@@ -189,8 +198,11 @@ fn bench_str_query(c: &mut Criterion) {
         group.bench_function(BenchmarkId::from_parameter(label), |b| {
             let mut ctr = 0usize;
             b.iter(|| {
-                let q = query_strs[ctr & QUERY_MASK];
+                let idx = ctr & QUERY_MASK;
                 ctr += 1;
+                let start = packed_offsets[idx] as usize;
+                let end = packed_offsets[idx + 1] as usize;
+                let q = unsafe { std::str::from_utf8_unchecked(&packed_data[start..end]) };
                 black_box(func.get(q))
             })
         });
