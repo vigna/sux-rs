@@ -6,18 +6,23 @@
 
 #![allow(clippy::type_complexity)]
 
-//! LCP-based monotone minimal perfect hash function for integer types.
+//! LCP-based monotone minimal perfect hash function.
+//!
+//! We provide two variants:
+//!
+//! - [`LcpMinPerfHashFuncStr`]
 
 use crate::bits::BitFieldVec;
 use crate::func::VBuilder;
 use crate::func::VFunc;
-use crate::func::shard_edge::Fuse3NoShards;
+use crate::func::shard_edge::{Fuse3NoShards, FuseLge3Shards, ShardEdge};
 use crate::utils::*;
 use anyhow::{Result, bail};
 use dsi_progress_logger::ProgressLog;
 use lender::*;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
+use rdst::RadixKey;
 use std::borrow::Borrow;
 use xxhash_rust::xxh3;
 
@@ -59,21 +64,33 @@ impl<T: PrimitiveInteger> IntBitPrefix<T> {
     }
 }
 
-/// Returns a byte-slice view of a `PrimitiveInteger` value.
+/// Returns a byte-slice view of a `PrimitiveInteger` value. TODO
 #[inline]
 fn as_bytes<T: PrimitiveInteger>(val: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts(val as *const T as *const u8, size_of::<T>()) }
 }
 
+/// Packs significant bits and bit_length into a contiguous stack buffer
+/// for one-shot xxh3 hashing. Returns the number of bytes written.
+/// Buffer must be at least `size_of::<T>() + size_of::<usize>()` bytes.
+#[inline]
+fn pack_int_bit_prefix<T: PrimitiveInteger>(bp: &IntBitPrefix<T>, buf: &mut [u8]) -> usize {
+    let sig = bp.significant_bits();
+    let val = as_bytes(&sig);
+    let len = bp.bit_length.to_ne_bytes();
+    let n = val.len() + len.len();
+    buf[..val.len()].copy_from_slice(val);
+    buf[val.len()..n].copy_from_slice(&len);
+    n
+}
+
 impl<T: PrimitiveInteger> ToSig<[u64; 2]> for IntBitPrefix<T> {
     #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
-        let k = key.borrow();
-        let sig = k.significant_bits();
-        let mut hasher = xxh3::Xxh3::with_seed(seed);
-        hasher.update(as_bytes(&sig));
-        hasher.update(&k.bit_length.to_ne_bytes());
-        let h = hasher.digest128();
+        // 24 bytes covers u128 (16) + usize (8) on 64-bit.
+        let mut buf = [0u8; 24];
+        let n = pack_int_bit_prefix(key.borrow(), &mut buf);
+        let h = xxh3::xxh3_128_with_seed(&buf[..n], seed);
         [(h >> 64) as u64, h as u64]
     }
 }
@@ -81,24 +98,21 @@ impl<T: PrimitiveInteger> ToSig<[u64; 2]> for IntBitPrefix<T> {
 impl<T: PrimitiveInteger> ToSig<[u64; 1]> for IntBitPrefix<T> {
     #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
-        let k = key.borrow();
-        let sig = k.significant_bits();
-        let mut hasher = xxh3::Xxh3::with_seed(seed);
-        hasher.update(as_bytes(&sig));
-        hasher.update(&k.bit_length.to_ne_bytes());
-        [hasher.digest()]
+        let mut buf = [0u8; 24];
+        let n = pack_int_bit_prefix(key.borrow(), &mut buf);
+        [xxh3::xxh3_64_with_seed(&buf[..n], seed)]
     }
 }
 
 /// Returns the number of leading bits shared by two integers of the same
 /// type, compared MSB-first (big-endian bit order).
-#[inline]
+#[inline(always)]
 fn lcp_bits<T: PrimitiveInteger>(a: T, b: T) -> usize {
     (a ^ b).leading_zeros() as usize
 }
 
 /// Computes the log2 of bucket size from *n* using the LCP-MPHF formula.
-fn compute_log2_bucket_size(n: usize) -> usize {
+fn log2_bucket_size(n: usize) -> usize {
     if n <= 1 {
         return 0;
     }
@@ -131,18 +145,22 @@ fn compute_log2_bucket_size(n: usize) -> usize {
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct LcpMinPerfHashFuncInt<T: PrimitiveInteger + ToSig<[u64; 2]>> {
+pub struct LcpMinPerfHashFuncInt<
+    T: PrimitiveInteger + ToSig<S>,
+    S: Sig = [u64; 2],
+    E: ShardEdge<S, 3> = FuseLge3Shards,
+> {
     /// Number of keys.
     n: usize,
     /// Log2 of bucket size.
     log2_bucket_size: usize,
     /// Maps each key to `(lcp_bit_length << log2_bucket_size) | offset`.
-    offset_lcp_length: VFunc<T, usize, BitFieldVec<Box<[usize]>>>,
+    offset_lcp_length: VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>,
     /// Maps each LCP bit-prefix to its bucket index.
     lcp2bucket: VFunc<IntBitPrefix<T>, usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>,
 }
 
-impl<T: PrimitiveInteger + ToSig<[u64; 2]>> LcpMinPerfHashFuncInt<T> {
+impl<T: PrimitiveInteger + ToSig<S>, S: Sig, E: ShardEdge<S, 3>> LcpMinPerfHashFuncInt<T, S, E> {
     /// Returns the rank (0-based position) of the given key in the
     /// original sorted sequence.
     ///
@@ -173,9 +191,13 @@ impl<T: PrimitiveInteger + ToSig<[u64; 2]>> LcpMinPerfHashFuncInt<T> {
 }
 
 #[cfg(feature = "rayon")]
-impl<T> LcpMinPerfHashFuncInt<T>
+impl<T, S, E> LcpMinPerfHashFuncInt<T, S, E>
 where
-    T: PrimitiveInteger + ToSig<[u64; 2]> + std::fmt::Debug + Send + Sync + Copy + Ord,
+    T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    SigVal<S, usize>: RadixKey,
+    SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
 {
     /// Creates a new LCP-based monotone minimal perfect hash function for
     /// integers.
@@ -202,7 +224,7 @@ where
             let empty_keys_bp: Vec<IntBitPrefix<T>> = vec![];
             let empty_vals: Vec<usize> = vec![];
 
-            let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
+            let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
                 .try_build_func::<T, T>(
                     FromSlice::new(&empty_keys_t),
                     FromSlice::new(&empty_vals),
@@ -223,7 +245,7 @@ where
             });
         }
 
-        let log2_bs = compute_log2_bucket_size(n);
+        let log2_bs = log2_bucket_size(n);
         let bucket_size = 1usize << log2_bs;
         let bucket_mask = bucket_size - 1;
         let num_buckets = n.div_ceil(bucket_size);
@@ -287,7 +309,7 @@ where
 
         let keys = keys.rewind()?;
 
-        let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
+        let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
             .expected_num_keys(n)
             .try_build_func::<T, T>(keys, FromSlice::new(&packed_values), pl)?;
 
@@ -415,18 +437,21 @@ impl ToSig<[u64; 1]> for BitPrefix {
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct LcpMinPerfHashFuncStr {
+pub struct LcpMinPerfHashFuncStr<S: Sig = [u64; 2], E: ShardEdge<S, 3> = FuseLge3Shards> {
     /// Number of keys.
     n: usize,
     /// Log2 of bucket size.
     log2_bucket_size: usize,
     /// Maps each key to `(lcp_bit_length << log2_bucket_size) | offset`.
-    offset_lcp_length: VFunc<str, usize, BitFieldVec<Box<[usize]>>>,
+    offset_lcp_length: VFunc<str, usize, BitFieldVec<Box<[usize]>>, S, E>,
     /// Maps each LCP bit-prefix to its bucket index.
     lcp2bucket: VFunc<BitPrefix, usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>,
 }
 
-impl LcpMinPerfHashFuncStr {
+impl<S: Sig, E: ShardEdge<S, 3>> LcpMinPerfHashFuncStr<S, E>
+where
+    str: ToSig<S>,
+{
     /// Returns the rank (0-based position) of the given key in the
     /// original sorted sequence.
     ///
@@ -519,7 +544,14 @@ fn lcp_bits_sentineled(a: &[u8], b: &[u8]) -> usize {
 }
 
 #[cfg(feature = "rayon")]
-impl LcpMinPerfHashFuncStr {
+impl<S, E> LcpMinPerfHashFuncStr<S, E>
+where
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    str: ToSig<S>,
+    SigVal<S, usize>: RadixKey,
+    SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+{
     /// Creates a new LCP-based monotone minimal perfect hash function.
     ///
     /// The keys must be provided in strictly increasing lexicographic
@@ -545,12 +577,12 @@ impl LcpMinPerfHashFuncStr {
             let empty_keys_bp: Vec<BitPrefix> = vec![];
             let empty_vals: Vec<usize> = vec![];
 
-            let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
+            let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
                 .try_build_func::<str, &str>(
-                    FromSlice::new(&empty_keys_str),
-                    FromSlice::new(&empty_vals),
-                    pl,
-                )?;
+                FromSlice::new(&empty_keys_str),
+                FromSlice::new(&empty_vals),
+                pl,
+            )?;
             let lcp2bucket =
                 VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
                     .try_build_func::<BitPrefix, BitPrefix>(
@@ -566,7 +598,7 @@ impl LcpMinPerfHashFuncStr {
             });
         }
 
-        let log2_bs = compute_log2_bucket_size(n);
+        let log2_bs = log2_bucket_size(n);
         let bucket_size = 1usize << log2_bs;
         let bucket_mask = bucket_size - 1;
         let num_buckets = n.div_ceil(bucket_size);
@@ -633,7 +665,7 @@ impl LcpMinPerfHashFuncStr {
 
         let keys = keys.rewind()?;
 
-        let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
+        let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
             .expected_num_keys(n)
             .try_build_func::<str, str>(keys, FromSlice::new(&packed_values), pl)?;
 

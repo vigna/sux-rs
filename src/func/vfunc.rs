@@ -69,13 +69,7 @@ use value_traits::slices::SliceByValue;
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct VFunc<
-    T: ?Sized + ToSig<S>,
-    W: Word + BinSafe = usize,
-    D: SliceByValue<Value = W> = Box<[W]>,
-    S: Sig = [u64; 2],
-    E: ShardEdge<S, 3> = FuseLge3Shards,
-> {
+pub struct VFunc<T: ?Sized, W = usize, D = Box<[W]>, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) shard_edge: E,
     pub(crate) seed: u64,
     pub(crate) num_keys: usize,
