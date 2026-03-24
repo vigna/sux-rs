@@ -9,6 +9,7 @@
 use crate::bits::BitFieldVec;
 use crate::func::VBuilder;
 use crate::func::VFunc;
+use crate::func::shard_edge::Fuse3NoShards;
 use crate::utils::*;
 use anyhow::{Result, bail};
 use dsi_progress_logger::ProgressLog;
@@ -136,7 +137,7 @@ pub struct LcpMinPerfHashFuncInt<T: PrimitiveInteger + ToSig<[u64; 2]>> {
     /// Maps each key to `(lcp_bit_length << log2_bucket_size) | offset`.
     offset_lcp_length: VFunc<T, usize, BitFieldVec<Box<[usize]>>>,
     /// Maps each LCP bit-prefix to its bucket index.
-    lcp2bucket: VFunc<IntBitPrefix<T>, usize, BitFieldVec<Box<[usize]>>>,
+    lcp2bucket: VFunc<IntBitPrefix<T>, usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>,
 }
 
 impl<T: PrimitiveInteger + ToSig<[u64; 2]>> LcpMinPerfHashFuncInt<T> {
@@ -211,7 +212,7 @@ where
                     FromSlice::new(&empty_vals),
                     pl,
                 )?;
-            let lcp2bucket = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
+            let lcp2bucket = VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
                 .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
                     FromSlice::new(&empty_keys_bp),
                     FromSlice::new(&empty_vals),
@@ -303,13 +304,14 @@ where
 
         let bucket_indices: Vec<usize> = (0..num_buckets).collect();
 
-        let lcp2bucket = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
-            .expected_num_keys(num_buckets)
-            .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
-                FromSlice::new(&bit_prefixes),
-                FromSlice::new(&bucket_indices),
-                pl,
-            )?;
+        let lcp2bucket =
+            VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
+                .expected_num_keys(num_buckets)
+                .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
+                    FromSlice::new(&bit_prefixes),
+                    FromSlice::new(&bucket_indices),
+                    pl,
+                )?;
 
         Ok(Self {
             n,
@@ -364,15 +366,14 @@ fn hash_bit_prefix_raw(hasher: &mut xxh3::Xxh3, bytes: &[u8], bit_length: usize)
     hasher.update(&bit_length.to_ne_bytes());
 }
 
-/// Computes a `[u64; 2]` signature from raw bytes and a bit length,
-/// matching the [`BitPrefix`] `ToSig` implementation but without
-/// allocating a `BitPrefix`.
+/// Computes a `[u64; 1]` signature from raw bytes and a bit length,
+/// matching the [`BitPrefix`] `ToSig<[u64; 1]>` implementation but
+/// without allocating a `BitPrefix`.
 #[inline]
-fn bit_prefix_sig(bytes: &[u8], bit_length: usize, seed: u64) -> [u64; 2] {
+fn bit_prefix_sig(bytes: &[u8], bit_length: usize, seed: u64) -> [u64; 1] {
     let mut hasher = xxh3::Xxh3::with_seed(seed);
     hash_bit_prefix_raw(&mut hasher, bytes, bit_length);
-    let h = hasher.digest128();
-    [(h >> 64) as u64, h as u64]
+    [hasher.digest()]
 }
 
 impl ToSig<[u64; 2]> for BitPrefix {
@@ -427,7 +428,7 @@ pub struct LcpMinPerfHashFuncStr {
     /// Maps each key to `(lcp_bit_length << log2_bucket_size) | offset`.
     offset_lcp_length: VFunc<str, usize, BitFieldVec<Box<[usize]>>>,
     /// Maps each LCP bit-prefix to its bucket index.
-    lcp2bucket: VFunc<BitPrefix, usize, BitFieldVec<Box<[usize]>>>,
+    lcp2bucket: VFunc<BitPrefix, usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>,
 }
 
 impl LcpMinPerfHashFuncStr {
@@ -555,12 +556,13 @@ impl LcpMinPerfHashFuncStr {
                     FromSlice::new(&empty_vals),
                     pl,
                 )?;
-            let lcp2bucket = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
-                .try_build_func::<BitPrefix, BitPrefix>(
-                    FromSlice::new(&empty_keys_bp),
-                    FromSlice::new(&empty_vals),
-                    pl,
-                )?;
+            let lcp2bucket =
+                VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
+                    .try_build_func::<BitPrefix, BitPrefix>(
+                        FromSlice::new(&empty_keys_bp),
+                        FromSlice::new(&empty_vals),
+                        pl,
+                    )?;
             return Ok(Self {
                 n: 0,
                 log2_bucket_size: 0,
@@ -660,13 +662,14 @@ impl LcpMinPerfHashFuncStr {
 
         let bucket_indices: Vec<usize> = (0..num_buckets).collect();
 
-        let lcp2bucket = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
-            .expected_num_keys(num_buckets)
-            .try_build_func::<BitPrefix, BitPrefix>(
-                FromSlice::new(&bit_prefixes),
-                FromSlice::new(&bucket_indices),
-                pl,
-            )?;
+        let lcp2bucket =
+            VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
+                .expected_num_keys(num_buckets)
+                .try_build_func::<BitPrefix, BitPrefix>(
+                    FromSlice::new(&bit_prefixes),
+                    FromSlice::new(&bucket_indices),
+                    pl,
+                )?;
 
         Ok(Self {
             n,
