@@ -983,6 +983,108 @@ fn write_binary<S: BinSafe + Sig, V: BinSafe>(
 }
 
 /// An enum that can hold either an online (in-memory) or offline (file-based)
+/// A [`ShardStore`] wrapper that applies a filter-map to each entry.
+///
+/// Entries for which the closure returns `None` are excluded; those
+/// returning `Some(w)` are kept with the new value. The wrapper
+/// recomputes shard sizes on construction.
+///
+/// This is the Rust equivalent of Java's
+/// `BucketedHashStore.filter(predicate)`.
+pub struct FilteredShardStore<'a, SS, S: Sig + BinSafe, V: BinSafe, W: BinSafe, F> {
+    inner: &'a mut SS,
+    filter_map: F,
+    shard_sizes: Vec<usize>,
+    _marker: std::marker::PhantomData<(S, V, W)>,
+}
+
+impl<'a, SS, S, V, W, F> FilteredShardStore<'a, SS, S, V, W, F>
+where
+    SS: ShardStore<S, V>,
+    S: Sig + BinSafe + Send + Sync,
+    V: BinSafe + Copy,
+    W: BinSafe,
+    F: Fn(&SigVal<S, V>) -> Option<W>,
+{
+    /// Creates a new filtered view of a shard store.
+    ///
+    /// The `filter_map` closure is applied to each entry: `None` excludes
+    /// the entry, `Some(w)` keeps it with value `w`.
+    pub fn new(inner: &'a mut SS, filter_map: F) -> Self {
+        // Pre-scan to compute filtered shard sizes.
+        let shard_sizes: Vec<usize> = inner
+            .iter()
+            .map(|shard| shard.iter().filter(|sv| filter_map(sv).is_some()).count())
+            .collect();
+        Self {
+            inner,
+            filter_map,
+            shard_sizes,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<'a, SS, S, V, W, F> ShardStore<S, W> for FilteredShardStore<'a, SS, S, V, W, F>
+where
+    SS: ShardStore<S, V>,
+    S: Sig + BinSafe + Send + Sync,
+    V: BinSafe + Copy,
+    W: BinSafe + Send + Sync + 'static,
+    F: Fn(&SigVal<S, V>) -> Option<W> + Send + Sync,
+{
+    type ShardIter<'b>
+        = Box<dyn Iterator<Item = Arc<Vec<SigVal<S, W>>>> + Send + Sync + 'b>
+    where
+        Self: 'b;
+
+    type ShardIntoIter = Box<dyn Iterator<Item = Arc<Vec<SigVal<S, W>>>> + Send + Sync>;
+
+    fn shard_sizes(&self) -> &[usize] {
+        &self.shard_sizes
+    }
+
+    fn iter(&mut self) -> Self::ShardIter<'_> {
+        let filter_map = &self.filter_map;
+        Box::new(self.inner.iter().map(move |shard| {
+            Arc::new(
+                shard
+                    .iter()
+                    .filter_map(|sv| {
+                        filter_map(sv).map(|new_val| SigVal {
+                            sig: sv.sig,
+                            val: new_val,
+                        })
+                    })
+                    .collect(),
+            )
+        }))
+    }
+
+    fn into_iter(mut self) -> Self::ShardIntoIter {
+        let filter_map = self.filter_map;
+        // Materialize lazily — each shard is filtered on demand.
+        let shards: Vec<_> = self
+            .inner
+            .iter()
+            .map(move |shard| {
+                Arc::new(
+                    shard
+                        .iter()
+                        .filter_map(|sv| {
+                            filter_map(sv).map(|new_val| SigVal {
+                                sig: sv.sig,
+                                val: new_val,
+                            })
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+        Box::new(shards.into_iter())
+    }
+}
+
 /// [`ShardStore`].
 ///
 /// This type is used to return a shard store from construction methods without

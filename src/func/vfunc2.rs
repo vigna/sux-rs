@@ -148,13 +148,17 @@ where
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self> {
-        let (seed, shard_edge, store) = builder
+        // TODO: replace _try_build_func (which solves a throwaway VFunc)
+        // with a populate-only method once the retry loop is refactored.
+        let (seed_vfunc, store) = builder
             .expected_num_keys(n)
-            .try_populate_store::<T, B, usize>(keys, values, pl)?;
+            ._try_build_func::<T, B>(keys, values, true, pl)?;
 
+        let seed = seed_vfunc.seed;
+        let shard_edge = seed_vfunc.shard_edge;
         let mut store = match store {
-            AnyShardStore::Online(s) => s,
-            _ => unreachable!("try_populate_store returns Online"),
+            Some(AnyShardStore::Online(s)) => s,
+            _ => unreachable!("keep_store=true"),
         };
 
         Self::try_build_from_store::<usize>(seed, shard_edge, n, &mut store, &|v| v, pl)
@@ -293,20 +297,23 @@ where
         pl.info(format_args!(
             "Building key -> full value ({w} bits, escaped keys only)..."
         ));
+        let mut filtered_store = FilteredShardStore::new(store, |sv: &SigVal<S, V>| {
+            let val = get_val(sv.val);
+            if inv_map.contains_key(&val) {
+                None // frequent → handled by short function
+            } else {
+                Some(val)
+            }
+        });
+        let n_escaped = filtered_store.len();
         let long = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, Fuse3Shards>::default()
-            .try_build_func_with_store_filtered::<T, V>(
+            .try_build_func_with_store::<T, usize>(
                 seed,
                 Fuse3Shards::default(),
+                n_escaped,
                 max_value,
-                store,
-                &|_e, sig_val| {
-                    let val = get_val(sig_val.val);
-                    if inv_map.contains_key(&val) {
-                        None // frequent -> handled by short function
-                    } else {
-                        Some(val)
-                    }
-                },
+                &mut filtered_store,
+                &|_, sig_val| sig_val.val,
                 pl,
             )?;
 
