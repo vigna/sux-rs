@@ -26,7 +26,7 @@ fn test_str_small() -> Result<()> {
         "gamma".to_owned(),
     ];
     let func: SignedLcpMmphfStr =
-        SignedLcpMmphfStr::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 
     for (i, key) in keys.iter().enumerate() {
         assert_eq!(
@@ -43,7 +43,7 @@ fn test_str_small() -> Result<()> {
 #[test]
 fn test_str_single() -> Result<()> {
     let keys = vec!["hello".to_owned()];
-    let func: SignedLcpMmphfStr = SignedLcpMmphfStr::new(FromSlice::new(&keys), 1, no_logging![])?;
+    let func: SignedLcpMmphfStr = SignedLcpMmphfStr::try_new(FromSlice::new(&keys), 1, no_logging![])?;
     assert_eq!(func.get("hello"), Some(0));
     assert_eq!(func.get("world"), None);
     assert_eq!(func.len(), 1);
@@ -54,7 +54,7 @@ fn test_str_single() -> Result<()> {
 #[test]
 fn test_str_empty() -> Result<()> {
     let keys: Vec<String> = vec![];
-    let func: SignedLcpMmphfStr = SignedLcpMmphfStr::new(FromSlice::new(&keys), 0, no_logging![])?;
+    let func: SignedLcpMmphfStr = SignedLcpMmphfStr::try_new(FromSlice::new(&keys), 0, no_logging![])?;
     assert_eq!(func.len(), 0);
     assert!(func.is_empty());
     assert_eq!(func.get("anything"), None);
@@ -66,7 +66,7 @@ fn test_str_1000() -> Result<()> {
     let mut keys: Vec<String> = (0..1000).map(|i| format!("key_{:06}", i)).collect();
     keys.sort();
     let func: SignedLcpMmphfStr =
-        SignedLcpMmphfStr::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 
     for (i, key) in keys.iter().enumerate() {
         assert_eq!(
@@ -92,7 +92,7 @@ fn test_slice_u8_small() -> Result<()> {
         b"gamma".to_vec(),
     ];
     let func: SignedLcpMmphfSliceU8 =
-        SignedLcpMmphfSliceU8::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcpMmphfSliceU8::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 
     for (i, key) in keys.iter().enumerate() {
         assert_eq!(func.get(key.as_slice()), Some(i));
@@ -107,7 +107,7 @@ fn test_slice_u8_small() -> Result<()> {
 fn test_u64_small() -> Result<()> {
     let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
     let func: SignedLcpMmphfInt<u64> =
-        SignedLcpMmphfInt::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), Some(i), "key {key} at position {i}");
@@ -121,7 +121,7 @@ fn test_u64_small() -> Result<()> {
 fn test_u64_empty() -> Result<()> {
     let keys: Vec<u64> = vec![];
     let func: SignedLcpMmphfInt<u64> =
-        SignedLcpMmphfInt::new(FromSlice::new(&keys), 0, no_logging![])?;
+        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), 0, no_logging![])?;
     assert_eq!(func.len(), 0);
     assert!(func.is_empty());
     assert_eq!(func.get(42), None);
@@ -137,7 +137,7 @@ fn test_u64_1000() -> Result<()> {
     let n = keys.len();
 
     let func: SignedLcpMmphfInt<u64> =
-        SignedLcpMmphfInt::new(FromSlice::new(&keys), n, no_logging![])?;
+        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), n, no_logging![])?;
 
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), Some(i), "key {key} at position {i}");
@@ -151,7 +151,7 @@ fn test_u64_1000() -> Result<()> {
 fn test_signed_i64() -> Result<()> {
     let keys: Vec<i64> = vec![-100, -10, -1, 0, 1, 10, 100];
     let func: SignedLcpMmphfInt<i64> =
-        SignedLcpMmphfInt::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), Some(i), "key {key} at position {i}");
@@ -165,7 +165,7 @@ fn test_signed_i64() -> Result<()> {
 fn test_u32() -> Result<()> {
     let keys: Vec<u32> = vec![1, 100, 1000, 10000, 100000];
     let func: SignedLcpMmphfInt<u32> =
-        SignedLcpMmphfInt::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), Some(i), "key {key} at position {i}");
@@ -180,7 +180,7 @@ fn test_u32() -> Result<()> {
 fn test_bit_signed_u64_8bit() -> Result<()> {
     let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
     let func: BitSignedLcpMmphfInt<u64> =
-        BitSignedLcpMmphfInt::new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+        BitSignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
 
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), Some(i), "key {key} at position {i}");
@@ -199,7 +199,7 @@ fn test_bit_signed_str_12bit() -> Result<()> {
         "gamma".to_owned(),
     ];
     let func: BitSignedLcpMmphfStr =
-        BitSignedLcpMmphfStr::new(FromSlice::new(&keys), keys.len(), 12, no_logging![])?;
+        BitSignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), 12, no_logging![])?;
 
     for (i, key) in keys.iter().enumerate() {
         assert_eq!(
@@ -221,7 +221,7 @@ fn test_bit_signed_u64_1000() -> Result<()> {
     let n = keys.len();
 
     let func: BitSignedLcpMmphfInt<u64> =
-        BitSignedLcpMmphfInt::new(FromSlice::new(&keys), n, 16, no_logging![])?;
+        BitSignedLcpMmphfInt::try_new(FromSlice::new(&keys), n, 16, no_logging![])?;
 
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), Some(i), "key {key} at position {i}");

@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use dsi_progress_logger::no_logging;
 use mem_dbg::{MemSize, SizeFlags};

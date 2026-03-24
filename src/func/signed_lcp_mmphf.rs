@@ -73,7 +73,7 @@ pub struct SignedLcpMmphf<F, H: SliceByValue> {
 /// # use sux::utils::FromSlice;
 /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
 ///
-/// let func: SignedLcpMmphfInt<u64> = SignedLcpMmphfInt::new(
+/// let func: SignedLcpMmphfInt<u64> = SignedLcpMmphfInt::try_new(
 ///     FromSlice::new(&keys),
 ///     keys.len(),
 ///     no_logging![],
@@ -109,7 +109,7 @@ pub type SignedLcpMmphfInt<T, H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> 
 /// ];
 ///
 /// let func: SignedLcpMmphfStr =
-///     SignedLcpMmphfStr::new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+///     SignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 ///
 /// for (i, key) in keys.iter().enumerate() {
 ///     assert_eq!(func.get(key.as_str()), Some(i));
@@ -140,7 +140,7 @@ pub type SignedLcpMmphfStr<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
 ///     b"gamma".to_vec(),
 /// ];
 ///
-/// let func: SignedLcpMmphfSliceU8 = SignedLcpMmphfSliceU8::new(
+/// let func: SignedLcpMmphfSliceU8 = SignedLcpMmphfSliceU8::try_new(
 ///     FromSlice::new(&keys),
 ///     keys.len(),
 ///     no_logging![],
@@ -219,7 +219,7 @@ where
     /// The keys must be in strictly increasing order. The lender must be
     /// [`Clone`] so that an additional pass can compute verification
     /// hashes after building the inner MMPHF.
-    pub fn new(
+    pub fn try_new(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -229,7 +229,7 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         let keys_for_hashes = keys.clone();
-        let inner = LcpMmphfInt::new(keys, n, pl)?;
+        let inner = LcpMmphfInt::try_new(keys, n, pl)?;
 
         let seed = inner.offset_lcp_length.seed;
         let shard_edge: &E = &inner.offset_lcp_length.shard_edge;
@@ -310,7 +310,7 @@ where
     /// (byte-level comparison). The lender must be [`Clone`] so that an
     /// additional pass can compute verification hashes after building the
     /// inner MMPHF.
-    pub fn new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
+    pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -319,12 +319,12 @@ where
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::new_with_builder(keys, n, VBuilder::default(), pl)
+        Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
     }
 
-    /// Like [`new`](Self::new), but uses the given [`VBuilder`] to
+    /// Like [`new`](Self::try_new), but uses the given [`VBuilder`] to
     /// configure the internal `offset_lcp_length` VFunc.
-    pub fn new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
+    pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -335,7 +335,7 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         let keys_for_hashes = keys.clone();
-        let inner = LcpMmphf::new_with_builder(keys, n, builder, pl)?;
+        let inner = LcpMmphf::try_new_with_builder(keys, n, builder, pl)?;
 
         let seed = inner.offset_lcp_length.seed;
         let shard_edge: &E = &inner.offset_lcp_length.shard_edge;
@@ -448,7 +448,7 @@ where
     /// `hash_width` is the number of hash bits stored per key (must be
     /// in `1..=H::BITS`). False-positive probability is
     /// 2<sup>−`hash_width`</sup>.
-    pub fn new(
+    pub fn try_new(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -466,7 +466,7 @@ where
         };
 
         let keys_for_hashes = keys.clone();
-        let inner = LcpMmphfInt::new(keys, n, pl)?;
+        let inner = LcpMmphfInt::try_new(keys, n, pl)?;
 
         let seed = inner.offset_lcp_length.seed;
         let shard_edge: &E = &inner.offset_lcp_length.shard_edge;
@@ -546,7 +546,7 @@ where
     /// `hash_width` is the number of hash bits stored per key (must be
     /// in `1..=H::BITS`). False-positive probability is
     /// 2<sup>−`hash_width`</sup>.
-    pub fn new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
+    pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -564,7 +564,7 @@ where
         };
 
         let keys_for_hashes = keys.clone();
-        let inner = LcpMmphf::new(keys, n, pl)?;
+        let inner = LcpMmphf::try_new(keys, n, pl)?;
 
         let seed = inner.offset_lcp_length.seed;
         let shard_edge: &E = &inner.offset_lcp_length.shard_edge;
@@ -649,7 +649,7 @@ where
         std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<W>,
 {
-    pub fn new(
+    pub fn try_new(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -659,7 +659,7 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         let keys_for_hashes = keys.clone();
-        let inner = Lcp2MmphfInt::new(keys, n, pl)?;
+        let inner = Lcp2MmphfInt::try_new(keys, n, pl)?;
         let seed = inner.offsets.seed;
         let shard_edge: &E = &inner.offsets.shard_edge;
         let mut hashes = vec![W::MIN; n];
@@ -723,7 +723,7 @@ where
         std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<W>,
 {
-    pub fn new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
+    pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -733,7 +733,7 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         let keys_for_hashes = keys.clone();
-        let inner = Lcp2Mmphf::new(keys, n, pl)?;
+        let inner = Lcp2Mmphf::try_new(keys, n, pl)?;
         let seed = inner.offsets.seed;
         let shard_edge: &E = &inner.offsets.shard_edge;
         let mut hashes = vec![W::MIN; n];
