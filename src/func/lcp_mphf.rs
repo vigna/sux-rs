@@ -24,15 +24,15 @@ use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
 use rdst::RadixKey;
 use std::borrow::Borrow;
+use std::convert::Infallible;
 use xxhash_rust::xxh3;
 
-/// A 128-bit random magic cookie appended to strings to ensure
-/// prefix-freeness. Two distinct strings that are prefix-related will
-/// diverge within these bytes. The probability of a real string
-/// containing this exact sequence is 2⁻¹²⁸.
+/// A 128-bit [random](https://www.random.org/) magic cookie appended to strings
+/// to ensure prefix-freeness. Two distinct strings that are prefix-related will
+/// diverge within these bytes. The probability of a real string containing this
+/// exact sequence is 2⁻¹²⁸.
 static MAGIC_COOKIE: [u8; 16] = [
-    0xA3, 0x7B, 0x1F, 0xE4, 0x92, 0xD8, 0x56, 0xC0,
-    0x4D, 0x8A, 0xF7, 0x23, 0x6E, 0xB1, 0x09, 0x5C,
+    0xb6, 0x16, 0x1a, 0x72, 0xb1, 0xc4, 0x50, 0x11, 0x19, 0x02, 0xc6, 0xda, 0x23, 0x5b, 0xea, 0xdc,
 ];
 
 /// A bit-level prefix of an integer, used as key for the LCP-to-bucket
@@ -73,19 +73,13 @@ impl<T: PrimitiveInteger> IntBitPrefix<T> {
     }
 }
 
-/// Returns a byte-slice view of a `PrimitiveInteger` value. TODO
-#[inline]
-fn as_bytes<T: PrimitiveInteger>(val: &T) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(val as *const T as *const u8, size_of::<T>()) }
-}
-
 /// Packs significant bits and bit_length into a contiguous stack buffer
 /// for one-shot xxh3 hashing. Returns the number of bytes written.
 /// Buffer must be at least `size_of::<T>() + size_of::<usize>()` bytes.
 #[inline]
 fn pack_int_bit_prefix<T: PrimitiveInteger>(bp: &IntBitPrefix<T>, buf: &mut [u8]) -> usize {
-    let sig = bp.significant_bits();
-    let val = as_bytes(&sig);
+    let val: T::Bytes = bp.significant_bits().to_ne_bytes();
+    let val = val.borrow() as &[u8];
     let len = bp.bit_length.to_ne_bytes();
     let n = val.len() + len.len();
     buf[..val.len()].copy_from_slice(val);
@@ -110,95 +104,6 @@ impl<T: PrimitiveInteger> ToSig<[u64; 1]> for IntBitPrefix<T> {
         let mut buf = [0u8; 24];
         let n = pack_int_bit_prefix(key.borrow(), &mut buf);
         [xxh3::xxh3_64_with_seed(&buf[..n], seed)]
-    }
-}
-
-// ── Cloneable iterators for on-the-fly value computation ─────────────
-
-/// A `Clone` + `Iterator` yielding packed values on the fly.
-#[derive(Clone)]
-struct PackedValuesIter<'a> {
-    lcp_bit_lengths: &'a [usize],
-    log2_bs: usize,
-    bucket_mask: usize,
-    n: usize,
-    pos: usize,
-}
-
-impl<'a> PackedValuesIter<'a> {
-    fn new(lcp_bit_lengths: &'a [usize], log2_bs: usize, n: usize) -> Self {
-        Self {
-            lcp_bit_lengths,
-            log2_bs,
-            bucket_mask: (1 << log2_bs) - 1,
-            n,
-            pos: 0,
-        }
-    }
-}
-
-impl Iterator for PackedValuesIter<'_> {
-    type Item = usize;
-    fn next(&mut self) -> Option<usize> {
-        if self.pos < self.n {
-            let bucket = self.pos >> self.log2_bs;
-            let offset = self.pos & self.bucket_mask;
-            let val = (self.lcp_bit_lengths[bucket] << self.log2_bs) | offset;
-            self.pos += 1;
-            Some(val)
-        } else {
-            None
-        }
-    }
-}
-
-
-/// A `Clone` + `Iterator` yielding `IntBitPrefix<T>` on the fly.
-#[derive(Clone)]
-struct IntBitPrefixIter<'a, T: PrimitiveInteger + Copy> {
-    bucket_first_keys: &'a [T],
-    lcp_bit_lengths: &'a [usize],
-    pos: usize,
-}
-
-impl<T: PrimitiveInteger + Copy> Iterator for IntBitPrefixIter<'_, T> {
-    type Item = IntBitPrefix<T>;
-    fn next(&mut self) -> Option<IntBitPrefix<T>> {
-        if self.pos < self.bucket_first_keys.len() {
-            let bp = IntBitPrefix::new(
-                self.bucket_first_keys[self.pos],
-                self.lcp_bit_lengths[self.pos],
-            );
-            self.pos += 1;
-            Some(bp)
-        } else {
-            None
-        }
-    }
-}
-
-/// A `Clone` + `Iterator` yielding `BitPrefix` on the fly from
-/// pre-extended (string + cookie) byte slices.
-#[derive(Clone)]
-struct BitPrefixIter<'a> {
-    extended_strings: &'a [Vec<u8>],
-    lcp_bit_lengths: &'a [usize],
-    pos: usize,
-}
-
-impl Iterator for BitPrefixIter<'_> {
-    type Item = BitPrefix;
-    fn next(&mut self) -> Option<BitPrefix> {
-        if self.pos < self.extended_strings.len() {
-            let bp = BitPrefix::new(
-                &self.extended_strings[self.pos],
-                self.lcp_bit_lengths[self.pos],
-            );
-            self.pos += 1;
-            Some(bp)
-        } else {
-            None
-        }
     }
 }
 
@@ -403,9 +308,11 @@ where
             .expected_num_keys(n)
             .try_build_func::<T, T>(
                 keys,
-                FromCloneableIntoIterator::new(PackedValuesIter::new(
-                    &lcp_bit_lengths, log2_bs, n,
-                )),
+                FromIntoFallibleLenderFactory::new(|| {
+                    Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
+                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                    })))
+                })?,
                 pl,
             )?;
 
@@ -415,12 +322,16 @@ where
             VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
                 .expected_num_keys(num_buckets)
                 .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
-                    FromCloneableIntoIterator::new(IntBitPrefixIter {
-                        bucket_first_keys: &bucket_first_keys,
-                        lcp_bit_lengths: &lcp_bit_lengths,
-                        pos: 0,
-                    }),
-                    FromCloneableIntoIterator::new(0..num_buckets),
+                    FromIntoFallibleLenderFactory::new(|| {
+                        Ok::<_, Infallible>(FromCloneableIntoIterator::new(
+                            (0..num_buckets).map(|b| {
+                                IntBitPrefix::new(bucket_first_keys[b], lcp_bit_lengths[b])
+                            }),
+                        ))
+                    })?,
+                    FromIntoFallibleLenderFactory::new(|| {
+                        Ok::<_, Infallible>(FromCloneableIntoIterator::new(0..num_buckets))
+                    })?,
                     pl,
                 )?;
 
@@ -648,8 +559,7 @@ fn lcp_bits_with_cookie(a: &[u8], b: &[u8]) -> usize {
             cookie_byte
         };
         if longer_byte != cookie_byte {
-            return (shorter_len + i) * 8
-                + (longer_byte ^ cookie_byte).leading_zeros() as usize;
+            return (shorter_len + i) * 8 + (longer_byte ^ cookie_byte).leading_zeros() as usize;
         }
     }
 
@@ -774,9 +684,11 @@ where
             .expected_num_keys(n)
             .try_build_func::<str, str>(
                 keys,
-                FromCloneableIntoIterator::new(PackedValuesIter::new(
-                    &lcp_bit_lengths, log2_bs, n,
-                )),
+                FromIntoFallibleLenderFactory::new(|| {
+                    Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
+                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                    })))
+                })?,
                 pl,
             )?;
 
@@ -800,12 +712,14 @@ where
             VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
                 .expected_num_keys(num_buckets)
                 .try_build_func::<BitPrefix, BitPrefix>(
-                    FromCloneableIntoIterator::new(BitPrefixIter {
-                        extended_strings: &extended_first_strings,
-                        lcp_bit_lengths: &lcp_bit_lengths,
-                        pos: 0,
-                    }),
-                    FromCloneableIntoIterator::new(0..num_buckets),
+                    FromIntoFallibleLenderFactory::new(|| {
+                        Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..num_buckets).map(
+                            |b| BitPrefix::new(&extended_first_strings[b], lcp_bit_lengths[b]),
+                        )))
+                    })?,
+                    FromIntoFallibleLenderFactory::new(|| {
+                        Ok::<_, Infallible>(FromCloneableIntoIterator::new(0..num_buckets))
+                    })?,
                     pl,
                 )?;
 
