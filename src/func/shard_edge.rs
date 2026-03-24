@@ -882,7 +882,7 @@ mod fuse {
             let num_vertices = (c * n as f64).ceil() as u128;
             assert!(
                 num_vertices <= max_vertices,
-                "This ShardEdge does not support more than {max_vertices} vertices, but you are requesting {num_vertices}"
+                "FuseLge3NoShards does not support more than {max_vertices} vertices, but you are requesting {num_vertices}"
             );
 
             self.l = num_vertices
@@ -961,6 +961,134 @@ mod fuse {
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             FuseLge3NoShards::set_up_graphs(self, n, Self::Vertex::MAX as u128 + 1)
+        }
+
+        #[inline(always)]
+        fn shard_high_bits(&self) -> u32 {
+            0
+        }
+
+        fn num_sort_keys(&self) -> usize {
+            self.l as usize
+        }
+
+        #[inline(always)]
+        fn sort_key(&self, sig: [u64; 1]) -> usize {
+            fixed_point_inv_128!(sig[0], self.l)
+        }
+
+        #[inline(always)]
+        fn edge_hash(&self, sig: [u64; 1]) -> u64 {
+            sig[0]
+        }
+
+        #[inline(always)]
+        fn shard(&self, _sig: [u64; 1]) -> usize {
+            0
+        }
+
+        #[inline(always)]
+        fn local_sig(&self, sig: [u64; 1]) -> Self::LocalSig {
+            sig
+        }
+
+        #[inline(always)]
+        fn num_vertices(&self) -> usize {
+            (self.l as usize + 2) << self.log2_seg_size
+        }
+
+        #[inline(always)]
+        fn local_edge(&self, sig: Self::LocalSig) -> [usize; 3] {
+            edge_1(0, self.log2_seg_size, self.l, sig)
+        }
+
+        #[inline(always)]
+        fn edge(&self, sig: [u64; 1]) -> [usize; 3] {
+            edge_1(0, self.log2_seg_size, self.l, sig)
+        }
+    }
+
+    /// Unsharded [fuse
+    /// 3-hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38) without [lazy
+    /// Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517).
+    ///
+    /// This implementation is equivalent to that described in "[Binary Fuse
+    /// Filters: Fast and Smaller Than Xor
+    /// Filters](https://doi.org/10.1145/3510449)". We use the 3-wise expansion
+    /// factor from Table 1, , which provides enough expansion for peelability
+    /// at any *n* at the cost of slightly more space for small key sets (e.g.,
+    /// ≈1.35 for *n* = 100, ≈1.125 for *n* ≥ 10⁶).
+    ///
+    /// This is intended for small to medium key sets (up to 2³² keys due
+    /// to `u32` vertices) where avoiding Gaussian elimination is more
+    /// important than minimizing space overhead.
+    #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
+    #[mem_size_flat]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[derive(Default)]
+    pub struct Fuse3NoShards {
+        log2_seg_size: u32,
+        l: u32,
+    }
+
+    impl Display for Fuse3NoShards {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "Fuse3 (no shards, no LGE) Segment size: 2^{} Number of segments: {}",
+                self.log2_seg_size,
+                self.l + 2
+            )
+        }
+    }
+
+    impl Fuse3NoShards {
+        /// Returns the expansion factor for fuse 3-hypergraphs.
+        ///
+        /// From Table 1 (3-wise) of "[Binary Fuse Filters: Fast and
+        /// Smaller Than Xor
+        /// Filters](https://doi.org/10.1145/3510449)".
+        fn c(n: usize) -> f64 {
+            let n = n.max(2) as f64;
+            0.875 + 0.25 * (1.0_f64).max((1e6_f64).ln() / n.ln())
+        }
+
+        /// Returns the log₂ of segment size for fuse 3-hypergraphs.
+        ///
+        /// From "[Binary Fuse Filters: Fast and Smaller Than Xor
+        /// Filters](https://doi.org/10.1145/3510449)".
+        fn log2_seg_size(n: usize) -> u32 {
+            let n = n.max(1) as f64;
+            (n.ln() / (3.33_f64).ln() + 2.25).floor() as u32
+        }
+    }
+
+    impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
+        type SortSigVal<V: BinSafe> = SigVal<[u64; 1], V>;
+        type LocalSig = [u64; 1];
+        type Vertex = u32;
+
+        fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
+
+        fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
+            let c = Self::c(n);
+            self.log2_seg_size = Fuse3NoShards::log2_seg_size(n);
+            let num_vertices = (c * n as f64).ceil() as u128;
+            assert!(
+                num_vertices <= Self::Vertex::MAX as u128 + 1,
+                "Fuse3NoShards does not support more than {} vertices, but you are requesting {num_vertices}",
+                Self::Vertex::MAX as u128 + 1
+            );
+
+            self.l = num_vertices
+                .div_ceil(1 << self.log2_seg_size)
+                .saturating_sub(2)
+                .max(1)
+                .try_into()
+                .unwrap();
+
+            (c, false) // false = no Gaussian elimination
         }
 
         #[inline(always)]
