@@ -15,7 +15,11 @@
 //! between keys and values just in the space required by the values, plus
 //! a small overhead.
 //!
-//! See [`VFunc`] for more details.
+//! - [`VFunc`] is a generic static function.
+//!
+//! - [`LcpMinPerfHashFuncInt`]/[`LcpMinPerfHashFuncStr`] are specialized static
+//!   function mapping keys in lexicographical order to their lexicographical
+//!   rank.
 
 mod vfunc;
 pub use vfunc::*;
@@ -25,9 +29,7 @@ mod vbuilder;
 #[cfg(feature = "rayon")]
 pub use vbuilder::*;
 
-#[cfg(feature = "rayon")]
 mod lcp_mphf;
-#[cfg(feature = "rayon")]
 pub use lcp_mphf::*;
 
 pub mod shard_edge;
