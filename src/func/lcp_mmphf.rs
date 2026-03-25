@@ -37,7 +37,6 @@ use {
     dsi_progress_logger::ProgressLog,
     lender::*,
     rdst::RadixKey,
-    std::convert::Infallible,
 };
 
 /// A 128-bit [random](https://www.random.org/) magic cookie appended to strings
@@ -372,11 +371,10 @@ where
 
         let (offset_lcp_length, store) = builder.expected_num_keys(n)._try_build_func::<T, T>(
             keys,
-            FromIntoFallibleLenderFactory::new(|| {
-                Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
-                    (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                })))
-            })?,
+            FromCloneableIntoIterator::new(
+                (0..n)
+                    .map(|idx| (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)),
+            ),
             keep_store,
             pl,
         )?;
@@ -390,16 +388,10 @@ where
             VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
                 .expected_num_keys(num_buckets)
                 .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
-                    FromIntoFallibleLenderFactory::new(|| {
-                        Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..num_buckets).map(
-                            |b| {
-                                IntBitPrefix::new(bucket_first_keys[b] ^ T::MIN, lcp_bit_lengths[b])
-                            },
-                        )))
-                    })?,
-                    FromIntoFallibleLenderFactory::new(|| {
-                        Ok::<_, Infallible>(FromCloneableIntoIterator::new(0..num_buckets))
-                    })?,
+                    FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
+                        IntBitPrefix::new(bucket_first_keys[b] ^ T::MIN, lcp_bit_lengths[b])
+                    })),
+                    FromCloneableIntoIterator::new(0..num_buckets),
                     pl,
                 )?;
 
@@ -882,11 +874,10 @@ where
 
         let (offset_lcp_length, store) = builder.expected_num_keys(n)._try_build_func::<K, B>(
             keys,
-            FromIntoFallibleLenderFactory::new(|| {
-                Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
-                    (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                })))
-            })?,
+            FromCloneableIntoIterator::new(
+                (0..n)
+                    .map(|idx| (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)),
+            ),
             keep_store,
             pl,
         )?;
@@ -914,16 +905,11 @@ where
             VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
                 .expected_num_keys(num_buckets)
                 .try_build_func::<BitPrefix, BitPrefix>(
-                    FromIntoFallibleLenderFactory::new(|| {
-                        Ok::<_, Infallible>(FromCloneableIntoIterator::new(
-                            (0..num_buckets).map(|b| {
-                                BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b])
-                            }),
-                        ))
-                    })?,
-                    FromIntoFallibleLenderFactory::new(|| {
-                        Ok::<_, Infallible>(FromCloneableIntoIterator::new(0..num_buckets))
-                    })?,
+                    FromCloneableIntoIterator::new(
+                        (0..num_buckets)
+                            .map(|b| BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b])),
+                    ),
+                    FromCloneableIntoIterator::new(0..num_buckets),
                     pl,
                 )?;
 
