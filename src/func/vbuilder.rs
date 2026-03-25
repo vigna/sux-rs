@@ -709,9 +709,10 @@ where
         self.num_keys = num_keys;
         self.bit_width = max_value.as_u128().bit_len() as usize;
 
-        // Recalculate sharding for the actual key count (may differ
-        // from the original if the store was filtered).
-        self.shard_edge.set_up_shards(num_keys, self.eps);
+        // The shard structure is fixed by the store (set at
+        // `into_shard_store` time). We only reconfigure graph
+        // parameters (c, lge, segment size, vertex count) for the
+        // actual key count and shard sizes.
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
         (self.c, self.lge) = self.shard_edge.set_up_graphs(num_keys, max_shard);
 

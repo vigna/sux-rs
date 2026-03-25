@@ -297,19 +297,31 @@ where
         pl.info(format_args!(
             "Building key -> full value ({w} bits, escaped keys only)..."
         ));
-        let mut filtered_store = FilteredShardStore::new(store, |sv: &SigVal<S, V>| {
-            let val = get_val(sv.val);
-            if inv_map.contains_key(&val) {
-                None // frequent → handled by short function
-            } else {
-                Some(val)
-            }
-        });
-        let n_escaped = filtered_store.len();
+        // Compute the optimal shard_high_bits for the escaped key count.
+        let n_escaped = n - sorted_vals[..num_remapped]
+            .iter()
+            .map(|v| counts[v])
+            .sum::<usize>();
+        let mut long_shard_edge = Fuse3Shards::default();
+        long_shard_edge.set_up_shards(n_escaped, 0.001);
+        let long_shard_high_bits = long_shard_edge.shard_high_bits();
+
+        let mut filtered_store = FilteredShardStore::new(
+            store,
+            long_shard_high_bits,
+            |sv: &SigVal<S, V>| {
+                let val = get_val(sv.val);
+                if inv_map.contains_key(&val) {
+                    None // frequent → handled by short function
+                } else {
+                    Some(val)
+                }
+            },
+        );
         let long = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, Fuse3Shards>::default()
             .try_build_func_with_store::<T, usize>(
                 seed,
-                Fuse3Shards::default(),
+                long_shard_edge,
                 n_escaped,
                 max_value,
                 &mut filtered_store,
