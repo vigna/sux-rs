@@ -53,6 +53,7 @@
 #![allow(clippy::comparison_chain)]
 #![allow(clippy::type_complexity)]
 use anyhow::Result;
+use itertools::Itertools;
 use mem_dbg::{MemDbg, MemSize};
 
 use rdst::RadixKey;
@@ -985,16 +986,15 @@ fn write_binary<S: BinSafe + Sig, V: BinSafe>(
 /// A [`ShardStore`] wrapper that filters entries and optionally
 /// re-aggregates shards to a coarser granularity.
 ///
-/// Entries for which the predicate returns `false` are excluded.
-/// The value type is unchanged — remapping is done downstream by
-/// the `get_val` closure in
-/// [`try_build_func_with_store`](crate::func::VBuilder::try_build_func_with_store).
+/// [`SigVal`]s for which the predicate returns `false` are excluded.
 ///
 /// If the requested `shard_high_bits` results in fewer shards than
 /// the inner store, adjacent shards are merged; otherwise the inner
 /// structure is kept as-is.
-pub struct FilteredShardStore<'a, SS, S: Sig + BinSafe, V: BinSafe, F> {
+pub struct FilteredShardStore<'a, SS, S, V, F> {
+    /// The inner store.
     inner: &'a mut SS,
+    /// The filter predicate.
     filter: F,
     /// Shard sizes after filtering and optional merging.
     shard_sizes: Vec<usize>,
@@ -1018,21 +1018,14 @@ where
     pub fn new(inner: &'a mut SS, shard_high_bits: u32, filter: F) -> Self {
         let old_num_shards = inner.shard_sizes().len();
         let new_num_shards = (1usize << shard_high_bits).min(old_num_shards);
-        let merge_factor = if new_num_shards == 0 {
-            old_num_shards
-        } else {
-            old_num_shards / new_num_shards
-        }
-        .max(1);
+        let merge_factor = old_num_shards / new_num_shards;
 
-        let per_inner: Vec<usize> = inner
+        let shard_sizes: Vec<usize> = inner
             .iter()
             .map(|shard| shard.iter().filter(|sv| filter(sv)).count())
-            .collect();
-
-        let shard_sizes: Vec<usize> = per_inner
             .chunks(merge_factor)
-            .map(|group| group.iter().sum())
+            .into_iter()
+            .map(|chunk| chunk.sum())
             .collect();
 
         Self {
