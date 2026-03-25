@@ -1031,25 +1031,24 @@ where
     V: BinSafe + Copy,
     F: Fn(&SigVal<S, V>) -> bool,
 {
-    /// Creates a new filtered (and optionally re-sharded) view.
+    /// Creates a new filtered view with pre-computed shard sizes,
+    /// skipping the size-counting scan.
     ///
-    /// `shard_high_bits` is the desired shard granularity. If it
-    /// results in fewer shards than the inner store,
-    /// [`set_shard_high_bits`](ShardStore::set_shard_high_bits) is called on the
-    /// inner store so that shards are re-aggregated once at the bucket level,
-    /// avoiding double aggregation (buckets -> shards -> bigger shards).
-    pub fn new(inner: &'a mut SS, shard_high_bits: u32, filter: F) -> Self {
+    /// `shard_sizes` must have one entry per shard (after
+    /// re-aggregation to `shard_high_bits`), where each entry is the
+    /// number of entries in that shard that pass `filter`.
+    pub fn new(
+        inner: &'a mut SS,
+        shard_high_bits: u32,
+        filter: F,
+        shard_sizes: Vec<usize>,
+    ) -> Self {
         let old_num_shards = inner.shard_sizes().len();
         let new_num_shards = (1usize << shard_high_bits).min(old_num_shards);
 
         if new_num_shards < old_num_shards {
             inner.set_shard_high_bits(shard_high_bits);
         }
-
-        let shard_sizes: Vec<usize> = inner
-            .iter()
-            .map(|shard| shard.iter().filter(|sv| filter(sv)).count())
-            .collect();
 
         Self {
             inner,
