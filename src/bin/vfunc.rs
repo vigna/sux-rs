@@ -151,9 +151,9 @@ where
 
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
-        let builder = args.builder.configure(
-            VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default(),
-        );
+        let builder = args
+            .builder
+            .configure(VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default());
         let builder = if let Some(n_hint) = args.n {
             builder.expected_num_keys(n_hint)
         } else {
@@ -185,9 +185,9 @@ where
         }
     } else {
         let n = args.n.unwrap();
-        let builder = args.builder.configure(
-            VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default(),
-        );
+        let builder = args
+            .builder
+            .configure(VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default());
         let builder = builder.expected_num_keys(n);
         match args.hash_type {
             None => {

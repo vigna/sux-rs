@@ -39,7 +39,8 @@ fn test_small() -> Result<()> {
 #[test]
 fn test_single() -> Result<()> {
     let keys = vec!["hello"];
-    let func = LcpMmphfStr::<[u64; 2], FuseLge3Shards>::try_new(keys_lender(&keys), 1, no_logging![])?;
+    let func =
+        LcpMmphfStr::<[u64; 2], FuseLge3Shards>::try_new(keys_lender(&keys), 1, no_logging![])?;
     assert_eq!(func.get("hello"), 0);
     assert_eq!(func.len(), 1);
     assert!(!func.is_empty());
@@ -49,7 +50,8 @@ fn test_single() -> Result<()> {
 #[test]
 fn test_two_keys() -> Result<()> {
     let keys = vec!["aaa", "bbb"];
-    let func = LcpMmphfStr::<[u64; 2], FuseLge3Shards>::try_new(keys_lender(&keys), 2, no_logging![])?;
+    let func =
+        LcpMmphfStr::<[u64; 2], FuseLge3Shards>::try_new(keys_lender(&keys), 2, no_logging![])?;
     assert_eq!(func.get("aaa"), 0);
     assert_eq!(func.get("bbb"), 1);
     Ok(())
@@ -134,7 +136,8 @@ fn test_diverse_keys() -> Result<()> {
 #[test]
 fn test_unsorted_error() {
     let keys = vec!["beta", "alpha"];
-    let result = LcpMmphfStr::<[u64; 2], FuseLge3Shards>::try_new(keys_lender(&keys), 2, no_logging![]);
+    let result =
+        LcpMmphfStr::<[u64; 2], FuseLge3Shards>::try_new(keys_lender(&keys), 2, no_logging![]);
     assert!(result.is_err());
 }
 
@@ -156,8 +159,11 @@ fn test_small_u64() -> Result<()> {
 #[test]
 fn test_single_u64() -> Result<()> {
     let keys: Vec<u64> = vec![42];
-    let func =
-        LcpMmphfInt::<_, [u64; 2], FuseLge3Shards>::try_new(FromSlice::new(&keys), 1, no_logging![])?;
+    let func = LcpMmphfInt::<_, [u64; 2], FuseLge3Shards>::try_new(
+        FromSlice::new(&keys),
+        1,
+        no_logging![],
+    )?;
     assert_eq!(func.get(42), 0);
     assert_eq!(func.len(), 1);
     Ok(())
@@ -166,8 +172,11 @@ fn test_single_u64() -> Result<()> {
 #[test]
 fn test_two_u64() -> Result<()> {
     let keys: Vec<u64> = vec![100, 200];
-    let func =
-        LcpMmphfInt::<_, [u64; 2], FuseLge3Shards>::try_new(FromSlice::new(&keys), 2, no_logging![])?;
+    let func = LcpMmphfInt::<_, [u64; 2], FuseLge3Shards>::try_new(
+        FromSlice::new(&keys),
+        2,
+        no_logging![],
+    )?;
     assert_eq!(func.get(100), 0);
     assert_eq!(func.get(200), 1);
     Ok(())
@@ -181,8 +190,11 @@ fn test_monotone_1000_u64() -> Result<()> {
     keys.dedup();
     let n = keys.len();
 
-    let func =
-        LcpMmphfInt::<_, [u64; 2], FuseLge3Shards>::try_new(FromSlice::new(&keys), n, no_logging![])?;
+    let func = LcpMmphfInt::<_, [u64; 2], FuseLge3Shards>::try_new(
+        FromSlice::new(&keys),
+        n,
+        no_logging![],
+    )?;
 
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), i, "key {key} at position {i}");
@@ -240,15 +252,19 @@ fn test_u32() -> Result<()> {
 #[test]
 fn test_unsorted_error_u64() {
     let keys: Vec<u64> = vec![50, 30, 10];
-    let result =
-        LcpMmphfInt::<_, [u64; 2], FuseLge3Shards>::try_new(FromSlice::new(&keys), 3, no_logging![]);
+    let result = LcpMmphfInt::<_, [u64; 2], FuseLge3Shards>::try_new(
+        FromSlice::new(&keys),
+        3,
+        no_logging![],
+    );
     assert!(result.is_err());
 }
 
 #[test]
 fn test_empty_str() -> Result<()> {
     let keys: Vec<&str> = vec![];
-    let func = LcpMmphfStr::<[u64; 2], FuseLge3Shards>::try_new(keys_lender(&keys), 0, no_logging![])?;
+    let func =
+        LcpMmphfStr::<[u64; 2], FuseLge3Shards>::try_new(keys_lender(&keys), 0, no_logging![])?;
     assert_eq!(func.len(), 0);
     assert!(func.is_empty());
     Ok(())
@@ -257,8 +273,11 @@ fn test_empty_str() -> Result<()> {
 #[test]
 fn test_empty_u64() -> Result<()> {
     let keys: Vec<u64> = vec![];
-    let func =
-        LcpMmphfInt::<_, [u64; 2], FuseLge3Shards>::try_new(FromSlice::new(&keys), 0, no_logging![])?;
+    let func = LcpMmphfInt::<_, [u64; 2], FuseLge3Shards>::try_new(
+        FromSlice::new(&keys),
+        0,
+        no_logging![],
+    )?;
     assert_eq!(func.len(), 0);
     assert!(func.is_empty());
     Ok(())

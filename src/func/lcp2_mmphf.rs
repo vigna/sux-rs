@@ -222,17 +222,16 @@ where
         pl.info(format_args!("Hashing keys..."));
         let keys = keys.rewind()?;
 
-        let (seed_vfunc, store) = builder.expected_num_keys(n)
-            ._try_build_func::<T, T>(
-                keys,
-                FromIntoFallibleLenderFactory::new(|| {
-                    Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
-                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                    })))
-                })?,
-                true,
-                pl,
-            )?;
+        let (seed_vfunc, store) = builder.expected_num_keys(n)._try_build_func::<T, T>(
+            keys,
+            FromIntoFallibleLenderFactory::new(|| {
+                Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
+                    (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                })))
+            })?,
+            true,
+            pl,
+        )?;
 
         let seed = seed_vfunc.seed;
         let shard_edge = seed_vfunc.shard_edge;
@@ -477,17 +476,16 @@ where
         pl.info(format_args!("Hashing keys..."));
         let keys = keys.rewind()?;
 
-        let (seed_vfunc, store) = builder.expected_num_keys(n)
-            ._try_build_func::<K, B>(
-                keys,
-                FromIntoFallibleLenderFactory::new(|| {
-                    Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
-                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                    })))
-                })?,
-                true,
-                pl,
-            )?;
+        let (seed_vfunc, store) = builder.expected_num_keys(n)._try_build_func::<K, B>(
+            keys,
+            FromIntoFallibleLenderFactory::new(|| {
+                Ok::<_, Infallible>(FromCloneableIntoIterator::new((0..n).map(|idx| {
+                    (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                })))
+            })?,
+            true,
+            pl,
+        )?;
 
         let seed = seed_vfunc.seed;
         let shard_edge = seed_vfunc.shard_edge;

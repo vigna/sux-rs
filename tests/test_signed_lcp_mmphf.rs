@@ -43,7 +43,8 @@ fn test_str_small() -> Result<()> {
 #[test]
 fn test_str_single() -> Result<()> {
     let keys = vec!["hello".to_owned()];
-    let func: SignedLcpMmphfStr = SignedLcpMmphfStr::try_new(FromSlice::new(&keys), 1, no_logging![])?;
+    let func: SignedLcpMmphfStr =
+        SignedLcpMmphfStr::try_new(FromSlice::new(&keys), 1, no_logging![])?;
     assert_eq!(func.get("hello"), Some(0));
     assert_eq!(func.get("world"), None);
     assert_eq!(func.len(), 1);
@@ -54,7 +55,8 @@ fn test_str_single() -> Result<()> {
 #[test]
 fn test_str_empty() -> Result<()> {
     let keys: Vec<String> = vec![];
-    let func: SignedLcpMmphfStr = SignedLcpMmphfStr::try_new(FromSlice::new(&keys), 0, no_logging![])?;
+    let func: SignedLcpMmphfStr =
+        SignedLcpMmphfStr::try_new(FromSlice::new(&keys), 0, no_logging![])?;
     assert_eq!(func.len(), 0);
     assert!(func.is_empty());
     assert_eq!(func.get("anything"), None);

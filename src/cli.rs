@@ -62,7 +62,12 @@ pub struct BuilderArgs {
 
 impl BuilderArgs {
     /// Applies these options to a [`VBuilder`].
-    pub fn configure<W: Word + BinSafe, D: BitFieldSlice<Value = W> + Send + Sync, S, E: ShardEdge<S, 3>>(
+    pub fn configure<
+        W: Word + BinSafe,
+        D: BitFieldSlice<Value = W> + Send + Sync,
+        S,
+        E: ShardEdge<S, 3>,
+    >(
         &self,
         builder: VBuilder<W, D, S, E>,
     ) -> VBuilder<W, D, S, E> {

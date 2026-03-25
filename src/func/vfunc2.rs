@@ -306,26 +306,18 @@ where
         long_shard_edge.set_up_shards(n_escaped, 0.001);
         let long_shard_high_bits = long_shard_edge.shard_high_bits();
 
-        let mut filtered_store = FilteredShardStore::new(
-            store,
-            long_shard_high_bits,
-            |sv: &SigVal<S, V>| {
-                let val = get_val(sv.val);
-                if inv_map.contains_key(&val) {
-                    None // frequent → handled by short function
-                } else {
-                    Some(val)
-                }
-            },
-        );
+        let mut filtered_store =
+            FilteredShardStore::new(store, long_shard_high_bits, |sv: &SigVal<S, V>| {
+                !inv_map.contains_key(&get_val(sv.val))
+            });
         let long = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, Fuse3Shards>::default()
-            .try_build_func_with_store::<T, usize>(
+            .try_build_func_with_store::<T, V>(
                 seed,
                 long_shard_edge,
                 n_escaped,
                 max_value,
                 &mut filtered_store,
-                &|_, sig_val| sig_val.val,
+                &|_e, sig_val| get_val(sig_val.val),
                 pl,
             )?;
 
