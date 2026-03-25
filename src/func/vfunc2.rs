@@ -13,7 +13,7 @@ use std::borrow::Borrow;
 use super::shard_edge::FuseLge3Shards;
 use crate::bits::BitFieldVec;
 use crate::func::VFunc;
-use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
+use crate::func::shard_edge::ShardEdge;
 use crate::traits::Word;
 use crate::utils::*;
 use mem_dbg::*;
@@ -46,7 +46,10 @@ use value_traits::slices::SliceByValue;
 /// * `D`: The backend storing the function data. Defaults to
 ///   `BitFieldVec<Box<[W]>>`.
 /// * `S`: The signature type. The default is `[u64; 2]`.
-/// * `E`: The sharding and edge logic type. The default is [`FuseLge3Shards`].
+/// * `E0`: The sharding and edge logic type for the short (frequent-value)
+///   function. The default is [`FuseLge3Shards`].
+/// * `E1`: The sharding and edge logic type for the long (escaped-value)
+///   function. The default is `E0`.
 ///
 /// # References
 ///
@@ -62,17 +65,16 @@ pub struct VFunc2<
     W = usize,
     D = BitFieldVec<Box<[W]>>,
     S: Sig = [u64; 2],
-    E: ShardEdge<S, 3> = FuseLge3Shards,
+    E0: ShardEdge<S, 3> = FuseLge3Shards,
+    E1: ShardEdge<S, 3> = E0,
 > {
     /// First function: maps each key to a remapped index (*r* bits), or
     /// `escape` for infrequent values. When *r* = 0 this is an empty
     /// VFunc that always returns 0 = `escape`, so the long function is
     /// always queried.
-    pub(crate) short: VFunc<T, W, D, S, E>,
+    pub(crate) short: VFunc<T, W, D, S, E0>,
     /// Second function: maps escaped keys to their full value.
-    /// Uses Fuse3Shards so we do not have problems with a small number of
-    /// escaped keys.
-    pub(crate) long: VFunc<T, W, D, S, Fuse3Shards>,
+    pub(crate) long: VFunc<T, W, D, S, E1>,
     /// Maps remapped indices (0 . . `escape` − 1) back to actual values.
     pub(crate) remap: Box<[W]>,
     /// The escape value (2*ʳ* − 1). When *r* = 0, `escape` = 0 and the
@@ -80,9 +82,8 @@ pub struct VFunc2<
     pub(crate) escape: W,
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc2<T, W, BitFieldVec<Box<[W]>>, S, E>
-where
-    Fuse3Shards: ShardEdge<S, 3>,
+impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
+    VFunc2<T, W, BitFieldVec<Box<[W]>>, S, E0, E1>
 {
     /// Creates a VFunc2 with zero keys.
     ///
@@ -104,10 +105,9 @@ impl<
     W: Word + BinSafe,
     D: SliceByValue<Value = W>,
     S: Sig,
-    E: ShardEdge<S, 3>,
-> VFunc2<T, W, D, S, E>
-where
-    Fuse3Shards: ShardEdge<S, 3>,
+    E0: ShardEdge<S, 3>,
+    E1: ShardEdge<S, 3>,
+> VFunc2<T, W, D, S, E0, E1>
 {
     /// Retrieves the value for a key given its pre-computed signature.
     ///
@@ -130,10 +130,7 @@ where
     /// Retrieves the value associated with the given key, or an arbitrary
     /// value if the key was not in the original set.
     #[inline(always)]
-    pub fn get(&self, key: impl Borrow<T>) -> W
-    where
-        E: ShardEdge<S, 3>,
-    {
+    pub fn get(&self, key: impl Borrow<T>) -> W {
         self.get_by_sig(T::to_sig(key.borrow(), self.short.seed))
     }
 }
@@ -193,16 +190,16 @@ use {
 };
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E> VFunc2<T, W, BitFieldVec<Box<[W]>>, S, E>
+impl<T, W, S, E0, E1> VFunc2<T, W, BitFieldVec<Box<[W]>>, S, E0, E1>
 where
     T: ?Sized + ToSig<S> + std::fmt::Debug,
     W: Word + BinSafe,
     S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
-    Fuse3Shards: ShardEdge<S, 3>,
+    E0: ShardEdge<S, 3>,
+    E1: ShardEdge<S, 3>,
     SigVal<S, W>: RadixKey,
-    SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
-    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, W>: BitXor + BitXorAssign,
+    SigVal<E0::LocalSig, W>: BitXor + BitXorAssign,
+    SigVal<E1::LocalSig, W>: BitXor + BitXorAssign,
 {
     /// Builds a [`VFunc2`] from keys and values using default
     /// [`VBuilder`] settings.
@@ -250,7 +247,7 @@ where
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         n: usize,
-        builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E>,
+        builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self> {
         let mut builder = builder.expected_num_keys(n);
@@ -308,17 +305,17 @@ where
     /// * `pl` — a progress logger.
     pub fn try_build_from_store<V: BinSafe + Default + Send + Sync + Copy>(
         seed: u64,
-        shard_edge: E,
+        shard_edge: E0,
         n: usize,
         store: &mut impl ShardStore<S, V>,
         get_val: &(impl Fn(V) -> W + Send + Sync),
-        builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E>,
+        builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self>
     where
         SigVal<S, V>: RadixKey,
-        SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
-        SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<E0::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<E1::LocalSig, V>: BitXor + BitXorAssign,
     {
         // -- 1. Frequency analysis --
 
@@ -355,19 +352,19 @@ where
     ///   would produce when applied to the store.
     pub fn try_build_from_store_with_freq<V: BinSafe + Default + Send + Sync + Copy>(
         seed: u64,
-        shard_edge: E,
+        shard_edge: E0,
         n: usize,
         store: &mut impl ShardStore<S, V>,
         get_val: &(impl Fn(V) -> W + Send + Sync),
         max_value: W,
         counts: &std::collections::HashMap<W, usize>,
-        builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E>,
+        builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self>
     where
         SigVal<S, V>: RadixKey,
-        SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
-        SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<E0::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<E1::LocalSig, V>: BitXor + BitXorAssign,
     {
         let max_value_usize = max_value.as_u128() as usize;
 
@@ -445,7 +442,7 @@ where
             .iter()
             .map(|v| counts[v])
             .sum::<usize>();
-        let mut long_shard_edge = Fuse3Shards::default();
+        let mut long_shard_edge = E1::default();
         long_shard_edge.set_up_shards(n_escaped, 0.001);
         let long_shard_high_bits = long_shard_edge.shard_high_bits();
 
@@ -453,7 +450,7 @@ where
             FilteredShardStore::new(store, long_shard_high_bits, |sv: &SigVal<S, V>| {
                 !inv_map.contains_key(&get_val(sv.val))
             });
-        let long = VBuilder::<W, BitFieldVec<Box<[W]>>, S, Fuse3Shards>::default()
+        let long = VBuilder::<W, BitFieldVec<Box<[W]>>, S, E1>::default()
             .try_build_func_with_store::<T, V>(
                 seed,
                 long_shard_edge,

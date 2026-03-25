@@ -76,13 +76,15 @@ use {
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Lcp2MmphfInt<T: PrimitiveInteger, S: Sig = [u64; 2], E: ShardEdge<S, 3> = FuseLge3Shards>
+where
+    Fuse3Shards: ShardEdge<S, 3>,
 {
     pub(crate) n: usize,
     pub(crate) log2_bucket_size: usize,
     /// Maps each key to its offset within the bucket.
     pub(crate) offsets: VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>,
     /// Two-step retrieval of LCP lengths.
-    pub(crate) lcp_lengths: VFunc2<T, usize, BitFieldVec<Box<[usize]>>, S, E>,
+    pub(crate) lcp_lengths: VFunc2<T, usize, BitFieldVec<Box<[usize]>>, S, E, Fuse3Shards>,
     /// Maps each LCP bit-prefix to its bucket index.
     pub(crate) lcp2bucket:
         VFunc<IntBitPrefix<T>, usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>,
@@ -106,7 +108,10 @@ where
     }
 }
 
-impl<T: PrimitiveInteger, S: Sig, E: ShardEdge<S, 3>> Lcp2MmphfInt<T, S, E> {
+impl<T: PrimitiveInteger, S: Sig, E: ShardEdge<S, 3>> Lcp2MmphfInt<T, S, E>
+where
+    Fuse3Shards: ShardEdge<S, 3>,
+{
     pub const fn len(&self) -> usize {
         self.n
     }
@@ -349,11 +354,14 @@ where
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Lcp2Mmphf<K: ?Sized, S: Sig = [u64; 2], E: ShardEdge<S, 3> = FuseLge3Shards> {
+pub struct Lcp2Mmphf<K: ?Sized, S: Sig = [u64; 2], E: ShardEdge<S, 3> = FuseLge3Shards>
+where
+    Fuse3Shards: ShardEdge<S, 3>,
+{
     pub(crate) n: usize,
     pub(crate) log2_bucket_size: usize,
     pub(crate) offsets: VFunc<K, usize, BitFieldVec<Box<[usize]>>, S, E>,
-    pub(crate) lcp_lengths: VFunc2<K, usize, BitFieldVec<Box<[usize]>>, S, E>,
+    pub(crate) lcp_lengths: VFunc2<K, usize, BitFieldVec<Box<[usize]>>, S, E, Fuse3Shards>,
     pub(crate) lcp2bucket:
         VFunc<BitPrefix, usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>,
 }
@@ -394,7 +402,10 @@ where
     }
 }
 
-impl<K: ?Sized, S: Sig, E: ShardEdge<S, 3>> Lcp2Mmphf<K, S, E> {
+impl<K: ?Sized, S: Sig, E: ShardEdge<S, 3>> Lcp2Mmphf<K, S, E>
+where
+    Fuse3Shards: ShardEdge<S, 3>,
+{
     pub const fn len(&self) -> usize {
         self.n
     }
