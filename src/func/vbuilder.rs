@@ -644,6 +644,7 @@ where
                         new_data,
                         s.into_iter(),
                         &get_val,
+                        &|_| {},
                         pl,
                     )?,
                     AnyShardStore::Offline(s) => builder.try_build_from_shard_iter(
@@ -651,6 +652,7 @@ where
                         new_data,
                         s.into_iter(),
                         &get_val,
+                        &|_| {},
                         pl,
                     )?,
                 };
@@ -718,6 +720,7 @@ where
         max_value: W,
         shard_store: &mut impl ShardStore<S, V>,
         get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
+        inspect: &(impl Fn(&SigVal<S, V>) + Send + Sync),
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
     where
@@ -753,7 +756,7 @@ where
         )
         .into();
 
-        self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
+        self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, inspect, pl)
             .map_err(Into::into)
     }
 
@@ -1022,6 +1025,7 @@ where
                         new_data,
                         s.into_iter(),
                         &get_val,
+                        &|_| {},
                         pl,
                     )?,
                     AnyShardStore::Offline(s) => builder.try_build_from_shard_iter(
@@ -1029,6 +1033,7 @@ where
                         new_data,
                         s.into_iter(),
                         &get_val,
+                        &|_| {},
                         pl,
                     )?,
                 };
@@ -1127,6 +1132,7 @@ impl<
                                 data,
                                 s.iter(),
                                 &get_val,
+                                &|_| {},
                                 pl,
                             )?;
                             Ok((func, Some(AnyShardStore::Online(s))))
@@ -1136,6 +1142,7 @@ impl<
                                 data,
                                 s.into_iter(),
                                 &get_val,
+                                &|_| {},
                                 pl,
                             )?;
                             Ok((func, None))
@@ -1148,6 +1155,7 @@ impl<
                                 data,
                                 s.iter(),
                                 &get_val,
+                                &|_| {},
                                 pl,
                             )?;
                             Ok((func, Some(AnyShardStore::Offline(s))))
@@ -1157,6 +1165,7 @@ impl<
                                 data,
                                 s.into_iter(),
                                 &get_val,
+                                &|_| {},
                                 pl,
                             )?;
                             Ok((func, None))
@@ -1725,12 +1734,14 @@ impl<
         P,
         V: BinSafe + Default + Send + Sync,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        H: Fn(&SigVal<S, V>) + Send + Sync,
     >(
         &mut self,
         seed: u64,
         mut data: D,
         shard_iter: I,
         get_val: &G,
+        inspect: &H,
         pl: &mut P,
     ) -> Result<VFunc<T, W, D, S, E>, SolveError>
     where
@@ -1768,7 +1779,7 @@ impl<
                 shard_iter,
                 &mut data,
                 |this, shard_index, shard, data, pl| {
-                    this.lge_shard(shard_index, shard, data, get_val, pl)
+                    this.lge_shard(shard_index, shard, data, get_val, inspect, pl)
                 },
                 &mut pl.concurrent(),
                 pl,
@@ -1781,7 +1792,7 @@ impl<
                 shard_iter,
                 &mut data,
                 |this, shard_index, shard, data, pl| {
-                    this.peel_by_sig_vals_low_mem(shard_index, shard, data, get_val, pl)
+                    this.peel_by_sig_vals_low_mem(shard_index, shard, data, get_val, inspect, pl)
                 },
                 &mut pl.concurrent(),
                 pl,
@@ -1792,7 +1803,7 @@ impl<
                 shard_iter,
                 &mut data,
                 |this, shard_index, shard, data, pl| {
-                    this.peel_by_sig_vals_high_mem(shard_index, shard, data, get_val, pl)
+                    this.peel_by_sig_vals_high_mem(shard_index, shard, data, get_val, inspect, pl)
                 },
                 &mut pl.concurrent(),
                 pl,
@@ -2159,12 +2170,18 @@ impl<
     ///  but this would be less cache friendly. This peeler is only used for
     /// very small instances, and since we are going to pass through lazy
     /// Gaussian elimination some additional speed is a good idea.
-    fn peel_by_index<'a, V: BinSafe, G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync>(
+    fn peel_by_index<
+        'a,
+        V: BinSafe,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        H: Fn(&SigVal<S, V>) + Send + Sync,
+    >(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
         data: ShardData<'a, D>,
         get_val: &G,
+        inspect: &H,
         pl: &mut impl ProgressLog,
     ) -> Result<PeelResult<'a, W, D, S, E, V>, ()> {
         let shard_edge = &self.shard_edge;
@@ -2179,6 +2196,7 @@ impl<
 
         let mut xor_graph = XorGraph::<E::Vertex>::new(num_vertices);
         for (edge_index, sig_val) in shard.iter().enumerate() {
+            inspect(sig_val);
             for (side, &v) in shard_edge
                 .local_edge(shard_edge.local_sig(sig_val.sig))
                 .iter()
@@ -2312,12 +2330,17 @@ impl<
     /// elimination](https://doi.org/10.1016/j.ic.2020.104517) as after a failed
     /// peeling it is not possible to retrieve information about the
     /// signature/value pairs in the shard.
-    fn peel_by_sig_vals_high_mem<V: BinSafe, G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync>(
+    fn peel_by_sig_vals_high_mem<
+        V: BinSafe,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        H: Fn(&SigVal<S, V>) + Send + Sync,
+    >(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
         data: ShardData<'_, D>,
         get_val: &G,
+        inspect: &H,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()>
     where
@@ -2336,6 +2359,7 @@ impl<
 
         let mut xor_graph = XorGraph::<SigVal<E::LocalSig, V>>::new(num_vertices);
         for &sig_val in shard.iter() {
+            inspect(&sig_val);
             let local_sig = shard_edge.local_sig(sig_val.sig);
             for (side, &v) in shard_edge.local_edge(local_sig).iter().enumerate() {
                 xor_graph.add(
@@ -2446,12 +2470,17 @@ impl<
     /// elimination](https://doi.org/10.1016/j.ic.2020.104517) as after a
     /// failed peeling it is not possible to retrieve information about the
     /// signature/value pairs in the shard.
-    fn peel_by_sig_vals_low_mem<V: BinSafe, G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync>(
+    fn peel_by_sig_vals_low_mem<
+        V: BinSafe,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        H: Fn(&SigVal<S, V>) + Send + Sync,
+    >(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
         data: ShardData<'_, D>,
         get_val: &G,
+        inspect: &H,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()>
     where
@@ -2470,6 +2499,7 @@ impl<
 
         let mut xor_graph = XorGraph::<SigVal<E::LocalSig, V>>::new(num_vertices);
         for &sig_val in shard.iter() {
+            inspect(&sig_val);
             let local_sig = shard_edge.local_sig(sig_val.sig);
             for (side, &v) in shard_edge.local_edge(local_sig).iter().enumerate() {
                 xor_graph.add(
@@ -2566,17 +2596,22 @@ impl<
     /// This method will scan the double stack, without emptying it, to check
     /// which edges have been peeled. The information will be then passed to
     /// [`VBuilder::assign`] to complete the assignment of values.
-    fn lge_shard<V: BinSafe, G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync>(
+    fn lge_shard<
+        V: BinSafe,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        H: Fn(&SigVal<S, V>) + Send + Sync,
+    >(
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
         data: ShardData<'_, D>,
         get_val: &G,
+        inspect: &H,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()> {
         let shard_edge = &self.shard_edge;
         // Let's try to peel first
-        match self.peel_by_index(shard_index, shard, data, get_val, pl) {
+        match self.peel_by_index(shard_index, shard, data, get_val, inspect, pl) {
             Err(()) => Err(()),
             Ok(PeelResult::Complete()) => Ok(()),
             Ok(PeelResult::Partial {

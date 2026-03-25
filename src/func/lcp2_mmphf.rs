@@ -261,6 +261,7 @@ where
                                 bucket_mask,
                                 store,
                                 &|_, sig_val| sig_val.val & bucket_mask,
+                                &|_| {},
                                 pl,
                             )?;
 
@@ -560,6 +561,7 @@ where
                                 bucket_mask,
                                 store,
                                 &|_, sig_val| sig_val.val & bucket_mask,
+                                &|_| {},
                                 pl,
                             )?;
 

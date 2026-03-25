@@ -430,6 +430,7 @@ where
                 let val = get_val(sig_val.val);
                 inv_map.get(&val).copied().unwrap_or(escape)
             },
+            &|_| {},
             pl,
         )?;
 
@@ -458,6 +459,7 @@ where
                 max_value,
                 &mut filtered_store,
                 &|_e, sig_val| get_val(sig_val.val),
+                &|_| {},
                 pl,
             )?;
 
