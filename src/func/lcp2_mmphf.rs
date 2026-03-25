@@ -82,7 +82,7 @@ pub struct Lcp2MmphfInt<T: PrimitiveInteger, S: Sig = [u64; 2], E: ShardEdge<S, 
     /// Maps each key to its offset within the bucket.
     pub(crate) offsets: VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>,
     /// Two-step retrieval of LCP lengths.
-    pub(crate) lcp_lengths: VFunc2<T, S, E>,
+    pub(crate) lcp_lengths: VFunc2<T, usize, BitFieldVec<Box<[usize]>>, S, E>,
     /// Maps each LCP bit-prefix to its bucket index.
     pub(crate) lcp2bucket:
         VFunc<IntBitPrefix<T>, usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>,
@@ -241,43 +241,63 @@ where
                 let (lcp_bit_lengths, bucket_first_keys, _, _) = &*s;
                 assert_eq!(lcp_bit_lengths.len(), num_buckets);
 
-                let mut store = match store {
-                    AnyShardStore::Online(s) => s,
-                    _ => unreachable!("online builder"),
-                };
+                macro_rules! build_from_store {
+                    ($store:expr) => {{
+                        let store = $store;
+                        // -- Offsets --
+                        pl.info(format_args!(
+                            "Building key → offset map ({log2_bs} bits)..."
+                        ));
+                        let offsets = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
+                            .try_build_func_with_store::<T, usize>(
+                                seed,
+                                shard_edge,
+                                n,
+                                bucket_mask,
+                                store,
+                                &|_, sig_val| sig_val.val & bucket_mask,
+                                pl,
+                            )?;
 
-                // -- Offsets --
-                pl.info(format_args!(
-                    "Building key → offset map ({log2_bs} bits)..."
-                ));
-                let offsets = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
-                    .try_build_func_with_store::<T, usize>(
-                        seed,
-                        shard_edge,
-                        n,
-                        bucket_mask,
-                        &mut store,
-                        &|_, sig_val| sig_val.val & bucket_mask,
-                        pl,
-                    )?;
+                        // -- LCP lengths (two-step) --
+                        // Compute frequency table directly from lcp_bit_lengths
+                        // (no store scan needed).
+                        let max_lcp = *lcp_bit_lengths.iter().max().unwrap_or(&0);
+                        let mut lcp_counts: std::collections::HashMap<usize, usize> =
+                            std::collections::HashMap::new();
+                        let last_bucket_size = n - (num_buckets - 1) * bucket_size;
+                        for (b, &lcp) in lcp_bit_lengths.iter().enumerate() {
+                            let bsize = if b == num_buckets - 1 {
+                                last_bucket_size
+                            } else {
+                                bucket_size
+                            };
+                            *lcp_counts.entry(lcp).or_insert(0) += bsize;
+                        }
 
-                // -- LCP lengths (two-step) --
-                pl.info(format_args!("Building two-step LCP lengths..."));
-                let lcp_lengths = VFunc2::try_build_from_store::<usize>(
-                    seed,
-                    shard_edge,
-                    n,
-                    &mut store,
-                    &|v| lcp_bit_lengths[v >> log2_bs],
-                    pl,
-                )?;
+                        pl.info(format_args!("Building two-step LCP lengths..."));
+                        let lcp_lengths = VFunc2::try_build_from_store_with_freq::<usize>(
+                            seed,
+                            shard_edge,
+                            n,
+                            store,
+                            &|v| lcp_bit_lengths[v >> log2_bs],
+                            max_lcp,
+                            &lcp_counts,
+                            VBuilder::default(),
+                            pl,
+                        )?;
 
-                // -- lcp2bucket --
-                pl.info(format_args!(
-                    "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-                ));
-                let lcp2bucket =
-                    VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
+                        // -- lcp2bucket --
+                        pl.info(format_args!(
+                            "Building LCP prefix → bucket map ({num_buckets} buckets)..."
+                        ));
+                        let lcp2bucket = VBuilder::<
+                            _,
+                            BitFieldVec<Box<[usize]>>,
+                            [u64; 1],
+                            Fuse3NoShards,
+                        >::default()
                         .expected_num_keys(num_buckets)
                         .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
                             FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
@@ -287,25 +307,33 @@ where
                             pl,
                         )?;
 
-                let off_bits = offsets.data.mem_size(SizeFlags::default()) * 8;
-                let lcp_bits_total = (lcp_lengths.short.data.mem_size(SizeFlags::default())
-                    + lcp_lengths.long.data.mem_size(SizeFlags::default())
-                    + lcp_lengths.remap.len() * std::mem::size_of::<usize>())
-                    * 8;
-                let l2b_bits = lcp2bucket.data.mem_size(SizeFlags::default()) * 8;
-                let total = off_bits + lcp_bits_total + l2b_bits;
-                pl.info(format_args!(
-                    "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
-                    total as f64 / n as f64
-                ));
+                        let off_bits = offsets.data.mem_size(SizeFlags::default()) * 8;
+                        let lcp_bits_total =
+                            (lcp_lengths.short.data.mem_size(SizeFlags::default())
+                                + lcp_lengths.long.data.mem_size(SizeFlags::default())
+                                + lcp_lengths.remap.len() * std::mem::size_of::<usize>())
+                                * 8;
+                        let l2b_bits = lcp2bucket.data.mem_size(SizeFlags::default()) * 8;
+                        let total = off_bits + lcp_bits_total + l2b_bits;
+                        pl.info(format_args!(
+                            "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
+                            total as f64 / n as f64
+                        ));
 
-                Ok(Self {
-                    n,
-                    log2_bucket_size: log2_bs,
-                    offsets,
-                    lcp_lengths,
-                    lcp2bucket,
-                })
+                        Ok(Self {
+                            n,
+                            log2_bucket_size: log2_bs,
+                            offsets,
+                            lcp_lengths,
+                            lcp2bucket,
+                        })
+                    }};
+                }
+
+                match store {
+                    AnyShardStore::Online(mut s) => build_from_store!(&mut s),
+                    AnyShardStore::Offline(mut s) => build_from_store!(&mut s),
+                }
             },
             pl,
         )
@@ -325,7 +353,7 @@ pub struct Lcp2Mmphf<K: ?Sized, S: Sig = [u64; 2], E: ShardEdge<S, 3> = FuseLge3
     pub(crate) n: usize,
     pub(crate) log2_bucket_size: usize,
     pub(crate) offsets: VFunc<K, usize, BitFieldVec<Box<[usize]>>, S, E>,
-    pub(crate) lcp_lengths: VFunc2<K, S, E>,
+    pub(crate) lcp_lengths: VFunc2<K, usize, BitFieldVec<Box<[usize]>>, S, E>,
     pub(crate) lcp2bucket:
         VFunc<BitPrefix, usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>,
 }
@@ -507,50 +535,70 @@ where
                 let (lcp_bit_lengths, bucket_first_keys, _, _) = &*s;
                 assert_eq!(lcp_bit_lengths.len(), num_buckets);
 
-                let mut store = match store {
-                    AnyShardStore::Online(s) => s,
-                    _ => unreachable!("online builder"),
-                };
+                macro_rules! build_from_store {
+                    ($store:expr) => {{
+                        let store = $store;
+                        pl.info(format_args!(
+                            "Building key → offset map ({log2_bs} bits)..."
+                        ));
+                        let offsets = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
+                            .try_build_func_with_store::<K, usize>(
+                                seed,
+                                shard_edge,
+                                n,
+                                bucket_mask,
+                                store,
+                                &|_, sig_val| sig_val.val & bucket_mask,
+                                pl,
+                            )?;
 
-                pl.info(format_args!(
-                    "Building key → offset map ({log2_bs} bits)..."
-                ));
-                let offsets = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
-                    .try_build_func_with_store::<K, usize>(
-                        seed,
-                        shard_edge,
-                        n,
-                        bucket_mask,
-                        &mut store,
-                        &|_, sig_val| sig_val.val & bucket_mask,
-                        pl,
-                    )?;
+                        // Compute frequency table directly from lcp_bit_lengths
+                        // (no store scan needed).
+                        let max_lcp = *lcp_bit_lengths.iter().max().unwrap_or(&0);
+                        let mut lcp_counts: std::collections::HashMap<usize, usize> =
+                            std::collections::HashMap::new();
+                        let last_bucket_size = n - (num_buckets - 1) * bucket_size;
+                        for (b, &lcp) in lcp_bit_lengths.iter().enumerate() {
+                            let bsize = if b == num_buckets - 1 {
+                                last_bucket_size
+                            } else {
+                                bucket_size
+                            };
+                            *lcp_counts.entry(lcp).or_insert(0) += bsize;
+                        }
 
-                pl.info(format_args!("Building two-step LCP lengths..."));
-                let lcp_lengths = VFunc2::try_build_from_store::<usize>(
-                    seed,
-                    shard_edge,
-                    n,
-                    &mut store,
-                    &|v| lcp_bit_lengths[v >> log2_bs],
-                    pl,
-                )?;
+                        pl.info(format_args!("Building two-step LCP lengths..."));
+                        let lcp_lengths = VFunc2::try_build_from_store_with_freq::<usize>(
+                            seed,
+                            shard_edge,
+                            n,
+                            store,
+                            &|v| lcp_bit_lengths[v >> log2_bs],
+                            max_lcp,
+                            &lcp_counts,
+                            VBuilder::default(),
+                            pl,
+                        )?;
 
-                pl.info(format_args!(
-                    "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-                ));
-                let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
-                    .iter()
-                    .map(|k| {
-                        let mut v = Vec::with_capacity(k.len() + MAGIC_COOKIE.len());
-                        v.extend_from_slice(k);
-                        v.extend_from_slice(&MAGIC_COOKIE);
-                        v
-                    })
-                    .collect();
+                        pl.info(format_args!(
+                            "Building LCP prefix → bucket map ({num_buckets} buckets)..."
+                        ));
+                        let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
+                            .iter()
+                            .map(|k| {
+                                let mut v = Vec::with_capacity(k.len() + MAGIC_COOKIE.len());
+                                v.extend_from_slice(k);
+                                v.extend_from_slice(&MAGIC_COOKIE);
+                                v
+                            })
+                            .collect();
 
-                let lcp2bucket =
-                    VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
+                        let lcp2bucket = VBuilder::<
+                            _,
+                            BitFieldVec<Box<[usize]>>,
+                            [u64; 1],
+                            Fuse3NoShards,
+                        >::default()
                         .expected_num_keys(num_buckets)
                         .try_build_func::<BitPrefix, BitPrefix>(
                             FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
@@ -560,25 +608,33 @@ where
                             pl,
                         )?;
 
-                let off_bits = offsets.data.mem_size(SizeFlags::default()) * 8;
-                let lcp_bits_total = (lcp_lengths.short.data.mem_size(SizeFlags::default())
-                    + lcp_lengths.long.data.mem_size(SizeFlags::default())
-                    + lcp_lengths.remap.len() * std::mem::size_of::<usize>())
-                    * 8;
-                let l2b_bits = lcp2bucket.data.mem_size(SizeFlags::default()) * 8;
-                let total = off_bits + lcp_bits_total + l2b_bits;
-                pl.info(format_args!(
-                    "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
-                    total as f64 / n as f64
-                ));
+                        let off_bits = offsets.data.mem_size(SizeFlags::default()) * 8;
+                        let lcp_bits_total =
+                            (lcp_lengths.short.data.mem_size(SizeFlags::default())
+                                + lcp_lengths.long.data.mem_size(SizeFlags::default())
+                                + lcp_lengths.remap.len() * std::mem::size_of::<usize>())
+                                * 8;
+                        let l2b_bits = lcp2bucket.data.mem_size(SizeFlags::default()) * 8;
+                        let total = off_bits + lcp_bits_total + l2b_bits;
+                        pl.info(format_args!(
+                            "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
+                            total as f64 / n as f64
+                        ));
 
-                Ok(Self {
-                    n,
-                    log2_bucket_size: log2_bs,
-                    offsets,
-                    lcp_lengths,
-                    lcp2bucket,
-                })
+                        Ok(Self {
+                            n,
+                            log2_bucket_size: log2_bs,
+                            offsets,
+                            lcp_lengths,
+                            lcp2bucket,
+                        })
+                    }};
+                }
+
+                match store {
+                    AnyShardStore::Online(mut s) => build_from_store!(&mut s),
+                    AnyShardStore::Offline(mut s) => build_from_store!(&mut s),
+                }
             },
             pl,
         )
