@@ -185,7 +185,8 @@ fn bench_int_construction(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("Lcp2Mmphf", label), |b| {
             b.iter(|| {
                 let func: Lcp2MmphfInt<u64> =
-                    Lcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+                    Lcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])
+                        .unwrap();
                 black_box(&func);
             })
         });
@@ -211,7 +212,8 @@ fn bench_str_construction(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("Lcp2Mmphf", label), |b| {
             b.iter(|| {
                 let func: Lcp2MmphfStr =
-                    Lcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+                    Lcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])
+                        .unwrap();
                 black_box(&func);
             })
         });

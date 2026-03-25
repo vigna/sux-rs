@@ -749,6 +749,7 @@ where
     /// for one or more solve steps with different value mappings.
     ///
     /// Returns `(seed, configured_shard_edge, shard_store)`.
+    #[allow(unused)]
     pub(crate) fn try_populate_store<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
