@@ -41,6 +41,7 @@ use {
     lender::*,
     rdst::RadixKey,
     std::borrow::Borrow,
+    std::cell::RefCell,
 };
 
 // ── Integer variant ─────────────────────────────────────────────────
@@ -154,14 +155,14 @@ where
     /// overhead (`eps`), and PRNG seed (`seed`).
     ///
     /// The keys must be provided in strictly increasing order.
-    pub fn try_new_with_builder(
-        mut keys: impl FallibleRewindableLender<
+    pub fn try_new_with_builder<P: ProgressLog + Clone + Send + Sync>(
+        keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+        pl: &mut P,
     ) -> Result<Self> {
         if n == 0 {
             return Ok(Self {
@@ -182,63 +183,75 @@ where
             "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
         ));
 
-        // -- First pass: compute bit-level LCPs --
-        let mut lcp_bit_lengths: Vec<usize> = Vec::with_capacity(num_buckets);
-        let mut bucket_first_keys: Vec<T> = Vec::with_capacity(num_buckets);
-        let mut prev_key: Option<T> = None;
-        let mut curr_lcp_bits: usize = 0;
-        let mut i = 0usize;
+        // LCP state shared between key_to_val and build_fn via RefCell.
+        // (lcp_bit_lengths, bucket_first_keys, prev_key, curr_lcp_bits)
+        let state = RefCell::new((
+            Vec::<usize>::with_capacity(num_buckets),
+            Vec::<T>::with_capacity(num_buckets),
+            None::<T>,
+            0usize,
+        ));
 
-        while let Some(key) = keys.next()? {
-            let key: T = *key;
-            if let Some(prev) = prev_key {
-                if key <= prev {
-                    bail!(
-                        "Keys are not in strictly increasing order at position {i}: {prev:?} >= {key:?}"
-                    );
+        let mut builder = builder.expected_num_keys(n);
+        builder.try_populate_and_build_with_fn(
+            keys,
+            &mut |key: &T, idx: usize| -> anyhow::Result<usize> {
+                let mut s = state.borrow_mut();
+                let (lcp_bit_lengths, bucket_first_keys, prev_key, curr_lcp_bits) = &mut *s;
+                let key: T = *key;
+
+                if idx == 0 {
+                    lcp_bit_lengths.clear();
+                    bucket_first_keys.clear();
+                    *prev_key = None;
+                    *curr_lcp_bits = 0;
                 }
-            }
-            let offset = i & bucket_mask;
-            if offset == 0 {
-                if i > 0 {
-                    lcp_bit_lengths.push(curr_lcp_bits);
+
+                if let Some(prev) = *prev_key {
+                    if key <= prev {
+                        bail!(
+                            "Keys are not in strictly increasing order at position {idx}: \
+                             {prev:?} >= {key:?}"
+                        );
+                    }
                 }
-                bucket_first_keys.push(key);
-                curr_lcp_bits = T::BITS as usize;
-            } else {
-                curr_lcp_bits = curr_lcp_bits.min(lcp_bits(key, prev_key.unwrap()));
-            }
-            prev_key = Some(key);
-            i += 1;
-        }
-        assert_eq!(i, n, "Expected {n} keys but got {i}");
-        lcp_bit_lengths.push(curr_lcp_bits);
 
-        // -- Populate shared store (no solve) --
-        pl.info(format_args!("Hashing keys..."));
-        let keys = keys.rewind()?;
+                let offset = idx & bucket_mask;
+                if offset == 0 {
+                    if idx > 0 {
+                        lcp_bit_lengths.push(*curr_lcp_bits);
+                    }
+                    bucket_first_keys.push(key);
+                    *curr_lcp_bits = T::BITS as usize;
+                } else {
+                    *curr_lcp_bits = (*curr_lcp_bits).min(lcp_bits(key, prev_key.unwrap()));
+                }
+                *prev_key = Some(key);
+                Ok(idx)
+            },
+            &mut |_builder, seed, store, _max_value, _num_keys, pl: &mut P| {
+                let shard_edge = _builder.shard_edge;
+                // Finalize LCP data (last bucket).
+                {
+                    let mut s = state.borrow_mut();
+                    let last_lcp = s.3;
+                    s.0.push(last_lcp);
+                }
+                let s = state.borrow();
+                let (lcp_bit_lengths, bucket_first_keys, _, _) = &*s;
+                assert_eq!(lcp_bit_lengths.len(), num_buckets);
 
-        builder
-            .expected_num_keys(n)
-            .try_populate_and_build::<T, T, usize, Self, _>(
-                keys,
-                FromCloneableIntoIterator::new(
-                    (0..n).map(|idx| {
-                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                    }),
-                ),
-                |seed, shard_edge, store, pl| {
-                    let mut store = match store {
-                        AnyShardStore::Online(s) => s,
-                        _ => unreachable!("online builder"),
-                    };
+                let mut store = match store {
+                    AnyShardStore::Online(s) => s,
+                    _ => unreachable!("online builder"),
+                };
 
-                    // -- Offsets --
-                    pl.info(format_args!(
-                        "Building key → offset map ({log2_bs} bits)..."
-                    ));
-                    let offsets = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
-                        .try_build_func_with_store::<T, usize>(
+                // -- Offsets --
+                pl.info(format_args!(
+                    "Building key → offset map ({log2_bs} bits)..."
+                ));
+                let offsets = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
+                    .try_build_func_with_store::<T, usize>(
                         seed,
                         shard_edge,
                         n,
@@ -248,24 +261,23 @@ where
                         pl,
                     )?;
 
-                    // -- LCP lengths (two-step) --
-                    pl.info(format_args!("Building two-step LCP lengths..."));
-                    let lcp_lengths = VFunc2::try_build_from_store::<usize>(
-                        seed,
-                        shard_edge,
-                        n,
-                        &mut store,
-                        &|v| v >> log2_bs,
-                        pl,
-                    )?;
+                // -- LCP lengths (two-step) --
+                pl.info(format_args!("Building two-step LCP lengths..."));
+                let lcp_lengths = VFunc2::try_build_from_store::<usize>(
+                    seed,
+                    shard_edge,
+                    n,
+                    &mut store,
+                    &|v| lcp_bit_lengths[v >> log2_bs],
+                    pl,
+                )?;
 
-                    // -- lcp2bucket --
-                    pl.info(format_args!(
-                        "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-                    ));
-                    let lcp2bucket =
-                        VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default(
-                        )
+                // -- lcp2bucket --
+                pl.info(format_args!(
+                    "Building LCP prefix → bucket map ({num_buckets} buckets)..."
+                ));
+                let lcp2bucket =
+                    VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
                         .expected_num_keys(num_buckets)
                         .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
                             FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
@@ -275,28 +287,28 @@ where
                             pl,
                         )?;
 
-                    let off_bits = offsets.data.mem_size(SizeFlags::default()) * 8;
-                    let lcp_bits_total = (lcp_lengths.short.data.mem_size(SizeFlags::default())
-                        + lcp_lengths.long.data.mem_size(SizeFlags::default())
-                        + lcp_lengths.remap.len() * std::mem::size_of::<usize>())
-                        * 8;
-                    let l2b_bits = lcp2bucket.data.mem_size(SizeFlags::default()) * 8;
-                    let total = off_bits + lcp_bits_total + l2b_bits;
-                    pl.info(format_args!(
-                        "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
-                        total as f64 / n as f64
-                    ));
+                let off_bits = offsets.data.mem_size(SizeFlags::default()) * 8;
+                let lcp_bits_total = (lcp_lengths.short.data.mem_size(SizeFlags::default())
+                    + lcp_lengths.long.data.mem_size(SizeFlags::default())
+                    + lcp_lengths.remap.len() * std::mem::size_of::<usize>())
+                    * 8;
+                let l2b_bits = lcp2bucket.data.mem_size(SizeFlags::default()) * 8;
+                let total = off_bits + lcp_bits_total + l2b_bits;
+                pl.info(format_args!(
+                    "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
+                    total as f64 / n as f64
+                ));
 
-                    Ok(Self {
-                        n,
-                        log2_bucket_size: log2_bs,
-                        offsets,
-                        lcp_lengths,
-                        lcp2bucket,
-                    })
-                },
-                pl,
-            )
+                Ok(Self {
+                    n,
+                    log2_bucket_size: log2_bs,
+                    offsets,
+                    lcp_lengths,
+                    lcp2bucket,
+                })
+            },
+            pl,
+        )
     }
 }
 
@@ -406,14 +418,17 @@ where
     /// overhead (`eps`), and PRNG seed (`seed`).
     ///
     /// The keys must be in strictly increasing lexicographic order.
-    pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
-        mut keys: impl FallibleRewindableLender<
+    pub fn try_new_with_builder<
+        B: ?Sized + AsRef<[u8]> + Borrow<K>,
+        P: ProgressLog + Clone + Send + Sync,
+    >(
+        keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+        pl: &mut P,
     ) -> Result<Self> {
         if n == 0 {
             return Ok(Self {
@@ -434,69 +449,74 @@ where
             "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
         ));
 
-        // -- First pass: compute bit-level LCPs --
-        let mut lcp_bit_lengths: Vec<usize> = Vec::with_capacity(num_buckets);
-        let mut bucket_first_keys: Vec<Vec<u8>> = Vec::with_capacity(num_buckets);
-        let mut prev_key: Vec<u8> = Vec::new();
-        let mut curr_lcp_bits: usize = 0;
-        let mut i = 0usize;
+        // LCP state shared between key_to_val and build_fn via RefCell.
+        // (lcp_bit_lengths, bucket_first_keys, prev_key, curr_lcp_bits)
+        let state = RefCell::new((
+            Vec::<usize>::with_capacity(num_buckets),
+            Vec::<Vec<u8>>::with_capacity(num_buckets),
+            Vec::<u8>::new(),
+            0usize,
+        ));
 
-        while let Some(key) = keys.next()? {
-            let key_bytes: &[u8] = key.as_ref();
-            if i > 0 && key_bytes <= prev_key.as_slice() {
-                bail!("Keys are not in strictly increasing lexicographic order at position {i}");
-            }
-            let offset = i & bucket_mask;
-            if offset == 0 {
-                if i > 0 {
-                    lcp_bit_lengths.push(curr_lcp_bits);
+        let mut builder = builder.expected_num_keys(n);
+        builder.try_populate_and_build_with_fn(
+            keys,
+            &mut |key: &B, idx: usize| -> anyhow::Result<usize> {
+                let mut s = state.borrow_mut();
+                let (lcp_bit_lengths, bucket_first_keys, prev_key, curr_lcp_bits) = &mut *s;
+                let key_bytes: &[u8] = key.as_ref();
+
+                if idx == 0 {
+                    lcp_bit_lengths.clear();
+                    bucket_first_keys.clear();
+                    prev_key.clear();
+                    *curr_lcp_bits = 0;
                 }
-                bucket_first_keys.push(key_bytes.to_vec());
-                curr_lcp_bits = (key_bytes.len() + MAGIC_COOKIE.len()) * 8;
-            } else {
-                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_with_cookie(key_bytes, &prev_key));
-            }
-            prev_key.clear();
-            prev_key.extend_from_slice(key_bytes);
-            i += 1;
-        }
-        assert_eq!(i, n, "Expected {n} keys but got {i}");
-        lcp_bit_lengths.push(curr_lcp_bits);
 
-        // -- Build from shared store --
-        pl.info(format_args!("Hashing keys..."));
-        let keys = keys.rewind()?;
+                if idx > 0 && key_bytes <= prev_key.as_slice() {
+                    bail!(
+                        "Keys are not in strictly increasing lexicographic order \
+                         at position {idx}"
+                    );
+                }
 
-        let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
-            .iter()
-            .map(|k| {
-                let mut v = Vec::with_capacity(k.len() + MAGIC_COOKIE.len());
-                v.extend_from_slice(k);
-                v.extend_from_slice(&MAGIC_COOKIE);
-                v
-            })
-            .collect();
+                let offset = idx & bucket_mask;
+                if offset == 0 {
+                    if idx > 0 {
+                        lcp_bit_lengths.push(*curr_lcp_bits);
+                    }
+                    bucket_first_keys.push(key_bytes.to_vec());
+                    *curr_lcp_bits = (key_bytes.len() + MAGIC_COOKIE.len()) * 8;
+                } else {
+                    *curr_lcp_bits =
+                        (*curr_lcp_bits).min(lcp_bits_with_cookie(key_bytes, prev_key));
+                }
+                prev_key.clear();
+                prev_key.extend_from_slice(key_bytes);
+                Ok(idx)
+            },
+            &mut |_builder, seed, store, _max_value, _num_keys, pl: &mut P| {
+                let shard_edge = _builder.shard_edge;
+                // Finalize LCP data (last bucket).
+                {
+                    let mut s = state.borrow_mut();
+                    let last_lcp = s.3;
+                    s.0.push(last_lcp);
+                }
+                let s = state.borrow();
+                let (lcp_bit_lengths, bucket_first_keys, _, _) = &*s;
+                assert_eq!(lcp_bit_lengths.len(), num_buckets);
 
-        builder
-            .expected_num_keys(n)
-            .try_populate_and_build::<K, B, usize, Self, _>(
-                keys,
-                FromCloneableIntoIterator::new(
-                    (0..n).map(|idx| {
-                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                    }),
-                ),
-                |seed, shard_edge, store, pl| {
-                    let mut store = match store {
-                        AnyShardStore::Online(s) => s,
-                        _ => unreachable!("online builder"),
-                    };
+                let mut store = match store {
+                    AnyShardStore::Online(s) => s,
+                    _ => unreachable!("online builder"),
+                };
 
-                    pl.info(format_args!(
-                        "Building key → offset map ({log2_bs} bits)..."
-                    ));
-                    let offsets = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
-                        .try_build_func_with_store::<K, usize>(
+                pl.info(format_args!(
+                    "Building key → offset map ({log2_bs} bits)..."
+                ));
+                let offsets = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
+                    .try_build_func_with_store::<K, usize>(
                         seed,
                         shard_edge,
                         n,
@@ -506,22 +526,31 @@ where
                         pl,
                     )?;
 
-                    pl.info(format_args!("Building two-step LCP lengths..."));
-                    let lcp_lengths = VFunc2::try_build_from_store::<usize>(
-                        seed,
-                        shard_edge,
-                        n,
-                        &mut store,
-                        &|v| v >> log2_bs,
-                        pl,
-                    )?;
+                pl.info(format_args!("Building two-step LCP lengths..."));
+                let lcp_lengths = VFunc2::try_build_from_store::<usize>(
+                    seed,
+                    shard_edge,
+                    n,
+                    &mut store,
+                    &|v| lcp_bit_lengths[v >> log2_bs],
+                    pl,
+                )?;
 
-                    pl.info(format_args!(
-                        "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-                    ));
-                    let lcp2bucket =
-                        VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default(
-                        )
+                pl.info(format_args!(
+                    "Building LCP prefix → bucket map ({num_buckets} buckets)..."
+                ));
+                let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
+                    .iter()
+                    .map(|k| {
+                        let mut v = Vec::with_capacity(k.len() + MAGIC_COOKIE.len());
+                        v.extend_from_slice(k);
+                        v.extend_from_slice(&MAGIC_COOKIE);
+                        v
+                    })
+                    .collect();
+
+                let lcp2bucket =
+                    VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
                         .expected_num_keys(num_buckets)
                         .try_build_func::<BitPrefix, BitPrefix>(
                             FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
@@ -531,27 +560,27 @@ where
                             pl,
                         )?;
 
-                    let off_bits = offsets.data.mem_size(SizeFlags::default()) * 8;
-                    let lcp_bits_total = (lcp_lengths.short.data.mem_size(SizeFlags::default())
-                        + lcp_lengths.long.data.mem_size(SizeFlags::default())
-                        + lcp_lengths.remap.len() * std::mem::size_of::<usize>())
-                        * 8;
-                    let l2b_bits = lcp2bucket.data.mem_size(SizeFlags::default()) * 8;
-                    let total = off_bits + lcp_bits_total + l2b_bits;
-                    pl.info(format_args!(
-                        "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
-                        total as f64 / n as f64
-                    ));
+                let off_bits = offsets.data.mem_size(SizeFlags::default()) * 8;
+                let lcp_bits_total = (lcp_lengths.short.data.mem_size(SizeFlags::default())
+                    + lcp_lengths.long.data.mem_size(SizeFlags::default())
+                    + lcp_lengths.remap.len() * std::mem::size_of::<usize>())
+                    * 8;
+                let l2b_bits = lcp2bucket.data.mem_size(SizeFlags::default()) * 8;
+                let total = off_bits + lcp_bits_total + l2b_bits;
+                pl.info(format_args!(
+                    "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
+                    total as f64 / n as f64
+                ));
 
-                    Ok(Self {
-                        n,
-                        log2_bucket_size: log2_bs,
-                        offsets,
-                        lcp_lengths,
-                        lcp2bucket,
-                    })
-                },
-                pl,
-            )
+                Ok(Self {
+                    n,
+                    log2_bucket_size: log2_bs,
+                    offsets,
+                    lcp_lengths,
+                    lcp2bucket,
+                })
+            },
+            pl,
+        )
     }
 }

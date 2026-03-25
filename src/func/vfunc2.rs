@@ -66,7 +66,11 @@ impl<T: ?Sized, S: Sig, E: ShardEdge<S, 3>> VFunc2<T, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
-    /// Creates a VFunc2 with zero keys. Queries return arbitrary values.
+    /// Creates a VFunc2 with zero keys.
+    ///
+    /// With `escape = 0`, the short function always returns the escape,
+    /// so `get` always queries the long function (which returns zero
+    /// since both internal [`VFunc`]s are empty).
     pub fn empty() -> Self {
         Self {
             short: VFunc::empty(),
@@ -83,8 +87,12 @@ where
 {
     /// Retrieves the value for a key given its pre-computed signature.
     ///
-    /// The signature must have been computed with the same seed as the
-    /// [`VFunc`]'s inside (typically from a shared shard store).
+    /// The signature must have been computed with `self.short.seed`
+    /// (i.e., `T::to_sig(key, self.short.seed)`). Both the short and
+    /// long internal functions share the same seed.
+    ///
+    /// This method is mainly useful in the construction of compound
+    /// functions.
     #[inline]
     pub fn get_by_sig(&self, sig: S) -> usize {
         let idx = self.short.get_by_sig(sig);
@@ -129,11 +137,14 @@ where
     /// Builds a [`VFunc2`] from keys and values using default
     /// [`VBuilder`] settings.
     ///
+    /// * `keys` and `values` must be aligned (one value per key, same
+    ///   order) and rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys; a significantly wrong
+    ///   value may degrade performance or cause extra retries.
+    ///
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
-    /// `VBuilder::default()`. Use `try_new_with_builder` if you need
-    /// to configure construction parameters such as offline mode,
-    /// thread count, or sharding overhead.
+    /// `VBuilder::default()`.
     pub fn try_new<B: ?Sized + std::borrow::Borrow<T>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
@@ -152,6 +163,10 @@ where
     /// Builds a [`VFunc2`] from keys and values using the given
     /// [`VBuilder`] configuration.
     ///
+    /// * `keys` and `values` must be aligned (one value per key, same
+    ///   order) and rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys.
+    ///
     /// The builder controls construction parameters such as offline
     /// mode (`offline`), thread count (`max_num_threads`), sharding
     /// overhead (`eps`), and PRNG seed (`seed`).
@@ -168,20 +183,26 @@ where
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self> {
-        builder
-            .expected_num_keys(n)
-            .try_populate_and_build::<T, B, usize, Self, _>(
-                keys,
-                values,
-                |seed, shard_edge, store, pl| {
-                    let mut store = match store {
-                        AnyShardStore::Online(s) => s,
-                        _ => unreachable!("online builder"),
-                    };
-                    Self::try_build_from_store::<usize>(seed, shard_edge, n, &mut store, &|v| v, pl)
-                },
-                pl,
-            )
+        let mut builder = builder.expected_num_keys(n);
+        builder.try_populate_and_build(
+            keys,
+            values,
+            &mut |builder, seed, store, _max_value, _num_keys, pl| {
+                let mut store = match store {
+                    AnyShardStore::Online(s) => s,
+                    _ => unreachable!("online builder"),
+                };
+                Self::try_build_from_store::<usize>(
+                    seed,
+                    builder.shard_edge,
+                    n,
+                    &mut store,
+                    &|v| v,
+                    pl,
+                )
+            },
+            pl,
+        )
     }
 
     /// Builds a [`VFunc2`] from an existing [`ShardStore`].
@@ -191,6 +212,16 @@ where
     /// [`Lcp2Mmphf`](crate::func::Lcp2Mmphf)). Use [`try_new`](Self::try_new)
     /// or [`try_new_with_builder`](Self::try_new_with_builder) for the
     /// common case of building from keys and values directly.
+    ///
+    /// # Preconditions
+    ///
+    /// * `seed` and `shard_edge` must be the values used when the store
+    ///   was populated.
+    /// * `get_val` must be deterministic: the store is iterated multiple
+    ///   times (frequency analysis, then short/long construction) and
+    ///   differing results corrupt the function silently.
+    ///
+    /// # Arguments
     ///
     /// * `seed` — the seed from the store's population step.
     /// * `shard_edge` — the shard edge from the same population step.
@@ -212,23 +243,26 @@ where
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
         SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, V>: BitXor + BitXorAssign,
     {
-        // -- 1. Frequency analysis --
+        // -- 1. Frequency analysis (array-based) --
 
-        let mut counts: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
         let mut max_value = 0usize;
-
         for shard in store.iter() {
             for sv in shard.iter() {
-                let val = get_val(sv.val);
-                *counts.entry(val).or_insert(0) += 1;
-                max_value = max_value.max(val);
+                max_value = max_value.max(get_val(sv.val));
+            }
+        }
+
+        let mut counts = vec![0usize; max_value + 1];
+        for shard in store.iter() {
+            for sv in shard.iter() {
+                counts[get_val(sv.val)] += 1;
             }
         }
 
         // -- 2. Sort distinct values by descending frequency --
 
-        let mut sorted_vals: Vec<usize> = counts.keys().copied().collect();
-        sorted_vals.sort_by(|a, b| counts[b].cmp(&counts[a]));
+        let mut sorted_vals: Vec<usize> = (0..=max_value).filter(|&v| counts[v] > 0).collect();
+        sorted_vals.sort_by(|&a, &b| counts[b].cmp(&counts[a]));
 
         let w = (max_value as u128).bit_len() as usize;
         let m = sorted_vals.len(); // number of distinct values
@@ -260,7 +294,7 @@ where
                 if pos >= m {
                     break;
                 }
-                post -= counts[&sorted_vals[pos]];
+                post -= counts[sorted_vals[pos]];
                 pos += 1;
             }
         }
@@ -270,29 +304,66 @@ where
             best_r = usize::BITS as usize - 1;
         }
 
-        let escape = (1usize << best_r).wrapping_sub(1); // 2^r - 1
-        let num_remapped = escape; // number of values in the remap
+        Self::try_build_from_store_with_r(seed, shard_edge, n, store, get_val, best_r, max_value, &counts, &sorted_vals, pl)
+    }
 
-        // -- 4. Build remap and inv_map --
+    /// Like [`try_build_from_store`](Self::try_build_from_store), but
+    /// the caller provides `r` (the bit width of the short function)
+    /// directly, along with the pre-computed frequency data.
+    ///
+    /// This is a low-level method that requires a thorough understanding
+    /// of the builder's internal state.
+    ///
+    /// # Arguments
+    ///
+    /// * `r` — bit width of the short function. The escape sentinel
+    ///   is 2*ʳ* − 1 and the first 2*ʳ* − 1 entries of `sorted_vals`
+    ///   become the remap table.
+    /// * `max_value` — the maximum value returned by `get_val`.
+    /// * `counts` — `counts[v]` is the number of keys with value `v`.
+    ///   Must have length ≥ `max_value + 1`.
+    /// * `sorted_vals` — distinct values sorted by descending frequency.
+    pub fn try_build_from_store_with_r<V: BinSafe + Default + Send + Sync + Copy>(
+        seed: u64,
+        shard_edge: E,
+        n: usize,
+        store: &mut impl ShardStore<S, V>,
+        get_val: &(impl Fn(V) -> usize + Send + Sync),
+        r: usize,
+        max_value: usize,
+        counts: &[usize],
+        sorted_vals: &[usize],
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<Self>
+    where
+        SigVal<S, V>: RadixKey,
+        SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, V>: BitXor + BitXorAssign,
+    {
+        let w = (max_value as u128).bit_len() as usize;
+        let m = sorted_vals.len();
+        let escape = (1usize << r).wrapping_sub(1); // 2^r - 1
+        let num_remapped = escape.min(m);
+
+        // -- Build remap and inv_map --
 
         let remap: Box<[usize]> = sorted_vals[..num_remapped].to_vec().into_boxed_slice();
-        let mut inv_map: std::collections::HashMap<usize, usize> =
-            std::collections::HashMap::with_capacity(num_remapped);
+        let mut inv_map = vec![usize::MAX; max_value + 1];
         for (i, &val) in remap.iter().enumerate() {
-            inv_map.insert(val, i);
+            inv_map[val] = i;
         }
 
         pl.info(format_args!(
-            "Two-step: r={best_r}, escape={escape}, {num_remapped} remapped values, \
+            "Two-step: r={r}, escape={escape}, {num_remapped} remapped values, \
              {m} distinct values, max_value={max_value} ({w} bits)"
         ));
 
-        // -- 5. Build short VFunc --
+        // -- Build short VFunc --
         // When r = 0, escape = 0 and the short function maps every key to
         // 0 = escape, so the long function is always queried.
 
         pl.info(format_args!(
-            "Building key -> remapped index ({best_r} bits, escape={escape})..."
+            "Building key -> remapped index ({r} bits, escape={escape})..."
         ));
         let short = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
             .try_build_func_with_store::<T, V>(
@@ -303,20 +374,20 @@ where
                 store,
                 &|_e, sig_val| {
                     let val = get_val(sig_val.val);
-                    inv_map.get(&val).copied().unwrap_or(escape)
+                    let mapped = inv_map[val];
+                    if mapped != usize::MAX { mapped } else { escape }
                 },
                 pl,
             )?;
 
-        // -- 6. Build long VFunc (escaped keys only) --
+        // -- Build long VFunc (escaped keys only) --
 
         pl.info(format_args!(
             "Building key -> full value ({w} bits, escaped keys only)..."
         ));
-        // Compute the optimal shard_high_bits for the escaped key count.
         let n_escaped = n - sorted_vals[..num_remapped]
             .iter()
-            .map(|v| counts[v])
+            .map(|&v| counts[v])
             .sum::<usize>();
         let mut long_shard_edge = Fuse3Shards::default();
         long_shard_edge.set_up_shards(n_escaped, 0.001);
@@ -324,7 +395,7 @@ where
 
         let mut filtered_store =
             FilteredShardStore::new(store, long_shard_high_bits, |sv: &SigVal<S, V>| {
-                !inv_map.contains_key(&get_val(sv.val))
+                inv_map[get_val(sv.val)] == usize::MAX
             });
         let long = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, Fuse3Shards>::default()
             .try_build_func_with_store::<T, V>(
