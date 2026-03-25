@@ -982,15 +982,22 @@ fn write_binary<S: BinSafe + Sig, V: BinSafe>(
     writer.write_all(buf)
 }
 
-/// A [`ShardStore`] wrapper that applies a filter-map to each entry.
+/// A [`ShardStore`] wrapper that applies a filter-map to each entry
+/// and optionally re-aggregates shards to a coarser granularity.
 ///
 /// Entries for which the closure returns `None` are excluded; those
-/// returning `Some(w)` are kept with the new value. The wrapper
-/// recomputes shard sizes on construction.
+/// returning `Some(w)` are kept with the new value.
+///
+/// If the requested `shard_high_bits` is smaller than the inner
+/// store's current shard count, adjacent shards are merged. If it is
+/// larger or equal, the inner shard structure is kept as-is.
 pub struct FilteredShardStore<'a, SS, S: Sig + BinSafe, V: BinSafe, W: BinSafe, F> {
     inner: &'a mut SS,
     filter_map: F,
+    /// Shard sizes after filtering and optional merging.
     shard_sizes: Vec<usize>,
+    /// How many inner shards to merge into one output shard.
+    merge_factor: usize,
     _marker: std::marker::PhantomData<(S, V, W)>,
 }
 
@@ -1002,20 +1009,40 @@ where
     W: BinSafe,
     F: Fn(&SigVal<S, V>) -> Option<W>,
 {
-    /// Creates a new filtered view of a shard store.
+    /// Creates a new filtered (and optionally re-sharded) view of a
+    /// shard store.
     ///
-    /// The `filter_map` closure is applied to each entry: `None` excludes
-    /// the entry, `Some(w)` keeps it with value `w`.
-    pub fn new(inner: &'a mut SS, filter_map: F) -> Self {
-        // Pre-scan to compute filtered shard sizes.
-        let shard_sizes: Vec<usize> = inner
+    /// `shard_high_bits` is the desired number of high bits for the
+    /// output shard structure. If it results in fewer shards than the
+    /// inner store, adjacent shards are merged; otherwise the inner
+    /// structure is kept unchanged.
+    pub fn new(inner: &'a mut SS, shard_high_bits: u32, filter_map: F) -> Self {
+        let old_num_shards = inner.shard_sizes().len();
+        let new_num_shards = (1usize << shard_high_bits).min(old_num_shards);
+        let merge_factor = if new_num_shards == 0 {
+            old_num_shards
+        } else {
+            old_num_shards / new_num_shards
+        }
+        .max(1);
+
+        // Pre-scan: count filtered entries per inner shard, then
+        // aggregate into the (possibly coarser) output shards.
+        let per_inner: Vec<usize> = inner
             .iter()
             .map(|shard| shard.iter().filter(|sv| filter_map(sv).is_some()).count())
             .collect();
+
+        let shard_sizes: Vec<usize> = per_inner
+            .chunks(merge_factor)
+            .map(|group| group.iter().sum())
+            .collect();
+
         Self {
             inner,
             filter_map,
             shard_sizes,
+            merge_factor,
             _marker: std::marker::PhantomData,
         }
     }
@@ -1042,42 +1069,55 @@ where
 
     fn iter(&mut self) -> Self::ShardIter<'_> {
         let filter_map = &self.filter_map;
-        Box::new(self.inner.iter().map(move |shard| {
-            Arc::new(
-                shard
-                    .iter()
-                    .filter_map(|sv| {
-                        filter_map(sv).map(|new_val| SigVal {
-                            sig: sv.sig,
-                            val: new_val,
-                        })
-                    })
-                    .collect(),
-            )
-        }))
+        let merge_factor = self.merge_factor;
+        // Collect inner shards so we can chunk them for merging.
+        let inner_shards: Vec<_> = self.inner.iter().collect();
+        Box::new(
+            inner_shards
+                .chunks(merge_factor)
+                .map(move |group| {
+                    let mut merged = Vec::new();
+                    for shard in group {
+                        for sv in shard.iter() {
+                            if let Some(new_val) = filter_map(sv) {
+                                merged.push(SigVal {
+                                    sig: sv.sig,
+                                    val: new_val,
+                                });
+                            }
+                        }
+                    }
+                    Arc::new(merged)
+                })
+                .collect::<Vec<_>>()
+                .into_iter(),
+        )
     }
 
-    fn into_iter(self) -> Self::ShardIntoIter {
+    fn into_iter(mut self) -> Self::ShardIntoIter {
         let filter_map = self.filter_map;
-        // Materialize lazily — each shard is filtered on demand.
-        let shards: Vec<_> = self
-            .inner
-            .iter()
-            .map(move |shard| {
-                Arc::new(
-                    shard
-                        .iter()
-                        .filter_map(|sv| {
-                            filter_map(sv).map(|new_val| SigVal {
-                                sig: sv.sig,
-                                val: new_val,
-                            })
-                        })
-                        .collect(),
-                )
-            })
-            .collect();
-        Box::new(shards.into_iter())
+        let merge_factor = self.merge_factor;
+        let inner_shards: Vec<_> = self.inner.iter().collect();
+        Box::new(
+            inner_shards
+                .chunks(merge_factor)
+                .map(move |group| {
+                    let mut merged = Vec::new();
+                    for shard in group {
+                        for sv in shard.iter() {
+                            if let Some(new_val) = filter_map(sv) {
+                                merged.push(SigVal {
+                                    sig: sv.sig,
+                                    val: new_val,
+                                });
+                            }
+                        }
+                    }
+                    Arc::new(merged)
+                })
+                .collect::<Vec<_>>()
+                .into_iter(),
+        )
     }
 }
 
