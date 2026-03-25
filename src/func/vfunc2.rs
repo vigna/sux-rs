@@ -457,13 +457,17 @@ where
 
         // -- Build long VFunc (escaped keys only) --
 
-        pl.info(format_args!(
-            "Building key -> full value ({w} bits, escaped keys only)..."
-        ));
         let n_escaped = n - sorted_vals[..num_remapped]
             .iter()
             .map(|v| counts[v])
             .sum::<usize>();
+
+        debug_assert_eq!(
+            escaped_counts.iter().sum::<usize>(),
+            n_escaped,
+            "inspect-counted escaped != freq-computed escaped"
+        );
+
         let mut long_shard_edge = E1::default();
         long_shard_edge.set_up_shards(n_escaped, 0.001);
         let long_shard_high_bits = long_shard_edge.shard_high_bits();
@@ -471,8 +475,6 @@ where
         // Aggregate escaped_counts to the long function's shard granularity.
         let long_num_shards = 1usize << long_shard_high_bits;
         let filtered_shard_sizes = if long_num_shards >= num_shards {
-            // Long uses same or finer granularity (shouldn't happen
-            // in practice since it has fewer keys, but handle it).
             escaped_counts
         } else {
             let shards_per_long = num_shards / long_num_shards;
@@ -481,6 +483,11 @@ where
                 .map(|chunk| chunk.iter().sum())
                 .collect()
         };
+
+        pl.info(format_args!(
+            "Building key -> full value ({w} bits, {n_escaped} escaped keys, {:.1}%)...",
+            100.0 * n_escaped as f64 / n as f64
+        ));
 
         let mut filtered_store = FilteredShardStore::new(
             store,
