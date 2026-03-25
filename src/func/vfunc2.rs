@@ -187,6 +187,7 @@ use {
     lender::*,
     rdst::RadixKey,
     std::ops::{BitXor, BitXorAssign},
+    sync_cell_slice::SyncSlice,
 };
 
 #[cfg(feature = "rayon")]
@@ -417,6 +418,14 @@ where
         // When r = 0, escape = 0 and the short function maps every key to
         // 0 = escape, so the long function is always queried.
 
+        // Set up per-shard counters for escaped entries, using the
+        // store's current shard granularity.
+        let shb = shard_edge.shard_high_bits();
+        let num_shards = 1usize << shb;
+        let shard_mask = (1u64 << shb) - 1;
+        let mut escaped_counts = vec![0usize; num_shards];
+        let sync_counts = escaped_counts.as_sync_slice();
+
         pl.info(format_args!(
             "Building key -> remapped index ({best_r} bits, escape={escape_usize})..."
         ));
@@ -430,9 +439,21 @@ where
                 let val = get_val(sig_val.val);
                 inv_map.get(&val).copied().unwrap_or(escape)
             },
-            &|_| {},
+            &|sv: &SigVal<S, V>| {
+                if !inv_map.contains_key(&get_val(sv.val)) {
+                    let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
+                    // SAFETY: each shard is processed by exactly one
+                    // thread, so no two threads access the same counter.
+                    unsafe {
+                        let c = sync_counts[shard_idx].get();
+                        sync_counts[shard_idx].set(c + 1);
+                    }
+                }
+            },
             pl,
         )?;
+
+        // escaped_counts now has per-shard escaped entry counts.
 
         // -- Build long VFunc (escaped keys only) --
 
@@ -447,10 +468,26 @@ where
         long_shard_edge.set_up_shards(n_escaped, 0.001);
         let long_shard_high_bits = long_shard_edge.shard_high_bits();
 
-        let mut filtered_store =
-            FilteredShardStore::new(store, long_shard_high_bits, |sv: &SigVal<S, V>| {
-                !inv_map.contains_key(&get_val(sv.val))
-            });
+        // Aggregate escaped_counts to the long function's shard granularity.
+        let long_num_shards = 1usize << long_shard_high_bits;
+        let filtered_shard_sizes = if long_num_shards >= num_shards {
+            // Long uses same or finer granularity (shouldn't happen
+            // in practice since it has fewer keys, but handle it).
+            escaped_counts
+        } else {
+            let shards_per_long = num_shards / long_num_shards;
+            escaped_counts
+                .chunks(shards_per_long)
+                .map(|chunk| chunk.iter().sum())
+                .collect()
+        };
+
+        let mut filtered_store = FilteredShardStore::new(
+            store,
+            long_shard_high_bits,
+            |sv: &SigVal<S, V>| !inv_map.contains_key(&get_val(sv.val)),
+            filtered_shard_sizes,
+        );
         let long = VBuilder::<W, BitFieldVec<Box<[W]>>, S, E1>::default()
             .try_build_func_with_store::<T, V>(
                 seed,
