@@ -80,7 +80,12 @@ pub struct VFunc<T: ?Sized, W = usize, D = Box<[W]>, S = [u64; 2], E = FuseLge3S
 }
 
 impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<T, W, BitFieldVec<Box<[W]>>, S, E> {
-    /// Creates a VFunc with zero keys. Queries return arbitrary values.
+    /// Creates a VFunc with zero keys.
+    ///
+    /// The internal data has bit width 0, so `get` always returns zero.
+    /// This is safe because [`BitFieldVec::new(0, 0)`] allocates one
+    /// word and `get_value_unchecked` with bit width 0 always reads
+    /// index 0 and masks with 0.
     pub fn empty() -> Self {
         Self {
             shard_edge: E::default(),

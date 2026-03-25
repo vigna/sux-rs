@@ -26,7 +26,7 @@
 //!   [`LcpMmphfSliceU8`] for common instantiations.
 //!
 //! - [`Lcp2MmphfInt`]/[`Lcp2Mmphf`] are versions of
-//!   [`LcpMmphfInt`]/[`LcpMmphf`] that use a [`Vfunc2`] to reduce space usage, at
+//!   [`LcpMmphfInt`]/[`LcpMmphf`] that use a [`VFunc2`] to reduce space usage, at
 //!   the cost of slightly slower queries.
 
 mod vfunc;

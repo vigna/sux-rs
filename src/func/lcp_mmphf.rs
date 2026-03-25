@@ -369,15 +369,19 @@ where
         pl.info(format_args!("Building key → (LCP length, offset) map..."));
         let keys = keys.rewind()?;
 
-        let (offset_lcp_length, store) = builder.expected_num_keys(n)._try_build_func::<T, T>(
-            keys,
-            FromCloneableIntoIterator::new(
-                (0..n)
-                    .map(|idx| (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)),
-            ),
-            keep_store,
-            pl,
-        )?;
+        let (offset_lcp_length, store) = builder
+            .expected_num_keys(n)
+            .try_build_func_and_store::<T, T, _>(
+                keys,
+                FromCloneableIntoIterator::new(
+                    (0..n).map(|idx| {
+                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                    }),
+                ),
+                |bit_width, len| BitFieldVec::<Vec<usize>>::new_unaligned(bit_width, len).into(),
+                keep_store,
+                pl,
+            )?;
 
         // -- Build lcp2bucket VFunc --
 
@@ -872,15 +876,19 @@ where
         pl.info(format_args!("Building key → (LCP length, offset) map..."));
         let keys = keys.rewind()?;
 
-        let (offset_lcp_length, store) = builder.expected_num_keys(n)._try_build_func::<K, B>(
-            keys,
-            FromCloneableIntoIterator::new(
-                (0..n)
-                    .map(|idx| (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)),
-            ),
-            keep_store,
-            pl,
-        )?;
+        let (offset_lcp_length, store) = builder
+            .expected_num_keys(n)
+            .try_build_func_and_store::<K, B, _>(
+                keys,
+                FromCloneableIntoIterator::new(
+                    (0..n).map(|idx| {
+                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                    }),
+                ),
+                |bit_width, len| BitFieldVec::<Vec<usize>>::new_unaligned(bit_width, len).into(),
+                keep_store,
+                pl,
+            )?;
 
         // -- Build lcp2bucket VFunc --
         //

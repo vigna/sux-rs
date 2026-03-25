@@ -287,7 +287,7 @@ pub struct VBuilder<
     /// The bit width of the maximum value.
     bit_width: usize,
     /// The edge generator.
-    shard_edge: E,
+    pub(crate) shard_edge: E,
     /// The number of keys.
     num_keys: usize,
     /// The ratio between the number of vertices and the number of edges
@@ -558,7 +558,7 @@ where
     /// the bit width of the output of the function will be exactly the bit width of
     /// the unsigned type `W`.
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
-        mut self,
+        self,
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -574,10 +574,14 @@ where
         for<'a> ShardDataIter<'a, Box<[W]>>: Send,
         for<'a> ShardData<'a, Box<[W]>>: Send,
     {
-        let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
-        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
         Ok(self
-            .build_loop(keys, values, None, &get_val, new_data, false, pl)?
+            .try_build_func_and_store(
+                keys,
+                values,
+                |_bit_width, len| vec![W::ZERO; len].into(),
+                false,
+                pl,
+            )?
             .0)
     }
 }
@@ -594,13 +598,17 @@ where
     /// Since values are stored in a boxed slice access is particularly fast, but
     /// the number of bits of the hashes will be exactly the bit width of the
     /// unsigned type `W`.
-    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
+    pub fn try_build_filter<
+        T: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<T>,
+        P: ProgressLog + Clone + Send + Sync,
+    >(
         mut self,
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+        pl: &mut P,
     ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>>
     where
         for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut,
@@ -611,23 +619,48 @@ where
         let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
             W::as_from(mix64(shard_edge.edge_hash(sig_val.sig)))
         };
-        let new_data = |_bit_width: usize, len: usize| vec![W::ZERO; len].into();
+
+        let func = self.try_populate_and_build(
+            keys,
+            FromCloneableIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
+            &mut |builder, seed, store, _max_value, _num_keys, pl: &mut P| {
+                builder.bit_width = W::BITS as usize;
+
+                let new_data: Box<[W]> = vec![
+                    W::ZERO;
+                    builder.shard_edge.num_vertices()
+                        * builder.shard_edge.num_shards()
+                ]
+                .into();
+
+                pl.info(format_args!(
+                    "Number of keys: {} Bit width: {}",
+                    builder.num_keys, builder.bit_width,
+                ));
+
+                let func = match store {
+                    AnyShardStore::Online(s) => builder.try_build_from_shard_iter(
+                        seed,
+                        new_data,
+                        s.into_iter(),
+                        &get_val,
+                        pl,
+                    )?,
+                    AnyShardStore::Offline(s) => builder.try_build_from_shard_iter(
+                        seed,
+                        new_data,
+                        s.into_iter(),
+                        &get_val,
+                        pl,
+                    )?,
+                };
+                Ok(func)
+            },
+            pl,
+        )?;
 
         Ok(VFilter {
-            func: self
-                .build_loop(
-                    keys,
-                    FromCloneableIntoIterator::from(itertools::repeat_n(
-                        EmptyVal::default(),
-                        usize::MAX,
-                    )),
-                    Some(W::BITS as usize),
-                    &get_val,
-                    new_data,
-                    false,
-                    pl,
-                )?
-                .0,
+            func,
             filter_mask,
             hash_bits: W::BITS,
         })
@@ -640,56 +673,44 @@ where
     SigVal<S, W>: RadixKey,
     SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
 {
-    pub(crate) fn _try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
-        mut self,
-        keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        values: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-        keep_store: bool,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<(
-        VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>,
-        Option<AnyShardStore<S, W>>,
-    )> {
-        let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
-        let new_data = |bit_width, len| BitFieldVec::<Vec<W>>::new_unaligned(bit_width, len).into();
-
-        self.build_loop(keys, values, None, &get_val, new_data, keep_store, pl)
-    }
-
     /// Builds a new function by reusing an existing [`ShardStore`] with
     /// remapped values.
+    ///
+    /// This is a low-level method that requires a thorough understanding
+    /// of the builder's internal state.
     ///
     /// This avoids re-hashing the keys: the store already contains the
     /// signatures from a previous build. A `get_val` closure transforms
     /// each stored [`SigVal`] into the new output value.
     ///
+    /// # Preconditions
+    ///
+    /// * `seed` and `shard_edge` **must** be the exact values used when
+    ///   the store was populated; passing mismatched values produces a
+    ///   silently corrupt function.
+    /// * Every value produced by `get_val` must fit in the bit width
+    ///   implied by `max_value`.
+    /// * `get_val` must be deterministic: the store is iterated multiple
+    ///   times and different results for the same input would silently
+    ///   corrupt the function.
+    ///
     /// # Arguments
     ///
-    /// * `seed` — the seed from the [`VFunc`] that was built when the
-    ///   store was populated.
+    /// * `seed` — the seed from the store's population step.
     ///
-    /// * `shard_edge` — the shard edge from that same [`VFunc`].
+    /// * `shard_edge` — the shard edge from the same population step.
     ///
     /// * `num_keys` — the number of keys in the store.
     ///
-    /// * `max_value` — the maximum new value (determines bit width).
+    /// * `max_value` — the maximum value that `get_val` can return
+    ///   (determines the bit width of the output).
     ///
     /// * `shard_store` — the store kept from a previous
-    ///   `_try_build_func(…, keep_store = true, …)` call.
+    ///   `try_build_func_and_store(…, keep_store = true, …)` call.
     ///
     /// * `get_val` — maps each [`SigVal<E::LocalSig, V>`](SigVal) to
-    ///   the new output value `W`. It is passed to
-    ///   [`try_build_from_shard_iter`](Self::try_build_from_shard_iter).
-    pub(crate) fn try_build_func_with_store<
-        T: ?Sized + ToSig<S>,
-        V: BinSafe + Default + Send + Sync,
-    >(
+    ///   the new output value `W`.
+    pub fn try_build_func_with_store<T: ?Sized + ToSig<S>, V: BinSafe + Default + Send + Sync>(
         mut self,
         seed: u64,
         shard_edge: E,
@@ -736,148 +757,6 @@ where
             .map_err(Into::into)
     }
 
-    /// Populates a shard store from keys and values without solving.
-    ///
-    /// **Note:** the store-population logic here must stay aligned with
-    /// the corresponding code in [`try_seed`](Self::try_seed) and
-    /// [`try_populate_and_build`](Self::try_populate_and_build).
-    ///
-    /// This is the first half of what `_try_build_func` does: it hashes
-    /// the keys, pushes them into a store, converts to a shard store, and
-    /// sets up the shard edge. The store can then be passed to
-    /// [`try_build_func_with_store`](Self::try_build_func_with_store) or
-    /// [`VFunc2::try_build_from_store`](super::vfunc2::VFunc2::try_build_from_store)
-    /// for one or more solve steps with different value mappings.
-    ///
-    /// Populates a shard store and then calls a build closure.
-    ///
-    /// **Note:** the store-population logic here must stay aligned with
-    /// the corresponding code in [`try_seed`](Self::try_seed).
-    ///
-    /// This method hashes the keys into a store, then passes the store
-    /// to `build_fn`. If `build_fn` fails with a [`SolveError`] (e.g.,
-    /// unsolvable shard), the whole process is retried from scratch
-    /// with a new seed.
-    ///
-    /// The `build_fn` closure also receives the progress logger so the
-    /// caller does not have to capture it (which would conflict with the
-    /// mutable borrow needed by the populate step).
-    ///
-    /// Returns whatever `build_fn` returns on success.
-    pub(crate) fn try_populate_and_build<
-        T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: ?Sized + Borrow<T>,
-        V: BinSafe + Default + Send + Sync + Ord + AsU128,
-        R,
-        P: ProgressLog + Clone + Send + Sync,
-    >(
-        mut self,
-        mut keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        mut values: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend V>,
-        mut build_fn: impl FnMut(u64, E, AnyShardStore<S, V>, &mut P) -> anyhow::Result<R>,
-        pl: &mut P,
-    ) -> anyhow::Result<R>
-    where
-        SigVal<S, V>: RadixKey,
-    {
-        if let Some(expected_num_keys) = self.expected_num_keys {
-            self.shard_edge.set_up_shards(expected_num_keys, self.eps);
-            self.log2_buckets = self.shard_edge.shard_high_bits();
-        }
-
-        let mut prng = SmallRng::seed_from_u64(self.seed);
-
-        pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
-
-        let mut dup_count = 0u32;
-
-        loop {
-            let seed: u64 = prng.random();
-
-            let mut sig_store = sig_store::new_online::<S, V>(
-                self.log2_buckets,
-                LOG2_MAX_SHARDS,
-                self.expected_num_keys,
-            )?;
-
-            pl.expected_updates(self.expected_num_keys);
-            pl.item_name("key");
-            pl.start(format!(
-                "Computing and storing {}-bit signatures in memory using seed 0x{seed:016x}...",
-                std::mem::size_of::<S>() * 8,
-            ));
-
-            while let Some(key) = keys.next()? {
-                pl.light_update();
-                let &maybe_val = values.next()?.expect("Not enough values");
-                sig_store.try_push(SigVal {
-                    sig: T::to_sig(key.borrow(), seed),
-                    val: maybe_val,
-                })?;
-            }
-            pl.done();
-
-            let num_keys = sig_store.len();
-            let shard_edge = &mut self.shard_edge;
-            shard_edge.set_up_shards(num_keys, self.eps);
-
-            match sig_store.into_shard_store(shard_edge.shard_high_bits()) {
-                Ok(shard_store) => {
-                    let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
-                    if max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64 {
-                        pl.warn(format_args!(
-                            "Max shard too big, trying again with a different seed..."
-                        ));
-                    } else {
-                        (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
-
-                        match build_fn(
-                            seed,
-                            self.shard_edge,
-                            AnyShardStore::Online(shard_store),
-                            pl,
-                        ) {
-                            Ok(result) => return Ok(result),
-                            Err(e) => match e.downcast::<SolveError>() {
-                                Ok(SolveError::UnsolvableShard) => {
-                                    pl.warn(format_args!(
-                                        "Unsolvable shard, trying again with a different seed..."
-                                    ));
-                                }
-                                Ok(SolveError::DuplicateLocalSignature) => {
-                                    pl.warn(format_args!(
-                                        "Duplicate local signature, trying again with a different seed..."
-                                    ));
-                                }
-                                Ok(other) => return Err(other.into()),
-                                Err(e) => return Err(e),
-                            },
-                        }
-                    }
-                }
-                Err(e) => {
-                    // Duplicate signature — retry.
-                    if dup_count >= 3 {
-                        return Err(e);
-                    }
-                    pl.warn(format_args!(
-                        "Duplicate signature, trying again with a different seed..."
-                    ));
-                    dup_count += 1;
-                }
-            }
-
-            values = values.rewind()?;
-            keys = keys.rewind()?;
-        }
-    }
-
     /// Builds a new function using a [bit-field vector](BitFieldVec) on words of
     /// the unsigned type `W` to store values.
     ///
@@ -898,8 +777,14 @@ where
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>> {
-        self._try_build_func(keys, values, false, pl)
-            .map(|res| res.0)
+        self.try_build_func_and_store(
+            keys,
+            values,
+            |bit_width, len| BitFieldVec::<Vec<W>>::new_unaligned(bit_width, len).into(),
+            false,
+            pl,
+        )
+        .map(|res| res.0)
     }
 }
 
@@ -940,8 +825,13 @@ where
         assert!(hash_width > 0);
         assert!(hash_width <= H::BITS as usize);
 
-        let (func, store) =
-            self._try_build_func(keys, FromCloneableIntoIterator::from(0..), true, pl)?;
+        let (func, store) = self.try_build_func_and_store(
+            keys,
+            FromCloneableIntoIterator::from(0..),
+            |bit_width, len| BitFieldVec::<Vec<usize>>::new_unaligned(bit_width, len).into(),
+            true,
+            pl,
+        )?;
 
         let num_keys = func.num_keys;
         let shard_edge = &func.shard_edge;
@@ -1020,8 +910,13 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<SignedVFunc<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>>
     {
-        let (func, store) =
-            self._try_build_func(keys, FromCloneableIntoIterator::from(0..), true, pl)?;
+        let (func, store) = self.try_build_func_and_store(
+            keys,
+            FromCloneableIntoIterator::from(0..),
+            |bit_width, len| BitFieldVec::<Vec<usize>>::new_unaligned(bit_width, len).into(),
+            true,
+            pl,
+        )?;
 
         let num_keys = func.num_keys;
         let shard_edge = &func.shard_edge;
@@ -1080,38 +975,70 @@ where
     /// will. It must be in any case at most the bit width of `W`.
     ///
     /// Typically `W` will be `usize` or `u64`.
-    pub fn try_build_filter<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
+    pub fn try_build_filter<
+        T: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<T>,
+        P: ProgressLog + Clone + Send + Sync,
+    >(
         mut self,
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         filter_bits: usize,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>> {
+        pl: &mut P,
+    ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>>
+    where
+        for<'a> ShardDataIter<'a, BitFieldVec<Box<[W]>>>: Send,
+        for<'a> <ShardDataIter<'a, BitFieldVec<Box<[W]>>> as Iterator>::Item: Send,
+    {
         assert!(filter_bits > 0);
         assert!(filter_bits <= W::BITS as usize);
         let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
         let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
             W::as_from(mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
         };
-        let new_data = |bit_width, len| BitFieldVec::<Vec<W>>::new_unaligned(bit_width, len).into();
+
+        let func = self.try_populate_and_build(
+            keys,
+            FromCloneableIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
+            &mut |builder, seed, store, _max_value, _num_keys, pl: &mut P| {
+                builder.bit_width = filter_bits;
+
+                let new_data: BitFieldVec<Box<[W]>> = BitFieldVec::<Vec<W>>::new_unaligned(
+                    builder.bit_width,
+                    builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
+                )
+                .into();
+
+                pl.info(format_args!(
+                    "Number of keys: {} Bit width: {}",
+                    builder.num_keys, builder.bit_width,
+                ));
+
+                let func = match store {
+                    AnyShardStore::Online(s) => builder.try_build_from_shard_iter(
+                        seed,
+                        new_data,
+                        s.into_iter(),
+                        &get_val,
+                        pl,
+                    )?,
+                    AnyShardStore::Offline(s) => builder.try_build_from_shard_iter(
+                        seed,
+                        new_data,
+                        s.into_iter(),
+                        &get_val,
+                        pl,
+                    )?,
+                };
+                Ok(func)
+            },
+            pl,
+        )?;
 
         Ok(VFilter {
-            func: self
-                .build_loop(
-                    keys,
-                    FromCloneableIntoIterator::from(itertools::repeat_n(
-                        EmptyVal::default(),
-                        usize::MAX,
-                    )),
-                    Some(filter_bits),
-                    &get_val,
-                    new_data,
-                    false,
-                    pl,
-                )?
-                .0,
+            func,
             filter_mask,
             hash_bits: filter_bits as _,
         })
@@ -1120,36 +1047,160 @@ where
 
 impl<
     W: Word + BinSafe,
-    D: BitFieldSlice<Value = W>
-        + for<'a> BitFieldSliceMut<Value = W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>
-        + Send
-        + Sync,
+    D: BitFieldSlice<Value = W> + Send + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 > VBuilder<W, D, S, E>
 {
-    /// Builds and returns a new function with given keys and values.
+    /// Builds a new [`VFunc`], optionally retaining the populated shard
+    /// store for reuse.
     ///
-    /// This method can build functions based both on vectors and on bit-field
-    /// vectors. The necessary abstraction is provided by the
-    /// `new_data(bit_width, len)` function, which is called to create the data
-    /// structure to store the values.
+    /// This is a low-level method that requires a thorough understanding
+    /// of the builder's internal state.
     ///
-    /// When `V` is [`EmptyVal`], this method builds a function supporting a
-    /// filter by mapping each key to a mix of its local signature. The
-    /// necessary abstraction is provided by the `get_val` function, which is
-    /// called to extract the value from the signature/value pair; in the case
-    /// of functions it returns the value stored in the signature/value pair,
-    /// and in the case of filters it returns the hash associated with the
-    /// signature.
+    /// `new_data(bit_width, len)` allocates the backend storage of the
+    /// given bit width and length.
     ///
-    /// If `keep_store` is true, the shard store is returned wrapped in
-    /// [`AnyShardStore`]; otherwise, `None` is returned and `into_iter()` is
-    /// used for efficiency.
-    fn build_loop<
+    /// If `keep_store` is `true`, the second element of the returned
+    /// tuple contains the store that was populated during construction
+    /// (the solver uses `iter()` rather than `into_iter()` so the store
+    /// survives). The caller can pass it to
+    /// [`try_build_func_with_store`](Self::try_build_func_with_store)
+    /// to build additional functions without re-hashing the keys.
+    ///
+    /// If `keep_store` is `false`, the store is consumed for efficiency
+    /// and `None` is returned.
+    pub fn try_build_func_and_store<
+        T: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<T>,
+        P: ProgressLog + Clone + Send + Sync,
+    >(
+        mut self,
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
+        new_data: fn(usize, usize) -> D,
+        keep_store: bool,
+        pl: &mut P,
+    ) -> anyhow::Result<(VFunc<T, W, D, S, E>, Option<AnyShardStore<S, W>>)>
+    where
+        W: AsU128,
+        SigVal<S, W>: RadixKey,
+        SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
+        D: for<'a> BitFieldSliceMut<Value = W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>,
+        for<'a> ShardDataIter<'a, D>: Send,
+        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
+    {
+        let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
+
+        self.try_populate_and_build(
+            keys,
+            values,
+            &mut |builder, seed, store, max_value, _num_keys, pl: &mut P| {
+                builder.bit_width = max_value.as_u128().bit_len() as usize;
+
+                let data = new_data(
+                    builder.bit_width,
+                    builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
+                );
+
+                pl.info(format_args!(
+                    "Number of keys: {} Max value: {} Bit width: {}",
+                    builder.num_keys,
+                    {
+                        let v: u128 = max_value.as_u128();
+                        v
+                    },
+                    builder.bit_width,
+                ));
+
+                match store {
+                    AnyShardStore::Online(mut s) => {
+                        if keep_store {
+                            let func = builder.try_build_from_shard_iter(
+                                seed,
+                                data,
+                                s.iter(),
+                                &get_val,
+                                pl,
+                            )?;
+                            Ok((func, Some(AnyShardStore::Online(s))))
+                        } else {
+                            let func = builder.try_build_from_shard_iter(
+                                seed,
+                                data,
+                                s.into_iter(),
+                                &get_val,
+                                pl,
+                            )?;
+                            Ok((func, None))
+                        }
+                    }
+                    AnyShardStore::Offline(mut s) => {
+                        if keep_store {
+                            let func = builder.try_build_from_shard_iter(
+                                seed,
+                                data,
+                                s.iter(),
+                                &get_val,
+                                pl,
+                            )?;
+                            Ok((func, Some(AnyShardStore::Offline(s))))
+                        } else {
+                            let func = builder.try_build_from_shard_iter(
+                                seed,
+                                data,
+                                s.into_iter(),
+                                &get_val,
+                                pl,
+                            )?;
+                            Ok((func, None))
+                        }
+                    }
+                }
+            },
+            pl,
+        )
+    }
+
+    /// Populates a shard store from keys and values, then calls a build
+    /// closure. If the closure (or the store population) fails with a
+    /// [`SolveError`], the process is retried from scratch with a new
+    /// seed.
+    ///
+    /// See also
+    /// [`try_populate_and_build_with_fn`](Self::try_populate_and_build_with_fn),
+    /// which produces values from a closure instead of a lender.
+    ///
+    /// This is a low-level method that requires a thorough understanding
+    /// of the builder's internal state.
+    ///
+    /// On each retry the lenders are rewound. Retries continue for
+    /// [`SolveError::UnsolvableShard`] and
+    /// [`SolveError::MaxShardTooBig`]; after 4 duplicate-signature
+    /// retries [`BuildError::DuplicateKey`] is returned, and after 3
+    /// duplicate-local-signature retries
+    /// [`BuildError::DuplicateLocalSignatures`] is returned. Any other
+    /// error is propagated immediately.
+    ///
+    /// `build_fn` is called with `(&mut self, seed, store, max_value,
+    /// num_keys, pl)`. The builder's `shard_edge`, `c`, and `lge` fields
+    /// are already set up when `build_fn` is invoked, so it can call
+    /// `try_build_from_shard_iter`
+    /// directly.
+    ///
+    /// Returns whatever `build_fn` returns on success.
+    pub fn try_populate_and_build<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
         V: BinSafe + Default + Send + Sync + Ord + AsU128,
+        R,
+        P: ProgressLog + Clone + Send + Sync,
     >(
         &mut self,
         mut keys: impl FallibleRewindableLender<
@@ -1160,46 +1211,37 @@ impl<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend V>,
-        bit_width: Option<usize>,
-        get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
-        new_data: fn(usize, usize) -> D,
-        keep_store: bool,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<(VFunc<T, W, D, S, E>, Option<AnyShardStore<S, V>>)>
+        build_fn: &mut impl FnMut(
+            &mut Self,
+            u64,
+            AnyShardStore<S, V>,
+            V,
+            usize,
+            &mut P,
+        ) -> anyhow::Result<R>,
+        pl: &mut P,
+    ) -> anyhow::Result<R>
     where
-        // u128 can always be created from any Word type via as cast
         SigVal<S, V>: RadixKey,
-        SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
-        for<'a> ShardDataIter<'a, D>: Send,
-        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
-        // Static check that Vertex → usize conversion is lossless
-        const {
-            assert!(
-                size_of::<E::Vertex>() <= size_of::<usize>(),
-                "ShardEdge::Vertex must fit in usize without truncation"
-            );
-        }
-
-        let mut dup_count = 0;
-        let mut local_dup_count = 0;
-        let mut prng = SmallRng::seed_from_u64(self.seed);
-
+        // NOTE: the retry loop and error handling below must be kept in
+        // sync with try_populate_and_build_with_fn.
         if let Some(expected_num_keys) = self.expected_num_keys {
             self.shard_edge.set_up_shards(expected_num_keys, self.eps);
             self.log2_buckets = self.shard_edge.shard_high_bits();
         }
 
+        let mut dup_count = 0u32;
+        let mut local_dup_count = 0u32;
+        let mut prng = SmallRng::seed_from_u64(self.seed);
+
         pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
 
-        // Loop until success or duplicate detection
         loop {
-            let seed = prng.random();
+            let seed: u64 = prng.random();
 
-            // We need separate branches for offline/online because they return
-            // different ShardStore types that must be wrapped in AnyShardStore
             let result = if self.offline {
-                self.try_seed(
+                self.try_solve_once(
                     seed,
                     sig_store::new_offline::<S, V>(
                         self.log2_buckets,
@@ -1208,15 +1250,12 @@ impl<
                     )?,
                     &mut keys,
                     &mut values,
-                    bit_width,
-                    get_val,
-                    new_data,
-                    keep_store,
+                    AnyShardStore::Offline,
+                    build_fn,
                     pl,
                 )
-                .map(|(func, store)| (func, store.map(AnyShardStore::Offline)))
             } else {
-                self.try_seed(
+                self.try_solve_once(
                     seed,
                     sig_store::new_online::<S, V>(
                         self.log2_buckets,
@@ -1225,92 +1264,208 @@ impl<
                     )?,
                     &mut keys,
                     &mut values,
-                    bit_width,
-                    get_val,
-                    new_data,
-                    keep_store,
+                    AnyShardStore::Online,
+                    build_fn,
                     pl,
                 )
-                .map(|(func, store)| (func, store.map(AnyShardStore::Online)))
             };
 
             match result {
-                Ok((func, store)) => {
-                    return Ok((func, store));
-                }
-                Err(error) => {
-                    match error.downcast::<SolveError>() {
-                        Ok(vfunc_error) => match vfunc_error {
-                            // Let's try another seed, but just a few times--most likely,
-                            // duplicate keys
-                            SolveError::DuplicateSignature => {
-                                if dup_count >= 3 {
-                                    pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with four different seeds)"));
-                                    return Err(BuildError::DuplicateKey.into());
-                                }
-                                pl.warn(format_args!(
+                Ok(r) => return Ok(r),
+                Err(error) => match error.downcast::<SolveError>() {
+                    Ok(vfunc_error) => match vfunc_error {
+                        SolveError::DuplicateSignature => {
+                            if dup_count >= 3 {
+                                pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with four different seeds)"));
+                                return Err(BuildError::DuplicateKey.into());
+                            }
+                            pl.warn(format_args!(
                                 "Duplicate 128-bit signature, trying again with a different seed..."
-                                ));
-                                dup_count += 1;
+                            ));
+                            dup_count += 1;
+                        }
+                        SolveError::DuplicateLocalSignature => {
+                            if local_dup_count >= 2 {
+                                pl.error(format_args!("Duplicate local signatures: use full signatures (duplicate local signatures with three different seeds)"));
+                                return Err(BuildError::DuplicateLocalSignatures.into());
                             }
-                            // Let's try another seed, but just a few times
-                            SolveError::DuplicateLocalSignature => {
-                                if local_dup_count >= 2 {
-                                    pl.error(format_args!("Duplicate local signatures: use full signatures (duplicate local signatures with three different seeds)"));
-                                    return Err(BuildError::DuplicateLocalSignatures.into());
-                                }
-                                pl.warn(format_args!(
+                            pl.warn(format_args!(
                                 "Duplicate local signature, trying again with a different seed..."
-                                ));
-                                local_dup_count += 1;
-                            }
-                            SolveError::MaxShardTooBig => {
-                                pl.warn(format_args!(
+                            ));
+                            local_dup_count += 1;
+                        }
+                        SolveError::MaxShardTooBig => {
+                            pl.warn(format_args!(
                                 "The maximum shard is too big, trying again with a different seed..."
-                               ));
-                            }
-                            // Let's just try another seed
-                            SolveError::UnsolvableShard => {
-                                pl.warn(format_args!(
-                                    "Unsolvable shard, trying again with a different seed..."
-                                ));
-                            }
-                        },
-                        Err(error) => return Err(error),
-                    }
-                }
+                            ));
+                        }
+                        SolveError::UnsolvableShard => {
+                            pl.warn(format_args!(
+                                "Unsolvable shard, trying again with a different seed..."
+                            ));
+                        }
+                    },
+                    Err(error) => return Err(error),
+                },
             }
 
             values = values.rewind()?;
             keys = keys.rewind()?;
         }
     }
-}
 
-impl<
-    W: Word + BinSafe,
-    D: BitFieldSlice<Value = W>
-        + for<'a> BitFieldSliceMut<Value = W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>
-        + Send
-        + Sync,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
-> VBuilder<W, D, S, E>
-{
-    /// Tries to build a function using specific seed. See the comments in the
-    /// [`VBuilder::build_loop`] method for more details.
+    /// Like [`try_populate_and_build`](Self::try_populate_and_build), but
+    /// values are produced by a `key_to_val` closure that receives each
+    /// key and its ordinal index, instead of being read from a separate
+    /// lender. See that method for the retry and error semantics.
     ///
-    /// This methods reads the input, sets up the shards, allocates the backend
-    /// using `new_data`, and passes the backend and an iterator on shards to
-    /// the [`VBuilder::try_build_from_shard_iter`] method.
+    /// This is a low-level method that requires a thorough understanding
+    /// of the builder's internal state.
     ///
-    /// If `keep_store` is true, uses `iter()` on the shard store so it can be
-    /// returned; otherwise uses `into_iter()` for efficiency.
-    fn try_seed<
+    /// This enables computing side data (e.g., LCP bit lengths) in the
+    /// same pass as store population, avoiding a separate scan of the
+    /// keys.
+    ///
+    /// On retry (seed change), the keys lender is rewound and
+    /// `key_to_val` is called again from index 0; stateful closures
+    /// should reset when they see index 0.
+    ///
+    /// See [`try_populate_and_build`](Self::try_populate_and_build) for
+    /// the retry and error semantics.
+    pub fn try_populate_and_build_with_fn<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
         V: BinSafe + Default + Send + Sync + Ord + AsU128,
-        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        R,
+        P: ProgressLog + Clone + Send + Sync,
+    >(
+        &mut self,
+        mut keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        key_to_val: &mut impl FnMut(&B, usize) -> anyhow::Result<V>,
+        build_fn: &mut impl FnMut(
+            &mut Self,
+            u64,
+            AnyShardStore<S, V>,
+            V,
+            usize,
+            &mut P,
+        ) -> anyhow::Result<R>,
+        pl: &mut P,
+    ) -> anyhow::Result<R>
+    where
+        SigVal<S, V>: RadixKey,
+    {
+        // NOTE: the retry loop and error handling below must be kept in
+        // sync with try_populate_and_build.
+        if let Some(expected_num_keys) = self.expected_num_keys {
+            self.shard_edge.set_up_shards(expected_num_keys, self.eps);
+            self.log2_buckets = self.shard_edge.shard_high_bits();
+        }
+
+        let mut dup_count = 0u32;
+        let mut local_dup_count = 0u32;
+        let mut prng = SmallRng::seed_from_u64(self.seed);
+
+        pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
+
+        loop {
+            let seed: u64 = prng.random();
+
+            let result = if self.offline {
+                self.try_solve_once_with_fn(
+                    seed,
+                    sig_store::new_offline::<S, V>(
+                        self.log2_buckets,
+                        LOG2_MAX_SHARDS,
+                        self.expected_num_keys,
+                    )?,
+                    &mut keys,
+                    key_to_val,
+                    AnyShardStore::Offline,
+                    build_fn,
+                    pl,
+                )
+            } else {
+                self.try_solve_once_with_fn(
+                    seed,
+                    sig_store::new_online::<S, V>(
+                        self.log2_buckets,
+                        LOG2_MAX_SHARDS,
+                        self.expected_num_keys,
+                    )?,
+                    &mut keys,
+                    key_to_val,
+                    AnyShardStore::Online,
+                    build_fn,
+                    pl,
+                )
+            };
+
+            match result {
+                Ok(r) => return Ok(r),
+                Err(error) => match error.downcast::<SolveError>() {
+                    Ok(vfunc_error) => match vfunc_error {
+                        SolveError::DuplicateSignature => {
+                            if dup_count >= 3 {
+                                pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with four different seeds)"));
+                                return Err(BuildError::DuplicateKey.into());
+                            }
+                            pl.warn(format_args!(
+                                "Duplicate 128-bit signature, trying again with a different seed..."
+                            ));
+                            dup_count += 1;
+                        }
+                        SolveError::DuplicateLocalSignature => {
+                            if local_dup_count >= 2 {
+                                pl.error(format_args!("Duplicate local signatures: use full signatures (duplicate local signatures with three different seeds)"));
+                                return Err(BuildError::DuplicateLocalSignatures.into());
+                            }
+                            pl.warn(format_args!(
+                                "Duplicate local signature, trying again with a different seed..."
+                            ));
+                            local_dup_count += 1;
+                        }
+                        SolveError::MaxShardTooBig => {
+                            pl.warn(format_args!(
+                                "The maximum shard is too big, trying again with a different seed..."
+                            ));
+                        }
+                        SolveError::UnsolvableShard => {
+                            pl.warn(format_args!(
+                                "Unsolvable shard, trying again with a different seed..."
+                            ));
+                        }
+                    },
+                    Err(error) => return Err(error),
+                },
+            }
+
+            keys = keys.rewind()?;
+        }
+    }
+
+    /// Performs a single population-and-build attempt for the given seed.
+    ///
+    /// Populates `sig_store` by iterating `keys`/`values`, converts it
+    /// to a shard store, checks the max-shard invariant, sets up
+    /// `self.shard_edge`/`c`/`lge`, wraps the store via `wrap` into an
+    /// [`AnyShardStore`], and calls `build_fn`.
+    ///
+    /// Returns the result of `build_fn`, or a [`SolveError`] for the
+    /// caller's retry loop to handle.
+    ///
+    /// See also
+    /// [`try_solve_once_with_fn`](Self::try_solve_once_with_fn),
+    /// which produces values from a closure instead of a lender.
+    fn try_solve_once<
+        T: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<T>,
+        V: BinSafe + Default + Send + Sync + Ord + AsU128,
+        R,
+        P: ProgressLog + Clone + Send + Sync,
         SS: SigStore<S, V>,
     >(
         &mut self,
@@ -1328,23 +1483,22 @@ impl<
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend V>
              ),
-        bit_width: Option<usize>,
-        get_val: &G,
-        new_data: fn(usize, usize) -> D,
-        keep_store: bool,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<(VFunc<T, W, D, S, E>, Option<SS::ShardStore>)>
+        wrap: impl FnOnce(SS::ShardStore) -> AnyShardStore<S, V>,
+        build_fn: &mut impl FnMut(
+            &mut Self,
+            u64,
+            AnyShardStore<S, V>,
+            V,
+            usize,
+            &mut P,
+        ) -> anyhow::Result<R>,
+        pl: &mut P,
+    ) -> anyhow::Result<R>
     where
         SigVal<S, V>: RadixKey,
-        SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
-        for<'a> ShardDataIter<'a, D>: Send,
-        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
-        // Note: the store-population logic below must stay aligned with
-        // the corresponding code in `try_populate_and_build` and
-        // `try_populate_and_build`.
-        let shard_edge = &mut self.shard_edge;
-
+        // NOTE: the population and sharding logic below must be kept in
+        // sync with try_solve_once_with_fn.
         pl.expected_updates(self.expected_num_keys);
         pl.item_name("key");
         pl.start(format!(
@@ -1357,122 +1511,214 @@ impl<
             seed
         ));
 
-        // This will be the maximum value for functions and EmptyVal for filters
         let mut maybe_max_value = V::default();
         let start = Instant::now();
 
         while let Some(key) = keys.next()? {
             pl.light_update();
-            // This might be an actual value, if we are building a
-            // function, or EmptyVal, if we are building a filter.
             let &maybe_val = values.next()?.expect("Not enough values");
-            let sig_val = SigVal {
+            maybe_max_value = Ord::max(maybe_max_value, maybe_val);
+            sig_store.try_push(SigVal {
                 sig: T::to_sig(key.borrow(), seed),
                 val: maybe_val,
-            };
-            maybe_max_value = Ord::max(maybe_max_value, maybe_val);
-            sig_store.try_push(sig_val)?;
+            })?;
         }
         pl.done();
 
-        self.num_keys = sig_store.len();
-        self.bit_width = if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
-            bit_width.expect("Bit width must be set for filters")
-        } else {
-            let len_width = maybe_max_value.as_u128().bit_len() as usize;
-            if let Some(bit_width) = bit_width {
-                if len_width > bit_width {
-                    return Err(BuildError::ValueTooLarge.into());
-                }
-                bit_width
-            } else {
-                len_width
-            }
-        };
+        let num_keys = sig_store.len();
 
         info!(
             "Computation of signatures from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
             start.elapsed().as_secs_f64(),
-            self.num_keys,
-            start.elapsed().as_nanos() as f64 / self.num_keys as f64
+            num_keys,
+            start.elapsed().as_nanos() as f64 / num_keys as f64
         );
 
-        shard_edge.set_up_shards(self.num_keys, self.eps);
+        let shard_edge = &mut self.shard_edge;
+        shard_edge.set_up_shards(num_keys, self.eps);
 
         let start = Instant::now();
 
-        let mut shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
+        let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
-        let filter = TypeId::of::<V>() == TypeId::of::<EmptyVal>();
-
-        (self.c, self.lge) = shard_edge.set_up_graphs(self.num_keys, max_shard);
-
-        if filter {
-            pl.info(format_args!(
-                "Number of keys: {} Bit width: {}",
-                self.num_keys, self.bit_width,
-            ));
-        } else {
-            pl.info(format_args!(
-                "Number of keys: {} Max value: {} Bit width: {}",
-                self.num_keys,
-                {
-                    let v: u128 = maybe_max_value.as_u128();
-                    v
-                },
-                self.bit_width,
-            ));
-        }
 
         if shard_edge.shard_high_bits() != 0 {
             pl.info(format_args!(
                 "Max shard / average shard: {:.2}%",
-                (100.0 * max_shard as f64)
-                    / (self.num_keys as f64 / shard_edge.num_shards() as f64)
+                (100.0 * max_shard as f64) / (num_keys as f64 / shard_edge.num_shards() as f64)
             ));
         }
 
-        if max_shard as f64 > 1.01 * self.num_keys as f64 / shard_edge.num_shards() as f64 {
-            // This might sometimes happen with small sharded graphs
-            Err(SolveError::MaxShardTooBig.into())
-        } else {
-            let data = new_data(
-                self.bit_width,
-                shard_edge.num_vertices() * shard_edge.num_shards(),
-            );
-            // Use iter() when keep_store is true so we can return the shard_store,
-            // otherwise use into_iter() for efficiency
-            if keep_store {
-                let func = self
-                    .try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, pl)
-                    .inspect(|_| {
-                        info!(
-                            "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                            start.elapsed().as_secs_f64(),
-                            self.num_keys,
-                            start.elapsed().as_nanos() as f64 / self.num_keys as f64
-                        );
-                    })?;
-                Ok((func, Some(shard_store)))
-            } else {
-                let func = self
-                    .try_build_from_shard_iter(seed, data, shard_store.into_iter(), get_val, pl)
-                    .inspect(|_| {
-                        info!(
-                            "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                            start.elapsed().as_secs_f64(),
-                            self.num_keys,
-                            start.elapsed().as_nanos() as f64 / self.num_keys as f64
-                        );
-                    })?;
-                Ok((func, None))
-            }
+        if max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64 {
+            return Err(SolveError::MaxShardTooBig.into());
         }
+
+        (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
+        self.num_keys = num_keys;
+
+        let store = wrap(shard_store);
+
+        build_fn(self, seed, store, maybe_max_value, num_keys, pl).inspect(|_| {
+            info!(
+                "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                start.elapsed().as_secs_f64(),
+                num_keys,
+                start.elapsed().as_nanos() as f64 / num_keys as f64
+            );
+        })
     }
 
-    /// Builds and return a new function starting from an iterator on shards.
+    /// Performs a single population-and-build attempt for the given seed,
+    /// producing values from `key_to_val` instead of a lender.
     ///
-    /// See [`VBuilder::build_loop`] for more details on the parameters.
+    /// Populates `sig_store` by iterating `keys` and calling
+    /// `key_to_val` for each key, converts it to a shard store, checks
+    /// the max-shard invariant, sets up `self.shard_edge`/`c`/`lge`,
+    /// wraps the store via `wrap` into an [`AnyShardStore`], and calls
+    /// `build_fn`.
+    ///
+    /// Returns the result of `build_fn`, or a [`SolveError`] for the
+    /// caller's retry loop to handle.
+    ///
+    /// See also [`try_solve_once`](Self::try_solve_once), which reads
+    /// values from a lender instead.
+    fn try_solve_once_with_fn<
+        T: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<T>,
+        V: BinSafe + Default + Send + Sync + Ord + AsU128,
+        R,
+        P: ProgressLog + Clone + Send + Sync,
+        SS: SigStore<S, V>,
+    >(
+        &mut self,
+        seed: u64,
+        mut sig_store: SS,
+        keys: &mut (
+                 impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
+             ),
+        key_to_val: &mut impl FnMut(&B, usize) -> anyhow::Result<V>,
+        wrap: impl FnOnce(SS::ShardStore) -> AnyShardStore<S, V>,
+        build_fn: &mut impl FnMut(
+            &mut Self,
+            u64,
+            AnyShardStore<S, V>,
+            V,
+            usize,
+            &mut P,
+        ) -> anyhow::Result<R>,
+        pl: &mut P,
+    ) -> anyhow::Result<R>
+    where
+        SigVal<S, V>: RadixKey,
+    {
+        // NOTE: the population and sharding logic below must be kept in
+        // sync with try_solve_once.
+        pl.expected_updates(self.expected_num_keys);
+        pl.item_name("key");
+        pl.start(format!(
+            "Computing and storing {}-bit signatures in {} using seed 0x{:016x}...",
+            std::mem::size_of::<S>() * 8,
+            sig_store
+                .temp_dir()
+                .map(|d| d.path().to_string_lossy())
+                .unwrap_or(Cow::Borrowed("memory")),
+            seed
+        ));
+
+        let mut maybe_max_value = V::default();
+        let start = Instant::now();
+
+        let mut idx = 0usize;
+        while let Some(key) = keys.next()? {
+            pl.light_update();
+            let val = key_to_val(key, idx)?;
+            maybe_max_value = Ord::max(maybe_max_value, val);
+            sig_store.try_push(SigVal {
+                sig: T::to_sig(key.borrow(), seed),
+                val,
+            })?;
+            idx += 1;
+        }
+        pl.done();
+
+        let num_keys = sig_store.len();
+
+        info!(
+            "Computation of signatures from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+            start.elapsed().as_secs_f64(),
+            num_keys,
+            start.elapsed().as_nanos() as f64 / num_keys as f64
+        );
+
+        let shard_edge = &mut self.shard_edge;
+        shard_edge.set_up_shards(num_keys, self.eps);
+
+        let start = Instant::now();
+
+        let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
+        let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
+
+        if shard_edge.shard_high_bits() != 0 {
+            pl.info(format_args!(
+                "Max shard / average shard: {:.2}%",
+                (100.0 * max_shard as f64) / (num_keys as f64 / shard_edge.num_shards() as f64)
+            ));
+        }
+
+        if max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64 {
+            return Err(SolveError::MaxShardTooBig.into());
+        }
+
+        (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
+        self.num_keys = num_keys;
+
+        let store = wrap(shard_store);
+
+        build_fn(self, seed, store, maybe_max_value, num_keys, pl).inspect(|_| {
+            info!(
+                "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                start.elapsed().as_secs_f64(),
+                num_keys,
+                start.elapsed().as_nanos() as f64 / num_keys as f64
+            );
+        })
+    }
+}
+
+impl<
+    W: Word + BinSafe,
+    D: BitFieldSlice<Value = W>
+        + for<'a> BitFieldSliceMut<Value = W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>
+        + Send
+        + Sync,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+> VBuilder<W, D, S, E>
+{
+    /// Solves the 3-hypergraph system and returns a new [`VFunc`].
+    ///
+    /// This is the core solver: it peels the hypergraph defined by the
+    /// shard iterator, writes the solution into `data`, and returns the
+    /// assembled [`VFunc`].
+    ///
+    /// # Preconditions
+    ///
+    /// * `seed` must be the seed used during store population.
+    /// * `data` must be freshly allocated, zero-initialized storage of
+    ///   size `shard_edge.num_vertices() * shard_edge.num_shards()`.
+    /// * `self.shard_edge`, `self.c`, `self.lge`, `self.bit_width`, and
+    ///   `self.num_keys` must be set up by the caller (typically by
+    ///   [`try_solve_once`](Self::try_solve_once)).
+    /// * `get_val` must be deterministic.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SolveError::UnsolvableShard`] or
+    /// [`SolveError::DuplicateLocalSignature`] if the system cannot be
+    /// solved with the current seed.
     fn try_build_from_shard_iter<
         T: ?Sized + ToSig<S>,
         I,
@@ -1495,6 +1741,14 @@ impl<
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
+        // Static check that Vertex → usize conversion is lossless
+        const {
+            assert!(
+                size_of::<E::Vertex>() <= size_of::<usize>(),
+                "ShardEdge::Vertex must fit in usize without truncation"
+            );
+        }
+
         let shard_edge = &self.shard_edge;
         self.num_threads = shard_edge.num_shards().min(self.max_num_threads);
 
