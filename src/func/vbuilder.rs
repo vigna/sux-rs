@@ -739,7 +739,8 @@ where
     /// Populates a shard store from keys and values without solving.
     ///
     /// **Note:** the store-population logic here must stay aligned with
-    /// the corresponding code in [`try_seed`](Self::try_seed).
+    /// the corresponding code in [`try_seed`](Self::try_seed) and
+    /// [`try_populate_and_build`](Self::try_populate_and_build).
     ///
     /// This is the first half of what `_try_build_func` does: it hashes
     /// the keys, pushes them into a store, converts to a shard store, and
@@ -748,12 +749,27 @@ where
     /// [`VFunc2::try_build_from_store`](super::vfunc2::VFunc2::try_build_from_store)
     /// for one or more solve steps with different value mappings.
     ///
-    /// Returns `(seed, configured_shard_edge, shard_store)`.
-    #[allow(unused)]
-    pub(crate) fn try_populate_store<
+    /// Populates a shard store and then calls a build closure.
+    ///
+    /// **Note:** the store-population logic here must stay aligned with
+    /// the corresponding code in [`try_seed`](Self::try_seed).
+    ///
+    /// This method hashes the keys into a store, then passes the store
+    /// to `build_fn`. If `build_fn` fails with a [`SolveError`] (e.g.,
+    /// unsolvable shard), the whole process is retried from scratch
+    /// with a new seed.
+    ///
+    /// The `build_fn` closure also receives the progress logger so the
+    /// caller does not have to capture it (which would conflict with the
+    /// mutable borrow needed by the populate step).
+    ///
+    /// Returns whatever `build_fn` returns on success.
+    pub(crate) fn try_populate_and_build<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
         V: BinSafe + Default + Send + Sync + Ord + AsU128,
+        R,
+        P: ProgressLog + Clone + Send + Sync,
     >(
         mut self,
         mut keys: impl FallibleRewindableLender<
@@ -764,8 +780,14 @@ where
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend V>,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<(u64, E, AnyShardStore<S, V>)>
+        mut build_fn: impl FnMut(
+            u64,
+            E,
+            AnyShardStore<S, V>,
+            &mut P,
+        ) -> anyhow::Result<R>,
+        pl: &mut P,
+    ) -> anyhow::Result<R>
     where
         SigVal<S, V>: RadixKey,
     {
@@ -814,13 +836,34 @@ where
                 Ok(shard_store) => {
                     let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
                     if max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64 {
-                        // Shard too big — retry with a different seed.
                         pl.warn(format_args!(
                             "Max shard too big, trying again with a different seed..."
                         ));
                     } else {
                         (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
-                        return Ok((seed, self.shard_edge, AnyShardStore::Online(shard_store)));
+
+                        match build_fn(
+                            seed,
+                            self.shard_edge,
+                            AnyShardStore::Online(shard_store),
+                            pl,
+                        ) {
+                            Ok(result) => return Ok(result),
+                            Err(e) => match e.downcast::<SolveError>() {
+                                Ok(SolveError::UnsolvableShard) => {
+                                    pl.warn(format_args!(
+                                        "Unsolvable shard, trying again with a different seed..."
+                                    ));
+                                }
+                                Ok(SolveError::DuplicateLocalSignature) => {
+                                    pl.warn(format_args!(
+                                        "Duplicate local signature, trying again with a different seed..."
+                                    ));
+                                }
+                                Ok(other) => return Err(other.into()),
+                                Err(e) => return Err(e),
+                            },
+                        }
                     }
                 }
                 Err(e) => {
@@ -1303,7 +1346,8 @@ impl<
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
         // Note: the store-population logic below must stay aligned with
-        // the corresponding code in `try_populate_store`.
+        // the corresponding code in `try_populate_and_build` and
+        // `try_populate_and_build`.
         let shard_edge = &mut self.shard_edge;
 
         pl.expected_updates(self.expected_num_keys);

@@ -79,6 +79,21 @@ pub struct VFunc<T: ?Sized, W = usize, D = Box<[W]>, S = [u64; 2], E = FuseLge3S
     pub(crate) _marker_s: std::marker::PhantomData<S>,
 }
 
+impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<T, W, BitFieldVec<Box<[W]>>, S, E> {
+    /// Creates a VFunc with zero keys. Queries return arbitrary values.
+    pub fn empty() -> Self {
+        Self {
+            shard_edge: E::default(),
+            seed: 0,
+            num_keys: 0,
+            data: BitFieldVec::<Vec<W>>::new(0, 0).into(),
+            _marker_t: std::marker::PhantomData,
+            _marker_w: std::marker::PhantomData,
+            _marker_s: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<
     T: ?Sized + ToSig<S>,
     W: Word + BinSafe,

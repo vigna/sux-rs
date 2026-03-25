@@ -53,7 +53,6 @@
 #![allow(clippy::comparison_chain)]
 #![allow(clippy::type_complexity)]
 use anyhow::Result;
-use itertools::Itertools;
 use mem_dbg::{MemDbg, MemSize};
 
 use rdst::RadixKey;
@@ -666,6 +665,17 @@ pub trait ShardStore<S: Sig, V: BinSafe> {
     /// Returns an iterator on shards, consuming self.
     fn into_iter(self) -> Self::ShardIntoIter;
 
+    /// Re-aggregates to a coarser shard granularity.
+    ///
+    /// `new_bits` must be less than or equal to the current
+    /// `shard_high_bits`. Recomputes `shard_sizes` from the underlying
+    /// per-bucket counts.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `new_bits` is greater than the current `shard_high_bits`.
+    fn set_shard_high_bits(&mut self, new_bits: u32);
+
     /// Returns the number of signature/value pairs in the store.
     fn len(&self) -> usize {
         self.shard_sizes().iter().sum()
@@ -706,6 +716,17 @@ where
 
     fn shard_sizes(&self) -> &[usize] {
         &self.shard_sizes
+    }
+
+    fn set_shard_high_bits(&mut self, new_bits: u32) {
+        assert!(new_bits <= self.shard_high_bits);
+        self.shard_high_bits = new_bits;
+        let buckets_per_shard = 1usize << (self.bucket_high_bits - new_bits);
+        self.shard_sizes = self
+            .buf_sizes
+            .chunks(buckets_per_shard)
+            .map(|chunk| chunk.iter().sum())
+            .collect();
     }
 
     fn iter(&mut self) -> ShardIter<S, V, B, &'_ mut Self> {
@@ -989,17 +1010,17 @@ fn write_binary<S: BinSafe + Sig, V: BinSafe>(
 /// [`SigVal`]s for which the predicate returns `false` are excluded.
 ///
 /// If the requested `shard_high_bits` results in fewer shards than
-/// the inner store, adjacent shards are merged; otherwise the inner
-/// structure is kept as-is.
+/// the inner store,
+/// [`set_shard_high_bits`](ShardStore::set_shard_high_bits) is called on
+/// the inner store so that shards are re-aggregated once at the bucket
+/// level, avoiding double aggregation.
 pub struct FilteredShardStore<'a, SS, S, V, F> {
     /// The inner store.
     inner: &'a mut SS,
     /// The filter predicate.
     filter: F,
-    /// Shard sizes after filtering and optional merging.
+    /// Shard sizes after filtering.
     shard_sizes: Vec<usize>,
-    /// How many inner shards to merge into one output shard.
-    merge_factor: usize,
     _marker: std::marker::PhantomData<(S, V)>,
 }
 
@@ -1013,26 +1034,27 @@ where
     /// Creates a new filtered (and optionally re-sharded) view.
     ///
     /// `shard_high_bits` is the desired shard granularity. If it
-    /// results in fewer shards than the inner store, adjacent shards
-    /// are merged; otherwise the inner structure is kept unchanged.
+    /// results in fewer shards than the inner store,
+    /// [`set_shard_high_bits`](ShardStore::set_shard_high_bits) is called on the
+    /// inner store so that shards are re-aggregated once at the bucket level,
+    /// avoiding double aggregation (buckets -> shards -> bigger shards).
     pub fn new(inner: &'a mut SS, shard_high_bits: u32, filter: F) -> Self {
         let old_num_shards = inner.shard_sizes().len();
         let new_num_shards = (1usize << shard_high_bits).min(old_num_shards);
-        let merge_factor = old_num_shards / new_num_shards;
+
+        if new_num_shards < old_num_shards {
+            inner.set_shard_high_bits(shard_high_bits);
+        }
 
         let shard_sizes: Vec<usize> = inner
             .iter()
             .map(|shard| shard.iter().filter(|sv| filter(sv)).count())
-            .chunks(merge_factor)
-            .into_iter()
-            .map(|chunk| chunk.sum())
             .collect();
 
         Self {
             inner,
             filter,
             shard_sizes,
-            merge_factor,
             _marker: std::marker::PhantomData,
         }
     }
@@ -1056,22 +1078,24 @@ where
         &self.shard_sizes
     }
 
+    fn set_shard_high_bits(&mut self, new_bits: u32) {
+        self.inner.set_shard_high_bits(new_bits);
+        // Recompute filtered shard sizes after the inner store changed.
+        self.shard_sizes = self
+            .inner
+            .iter()
+            .map(|shard| shard.iter().filter(|sv| (self.filter)(sv)).count())
+            .collect();
+    }
+
     fn iter(&mut self) -> Self::ShardIter<'_> {
         let filter = &self.filter;
-        let merge_factor = self.merge_factor;
         let inner_shards: Vec<_> = self.inner.iter().collect();
         inner_shards
-            .chunks(merge_factor)
-            .map(move |group| {
-                let mut merged = Vec::new();
-                for shard in group {
-                    for sv in shard.iter() {
-                        if filter(sv) {
-                            merged.push(*sv);
-                        }
-                    }
-                }
-                Arc::new(merged)
+            .into_iter()
+            .map(move |shard| {
+                let filtered: Vec<_> = shard.iter().filter(|sv| filter(sv)).copied().collect();
+                Arc::new(filtered)
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -1079,20 +1103,12 @@ where
 
     fn into_iter(self) -> Self::ShardIntoIter {
         let filter = self.filter;
-        let merge_factor = self.merge_factor;
         let inner_shards: Vec<_> = self.inner.iter().collect();
         inner_shards
-            .chunks(merge_factor)
-            .map(move |group| {
-                let mut merged = Vec::new();
-                for shard in group {
-                    for sv in shard.iter() {
-                        if filter(sv) {
-                            merged.push(*sv);
-                        }
-                    }
-                }
-                Arc::new(merged)
+            .into_iter()
+            .map(move |shard| {
+                let filtered: Vec<_> = shard.iter().filter(|sv| filter(sv)).copied().collect();
+                Arc::new(filtered)
             })
             .collect::<Vec<_>>()
             .into_iter()

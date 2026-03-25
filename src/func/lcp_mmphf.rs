@@ -247,18 +247,15 @@ where
     SigVal<S, usize>: RadixKey,
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
 {
-    /// Creates a new LCP-based monotone minimal perfect hash function for
-    /// integers.
+    /// Creates a new LCP-based monotone minimal perfect hash function
+    /// for integers using default [`VBuilder`] settings.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_new_with_builder`](Self::try_new_with_builder). Use that
+    /// method if you need to configure construction parameters such
+    /// as offline mode, thread count, or sharding overhead.
     ///
     /// The keys must be provided in strictly increasing order.
-    ///
-    /// # Arguments
-    ///
-    /// * `keys`: a lender yielding `&T` references in sorted order.
-    ///
-    /// * `n`: the number of keys.
-    ///
-    /// * `pl`: a progress logger.
     pub fn try_new(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -270,9 +267,14 @@ where
         Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
     }
 
-    /// Like [`new`](Self::try_new), but uses the given [`VBuilder`] to
-    /// configure the internal `offset_lcp_length` VFunc (e.g., for
-    /// offline construction or thread control).
+    /// Creates a new LCP-based monotone minimal perfect hash function
+    /// for integers using the given [`VBuilder`] configuration.
+    ///
+    /// The builder controls construction parameters such as offline
+    /// mode (`offline`), thread count (`max_num_threads`), sharding
+    /// overhead (`eps`), and PRNG seed (`seed`).
+    ///
+    /// The keys must be provided in strictly increasing order.
     pub fn try_new_with_builder(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -298,29 +300,12 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<(Self, Option<AnyShardStore<S, usize>>)> {
         if n == 0 {
-            let empty_keys_t: Vec<T> = vec![];
-            let empty_keys_bp: Vec<IntBitPrefix<T>> = vec![];
-            let empty_vals: Vec<usize> = vec![];
-
-            let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
-                .try_build_func::<T, T>(
-                    FromSlice::new(&empty_keys_t),
-                    FromSlice::new(&empty_vals),
-                    pl,
-                )?;
-            let lcp2bucket =
-                VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
-                    .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
-                    FromSlice::new(&empty_keys_bp),
-                    FromSlice::new(&empty_vals),
-                    pl,
-                )?;
             return Ok((
                 Self {
                     n: 0,
                     log2_bucket_size: 0,
-                    offset_lcp_length,
-                    lcp2bucket,
+                    offset_lcp_length: VFunc::empty(),
+                    lcp2bucket: VFunc::empty(),
                 },
                 None,
             ));
@@ -766,23 +751,18 @@ where
     SigVal<S, usize>: RadixKey,
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
 {
-    /// Creates a new LCP-based monotone minimal perfect hash function for
-    /// byte-sequence keys.
+    /// Creates a new LCP-based monotone minimal perfect hash function
+    /// for byte-sequence keys using default [`VBuilder`] settings.
     ///
-    /// The keys must be provided in strictly increasing lexicographic
-    /// order (byte-level comparison).
+    /// This is a convenience wrapper around
+    /// [`try_new_with_builder`](Self::try_new_with_builder). Use that
+    /// method if you need to configure construction parameters such
+    /// as offline mode, thread count, or sharding overhead.
     ///
-    /// The lender may yield references to any type `B` that borrows as
-    /// `K` (e.g., `&str` or `&String` for `K = str`; `&[u8]` or
-    /// `&Vec<u8>` for `K = [u8]`).
-    ///
-    /// # Arguments
-    ///
-    /// * `keys`: a lender yielding key references in sorted order.
-    ///
-    /// * `n`: the number of keys.
-    ///
-    /// * `pl`: a progress logger.
+    /// The keys must be in strictly increasing lexicographic order.
+    /// The lender may yield references to any type `B` that borrows
+    /// as `K` (e.g., `&String` for `K = str`, `&Vec<u8>` for
+    /// `K = [u8]`).
     pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -794,9 +774,15 @@ where
         Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
     }
 
-    /// Like [`new`](Self::try_new), but uses the given [`VBuilder`] to
-    /// configure the internal `offset_lcp_length` VFunc (e.g., for
-    /// offline construction or thread control).
+    /// Creates a new LCP-based monotone minimal perfect hash function
+    /// for byte-sequence keys using the given [`VBuilder`]
+    /// configuration.
+    ///
+    /// The builder controls construction parameters such as offline
+    /// mode (`offline`), thread count (`max_num_threads`), sharding
+    /// overhead (`eps`), and PRNG seed (`seed`).
+    ///
+    /// The keys must be in strictly increasing lexicographic order.
     pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -822,29 +808,12 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<(Self, Option<AnyShardStore<S, usize>>)> {
         if n == 0 {
-            let empty_keys: Vec<&K> = vec![];
-            let empty_keys_bp: Vec<BitPrefix> = vec![];
-            let empty_vals: Vec<usize> = vec![];
-
-            let offset_lcp_length = VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default()
-                .try_build_func::<K, &K>(
-                    FromSlice::new(&empty_keys),
-                    FromSlice::new(&empty_vals),
-                    pl,
-                )?;
-            let lcp2bucket =
-                VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
-                    .try_build_func::<BitPrefix, BitPrefix>(
-                    FromSlice::new(&empty_keys_bp),
-                    FromSlice::new(&empty_vals),
-                    pl,
-                )?;
             return Ok((
                 Self {
                     n: 0,
                     log2_bucket_size: 0,
-                    offset_lcp_length,
-                    lcp2bucket,
+                    offset_lcp_length: VFunc::empty(),
+                    lcp2bucket: VFunc::empty(),
                 },
                 None,
             ));
