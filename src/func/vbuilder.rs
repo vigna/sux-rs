@@ -780,12 +780,7 @@ where
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend V>,
-        mut build_fn: impl FnMut(
-            u64,
-            E,
-            AnyShardStore<S, V>,
-            &mut P,
-        ) -> anyhow::Result<R>,
+        mut build_fn: impl FnMut(u64, E, AnyShardStore<S, V>, &mut P) -> anyhow::Result<R>,
         pl: &mut P,
     ) -> anyhow::Result<R>
     where

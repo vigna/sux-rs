@@ -168,18 +168,20 @@ where
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self> {
-        builder.expected_num_keys(n).try_populate_and_build::<T, B, usize, Self, _>(
-            keys,
-            values,
-            |seed, shard_edge, store, pl| {
-                let mut store = match store {
-                    AnyShardStore::Online(s) => s,
-                    _ => unreachable!("online builder"),
-                };
-                Self::try_build_from_store::<usize>(seed, shard_edge, n, &mut store, &|v| v, pl)
-            },
-            pl,
-        )
+        builder
+            .expected_num_keys(n)
+            .try_populate_and_build::<T, B, usize, Self, _>(
+                keys,
+                values,
+                |seed, shard_edge, store, pl| {
+                    let mut store = match store {
+                        AnyShardStore::Online(s) => s,
+                        _ => unreachable!("online builder"),
+                    };
+                    Self::try_build_from_store::<usize>(seed, shard_edge, n, &mut store, &|v| v, pl)
+                },
+                pl,
+            )
     }
 
     /// Builds a [`VFunc2`] from an existing [`ShardStore`].
