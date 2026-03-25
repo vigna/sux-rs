@@ -62,6 +62,21 @@ pub struct VFunc2<T: ?Sized, S: Sig = [u64; 2], E: ShardEdge<S, 3> = FuseLge3Sha
     pub(crate) escape: usize,
 }
 
+impl<T: ?Sized, S: Sig, E: ShardEdge<S, 3>> VFunc2<T, S, E>
+where
+    Fuse3Shards: ShardEdge<S, 3>,
+{
+    /// Creates a VFunc2 with zero keys. Queries return arbitrary values.
+    pub fn empty() -> Self {
+        Self {
+            short: VFunc::empty(),
+            long: VFunc::empty(),
+            remap: Box::new([]),
+            escape: 0,
+        }
+    }
+}
+
 impl<T: ?Sized + ToSig<S>, S: Sig, E: ShardEdge<S, 3>> VFunc2<T, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
@@ -111,12 +126,14 @@ where
     SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
     SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>: BitXor + BitXorAssign,
 {
-    /// Builds a [`VFunc2`] from keys and values.
+    /// Builds a [`VFunc2`] from keys and values using default
+    /// [`VBuilder`] settings.
     ///
-    /// The keys must be provided as a rewindable lender. The values must
-    /// be provided as a rewindable lender of `usize`. Internally, a
-    /// temporary VFunc is built to populate the store, then the two-step
-    /// analysis is applied.
+    /// This is a convenience wrapper around
+    /// [`try_new_with_builder`](Self::try_new_with_builder) with
+    /// `VBuilder::default()`. Use `try_new_with_builder` if you need
+    /// to configure construction parameters such as offline mode,
+    /// thread count, or sharding overhead.
     pub fn try_new<B: ?Sized + std::borrow::Borrow<T>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
@@ -132,9 +149,12 @@ where
         Self::try_new_with_builder(keys, values, n, VBuilder::default(), pl)
     }
 
-    /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`]
-    /// for the internal VFunc (e.g., offline construction or thread
-    /// control).
+    /// Builds a [`VFunc2`] from keys and values using the given
+    /// [`VBuilder`] configuration.
+    ///
+    /// The builder controls construction parameters such as offline
+    /// mode (`offline`), thread count (`max_num_threads`), sharding
+    /// overhead (`eps`), and PRNG seed (`seed`).
     pub fn try_new_with_builder<B: ?Sized + std::borrow::Borrow<T>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
@@ -148,41 +168,35 @@ where
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self> {
-        // TODO: replace _try_build_func (which solves a throwaway VFunc)
-        // with a populate-only method once the retry loop is refactored.
-        let (seed_vfunc, store) = builder
-            .expected_num_keys(n)
-            ._try_build_func::<T, B>(keys, values, true, pl)?;
-
-        let seed = seed_vfunc.seed;
-        let shard_edge = seed_vfunc.shard_edge;
-        let mut store = match store {
-            Some(AnyShardStore::Online(s)) => s,
-            _ => unreachable!("keep_store=true"),
-        };
-
-        Self::try_build_from_store::<usize>(seed, shard_edge, n, &mut store, &|v| v, pl)
+        builder.expected_num_keys(n).try_populate_and_build::<T, B, usize, Self, _>(
+            keys,
+            values,
+            |seed, shard_edge, store, pl| {
+                let mut store = match store {
+                    AnyShardStore::Online(s) => s,
+                    _ => unreachable!("online builder"),
+                };
+                Self::try_build_from_store::<usize>(seed, shard_edge, n, &mut store, &|v| v, pl)
+            },
+            pl,
+        )
     }
 
-    /// Builds a [`VFunc2`] from an existing shard store, applying a
-    /// user-supplied `get_val` closure to extract the actual value from each
-    /// store entry.
+    /// Builds a [`VFunc2`] from an existing [`ShardStore`].
     ///
-    /// # Arguments
+    /// This is the low-level constructor used when multiple VFuncs are
+    /// built from the same store (e.g., inside
+    /// [`Lcp2Mmphf`](crate::func::Lcp2Mmphf)). Use [`try_new`](Self::try_new)
+    /// or [`try_new_with_builder`](Self::try_new_with_builder) for the
+    /// common case of building from keys and values directly.
     ///
-    /// * `seed` – the seed used when hashing keys into the store.
-    ///
-    /// * `shard_edge` – the shard/edge configuration matching the store.
-    ///
-    /// * `n` – the total number of keys in the store.
-    ///
-    /// * `store` – a mutable reference to the shard store populated during a
-    ///   prior build.
-    ///
-    /// * `get_val` – closure that extracts the actual value from the store's
-    ///   packed value (e.g., `|v| v >> log2_bs` for LCP lengths).
-    ///
-    /// * `pl` – a progress logger.
+    /// * `seed` — the seed from the store's population step.
+    /// * `shard_edge` — the shard edge from the same population step.
+    /// * `n` — total number of keys in the store.
+    /// * `store` — the populated shard store.
+    /// * `get_val` — extracts the value from the store's packed entry
+    ///   (e.g., `|v| v >> log2_bs` for LCP lengths).
+    /// * `pl` — a progress logger.
     pub fn try_build_from_store<V: BinSafe + Default + Send + Sync + Copy>(
         seed: u64,
         shard_edge: E,
