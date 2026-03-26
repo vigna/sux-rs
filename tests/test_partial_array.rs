@@ -151,6 +151,108 @@ fn test_single_element() {
     }
 }
 
+#[test]
+fn test_strings() {
+    let mut builder = partial_array::new_sparse(10, 3);
+    builder.set(0, String::from("hello"));
+    builder.set(5, String::from("world"));
+    builder.set(9, String::from("!"));
+
+    let array = builder.build();
+
+    assert_eq!(array.len(), 10);
+    assert_eq!(array.num_values(), 3);
+    assert_eq!(array.get(0), Some(&String::from("hello")));
+    assert_eq!(array.get(5), Some(&String::from("world")));
+    assert_eq!(array.get(9), Some(&String::from("!")));
+    for i in [1, 2, 3, 4, 6, 7, 8] {
+        assert_eq!(array.get(i), None);
+    }
+
+    let mut builder = partial_array::new_dense(10);
+    builder.set(0, String::from("hello"));
+    builder.set(5, String::from("world"));
+    builder.set(9, String::from("!"));
+
+    let array = builder.build();
+
+    assert_eq!(array.len(), 10);
+    assert_eq!(array.num_values(), 3);
+    assert_eq!(array.get(0), Some(&String::from("hello")));
+    assert_eq!(array.get(5), Some(&String::from("world")));
+    assert_eq!(array.get(9), Some(&String::from("!")));
+    for i in [1, 2, 3, 4, 6, 7, 8] {
+        assert_eq!(array.get(i), None);
+    }
+}
+
+#[cfg(feature = "epserde")]
+#[test]
+fn test_serialize_strings() {
+    use epserde::prelude::Aligned64;
+    use epserde::utils::AlignedCursor;
+    use sux::bits::BitVec;
+    use sux::rank_sel::Rank9;
+
+    // Sparse
+    let mut builder = partial_array::new_sparse(10, 3);
+    builder.set(0, String::from("hello"));
+    builder.set(5, String::from("world"));
+    builder.set(9, String::from("!"));
+
+    let array = builder.build();
+
+    let mut cursor = <AlignedCursor<Aligned64>>::new();
+    unsafe {
+        use epserde::ser::Serialize;
+        array.serialize(&mut cursor).expect("Could not serialize")
+    };
+
+    cursor.set_position(0);
+    let array2 = unsafe {
+        use epserde::deser::Deserialize;
+        <partial_array::PartialArray<String, partial_array::SparseIndex<Box<[usize]>>>>::deserialize_full(
+            &mut cursor,
+        )
+        .expect("Could not deserialize")
+    };
+
+    assert_eq!(array.len(), array2.len());
+    assert_eq!(array.num_values(), array2.num_values());
+    for i in 0..10 {
+        assert_eq!(array.get(i), array2.get(i), "Mismatch at index {i}");
+    }
+
+    // Dense
+    let mut builder = partial_array::new_dense(10);
+    builder.set(0, String::from("hello"));
+    builder.set(5, String::from("world"));
+    builder.set(9, String::from("!"));
+
+    let array = builder.build();
+
+    let mut cursor = <AlignedCursor<Aligned64>>::new();
+    unsafe {
+        use epserde::ser::Serialize;
+        array.serialize(&mut cursor).expect("Could not serialize")
+    };
+
+    cursor.set_position(0);
+    let array2 = unsafe {
+        use epserde::deser::Deserialize;
+        <partial_array::PartialArray<String, Rank9<BitVec<Box<[u64]>>>>>::deserialize_full(
+            &mut cursor,
+        )
+        .expect("Could not deserialize")
+    };
+
+    assert_eq!(array.len(), array2.len());
+    assert_eq!(array.num_values(), array2.num_values());
+    for i in 0..10 {
+        assert_eq!(array.get(i), array2.get(i), "Mismatch at index {i}");
+    }
+}
+
 #[cfg(feature = "epserde")]
 #[test]
 fn test_serialize() {
@@ -189,3 +291,4 @@ fn test_serialize() {
         assert_eq!(array.get(i), array2.get(i), "Mismatch at index {i}");
     }
 }
+
