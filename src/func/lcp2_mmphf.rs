@@ -75,8 +75,7 @@ use {
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Lcp2MmphfInt<T: PrimitiveInteger, S = [u64; 2], E = FuseLge3Shards>
-{
+pub struct Lcp2MmphfInt<T: PrimitiveInteger, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) n: usize,
     pub(crate) log2_bucket_size: usize,
     /// Maps each key to its offset within the bucket.
@@ -351,8 +350,7 @@ where
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Lcp2Mmphf<K: ?Sized, S: Sig = [u64; 2], E: ShardEdge<S, 3> = FuseLge3Shards>
-{
+pub struct Lcp2Mmphf<K: ?Sized, S: Sig = [u64; 2], E: ShardEdge<S, 3> = FuseLge3Shards> {
     pub(crate) n: usize,
     pub(crate) log2_bucket_size: usize,
     pub(crate) offsets: VFunc<K, usize, BitFieldVec<Box<[usize]>>, S, E>,

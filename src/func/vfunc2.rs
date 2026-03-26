@@ -382,13 +382,7 @@ where
         // -- Find optimal r --
 
         let n = store.len();
-        let best_r = find_optimal_r(
-            n,
-            max_value_usize,
-            &sorted_vals,
-            counts,
-            W::BITS as usize,
-        );
+        let best_r = find_optimal_r(n, max_value_usize, &sorted_vals, counts, W::BITS as usize);
 
         let escape_usize = (1usize << best_r).wrapping_sub(1); // 2^r - 1
         let escape = W::try_from(escape_usize).ok().unwrap();
