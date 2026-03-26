@@ -1818,7 +1818,8 @@ impl<
             shard_edge: self.shard_edge,
             num_keys: self.num_keys,
             data,
-            _marker: std::marker::PhantomData,
+            _marker_t: std::marker::PhantomData,
+            _marker_ws: std::marker::PhantomData,
         })
     }
 }
@@ -2271,7 +2272,7 @@ impl<
                 data,
                 double_stack,
                 sides_stack,
-                _marker: std::marker::PhantomData,
+                _marker: PhantomData,
             });
         }
 

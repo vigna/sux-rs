@@ -75,9 +75,7 @@ use {
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Lcp2MmphfInt<T: PrimitiveInteger, S: Sig = [u64; 2], E: ShardEdge<S, 3> = FuseLge3Shards>
-where
-    Fuse3Shards: ShardEdge<S, 3>,
+pub struct Lcp2MmphfInt<T: PrimitiveInteger, S = [u64; 2], E = FuseLge3Shards>
 {
     pub(crate) n: usize,
     pub(crate) log2_bucket_size: usize,
@@ -257,7 +255,6 @@ where
                             .try_build_func_with_store::<T, usize>(
                                 seed,
                                 shard_edge,
-                                n,
                                 bucket_mask,
                                 store,
                                 &|_, sig_val| sig_val.val & bucket_mask,
@@ -285,7 +282,6 @@ where
                         let lcp_lengths = VFunc2::try_build_from_store_with_freq::<usize>(
                             seed,
                             shard_edge,
-                            n,
                             store,
                             &|v| lcp_bit_lengths[v >> log2_bs],
                             max_lcp,
@@ -356,8 +352,6 @@ where
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Lcp2Mmphf<K: ?Sized, S: Sig = [u64; 2], E: ShardEdge<S, 3> = FuseLge3Shards>
-where
-    Fuse3Shards: ShardEdge<S, 3>,
 {
     pub(crate) n: usize,
     pub(crate) log2_bucket_size: usize,
@@ -557,7 +551,6 @@ where
                             .try_build_func_with_store::<K, usize>(
                                 seed,
                                 shard_edge,
-                                n,
                                 bucket_mask,
                                 store,
                                 &|_, sig_val| sig_val.val & bucket_mask,
@@ -584,7 +577,6 @@ where
                         let lcp_lengths = VFunc2::try_build_from_store_with_freq::<usize>(
                             seed,
                             shard_edge,
-                            n,
                             store,
                             &|v| lcp_bit_lengths[v >> log2_bs],
                             max_lcp,
