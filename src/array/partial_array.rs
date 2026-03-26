@@ -243,7 +243,7 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PartialArray<T, P, V: AsRef<[T]> = Box<[T]>> {
+pub struct PartialArray<T, P, V = Box<[T]>> {
     index: P,
     values: V,
     _marker: PhantomData<T>,
