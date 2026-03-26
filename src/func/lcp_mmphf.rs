@@ -61,7 +61,7 @@ pub(crate) static MAGIC_COOKIE: [u8; 16] = [
 #[mem_size_flat]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct IntBitPrefix<T: PrimitiveInteger> {
+pub struct IntBitPrefix<T> {
     /// The original integer value.
     value: T,
     /// Number of significant leading bits.

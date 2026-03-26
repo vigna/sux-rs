@@ -68,9 +68,9 @@ pub struct VFunc2<
     T: ?Sized,
     W = usize,
     D = BitFieldVec<Box<[W]>>,
-    S: Sig = [u64; 2],
-    E0: ShardEdge<S, 3> = FuseLge3Shards,
-    E1: ShardEdge<S, 3> = E0,
+    S = [u64; 2],
+    E0 = FuseLge3Shards,
+    E1 = E0,
 > {
     /// First function: maps each key to a remapped index (*r* bits), or
     /// `escape` for infrequent values. When *r* = 0 this is an empty
@@ -141,11 +141,14 @@ impl<
 
 /// Finds the optimal short-function bit width `r` for a [`VFunc2`],
 /// minimizing the estimated total space.
-fn find_optimal_r(
+///
+/// `sorted_vals` must be the distinct values sorted by descending
+/// frequency.
+fn find_optimal_r<W: Word>(
     n: usize,
     max_value: usize,
-    counts: &[usize],
-    sorted_vals: &[usize],
+    sorted_vals: &[W],
+    counts: &std::collections::HashMap<W, usize>,
     w_bits: usize,
 ) -> usize {
     let w = (max_value as u128).bit_len() as usize;
@@ -171,7 +174,7 @@ fn find_optimal_r(
 
         let to_absorb = (1usize << r).min(m - pos);
         for _ in 0..to_absorb {
-            post -= counts[sorted_vals[pos]];
+            post -= counts[&sorted_vals[pos]];
             pos += 1;
         }
     }
@@ -327,7 +330,7 @@ where
             for sv in shard.iter() {
                 let val = get_val(sv.val);
                 *counts.entry(val).or_insert(0) += 1;
-                if val.as_u128() > max_value.as_u128() {
+                if val > max_value {
                     max_value = val;
                 }
             }
@@ -373,26 +376,17 @@ where
         let mut sorted_vals: Vec<W> = counts.keys().copied().collect();
         sorted_vals.sort_by(|a, b| counts[b].cmp(&counts[a]));
 
-        // Convert to usize for find_optimal_r
-        let sorted_vals_usize: Vec<usize> =
-            sorted_vals.iter().map(|v| v.as_u128() as usize).collect();
-
         let w = max_value.as_u128().bit_len() as usize;
         let m = sorted_vals.len();
 
         // -- Find optimal r --
 
-        // find_optimal_r needs array-indexed counts; build a temporary one.
-        let mut counts_arr = vec![0usize; max_value_usize + 1];
-        for (&val, &cnt) in counts.iter() {
-            counts_arr[val.as_u128() as usize] = cnt;
-        }
         let n = store.len();
         let best_r = find_optimal_r(
             n,
             max_value_usize,
-            &counts_arr,
-            &sorted_vals_usize,
+            &sorted_vals,
+            counts,
             W::BITS as usize,
         );
 
