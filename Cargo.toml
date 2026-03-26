@@ -29,7 +29,7 @@ zstd = { version = "0.13.1", optional = true }
 flate2 = { version = "1.0.28", optional = true }
 rand = "0.10.0"
 rdst = "0.20.12"
-mem_dbg = "0.4.0"
+mem_dbg = ">=0.4.1"
 rayon = { version = "1.8.1", optional = true }
 env_logger = { version = "0.11.0" }
 ambassador = { version = "0.5.0" }

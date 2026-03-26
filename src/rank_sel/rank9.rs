@@ -115,7 +115,7 @@ impl<B: Backend + AsRef<[B::Word]>, C> AsRef<[B::Word]> for Rank9<B, C> {
 
 #[doc(hidden)]
 #[derive(Copy, Debug, Clone, MemDbg, MemSize, Default)]
-#[mem_size_flat]
+#[mem_size(flat)]
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),

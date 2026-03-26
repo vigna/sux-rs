@@ -284,7 +284,7 @@ mod mwhc {
     /// queries due to the simpler edge-generation logic, albeit construction is
     /// slower due to cache-unfriendly accesses.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
-    #[mem_size_flat]
+    #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     pub struct Mwhc3Shards {
         // One third of the number of vertices in a shard
@@ -411,7 +411,7 @@ mod mwhc {
     /// This construction uses random peelable 3-hypergraphs, giving a 23% space
     /// overhead. See [`Mwhc3Shards`] for more information.
     #[derive(Default, Debug, MemDbg, MemSize, Clone, Copy)]
-    #[mem_size_flat]
+    #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     pub struct Mwhc3NoShards {
         // One third of the number of vertices in a shard
@@ -536,7 +536,7 @@ mod fuse {
     /// making the probability of a duplicate local signature negligible. As a
     /// result, it is slightly slower and uses more space at construction time.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
-    #[mem_size_flat]
+    #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct FuseLge3Shards {
@@ -818,7 +818,7 @@ mod fuse {
     /// mostly equivalent to that described in [“Binary Fuse Filters: Fast and
     /// Smaller Than Xor Filters”](https://doi.org/10.1145/3510449).
     #[derive(Default, Debug, MemDbg, MemSize, Clone, Copy)]
-    #[mem_size_flat]
+    #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct FuseLge3NoShards {
@@ -1035,7 +1035,7 @@ mod fuse {
     /// to `u32` vertices) where avoiding Gaussian elimination is more
     /// important than minimizing space overhead.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
-    #[mem_size_flat]
+    #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[derive(Default)]
@@ -1237,7 +1237,7 @@ mod fuse {
     /// Gaussian elimination fallback at the cost of slightly higher space
     /// overhead for small shard sizes.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
-    #[mem_size_flat]
+    #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct Fuse3Shards {
@@ -1413,7 +1413,7 @@ mod fuse {
     ///
     /// The rest of the logic is identical.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
-    #[mem_size_flat]
+    #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[derive(Default)]

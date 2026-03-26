@@ -146,7 +146,7 @@ impl<S: Sig + PartialEq, V: BinSafe> PartialEq for SigVal<S, V> {
     FromBytes,
     IntoBytes,
 )]
-#[mem_size_flat]
+#[mem_size(flat)]
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),
