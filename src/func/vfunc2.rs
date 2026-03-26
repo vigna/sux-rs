@@ -24,7 +24,7 @@ use value_traits::slices::SliceByValue;
 /// frequency-based remapping.
 ///
 /// During construction, the value distribution is analyzed and the most frequent
-/// values are assigned compact indices (0 . . 2*ʳ* − 1). A first ("short")
+/// values are assigned compact indices (0 . . 2*ʳ* − 1). A first ("short")
 /// [`VFunc`] maps every key either to one of these compact indices or to the
 /// escape sentinel 2*ʳ* − 1. For escaped keys a second ("long") [`VFunc`],
 /// built only over the escaped subset, stores the full value. A small `remap`
@@ -59,6 +59,10 @@ use value_traits::slices::SliceByValue;
 /// Experimental Algorithmics*, 16(3):3.2:1−3.2:26, 2011.
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(
+    feature = "epserde",
+    epserde(bound(deser = "W: for<'a> epserde::deser::DeserInner<DeserType<'a> = W>"))
+)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VFunc2<
     T: ?Sized,
@@ -75,7 +79,7 @@ pub struct VFunc2<
     pub(crate) short: VFunc<T, W, D, S, E0>,
     /// Second function: maps escaped keys to their full value.
     pub(crate) long: VFunc<T, W, D, S, E1>,
-    /// Maps remapped indices (0 . . `escape` − 1) back to actual values.
+    /// Maps remapped indices (0 . . `escape` − 1) back to actual values.
     pub(crate) remap: Box<[W]>,
     /// The escape value (2*ʳ* − 1). When *r* = 0, `escape` = 0 and the
     /// short function always returns the escape.
@@ -153,6 +157,7 @@ fn find_optimal_r(
     let mut best_r = 0usize;
     let mut best_cost = f64::MAX;
 
+    // r < w <= 64, so 1usize << r never overflows.
     for r in 0..w {
         let cost_first = if r == 0 { 0.0 } else { c * n as f64 * r as f64 };
         let cost_second = c * post as f64 * w as f64;
@@ -166,17 +171,11 @@ fn find_optimal_r(
 
         let to_absorb = (1usize << r).min(m - pos);
         for _ in 0..to_absorb {
-            if pos >= m {
-                break;
-            }
             post -= counts[sorted_vals[pos]];
             pos += 1;
         }
     }
 
-    if best_r >= usize::BITS as usize {
-        best_r = usize::BITS as usize - 1;
-    }
     best_r
 }
 
@@ -259,19 +258,21 @@ where
                 AnyShardStore::Online(mut s) => Self::try_build_from_store::<W>(
                     seed,
                     builder.shard_edge,
-                    n,
                     &mut s,
                     &|v| v,
-                    VBuilder::default(),
+                    VBuilder::default()
+                        .max_num_threads(builder.max_num_threads)
+                        .eps(builder.eps),
                     pl,
                 ),
                 AnyShardStore::Offline(mut s) => Self::try_build_from_store::<W>(
                     seed,
                     builder.shard_edge,
-                    n,
                     &mut s,
                     &|v| v,
-                    VBuilder::default(),
+                    VBuilder::default()
+                        .max_num_threads(builder.max_num_threads)
+                        .eps(builder.eps),
                     pl,
                 ),
             },
@@ -299,15 +300,14 @@ where
     ///
     /// * `seed` — the seed from the store's population step.
     /// * `shard_edge` — the shard edge from the same population step.
-    /// * `n` — total number of keys in the store.
     /// * `store` — the populated shard store.
     /// * `get_val` — extracts the value from the store's packed entry
     ///   (e.g., `|v| v >> log2_bs` for LCP lengths).
+    /// * `builder` — the builder configuration for the internal VFuncs.
     /// * `pl` — a progress logger.
     pub fn try_build_from_store<V: BinSafe + Default + Send + Sync + Copy>(
         seed: u64,
         shard_edge: E0,
-        n: usize,
         store: &mut impl ShardStore<S, V>,
         get_val: &(impl Fn(V) -> W + Send + Sync),
         builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E0>,
@@ -334,7 +334,7 @@ where
         }
 
         Self::try_build_from_store_with_freq(
-            seed, shard_edge, n, store, get_val, max_value, &counts, builder, pl,
+            seed, shard_edge, store, get_val, max_value, &counts, builder, pl,
         )
     }
 
@@ -354,7 +354,6 @@ where
     pub fn try_build_from_store_with_freq<V: BinSafe + Default + Send + Sync + Copy>(
         seed: u64,
         shard_edge: E0,
-        n: usize,
         store: &mut impl ShardStore<S, V>,
         get_val: &(impl Fn(V) -> W + Send + Sync),
         max_value: W,
@@ -388,6 +387,7 @@ where
         for (&val, &cnt) in counts.iter() {
             counts_arr[val.as_u128() as usize] = cnt;
         }
+        let n = store.len();
         let best_r = find_optimal_r(
             n,
             max_value_usize,
@@ -426,13 +426,16 @@ where
         let mut escaped_counts = vec![0usize; num_shards];
         let sync_counts = escaped_counts.as_sync_slice();
 
+        // Save builder settings before the short VFunc consumes it.
+        let saved_max_num_threads = builder.max_num_threads;
+        let saved_eps = builder.eps;
+
         pl.info(format_args!(
             "Building key -> remapped index ({best_r} bits, escape={escape_usize})..."
         ));
         let short = builder.try_build_func_with_store::<T, V>(
             seed,
             shard_edge,
-            n,
             escape,
             store,
             &|_e, sig_val| {
@@ -469,7 +472,7 @@ where
         );
 
         let mut long_shard_edge = E1::default();
-        long_shard_edge.set_up_shards(n_escaped, 0.001);
+        long_shard_edge.set_up_shards(n_escaped, saved_eps);
         let long_shard_high_bits = long_shard_edge.shard_high_bits();
 
         // Aggregate escaped_counts to the long function's shard granularity.
@@ -496,10 +499,10 @@ where
             filtered_shard_sizes,
         );
         let long = VBuilder::<W, BitFieldVec<Box<[W]>>, S, E1>::default()
+            .max_num_threads(saved_max_num_threads)
             .try_build_func_with_store::<T, V>(
                 seed,
                 long_shard_edge,
-                n_escaped,
                 max_value,
                 &mut filtered_store,
                 &|_e, sig_val| get_val(sig_val.val),
