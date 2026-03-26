@@ -172,7 +172,7 @@ use mem_dbg::*;
 use std::borrow::Borrow;
 
 #[derive(Debug, Clone, MemDbg, MemSize, Default)]
-#[mem_size_flat]
+#[mem_size(flat)]
 /// Statistics of the encoded data.
 struct Stats {
     /// Maximum block size in bytes.

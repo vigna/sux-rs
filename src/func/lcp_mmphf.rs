@@ -58,7 +58,7 @@ pub(crate) static MAGIC_COOKIE: [u8; 16] = [
 /// the bottom bits) followed by the bit length, directly on the stack
 /// with no allocation.
 #[derive(Debug, Clone, Copy, MemDbg, MemSize)]
-#[mem_size_flat]
+#[mem_size(flat)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IntBitPrefix<T> {
