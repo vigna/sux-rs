@@ -34,7 +34,7 @@ use sux::utils::{
 ))]
 struct Args {
     /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0 . . n).​
+    /// [0 . . n).​
     #[arg(short, long)]
     n: Option<usize>,
     /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.​

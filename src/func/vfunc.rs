@@ -74,9 +74,7 @@ pub struct VFunc<T: ?Sized, W = usize, D = Box<[W]>, S = [u64; 2], E = FuseLge3S
     pub(crate) seed: u64,
     pub(crate) num_keys: usize,
     pub(crate) data: D,
-    pub(crate) _marker_t: std::marker::PhantomData<T>,
-    pub(crate) _marker_w: std::marker::PhantomData<W>,
-    pub(crate) _marker_s: std::marker::PhantomData<S>,
+    pub(crate) _marker: std::marker::PhantomData<(*const T, W, S)>,
 }
 
 impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<T, W, BitFieldVec<Box<[W]>>, S, E> {
@@ -92,9 +90,7 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<T, W, BitFieldVec<Box
             seed: 0,
             num_keys: 0,
             data: BitFieldVec::<Vec<W>>::new(0, 0).into(),
-            _marker_t: std::marker::PhantomData,
-            _marker_w: std::marker::PhantomData,
-            _marker_s: std::marker::PhantomData,
+            _marker: std::marker::PhantomData,
         }
     }
 }

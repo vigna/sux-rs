@@ -236,7 +236,7 @@ pub struct VBuilder<
     /// The maximum number of parallel threads to use. The default is 8.
     #[setters(generate = true)]
     #[derivative(Default(value = "8"))]
-    max_num_threads: usize,
+    pub(crate) max_num_threads: usize,
 
     /// Use disk-based buckets to reduce core memory usage at construction time.
     #[setters(generate = true)]
@@ -282,7 +282,7 @@ pub struct VBuilder<
     /// [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "0.001"))]
-    eps: f64,
+    pub(crate) eps: f64,
 
     /// The bit width of the maximum value.
     bit_width: usize,
@@ -702,8 +702,6 @@ where
     ///
     /// * `shard_edge` — the shard edge from the same population step.
     ///
-    /// * `num_keys` — the number of keys in the store.
-    ///
     /// * `max_value` — the maximum value that `get_val` can return
     ///   (determines the bit width of the output).
     ///
@@ -716,7 +714,6 @@ where
         mut self,
         seed: u64,
         shard_edge: E,
-        num_keys: usize,
         max_value: W,
         shard_store: &mut impl ShardStore<S, V>,
         get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
@@ -730,7 +727,7 @@ where
         for<'a> <ShardDataIter<'a, BitFieldVec<Box<[W]>>> as Iterator>::Item: Send,
     {
         self.shard_edge = shard_edge;
-        self.num_keys = num_keys;
+        self.num_keys = shard_store.len();
         self.bit_width = max_value.as_u128().bit_len() as usize;
 
         // The shard structure is fixed by the store (set at
@@ -738,11 +735,11 @@ where
         // parameters (c, lge, segment size, vertex count) for the
         // actual key count and shard sizes.
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
-        (self.c, self.lge) = self.shard_edge.set_up_graphs(num_keys, max_shard);
+        (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
 
         pl.info(format_args!(
             "Number of keys: {} Max value: {} Bit width: {}",
-            num_keys,
+            self.num_keys,
             {
                 let v: u128 = max_value.as_u128();
                 v
@@ -1821,9 +1818,7 @@ impl<
             shard_edge: self.shard_edge,
             num_keys: self.num_keys,
             data,
-            _marker_t: std::marker::PhantomData,
-            _marker_w: std::marker::PhantomData,
-            _marker_s: std::marker::PhantomData,
+            _marker: std::marker::PhantomData,
         })
     }
 }
