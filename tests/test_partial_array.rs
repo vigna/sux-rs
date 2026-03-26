@@ -291,4 +291,3 @@ fn test_serialize() {
         assert_eq!(array.get(i), array2.get(i), "Mismatch at index {i}");
     }
 }
-
