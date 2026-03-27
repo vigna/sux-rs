@@ -39,14 +39,6 @@ use {
     rdst::RadixKey,
 };
 
-/// A 128-bit [random](https://www.random.org/) magic cookie appended to strings
-/// to ensure prefix-freeness. Two distinct strings that are prefix-related will
-/// diverge within these bytes. The probability of a real string containing this
-/// exact sequence is 2⁻¹²⁸.
-pub(crate) static MAGIC_COOKIE: [u8; 16] = [
-    0xb6, 0x16, 0x1a, 0x72, 0xb1, 0xc4, 0x50, 0x11, 0x19, 0x02, 0xc6, 0xda, 0x23, 0x5b, 0xea, 0xdc,
-];
-
 /// A bit-level prefix of an integer, used as key for the LCP-to-bucket
 /// mapping.
 ///
@@ -504,10 +496,10 @@ impl ToSig<[u64; 1]> for BitPrefix {
 ///
 /// The keys are divided into buckets. For each bucket, the longest common
 /// bit-level prefix (LCP) shared by all consecutive pairs within the bucket is
-/// computed. A 128-bit magic cookie is appended internally to ensure
-/// prefix-freeness. The rank of a key is then reconstructed as `bucket *
-/// bucket_size + offset`, where the bucket is determined by the LCP and the
-/// offset is stored directly.
+/// computed. A virtual NUL byte is appended internally to ensure
+/// prefix-freeness (keys must not contain ASCII NUL). The rank of a key is
+/// then reconstructed as `bucket * bucket_size + offset`, where the bucket is
+/// determined by the LCP and the offset is stored directly.
 ///
 /// Internally, the structure contains two [`VFunc`]s:
 /// - `offset_lcp_length`: maps each key to a packed value encoding the
@@ -636,7 +628,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, S: Sig, E: ShardEdge<S, 3>> LcpMmphf<K,
         let lcp_bit_length = packed >> self.log2_bucket_size;
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         // Compute the lcp2bucket signature by streaming the key bytes
-        // and, if necessary, the magic cookie bytes into the hasher.
+        // and, if necessary, the virtual NUL byte into the hasher.
         // No allocation or copying needed.
         let key_bytes: &[u8] = key.as_ref();
         let seed = self.lcp2bucket.seed;
@@ -645,17 +637,11 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, S: Sig, E: ShardEdge<S, 3>> LcpMmphf<K,
             // Fast path: LCP fits within the key bytes.
             bit_prefix_sig(key_bytes, lcp_bit_length, seed)
         } else {
-            // Rare: LCP extends into the cookie. Stream key then cookie.
+            // Rare: LCP extends into the virtual NUL (at most 8 extra bits).
             let mut hasher = xxh3::Xxh3::with_seed(seed);
             hasher.update(key_bytes);
-            let remaining_bits = lcp_bit_length - key_bytes.len() * 8;
-            let cookie_full = remaining_bits / 8;
-            hasher.update(&MAGIC_COOKIE[..cookie_full]);
-            let extra_bits = remaining_bits % 8;
-            if extra_bits > 0 {
-                let mask = !((1u8 << (8 - extra_bits)) - 1);
-                hasher.update(&[MAGIC_COOKIE[cookie_full] & mask]);
-            }
+            // The virtual NUL is 0x00, so we feed a zero byte.
+            hasher.update(&[0u8]);
             hasher.update(&lcp_bit_length.to_ne_bytes());
             [hasher.digest()]
         };
@@ -690,18 +676,18 @@ pub(crate) fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
 }
 
 /// Returns the number of leading bits that are identical in two byte
-/// slices, after conceptually appending [`MAGIC_COOKIE`] to each. The
-/// cookie ensures prefix-freeness: two distinct strings that are
-/// prefix-related will diverge within the cookie bytes.
+/// slices, after conceptually appending a NUL byte to each. Since keys
+/// must not contain NUL, two distinct prefix-related strings are
+/// guaranteed to diverge at the NUL position.
 ///
 /// The implementation first compares the string bytes (using vectorized
-/// [`mismatch`]). If one string is a prefix of the other, it continues
-/// comparing the shorter string's cookie extension against the longer
-/// string's remaining bytes (and then its cookie extension).
+/// [`mismatch`]). If one string is a prefix of the other, the virtual
+/// NUL (0x00) XOR the next byte of the longer string yields that byte
+/// itself, and `leading_zeros` gives the additional shared bits.
 ///
 /// The two strings must be distinct (the constructor enforces this).
 #[cfg(feature = "rayon")]
-pub(crate) fn lcp_bits_with_cookie(a: &[u8], b: &[u8]) -> usize {
+pub(crate) fn lcp_bits_nul(a: &[u8], b: &[u8]) -> usize {
     let min_len = a.len().min(b.len());
     let pos = mismatch(&a[..min_len], &b[..min_len]);
 
@@ -712,30 +698,12 @@ pub(crate) fn lcp_bits_with_cookie(a: &[u8], b: &[u8]) -> usize {
 
     // One string is a proper prefix of the other (they cannot be
     // identical because the constructor enforces strict ordering).
-    let (longer, shorter_len) = if a.len() >= b.len() {
-        (a, b.len())
-    } else {
-        (b, a.len())
-    };
+    let longer = if a.len() >= b.len() { a } else { b };
+    debug_assert!(longer.len() > min_len);
 
-    debug_assert!(longer.len() > shorter_len);
-    let extra = longer.len() - shorter_len;
-
-    // Compare the shorter string's cookie extension (COOKIE[i])
-    // against the longer string's continuation: first its actual
-    // remaining bytes, then its own cookie extension (COOKIE[i - extra]).
-    for (i, &cookie_byte) in MAGIC_COOKIE.iter().enumerate() {
-        let longer_byte = if i < extra {
-            longer[shorter_len + i]
-        } else {
-            MAGIC_COOKIE[i - extra]
-        };
-        if longer_byte != cookie_byte {
-            return (shorter_len + i) * 8 + (longer_byte ^ cookie_byte).leading_zeros() as usize;
-        }
-    }
-
-    unreachable!("the magic cookie guarantees prefix-freeness for distinct strings")
+    // The virtual NUL after the shorter string diverges from the next
+    // byte of the longer string (which is guaranteed non-NUL).
+    min_len * 8 + longer[min_len].leading_zeros() as usize
 }
 
 #[cfg(feature = "rayon")]
@@ -828,7 +796,7 @@ where
         //
         // For each bucket, the LCP is the minimum number of leading bits
         // shared by all consecutive pairs WITHIN the bucket. The initial
-        // value is the bit-length of the first key (+ cookie).
+        // value is the bit-length of the first key (+ virtual NUL).
 
         let mut lcp_bit_lengths: Vec<usize> = Vec::with_capacity(num_buckets);
         let mut bucket_first_keys: Vec<Vec<u8>> = Vec::with_capacity(num_buckets);
@@ -855,11 +823,11 @@ where
                     lcp_bit_lengths.push(curr_lcp_bits);
                 }
                 bucket_first_keys.push(key_bytes.to_vec());
-                // Initialize to full key bit-length (including cookie).
-                curr_lcp_bits = (key_bytes.len() + MAGIC_COOKIE.len()) * 8;
+                // Initialize to full key bit-length (including virtual NUL).
+                curr_lcp_bits = (key_bytes.len() + 1) * 8;
             } else {
                 // Subsequent key: minimize LCP.
-                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_with_cookie(key_bytes, &prev_key));
+                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul(key_bytes, &prev_key));
             }
 
             prev_key.clear();
@@ -893,8 +861,8 @@ where
         // -- Build lcp2bucket VFunc --
         //
         // Each bucket's LCP key is a BitPrefix: the first
-        // lcp_bit_lengths[b] bits of the first key extended with the
-        // magic cookie.
+        // lcp_bit_lengths[b] bits of the first key extended with a
+        // virtual NUL.
 
         pl.info(format_args!(
             "Building LCP prefix → bucket map ({num_buckets} buckets)..."
@@ -902,9 +870,9 @@ where
         let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
             .iter()
             .map(|k| {
-                let mut v = Vec::with_capacity(k.len() + MAGIC_COOKIE.len());
+                let mut v = Vec::with_capacity(k.len() + 1);
                 v.extend_from_slice(k);
-                v.extend_from_slice(&MAGIC_COOKIE);
+                v.push(0x00);
                 v
             })
             .collect();

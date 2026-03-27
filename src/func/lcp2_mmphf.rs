@@ -24,7 +24,7 @@
 
 use crate::bits::BitFieldVec;
 use crate::func::VFunc;
-use crate::func::lcp_mmphf::{BitPrefix, IntBitPrefix, MAGIC_COOKIE, bit_prefix_sig};
+use crate::func::lcp_mmphf::{BitPrefix, IntBitPrefix, bit_prefix_sig};
 use crate::func::shard_edge::{Fuse3NoShards, Fuse3Shards, FuseLge3Shards, ShardEdge};
 use crate::func::vfunc2::VFunc2;
 use crate::utils::*;
@@ -35,7 +35,7 @@ use xxhash_rust::xxh3;
 #[cfg(feature = "rayon")]
 use {
     crate::func::VBuilder,
-    crate::func::lcp_mmphf::{lcp_bits, lcp_bits_with_cookie, log2_bucket_size},
+    crate::func::lcp_mmphf::{lcp_bits, lcp_bits_nul, log2_bucket_size},
     anyhow::{Result, bail},
     dsi_progress_logger::ProgressLog,
     lender::*,
@@ -377,16 +377,10 @@ where
         let lcp2b_sig = if lcp_bit_length <= key_bytes.len() * 8 {
             bit_prefix_sig(key_bytes, lcp_bit_length, lcp2b_seed)
         } else {
+            // Rare: LCP extends into the virtual NUL (at most 8 extra bits).
             let mut hasher = xxh3::Xxh3::with_seed(lcp2b_seed);
             hasher.update(key_bytes);
-            let remaining_bits = lcp_bit_length - key_bytes.len() * 8;
-            let cookie_full = remaining_bits / 8;
-            hasher.update(&MAGIC_COOKIE[..cookie_full]);
-            let extra_bits = remaining_bits % 8;
-            if extra_bits > 0 {
-                let mask = !((1u8 << (8 - extra_bits)) - 1);
-                hasher.update(&[MAGIC_COOKIE[cookie_full] & mask]);
-            }
+            hasher.update(&[0u8]);
             hasher.update(&lcp_bit_length.to_ne_bytes());
             [hasher.digest()]
         };
@@ -518,10 +512,10 @@ where
                         lcp_bit_lengths.push(*curr_lcp_bits);
                     }
                     bucket_first_keys.push(key_bytes.to_vec());
-                    *curr_lcp_bits = (key_bytes.len() + MAGIC_COOKIE.len()) * 8;
+                    *curr_lcp_bits = (key_bytes.len() + 1) * 8;
                 } else {
                     *curr_lcp_bits =
-                        (*curr_lcp_bits).min(lcp_bits_with_cookie(key_bytes, prev_key));
+                        (*curr_lcp_bits).min(lcp_bits_nul(key_bytes, prev_key));
                 }
                 prev_key.clear();
                 prev_key.extend_from_slice(key_bytes);
@@ -589,9 +583,9 @@ where
                         let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
                             .iter()
                             .map(|k| {
-                                let mut v = Vec::with_capacity(k.len() + MAGIC_COOKIE.len());
+                                let mut v = Vec::with_capacity(k.len() + 1);
                                 v.extend_from_slice(k);
-                                v.extend_from_slice(&MAGIC_COOKIE);
+                                v.push(0x00);
                                 v
                             })
                             .collect();
