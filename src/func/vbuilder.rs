@@ -123,7 +123,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
 /// }
-/// # Ok::<(), Box<dyn Error>>(())
+/// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
 ///
 /// Alternatively we can use the bit-field vector backend, that will use
@@ -145,7 +145,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
 /// }
-/// # Ok::<(), Box<dyn Error>>(())
+/// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
 ///
 /// Since the numbers are small, we can also try to use a fixed-size output:
@@ -169,7 +169,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
 /// }
-/// # Ok::<(), Box<dyn Error>>(())
+/// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
 ///
 ///
@@ -191,7 +191,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// for i in 0..100 {
 ///    assert!(func[i]);
 /// }
-/// # Ok::<(), Box<dyn Error>>(())
+/// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
 ///
 /// Since the keys are very few, we can switch to 64-bit signatures, and no
@@ -212,7 +212,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// for i in 0..100 {
 ///    assert!(func[i]);
 /// }
-/// # Ok::<(), Box<dyn Error>>(())
+/// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
 
 #[derive(Setters, Debug, Derivative)]
@@ -1818,8 +1818,7 @@ impl<
             shard_edge: self.shard_edge,
             num_keys: self.num_keys,
             data,
-            _marker_t: std::marker::PhantomData,
-            _marker_ws: std::marker::PhantomData,
+            _marker: std::marker::PhantomData,
         })
     }
 }
