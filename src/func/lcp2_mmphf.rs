@@ -97,10 +97,10 @@ where
         T: Copy,
     {
         let sig = T::to_sig(key, self.offsets.seed);
-        let offset = self.offsets.get_by_sig(sig);
-        let lcp_bit_length = self.lcp_lengths.get_by_sig(sig);
+        let offset = self.offsets.get_by_sig_unaligned(sig);
+        let lcp_bit_length = self.lcp_lengths.get_by_sig_unaligned(sig);
         let prefix = IntBitPrefix::new(key ^ T::MIN, lcp_bit_length);
-        let bucket = self.lcp2bucket.get(prefix);
+        let bucket = self.lcp2bucket.get_unaligned(prefix);
         (bucket << self.log2_bucket_size) + offset
     }
 }
@@ -369,8 +369,8 @@ where
     #[inline]
     pub fn get(&self, key: &K) -> usize {
         let sig = K::to_sig(key, self.offsets.seed);
-        let offset = self.offsets.get_by_sig(sig);
-        let lcp_bit_length = self.lcp_lengths.get_by_sig(sig);
+        let offset = self.offsets.get_by_sig_unaligned(sig);
+        let lcp_bit_length = self.lcp_lengths.get_by_sig_unaligned(sig);
 
         let key_bytes: &[u8] = key.as_ref();
         let lcp2b_seed = self.lcp2bucket.seed;
@@ -384,7 +384,7 @@ where
             hasher.update(&lcp_bit_length.to_ne_bytes());
             [hasher.digest()]
         };
-        let bucket = self.lcp2bucket.get_by_sig(lcp2b_sig);
+        let bucket = self.lcp2bucket.get_by_sig_unaligned(lcp2b_sig);
         (bucket << self.log2_bucket_size) + offset
     }
 }

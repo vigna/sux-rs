@@ -139,6 +139,27 @@ impl<
     }
 }
 
+impl<
+    T: ?Sized + ToSig<S>,
+    W: Word + BinSafe,
+    S: Sig,
+    E0: ShardEdge<S, 3>,
+    E1: ShardEdge<S, 3>,
+> VFunc2<T, W, BitFieldVec<Box<[W]>>, S, E0, E1>
+{
+    /// Like [`get_by_sig`](VFunc2::get_by_sig), but using
+    /// [unaligned reads](BitFieldVec::get_unaligned).
+    #[inline]
+    pub fn get_by_sig_unaligned(&self, sig: S) -> W {
+        let idx = self.short.get_by_sig_unaligned(sig);
+        if idx != self.escape {
+            self.remap[idx.as_u128() as usize]
+        } else {
+            self.long.get_by_sig_unaligned(sig)
+        }
+    }
+}
+
 /// Finds the optimal short-function bit width `r` for a [`VFunc2`],
 /// minimizing the estimated total space.
 ///

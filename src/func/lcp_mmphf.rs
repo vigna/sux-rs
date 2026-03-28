@@ -207,14 +207,14 @@ impl<T: PrimitiveInteger + ToSig<S>, S: Sig, E: ShardEdge<S, 3>> LcpMmphfInt<T, 
     where
         T: Copy,
     {
-        let packed = self.offset_lcp_length.get(key);
+        let packed = self.offset_lcp_length.get_unaligned(key);
         let lcp_bit_length = packed >> self.log2_bucket_size;
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         // XOR with T::MIN maps signed numeric order to bit-lexicographic
         // order by flipping the sign bit; for unsigned types T::MIN is 0,
         // so this is a no-op.
         let prefix = IntBitPrefix::new(key ^ T::MIN, lcp_bit_length);
-        let bucket = self.lcp2bucket.get(prefix);
+        let bucket = self.lcp2bucket.get_unaligned(prefix);
         (bucket << self.log2_bucket_size) + offset
     }
 
@@ -624,7 +624,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, S: Sig, E: ShardEdge<S, 3>> LcpMmphf<K,
     /// (same contract as [`VFunc::get`]).
     #[inline]
     pub fn get(&self, key: &K) -> usize {
-        let packed = self.offset_lcp_length.get(key);
+        let packed = self.offset_lcp_length.get_unaligned(key);
         let lcp_bit_length = packed >> self.log2_bucket_size;
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         // Compute the lcp2bucket signature by streaming the key bytes
@@ -645,7 +645,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, S: Sig, E: ShardEdge<S, 3>> LcpMmphf<K,
             hasher.update(&lcp_bit_length.to_ne_bytes());
             [hasher.digest()]
         };
-        let bucket = self.lcp2bucket.get_by_sig(sig);
+        let bucket = self.lcp2bucket.get_by_sig_unaligned(sig);
         (bucket << self.log2_bucket_size) + offset
     }
 
