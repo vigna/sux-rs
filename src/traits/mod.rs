@@ -55,13 +55,64 @@ pub type Unaligned<T> = <T as TryIntoUnaligned>::Unaligned;
 /// that uses branchless
 /// [unaligned reads](crate::bits::BitFieldVec::get_unaligned).
 ///
+/// The conversion will fail if the bit width for which unaligned reads are
+/// required does not satisfy the constraints for the word type used by the
+/// structure or its components.
+///
 /// Compound types (e.g.,
 /// [`SignedLcpMmphf`](crate::func::SignedLcpMmphf)) implement this
 /// trait by recursively converting their inner components.
+///
+/// You can obtain an unaligned variant of a structure just by chaining the
+/// [`try_into_unaligned`](Self::try_into_unaligned) method at construction
+/// time. Since the unaligned variant of a type can be quite complicated, there
+/// is an [`Unaligned`] type alias to refer to it more conveniently. For
+/// example,
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::LcpMmphfInt;
+/// # use sux::utils::FromSlice;
+/// # use sux::traits::{Unaligned, TryIntoUnaligned};
+/// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+/// let unaligned_func: Unaligned<LcpMmphfInt<u64>> =
+///     LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
+///
+/// Or, equivalently, without chaining:
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::LcpMmphfInt;
+/// # use sux::utils::FromSlice;
+/// # use sux::traits::TryIntoUnaligned;
+/// # let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+/// let func: LcpMmphfInt<u64> =
+///     LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+/// let unaligned_func = func.try_into_unaligned()?;
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 pub trait TryIntoUnaligned {
     /// The unaligned version of this type.
     type Unaligned;
     /// Converts `self` into the unaligned variant.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bit width for which unaligned reads are required
+    /// does not satisfy the constraints for the word type used by the structure
+    /// or its components.
     fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError>;
 }
 

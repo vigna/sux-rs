@@ -15,6 +15,9 @@
 //!
 //! See [`Lcp2MmphfInt`], [`Lcp2MmphfStr`], and [`Lcp2MmphfSliceU8`].
 //!
+//! These structures implements the [`TryIntoUnaligned`] trait, allowing them to
+//! be converted into (usually faster) structures using unaligned access.
+//!
 //! # References
 //!
 //! Djamal Belazzougui, Paolo Boldi, Rasmus Pagh, and Sebastiano Vigna. [Theory
@@ -51,6 +54,9 @@ use {
 ///
 /// Like [`LcpMmphfInt`](super::LcpMmphfInt) but uses a [`VFunc2`] for
 /// the LCP-length component, trading speed for less space.
+///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
 ///
 /// # Examples
 ///
@@ -351,6 +357,9 @@ where
 
 /// A two-step monotone minimal perfect hash function for sorted
 /// byte-sequence keys.
+///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
 ///
 /// See [`Lcp2MmphfStr`] and [`Lcp2MmphfSliceU8`] for common instantiations.
 #[derive(Debug, MemDbg, MemSize)]

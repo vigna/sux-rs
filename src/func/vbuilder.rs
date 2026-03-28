@@ -747,11 +747,10 @@ where
             self.bit_width,
         ));
 
-        let data: BitFieldVec<Box<[W]>> = BitFieldVec::<Vec<W>>::new_unaligned(
+        let data: BitFieldVec<Box<[W]>> = BitFieldVec::<Box<[W]>>::new_unaligned(
             self.bit_width,
             self.shard_edge.num_vertices() * self.shard_edge.num_shards(),
-        )
-        .into();
+        );
 
         self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, inspect, pl)
             .map_err(Into::into)
@@ -780,7 +779,7 @@ where
         self.try_build_func_and_store(
             keys,
             values,
-            |bit_width, len| BitFieldVec::<Vec<W>>::new_unaligned(bit_width, len).into(),
+            |bit_width, len| BitFieldVec::<Box<[W]>>::new_unaligned(bit_width, len),
             false,
             pl,
         )
@@ -828,7 +827,7 @@ where
         let (func, store) = self.try_build_func_and_store(
             keys,
             FromCloneableIntoIterator::from(0..),
-            |bit_width, len| BitFieldVec::<Vec<usize>>::new_unaligned(bit_width, len).into(),
+            BitFieldVec::<Box<[usize]>>::new_unaligned,
             true,
             pl,
         )?;
@@ -843,7 +842,7 @@ where
 
         // Create the signature vector
         let mut hashes: BitFieldVec<Box<[H]>> =
-            BitFieldVec::<Vec<H>>::new_unaligned(hash_width, num_keys).into();
+            BitFieldVec::<Box<[H]>>::new_unaligned(hash_width, num_keys);
 
         // Enumerate the store and extract signatures using the same method as filters
         pl.item_name("hash");
@@ -913,7 +912,7 @@ where
         let (func, store) = self.try_build_func_and_store(
             keys,
             FromCloneableIntoIterator::from(0..),
-            |bit_width, len| BitFieldVec::<Vec<usize>>::new_unaligned(bit_width, len).into(),
+            BitFieldVec::new_unaligned,
             true,
             pl,
         )?;
@@ -1005,11 +1004,10 @@ where
             &mut |builder, seed, store, _max_value, _num_keys, pl: &mut P| {
                 builder.bit_width = filter_bits;
 
-                let new_data: BitFieldVec<Box<[W]>> = BitFieldVec::<Vec<W>>::new_unaligned(
+                let new_data = BitFieldVec::<Box<[W]>>::new_unaligned(
                     builder.bit_width,
                     builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
-                )
-                .into();
+                );
 
                 pl.info(format_args!(
                     "Number of keys: {} Bit width: {}",

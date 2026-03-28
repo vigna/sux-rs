@@ -23,9 +23,7 @@ use std::ops::Index;
 /// [ε-serde](https://crates.io/crates/epserde). They contain a mapping from
 /// keys to hashes stored in a [`VFunc`]; [`contains`](VFilter::contains) checks
 /// that the hash of a key is equal to the hash stored by the function for the
-/// same key. On some
-/// architectures, and with some constraints,
-/// [`contains_unaligned`](VFilter::contains_unaligned) might be faster.
+/// same key.
 ///
 /// Please read the [`VFunc`] documentation for more information about the space
 /// usage and the ways in which a filter can be built. At construction time you
@@ -116,66 +114,6 @@ where
     /// The filter precision (false-positive rate) is 2<sup>-`hash_bits`</sup>.
     pub const fn hash_bits(&self) -> u32 {
         self.hash_bits
-    }
-}
-
-impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
-    VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
-where
-    u64: PrimitiveNumberAs<W>,
-{
-    /// Returns the hash associated with the given signature by the underlying
-    /// function, or a random hash if the signature is not the signature of a
-    /// key, using [unaligned reads](BitFieldVec::get_unaligned).
-    ///
-    /// This method uses [`BitFieldVec::get_unaligned`], and has
-    /// the same constraints.
-    ///
-    /// The user should not normally call this method, but rather
-    /// [`contains_by_sig_unaligned`](VFilter::contains_by_sig_unaligned).
-    #[inline(always)]
-    pub fn get_by_sig_unaligned(&self, sig: S) -> W {
-        self.func.get_by_sig_unaligned(sig)
-    }
-
-    /// Returns the hash associated with the given key by the underlying
-    /// function, or a random hash if the key is not present, using [unaligned
-    /// reads](BitFieldVec::get_unaligned).
-    ///
-    /// This method uses [`BitFieldVec::get_unaligned`], and has
-    /// the same constraints.
-    ///
-    /// The user should not normally call this method, but rather
-    /// [`contains_unaligned`](VFilter::contains_unaligned).
-    #[inline]
-    pub fn get_unaligned(&self, key: impl Borrow<T>) -> W {
-        self.func.get_unaligned(key)
-    }
-
-    /// Returns whether a signature is contained in the filter, using [unaligned
-    /// reads](BitFieldVec::get_unaligned).
-    ///
-    /// This method uses [`BitFieldVec::get_unaligned`], and has
-    /// the same constraints.
-    ///
-    /// The user should not normally call this method, but rather
-    /// [`contains_unaligned`](VFilter::contains_unaligned).
-    #[inline(always)]
-    pub fn contains_by_sig_unaligned(&self, sig: S) -> bool {
-        let shard_edge = &self.func.shard_edge;
-        self.func.get_by_sig_unaligned(sig)
-            == mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))).as_to::<W>()
-                & self.filter_mask
-    }
-
-    /// Returns whether a key is contained in the filter, using [unaligned
-    /// reads](BitFieldVec::get_unaligned).
-    ///
-    /// This method uses [`BitFieldVec::get_unaligned`], and has
-    /// the same constraints.
-    #[inline]
-    pub fn contains_unaligned(&self, key: impl Borrow<T>) -> bool {
-        self.contains_by_sig_unaligned(T::to_sig(key.borrow(), self.func.seed))
     }
 }
 

@@ -24,6 +24,10 @@
 //!
 //! These structures implement traits from the
 //! [`indexed_dict`](crate::traits::indexed_dict) module.
+//!
+//! Most structures implements the
+//! [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing them
+//! to be converted into (usually faster) structures using unaligned access.
 
 pub mod elias_fano;
 pub use elias_fano::{

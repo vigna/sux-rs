@@ -323,7 +323,7 @@ fn test_pop() {
 #[test]
 fn test_unaligned() {
     for bit_width in [50, 56, 57, 58, 60, 64] {
-        let mut c = BitFieldVec::<Vec<usize>>::new_unaligned(bit_width, 100);
+        let mut c = BitFieldVec::<Box<[usize]>>::new_unaligned(bit_width, 100);
         for i in 0..10 {
             c.set_value(i, i);
         }

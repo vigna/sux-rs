@@ -13,6 +13,7 @@ use sux::{
     bits::BitFieldVec,
     dict::{BitSignedVFunc, SignedVFunc},
     func::{VBuilder, VFunc, shard_edge::FuseLge3Shards},
+    traits::TryIntoUnaligned,
     utils::FromCloneableIntoIterator,
 };
 
@@ -31,6 +32,7 @@ fn test_signed_vfunc() -> Result<()> {
     > = VBuilder::default()
         .expected_num_keys(n)
         .try_build_sig_index(FromCloneableIntoIterator::from(0..n), &mut pl)?;
+    let func = func.try_into_unaligned()?;
     for i in 0..n {
         assert_eq!(Some(i), func.get(i));
     }
@@ -56,6 +58,7 @@ fn test_bit_signed_vfunc() -> Result<()> {
     > = VBuilder::default()
         .expected_num_keys(n)
         .try_build_bit_sig_index(FromCloneableIntoIterator::from(0..n), 31, &mut pl)?;
+    let func = func.try_into_unaligned()?;
     for i in 0..n {
         assert_eq!(Some(i), func.get(i));
     }
