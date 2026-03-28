@@ -57,7 +57,7 @@ use {
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct SignedLcpMmphf<F, H: SliceByValue> {
+pub struct SignedLcpMmphf<F, H> {
     pub(crate) inner: F,
     pub(crate) hashes: H,
 }
@@ -382,7 +382,7 @@ where
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct BitSignedLcpMmphf<F, H: SliceByValue> {
+pub struct BitSignedLcpMmphf<F, H> {
     pub(crate) inner: F,
     pub(crate) hashes: H,
     pub(crate) hash_mask: u64,
@@ -774,7 +774,7 @@ use crate::traits::TryIntoUnaligned;
 
 // -- SignedLcpMmphf: only inner needs converting, hashes stay as-is --
 
-impl<F: TryIntoUnaligned, H: SliceByValue> TryIntoUnaligned for SignedLcpMmphf<F, H> {
+impl<F: TryIntoUnaligned, H> TryIntoUnaligned for SignedLcpMmphf<F, H> {
     type Unaligned = SignedLcpMmphf<F::Unaligned, H>;
     fn try_into_unaligned(
         self,
@@ -788,10 +788,8 @@ impl<F: TryIntoUnaligned, H: SliceByValue> TryIntoUnaligned for SignedLcpMmphf<F
 
 // -- BitSignedLcpMmphf: both inner and hashes are converted --
 
-impl<F: TryIntoUnaligned, H: TryIntoUnaligned + SliceByValue> TryIntoUnaligned
+impl<F: TryIntoUnaligned, H: TryIntoUnaligned> TryIntoUnaligned
     for BitSignedLcpMmphf<F, H>
-where
-    H::Unaligned: SliceByValue,
 {
     type Unaligned = BitSignedLcpMmphf<F::Unaligned, H::Unaligned>;
     fn try_into_unaligned(
