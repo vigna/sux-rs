@@ -179,11 +179,11 @@ pub type EfSeqDict<V = usize> = EliasFano<
 ///
 /// ```ignore
 /// use sux::traits::TryIntoUnaligned;
-/// let ef = ef.try_into_unaligned().unwrap();
+/// let ef = ef.try_into_unaligned()?;
 /// ```
 ///
-/// See the [`BitFieldVecU`](crate::bits::BitFieldVecU) documentation for
-/// more details and caveats about unaligned access.
+/// See the [`BitFieldVecU`] documentation for more details and caveats about
+/// unaligned access.
 ///
 /// # Examples
 ///

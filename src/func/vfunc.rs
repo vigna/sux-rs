@@ -20,9 +20,7 @@ use value_traits::slices::SliceByValue;
 /// *Static functions* map keys to values, but they do not store the keys:
 /// querying a static function with a key outside of the original set will lead
 /// to an arbitrary result. Another name for static functions is *retrieval data
-/// structure*. Values are retrieved using the [`get`](VFunc::get) method. On
-/// some architectures, and with some constraints,
-/// [`get_unaligned`](VFunc::get_unaligned) might be faster.
+/// structure*. Values are retrieved using the [`get`](VFunc::get) method.
 ///
 /// In exchange, static functions have a very low space overhead, and make it
 /// possible to store the association between keys and values just in the space
@@ -42,6 +40,9 @@ use value_traits::slices::SliceByValue;
 /// [ε-serde](https://crates.io/crates/epserde). Please see the documentation of
 /// [`VBuilder`](crate::func::VBuilder) for examples.
 ///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
+///
 /// # Generics
 ///
 /// * `T`: The type of the keys.
@@ -53,8 +54,10 @@ use value_traits::slices::SliceByValue;
 ///   access is slightly slower, while in the second case the data is stored in
 ///   a boxed slice of `W`, thus forcing the number of bits to the number of
 ///   bits of `W`, but access will be faster. Note that for most bit sizes in
-///   the first case on some architectures you can use [unaligned
-///   reads](VFunc::get_unaligned) to get faster queries.
+///   the first case on some architectures you can use
+///   [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) to convert the
+///   function into one using [unaligned
+///   reads](BitFieldVec::get_unaligned) for faster queries.
 /// * `S`: The signature type. The default is `[u64; 2]`. You can switch to
 ///   `[u64; 1]` (and possibly
 ///   [`FuseLge3NoShards`](crate::func::shard_edge::FuseLge3NoShards)) for
@@ -139,43 +142,6 @@ impl<
     }
 }
 
-impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
-    VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>
-{
-    /// Returns the value associated with the given signature, or a random value
-    /// if the signature is not the signature of a key, using [unaligned
-    /// reads](BitFieldVec::get_unaligned).
-    ///
-    /// This method uses [`BitFieldVec::get_unaligned`], and has
-    /// the same constraints.
-    ///
-    /// This method is mainly useful in the construction of compound functions.
-    #[inline]
-    pub fn get_by_sig_unaligned(&self, sig: S) -> W {
-        let edge = self.shard_edge.edge(sig);
-        // SAFETY: The ShardEdge implementation guarantees that all indices
-        // returned by `edge()` are within bounds of `self.data`. This invariant
-        // is established during construction by VBuilder, which ensures the
-        // data array is sized according to the ShardEdge's `num_vertices()`
-        unsafe {
-            self.data.get_unaligned_unchecked(edge[0])
-                ^ self.data.get_unaligned_unchecked(edge[1])
-                ^ self.data.get_unaligned_unchecked(edge[2])
-        }
-    }
-
-    /// Returns the value associated with the given key, or a random value if
-    /// the key is not present, using [unaligned
-    /// reads](BitFieldVec::get_unaligned).
-    ///
-    /// This method uses [`BitFieldVec::get_unaligned`], and has
-    /// the same constraints.
-    #[inline(always)]
-    pub fn get_unaligned(&self, key: impl Borrow<T>) -> W {
-        self.get_by_sig_unaligned(T::to_sig(key.borrow(), self.seed))
-    }
-}
-
 // ── Aligned ↔ Unaligned conversions ─────────────────────────────────
 
 use crate::bits::BitFieldVecU;
@@ -201,7 +167,7 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
 impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> From<VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>>
     for VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>
 {
-    /// Converts a [`VFunc`] with [`UnalignedBitFieldVec`] data back into
+    /// Converts a [`VFunc`] with [`BitFieldVecU`] data back into
     /// one with [`BitFieldVec`] data, removing the padding word.
     fn from(vf: VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>) -> Self {
         VFunc {

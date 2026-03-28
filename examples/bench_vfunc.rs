@@ -13,6 +13,7 @@ use lender::*;
 use sux::{
     bits::BitFieldVec,
     func::{shard_edge::*, *},
+    traits::TryIntoUnaligned,
     utils::{LineLender, Sig, ToSig, ZstdLineLender},
 };
 
@@ -126,37 +127,44 @@ where
 
         let func =
             unsafe { VFunc::<str, usize, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
-        bench(args.n, args.repeats, || {
-            if args.unaligned {
-                for key in &keys {
-                    std::hint::black_box(func.get_unaligned(key.as_str()));
-                }
-            } else {
+        if args.unaligned {
+            let func = func.try_into_unaligned().unwrap();
+            bench(args.n, args.repeats, || {
                 for key in &keys {
                     std::hint::black_box(func.get(key.as_str()));
                 }
-            }
-        });
+            });
+        } else {
+            bench(args.n, args.repeats, || {
+                for key in &keys {
+                    std::hint::black_box(func.get(key.as_str()));
+                }
+            });
+        }
     } else {
         // No filename
         let func = unsafe {
             VFunc::<usize, usize, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func)
         }?;
 
-        bench(args.n, args.repeats, || {
-            let mut key: usize = 0;
-            if args.unaligned {
-                for _ in 0..args.n {
-                    key = key.wrapping_add(INCR);
-                    std::hint::black_box(func.get_unaligned(key));
-                }
-            } else {
+        if args.unaligned {
+            let func = func.try_into_unaligned().unwrap();
+            bench(args.n, args.repeats, || {
+                let mut key: usize = 0;
                 for _ in 0..args.n {
                     key = key.wrapping_add(INCR);
                     std::hint::black_box(func.get(key));
                 }
-            }
-        });
+            });
+        } else {
+            bench(args.n, args.repeats, || {
+                let mut key: usize = 0;
+                for _ in 0..args.n {
+                    key = key.wrapping_add(INCR);
+                    std::hint::black_box(func.get(key));
+                }
+            });
+        }
     }
     Ok(())
 }

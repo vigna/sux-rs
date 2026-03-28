@@ -14,7 +14,7 @@ use sux::{
     bits::BitFieldVec,
     dict::VFilter,
     func::{shard_edge::*, *},
-    traits::{BitFieldSlice, Word},
+    traits::{BitFieldSlice, TryIntoUnaligned, Word},
     utils::{BinSafe, LineLender, Sig, ToSig, ZstdLineLender},
 };
 
@@ -221,37 +221,44 @@ where
             VFilter::<W, VFunc<str, W, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
         }?;
 
-        bench(args.n, args.repeats, || {
-            if args.unaligned {
-                for key in &keys {
-                    std::hint::black_box(filter.contains_unaligned(key.as_str()));
-                }
-            } else {
+        if args.unaligned {
+            let filter = filter.try_into_unaligned().unwrap();
+            bench(args.n, args.repeats, || {
                 for key in &keys {
                     std::hint::black_box(filter.contains(key.as_str()));
                 }
-            }
-        });
+            });
+        } else {
+            bench(args.n, args.repeats, || {
+                for key in &keys {
+                    std::hint::black_box(filter.contains(key.as_str()));
+                }
+            });
+        }
     } else {
         // No filename
         let filter = unsafe {
             VFilter::<W, VFunc<usize, W, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
         }?;
 
-        bench(args.n, args.repeats, || {
-            let mut key: usize = 0;
-            if args.unaligned {
-                for _ in 0..args.n {
-                    key = key.wrapping_add(INCR);
-                    std::hint::black_box(filter.contains_unaligned(key));
-                }
-            } else {
+        if args.unaligned {
+            let filter = filter.try_into_unaligned().unwrap();
+            bench(args.n, args.repeats, || {
+                let mut key: usize = 0;
                 for _ in 0..args.n {
                     key = key.wrapping_add(INCR);
                     std::hint::black_box(filter.contains(key));
                 }
-            }
-        });
+            });
+        } else {
+            bench(args.n, args.repeats, || {
+                let mut key: usize = 0;
+                for _ in 0..args.n {
+                    key = key.wrapping_add(INCR);
+                    std::hint::black_box(filter.contains(key));
+                }
+            });
+        }
     }
     Ok(())
 }

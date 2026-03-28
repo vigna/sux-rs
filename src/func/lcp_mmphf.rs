@@ -13,6 +13,9 @@
 //! (`K: AsRef<[u8]>`). Type aliases [`LcpMmphfStr`] and [`LcpMmphfSliceU8`]
 //! are provided for convenience.
 //!
+//! These structures implements the [`TryIntoUnaligned`] trait, allowing them to
+//! be converted into (usually faster) structures using unaligned access.
+//!
 //! # References
 //!
 //! Djamal Belazzougui, Paolo Boldi, Rasmus Pagh, and Sebastiano Vigna.
@@ -157,6 +160,9 @@ pub(crate) fn log2_bucket_size(n: usize) -> usize {
 ///   the LCP bit-length and the offset within the bucket;
 /// - `lcp2bucket`: maps each LCP bit-prefix ([`IntBitPrefix`]) to its
 ///   bucket index.
+///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
 ///
 /// # Examples
 ///
@@ -370,19 +376,18 @@ where
         pl.info(format_args!("Building key → (LCP length, offset) map..."));
         let keys = keys.rewind()?;
 
-        let (offset_lcp_length, store) = builder
-            .expected_num_keys(n)
-            .try_build_func_and_store::<T, T, _>(
-                keys,
-                FromCloneableIntoIterator::new(
-                    (0..n).map(|idx| {
+        let (offset_lcp_length, store) =
+            builder
+                .expected_num_keys(n)
+                .try_build_func_and_store::<T, T, _>(
+                    keys,
+                    FromCloneableIntoIterator::new((0..n).map(|idx| {
                         (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                    }),
-                ),
-                |bit_width, len| BitFieldVec::<Vec<usize>>::new_unaligned(bit_width, len).into(),
-                keep_store,
-                pl,
-            )?;
+                    })),
+                    BitFieldVec::<Box<[usize]>>::new_unaligned,
+                    keep_store,
+                    pl,
+                )?;
 
         // -- Build lcp2bucket VFunc --
 
@@ -501,6 +506,9 @@ impl ToSig<[u64; 1]> for BitPrefix {
 /// key not in the original set returns an arbitrary value (same contract as
 /// [`VFunc`]).
 ///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
+///
 /// # Implementation details
 ///
 /// The keys are divided into buckets. For each bucket, the longest common
@@ -563,6 +571,9 @@ pub struct LcpMmphf<K: ?Sized, D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = 
 
 /// A [`LcpMmphf`] for `str` keys.
 ///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
+///
 /// # Examples
 ///
 /// ```rust
@@ -593,6 +604,9 @@ pub type LcpMmphfStr<D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Sh
     LcpMmphf<str, D, S, E>;
 
 /// A [`LcpMmphf`] for `[u8]` keys.
+///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
 ///
 /// # Examples
 ///
@@ -858,19 +872,18 @@ where
         pl.info(format_args!("Building key → (LCP length, offset) map..."));
         let keys = keys.rewind()?;
 
-        let (offset_lcp_length, store) = builder
-            .expected_num_keys(n)
-            .try_build_func_and_store::<K, B, _>(
-                keys,
-                FromCloneableIntoIterator::new(
-                    (0..n).map(|idx| {
+        let (offset_lcp_length, store) =
+            builder
+                .expected_num_keys(n)
+                .try_build_func_and_store::<K, B, _>(
+                    keys,
+                    FromCloneableIntoIterator::new((0..n).map(|idx| {
                         (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                    }),
-                ),
-                |bit_width, len| BitFieldVec::<Vec<usize>>::new_unaligned(bit_width, len).into(),
-                keep_store,
-                pl,
-            )?;
+                    })),
+                    BitFieldVec::<Box<[usize]>>::new_unaligned,
+                    keep_store,
+                    pl,
+                )?;
 
         // -- Build lcp2bucket VFunc --
         //

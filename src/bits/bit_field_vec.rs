@@ -65,7 +65,7 @@
 //! prefetch parts of the data structure, or read values using unaligned read,
 //! when the bit width makes it possible.
 //!
-//! The wrapper [`UnalignedBitFieldVec`] implements [`SliceByValue`] using
+//! The wrapper [`BitFieldVecU`] implements [`SliceByValue`] using
 //! unaligned reads and delegates all iterator methods. It can be just plugged
 //! in place of a normal [`BitFieldVec`] when the trait bound is
 //! [`SliceByValue`].
@@ -395,23 +395,6 @@ impl<W: Word> BitFieldVec<Vec<W>> {
         }
     }
 
-    /// Creates a new zero-initialized vector of given bit width and length,
-    /// adding padding bits to the end of the vector so that unaligned reads are
-    /// possible.
-    ///
-    /// Note that this convenience method is a one-off: if the vector is resized
-    /// or expanded, the padding will be lost.
-    pub fn new_unaligned(bit_width: usize, len: usize) -> Self {
-        let n_of_words = (len * bit_width).div_ceil(W::BITS as usize);
-        Self {
-            // We add a word at the end
-            bits: vec![W::ZERO; n_of_words + 1],
-            bit_width,
-            mask: mask(bit_width),
-            len,
-        }
-    }
-
     /// Creates an empty vector that doesn't need to reallocate for up to
     /// `capacity` elements.
     pub fn with_capacity(bit_width: usize, capacity: usize) -> Self {
@@ -524,6 +507,26 @@ impl<W: Word> BitFieldVec<Vec<W>> {
         let value = self.index_value(self.len - 1);
         self.len -= 1;
         Some(value)
+    }
+}
+
+impl<W: Word> BitFieldVec<Box<[W]>> {
+    /// Creates a new zero-initialized vector of given bit width and length,
+    /// adding padding bits to the end of the vector so that unaligned reads are
+    /// possible.
+    ///
+    /// Note that this convenience method is a one-off: if the vector is resized
+    /// or expanded (by replacing its boxed slice with a vector first), the
+    /// padding will be lost.
+    pub fn new_unaligned(bit_width: usize, len: usize) -> Self {
+        let n_of_words = (len * bit_width).div_ceil(W::BITS as usize);
+        Self {
+            // We add a word at the end
+            bits: vec![W::ZERO; n_of_words + 1].into_boxed_slice(),
+            bit_width,
+            mask: mask(bit_width),
+            len,
+        }
     }
 }
 
@@ -1813,7 +1816,7 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
 /// access patterns.
 ///
 /// The [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait converts a
-/// [`BitFieldVec`] into an [`UnalignedBitFieldVec`] after adding a padding word
+/// [`BitFieldVec`] into an [`BitFieldVecU`] after adding a padding word
 /// at the end, which is required for unaligned reads to work correctly. The
 /// conversion will fail if the bit width does not satisfy the constraints of
 /// [`BitFieldVec::get_unaligned_unchecked`]. You can recover the original
@@ -1853,7 +1856,7 @@ impl<B: Backend<Word: Word>> BitFieldVecU<B> {
 impl<W: Word> crate::traits::TryIntoUnaligned for BitFieldVec<Box<[W]>> {
     type Unaligned = BitFieldVecU<Box<[W]>>;
 
-    /// Converts a [`BitFieldVec`] into an [`UnalignedBitFieldVec`], adding a
+    /// Converts a [`BitFieldVec`] into an [`BitFieldVecU`], adding a
     /// padding word at the end.
     ///
     /// # Errors
@@ -1883,7 +1886,7 @@ impl<W: Word> crate::traits::TryIntoUnaligned for BitFieldVec<Box<[W]>> {
 }
 
 impl<W: Word> From<BitFieldVecU<Box<[W]>>> for BitFieldVec<Box<[W]>> {
-    /// Converts an [`UnalignedBitFieldVec`] back into a [`BitFieldVec`],
+    /// Converts an [`BitFieldVecU`] back into a [`BitFieldVec`],
     /// removing the padding word.
     fn from(unaligned: BitFieldVecU<Box<[W]>>) -> Self {
         let (raw_bits, bit_width, len) = unaligned.0.into_raw_parts();

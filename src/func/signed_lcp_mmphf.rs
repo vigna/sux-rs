@@ -51,6 +51,9 @@ use {
 /// [`SignedVFunc`](crate::dict::SignedVFunc). See [`SignedLcpMmphfInt`],
 /// [`SignedLcpMmphfStr`], and [`SignedLcpMmphfSliceU8`] for convenient type
 /// aliases.
+///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -62,6 +65,9 @@ pub struct SignedLcpMmphf<F, H: SliceByValue> {
 // ── Type aliases ────────────────────────────────────────────────────
 
 /// A [`SignedLcpMmphf`] wrapping a [`LcpMmphfInt`].
+///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
 ///
 /// # Examples
 ///
@@ -125,6 +131,9 @@ pub type SignedLcpMmphfStr<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
 
 /// A [`SignedLcpMmphf`] wrapping a [`LcpMmphf`] for `[u8]` keys.
 ///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
+///
 /// # Examples
 ///
 /// ```rust
@@ -162,10 +171,11 @@ pub type SignedLcpMmphfSliceU8<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards>
 
 impl<
     T: PrimitiveInteger + ToSig<S> + Copy,
+    D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> SignedLcpMmphf<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>
+> SignedLcpMmphf<LcpMmphfInt<T, D, S, E>, H>
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
@@ -252,10 +262,11 @@ where
 
 impl<
     K: ?Sized + AsRef<[u8]> + ToSig<S>,
+    D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> SignedLcpMmphf<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>, H>
+> SignedLcpMmphf<LcpMmphf<K, D, S, E>, H>
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
@@ -395,10 +406,11 @@ pub type BitSignedLcpMmphfSliceU8<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E
 
 impl<
     T: PrimitiveInteger + ToSig<S> + Copy,
+    D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> BitSignedLcpMmphf<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>
+> BitSignedLcpMmphf<LcpMmphfInt<T, D, S, E>, H>
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
@@ -472,7 +484,7 @@ where
         let seed = inner.offset_lcp_length.seed;
         let shard_edge: &E = &inner.offset_lcp_length.shard_edge;
         let mut hashes: BitFieldVec<Box<[H]>> =
-            BitFieldVec::<Vec<H>>::new_unaligned(hash_width, n).into();
+            BitFieldVec::<Box<[H]>>::new_unaligned(hash_width, n);
         let mut keys = keys_for_hashes;
         for i in 0..n {
             let key: T = *keys.next()?.unwrap();
@@ -494,10 +506,11 @@ where
 
 impl<
     K: ?Sized + AsRef<[u8]> + ToSig<S>,
+    D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> BitSignedLcpMmphf<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>, H>
+> BitSignedLcpMmphf<LcpMmphf<K, D, S, E>, H>
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
@@ -571,7 +584,7 @@ where
         let seed = inner.offset_lcp_length.seed;
         let shard_edge: &E = &inner.offset_lcp_length.shard_edge;
         let mut hashes: BitFieldVec<Box<[H]>> =
-            BitFieldVec::<Vec<H>>::new_unaligned(hash_width, n).into();
+            BitFieldVec::<Box<[H]>>::new_unaligned(hash_width, n);
         let mut keys = keys_for_hashes;
         for i in 0..n {
             let key = keys.next()?.unwrap();
@@ -606,10 +619,11 @@ pub type SignedLcp2MmphfSliceU8<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards
 
 impl<
     T: PrimitiveInteger + ToSig<S> + Copy,
+    D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> SignedLcpMmphf<Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>
+> SignedLcpMmphf<Lcp2MmphfInt<T, D, S, E>, H>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
@@ -680,10 +694,11 @@ where
 
 impl<
     K: ?Sized + AsRef<[u8]> + ToSig<S>,
+    D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> SignedLcpMmphf<Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S, E>, H>
+> SignedLcpMmphf<Lcp2Mmphf<K, D, S, E>, H>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {

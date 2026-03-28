@@ -23,6 +23,9 @@ use value_traits::slices::SliceByValue;
 /// `SliceByValue::Value::BITS`. If you are using implementations returning less
 /// hash bits (such as a [`BitFieldVec<Box<[W]>>`](BitFieldVec)), you will need to use
 /// [`BitSignedVFunc`] instead.
+///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -173,65 +176,6 @@ impl<
     /// Returns whether the function has no keys.
     pub const fn is_empty(&self) -> bool {
         self.func.num_keys == 0
-    }
-}
-
-impl<
-    T: ?Sized + ToSig<S>,
-    W: Word + BinSafe,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-    H: SliceByValue<Value: PrimitiveNumber>,
-> BitSignedVFunc<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>, H>
-{
-    /// Returns the index of a key associated with the given signature, if there
-    /// was such a key in the list provided at construction time; otherwise,
-    /// returns `None`, using [unaligned reads](BitFieldVec::get_unaligned).
-    ///
-    /// False positives happen with probability defined at [construction
-    /// time](crate::func::VBuilder::try_build_bit_sig_index).
-    ///
-    /// This method uses [`BitFieldVec::get_unaligned`], and has
-    /// the same constraints.
-    ///
-    /// This method is mainly useful in the construction of compound functions.
-    #[inline]
-    pub fn get_by_sig_unaligned(&self, sig: S) -> Option<W> {
-        // Static check that H::Value → u64 conversion is lossless
-        const {
-            assert!(
-                size_of::<H::Value>() <= size_of::<u64>(),
-                "Hash value type must fit in u64 without truncation"
-            );
-        }
-        let index = self.func.get_by_sig_unaligned(sig);
-        let shard_edge = &self.func.shard_edge;
-        // as_to is safe: index is bounded by num_keys, which is a usize
-        if self
-            .hashes
-            .get_value(index.as_to::<usize>())?
-            .as_to::<u64>()
-            == (crate::func::mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)))
-                & self.hash_mask)
-        {
-            Some(index)
-        } else {
-            None
-        }
-    }
-
-    /// Returns the index of given key, if the key was in the list provided at
-    /// construction time; otherwise, returns `None`, using [unaligned
-    /// reads](BitFieldVec::get_unaligned).
-    ///
-    /// False positives happen with probability defined at [construction
-    /// time](crate::func::VBuilder::try_build_bit_sig_index).
-    ///
-    /// This method uses [`BitFieldVec::get_unaligned`], and has
-    /// the same constraints.
-    #[inline(always)]
-    pub fn get_unaligned(&self, key: impl Borrow<T>) -> Option<W> {
-        self.get_by_sig_unaligned(T::to_sig(key.borrow(), self.func.seed))
     }
 }
 

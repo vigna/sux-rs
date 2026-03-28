@@ -38,6 +38,9 @@ use value_traits::slices::SliceByValue;
 /// additional access to the long function; sometimes, the reduction in space
 /// can even lead to faster queries due to better cache locality.
 ///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
+///
 /// # Generics
 ///
 /// * `T`: The type of the keys.
@@ -164,7 +167,7 @@ impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
     From<VFunc2<T, W, BitFieldVecU<Box<[W]>>, S, E0, E1>>
     for VFunc2<T, W, BitFieldVec<Box<[W]>>, S, E0, E1>
 {
-    /// Converts a [`VFunc2`] with [`UnalignedBitFieldVec`] data back into
+    /// Converts a [`VFunc2`] with [`BitFieldVecU`] data back into
     /// one with [`BitFieldVec`] data, removing the padding words.
     fn from(vf: VFunc2<T, W, BitFieldVecU<Box<[W]>>, S, E0, E1>) -> Self {
         VFunc2 {
@@ -181,6 +184,7 @@ impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
 ///
 /// `sorted_vals` must be the distinct values sorted by descending
 /// frequency.
+#[cfg(feature = "rayon")]
 fn find_optimal_r<W: Word>(
     n: usize,
     max_value: usize,

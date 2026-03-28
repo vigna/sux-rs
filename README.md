@@ -130,7 +130,15 @@ always available as `mem_dbg` is a required dependency.
 
 ## Benchmarks
 
-You can run a number of benchmarks on the structures. Try
+A few benchmarks are available in the `benches` directory. The ones starting with
+`bench_` can be just run as usual; for example,
+
+```bash
+cargo bench --bench bench_vfunc
+```
+
+The `sux` benchmark, which tests rank and select structures, is instead a CLI
+command with options. Try
 
 ```bash
 cargo bench --bench sux -- --help

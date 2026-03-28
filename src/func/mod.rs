@@ -28,6 +28,10 @@
 //! - [`Lcp2MmphfInt`]/[`Lcp2Mmphf`] are versions of
 //!   [`LcpMmphfInt`]/[`LcpMmphf`] that use a [`VFunc2`] to reduce space usage, at
 //!   the cost of slightly slower queries.
+//!
+//! Most structures implements the
+//! [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing them
+//! to be converted into (usually faster) structures using unaligned access.
 
 mod vfunc;
 pub use vfunc::*;
