@@ -179,20 +179,103 @@ impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
     }
 }
 
+/// Threshold for the array portion of [`HybridMap`].
+const HYBRID_ARRAY_LEN: usize = if cfg!(target_pointer_width = "64") {
+    1 << 16
+} else {
+    1 << 10
+};
+
+/// A map from `K` to `V` backed by a flat array for small keys and a
+/// `HashMap` for large keys.
+struct HybridMap<K, V> {
+    array: Vec<V>,
+    map: std::collections::HashMap<K, V>,
+    default: V,
+}
+
+impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
+    /// Creates a new hybrid map.
+    ///
+    /// * `max_key` — the maximum key that will be inserted.
+    /// * `len` — the expected number of distinct entries.
+    /// * `default` — value returned for absent keys.
+    fn new(max_key: K, len: usize, default: V) -> Self {
+        let array_len = HYBRID_ARRAY_LEN
+            .min(max_key.as_u128() as usize / 2 + 1)
+            .min(len)
+            .max(256);
+        Self {
+            array: vec![default; array_len],
+            map: std::collections::HashMap::new(),
+            default,
+        }
+    }
+
+    fn insert(&mut self, key: K, value: V) {
+        let k = key.as_u128() as usize;
+        if k < self.array.len() {
+            self.array[k] = value;
+        } else {
+            self.map.insert(key, value);
+        }
+    }
+
+    #[inline(always)]
+    fn get(&self, key: K) -> V {
+        let k = key.as_u128() as usize;
+        if k < self.array.len() {
+            self.array[k]
+        } else {
+            self.map.get(&key).copied().unwrap_or(self.default)
+        }
+    }
+
+    /// Returns keys whose value differs from the default, sorted by
+    /// descending value (requires `V: Ord`).
+    fn keys_by_desc_value(&self) -> Vec<K>
+    where
+        V: Ord,
+    {
+        let array_iter = self
+            .array
+            .iter()
+            .enumerate()
+            .filter(|&(_, v)| *v != self.default)
+            .map(|(k, _)| K::try_from(k).ok().unwrap());
+        let map_iter = self.map.keys().copied();
+        let mut keys: Vec<K> = array_iter.chain(map_iter).collect();
+        keys.sort_by(|a, b| self.get(*b).cmp(&self.get(*a)));
+        keys
+    }
+}
+
+impl<K: Word> HybridMap<K, usize> {
+    #[inline(always)]
+    fn incr(&mut self, key: K) {
+        let k = key.as_u128() as usize;
+        if k < self.array.len() {
+            self.array[k] += 1;
+        } else {
+            *self.map.entry(key).or_insert(0) += 1;
+        }
+    }
+}
+
 /// Finds the optimal short-function bit width `r` for a [`VFunc2`],
 /// minimizing the estimated total space.
 ///
 /// `sorted_vals` must be the distinct values sorted by descending
-/// frequency.
+/// frequency. `count_of` returns the frequency for a given value.
 #[cfg(feature = "rayon")]
 fn find_optimal_r<W: Word>(
     n: usize,
-    max_value: usize,
+    max_value: W,
     sorted_vals: &[W],
-    counts: &std::collections::HashMap<W, usize>,
+    count_of: impl Fn(W) -> usize,
     w_bits: usize,
 ) -> usize {
-    let w = (max_value as u128).bit_len() as usize;
+    let w = max_value.bit_len() as usize;
     let m = sorted_vals.len();
     let c = 1.11f64; // VFunc expansion factor (approximate)
 
@@ -215,7 +298,7 @@ fn find_optimal_r<W: Word>(
 
         let to_absorb = (1usize << r).min(m - pos);
         for _ in 0..to_absorb {
-            post -= counts[&sorted_vals[pos]];
+            post -= count_of(sorted_vals[pos]);
             pos += 1;
         }
     }
@@ -364,21 +447,26 @@ where
     {
         // -- 1. Frequency analysis --
 
-        let mut counts: std::collections::HashMap<W, usize> = std::collections::HashMap::new();
         let mut max_value = W::ZERO;
-
         for shard in store.iter() {
             for sv in shard.iter() {
                 let val = get_val(sv.val);
-                *counts.entry(val).or_insert(0) += 1;
                 if val > max_value {
                     max_value = val;
                 }
             }
         }
 
-        Self::try_build_from_store_with_freq(
-            seed, shard_edge, store, get_val, max_value, &counts, builder, pl,
+        let n = store.len();
+        let mut counts: HybridMap<W, usize> = HybridMap::new(max_value, n, 0);
+        for shard in store.iter() {
+            for sv in shard.iter() {
+                counts.incr(get_val(sv.val));
+            }
+        }
+
+        Self::build_from_hybrid_counts(
+            seed, shard_edge, store, get_val, max_value, counts, builder, pl,
         )
     }
 
@@ -410,20 +498,49 @@ where
         SigVal<E0::LocalSig, V>: BitXor + BitXorAssign,
         SigVal<E1::LocalSig, V>: BitXor + BitXorAssign,
     {
-        let max_value_usize = max_value.as_u128() as usize;
+        let mut hybrid_counts: HybridMap<W, usize> = HybridMap::new(max_value, counts.len(), 0);
+        for (&val, &count) in counts {
+            hybrid_counts.insert(val, count);
+        }
+        Self::build_from_hybrid_counts(
+            seed, shard_edge, store, get_val, max_value, hybrid_counts, builder, pl,
+        )
+    }
 
+    /// Core two-step build logic using [`HybridMap`] for O(1) lookups
+    /// on common value ranges.
+    fn build_from_hybrid_counts<V: BinSafe + Default + Send + Sync + Copy>(
+        seed: u64,
+        shard_edge: E0,
+        store: &mut impl ShardStore<S, V>,
+        get_val: &(impl Fn(V) -> W + Send + Sync),
+        max_value: W,
+        counts: HybridMap<W, usize>,
+        builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E0>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<Self>
+    where
+        SigVal<S, V>: RadixKey,
+        SigVal<E0::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<E1::LocalSig, V>: BitXor + BitXorAssign,
+    {
         // -- Sort distinct values by descending frequency --
 
-        let mut sorted_vals: Vec<W> = counts.keys().copied().collect();
-        sorted_vals.sort_by(|a, b| counts[b].cmp(&counts[a]));
+        let sorted_vals: Vec<W> = counts.keys_by_desc_value();
 
-        let w = max_value.as_u128().bit_len() as usize;
+        let w = max_value.bit_len() as usize;
         let m = sorted_vals.len();
 
         // -- Find optimal r --
 
         let n = store.len();
-        let best_r = find_optimal_r(n, max_value_usize, &sorted_vals, counts, W::BITS as usize);
+        let best_r = find_optimal_r(
+            n,
+            max_value,
+            &sorted_vals,
+            |v| counts.get(v),
+            W::BITS as usize,
+        );
 
         let escape_usize = (1usize << best_r).wrapping_sub(1); // 2^r - 1
         let escape = W::try_from(escape_usize).ok().unwrap();
@@ -432,15 +549,15 @@ where
         // -- Build remap and inv_map --
 
         let remap: Box<[W]> = sorted_vals[..num_remapped].to_vec().into_boxed_slice();
-        let mut inv_map: std::collections::HashMap<W, W> =
-            std::collections::HashMap::with_capacity(num_remapped);
+        let mut inv_map: HybridMap<W, W> = HybridMap::new(max_value, num_remapped, escape);
         for (i, &val) in remap.iter().enumerate() {
             inv_map.insert(val, W::try_from(i).ok().unwrap());
         }
 
         pl.info(format_args!(
             "Two-step: r={best_r}, escape={escape_usize}, {num_remapped} remapped values, \
-             {m} distinct values, max_value={max_value_usize} ({w} bits)"
+             {m} distinct values, max_value={} ({w} bits)",
+            max_value.as_u128()
         ));
 
         // -- Build short VFunc --
@@ -467,12 +584,9 @@ where
             shard_edge,
             escape,
             store,
-            &|_e, sig_val| {
-                let val = get_val(sig_val.val);
-                inv_map.get(&val).copied().unwrap_or(escape)
-            },
+            &|_e, sig_val| inv_map.get(get_val(sig_val.val)),
             &|sv: &SigVal<S, V>| {
-                if !inv_map.contains_key(&get_val(sv.val)) {
+                if inv_map.get(get_val(sv.val)) == escape {
                     let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
                     // SAFETY: each shard is processed by exactly one
                     // thread, so no two threads access the same counter.
@@ -491,7 +605,7 @@ where
 
         let n_escaped = n - sorted_vals[..num_remapped]
             .iter()
-            .map(|v| counts[v])
+            .map(|&v| counts.get(v))
             .sum::<usize>();
 
         debug_assert_eq!(
@@ -524,7 +638,7 @@ where
         let mut filtered_store = FilteredShardStore::new(
             store,
             long_shard_high_bits,
-            |sv: &SigVal<S, V>| !inv_map.contains_key(&get_val(sv.val)),
+            |sv: &SigVal<S, V>| inv_map.get(get_val(sv.val)) == escape,
             filtered_shard_sizes,
         );
         let long = VBuilder::<W, BitFieldVec<Box<[W]>>, S, E1>::default()
