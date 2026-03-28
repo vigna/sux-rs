@@ -5,6 +5,7 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 use sux::func::{Lcp2MmphfInt, Lcp2MmphfStr, LcpMmphfInt, LcpMmphfStr};
+use sux::traits::TryIntoUnaligned;
 use sux::utils::FromSlice;
 
 /// Number of pregenerated queries (must be a power of 2 for masking).
@@ -79,6 +80,18 @@ fn bench_int_query(c: &mut Criterion) {
             })
         });
 
+        // LcpMmphf (unaligned)
+        let func_u = func.try_into_unaligned().unwrap();
+
+        group.bench_function(BenchmarkId::new("LcpMmphf/unaligned", label), |b| {
+            let mut ctr = 0usize;
+            b.iter(|| {
+                let q = queries[ctr & QUERY_MASK];
+                ctr += 1;
+                black_box(func_u.get(q))
+            })
+        });
+
         // Lcp2Mmphf (two-step)
         let func2: Lcp2MmphfInt<u64> =
             Lcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
@@ -94,6 +107,18 @@ fn bench_int_query(c: &mut Criterion) {
                 let q = queries[ctr & QUERY_MASK];
                 ctr += 1;
                 black_box(func2.get(q))
+            })
+        });
+
+        // Lcp2Mmphf (unaligned)
+        let func2_u = func2.try_into_unaligned().unwrap();
+
+        group.bench_function(BenchmarkId::new("Lcp2Mmphf/unaligned", label), |b| {
+            let mut ctr = 0usize;
+            b.iter(|| {
+                let q = queries[ctr & QUERY_MASK];
+                ctr += 1;
+                black_box(func2_u.get(q))
             })
         });
     }
@@ -134,9 +159,23 @@ fn bench_str_query(c: &mut Criterion) {
                 ctr += 1;
                 let start = packed_offsets[idx] as usize;
                 let end = packed_offsets[idx + 1] as usize;
-                // SAFETY: packed_data was built from valid UTF-8 String data.
                 let q = unsafe { std::str::from_utf8_unchecked(&packed_data[start..end]) };
                 black_box(func.get(q))
+            })
+        });
+
+        // LcpMmphf (unaligned)
+        let func_u = func.try_into_unaligned().unwrap();
+
+        group.bench_function(BenchmarkId::new("LcpMmphf/unaligned", label), |b| {
+            let mut ctr = 0usize;
+            b.iter(|| {
+                let idx = ctr & QUERY_MASK;
+                ctr += 1;
+                let start = packed_offsets[idx] as usize;
+                let end = packed_offsets[idx + 1] as usize;
+                let q = unsafe { std::str::from_utf8_unchecked(&packed_data[start..end]) };
+                black_box(func_u.get(q))
             })
         });
 
@@ -156,9 +195,23 @@ fn bench_str_query(c: &mut Criterion) {
                 ctr += 1;
                 let start = packed_offsets[idx] as usize;
                 let end = packed_offsets[idx + 1] as usize;
-                // SAFETY: packed_data was built from valid UTF-8 String data.
                 let q = unsafe { std::str::from_utf8_unchecked(&packed_data[start..end]) };
                 black_box(func2.get(q))
+            })
+        });
+
+        // Lcp2Mmphf (unaligned)
+        let func2_u = func2.try_into_unaligned().unwrap();
+
+        group.bench_function(BenchmarkId::new("Lcp2Mmphf/unaligned", label), |b| {
+            let mut ctr = 0usize;
+            b.iter(|| {
+                let idx = ctr & QUERY_MASK;
+                ctr += 1;
+                let start = packed_offsets[idx] as usize;
+                let end = packed_offsets[idx + 1] as usize;
+                let q = unsafe { std::str::from_utf8_unchecked(&packed_data[start..end]) };
+                black_box(func2_u.get(q))
             })
         });
     }

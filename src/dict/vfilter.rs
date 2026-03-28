@@ -5,7 +5,7 @@
 * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
 */
 
-use crate::bits::BitFieldVec;
+use crate::bits::{BitFieldVec, BitFieldVecU};
 use crate::func::mix64;
 use crate::func::{VFunc, shard_edge::ShardEdge};
 use crate::traits::{Word, bit_field_slice::*};
@@ -195,6 +195,34 @@ where
     #[inline(always)]
     fn index(&self, key: B) -> &Self::Output {
         if self.contains(key) { &true } else { &false }
+    }
+}
+
+// Aligned ↔ Unaligned conversions
+
+impl<T: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::TryIntoUnaligned
+    for VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
+{
+    type Unaligned = VFilter<W, VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>>;
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+        Ok(VFilter {
+            func: self.func.try_into_unaligned()?,
+            filter_mask: self.filter_mask,
+            hash_bits: self.hash_bits,
+        })
+    }
+}
+
+impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
+    From<VFilter<W, VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>>>
+    for VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
+{
+    fn from(f: VFilter<W, VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>>) -> Self {
+        VFilter {
+            func: f.func.into(),
+            filter_mask: f.filter_mask,
+            hash_bits: f.hash_bits,
+        }
     }
 }
 

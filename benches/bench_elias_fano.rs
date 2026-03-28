@@ -1,3 +1,4 @@
+use bit_field_vec::BitFieldVecU;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
@@ -102,7 +103,7 @@ macro_rules! bench_ef {
                     })
                 });
 
-                let ef = unsafe { ef.map_low_bits(|l| UnalignedBitFieldVec::try_from(l).unwrap()) };
+                let ef = unsafe { ef.map_low_bits(|l| BitFieldVecU::try_from(l).unwrap()) };
 
                 group.bench_function(BenchmarkId::new("unaligned", &param), |b| {
                     let mut ctr = 0usize;
@@ -135,7 +136,7 @@ macro_rules! bench_ef {
                     })
                 });
 
-                let ef = unsafe { ef.map_low_bits(|l| UnalignedBitFieldVec::try_from(l).unwrap()) };
+                let ef = unsafe { ef.map_low_bits(|l| BitFieldVecU::try_from(l).unwrap()) };
 
                 group.bench_function(BenchmarkId::new("unaligned", &param), |b| {
                     let mut ctr = 0usize;

@@ -300,12 +300,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
     ///
     /// This method will panic if the constraints above are not respected.
     pub fn get_unaligned(&self, index: usize) -> B::Word {
-        let bits = B::Word::BITS as usize;
-        assert!(
-            self.bit_width <= bits - 8 + 2
-                || self.bit_width == bits - 8 + 4
-                || self.bit_width == bits
-        );
+        assert_unaligned!(B::Word, self.bit_width);
         panic_if_out_of_bounds!(index, self.len);
         assert!(
             (index * self.bit_width) / size_of::<B::Word>() + size_of::<B::Word>()
@@ -320,19 +315,15 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
     ///
     /// This method can be used only for bit width smaller than or equal to
     /// `W::BITS as usize - 8 + 2` or equal to `W::BITS as usize - 8 + 4` or `W::BITS`. Moreover,
-    /// an additional padding word must be present at the end of the vector.
+    /// an additional padding word must be present at the end of the vector,
+    /// and `index` must be within bounds.
     ///
     /// # Panics
     ///
     /// This method will panic in debug mode if the safety constraints are not
     /// respected.
     pub unsafe fn get_unaligned_unchecked(&self, index: usize) -> B::Word {
-        let bits = B::Word::BITS as usize;
-        debug_assert!(
-            self.bit_width <= bits - 8 + 2
-                || self.bit_width == bits - 8 + 4
-                || self.bit_width == bits
-        );
+        debug_assert_unaligned!(B::Word, self.bit_width);
         let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
         let start_bit = index * self.bit_width;
         debug_assert!(
@@ -1821,22 +1812,33 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
 /// [`BitFieldVec::get_unaligned_unchecked`], which can be faster for random
 /// access patterns.
 ///
-/// A convenience
-/// [`TryFrom`](#impl-TryFrom<BitFieldVec<Box<%5BW%5D>>>-for-UnalignedBitFieldVec<Box<%5BW%5D>>)
-/// implementation converts a [`BitFieldVec`] into an [`UnalignedBitFieldVec`]
-/// after adding a padding word at the end, which is required for unaligned
-/// reads to work correctly. The conversion will fail if the bit width does not
-/// satisfy the constraints of [`BitFieldVec::get_unaligned_unchecked`]. You can
-/// recover the original [`BitFieldVec`] using [`into_inner`](Self::into_inner).
+/// The [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait converts a
+/// [`BitFieldVec`] into an [`UnalignedBitFieldVec`] after adding a padding word
+/// at the end, which is required for unaligned reads to work correctly. The
+/// conversion will fail if the bit width does not satisfy the constraints of
+/// [`BitFieldVec::get_unaligned_unchecked`]. You can recover the original
+/// [`BitFieldVec`] using [`into_inner`](Self::into_inner).
 ///
 /// # Safety
 ///
 /// The backing storage must have sufficient padding at the end so that
 /// unaligned reads do not access memory outside the allocation.
-#[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct UnalignedBitFieldVec<B: Backend<Word: Word> = Vec<usize>>(BitFieldVec<B>);
+#[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, Delegate, value_traits::Subslices)]
+#[value_traits_subslices(bound = "B: AsRef<[B::Word]>")]
+#[value_traits_subslices(bound = "B::Word: Word")]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[repr(transparent)]
+#[cfg_attr(
+    feature = "epserde",
+    epserde(bound(
+        deser = "B: epserde::deser::DeserInner, for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = B::Word>"
+    ))
+)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[delegate(crate::traits::Backend, target = "0")]
+pub struct BitFieldVecU<B: Backend<Word: Word> = Vec<usize>>(BitFieldVec<B>);
 
-impl<B: Backend<Word: Word>> UnalignedBitFieldVec<B> {
+impl<B: Backend<Word: Word>> BitFieldVecU<B> {
     /// Returns a reference to the inner [`BitFieldVec`].
     pub fn inner(&self) -> &BitFieldVec<B> {
         &self.0
@@ -1848,8 +1850,8 @@ impl<B: Backend<Word: Word>> UnalignedBitFieldVec<B> {
     }
 }
 
-impl<W: Word> TryFrom<BitFieldVec<Box<[W]>>> for UnalignedBitFieldVec<Box<[W]>> {
-    type Error = String;
+impl<W: Word> crate::traits::TryIntoUnaligned for BitFieldVec<Box<[W]>> {
+    type Unaligned = BitFieldVecU<Box<[W]>>;
 
     /// Converts a [`BitFieldVec`] into an [`UnalignedBitFieldVec`], adding a
     /// padding word at the end.
@@ -1859,29 +1861,37 @@ impl<W: Word> TryFrom<BitFieldVec<Box<[W]>>> for UnalignedBitFieldVec<Box<[W]>> 
     /// Returns an error if the bit width does not satisfy the constraints of
     /// [`BitFieldVec::get_unaligned_unchecked`]: it must be at most
     /// `W::BITS - 6`, or exactly `W::BITS - 4`, or exactly `W::BITS`.
-    fn try_from(bfv: BitFieldVec<Box<[W]>>) -> Result<Self, Self::Error> {
-        let bits = W::BITS as usize;
-        let bw = bfv.bit_width();
-        if !(bw <= bits - 8 + 2 || bw == bits - 8 + 4 || bw == bits) {
-            return Err(format!(
-                "bit width {} does not satisfy the constraints for unaligned reads \
-                 (must be <= {}, or == {}, or == {})",
-                bw,
-                bits - 8 + 2,
-                bits - 8 + 4,
-                bits,
-            ));
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+        let bw = self.bit_width();
+        ensure_unaligned!(W, bw);
+        let needed = (SliceByValue::len(&self) * bw).div_ceil(W::BITS as usize);
+        if self.as_slice().len() > needed {
+            // Padding word already present (e.g., built with new_unaligned).
+            Ok(BitFieldVecU(self))
+        } else {
+            // Add a padding word.
+            let (raw_bits, bit_width, len) = self.into_raw_parts();
+            let mut v = raw_bits.into_vec();
+            v.push(W::ZERO);
+            Ok(BitFieldVecU(unsafe {
+                BitFieldVec::from_raw_parts(v.into_boxed_slice(), bit_width, len)
+            }))
         }
-        let (raw_bits, bit_width, len) = bfv.into_raw_parts();
-        let mut v = raw_bits.into_vec();
-        v.push(W::ZERO); // Add padding word for unaligned reads
-        Ok(Self(unsafe {
-            BitFieldVec::from_raw_parts(v.into_boxed_slice(), bit_width, len)
-        }))
     }
 }
 
-impl<B: Backend<Word: Word> + AsRef<[B::Word]>> SliceByValue for UnalignedBitFieldVec<B> {
+impl<W: Word> From<BitFieldVecU<Box<[W]>>> for BitFieldVec<Box<[W]>> {
+    /// Converts an [`UnalignedBitFieldVec`] back into a [`BitFieldVec`],
+    /// removing the padding word.
+    fn from(unaligned: BitFieldVecU<Box<[W]>>) -> Self {
+        let (raw_bits, bit_width, len) = unaligned.0.into_raw_parts();
+        let mut v = raw_bits.into_vec();
+        v.pop(); // Remove padding word
+        unsafe { BitFieldVec::from_raw_parts(v.into_boxed_slice(), bit_width, len) }
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> SliceByValue for BitFieldVecU<B> {
     type Value = B::Word;
 
     #[inline(always)]
@@ -1895,9 +1905,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> SliceByValue for UnalignedBitFie
     }
 }
 
-impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedIterator
-    for &'a UnalignedBitFieldVec<B>
-{
+impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedIterator for &'a BitFieldVecU<B> {
     type Item = B::Word;
     type IntoUncheckedIter = BitFieldVecUncheckedIter<'a, B>;
     fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter {
@@ -1906,7 +1914,7 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedIterator
 }
 
 impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedBackIterator
-    for &'a UnalignedBitFieldVec<B>
+    for &'a BitFieldVecU<B>
 {
     type Item = B::Word;
     type IntoUncheckedIterBack = BitFieldVecUncheckedBackIter<'a, B>;

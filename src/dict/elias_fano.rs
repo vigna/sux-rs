@@ -51,7 +51,7 @@
 //! nondecreasing).
 
 use crate::prelude::{indexed_dict::*, *};
-use crate::traits::{AtomicBitVecOps, BitVecOpsMut, Word, bit_field_slice::*};
+use crate::traits::{AtomicBitVecOps, BitVecOpsMut, TryIntoUnaligned, Word, bit_field_slice::*};
 use crate::utils::SelectInWord;
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomicUnsigned};
 use core::sync::atomic::Ordering;
@@ -174,15 +174,16 @@ pub type EfSeqDict<V = usize> = EliasFano<
 ///
 /// This structure can use [unaligned access](BitFieldVec::get_unaligned) to
 /// retrieve the lower bits. On some architectures this provides a mild
-/// performance improvements. To use unaligned access you have to remap the low bits.
-/// For example,
+/// performance improvement. To use unaligned access, call
+/// [`try_into_unaligned`](TryIntoUnaligned::try_into_unaligned):
 ///
 /// ```ignore
-/// let ef = unsafe { ef.map_low_bits(|l| UnalignedBitFieldVec::try_from(l).unwrap()) };
+/// use sux::traits::TryIntoUnaligned;
+/// let ef = ef.try_into_unaligned().unwrap();
 /// ```
 ///
-/// See the [`UnalignedBitFieldVec`] documentation for more details and caveats
-/// about unaligned access.
+/// See the [`BitFieldVecU`](crate::bits::BitFieldVecU) documentation for
+/// more details and caveats about unaligned access.
 ///
 /// # Examples
 ///
@@ -2369,6 +2370,41 @@ where
         unsafe {
             ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new)
                 .map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new)
+        }
+    }
+}
+
+// ── Aligned ↔ Unaligned conversion ──────────────────────────────────
+
+use crate::bits::BitFieldVecU;
+
+impl<V: Word, H> TryIntoUnaligned for EliasFano<V, H, BitFieldVec<Box<[V]>>> {
+    type Unaligned = EliasFano<V, H, BitFieldVecU<Box<[V]>>>;
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+        Ok(EliasFano {
+            n: self.n,
+            u: self.u,
+            l: self.l,
+            first_val: self.first_val,
+            last_val: self.last_val,
+            low_bits: self.low_bits.try_into_unaligned()?,
+            high_bits: self.high_bits,
+        })
+    }
+}
+
+impl<V: Word, H> From<EliasFano<V, H, BitFieldVecU<Box<[V]>>>>
+    for EliasFano<V, H, BitFieldVec<Box<[V]>>>
+{
+    fn from(ef: EliasFano<V, H, BitFieldVecU<Box<[V]>>>) -> Self {
+        EliasFano {
+            n: ef.n,
+            u: ef.u,
+            l: ef.l,
+            first_val: ef.first_val,
+            last_val: ef.last_val,
+            low_bits: ef.low_bits.into(),
+            high_bits: ef.high_bits,
         }
     }
 }

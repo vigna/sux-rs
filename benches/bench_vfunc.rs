@@ -10,6 +10,7 @@ use std::hint::black_box;
 use sux::bits::BitFieldVec;
 use sux::func::vfunc2::VFunc2;
 use sux::func::{VBuilder, VFunc};
+use sux::traits::TryIntoUnaligned;
 use sux::utils::FromSlice;
 
 /// Number of pregenerated queries (must be a power of 2 for masking).
@@ -103,6 +104,18 @@ fn bench_query(c: &mut Criterion) {
                 })
             });
 
+            // VFunc (unaligned)
+            let vfunc_u = vfunc.try_into_unaligned().unwrap();
+
+            group.bench_function(BenchmarkId::new("VFunc/unaligned", label), |b| {
+                let mut ctr = 0usize;
+                b.iter(|| {
+                    let q = queries[ctr & QUERY_MASK];
+                    ctr += 1;
+                    black_box(vfunc_u.get(q))
+                })
+            });
+
             // VFunc2
             let vfunc2 = build_vfunc2(n, &values);
             let vf2_bytes = vfunc2.mem_size(SizeFlags::default());
@@ -115,6 +128,18 @@ fn bench_query(c: &mut Criterion) {
                     let q = queries[ctr & QUERY_MASK];
                     ctr += 1;
                     black_box(vfunc2.get(q))
+                })
+            });
+
+            // VFunc2 (unaligned)
+            let vfunc2_u = vfunc2.try_into_unaligned().unwrap();
+
+            group.bench_function(BenchmarkId::new("VFunc2/unaligned", label), |b| {
+                let mut ctr = 0usize;
+                b.iter(|| {
+                    let q = queries[ctr & QUERY_MASK];
+                    ctr += 1;
+                    black_box(vfunc2_u.get(q))
                 })
             });
         }

@@ -10,6 +10,7 @@ use anyhow::Result;
 use dsi_progress_logger::*;
 use rdst::RadixKey;
 use std::ops::{BitXor, BitXorAssign};
+use sux::traits::TryIntoUnaligned;
 use sux::{
     bits::BitFieldVec,
     func::{
@@ -49,7 +50,9 @@ where
                 FromCloneableIntoIterator::from(0..n),
                 FromCloneableIntoIterator::from(0_usize..),
                 &mut pl,
-            )?;
+            )?
+            .try_into_unaligned()
+            .unwrap();
         pl.start("Querying...");
         for i in 0..n {
             assert_eq!(i, func.get(i));
