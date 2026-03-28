@@ -29,7 +29,7 @@ use value_traits::slices::SliceByValue;
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct SignedVFunc<F, H: SliceByValue> {
+pub struct SignedVFunc<F, H> {
     pub(crate) func: F,
     pub(crate) hashes: H,
 }
@@ -110,7 +110,7 @@ impl<
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct BitSignedVFunc<F, H: SliceByValue> {
+pub struct BitSignedVFunc<F, H> {
     pub(crate) func: F,
     pub(crate) hashes: H,
     pub(crate) hash_mask: u64,
@@ -185,7 +185,7 @@ impl<
 
 use crate::traits::{TryIntoUnaligned, Word};
 
-impl<F: TryIntoUnaligned, H: SliceByValue> TryIntoUnaligned for SignedVFunc<F, H> {
+impl<F: TryIntoUnaligned, H> TryIntoUnaligned for SignedVFunc<F, H> {
     type Unaligned = SignedVFunc<F::Unaligned, H>;
     fn try_into_unaligned(
         self,
@@ -197,7 +197,7 @@ impl<F: TryIntoUnaligned, H: SliceByValue> TryIntoUnaligned for SignedVFunc<F, H
     }
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, H: SliceByValue>
+impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, H>
     From<SignedVFunc<VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>, H>>
     for SignedVFunc<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>, H>
 {
@@ -211,11 +211,7 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, H: SliceByValue>
 
 // -- BitSignedVFunc: both func and hashes are converted --
 
-impl<F: TryIntoUnaligned, H: TryIntoUnaligned + SliceByValue> TryIntoUnaligned
-    for BitSignedVFunc<F, H>
-where
-    H::Unaligned: SliceByValue,
-{
+impl<F: TryIntoUnaligned, H: TryIntoUnaligned> TryIntoUnaligned for BitSignedVFunc<F, H> {
     type Unaligned = BitSignedVFunc<F::Unaligned, H::Unaligned>;
     fn try_into_unaligned(
         self,
