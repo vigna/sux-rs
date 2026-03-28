@@ -44,8 +44,8 @@
 //! a slice of bits with a slice of a primitive integer type of the same width.
 //!
 #![allow(clippy::result_unit_err)]
-use ambassador::delegatable_trait;
 use crate::{debug_assert_bounds, panic_if_out_of_bounds, panic_if_value, traits::Word};
+use ambassador::delegatable_trait;
 use atomic_primitive::PrimitiveAtomicUnsigned;
 use core::sync::atomic::Ordering;
 use impl_tools::autoimpl;
