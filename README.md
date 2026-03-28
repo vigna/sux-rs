@@ -207,7 +207,7 @@ Union nor the Italian MUR can be held responsible for them.
 [static filters]: https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html
 [partial arrays]: https://docs.rs/sux/latest/sux/array/struct.PartialArray.html
 [bit vectors operations]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
-[unaligned access]: https://docs.rs/sux/latest/sux/bits/bit_field_vec/struct.BitFieldVec.html#method.get_unaligned
+[unaligned access]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html
 [`value-traits`]: https://crates.io/crates/value-traits
 [serde]: https://crates.io/crates/serde/
 [`deko`]: https://crates.io/crates/deko/

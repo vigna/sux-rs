@@ -1826,7 +1826,7 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
 ///
 /// The backing storage must have sufficient padding at the end so that
 /// unaligned reads do not access memory outside the allocation.
-#[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, Delegate, value_traits::Subslices)]
+#[derive(Debug, Clone, MemDbg, MemSize, value_traits::Subslices)]
 #[value_traits_subslices(bound = "B: AsRef<[B::Word]>")]
 #[value_traits_subslices(bound = "B::Word: Word")]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
@@ -1834,30 +1834,54 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
 #[cfg_attr(
     feature = "epserde",
     epserde(bound(
-        deser = "B: epserde::deser::DeserInner, for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = B::Word>"
+        deser = "B: Backend + epserde::deser::DeserInner, for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = B::Word>"
     ))
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(crate::traits::Backend, target = "0")]
+#[cfg_attr(
+    feature = "serde",
+    serde(bound(
+        serialize = "B: Backend + serde::Serialize, B::Word: serde::Serialize",
+        deserialize = "B: Backend + serde::Deserialize<'de>, B::Word: serde::Deserialize<'de>"
+    ))
+)]
 pub struct BitFieldVecU<B: Backend<Word: Word> = Vec<usize>>(BitFieldVec<B>);
 
 impl<B: Backend<Word: Word>> BitFieldVecU<B> {
-    /// Returns a reference to the inner [`BitFieldVec`].
-    pub fn inner(&self) -> &BitFieldVec<B> {
-        &self.0
-    }
-
     /// Consumes the wrapper and returns the inner [`BitFieldVec`].
     pub fn into_inner(self) -> BitFieldVec<B> {
         self.0
     }
 }
 
+impl<B: Backend<Word: Word>> Backend for BitFieldVecU<B> {
+    type Word = B::Word;
+}
+
+impl<B: Backend<Word: Word>> BitWidth for BitFieldVecU<B> {
+    #[inline(always)]
+    fn bit_width(&self) -> usize {
+        self.0.bit_width()
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldSlice for BitFieldVecU<B> {
+    fn as_slice(&self) -> &[Self::Value] {
+        self.0.as_slice()
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> AsRef<[B::Word]> for BitFieldVecU<B> {
+    fn as_ref(&self) -> &[B::Word] {
+        self.0.bits.as_ref()
+    }
+}
+
 impl<W: Word> crate::traits::TryIntoUnaligned for BitFieldVec<Box<[W]>> {
     type Unaligned = BitFieldVecU<Box<[W]>>;
 
-    /// Converts a [`BitFieldVec`] into an [`BitFieldVecU`], adding a
-    /// padding word at the end.
+    /// Converts a [`BitFieldVec`] into a [`BitFieldVecU`], adding a
+    /// padding word at the end if one is not already present.
     ///
     /// # Errors
     ///
@@ -1874,10 +1898,13 @@ impl<W: Word> crate::traits::TryIntoUnaligned for BitFieldVec<Box<[W]>> {
             // Padding word already present (e.g., built with new_unaligned).
             Ok(BitFieldVecU(self))
         } else {
-            // Add a padding word.
+            // Add a padding word, reserving exactly one extra slot to
+            // avoid over-allocation.
             let (raw_bits, bit_width, len) = self.into_raw_parts();
             let mut v = raw_bits.into_vec();
+            v.reserve_exact(1);
             v.push(W::ZERO);
+            // SAFETY: we added a padding word, the length is still valid
             Ok(BitFieldVecU(unsafe {
                 BitFieldVec::from_raw_parts(v.into_boxed_slice(), bit_width, len)
             }))
@@ -1886,13 +1913,13 @@ impl<W: Word> crate::traits::TryIntoUnaligned for BitFieldVec<Box<[W]>> {
 }
 
 impl<W: Word> From<BitFieldVecU<Box<[W]>>> for BitFieldVec<Box<[W]>> {
-    /// Converts an [`BitFieldVecU`] back into a [`BitFieldVec`],
-    /// removing the padding word.
+    /// Converts a [`BitFieldVecU`] back into a [`BitFieldVec`].
+    ///
+    /// The padding word is kept in the backing storage so that a
+    /// subsequent [`try_into_unaligned`](crate::traits::TryIntoUnaligned::try_into_unaligned)
+    /// does not need to reallocate.
     fn from(unaligned: BitFieldVecU<Box<[W]>>) -> Self {
-        let (raw_bits, bit_width, len) = unaligned.0.into_raw_parts();
-        let mut v = raw_bits.into_vec();
-        v.pop(); // Remove padding word
-        unsafe { BitFieldVec::from_raw_parts(v.into_boxed_slice(), bit_width, len) }
+        unaligned.0
     }
 }
 
