@@ -1,10 +1,9 @@
-use bit_field_vec::BitFieldVecU;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 use sux::prelude::*;
-use sux::traits::{IndexedSeq, Pred, PredUnchecked, Succ, SuccUnchecked};
+use sux::traits::{IndexedSeq, Pred, PredUnchecked, Succ, SuccUnchecked, TryIntoUnaligned};
 
 /// Number of pregenerated queries (must be a power of 2 for masking).
 const NUM_QUERIES: usize = 1 << 20;
@@ -103,7 +102,7 @@ macro_rules! bench_ef {
                     })
                 });
 
-                let ef = unsafe { ef.map_low_bits(|l| BitFieldVecU::try_from(l).unwrap()) };
+                let ef = ef.try_into_unaligned().unwrap();
 
                 group.bench_function(BenchmarkId::new("unaligned", &param), |b| {
                     let mut ctr = 0usize;
@@ -136,7 +135,7 @@ macro_rules! bench_ef {
                     })
                 });
 
-                let ef = unsafe { ef.map_low_bits(|l| BitFieldVecU::try_from(l).unwrap()) };
+                let ef = ef.try_into_unaligned().unwrap();
 
                 group.bench_function(BenchmarkId::new("unaligned", &param), |b| {
                     let mut ctr = 0usize;

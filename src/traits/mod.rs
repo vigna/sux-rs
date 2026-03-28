@@ -34,6 +34,19 @@ pub use rank_sel::*;
 pub mod bit_vec_ops;
 pub use bit_vec_ops::*;
 
+/// Error returned by [`TryIntoUnaligned::try_into_unaligned`] when the
+/// bit width does not satisfy the constraints for unaligned reads.
+#[derive(Debug)]
+pub struct UnalignedConversionError(pub String);
+
+impl std::fmt::Display for UnalignedConversionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for UnalignedConversionError {}
+
 /// A trait for types that can be converted into an unaligned variant
 /// that uses branchless
 /// [unaligned reads](crate::bits::BitFieldVec::get_unaligned).
@@ -45,7 +58,7 @@ pub trait TryIntoUnaligned {
     /// The unaligned version of this type.
     type Unaligned;
     /// Converts `self` into the unaligned variant.
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, String>;
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError>;
 }
 
 /// A trait for primitive types that can be used in

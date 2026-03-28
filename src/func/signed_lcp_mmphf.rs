@@ -759,7 +759,7 @@ use crate::traits::TryIntoUnaligned;
 
 impl<F: TryIntoUnaligned, H: SliceByValue> TryIntoUnaligned for SignedLcpMmphf<F, H> {
     type Unaligned = SignedLcpMmphf<F::Unaligned, H>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(SignedLcpMmphf {
             inner: self.inner.try_into_unaligned()?,
             hashes: self.hashes,
@@ -775,7 +775,7 @@ where
     H::Unaligned: SliceByValue,
 {
     type Unaligned = BitSignedLcpMmphf<F::Unaligned, H::Unaligned>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(BitSignedLcpMmphf {
             inner: self.inner.try_into_unaligned()?,
             hashes: self.hashes.try_into_unaligned()?,

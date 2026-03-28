@@ -946,7 +946,7 @@ impl<T: PrimitiveInteger, S: Sig, E: ShardEdge<S, 3>> From<LcpMmphfInt<T, Ubfv, 
 
 impl<T: PrimitiveInteger, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned for LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E> {
     type Unaligned = LcpMmphfInt<T, Ubfv, S, E>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(LcpMmphfInt {
             n: self.n,
             log2_bucket_size: self.log2_bucket_size,
@@ -973,7 +973,7 @@ impl<K: ?Sized, S: Sig, E: ShardEdge<S, 3>> From<LcpMmphf<K, Ubfv, S, E>>
 
 impl<K: ?Sized, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned for LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E> {
     type Unaligned = LcpMmphf<K, Ubfv, S, E>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(LcpMmphf {
             n: self.n,
             log2_bucket_size: self.log2_bucket_size,

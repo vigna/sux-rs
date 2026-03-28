@@ -417,7 +417,7 @@ where
 
 impl<D> TryIntoUnaligned for SparseIndex<D> {
     type Unaligned = SparseIndex<D, BitFieldVecU<Box<[u64]>>>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(SparseIndex {
             ef: self.ef.try_into_unaligned()?,
             first_invalid_pos: self.first_invalid_pos,
@@ -427,7 +427,7 @@ impl<D> TryIntoUnaligned for SparseIndex<D> {
 
 impl<T, P: TryIntoUnaligned, V> TryIntoUnaligned for PartialArray<T, P, V> {
     type Unaligned = PartialArray<T, P::Unaligned, V>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(PartialArray {
             index: self.index.try_into_unaligned()?,
             values: self.values,
