@@ -56,10 +56,10 @@ macro_rules! ensure_unaligned {
     ($ty:ty, $bw:expr) => {
         if !test_unaligned!($ty, $bw) {
             let bits = <$ty>::BITS as usize;
-            return Err(format!(
+            return Err($crate::traits::UnalignedConversionError(format!(
                 "bit width {} does not satisfy the constraints for unaligned reads on word type {} (must be <= {}, or == {}, or == {})",
                 $bw, stringify!($ty), bits - 8 + 2, bits - 8 + 4, bits,
-            ));
+            )));
         }
     };
 }

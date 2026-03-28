@@ -1861,7 +1861,7 @@ impl<W: Word> crate::traits::TryIntoUnaligned for BitFieldVec<Box<[W]>> {
     /// Returns an error if the bit width does not satisfy the constraints of
     /// [`BitFieldVec::get_unaligned_unchecked`]: it must be at most
     /// `W::BITS - 6`, or exactly `W::BITS - 4`, or exactly `W::BITS`.
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         let bw = self.bit_width();
         ensure_unaligned!(W, bw);
         let needed = (SliceByValue::len(&self) * bw).div_ceil(W::BITS as usize);

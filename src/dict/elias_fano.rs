@@ -2380,7 +2380,7 @@ use crate::bits::BitFieldVecU;
 
 impl<V: Word, H> TryIntoUnaligned for EliasFano<V, H, BitFieldVec<Box<[V]>>> {
     type Unaligned = EliasFano<V, H, BitFieldVecU<Box<[V]>>>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(EliasFano {
             n: self.n,
             u: self.u,
