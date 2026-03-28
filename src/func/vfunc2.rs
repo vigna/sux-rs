@@ -139,6 +139,41 @@ impl<
     }
 }
 
+// ── Aligned ↔ Unaligned conversions ─────────────────────────────────
+
+use crate::bits::BitFieldVecU;
+use crate::traits::TryIntoUnaligned;
+
+impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>> TryIntoUnaligned
+    for VFunc2<T, W, BitFieldVec<Box<[W]>>, S, E0, E1>
+{
+    type Unaligned = VFunc2<T, W, BitFieldVecU<Box<[W]>>, S, E0, E1>;
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+        Ok(VFunc2 {
+            short: self.short.try_into_unaligned()?,
+            long: self.long.try_into_unaligned()?,
+            remap: self.remap,
+            escape: self.escape,
+        })
+    }
+}
+
+impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
+    From<VFunc2<T, W, BitFieldVecU<Box<[W]>>, S, E0, E1>>
+    for VFunc2<T, W, BitFieldVec<Box<[W]>>, S, E0, E1>
+{
+    /// Converts a [`VFunc2`] with [`UnalignedBitFieldVec`] data back into
+    /// one with [`BitFieldVec`] data, removing the padding words.
+    fn from(vf: VFunc2<T, W, BitFieldVecU<Box<[W]>>, S, E0, E1>) -> Self {
+        VFunc2 {
+            short: VFunc::from(vf.short),
+            long: VFunc::from(vf.long),
+            remap: vf.remap,
+            escape: vf.escape,
+        }
+    }
+}
+
 /// Finds the optimal short-function bit width `r` for a [`VFunc2`],
 /// minimizing the estimated total space.
 ///

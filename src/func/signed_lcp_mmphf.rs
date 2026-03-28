@@ -89,7 +89,7 @@ pub struct SignedLcpMmphf<F, H: SliceByValue> {
 /// # fn main() {}
 /// ```
 pub type SignedLcpMmphfInt<T, H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
-    SignedLcpMmphf<LcpMmphfInt<T, S, E>, H>;
+    SignedLcpMmphf<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 /// A [`SignedLcpMmphf`] wrapping a [`LcpMmphf`] for `str` keys.
 ///
@@ -121,7 +121,7 @@ pub type SignedLcpMmphfInt<T, H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> 
 /// # fn main() {}
 /// ```
 pub type SignedLcpMmphfStr<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
-    SignedLcpMmphf<LcpMmphf<str, S, E>, H>;
+    SignedLcpMmphf<LcpMmphf<str, BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 /// A [`SignedLcpMmphf`] wrapping a [`LcpMmphf`] for `[u8]` keys.
 ///
@@ -156,7 +156,7 @@ pub type SignedLcpMmphfStr<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
 /// # fn main() {}
 /// ```
 pub type SignedLcpMmphfSliceU8<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
-    SignedLcpMmphf<LcpMmphf<[u8], S, E>, H>;
+    SignedLcpMmphf<LcpMmphf<[u8], BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 // ── Integer impl ────────────────────────────────────────────────────
 
@@ -165,7 +165,7 @@ impl<
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> SignedLcpMmphf<LcpMmphfInt<T, S, E>, H>
+> SignedLcpMmphf<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
@@ -204,7 +204,7 @@ impl<
 }
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E> SignedLcpMmphf<LcpMmphfInt<T, S, E>, Box<[W]>>
+impl<T, W, S, E> SignedLcpMmphf<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, Box<[W]>>
 where
     T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
     W: Word,
@@ -255,7 +255,7 @@ impl<
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> SignedLcpMmphf<LcpMmphf<K, S, E>, H>
+> SignedLcpMmphf<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>, H>
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
@@ -294,7 +294,7 @@ impl<
 }
 
 #[cfg(feature = "rayon")]
-impl<K, W, S, E> SignedLcpMmphf<LcpMmphf<K, S, E>, Box<[W]>>
+impl<K, W, S, E> SignedLcpMmphf<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>, Box<[W]>>
 where
     K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
     W: Word,
@@ -381,15 +381,15 @@ pub struct BitSignedLcpMmphf<F, H: SliceByValue> {
 
 /// A [`BitSignedLcpMmphf`] wrapping a [`LcpMmphfInt`].
 pub type BitSignedLcpMmphfInt<T, H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
-    BitSignedLcpMmphf<LcpMmphfInt<T, S, E>, H>;
+    BitSignedLcpMmphf<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 /// A [`BitSignedLcpMmphf`] wrapping a [`LcpMmphf`] for `str` keys.
 pub type BitSignedLcpMmphfStr<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
-    BitSignedLcpMmphf<LcpMmphf<str, S, E>, H>;
+    BitSignedLcpMmphf<LcpMmphf<str, BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 /// A [`BitSignedLcpMmphf`] wrapping a [`LcpMmphf`] for `[u8]` keys.
 pub type BitSignedLcpMmphfSliceU8<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
-    BitSignedLcpMmphf<LcpMmphf<[u8], S, E>, H>;
+    BitSignedLcpMmphf<LcpMmphf<[u8], BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 // ── Integer impl ────────────────────────────────────────────────────
 
@@ -398,7 +398,7 @@ impl<
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> BitSignedLcpMmphf<LcpMmphfInt<T, S, E>, H>
+> BitSignedLcpMmphf<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
@@ -433,7 +433,7 @@ impl<
 }
 
 #[cfg(feature = "rayon")]
-impl<T, H, S, E> BitSignedLcpMmphf<LcpMmphfInt<T, S, E>, BitFieldVec<Box<[H]>>>
+impl<T, H, S, E> BitSignedLcpMmphf<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
 where
     T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
     H: Word,
@@ -496,7 +496,7 @@ impl<
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> BitSignedLcpMmphf<LcpMmphf<K, S, E>, H>
+> BitSignedLcpMmphf<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>, H>
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
@@ -531,7 +531,7 @@ impl<
 }
 
 #[cfg(feature = "rayon")]
-impl<K, H, S, E> BitSignedLcpMmphf<LcpMmphf<K, S, E>, BitFieldVec<Box<[H]>>>
+impl<K, H, S, E> BitSignedLcpMmphf<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
 where
     K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
     H: Word,
@@ -594,20 +594,20 @@ where
 
 /// A [`SignedLcpMmphf`] wrapping a [`Lcp2MmphfInt`].
 pub type SignedLcp2MmphfInt<T, H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
-    SignedLcpMmphf<Lcp2MmphfInt<T, S, E>, H>;
+    SignedLcpMmphf<Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>;
 /// A [`SignedLcpMmphf`] wrapping a [`Lcp2Mmphf`] for `str` keys.
 pub type SignedLcp2MmphfStr<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
-    SignedLcpMmphf<Lcp2Mmphf<str, S, E>, H>;
+    SignedLcpMmphf<Lcp2Mmphf<str, BitFieldVec<Box<[usize]>>, S, E>, H>;
 /// A [`SignedLcpMmphf`] wrapping a [`Lcp2Mmphf`] for `[u8]` keys.
 pub type SignedLcp2MmphfSliceU8<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
-    SignedLcpMmphf<Lcp2Mmphf<[u8], S, E>, H>;
+    SignedLcpMmphf<Lcp2Mmphf<[u8], BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 impl<
     T: PrimitiveInteger + ToSig<S> + Copy,
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> SignedLcpMmphf<Lcp2MmphfInt<T, S, E>, H>
+> SignedLcpMmphf<Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
@@ -636,7 +636,7 @@ where
 }
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E> SignedLcpMmphf<Lcp2MmphfInt<T, S, E>, Box<[W]>>
+impl<T, W, S, E> SignedLcpMmphf<Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, Box<[W]>>
 where
     T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
     W: Word,
@@ -681,7 +681,7 @@ impl<
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> SignedLcpMmphf<Lcp2Mmphf<K, S, E>, H>
+> SignedLcpMmphf<Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S, E>, H>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
@@ -710,7 +710,7 @@ where
 }
 
 #[cfg(feature = "rayon")]
-impl<K, W, S, E> SignedLcpMmphf<Lcp2Mmphf<K, S, E>, Box<[W]>>
+impl<K, W, S, E> SignedLcpMmphf<Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S, E>, Box<[W]>>
 where
     K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
     W: Word,
@@ -747,6 +747,39 @@ where
         Ok(Self {
             inner,
             hashes: hashes.into_boxed_slice(),
+        })
+    }
+}
+
+// ── Aligned ↔ Unaligned conversions ─────────────────────────────────
+
+use crate::traits::TryIntoUnaligned;
+
+// -- SignedLcpMmphf: only inner needs converting, hashes stay as-is --
+
+impl<F: TryIntoUnaligned, H: SliceByValue> TryIntoUnaligned for SignedLcpMmphf<F, H> {
+    type Unaligned = SignedLcpMmphf<F::Unaligned, H>;
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+        Ok(SignedLcpMmphf {
+            inner: self.inner.try_into_unaligned()?,
+            hashes: self.hashes,
+        })
+    }
+}
+
+// -- BitSignedLcpMmphf: both inner and hashes are converted --
+
+impl<F: TryIntoUnaligned, H: TryIntoUnaligned + SliceByValue> TryIntoUnaligned
+    for BitSignedLcpMmphf<F, H>
+where
+    H::Unaligned: SliceByValue,
+{
+    type Unaligned = BitSignedLcpMmphf<F::Unaligned, H::Unaligned>;
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+        Ok(BitSignedLcpMmphf {
+            inner: self.inner.try_into_unaligned()?,
+            hashes: self.hashes.try_into_unaligned()?,
+            hash_mask: self.hash_mask,
         })
     }
 }

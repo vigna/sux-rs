@@ -8,10 +8,10 @@
 
 use std::borrow::Borrow;
 
+use crate::bits::{BitFieldVec, BitFieldVecU};
+use crate::func::VFunc;
 use crate::func::shard_edge::ShardEdge;
-use crate::traits::Word;
 use crate::utils::*;
-use crate::{bits::BitFieldVec, func::VFunc};
 use mem_dbg::*;
 use num_primitive::PrimitiveNumber;
 use value_traits::slices::SliceByValue;
@@ -232,5 +232,65 @@ impl<
     #[inline(always)]
     pub fn get_unaligned(&self, key: impl Borrow<T>) -> Option<W> {
         self.get_by_sig_unaligned(T::to_sig(key.borrow(), self.func.seed))
+    }
+}
+
+// ── Aligned ↔ Unaligned conversions ─────────────────────────────────
+
+// -- SignedVFunc: only func needs converting, hashes stay as-is --
+
+use crate::traits::{TryIntoUnaligned, Word};
+
+impl<F: TryIntoUnaligned, H: SliceByValue> TryIntoUnaligned for SignedVFunc<F, H> {
+    type Unaligned = SignedVFunc<F::Unaligned, H>;
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+        Ok(SignedVFunc {
+            func: self.func.try_into_unaligned()?,
+            hashes: self.hashes,
+        })
+    }
+}
+
+impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, H: SliceByValue>
+    From<SignedVFunc<VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>, H>>
+    for SignedVFunc<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>, H>
+{
+    fn from(f: SignedVFunc<VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>, H>) -> Self {
+        SignedVFunc {
+            func: f.func.into(),
+            hashes: f.hashes,
+        }
+    }
+}
+
+// -- BitSignedVFunc: both func and hashes are converted --
+
+impl<F: TryIntoUnaligned, H: TryIntoUnaligned + SliceByValue> TryIntoUnaligned
+    for BitSignedVFunc<F, H>
+where
+    H::Unaligned: SliceByValue,
+{
+    type Unaligned = BitSignedVFunc<F::Unaligned, H::Unaligned>;
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+        Ok(BitSignedVFunc {
+            func: self.func.try_into_unaligned()?,
+            hashes: self.hashes.try_into_unaligned()?,
+            hash_mask: self.hash_mask,
+        })
+    }
+}
+
+impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
+    From<BitSignedVFunc<VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W]>>>>
+    for BitSignedVFunc<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>, BitFieldVec<Box<[W]>>>
+{
+    fn from(
+        f: BitSignedVFunc<VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W]>>>,
+    ) -> Self {
+        BitSignedVFunc {
+            func: f.func.into(),
+            hashes: f.hashes.into(),
+            hash_mask: f.hash_mask,
+        }
     }
 }

@@ -175,3 +175,39 @@ impl<T: ?Sized + ToSig<S>, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
         self.get_by_sig_unaligned(T::to_sig(key.borrow(), self.seed))
     }
 }
+
+// ── Aligned ↔ Unaligned conversions ─────────────────────────────────
+
+use crate::bits::BitFieldVecU;
+use crate::traits::TryIntoUnaligned;
+
+impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
+    for VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>
+{
+    type Unaligned = VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>;
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+        Ok(VFunc {
+            shard_edge: self.shard_edge,
+            seed: self.seed,
+            num_keys: self.num_keys,
+            data: self.data.try_into_unaligned()?,
+            _marker: std::marker::PhantomData,
+        })
+    }
+}
+
+impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> From<VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>>
+    for VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>
+{
+    /// Converts a [`VFunc`] with [`UnalignedBitFieldVec`] data back into
+    /// one with [`BitFieldVec`] data, removing the padding word.
+    fn from(vf: VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>) -> Self {
+        VFunc {
+            shard_edge: vf.shard_edge,
+            seed: vf.seed,
+            num_keys: vf.num_keys,
+            data: BitFieldVec::from(vf.data),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}

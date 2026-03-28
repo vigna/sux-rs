@@ -11,9 +11,10 @@ use std::marker::PhantomData;
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;
 
-use crate::bits::BitVec;
+use crate::bits::{BitFieldVec, BitFieldVecU, BitVec};
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EliasFano;
+use crate::traits::TryIntoUnaligned;
 use crate::panic_if_out_of_bounds;
 use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
 use crate::traits::Backend;
@@ -38,8 +39,8 @@ type DenseIndex = Rank9<BitVec<Box<[u64]>>>;
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct SparseIndex<D> {
-    ef: EliasFano<u64, SelectZeroAdaptConst<BitVec<D>, Box<[usize]>, 12, 3>>,
+pub struct SparseIndex<D, L = BitFieldVec<Box<[u64]>>> {
+    ef: EliasFano<u64, SelectZeroAdaptConst<BitVec<D>, Box<[usize]>, 12, 3>, L>,
     /// self.ef should not be queried for values >= self.first_invalid_position
     first_invalid_pos: usize,
 }
@@ -315,8 +316,10 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
     }
 }
 
-impl<T, D: Backend<Word = usize> + AsRef<[usize]>, V: AsRef<[T]>>
-    PartialArray<T, SparseIndex<D>, V>
+impl<T, D: Backend<Word = usize> + AsRef<[usize]>, L: SliceByValue<Value = u64>, V: AsRef<[T]>>
+    PartialArray<T, SparseIndex<D, L>, V>
+where
+    for<'b> &'b L: crate::traits::IntoUncheckedIterator<Item = u64>,
 {
     /// Returns the total length of the array.
     ///
@@ -393,8 +396,10 @@ impl<T: Clone, V: AsRef<[T]>> SliceByValue for PartialArray<T, DenseIndex, V> {
 
 /// Returns an option even when using `get_value_unchecked` because it should be safe to call
 /// whenever `position < len()`.
-impl<T: Clone, D: Backend<Word = usize> + AsRef<[usize]>, V: AsRef<[T]>> SliceByValue
-    for PartialArray<T, SparseIndex<D>, V>
+impl<T: Clone, D: Backend<Word = usize> + AsRef<[usize]>, L: SliceByValue<Value = u64>, V: AsRef<[T]>>
+    SliceByValue for PartialArray<T, SparseIndex<D, L>, V>
+where
+    for<'b> &'b L: crate::traits::IntoUncheckedIterator<Item = u64>,
 {
     type Value = Option<T>;
 
@@ -405,5 +410,28 @@ impl<T: Clone, D: Backend<Word = usize> + AsRef<[usize]>, V: AsRef<[T]>> SliceBy
     unsafe fn get_value_unchecked(&self, position: usize) -> Self::Value {
         // SAFETY: position < len() guaranteed by caller
         unsafe { self.get_unchecked(position) }.cloned()
+    }
+}
+
+// ── Aligned ↔ Unaligned conversion ──────────────────────────────────
+
+impl<D> TryIntoUnaligned for SparseIndex<D> {
+    type Unaligned = SparseIndex<D, BitFieldVecU<Box<[u64]>>>;
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+        Ok(SparseIndex {
+            ef: self.ef.try_into_unaligned()?,
+            first_invalid_pos: self.first_invalid_pos,
+        })
+    }
+}
+
+impl<T, P: TryIntoUnaligned, V> TryIntoUnaligned for PartialArray<T, P, V> {
+    type Unaligned = PartialArray<T, P::Unaligned, V>;
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, String> {
+        Ok(PartialArray {
+            index: self.index.try_into_unaligned()?,
+            values: self.values,
+            _marker: PhantomData,
+        })
     }
 }

@@ -34,6 +34,20 @@ pub use rank_sel::*;
 pub mod bit_vec_ops;
 pub use bit_vec_ops::*;
 
+/// A trait for types that can be converted into an unaligned variant
+/// that uses branchless
+/// [unaligned reads](crate::bits::BitFieldVec::get_unaligned).
+///
+/// Compound types (e.g.,
+/// [`SignedLcpMmphf`](crate::func::SignedLcpMmphf)) implement this
+/// trait by recursively converting their inner components.
+pub trait TryIntoUnaligned {
+    /// The unaligned version of this type.
+    type Unaligned;
+    /// Converts `self` into the unaligned variant.
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, String>;
+}
+
 /// A trait for primitive types that can be used in
 /// [backends](crate::traits::Backend).
 ///
