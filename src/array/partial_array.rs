@@ -14,10 +14,10 @@ use value_traits::slices::SliceByValue;
 use crate::bits::{BitFieldVec, BitFieldVecU, BitVec};
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EliasFano;
-use crate::traits::TryIntoUnaligned;
 use crate::panic_if_out_of_bounds;
 use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
 use crate::traits::Backend;
+use crate::traits::TryIntoUnaligned;
 use crate::traits::{BitVecOps, BitVecOpsMut};
 use crate::traits::{RankUnchecked, SuccUnchecked};
 
@@ -396,8 +396,12 @@ impl<T: Clone, V: AsRef<[T]>> SliceByValue for PartialArray<T, DenseIndex, V> {
 
 /// Returns an option even when using `get_value_unchecked` because it should be safe to call
 /// whenever `position < len()`.
-impl<T: Clone, D: Backend<Word = usize> + AsRef<[usize]>, L: SliceByValue<Value = u64>, V: AsRef<[T]>>
-    SliceByValue for PartialArray<T, SparseIndex<D, L>, V>
+impl<
+    T: Clone,
+    D: Backend<Word = usize> + AsRef<[usize]>,
+    L: SliceByValue<Value = u64>,
+    V: AsRef<[T]>,
+> SliceByValue for PartialArray<T, SparseIndex<D, L>, V>
 where
     for<'b> &'b L: crate::traits::IntoUncheckedIterator<Item = u64>,
 {
@@ -417,7 +421,9 @@ where
 
 impl<D> TryIntoUnaligned for SparseIndex<D> {
     type Unaligned = SparseIndex<D, BitFieldVecU<Box<[u64]>>>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(SparseIndex {
             ef: self.ef.try_into_unaligned()?,
             first_invalid_pos: self.first_invalid_pos,
@@ -427,7 +433,9 @@ impl<D> TryIntoUnaligned for SparseIndex<D> {
 
 impl<T, P: TryIntoUnaligned, V> TryIntoUnaligned for PartialArray<T, P, V> {
     type Unaligned = PartialArray<T, P::Unaligned, V>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(PartialArray {
             index: self.index.try_into_unaligned()?,
             values: self.values,

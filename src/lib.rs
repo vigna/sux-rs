@@ -15,6 +15,8 @@
 #![deny(unconditional_recursion)]
 #![allow(clippy::duplicated_attributes)]
 #![allow(clippy::len_without_is_empty)]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::too_many_arguments)]
 
 pub mod array;
 pub mod bits;

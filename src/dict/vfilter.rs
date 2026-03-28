@@ -204,7 +204,9 @@ impl<T: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::Tr
     for VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
 {
     type Unaligned = VFilter<W, VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(VFilter {
             func: self.func.try_into_unaligned()?,
             filter_mask: self.filter_mask,

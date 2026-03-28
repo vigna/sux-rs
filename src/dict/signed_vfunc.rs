@@ -243,7 +243,9 @@ use crate::traits::{TryIntoUnaligned, Word};
 
 impl<F: TryIntoUnaligned, H: SliceByValue> TryIntoUnaligned for SignedVFunc<F, H> {
     type Unaligned = SignedVFunc<F::Unaligned, H>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(SignedVFunc {
             func: self.func.try_into_unaligned()?,
             hashes: self.hashes,
@@ -271,7 +273,9 @@ where
     H::Unaligned: SliceByValue,
 {
     type Unaligned = BitSignedVFunc<F::Unaligned, H::Unaligned>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(BitSignedVFunc {
             func: self.func.try_into_unaligned()?,
             hashes: self.hashes.try_into_unaligned()?,

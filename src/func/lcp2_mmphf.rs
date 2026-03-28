@@ -674,12 +674,15 @@ where
     }
 }
 
-impl<T: PrimitiveInteger, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned for Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>
+impl<T: PrimitiveInteger, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
+    for Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
     type Unaligned = Lcp2MmphfInt<T, Ubfv, S, E>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(Lcp2MmphfInt {
             n: self.n,
             log2_bucket_size: self.log2_bucket_size,
@@ -708,12 +711,15 @@ where
     }
 }
 
-impl<K: ?Sized, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned for Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S, E>
+impl<K: ?Sized, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
+    for Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
     type Unaligned = Lcp2Mmphf<K, Ubfv, S, E>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(Lcp2Mmphf {
             n: self.n,
             log2_bucket_size: self.log2_bucket_size,
