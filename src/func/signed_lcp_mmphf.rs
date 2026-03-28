@@ -788,9 +788,7 @@ impl<F: TryIntoUnaligned, H> TryIntoUnaligned for SignedLcpMmphf<F, H> {
 
 // -- BitSignedLcpMmphf: both inner and hashes are converted --
 
-impl<F: TryIntoUnaligned, H: TryIntoUnaligned> TryIntoUnaligned
-    for BitSignedLcpMmphf<F, H>
-{
+impl<F: TryIntoUnaligned, H: TryIntoUnaligned> TryIntoUnaligned for BitSignedLcpMmphf<F, H> {
     type Unaligned = BitSignedLcpMmphf<F::Unaligned, H::Unaligned>;
     fn try_into_unaligned(
         self,
