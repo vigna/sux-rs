@@ -304,7 +304,7 @@ where
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
         keep_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> Result<(Self, Option<AnyShardStore<S, usize>>)> {
+    ) -> Result<(Self, Option<Box<dyn ShardStore<S, usize> + Send + Sync>>)> {
         if n == 0 {
             return Ok((
                 Self {
@@ -798,7 +798,7 @@ where
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
         keep_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> Result<(Self, Option<AnyShardStore<S, usize>>)> {
+    ) -> Result<(Self, Option<Box<dyn ShardStore<S, usize> + Send + Sync>>)> {
         if n == 0 {
             return Ok((
                 Self {

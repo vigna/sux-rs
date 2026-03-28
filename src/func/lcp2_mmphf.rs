@@ -243,7 +243,7 @@ where
                 *prev_key = Some(key);
                 Ok(idx)
             },
-            &mut |_builder, seed, store, _max_value, _num_keys, pl: &mut P| {
+            &mut |_builder, seed, mut store, _max_value, _num_keys, pl: &mut P| {
                 let shard_edge = _builder.shard_edge;
                 // Finalize LCP data (last bucket).
                 {
@@ -343,10 +343,7 @@ where
                     }};
                 }
 
-                match store {
-                    AnyShardStore::Online(mut s) => build_from_store!(&mut s),
-                    AnyShardStore::Offline(mut s) => build_from_store!(&mut s),
-                }
+                build_from_store!(&mut *store)
             },
             pl,
         )
@@ -542,7 +539,7 @@ where
                 prev_key.extend_from_slice(key_bytes);
                 Ok(idx)
             },
-            &mut |_builder, seed, store, _max_value, _num_keys, pl: &mut P| {
+            &mut |_builder, seed, mut store, _max_value, _num_keys, pl: &mut P| {
                 let shard_edge = _builder.shard_edge;
                 // Finalize LCP data (last bucket).
                 {
@@ -649,10 +646,7 @@ where
                     }};
                 }
 
-                match store {
-                    AnyShardStore::Online(mut s) => build_from_store!(&mut s),
-                    AnyShardStore::Offline(mut s) => build_from_store!(&mut s),
-                }
+                build_from_store!(&mut *store)
             },
             pl,
         )

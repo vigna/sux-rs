@@ -623,7 +623,7 @@ where
         let func = self.try_populate_and_build(
             keys,
             FromCloneableIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
-            &mut |builder, seed, store, _max_value, _num_keys, pl: &mut P| {
+            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P| {
                 builder.bit_width = W::BITS as usize;
 
                 let new_data: Box<[W]> = vec![
@@ -638,24 +638,14 @@ where
                     builder.num_keys, builder.bit_width,
                 ));
 
-                let func = match store {
-                    AnyShardStore::Online(s) => builder.try_build_from_shard_iter(
-                        seed,
-                        new_data,
-                        s.into_iter(),
-                        &get_val,
-                        &|_| {},
-                        pl,
-                    )?,
-                    AnyShardStore::Offline(s) => builder.try_build_from_shard_iter(
-                        seed,
-                        new_data,
-                        s.into_iter(),
-                        &get_val,
-                        &|_| {},
-                        pl,
-                    )?,
-                };
+                let func = builder.try_build_from_shard_iter(
+                    seed,
+                    new_data,
+                    store.drain(),
+                    &get_val,
+                    &|_| {},
+                    pl,
+                )?;
                 Ok(func)
             },
             pl,
@@ -715,7 +705,7 @@ where
         seed: u64,
         shard_edge: E,
         max_value: W,
-        shard_store: &mut impl ShardStore<S, V>,
+        shard_store: &mut (impl ShardStore<S, V> + ?Sized),
         get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
         inspect: &(impl Fn(&SigVal<S, V>) + Send + Sync),
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -850,30 +840,15 @@ where
         pl.start("Storing hashes...");
 
         // We passed keep_store = true
-        match store.unwrap() {
-            AnyShardStore::Online(mut shard_store) => {
-                for shard in shard_store.iter() {
-                    for sig_val in shard.iter() {
-                        let pos = sig_val.val;
-                        let local_sig = shard_edge.local_sig(sig_val.sig);
-                        let hash =
-                            (mix64(shard_edge.edge_hash(local_sig)) & hash_mask).as_to::<H>();
-                        hashes.set_value(pos, hash);
-                        pl.light_update();
-                    }
-                }
-            }
-            AnyShardStore::Offline(mut shard_store) => {
-                for shard in shard_store.iter() {
-                    for sig_val in shard.iter() {
-                        let pos = sig_val.val;
-                        let local_sig = shard_edge.local_sig(sig_val.sig);
-                        let hash =
-                            (mix64(shard_edge.edge_hash(local_sig)) & hash_mask).as_to::<H>();
-                        hashes.set_value(pos, hash);
-                        pl.light_update();
-                    }
-                }
+        let mut shard_store = store.unwrap();
+        for shard in shard_store.iter() {
+            for sig_val in shard.iter() {
+                let pos = sig_val.val;
+                let local_sig = shard_edge.local_sig(sig_val.sig);
+                let hash =
+                    (mix64(shard_edge.edge_hash(local_sig)) & hash_mask).as_to::<H>();
+                hashes.set_value(pos, hash);
+                pl.light_update();
             }
         }
 
@@ -928,28 +903,15 @@ where
         pl.expected_updates(Some(num_keys));
         pl.start("Storing hashes...");
 
-        match store.expect("Store should be present when keep_store is true") {
-            AnyShardStore::Online(mut shard_store) => {
-                for shard in shard_store.iter() {
-                    for sig_val in shard.iter() {
-                        let pos = sig_val.val;
-                        let local_sig = shard_edge.local_sig(sig_val.sig);
-                        let hash = H::as_from(mix64(shard_edge.edge_hash(local_sig)));
-                        hashes.set_value(pos, hash);
-                        pl.light_update();
-                    }
-                }
-            }
-            AnyShardStore::Offline(mut shard_store) => {
-                for shard in shard_store.iter() {
-                    for sig_val in shard.iter() {
-                        let pos = sig_val.val;
-                        let local_sig = shard_edge.local_sig(sig_val.sig);
-                        let hash = H::as_from(mix64(shard_edge.edge_hash(local_sig)));
-                        hashes.set_value(pos, hash);
-                        pl.light_update();
-                    }
-                }
+        let mut shard_store =
+            store.expect("Store should be present when keep_store is true");
+        for shard in shard_store.iter() {
+            for sig_val in shard.iter() {
+                let pos = sig_val.val;
+                let local_sig = shard_edge.local_sig(sig_val.sig);
+                let hash = H::as_from(mix64(shard_edge.edge_hash(local_sig)));
+                hashes.set_value(pos, hash);
+                pl.light_update();
             }
         }
 
@@ -1001,7 +963,7 @@ where
         let func = self.try_populate_and_build(
             keys,
             FromCloneableIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
-            &mut |builder, seed, store, _max_value, _num_keys, pl: &mut P| {
+            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P| {
                 builder.bit_width = filter_bits;
 
                 let new_data = BitFieldVec::<Box<[W]>>::new_unaligned(
@@ -1014,24 +976,14 @@ where
                     builder.num_keys, builder.bit_width,
                 ));
 
-                let func = match store {
-                    AnyShardStore::Online(s) => builder.try_build_from_shard_iter(
-                        seed,
-                        new_data,
-                        s.into_iter(),
-                        &get_val,
-                        &|_| {},
-                        pl,
-                    )?,
-                    AnyShardStore::Offline(s) => builder.try_build_from_shard_iter(
-                        seed,
-                        new_data,
-                        s.into_iter(),
-                        &get_val,
-                        &|_| {},
-                        pl,
-                    )?,
-                };
+                let func = builder.try_build_from_shard_iter(
+                    seed,
+                    new_data,
+                    store.drain(),
+                    &get_val,
+                    &|_| {},
+                    pl,
+                )?;
                 Ok(func)
             },
             pl,
@@ -1063,7 +1015,7 @@ impl<
     ///
     /// If `keep_store` is `true`, the second element of the returned
     /// tuple contains the store that was populated during construction
-    /// (the solver uses `iter()` rather than `into_iter()` so the store
+    /// (the solver uses `iter()` rather than `drain()` so the store
     /// survives). The caller can pass it to
     /// [`try_build_func_with_store`](Self::try_build_func_with_store)
     /// to build additional functions without re-hashing the keys.
@@ -1087,7 +1039,7 @@ impl<
         new_data: fn(usize, usize) -> D,
         keep_store: bool,
         pl: &mut P,
-    ) -> anyhow::Result<(VFunc<T, W, D, S, E>, Option<AnyShardStore<S, W>>)>
+    ) -> anyhow::Result<(VFunc<T, W, D, S, E>, Option<Box<dyn ShardStore<S, W> + Send + Sync>>)>
     where
         W: AsU128,
         SigVal<S, W>: RadixKey,
@@ -1101,7 +1053,7 @@ impl<
         self.try_populate_and_build(
             keys,
             values,
-            &mut |builder, seed, store, max_value, _num_keys, pl: &mut P| {
+            &mut |builder, seed, mut store, max_value, _num_keys, pl: &mut P| {
                 builder.bit_width = max_value.as_u128().bit_len() as usize;
 
                 let data = new_data(
@@ -1119,53 +1071,26 @@ impl<
                     builder.bit_width,
                 ));
 
-                match store {
-                    AnyShardStore::Online(mut s) => {
-                        if keep_store {
-                            let func = builder.try_build_from_shard_iter(
-                                seed,
-                                data,
-                                s.iter(),
-                                &get_val,
-                                &|_| {},
-                                pl,
-                            )?;
-                            Ok((func, Some(AnyShardStore::Online(s))))
-                        } else {
-                            let func = builder.try_build_from_shard_iter(
-                                seed,
-                                data,
-                                s.into_iter(),
-                                &get_val,
-                                &|_| {},
-                                pl,
-                            )?;
-                            Ok((func, None))
-                        }
-                    }
-                    AnyShardStore::Offline(mut s) => {
-                        if keep_store {
-                            let func = builder.try_build_from_shard_iter(
-                                seed,
-                                data,
-                                s.iter(),
-                                &get_val,
-                                &|_| {},
-                                pl,
-                            )?;
-                            Ok((func, Some(AnyShardStore::Offline(s))))
-                        } else {
-                            let func = builder.try_build_from_shard_iter(
-                                seed,
-                                data,
-                                s.into_iter(),
-                                &get_val,
-                                &|_| {},
-                                pl,
-                            )?;
-                            Ok((func, None))
-                        }
-                    }
+                if keep_store {
+                    let func = builder.try_build_from_shard_iter(
+                        seed,
+                        data,
+                        store.iter(),
+                        &get_val,
+                        &|_| {},
+                        pl,
+                    )?;
+                    Ok((func, Some(store)))
+                } else {
+                    let func = builder.try_build_from_shard_iter(
+                        seed,
+                        data,
+                        store.drain(),
+                        &get_val,
+                        &|_| {},
+                        pl,
+                    )?;
+                    Ok((func, None))
                 }
             },
             pl,
@@ -1218,7 +1143,7 @@ impl<
         build_fn: &mut impl FnMut(
             &mut Self,
             u64,
-            AnyShardStore<S, V>,
+            Box<dyn ShardStore<S, V> + Send + Sync>,
             V,
             usize,
             &mut P,
@@ -1254,7 +1179,7 @@ impl<
                     )?,
                     &mut keys,
                     &mut values,
-                    AnyShardStore::Offline,
+                    |s| Box::new(s) as Box<dyn ShardStore<S, V> + Send + Sync>,
                     build_fn,
                     pl,
                 )
@@ -1268,7 +1193,7 @@ impl<
                     )?,
                     &mut keys,
                     &mut values,
-                    AnyShardStore::Online,
+                    |s| Box::new(s) as Box<dyn ShardStore<S, V> + Send + Sync>,
                     build_fn,
                     pl,
                 )
@@ -1352,7 +1277,7 @@ impl<
         build_fn: &mut impl FnMut(
             &mut Self,
             u64,
-            AnyShardStore<S, V>,
+            Box<dyn ShardStore<S, V> + Send + Sync>,
             V,
             usize,
             &mut P,
@@ -1388,7 +1313,7 @@ impl<
                     )?,
                     &mut keys,
                     key_to_val,
-                    AnyShardStore::Offline,
+                    |s| Box::new(s) as Box<dyn ShardStore<S, V> + Send + Sync>,
                     build_fn,
                     pl,
                 )
@@ -1402,7 +1327,7 @@ impl<
                     )?,
                     &mut keys,
                     key_to_val,
-                    AnyShardStore::Online,
+                    |s| Box::new(s) as Box<dyn ShardStore<S, V> + Send + Sync>,
                     build_fn,
                     pl,
                 )
@@ -1455,8 +1380,8 @@ impl<
     ///
     /// Populates `sig_store` by iterating `keys`/`values`, converts it
     /// to a shard store, checks the max-shard invariant, sets up
-    /// `self.shard_edge`/`c`/`lge`, wraps the store via `wrap` into an
-    /// [`AnyShardStore`], and calls `build_fn`.
+    /// `self.shard_edge`/`c`/`lge`, wraps the store via `wrap` into a
+    /// boxed [`ShardStore`], and calls `build_fn`.
     ///
     /// Returns the result of `build_fn`, or a [`SolveError`] for the
     /// caller's retry loop to handle.
@@ -1487,11 +1412,11 @@ impl<
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend V>
              ),
-        wrap: impl FnOnce(SS::ShardStore) -> AnyShardStore<S, V>,
+        wrap: impl FnOnce(SS::ShardStore) -> Box<dyn ShardStore<S, V> + Send + Sync>,
         build_fn: &mut impl FnMut(
             &mut Self,
             u64,
-            AnyShardStore<S, V>,
+            Box<dyn ShardStore<S, V> + Send + Sync>,
             V,
             usize,
             &mut P,
@@ -1578,7 +1503,7 @@ impl<
     /// Populates `sig_store` by iterating `keys` and calling
     /// `key_to_val` for each key, converts it to a shard store, checks
     /// the max-shard invariant, sets up `self.shard_edge`/`c`/`lge`,
-    /// wraps the store via `wrap` into an [`AnyShardStore`], and calls
+    /// wraps the store via `wrap` into a boxed [`ShardStore`], and calls
     /// `build_fn`.
     ///
     /// Returns the result of `build_fn`, or a [`SolveError`] for the
@@ -1604,11 +1529,11 @@ impl<
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
              ),
         key_to_val: &mut impl FnMut(&B, usize) -> anyhow::Result<V>,
-        wrap: impl FnOnce(SS::ShardStore) -> AnyShardStore<S, V>,
+        wrap: impl FnOnce(SS::ShardStore) -> Box<dyn ShardStore<S, V> + Send + Sync>,
         build_fn: &mut impl FnMut(
             &mut Self,
             u64,
-            AnyShardStore<S, V>,
+            Box<dyn ShardStore<S, V> + Send + Sync>,
             V,
             usize,
             &mut P,

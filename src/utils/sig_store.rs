@@ -648,22 +648,25 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
 /// combinations of type parameters. Having this trait greatly simplifies the
 /// type signatures.
 pub trait ShardStore<S: Sig, V: BinSafe> {
-    type ShardIter<'a>: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync
-    where
-        Self: 'a;
-
-    type ShardIntoIter: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync;
-
     /// Returns the shard sizes.
     fn shard_sizes(&self) -> &[usize];
 
     /// Returns an iterator on shards.
     ///
-    /// This method can be called multiple times.
-    fn iter(&mut self) -> Self::ShardIter<'_>;
+    /// This method can be called multiple times; the store is not
+    /// modified.
+    fn iter(
+        &mut self,
+    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_>;
 
-    /// Returns an iterator on shards, consuming self.
-    fn into_iter(self) -> Self::ShardIntoIter;
+    /// Returns an iterator on shards, draining the store.
+    ///
+    /// Like [`iter`](Self::iter), but frees each shard's memory as it
+    /// is consumed. After draining, subsequent calls to `iter` or
+    /// `drain` will yield no elements.
+    fn drain(
+        &mut self,
+    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_>;
 
     /// Re-aggregates to a coarser shard granularity.
     ///
@@ -701,19 +704,11 @@ pub struct ShardStoreImpl<S, V, B> {
     _marker: PhantomData<(S, V)>,
 }
 
-impl<S: BinSafe + Sig + Send + Sync, V: BinSafe, B: Send + Sync> ShardStore<S, V>
+impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync, B: Send + Sync> ShardStore<S, V>
     for ShardStoreImpl<S, V, B>
 where
-    for<'a> ShardIter<S, V, B, Self>: Iterator<Item = Arc<Vec<SigVal<S, V>>>>,
-    for<'a> ShardIter<S, V, B, &'a mut Self>: Iterator<Item = Arc<Vec<SigVal<S, V>>>>,
+    for<'a> ShardIter<S, V, B, &'a mut Self>: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync,
 {
-    type ShardIter<'a>
-        = ShardIter<S, V, B, &'a mut Self>
-    where
-        B: 'a;
-
-    type ShardIntoIter = ShardIter<S, V, B, Self>;
-
     fn shard_sizes(&self) -> &[usize] {
         &self.shard_sizes
     }
@@ -729,26 +724,30 @@ where
             .collect();
     }
 
-    fn iter(&mut self) -> ShardIter<S, V, B, &'_ mut Self> {
-        ShardIter {
+    fn iter(
+        &mut self,
+    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
+        Box::new(ShardIter {
             store: self,
             borrowed: true,
             next_bucket: 0,
             next_shard: 0,
             shards: VecDeque::from(vec![]),
             _marker: PhantomData,
-        }
+        })
     }
 
-    fn into_iter(self) -> ShardIter<S, V, B, Self> {
-        ShardIter {
+    fn drain(
+        &mut self,
+    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
+        Box::new(ShardIter {
             store: self,
             borrowed: false,
             next_bucket: 0,
             next_shard: 0,
             shards: VecDeque::from(vec![]),
             _marker: PhantomData,
-        }
+        })
     }
 }
 
@@ -1014,7 +1013,7 @@ fn write_binary<S: BinSafe + Sig, V: BinSafe>(
 /// [`set_shard_high_bits`](ShardStore::set_shard_high_bits) is called on
 /// the inner store so that shards are re-aggregated once at the bucket
 /// level, avoiding double aggregation.
-pub struct FilteredShardStore<'a, SS, S, V, F> {
+pub struct FilteredShardStore<'a, SS: ?Sized, S, V, F> {
     /// The inner store.
     inner: &'a mut SS,
     /// The filter predicate.
@@ -1024,7 +1023,7 @@ pub struct FilteredShardStore<'a, SS, S, V, F> {
     _marker: std::marker::PhantomData<(S, V)>,
 }
 
-impl<'a, SS, S, V, F> FilteredShardStore<'a, SS, S, V, F>
+impl<'a, SS: ?Sized, S, V, F> FilteredShardStore<'a, SS, S, V, F>
 where
     SS: ShardStore<S, V>,
     S: Sig + BinSafe + Send + Sync,
@@ -1059,20 +1058,13 @@ where
     }
 }
 
-impl<'a, SS, S, V, F> ShardStore<S, V> for FilteredShardStore<'a, SS, S, V, F>
+impl<'a, SS: ?Sized, S, V, F> ShardStore<S, V> for FilteredShardStore<'a, SS, S, V, F>
 where
     SS: ShardStore<S, V>,
     S: Sig + BinSafe + Send + Sync,
     V: BinSafe + Copy + Send + Sync,
     F: Fn(&SigVal<S, V>) -> bool + Send + Sync,
 {
-    type ShardIter<'b>
-        = std::vec::IntoIter<Arc<Vec<SigVal<S, V>>>>
-    where
-        Self: 'b;
-
-    type ShardIntoIter = std::vec::IntoIter<Arc<Vec<SigVal<S, V>>>>;
-
     fn shard_sizes(&self) -> &[usize] {
         &self.shard_sizes
     }
@@ -1087,43 +1079,52 @@ where
             .collect();
     }
 
-    fn iter(&mut self) -> Self::ShardIter<'_> {
+    fn iter(
+        &mut self,
+    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
         let filter = &self.filter;
         let inner_shards: Vec<_> = self.inner.iter().collect();
-        inner_shards
-            .into_iter()
-            .map(move |shard| {
-                let filtered: Vec<_> = shard.iter().filter(|sv| filter(sv)).copied().collect();
-                Arc::new(filtered)
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
+        Box::new(
+            inner_shards
+                .into_iter()
+                .map(move |shard| {
+                    let filtered: Vec<_> =
+                        shard.iter().filter(|sv| filter(sv)).copied().collect();
+                    Arc::new(filtered)
+                })
+                .collect::<Vec<_>>()
+                .into_iter(),
+        )
     }
 
-    fn into_iter(self) -> Self::ShardIntoIter {
-        let filter = self.filter;
-        let inner_shards: Vec<_> = self.inner.iter().collect();
-        inner_shards
-            .into_iter()
-            .map(move |shard| {
-                let filtered: Vec<_> = shard.iter().filter(|sv| filter(sv)).copied().collect();
-                Arc::new(filtered)
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
+    fn drain(
+        &mut self,
+    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
+        // FilteredShardStore always re-filters, so drain == iter.
+        self.iter()
     }
 }
 
-/// An enum that can hold either an online (in-memory) or offline (file-based)
-/// [`ShardStore`].
-///
-/// This type is used to return a shard store from construction methods without
-/// requiring the caller to know whether the store is online or offline.
-pub enum AnyShardStore<S: BinSafe + Sig + Send + Sync, V: BinSafe> {
-    /// An in-memory shard store.
-    Online(ShardStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>),
-    /// A file-based shard store.
-    Offline(ShardStoreImpl<S, V, BufReader<File>>),
+impl<S: Sig, V: BinSafe> ShardStore<S, V> for Box<dyn ShardStore<S, V> + Send + Sync> {
+    fn shard_sizes(&self) -> &[usize] {
+        (**self).shard_sizes()
+    }
+
+    fn set_shard_high_bits(&mut self, new_bits: u32) {
+        (**self).set_shard_high_bits(new_bits)
+    }
+
+    fn iter(
+        &mut self,
+    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
+        (**self).iter()
+    }
+
+    fn drain(
+        &mut self,
+    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
+        (**self).drain()
+    }
 }
 
 #[cfg(test)]
@@ -1161,7 +1162,7 @@ mod tests {
         }
 
         let mut count = 0;
-        for shard in shard_store.into_iter() {
+        for shard in shard_store.drain() {
             for &w in shard.iter() {
                 assert_eq!(
                     count,

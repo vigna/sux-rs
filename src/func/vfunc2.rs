@@ -381,27 +381,17 @@ where
         builder.try_populate_and_build(
             keys,
             values,
-            &mut |builder, seed, store, _max_value, _num_keys, pl| match store {
-                AnyShardStore::Online(mut s) => Self::try_build_from_store::<W>(
+            &mut |builder, seed, mut store, _max_value, _num_keys, pl| {
+                Self::try_build_from_store::<W>(
                     seed,
                     builder.shard_edge,
-                    &mut s,
+                    &mut *store,
                     &|v| v,
                     VBuilder::default()
                         .max_num_threads(builder.max_num_threads)
                         .eps(builder.eps),
                     pl,
-                ),
-                AnyShardStore::Offline(mut s) => Self::try_build_from_store::<W>(
-                    seed,
-                    builder.shard_edge,
-                    &mut s,
-                    &|v| v,
-                    VBuilder::default()
-                        .max_num_threads(builder.max_num_threads)
-                        .eps(builder.eps),
-                    pl,
-                ),
+                )
             },
             pl,
         )
@@ -435,7 +425,7 @@ where
     pub fn try_build_from_store<V: BinSafe + Default + Send + Sync + Copy>(
         seed: u64,
         shard_edge: E0,
-        store: &mut impl ShardStore<S, V>,
+        store: &mut (impl ShardStore<S, V> + ?Sized),
         get_val: &(impl Fn(V) -> W + Send + Sync),
         builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -486,7 +476,7 @@ where
     pub fn try_build_from_store_with_freq<V: BinSafe + Default + Send + Sync + Copy>(
         seed: u64,
         shard_edge: E0,
-        store: &mut impl ShardStore<S, V>,
+        store: &mut (impl ShardStore<S, V> + ?Sized),
         get_val: &(impl Fn(V) -> W + Send + Sync),
         max_value: W,
         counts: &std::collections::HashMap<W, usize>,
