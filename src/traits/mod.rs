@@ -47,6 +47,10 @@ impl std::fmt::Display for UnalignedConversionError {
 
 impl std::error::Error for UnalignedConversionError {}
 
+/// A convenient alias for the unaligned variant of a type that implements
+/// [`TryIntoUnaligned`].
+pub type Unaligned<T> = <T as TryIntoUnaligned>::Unaligned;
+
 /// A trait for types that can be converted into an unaligned variant
 /// that uses branchless
 /// [unaligned reads](crate::bits::BitFieldVec::get_unaligned).

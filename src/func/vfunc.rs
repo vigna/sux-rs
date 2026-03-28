@@ -185,7 +185,9 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
     for VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>
 {
     type Unaligned = VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(VFunc {
             shard_edge: self.shard_edge,
             seed: self.seed,

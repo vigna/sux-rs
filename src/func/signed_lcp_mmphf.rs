@@ -433,7 +433,8 @@ impl<
 }
 
 #[cfg(feature = "rayon")]
-impl<T, H, S, E> BitSignedLcpMmphf<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
+impl<T, H, S, E>
+    BitSignedLcpMmphf<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
 where
     T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
     H: Word,
@@ -531,7 +532,8 @@ impl<
 }
 
 #[cfg(feature = "rayon")]
-impl<K, H, S, E> BitSignedLcpMmphf<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
+impl<K, H, S, E>
+    BitSignedLcpMmphf<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
 where
     K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
     H: Word,
@@ -759,7 +761,9 @@ use crate::traits::TryIntoUnaligned;
 
 impl<F: TryIntoUnaligned, H: SliceByValue> TryIntoUnaligned for SignedLcpMmphf<F, H> {
     type Unaligned = SignedLcpMmphf<F::Unaligned, H>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(SignedLcpMmphf {
             inner: self.inner.try_into_unaligned()?,
             hashes: self.hashes,
@@ -775,7 +779,9 @@ where
     H::Unaligned: SliceByValue,
 {
     type Unaligned = BitSignedLcpMmphf<F::Unaligned, H::Unaligned>;
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(BitSignedLcpMmphf {
             inner: self.inner.try_into_unaligned()?,
             hashes: self.hashes.try_into_unaligned()?,
