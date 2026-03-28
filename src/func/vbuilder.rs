@@ -579,7 +579,7 @@ where
                 keys,
                 values,
                 |_bit_width, len| vec![W::ZERO; len].into(),
-                false,
+                true,
                 pl,
             )?
             .0)
@@ -770,7 +770,7 @@ where
             keys,
             values,
             |bit_width, len| BitFieldVec::<Box<[W]>>::new_unaligned(bit_width, len),
-            false,
+            true,
             pl,
         )
         .map(|res| res.0)
@@ -814,11 +814,11 @@ where
         assert!(hash_width > 0);
         assert!(hash_width <= H::BITS as usize);
 
-        let (func, store) = self.try_build_func_and_store(
+        let (func, mut store) = self.try_build_func_and_store(
             keys,
             FromCloneableIntoIterator::from(0..),
             BitFieldVec::<Box<[usize]>>::new_unaligned,
-            true,
+            false,
             pl,
         )?;
 
@@ -839,9 +839,7 @@ where
         pl.expected_updates(Some(num_keys));
         pl.start("Storing hashes...");
 
-        // We passed keep_store = true
-        let mut shard_store = store.unwrap();
-        for shard in shard_store.iter() {
+        for shard in store.iter() {
             for sig_val in shard.iter() {
                 let pos = sig_val.val;
                 let local_sig = shard_edge.local_sig(sig_val.sig);
@@ -884,11 +882,11 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<SignedVFunc<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>>
     {
-        let (func, store) = self.try_build_func_and_store(
+        let (func, mut store) = self.try_build_func_and_store(
             keys,
             FromCloneableIntoIterator::from(0..),
             BitFieldVec::new_unaligned,
-            true,
+            false,
             pl,
         )?;
 
@@ -903,9 +901,7 @@ where
         pl.expected_updates(Some(num_keys));
         pl.start("Storing hashes...");
 
-        let mut shard_store =
-            store.expect("Store should be present when keep_store is true");
-        for shard in shard_store.iter() {
+        for shard in store.iter() {
             for sig_val in shard.iter() {
                 let pos = sig_val.val;
                 let local_sig = shard_edge.local_sig(sig_val.sig);
@@ -1013,15 +1009,16 @@ impl<
     /// `new_data(bit_width, len)` allocates the backend storage of the
     /// given bit width and length.
     ///
-    /// If `keep_store` is `true`, the second element of the returned
-    /// tuple contains the store that was populated during construction
-    /// (the solver uses `iter()` rather than `drain()` so the store
-    /// survives). The caller can pass it to
+    /// The second element of the returned tuple is the store that was
+    /// populated during construction. The caller can pass it to
     /// [`try_build_func_with_store`](Self::try_build_func_with_store)
-    /// to build additional functions without re-hashing the keys.
+    /// to build additional functions without re-hashing the keys, or
+    /// simply drop it.
     ///
-    /// If `keep_store` is `false`, the store is consumed for efficiency
-    /// and `None` is returned.
+    /// If `drain_store` is `true`, the store is drained during
+    /// construction (freeing memory as shards are consumed); the
+    /// returned store is empty. If `false`, the store is preserved
+    /// intact for reuse.
     pub fn try_build_func_and_store<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
@@ -1037,9 +1034,9 @@ impl<
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         new_data: fn(usize, usize) -> D,
-        keep_store: bool,
+        drain_store: bool,
         pl: &mut P,
-    ) -> anyhow::Result<(VFunc<T, W, D, S, E>, Option<Box<dyn ShardStore<S, W> + Send + Sync>>)>
+    ) -> anyhow::Result<(VFunc<T, W, D, S, E>, Box<dyn ShardStore<S, W> + Send + Sync>)>
     where
         W: AsU128,
         SigVal<S, W>: RadixKey,
@@ -1071,27 +1068,21 @@ impl<
                     builder.bit_width,
                 ));
 
-                if keep_store {
-                    let func = builder.try_build_from_shard_iter(
-                        seed,
-                        data,
-                        store.iter(),
-                        &get_val,
-                        &|_| {},
-                        pl,
-                    )?;
-                    Ok((func, Some(store)))
-                } else {
-                    let func = builder.try_build_from_shard_iter(
-                        seed,
-                        data,
-                        store.drain(),
-                        &get_val,
-                        &|_| {},
-                        pl,
-                    )?;
-                    Ok((func, None))
-                }
+                let shard_iter: Box<dyn Iterator<Item = _> + Send + Sync + '_> =
+                    if drain_store {
+                        store.drain()
+                    } else {
+                        store.iter()
+                    };
+                let func = builder.try_build_from_shard_iter(
+                    seed,
+                    data,
+                    shard_iter,
+                    &get_val,
+                    &|_| {},
+                    pl,
+                )?;
+                Ok((func, store))
             },
             pl,
         )

@@ -290,7 +290,7 @@ where
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::try_new_inner(keys, n, builder, false, pl).map(|(mmphf, _)| mmphf)
+        Self::try_new_inner(keys, n, builder, true, pl).map(|(mmphf, _)| mmphf)
     }
 
     /// Internal constructor accepting a [`VBuilder`] and optionally
@@ -302,9 +302,9 @@ where
         > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
-        keep_store: bool,
+        drain_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> Result<(Self, Option<Box<dyn ShardStore<S, usize> + Send + Sync>>)> {
+    ) -> Result<(Self, Box<dyn ShardStore<S, usize> + Send + Sync>)> {
         if n == 0 {
             return Ok((
                 Self {
@@ -313,7 +313,12 @@ where
                     offset_lcp_length: VFunc::empty(),
                     lcp2bucket: VFunc::empty(),
                 },
-                None,
+                Box::new(
+                    crate::utils::sig_store::new_online::<S, usize>(0, 0, None)
+                        .expect("empty online store")
+                        .into_shard_store(0)
+                        .expect("empty shard store"),
+                ),
             ));
         }
 
@@ -385,7 +390,7 @@ where
                         (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
                     })),
                     BitFieldVec::<Box<[usize]>>::new_unaligned,
-                    keep_store,
+                    drain_store,
                     pl,
                 )?;
 
@@ -784,7 +789,7 @@ where
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::try_new_inner(keys, n, builder, false, pl).map(|(mmphf, _)| mmphf)
+        Self::try_new_inner(keys, n, builder, true, pl).map(|(mmphf, _)| mmphf)
     }
 
     /// Internal constructor accepting a [`VBuilder`] and optionally
@@ -796,9 +801,9 @@ where
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
-        keep_store: bool,
+        drain_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> Result<(Self, Option<Box<dyn ShardStore<S, usize> + Send + Sync>>)> {
+    ) -> Result<(Self, Box<dyn ShardStore<S, usize> + Send + Sync>)> {
         if n == 0 {
             return Ok((
                 Self {
@@ -807,7 +812,12 @@ where
                     offset_lcp_length: VFunc::empty(),
                     lcp2bucket: VFunc::empty(),
                 },
-                None,
+                Box::new(
+                    crate::utils::sig_store::new_online::<S, usize>(0, 0, None)
+                        .expect("empty online store")
+                        .into_shard_store(0)
+                        .expect("empty shard store"),
+                ),
             ));
         }
 
@@ -881,7 +891,7 @@ where
                         (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
                     })),
                     BitFieldVec::<Box<[usize]>>::new_unaligned,
-                    keep_store,
+                    drain_store,
                     pl,
                 )?;
 
