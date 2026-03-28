@@ -1153,8 +1153,6 @@ impl<
     where
         SigVal<S, V>: RadixKey,
     {
-        // NOTE: the retry loop and error handling below must be kept in
-        // sync with try_populate_and_build_with_fn.
         if let Some(expected_num_keys) = self.expected_num_keys {
             self.shard_edge.set_up_shards(expected_num_keys, self.eps);
             self.log2_buckets = self.shard_edge.shard_high_bits();
@@ -1169,34 +1167,25 @@ impl<
         loop {
             let seed: u64 = prng.random();
 
-            let result = if self.offline {
-                self.try_solve_once(
-                    seed,
-                    sig_store::new_offline::<S, V>(
-                        self.log2_buckets,
-                        LOG2_MAX_SHARDS,
-                        self.expected_num_keys,
-                    )?,
-                    &mut keys,
-                    &mut values,
-                    |s| Box::new(s) as Box<dyn ShardStore<S, V> + Send + Sync>,
-                    build_fn,
-                    pl,
-                )
-            } else {
-                self.try_solve_once(
-                    seed,
-                    sig_store::new_online::<S, V>(
-                        self.log2_buckets,
-                        LOG2_MAX_SHARDS,
-                        self.expected_num_keys,
-                    )?,
-                    &mut keys,
-                    &mut values,
-                    |s| Box::new(s) as Box<dyn ShardStore<S, V> + Send + Sync>,
-                    build_fn,
-                    pl,
-                )
+            let result = {
+                let mut populate =
+                    |seed: u64,
+                     push: &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
+                     pl: &mut P| {
+                        let mut maybe_max_value = V::default();
+                        while let Some(key) = keys.next()? {
+                            pl.light_update();
+                            let &maybe_val = values.next()?.expect("Not enough values");
+                            maybe_max_value = Ord::max(maybe_max_value, maybe_val);
+                            push(SigVal {
+                                sig: T::to_sig(key.borrow(), seed),
+                                val: maybe_val,
+                            })?;
+                        }
+                        Ok(maybe_max_value)
+                    };
+
+                self.try_solve_once(seed, &mut populate, build_fn, pl)
             };
 
             match result {
@@ -1287,8 +1276,6 @@ impl<
     where
         SigVal<S, V>: RadixKey,
     {
-        // NOTE: the retry loop and error handling below must be kept in
-        // sync with try_populate_and_build.
         if let Some(expected_num_keys) = self.expected_num_keys {
             self.shard_edge.set_up_shards(expected_num_keys, self.eps);
             self.log2_buckets = self.shard_edge.shard_high_bits();
@@ -1303,34 +1290,27 @@ impl<
         loop {
             let seed: u64 = prng.random();
 
-            let result = if self.offline {
-                self.try_solve_once_with_fn(
-                    seed,
-                    sig_store::new_offline::<S, V>(
-                        self.log2_buckets,
-                        LOG2_MAX_SHARDS,
-                        self.expected_num_keys,
-                    )?,
-                    &mut keys,
-                    key_to_val,
-                    |s| Box::new(s) as Box<dyn ShardStore<S, V> + Send + Sync>,
-                    build_fn,
-                    pl,
-                )
-            } else {
-                self.try_solve_once_with_fn(
-                    seed,
-                    sig_store::new_online::<S, V>(
-                        self.log2_buckets,
-                        LOG2_MAX_SHARDS,
-                        self.expected_num_keys,
-                    )?,
-                    &mut keys,
-                    key_to_val,
-                    |s| Box::new(s) as Box<dyn ShardStore<S, V> + Send + Sync>,
-                    build_fn,
-                    pl,
-                )
+            let result = {
+                let mut populate =
+                    |seed: u64,
+                     push: &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
+                     pl: &mut P| {
+                        let mut maybe_max_value = V::default();
+                        let mut idx = 0usize;
+                        while let Some(key) = keys.next()? {
+                            pl.light_update();
+                            let val = key_to_val(key, idx)?;
+                            maybe_max_value = Ord::max(maybe_max_value, val);
+                            push(SigVal {
+                                sig: T::to_sig(key.borrow(), seed),
+                                val,
+                            })?;
+                            idx += 1;
+                        }
+                        Ok(maybe_max_value)
+                    };
+
+                self.try_solve_once(seed, &mut populate, build_fn, pl)
             };
 
             match result {
@@ -1378,41 +1358,31 @@ impl<
 
     /// Performs a single population-and-build attempt for the given seed.
     ///
-    /// Populates `sig_store` by iterating `keys`/`values`, converts it
-    /// to a shard store, checks the max-shard invariant, sets up
-    /// `self.shard_edge`/`c`/`lge`, wraps the store via `wrap` into a
-    /// boxed [`ShardStore`], and calls `build_fn`.
+    /// Creates a [`SigStore`] (offline or online depending on
+    /// `self.offline`), populates it via the `populate` closure, converts
+    /// it to a shard store, checks the max-shard invariant, sets up
+    /// `self.shard_edge`/`c`/`lge`, boxes the store into a
+    /// `dyn` [`ShardStore`], and calls `build_fn`.
+    ///
+    /// The `populate` closure receives `(seed, push, &mut pl)` where
+    /// `push` appends a [`SigVal`] to the store. The closure must
+    /// iterate the keys, push all signature/value pairs, and return the
+    /// maximum value seen.
     ///
     /// Returns the result of `build_fn`, or a [`SolveError`] for the
     /// caller's retry loop to handle.
-    ///
-    /// See also
-    /// [`try_solve_once_with_fn`](Self::try_solve_once_with_fn),
-    /// which produces values from a closure instead of a lender.
     fn try_solve_once<
-        T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: ?Sized + Borrow<T>,
         V: BinSafe + Default + Send + Sync + Ord + AsU128,
         R,
         P: ProgressLog + Clone + Send + Sync,
-        SS: SigStore<S, V>,
     >(
         &mut self,
         seed: u64,
-        mut sig_store: SS,
-        keys: &mut (
-                 impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
-             ),
-        values: &mut (
-                 impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend V>
-             ),
-        wrap: impl FnOnce(SS::ShardStore) -> Box<dyn ShardStore<S, V> + Send + Sync>,
+        populate: &mut impl FnMut(
+            u64,
+            &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
+            &mut P,
+        ) -> anyhow::Result<V>,
         build_fn: &mut impl FnMut(
             &mut Self,
             u64,
@@ -1426,110 +1396,51 @@ impl<
     where
         SigVal<S, V>: RadixKey,
     {
-        // NOTE: the population and sharding logic below must be kept in
-        // sync with try_solve_once_with_fn.
-        pl.expected_updates(self.expected_num_keys);
-        pl.item_name("key");
-        pl.start(format!(
-            "Computing and storing {}-bit signatures in {} using seed 0x{:016x}...",
-            std::mem::size_of::<S>() * 8,
-            sig_store
-                .temp_dir()
-                .map(|d| d.path().to_string_lossy())
-                .unwrap_or(Cow::Borrowed("memory")),
-            seed
-        ));
-
-        let mut maybe_max_value = V::default();
-        let start = Instant::now();
-
-        while let Some(key) = keys.next()? {
-            pl.light_update();
-            let &maybe_val = values.next()?.expect("Not enough values");
-            maybe_max_value = Ord::max(maybe_max_value, maybe_val);
-            sig_store.try_push(SigVal {
-                sig: T::to_sig(key.borrow(), seed),
-                val: maybe_val,
-            })?;
+        if self.offline {
+            self.try_solve_once_inner(
+                seed,
+                sig_store::new_offline::<S, V>(
+                    self.log2_buckets,
+                    LOG2_MAX_SHARDS,
+                    self.expected_num_keys,
+                )?,
+                populate,
+                build_fn,
+                pl,
+            )
+        } else {
+            self.try_solve_once_inner(
+                seed,
+                sig_store::new_online::<S, V>(
+                    self.log2_buckets,
+                    LOG2_MAX_SHARDS,
+                    self.expected_num_keys,
+                )?,
+                populate,
+                build_fn,
+                pl,
+            )
         }
-        pl.done();
-
-        let num_keys = sig_store.len();
-
-        info!(
-            "Computation of signatures from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-            start.elapsed().as_secs_f64(),
-            num_keys,
-            start.elapsed().as_nanos() as f64 / num_keys as f64
-        );
-
-        let shard_edge = &mut self.shard_edge;
-        shard_edge.set_up_shards(num_keys, self.eps);
-
-        let start = Instant::now();
-
-        let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
-        let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
-
-        if shard_edge.shard_high_bits() != 0 {
-            pl.info(format_args!(
-                "Max shard / average shard: {:.2}%",
-                (100.0 * max_shard as f64) / (num_keys as f64 / shard_edge.num_shards() as f64)
-            ));
-        }
-
-        if max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64 {
-            return Err(SolveError::MaxShardTooBig.into());
-        }
-
-        (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
-        self.num_keys = num_keys;
-
-        let store = wrap(shard_store);
-
-        build_fn(self, seed, store, maybe_max_value, num_keys, pl).inspect(|_| {
-            info!(
-                "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                start.elapsed().as_secs_f64(),
-                num_keys,
-                start.elapsed().as_nanos() as f64 / num_keys as f64
-            );
-        })
     }
 
-    /// Performs a single population-and-build attempt for the given seed,
-    /// producing values from `key_to_val` instead of a lender.
+    /// Inner generic implementation of [`try_solve_once`](Self::try_solve_once).
     ///
-    /// Populates `sig_store` by iterating `keys` and calling
-    /// `key_to_val` for each key, converts it to a shard store, checks
-    /// the max-shard invariant, sets up `self.shard_edge`/`c`/`lge`,
-    /// wraps the store via `wrap` into a boxed [`ShardStore`], and calls
-    /// `build_fn`.
-    ///
-    /// Returns the result of `build_fn`, or a [`SolveError`] for the
-    /// caller's retry loop to handle.
-    ///
-    /// See also [`try_solve_once`](Self::try_solve_once), which reads
-    /// values from a lender instead.
-    fn try_solve_once_with_fn<
-        T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: ?Sized + Borrow<T>,
+    /// This is generic over `SS` so that the `populate` closure can push
+    /// to the concrete store type without dynamic dispatch.
+    fn try_solve_once_inner<
         V: BinSafe + Default + Send + Sync + Ord + AsU128,
         R,
         P: ProgressLog + Clone + Send + Sync,
-        SS: SigStore<S, V>,
+        SS: SigStore<S, V, ShardStore: 'static>,
     >(
         &mut self,
         seed: u64,
         mut sig_store: SS,
-        keys: &mut (
-                 impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
-             ),
-        key_to_val: &mut impl FnMut(&B, usize) -> anyhow::Result<V>,
-        wrap: impl FnOnce(SS::ShardStore) -> Box<dyn ShardStore<S, V> + Send + Sync>,
+        populate: &mut impl FnMut(
+            u64,
+            &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
+            &mut P,
+        ) -> anyhow::Result<V>,
         build_fn: &mut impl FnMut(
             &mut Self,
             u64,
@@ -1543,8 +1454,6 @@ impl<
     where
         SigVal<S, V>: RadixKey,
     {
-        // NOTE: the population and sharding logic below must be kept in
-        // sync with try_solve_once.
         pl.expected_updates(self.expected_num_keys);
         pl.item_name("key");
         pl.start(format!(
@@ -1557,20 +1466,14 @@ impl<
             seed
         ));
 
-        let mut maybe_max_value = V::default();
         let start = Instant::now();
 
-        let mut idx = 0usize;
-        while let Some(key) = keys.next()? {
-            pl.light_update();
-            let val = key_to_val(key, idx)?;
-            maybe_max_value = Ord::max(maybe_max_value, val);
-            sig_store.try_push(SigVal {
-                sig: T::to_sig(key.borrow(), seed),
-                val,
-            })?;
-            idx += 1;
-        }
+        let maybe_max_value = populate(
+            seed,
+            &mut |sig_val| sig_store.try_push(sig_val).map_err(Into::into),
+            pl,
+        )?;
+
         pl.done();
 
         let num_keys = sig_store.len();
@@ -1604,7 +1507,7 @@ impl<
         (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
         self.num_keys = num_keys;
 
-        let store = wrap(shard_store);
+        let store = Box::new(shard_store) as Box<dyn ShardStore<S, V> + Send + Sync>;
 
         build_fn(self, seed, store, maybe_max_value, num_keys, pl).inspect(|_| {
             info!(
