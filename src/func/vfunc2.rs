@@ -493,7 +493,14 @@ where
             hybrid_counts.insert(val, count);
         }
         Self::build_from_hybrid_counts(
-            seed, shard_edge, store, get_val, max_value, hybrid_counts, builder, pl,
+            seed,
+            shard_edge,
+            store,
+            get_val,
+            max_value,
+            hybrid_counts,
+            builder,
+            pl,
         )
     }
 
