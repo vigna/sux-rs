@@ -655,18 +655,14 @@ pub trait ShardStore<S: Sig, V: BinSafe> {
     ///
     /// This method can be called multiple times; the store is not
     /// modified.
-    fn iter(
-        &mut self,
-    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_>;
+    fn iter(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_>;
 
     /// Returns an iterator on shards, draining the store.
     ///
     /// Like [`iter`](Self::iter), but frees each shard's memory as it
     /// is consumed. After draining, subsequent calls to `iter` or
     /// `drain` will yield no elements.
-    fn drain(
-        &mut self,
-    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_>;
+    fn drain(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_>;
 
     /// Re-aggregates to a coarser shard granularity.
     ///
@@ -724,9 +720,7 @@ where
             .collect();
     }
 
-    fn iter(
-        &mut self,
-    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
+    fn iter(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
         Box::new(ShardIter {
             store: self,
             borrowed: true,
@@ -737,9 +731,7 @@ where
         })
     }
 
-    fn drain(
-        &mut self,
-    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
+    fn drain(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
         Box::new(ShardIter {
             store: self,
             borrowed: false,
@@ -1079,17 +1071,14 @@ where
             .collect();
     }
 
-    fn iter(
-        &mut self,
-    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
+    fn iter(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
         let filter = &self.filter;
         let inner_shards: Vec<_> = self.inner.iter().collect();
         Box::new(
             inner_shards
                 .into_iter()
                 .map(move |shard| {
-                    let filtered: Vec<_> =
-                        shard.iter().filter(|sv| filter(sv)).copied().collect();
+                    let filtered: Vec<_> = shard.iter().filter(|sv| filter(sv)).copied().collect();
                     Arc::new(filtered)
                 })
                 .collect::<Vec<_>>()
@@ -1097,9 +1086,7 @@ where
         )
     }
 
-    fn drain(
-        &mut self,
-    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
+    fn drain(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
         // FilteredShardStore always re-filters, so drain == iter.
         self.iter()
     }
@@ -1114,15 +1101,11 @@ impl<S: Sig, V: BinSafe> ShardStore<S, V> for Box<dyn ShardStore<S, V> + Send + 
         (**self).set_shard_high_bits(new_bits)
     }
 
-    fn iter(
-        &mut self,
-    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
+    fn iter(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
         (**self).iter()
     }
 
-    fn drain(
-        &mut self,
-    ) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
+    fn drain(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
         (**self).drain()
     }
 }
