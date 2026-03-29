@@ -188,7 +188,7 @@ const HYBRID_ARRAY_LEN: usize = if cfg!(target_pointer_width = "64") {
 
 /// A map from `K` to `V` backed by a flat array for small keys and a
 /// `HashMap` for large keys.
-struct HybridMap<K, V> {
+pub(crate) struct HybridMap<K, V> {
     array: Vec<V>,
     map: std::collections::HashMap<K, V>,
     default: V,
@@ -197,14 +197,15 @@ struct HybridMap<K, V> {
 impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
     /// Creates a new hybrid map.
     ///
-    /// * `max_key` — the maximum key that will be inserted.
+    /// * `max_key` — optional upper bound on keys. When provided,
+    ///   the array is capped at `max_key / 2 + 1` for better sizing.
     /// * `len` — the expected number of distinct entries.
     /// * `default` — value returned for absent keys.
-    fn new(max_key: K, len: usize, default: V) -> Self {
-        let array_len = HYBRID_ARRAY_LEN
-            .min(max_key.as_u128() as usize / 2 + 1)
-            .min(len)
-            .max(256);
+    pub(crate) fn new(max_key: Option<K>, len: usize, default: V) -> Self {
+        let mut array_len = HYBRID_ARRAY_LEN.min(len).max(256);
+        if let Some(mk) = max_key {
+            array_len = array_len.min(mk.as_u128() as usize / 2 + 1);
+        }
         Self {
             array: vec![default; array_len],
             map: std::collections::HashMap::new(),
@@ -252,12 +253,17 @@ impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
 
 impl<K: Word> HybridMap<K, usize> {
     #[inline(always)]
-    fn incr(&mut self, key: K) {
+    pub(crate) fn incr(&mut self, key: K) {
+        self.add(key, 1);
+    }
+
+    #[inline(always)]
+    pub(crate) fn add(&mut self, key: K, amount: usize) {
         let k = key.as_u128() as usize;
         if k < self.array.len() {
-            self.array[k] += 1;
+            self.array[k] += amount;
         } else {
-            *self.map.entry(key).or_insert(0) += 1;
+            *self.map.entry(key).or_insert(0) += amount;
         }
     }
 }
@@ -450,7 +456,7 @@ where
         }
 
         let n = store.len();
-        let mut counts: HybridMap<W, usize> = HybridMap::new(max_value, n, 0);
+        let mut counts: HybridMap<W, usize> = HybridMap::new(Some(max_value), n, 0);
         for shard in store.iter() {
             for sv in shard.iter() {
                 counts.incr(get_val(sv.val));
@@ -481,7 +487,7 @@ where
         store: &mut (impl ShardStore<S, V> + ?Sized),
         get_val: &(impl Fn(V) -> W + Send + Sync),
         max_value: W,
-        counts: &std::collections::HashMap<W, usize>,
+        counts: HybridMap<W, usize>,
         builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self>
@@ -490,17 +496,13 @@ where
         SigVal<E0::LocalSig, V>: BitXor + BitXorAssign,
         SigVal<E1::LocalSig, V>: BitXor + BitXorAssign,
     {
-        let mut hybrid_counts: HybridMap<W, usize> = HybridMap::new(max_value, counts.len(), 0);
-        for (&val, &count) in counts {
-            hybrid_counts.insert(val, count);
-        }
         Self::build_from_hybrid_counts(
             seed,
             shard_edge,
             store,
             get_val,
             max_value,
-            hybrid_counts,
+            counts,
             builder,
             pl,
         )
@@ -548,7 +550,7 @@ where
         // -- Build remap and inv_map --
 
         let remap: Box<[W]> = sorted_vals[..num_remapped].to_vec().into_boxed_slice();
-        let mut inv_map: HybridMap<W, W> = HybridMap::new(max_value, num_remapped, escape);
+        let mut inv_map: HybridMap<W, W> = HybridMap::new(Some(max_value), num_remapped, escape);
         for (i, &val) in remap.iter().enumerate() {
             inv_map.insert(val, W::try_from(i).ok().unwrap());
         }

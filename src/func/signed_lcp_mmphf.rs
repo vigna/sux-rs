@@ -660,8 +660,12 @@ where
     E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
     Fuse3Shards: ShardEdge<S, 3>,
     SigVal<S, usize>: RadixKey,
+    SigVal<S, u64>: RadixKey,
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<E::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
     SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>:
+        std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, u64>:
         std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<W>,
 {
@@ -735,8 +739,12 @@ where
     E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
     Fuse3Shards: ShardEdge<S, 3>,
     SigVal<S, usize>: RadixKey,
+    SigVal<S, u64>: RadixKey,
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<E::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
     SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>:
+        std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, u64>:
         std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<W>,
 {
