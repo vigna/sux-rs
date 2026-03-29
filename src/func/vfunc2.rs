@@ -381,7 +381,7 @@ where
         builder.try_populate_and_build(
             keys,
             values,
-            &mut |builder, seed, mut store, _max_value, _num_keys, pl| {
+            &mut |builder, seed, mut store, _max_value, _num_keys, pl, _state: &mut ()| {
                 Self::try_build_from_store::<W>(
                     seed,
                     builder.shard_edge,
@@ -394,6 +394,7 @@ where
                 )
             },
             pl,
+            (),
         )
     }
 
