@@ -1220,7 +1220,7 @@ mod fuse {
         }
     }
 
-    /// [ε-cost sharded](https://arxiv.org/abs/2503.18397)[fuse
+    /// [ε-cost sharded](https://arxiv.org/abs/2503.18397) [fuse
     /// 3-hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38) without [lazy
     /// Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517).
     ///
