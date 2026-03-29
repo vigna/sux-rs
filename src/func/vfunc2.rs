@@ -320,10 +320,11 @@ use {
 impl<T, W, S, E0, E1> VFunc2<T, W, BitFieldVec<Box<[W]>>, S, E0, E1>
 where
     T: ?Sized + ToSig<S> + std::fmt::Debug,
-    W: Word + BinSafe,
+    W: Word + BinSafe + MemSize + mem_dbg::FlatType,
     S: Sig + Send + Sync,
-    E0: ShardEdge<S, 3>,
-    E1: ShardEdge<S, 3>,
+    E0: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
+    E1: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
+    Box<[W]>: MemSize,
     SigVal<S, W>: RadixKey,
     SigVal<E0::LocalSig, W>: BitXor + BitXorAssign,
     SigVal<E1::LocalSig, W>: BitXor + BitXorAssign,
@@ -651,11 +652,18 @@ where
                 pl,
             )?;
 
-        Ok(Self {
+        let result = Self {
             short,
             long,
             remap,
             escape,
-        })
+        };
+        let n = store.len();
+        let total = result.mem_size(SizeFlags::default()) * 8;
+        pl.info(format_args!(
+            "Bits/keys: {:.2} ({total} bits for {n} keys)",
+            total as f64 / n as f64,
+        ));
+        Ok(result)
     }
 }

@@ -152,7 +152,7 @@ impl<T, S, E> Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>
 where
     T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
     S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
+    E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
     Fuse3Shards: ShardEdge<S, 3>,
     SigVal<S, usize>: RadixKey,
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
@@ -395,26 +395,19 @@ where
                             pl,
                         )?;
 
-                        let off_bits = offsets.data.mem_size(SizeFlags::default()) * 8;
-                        let lcp_bits_total =
-                            (lcp_lengths.short.data.mem_size(SizeFlags::default())
-                                + lcp_lengths.long.data.mem_size(SizeFlags::default())
-                                + lcp_lengths.remap.len() * std::mem::size_of::<usize>())
-                                * 8;
-                        let l2b_bits = lcp2bucket.data.mem_size(SizeFlags::default()) * 8;
-                        let total = off_bits + lcp_bits_total + l2b_bits;
-                        pl.info(format_args!(
-                            "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
-                            total as f64 / n as f64
-                        ));
-
-                        Ok(Self {
+                        let result = Self {
                             n,
                             log2_bucket_size: log2_bs,
                             offsets,
                             lcp_lengths,
                             lcp2bucket,
-                        })
+                        };
+                        let total = result.mem_size(SizeFlags::default()) * 8;
+                        pl.info(format_args!(
+                            "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
+                            total as f64 / n as f64
+                        ));
+                        Ok(result)
                     },
                     pl,
                     &mut state,
@@ -550,7 +543,7 @@ impl<K, S, E> Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S, E>
 where
     K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
     S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
+    E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
     Fuse3Shards: ShardEdge<S, 3>,
     SigVal<S, usize>: RadixKey,
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
@@ -737,25 +730,19 @@ where
                             pl,
                         )?;
 
-                    let off_bits = offsets.data.mem_size(SizeFlags::default()) * 8;
-                    let lcp_bits_total = (lcp_lengths.short.data.mem_size(SizeFlags::default())
-                        + lcp_lengths.long.data.mem_size(SizeFlags::default())
-                        + lcp_lengths.remap.len() * std::mem::size_of::<usize>())
-                        * 8;
-                    let l2b_bits = lcp2bucket.data.mem_size(SizeFlags::default()) * 8;
-                    let total = off_bits + lcp_bits_total + l2b_bits;
-                    pl.info(format_args!(
-                        "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
-                        total as f64 / n as f64
-                    ));
-
-                    Ok(Self {
+                    let result = Self {
                         n,
                         log2_bucket_size: log2_bs,
                         offsets,
                         lcp_lengths,
                         lcp2bucket,
-                    })
+                    };
+                    let total = result.mem_size(SizeFlags::default()) * 8;
+                    pl.info(format_args!(
+                        "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
+                        total as f64 / n as f64
+                    ));
+                    Ok(result)
                 }
             },
             pl,
