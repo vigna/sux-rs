@@ -55,8 +55,7 @@ use value_traits::slices::SliceByValue;
 ///   a boxed slice of `W`, thus forcing the number of bits to the number of
 ///   bits of `W`, but access will be faster. Note that for most bit sizes in
 ///   the first case on some architectures you can use
-///   [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) to convert the
-///   function into one using [unaligned
+///   [`TryIntoUnaligned`] to convert the function into one using [unaligned
 ///   reads](BitFieldVec::get_unaligned) for faster queries.
 /// * `S`: The signature type. The default is `[u64; 2]`. You can switch to
 ///   `[u64; 1]` (and possibly

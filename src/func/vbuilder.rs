@@ -86,7 +86,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 ///
 /// # Building from stores
 ///
-/// The method
+/// The low-level method
 /// [`try_build_func_with_store`](VBuilder::try_build_func_with_store)
 /// builds a function from a [`ShardStore`] containing signatures and
 /// values. The store is expected to be already populated; the method
@@ -252,7 +252,7 @@ pub struct VBuilder<
     /// high-memory peel-by-index algorithm (false). The former is slightly
     /// slower, but it uses much less memory. Normally [`VBuilder`] uses
     /// high-mem and switches to low-mem if there are more
-    /// than two threads and more than four shards.
+    /// than three threads and more than two shards.
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "None"))]
     low_mem: Option<bool>,
@@ -382,7 +382,7 @@ enum PeelResult<
 /// Edge information is packed together using Djamal's XOR trick (see
 /// [“Cache-Oblivious Peeling of Random
 /// Hypergraphs”](https://doi.org/10.1109/DCC.2014.48)): since during the
-/// peeling b visit we need to know the content of the list only when a single
+/// peeling visit we need to know the content of the list only when a single
 /// edge index is present, we can XOR together all the edge information.
 ///
 /// We use a single byte to store the degree (six upper bits) and the XOR of the
@@ -696,7 +696,7 @@ where
     ///   (determines the bit width of the output).
     ///
     /// * `shard_store` — the store kept from a previous
-    ///   `try_build_func_and_store(…, keep_store = true, …)` call.
+    ///   `try_build_func_and_store(…, drain_store = false, …)` call.
     ///
     /// * `get_val` — maps each [`SigVal<E::LocalSig, V>`](SigVal) to
     ///   the new output value `W`.
@@ -753,7 +753,9 @@ where
     /// when using a boxed slice, but the bit width of stored values will be the
     /// minimum necessary. It must be in any case at most the bit width of `W`.
     ///
-    /// Typically `W` will be `usize` or `u64`.
+    /// Typically `W` will be `usize` or `u64`. Consider calling
+    /// [`try_into_unaligned`](crate::traits::TryIntoUnaligned::try_into_unaligned)
+    /// on the resulting function to get faster access.
     pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         self,
         keys: impl FallibleRewindableLender<
@@ -793,6 +795,10 @@ where
     ///
     /// This type of signed function offers more resolution than [`SignedVFunc`]
     /// in choosing the hash size, but testing signatures will be slower.
+    ///
+    ///  Consider calling
+    /// [`try_into_unaligned`](crate::traits::TryIntoUnaligned::try_into_unaligned)
+    /// on the resulting function to get faster access.
     pub fn try_build_bit_sig_index<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
@@ -843,8 +849,7 @@ where
             for sig_val in shard.iter() {
                 let pos = sig_val.val;
                 let local_sig = shard_edge.local_sig(sig_val.sig);
-                let hash =
-                    (mix64(shard_edge.edge_hash(local_sig)) & hash_mask).as_to::<H>();
+                let hash = (mix64(shard_edge.edge_hash(local_sig)) & hash_mask).as_to::<H>();
                 hashes.set_value(pos, hash);
                 pl.light_update();
             }
@@ -931,7 +936,9 @@ where
     /// when using a boxed slice, but the number of bits of the hashes can be set at
     /// will. It must be in any case at most the bit width of `W`.
     ///
-    /// Typically `W` will be `usize` or `u64`.
+    /// Typically `W` will be `usize` or `u64`. Consider calling
+    /// [`try_into_unaligned`](crate::traits::TryIntoUnaligned::try_into_unaligned)
+    /// on the resulting filter to get faster access.
     pub fn try_build_filter<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
@@ -993,6 +1000,53 @@ where
     }
 }
 
+/// Handles the result of [`VBuilder::try_solve_once`], returning on
+/// success or non-retryable error and falling through on retryable
+/// [`SolveError`] variants so the caller's loop can retry with a
+/// different seed.
+macro_rules! handle_solve_result {
+    ($result:expr, $dup_count:expr, $local_dup_count:expr, $pl:expr) => {
+        match $result {
+            Ok(r) => return Ok(r),
+            Err(error) => match error.downcast::<SolveError>() {
+                Ok(vfunc_error) => match vfunc_error {
+                    SolveError::DuplicateSignature => {
+                        if $dup_count >= 3 {
+                            $pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with four different seeds)"));
+                            return Err(BuildError::DuplicateKey.into());
+                        }
+                        $pl.warn(format_args!(
+                            "Duplicate 128-bit signature, trying again with a different seed..."
+                        ));
+                        $dup_count += 1;
+                    }
+                    SolveError::DuplicateLocalSignature => {
+                        if $local_dup_count >= 2 {
+                            $pl.error(format_args!("Duplicate local signatures: use full signatures (duplicate local signatures with three different seeds)"));
+                            return Err(BuildError::DuplicateLocalSignatures.into());
+                        }
+                        $pl.warn(format_args!(
+                            "Duplicate local signature, trying again with a different seed..."
+                        ));
+                        $local_dup_count += 1;
+                    }
+                    SolveError::MaxShardTooBig => {
+                        $pl.warn(format_args!(
+                            "The maximum shard is too big, trying again with a different seed..."
+                        ));
+                    }
+                    SolveError::UnsolvableShard => {
+                        $pl.warn(format_args!(
+                            "Unsolvable shard, trying again with a different seed..."
+                        ));
+                    }
+                },
+                Err(error) => return Err(error),
+            },
+        }
+    };
+}
+
 impl<
     W: Word + BinSafe,
     D: BitFieldSlice<Value = W> + Send + Sync,
@@ -1036,7 +1090,10 @@ impl<
         new_data: fn(usize, usize) -> D,
         drain_store: bool,
         pl: &mut P,
-    ) -> anyhow::Result<(VFunc<T, W, D, S, E>, Box<dyn ShardStore<S, W> + Send + Sync>)>
+    ) -> anyhow::Result<(
+        VFunc<T, W, D, S, E>,
+        Box<dyn ShardStore<S, W> + Send + Sync>,
+    )>
     where
         W: AsU128,
         SigVal<S, W>: RadixKey,
@@ -1068,12 +1125,11 @@ impl<
                     builder.bit_width,
                 ));
 
-                let shard_iter: Box<dyn Iterator<Item = _> + Send + Sync + '_> =
-                    if drain_store {
-                        store.drain()
-                    } else {
-                        store.iter()
-                    };
+                let shard_iter: Box<dyn Iterator<Item = _> + Send + Sync + '_> = if drain_store {
+                    store.drain()
+                } else {
+                    store.iter()
+                };
                 let func = builder.try_build_from_shard_iter(
                     seed,
                     data,
@@ -1159,64 +1215,26 @@ impl<
             let seed: u64 = prng.random();
 
             let result = {
-                let mut populate =
-                    |seed: u64,
-                     push: &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
-                     pl: &mut P| {
-                        let mut maybe_max_value = V::default();
-                        while let Some(key) = keys.next()? {
-                            pl.light_update();
-                            let &maybe_val = values.next()?.expect("Not enough values");
-                            maybe_max_value = Ord::max(maybe_max_value, maybe_val);
-                            push(SigVal {
-                                sig: T::to_sig(key.borrow(), seed),
-                                val: maybe_val,
-                            })?;
-                        }
-                        Ok(maybe_max_value)
-                    };
+                let mut populate = |seed: u64,
+                                    push: &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
+                                    pl: &mut P| {
+                    let mut maybe_max_value = V::default();
+                    while let Some(key) = keys.next()? {
+                        pl.light_update();
+                        let &maybe_val = values.next()?.expect("Not enough values");
+                        maybe_max_value = Ord::max(maybe_max_value, maybe_val);
+                        push(SigVal {
+                            sig: T::to_sig(key.borrow(), seed),
+                            val: maybe_val,
+                        })?;
+                    }
+                    Ok(maybe_max_value)
+                };
 
                 self.try_solve_once(seed, &mut populate, build_fn, pl)
             };
 
-            match result {
-                Ok(r) => return Ok(r),
-                Err(error) => match error.downcast::<SolveError>() {
-                    Ok(vfunc_error) => match vfunc_error {
-                        SolveError::DuplicateSignature => {
-                            if dup_count >= 3 {
-                                pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with four different seeds)"));
-                                return Err(BuildError::DuplicateKey.into());
-                            }
-                            pl.warn(format_args!(
-                                "Duplicate 128-bit signature, trying again with a different seed..."
-                            ));
-                            dup_count += 1;
-                        }
-                        SolveError::DuplicateLocalSignature => {
-                            if local_dup_count >= 2 {
-                                pl.error(format_args!("Duplicate local signatures: use full signatures (duplicate local signatures with three different seeds)"));
-                                return Err(BuildError::DuplicateLocalSignatures.into());
-                            }
-                            pl.warn(format_args!(
-                                "Duplicate local signature, trying again with a different seed..."
-                            ));
-                            local_dup_count += 1;
-                        }
-                        SolveError::MaxShardTooBig => {
-                            pl.warn(format_args!(
-                                "The maximum shard is too big, trying again with a different seed..."
-                            ));
-                        }
-                        SolveError::UnsolvableShard => {
-                            pl.warn(format_args!(
-                                "Unsolvable shard, trying again with a different seed..."
-                            ));
-                        }
-                    },
-                    Err(error) => return Err(error),
-                },
-            }
+            handle_solve_result!(result, dup_count, local_dup_count, pl);
 
             values = values.rewind()?;
             keys = keys.rewind()?;
@@ -1282,66 +1300,28 @@ impl<
             let seed: u64 = prng.random();
 
             let result = {
-                let mut populate =
-                    |seed: u64,
-                     push: &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
-                     pl: &mut P| {
-                        let mut maybe_max_value = V::default();
-                        let mut idx = 0usize;
-                        while let Some(key) = keys.next()? {
-                            pl.light_update();
-                            let val = key_to_val(key, idx)?;
-                            maybe_max_value = Ord::max(maybe_max_value, val);
-                            push(SigVal {
-                                sig: T::to_sig(key.borrow(), seed),
-                                val,
-                            })?;
-                            idx += 1;
-                        }
-                        Ok(maybe_max_value)
-                    };
+                let mut populate = |seed: u64,
+                                    push: &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
+                                    pl: &mut P| {
+                    let mut maybe_max_value = V::default();
+                    let mut idx = 0usize;
+                    while let Some(key) = keys.next()? {
+                        pl.light_update();
+                        let val = key_to_val(key, idx)?;
+                        maybe_max_value = Ord::max(maybe_max_value, val);
+                        push(SigVal {
+                            sig: T::to_sig(key.borrow(), seed),
+                            val,
+                        })?;
+                        idx += 1;
+                    }
+                    Ok(maybe_max_value)
+                };
 
                 self.try_solve_once(seed, &mut populate, build_fn, pl)
             };
 
-            match result {
-                Ok(r) => return Ok(r),
-                Err(error) => match error.downcast::<SolveError>() {
-                    Ok(vfunc_error) => match vfunc_error {
-                        SolveError::DuplicateSignature => {
-                            if dup_count >= 3 {
-                                pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with four different seeds)"));
-                                return Err(BuildError::DuplicateKey.into());
-                            }
-                            pl.warn(format_args!(
-                                "Duplicate 128-bit signature, trying again with a different seed..."
-                            ));
-                            dup_count += 1;
-                        }
-                        SolveError::DuplicateLocalSignature => {
-                            if local_dup_count >= 2 {
-                                pl.error(format_args!("Duplicate local signatures: use full signatures (duplicate local signatures with three different seeds)"));
-                                return Err(BuildError::DuplicateLocalSignatures.into());
-                            }
-                            pl.warn(format_args!(
-                                "Duplicate local signature, trying again with a different seed..."
-                            ));
-                            local_dup_count += 1;
-                        }
-                        SolveError::MaxShardTooBig => {
-                            pl.warn(format_args!(
-                                "The maximum shard is too big, trying again with a different seed..."
-                            ));
-                        }
-                        SolveError::UnsolvableShard => {
-                            pl.warn(format_args!(
-                                "Unsolvable shard, trying again with a different seed..."
-                            ));
-                        }
-                    },
-                    Err(error) => return Err(error),
-                },
-            }
+            handle_solve_result!(result, dup_count, local_dup_count, pl);
 
             keys = keys.rewind()?;
         }
@@ -1542,6 +1522,10 @@ impl<
     /// Returns [`SolveError::UnsolvableShard`] or
     /// [`SolveError::DuplicateLocalSignature`] if the system cannot be
     /// solved with the current seed.
+    ///
+    /// The peeling algorithm is selected based on `self.lge` and
+    /// `self.low_mem`; see the [`low_mem`](VBuilder::low_mem) field
+    /// documentation for the automatic selection heuristic.
     fn try_build_from_shard_iter<
         T: ?Sized + ToSig<S>,
         I,
@@ -1688,6 +1672,8 @@ impl<
     E: ShardEdge<S, 3>,
 > VBuilder<W, D, S, E>
 {
+    /// Stable counting sort of `shard` by [`ShardEdge::sort_key`],
+    /// improving memory locality before peeling.
     fn count_sort<V: BinSafe>(&self, data: &mut [SigVal<S, V>]) {
         let num_sort_keys = self.shard_edge.num_sort_keys();
         let mut count = vec![0; num_sort_keys];
@@ -1697,6 +1683,7 @@ impl<
             count[self.shard_edge.sort_key(sig_val.sig)] += 1;
             copy.write(sig_val);
         }
+        // SAFETY: every element was initialized in the loop above.
         let copied = unsafe { copied.assume_init() };
 
         count.iter_mut().fold(0, |acc, c| {
@@ -1823,8 +1810,8 @@ impl<
                                 ));
 
                                 {
-                                    // SAFETY: only one thread may be accessing the
-                                    // shard, and we will be consuming it
+                                    // SAFETY: The Arc has refcount 1: this thread is the
+                                    // sole owner after receiving from the channel.
                                     let shard = unsafe {
                                         &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>)
                                     };
@@ -1852,7 +1839,12 @@ impl<
                                         // that implies equality of local
                                         // signatures.
 
-                                        // SAFETY: we drop this immediately after sorting
+                                        // SAFETY: The Arc has refcount 1 at this point
+                                        // (this thread is the sole owner after receive),
+                                        // so the mutable reference does not violate
+                                        // aliasing. The memory layout of SigVal<S, V>
+                                        // and E::SortSigVal<V> is guaranteed compatible
+                                        // by the ShardEdge trait.
                                         let shard = unsafe {
                                             transmute::<
                                                 &mut Vec<SigVal<S, V>>,
@@ -2435,7 +2427,7 @@ impl<
                 _marker: PhantomData,
             }) => {
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
-                // Likely result--we have solve the rest
+                // We now solve the remaining edges with Gaussian elimination.
                 pl.start(format!(
                     "Generating system for shard {}/{}...",
                     shard_index + 1,
@@ -2533,7 +2525,7 @@ impl<
     /// This method might be called after a successful peeling procedure, or
     /// after a linear solver has been used to solve the remaining edges.
     ///
-    /// `sig_vals_sides` is an iterator returning pairs of signature/value pairs
+    /// `sigs_vals_sides` is an iterator returning pairs of signature/value pairs
     /// and sides in reverse peeling order.
     fn assign(
         &self,
@@ -2557,6 +2549,9 @@ impl<
         for ((sig, val), side) in sigs_vals_sides {
             let edge = self.shard_edge.local_edge(sig);
             let side = side as usize;
+            // SAFETY: vertex indices from `local_edge` are guaranteed within
+            // bounds of `data` by the ShardEdge contract; `side` is always
+            // 0, 1, or 2 because it encodes a hyperedge vertex index.
             unsafe {
                 let xor = match side {
                     0 => data.get_value_unchecked(edge[1]) ^ data.get_value_unchecked(edge[2]),

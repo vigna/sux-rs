@@ -47,7 +47,7 @@ use std::ops::Index;
 /// # Type Parameters
 ///
 /// - `B`: The bit-base [backend](Backend). Defaults to
-///   [`BitVec`](crate::bits::BitVec).
+///   [`BitVec`].
 /// - `C`: The counter storage. Defaults to `Box<[BlockCounters]>`.
 ///
 /// # Examples
