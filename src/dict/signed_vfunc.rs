@@ -78,7 +78,7 @@ impl<
         }
     }
 
-    /// Returns the index of given key, if the key was in the list provided at
+    /// Returns the index of the given key, if the key was in the list provided at
     /// construction time; otherwise, returns `None`.
     ///
     /// False positives happen with probability
@@ -158,7 +158,7 @@ impl<
         }
     }
 
-    /// Returns the index of given key, if the key was in the list provided at
+    /// Returns the index of the given key, if the key was in the list provided at
     /// construction time; otherwise, returns `None`.
     ///
     /// False positives happen with probability defined at [construction

@@ -307,32 +307,32 @@ pub struct VBuilder<
 /// Fatal build errors.
 #[derive(thiserror::Error, Debug)]
 pub enum BuildError {
-    #[error("Duplicate key")]
     /// A duplicate key was detected.
+    #[error("Duplicate key")]
     DuplicateKey,
-    #[error("Duplicate local signatures: use full signatures")]
     /// Duplicate local signatures were detected.
+    #[error("Duplicate local signatures: use full signatures")]
     DuplicateLocalSignatures,
-    #[error("Value too large for specified bit size")]
     /// A value is too large for the specified bit size.
+    #[error("Value too large for specified bit size")]
     ValueTooLarge,
 }
 
-#[derive(thiserror::Error, Debug)]
 /// Transient error during the build, leading to
 /// trying with a different seed.
+#[derive(thiserror::Error, Debug)]
 pub enum SolveError {
-    #[error("Duplicate signature")]
     /// A duplicate signature was detected.
+    #[error("Duplicate signature")]
     DuplicateSignature,
-    #[error("Duplicate local signature")]
     /// A duplicate local signature was detected.
+    #[error("Duplicate local signature")]
     DuplicateLocalSignature,
+    /// The maximum shard is too big relative to the average shard.
     #[error("Max shard too big")]
-    /// The maximum shard is too big relatively to the average shard.
     MaxShardTooBig,
-    #[error("Unsolvable shard")]
     /// A shard cannot be solved.
+    #[error("Unsolvable shard")]
     UnsolvableShard,
 }
 
@@ -1572,7 +1572,9 @@ impl<
         ));
 
         if self.lge {
-            pl.info(format_args!("Peeling towards lazy Gaussian elimination"));
+            pl.info(format_args!(
+                "Peeling with lazy Gaussian elimination fallback"
+            ));
             self.par_solve(
                 shard_iter,
                 &mut data,
@@ -1657,6 +1659,8 @@ macro_rules! remove_edge {
                 }
                 $xor_graph.remove($e[1], $edge, 1);
             }
+            // SAFETY: side is always 0, 1, or 2 (encoded as a 2-bit
+            // field in the degrees_sides array).
             _ => unsafe { unreachable_unchecked() },
         }
     };

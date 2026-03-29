@@ -13,7 +13,7 @@
 //! (`K: AsRef<[u8]>`). Type aliases [`LcpMmphfStr`] and [`LcpMmphfSliceU8`]
 //! are provided for convenience.
 //!
-//! These structures implements the [`TryIntoUnaligned`] trait, allowing them to
+//! These structures implement the [`TryIntoUnaligned`] trait, allowing them to
 //! be converted into (usually faster) structures using unaligned access.
 //!
 //! # References

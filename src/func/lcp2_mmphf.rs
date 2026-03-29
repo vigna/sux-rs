@@ -10,12 +10,12 @@
 //!
 //! Compared to [`LcpMmphfInt`](super::LcpMmphfInt) /
 //! [`LcpMmphf`](super::LcpMmphf), these variants use a [`VFunc2`] for the
-//! LCP-length component, trading ≈3 extra independent random memory accesses
+//! LCP-length component, trading 3 extra independent random memory accesses
 //! per query for ≈20–35% less space.
 //!
 //! See [`Lcp2MmphfInt`], [`Lcp2MmphfStr`], and [`Lcp2MmphfSliceU8`].
 //!
-//! These structures implements the [`TryIntoUnaligned`] trait, allowing them to
+//! These structures implement the [`TryIntoUnaligned`] trait, allowing them to
 //! be converted into (usually faster) structures using unaligned access.
 //!
 //! # References
@@ -53,7 +53,7 @@ use {
 /// A two-step monotone minimal perfect hash function for sorted integers.
 ///
 /// Like [`LcpMmphfInt`](super::LcpMmphfInt) but uses a [`VFunc2`] for
-/// the LCP-length component, trading speed for less space.
+/// the LCP-length component, trading query speed for ≈20–35% less space.
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
@@ -103,6 +103,11 @@ impl<T: PrimitiveInteger + ToSig<S>, D: SliceByValue<Value = usize>, S: Sig, E: 
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
+    /// Returns the rank (0-based position) of the given key in the
+    /// original sorted sequence.
+    ///
+    /// If the key was not in the original set, the result is arbitrary
+    /// (same contract as [`VFunc::get`]).
     #[inline]
     pub fn get(&self, key: T) -> usize
     where
@@ -121,9 +126,11 @@ impl<T: PrimitiveInteger, D, S: Sig, E: ShardEdge<S, 3>> Lcp2MmphfInt<T, D, S, E
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
+    /// Returns the number of keys.
     pub const fn len(&self) -> usize {
         self.n
     }
+    /// Returns `true` if the function contains no keys.
     pub const fn is_empty(&self) -> bool {
         self.n == 0
     }
@@ -375,8 +382,10 @@ pub struct Lcp2Mmphf<
     pub(crate) lcp2bucket: VFunc<BitPrefix, usize, D, [u64; 1], Fuse3NoShards>,
 }
 
+/// A [`Lcp2Mmphf`] for `str` keys.
 pub type Lcp2MmphfStr<D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
     Lcp2Mmphf<str, D, S, E>;
+/// A [`Lcp2Mmphf`] for `[u8]` keys.
 pub type Lcp2MmphfSliceU8<D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
     Lcp2Mmphf<[u8], D, S, E>;
 
@@ -385,6 +394,11 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, D: SliceByValue<Value = usize>, S: Sig,
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
+    /// Returns the rank (0-based position) of the given key in the
+    /// original sorted sequence.
+    ///
+    /// If the key was not in the original set, the result is arbitrary
+    /// (same contract as [`VFunc::get`]).
     #[inline]
     pub fn get(&self, key: &K) -> usize {
         let sig = K::to_sig(key, self.offsets.seed);
@@ -412,9 +426,11 @@ impl<K: ?Sized, D, S: Sig, E: ShardEdge<S, 3>> Lcp2Mmphf<K, D, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
+    /// Returns the number of keys.
     pub const fn len(&self) -> usize {
         self.n
     }
+    /// Returns `true` if the function contains no keys.
     pub const fn is_empty(&self) -> bool {
         self.n == 0
     }

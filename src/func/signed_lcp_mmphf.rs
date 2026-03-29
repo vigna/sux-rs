@@ -333,7 +333,7 @@ where
         Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
     }
 
-    /// Like [`new`](Self::try_new), but uses the given [`VBuilder`] to
+    /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
     /// configure the internal `offset_lcp_length` VFunc.
     pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<

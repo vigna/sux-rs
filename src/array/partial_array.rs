@@ -268,7 +268,7 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
         self.index.len()
     }
 
-    /// Returns true if the array length is 0.
+    /// Returns `true` if the array has no elements.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
@@ -330,7 +330,7 @@ where
         self.index.ef.upper_bound() as usize
     }
 
-    /// Returns true if the array len is 0.
+    /// Returns `true` if the array has no elements.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.index.ef.upper_bound() == 0

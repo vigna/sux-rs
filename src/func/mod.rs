@@ -17,7 +17,7 @@
 //!
 //! - [`VFunc`] is a generic static function.
 //!
-//! - [`VFunc2`] is a two-step static function that has better space Usage
+//! - [`VFunc2`] is a two-step static function that has better space usage
 //!   in case the distribution of the output values is skewed.
 //!
 //! - [`LcpMmphfInt`]/[`LcpMmphf`] are *monotone minimal perfect hash
@@ -29,7 +29,7 @@
 //!   [`LcpMmphfInt`]/[`LcpMmphf`] that use a [`VFunc2`] to reduce space usage, at
 //!   the cost of slightly slower queries.
 //!
-//! Most structures implements the
+//! Most structures implement the
 //! [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing them
 //! to be converted into (usually faster) structures using unaligned access.
 
