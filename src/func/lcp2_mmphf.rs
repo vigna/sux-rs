@@ -331,7 +331,10 @@ where
                         .expected_num_keys(num_buckets)
                         .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
                             FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
-                                IntBitPrefix::new(bucket_first_keys[b] ^ T::MIN, lcp_bit_lengths[b] as usize)
+                                IntBitPrefix::new(
+                                    bucket_first_keys[b] ^ T::MIN,
+                                    lcp_bit_lengths[b] as usize,
+                                )
                             })),
                             FromCloneableIntoIterator::new(0..num_buckets),
                             pl,

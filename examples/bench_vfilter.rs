@@ -171,7 +171,7 @@ where
 
         bench(args.n, args.repeats, || {
             for key in &keys {
-                std::hint::black_box(filter.get(key.as_str()));
+                std::hint::black_box(filter.contains(key.as_str()));
             }
         });
     } else {

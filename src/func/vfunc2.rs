@@ -245,7 +245,7 @@ impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
             .map(|(k, _)| K::try_from(k).ok().unwrap());
         let map_iter = self.map.keys().copied();
         let mut keys: Vec<K> = array_iter.chain(map_iter).collect();
-        keys.sort_by(|a, b| self.get(*b).cmp(&self.get(*a)));
+        keys.sort_by_key(|b| std::cmp::Reverse(self.get(*b)));
         keys
     }
 }
