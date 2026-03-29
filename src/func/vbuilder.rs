@@ -640,7 +640,7 @@ where
         let func = self.try_populate_and_build(
             keys,
             FromCloneableIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
-            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P| {
+            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
                 builder.bit_width = W::BITS as usize;
 
                 let new_data: Box<[W]> = vec![
@@ -666,6 +666,7 @@ where
                 Ok(func)
             },
             pl,
+            (),
         )?;
 
         Ok(VFilter {
@@ -717,6 +718,11 @@ where
     ///
     /// * `get_val` — maps each [`SigVal<E::LocalSig, V>`](SigVal) to
     ///   the new output value `W`.
+    ///
+    /// * `inspect` — a closure that is called on each signature/value pair
+    ///   during the build, for example, to log the distribution of values.
+    ///
+    /// * `pl` — the progress logger.
     pub fn try_build_func_with_store<T: ?Sized + ToSig<S>, V: BinSafe + Default + Send + Sync>(
         mut self,
         seed: u64,
@@ -983,7 +989,7 @@ where
         let func = self.try_populate_and_build(
             keys,
             FromCloneableIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
-            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P| {
+            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
                 builder.bit_width = filter_bits;
 
                 let new_data = BitFieldVec::<Box<[W]>>::new_unaligned(
@@ -1007,6 +1013,7 @@ where
                 Ok(func)
             },
             pl,
+            (),
         )?;
 
         Ok(VFilter {
@@ -1124,7 +1131,7 @@ impl<
         self.try_populate_and_build(
             keys,
             values,
-            &mut |builder, seed, mut store, max_value, _num_keys, pl: &mut P| {
+            &mut |builder, seed, mut store, max_value, _num_keys, pl: &mut P, _state: &mut ()| {
                 builder.bit_width = max_value.as_u128().bit_len() as usize;
 
                 let data = new_data(
@@ -1158,6 +1165,7 @@ impl<
                 Ok((func, store))
             },
             pl,
+            (),
         )
     }
 
@@ -1194,6 +1202,7 @@ impl<
         V: BinSafe + Default + Send + Sync + Ord + AsU128,
         R,
         P: ProgressLog + Clone + Send + Sync,
+        C,
     >(
         &mut self,
         mut keys: impl FallibleRewindableLender<
@@ -1211,8 +1220,10 @@ impl<
             V,
             usize,
             &mut P,
+            &mut C,
         ) -> anyhow::Result<R>,
         pl: &mut P,
+        mut state: C,
     ) -> anyhow::Result<R>
     where
         SigVal<S, V>: RadixKey,
@@ -1235,7 +1246,7 @@ impl<
                 let mut populate = |seed: u64,
                                     push: &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
                                     pl: &mut P,
-                                    _state: &mut ()| {
+                                    _state: &mut C| {
                     let mut maybe_max_value = V::default();
                     while let Some(key) = keys.next()? {
                         pl.light_update();
@@ -1252,11 +1263,9 @@ impl<
                 self.try_solve_once(
                     seed,
                     &mut populate,
-                    &mut |builder, seed, store, max_value, num_keys, pl, _state: &mut ()| {
-                        build_fn(builder, seed, store, max_value, num_keys, pl)
-                    },
+                    build_fn,
                     pl,
-                    &mut (),
+                    &mut state,
                 )
             };
 
@@ -1276,11 +1285,10 @@ impl<
     /// This is a low-level method that requires a thorough understanding
     /// of the builder's internal state.
     ///
-    /// This enables computing side data (e.g., LCP bit lengths) in the
-    /// same pass as store population, avoiding a separate scan of the
-    /// keys. The `state` parameter is threaded through to both
-    /// `key_to_val` and `build_fn`, allowing them to share mutable
-    /// context without `RefCell`.
+    /// The `state` parameter is threaded through to both `key_to_val` and
+    /// `build_fn`, allowing them to share mutable context without [`RefCell]`.
+    /// This enables computing side data in the same pass as store population,
+    /// avoiding a separate scan of the keys.
     ///
     /// On retry (seed change), the keys lender is rewound and
     /// `key_to_val` is called again from index 0; stateful closures
