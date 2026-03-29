@@ -48,6 +48,16 @@ use {
     std::cell::RefCell,
 };
 
+/// Compact type for LCP bit lengths. Using a smaller type than
+/// `usize` reduces the cache footprint of the LCP lookup table,
+/// which is on the hot path during peeling. `u32` on 64-bit
+/// platforms supports keys up to 512 MB; `u16` on 32-bit supports
+/// keys up to 8 KB.
+#[cfg(target_pointer_width = "64")]
+type LcpLen = u32;
+#[cfg(not(target_pointer_width = "64"))]
+type LcpLen = u16;
+
 // ── Integer variant ─────────────────────────────────────────────────
 
 /// A two-step monotone minimal perfect hash function for sorted integers.
@@ -207,7 +217,7 @@ where
         // LCP state shared between key_to_val and build_fn via RefCell.
         // (lcp_bit_lengths, bucket_first_keys, prev_key, curr_lcp_bits)
         let state = RefCell::new((
-            Vec::<usize>::with_capacity(num_buckets),
+            Vec::<LcpLen>::with_capacity(num_buckets),
             Vec::<T>::with_capacity(num_buckets),
             None::<T>,
             0usize,
@@ -240,7 +250,7 @@ where
                 let offset = idx & bucket_mask;
                 if offset == 0 {
                     if idx > 0 {
-                        lcp_bit_lengths.push(*curr_lcp_bits);
+                        lcp_bit_lengths.push(*curr_lcp_bits as LcpLen);
                     }
                     bucket_first_keys.push(key);
                     *curr_lcp_bits = T::BITS as usize;
@@ -255,7 +265,7 @@ where
                 // Finalize LCP data (last bucket).
                 {
                     let mut s = state.borrow_mut();
-                    let last_lcp = s.3;
+                    let last_lcp = s.3 as LcpLen;
                     s.0.push(last_lcp);
                 }
                 let s = state.borrow();
@@ -283,7 +293,7 @@ where
                         // -- LCP lengths (two-step) --
                         // Compute frequency table directly from lcp_bit_lengths
                         // (no store scan needed).
-                        let max_lcp = *lcp_bit_lengths.iter().max().unwrap_or(&0);
+                        let max_lcp = *lcp_bit_lengths.iter().max().unwrap_or(&0) as usize;
                         let mut lcp_counts: std::collections::HashMap<usize, usize> =
                             std::collections::HashMap::new();
                         let last_bucket_size = n - (num_buckets - 1) * bucket_size;
@@ -293,7 +303,7 @@ where
                             } else {
                                 bucket_size
                             };
-                            *lcp_counts.entry(lcp).or_insert(0) += bsize;
+                            *lcp_counts.entry(lcp as usize).or_insert(0) += bsize;
                         }
 
                         pl.info(format_args!("Building two-step LCP lengths..."));
@@ -301,7 +311,7 @@ where
                             seed,
                             shard_edge,
                             store,
-                            &|v| lcp_bit_lengths[v >> log2_bs],
+                            &|v| lcp_bit_lengths[v >> log2_bs] as usize,
                             max_lcp,
                             &lcp_counts,
                             VBuilder::default(),
@@ -321,7 +331,7 @@ where
                         .expected_num_keys(num_buckets)
                         .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
                             FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
-                                IntBitPrefix::new(bucket_first_keys[b] ^ T::MIN, lcp_bit_lengths[b])
+                                IntBitPrefix::new(bucket_first_keys[b] ^ T::MIN, lcp_bit_lengths[b] as usize)
                             })),
                             FromCloneableIntoIterator::new(0..num_buckets),
                             pl,
@@ -513,7 +523,7 @@ where
         // LCP state shared between key_to_val and build_fn via RefCell.
         // (lcp_bit_lengths, bucket_first_keys, prev_key, curr_lcp_bits)
         let state = RefCell::new((
-            Vec::<usize>::with_capacity(num_buckets),
+            Vec::<LcpLen>::with_capacity(num_buckets),
             Vec::<Vec<u8>>::with_capacity(num_buckets),
             Vec::<u8>::new(),
             0usize,
@@ -544,7 +554,7 @@ where
                 let offset = idx & bucket_mask;
                 if offset == 0 {
                     if idx > 0 {
-                        lcp_bit_lengths.push(*curr_lcp_bits);
+                        lcp_bit_lengths.push(*curr_lcp_bits as LcpLen);
                     }
                     bucket_first_keys.push(key_bytes.to_vec());
                     *curr_lcp_bits = (key_bytes.len() + 1) * 8;
@@ -560,7 +570,7 @@ where
                 // Finalize LCP data (last bucket).
                 {
                     let mut s = state.borrow_mut();
-                    let last_lcp = s.3;
+                    let last_lcp = s.3 as LcpLen;
                     s.0.push(last_lcp);
                 }
                 let s = state.borrow();
@@ -586,7 +596,7 @@ where
 
                         // Compute frequency table directly from lcp_bit_lengths
                         // (no store scan needed).
-                        let max_lcp = *lcp_bit_lengths.iter().max().unwrap_or(&0);
+                        let max_lcp = *lcp_bit_lengths.iter().max().unwrap_or(&0) as usize;
                         let mut lcp_counts: std::collections::HashMap<usize, usize> =
                             std::collections::HashMap::new();
                         let last_bucket_size = n - (num_buckets - 1) * bucket_size;
@@ -596,7 +606,7 @@ where
                             } else {
                                 bucket_size
                             };
-                            *lcp_counts.entry(lcp).or_insert(0) += bsize;
+                            *lcp_counts.entry(lcp as usize).or_insert(0) += bsize;
                         }
 
                         pl.info(format_args!("Building two-step LCP lengths..."));
@@ -604,7 +614,7 @@ where
                             seed,
                             shard_edge,
                             store,
-                            &|v| lcp_bit_lengths[v >> log2_bs],
+                            &|v| lcp_bit_lengths[v >> log2_bs] as usize,
                             max_lcp,
                             &lcp_counts,
                             VBuilder::default(),
@@ -633,7 +643,7 @@ where
                         .expected_num_keys(num_buckets)
                         .try_build_func::<BitPrefix, BitPrefix>(
                             FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
-                                BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b])
+                                BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b] as usize)
                             })),
                             FromCloneableIntoIterator::new(0..num_buckets),
                             pl,
