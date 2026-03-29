@@ -502,7 +502,7 @@ where
     fn build_from_hybrid_counts<V: BinSafe + Default + Send + Sync + Copy>(
         seed: u64,
         shard_edge: E0,
-        store: &mut impl ShardStore<S, V>,
+        store: &mut (impl ShardStore<S, V> + ?Sized),
         get_val: &(impl Fn(V) -> W + Send + Sync),
         max_value: W,
         counts: HybridMap<W, usize>,

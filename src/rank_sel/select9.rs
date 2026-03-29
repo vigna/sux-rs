@@ -83,7 +83,7 @@ use std::ops::{Deref, Index};
 /// # Type Parameters
 ///
 /// - `R`: The underlying [`Rank9`] structure. Defaults to
-///   a default [`Rank9`](super::Rank9).
+///   a default [`Rank9`].
 /// - `I`: The inventory storage. Defaults to `Box<[u64]>`.
 ///
 /// # Examples

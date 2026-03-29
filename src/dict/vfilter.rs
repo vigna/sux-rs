@@ -5,6 +5,8 @@
 * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
 */
 
+//! Static filters (approximate membership structures with false positives).
+
 use crate::bits::{BitFieldVec, BitFieldVecU};
 use crate::func::mix64;
 use crate::func::{VFunc, shard_edge::ShardEdge};
@@ -15,38 +17,42 @@ use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
 use std::borrow::Borrow;
 use std::ops::Index;
 
-/// Static filters (i.e., static approximate dictionaries with false positives)
-/// with low space overhead, fast parallel construction, and fast queries.
+/// A static filter (approximate membership data structure) with
+/// controllable false-positive rate.
 ///
-/// Instances of this structure are immutable; they are built using a
-/// [`VBuilder`](crate::func::VBuilder) and can be serialized using
-/// [ε-serde](https://crates.io/crates/epserde). They contain a mapping from
-/// keys to hashes stored in a [`VFunc`]; [`contains`](VFilter::contains) checks
-/// that the hash of a key is equal to the hash stored by the function for the
-/// same key.
+/// A `VFilter` wraps a [`VFunc`] that maps each key to a *b*-bit hash. A
+/// membership query recomputes the hash from the key's signature and compares
+/// it against the stored value: if they match, the key is probably in the set;
+/// if they differ, the key is not in the set. The false-positive rate is 2⁻*ᵇ*.
+/// For values of *b* that correspond to the size of an unsigned type, you can
+/// use a boxed slice as a backend.
 ///
-/// Please read the [`VFunc`] documentation for more information about the space
-/// usage and the ways in which a filter can be built. At construction time you
-/// have to choose a number *b* of hash bits per key, and the filter precision
-/// (false-positive rate) will be 2⁻*ᵇ*. For values of *b* that correspond to
-/// the size of an unsigned type, you can use a boxed slice as a backend.
+/// Instances are immutable; they are built using a
+/// [`VBuilder`](crate::func::VBuilder) and can be serialized with
+/// [ε-serde](https://crates.io/crates/epserde).
 ///
-/// Note that this structure implements the [`Index`] trait, which provides a
-/// convenient access to the filter. Please see the documentation of
-/// [`VBuilder`](crate::func::VBuilder) for examples.
+/// This structure implements the [`Index`] trait for convenient
+/// `filter[key]` syntax (returning `&bool`).
+///
+/// Please see the documentation of [`VBuilder`](crate::func::VBuilder)
+/// for construction examples.
 ///
 /// # Generics
 ///
-/// * `W`: The type of the hashes associated to keys. See the discussion about
-///   the generic `D` of [`VFunc`].
-/// * `F`: The type of [`VFunc`] used to store the mapping from keys to hashes.
-///   This type will also imply the type of the keys.
+/// * `W`: The unsigned integer type used to store hashes.
+/// * `F`: The underlying [`VFunc`] type (determines key type, signature
+///   type, sharding, and backend).
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VFilter<W, F> {
+    /// The underlying static function mapping keys to hashes.
     pub(crate) func: F,
+    /// Bit mask applied to the derived hash before comparison.
+    ///
+    /// Equal to `W::MAX >> (W::BITS - hash_bits)`.
     pub(crate) filter_mask: W,
+    /// Number of hash bits per key (determines the false-positive rate).
     pub(crate) hash_bits: u32,
 }
 
@@ -60,40 +66,33 @@ impl<
 where
     u64: PrimitiveNumberAs<W>,
 {
-    /// Returns the hash associated with the given signature by the underlying
-    /// function, or a random hash if the signature is not the signature of a
-    /// key.
+    /// Returns whether the key with the given pre-computed signature is
+    /// likely in the set.
     ///
-    /// The user should not normally call this method, but rather
-    /// [`contains_by_sig`](VFilter::contains_by_sig).
-    #[inline(always)]
-    pub fn get_by_sig(&self, sig: S) -> W {
-        self.func.get_by_sig(sig)
-    }
-
-    /// Returns the hash associated with the given key by the underlying
-    /// function, or a random hash if the key is not present.
+    /// Derives a *b*-bit hash from `sig` and compares it against the
+    /// hash stored by the underlying [`VFunc`]. Returns `true` on
+    /// match (key probably present, with false-positive rate 2⁻*ᵇ*),
+    /// `false` on mismatch (key definitely absent).
     ///
-    /// The user should not normally call this method, but rather
-    /// [`contains`](VFilter::contains).
-    #[inline]
-    pub fn get(&self, key: impl Borrow<T>) -> W {
-        self.func.get(key)
-    }
-
-    /// Returns whether a signature is contained in the filter.
-    ///
-    /// The user should not normally call this method, but rather
-    /// [`contains`](VFilter::contains).
+    /// This is the signature-level entry point; most callers should use
+    /// [`contains`](Self::contains) instead.
     #[inline(always)]
     pub fn contains_by_sig(&self, sig: S) -> bool {
         let shard_edge = &self.func.shard_edge;
-        self.func.get_by_sig(sig)
-            == mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))).as_to::<W>()
-                & self.filter_mask
+        // Derive the expected hash from the signature's edge hash,
+        // mix it with mix64 for avalanche, and mask to hash_bits.
+        let expected =
+            mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))).as_to::<W>() & self.filter_mask;
+        // Compare against the hash stored by the VFunc.
+        self.func.get_by_sig(sig) == expected
     }
 
-    /// Returns whether a key is contained in the filter.
+    /// Returns whether `key` is likely in the set.
+    ///
+    /// Computes the key's signature and delegates to
+    /// [`contains_by_sig`](Self::contains_by_sig). Returns `true`
+    /// on match (false-positive rate 2⁻*ᵇ*), `false` on mismatch
+    /// (definitely absent).
     #[inline]
     pub fn contains(&self, key: impl Borrow<T>) -> bool {
         self.contains_by_sig(T::to_sig(key.borrow(), self.func.seed))
@@ -104,14 +103,14 @@ where
         self.func.num_keys
     }
 
-    /// Returns whether the function has no keys.
+    /// Returns `true` if the filter contains no keys.
     pub const fn is_empty(&self) -> bool {
         self.func.num_keys == 0
     }
 
-    /// Returns the number of bits of the hash associated with keys.
+    /// Returns the number of hash bits per key.
     ///
-    /// The filter precision (false-positive rate) is 2<sup>-`hash_bits`</sup>.
+    /// The filter's false-positive rate is 2<sup>−`hash_bits`</sup>.
     pub const fn hash_bits(&self) -> u32 {
         self.hash_bits
     }
@@ -130,13 +129,19 @@ where
 {
     type Output = bool;
 
+    /// Indexes the filter by key, returning `&true` or `&false`.
+    ///
+    /// Equivalent to [`contains`](VFilter::contains) but satisfying
+    /// the [`Index`] trait for `filter[key]` syntax.
     #[inline(always)]
     fn index(&self, key: B) -> &Self::Output {
+        // Return references to static bools — this is the standard
+        // pattern for Index<_> -> &bool.
         if self.contains(key) { &true } else { &false }
     }
 }
 
-// Aligned ↔ Unaligned conversions
+// ── Aligned ↔ Unaligned conversions ─────────────────────────────────
 
 impl<T: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::TryIntoUnaligned
     for VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
@@ -165,6 +170,8 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
         }
     }
 }
+
+// ── Tests ───────────────────────────────────────────────────────────
 
 #[cfg(all(test, feature = "rayon"))]
 mod tests {
@@ -204,12 +211,15 @@ mod tests {
                 .log2_buckets(4)
                 .offline(false)
                 .try_build_filter(FromCloneableIntoIterator::from(0..n), no_logging![])?;
+            // Verify that the stored hash matches the expected derivation
+            // for every key in the set.
             let shard_edge = &filter.func.shard_edge;
             for i in 0..n {
                 let sig = ToSig::<S>::to_sig(i, filter.func.seed);
                 assert_eq!(
                     mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))) & 0xFF,
-                    filter.get(i) as u64
+                    filter.func.get_by_sig(sig) as u64,
+                    "Hash mismatch for key {i}"
                 );
             }
         }
