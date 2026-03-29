@@ -19,7 +19,6 @@ use derive_setters::*;
 use dsi_progress_logger::*;
 use lender::FallibleLending;
 use log::info;
-use mem_dbg::*;
 use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
 use rand::rngs::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
