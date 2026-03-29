@@ -45,7 +45,6 @@ use {
     lender::*,
     rdst::RadixKey,
     std::borrow::Borrow,
-    std::cell::RefCell,
 };
 
 /// Compact type for LCP bit lengths. Using a smaller type than
@@ -214,21 +213,13 @@ where
             "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
         ));
 
-        // LCP state shared between key_to_val and build_fn via RefCell.
-        // (lcp_bit_lengths, bucket_first_keys, prev_key, curr_lcp_bits)
-        let state = RefCell::new((
-            Vec::<LcpLen>::with_capacity(num_buckets),
-            Vec::<T>::with_capacity(num_buckets),
-            None::<T>,
-            0usize,
-        ));
+        type IntLcpState<T> = (Vec<LcpLen>, Vec<T>, Option<T>, usize);
 
         let mut builder = builder.expected_num_keys(n);
         builder.try_populate_and_build_with_fn(
             keys,
-            &mut |key: &T, idx: usize| -> anyhow::Result<usize> {
-                let mut s = state.borrow_mut();
-                let (lcp_bit_lengths, bucket_first_keys, prev_key, curr_lcp_bits) = &mut *s;
+            &mut |key: &T, idx: usize, ctx: &mut IntLcpState<T>| -> anyhow::Result<usize> {
+                let (lcp_bit_lengths, bucket_first_keys, prev_key, curr_lcp_bits) = ctx;
                 let key: T = *key;
 
                 if idx == 0 {
@@ -260,21 +251,15 @@ where
                 *prev_key = Some(key);
                 Ok(idx)
             },
-            &mut |_builder, seed, mut store, _max_value, _num_keys, pl: &mut P| {
+            &mut |_builder, seed, mut store, _max_value, _num_keys, pl: &mut P, ctx: &mut IntLcpState<T>| {
                 let shard_edge = _builder.shard_edge;
+                let (lcp_bit_lengths, bucket_first_keys, _, curr_lcp_bits) = ctx;
                 // Finalize LCP data (last bucket).
-                {
-                    let mut s = state.borrow_mut();
-                    let last_lcp = s.3 as LcpLen;
-                    s.0.push(last_lcp);
-                }
-                let s = state.borrow();
-                let (lcp_bit_lengths, bucket_first_keys, _, _) = &*s;
+                lcp_bit_lengths.push(*curr_lcp_bits as LcpLen);
                 assert_eq!(lcp_bit_lengths.len(), num_buckets);
 
-                macro_rules! build_from_store {
-                    ($store:expr) => {{
-                        let store = $store;
+                {
+                    let store = &mut *store;
                         // -- Offsets --
                         pl.info(format_args!(
                             "Building key → offset map ({log2_bs} bits)..."
@@ -353,19 +338,22 @@ where
                             total as f64 / n as f64
                         ));
 
-                        Ok(Self {
-                            n,
-                            log2_bucket_size: log2_bs,
-                            offsets,
-                            lcp_lengths,
-                            lcp2bucket,
-                        })
-                    }};
+                Ok(Self {
+                    n,
+                    log2_bucket_size: log2_bs,
+                    offsets,
+                    lcp_lengths,
+                    lcp2bucket,
+                })
                 }
-
-                build_from_store!(&mut *store)
             },
             pl,
+            (
+                Vec::<LcpLen>::with_capacity(num_buckets),
+                Vec::<T>::with_capacity(num_buckets),
+                None::<T>,
+                0usize,
+            ),
         )
     }
 }
@@ -523,21 +511,13 @@ where
             "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
         ));
 
-        // LCP state shared between key_to_val and build_fn via RefCell.
-        // (lcp_bit_lengths, bucket_first_keys, prev_key, curr_lcp_bits)
-        let state = RefCell::new((
-            Vec::<LcpLen>::with_capacity(num_buckets),
-            Vec::<Vec<u8>>::with_capacity(num_buckets),
-            Vec::<u8>::new(),
-            0usize,
-        ));
+        type StrLcpState = (Vec<LcpLen>, Vec<Vec<u8>>, Vec<u8>, usize);
 
         let mut builder = builder.expected_num_keys(n);
         builder.try_populate_and_build_with_fn(
             keys,
-            &mut |key: &B, idx: usize| -> anyhow::Result<usize> {
-                let mut s = state.borrow_mut();
-                let (lcp_bit_lengths, bucket_first_keys, prev_key, curr_lcp_bits) = &mut *s;
+            &mut |key: &B, idx: usize, ctx: &mut StrLcpState| -> anyhow::Result<usize> {
+                let (lcp_bit_lengths, bucket_first_keys, prev_key, curr_lcp_bits) = ctx;
                 let key_bytes: &[u8] = key.as_ref();
 
                 if idx == 0 {
@@ -568,21 +548,15 @@ where
                 prev_key.extend_from_slice(key_bytes);
                 Ok(idx)
             },
-            &mut |_builder, seed, mut store, _max_value, _num_keys, pl: &mut P| {
+            &mut |_builder, seed, mut store, _max_value, _num_keys, pl: &mut P, ctx: &mut StrLcpState| {
                 let shard_edge = _builder.shard_edge;
+                let (lcp_bit_lengths, bucket_first_keys, _, curr_lcp_bits) = ctx;
                 // Finalize LCP data (last bucket).
-                {
-                    let mut s = state.borrow_mut();
-                    let last_lcp = s.3 as LcpLen;
-                    s.0.push(last_lcp);
-                }
-                let s = state.borrow();
-                let (lcp_bit_lengths, bucket_first_keys, _, _) = &*s;
+                lcp_bit_lengths.push(*curr_lcp_bits as LcpLen);
                 assert_eq!(lcp_bit_lengths.len(), num_buckets);
 
-                macro_rules! build_from_store {
-                    ($store:expr) => {{
-                        let store = $store;
+                {
+                    let store = &mut *store;
                         pl.info(format_args!(
                             "Building key → offset map ({log2_bs} bits)..."
                         ));
@@ -665,19 +639,22 @@ where
                             total as f64 / n as f64
                         ));
 
-                        Ok(Self {
-                            n,
-                            log2_bucket_size: log2_bs,
-                            offsets,
-                            lcp_lengths,
-                            lcp2bucket,
-                        })
-                    }};
+                Ok(Self {
+                    n,
+                    log2_bucket_size: log2_bs,
+                    offsets,
+                    lcp_lengths,
+                    lcp2bucket,
+                })
                 }
-
-                build_from_store!(&mut *store)
             },
             pl,
+            (
+                Vec::<LcpLen>::with_capacity(num_buckets),
+                Vec::<Vec<u8>>::with_capacity(num_buckets),
+                Vec::<u8>::new(),
+                0usize,
+            ),
         )
     }
 }
