@@ -249,7 +249,7 @@ impl<T, S, E> LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>
 where
     T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
     S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
+    E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
     SigVal<S, usize>: RadixKey,
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
 {
@@ -410,23 +410,19 @@ where
                     pl,
                 )?;
 
-        let total_bits = (offset_lcp_length.data.mem_size(SizeFlags::default())
-            + lcp2bucket.data.mem_size(SizeFlags::default()))
-            * 8;
+        let result = Self {
+            n,
+            log2_bucket_size: log2_bs,
+            offset_lcp_length,
+            lcp2bucket,
+        };
+        let total_bits = result.mem_size(SizeFlags::default()) * 8;
         pl.info(format_args!(
             "Actual bit cost per key: {:.2} ({total_bits} bits for {n} keys)",
             total_bits as f64 / n as f64
         ));
 
-        Ok((
-            Self {
-                n,
-                log2_bucket_size: log2_bs,
-                offset_lcp_length,
-                lcp2bucket,
-            },
-            store,
-        ))
+        Ok((result, store))
     }
 }
 
@@ -744,7 +740,7 @@ impl<K, S, E> LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>
 where
     K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
     S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
+    E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
     SigVal<S, usize>: RadixKey,
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
 {
@@ -926,23 +922,19 @@ where
                     pl,
                 )?;
 
-        let total_bits = (offset_lcp_length.data.mem_size(SizeFlags::default())
-            + lcp2bucket.data.mem_size(SizeFlags::default()))
-            * 8;
+        let result = Self {
+            n,
+            log2_bucket_size: log2_bs,
+            offset_lcp_length,
+            lcp2bucket,
+        };
+        let total_bits = result.mem_size(SizeFlags::default()) * 8;
         pl.info(format_args!(
             "Actual bit cost per key: {:.2} ({total_bits} bits for {n} keys)",
             total_bits as f64 / n as f64
         ));
 
-        Ok((
-            Self {
-                n,
-                log2_bucket_size: log2_bs,
-                offset_lcp_length,
-                lcp2bucket,
-            },
-            store,
-        ))
+        Ok((result, store))
     }
 }
 
