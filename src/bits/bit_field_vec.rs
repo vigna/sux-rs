@@ -302,8 +302,10 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
     pub fn get_unaligned(&self, index: usize) -> B::Word {
         assert_unaligned!(B::Word, self.bit_width);
         panic_if_out_of_bounds!(index, self.len);
+        // Check that the read_unaligned of size_of::<W>() bytes starting at
+        // byte offset start_bit / 8 does not exceed the allocation.
         assert!(
-            (index * self.bit_width) / size_of::<B::Word>() + size_of::<B::Word>()
+            (index * self.bit_width) / 8 + size_of::<B::Word>()
                 <= std::mem::size_of_val(self.bits.as_ref())
         );
         unsafe { self.get_unaligned_unchecked(index) }
@@ -326,9 +328,10 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
         debug_assert_unaligned!(B::Word, self.bit_width);
         let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
         let start_bit = index * self.bit_width;
+        // Check that the read_unaligned of size_of::<W>() bytes starting at
+        // byte offset start_bit / 8 does not exceed the allocation.
         debug_assert!(
-            start_bit / size_of::<B::Word>() + size_of::<B::Word>()
-                <= std::mem::size_of_val(self.bits.as_ref())
+            start_bit / 8 + size_of::<B::Word>() <= std::mem::size_of_val(self.bits.as_ref())
         );
         let ptr = unsafe { base_ptr.add(start_bit / 8) } as *const B::Word;
         let word = unsafe { core::ptr::read_unaligned(ptr) };

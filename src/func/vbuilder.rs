@@ -1261,13 +1261,7 @@ impl<
                     Ok(maybe_max_value)
                 };
 
-                self.try_solve_once(
-                    seed,
-                    &mut populate,
-                    build_fn,
-                    pl,
-                    &mut state,
-                )
+                self.try_solve_once(seed, &mut populate, build_fn, pl, &mut state)
             };
 
             handle_solve_result!(result, dup_count, local_dup_count, pl);

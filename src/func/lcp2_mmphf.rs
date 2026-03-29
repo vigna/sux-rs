@@ -44,7 +44,7 @@ use {
     anyhow::{Result, bail},
     dsi_progress_logger::ProgressLog,
     lender::*,
-    rand::{SeedableRng, rngs::SmallRng, RngExt},
+    rand::{RngExt, SeedableRng, rngs::SmallRng},
     rdst::RadixKey,
     std::borrow::Borrow,
 };
@@ -260,27 +260,58 @@ where
                 state.lcp_counts.clear();
                 state.max_lcp = 0;
 
-                let mut populate = |seed: u64,
-                                    push: &mut dyn FnMut(SigVal<S, usize>) -> anyhow::Result<()>,
-                                    pl: &mut P,
-                                    state: &mut PopState<T>| {
-                    while let Some(key) = keys.next()? {
-                        pl.light_update();
-                        let key: T = *key;
+                let mut populate =
+                    |seed: u64,
+                     push: &mut dyn FnMut(SigVal<S, usize>) -> anyhow::Result<()>,
+                     pl: &mut P,
+                     state: &mut PopState<T>| {
+                        while let Some(key) = keys.next()? {
+                            pl.light_update();
+                            let key: T = *key;
 
-                        if let Some(prev) = prev_key {
-                            if key <= prev {
-                                bail!(
-                                    "Keys are not in strictly increasing order at \
+                            if let Some(prev) = prev_key {
+                                if key <= prev {
+                                    bail!(
+                                        "Keys are not in strictly increasing order at \
                                      position {idx}: {prev:?} >= {key:?}"
-                                );
+                                    );
+                                }
                             }
+
+                            let offset = idx & bucket_mask;
+
+                            // Start of a new bucket — flush the previous one.
+                            if offset == 0 && idx > 0 {
+                                let lcp = curr_lcp_bits;
+                                state.lcp_bit_lengths.push(lcp as LcpLen);
+                                state.max_lcp = state.max_lcp.max(lcp);
+                                let bsize = buf.len();
+                                *state.lcp_counts.entry(lcp).or_insert(0) += bsize;
+                                for (i, &(sig, _)) in buf.iter().enumerate() {
+                                    let packed = (lcp << log2_bs) | i;
+                                    max_value = max_value.max(packed);
+                                    push(SigVal { sig, val: packed })?;
+                                }
+                                buf.clear();
+                                curr_lcp_bits = T::BITS as usize;
+                            } else if offset == 0 {
+                                curr_lcp_bits = T::BITS as usize;
+                            } else {
+                                curr_lcp_bits = curr_lcp_bits.min(lcp_bits(key, prev_key.unwrap()));
+                            }
+
+                            if offset == 0 {
+                                state.bucket_first_keys.push(key);
+                            }
+
+                            let sig = T::to_sig(key, seed);
+                            buf.push((sig, key));
+                            prev_key = Some(key);
+                            idx += 1;
                         }
 
-                        let offset = idx & bucket_mask;
-
-                        // Start of a new bucket — flush the previous one.
-                        if offset == 0 && idx > 0 {
+                        // Flush the last (possibly partial) bucket.
+                        if !buf.is_empty() {
                             let lcp = curr_lcp_bits;
                             state.lcp_bit_lengths.push(lcp as LcpLen);
                             state.max_lcp = state.max_lcp.max(lcp);
@@ -292,44 +323,13 @@ where
                                 push(SigVal { sig, val: packed })?;
                             }
                             buf.clear();
-                            curr_lcp_bits = T::BITS as usize;
-                        } else if offset == 0 {
-                            curr_lcp_bits = T::BITS as usize;
-                        } else {
-                            curr_lcp_bits =
-                                curr_lcp_bits.min(lcp_bits(key, prev_key.unwrap()));
                         }
 
-                        if offset == 0 {
-                            state.bucket_first_keys.push(key);
-                        }
+                        assert_eq!(idx, n, "Expected {n} keys but got {idx}");
+                        assert_eq!(state.lcp_bit_lengths.len(), num_buckets);
 
-                        let sig = T::to_sig(key, seed);
-                        buf.push((sig, key));
-                        prev_key = Some(key);
-                        idx += 1;
-                    }
-
-                    // Flush the last (possibly partial) bucket.
-                    if !buf.is_empty() {
-                        let lcp = curr_lcp_bits;
-                        state.lcp_bit_lengths.push(lcp as LcpLen);
-                        state.max_lcp = state.max_lcp.max(lcp);
-                        let bsize = buf.len();
-                        *state.lcp_counts.entry(lcp).or_insert(0) += bsize;
-                        for (i, &(sig, _)) in buf.iter().enumerate() {
-                            let packed = (lcp << log2_bs) | i;
-                            max_value = max_value.max(packed);
-                            push(SigVal { sig, val: packed })?;
-                        }
-                        buf.clear();
-                    }
-
-                    assert_eq!(idx, n, "Expected {n} keys but got {idx}");
-                    assert_eq!(state.lcp_bit_lengths.len(), num_buckets);
-
-                    Ok(max_value)
-                };
+                        Ok(max_value)
+                    };
 
                 builder.try_solve_once(
                     seed,
@@ -348,9 +348,8 @@ where
                         pl.info(format_args!(
                             "Building key → offset map ({log2_bs} bits)..."
                         ));
-                        let offsets =
-                            VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
-                                .try_build_func_with_store::<T, usize>(
+                        let offsets = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
+                            .try_build_func_with_store::<T, usize>(
                                 seed,
                                 shard_edge,
                                 bucket_mask,
@@ -422,31 +421,21 @@ where
                             if dup_count >= 3 {
                                 return Err(BuildError::DuplicateKey.into());
                             }
-                            pl.warn(format_args!(
-                                "Duplicate 128-bit signature, trying again..."
-                            ));
+                            pl.warn(format_args!("Duplicate 128-bit signature, trying again..."));
                             dup_count += 1;
                         }
                         SolveError::DuplicateLocalSignature => {
                             if local_dup_count >= 2 {
-                                return Err(
-                                    BuildError::DuplicateLocalSignatures.into()
-                                );
+                                return Err(BuildError::DuplicateLocalSignatures.into());
                             }
-                            pl.warn(format_args!(
-                                "Duplicate local signature, trying again..."
-                            ));
+                            pl.warn(format_args!("Duplicate local signature, trying again..."));
                             local_dup_count += 1;
                         }
                         SolveError::MaxShardTooBig => {
-                            pl.warn(format_args!(
-                                "Max shard too big, trying again..."
-                            ));
+                            pl.warn(format_args!("Max shard too big, trying again..."));
                         }
                         SolveError::UnsolvableShard => {
-                            pl.warn(format_args!(
-                                "Unsolvable shard, trying again..."
-                            ));
+                            pl.warn(format_args!("Unsolvable shard, trying again..."));
                         }
                     },
                     Err(error) => return Err(error),
