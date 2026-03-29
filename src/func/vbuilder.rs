@@ -1217,7 +1217,8 @@ impl<
             let result = {
                 let mut populate = |seed: u64,
                                     push: &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
-                                    pl: &mut P| {
+                                    pl: &mut P,
+                                    _state: &mut ()| {
                     let mut maybe_max_value = V::default();
                     while let Some(key) = keys.next()? {
                         pl.light_update();
@@ -1231,7 +1232,15 @@ impl<
                     Ok(maybe_max_value)
                 };
 
-                self.try_solve_once(seed, &mut populate, build_fn, pl)
+                self.try_solve_once(
+                    seed,
+                    &mut populate,
+                    &mut |builder, seed, store, max_value, num_keys, pl, _state: &mut ()| {
+                        build_fn(builder, seed, store, max_value, num_keys, pl)
+                    },
+                    pl,
+                    &mut (),
+                )
             };
 
             handle_solve_result!(result, dup_count, local_dup_count, pl);
@@ -1243,15 +1252,18 @@ impl<
 
     /// Like [`try_populate_and_build`](Self::try_populate_and_build), but
     /// values are produced by a `key_to_val` closure that receives each
-    /// key and its ordinal index, instead of being read from a separate
-    /// lender. See that method for the retry and error semantics.
+    /// key, its ordinal index, and a `&mut C` context, instead of being
+    /// read from a separate lender. See that method for the retry and
+    /// error semantics.
     ///
     /// This is a low-level method that requires a thorough understanding
     /// of the builder's internal state.
     ///
     /// This enables computing side data (e.g., LCP bit lengths) in the
     /// same pass as store population, avoiding a separate scan of the
-    /// keys.
+    /// keys. The `state` parameter is threaded through to both
+    /// `key_to_val` and `build_fn`, allowing them to share mutable
+    /// context without `RefCell`.
     ///
     /// On retry (seed change), the keys lender is rewound and
     /// `key_to_val` is called again from index 0; stateful closures
@@ -1265,13 +1277,14 @@ impl<
         V: BinSafe + Default + Send + Sync + Ord + AsU128,
         R,
         P: ProgressLog + Clone + Send + Sync,
+        C,
     >(
         &mut self,
         mut keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        key_to_val: &mut impl FnMut(&B, usize) -> anyhow::Result<V>,
+        key_to_val: &mut impl FnMut(&B, usize, &mut C) -> anyhow::Result<V>,
         build_fn: &mut impl FnMut(
             &mut Self,
             u64,
@@ -1279,8 +1292,10 @@ impl<
             V,
             usize,
             &mut P,
+            &mut C,
         ) -> anyhow::Result<R>,
         pl: &mut P,
+        mut state: C,
     ) -> anyhow::Result<R>
     where
         SigVal<S, V>: RadixKey,
@@ -1302,12 +1317,13 @@ impl<
             let result = {
                 let mut populate = |seed: u64,
                                     push: &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
-                                    pl: &mut P| {
+                                    pl: &mut P,
+                                    state: &mut C| {
                     let mut maybe_max_value = V::default();
                     let mut idx = 0usize;
                     while let Some(key) = keys.next()? {
                         pl.light_update();
-                        let val = key_to_val(key, idx)?;
+                        let val = key_to_val(key, idx, state)?;
                         maybe_max_value = Ord::max(maybe_max_value, val);
                         push(SigVal {
                             sig: T::to_sig(key.borrow(), seed),
@@ -1318,7 +1334,7 @@ impl<
                     Ok(maybe_max_value)
                 };
 
-                self.try_solve_once(seed, &mut populate, build_fn, pl)
+                self.try_solve_once(seed, &mut populate, build_fn, pl, &mut state)
             };
 
             handle_solve_result!(result, dup_count, local_dup_count, pl);
@@ -1335,10 +1351,15 @@ impl<
     /// `self.shard_edge`/`c`/`lge`, boxes the store into a
     /// `dyn` [`ShardStore`], and calls `build_fn`.
     ///
-    /// The `populate` closure receives `(seed, push, &mut pl)` where
-    /// `push` appends a [`SigVal`] to the store. The closure must
+    /// The `populate` closure receives `(seed, push, &mut pl, &mut state)`
+    /// where `push` appends a [`SigVal`] to the store. The closure must
     /// iterate the keys, push all signature/value pairs, and return the
-    /// maximum value seen.
+    /// maximum value seen. The `build_fn` closure receives the same
+    /// `&mut state` as its last argument.
+    ///
+    /// `state` is a caller-supplied context of type `C` that is threaded
+    /// through both closures, allowing them to share mutable data without
+    /// interior mutability. Pass `&mut ()` when no shared state is needed.
     ///
     /// Returns the result of `build_fn`, or a [`SolveError`] for the
     /// caller's retry loop to handle.
@@ -1346,6 +1367,7 @@ impl<
         V: BinSafe + Default + Send + Sync + Ord + AsU128,
         R,
         P: ProgressLog + Clone + Send + Sync,
+        C,
     >(
         &mut self,
         seed: u64,
@@ -1353,6 +1375,7 @@ impl<
             u64,
             &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
             &mut P,
+            &mut C,
         ) -> anyhow::Result<V>,
         build_fn: &mut impl FnMut(
             &mut Self,
@@ -1361,8 +1384,10 @@ impl<
             V,
             usize,
             &mut P,
+            &mut C,
         ) -> anyhow::Result<R>,
         pl: &mut P,
+        state: &mut C,
     ) -> anyhow::Result<R>
     where
         SigVal<S, V>: RadixKey,
@@ -1378,6 +1403,7 @@ impl<
                 populate,
                 build_fn,
                 pl,
+                state,
             )
         } else {
             self.try_solve_once_inner(
@@ -1390,6 +1416,7 @@ impl<
                 populate,
                 build_fn,
                 pl,
+                state,
             )
         }
     }
@@ -1397,12 +1424,14 @@ impl<
     /// Inner generic implementation of [`try_solve_once`](Self::try_solve_once).
     ///
     /// This is generic over `SS` so that the `populate` closure can push
-    /// to the concrete store type without dynamic dispatch.
+    /// to the concrete store type without dynamic dispatch. The `state`
+    /// parameter is forwarded to both `populate` and `build_fn`.
     fn try_solve_once_inner<
         V: BinSafe + Default + Send + Sync + Ord + AsU128,
         R,
         P: ProgressLog + Clone + Send + Sync,
         SS: SigStore<S, V, ShardStore: 'static>,
+        C,
     >(
         &mut self,
         seed: u64,
@@ -1411,6 +1440,7 @@ impl<
             u64,
             &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
             &mut P,
+            &mut C,
         ) -> anyhow::Result<V>,
         build_fn: &mut impl FnMut(
             &mut Self,
@@ -1419,8 +1449,10 @@ impl<
             V,
             usize,
             &mut P,
+            &mut C,
         ) -> anyhow::Result<R>,
         pl: &mut P,
+        state: &mut C,
     ) -> anyhow::Result<R>
     where
         SigVal<S, V>: RadixKey,
@@ -1443,6 +1475,7 @@ impl<
             seed,
             &mut |sig_val| sig_store.try_push(sig_val).map_err(Into::into),
             pl,
+            state,
         )?;
 
         pl.done();
@@ -1480,7 +1513,7 @@ impl<
 
         let store = Box::new(shard_store) as Box<dyn ShardStore<S, V> + Send + Sync>;
 
-        build_fn(self, seed, store, maybe_max_value, num_keys, pl).inspect(|_| {
+        build_fn(self, seed, store, maybe_max_value, num_keys, pl, state).inspect(|_| {
             info!(
                 "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
                 start.elapsed().as_secs_f64(),
