@@ -304,6 +304,23 @@ pub struct VBuilder<
     _marker_v: PhantomData<(W, D, S)>,
 }
 
+impl<W: Word + BinSafe, D: BitFieldSlice<Value = W> + Send + Sync, S: Sig, E: ShardEdge<S, 3>>
+    VBuilder<W, D, S, E>
+{
+    /// Sets up shards from the expected number of keys and returns the
+    /// seed. This is the same initialization that
+    /// [`try_populate_and_build_with_fn`](Self::try_populate_and_build_with_fn)
+    /// performs at the start; callers that drive `try_solve_once`
+    /// directly must call this first.
+    pub(crate) fn init_shards_and_seed(&mut self) -> u64 {
+        if let Some(expected_num_keys) = self.expected_num_keys {
+            self.shard_edge.set_up_shards(expected_num_keys, self.eps);
+            self.log2_buckets = self.shard_edge.shard_high_bits();
+        }
+        self.seed
+    }
+}
+
 /// Fatal build errors.
 #[derive(thiserror::Error, Debug)]
 pub enum BuildError {
@@ -1363,7 +1380,7 @@ impl<
     ///
     /// Returns the result of `build_fn`, or a [`SolveError`] for the
     /// caller's retry loop to handle.
-    fn try_solve_once<
+    pub(crate) fn try_solve_once<
         V: BinSafe + Default + Send + Sync + Ord + AsU128,
         R,
         P: ProgressLog + Clone + Send + Sync,
