@@ -205,8 +205,12 @@ where
     } else {
         let n = args.n.unwrap();
         let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
-        let filter =
-            builder.try_build_filter(FromCloneableIntoIterator::from(0_usize..n), &mut pl)?;
+        let filter = VFilter::try_new_with_builder(
+            FromCloneableIntoIterator::from(0_usize..n),
+            n,
+            builder,
+            &mut pl,
+        )?;
         if let Some(filename) = args.filter {
             unsafe { filter.store(filename) }?;
         }
@@ -247,9 +251,11 @@ where
     } else {
         let n = args.n.unwrap();
         let builder = set_builder(VBuilder::<W, BitFieldVec<Box<[W]>>, S, E>::default(), &args);
-        let filter = builder.try_build_filter(
+        let filter = VFilter::try_new_with_builder(
             FromCloneableIntoIterator::from(0_usize..n),
+            n,
             args.bits,
+            builder,
             &mut pl,
         )?;
         if let Some(filename) = args.filter {

@@ -13,8 +13,9 @@ use std::ops::{BitXor, BitXorAssign};
 use sux::traits::TryIntoUnaligned;
 use sux::{
     bits::BitFieldVec,
+    dict::VFilter,
     func::{
-        VBuilder,
+        VBuilder, VFunc,
         shard_edge::{
             Fuse3NoShards, Fuse3Shards, FuseLge3FullSigs, FuseLge3NoShards, FuseLge3Shards,
             ShardEdge,
@@ -42,17 +43,15 @@ where
 
     for &n in sizes {
         dbg!(offline, n);
-        let func = VBuilder::<_, BitFieldVec<Box<[_]>>, S, E>::default()
-            .expected_num_keys(n)
-            .offline(offline)
-            .low_mem(low_mem)
-            .try_build_func(
+        let func =
+            <VFunc<usize, usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                 FromCloneableIntoIterator::from(0..n),
                 FromCloneableIntoIterator::from(0_usize..),
+                n,
+                VBuilder::default().offline(offline).low_mem(low_mem),
                 &mut pl,
-            )?
-            .try_into_unaligned()
-            .unwrap();
+            )?;
+        let func = func.try_into_unaligned().unwrap();
         pl.start("Querying...");
         for i in 0..n {
             assert_eq!(i, func.get(i));
@@ -114,11 +113,13 @@ where
 
     for &n in sizes {
         dbg!(offline, n);
-        let filter = VBuilder::<_, Box<[u8]>, S, E>::default()
-            .expected_num_keys(n)
-            .offline(offline)
-            .low_mem(low_mem)
-            .try_build_filter(FromCloneableIntoIterator::from(0..n), &mut pl)?;
+        let filter =
+            <VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, E>>>::try_new_with_builder(
+                FromCloneableIntoIterator::from(0..n),
+                n,
+                VBuilder::default().offline(offline).low_mem(low_mem),
+                &mut pl,
+            )?;
         pl.start("Querying (positive)...");
         for i in 0..n {
             assert!(filter.contains(i), "Contains failed for {}", i);
@@ -185,14 +186,14 @@ fn test_dup_key() -> Result<()> {
         .try_init();
 
     assert!(
-        VBuilder::<usize, BitFieldVec<Box<[usize]>>>::default()
-            .check_dups(true)
-            .try_build_func(
-                FromCloneableIntoIterator::from(std::iter::repeat_n(0, 10)),
-                FromCloneableIntoIterator::from(0..),
-                &mut ProgressLogger::default(),
-            )
-            .is_err()
+        <VFunc<usize, usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+            FromCloneableIntoIterator::from(std::iter::repeat_n(0, 10)),
+            FromCloneableIntoIterator::from(0..),
+            10,
+            VBuilder::default().check_dups(true),
+            &mut ProgressLogger::default(),
+        )
+        .is_err()
     );
 
     Ok(())

@@ -17,6 +17,19 @@ use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
 use std::borrow::Borrow;
 use std::ops::Index;
 
+#[cfg(feature = "rayon")]
+use {
+    crate::func::VBuilder,
+    crate::utils::{EmptyVal, FallibleRewindableLender, SigVal},
+    anyhow::Result,
+    core::error::Error,
+    dsi_progress_logger::ProgressLog,
+    lender::*,
+    rdst::RadixKey,
+    std::ops::{BitXor, BitXorAssign},
+    value_traits::slices::SliceByValueMut,
+};
+
 /// A static filter (approximate membership data structure) with
 /// controllable false-positive rate.
 ///
@@ -171,6 +184,146 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
     }
 }
 
+// ── Convenience constructors ───────────────────────────────────────
+
+#[cfg(feature = "rayon")]
+impl<T, W, S, E> VFilter<W, VFunc<T, W, Box<[W]>, S, E>>
+where
+    T: ?Sized + ToSig<S> + std::fmt::Debug,
+    W: Word + BinSafe,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    SigVal<S, EmptyVal>: RadixKey,
+    SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
+{
+    /// Builds a [`VFilter`] with a `Box<[W]>` backend from keys using
+    /// default [`VBuilder`] settings.
+    ///
+    /// The number of hash bits per key equals `W::BITS`, giving a
+    /// false-positive rate of 2<sup>−`W::BITS`</sup>.
+    ///
+    /// * `keys` must be rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys; a significantly wrong
+    ///   value may degrade performance or cause extra retries.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_new_with_builder`](Self::try_new_with_builder) with
+    /// `VBuilder::default()`.
+    pub fn try_new<B: ?Sized + Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        n: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut,
+        for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
+    {
+        Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
+    }
+
+    /// Builds a [`VFilter`] with a `Box<[W]>` backend from keys using
+    /// the given [`VBuilder`] configuration.
+    ///
+    /// The number of hash bits per key equals `W::BITS`, giving a
+    /// false-positive rate of 2<sup>−`W::BITS`</sup>.
+    ///
+    /// * `keys` must be rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys.
+    ///
+    /// The builder controls construction parameters such as offline
+    /// mode (`offline`), thread count (`max_num_threads`), sharding
+    /// overhead (`eps`), and PRNG seed (`seed`).
+    pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        n: usize,
+        builder: VBuilder<W, Box<[W]>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut,
+        for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
+    {
+        builder.expected_num_keys(n).try_build_filter(keys, pl)
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<T, W, S, E> VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
+where
+    T: ?Sized + ToSig<S> + std::fmt::Debug,
+    W: Word + BinSafe,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    SigVal<S, EmptyVal>: RadixKey,
+    SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
+{
+    /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from keys
+    /// using default [`VBuilder`] settings.
+    ///
+    /// * `keys` must be rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys; a significantly wrong
+    ///   value may degrade performance or cause extra retries.
+    /// * `filter_bits` is the number of hash bits per key; the
+    ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_new_with_builder`](Self::try_new_with_builder) with
+    /// `VBuilder::default()`.
+    pub fn try_new<B: ?Sized + Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        n: usize,
+        filter_bits: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        for<'a> <BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a>: Send,
+        for<'a> <<BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
+    {
+        Self::try_new_with_builder(keys, n, filter_bits, VBuilder::default(), pl)
+    }
+
+    /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from keys
+    /// using the given [`VBuilder`] configuration.
+    ///
+    /// * `keys` must be rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys.
+    /// * `filter_bits` is the number of hash bits per key; the
+    ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
+    ///
+    /// The builder controls construction parameters such as offline
+    /// mode (`offline`), thread count (`max_num_threads`), sharding
+    /// overhead (`eps`), and PRNG seed (`seed`).
+    pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        n: usize,
+        filter_bits: usize,
+        builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        for<'a> <BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a>: Send,
+        for<'a> <<BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
+    {
+        builder
+            .expected_num_keys(n)
+            .try_build_filter(keys, filter_bits, pl)
+    }
+}
+
 // ── Tests ───────────────────────────────────────────────────────────
 
 #[cfg(all(test, feature = "rayon"))]
@@ -183,13 +336,13 @@ mod tests {
 
     use crate::{
         func::{
-            VBuilder, mix64,
+            VBuilder, VFunc, mix64,
             shard_edge::{FuseLge3NoShards, FuseLge3Shards},
         },
         utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
     };
 
-    use super::ShardEdge;
+    use super::{ShardEdge, VFilter};
 
     #[test]
     fn test_filter_func() -> anyhow::Result<()> {
@@ -207,10 +360,13 @@ mod tests {
         SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     {
         for n in [0_usize, 10, 1000, 100_000, 1_000_000] {
-            let filter = VBuilder::<u8, Box<[_]>, S, E>::default()
-                .log2_buckets(4)
-                .offline(false)
-                .try_build_filter(FromCloneableIntoIterator::from(0..n), no_logging![])?;
+            let filter =
+                <VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, E>>>::try_new_with_builder(
+                    FromCloneableIntoIterator::from(0..n),
+                    n,
+                    VBuilder::default().log2_buckets(4).offline(false),
+                    no_logging![],
+                )?;
             // Verify that the stored hash matches the expected derivation
             // for every key in the set.
             let shard_edge = &filter.func.shard_edge;

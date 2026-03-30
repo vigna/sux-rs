@@ -179,6 +179,7 @@ impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
     }
 }
 
+#[cfg(feature = "rayon")]
 /// Threshold for the array portion of [`HybridMap`].
 const HYBRID_ARRAY_START_LEN: usize = if cfg!(target_pointer_width = "64") {
     1 << 16
@@ -186,16 +187,19 @@ const HYBRID_ARRAY_START_LEN: usize = if cfg!(target_pointer_width = "64") {
     1 << 10
 };
 
+#[cfg(feature = "rayon")]
 const HYBRID_ARRAY_MIN_LEN: usize = 1024;
 
+#[cfg(feature = "rayon")]
 /// A map from `K` to `V` backed by a flat array for small keys and a
 /// [`HashMap`] for large keys.
-pub struct HybridMap<K, V> {
+pub(crate) struct HybridMap<K, V> {
     array: Vec<V>,
     map: std::collections::HashMap<K, V>,
     default: V,
 }
 
+#[cfg(feature = "rayon")]
 impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
     /// Creates a new hybrid map.
     ///
@@ -253,6 +257,7 @@ impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
     }
 }
 
+#[cfg(feature = "rayon")]
 impl<K: Word> HybridMap<K, usize> {
     #[inline(always)]
     pub(crate) fn incr(&mut self, key: K) {

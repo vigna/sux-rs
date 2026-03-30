@@ -113,8 +113,10 @@ macro_rules! filename_save_sign(
 
 macro_rules! n_save_sign(
     ($h: ty, $builder:expr, $n: expr, $func: expr, $pl: expr) => {{
-        let func = $builder.try_build_sig_index::<_, _, $h>(
+        let func: SignedVFunc<_, Box<[$h]>> = SignedVFunc::try_new_with_builder(
             FromCloneableIntoIterator::new(0_usize..$n),
+            $n,
+            $builder,
             &mut $pl,
         )?;
         if let Some(filename) = $func {
@@ -151,14 +153,12 @@ where
 
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
-        let builder = args
+        let mut builder = args
             .builder
             .configure(VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default());
-        let builder = if let Some(n_hint) = args.n {
-            builder.expected_num_keys(n_hint)
-        } else {
-            builder
-        };
+        if let Some(n_hint) = args.n {
+            builder = builder.expected_num_keys(n_hint);
+        }
         match args.hash_type {
             None => {
                 let func = builder.try_build_func(
@@ -188,12 +188,13 @@ where
         let builder = args
             .builder
             .configure(VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default());
-        let builder = builder.expected_num_keys(n);
         match args.hash_type {
             None => {
-                let func = builder.try_build_func(
+                let func = VFunc::try_new_with_builder(
                     FromCloneableIntoIterator::from(0_usize..n),
                     FromCloneableIntoIterator::from(0_usize..),
+                    n,
+                    builder,
                     &mut pl,
                 )?;
                 if let Some(filename) = args.func {
