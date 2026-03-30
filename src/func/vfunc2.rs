@@ -180,15 +180,17 @@ impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
 }
 
 /// Threshold for the array portion of [`HybridMap`].
-const HYBRID_ARRAY_LEN: usize = if cfg!(target_pointer_width = "64") {
+const HYBRID_ARRAY_START_LEN: usize = if cfg!(target_pointer_width = "64") {
     1 << 16
 } else {
     1 << 10
 };
 
+const HYBRID_ARRAY_MIN_LEN: usize = 1024;
+
 /// A map from `K` to `V` backed by a flat array for small keys and a
-/// `HashMap` for large keys.
-pub(crate) struct HybridMap<K, V> {
+/// [`HashMap`] for large keys.
+pub struct HybridMap<K, V> {
     array: Vec<V>,
     map: std::collections::HashMap<K, V>,
     default: V,
@@ -198,14 +200,14 @@ impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
     /// Creates a new hybrid map.
     ///
     /// * `max_key` — optional upper bound on keys. When provided,
-    ///   the array is capped at `max_key / 2 + 1` for better sizing.
-    /// * `len` — the expected number of distinct entries.
+    ///   the array is capped at `max_key + 1`.
     /// * `default` — value returned for absent keys.
-    pub(crate) fn new(max_key: Option<K>, len: usize, default: V) -> Self {
-        let mut array_len = HYBRID_ARRAY_LEN.min(len).max(256);
+    pub(crate) fn new(max_key: Option<K>, default: V) -> Self {
+        let mut array_len = HYBRID_ARRAY_START_LEN;
         if let Some(mk) = max_key {
-            array_len = array_len.min(mk.as_u128() as usize / 2 + 1);
+            array_len = array_len.min(mk.as_u128() as usize + 1);
         }
+        array_len = array_len.max(HYBRID_ARRAY_MIN_LEN);
         Self {
             array: vec![default; array_len],
             map: std::collections::HashMap::new(),
@@ -213,7 +215,7 @@ impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
         }
     }
 
-    fn insert(&mut self, key: K, value: V) {
+    pub(crate) fn insert(&mut self, key: K, value: V) {
         let k = key.as_u128() as usize;
         if k < self.array.len() {
             self.array[k] = value;
@@ -455,8 +457,7 @@ where
             }
         }
 
-        let n = store.len();
-        let mut counts: HybridMap<W, usize> = HybridMap::new(Some(max_value), n, 0);
+        let mut counts: HybridMap<W, usize> = HybridMap::new(Some(max_value), 0);
         for shard in store.iter() {
             for sv in shard.iter() {
                 counts.incr(get_val(sv.val));
@@ -497,14 +498,7 @@ where
         SigVal<E1::LocalSig, V>: BitXor + BitXorAssign,
     {
         Self::build_from_hybrid_counts(
-            seed,
-            shard_edge,
-            store,
-            get_val,
-            max_value,
-            counts,
-            builder,
-            pl,
+            seed, shard_edge, store, get_val, max_value, counts, builder, pl,
         )
     }
 
@@ -550,7 +544,7 @@ where
         // -- Build remap and inv_map --
 
         let remap: Box<[W]> = sorted_vals[..num_remapped].to_vec().into_boxed_slice();
-        let mut inv_map: HybridMap<W, W> = HybridMap::new(Some(max_value), num_remapped, escape);
+        let mut inv_map: HybridMap<W, W> = HybridMap::new(Some(max_value), escape);
         for (i, &val) in remap.iter().enumerate() {
             inv_map.insert(val, W::try_from(i).ok().unwrap());
         }
