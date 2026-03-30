@@ -10,7 +10,7 @@
 use crate::bits::{BitFieldVec, BitFieldVecU};
 use crate::func::mix64;
 use crate::func::{VFunc, shard_edge::ShardEdge};
-use crate::traits::{Word, bit_field_slice::*};
+use crate::traits::{Backend, Word, bit_field_slice::*};
 use crate::utils::{BinSafe, Sig, ToSig};
 use mem_dbg::*;
 use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
@@ -20,7 +20,7 @@ use std::ops::Index;
 #[cfg(feature = "rayon")]
 use {
     crate::func::VBuilder,
-    crate::utils::{EmptyVal, FallibleRewindableLender, SigVal},
+    crate::utils::{EmptyVal, FallibleRewindableLender, FromCloneableIntoIterator, SigVal},
     anyhow::Result,
     core::error::Error,
     dsi_progress_logger::ProgressLog,
@@ -56,28 +56,44 @@ use {
 /// * `F`: The underlying [`VFunc`] type (determines key type, signature
 ///   type, sharding, and backend).
 #[derive(Debug, MemDbg, MemSize)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(
+    feature = "epserde",
+    derive(epserde::Epserde),
+    epserde(bound(
+        deser = "for<'a> <F as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = F::Word>"
+    ))
+)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct VFilter<W, F> {
+pub struct VFilter<F: Backend> {
     /// The underlying static function mapping keys to hashes.
     pub(crate) func: F,
     /// Bit mask applied to the derived hash before comparison.
     ///
     /// Equal to `W::MAX >> (W::BITS - hash_bits)`.
-    pub(crate) filter_mask: W,
+    pub(crate) filter_mask: F::Word,
     /// Number of hash bits per key (determines the false-positive rate).
     pub(crate) hash_bits: u32,
 }
 
-impl<
-    T: ?Sized + ToSig<S>,
-    W: Word + BinSafe,
-    D: BitFieldSlice<Value = W>,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-> VFilter<W, VFunc<T, W, D, S, E>>
+impl<F: Backend> VFilter<F> {
+    /// Creates a new `VFilter` from a function, a filter mask, and hash
+    /// bit count.
+    ///
+    /// This is a low-level constructor; prefer
+    /// [`try_new`](VFilter::try_new)/[`try_new_with_builder`](VFilter::try_new_with_builder)
+    /// when possible.
+    pub fn from_parts(func: F, filter_mask: F::Word, hash_bits: u32) -> Self {
+        Self {
+            func,
+            filter_mask,
+            hash_bits,
+        }
+    }
+}
+
+impl<T: ?Sized + ToSig<S>, D: BitFieldSlice, S: Sig, E: ShardEdge<S, 3>> VFilter<VFunc<T, D, S, E>>
 where
-    u64: PrimitiveNumberAs<W>,
+    u64: PrimitiveNumberAs<D::Value>,
 {
     /// Returns whether the key with the given pre-computed signature is
     /// likely in the set.
@@ -94,8 +110,8 @@ where
         let shard_edge = &self.func.shard_edge;
         // Derive the expected hash from the signature's edge hash,
         // mix it with mix64 for avalanche, and mask to hash_bits.
-        let expected =
-            mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))).as_to::<W>() & self.filter_mask;
+        let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))).as_to::<D::Value>()
+            & self.filter_mask;
         // Compare against the hash stored by the VFunc.
         self.func.get_by_sig(sig) == expected
     }
@@ -131,14 +147,13 @@ where
 
 impl<
     T: ?Sized + ToSig<S>,
-    W: Word + BinSafe,
-    D: BitFieldSlice<Value = W>,
+    D: BitFieldSlice<Value: Word + BinSafe>,
     S: Sig,
     E: ShardEdge<S, 3>,
     B: Borrow<T>,
-> Index<B> for VFilter<W, VFunc<T, W, D, S, E>>
+> Index<B> for VFilter<VFunc<T, D, S, E>>
 where
-    u64: PrimitiveNumberAs<W>,
+    u64: PrimitiveNumberAs<D::Value>,
 {
     type Output = bool;
 
@@ -157,9 +172,9 @@ where
 // ── Aligned ↔ Unaligned conversions ─────────────────────────────────
 
 impl<T: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::TryIntoUnaligned
-    for VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
+    for VFilter<VFunc<T, BitFieldVec<Box<[W]>>, S, E>>
 {
-    type Unaligned = VFilter<W, VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>>;
+    type Unaligned = VFilter<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -172,10 +187,10 @@ impl<T: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::Tr
 }
 
 impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
-    From<VFilter<W, VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>>>
-    for VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
+    From<VFilter<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>>>
+    for VFilter<VFunc<T, BitFieldVec<Box<[W]>>, S, E>>
 {
-    fn from(f: VFilter<W, VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>>) -> Self {
+    fn from(f: VFilter<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>>) -> Self {
         VFilter {
             func: f.func.into(),
             filter_mask: f.filter_mask,
@@ -187,7 +202,7 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
 // ── Convenience constructors ───────────────────────────────────────
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E> VFilter<W, VFunc<T, W, Box<[W]>, S, E>>
+impl<T, W, S, E> VFilter<VFunc<T, Box<[W]>, S, E>>
 where
     T: ?Sized + ToSig<S> + std::fmt::Debug,
     W: Word + BinSafe,
@@ -237,26 +252,68 @@ where
     /// The builder controls construction parameters such as offline
     /// mode (`offline`), thread count (`max_num_threads`), sharding
     /// overhead (`eps`), and PRNG seed (`seed`).
-    pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
+    pub fn try_new_with_builder<B: ?Sized + Borrow<T>, P: ProgressLog + Clone + Send + Sync>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         builder: VBuilder<W, Box<[W]>, S, E>,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+        pl: &mut P,
     ) -> Result<Self>
     where
         for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut,
         for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
         for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
     {
-        builder.expected_num_keys(n).try_build_filter(keys, pl)
+        let filter_mask = W::MAX;
+        let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
+            W::as_from(mix64(shard_edge.edge_hash(sig_val.sig)))
+        };
+        let mut builder = builder.expected_num_keys(n);
+
+        let func = builder.try_populate_and_build(
+            keys,
+            FromCloneableIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
+            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
+                builder.bit_width = W::BITS as usize;
+
+                let new_data: Box<[W]> = vec![
+                    W::ZERO;
+                    builder.shard_edge.num_vertices()
+                        * builder.shard_edge.num_shards()
+                ]
+                .into();
+
+                pl.info(format_args!(
+                    "Number of keys: {} Bit width: {}",
+                    builder.num_keys, builder.bit_width,
+                ));
+
+                let func = builder.try_build_from_shard_iter(
+                    seed,
+                    new_data,
+                    store.drain(),
+                    &get_val,
+                    &|_| {},
+                    pl,
+                )?;
+                Ok(func)
+            },
+            pl,
+            (),
+        )?;
+
+        Ok(VFilter {
+            func,
+            filter_mask,
+            hash_bits: W::BITS,
+        })
     }
 }
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E> VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
+impl<T, W, S, E> VFilter<VFunc<T, BitFieldVec<Box<[W]>>, S, E>>
 where
     T: ?Sized + ToSig<S> + std::fmt::Debug,
     W: Word + BinSafe,
@@ -304,23 +361,63 @@ where
     /// The builder controls construction parameters such as offline
     /// mode (`offline`), thread count (`max_num_threads`), sharding
     /// overhead (`eps`), and PRNG seed (`seed`).
-    pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
+    pub fn try_new_with_builder<B: ?Sized + Borrow<T>, P: ProgressLog + Clone + Send + Sync>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         filter_bits: usize,
-        builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E>,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+        builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
+        pl: &mut P,
     ) -> Result<Self>
     where
         for<'a> <BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a>: Send,
         for<'a> <<BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
     {
-        builder
-            .expected_num_keys(n)
-            .try_build_filter(keys, filter_bits, pl)
+        assert!(filter_bits > 0);
+        assert!(filter_bits <= W::BITS as usize);
+        let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
+        let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
+            W::as_from(mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
+        };
+        let mut builder = builder.expected_num_keys(n);
+
+        let func = builder.try_populate_and_build(
+            keys,
+            FromCloneableIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
+            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
+                builder.bit_width = filter_bits;
+
+                let new_data = BitFieldVec::<Box<[W]>>::new_unaligned(
+                    builder.bit_width,
+                    builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
+                );
+
+                pl.info(format_args!(
+                    "Number of keys: {} Bit width: {}",
+                    builder.num_keys, builder.bit_width,
+                ));
+
+                let func = builder.try_build_from_shard_iter(
+                    seed,
+                    new_data,
+                    store.drain(),
+                    &get_val,
+                    &|_| {},
+                    pl,
+                )?;
+                Ok(func)
+            },
+            pl,
+            (),
+        )?;
+
+        Ok(VFilter {
+            func,
+            filter_mask,
+            hash_bits: filter_bits as _,
+        })
     }
 }
 
@@ -360,13 +457,12 @@ mod tests {
         SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     {
         for n in [0_usize, 10, 1000, 100_000, 1_000_000] {
-            let filter =
-                <VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, E>>>::try_new_with_builder(
-                    FromCloneableIntoIterator::from(0..n),
-                    n,
-                    VBuilder::default().log2_buckets(4).offline(false),
-                    no_logging![],
-                )?;
+            let filter = <VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, E>>>::try_new_with_builder(
+                FromCloneableIntoIterator::from(0..n),
+                n,
+                VBuilder::default().log2_buckets(4).offline(false),
+                no_logging![],
+            )?;
             // Verify that the stored hash matches the expected derivation
             // for every key in the set.
             let shard_edge = &filter.func.shard_edge;

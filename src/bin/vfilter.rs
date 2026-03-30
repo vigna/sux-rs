@@ -197,8 +197,12 @@ where
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
         let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
-        let filter =
-            builder.try_build_filter(DekoBufLineLender::from_path(filename)?.take(n), &mut pl)?;
+        let filter = VFilter::try_new_with_builder(
+            DekoBufLineLender::from_path(filename)?.take(n),
+            args.n.unwrap_or(0),
+            builder,
+            &mut pl,
+        )?;
         if let Some(filename) = args.filter {
             unsafe { filter.store(filename) }?;
         }
@@ -251,11 +255,9 @@ where
     } else {
         let n = args.n.unwrap();
         let builder = set_builder(VBuilder::<W, BitFieldVec<Box<[W]>>, S, E>::default(), &args);
-        let filter = VFilter::try_new_with_builder(
+        let filter = builder.expected_num_keys(n).try_build_filter(
             FromCloneableIntoIterator::from(0_usize..n),
-            n,
             args.bits,
-            builder,
             &mut pl,
         )?;
         if let Some(filename) = args.filter {

@@ -382,14 +382,13 @@ where
                         pl.info(format_args!(
                             "Building LCP prefix → bucket map ({num_buckets} buckets)..."
                         ));
-                        let lcp2bucket = VBuilder::<
-                            _,
+                        let lcp2bucket = <VFunc<
+                            IntBitPrefix<T>,
+                            usize,
                             BitFieldVec<Box<[usize]>>,
                             [u64; 1],
                             Fuse3NoShards,
-                        >::default()
-                        .expected_num_keys(num_buckets)
-                        .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
+                        >>::try_new_with_builder(
                             FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
                                 IntBitPrefix::new(
                                     state.bucket_first_keys[b] ^ T::MIN,
@@ -397,6 +396,8 @@ where
                                 )
                             })),
                             FromCloneableIntoIterator::new(0..num_buckets),
+                            num_buckets,
+                            VBuilder::default(),
                             pl,
                         )?;
 
@@ -780,14 +781,13 @@ where
                             })
                             .collect();
 
-                        let lcp2bucket = VBuilder::<
-                            _,
+                        let lcp2bucket = <VFunc<
+                            BitPrefix,
+                            usize,
                             BitFieldVec<Box<[usize]>>,
                             [u64; 1],
                             Fuse3NoShards,
-                        >::default()
-                        .expected_num_keys(num_buckets)
-                        .try_build_func::<BitPrefix, BitPrefix>(
+                        >>::try_new_with_builder(
                             FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
                                 BitPrefix::new(
                                     &extended_first_keys[b],
@@ -795,6 +795,8 @@ where
                                 )
                             })),
                             FromCloneableIntoIterator::new(0..num_buckets),
+                            num_buckets,
+                            VBuilder::default(),
                             pl,
                         )?;
 

@@ -11,6 +11,7 @@ use std::borrow::Borrow;
 #[cfg(feature = "rayon")]
 use {
     crate::func::VBuilder,
+    crate::func::mix64,
     crate::utils::FallibleRewindableLender,
     anyhow::Result,
     core::error::Error,
@@ -19,6 +20,7 @@ use {
     num_primitive::PrimitiveNumberAs,
     rdst::RadixKey,
     std::ops::{BitXor, BitXorAssign},
+    value_traits::slices::SliceByValueMut,
 };
 
 use crate::bits::{BitFieldVec, BitFieldVecU};
@@ -47,6 +49,17 @@ pub struct SignedVFunc<F, H> {
     pub(crate) hashes: H,
 }
 
+impl<F, H> SignedVFunc<F, H> {
+    /// Creates a new `SignedVFunc` from a function and a hash slice.
+    ///
+    /// This is a low-level constructor; prefer
+    /// [`try_new`](Self::try_new)/[`try_new_with_builder`](Self::try_new_with_builder)
+    /// when possible.
+    pub fn from_parts(func: F, hashes: H) -> Self {
+        Self { func, hashes }
+    }
+}
+
 impl<
     T: ?Sized + ToSig<S>,
     W: Word + BinSafe,
@@ -54,7 +67,7 @@ impl<
     S: Sig,
     E: ShardEdge<S, 3>,
     H: SliceByValue<Value: PrimitiveNumber>,
-> SignedVFunc<VFunc<T, W, D, S, E>, H>
+> SignedVFunc<VFunc<T, D, S, E>, H>
 {
     /// Returns the index of a key associated with the given signature, if there
     /// was such a key in the list provided at construction time; otherwise,
@@ -131,12 +144,11 @@ pub struct BitSignedVFunc<F, H> {
 
 impl<
     T: ?Sized + ToSig<S>,
-    W: Word + BinSafe,
-    D: SliceByValue<Value = W>,
+    D: SliceByValue<Value: Word + BinSafe>,
     S: Sig,
     E: ShardEdge<S, 3>,
     H: SliceByValue<Value: PrimitiveNumber>,
-> BitSignedVFunc<VFunc<T, W, D, S, E>, H>
+> BitSignedVFunc<VFunc<T, D, S, E>, H>
 {
     /// Returns the index of a key associated with the given signature, if there
     /// was such a key in the list provided at construction time; otherwise,
@@ -195,7 +207,7 @@ impl<
 // ── Convenience constructors ───────────────────────────────────────
 
 #[cfg(feature = "rayon")]
-impl<T, S, E, H> SignedVFunc<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>
+impl<T, S, E, H> SignedVFunc<VFunc<T, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>
 where
     T: ?Sized + ToSig<S> + std::fmt::Debug,
     S: Sig + Send + Sync,
@@ -248,17 +260,46 @@ where
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
-        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        builder
-            .expected_num_keys(n)
-            .try_build_sig_index(keys, pl)
+        let (func, mut store) = builder.expected_num_keys(n).try_build_func_and_store(
+            keys,
+            FromCloneableIntoIterator::from(0..),
+            BitFieldVec::new_unaligned,
+            false,
+            pl,
+        )?;
+
+        let num_keys = func.num_keys;
+        let shard_edge = &func.shard_edge;
+
+        // Create the hash vector
+        let mut hashes = vec![H::ZERO; num_keys].into_boxed_slice();
+
+        // Enumerate the store and extract hashes using the same method as filters
+        pl.item_name("hash");
+        pl.expected_updates(Some(num_keys));
+        pl.start("Storing hashes...");
+
+        for shard in store.iter() {
+            for sig_val in shard.iter() {
+                let pos = sig_val.val;
+                let local_sig = shard_edge.local_sig(sig_val.sig);
+                let hash = H::as_from(mix64(shard_edge.edge_hash(local_sig)));
+                hashes.set_value(pos, hash);
+                pl.light_update();
+            }
+        }
+
+        pl.done();
+
+        Ok(SignedVFunc { func, hashes })
     }
 }
 
 #[cfg(feature = "rayon")]
-impl<T, S, E, H> BitSignedVFunc<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
+impl<T, S, E, H> BitSignedVFunc<VFunc<T, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
 where
     T: ?Sized + ToSig<S> + std::fmt::Debug,
     S: Sig + Send + Sync,
@@ -320,15 +361,57 @@ where
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         hash_width: usize,
-        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
         u64: PrimitiveNumberAs<H>,
     {
-        builder
-            .expected_num_keys(n)
-            .try_build_bit_sig_index(keys, hash_width, pl)
+        assert!(hash_width > 0);
+        assert!(hash_width <= H::BITS as usize);
+
+        let (func, mut store) = builder.expected_num_keys(n).try_build_func_and_store(
+            keys,
+            FromCloneableIntoIterator::from(0..),
+            BitFieldVec::<Box<[usize]>>::new_unaligned,
+            false,
+            pl,
+        )?;
+
+        let num_keys = func.num_keys;
+        let shard_edge = &func.shard_edge;
+        let hash_mask = if hash_width == 64 {
+            u64::MAX
+        } else {
+            (1u64 << hash_width) - 1
+        };
+
+        // Create the signature vector
+        let mut hashes: BitFieldVec<Box<[H]>> =
+            BitFieldVec::<Box<[H]>>::new_unaligned(hash_width, num_keys);
+
+        // Enumerate the store and extract signatures using the same method as filters
+        pl.item_name("hash");
+        pl.expected_updates(Some(num_keys));
+        pl.start("Storing hashes...");
+
+        for shard in store.iter() {
+            for sig_val in shard.iter() {
+                let pos = sig_val.val;
+                let local_sig = shard_edge.local_sig(sig_val.sig);
+                let hash = (mix64(shard_edge.edge_hash(local_sig)) & hash_mask).as_to::<H>();
+                hashes.set_value(pos, hash);
+                pl.light_update();
+            }
+        }
+
+        pl.done();
+
+        Ok(BitSignedVFunc {
+            func,
+            hashes,
+            hash_mask,
+        })
     }
 }
 
@@ -351,10 +434,10 @@ impl<F: TryIntoUnaligned, H> TryIntoUnaligned for SignedVFunc<F, H> {
 }
 
 impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, H>
-    From<SignedVFunc<VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>, H>>
-    for SignedVFunc<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>, H>
+    From<SignedVFunc<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>, H>>
+    for SignedVFunc<VFunc<T, BitFieldVec<Box<[W]>>, S, E>, H>
 {
-    fn from(f: SignedVFunc<VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>, H>) -> Self {
+    fn from(f: SignedVFunc<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>, H>) -> Self {
         SignedVFunc {
             func: f.func.into(),
             hashes: f.hashes,
@@ -378,11 +461,11 @@ impl<F: TryIntoUnaligned, H: TryIntoUnaligned> TryIntoUnaligned for BitSignedVFu
 }
 
 impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
-    From<BitSignedVFunc<VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W]>>>>
-    for BitSignedVFunc<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>, BitFieldVec<Box<[W]>>>
+    From<BitSignedVFunc<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W]>>>>
+    for BitSignedVFunc<VFunc<T, BitFieldVec<Box<[W]>>, S, E>, BitFieldVec<Box<[W]>>>
 {
     fn from(
-        f: BitSignedVFunc<VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W]>>>,
+        f: BitSignedVFunc<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W]>>>,
     ) -> Self {
         BitSignedVFunc {
             func: f.func.into(),

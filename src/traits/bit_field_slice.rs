@@ -44,7 +44,10 @@
 //! a slice of bits with a slice of a primitive integer type of the same width.
 //!
 #![allow(clippy::result_unit_err)]
-use crate::{debug_assert_bounds, panic_if_out_of_bounds, panic_if_value, traits::Word};
+use crate::{
+    debug_assert_bounds, panic_if_out_of_bounds, panic_if_value,
+    traits::{Backend, Word},
+};
 use ambassador::delegatable_trait;
 use atomic_primitive::PrimitiveAtomicUnsigned;
 use core::sync::atomic::Ordering;
@@ -77,6 +80,10 @@ pub trait BitWidth {
 pub trait BitFieldSlice: SliceByValue + BitWidth {
     /// Returns the backend of the slice as a slice of `Self::Value`.
     fn as_slice(&self) -> &[Self::Value];
+}
+
+impl<T: BitFieldSlice> Backend for T {
+    type Word = Self::Word;
 }
 
 /// A mutable slice of bit fields of constant bit width.

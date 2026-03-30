@@ -193,7 +193,7 @@ pub(crate) fn log2_bucket_size(n: usize) -> usize {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LcpMmphfInt<
     T: PrimitiveInteger,
-    D = BitFieldVec<Box<[usize]>>,
+    D: Backend = BitFieldVec<Box<[usize]>>,
     S = [u64; 2],
     E = FuseLge3Shards,
 > {
@@ -202,12 +202,12 @@ pub struct LcpMmphfInt<
     /// Log2 of bucket size.
     pub(crate) log2_bucket_size: usize,
     /// Maps each key to `(lcp_bit_length << log2_bucket_size) | offset`.
-    pub(crate) offset_lcp_length: VFunc<T, usize, D, S, E>,
+    pub(crate) offset_lcp_length: VFunc<T, D, S, E>,
     /// Maps each LCP bit-prefix to its bucket index.
-    pub(crate) lcp2bucket: VFunc<IntBitPrefix<T>, usize, D, [u64; 1], Fuse3NoShards>,
+    pub(crate) lcp2bucket: VFunc<IntBitPrefix<T>, D, [u64; 1], Fuse3NoShards>,
 }
 
-impl<T: PrimitiveInteger + ToSig<S>, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
+impl<T: PrimitiveInteger + ToSig<S>, D: BitFieldSlice<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
     LcpMmphfInt<T, D, S, E>
 {
     /// Returns the rank (0-based position) of the given key in the
@@ -232,7 +232,9 @@ impl<T: PrimitiveInteger + ToSig<S>, D: SliceByValue<Value = usize>, S: Sig, E: 
     }
 }
 
-impl<T: PrimitiveInteger, D, S: Sig, E: ShardEdge<S, 3>> LcpMmphfInt<T, D, S, E> {
+impl<T: PrimitiveInteger, D: BitFieldSlice<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
+    LcpMmphfInt<T, D, S, E>
+{
     /// Returns the number of keys.
     pub const fn len(&self) -> usize {
         self.n
@@ -287,7 +289,7 @@ where
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
-        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         Self::try_new_inner(keys, n, builder, true, pl).map(|(mmphf, _)| mmphf)
@@ -301,7 +303,7 @@ where
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
-        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         drain_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<(Self, Box<dyn ShardStore<S, usize> + Send + Sync>)> {
@@ -399,16 +401,22 @@ where
         pl.info(format_args!(
             "Building LCP prefix → bucket map ({num_buckets} buckets)..."
         ));
-        let lcp2bucket =
-            VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
-                .expected_num_keys(num_buckets)
-                .try_build_func::<IntBitPrefix<T>, IntBitPrefix<T>>(
-                    FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
-                        IntBitPrefix::new(bucket_first_keys[b] ^ T::MIN, lcp_bit_lengths[b])
-                    })),
-                    FromCloneableIntoIterator::new(0..num_buckets),
-                    pl,
-                )?;
+        let lcp2bucket = <VFunc<
+            IntBitPrefix<T>,
+            usize,
+            BitFieldVec<Box<[usize]>>,
+            [u64; 1],
+            Fuse3NoShards,
+        >>::try_new_with_builder(
+            FromCloneableIntoIterator::new(
+                (0..num_buckets)
+                    .map(|b| IntBitPrefix::new(bucket_first_keys[b] ^ T::MIN, lcp_bit_lengths[b])),
+            ),
+            FromCloneableIntoIterator::new(0..num_buckets),
+            num_buckets,
+            VBuilder::default(),
+            pl,
+        )?;
 
         let result = Self {
             n,
@@ -565,9 +573,9 @@ pub struct LcpMmphf<K: ?Sized, D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = 
     /// Log2 of bucket size.
     pub(crate) log2_bucket_size: usize,
     /// Maps each key to `(lcp_bit_length << log2_bucket_size) | offset`.
-    pub(crate) offset_lcp_length: VFunc<K, usize, D, S, E>,
+    pub(crate) offset_lcp_length: VFunc<K, D, S, E>,
     /// Maps each LCP bit-prefix to its bucket index.
-    pub(crate) lcp2bucket: VFunc<BitPrefix, usize, D, [u64; 1], Fuse3NoShards>,
+    pub(crate) lcp2bucket: VFunc<BitPrefix, D, [u64; 1], Fuse3NoShards>,
 }
 
 /// A [`LcpMmphf`] for `str` keys.
@@ -782,7 +790,7 @@ where
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
-        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         Self::try_new_inner(keys, n, builder, true, pl).map(|(mmphf, _)| mmphf)
@@ -796,7 +804,7 @@ where
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
-        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         drain_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<(Self, Box<dyn ShardStore<S, usize> + Send + Sync>)> {
@@ -910,17 +918,22 @@ where
             })
             .collect();
 
-        let lcp2bucket =
-            VBuilder::<_, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>::default()
-                .expected_num_keys(num_buckets)
-                .try_build_func::<BitPrefix, BitPrefix>(
-                    FromCloneableIntoIterator::new(
-                        (0..num_buckets)
-                            .map(|b| BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b])),
-                    ),
-                    FromCloneableIntoIterator::new(0..num_buckets),
-                    pl,
-                )?;
+        let lcp2bucket = <VFunc<
+            BitPrefix,
+            usize,
+            BitFieldVec<Box<[usize]>>,
+            [u64; 1],
+            Fuse3NoShards,
+        >>::try_new_with_builder(
+            FromCloneableIntoIterator::new(
+                (0..num_buckets)
+                    .map(|b| BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b])),
+            ),
+            FromCloneableIntoIterator::new(0..num_buckets),
+            num_buckets,
+            VBuilder::default(),
+            pl,
+        )?;
 
         let result = Self {
             n,
@@ -941,7 +954,7 @@ where
 // ── Aligned ↔ Unaligned conversions ──────────────────────────────────
 
 use crate::bits::BitFieldVecU;
-use crate::traits::TryIntoUnaligned;
+use crate::traits::{Backend, BitFieldSlice, TryIntoUnaligned};
 type Ubfv = BitFieldVecU<Box<[usize]>>;
 
 // -- LcpMmphfInt --

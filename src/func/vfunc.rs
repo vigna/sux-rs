@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::borrow::Borrow;
+use crate::traits::ambassador_impl_Backend;
 
 #[cfg(feature = "rayon")]
 use {
@@ -21,11 +21,13 @@ use {
 };
 
 use super::shard_edge::FuseLge3Shards;
-use crate::bits::BitFieldVec;
 use crate::func::shard_edge::ShardEdge;
 use crate::traits::Word;
 use crate::utils::*;
+use crate::{bits::BitFieldVec, traits::Backend};
+use ambassador::Delegate;
 use mem_dbg::*;
+use std::borrow::Borrow;
 use value_traits::slices::SliceByValue;
 
 /// Static functions with low space overhead, fast parallel construction, and
@@ -82,18 +84,19 @@ use value_traits::slices::SliceByValue;
 ///   coupled with `[u64; 1]` signatures. For functions with more than a few
 ///   dozen billion keys, you might try
 ///   [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
-#[derive(Debug, MemDbg, MemSize)]
+#[derive(Debug, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct VFunc<T: ?Sized, W = usize, D = Box<[W]>, S = [u64; 2], E = FuseLge3Shards> {
+#[delegate(crate::traits::Backend, target = "data")]
+pub struct VFunc<T: ?Sized, D: Backend, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) shard_edge: E,
     pub(crate) seed: u64,
     pub(crate) num_keys: usize,
     pub(crate) data: D,
-    pub(crate) _marker: std::marker::PhantomData<(*const T, W, S)>,
+    pub(crate) _marker: std::marker::PhantomData<(*const T, S)>,
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<T, W, BitFieldVec<Box<[W]>>, S, E> {
+impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<T, BitFieldVec<Box<[W]>>, S, E> {
     /// Creates a VFunc with zero keys.
     ///
     /// The internal data has bit width 0, so `get` always returns zero.
@@ -111,20 +114,15 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<T, W, BitFieldVec<Box
     }
 }
 
-impl<
-    T: ?Sized + ToSig<S>,
-    W: Word + BinSafe,
-    D: SliceByValue<Value = W>,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-> VFunc<T, W, D, S, E>
+impl<T: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
+    VFunc<T, D, S, E>
 {
     /// Returns the value associated with the given signature, or a random value
     /// if the signature is not the signature of a key.
     ///
     /// This method is mainly useful in the construction of compound functions.
     #[inline]
-    pub fn get_by_sig(&self, sig: S) -> W {
+    pub fn get_by_sig(&self, sig: S) -> D::Value {
         let edge = self.shard_edge.edge(sig);
         // SAFETY: The ShardEdge implementation guarantees that all indices
         // returned by `edge()` are within bounds of `self.data`. This invariant
@@ -140,7 +138,7 @@ impl<
     /// Returns the value associated with the given key, or a random value if the
     /// key is not present.
     #[inline(always)]
-    pub fn get(&self, key: impl Borrow<T>) -> W {
+    pub fn get(&self, key: impl Borrow<T>) -> D::Value {
         self.get_by_sig(T::to_sig(key.borrow(), self.seed))
     }
 
@@ -153,6 +151,16 @@ impl<
     pub const fn is_empty(&self) -> bool {
         self.num_keys == 0
     }
+
+    /// Returns the edge hash derived from a full signature.
+    ///
+    /// Computes `shard_edge.edge_hash(shard_edge.local_sig(sig))`.
+    /// This is useful for building signed functions outside the crate.
+    #[inline]
+    pub fn edge_hash_by_sig(&self, sig: S) -> u64 {
+        let local_sig = self.shard_edge.local_sig(sig);
+        self.shard_edge.edge_hash(local_sig)
+    }
 }
 
 // ── Aligned ↔ Unaligned conversions ─────────────────────────────────
@@ -161,9 +169,9 @@ use crate::bits::BitFieldVecU;
 use crate::traits::TryIntoUnaligned;
 
 impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
-    for VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>
+    for VFunc<T, BitFieldVec<Box<[W]>>, S, E>
 {
-    type Unaligned = VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>;
+    type Unaligned = VFunc<T, BitFieldVecU<Box<[W]>>, S, E>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -177,12 +185,12 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
     }
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> From<VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>>
-    for VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>
+impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> From<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>>
+    for VFunc<T, BitFieldVec<Box<[W]>>, S, E>
 {
     /// Converts a [`VFunc`] with [`BitFieldVecU`] data back into
     /// one with [`BitFieldVec`] data, removing the padding word.
-    fn from(vf: VFunc<T, W, BitFieldVecU<Box<[W]>>, S, E>) -> Self {
+    fn from(vf: VFunc<T, BitFieldVecU<Box<[W]>>, S, E>) -> Self {
         VFunc {
             shard_edge: vf.shard_edge,
             seed: vf.seed,
@@ -196,7 +204,7 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> From<VFunc<T, W, BitFieldVe
 // ── Convenience constructors ───────────────────────────────────────
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E> VFunc<T, W, Box<[W]>, S, E>
+impl<T, W, S, E> VFunc<T, Box<[W]>, S, E>
 where
     T: ?Sized + ToSig<S> + std::fmt::Debug,
     W: Word + BinSafe + AsU128,
@@ -256,7 +264,7 @@ where
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         n: usize,
-        builder: VBuilder<W, Box<[W]>, S, E>,
+        builder: VBuilder<Box<[W]>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
@@ -264,12 +272,21 @@ where
         for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
         for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
     {
-        builder.expected_num_keys(n).try_build_func(keys, values, pl)
+        Ok(builder
+            .expected_num_keys(n)
+            .try_build_func_and_store(
+                keys,
+                values,
+                |_bit_width, len| vec![W::ZERO; len].into(),
+                true,
+                pl,
+            )?
+            .0)
     }
 }
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E> VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>
+impl<T, W, S, E> VFunc<T, BitFieldVec<Box<[W]>>, S, E>
 where
     T: ?Sized + ToSig<S> + std::fmt::Debug,
     W: Word + BinSafe + AsU128,
@@ -324,9 +341,18 @@ where
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         n: usize,
-        builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        builder.expected_num_keys(n).try_build_func(keys, values, pl)
+        builder
+            .expected_num_keys(n)
+            .try_build_func_and_store(
+                keys,
+                values,
+                |bit_width, len| BitFieldVec::<Box<[W]>>::new_unaligned(bit_width, len),
+                true,
+                pl,
+            )
+            .map(|res| res.0)
     }
 }

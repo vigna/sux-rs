@@ -8,7 +8,6 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::bits::*;
-use crate::dict::{BitSignedVFunc, SignedVFunc, VFilter};
 use crate::func::{shard_edge::ShardEdge, *};
 use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut};
 use crate::traits::{BitVecOpsMut, Word};
@@ -19,7 +18,7 @@ use derive_setters::*;
 use dsi_progress_logger::*;
 use lender::FallibleLending;
 use log::info;
-use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
+use num_primitive::PrimitiveNumber;
 use rand::rngs::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
 use rayon::iter::ParallelIterator;
@@ -160,12 +159,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 #[derive(Setters, Debug, Derivative)]
 #[derivative(Default)]
 #[setters(generate = false)]
-pub struct VBuilder<
-    W: Word + BinSafe,
-    D: BitFieldSlice<Value = W> + Send + Sync = Box<[W]>,
-    S = [u64; 2],
-    E: ShardEdge<S, 3> = FuseLge3Shards,
-> {
+pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// The expected number of keys.
     ///
     /// While this setter is optional, setting this value to a reasonable bound
@@ -227,11 +221,11 @@ pub struct VBuilder<
     pub(crate) eps: f64,
 
     /// The bit width of the maximum value.
-    bit_width: usize,
+    pub(crate) bit_width: usize,
     /// The edge generator.
     pub(crate) shard_edge: E,
     /// The number of keys.
-    num_keys: usize,
+    pub(crate) num_keys: usize,
     /// The ratio between the number of vertices and the number of edges
     /// (i.e., between the number of variables and the number of equations).
     c: f64,
@@ -243,11 +237,11 @@ pub struct VBuilder<
     /// Fast-stop for failed attempts.
     failed: AtomicBool,
     #[doc(hidden)]
-    _marker_v: PhantomData<(W, D, S)>,
+    _marker_v: PhantomData<(D, S)>,
 }
 
-impl<W: Word + BinSafe, D: BitFieldSlice<Value = W> + Send + Sync, S: Sig, E: ShardEdge<S, 3>>
-    VBuilder<W, D, S, E>
+impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge<S, 3>>
+    VBuilder<D, S, E>
 {
     /// Sets up shards from the expected number of keys and returns the
     /// seed. This is the same initialization that
@@ -505,122 +499,7 @@ type ShardDataIter<'a, D> = <D as SliceByValueMut>::ChunksMut<'a>;
 type ShardData<'a, D> = <ShardDataIter<'a, D> as Iterator>::Item;
 
 impl<W: Word + BinSafe + AsU128, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
-    VBuilder<W, Box<[W]>, S, E>
-where
-    SigVal<S, W>: RadixKey,
-    SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
-    // Box<[W]> satisfies BitFieldSlice<Value = W> via blanket impls.
-{
-    /// Builds a new function using a `Box<[W]>` to store values.
-    ///
-    /// Since values are stored in a boxed slice access is particularly fast, but
-    /// the bit width of the output of the function will be exactly the bit width of
-    /// the unsigned type `W`.
-    pub(crate) fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
-        self,
-        keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        values: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, Box<[W]>, S, E>>
-    where
-        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut,
-        for<'a> ShardDataIter<'a, Box<[W]>>: Send,
-        for<'a> ShardData<'a, Box<[W]>>: Send,
-    {
-        Ok(self
-            .try_build_func_and_store(
-                keys,
-                values,
-                |_bit_width, len| vec![W::ZERO; len].into(),
-                true,
-                pl,
-            )?
-            .0)
-    }
-}
-
-impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<W, Box<[W]>, S, E>
-where
-    // u128 can always be created from any Word type via as cast
-    SigVal<S, EmptyVal>: RadixKey,
-    SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
-    // Box<[W]> satisfies BitFieldSlice<Value = W> via blanket impls.
-{
-    /// Builds a new filter using a `Box<[W]>` to store values.
-    ///
-    /// Since values are stored in a boxed slice access is particularly fast, but
-    /// the number of bits of the hashes will be exactly the bit width of the
-    /// unsigned type `W`.
-    pub(crate) fn try_build_filter<
-        T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: ?Sized + Borrow<T>,
-        P: ProgressLog + Clone + Send + Sync,
-    >(
-        mut self,
-        keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        pl: &mut P,
-    ) -> anyhow::Result<VFilter<W, VFunc<T, W, Box<[W]>, S, E>>>
-    where
-        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut,
-        for<'a> ShardDataIter<'a, Box<[W]>>: Send,
-        for<'a> ShardData<'a, Box<[W]>>: Send,
-    {
-        let filter_mask = W::MAX;
-        let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
-            W::as_from(mix64(shard_edge.edge_hash(sig_val.sig)))
-        };
-
-        let func = self.try_populate_and_build(
-            keys,
-            FromCloneableIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
-            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
-                builder.bit_width = W::BITS as usize;
-
-                let new_data: Box<[W]> = vec![
-                    W::ZERO;
-                    builder.shard_edge.num_vertices()
-                        * builder.shard_edge.num_shards()
-                ]
-                .into();
-
-                pl.info(format_args!(
-                    "Number of keys: {} Bit width: {}",
-                    builder.num_keys, builder.bit_width,
-                ));
-
-                let func = builder.try_build_from_shard_iter(
-                    seed,
-                    new_data,
-                    store.drain(),
-                    &get_val,
-                    &|_| {},
-                    pl,
-                )?;
-                Ok(func)
-            },
-            pl,
-            (),
-        )?;
-
-        Ok(VFilter {
-            func,
-            filter_mask,
-            hash_bits: W::BITS,
-        })
-    }
-}
-
-impl<W: Word + BinSafe + AsU128, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
-    VBuilder<W, BitFieldVec<Box<[W]>>, S, E>
+    VBuilder<BitFieldVec<Box<[W]>>, S, E>
 where
     SigVal<S, W>: RadixKey,
     SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
@@ -674,7 +553,7 @@ where
         get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
         inspect: &(impl Fn(&SigVal<S, V>) + Send + Sync),
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>
+    ) -> anyhow::Result<VFunc<T, BitFieldVec<Box<[W]>>, S, E>>
     where
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
@@ -709,260 +588,6 @@ where
 
         self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, inspect, pl)
             .map_err(Into::into)
-    }
-
-    /// Builds a new function using a [bit-field vector](BitFieldVec) on words of
-    /// the unsigned type `W` to store values.
-    ///
-    /// Since values are stored in a bit-field vector access will be slower than
-    /// when using a boxed slice, but the bit width of stored values will be the
-    /// minimum necessary. It must be in any case at most the bit width of `W`.
-    ///
-    /// Typically `W` will be `usize` or `u64`. Consider calling
-    /// [`try_into_unaligned`](crate::traits::TryIntoUnaligned::try_into_unaligned)
-    /// on the resulting function to get faster access.
-    pub(crate) fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
-        self,
-        keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        values: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>> {
-        self.try_build_func_and_store(
-            keys,
-            values,
-            |bit_width, len| BitFieldVec::<Box<[W]>>::new_unaligned(bit_width, len),
-            true,
-            pl,
-        )
-        .map(|res| res.0)
-    }
-}
-
-impl<S: Sig + Send + Sync, E: ShardEdge<S, 3>> VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>
-where
-    SigVal<S, usize>: RadixKey,
-    SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
-{
-    /// Builds a _bit-signed index function_, that is, a function that maps each
-    /// key to its position in the input sequence and verifies its output against a
-    /// [`BitFieldVec`] containing hashes of the keys.
-    ///
-    /// The hashes, of `hash_width` bits, are stored in a [`BitFieldVec`] on
-    /// words of type `H`, providing a false-positive error rate (i.e., keys
-    /// that are not part of the function definition, but for which this
-    /// property is not detected) of 2<sup>-`hash_width`</sup>.
-    ///
-    /// This type of signed function offers more resolution than [`SignedVFunc`]
-    /// in choosing the hash size, but testing signatures will be slower.
-    ///
-    ///  Consider calling
-    /// [`try_into_unaligned`](crate::traits::TryIntoUnaligned::try_into_unaligned)
-    /// on the resulting function to get faster access.
-    pub(crate) fn try_build_bit_sig_index<
-        T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: ?Sized + Borrow<T>,
-        H: Word,
-    >(
-        self,
-        keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        hash_width: usize,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<
-        BitSignedVFunc<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>,
-    >
-    where
-        u64: PrimitiveNumberAs<H>,
-    {
-        assert!(hash_width > 0);
-        assert!(hash_width <= H::BITS as usize);
-
-        let (func, mut store) = self.try_build_func_and_store(
-            keys,
-            FromCloneableIntoIterator::from(0..),
-            BitFieldVec::<Box<[usize]>>::new_unaligned,
-            false,
-            pl,
-        )?;
-
-        let num_keys = func.num_keys;
-        let shard_edge = &func.shard_edge;
-        let hash_mask = if hash_width == 64 {
-            u64::MAX
-        } else {
-            (1u64 << hash_width) - 1
-        };
-
-        // Create the signature vector
-        let mut hashes: BitFieldVec<Box<[H]>> =
-            BitFieldVec::<Box<[H]>>::new_unaligned(hash_width, num_keys);
-
-        // Enumerate the store and extract signatures using the same method as filters
-        pl.item_name("hash");
-        pl.expected_updates(Some(num_keys));
-        pl.start("Storing hashes...");
-
-        for shard in store.iter() {
-            for sig_val in shard.iter() {
-                let pos = sig_val.val;
-                let local_sig = shard_edge.local_sig(sig_val.sig);
-                let hash = (mix64(shard_edge.edge_hash(local_sig)) & hash_mask).as_to::<H>();
-                hashes.set_value(pos, hash);
-                pl.light_update();
-            }
-        }
-
-        pl.done();
-
-        Ok(BitSignedVFunc {
-            func,
-            hashes,
-            hash_mask,
-        })
-    }
-
-    /// Builds a _signed index function_, that is, a function that maps each key
-    /// to its position in the input sequence and verifies its output against a
-    /// boxed slice containing hashes of the keys.
-    ///
-    /// The hashes are of type `H`, and the false-positive error rate (i.e.,
-    /// keys that are not part of the function definition, but for which this
-    /// property is not detected) is 2<sup>-`H::BITS`</sup>.
-    ///
-    /// This type of signed function offers more speed than [`BitSignedVFunc`],
-    /// but you have less resolution in the choice of the hash size.
-    pub(crate) fn try_build_sig_index<
-        T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: ?Sized + Borrow<T>,
-        H: Word,
-    >(
-        self,
-        keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<SignedVFunc<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>>
-    {
-        let (func, mut store) = self.try_build_func_and_store(
-            keys,
-            FromCloneableIntoIterator::from(0..),
-            BitFieldVec::new_unaligned,
-            false,
-            pl,
-        )?;
-
-        let num_keys = func.num_keys;
-        let shard_edge = &func.shard_edge;
-
-        // Create the hash vector
-        let mut hashes = vec![H::ZERO; num_keys].into_boxed_slice();
-
-        // Enumerate the store and extract hashes using the same method as filters
-        pl.item_name("hash");
-        pl.expected_updates(Some(num_keys));
-        pl.start("Storing hashes...");
-
-        for shard in store.iter() {
-            for sig_val in shard.iter() {
-                let pos = sig_val.val;
-                let local_sig = shard_edge.local_sig(sig_val.sig);
-                let hash = H::as_from(mix64(shard_edge.edge_hash(local_sig)));
-                hashes.set_value(pos, hash);
-                pl.light_update();
-            }
-        }
-
-        pl.done();
-
-        Ok(SignedVFunc { func, hashes })
-    }
-}
-
-impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
-    VBuilder<W, BitFieldVec<Box<[W]>>, S, E>
-where
-    // u128 can always be created from any Word type via as cast
-    SigVal<S, EmptyVal>: RadixKey,
-    SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
-{
-    /// Builds a new filter using a [bit-field vector](BitFieldVec) on words of the
-    /// unsigned type `W` to store values.
-    ///
-    /// Since values are stored in a bit-field vector access will be slower than
-    /// when using a boxed slice, but the number of bits of the hashes can be set at
-    /// will. It must be in any case at most the bit width of `W`.
-    ///
-    /// Typically `W` will be `usize` or `u64`. Consider calling
-    /// [`try_into_unaligned`](crate::traits::TryIntoUnaligned::try_into_unaligned)
-    /// on the resulting filter to get faster access.
-    pub(crate) fn try_build_filter<
-        T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: ?Sized + Borrow<T>,
-        P: ProgressLog + Clone + Send + Sync,
-    >(
-        mut self,
-        keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        filter_bits: usize,
-        pl: &mut P,
-    ) -> anyhow::Result<VFilter<W, VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>>>
-    where
-        for<'a> ShardDataIter<'a, BitFieldVec<Box<[W]>>>: Send,
-        for<'a> <ShardDataIter<'a, BitFieldVec<Box<[W]>>> as Iterator>::Item: Send,
-    {
-        assert!(filter_bits > 0);
-        assert!(filter_bits <= W::BITS as usize);
-        let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
-        let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
-            W::as_from(mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
-        };
-
-        let func = self.try_populate_and_build(
-            keys,
-            FromCloneableIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
-            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
-                builder.bit_width = filter_bits;
-
-                let new_data = BitFieldVec::<Box<[W]>>::new_unaligned(
-                    builder.bit_width,
-                    builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
-                );
-
-                pl.info(format_args!(
-                    "Number of keys: {} Bit width: {}",
-                    builder.num_keys, builder.bit_width,
-                ));
-
-                let func = builder.try_build_from_shard_iter(
-                    seed,
-                    new_data,
-                    store.drain(),
-                    &get_val,
-                    &|_| {},
-                    pl,
-                )?;
-                Ok(func)
-            },
-            pl,
-            (),
-        )?;
-
-        Ok(VFilter {
-            func,
-            filter_mask,
-            hash_bits: filter_bits as _,
-        })
     }
 }
 
@@ -1014,11 +639,10 @@ macro_rules! handle_solve_result {
 }
 
 impl<
-    W: Word + BinSafe,
-    D: BitFieldSlice<Value = W> + Send + Sync,
+    D: BitFieldSlice<Value: Word + BinSafe + AsU128> + Send + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
-> VBuilder<W, D, S, E>
+> VBuilder<D, S, E>
 {
     /// Builds a new [`VFunc`], optionally retaining the populated shard
     /// store for reuse.
@@ -1052,23 +676,23 @@ impl<
         values: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend D::Value>,
         new_data: fn(usize, usize) -> D,
         drain_store: bool,
         pl: &mut P,
     ) -> anyhow::Result<(
-        VFunc<T, W, D, S, E>,
-        Box<dyn ShardStore<S, W> + Send + Sync>,
+        VFunc<T, D, S, E>,
+        Box<dyn ShardStore<S, D::Value> + Send + Sync>,
     )>
     where
-        W: AsU128,
-        SigVal<S, W>: RadixKey,
-        SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
-        D: for<'a> BitFieldSliceMut<Value = W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>,
+        D::Value: AsU128,
+        SigVal<S, D::Value>: RadixKey,
+        SigVal<E::LocalSig, D::Value>: BitXor + BitXorAssign,
+        D: for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>,
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
-        let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, W>| sig_val.val;
+        let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, D::Value>| sig_val.val;
 
         self.try_populate_and_build(
             keys,
@@ -1486,14 +1110,13 @@ impl<
 }
 
 impl<
-    W: Word + BinSafe,
-    D: BitFieldSlice<Value = W>
-        + for<'a> BitFieldSliceMut<Value = W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>
+    D: BitFieldSlice<Value: Word + BinSafe>
+        + for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>
         + Send
         + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
-> VBuilder<W, D, S, E>
+> VBuilder<D, S, E>
 {
     /// Solves the 3-hypergraph system and returns a new [`VFunc`].
     ///
@@ -1520,12 +1143,12 @@ impl<
     /// The peeling algorithm is selected based on `self.lge` and
     /// `self.low_mem`; see the [`low_mem`](VBuilder::low_mem) field
     /// documentation for the automatic selection heuristic.
-    fn try_build_from_shard_iter<
+    pub(crate) fn try_build_from_shard_iter<
         T: ?Sized + ToSig<S>,
         I,
         P,
         V: BinSafe + Default + Send + Sync,
-        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> D::Value + Send + Sync,
         H: Fn(&SigVal<S, V>) + Send + Sync,
     >(
         &mut self,
@@ -1535,7 +1158,7 @@ impl<
         get_val: &G,
         inspect: &H,
         pl: &mut P,
-    ) -> Result<VFunc<T, W, D, S, E>, SolveError>
+    ) -> Result<VFunc<T, D, S, E>, SolveError>
     where
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
@@ -1668,7 +1291,7 @@ impl<
         + Sync,
     S: Sig + BinSafe,
     E: ShardEdge<S, 3>,
-> VBuilder<W, D, S, E>
+> VBuilder<D, S, E>
 {
     /// Stable counting sort of `shard` by [`ShardEdge::sort_key`],
     /// improving memory locality before peeling.
