@@ -102,10 +102,10 @@ fn main() -> Result<()> {
 macro_rules! filename_save_sign(
     ($h: ty, $builder:expr, $filename: expr, $func: expr, $n: expr, $pl: expr) => {{
         use sux::func::mix64;
-        use sux::traits::bit_field_slice::BitFieldSliceMut;
+
         use sux::utils::ShardStore;
         use num_primitive::PrimitiveNumber;
-        use value_traits::slices::{SliceByValue, SliceByValueMut};
+        use value_traits::slices::SliceByValueMut;
 
         let (func, mut store) = $builder.try_build_func_and_store(
             DekoBufLineLender::from_path($filename)?.take($n),
@@ -193,7 +193,7 @@ where
                 let (func, _) = builder.try_build_func_and_store(
                     DekoBufLineLender::from_path(filename)?.take(n),
                     FromCloneableIntoIterator::from(0_usize..),
-                    |bit_width, len| BitFieldVec::<Box<[usize]>>::new_unaligned(bit_width, len),
+                    BitFieldVec::<Box<[usize]>>::new_unaligned,
                     true,
                     &mut pl,
                 )?;

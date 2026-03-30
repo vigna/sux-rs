@@ -125,8 +125,7 @@ where
                 .collect()?
         };
 
-        let func =
-            unsafe { VFunc::<str, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
+        let func = unsafe { VFunc::<str, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
         if args.unaligned {
             let func = func.try_into_unaligned().unwrap();
             bench(args.n, args.repeats, || {
@@ -143,9 +142,8 @@ where
         }
     } else {
         // No filename
-        let func = unsafe {
-            VFunc::<usize, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func)
-        }?;
+        let func =
+            unsafe { VFunc::<usize, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
 
         if args.unaligned {
             let func = func.try_into_unaligned().unwrap();

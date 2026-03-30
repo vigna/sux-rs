@@ -23,13 +23,10 @@ use {
     value_traits::slices::SliceByValueMut,
 };
 
+use crate::bits::{BitFieldVec, BitFieldVecU};
 use crate::func::VFunc;
 use crate::func::shard_edge::ShardEdge;
 use crate::utils::*;
-use crate::{
-    bits::{BitFieldVec, BitFieldVecU},
-    traits::BitFieldSlice,
-};
 use mem_dbg::*;
 use num_primitive::PrimitiveNumber;
 use value_traits::slices::SliceByValue;
@@ -66,7 +63,7 @@ impl<F, H> SignedVFunc<F, H> {
 impl<
     T: ?Sized + ToSig<S>,
     W: Word + BinSafe,
-    D: BitFieldSlice<Value = W>,
+    D: SliceByValue<Value = W>,
     S: Sig,
     E: ShardEdge<S, 3>,
     H: SliceByValue<Value: PrimitiveNumber>,
@@ -147,7 +144,7 @@ pub struct BitSignedVFunc<F, H> {
 
 impl<
     T: ?Sized + ToSig<S>,
-    D: BitFieldSlice<Value: Word + BinSafe>,
+    D: SliceByValue<Value: Word + BinSafe>,
     S: Sig,
     E: ShardEdge<S, 3>,
     H: SliceByValue<Value: PrimitiveNumber>,

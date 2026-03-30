@@ -18,7 +18,7 @@ use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
-use sux::traits::{BitFieldSlice, BitFieldSliceMut, Word};
+use sux::traits::{BitFieldSliceMut, Word};
 use sux::utils::{
     BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig,
 };
@@ -136,7 +136,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn set_builder<D: BitFieldSlice + Send + Sync, S, E: ShardEdge<S, 3>>(
+fn set_builder<D: Send + Sync, S, E: ShardEdge<S, 3>>(
     builder: VBuilder<D, S, E>,
     args: &Args,
 ) -> VBuilder<D, S, E> {

@@ -35,6 +35,7 @@ use crate::func::vfunc2::VFunc2;
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
+use value_traits::slices::SliceByValue;
 use xxhash_rust::xxh3;
 
 #[cfg(feature = "rayon")]
@@ -103,7 +104,7 @@ type LcpLen = u16;
 )]
 pub struct Lcp2MmphfInt<
     T: PrimitiveInteger,
-    D: BitFieldSlice = BitFieldVec<Box<[usize]>>,
+    D: SliceByValue = BitFieldVec<Box<[usize]>>,
     S = [u64; 2],
     E = FuseLge3Shards,
 > {
@@ -119,7 +120,7 @@ pub struct Lcp2MmphfInt<
     pub(crate) lcp2bucket: VFunc<IntBitPrefix<T>, D, [u64; 1], Fuse3NoShards>,
 }
 
-impl<T: PrimitiveInteger, D: BitFieldSlice, S, E> std::fmt::Debug for Lcp2MmphfInt<T, D, S, E>
+impl<T: PrimitiveInteger, D: SliceByValue, S, E> std::fmt::Debug for Lcp2MmphfInt<T, D, S, E>
 where
     VFunc<T, D, S, E>: std::fmt::Debug,
     VFunc2<T, D, S, E, Fuse3Shards>: std::fmt::Debug,
@@ -136,7 +137,7 @@ where
     }
 }
 
-impl<T: PrimitiveInteger + ToSig<S>, D: BitFieldSlice<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
+impl<T: PrimitiveInteger + ToSig<S>, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
     Lcp2MmphfInt<T, D, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
@@ -160,7 +161,7 @@ where
     }
 }
 
-impl<T: PrimitiveInteger, D: BitFieldSlice, S: Sig, E: ShardEdge<S, 3>> Lcp2MmphfInt<T, D, S, E>
+impl<T: PrimitiveInteger, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> Lcp2MmphfInt<T, D, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
@@ -498,7 +499,7 @@ where
 )]
 pub struct Lcp2Mmphf<
     K: ?Sized,
-    D: BitFieldSlice = BitFieldVec<Box<[usize]>>,
+    D: SliceByValue = BitFieldVec<Box<[usize]>>,
     S: Sig = [u64; 2],
     E: ShardEdge<S, 3> = FuseLge3Shards,
 > {
@@ -509,7 +510,7 @@ pub struct Lcp2Mmphf<
     pub(crate) lcp2bucket: VFunc<BitPrefix, D, [u64; 1], Fuse3NoShards>,
 }
 
-impl<K: ?Sized, D: BitFieldSlice, S: Sig, E: ShardEdge<S, 3>> std::fmt::Debug
+impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> std::fmt::Debug
     for Lcp2Mmphf<K, D, S, E>
 where
     VFunc<K, D, S, E>: std::fmt::Debug,
@@ -534,7 +535,7 @@ pub type Lcp2MmphfStr<D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3S
 pub type Lcp2MmphfSliceU8<D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
     Lcp2Mmphf<[u8], D, S, E>;
 
-impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, D: BitFieldSlice<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
+impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
     Lcp2Mmphf<K, D, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
@@ -567,7 +568,7 @@ where
     }
 }
 
-impl<K: ?Sized, D: BitFieldSlice, S: Sig, E: ShardEdge<S, 3>> Lcp2Mmphf<K, D, S, E>
+impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> Lcp2Mmphf<K, D, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
@@ -903,7 +904,7 @@ where
 // ── Aligned ↔ Unaligned conversions ──────────────────────────────────
 
 use crate::bits::BitFieldVecU;
-use crate::traits::{BitFieldSlice, TryIntoUnaligned};
+use crate::traits::TryIntoUnaligned;
 type Ubfv = BitFieldVecU<Box<[usize]>>;
 
 // -- Lcp2MmphfInt --

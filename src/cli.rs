@@ -11,8 +11,6 @@ use std::fmt::Display;
 use crate::bits::BitFieldVec;
 use crate::func::VBuilder;
 use crate::func::shard_edge::ShardEdge;
-use crate::traits::{BitFieldSlice, Word};
-use crate::utils::BinSafe;
 
 /// Hash types for signed functions.​
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -62,7 +60,7 @@ pub struct BuilderArgs {
 
 impl BuilderArgs {
     /// Applies these options to a [`VBuilder`].
-    pub fn configure<D: BitFieldSlice + Send + Sync, S, E: ShardEdge<S, 3>>(
+    pub fn configure<D: Send + Sync, S, E: ShardEdge<S, 3>>(
         &self,
         builder: VBuilder<D, S, E>,
     ) -> VBuilder<D, S, E> {
