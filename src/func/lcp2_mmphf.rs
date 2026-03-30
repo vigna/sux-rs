@@ -236,7 +236,7 @@ where
         let mut state = State::<T> {
             bucket_first_keys: Vec::with_capacity(num_buckets),
             lcp_bit_lengths: Vec::with_capacity(num_buckets),
-            lcp_counts: HybridMap::new(None, num_buckets, 0),
+            lcp_counts: HybridMap::new(None, 0),
             max_lcp: 0,
         };
 
@@ -262,7 +262,7 @@ where
 
                 state.bucket_first_keys.clear();
                 state.lcp_bit_lengths.clear();
-                state.lcp_counts = HybridMap::new(None, num_buckets, 0);
+                state.lcp_counts = HybridMap::new(None, 0);
                 state.max_lcp = 0;
 
                 let mut populate = |seed: u64,
@@ -371,10 +371,7 @@ where
                             store,
                             &|v| (v >> log2_bs) as usize,
                             state.max_lcp,
-                            std::mem::replace(
-                                &mut state.lcp_counts,
-                                HybridMap::new(None, 0, 0),
-                            ),
+                            std::mem::replace(&mut state.lcp_counts, HybridMap::new(None, 0)),
                             VBuilder::default(),
                             pl,
                         )?;
@@ -627,7 +624,7 @@ where
         let mut state = State {
             bucket_first_keys: Vec::with_capacity(num_buckets),
             lcp_bit_lengths: Vec::with_capacity(num_buckets),
-            lcp_counts: HybridMap::new(None, num_buckets, 0),
+            lcp_counts: HybridMap::new(None, 0),
             max_lcp: 0,
         };
 
@@ -653,7 +650,7 @@ where
 
                 state.bucket_first_keys.clear();
                 state.lcp_bit_lengths.clear();
-                state.lcp_counts = HybridMap::new(None, num_buckets, 0);
+                state.lcp_counts = HybridMap::new(None, 0);
                 state.max_lcp = 0;
 
                 let mut populate = |seed: u64,
@@ -690,8 +687,7 @@ where
                         } else if offset == 0 {
                             curr_lcp_bits = (key_bytes.len() + 1) * 8;
                         } else {
-                            curr_lcp_bits =
-                                curr_lcp_bits.min(lcp_bits_nul(key_bytes, &prev_key));
+                            curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul(key_bytes, &prev_key));
                         }
 
                         if offset == 0 {
@@ -762,10 +758,7 @@ where
                             store,
                             &|v| (v >> log2_bs) as usize,
                             state.max_lcp,
-                            std::mem::replace(
-                                &mut state.lcp_counts,
-                                HybridMap::new(None, 0, 0),
-                            ),
+                            std::mem::replace(&mut state.lcp_counts, HybridMap::new(None, 0)),
                             VBuilder::default(),
                             pl,
                         )?;
