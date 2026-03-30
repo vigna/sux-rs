@@ -93,68 +93,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// with [`FilteredShardStore`] to build from a filtered subset. This
 /// is used when building compound functions such as [`VFunc2`].
 ///
-/// # Examples
-///
-/// Build a function using [`VFunc::try_new`]:
-///
-/// ```rust
-/// # use sux::func::VFunc;
-/// # use sux::bits::BitFieldVec;
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromCloneableIntoIterator;
-/// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new(
-///    FromCloneableIntoIterator::new(0..100),
-///    FromCloneableIntoIterator::new(0..100),
-///    100,
-///    no_logging![],
-/// )?;
-///
-/// for i in 0..100 {
-///    assert_eq!(i, func.get(&i));
-/// }
-/// # Ok::<(), Box<dyn core::error::Error>>(())
-/// ```
-///
-/// Build a filter using [`VFilter::try_new`]:
-///
-/// ```rust
-/// # use sux::dict::VFilter;
-/// # use sux::func::VFunc;
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromCloneableIntoIterator;
-/// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new(
-///    FromCloneableIntoIterator::new(0..100),
-///    100,
-///    no_logging![],
-/// )?;
-///
-/// for i in 0..100 {
-///    assert!(filter[i]);
-/// }
-/// # Ok::<(), Box<dyn core::error::Error>>(())
-/// ```
-///
-/// Use a pre-configured builder for custom settings:
-///
-/// ```rust
-/// # use sux::func::{VBuilder, VFunc};
-/// # use sux::bits::BitFieldVec;
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromCloneableIntoIterator;
-/// let func =
-///     <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
-///         FromCloneableIntoIterator::new(0..100),
-///         FromCloneableIntoIterator::new(0..100),
-///         100,
-///         VBuilder::default().offline(true),
-///         no_logging![],
-///     )?;
-///
-/// for i in 0..100 {
-///    assert_eq!(i, func.get(&i));
-/// }
-/// # Ok::<(), Box<dyn core::error::Error>>(())
-/// ```
+/// See [`VFunc::try_new`], [`VFilter::try_new`], etc. for usage examples.
 
 #[derive(Setters, Debug, Derivative)]
 #[derivative(Default)]

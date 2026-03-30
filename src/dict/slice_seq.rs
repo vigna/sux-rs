@@ -5,12 +5,13 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Adapters from reference to slices to [indexed sequences](crate::traits::IndexedSeq).
-
 use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
 
 /// A newtype exhibiting a reference to a slice as an [indexed
 /// sequence](crate::traits::IndexedSeq).
+///
+/// Note that [`IndexedSeq`] is implemented for vectors, slices, and arrays,
+/// so the need for this newtype is very limited.
 ///
 /// You can create a [`SliceSeq`] with [`SliceSeq::new`], or with the equivalent
 /// [`From`] implementation. Note, however, that we provide [`IndexedSeq`]

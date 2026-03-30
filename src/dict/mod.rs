@@ -40,7 +40,7 @@ pub use rear_coded_list::{RearCodedListBuilder, RearCodedListSliceU8, RearCodedL
 pub mod mapped_rear_coded_list;
 pub use mapped_rear_coded_list::{MappedRearCodedListSliceU8, MappedRearCodedListStr};
 
-pub mod slice_seq;
+mod slice_seq;
 pub use slice_seq::SliceSeq;
 
 pub mod signed_vfunc;
