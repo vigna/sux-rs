@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::traits::{Backend, BitFieldSlice};
+use crate::traits::Backend;
+use value_traits::slices::SliceByValue;
 
 #[cfg(feature = "rayon")]
 use {
@@ -85,7 +86,7 @@ use std::borrow::Borrow;
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct VFunc<T: ?Sized, D: BitFieldSlice, S = [u64; 2], E = FuseLge3Shards> {
+pub struct VFunc<T: ?Sized, D: SliceByValue, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) shard_edge: E,
     pub(crate) seed: u64,
     pub(crate) num_keys: usize,
@@ -93,7 +94,7 @@ pub struct VFunc<T: ?Sized, D: BitFieldSlice, S = [u64; 2], E = FuseLge3Shards> 
     pub(crate) _marker: std::marker::PhantomData<(*const T, S)>,
 }
 
-impl<T: ?Sized, D: BitFieldSlice, S, E> Backend for VFunc<T, D, S, E> {
+impl<T: ?Sized, D: SliceByValue, S, E> Backend for VFunc<T, D, S, E> {
     type Word = D::Value;
 }
 
@@ -115,7 +116,7 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<T, BitFieldVec<Box<[W
     }
 }
 
-impl<T: ?Sized + ToSig<S>, D: BitFieldSlice<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
+impl<T: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
     VFunc<T, D, S, E>
 {
     /// Returns the value associated with the given signature, or a random value

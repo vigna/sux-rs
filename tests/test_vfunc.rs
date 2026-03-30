@@ -43,14 +43,13 @@ where
 
     for &n in sizes {
         dbg!(offline, n);
-        let func =
-            <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-                FromCloneableIntoIterator::from(0..n),
-                FromCloneableIntoIterator::from(0_usize..),
-                n,
-                VBuilder::default().offline(offline).low_mem(low_mem),
-                &mut pl,
-            )?;
+        let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
+            FromCloneableIntoIterator::from(0..n),
+            FromCloneableIntoIterator::from(0_usize..),
+            n,
+            VBuilder::default().offline(offline).low_mem(low_mem),
+            &mut pl,
+        )?;
         let func = func.try_into_unaligned().unwrap();
         pl.start("Querying...");
         for i in 0..n {
@@ -113,13 +112,12 @@ where
 
     for &n in sizes {
         dbg!(offline, n);
-        let filter =
-            <VFilter<VFunc<usize, Box<[u8]>, S, E>>>::try_new_with_builder(
-                FromCloneableIntoIterator::from(0..n),
-                n,
-                VBuilder::default().offline(offline).low_mem(low_mem),
-                &mut pl,
-            )?;
+        let filter = <VFilter<VFunc<usize, Box<[u8]>, S, E>>>::try_new_with_builder(
+            FromCloneableIntoIterator::from(0..n),
+            n,
+            VBuilder::default().offline(offline).low_mem(low_mem),
+            &mut pl,
+        )?;
         pl.start("Querying (positive)...");
         for i in 0..n {
             assert!(filter.contains(i), "Contains failed for {}", i);

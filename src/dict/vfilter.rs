@@ -16,6 +16,7 @@ use mem_dbg::*;
 use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
 use std::borrow::Borrow;
 use std::ops::Index;
+use value_traits::slices::SliceByValue;
 
 #[cfg(feature = "rayon")]
 use {
@@ -91,7 +92,7 @@ impl<F: Backend> VFilter<F> {
     }
 }
 
-impl<T: ?Sized + ToSig<S>, D: BitFieldSlice<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
+impl<T: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
     VFilter<VFunc<T, D, S, E>>
 where
     u64: PrimitiveNumberAs<D::Value>,
@@ -148,7 +149,7 @@ where
 
 impl<
     T: ?Sized + ToSig<S>,
-    D: BitFieldSlice<Value: Word + BinSafe>,
+    D: SliceByValue<Value: Word + BinSafe>,
     S: Sig,
     E: ShardEdge<S, 3>,
     B: Borrow<T>,

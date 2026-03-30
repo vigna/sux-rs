@@ -28,7 +28,7 @@ use crate::bits::BitFieldVec;
 use crate::bits::BitFieldVecU;
 use crate::func::VFunc;
 use crate::func::shard_edge::{Fuse3NoShards, FuseLge3Shards, ShardEdge};
-use crate::traits::{BitFieldSlice, TryIntoUnaligned};
+use crate::traits::TryIntoUnaligned;
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
@@ -195,7 +195,7 @@ pub(crate) fn log2_bucket_size(n: usize) -> usize {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LcpMmphfInt<
     T: PrimitiveInteger,
-    D: BitFieldSlice = BitFieldVec<Box<[usize]>>,
+    D: SliceByValue = BitFieldVec<Box<[usize]>>,
     S = [u64; 2],
     E = FuseLge3Shards,
 > {
@@ -209,7 +209,7 @@ pub struct LcpMmphfInt<
     pub(crate) lcp2bucket: VFunc<IntBitPrefix<T>, D, [u64; 1], Fuse3NoShards>,
 }
 
-impl<T: PrimitiveInteger + ToSig<S>, D: BitFieldSlice<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
+impl<T: PrimitiveInteger + ToSig<S>, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
     LcpMmphfInt<T, D, S, E>
 {
     /// Returns the rank (0-based position) of the given key in the
@@ -234,7 +234,7 @@ impl<T: PrimitiveInteger + ToSig<S>, D: BitFieldSlice<Value = usize>, S: Sig, E:
     }
 }
 
-impl<T: PrimitiveInteger, D: BitFieldSlice<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
+impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
     LcpMmphfInt<T, D, S, E>
 {
     /// Returns the number of keys.
@@ -570,7 +570,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LcpMmphf<
     K: ?Sized,
-    D: BitFieldSlice = BitFieldVec<Box<[usize]>>,
+    D: SliceByValue = BitFieldVec<Box<[usize]>>,
     S = [u64; 2],
     E = FuseLge3Shards,
 > {
@@ -655,12 +655,8 @@ pub type LcpMmphfStr<D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Sh
 pub type LcpMmphfSliceU8<D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
     LcpMmphf<[u8], D, S, E>;
 
-impl<
-    K: ?Sized + AsRef<[u8]> + ToSig<S>,
-    D: BitFieldSlice<Value = usize>,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-> LcpMmphf<K, D, S, E>
+impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
+    LcpMmphf<K, D, S, E>
 {
     /// Returns the rank (0-based position) of the given key in the
     /// original sorted sequence.
@@ -695,7 +691,7 @@ impl<
     }
 }
 
-impl<K: ?Sized, D: BitFieldSlice, S: Sig, E: ShardEdge<S, 3>> LcpMmphf<K, D, S, E> {
+impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> LcpMmphf<K, D, S, E> {
     /// Returns the number of keys.
     pub const fn len(&self) -> usize {
         self.n

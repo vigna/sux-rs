@@ -171,7 +171,7 @@ pub type SignedLcpMmphfSliceU8<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards>
 
 impl<
     T: PrimitiveInteger + ToSig<S> + Copy,
-    D: BitFieldSlice<Value = usize>,
+    D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
@@ -262,7 +262,7 @@ where
 
 impl<
     K: ?Sized + AsRef<[u8]> + ToSig<S>,
-    D: BitFieldSlice<Value = usize>,
+    D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
@@ -406,7 +406,7 @@ pub type BitSignedLcpMmphfSliceU8<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E
 
 impl<
     T: PrimitiveInteger + ToSig<S> + Copy,
-    D: BitFieldSlice<Value = usize>,
+    D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
@@ -506,7 +506,7 @@ where
 
 impl<
     K: ?Sized + AsRef<[u8]> + ToSig<S>,
-    D: BitFieldSlice<Value = usize>,
+    D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
@@ -619,7 +619,7 @@ pub type SignedLcp2MmphfSliceU8<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards
 
 impl<
     T: PrimitiveInteger + ToSig<S> + Copy,
-    D: BitFieldSlice<Value = usize>,
+    D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
@@ -698,7 +698,7 @@ where
 
 impl<
     K: ?Sized + AsRef<[u8]> + ToSig<S>,
-    D: BitFieldSlice<Value = usize>,
+    D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber>,
     S: Sig,
     E: ShardEdge<S, 3>,
@@ -778,7 +778,7 @@ where
 
 // ── Aligned ↔ Unaligned conversions ─────────────────────────────────
 
-use crate::traits::{BitFieldSlice, TryIntoUnaligned};
+use crate::traits::TryIntoUnaligned;
 
 // -- SignedLcpMmphf: only inner needs converting, hashes stay as-is --
 

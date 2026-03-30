@@ -11,12 +11,13 @@ use core::error::Error;
 use std::borrow::Borrow;
 
 use super::shard_edge::FuseLge3Shards;
+use crate::bits::BitFieldVec;
 use crate::func::VFunc;
 use crate::func::shard_edge::ShardEdge;
-use crate::traits::{BitFieldSlice, Word};
+use crate::traits::Word;
 use crate::utils::*;
-use crate::bits::BitFieldVec;
 use mem_dbg::*;
+use value_traits::slices::SliceByValue;
 
 /// A two-step static function that stores frequent values in a narrow first
 /// function and infrequent values in a wider second function, with
@@ -75,13 +76,7 @@ use mem_dbg::*;
         deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E0: serde::Deserialize<'de>, E1: serde::Deserialize<'de>"
     ))
 )]
-pub struct VFunc2<
-    T: ?Sized,
-    D: BitFieldSlice,
-    S = [u64; 2],
-    E0 = FuseLge3Shards,
-    E1 = E0,
-> {
+pub struct VFunc2<T: ?Sized, D: SliceByValue, S = [u64; 2], E0 = FuseLge3Shards, E1 = E0> {
     /// First function: maps each key to a remapped index (*r* bits), or
     /// `escape` for infrequent values. When *r* = 0 this is an empty
     /// VFunc that always returns 0 = `escape`, so the long function is
@@ -96,7 +91,7 @@ pub struct VFunc2<
     pub(crate) escape: D::Value,
 }
 
-impl<T: ?Sized, D: BitFieldSlice, S, E0, E1> std::fmt::Debug for VFunc2<T, D, S, E0, E1>
+impl<T: ?Sized, D: SliceByValue, S, E0, E1> std::fmt::Debug for VFunc2<T, D, S, E0, E1>
 where
     D::Value: std::fmt::Debug,
     VFunc<T, D, S, E0>: std::fmt::Debug,
@@ -132,7 +127,7 @@ impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
 
 impl<
     T: ?Sized + ToSig<S>,
-    D: BitFieldSlice<Value: Word + BinSafe>,
+    D: SliceByValue<Value: Word + BinSafe>,
     S: Sig,
     E0: ShardEdge<S, 3>,
     E1: ShardEdge<S, 3>,
