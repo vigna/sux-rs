@@ -25,8 +25,10 @@
 //! 785−794, New York, 2009. ACM Press.
 
 use crate::bits::BitFieldVec;
+use crate::bits::BitFieldVecU;
 use crate::func::VFunc;
 use crate::func::shard_edge::{Fuse3NoShards, FuseLge3Shards, ShardEdge};
+use crate::traits::{BitFieldSlice, TryIntoUnaligned};
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
@@ -193,7 +195,7 @@ pub(crate) fn log2_bucket_size(n: usize) -> usize {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LcpMmphfInt<
     T: PrimitiveInteger,
-    D: Backend = BitFieldVec<Box<[usize]>>,
+    D: BitFieldSlice = BitFieldVec<Box<[usize]>>,
     S = [u64; 2],
     E = FuseLge3Shards,
 > {
@@ -403,7 +405,6 @@ where
         ));
         let lcp2bucket = <VFunc<
             IntBitPrefix<T>,
-            usize,
             BitFieldVec<Box<[usize]>>,
             [u64; 1],
             Fuse3NoShards,
@@ -567,7 +568,12 @@ impl ToSig<[u64; 1]> for BitPrefix {
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct LcpMmphf<K: ?Sized, D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> {
+pub struct LcpMmphf<
+    K: ?Sized,
+    D: BitFieldSlice = BitFieldVec<Box<[usize]>>,
+    S = [u64; 2],
+    E = FuseLge3Shards,
+> {
     /// Number of keys.
     pub(crate) n: usize,
     /// Log2 of bucket size.
@@ -649,8 +655,12 @@ pub type LcpMmphfStr<D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Sh
 pub type LcpMmphfSliceU8<D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
     LcpMmphf<[u8], D, S, E>;
 
-impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
-    LcpMmphf<K, D, S, E>
+impl<
+    K: ?Sized + AsRef<[u8]> + ToSig<S>,
+    D: BitFieldSlice<Value = usize>,
+    S: Sig,
+    E: ShardEdge<S, 3>,
+> LcpMmphf<K, D, S, E>
 {
     /// Returns the rank (0-based position) of the given key in the
     /// original sorted sequence.
@@ -685,7 +695,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, D: SliceByValue<Value = usize>, S: Sig,
     }
 }
 
-impl<K: ?Sized, D, S: Sig, E: ShardEdge<S, 3>> LcpMmphf<K, D, S, E> {
+impl<K: ?Sized, D: BitFieldSlice, S: Sig, E: ShardEdge<S, 3>> LcpMmphf<K, D, S, E> {
     /// Returns the number of keys.
     pub const fn len(&self) -> usize {
         self.n
@@ -920,7 +930,6 @@ where
 
         let lcp2bucket = <VFunc<
             BitPrefix,
-            usize,
             BitFieldVec<Box<[usize]>>,
             [u64; 1],
             Fuse3NoShards,
@@ -953,16 +962,13 @@ where
 
 // ── Aligned ↔ Unaligned conversions ──────────────────────────────────
 
-use crate::bits::BitFieldVecU;
-use crate::traits::{Backend, BitFieldSlice, TryIntoUnaligned};
-type Ubfv = BitFieldVecU<Box<[usize]>>;
-
 // -- LcpMmphfInt --
 
-impl<T: PrimitiveInteger, S: Sig, E: ShardEdge<S, 3>> From<LcpMmphfInt<T, Ubfv, S, E>>
+impl<T: PrimitiveInteger, S: Sig, E: ShardEdge<S, 3>>
+    From<LcpMmphfInt<T, BitFieldVecU<Box<[usize]>>, S, E>>
     for LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>
 {
-    fn from(f: LcpMmphfInt<T, Ubfv, S, E>) -> Self {
+    fn from(f: LcpMmphfInt<T, BitFieldVecU<Box<[usize]>>, S, E>) -> Self {
         LcpMmphfInt {
             n: f.n,
             log2_bucket_size: f.log2_bucket_size,
@@ -975,7 +981,7 @@ impl<T: PrimitiveInteger, S: Sig, E: ShardEdge<S, 3>> From<LcpMmphfInt<T, Ubfv, 
 impl<T: PrimitiveInteger, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
     for LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>
 {
-    type Unaligned = LcpMmphfInt<T, Ubfv, S, E>;
+    type Unaligned = LcpMmphfInt<T, BitFieldVecU<Box<[usize]>>, S, E>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -990,10 +996,10 @@ impl<T: PrimitiveInteger, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
 
 // -- LcpMmphf --
 
-impl<K: ?Sized, S: Sig, E: ShardEdge<S, 3>> From<LcpMmphf<K, Ubfv, S, E>>
+impl<K: ?Sized, S: Sig, E: ShardEdge<S, 3>> From<LcpMmphf<K, BitFieldVecU<Box<[usize]>>, S, E>>
     for LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>
 {
-    fn from(f: LcpMmphf<K, Ubfv, S, E>) -> Self {
+    fn from(f: LcpMmphf<K, BitFieldVecU<Box<[usize]>>, S, E>) -> Self {
         LcpMmphf {
             n: f.n,
             log2_bucket_size: f.log2_bucket_size,
@@ -1006,7 +1012,7 @@ impl<K: ?Sized, S: Sig, E: ShardEdge<S, 3>> From<LcpMmphf<K, Ubfv, S, E>>
 impl<K: ?Sized, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
     for LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>
 {
-    type Unaligned = LcpMmphf<K, Ubfv, S, E>;
+    type Unaligned = LcpMmphf<K, BitFieldVecU<Box<[usize]>>, S, E>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {

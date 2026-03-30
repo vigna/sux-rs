@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::traits::ambassador_impl_Backend;
+use crate::traits::{Backend, BitFieldSlice};
 
 #[cfg(feature = "rayon")]
 use {
@@ -21,14 +21,12 @@ use {
 };
 
 use super::shard_edge::FuseLge3Shards;
+use crate::bits::BitFieldVec;
 use crate::func::shard_edge::ShardEdge;
 use crate::traits::Word;
 use crate::utils::*;
-use crate::{bits::BitFieldVec, traits::Backend};
-use ambassador::Delegate;
 use mem_dbg::*;
 use std::borrow::Borrow;
-use value_traits::slices::SliceByValue;
 
 /// Static functions with low space overhead, fast parallel construction, and
 /// fast queries.
@@ -84,16 +82,19 @@ use value_traits::slices::SliceByValue;
 ///   coupled with `[u64; 1]` signatures. For functions with more than a few
 ///   dozen billion keys, you might try
 ///   [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
-#[derive(Debug, MemDbg, MemSize, Delegate)]
+#[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(crate::traits::Backend, target = "data")]
-pub struct VFunc<T: ?Sized, D: Backend, S = [u64; 2], E = FuseLge3Shards> {
+pub struct VFunc<T: ?Sized, D: BitFieldSlice, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) shard_edge: E,
     pub(crate) seed: u64,
     pub(crate) num_keys: usize,
     pub(crate) data: D,
     pub(crate) _marker: std::marker::PhantomData<(*const T, S)>,
+}
+
+impl<T: ?Sized, D: BitFieldSlice, S, E> Backend for VFunc<T, D, S, E> {
+    type Word = D::Value;
 }
 
 impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<T, BitFieldVec<Box<[W]>>, S, E> {
@@ -114,7 +115,7 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<T, BitFieldVec<Box<[W
     }
 }
 
-impl<T: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
+impl<T: ?Sized + ToSig<S>, D: BitFieldSlice<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
     VFunc<T, D, S, E>
 {
     /// Returns the value associated with the given signature, or a random value

@@ -147,8 +147,8 @@ where
     usize: ToSig<S>,
     u64: num_primitive::PrimitiveNumberAs<W>,
     Box<[W]>: BitFieldSlice<Value = W>,
-    VFilter<W, VFunc<usize, W, Box<[W]>, S, E>>: Deserialize,
-    VFilter<W, VFunc<str, W, Box<[W]>, S, E>>: Deserialize,
+    VFilter<VFunc<usize, Box<[W]>, S, E>>: Deserialize,
+    VFilter<VFunc<str, Box<[W]>, S, E>>: Deserialize,
 {
     if args.unaligned {
         panic!("Unaligned reads are not supported for backend Box<[W]>");
@@ -167,7 +167,7 @@ where
                 .collect()?
         };
 
-        let filter = unsafe { VFilter::<W, VFunc<str, W, Box<[W]>, S, E>>::load_full(&args.func) }?;
+        let filter = unsafe { VFilter::<VFunc<str, Box<[W]>, S, E>>::load_full(&args.func) }?;
 
         bench(args.n, args.repeats, || {
             for key in &keys {
@@ -177,7 +177,7 @@ where
     } else {
         // No filename
         let filter =
-            unsafe { VFilter::<W, VFunc<usize, W, Box<[W]>, S, E>>::load_full(&args.func) }?;
+            unsafe { VFilter::<VFunc<usize, Box<[W]>, S, E>>::load_full(&args.func) }?;
 
         bench(args.n, args.repeats, || {
             let mut key: usize = 0;
@@ -201,8 +201,8 @@ where
     str: ToSig<S>,
     usize: ToSig<S>,
     u64: num_primitive::PrimitiveNumberAs<W>,
-    VFilter<W, VFunc<usize, W, BitFieldVec<Box<[W]>>, S, E>>: Deserialize,
-    VFilter<W, VFunc<str, W, BitFieldVec<Box<[W]>>, S, E>>: Deserialize,
+    VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>: Deserialize,
+    VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>: Deserialize,
 {
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
@@ -218,7 +218,7 @@ where
         };
 
         let filter = unsafe {
-            VFilter::<W, VFunc<str, W, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
+            VFilter::<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
         }?;
 
         if args.unaligned {
@@ -238,7 +238,7 @@ where
     } else {
         // No filename
         let filter = unsafe {
-            VFilter::<W, VFunc<usize, W, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
+            VFilter::<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
         }?;
 
         if args.unaligned {

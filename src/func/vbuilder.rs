@@ -102,7 +102,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// # use sux::bits::BitFieldVec;
 /// # use dsi_progress_logger::no_logging;
 /// # use sux::utils::FromCloneableIntoIterator;
-/// let func = <VFunc<usize, usize, BitFieldVec<Box<[usize]>>>>::try_new(
+/// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new(
 ///    FromCloneableIntoIterator::new(0..100),
 ///    FromCloneableIntoIterator::new(0..100),
 ///    100,
@@ -122,7 +122,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// # use sux::func::VFunc;
 /// # use dsi_progress_logger::no_logging;
 /// # use sux::utils::FromCloneableIntoIterator;
-/// let filter = <VFilter<u8, VFunc<usize, u8, Box<[u8]>>>>::try_new(
+/// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new(
 ///    FromCloneableIntoIterator::new(0..100),
 ///    100,
 ///    no_logging![],
@@ -142,7 +142,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// # use dsi_progress_logger::no_logging;
 /// # use sux::utils::FromCloneableIntoIterator;
 /// let func =
-///     <VFunc<usize, usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+///     <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
 ///         FromCloneableIntoIterator::new(0..100),
 ///         FromCloneableIntoIterator::new(0..100),
 ///         100,

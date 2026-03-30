@@ -23,10 +23,13 @@ use {
     value_traits::slices::SliceByValueMut,
 };
 
-use crate::bits::{BitFieldVec, BitFieldVecU};
 use crate::func::VFunc;
 use crate::func::shard_edge::ShardEdge;
 use crate::utils::*;
+use crate::{
+    bits::{BitFieldVec, BitFieldVecU},
+    traits::BitFieldSlice,
+};
 use mem_dbg::*;
 use num_primitive::PrimitiveNumber;
 use value_traits::slices::SliceByValue;
@@ -63,7 +66,7 @@ impl<F, H> SignedVFunc<F, H> {
 impl<
     T: ?Sized + ToSig<S>,
     W: Word + BinSafe,
-    D: SliceByValue<Value = W>,
+    D: BitFieldSlice<Value = W>,
     S: Sig,
     E: ShardEdge<S, 3>,
     H: SliceByValue<Value: PrimitiveNumber>,
@@ -144,7 +147,7 @@ pub struct BitSignedVFunc<F, H> {
 
 impl<
     T: ?Sized + ToSig<S>,
-    D: SliceByValue<Value: Word + BinSafe>,
+    D: BitFieldSlice<Value: Word + BinSafe>,
     S: Sig,
     E: ShardEdge<S, 3>,
     H: SliceByValue<Value: PrimitiveNumber>,
@@ -159,7 +162,7 @@ impl<
     ///
     /// This method is mainly useful in the construction of compound functions.
     #[inline]
-    pub fn get_by_sig(&self, sig: S) -> Option<W> {
+    pub fn get_by_sig(&self, sig: S) -> Option<D::Value> {
         // Static check that H::Value → u64 conversion is lossless
         const {
             assert!(
@@ -189,7 +192,7 @@ impl<
     /// False positives happen with probability defined at [construction
     /// time](crate::func::VBuilder::try_build_bit_sig_index).
     #[inline(always)]
-    pub fn get(&self, key: impl Borrow<T>) -> Option<W> {
+    pub fn get(&self, key: impl Borrow<T>) -> Option<D::Value> {
         self.get_by_sig(T::to_sig(key.borrow(), self.func.seed))
     }
 

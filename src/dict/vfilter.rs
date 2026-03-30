@@ -91,7 +91,8 @@ impl<F: Backend> VFilter<F> {
     }
 }
 
-impl<T: ?Sized + ToSig<S>, D: BitFieldSlice, S: Sig, E: ShardEdge<S, 3>> VFilter<VFunc<T, D, S, E>>
+impl<T: ?Sized + ToSig<S>, D: BitFieldSlice<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
+    VFilter<VFunc<T, D, S, E>>
 where
     u64: PrimitiveNumberAs<D::Value>,
 {
@@ -258,7 +259,7 @@ where
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
-        builder: VBuilder<W, Box<[W]>, S, E>,
+        builder: VBuilder<Box<[W]>, S, E>,
         pl: &mut P,
     ) -> Result<Self>
     where
@@ -457,7 +458,7 @@ mod tests {
         SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     {
         for n in [0_usize, 10, 1000, 100_000, 1_000_000] {
-            let filter = <VFilter<u8, VFunc<usize, u8, Box<[u8]>, S, E>>>::try_new_with_builder(
+            let filter = <VFilter<VFunc<usize, Box<[u8]>, S, E>>>::try_new_with_builder(
                 FromCloneableIntoIterator::from(0..n),
                 n,
                 VBuilder::default().log2_buckets(4).offline(false),

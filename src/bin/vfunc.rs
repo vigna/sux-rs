@@ -104,7 +104,8 @@ macro_rules! filename_save_sign(
         use sux::func::mix64;
         use sux::traits::bit_field_slice::BitFieldSliceMut;
         use sux::utils::ShardStore;
-        use value_traits::slices::SliceByValue;
+        use num_primitive::PrimitiveNumber;
+        use value_traits::slices::{SliceByValue, SliceByValueMut};
 
         let (func, mut store) = $builder.try_build_func_and_store(
             DekoBufLineLender::from_path($filename)?.take($n),
@@ -161,18 +162,18 @@ where
     SigVal<S, EmptyVal>: RadixKey,
     SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
-    VFunc<usize, usize, BitFieldVec<Box<[usize]>>, S, E>: Serialize,
-    VFunc<str, usize, BitFieldVec<Box<[usize]>>, S, E>: Serialize,
-    VFunc<usize, u8, Box<[u8]>, S, E>: Serialize,
-    VFunc<str, u8, Box<[u8]>, S, E>: Serialize,
-    SignedVFunc<VFunc<usize, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>: Serialize,
-    SignedVFunc<VFunc<usize, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>: Serialize,
-    SignedVFunc<VFunc<usize, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>: Serialize,
-    SignedVFunc<VFunc<usize, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>: Serialize,
-    SignedVFunc<VFunc<str, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>: Serialize,
-    SignedVFunc<VFunc<str, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>: Serialize,
-    SignedVFunc<VFunc<str, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>: Serialize,
-    SignedVFunc<VFunc<str, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>: Serialize,
+    VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>: Serialize,
+    VFunc<str, BitFieldVec<Box<[usize]>>, S, E>: Serialize,
+    VFunc<usize, Box<[u8]>, S, E>: Serialize,
+    VFunc<str, Box<[u8]>, S, E>: Serialize,
+    SignedVFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>: Serialize,
+    SignedVFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>: Serialize,
+    SignedVFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>: Serialize,
+    SignedVFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>: Serialize,
+    SignedVFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>: Serialize,
+    SignedVFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>: Serialize,
+    SignedVFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>: Serialize,
+    SignedVFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>: Serialize,
 {
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
@@ -183,7 +184,7 @@ where
         let n = args.n.unwrap_or(usize::MAX);
         let mut builder = args
             .builder
-            .configure(VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default());
+            .configure(VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default());
         if let Some(n_hint) = args.n {
             builder = builder.expected_num_keys(n_hint);
         }
@@ -217,10 +218,10 @@ where
         let n = args.n.unwrap();
         let builder = args
             .builder
-            .configure(VBuilder::<_, BitFieldVec<Box<[usize]>>, S, E>::default());
+            .configure(VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default());
         match args.hash_type {
             None => {
-                let func = VFunc::try_new_with_builder(
+                let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                     FromCloneableIntoIterator::from(0_usize..n),
                     FromCloneableIntoIterator::from(0_usize..),
                     n,
@@ -270,7 +271,7 @@ fn main_two_step(args: Args) -> Result<()> {
             pl.info(format_args!("Found {count} keys"));
             count
         };
-        let func: VFunc2<str> = VFunc2::try_new_with_builder(
+        let func: VFunc2<str, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
             DekoBufLineLender::from_path(filename)?.take(n),
             FromCloneableIntoIterator::from(0_usize..),
             n,
@@ -284,7 +285,7 @@ fn main_two_step(args: Args) -> Result<()> {
         let n = args.n.unwrap();
         let keys: Vec<usize> = (0..n).collect();
         let vals: Vec<usize> = (0..n).collect();
-        let func: VFunc2<usize> = VFunc2::try_new_with_builder(
+        let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
             FromSlice::new(&keys),
             FromSlice::new(&vals),
             n,
