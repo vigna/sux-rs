@@ -266,6 +266,27 @@ where
     /// as offline mode, thread count, or sharding overhead.
     ///
     /// The keys must be provided in strictly increasing order.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::LcpMmphfInt;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromSlice;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// let func: LcpMmphfInt<u64> =
+    ///     LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), i);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -285,6 +306,31 @@ where
     /// overhead (`eps`), and PRNG seed (`seed`).
     ///
     /// The keys must be provided in strictly increasing order.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{LcpMmphfInt, VBuilder};
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromSlice;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// let func: LcpMmphfInt<u64> = LcpMmphfInt::try_new_with_builder(
+    ///     FromSlice::new(&keys),
+    ///     keys.len(),
+    ///     VBuilder::default().offline(true),
+    ///     no_logging![],
+    /// )?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), i);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new_with_builder(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -770,6 +816,27 @@ where
     /// The lender may yield references to any type `B` that borrows
     /// as `K` (e.g., `&String` for `K = str`, `&Vec<u8>` for
     /// `K = [u8]`).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::LcpMmphfStr;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromSlice;
+    /// let keys = vec!["a", "b", "c", "d", "e"];
+    /// let func: LcpMmphfStr =
+    ///     LcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), i);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -790,6 +857,31 @@ where
     /// overhead (`eps`), and PRNG seed (`seed`).
     ///
     /// The keys must be in strictly increasing lexicographic order.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{LcpMmphfStr, VBuilder};
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromSlice;
+    /// let keys = vec!["a", "b", "c", "d", "e"];
+    /// let func: LcpMmphfStr = LcpMmphfStr::try_new_with_builder(
+    ///     FromSlice::new(&keys),
+    ///     keys.len(),
+    ///     VBuilder::default().offline(true),
+    ///     no_logging![],
+    /// )?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), i);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,

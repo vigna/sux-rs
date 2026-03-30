@@ -229,6 +229,27 @@ where
     /// The keys must be in strictly increasing order. The lender must be
     /// [`Clone`] so that an additional pass can compute verification
     /// hashes after building the inner MMPHF.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::SignedLcpMmphfInt;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromSlice;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// let func: SignedLcpMmphfInt<u64, Box<[u16]>> =
+    ///     SignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -321,6 +342,27 @@ where
     /// (byte-level comparison). The lender must be [`Clone`] so that an
     /// additional pass can compute verification hashes after building the
     /// inner MMPHF.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::SignedLcpMmphfStr;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromSlice;
+    /// let keys = vec!["a", "b", "c", "d", "e"];
+    /// let func: SignedLcpMmphfStr<Box<[u16]>> =
+    ///     SignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -461,6 +503,27 @@ where
     /// `hash_width` is the number of hash bits stored per key (must be
     /// in `1..=H::BITS`). False-positive probability is
     /// 2<sup>−`hash_width`</sup>.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::BitSignedLcpMmphfInt;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromSlice;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// let func: BitSignedLcpMmphfInt<u64> =
+    ///     BitSignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -561,6 +624,27 @@ where
     /// `hash_width` is the number of hash bits stored per key (must be
     /// in `1..=H::BITS`). False-positive probability is
     /// 2<sup>−`hash_width`</sup>.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::BitSignedLcpMmphfStr;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromSlice;
+    /// let keys = vec!["a", "b", "c", "d", "e"];
+    /// let func: BitSignedLcpMmphfStr =
+    ///     BitSignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -669,6 +753,28 @@ where
         std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<W>,
 {
+    /// Creates a new signed two-step LCP-based MMPHF for integers.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::SignedLcp2MmphfInt;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromSlice;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// let func: SignedLcp2MmphfInt<u64, Box<[u16]>> =
+    ///     SignedLcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -748,6 +854,28 @@ where
         std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<W>,
 {
+    /// Creates a new signed two-step LCP-based MMPHF for byte-sequence keys.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::SignedLcp2MmphfStr;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromSlice;
+    /// let keys = vec!["a", "b", "c", "d", "e"];
+    /// let func: SignedLcp2MmphfStr<Box<[u16]>> =
+    ///     SignedLcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,

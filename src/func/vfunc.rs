@@ -191,7 +191,7 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> From<VFunc<T, BitFieldVecU<
     for VFunc<T, BitFieldVec<Box<[W]>>, S, E>
 {
     /// Converts a [`VFunc`] with [`BitFieldVecU`] data back into
-    /// one with [`BitFieldVec`] data, removing the padding word.
+    /// one with [`BitFieldVec`] data.
     fn from(vf: VFunc<T, BitFieldVecU<Box<[W]>>, S, E>) -> Self {
         VFunc {
             shard_edge: vf.shard_edge,
@@ -226,6 +226,30 @@ where
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::VFunc;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromCloneableIntoIterator;
+    /// let func = <VFunc<usize, Box<[u8]>>>::try_new(
+    ///     FromCloneableIntoIterator::new(0..100),
+    ///     FromCloneableIntoIterator::new(0..100_u8),
+    ///     100,
+    ///     no_logging![],
+    /// )?;
+    ///
+    /// for i in 0..100_u8 {
+    ///     assert_eq!(i, func.get(&(i as usize)));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new<B: ?Sized + Borrow<T>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
@@ -256,6 +280,31 @@ where
     /// The builder controls construction parameters such as offline
     /// mode (`offline`), thread count (`max_num_threads`), sharding
     /// overhead (`eps`), and PRNG seed (`seed`).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{VBuilder, VFunc};
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromCloneableIntoIterator;
+    /// let func = <VFunc<usize, Box<[u8]>>>::try_new_with_builder(
+    ///     FromCloneableIntoIterator::new(0..100),
+    ///     FromCloneableIntoIterator::new(0..100_u8),
+    ///     100,
+    ///     VBuilder::default().offline(true),
+    ///     no_logging![],
+    /// )?;
+    ///
+    /// for i in 0..100_u8 {
+    ///     assert_eq!(i, func.get(&(i as usize)));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
@@ -308,6 +357,31 @@ where
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::VFunc;
+    /// # use sux::bits::BitFieldVec;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromCloneableIntoIterator;
+    /// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new(
+    ///     FromCloneableIntoIterator::new(0..100),
+    ///     FromCloneableIntoIterator::new(0..100),
+    ///     100,
+    ///     no_logging![],
+    /// )?;
+    ///
+    /// for i in 0..100 {
+    ///     assert_eq!(i, func.get(&i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new<B: ?Sized + Borrow<T>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
@@ -333,6 +407,32 @@ where
     /// The builder controls construction parameters such as offline
     /// mode (`offline`), thread count (`max_num_threads`), sharding
     /// overhead (`eps`), and PRNG seed (`seed`).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{VBuilder, VFunc};
+    /// # use sux::bits::BitFieldVec;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromCloneableIntoIterator;
+    /// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+    ///     FromCloneableIntoIterator::new(0..100),
+    ///     FromCloneableIntoIterator::new(0..100),
+    ///     100,
+    ///     VBuilder::default().offline(true),
+    ///     no_logging![],
+    /// )?;
+    ///
+    /// for i in 0..100 {
+    ///     assert_eq!(i, func.get(&i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
