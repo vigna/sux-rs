@@ -10,7 +10,7 @@
 use crate::bits::{BitFieldVec, BitFieldVecU};
 use crate::func::mix64;
 use crate::func::{VFunc, shard_edge::ShardEdge};
-use crate::traits::{Backend, Word, bit_field_slice::*};
+use crate::traits::{Backend, Word};
 use crate::utils::{BinSafe, Sig, ToSig};
 use mem_dbg::*;
 use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
@@ -259,7 +259,8 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
-        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut,
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
+            crate::traits::bit_field_slice::BitFieldSliceMut,
         for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
         for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
     {
@@ -313,7 +314,8 @@ where
         pl: &mut P,
     ) -> Result<Self>
     where
-        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut,
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
+            crate::traits::BitFieldSliceMut,
         for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
         for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
     {
