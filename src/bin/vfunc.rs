@@ -101,10 +101,38 @@ fn main() -> Result<()> {
 
 macro_rules! filename_save_sign(
     ($h: ty, $builder:expr, $filename: expr, $func: expr, $n: expr, $pl: expr) => {{
-        let func = $builder.try_build_sig_index::<_, _, $h>(
+        use sux::func::mix64;
+        use sux::traits::bit_field_slice::BitFieldSliceMut;
+        use sux::utils::ShardStore;
+        use value_traits::slices::SliceByValue;
+
+        let (func, mut store) = $builder.try_build_func_and_store(
             DekoBufLineLender::from_path($filename)?.take($n),
+            FromCloneableIntoIterator::from(0_usize..),
+            BitFieldVec::new_unaligned,
+            false,
             &mut $pl,
         )?;
+
+        let num_keys = func.len();
+        let mut hashes = vec![<$h>::MIN; num_keys].into_boxed_slice();
+
+        $pl.item_name("hash");
+        $pl.expected_updates(Some(num_keys));
+        $pl.start("Storing hashes...");
+
+        for shard in store.iter() {
+            for sig_val in shard.iter() {
+                let pos = sig_val.val;
+                let hash = <$h>::as_from(mix64(func.edge_hash_by_sig(sig_val.sig)));
+                hashes.set_value(pos, hash);
+                $pl.light_update();
+            }
+        }
+
+        $pl.done();
+
+        let func = SignedVFunc::from_parts(func, hashes);
         if let Some(filename) = $func {
             unsafe { func.store(filename) }?;
         }
@@ -161,9 +189,11 @@ where
         }
         match args.hash_type {
             None => {
-                let func = builder.try_build_func(
+                let (func, _) = builder.try_build_func_and_store(
                     DekoBufLineLender::from_path(filename)?.take(n),
                     FromCloneableIntoIterator::from(0_usize..),
+                    |bit_width, len| BitFieldVec::<Box<[usize]>>::new_unaligned(bit_width, len),
+                    true,
                     &mut pl,
                 )?;
                 if let Some(filename) = args.func {

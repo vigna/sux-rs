@@ -342,7 +342,7 @@ where
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
         + Clone,
         n: usize,
-        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         let keys_for_hashes = keys.clone();
