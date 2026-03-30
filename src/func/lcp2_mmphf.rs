@@ -29,7 +29,9 @@ use crate::bits::BitFieldVec;
 use crate::func::VFunc;
 use crate::func::lcp_mmphf::{BitPrefix, IntBitPrefix, bit_prefix_sig};
 use crate::func::shard_edge::{Fuse3NoShards, Fuse3Shards, FuseLge3Shards, ShardEdge};
-use crate::func::vfunc2::{HybridMap, VFunc2};
+use crate::func::vfunc2::VFunc2;
+#[cfg(feature = "rayon")]
+use crate::func::vfunc2::HybridMap;
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
@@ -54,9 +56,9 @@ use {
 /// which is on the hot path during peeling. `u32` on 64-bit
 /// platforms supports keys up to 512 MB; `u16` on 32-bit supports
 /// keys up to 8 KB.
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(feature = "rayon", target_pointer_width = "64"))]
 type LcpLen = u32;
-#[cfg(not(target_pointer_width = "64"))]
+#[cfg(all(feature = "rayon", not(target_pointer_width = "64")))]
 type LcpLen = u16;
 
 // ── Integer variant ─────────────────────────────────────────────────

@@ -8,6 +8,19 @@
 
 use std::borrow::Borrow;
 
+#[cfg(feature = "rayon")]
+use {
+    crate::func::VBuilder,
+    crate::utils::FallibleRewindableLender,
+    anyhow::Result,
+    core::error::Error,
+    dsi_progress_logger::ProgressLog,
+    lender::*,
+    num_primitive::PrimitiveNumberAs,
+    rdst::RadixKey,
+    std::ops::{BitXor, BitXorAssign},
+};
+
 use crate::bits::{BitFieldVec, BitFieldVecU};
 use crate::func::VFunc;
 use crate::func::shard_edge::ShardEdge;
@@ -176,6 +189,146 @@ impl<
     /// Returns whether the function has no keys.
     pub const fn is_empty(&self) -> bool {
         self.func.num_keys == 0
+    }
+}
+
+// ── Convenience constructors ───────────────────────────────────────
+
+#[cfg(feature = "rayon")]
+impl<T, S, E, H> SignedVFunc<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>
+where
+    T: ?Sized + ToSig<S> + std::fmt::Debug,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    H: crate::traits::Word,
+    SigVal<S, usize>: RadixKey,
+    SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
+{
+    /// Builds a [`SignedVFunc`] from keys using default [`VBuilder`]
+    /// settings.
+    ///
+    /// The function maps each key to its index in the input sequence
+    /// and stores `H::BITS`-bit hashes for verification, giving a
+    /// false-positive rate of 2<sup>−`H::BITS`</sup>.
+    ///
+    /// * `keys` must be rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys; a significantly wrong
+    ///   value may degrade performance or cause extra retries.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_new_with_builder`](Self::try_new_with_builder) with
+    /// `VBuilder::default()`.
+    pub fn try_new<B: ?Sized + Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        n: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
+    }
+
+    /// Builds a [`SignedVFunc`] from keys using the given [`VBuilder`]
+    /// configuration.
+    ///
+    /// The function maps each key to its index in the input sequence
+    /// and stores `H::BITS`-bit hashes for verification, giving a
+    /// false-positive rate of 2<sup>−`H::BITS`</sup>.
+    ///
+    /// * `keys` must be rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys.
+    ///
+    /// The builder controls construction parameters such as offline
+    /// mode (`offline`), thread count (`max_num_threads`), sharding
+    /// overhead (`eps`), and PRNG seed (`seed`).
+    pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        n: usize,
+        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        builder
+            .expected_num_keys(n)
+            .try_build_sig_index(keys, pl)
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<T, S, E, H> BitSignedVFunc<VFunc<T, usize, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
+where
+    T: ?Sized + ToSig<S> + std::fmt::Debug,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    H: crate::traits::Word,
+    SigVal<S, usize>: RadixKey,
+    SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
+{
+    /// Builds a [`BitSignedVFunc`] from keys using default [`VBuilder`]
+    /// settings.
+    ///
+    /// The function maps each key to its index in the input sequence
+    /// and stores `hash_width`-bit hashes for verification, giving a
+    /// false-positive rate of 2<sup>−`hash_width`</sup>.
+    ///
+    /// * `keys` must be rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys; a significantly wrong
+    ///   value may degrade performance or cause extra retries.
+    /// * `hash_width` is the number of hash bits per key (at most
+    ///   `H::BITS`).
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_new_with_builder`](Self::try_new_with_builder) with
+    /// `VBuilder::default()`.
+    pub fn try_new<B: ?Sized + Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        n: usize,
+        hash_width: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        u64: PrimitiveNumberAs<H>,
+    {
+        Self::try_new_with_builder(keys, n, hash_width, VBuilder::default(), pl)
+    }
+
+    /// Builds a [`BitSignedVFunc`] from keys using the given
+    /// [`VBuilder`] configuration.
+    ///
+    /// The function maps each key to its index in the input sequence
+    /// and stores `hash_width`-bit hashes for verification, giving a
+    /// false-positive rate of 2<sup>−`hash_width`</sup>.
+    ///
+    /// * `keys` must be rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys.
+    /// * `hash_width` is the number of hash bits per key (at most
+    ///   `H::BITS`).
+    ///
+    /// The builder controls construction parameters such as offline
+    /// mode (`offline`), thread count (`max_num_threads`), sharding
+    /// overhead (`eps`), and PRNG seed (`seed`).
+    pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        n: usize,
+        hash_width: usize,
+        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        u64: PrimitiveNumberAs<H>,
+    {
+        builder
+            .expected_num_keys(n)
+            .try_build_bit_sig_index(keys, hash_width, pl)
     }
 }
 

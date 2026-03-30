@@ -96,50 +96,18 @@ const LOG2_MAX_SHARDS: u32 = 16;
 ///
 /// # Examples
 ///
-/// In this example, we build a function that maps each key to itself using a
-/// boxed slice of `usize` as a backend (note that this is really wasteful). The
-/// setter for the expected number of keys is used to optimize the construction.
-/// We use the [`FromCloneableIntoIterator`] adapter to turn a clonable [`IntoIterator`]
-/// into a [`FallibleRewindableLender`]. Note that you need the
-/// [`dsi-progress-logger`](https://crates.io/crates/dsi-progress-logger) crate.
-///
-/// Type inference derives the input type (`usize`) from the type of the items
-/// returned by the first [`FallibleRewindableLender`], and the output type (again,
-/// `usize`, the first type parameter), from the backend type (`Box<[usize]>`,
-/// the second type parameter):
+/// Build a function using [`VFunc::try_new`]:
 ///
 /// ```rust
-/// # use sux::func::VBuilder;
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromCloneableIntoIterator;
-/// let builder = VBuilder::<_, Box<[usize]>>::default()
-///     .expected_num_keys(100);
-/// let func = builder.try_build_func(
-///    FromCloneableIntoIterator::new(0..100),
-///    FromCloneableIntoIterator::new(0..100),
-///    no_logging![]
-/// )?;
-///
-/// for i in 0..100 {
-///    assert_eq!(i, func.get(&i));
-/// }
-/// # Ok::<(), Box<dyn core::error::Error>>(())
-/// ```
-///
-/// Alternatively we can use the bit-field vector backend, that will use
-/// ⌈log₂(99)⌉ bits per backend element:
-///
-/// ```rust
-/// # use sux::func::VBuilder;
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromCloneableIntoIterator;
+/// # use sux::func::VFunc;
 /// # use sux::bits::BitFieldVec;
-/// let builder = VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
-///     .expected_num_keys(100);
-/// let func = builder.try_build_func(
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::utils::FromCloneableIntoIterator;
+/// let func = <VFunc<usize, usize, BitFieldVec<Box<[usize]>>>>::try_new(
 ///    FromCloneableIntoIterator::new(0..100),
 ///    FromCloneableIntoIterator::new(0..100),
-///    no_logging![]
+///    100,
+///    no_logging![],
 /// )?;
 ///
 /// for i in 0..100 {
@@ -148,69 +116,43 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
 ///
-/// Since the numbers are small, we can also try to use a fixed-size output:
-/// type inference takes care of making the second range `0..100` a range of
-/// `u8`. Note that the type of keys is always `usize`, as it is still inferred
-/// from the type of the items returned by the first [`FallibleRewindableLender`]:
+/// Build a filter using [`VFilter::try_new`]:
 ///
 /// ```rust
-/// # use sux::func::VBuilder;
+/// # use sux::dict::VFilter;
+/// # use sux::func::VFunc;
 /// # use dsi_progress_logger::no_logging;
 /// # use sux::utils::FromCloneableIntoIterator;
+/// let filter = <VFilter<u8, VFunc<usize, u8, Box<[u8]>>>>::try_new(
+///    FromCloneableIntoIterator::new(0..100),
+///    100,
+///    no_logging![],
+/// )?;
+///
+/// for i in 0..100 {
+///    assert!(filter[i]);
+/// }
+/// # Ok::<(), Box<dyn core::error::Error>>(())
+/// ```
+///
+/// Use a pre-configured builder for custom settings:
+///
+/// ```rust
+/// # use sux::func::{VBuilder, VFunc};
 /// # use sux::bits::BitFieldVec;
-/// let builder = VBuilder::<_, Box<[u8]>>::default()
-///     .expected_num_keys(100);
-/// let func = builder.try_build_func(
-///    FromCloneableIntoIterator::new(0..100),
-///    FromCloneableIntoIterator::new(0..100),
-///    no_logging![]
-/// )?;
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::utils::FromCloneableIntoIterator;
+/// let func =
+///     <VFunc<usize, usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+///         FromCloneableIntoIterator::new(0..100),
+///         FromCloneableIntoIterator::new(0..100),
+///         100,
+///         VBuilder::default().offline(true),
+///         no_logging![],
+///     )?;
 ///
 /// for i in 0..100 {
 ///    assert_eq!(i, func.get(&i));
-/// }
-/// # Ok::<(), Box<dyn core::error::Error>>(())
-/// ```
-///
-///
-/// We now try to build a fast 8-bit filter for the same key set, using a boxed
-/// slice of `u8` as a backend (this is not wasteful, as the filter uses 8-bit
-/// hashes):
-///
-/// ```rust
-/// # use sux::func::VBuilder;
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromCloneableIntoIterator;
-/// let builder = VBuilder::<_, Box<[u8]>>::default()
-///     .expected_num_keys(100);
-/// let func = builder.try_build_filter(
-///    FromCloneableIntoIterator::new(0..100),
-///    no_logging![]
-/// )?;
-///
-/// for i in 0..100 {
-///    assert!(func[i]);
-/// }
-/// # Ok::<(), Box<dyn core::error::Error>>(())
-/// ```
-///
-/// Since the keys are very few, we can switch to 64-bit signatures, and no
-/// shards, which will yield faster queries:
-///
-/// ```rust
-/// # use sux::func::VBuilder;
-/// # use sux::func::shard_edge::FuseLge3NoShards;
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromCloneableIntoIterator;
-/// let builder = VBuilder::<_, Box<[u8]>, [u64; 1], FuseLge3NoShards>::default()
-///     .expected_num_keys(100);
-/// let func = builder.try_build_filter(
-///    FromCloneableIntoIterator::new(0..100),
-///    no_logging![]
-/// )?;
-///
-/// for i in 0..100 {
-///    assert!(func[i]);
 /// }
 /// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
@@ -574,7 +516,7 @@ where
     /// Since values are stored in a boxed slice access is particularly fast, but
     /// the bit width of the output of the function will be exactly the bit width of
     /// the unsigned type `W`.
-    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
+    pub(crate) fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         self,
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
@@ -615,7 +557,7 @@ where
     /// Since values are stored in a boxed slice access is particularly fast, but
     /// the number of bits of the hashes will be exactly the bit width of the
     /// unsigned type `W`.
-    pub fn try_build_filter<
+    pub(crate) fn try_build_filter<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
         P: ProgressLog + Clone + Send + Sync,
@@ -779,7 +721,7 @@ where
     /// Typically `W` will be `usize` or `u64`. Consider calling
     /// [`try_into_unaligned`](crate::traits::TryIntoUnaligned::try_into_unaligned)
     /// on the resulting function to get faster access.
-    pub fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
+    pub(crate) fn try_build_func<T: ?Sized + ToSig<S> + std::fmt::Debug, B: ?Sized + Borrow<T>>(
         self,
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
@@ -822,7 +764,7 @@ where
     ///  Consider calling
     /// [`try_into_unaligned`](crate::traits::TryIntoUnaligned::try_into_unaligned)
     /// on the resulting function to get faster access.
-    pub fn try_build_bit_sig_index<
+    pub(crate) fn try_build_bit_sig_index<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
         H: Word,
@@ -897,7 +839,7 @@ where
     ///
     /// This type of signed function offers more speed than [`BitSignedVFunc`],
     /// but you have less resolution in the choice of the hash size.
-    pub fn try_build_sig_index<
+    pub(crate) fn try_build_sig_index<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
         H: Word,
@@ -962,7 +904,7 @@ where
     /// Typically `W` will be `usize` or `u64`. Consider calling
     /// [`try_into_unaligned`](crate::traits::TryIntoUnaligned::try_into_unaligned)
     /// on the resulting filter to get faster access.
-    pub fn try_build_filter<
+    pub(crate) fn try_build_filter<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
         P: ProgressLog + Clone + Send + Sync,

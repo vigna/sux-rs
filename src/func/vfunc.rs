@@ -6,6 +6,20 @@
 
 use std::borrow::Borrow;
 
+#[cfg(feature = "rayon")]
+use {
+    crate::func::VBuilder,
+    crate::traits::bit_field_slice::BitFieldSliceMut,
+    crate::utils::AsU128,
+    anyhow::Result,
+    core::error::Error,
+    dsi_progress_logger::ProgressLog,
+    lender::*,
+    rdst::RadixKey,
+    std::ops::{BitXor, BitXorAssign},
+    value_traits::slices::SliceByValueMut,
+};
+
 use super::shard_edge::FuseLge3Shards;
 use crate::bits::BitFieldVec;
 use crate::func::shard_edge::ShardEdge;
@@ -176,5 +190,143 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> From<VFunc<T, W, BitFieldVe
             data: BitFieldVec::from(vf.data),
             _marker: std::marker::PhantomData,
         }
+    }
+}
+
+// ── Convenience constructors ───────────────────────────────────────
+
+#[cfg(feature = "rayon")]
+impl<T, W, S, E> VFunc<T, W, Box<[W]>, S, E>
+where
+    T: ?Sized + ToSig<S> + std::fmt::Debug,
+    W: Word + BinSafe + AsU128,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    SigVal<S, W>: RadixKey,
+    SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
+{
+    /// Builds a [`VFunc`] with a `Box<[W]>` backend from keys and values
+    /// using default [`VBuilder`] settings.
+    ///
+    /// * `keys` and `values` must be aligned (one value per key, same
+    ///   order) and rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys; a significantly wrong
+    ///   value may degrade performance or cause extra retries.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_new_with_builder`](Self::try_new_with_builder) with
+    /// `VBuilder::default()`.
+    pub fn try_new<B: ?Sized + Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
+        n: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut,
+        for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
+    {
+        Self::try_new_with_builder(keys, values, n, VBuilder::default(), pl)
+    }
+
+    /// Builds a [`VFunc`] with a `Box<[W]>` backend from keys and values
+    /// using the given [`VBuilder`] configuration.
+    ///
+    /// * `keys` and `values` must be aligned (one value per key, same
+    ///   order) and rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys.
+    ///
+    /// The builder controls construction parameters such as offline
+    /// mode (`offline`), thread count (`max_num_threads`), sharding
+    /// overhead (`eps`), and PRNG seed (`seed`).
+    pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
+        n: usize,
+        builder: VBuilder<W, Box<[W]>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut,
+        for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
+        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
+    {
+        builder.expected_num_keys(n).try_build_func(keys, values, pl)
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<T, W, S, E> VFunc<T, W, BitFieldVec<Box<[W]>>, S, E>
+where
+    T: ?Sized + ToSig<S> + std::fmt::Debug,
+    W: Word + BinSafe + AsU128,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    SigVal<S, W>: RadixKey,
+    SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
+{
+    /// Builds a [`VFunc`] with a [`BitFieldVec`] backend from keys and
+    /// values using default [`VBuilder`] settings.
+    ///
+    /// * `keys` and `values` must be aligned (one value per key, same
+    ///   order) and rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys; a significantly wrong
+    ///   value may degrade performance or cause extra retries.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_new_with_builder`](Self::try_new_with_builder) with
+    /// `VBuilder::default()`.
+    pub fn try_new<B: ?Sized + Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
+        n: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        Self::try_new_with_builder(keys, values, n, VBuilder::default(), pl)
+    }
+
+    /// Builds a [`VFunc`] with a [`BitFieldVec`] backend from keys and
+    /// values using the given [`VBuilder`] configuration.
+    ///
+    /// * `keys` and `values` must be aligned (one value per key, same
+    ///   order) and rewindable (they may be rewound on retry).
+    /// * `n` is the expected number of keys.
+    ///
+    /// The builder controls construction parameters such as offline
+    /// mode (`offline`), thread count (`max_num_threads`), sharding
+    /// overhead (`eps`), and PRNG seed (`seed`).
+    pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
+        n: usize,
+        builder: VBuilder<W, BitFieldVec<Box<[W]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        builder.expected_num_keys(n).try_build_func(keys, values, pl)
     }
 }
