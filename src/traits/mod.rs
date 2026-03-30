@@ -212,3 +212,15 @@ pub trait Backend {
     /// The word type used by this backend.
     type Word;
 }
+
+impl<W> Backend for [W] {
+    type Word = W;
+}
+
+impl<W> Backend for Vec<W> {
+    type Word = W;
+}
+
+impl<W, const N: usize> Backend for [W; N] {
+    type Word = W;
+}

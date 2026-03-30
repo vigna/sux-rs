@@ -198,7 +198,7 @@ macro_rules! bit_field_vec {
 /// etc.).
 ///
 /// See the [module documentation](crate::bits) for more details.
-#[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
+#[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, Delegate, value_traits::Subslices)]
 #[value_traits_subslices(bound = "B: AsRef<[B::Word]>")]
 #[value_traits_subslices(bound = "B::Word: Word")]
 #[derive(value_traits::SubslicesMut)]
@@ -212,6 +212,7 @@ macro_rules! bit_field_vec {
     ))
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[delegate(crate::traits::Backend, target = "bits")]
 pub struct BitFieldVec<B: Backend = Vec<usize>> {
     /// The underlying storage.
     bits: B,
@@ -1854,6 +1855,10 @@ impl<B: Backend<Word: Word>> BitFieldVecU<B> {
     pub fn into_inner(self) -> BitFieldVec<B> {
         self.0
     }
+}
+
+impl<B: Backend<Word: Word>> Backend for BitFieldVecU<B> {
+    type Word = B::Word;
 }
 
 impl<B: Backend<Word: Word>> BitWidth for BitFieldVecU<B> {

@@ -29,13 +29,12 @@ use crate::bits::BitFieldVec;
 use crate::func::VFunc;
 use crate::func::lcp_mmphf::{BitPrefix, IntBitPrefix, bit_prefix_sig};
 use crate::func::shard_edge::{Fuse3NoShards, Fuse3Shards, FuseLge3Shards, ShardEdge};
-use crate::func::vfunc2::VFunc2;
 #[cfg(feature = "rayon")]
 use crate::func::vfunc2::HybridMap;
+use crate::func::vfunc2::VFunc2;
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
-use value_traits::slices::SliceByValue;
 use xxhash_rust::xxh3;
 
 #[cfg(feature = "rayon")]
@@ -92,12 +91,19 @@ type LcpLen = u16;
 /// # #[cfg(not(feature = "rayon"))]
 /// # fn main() {}
 /// ```
-#[derive(Debug, MemDbg, MemSize)]
+#[derive(MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(bound(
+        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E: serde::Serialize",
+        deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E: serde::Deserialize<'de>"
+    ))
+)]
 pub struct Lcp2MmphfInt<
     T: PrimitiveInteger,
-    D = BitFieldVec<Box<[usize]>>,
+    D: BitFieldSlice = BitFieldVec<Box<[usize]>>,
     S = [u64; 2],
     E = FuseLge3Shards,
 > {
@@ -106,14 +112,31 @@ pub struct Lcp2MmphfInt<
     /// The base-2 logarithm of the bucket size.
     pub(crate) log2_bucket_size: usize,
     /// Maps each key to its offset within the bucket.
-    pub(crate) offsets: VFunc<T, usize, D, S, E>,
+    pub(crate) offsets: VFunc<T, D, S, E>,
     /// Two-step retrieval of LCP lengths.
-    pub(crate) lcp_lengths: VFunc2<T, usize, D, S, E, Fuse3Shards>,
+    pub(crate) lcp_lengths: VFunc2<T, D, S, E, Fuse3Shards>,
     /// Maps each LCP bit-prefix to its bucket index.
-    pub(crate) lcp2bucket: VFunc<IntBitPrefix<T>, usize, D, [u64; 1], Fuse3NoShards>,
+    pub(crate) lcp2bucket: VFunc<IntBitPrefix<T>, D, [u64; 1], Fuse3NoShards>,
 }
 
-impl<T: PrimitiveInteger + ToSig<S>, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
+impl<T: PrimitiveInteger, D: BitFieldSlice, S, E> std::fmt::Debug for Lcp2MmphfInt<T, D, S, E>
+where
+    VFunc<T, D, S, E>: std::fmt::Debug,
+    VFunc2<T, D, S, E, Fuse3Shards>: std::fmt::Debug,
+    VFunc<IntBitPrefix<T>, D, [u64; 1], Fuse3NoShards>: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Lcp2MmphfInt")
+            .field("n", &self.n)
+            .field("log2_bucket_size", &self.log2_bucket_size)
+            .field("offsets", &self.offsets)
+            .field("lcp_lengths", &self.lcp_lengths)
+            .field("lcp2bucket", &self.lcp2bucket)
+            .finish()
+    }
+}
+
+impl<T: PrimitiveInteger + ToSig<S>, D: BitFieldSlice<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
     Lcp2MmphfInt<T, D, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
@@ -137,7 +160,7 @@ where
     }
 }
 
-impl<T: PrimitiveInteger, D, S: Sig, E: ShardEdge<S, 3>> Lcp2MmphfInt<T, D, S, E>
+impl<T: PrimitiveInteger, D: BitFieldSlice, S: Sig, E: ShardEdge<S, 3>> Lcp2MmphfInt<T, D, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
@@ -201,7 +224,7 @@ where
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
-        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut P,
     ) -> Result<Self> {
         if n == 0 {
@@ -354,7 +377,7 @@ where
                         pl.info(format_args!(
                             "Building key → offset map ({log2_bs} bits)..."
                         ));
-                        let offsets = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
+                        let offsets = VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default()
                             .try_build_func_with_store::<T, u64>(
                                 seed,
                                 shard_edge,
@@ -384,7 +407,6 @@ where
                         ));
                         let lcp2bucket = <VFunc<
                             IntBitPrefix<T>,
-                            usize,
                             BitFieldVec<Box<[usize]>>,
                             [u64; 1],
                             Fuse3NoShards,
@@ -464,20 +486,45 @@ where
 /// converted into (usually faster) structures using unaligned access.
 ///
 /// See [`Lcp2MmphfStr`] and [`Lcp2MmphfSliceU8`] for common instantiations.
-#[derive(Debug, MemDbg, MemSize)]
+#[derive(MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(bound(
+        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E: serde::Serialize",
+        deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E: serde::Deserialize<'de>"
+    ))
+)]
 pub struct Lcp2Mmphf<
     K: ?Sized,
-    D = BitFieldVec<Box<[usize]>>,
+    D: BitFieldSlice = BitFieldVec<Box<[usize]>>,
     S: Sig = [u64; 2],
     E: ShardEdge<S, 3> = FuseLge3Shards,
 > {
     pub(crate) n: usize,
     pub(crate) log2_bucket_size: usize,
-    pub(crate) offsets: VFunc<K, usize, D, S, E>,
-    pub(crate) lcp_lengths: VFunc2<K, usize, D, S, E, Fuse3Shards>,
-    pub(crate) lcp2bucket: VFunc<BitPrefix, usize, D, [u64; 1], Fuse3NoShards>,
+    pub(crate) offsets: VFunc<K, D, S, E>,
+    pub(crate) lcp_lengths: VFunc2<K, D, S, E, Fuse3Shards>,
+    pub(crate) lcp2bucket: VFunc<BitPrefix, D, [u64; 1], Fuse3NoShards>,
+}
+
+impl<K: ?Sized, D: BitFieldSlice, S: Sig, E: ShardEdge<S, 3>> std::fmt::Debug
+    for Lcp2Mmphf<K, D, S, E>
+where
+    VFunc<K, D, S, E>: std::fmt::Debug,
+    VFunc2<K, D, S, E, Fuse3Shards>: std::fmt::Debug,
+    VFunc<BitPrefix, D, [u64; 1], Fuse3NoShards>: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Lcp2Mmphf")
+            .field("n", &self.n)
+            .field("log2_bucket_size", &self.log2_bucket_size)
+            .field("offsets", &self.offsets)
+            .field("lcp_lengths", &self.lcp_lengths)
+            .field("lcp2bucket", &self.lcp2bucket)
+            .finish()
+    }
 }
 
 /// A [`Lcp2Mmphf`] for `str` keys.
@@ -487,7 +534,7 @@ pub type Lcp2MmphfStr<D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3S
 pub type Lcp2MmphfSliceU8<D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
     Lcp2Mmphf<[u8], D, S, E>;
 
-impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
+impl<K: ?Sized + AsRef<[u8]> + ToSig<S>, D: BitFieldSlice<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
     Lcp2Mmphf<K, D, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
@@ -520,7 +567,7 @@ where
     }
 }
 
-impl<K: ?Sized, D, S: Sig, E: ShardEdge<S, 3>> Lcp2Mmphf<K, D, S, E>
+impl<K: ?Sized, D: BitFieldSlice, S: Sig, E: ShardEdge<S, 3>> Lcp2Mmphf<K, D, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
@@ -590,7 +637,7 @@ where
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
-        builder: VBuilder<usize, BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut P,
     ) -> Result<Self> {
         if n == 0 {
@@ -742,7 +789,7 @@ where
                         pl.info(format_args!(
                             "Building key → offset map ({log2_bs} bits)..."
                         ));
-                        let offsets = VBuilder::<usize, BitFieldVec<Box<[usize]>>, S, E>::default()
+                        let offsets = VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default()
                             .try_build_func_with_store::<K, u64>(
                                 seed,
                                 shard_edge,
@@ -783,7 +830,6 @@ where
 
                         let lcp2bucket = <VFunc<
                             BitPrefix,
-                            usize,
                             BitFieldVec<Box<[usize]>>,
                             [u64; 1],
                             Fuse3NoShards,
@@ -857,7 +903,7 @@ where
 // ── Aligned ↔ Unaligned conversions ──────────────────────────────────
 
 use crate::bits::BitFieldVecU;
-use crate::traits::TryIntoUnaligned;
+use crate::traits::{BitFieldSlice, TryIntoUnaligned};
 type Ubfv = BitFieldVecU<Box<[usize]>>;
 
 // -- Lcp2MmphfInt --

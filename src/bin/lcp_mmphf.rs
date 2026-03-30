@@ -72,7 +72,7 @@ fn main() -> Result<()> {
 fn build_single(
     args: &Args,
     n: usize,
-    builder: sux::func::VBuilder<usize, sux::bits::BitFieldVec<Box<[usize]>>>,
+    builder: sux::func::VBuilder<sux::bits::BitFieldVec<Box<[usize]>>>,
     pl: &mut (impl ProgressLog + Clone + Send + Sync),
 ) -> Result<()> {
     match args.hash_type {
@@ -114,7 +114,7 @@ fn build_single(
 fn build_two_step(
     args: &Args,
     n: usize,
-    builder: sux::func::VBuilder<usize, sux::bits::BitFieldVec<Box<[usize]>>>,
+    builder: sux::func::VBuilder<sux::bits::BitFieldVec<Box<[usize]>>>,
     pl: &mut (impl ProgressLog + Clone + Send + Sync),
 ) -> Result<()> {
     match args.hash_type {

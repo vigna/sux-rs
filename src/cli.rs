@@ -62,15 +62,10 @@ pub struct BuilderArgs {
 
 impl BuilderArgs {
     /// Applies these options to a [`VBuilder`].
-    pub fn configure<
-        W: Word + BinSafe,
-        D: BitFieldSlice<Value = W> + Send + Sync,
-        S,
-        E: ShardEdge<S, 3>,
-    >(
+    pub fn configure<D: BitFieldSlice + Send + Sync, S, E: ShardEdge<S, 3>>(
         &self,
-        builder: VBuilder<W, D, S, E>,
-    ) -> VBuilder<W, D, S, E> {
+        builder: VBuilder<D, S, E>,
+    ) -> VBuilder<D, S, E> {
         let mut builder = builder
             .offline(self.offline)
             .check_dups(self.check_dups)
@@ -92,7 +87,7 @@ impl BuilderArgs {
 
     /// Creates and configures a default [`VBuilder`] with [`BitFieldVec`]
     /// storage.
-    pub fn to_builder(&self) -> VBuilder<usize, BitFieldVec<Box<[usize]>>> {
+    pub fn to_builder(&self) -> VBuilder<BitFieldVec<Box<[usize]>>> {
         self.configure(VBuilder::default())
     }
 }

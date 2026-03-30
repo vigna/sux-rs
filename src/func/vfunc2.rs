@@ -13,11 +13,10 @@ use std::borrow::Borrow;
 use super::shard_edge::FuseLge3Shards;
 use crate::func::VFunc;
 use crate::func::shard_edge::ShardEdge;
-use crate::traits::Word;
+use crate::traits::{BitFieldSlice, Word};
 use crate::utils::*;
-use crate::{bits::BitFieldVec, traits::Backend};
+use crate::bits::BitFieldVec;
 use mem_dbg::*;
-use value_traits::slices::SliceByValue;
 
 /// A two-step static function that stores frequent values in a narrow first
 /// function and infrequent values in a wider second function, with
@@ -60,7 +59,7 @@ use value_traits::slices::SliceByValue;
 /// and practice of monotone minimal perfect
 /// hashing](https://doi.org/10.1145/1963190.2025378). *ACM Journal of
 /// Experimental Algorithmics*, 16(3):3.2:1−3.2:26, 2011.
-#[derive(Debug, MemDbg, MemSize)]
+#[derive(MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(
     feature = "epserde",
@@ -69,9 +68,16 @@ use value_traits::slices::SliceByValue;
     ))
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(bound(
+        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E0: serde::Serialize, E1: serde::Serialize",
+        deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E0: serde::Deserialize<'de>, E1: serde::Deserialize<'de>"
+    ))
+)]
 pub struct VFunc2<
     T: ?Sized,
-    D: SliceByValue = BitFieldVec,
+    D: BitFieldSlice,
     S = [u64; 2],
     E0 = FuseLge3Shards,
     E1 = E0,
@@ -88,6 +94,22 @@ pub struct VFunc2<
     /// The escape value (2*ʳ* − 1). When *r* = 0, `escape` = 0 and the
     /// short function always returns the escape.
     pub(crate) escape: D::Value,
+}
+
+impl<T: ?Sized, D: BitFieldSlice, S, E0, E1> std::fmt::Debug for VFunc2<T, D, S, E0, E1>
+where
+    D::Value: std::fmt::Debug,
+    VFunc<T, D, S, E0>: std::fmt::Debug,
+    VFunc<T, D, S, E1>: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VFunc2")
+            .field("short", &self.short)
+            .field("long", &self.long)
+            .field("remap", &self.remap)
+            .field("escape", &self.escape)
+            .finish()
+    }
 }
 
 impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
@@ -110,7 +132,7 @@ impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
 
 impl<
     T: ?Sized + ToSig<S>,
-    D: Backend<Word: Word + BinSafe> + SliceByValue<Value = D::Word>,
+    D: BitFieldSlice<Value: Word + BinSafe>,
     S: Sig,
     E0: ShardEdge<S, 3>,
     E1: ShardEdge<S, 3>,
@@ -125,7 +147,7 @@ impl<
     /// This method is mainly useful in the construction of compound
     /// functions.
     #[inline]
-    pub fn get_by_sig(&self, sig: S) -> D::Word {
+    pub fn get_by_sig(&self, sig: S) -> D::Value {
         let idx = self.short.get_by_sig(sig);
         if idx != self.escape {
             self.remap[idx.as_u128() as usize]
@@ -137,7 +159,7 @@ impl<
     /// Retrieves the value associated with the given key, or an arbitrary
     /// value if the key was not in the original set.
     #[inline(always)]
-    pub fn get(&self, key: impl Borrow<T>) -> D::Word {
+    pub fn get(&self, key: impl Borrow<T>) -> D::Value {
         self.get_by_sig(T::to_sig(key.borrow(), self.short.seed))
     }
 }

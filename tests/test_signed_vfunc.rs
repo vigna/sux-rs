@@ -27,7 +27,7 @@ fn test_signed_vfunc() -> Result<()> {
     let mut pl = ProgressLogger::default();
     let n = 1000;
     let func: SignedVFunc<
-        VFunc<usize, usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>,
+        VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>,
         Box<[usize]>,
     > = SignedVFunc::try_new(FromCloneableIntoIterator::from(0..n), n, &mut pl)?;
     let func = func.try_into_unaligned()?;
@@ -51,7 +51,7 @@ fn test_bit_signed_vfunc() -> Result<()> {
     let mut pl = ProgressLogger::default();
     let n = 1000;
     let func: BitSignedVFunc<
-        VFunc<usize, usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>,
+        VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>,
         BitFieldVec<Box<[usize]>>,
     > = BitSignedVFunc::try_new(FromCloneableIntoIterator::from(0..n), n, 31, &mut pl)?;
     let func = func.try_into_unaligned()?;

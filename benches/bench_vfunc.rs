@@ -46,19 +46,19 @@ fn gen_query_indices(n: usize) -> Vec<usize> {
 
 // ── Build helpers ───────────────────────────────────────────────────
 
-fn build_vfunc(n: usize, values: &[usize]) -> VFunc<usize, usize, BitFieldVec<Box<[usize]>>> {
+fn build_vfunc(n: usize, values: &[usize]) -> VFunc<usize, BitFieldVec<Box<[usize]>>> {
     let keys: Vec<usize> = (0..n).collect();
-    VBuilder::<_, BitFieldVec<Box<[usize]>>>::default()
-        .expected_num_keys(n)
-        .try_build_func::<usize, usize>(
-            FromSlice::new(&keys),
-            FromSlice::new(values),
-            no_logging![],
-        )
-        .unwrap()
+    <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+        FromSlice::new(&keys),
+        FromSlice::new(values),
+        n,
+        VBuilder::default().expected_num_keys(n),
+        no_logging![],
+    )
+    .unwrap()
 }
 
-fn build_vfunc2(n: usize, values: &[usize]) -> VFunc2<usize> {
+fn build_vfunc2(n: usize, values: &[usize]) -> VFunc2<usize, BitFieldVec<Box<[usize]>>> {
     let keys: Vec<usize> = (0..n).collect();
     VFunc2::try_new(
         FromSlice::new(&keys),

@@ -136,15 +136,10 @@ fn main() -> Result<()> {
     }
 }
 
-fn set_builder<
-    W: Word + BinSafe,
-    D: BitFieldSlice<Value = W> + Send + Sync,
-    S,
-    E: ShardEdge<S, 3>,
->(
-    builder: VBuilder<W, D, S, E>,
+fn set_builder<D: BitFieldSlice + Send + Sync, S, E: ShardEdge<S, 3>>(
+    builder: VBuilder<D, S, E>,
     args: &Args,
-) -> VBuilder<W, D, S, E> {
+) -> VBuilder<D, S, E> {
     let mut builder = builder
         .offline(args.offline)
         .check_dups(args.check_dups)
@@ -182,12 +177,12 @@ where
     for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
     for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
         Send + BitFieldSliceMut<Value = W>,
-    VFunc<usize, usize, BitFieldVec, S, E>: Serialize,
-    VFunc<str, usize, BitFieldVec, S, E>: Serialize,
-    VFunc<usize, W, Box<[W]>, S, E>: Serialize,
-    VFunc<str, W, Box<[W]>, S, E>: Serialize,
-    VFilter<W, VFunc<usize, W, Box<[W]>, S, E>>: Serialize,
-    VFilter<W, VFunc<str, W, Box<[W]>, S, E>>: Serialize,
+    VFunc<usize, BitFieldVec, S, E>: Serialize,
+    VFunc<str, BitFieldVec, S, E>: Serialize,
+    VFunc<usize, Box<[W]>, S, E>: Serialize,
+    VFunc<str, Box<[W]>, S, E>: Serialize,
+    VFilter<VFunc<usize, Box<[W]>, S, E>>: Serialize,
+    VFilter<VFunc<str, Box<[W]>, S, E>>: Serialize,
 {
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
@@ -196,8 +191,8 @@ where
 
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
-        let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
-        let filter = VFilter::try_new_with_builder(
+        let builder = set_builder(VBuilder::<Box<[W]>, S, E>::default(), &args);
+        let filter = <VFilter<VFunc<str, Box<[W]>, S, E>>>::try_new_with_builder(
             DekoBufLineLender::from_path(filename)?.take(n),
             args.n.unwrap_or(0),
             builder,
@@ -208,8 +203,8 @@ where
         }
     } else {
         let n = args.n.unwrap();
-        let builder = set_builder(VBuilder::<W, Box<[W]>, S, E>::default(), &args);
-        let filter = VFilter::try_new_with_builder(
+        let builder = set_builder(VBuilder::<Box<[W]>, S, E>::default(), &args);
+        let filter = <VFilter<VFunc<usize, Box<[W]>, S, E>>>::try_new_with_builder(
             FromCloneableIntoIterator::from(0_usize..n),
             n,
             builder,
@@ -233,8 +228,8 @@ where
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    VFilter<W, VFunc<usize, W, BitFieldVec<Box<[W]>>, S, E>>: Serialize,
-    VFilter<W, VFunc<str, W, BitFieldVec<Box<[W]>>, S, E>>: Serialize,
+    VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>: Serialize,
+    VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>: Serialize,
 {
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
@@ -243,10 +238,12 @@ where
 
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
-        let builder = set_builder(VBuilder::<W, BitFieldVec<Box<[W]>>, S, E>::default(), &args);
-        let filter = builder.try_build_filter(
+        let builder = set_builder(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default(), &args);
+        let filter = <VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
             DekoBufLineLender::from_path(filename)?.take(n),
+            args.n.unwrap_or(0),
             args.bits,
+            builder,
             &mut pl,
         )?;
         if let Some(filename) = args.filter {
@@ -254,10 +251,13 @@ where
         }
     } else {
         let n = args.n.unwrap();
-        let builder = set_builder(VBuilder::<W, BitFieldVec<Box<[W]>>, S, E>::default(), &args);
-        let filter = builder.expected_num_keys(n).try_build_filter(
+        let mut builder = set_builder(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default(), &args);
+        builder = builder.expected_num_keys(n);
+        let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
             FromCloneableIntoIterator::from(0_usize..n),
+            n,
             args.bits,
+            builder,
             &mut pl,
         )?;
         if let Some(filename) = args.filter {
