@@ -717,8 +717,8 @@ where
             assert!(size_of::<H::Value>() <= size_of::<u64>());
         }
         let rank = self.inner.get(key);
-        let sig = T::to_sig(key, self.inner.offsets.seed);
-        let shard_edge = &self.inner.offsets.shard_edge;
+        let sig = T::to_sig(key, self.inner.fused.seed);
+        let shard_edge = &self.inner.fused.shard_edge;
         let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)));
         let stored = self.hashes.get_value(rank)?.as_to::<u64>();
         if stored == <H::Value>::as_from(expected).as_to::<u64>() {
@@ -786,8 +786,8 @@ where
     ) -> Result<Self> {
         let keys_for_hashes = keys.clone();
         let inner = Lcp2MmphfInt::try_new(keys, n, pl)?;
-        let seed = inner.offsets.seed;
-        let shard_edge: &E = &inner.offsets.shard_edge;
+        let seed = inner.fused.seed;
+        let shard_edge: &E = &inner.fused.shard_edge;
         let mut hashes = vec![W::MIN; n];
         let mut keys = keys_for_hashes;
         for hash in hashes.iter_mut() {
@@ -818,8 +818,8 @@ where
             assert!(size_of::<H::Value>() <= size_of::<u64>());
         }
         let rank = self.inner.get(key);
-        let sig = K::to_sig(key, self.inner.offsets.seed);
-        let shard_edge = &self.inner.offsets.shard_edge;
+        let sig = K::to_sig(key, self.inner.fused.seed);
+        let shard_edge = &self.inner.fused.shard_edge;
         let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)));
         let stored = self.hashes.get_value(rank)?.as_to::<u64>();
         if stored == <H::Value>::as_from(expected).as_to::<u64>() {
@@ -887,8 +887,8 @@ where
     ) -> Result<Self> {
         let keys_for_hashes = keys.clone();
         let inner = Lcp2Mmphf::try_new(keys, n, pl)?;
-        let seed = inner.offsets.seed;
-        let shard_edge: &E = &inner.offsets.shard_edge;
+        let seed = inner.fused.seed;
+        let shard_edge: &E = &inner.fused.shard_edge;
         let mut hashes = vec![W::MIN; n];
         let mut keys = keys_for_hashes;
         for hash in hashes.iter_mut() {

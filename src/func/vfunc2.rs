@@ -246,7 +246,7 @@ impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
     }
 
     #[inline(always)]
-    fn get(&self, key: K) -> V {
+    pub(crate) fn get(&self, key: K) -> V {
         let k = key.as_u128() as usize;
         if k < self.array.len() {
             self.array[k]
@@ -257,7 +257,7 @@ impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
 
     /// Returns keys whose value differs from the default, sorted by
     /// descending value (requires `V: Ord`).
-    fn keys_by_desc_value(&self) -> Vec<K>
+    pub(crate) fn keys_by_desc_value(&self) -> Vec<K>
     where
         V: Ord,
     {
@@ -298,7 +298,7 @@ impl<K: Word> HybridMap<K, usize> {
 /// `sorted_vals` must be the distinct values sorted by descending
 /// frequency. `count_of` returns the frequency for a given value.
 #[cfg(feature = "rayon")]
-fn find_optimal_r<W: Word>(
+pub(crate) fn find_optimal_r<W: Word>(
     n: usize,
     max_value: W,
     sorted_vals: &[W],
