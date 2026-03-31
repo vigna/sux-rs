@@ -30,8 +30,7 @@ use crate::func::VFunc;
 use crate::func::lcp_mmphf::{BitPrefix, IntBitPrefix, bit_prefix_sig};
 use crate::func::shard_edge::{Fuse3NoShards, Fuse3Shards, FuseLge3Shards, ShardEdge};
 #[cfg(feature = "rayon")]
-use crate::func::vfunc2::HybridMap;
-use crate::func::vfunc2::VFunc2;
+use crate::func::vfunc2::{HybridMap, find_optimal_r};
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
@@ -49,6 +48,7 @@ use {
     rand::{RngExt, SeedableRng, rngs::SmallRng},
     rdst::RadixKey,
     std::borrow::Borrow,
+    sync_cell_slice::SyncSlice,
 };
 
 /// Compact type for LCP bit lengths. Using a smaller type than
@@ -112,10 +112,14 @@ pub struct Lcp2MmphfInt<
     pub(crate) n: usize,
     /// The base-2 logarithm of the bucket size.
     pub(crate) log2_bucket_size: usize,
-    /// Maps each key to its offset within the bucket.
-    pub(crate) offsets: VFunc<T, D, S, E>,
-    /// Two-step retrieval of LCP lengths.
-    pub(crate) lcp_lengths: VFunc2<T, D, S, E, Fuse3Shards>,
+    /// Fused function: maps key → (remapped_lcp << log2_bs) | offset.
+    pub(crate) fused: VFunc<T, D, S, E>,
+    /// Maps escaped keys to their full LCP bit length.
+    pub(crate) lcp_long: VFunc<T, D, S, Fuse3Shards>,
+    /// Maps remapped LCP indices back to actual LCP bit lengths.
+    pub(crate) remap: Box<[usize]>,
+    /// Escape sentinel for the remapped LCP part (2^r − 1).
+    pub(crate) escape: usize,
     /// Maps each LCP bit-prefix to its bucket index.
     pub(crate) lcp2bucket: VFunc<IntBitPrefix<T>, D, [u64; 1], Fuse3NoShards>,
 }
@@ -123,15 +127,17 @@ pub struct Lcp2MmphfInt<
 impl<T: PrimitiveInteger, D: SliceByValue, S, E> std::fmt::Debug for Lcp2MmphfInt<T, D, S, E>
 where
     VFunc<T, D, S, E>: std::fmt::Debug,
-    VFunc2<T, D, S, E, Fuse3Shards>: std::fmt::Debug,
+    VFunc<T, D, S, Fuse3Shards>: std::fmt::Debug,
     VFunc<IntBitPrefix<T>, D, [u64; 1], Fuse3NoShards>: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Lcp2MmphfInt")
             .field("n", &self.n)
             .field("log2_bucket_size", &self.log2_bucket_size)
-            .field("offsets", &self.offsets)
-            .field("lcp_lengths", &self.lcp_lengths)
+            .field("fused", &self.fused)
+            .field("lcp_long", &self.lcp_long)
+            .field("remap", &self.remap)
+            .field("escape", &self.escape)
             .field("lcp2bucket", &self.lcp2bucket)
             .finish()
     }
@@ -152,9 +158,15 @@ where
     where
         T: Copy,
     {
-        let sig = T::to_sig(key, self.offsets.seed);
-        let offset = self.offsets.get_by_sig(sig);
-        let lcp_bit_length = self.lcp_lengths.get_by_sig(sig);
+        let sig = T::to_sig(key, self.fused.seed);
+        let packed = self.fused.get_by_sig(sig);
+        let offset = packed & ((1 << self.log2_bucket_size) - 1);
+        let remapped_lcp = packed >> self.log2_bucket_size;
+        let lcp_bit_length = if remapped_lcp != self.escape {
+            self.remap[remapped_lcp]
+        } else {
+            self.lcp_long.get_by_sig(sig)
+        };
         let prefix = IntBitPrefix::new(key ^ T::MIN, lcp_bit_length);
         let bucket = self.lcp2bucket.get(prefix);
         (bucket << self.log2_bucket_size) + offset
@@ -278,8 +290,10 @@ where
             return Ok(Self {
                 n: 0,
                 log2_bucket_size: 0,
-                offsets: VFunc::empty(),
-                lcp_lengths: VFunc2::empty(),
+                fused: VFunc::empty(),
+                lcp_long: VFunc::empty(),
+                remap: Box::new([]),
+                escape: 0,
                 lcp2bucket: VFunc::empty(),
             });
         }
@@ -294,9 +308,6 @@ where
         ));
 
         // State threaded through populate and build closures.
-        // bucket_first_keys and lcp_bit_lengths are only used for
-        // the (small) lcp2bucket build, NOT during the VFunc2
-        // peeling loop (the LCP is packed into the SigStore values).
         struct State<T> {
             bucket_first_keys: Vec<T>,
             lcp_bit_lengths: Vec<LcpLen>,
@@ -420,33 +431,149 @@ where
                         let shard_edge = _builder.shard_edge;
                         let store = &mut *store;
 
-                        // -- Offsets (extract lower bits from packed value) --
+                        // -- Compute optimal r and remap/inv_map from LCP frequencies --
+                        let counts = std::mem::replace(
+                            &mut state.lcp_counts,
+                            HybridMap::new(None, 0),
+                        );
+                        let sorted_vals = counts.keys_by_desc_value();
+                        let m = sorted_vals.len();
+                        let n_keys = store.len();
+
+                        let best_r = find_optimal_r(
+                            n_keys,
+                            state.max_lcp,
+                            &sorted_vals,
+                            |v| counts.get(v),
+                            usize::BITS as usize,
+                        );
+
+                        let escape_usize = (1usize << best_r).wrapping_sub(1);
+                        let num_remapped = escape_usize.min(m);
+
+                        let remap: Box<[usize]> =
+                            sorted_vals[..num_remapped].to_vec().into_boxed_slice();
+                        let mut inv_map: HybridMap<usize, usize> =
+                            HybridMap::new(Some(state.max_lcp), escape_usize);
+                        for (i, &val) in remap.iter().enumerate() {
+                            inv_map.insert(val, i);
+                        }
+
+                        let n_escaped = n_keys
+                            - sorted_vals[..num_remapped]
+                                .iter()
+                                .map(|&v| counts.get(v))
+                                .sum::<usize>();
+
                         pl.info(format_args!(
-                            "Building key → offset map ({log2_bs} bits)..."
+                            "Fused offset+LCP: r={best_r}, log2_bs={log2_bs}, \
+                             escape={escape_usize}, {num_remapped} remapped, \
+                             {m} distinct LCP values, {n_escaped} escaped keys ({:.1}%)",
+                            100.0 * n_escaped as f64 / n_keys as f64
                         ));
-                        let offsets = VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default()
+
+                        // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
+                        let fused_max = (escape_usize << log2_bs) | bucket_mask;
+
+                        let shb = shard_edge.shard_high_bits();
+                        let num_shards_se = 1usize << shb;
+                        let shard_mask = (1u64 << shb) - 1;
+                        let mut escaped_counts = vec![0usize; num_shards_se];
+                        let sync_counts = escaped_counts.as_sync_slice();
+
+                        pl.info(format_args!(
+                            "Building fused offset+LCP map ({} bits)...",
+                            best_r + log2_bs
+                        ));
+
+                        let fused =
+                            VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default()
+                                .try_build_func_with_store::<T, u64>(
+                                    seed,
+                                    shard_edge,
+                                    fused_max,
+                                    store,
+                                    &|_, sig_val| {
+                                        let lcp = (sig_val.val >> log2_bs) as usize;
+                                        let offset =
+                                            (sig_val.val as usize) & bucket_mask;
+                                        (inv_map.get(lcp) << log2_bs) | offset
+                                    },
+                                    &|sv: &SigVal<S, u64>| {
+                                        let lcp = (sv.val >> log2_bs) as usize;
+                                        if inv_map.get(lcp) == escape_usize {
+                                            let shard_idx = sv
+                                                .sig
+                                                .high_bits(shb, shard_mask)
+                                                as usize;
+                                            // SAFETY: each shard is processed by
+                                            // exactly one thread.
+                                            unsafe {
+                                                let c =
+                                                    sync_counts[shard_idx].get();
+                                                sync_counts[shard_idx]
+                                                    .set(c + 1);
+                                            }
+                                        }
+                                    },
+                                    pl,
+                                )?;
+
+                        // -- Build LCP long VFunc (escaped keys only) --
+                        let lcp_long = if n_escaped > 0 {
+                            let mut long_shard_edge = Fuse3Shards::default();
+                            long_shard_edge
+                                .set_up_shards(n_escaped, _builder.eps);
+                            let long_shb = long_shard_edge.shard_high_bits();
+
+                            let long_num_shards = 1usize << long_shb;
+                            let filtered_shard_sizes =
+                                if long_num_shards >= num_shards_se {
+                                    escaped_counts
+                                } else {
+                                    let per = num_shards_se / long_num_shards;
+                                    escaped_counts
+                                        .chunks(per)
+                                        .map(|c| c.iter().sum())
+                                        .collect()
+                                };
+
+                            pl.info(format_args!(
+                                "Building LCP long map ({n_escaped} escaped \
+                                 keys, {:.1}%)...",
+                                100.0 * n_escaped as f64 / n_keys as f64
+                            ));
+
+                            let mut filtered_store = FilteredShardStore::new(
+                                store,
+                                long_shb,
+                                |sv: &SigVal<S, u64>| {
+                                    inv_map.get((sv.val >> log2_bs) as usize)
+                                        == escape_usize
+                                },
+                                filtered_shard_sizes,
+                            );
+
+                            VBuilder::<
+                                BitFieldVec<Box<[usize]>>,
+                                S,
+                                Fuse3Shards,
+                            >::default()
+                            .max_num_threads(_builder.max_num_threads)
                             .try_build_func_with_store::<T, u64>(
                                 seed,
-                                shard_edge,
-                                bucket_mask,
-                                store,
-                                &|_, sig_val| (sig_val.val as usize) & bucket_mask,
+                                long_shard_edge,
+                                state.max_lcp,
+                                &mut filtered_store,
+                                &|_e, sig_val| {
+                                    (sig_val.val >> log2_bs) as usize
+                                },
                                 &|_| {},
                                 pl,
-                            )?;
-
-                        // -- LCP lengths (extract upper bits — no array lookup!) --
-                        pl.info(format_args!("Building two-step LCP lengths..."));
-                        let lcp_lengths = VFunc2::try_build_from_store_with_freq::<u64>(
-                            seed,
-                            shard_edge,
-                            store,
-                            &|v| (v >> log2_bs) as usize,
-                            state.max_lcp,
-                            std::mem::replace(&mut state.lcp_counts, HybridMap::new(None, 0)),
-                            VBuilder::default(),
-                            pl,
-                        )?;
+                            )?
+                        } else {
+                            VFunc::empty()
+                        };
 
                         // -- lcp2bucket --
                         pl.info(format_args!(
@@ -473,8 +600,10 @@ where
                         let result = Self {
                             n,
                             log2_bucket_size: log2_bs,
-                            offsets,
-                            lcp_lengths,
+                            fused,
+                            lcp_long,
+                            remap,
+                            escape: escape_usize,
                             lcp2bucket,
                         };
                         let total = result.mem_size(SizeFlags::default()) * 8;
@@ -551,8 +680,10 @@ pub struct Lcp2Mmphf<
 > {
     pub(crate) n: usize,
     pub(crate) log2_bucket_size: usize,
-    pub(crate) offsets: VFunc<K, D, S, E>,
-    pub(crate) lcp_lengths: VFunc2<K, D, S, E, Fuse3Shards>,
+    pub(crate) fused: VFunc<K, D, S, E>,
+    pub(crate) lcp_long: VFunc<K, D, S, Fuse3Shards>,
+    pub(crate) remap: Box<[usize]>,
+    pub(crate) escape: usize,
     pub(crate) lcp2bucket: VFunc<BitPrefix, D, [u64; 1], Fuse3NoShards>,
 }
 
@@ -560,15 +691,17 @@ impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> std::fmt::Debug
     for Lcp2Mmphf<K, D, S, E>
 where
     VFunc<K, D, S, E>: std::fmt::Debug,
-    VFunc2<K, D, S, E, Fuse3Shards>: std::fmt::Debug,
+    VFunc<K, D, S, Fuse3Shards>: std::fmt::Debug,
     VFunc<BitPrefix, D, [u64; 1], Fuse3NoShards>: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Lcp2Mmphf")
             .field("n", &self.n)
             .field("log2_bucket_size", &self.log2_bucket_size)
-            .field("offsets", &self.offsets)
-            .field("lcp_lengths", &self.lcp_lengths)
+            .field("fused", &self.fused)
+            .field("lcp_long", &self.lcp_long)
+            .field("remap", &self.remap)
+            .field("escape", &self.escape)
             .field("lcp2bucket", &self.lcp2bucket)
             .finish()
     }
@@ -593,9 +726,15 @@ where
     /// (same contract as [`VFunc::get`]).
     #[inline]
     pub fn get(&self, key: &K) -> usize {
-        let sig = K::to_sig(key, self.offsets.seed);
-        let offset = self.offsets.get_by_sig(sig);
-        let lcp_bit_length = self.lcp_lengths.get_by_sig(sig);
+        let sig = K::to_sig(key, self.fused.seed);
+        let packed = self.fused.get_by_sig(sig);
+        let offset = packed & ((1 << self.log2_bucket_size) - 1);
+        let remapped_lcp = packed >> self.log2_bucket_size;
+        let lcp_bit_length = if remapped_lcp != self.escape {
+            self.remap[remapped_lcp]
+        } else {
+            self.lcp_long.get_by_sig(sig)
+        };
 
         let key_bytes: &[u8] = key.as_ref();
         let lcp2b_seed = self.lcp2bucket.seed;
@@ -737,8 +876,10 @@ where
             return Ok(Self {
                 n: 0,
                 log2_bucket_size: 0,
-                offsets: VFunc::empty(),
-                lcp_lengths: VFunc2::empty(),
+                fused: VFunc::empty(),
+                lcp_long: VFunc::empty(),
+                remap: Box::new([]),
+                escape: 0,
                 lcp2bucket: VFunc::empty(),
             });
         }
@@ -753,9 +894,6 @@ where
         ));
 
         // State threaded through populate and build closures.
-        // bucket_first_keys and lcp_bit_lengths are only used for
-        // the (small) lcp2bucket build, NOT during the VFunc2
-        // peeling loop (the LCP is packed into the SigStore values).
         struct State {
             bucket_first_keys: Vec<Vec<u8>>,
             lcp_bit_lengths: Vec<LcpLen>,
@@ -878,33 +1016,149 @@ where
                         let shard_edge = _builder.shard_edge;
                         let store = &mut *store;
 
-                        // -- Offsets (extract lower bits from packed value) --
+                        // -- Compute optimal r and remap/inv_map from LCP frequencies --
+                        let counts = std::mem::replace(
+                            &mut state.lcp_counts,
+                            HybridMap::new(None, 0),
+                        );
+                        let sorted_vals = counts.keys_by_desc_value();
+                        let m = sorted_vals.len();
+                        let n_keys = store.len();
+
+                        let best_r = find_optimal_r(
+                            n_keys,
+                            state.max_lcp,
+                            &sorted_vals,
+                            |v| counts.get(v),
+                            usize::BITS as usize,
+                        );
+
+                        let escape_usize = (1usize << best_r).wrapping_sub(1);
+                        let num_remapped = escape_usize.min(m);
+
+                        let remap: Box<[usize]> =
+                            sorted_vals[..num_remapped].to_vec().into_boxed_slice();
+                        let mut inv_map: HybridMap<usize, usize> =
+                            HybridMap::new(Some(state.max_lcp), escape_usize);
+                        for (i, &val) in remap.iter().enumerate() {
+                            inv_map.insert(val, i);
+                        }
+
+                        let n_escaped = n_keys
+                            - sorted_vals[..num_remapped]
+                                .iter()
+                                .map(|&v| counts.get(v))
+                                .sum::<usize>();
+
                         pl.info(format_args!(
-                            "Building key → offset map ({log2_bs} bits)..."
+                            "Fused offset+LCP: r={best_r}, log2_bs={log2_bs}, \
+                             escape={escape_usize}, {num_remapped} remapped, \
+                             {m} distinct LCP values, {n_escaped} escaped keys ({:.1}%)",
+                            100.0 * n_escaped as f64 / n_keys as f64
                         ));
-                        let offsets = VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default()
+
+                        // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
+                        let fused_max = (escape_usize << log2_bs) | bucket_mask;
+
+                        let shb = shard_edge.shard_high_bits();
+                        let num_shards_se = 1usize << shb;
+                        let shard_mask = (1u64 << shb) - 1;
+                        let mut escaped_counts = vec![0usize; num_shards_se];
+                        let sync_counts = escaped_counts.as_sync_slice();
+
+                        pl.info(format_args!(
+                            "Building fused offset+LCP map ({} bits)...",
+                            best_r + log2_bs
+                        ));
+
+                        let fused =
+                            VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default()
+                                .try_build_func_with_store::<K, u64>(
+                                    seed,
+                                    shard_edge,
+                                    fused_max,
+                                    store,
+                                    &|_, sig_val| {
+                                        let lcp = (sig_val.val >> log2_bs) as usize;
+                                        let offset =
+                                            (sig_val.val as usize) & bucket_mask;
+                                        (inv_map.get(lcp) << log2_bs) | offset
+                                    },
+                                    &|sv: &SigVal<S, u64>| {
+                                        let lcp = (sv.val >> log2_bs) as usize;
+                                        if inv_map.get(lcp) == escape_usize {
+                                            let shard_idx = sv
+                                                .sig
+                                                .high_bits(shb, shard_mask)
+                                                as usize;
+                                            // SAFETY: each shard is processed by
+                                            // exactly one thread.
+                                            unsafe {
+                                                let c =
+                                                    sync_counts[shard_idx].get();
+                                                sync_counts[shard_idx]
+                                                    .set(c + 1);
+                                            }
+                                        }
+                                    },
+                                    pl,
+                                )?;
+
+                        // -- Build LCP long VFunc (escaped keys only) --
+                        let lcp_long = if n_escaped > 0 {
+                            let mut long_shard_edge = Fuse3Shards::default();
+                            long_shard_edge
+                                .set_up_shards(n_escaped, _builder.eps);
+                            let long_shb = long_shard_edge.shard_high_bits();
+
+                            let long_num_shards = 1usize << long_shb;
+                            let filtered_shard_sizes =
+                                if long_num_shards >= num_shards_se {
+                                    escaped_counts
+                                } else {
+                                    let per = num_shards_se / long_num_shards;
+                                    escaped_counts
+                                        .chunks(per)
+                                        .map(|c| c.iter().sum())
+                                        .collect()
+                                };
+
+                            pl.info(format_args!(
+                                "Building LCP long map ({n_escaped} escaped \
+                                 keys, {:.1}%)...",
+                                100.0 * n_escaped as f64 / n_keys as f64
+                            ));
+
+                            let mut filtered_store = FilteredShardStore::new(
+                                store,
+                                long_shb,
+                                |sv: &SigVal<S, u64>| {
+                                    inv_map.get((sv.val >> log2_bs) as usize)
+                                        == escape_usize
+                                },
+                                filtered_shard_sizes,
+                            );
+
+                            VBuilder::<
+                                BitFieldVec<Box<[usize]>>,
+                                S,
+                                Fuse3Shards,
+                            >::default()
+                            .max_num_threads(_builder.max_num_threads)
                             .try_build_func_with_store::<K, u64>(
                                 seed,
-                                shard_edge,
-                                bucket_mask,
-                                store,
-                                &|_, sig_val| (sig_val.val as usize) & bucket_mask,
+                                long_shard_edge,
+                                state.max_lcp,
+                                &mut filtered_store,
+                                &|_e, sig_val| {
+                                    (sig_val.val >> log2_bs) as usize
+                                },
                                 &|_| {},
                                 pl,
-                            )?;
-
-                        // -- LCP lengths (extract upper bits — no array lookup!) --
-                        pl.info(format_args!("Building two-step LCP lengths..."));
-                        let lcp_lengths = VFunc2::try_build_from_store_with_freq::<u64>(
-                            seed,
-                            shard_edge,
-                            store,
-                            &|v| (v >> log2_bs) as usize,
-                            state.max_lcp,
-                            std::mem::replace(&mut state.lcp_counts, HybridMap::new(None, 0)),
-                            VBuilder::default(),
-                            pl,
-                        )?;
+                            )?
+                        } else {
+                            VFunc::empty()
+                        };
 
                         // -- lcp2bucket --
                         pl.info(format_args!(
@@ -942,8 +1196,10 @@ where
                         let result = Self {
                             n,
                             log2_bucket_size: log2_bs,
-                            offsets,
-                            lcp_lengths,
+                            fused,
+                            lcp_long,
+                            remap,
+                            escape: escape_usize,
                             lcp2bucket,
                         };
                         let total = result.mem_size(SizeFlags::default()) * 8;
@@ -1010,8 +1266,10 @@ where
         Lcp2MmphfInt {
             n: f.n,
             log2_bucket_size: f.log2_bucket_size,
-            offsets: f.offsets.into(),
-            lcp_lengths: f.lcp_lengths.into(),
+            fused: f.fused.into(),
+            lcp_long: f.lcp_long.into(),
+            remap: f.remap,
+            escape: f.escape,
             lcp2bucket: f.lcp2bucket.into(),
         }
     }
@@ -1029,8 +1287,10 @@ where
         Ok(Lcp2MmphfInt {
             n: self.n,
             log2_bucket_size: self.log2_bucket_size,
-            offsets: self.offsets.try_into_unaligned()?,
-            lcp_lengths: self.lcp_lengths.try_into_unaligned()?,
+            fused: self.fused.try_into_unaligned()?,
+            lcp_long: self.lcp_long.try_into_unaligned()?,
+            remap: self.remap,
+            escape: self.escape,
             lcp2bucket: self.lcp2bucket.try_into_unaligned()?,
         })
     }
@@ -1047,8 +1307,10 @@ where
         Lcp2Mmphf {
             n: f.n,
             log2_bucket_size: f.log2_bucket_size,
-            offsets: f.offsets.into(),
-            lcp_lengths: f.lcp_lengths.into(),
+            fused: f.fused.into(),
+            lcp_long: f.lcp_long.into(),
+            remap: f.remap,
+            escape: f.escape,
             lcp2bucket: f.lcp2bucket.into(),
         }
     }
@@ -1066,8 +1328,10 @@ where
         Ok(Lcp2Mmphf {
             n: self.n,
             log2_bucket_size: self.log2_bucket_size,
-            offsets: self.offsets.try_into_unaligned()?,
-            lcp_lengths: self.lcp_lengths.try_into_unaligned()?,
+            fused: self.fused.try_into_unaligned()?,
+            lcp_long: self.lcp_long.try_into_unaligned()?,
+            remap: self.remap,
+            escape: self.escape,
             lcp2bucket: self.lcp2bucket.try_into_unaligned()?,
         })
     }
