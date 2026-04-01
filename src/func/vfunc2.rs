@@ -518,58 +518,20 @@ where
         SigVal<E0::LocalSig, V>: BitXor + BitXorAssign,
         SigVal<E1::LocalSig, V>: BitXor + BitXorAssign,
     {
-        // -- 1. Frequency analysis --
+        // -- Frequency analysis (single pass) --
 
         let mut max_value = W::ZERO;
+        let mut counts: HybridMap<W, usize> = HybridMap::new(None, 0);
         for shard in store.iter() {
             for sv in shard.iter() {
                 let val = get_val(sv.val);
                 if val > max_value {
                     max_value = val;
                 }
+                counts.incr(val);
             }
         }
 
-        let mut counts: HybridMap<W, usize> = HybridMap::new(Some(max_value), 0);
-        for shard in store.iter() {
-            for sv in shard.iter() {
-                counts.incr(get_val(sv.val));
-            }
-        }
-
-        Self::build_from_hybrid_counts(
-            seed, shard_edge, store, get_val, max_value, counts, builder, pl,
-        )
-    }
-
-    /// Like [`try_build_from_store`](Self::try_build_from_store), but
-    /// the caller provides pre-computed value frequencies, avoiding
-    /// a full scan of the store for frequency analysis.
-    ///
-    /// This is a low-level method that requires a thorough understanding
-    /// of the builder's internal state.
-    ///
-    /// # Arguments
-    ///
-    /// * `max_value` — the maximum value returned by `get_val`.
-    /// * `counts` — maps each distinct value to its frequency (number
-    ///   of keys with that value). Must be consistent with what `get_val`
-    ///   would produce when applied to the store.
-    pub(crate) fn try_build_from_store_with_freq<V: BinSafe + Default + Send + Sync + Copy>(
-        seed: u64,
-        shard_edge: E0,
-        store: &mut (impl ShardStore<S, V> + ?Sized),
-        get_val: &(impl Fn(V) -> W + Send + Sync),
-        max_value: W,
-        counts: HybridMap<W, usize>,
-        builder: VBuilder<BitFieldVec<Box<[W]>>, S, E0>,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<Self>
-    where
-        SigVal<S, V>: RadixKey,
-        SigVal<E0::LocalSig, V>: BitXor + BitXorAssign,
-        SigVal<E1::LocalSig, V>: BitXor + BitXorAssign,
-    {
         Self::build_from_hybrid_counts(
             seed, shard_edge, store, get_val, max_value, counts, builder, pl,
         )

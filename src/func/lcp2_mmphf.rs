@@ -323,7 +323,7 @@ where
             max_lcp: 0,
         };
 
-        // We replicate the retry loop from try_populate_and_build_with_fn
+        // We replicate the retry loop from try_populate_and_build
         // because we need the populate closure to buffer one bucket at a
         // time before pushing, which requires direct access to `push`.
         let builder_seed = builder.init_shards_and_seed();
@@ -909,7 +909,7 @@ where
             max_lcp: 0,
         };
 
-        // We replicate the retry loop from try_populate_and_build_with_fn
+        // We replicate the retry loop from try_populate_and_build
         // because we need the populate closure to buffer one bucket at a
         // time before pushing, which requires direct access to `push`.
         let builder_seed = builder.init_shards_and_seed();
