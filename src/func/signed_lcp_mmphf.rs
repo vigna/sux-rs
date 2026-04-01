@@ -25,7 +25,6 @@
 use crate::bits::BitFieldVec;
 use crate::func::lcp_mmphf::{LcpMmphf, LcpMmphfInt};
 use crate::func::lcp2_mmphf::{Lcp2Mmphf, Lcp2MmphfInt};
-use crate::func::mix64;
 use crate::func::shard_edge::{Fuse3Shards, FuseLge3Shards, ShardEdge};
 use crate::utils::*;
 use mem_dbg::*;
@@ -192,8 +191,7 @@ impl<
         }
         let rank = self.inner.get(key);
         let sig = T::to_sig(key, self.inner.offset_lcp_length.seed);
-        let shard_edge = &self.inner.offset_lcp_length.shard_edge;
-        let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)));
+        let expected = self.inner.offset_lcp_length.shard_edge.remixed_hash(sig);
         let stored = self.hashes.get_value(rank)?.as_to::<u64>();
         if stored == <H::Value>::as_from(expected).as_to::<u64>() {
             Some(rank)
@@ -268,8 +266,7 @@ where
         let mut keys = keys_for_hashes;
         for hash in hashes.iter_mut() {
             let key: T = *keys.next()?.unwrap();
-            let sig = T::to_sig(key, seed);
-            *hash = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))).as_to::<W>();
+            *hash = shard_edge.remixed_hash(T::to_sig(key, seed)).as_to::<W>();
         }
 
         Ok(Self {
@@ -304,8 +301,7 @@ impl<
         }
         let rank = self.inner.get(key);
         let sig = K::to_sig(key, self.inner.offset_lcp_length.seed);
-        let shard_edge = &self.inner.offset_lcp_length.shard_edge;
-        let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)));
+        let expected = self.inner.offset_lcp_length.shard_edge.remixed_hash(sig);
         let stored = self.hashes.get_value(rank)?.as_to::<u64>();
         if stored == <H::Value>::as_from(expected).as_to::<u64>() {
             Some(rank)
@@ -397,8 +393,7 @@ where
         for hash in hashes.iter_mut() {
             let key = keys.next()?.unwrap();
             let k_ref: &K = <B as Borrow<K>>::borrow(key);
-            let sig = K::to_sig(k_ref, seed);
-            *hash = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))).as_to::<W>();
+            *hash = shard_edge.remixed_hash(K::to_sig(k_ref, seed)).as_to::<W>();
         }
 
         Ok(Self {
@@ -469,8 +464,7 @@ impl<
         }
         let rank = self.inner.get(key);
         let sig = T::to_sig(key, self.inner.offset_lcp_length.seed);
-        let shard_edge = &self.inner.offset_lcp_length.shard_edge;
-        let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))) & self.hash_mask;
+        let expected = self.inner.offset_lcp_length.shard_edge.remixed_hash(sig) & self.hash_mask;
         let stored = self.hashes.get_value(rank)?.as_to::<u64>();
         if stored == expected { Some(rank) } else { None }
     }
@@ -551,9 +545,7 @@ where
         let mut keys = keys_for_hashes;
         for i in 0..n {
             let key: T = *keys.next()?.unwrap();
-            let sig = T::to_sig(key, seed);
-            let h =
-                (mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))) & hash_mask).as_to::<H>();
+            let h = (shard_edge.remixed_hash(T::to_sig(key, seed)) & hash_mask).as_to::<H>();
             hashes.set_value(i, h);
         }
 
@@ -590,8 +582,7 @@ impl<
         }
         let rank = self.inner.get(key);
         let sig = K::to_sig(key, self.inner.offset_lcp_length.seed);
-        let shard_edge = &self.inner.offset_lcp_length.shard_edge;
-        let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))) & self.hash_mask;
+        let expected = self.inner.offset_lcp_length.shard_edge.remixed_hash(sig) & self.hash_mask;
         let stored = self.hashes.get_value(rank)?.as_to::<u64>();
         if stored == expected { Some(rank) } else { None }
     }
@@ -673,9 +664,8 @@ where
         for i in 0..n {
             let key = keys.next()?.unwrap();
             let k_ref: &K = <B as Borrow<K>>::borrow(key);
-            let sig = K::to_sig(k_ref, seed);
             let h =
-                (mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))) & hash_mask).as_to::<H>();
+                (shard_edge.remixed_hash(K::to_sig(k_ref, seed)) & hash_mask).as_to::<H>();
             hashes.set_value(i, h);
         }
 
@@ -718,8 +708,7 @@ where
         }
         let rank = self.inner.get(key);
         let sig = T::to_sig(key, self.inner.fused.seed);
-        let shard_edge = &self.inner.fused.shard_edge;
-        let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)));
+        let expected = self.inner.fused.shard_edge.remixed_hash(sig);
         let stored = self.hashes.get_value(rank)?.as_to::<u64>();
         if stored == <H::Value>::as_from(expected).as_to::<u64>() {
             Some(rank)
@@ -792,8 +781,7 @@ where
         let mut keys = keys_for_hashes;
         for hash in hashes.iter_mut() {
             let key: T = *keys.next()?.unwrap();
-            *hash = mix64(shard_edge.edge_hash(shard_edge.local_sig(T::to_sig(key, seed))))
-                .as_to::<W>();
+            *hash = shard_edge.remixed_hash(T::to_sig(key, seed)).as_to::<W>();
         }
         Ok(Self {
             inner,
@@ -819,8 +807,7 @@ where
         }
         let rank = self.inner.get(key);
         let sig = K::to_sig(key, self.inner.fused.seed);
-        let shard_edge = &self.inner.fused.shard_edge;
-        let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)));
+        let expected = self.inner.fused.shard_edge.remixed_hash(sig);
         let stored = self.hashes.get_value(rank)?.as_to::<u64>();
         if stored == <H::Value>::as_from(expected).as_to::<u64>() {
             Some(rank)
@@ -894,8 +881,7 @@ where
         for hash in hashes.iter_mut() {
             let key = keys.next()?.unwrap();
             let k_ref: &K = <B as Borrow<K>>::borrow(key);
-            *hash = mix64(shard_edge.edge_hash(shard_edge.local_sig(K::to_sig(k_ref, seed))))
-                .as_to::<W>();
+            *hash = shard_edge.remixed_hash(K::to_sig(k_ref, seed)).as_to::<W>();
         }
         Ok(Self {
             inner,

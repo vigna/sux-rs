@@ -11,7 +11,6 @@ use std::borrow::Borrow;
 #[cfg(feature = "rayon")]
 use {
     crate::func::VBuilder,
-    crate::func::mix64,
     crate::utils::FallibleRewindableLender,
     anyhow::Result,
     core::error::Error,
@@ -87,16 +86,12 @@ impl<
             );
         }
         let index = self.func.get_by_sig(sig);
-        let shard_edge = &self.func.shard_edge;
         // as_to is safe: index is bounded by num_keys, which is a usize
         if self
             .hashes
             .get_value(index.as_to::<usize>())?
             .as_to::<u64>()
-            == <H::Value>::as_from(crate::func::mix64(
-                shard_edge.edge_hash(shard_edge.local_sig(sig)),
-            ))
-            .as_to::<u64>()
+            == <H::Value>::as_from(self.func.shard_edge.remixed_hash(sig)).as_to::<u64>()
         {
             Some(index)
         } else {
@@ -168,14 +163,12 @@ impl<
             );
         }
         let index = self.func.get_by_sig(sig);
-        let shard_edge = &self.func.shard_edge;
         // as_to is safe: index is bounded by num_keys, which is a usize
         if self
             .hashes
             .get_value(index.as_to::<usize>())?
             .as_to::<u64>()
-            == (crate::func::mix64(shard_edge.edge_hash(shard_edge.local_sig(sig)))
-                & self.hash_mask)
+            == (self.func.shard_edge.remixed_hash(sig) & self.hash_mask)
         {
             Some(index)
         } else {
@@ -339,8 +332,7 @@ where
         for shard in store.iter() {
             for sig_val in shard.iter() {
                 let pos = sig_val.val;
-                let local_sig = shard_edge.local_sig(sig_val.sig);
-                let hash = H::as_from(mix64(shard_edge.edge_hash(local_sig)));
+                let hash = H::as_from(shard_edge.remixed_hash(sig_val.sig));
                 hashes.set_value(pos, hash);
                 pl.light_update();
             }
@@ -507,8 +499,7 @@ where
         for shard in store.iter() {
             for sig_val in shard.iter() {
                 let pos = sig_val.val;
-                let local_sig = shard_edge.local_sig(sig_val.sig);
-                let hash = (mix64(shard_edge.edge_hash(local_sig)) & hash_mask).as_to::<H>();
+                let hash = (shard_edge.remixed_hash(sig_val.sig) & hash_mask).as_to::<H>();
                 hashes.set_value(pos, hash);
                 pl.light_update();
             }
