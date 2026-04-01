@@ -83,10 +83,7 @@ impl<F: Backend> VFilter<F> {
     /// [`try_new`](VFilter::try_new)/[`try_new_with_builder`](VFilter::try_new_with_builder)
     /// when possible.
     pub fn from_parts(func: F, filter_mask: F::Word) -> Self {
-        Self {
-            func,
-            filter_mask,
-        }
+        Self { func, filter_mask }
     }
 }
 
@@ -353,10 +350,7 @@ where
             (),
         )?;
 
-        Ok(VFilter {
-            func,
-            filter_mask,
-        })
+        Ok(VFilter { func, filter_mask })
     }
 }
 
@@ -514,10 +508,7 @@ where
             (),
         )?;
 
-        Ok(VFilter {
-            func,
-            filter_mask,
-        })
+        Ok(VFilter { func, filter_mask })
     }
 }
 
