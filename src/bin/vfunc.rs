@@ -101,8 +101,7 @@ fn main() -> Result<()> {
 
 macro_rules! filename_save_sign(
     ($h: ty, $builder:expr, $filename: expr, $func: expr, $n: expr, $pl: expr) => {{
-        use sux::func::mix64;
-
+        use sux::func::shard_edge::ShardEdge;
         use sux::utils::ShardStore;
         use num_primitive::PrimitiveNumber;
         use value_traits::slices::SliceByValueMut;
@@ -125,7 +124,7 @@ macro_rules! filename_save_sign(
         for shard in store.iter() {
             for sig_val in shard.iter() {
                 let pos = sig_val.val;
-                let hash = <$h>::as_from(mix64(func.edge_hash_by_sig(sig_val.sig)));
+                let hash = <$h>::as_from(func.shard_edge.remixed_hash(sig_val.sig));
                 hashes.set_value(pos, hash);
                 $pl.light_update();
             }

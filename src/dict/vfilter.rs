@@ -104,10 +104,9 @@ where
     /// [`contains`](Self::contains) instead.
     #[inline(always)]
     pub fn contains_by_sig(&self, sig: S) -> bool {
-        let shard_edge = &self.func.shard_edge;
-        // Derive the expected hash from the signature's edge hash,
-        // mix it with mix64 for avalanche, and mask to hash_bits.
-        let expected = mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))).as_to::<D::Value>()
+        // Derive the expected hash from the signature via the canonical
+        // remixed hash, and mask to hash_bits.
+        let expected = self.func.shard_edge.remixed_hash(sig).as_to::<D::Value>()
             & self.filter_mask;
         // Compare against the hash stored by the VFunc.
         self.func.get_by_sig(sig) == expected
@@ -524,7 +523,7 @@ mod tests {
 
     use crate::{
         func::{
-            VBuilder, VFunc, mix64,
+            VBuilder, VFunc,
             shard_edge::{FuseLge3NoShards, FuseLge3Shards},
         },
         utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
@@ -556,11 +555,10 @@ mod tests {
             )?;
             // Verify that the stored hash matches the expected derivation
             // for every key in the set.
-            let shard_edge = &filter.func.shard_edge;
             for i in 0..n {
                 let sig = ToSig::<S>::to_sig(i, filter.func.seed);
                 assert_eq!(
-                    mix64(shard_edge.edge_hash(shard_edge.local_sig(sig))) & 0xFF,
+                    filter.func.shard_edge.remixed_hash(sig) & 0xFF,
                     filter.func.get_by_sig(sig) as u64,
                     "Hash mismatch for key {i}"
                 );
