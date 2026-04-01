@@ -13,7 +13,7 @@ use crate::func::{VFunc, shard_edge::ShardEdge};
 use crate::traits::{Backend, Word};
 use crate::utils::{BinSafe, Sig, ToSig};
 use mem_dbg::*;
-use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
+use num_primitive::{PrimitiveInteger, PrimitiveNumber, PrimitiveNumberAs};
 use std::borrow::Borrow;
 use std::ops::Index;
 use value_traits::slices::SliceByValue;
@@ -70,10 +70,9 @@ pub struct VFilter<F: Backend> {
     pub(crate) func: F,
     /// Bit mask applied to the derived hash before comparison.
     ///
-    /// Equal to `W::MAX >> (W::BITS - hash_bits)`.
+    /// Equal to `W::MAX >> (W::BITS - hash_bits)`, where `hash_bits`
+    /// is the number of hash bits per key.
     pub(crate) filter_mask: F::Word,
-    /// Number of hash bits per key (determines the false-positive rate).
-    pub(crate) hash_bits: u32,
 }
 
 impl<F: Backend> VFilter<F> {
@@ -83,11 +82,10 @@ impl<F: Backend> VFilter<F> {
     /// This is a low-level constructor; prefer
     /// [`try_new`](VFilter::try_new)/[`try_new_with_builder`](VFilter::try_new_with_builder)
     /// when possible.
-    pub fn from_parts(func: F, filter_mask: F::Word, hash_bits: u32) -> Self {
+    pub fn from_parts(func: F, filter_mask: F::Word) -> Self {
         Self {
             func,
             filter_mask,
-            hash_bits,
         }
     }
 }
@@ -142,8 +140,8 @@ where
     /// Returns the number of hash bits per key.
     ///
     /// The filter's false-positive rate is 2<sup>−`hash_bits`</sup>.
-    pub const fn hash_bits(&self) -> u32 {
-        self.hash_bits
+    pub fn hash_bits(&self) -> u32 {
+        D::Value::BITS - self.filter_mask.leading_zeros()
     }
 }
 
@@ -183,7 +181,6 @@ impl<T: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::Tr
         Ok(VFilter {
             func: self.func.try_into_unaligned()?,
             filter_mask: self.filter_mask,
-            hash_bits: self.hash_bits,
         })
     }
 }
@@ -196,7 +193,6 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
         VFilter {
             func: f.func.into(),
             filter_mask: f.filter_mask,
-            hash_bits: f.hash_bits,
         }
     }
 }
@@ -360,7 +356,6 @@ where
         Ok(VFilter {
             func,
             filter_mask,
-            hash_bits: W::BITS,
         })
     }
 }
@@ -522,7 +517,6 @@ where
         Ok(VFilter {
             func,
             filter_mask,
-            hash_bits: filter_bits as _,
         })
     }
 }

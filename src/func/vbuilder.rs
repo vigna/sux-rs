@@ -184,7 +184,7 @@ impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge
 {
     /// Sets up shards from the expected number of keys and returns the
     /// seed. This is the same initialization that
-    /// [`try_populate_and_build_with_fn`](Self::try_populate_and_build_with_fn)
+    /// [`try_populate_and_build`](Self::try_populate_and_build)
     /// performs at the start; callers that drive `try_solve_once`
     /// directly must call this first.
     pub(crate) fn init_shards_and_seed(&mut self) -> u64 {
@@ -679,10 +679,6 @@ impl<
     /// [`SolveError`], the process is retried from scratch with a new
     /// seed.
     ///
-    /// See also
-    /// [`try_populate_and_build_with_fn`](Self::try_populate_and_build_with_fn),
-    /// which produces values from a closure instead of a lender.
-    ///
     /// This is a low-level method that requires a thorough understanding
     /// of the builder's internal state.
     ///
@@ -771,98 +767,6 @@ impl<
             handle_solve_result!(result, dup_count, local_dup_count, pl);
 
             values = values.rewind()?;
-            keys = keys.rewind()?;
-        }
-    }
-
-    /// Like [`try_populate_and_build`](Self::try_populate_and_build), but
-    /// values are produced by a `key_to_val` closure that receives each
-    /// key, its ordinal index, and a `&mut C` context, instead of being
-    /// read from a separate lender. See that method for the retry and
-    /// error semantics.
-    ///
-    /// This is a low-level method that requires a thorough understanding
-    /// of the builder's internal state.
-    ///
-    /// The `state` parameter is threaded through to both `key_to_val` and
-    /// `build_fn`, allowing them to share mutable context without [`RefCell]`.
-    /// This enables computing side data in the same pass as store population,
-    /// avoiding a separate scan of the keys.
-    ///
-    /// On retry (seed change), the keys lender is rewound and
-    /// `key_to_val` is called again from index 0; stateful closures
-    /// should reset when they see index 0.
-    ///
-    /// See [`try_populate_and_build`](Self::try_populate_and_build) for
-    /// the retry and error semantics.
-    pub fn try_populate_and_build_with_fn<
-        T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: ?Sized + Borrow<T>,
-        V: BinSafe + Default + Send + Sync + Ord + AsU128,
-        R,
-        P: ProgressLog + Clone + Send + Sync,
-        C,
-    >(
-        &mut self,
-        mut keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        key_to_val: &mut impl FnMut(&B, usize, &mut C) -> anyhow::Result<V>,
-        build_fn: &mut impl FnMut(
-            &mut Self,
-            u64,
-            Box<dyn ShardStore<S, V> + Send + Sync>,
-            V,
-            usize,
-            &mut P,
-            &mut C,
-        ) -> anyhow::Result<R>,
-        pl: &mut P,
-        mut state: C,
-    ) -> anyhow::Result<R>
-    where
-        SigVal<S, V>: RadixKey,
-    {
-        if let Some(expected_num_keys) = self.expected_num_keys {
-            self.shard_edge.set_up_shards(expected_num_keys, self.eps);
-            self.log2_buckets = self.shard_edge.shard_high_bits();
-        }
-
-        let mut dup_count = 0u32;
-        let mut local_dup_count = 0u32;
-        let mut prng = SmallRng::seed_from_u64(self.seed);
-
-        pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
-
-        loop {
-            let seed: u64 = prng.random();
-
-            let result = {
-                let mut populate = |seed: u64,
-                                    push: &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
-                                    pl: &mut P,
-                                    state: &mut C| {
-                    let mut maybe_max_value = V::default();
-                    let mut idx = 0usize;
-                    while let Some(key) = keys.next()? {
-                        pl.light_update();
-                        let val = key_to_val(key, idx, state)?;
-                        maybe_max_value = Ord::max(maybe_max_value, val);
-                        push(SigVal {
-                            sig: T::to_sig(key.borrow(), seed),
-                            val,
-                        })?;
-                        idx += 1;
-                    }
-                    Ok(maybe_max_value)
-                };
-
-                self.try_solve_once(seed, &mut populate, build_fn, pl, &mut state)
-            };
-
-            handle_solve_result!(result, dup_count, local_dup_count, pl);
-
             keys = keys.rewind()?;
         }
     }
