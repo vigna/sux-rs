@@ -48,3 +48,27 @@ pub use signed_vfunc::{BitSignedVFunc, SignedVFunc};
 
 pub mod vfilter;
 pub use vfilter::VFilter;
+
+use crate::{func::shard_edge::ShardEdge, utils::Sig};
+
+/// Common interface for inner minimal perfect hash functions used by signed
+/// wrappers.
+///
+/// Provides access to the seed, shard edge, and key count, so that
+/// [`SignedVFunc`](crate::dict::SignedVFunc),
+/// [`BitSignedVFunc`](crate::dict::BitSignedVFunc),
+/// [`SignedLcpMmphf`](crate::dict::SignedLcpMmphf) and
+/// [`BitSignedLcpMmphf`](crate::dict::BitSignedLcpMmphf) can verify hashes
+/// without knowing which specific MMPHF variant they wrap.
+pub trait SignableMphf {
+    type Sig: Sig;
+    type Edge: ShardEdge<Self::Sig, 3>;
+
+    fn seed(&self) -> u64;
+    fn shard_edge(&self) -> &Self::Edge;
+    fn len(&self) -> usize;
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}

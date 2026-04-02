@@ -23,6 +23,7 @@
 //! aliases.
 
 use crate::bits::BitFieldVec;
+use crate::dict::SignableMphf;
 use crate::func::VFunc;
 use crate::func::lcp_mmphf::{LcpMmphf, LcpMmphfInt};
 use crate::func::lcp2_mmphf::{Lcp2Mmphf, Lcp2MmphfInt};
@@ -43,26 +44,8 @@ use {
 // Mmphf trait — abstracts over the four inner MMPHF types
 // ═══════════════════════════════════════════════════════════════════
 
-/// Common interface for inner MMPHFs used by signed wrappers.
-///
-/// Provides access to the seed, shard edge, and key count, so that
-/// [`SignedLcpMmphf`] and [`BitSignedLcpMmphf`] can verify hashes
-/// without knowing which specific MMPHF variant they wrap.
-pub(crate) trait Mmphf {
-    type Sig: Sig;
-    type Edge: ShardEdge<Self::Sig, 3>;
-
-    fn seed(&self) -> u64;
-    fn shard_edge(&self) -> &Self::Edge;
-    fn len(&self) -> usize;
-    #[inline]
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
-
-impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
-    Mmphf for LcpMmphfInt<T, D, S, E>
+impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableMphf
+    for LcpMmphfInt<T, D, S, E>
 {
     type Sig = S;
     type Edge = E;
@@ -81,8 +64,8 @@ impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S
     }
 }
 
-impl<K: ?Sized, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
-    Mmphf for LcpMmphf<K, D, S, E>
+impl<K: ?Sized, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableMphf
+    for LcpMmphf<K, D, S, E>
 {
     type Sig = S;
     type Edge = E;
@@ -101,8 +84,8 @@ impl<K: ?Sized, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
     }
 }
 
-impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
-    Mmphf for Lcp2MmphfInt<T, D, S, E>
+impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableMphf
+    for Lcp2MmphfInt<T, D, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
@@ -123,8 +106,8 @@ where
     }
 }
 
-impl<K: ?Sized, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>>
-    Mmphf for Lcp2Mmphf<K, D, S, E>
+impl<K: ?Sized, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableMphf
+    for Lcp2Mmphf<K, D, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
@@ -145,7 +128,7 @@ where
     }
 }
 
-impl<T: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> Mmphf for VFunc<T, D, S, E> {
+impl<T: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableMphf for VFunc<T, D, S, E> {
     type Sig = S;
     type Edge = E;
 
@@ -192,8 +175,7 @@ pub struct SignedLcpMmphf<F, H> {
 
 // ── Unified query methods ──────────────────────────────────────────
 
-impl<F: Mmphf, H: SliceByValue<Value: PrimitiveNumber>> SignedLcpMmphf<F, H>
-{
+impl<F: SignableMphf, H: SliceByValue<Value: PrimitiveNumber>> SignedLcpMmphf<F, H> {
     /// Verifies that the stored hash matches the remixed hash for the
     /// given rank and signature.
     #[inline(always)]
@@ -731,8 +713,7 @@ pub struct BitSignedLcpMmphf<F, H> {
 
 // ── Unified query methods ──────────────────────────────────────────
 
-impl<F: Mmphf, H: SliceByValue<Value: PrimitiveNumber>> BitSignedLcpMmphf<F, H>
-{
+impl<F: SignableMphf, H: SliceByValue<Value: PrimitiveNumber>> BitSignedLcpMmphf<F, H> {
     /// Verifies that the stored hash matches the masked remixed hash for
     /// the given rank and signature.
     #[inline(always)]
@@ -862,8 +843,11 @@ pub type BitSignedLcp2MmphfStr<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = 
     BitSignedLcpMmphf<Lcp2Mmphf<str, BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 /// A [`BitSignedLcpMmphf`] wrapping a [`Lcp2Mmphf`] for `[u8]` keys.
-pub type BitSignedLcp2MmphfSliceU8<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
-    BitSignedLcpMmphf<Lcp2Mmphf<[u8], BitFieldVec<Box<[usize]>>, S, E>, H>;
+pub type BitSignedLcp2MmphfSliceU8<
+    H = BitFieldVec<Box<[usize]>>,
+    S = [u64; 2],
+    E = FuseLge3Shards,
+> = BitSignedLcpMmphf<Lcp2Mmphf<[u8], BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 // ── BitSignedLcpMmphf constructors (LcpMmphfInt) ──────────────────
 
@@ -916,7 +900,11 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
-        let hash_mask = if hash_width == 64 { u64::MAX } else { (1u64 << hash_width) - 1 };
+        let hash_mask = if hash_width == 64 {
+            u64::MAX
+        } else {
+            (1u64 << hash_width) - 1
+        };
 
         let keys_for_hashes = keys.clone();
         let inner = LcpMmphfInt::try_new(keys, n, pl)?;
@@ -929,7 +917,11 @@ where
             keys_for_hashes,
             |key, seed| T::to_sig(*key, seed),
         )?;
-        Ok(Self { inner, hashes, hash_mask })
+        Ok(Self {
+            inner,
+            hashes,
+            hash_mask,
+        })
     }
 }
 
@@ -984,7 +976,11 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
-        let hash_mask = if hash_width == 64 { u64::MAX } else { (1u64 << hash_width) - 1 };
+        let hash_mask = if hash_width == 64 {
+            u64::MAX
+        } else {
+            (1u64 << hash_width) - 1
+        };
 
         let keys_for_hashes = keys.clone();
         let inner = LcpMmphf::try_new(keys, n, pl)?;
@@ -997,7 +993,11 @@ where
             keys_for_hashes,
             |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
         )?;
-        Ok(Self { inner, hashes, hash_mask })
+        Ok(Self {
+            inner,
+            hashes,
+            hash_mask,
+        })
     }
 }
 
@@ -1038,7 +1038,11 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
-        let hash_mask = if hash_width == 64 { u64::MAX } else { (1u64 << hash_width) - 1 };
+        let hash_mask = if hash_width == 64 {
+            u64::MAX
+        } else {
+            (1u64 << hash_width) - 1
+        };
 
         let keys_for_hashes = keys.clone();
         let inner = Lcp2MmphfInt::try_new(keys, n, pl)?;
@@ -1051,7 +1055,11 @@ where
             keys_for_hashes,
             |key, seed| T::to_sig(*key, seed),
         )?;
-        Ok(Self { inner, hashes, hash_mask })
+        Ok(Self {
+            inner,
+            hashes,
+            hash_mask,
+        })
     }
 }
 
@@ -1092,7 +1100,11 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
-        let hash_mask = if hash_width == 64 { u64::MAX } else { (1u64 << hash_width) - 1 };
+        let hash_mask = if hash_width == 64 {
+            u64::MAX
+        } else {
+            (1u64 << hash_width) - 1
+        };
 
         let keys_for_hashes = keys.clone();
         let inner = Lcp2Mmphf::try_new(keys, n, pl)?;
@@ -1105,7 +1117,11 @@ where
             keys_for_hashes,
             |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
         )?;
-        Ok(Self { inner, hashes, hash_mask })
+        Ok(Self {
+            inner,
+            hashes,
+            hash_mask,
+        })
     }
 }
 
