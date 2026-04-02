@@ -131,7 +131,11 @@ fn build_two_step(
             macro_rules! build {
                 ($h:ty) => {{
                     let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
-                        <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_new(FromSlice::new(&keys), n, pl)?;
+                        <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_new(
+                            FromSlice::new(&keys),
+                            n,
+                            pl,
+                        )?;
                     if let Some(ref f) = args.func {
                         unsafe { mmphf.store(f) }?;
                     }

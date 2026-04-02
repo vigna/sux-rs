@@ -11,7 +11,6 @@ use value_traits::slices::SliceByValue;
 use {
     crate::func::VBuilder,
     crate::traits::bit_field_slice::BitFieldSliceMut,
-    crate::utils::AsU128,
     anyhow::Result,
     core::error::Error,
     dsi_progress_logger::ProgressLog,
@@ -199,7 +198,7 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> From<VFunc<T, BitFieldVecU<
 impl<T, W, S, E> VFunc<T, Box<[W]>, S, E>
 where
     T: ?Sized + ToSig<S> + std::fmt::Debug,
-    W: Word + BinSafe + AsU128,
+    W: Word + BinSafe,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
     SigVal<S, W>: RadixKey,
@@ -329,7 +328,7 @@ where
 impl<T, W, S, E> VFunc<T, BitFieldVec<Box<[W]>>, S, E>
 where
     T: ?Sized + ToSig<S> + std::fmt::Debug,
-    W: Word + BinSafe + AsU128,
+    W: Word + BinSafe,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
     SigVal<S, W>: RadixKey,

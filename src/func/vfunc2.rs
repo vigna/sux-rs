@@ -17,6 +17,7 @@ use crate::func::shard_edge::ShardEdge;
 use crate::traits::Word;
 use crate::utils::*;
 use mem_dbg::*;
+use num_primitive::{PrimitiveNumber, PrimitiveNumberAs};
 use value_traits::slices::SliceByValue;
 
 /// A two-step static function that stores frequent values in a narrow first
@@ -127,7 +128,7 @@ impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
 
 impl<
     T: ?Sized + ToSig<S>,
-    D: SliceByValue<Value: Word + BinSafe>,
+    D: SliceByValue<Value: Word + BinSafe + PrimitiveNumberAs<usize>>,
     S: Sig,
     E0: ShardEdge<S, 3>,
     E1: ShardEdge<S, 3>,
@@ -145,7 +146,7 @@ impl<
     pub fn get_by_sig(&self, sig: S) -> D::Value {
         let idx = self.short.get_by_sig(sig);
         if idx != self.escape {
-            self.remap[idx.as_u128() as usize]
+            self.remap[idx.as_to::<usize>()]
         } else {
             self.long.get_by_sig(sig)
         }
@@ -216,7 +217,7 @@ pub(crate) struct HybridMap<K, V> {
 }
 
 #[cfg(feature = "rayon")]
-impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
+impl<K: Word + PrimitiveNumberAs<usize>, V: Copy + Eq> HybridMap<K, V> {
     /// Creates a new hybrid map.
     ///
     /// * `max_key` — optional upper bound on keys. When provided,
@@ -225,7 +226,7 @@ impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
     pub(crate) fn new(max_key: Option<K>, default: V) -> Self {
         let mut array_len = 1 << 10;
         if let Some(mk) = max_key {
-            array_len = array_len.min(mk.as_u128() as usize + 1);
+            array_len = array_len.min(mk.as_to::<usize>() + 1);
         }
         Self {
             array: vec![default; array_len],
@@ -235,7 +236,7 @@ impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
     }
 
     pub(crate) fn insert(&mut self, key: K, value: V) {
-        let k = key.as_u128() as usize;
+        let k: usize = key.as_to();
         if k < self.array.len() {
             self.array[k] = value;
         } else {
@@ -245,7 +246,7 @@ impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
 
     #[inline(always)]
     pub(crate) fn get(&self, key: K) -> V {
-        let k = key.as_u128() as usize;
+        let k: usize = key.as_to();
         if k < self.array.len() {
             self.array[k]
         } else {
@@ -273,7 +274,7 @@ impl<K: Word, V: Copy + Eq> HybridMap<K, V> {
 }
 
 #[cfg(feature = "rayon")]
-impl<K: Word> HybridMap<K, usize> {
+impl<K: Word + PrimitiveNumberAs<usize>> HybridMap<K, usize> {
     #[inline(always)]
     pub(crate) fn incr(&mut self, key: K) {
         self.add(key, 1);
@@ -281,7 +282,7 @@ impl<K: Word> HybridMap<K, usize> {
 
     #[inline(always)]
     pub(crate) fn add(&mut self, key: K, amount: usize) {
-        let k = key.as_u128() as usize;
+        let k: usize = key.as_to();
         if k < self.array.len() {
             self.array[k] += amount;
         } else {
@@ -586,8 +587,7 @@ where
 
         pl.info(format_args!(
             "Two-step: r={best_r}, escape={escape_usize}, {num_remapped} remapped values, \
-             {m} distinct values, max_value={} ({w} bits)",
-            max_value.as_u128()
+             {m} distinct values, max_value={max_value} ({w} bits)",
         ));
 
         // -- Build short VFunc --

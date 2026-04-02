@@ -50,7 +50,7 @@ use crate::bits::{BitFieldVec, BitFieldVecU};
 use crate::func::VFunc;
 use crate::func::lcp_mmphf::{LcpMmphf, LcpMmphfInt};
 use crate::func::lcp2_mmphf::{Lcp2Mmphf, Lcp2MmphfInt};
-use crate::func::shard_edge::{Fuse3Shards, FuseLge3Shards, ShardEdge};
+use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::{PrimitiveInteger, PrimitiveNumber};
@@ -603,8 +603,6 @@ where
 // Constructors — helper functions
 // (type aliases section removed: use SignedFunc<LcpMmphfStr, Box<[u64]>> etc. directly)
 // ═══════════════════════════════════════════════════════════════════
-
-
 
 /// Fills a `Box<[W]>` hash array from a key lender.
 ///
@@ -1337,7 +1335,7 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{BitSignedFunc, LcpMmphfInt};
-/// # use sux::bits::BitFieldVec;
+    /// # use sux::bits::BitFieldVec;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
@@ -1536,7 +1534,7 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{BitSignedFunc, Lcp2MmphfInt};
-/// # use sux::bits::BitFieldVec;
+    /// # use sux::bits::BitFieldVec;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];

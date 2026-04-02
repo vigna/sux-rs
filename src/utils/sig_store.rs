@@ -181,32 +181,6 @@ impl From<EmptyVal> for u128 {
     }
 }
 
-/// Trait for types that can be converted to `u128` via an `as` cast.
-///
-/// We need this trait because [`EmptyVal`] is not a primitive type, so it
-/// cannot implement [`PrimitiveNumberAs`](num_primitive::PrimitiveNumberAs).
-/// This trait is implemented for all primitive types via a blanket on
-/// [`PrimitiveNumberAs<u128>`](num_primitive::PrimitiveNumberAs) and manually
-/// for [`EmptyVal`], making it possible to avoid a
-/// [`num_traits`](https://crates.io/crates/num-traits) dependency.
-pub trait AsU128: Copy {
-    fn as_u128(self) -> u128;
-}
-
-impl<T: num_primitive::PrimitiveNumber + num_primitive::PrimitiveNumberAs<u128>> AsU128 for T {
-    #[inline(always)]
-    fn as_u128(self) -> u128 {
-        self.as_to()
-    }
-}
-
-impl AsU128 for EmptyVal {
-    #[inline(always)]
-    fn as_u128(self) -> u128 {
-        0
-    }
-}
-
 impl<V: BinSafe + BitXor<Output: BinSafe>> BitXor<SigVal<[u64; 1], V>> for SigVal<[u64; 1], V> {
     type Output = SigVal<[u64; 1], V::Output>;
 
