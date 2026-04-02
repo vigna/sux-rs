@@ -43,8 +43,8 @@ const LOG2_MAX_SHARDS: u32 = 16;
 
 /// A builder for [`VFunc`] and [`VFilter`](crate::dict::VFilter).
 ///
-/// Keys must implement the [`ToSig`] trait, which provides a method to compute
-/// a signature of the key.
+/// Most users should not call `VBuilder` methods directly. Instead,
+/// functions and filters have `try_new` and `try_new_with_builder`.
 ///
 /// There are two construction modes: in core memory (default) and
 /// [offline](VBuilder::offline); both use a [`SigStore`]. In the first case,
@@ -55,6 +55,9 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// There are several setters: for example, you can [set the maximum number
 /// of threads](VBuilder::max_num_threads).
 ///
+/// Initially, keys are scanned, turned into signatures, and stored in the
+/// [`SigStore`], possibly together with associated values.
+///
 /// Once signatures have been computed, each parallel thread will process a
 /// shard of the signature/value pairs. For very large key sets shards will be
 /// significantly smaller than the number of keys, so the memory usage, in
@@ -62,33 +65,19 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// too many threads might actually be harmful due to memory contention.
 ///
 /// The generic parameters are explained in the [`VFunc`] documentation. You
-/// have to choose the type of the output values and the backend. The remaining
-/// parameters have default values that are the same as those of
-/// [`VFunc`]/[`VFilter`](crate::dict::VFilter), and some elaboration about them
-/// can be found in their documentation.
+/// have to choose the backend: the remaining parameters (which tune the
+/// sharding and the hypergraph peeling) have default values that are the same
+/// as those of [`VFunc`]/[`VFilter`](crate::dict::VFilter), and some
+/// elaboration about them can be found in their documentation.
 ///
-/// All construction methods require to pass one or two [`FallibleRewindableLender`]s
+/// Most methods require to pass one or two [`FallibleRewindableLender`]s
 /// (keys and possibly values), and the construction might fail and keys might
 /// be scanned again. The structures in the [`lenders`] module provide easy ways
 /// to build such lenders, even starting from compressed files of UTF-8 strings.
 /// The type of the keys of the resulting filter or function will be the type of
 /// the elements of the [`FallibleRewindableLender`].
 ///
-/// # Which method to use
-///
-/// Most users should not call `VBuilder` methods directly. Instead:
-///
-/// - **Building a [`VFunc`]?** Use [`VFunc::try_new`] or
-///   [`VFunc::try_new_with_builder`].
-///
-/// - **Building a [`VFilter`](crate::dict::VFilter)?** Use [`VFilter::try_new`](crate::dict::VFilter::try_new)
-///   or [`VFilter::try_new_with_builder`](crate::dict::VFilter::try_new_with_builder).
-///
-/// - **Building a signed function?** Use
-///   [`SignedFunc::try_new`](crate::func::SignedFunc::try_new) or the
-///   type-specific aliases ([`SignedLcpMmphfStr`](crate::func::SignedLcpMmphfStr), etc.).
-///
-/// The low-level methods below are for advanced use cases:
+/// # Low-level methods
 ///
 /// - [`try_build_func`](Self::try_build_func) — builds a [`VFunc`],
 ///   draining the store to save memory.
