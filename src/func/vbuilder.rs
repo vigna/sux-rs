@@ -647,12 +647,13 @@ impl<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
         P: ProgressLog + Clone + Send + Sync,
+        K: FallibleRewindableLender<
+                RewindError: Error + Send + Sync + 'static,
+                Error: Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
     >(
         mut self,
-        keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        keys: K,
         values: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -663,6 +664,7 @@ impl<
     ) -> anyhow::Result<(
         VFunc<T, D, S, E>,
         Box<dyn ShardStore<S, D::Value> + Send + Sync>,
+        K,
     )>
     where
         D::Value: AsU128,
@@ -713,6 +715,7 @@ impl<
             pl,
             (),
         )
+        .map(|((func, store), keys)| (func, store, keys))
     }
 
     /// Builds a [`VFunc`] suitable for use as a filter backend.
@@ -858,12 +861,13 @@ impl<
         R,
         P: ProgressLog + Clone + Send + Sync,
         C,
+        K: FallibleRewindableLender<
+                RewindError: Error + Send + Sync + 'static,
+                Error: Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
     >(
         &mut self,
-        mut keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        mut keys: K,
         mut values: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -879,7 +883,7 @@ impl<
         ) -> anyhow::Result<R>,
         pl: &mut P,
         mut state: C,
-    ) -> anyhow::Result<R>
+    ) -> anyhow::Result<(R, K)>
     where
         SigVal<S, V>: RadixKey,
     {
@@ -910,7 +914,7 @@ impl<
             };
 
             if let Some(r) = rs.handle_solve_result(result, pl)? {
-                return Ok(r);
+                return Ok((r, keys));
             }
 
             values = values.rewind()?;

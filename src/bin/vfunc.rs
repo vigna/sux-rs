@@ -105,7 +105,7 @@ macro_rules! filename_save_sign(
         use num_primitive::PrimitiveNumber;
         use value_traits::slices::SliceByValueMut;
 
-        let (func, mut store) = $builder.try_build_func_and_store(
+        let (func, mut store, _) = $builder.try_build_func_and_store(
             DekoBufLineLender::from_path($filename)?.take($n),
             FromCloneableIntoIterator::from(0_usize..),
             BitFieldVec::new_unaligned,
@@ -189,7 +189,7 @@ where
         }
         match args.hash_type {
             None => {
-                let (func, _) = builder.try_build_func_and_store(
+                let (func, _, _) = builder.try_build_func_and_store(
                     DekoBufLineLender::from_path(filename)?.take(n),
                     FromCloneableIntoIterator::from(0_usize..),
                     BitFieldVec::<Box<[usize]>>::new_unaligned,

@@ -275,25 +275,44 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new_with_builder<P: ProgressLog + Clone + Send + Sync>(
-        mut keys: impl FallibleRewindableLender<
+    pub fn try_new_with_builder(
+        keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
-        pl: &mut P,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
+        Self::try_new_inner(keys, n, builder, pl).map(|(mmphf, _)| mmphf)
+    }
+
+    /// Internal constructor returning both the MMPHF and the keys lender.
+    pub(crate) fn try_new_inner<
+        P: ProgressLog + Clone + Send + Sync,
+        K: FallibleRewindableLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+    >(
+        mut keys: K,
+        n: usize,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut P,
+    ) -> Result<(Self, K)> {
         if n == 0 {
-            return Ok(Self {
-                n: 0,
-                log2_bucket_size: 0,
-                fused: VFunc::empty(),
-                lcp_long: VFunc::empty(),
-                remap: Box::new([]),
-                escape: 0,
-                lcp2bucket: VFunc::empty(),
-            });
+            return Ok((
+                Self {
+                    n: 0,
+                    log2_bucket_size: 0,
+                    fused: VFunc::empty(),
+                    lcp_long: VFunc::empty(),
+                    remap: Box::new([]),
+                    escape: 0,
+                    lcp2bucket: VFunc::empty(),
+                },
+                keys,
+            ));
         }
 
         let log2_bs = log2_bucket_size(n);
@@ -588,7 +607,7 @@ where
             };
 
             if let Some(r) = rs.handle_solve_result(result, pl)? {
-                return Ok(r);
+                return Ok((r, keys));
             }
 
             keys = keys.rewind()?;
@@ -803,28 +822,45 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new_with_builder<
-        B: ?Sized + AsRef<[u8]> + Borrow<K>,
-        P: ProgressLog + Clone + Send + Sync,
-    >(
-        mut keys: impl FallibleRewindableLender<
+    pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
+        keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
-        pl: &mut P,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
+        Self::try_new_inner(keys, n, builder, pl).map(|(mmphf, _)| mmphf)
+    }
+
+    /// Internal constructor returning both the MMPHF and the keys lender.
+    pub(crate) fn try_new_inner<
+        B: ?Sized + AsRef<[u8]> + Borrow<K>,
+        P: ProgressLog + Clone + Send + Sync,
+        L: FallibleRewindableLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+    >(
+        mut keys: L,
+        n: usize,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut P,
+    ) -> Result<(Self, L)> {
         if n == 0 {
-            return Ok(Self {
-                n: 0,
-                log2_bucket_size: 0,
-                fused: VFunc::empty(),
-                lcp_long: VFunc::empty(),
-                remap: Box::new([]),
-                escape: 0,
-                lcp2bucket: VFunc::empty(),
-            });
+            return Ok((
+                Self {
+                    n: 0,
+                    log2_bucket_size: 0,
+                    fused: VFunc::empty(),
+                    lcp_long: VFunc::empty(),
+                    remap: Box::new([]),
+                    escape: 0,
+                    lcp2bucket: VFunc::empty(),
+                },
+                keys,
+            ));
         }
 
         let log2_bs = log2_bucket_size(n);
@@ -1129,7 +1165,7 @@ where
             };
 
             if let Some(r) = rs.handle_solve_result(result, pl)? {
-                return Ok(r);
+                return Ok((r, keys));
             }
 
             keys = keys.rewind()?;

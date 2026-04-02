@@ -340,21 +340,23 @@ where
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::try_new_inner(keys, n, builder, true, pl).map(|(mmphf, _)| mmphf)
+        Self::try_new_inner(keys, n, builder, true, pl).map(|(mmphf, _, _)| mmphf)
     }
 
     /// Internal constructor accepting a [`VBuilder`] and optionally
     /// returning the sig store.
-    pub(crate) fn try_new_inner(
-        mut keys: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+    pub(crate) fn try_new_inner<
+        K: FallibleRewindableLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+    >(
+        mut keys: K,
         n: usize,
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         drain_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> Result<(Self, Box<dyn ShardStore<S, usize> + Send + Sync>)> {
+    ) -> Result<(Self, Box<dyn ShardStore<S, usize> + Send + Sync>, K)> {
         if n == 0 {
             return Ok((
                 Self {
@@ -369,6 +371,7 @@ where
                         .into_shard_store(0)
                         .expect("empty shard store"),
                 ),
+                keys,
             ));
         }
 
@@ -431,10 +434,10 @@ where
         pl.info(format_args!("Building key → (LCP length, offset) map..."));
         let keys = keys.rewind()?;
 
-        let (offset_lcp_length, store) =
+        let (offset_lcp_length, store, keys) =
             builder
                 .expected_num_keys(n)
-                .try_build_func_and_store::<T, T, _>(
+                .try_build_func_and_store::<T, T, _, _>(
                     keys,
                     FromCloneableIntoIterator::new((0..n).map(|idx| {
                         (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
@@ -477,7 +480,7 @@ where
             total_bits as f64 / n as f64
         ));
 
-        Ok((result, store))
+        Ok((result, store, keys))
     }
 }
 
@@ -891,21 +894,24 @@ where
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::try_new_inner(keys, n, builder, true, pl).map(|(mmphf, _)| mmphf)
+        Self::try_new_inner(keys, n, builder, true, pl).map(|(mmphf, _, _)| mmphf)
     }
 
     /// Internal constructor accepting a [`VBuilder`] and optionally
     /// returning the sig store.
-    pub(crate) fn try_new_inner<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
-        mut keys: impl FallibleRewindableLender<
-            RewindError: std::error::Error + Send + Sync + 'static,
-            Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+    pub(crate) fn try_new_inner<
+        B: ?Sized + AsRef<[u8]> + Borrow<K>,
+        L: FallibleRewindableLender<
+                RewindError: std::error::Error + Send + Sync + 'static,
+                Error: std::error::Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+    >(
+        mut keys: L,
         n: usize,
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         drain_store: bool,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> Result<(Self, Box<dyn ShardStore<S, usize> + Send + Sync>)> {
+    ) -> Result<(Self, Box<dyn ShardStore<S, usize> + Send + Sync>, L)> {
         if n == 0 {
             return Ok((
                 Self {
@@ -920,6 +926,7 @@ where
                         .into_shard_store(0)
                         .expect("empty shard store"),
                 ),
+                keys,
             ));
         }
 
@@ -984,10 +991,10 @@ where
         pl.info(format_args!("Building key → (LCP length, offset) map..."));
         let keys = keys.rewind()?;
 
-        let (offset_lcp_length, store) =
+        let (offset_lcp_length, store, keys) =
             builder
                 .expected_num_keys(n)
-                .try_build_func_and_store::<K, B, _>(
+                .try_build_func_and_store::<K, B, _, _>(
                     keys,
                     FromCloneableIntoIterator::new((0..n).map(|idx| {
                         (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
@@ -1044,7 +1051,7 @@ where
             total_bits as f64 / n as f64
         ));
 
-        Ok((result, store))
+        Ok((result, store, keys))
     }
 }
 
