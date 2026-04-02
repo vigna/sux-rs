@@ -23,6 +23,7 @@
 //! aliases.
 
 use crate::bits::BitFieldVec;
+use crate::func::VFunc;
 use crate::func::lcp_mmphf::{LcpMmphf, LcpMmphfInt};
 use crate::func::lcp2_mmphf::{Lcp2Mmphf, Lcp2MmphfInt};
 use crate::func::shard_edge::{Fuse3Shards, FuseLge3Shards, ShardEdge};
@@ -141,6 +142,24 @@ where
     #[inline(always)]
     fn len(&self) -> usize {
         self.n
+    }
+}
+
+impl<T: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> Mmphf for VFunc<T, D, S, E> {
+    type Sig = S;
+    type Edge = E;
+
+    #[inline(always)]
+    fn seed(&self) -> u64 {
+        self.seed
+    }
+    #[inline(always)]
+    fn shard_edge(&self) -> &E {
+        &self.shard_edge
+    }
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.num_keys
     }
 }
 
