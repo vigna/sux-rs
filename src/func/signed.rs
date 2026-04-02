@@ -27,8 +27,8 @@
 //! [`SignableFunc`]) and the hash storage `H`. Per-inner-type `get` methods are
 //! provided via monomorphized `impl` blocks.
 //!
-//! See [`SignedLcpMmphfInt`], [`SignedLcpMmphfStr`], [`BitSignedLcpMmphfInt`],
-//! [`BitSignedLcpMmphfStr`], etc., for convenience type aliases.
+//! Use concrete types directly, e.g., `SignedFunc<LcpMmphfStr, Box<[u64]>>`
+//! or `BitSignedFunc<LcpMmphfInt<u64>, BitFieldVec<Box<[usize]>>>`.
 
 use std::borrow::Borrow;
 
@@ -197,6 +197,50 @@ impl<T: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VF
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
+///
+/// # Examples
+///
+/// Wrapping a [`VFunc`] to build a verified index function:
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use sux::func::{SignedFunc, VFunc};
+/// # use sux::bits::BitFieldVec;
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::utils::FromCloneableIntoIterator;
+/// let func = <SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, Box<[u16]>>>::try_new(
+///     FromCloneableIntoIterator::new(0..100_usize),
+///     100,
+///     no_logging![],
+/// )?;
+/// assert_eq!(func.get(42_usize), Some(42));
+/// assert_eq!(func.get(999_usize), None);
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
+///
+/// Wrapping an [`LcpMmphfStr`] for sorted string keys:
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use sux::func::{SignedFunc, LcpMmphfStr};
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::utils::FromSlice;
+/// let keys = vec!["alpha", "beta", "gamma"];
+/// let func = <SignedFunc<LcpMmphfStr, Box<[u64]>>>::try_new(
+///     FromSlice::new(&keys), keys.len(), no_logging![],
+/// )?;
+/// assert_eq!(func.get("beta"), Some(1));
+/// assert_eq!(func.get("missing"), None);
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -556,366 +600,11 @@ where
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Backward-compatible type aliases
-// ═══════════════════════════════════════════════════════════════════
-
-// ── SignedFunc convenience aliases (LcpMmphf) ────────────────────
-
-/// A [`SignedFunc`] wrapping a [`LcpMmphfInt`].
-///
-/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
-/// converted into (usually faster) structures using unaligned access.
-///
-/// # Examples
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::SignedLcpMmphfInt;
-/// # use sux::utils::FromSlice;
-/// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-///
-/// let func: SignedLcpMmphfInt<u64> = SignedLcpMmphfInt::try_new(
-///     FromSlice::new(&keys),
-///     keys.len(),
-///     no_logging![],
-/// )?;
-///
-/// for (i, &key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key), Some(i));
-/// }
-/// assert_eq!(func.get(999), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
-pub type SignedLcpMmphfInt<T, H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
-    SignedFunc<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>;
-
-/// A [`SignedFunc`] wrapping a [`LcpMmphf`] for `str` keys.
-///
-/// # Examples
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::SignedLcpMmphfStr;
-/// # use sux::utils::FromSlice;
-/// let keys = vec![
-///     "alpha".to_owned(),
-///     "beta".to_owned(),
-///     "delta".to_owned(),
-///     "gamma".to_owned(),
-/// ];
-///
-/// let func: SignedLcpMmphfStr =
-///     SignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
-///
-/// for (i, key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key.as_str()), Some(i));
-/// }
-/// assert_eq!(func.get("not_a_key"), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
-pub type SignedLcpMmphfStr<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
-    SignedFunc<LcpMmphf<str, BitFieldVec<Box<[usize]>>, S, E>, H>;
-
-/// A [`SignedFunc`] wrapping a [`LcpMmphf`] for `[u8]` keys.
-///
-/// # Examples
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::SignedLcpMmphfSliceU8;
-/// # use sux::utils::FromSlice;
-/// let keys: Vec<Vec<u8>> = vec![
-///     b"alpha".to_vec(), b"beta".to_vec(),
-///     b"delta".to_vec(), b"gamma".to_vec(),
-/// ];
-/// let func: SignedLcpMmphfSliceU8 =
-///     SignedLcpMmphfSliceU8::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
-///
-/// for (i, key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key.as_slice()), Some(i));
-/// }
-/// assert_eq!(func.get(b"not_a_key".as_slice()), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
-pub type SignedLcpMmphfSliceU8<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
-    SignedFunc<LcpMmphf<[u8], BitFieldVec<Box<[usize]>>, S, E>, H>;
-
-// ── SignedFunc convenience aliases (Lcp2Mmphf) ───────────────────
-
-/// A [`SignedFunc`] wrapping a [`Lcp2MmphfInt`].
-///
-/// # Examples
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::SignedLcp2MmphfInt;
-/// # use sux::utils::FromSlice;
-/// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-/// let func: SignedLcp2MmphfInt<u64> =
-///     SignedLcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
-///
-/// for (i, &key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key), Some(i));
-/// }
-/// assert_eq!(func.get(999), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
-pub type SignedLcp2MmphfInt<T, H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
-    SignedFunc<Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>;
-/// A [`SignedFunc`] wrapping a [`Lcp2Mmphf`] for `str` keys.
-///
-/// # Examples
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::SignedLcp2MmphfStr;
-/// # use sux::utils::FromSlice;
-/// let keys = vec!["alpha", "beta", "delta", "gamma"];
-/// let func: SignedLcp2MmphfStr =
-///     SignedLcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
-///
-/// for (i, &key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key), Some(i));
-/// }
-/// assert_eq!(func.get("not_a_key"), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
-pub type SignedLcp2MmphfStr<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
-    SignedFunc<Lcp2Mmphf<str, BitFieldVec<Box<[usize]>>, S, E>, H>;
-/// A [`SignedFunc`] wrapping a [`Lcp2Mmphf`] for `[u8]` keys.
-///
-/// # Examples
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::SignedLcp2MmphfSliceU8;
-/// # use sux::utils::FromSlice;
-/// let keys: Vec<Vec<u8>> = vec![
-///     b"alpha".to_vec(), b"beta".to_vec(),
-///     b"delta".to_vec(), b"gamma".to_vec(),
-/// ];
-/// let func: SignedLcp2MmphfSliceU8 =
-///     SignedLcp2MmphfSliceU8::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
-///
-/// for (i, key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key.as_slice()), Some(i));
-/// }
-/// assert_eq!(func.get(b"not_a_key".as_slice()), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
-pub type SignedLcp2MmphfSliceU8<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
-    SignedFunc<Lcp2Mmphf<[u8], BitFieldVec<Box<[usize]>>, S, E>, H>;
-
-// ── BitSignedFunc convenience aliases (LcpMmphf) ────────────────
-
-/// A [`BitSignedFunc`] wrapping a [`LcpMmphfInt`].
-///
-/// # Examples
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::BitSignedLcpMmphfInt;
-/// # use sux::utils::FromSlice;
-/// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-/// let func: BitSignedLcpMmphfInt<u64> =
-///     BitSignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
-///
-/// for (i, &key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key), Some(i));
-/// }
-/// assert_eq!(func.get(999), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
-pub type BitSignedLcpMmphfInt<T, H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
-    BitSignedFunc<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>;
-
-/// A [`BitSignedFunc`] wrapping a [`LcpMmphf`] for `str` keys.
-///
-/// # Examples
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::BitSignedLcpMmphfStr;
-/// # use sux::utils::FromSlice;
-/// let keys = vec!["alpha", "beta", "delta", "gamma"];
-/// let func: BitSignedLcpMmphfStr =
-///     BitSignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
-///
-/// for (i, &key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key), Some(i));
-/// }
-/// assert_eq!(func.get("not_a_key"), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
-pub type BitSignedLcpMmphfStr<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
-    BitSignedFunc<LcpMmphf<str, BitFieldVec<Box<[usize]>>, S, E>, H>;
-
-/// A [`BitSignedFunc`] wrapping a [`LcpMmphf`] for `[u8]` keys.
-///
-/// # Examples
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::BitSignedLcpMmphfSliceU8;
-/// # use sux::utils::FromSlice;
-/// let keys: Vec<Vec<u8>> = vec![
-///     b"alpha".to_vec(), b"beta".to_vec(),
-///     b"delta".to_vec(), b"gamma".to_vec(),
-/// ];
-/// let func: BitSignedLcpMmphfSliceU8 =
-///     BitSignedLcpMmphfSliceU8::try_new(
-///         FromSlice::new(&keys), keys.len(), 8, no_logging![],
-///     )?;
-///
-/// for (i, key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key.as_slice()), Some(i));
-/// }
-/// assert_eq!(func.get(b"not_a_key".as_slice()), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
-pub type BitSignedLcpMmphfSliceU8<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
-    BitSignedFunc<LcpMmphf<[u8], BitFieldVec<Box<[usize]>>, S, E>, H>;
-
-// ── BitSignedFunc convenience aliases (Lcp2Mmphf) ───────────────
-
-/// A [`BitSignedFunc`] wrapping a [`Lcp2MmphfInt`].
-///
-/// # Examples
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::BitSignedLcp2MmphfInt;
-/// # use sux::utils::FromSlice;
-/// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-/// let func: BitSignedLcp2MmphfInt<u64> =
-///     BitSignedLcp2MmphfInt::try_new(
-///         FromSlice::new(&keys), keys.len(), 8, no_logging![],
-///     )?;
-///
-/// for (i, &key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key), Some(i));
-/// }
-/// assert_eq!(func.get(999), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
-pub type BitSignedLcp2MmphfInt<T, H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
-    BitSignedFunc<Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>;
-
-/// A [`BitSignedFunc`] wrapping a [`Lcp2Mmphf`] for `str` keys.
-///
-/// # Examples
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::BitSignedLcp2MmphfStr;
-/// # use sux::utils::FromSlice;
-/// let keys = vec!["alpha", "beta", "delta", "gamma"];
-/// let func: BitSignedLcp2MmphfStr =
-///     BitSignedLcp2MmphfStr::try_new(
-///         FromSlice::new(&keys), keys.len(), 8, no_logging![],
-///     )?;
-///
-/// for (i, &key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key), Some(i));
-/// }
-/// assert_eq!(func.get("not_a_key"), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
-pub type BitSignedLcp2MmphfStr<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
-    BitSignedFunc<Lcp2Mmphf<str, BitFieldVec<Box<[usize]>>, S, E>, H>;
-
-/// A [`BitSignedFunc`] wrapping a [`Lcp2Mmphf`] for `[u8]` keys.
-///
-/// # Examples
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::BitSignedLcp2MmphfSliceU8;
-/// # use sux::utils::FromSlice;
-/// let keys: Vec<Vec<u8>> = vec![
-///     b"alpha".to_vec(), b"beta".to_vec(),
-///     b"delta".to_vec(), b"gamma".to_vec(),
-/// ];
-/// let func: BitSignedLcp2MmphfSliceU8 =
-///     BitSignedLcp2MmphfSliceU8::try_new(
-///         FromSlice::new(&keys), keys.len(), 8, no_logging![],
-///     )?;
-///
-/// for (i, key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key.as_slice()), Some(i));
-/// }
-/// assert_eq!(func.get(b"not_a_key".as_slice()), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
-pub type BitSignedLcp2MmphfSliceU8<
-    H = BitFieldVec<Box<[usize]>>,
-    S = [u64; 2],
-    E = FuseLge3Shards,
-> = BitSignedFunc<Lcp2Mmphf<[u8], BitFieldVec<Box<[usize]>>, S, E>, H>;
-
-// ═══════════════════════════════════════════════════════════════════
 // Constructors — helper functions
+// (type aliases section removed: use SignedFunc<LcpMmphfStr, Box<[u64]>> etc. directly)
 // ═══════════════════════════════════════════════════════════════════
+
+
 
 /// Fills a `Box<[W]>` hash array from a key lender.
 ///
@@ -1337,12 +1026,12 @@ where
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::func::SignedLcpMmphfInt;
+    /// # use sux::func::{SignedFunc, LcpMmphfInt};
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: SignedLcpMmphfInt<u64, Box<[u16]>> =
-    ///     SignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    /// let func: SignedFunc<LcpMmphfInt<u64>, Box<[u16]>> =
+    ///     <SignedFunc<LcpMmphfInt<u64>, Box<[u16]>>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1412,12 +1101,12 @@ where
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::func::SignedLcpMmphfStr;
+    /// # use sux::func::{SignedFunc, LcpMmphfStr};
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: SignedLcpMmphfStr<Box<[u16]>> =
-    ///     SignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    /// let func: SignedFunc<LcpMmphfStr, Box<[u16]>> =
+    ///     SignedFunc<LcpMmphfStr, Box<[u64]>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1491,12 +1180,12 @@ where
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::func::SignedLcp2MmphfInt;
+    /// # use sux::func::{SignedFunc, Lcp2MmphfInt};
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: SignedLcp2MmphfInt<u64, Box<[u16]>> =
-    ///     SignedLcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    /// let func: SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>> =
+    ///     <SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1570,12 +1259,12 @@ where
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::func::SignedLcp2MmphfStr;
+    /// # use sux::func::{SignedFunc, Lcp2MmphfStr};
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: SignedLcp2MmphfStr<Box<[u16]>> =
-    ///     SignedLcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    /// let func: SignedFunc<Lcp2MmphfStr, Box<[u16]>> =
+    ///     SignedFunc<Lcp2MmphfStr, Box<[u64]>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1647,12 +1336,13 @@ where
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::func::BitSignedLcpMmphfInt;
+    /// # use sux::func::{BitSignedFunc, LcpMmphfInt};
+/// # use sux::bits::BitFieldVec;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: BitSignedLcpMmphfInt<u64> =
-    ///     BitSignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+    /// let func: BitSignedFunc<LcpMmphfInt<u64>, Box<[u64]>> =
+    ///     Bit<SignedFunc<LcpMmphfInt<u64>, Box<[u16]>>>::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1742,12 +1432,12 @@ where
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::func::BitSignedLcpMmphfStr;
+    /// # use sux::func::BitSignedFunc<LcpMmphfStr, Box<[u64]>>;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: BitSignedLcpMmphfStr =
-    ///     BitSignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+    /// let func: BitSignedFunc<LcpMmphfStr, Box<[u64]>> =
+    ///     BitSignedFunc<LcpMmphfStr, Box<[u64]>>::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1845,12 +1535,13 @@ where
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::func::BitSignedLcp2MmphfInt;
+    /// # use sux::func::{BitSignedFunc, Lcp2MmphfInt};
+/// # use sux::bits::BitFieldVec;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: BitSignedLcp2MmphfInt<u64> =
-    ///     BitSignedLcp2MmphfInt::try_new(
+    /// let func: BitSignedFunc<Lcp2MmphfInt<u64>, BitFieldVec<Box<[usize]>>> =
+    ///     Bit<SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>>>::try_new(
     ///         FromSlice::new(&keys), keys.len(), 8, no_logging![],
     ///     )?;
     /// for (i, &key) in keys.iter().enumerate() {
@@ -1948,12 +1639,12 @@ where
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::func::BitSignedLcp2MmphfStr;
+    /// # use sux::func::BitSignedFunc<Lcp2MmphfStr, Box<[u64]>>;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: BitSignedLcp2MmphfStr =
-    ///     BitSignedLcp2MmphfStr::try_new(
+    /// let func: BitSignedFunc<Lcp2MmphfStr, Box<[u64]>> =
+    ///     BitSignedFunc<Lcp2MmphfStr, Box<[u64]>>::try_new(
     ///         FromSlice::new(&keys), keys.len(), 12, no_logging![],
     ///     )?;
     /// for (i, &key) in keys.iter().enumerate() {

@@ -88,8 +88,8 @@ fn build_single(
             let n = keys.len();
             macro_rules! build {
                 ($h:ty) => {{
-                    let mmphf: SignedLcpMmphfStr<Box<[$h]>> =
-                        SignedLcpMmphfStr::try_new_with_builder(
+                    let mmphf: SignedFunc<LcpMmphfStr, Box<[$h]>> =
+                        <SignedFunc<LcpMmphfStr, Box<[$h]>>>::try_new_with_builder(
                             FromSlice::new(&keys),
                             n,
                             builder,
@@ -130,8 +130,8 @@ fn build_two_step(
             let n = keys.len();
             macro_rules! build {
                 ($h:ty) => {{
-                    let mmphf: SignedLcp2MmphfStr<Box<[$h]>> =
-                        SignedLcp2MmphfStr::try_new(FromSlice::new(&keys), n, pl)?;
+                    let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
+                        <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_new(FromSlice::new(&keys), n, pl)?;
                     if let Some(ref f) = args.func {
                         unsafe { mmphf.store(f) }?;
                     }

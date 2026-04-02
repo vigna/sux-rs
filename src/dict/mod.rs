@@ -18,9 +18,8 @@
 //!   lists with element reordering for better compression.
 //! - [`SignedFunc`] / [`BitSignedFunc`]:
 //!   Index functions verified by hash signatures, returning `None` on mismatch.
-//!   These are re-exported from [`func::signed`](crate::func::signed); see
-//!   also the type aliases [`SignedLcpMmphfInt`](crate::func::SignedLcpMmphfInt),
-//!   [`SignedLcpMmphfStr`](crate::func::SignedLcpMmphfStr), etc.
+//!   These are re-exported from [`func::signed`](crate::func::signed).
+//!   Use concrete types like `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
 //! - [`VFilter`]: Static filters (approximate membership structures) based on
 //!   hash comparison. Use the `Box<[W]>` backend for full-width hashes, or the
 //!   `BitFieldVec` backend with an explicit `filter_bits` parameter for
