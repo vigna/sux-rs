@@ -458,24 +458,26 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self> {
         let mut builder = builder.expected_num_keys(n);
-        builder.try_populate_and_build(
-            keys,
-            values,
-            &mut |builder, seed, mut store, _max_value, _num_keys, pl, _state: &mut ()| {
-                Self::try_build_from_store::<W>(
-                    seed,
-                    builder.shard_edge,
-                    &mut *store,
-                    &|v| v,
-                    VBuilder::default()
-                        .max_num_threads(builder.max_num_threads)
-                        .eps(builder.eps),
-                    pl,
-                )
-            },
-            pl,
-            (),
-        )
+        builder
+            .try_populate_and_build(
+                keys,
+                values,
+                &mut |builder, seed, mut store, _max_value, _num_keys, pl, _state: &mut ()| {
+                    Self::try_build_from_store::<W>(
+                        seed,
+                        builder.shard_edge,
+                        &mut *store,
+                        &|v| v,
+                        VBuilder::default()
+                            .max_num_threads(builder.max_num_threads)
+                            .eps(builder.eps),
+                        pl,
+                    )
+                },
+                pl,
+                (),
+            )
+            .map(|(r, _keys)| r)
     }
 
     /// Builds a [`VFunc2`] from an existing [`ShardStore`].

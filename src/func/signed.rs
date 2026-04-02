@@ -824,7 +824,7 @@ where
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        let (func, mut store) = builder.expected_num_keys(n).try_build_func_and_store(
+        let (func, mut store, _) = builder.expected_num_keys(n).try_build_func_and_store(
             keys,
             FromCloneableIntoIterator::from(0..),
             BitFieldVec::new_unaligned,
@@ -986,7 +986,7 @@ where
         assert!(hash_width > 0);
         assert!(hash_width <= H::BITS as usize);
 
-        let (func, mut store) = builder.expected_num_keys(n).try_build_func_and_store(
+        let (func, mut store, _) = builder.expected_num_keys(n).try_build_func_and_store(
             keys,
             FromCloneableIntoIterator::from(0..),
             BitFieldVec::<Box<[usize]>>::new_unaligned,
@@ -1046,9 +1046,7 @@ where
 {
     /// Creates a new signed LCP-based MMPHF for integers.
     ///
-    /// The keys must be in strictly increasing order. The lender must be
-    /// [`Clone`] so that an additional pass can compute verification
-    /// hashes after building the inner MMPHF.
+    /// The keys must be in strictly increasing order.
     ///
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
@@ -1078,8 +1076,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -1092,21 +1089,16 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        let keys_for_hashes = keys.clone();
-        let func = LcpMmphfInt::try_new_with_builder(keys, n, builder, pl)?;
-        let hashes = fill_hashes(
-            func.shard_edge(),
-            func.seed(),
-            n,
-            keys_for_hashes,
-            |key, seed| T::to_sig(*key, seed),
-        )?;
+        let (func, _, keys) = LcpMmphfInt::try_new_inner(keys, n, builder, true, pl)?;
+        let mut keys = keys.rewind()?;
+        let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
+            T::to_sig(*key, seed)
+        })?;
         Ok(Self { func, hashes })
     }
 }
@@ -1129,9 +1121,7 @@ where
     /// Creates a new signed LCP-based MMPHF for byte-sequence keys.
     ///
     /// The keys must be in strictly increasing lexicographic order
-    /// (byte-level comparison). The lender must be [`Clone`] so that an
-    /// additional pass can compute verification hashes after building the
-    /// inner MMPHF.
+    /// (byte-level comparison).
     ///
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
@@ -1161,8 +1151,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -1175,21 +1164,16 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        let keys_for_hashes = keys.clone();
-        let func = LcpMmphf::try_new_with_builder(keys, n, builder, pl)?;
-        let hashes = fill_hashes(
-            func.shard_edge(),
-            func.seed(),
-            n,
-            keys_for_hashes,
-            |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
-        )?;
+        let (func, _, keys) = LcpMmphf::try_new_inner(keys, n, builder, true, pl)?;
+        let mut keys = keys.rewind()?;
+        let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
+            K::to_sig(<B as Borrow<K>>::borrow(key), seed)
+        })?;
         Ok(Self { func, hashes })
     }
 }
@@ -1246,8 +1230,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -1260,21 +1243,16 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        let keys_for_hashes = keys.clone();
-        let func = Lcp2MmphfInt::try_new_with_builder(keys, n, builder, pl)?;
-        let hashes = fill_hashes(
-            func.shard_edge(),
-            func.seed(),
-            n,
-            keys_for_hashes,
-            |key, seed| T::to_sig(*key, seed),
-        )?;
+        let (func, keys) = Lcp2MmphfInt::try_new_inner(keys, n, builder, pl)?;
+        let mut keys = keys.rewind()?;
+        let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
+            T::to_sig(*key, seed)
+        })?;
         Ok(Self { func, hashes })
     }
 }
@@ -1331,8 +1309,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -1345,21 +1322,16 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        let keys_for_hashes = keys.clone();
-        let func = Lcp2Mmphf::try_new_with_builder(keys, n, builder, pl)?;
-        let hashes = fill_hashes(
-            func.shard_edge(),
-            func.seed(),
-            n,
-            keys_for_hashes,
-            |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
-        )?;
+        let (func, keys) = Lcp2Mmphf::try_new_inner(keys, n, builder, pl)?;
+        let mut keys = keys.rewind()?;
+        let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
+            K::to_sig(<B as Borrow<K>>::borrow(key), seed)
+        })?;
         Ok(Self { func, hashes })
     }
 }
@@ -1414,8 +1386,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -1429,8 +1400,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
         hash_width: usize,
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
@@ -1443,15 +1413,15 @@ where
             (1u64 << hash_width) - 1
         };
 
-        let keys_for_hashes = keys.clone();
-        let func = LcpMmphfInt::try_new_with_builder(keys, n, builder, pl)?;
+        let (func, _, keys) = LcpMmphfInt::try_new_inner(keys, n, builder, true, pl)?;
+        let mut keys = keys.rewind()?;
         let hashes = fill_bit_hashes(
             func.shard_edge(),
             func.seed(),
             n,
             hash_width,
             hash_mask,
-            keys_for_hashes,
+            &mut keys,
             |key, seed| T::to_sig(*key, seed),
         )?;
         Ok(Self {
@@ -1511,8 +1481,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -1526,8 +1495,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         hash_width: usize,
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
@@ -1540,15 +1508,15 @@ where
             (1u64 << hash_width) - 1
         };
 
-        let keys_for_hashes = keys.clone();
-        let func = LcpMmphf::try_new_with_builder(keys, n, builder, pl)?;
+        let (func, _, keys) = LcpMmphf::try_new_inner(keys, n, builder, true, pl)?;
+        let mut keys = keys.rewind()?;
         let hashes = fill_bit_hashes(
             func.shard_edge(),
             func.seed(),
             n,
             hash_width,
             hash_mask,
-            keys_for_hashes,
+            &mut keys,
             |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
         )?;
         Ok(Self {
@@ -1617,8 +1585,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -1632,8 +1599,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
         n: usize,
         hash_width: usize,
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
@@ -1646,15 +1612,15 @@ where
             (1u64 << hash_width) - 1
         };
 
-        let keys_for_hashes = keys.clone();
-        let func = Lcp2MmphfInt::try_new_with_builder(keys, n, builder, pl)?;
+        let (func, keys) = Lcp2MmphfInt::try_new_inner(keys, n, builder, pl)?;
+        let mut keys = keys.rewind()?;
         let hashes = fill_bit_hashes(
             func.shard_edge(),
             func.seed(),
             n,
             hash_width,
             hash_mask,
-            keys_for_hashes,
+            &mut keys,
             |key, seed| T::to_sig(*key, seed),
         )?;
         Ok(Self {
@@ -1722,8 +1688,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -1737,8 +1702,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>
-        + Clone,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         hash_width: usize,
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
@@ -1751,15 +1715,15 @@ where
             (1u64 << hash_width) - 1
         };
 
-        let keys_for_hashes = keys.clone();
-        let func = Lcp2Mmphf::try_new_with_builder(keys, n, builder, pl)?;
+        let (func, keys) = Lcp2Mmphf::try_new_inner(keys, n, builder, pl)?;
+        let mut keys = keys.rewind()?;
         let hashes = fill_bit_hashes(
             func.shard_edge(),
             func.seed(),
             n,
             hash_width,
             hash_mask,
-            keys_for_hashes,
+            &mut keys,
             |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
         )?;
         Ok(Self {
