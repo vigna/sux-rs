@@ -11,7 +11,7 @@
 //! A signed function stores for each key a hash. When querying a key, the
 //! function first computes the hash of the key and compares it with the stored
 //! hash for the returned index. If the hashes match, the index is returned;
-//! otherwise, `None` is returned. This allows the function to reject queries
+//! otherwise, [`None`] is returned. This allows the function to reject queries
 //! for keys outside the original set, with a false-positive probability
 //! depending on the size of the stored hashes.
 //!
@@ -24,12 +24,11 @@
 //!   2<sup>-`hash_width`</sup>.
 //!
 //! Both wrappers are generic over the inner function `F` (which must implement
-//! [`SignableMphf`]) and the hash storage `H`. Per-inner-type `get` methods are
+//! [`SignableFunc`]) and the hash storage `H`. Per-inner-type `get` methods are
 //! provided via monomorphized `impl` blocks.
 //!
-//! See [`SignedLcpMmphfInt`], [`SignedLcpMmphfStr`],
-//! [`BitSignedLcpMmphfInt`], [`BitSignedLcpMmphfStr`], etc., for
-//! convenience type aliases.
+//! See [`SignedLcpMmphfInt`], [`SignedLcpMmphfStr`], [`BitSignedLcpMmphfInt`],
+//! [`BitSignedLcpMmphfStr`], etc., for convenience type aliases.
 
 use std::borrow::Borrow;
 
@@ -48,7 +47,6 @@ use {
 };
 
 use crate::bits::{BitFieldVec, BitFieldVecU};
-use crate::dict::SignableMphf;
 use crate::func::VFunc;
 use crate::func::lcp_mmphf::{LcpMmphf, LcpMmphfInt};
 use crate::func::lcp2_mmphf::{Lcp2Mmphf, Lcp2MmphfInt};
@@ -58,11 +56,27 @@ use mem_dbg::*;
 use num_primitive::{PrimitiveInteger, PrimitiveNumber};
 use value_traits::slices::SliceByValue;
 
-// ═══════════════════════════════════════════════════════════════════
-// SignableMphf implementations
-// ═══════════════════════════════════════════════════════════════════
+/// Common interface for inner functions used by signed wrappers.
+///
+/// This trait is not intended to be implemented by users; it iss an internal
+/// abstraction to allow the signed wrappers to work with different static
+/// functions. It provides access to the seed, shard edge, and key count, so
+/// that [`SignedFunc`] and [`BitSignedFunc`] can verify hashes without knowing
+/// which specific MMPHF variant they wrap.
+pub trait SignableFunc {
+    type Sig: Sig;
+    type Edge: ShardEdge<Self::Sig, 3>;
 
-impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableMphf
+    fn seed(&self) -> u64;
+    fn shard_edge(&self) -> &Self::Edge;
+    fn len(&self) -> usize;
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableFunc
     for LcpMmphfInt<T, D, S, E>
 {
     type Sig = S;
@@ -82,7 +96,7 @@ impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S
     }
 }
 
-impl<K: ?Sized, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableMphf
+impl<K: ?Sized, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableFunc
     for LcpMmphf<K, D, S, E>
 {
     type Sig = S;
@@ -102,7 +116,7 @@ impl<K: ?Sized, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> Sign
     }
 }
 
-impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableMphf
+impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableFunc
     for Lcp2MmphfInt<T, D, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
@@ -124,7 +138,7 @@ where
     }
 }
 
-impl<K: ?Sized, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableMphf
+impl<K: ?Sized, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableFunc
     for Lcp2Mmphf<K, D, S, E>
 where
     Fuse3Shards: ShardEdge<S, 3>,
@@ -146,7 +160,7 @@ where
     }
 }
 
-impl<T: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableMphf for VFunc<T, D, S, E> {
+impl<T: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VFunc<T, D, S, E> {
     type Sig = S;
     type Edge = E;
 
@@ -170,7 +184,7 @@ impl<T: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableMphf for VF
 
 /// A signed function using a [`SliceByValue`] to store full-width hashes.
 ///
-/// Wraps an inner function `F` (any type implementing [`SignableMphf`]) and adds
+/// Wraps an inner function `F` (any type implementing [`SignableFunc`]) and adds
 /// per-key verification hashes so that queries for keys outside the original
 /// set return `None` (with false-positive probability
 /// 2<sup>-`H::Value::BITS`</sup>).
@@ -204,7 +218,7 @@ impl<F, H> SignedFunc<F, H> {
 
 // ── Unified query helpers ────────────────────────────────────────
 
-impl<F: SignableMphf, H: SliceByValue<Value: PrimitiveNumber>> SignedFunc<F, H> {
+impl<F: SignableFunc, H: SliceByValue<Value: PrimitiveNumber>> SignedFunc<F, H> {
     /// Verifies that the stored hash matches the remixed hash for the
     /// given index and signature.
     #[inline(always)]
@@ -395,7 +409,7 @@ impl<F, H> BitSignedFunc<F, H> {
 
 // ── Unified query helpers ────────────────────────────────────────
 
-impl<F: SignableMphf, H: SliceByValue<Value: PrimitiveNumber>> BitSignedFunc<F, H> {
+impl<F: SignableFunc, H: SliceByValue<Value: PrimitiveNumber>> BitSignedFunc<F, H> {
     /// Verifies that the stored hash matches the masked remixed hash for
     /// the given index and signature.
     #[inline(always)]

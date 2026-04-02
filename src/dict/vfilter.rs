@@ -8,7 +8,6 @@
 //! Static filters (approximate membership structures with false positives).
 
 use crate::bits::{BitFieldVec, BitFieldVecU};
-use crate::func::mix64;
 use crate::func::{VFunc, shard_edge::ShardEdge};
 use crate::traits::{Backend, Word};
 use crate::utils::{BinSafe, Sig, ToSig};
@@ -317,7 +316,9 @@ where
             keys,
             W::BITS as usize,
             |_, len| vec![W::ZERO; len].into(),
-            &|shard_edge, sig_val| W::as_from(mix64(shard_edge.edge_hash(sig_val.sig))),
+            &|shard_edge, sig_val| {
+                W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
+            },
             pl,
         )?;
 
@@ -449,7 +450,7 @@ where
             filter_bits,
             BitFieldVec::new_unaligned,
             &|shard_edge, sig_val| {
-                W::as_from(mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
+                W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
             },
             pl,
         )?;
