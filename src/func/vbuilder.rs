@@ -81,6 +81,7 @@ const LOG2_MAX_SHARDS: u32 = 16;
 ///
 /// - [`try_build_func`](Self::try_build_func) — builds a [`VFunc`],
 ///   draining the store to save memory.
+///
 /// - [`try_build_func_and_store`](Self::try_build_func_and_store) — builds
 ///   a [`VFunc`] and returns the populated [`ShardStore`] for reuse.
 ///
@@ -174,7 +175,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// Fast-stop for failed attempts.
     failed: AtomicBool,
     #[doc(hidden)]
-    _marker_v: PhantomData<(D, S)>,
+    _marker: PhantomData<(D, S)>,
 }
 
 impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge<S, 3>>
@@ -197,10 +198,12 @@ impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge
 /// Fatal build errors.
 #[derive(thiserror::Error, Debug)]
 pub enum BuildError {
-    /// A duplicate key was detected.
+    /// A duplicate key was detected with high probability (multiple
+    /// construction attempts with different seeds found duplicate 128-bit
+    /// signatures).
     #[error("Duplicate key")]
     DuplicateKey,
-    /// Duplicate local signatures were detected.
+    /// Multiple construction attempts found duplicate local signatures.
     #[error("Duplicate local signatures: use full signatures")]
     DuplicateLocalSignatures,
     /// A value is too large for the specified bit size.
@@ -208,8 +211,7 @@ pub enum BuildError {
     ValueTooLarge,
 }
 
-/// Transient error during the build, leading to
-/// trying with a different seed.
+/// Transient error during the build, leading to trying with a different seed.
 #[derive(thiserror::Error, Debug)]
 pub enum SolveError {
     /// A duplicate signature was detected.
@@ -229,8 +231,7 @@ pub enum SolveError {
 /// The result of a peeling procedure.
 enum PeelResult<
     'a,
-    W: Word + BinSafe + Send + Sync,
-    D: BitFieldSlice<Value = W> + BitFieldSliceMut<Value = W> + Send + Sync + 'a,
+    D: BitFieldSlice<Value: Word + BinSafe + Send + Sync> + BitFieldSliceMut + Send + Sync + 'a,
     S: Sig + BinSafe,
     E: ShardEdge<S, 3>,
     V: BinSafe,
@@ -249,7 +250,6 @@ enum PeelResult<
         double_stack: DoubleStack<E::Vertex>,
         /// The sides stack.
         sides_stack: Vec<u8>,
-        _marker: PhantomData<W>,
     },
 }
 
@@ -435,7 +435,7 @@ type ShardDataIter<'a, D> = <D as SliceByValueMut>::ChunksMut<'a>;
 /// A segment of data associated with a specific shard.
 type ShardData<'a, D> = <ShardDataIter<'a, D> as Iterator>::Item;
 
-impl<W: Word + BinSafe + AsU128, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
     VBuilder<BitFieldVec<Box<[W]>>, S, E>
 where
     SigVal<S, W>: RadixKey,
@@ -511,23 +511,17 @@ where
     {
         self.shard_edge = shard_edge;
         self.num_keys = shard_store.len();
-        self.bit_width = max_value.as_u128().bit_len() as usize;
+        self.bit_width = max_value.bit_len() as usize;
 
-        // The shard structure is fixed by the store (set at
-        // `into_shard_store` time). We only reconfigure graph
-        // parameters (c, lge, segment size, vertex count) for the
-        // actual key count and shard sizes.
+        // The shard structure is fixed by the store (set at `into_shard_store`
+        // time). We only reconfigure graph parameters (c, lge, segment size,
+        // vertex count) for the actual key count and shard sizes.
         let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
         (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
 
         pl.info(format_args!(
-            "Number of keys: {} Max value: {} Bit width: {}",
-            self.num_keys,
-            {
-                let v: u128 = max_value.as_u128();
-                v
-            },
-            self.bit_width,
+            "Number of keys: {} Max value: {max_value} Bitwidth: {}",
+            self.num_keys, self.bit_width,
         ));
 
         let data: BitFieldVec<Box<[W]>> = BitFieldVec::<Box<[W]>>::new_unaligned(
@@ -562,8 +556,8 @@ impl RetryState {
     /// Handles the result of a [`VBuilder::try_solve_once`] call.
     ///
     /// On success, returns `Ok(Some(r))`. On retryable error, logs a
-    /// warning and returns `Ok(None)` — the caller should rewind its
-    /// lenders and retry. On fatal error, returns `Err(e)`.
+    /// warning and returns `Ok(None)` (the caller should rewind its
+    /// lenders and retry). On fatal error, returns `Err(e)`.
     pub(crate) fn handle_solve_result<R>(
         &mut self,
         result: anyhow::Result<R>,
@@ -615,7 +609,7 @@ impl RetryState {
 }
 
 impl<
-    D: BitFieldSlice<Value: Word + BinSafe + AsU128> + Send + Sync,
+    D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 > VBuilder<D, S, E>
@@ -653,7 +647,6 @@ impl<
         pl: &mut P,
     ) -> anyhow::Result<(VFunc<T, D, S, E>, K)>
     where
-        D::Value: AsU128,
         SigVal<S, D::Value>: RadixKey,
         SigVal<E::LocalSig, D::Value>: BitXor + BitXorAssign,
         D: for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>,
@@ -666,7 +659,7 @@ impl<
             keys,
             values,
             &mut |builder, seed, mut store, max_value, _num_keys, pl: &mut P, _state: &mut ()| {
-                builder.bit_width = max_value.as_u128().bit_len() as usize;
+                builder.bit_width = max_value.bit_len() as usize;
 
                 let data = new_data(
                     builder.bit_width,
@@ -674,13 +667,8 @@ impl<
                 );
 
                 pl.info(format_args!(
-                    "Number of keys: {} Max value: {} Bit width: {}",
-                    builder.num_keys,
-                    {
-                        let v: u128 = max_value.as_u128();
-                        v
-                    },
-                    builder.bit_width,
+                    "Number of keys: {} Max value: {max_value} Bit width: {}",
+                    builder.num_keys, builder.bit_width,
                 ));
 
                 let func = builder.try_build_from_shard_iter(
@@ -738,7 +726,6 @@ impl<
         K,
     )>
     where
-        D::Value: AsU128,
         SigVal<S, D::Value>: RadixKey,
         SigVal<E::LocalSig, D::Value>: BitXor + BitXorAssign,
         D: for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>,
@@ -751,7 +738,7 @@ impl<
             keys,
             values,
             &mut |builder, seed, mut store, max_value, _num_keys, pl: &mut P, _state: &mut ()| {
-                builder.bit_width = max_value.as_u128().bit_len() as usize;
+                builder.bit_width = max_value.bit_len() as usize;
 
                 let data = new_data(
                     builder.bit_width,
@@ -759,13 +746,8 @@ impl<
                 );
 
                 pl.info(format_args!(
-                    "Number of keys: {} Max value: {} Bit width: {}",
-                    builder.num_keys,
-                    {
-                        let v: u128 = max_value.as_u128();
-                        v
-                    },
-                    builder.bit_width,
+                    "Number of keys: {} Max value: {max_value} Bit width: {}",
+                    builder.num_keys, builder.bit_width,
                 ));
 
                 let func = builder.try_build_from_shard_iter(
@@ -913,17 +895,16 @@ impl<
     /// [`BuildError::DuplicateLocalSignatures`] is returned. Any other
     /// error is propagated immediately.
     ///
-    /// `build_fn` is called with `(&mut self, seed, store, max_value,
-    /// num_keys, pl)`. The builder's `shard_edge`, `c`, and `lge` fields
-    /// are already set up when `build_fn` is invoked, so it can call
-    /// `try_build_from_shard_iter`
-    /// directly.
+    /// `build_fn` is called with `(&mut self, seed, store, max_value, num_keys,
+    /// pl)`. The builder's `shard_edge`, `c`, and `lge` fields are already set
+    /// up when `build_fn` is invoked, so it can call
+    /// [`try_build_from_shard_iter`](Self::try_build_from_shard_iter) directly.
     ///
     /// Returns whatever `build_fn` returns on success.
     pub fn try_populate_and_build<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
-        V: BinSafe + Default + Send + Sync + Ord + AsU128,
+        V: BinSafe + Default + Send + Sync + Ord,
         R,
         P: ProgressLog + Clone + Send + Sync,
         C,
@@ -1009,7 +990,7 @@ impl<
     /// Returns the result of `build_fn`, or a [`SolveError`] for the
     /// caller's retry loop to handle.
     pub(crate) fn try_solve_once<
-        V: BinSafe + Default + Send + Sync + Ord + AsU128,
+        V: BinSafe + Default + Send + Sync + Ord,
         R,
         P: ProgressLog + Clone + Send + Sync,
         C,
@@ -1072,7 +1053,7 @@ impl<
     /// to the concrete store type without dynamic dispatch. The `state`
     /// parameter is forwarded to both `populate` and `build_fn`.
     fn try_solve_once_inner<
-        V: BinSafe + Default + Send + Sync + Ord + AsU128,
+        V: BinSafe + Default + Send + Sync + Ord,
         R,
         P: ProgressLog + Clone + Send + Sync,
         SS: SigStore<S, V, ShardStore: 'static>,
@@ -1187,11 +1168,14 @@ impl<
     /// # Preconditions
     ///
     /// * `seed` must be the seed used during store population.
+    ///
     /// * `data` must be freshly allocated, zero-initialized storage of
     ///   size `shard_edge.num_vertices() * shard_edge.num_shards()`.
+    ///
     /// * `self.shard_edge`, `self.c`, `self.lge`, `self.bit_width`, and
     ///   `self.num_keys` must be set up by the caller (typically by
     ///   [`try_solve_once`](Self::try_solve_once)).
+    ///
     /// * `get_val` must be deterministic.
     ///
     /// # Errors
@@ -1344,9 +1328,8 @@ macro_rules! remove_edge {
 }
 
 impl<
-    W: Word + BinSafe + Send + Sync,
-    D: BitFieldSlice<Value = W>
-        + for<'a> BitFieldSliceMut<Value = W, ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>
+    D: BitFieldSlice<Value: Word + BinSafe + Send + Sync>
+        + for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>
         + Send
         + Sync,
     S: Sig + BinSafe,
@@ -1658,7 +1641,7 @@ impl<
     fn peel_by_index<
         'a,
         V: BinSafe,
-        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> D::Value + Send + Sync,
         H: Fn(&SigVal<S, V>) + Send + Sync,
     >(
         &self,
@@ -1668,7 +1651,7 @@ impl<
         get_val: &G,
         inspect: &H,
         pl: &mut impl ProgressLog,
-    ) -> Result<PeelResult<'a, W, D, S, E, V>, ()> {
+    ) -> Result<PeelResult<'a, D, S, E, V>, ()> {
         let shard_edge = &self.shard_edge;
         let num_vertices = shard_edge.num_vertices();
         let num_shards = shard_edge.num_shards();
@@ -1761,7 +1744,6 @@ impl<
                 data,
                 double_stack,
                 sides_stack,
-                _marker: PhantomData,
             });
         }
 
@@ -1817,7 +1799,7 @@ impl<
     /// signature/value pairs in the shard.
     fn peel_by_sig_vals_high_mem<
         V: BinSafe,
-        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> D::Value + Send + Sync,
         H: Fn(&SigVal<S, V>) + Send + Sync,
     >(
         &self,
@@ -1957,7 +1939,7 @@ impl<
     /// signature/value pairs in the shard.
     fn peel_by_sig_vals_low_mem<
         V: BinSafe,
-        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> D::Value + Send + Sync,
         H: Fn(&SigVal<S, V>) + Send + Sync,
     >(
         &self,
@@ -2083,7 +2065,7 @@ impl<
     /// [`VBuilder::assign`] to complete the assignment of values.
     fn lge_shard<
         V: BinSafe,
-        G: Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync,
+        G: Fn(&E, SigVal<E::LocalSig, V>) -> D::Value + Send + Sync,
         H: Fn(&SigVal<S, V>) + Send + Sync,
     >(
         &self,
@@ -2105,7 +2087,6 @@ impl<
                 mut data,
                 double_stack,
                 sides_stack,
-                _marker: PhantomData,
             }) => {
                 pl.info(format_args!("Switching to lazy Gaussian elimination..."));
                 // We now solve the remaining edges with Gaussian elimination.
@@ -2212,10 +2193,10 @@ impl<
         &self,
         shard_index: usize,
         mut data: ShardData<'_, D>,
-        sigs_vals_sides: impl Iterator<Item = ((E::LocalSig, W), u8)>,
+        sigs_vals_sides: impl Iterator<Item = ((E::LocalSig, D::Value), u8)>,
         pl: &mut impl ProgressLog,
     ) where
-        for<'a> ShardData<'a, D>: SliceByValueMut<Value = W>,
+        for<'a> ShardData<'a, D>: SliceByValueMut,
     {
         if self.failed.load(Ordering::Relaxed) {
             return;

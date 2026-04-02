@@ -427,17 +427,15 @@ where
         pl.info(format_args!("Building key → (LCP length, offset) map..."));
         let keys = keys.rewind()?;
 
-        let (offset_lcp_length, keys) =
-            builder
-                .expected_num_keys(n)
-                .try_build_func::<T, T, _, _>(
-                    keys,
-                    FromCloneableIntoIterator::new((0..n).map(|idx| {
-                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                    })),
-                    BitFieldVec::<Box<[usize]>>::new_unaligned,
-                    pl,
-                )?;
+        let (offset_lcp_length, keys) = builder.expected_num_keys(n).try_build_func::<T, T, _, _>(
+            keys,
+            FromCloneableIntoIterator::new(
+                (0..n)
+                    .map(|idx| (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)),
+            ),
+            BitFieldVec::<Box<[usize]>>::new_unaligned,
+            pl,
+        )?;
 
         // -- Build lcp2bucket VFunc --
 
@@ -976,17 +974,15 @@ where
         pl.info(format_args!("Building key → (LCP length, offset) map..."));
         let keys = keys.rewind()?;
 
-        let (offset_lcp_length, keys) =
-            builder
-                .expected_num_keys(n)
-                .try_build_func::<K, B, _, _>(
-                    keys,
-                    FromCloneableIntoIterator::new((0..n).map(|idx| {
-                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
-                    })),
-                    BitFieldVec::<Box<[usize]>>::new_unaligned,
-                    pl,
-                )?;
+        let (offset_lcp_length, keys) = builder.expected_num_keys(n).try_build_func::<K, B, _, _>(
+            keys,
+            FromCloneableIntoIterator::new(
+                (0..n)
+                    .map(|idx| (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)),
+            ),
+            BitFieldVec::<Box<[usize]>>::new_unaligned,
+            pl,
+        )?;
 
         // -- Build lcp2bucket VFunc --
         //

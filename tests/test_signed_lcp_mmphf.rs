@@ -17,10 +17,8 @@ use sux::utils::FromSlice;
 type SignedLcpMmphfStr = SignedFunc<LcpMmphf<str>, Box<[u64]>>;
 type SignedLcpMmphfSliceU8 = SignedFunc<LcpMmphf<[u8]>, Box<[u64]>>;
 type SignedLcpMmphfInt<T> = SignedFunc<LcpMmphfInt<T>, Box<[u64]>>;
-type BitSignedLcpMmphfInt<T> =
-    BitSignedFunc<LcpMmphfInt<T>, BitFieldVec<Box<[usize]>>>;
-type BitSignedLcpMmphfStr =
-    BitSignedFunc<LcpMmphf<str>, BitFieldVec<Box<[usize]>>>;
+type BitSignedLcpMmphfInt<T> = BitSignedFunc<LcpMmphfInt<T>, BitFieldVec<Box<[usize]>>>;
+type BitSignedLcpMmphfStr = BitSignedFunc<LcpMmphf<str>, BitFieldVec<Box<[usize]>>>;
 
 // ── String tests ────────────────────────────────────────────────────
 
