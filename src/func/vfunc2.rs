@@ -609,7 +609,7 @@ where
         pl.info(format_args!(
             "Building key -> remapped index ({best_r} bits, escape={escape_usize})..."
         ));
-        let short = builder.try_build_func_with_store::<T, V>(
+        let short = builder.try_build_func_with_store_and_inspect::<T, V>(
             seed,
             shard_edge,
             escape,
@@ -679,7 +679,6 @@ where
                 max_value,
                 &mut filtered_store,
                 &|_e, sig_val| get_val(sig_val.val),
-                &|_| {},
                 pl,
             )?;
 

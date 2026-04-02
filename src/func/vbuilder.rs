@@ -446,9 +446,6 @@ where
     /// Builds a new function by reusing an existing [`ShardStore`] with
     /// remapped values.
     ///
-    /// This is a low-level method that requires a thorough understanding
-    /// of the builder's internal state.
-    ///
     /// This avoids re-hashing the keys: the store already contains the
     /// signatures from a previous build. A `get_val` closure transforms
     /// each stored [`SigVal`] into the new output value.
@@ -463,27 +460,36 @@ where
     /// * `get_val` must be deterministic: the store is iterated multiple
     ///   times and different results for the same input would silently
     ///   corrupt the function.
-    ///
-    /// # Arguments
-    ///
-    /// * `seed` — the seed from the store's population step.
-    ///
-    /// * `shard_edge` — the shard edge from the same population step.
-    ///
-    /// * `max_value` — the maximum value that `get_val` can return
-    ///   (determines the bit width of the output).
-    ///
-    /// * `shard_store` — the store kept from a previous
-    ///   `try_build_func_and_store(…, drain_store = false, …)` call.
-    ///
-    /// * `get_val` — maps each [`SigVal<E::LocalSig, V>`](SigVal) to
-    ///   the new output value `W`.
-    ///
-    /// * `inspect` — a closure that is called on each signature/value pair
-    ///   during the build, for example, to log the distribution of values.
-    ///
-    /// * `pl` — the progress logger.
     pub fn try_build_func_with_store<T: ?Sized + ToSig<S>, V: BinSafe + Default + Send + Sync>(
+        self,
+        seed: u64,
+        shard_edge: E,
+        max_value: W,
+        shard_store: &mut (impl ShardStore<S, V> + ?Sized),
+        get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFunc<T, BitFieldVec<Box<[W]>>, S, E>>
+    where
+        SigVal<S, V>: RadixKey,
+        SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
+        for<'a> ShardDataIter<'a, BitFieldVec<Box<[W]>>>: Send,
+        for<'a> <ShardDataIter<'a, BitFieldVec<Box<[W]>>> as Iterator>::Item: Send,
+    {
+        self.try_build_func_with_store_and_inspect(
+            seed, shard_edge, max_value, shard_store, get_val, &|_| {}, pl,
+        )
+    }
+
+    /// Like [`try_build_func_with_store`](Self::try_build_func_with_store),
+    /// but calls `inspect` on each [`SigVal`] during the peeling phase.
+    ///
+    /// This is used by [`VFunc2`](crate::func::VFunc2) and
+    /// [`Lcp2MmphfInt`](crate::func::Lcp2MmphfInt) to count escaped keys
+    /// per shard without a separate pass over the store.
+    pub fn try_build_func_with_store_and_inspect<
+        T: ?Sized + ToSig<S>,
+        V: BinSafe + Default + Send + Sync,
+    >(
         mut self,
         seed: u64,
         shard_edge: E,
@@ -699,6 +705,96 @@ impl<
             pl,
             (),
         )
+    }
+
+    /// Builds a [`VFunc`] suitable for use as a filter backend.
+    ///
+    /// Unlike [`try_build_func_and_store`](Self::try_build_func_and_store),
+    /// this method takes only keys (no values), uses a caller-specified
+    /// `bit_width` instead of deriving it from `max_value`, and derives
+    /// stored values from signatures via `get_val`.
+    ///
+    /// `new_data(bit_width, len)` allocates the backend storage.
+    pub fn try_build_filter<
+        T: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<T>,
+        P: ProgressLog + Clone + Send + Sync,
+        G: Fn(&E, SigVal<E::LocalSig, EmptyVal>) -> D::Value + Send + Sync,
+    >(
+        mut self,
+        mut keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        bit_width: usize,
+        new_data: fn(usize, usize) -> D,
+        get_val: &G,
+        pl: &mut P,
+    ) -> anyhow::Result<VFunc<T, D, S, E>>
+    where
+        SigVal<S, EmptyVal>: RadixKey,
+        SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
+        D: for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>,
+        for<'a> ShardDataIter<'a, D>: Send,
+        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
+    {
+        let mut rs = self.retry_state(pl);
+
+        loop {
+            let seed = rs.next_seed();
+
+            let result = {
+                let mut populate = |seed: u64,
+                                    push: &mut dyn FnMut(SigVal<S, EmptyVal>) -> anyhow::Result<()>,
+                                    pl: &mut P,
+                                    _state: &mut ()| {
+                    while let Some(key) = keys.next()? {
+                        pl.light_update();
+                        push(SigVal {
+                            sig: T::to_sig(key.borrow(), seed),
+                            val: EmptyVal::default(),
+                        })?;
+                    }
+                    Ok(EmptyVal::default())
+                };
+
+                self.try_solve_once(
+                    seed,
+                    &mut populate,
+                    &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
+                        builder.bit_width = bit_width;
+
+                        let data = new_data(
+                            builder.bit_width,
+                            builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
+                        );
+
+                        pl.info(format_args!(
+                            "Number of keys: {} Bit width: {}",
+                            builder.num_keys, builder.bit_width,
+                        ));
+
+                        let func = builder.try_build_from_shard_iter(
+                            seed,
+                            data,
+                            store.drain(),
+                            get_val,
+                            &|_| {},
+                            pl,
+                        )?;
+                        Ok(func)
+                    },
+                    pl,
+                    &mut (),
+                )
+            };
+
+            if let Some(r) = rs.handle_solve_result(result, pl)? {
+                return Ok(r);
+            }
+
+            keys = keys.rewind()?;
+        }
     }
 
     /// Initializes shards and returns a [`RetryState`] for driving the

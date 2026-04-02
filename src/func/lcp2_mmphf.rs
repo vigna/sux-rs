@@ -476,7 +476,7 @@ where
                         ));
 
                         let fused = VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default()
-                            .try_build_func_with_store::<T, u64>(
+                            .try_build_func_with_store_and_inspect::<T, u64>(
                                 seed,
                                 shard_edge,
                                 fused_max,
@@ -538,7 +538,6 @@ where
                                     state.max_lcp,
                                     &mut filtered_store,
                                     &|_e, sig_val| (sig_val.val >> log2_bs) as usize,
-                                    &|_| {},
                                     pl,
                                 )?
                         } else {
@@ -1007,7 +1006,7 @@ where
                         ));
 
                         let fused = VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default()
-                            .try_build_func_with_store::<K, u64>(
+                            .try_build_func_with_store_and_inspect::<K, u64>(
                                 seed,
                                 shard_edge,
                                 fused_max,
@@ -1069,7 +1068,6 @@ where
                                     state.max_lcp,
                                     &mut filtered_store,
                                     &|_e, sig_val| (sig_val.val >> log2_bs) as usize,
-                                    &|_| {},
                                     pl,
                                 )?
                         } else {
