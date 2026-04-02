@@ -25,6 +25,7 @@ use {
 use crate::bits::{BitFieldVec, BitFieldVecU};
 use crate::func::VFunc;
 use crate::func::shard_edge::ShardEdge;
+use crate::func::signed_lcp_mmphf::Mmphf;
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::PrimitiveNumber;
@@ -68,6 +69,25 @@ impl<
     H: SliceByValue<Value: PrimitiveNumber>,
 > SignedVFunc<VFunc<T, D, S, E>, H>
 {
+    /// Verifies that the stored hash matches the remixed hash for the
+    /// given index and signature.
+    #[inline(always)]
+    fn verify(&self, index: W, sig: S) -> Option<W> {
+        const {
+            assert!(
+                size_of::<H::Value>() <= size_of::<u64>(),
+                "Hash value type must fit in u64 without truncation"
+            );
+        }
+        let expected = self.func.shard_edge().remixed_hash(sig);
+        let stored = self.hashes.get_value(index.as_to::<usize>())?.as_to::<u64>();
+        if stored == <H::Value>::as_from(expected).as_to::<u64>() {
+            Some(index)
+        } else {
+            None
+        }
+    }
+
     /// Returns the index of a key associated with the given signature, if there
     /// was such a key in the list provided at construction time; otherwise,
     /// returns `None`.
@@ -78,25 +98,7 @@ impl<
     /// This method is mainly useful in the construction of compound functions.
     #[inline]
     pub fn get_by_sig(&self, sig: S) -> Option<W> {
-        // Static check that H::Value → u64 conversion is lossless
-        const {
-            assert!(
-                size_of::<H::Value>() <= size_of::<u64>(),
-                "Hash value type must fit in u64 without truncation"
-            );
-        }
-        let index = self.func.get_by_sig(sig);
-        // as_to is safe: index is bounded by num_keys, which is a usize
-        if self
-            .hashes
-            .get_value(index.as_to::<usize>())?
-            .as_to::<u64>()
-            == <H::Value>::as_from(self.func.shard_edge.remixed_hash(sig)).as_to::<u64>()
-        {
-            Some(index)
-        } else {
-            None
-        }
+        self.verify(self.func.get_by_sig(sig), sig)
     }
 
     /// Returns the index of the given key, if the key was in the list provided at
@@ -106,17 +108,17 @@ impl<
     /// 2<sup>–`SliceByValue::Value::BITS`</sup>.
     #[inline(always)]
     pub fn get(&self, key: impl Borrow<T>) -> Option<W> {
-        self.get_by_sig(T::to_sig(key.borrow(), self.func.seed))
+        self.get_by_sig(T::to_sig(key.borrow(), self.func.seed()))
     }
 
     /// Returns the number of keys in the function.
-    pub const fn len(&self) -> usize {
-        self.func.num_keys
+    pub fn len(&self) -> usize {
+        self.func.len()
     }
 
     /// Returns whether the function has no keys.
-    pub const fn is_empty(&self) -> bool {
-        self.func.num_keys == 0
+    pub fn is_empty(&self) -> bool {
+        self.func.is_empty()
     }
 }
 
@@ -145,55 +147,50 @@ impl<
     H: SliceByValue<Value: PrimitiveNumber>,
 > BitSignedVFunc<VFunc<T, D, S, E>, H>
 {
-    /// Returns the index of a key associated with the given signature, if there
-    /// was such a key in the list provided at construction time; otherwise,
-    /// returns `None`.
-    ///
-    /// False positives happen with probability defined at [construction
-    /// time](crate::func::VBuilder::try_build_bit_sig_index).
-    ///
-    /// This method is mainly useful in the construction of compound functions.
-    #[inline]
-    pub fn get_by_sig(&self, sig: S) -> Option<D::Value> {
-        // Static check that H::Value → u64 conversion is lossless
+    /// Verifies that the stored hash matches the masked remixed hash for
+    /// the given index and signature.
+    #[inline(always)]
+    fn verify(&self, index: D::Value, sig: S) -> Option<D::Value> {
         const {
             assert!(
                 size_of::<H::Value>() <= size_of::<u64>(),
                 "Hash value type must fit in u64 without truncation"
             );
         }
-        let index = self.func.get_by_sig(sig);
-        // as_to is safe: index is bounded by num_keys, which is a usize
-        if self
-            .hashes
-            .get_value(index.as_to::<usize>())?
-            .as_to::<u64>()
-            == (self.func.shard_edge.remixed_hash(sig) & self.hash_mask)
-        {
-            Some(index)
-        } else {
-            None
-        }
+        let expected = self.func.shard_edge().remixed_hash(sig) & self.hash_mask;
+        let stored = self.hashes.get_value(index.as_to::<usize>())?.as_to::<u64>();
+        if stored == expected { Some(index) } else { None }
+    }
+
+    /// Returns the index of a key associated with the given signature, if there
+    /// was such a key in the list provided at construction time; otherwise,
+    /// returns `None`.
+    ///
+    /// False positives happen with probability defined at construction time.
+    ///
+    /// This method is mainly useful in the construction of compound functions.
+    #[inline]
+    pub fn get_by_sig(&self, sig: S) -> Option<D::Value> {
+        self.verify(self.func.get_by_sig(sig), sig)
     }
 
     /// Returns the index of the given key, if the key was in the list provided at
     /// construction time; otherwise, returns `None`.
     ///
-    /// False positives happen with probability defined at [construction
-    /// time](crate::func::VBuilder::try_build_bit_sig_index).
+    /// False positives happen with probability defined at construction time.
     #[inline(always)]
     pub fn get(&self, key: impl Borrow<T>) -> Option<D::Value> {
-        self.get_by_sig(T::to_sig(key.borrow(), self.func.seed))
+        self.get_by_sig(T::to_sig(key.borrow(), self.func.seed()))
     }
 
     /// Returns the number of keys in the function.
-    pub const fn len(&self) -> usize {
-        self.func.num_keys
+    pub fn len(&self) -> usize {
+        self.func.len()
     }
 
     /// Returns whether the function has no keys.
-    pub const fn is_empty(&self) -> bool {
-        self.func.num_keys == 0
+    pub fn is_empty(&self) -> bool {
+        self.func.is_empty()
     }
 }
 
@@ -318,8 +315,7 @@ where
             pl,
         )?;
 
-        let num_keys = func.num_keys;
-        let shard_edge = &func.shard_edge;
+        let num_keys = func.len();
 
         // Create the hash vector
         let mut hashes = vec![H::ZERO; num_keys].into_boxed_slice();
@@ -332,7 +328,7 @@ where
         for shard in store.iter() {
             for sig_val in shard.iter() {
                 let pos = sig_val.val;
-                let hash = H::as_from(shard_edge.remixed_hash(sig_val.sig));
+                let hash = H::as_from(func.shard_edge().remixed_hash(sig_val.sig));
                 hashes.set_value(pos, hash);
                 pl.light_update();
             }
@@ -479,8 +475,7 @@ where
             pl,
         )?;
 
-        let num_keys = func.num_keys;
-        let shard_edge = &func.shard_edge;
+        let num_keys = func.len();
         let hash_mask = if hash_width == 64 {
             u64::MAX
         } else {
@@ -491,7 +486,7 @@ where
         let mut hashes: BitFieldVec<Box<[H]>> =
             BitFieldVec::<Box<[H]>>::new_unaligned(hash_width, num_keys);
 
-        // Enumerate the store and extract signatures using the same method as filters
+        // Enumerate the store and extract hashes
         pl.item_name("hash");
         pl.expected_updates(Some(num_keys));
         pl.start("Storing hashes...");
@@ -499,7 +494,7 @@ where
         for shard in store.iter() {
             for sig_val in shard.iter() {
                 let pos = sig_val.val;
-                let hash = (shard_edge.remixed_hash(sig_val.sig) & hash_mask).as_to::<H>();
+                let hash = (func.shard_edge().remixed_hash(sig_val.sig) & hash_mask).as_to::<H>();
                 hashes.set_value(pos, hash);
                 pl.light_update();
             }

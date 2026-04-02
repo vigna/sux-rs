@@ -163,6 +163,18 @@ impl<T: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: Sh
         let local_sig = self.shard_edge.local_sig(sig);
         self.shard_edge.edge_hash(local_sig)
     }
+
+    /// Returns the remixed hash derived from a full signature.
+    ///
+    /// Computes `shard_edge.remixed_hash(sig)`, i.e.,
+    /// [`mix64`](super::mix64) applied to
+    /// [`edge_hash_by_sig`](Self::edge_hash_by_sig). This is the
+    /// canonical verification hash used by
+    /// [`VFilter`](crate::dict::VFilter) and all signed structures.
+    #[inline]
+    pub fn remixed_hash_by_sig(&self, sig: S) -> u64 {
+        self.shard_edge.remixed_hash(sig)
+    }
 }
 
 // ── Aligned ↔ Unaligned conversions ─────────────────────────────────
