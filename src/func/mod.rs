@@ -31,8 +31,7 @@
 //!
 //! - [`SignedFunc`]/[`BitSignedFunc`] wrap any of the above with per-key
 //!   verification hashes, returning `None` for keys outside the original set.
-//!   See also the convenience aliases [`SignedLcpMmphfInt`],
-//!   [`SignedLcpMmphfStr`], etc.
+//!   Use concrete types like `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
 //!
 //! Most structures implement the
 //! [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing them
