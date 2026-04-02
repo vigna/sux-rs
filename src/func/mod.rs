@@ -82,8 +82,7 @@ pub mod shard_edge;
 
 /// Avalanches bits using the finalization step of Austin Appleby's
 /// [MurmurHash3](http://code.google.com/p/smhasher/).
-#[doc(hidden)]
-pub const fn mix64(mut k: u64) -> u64 {
+pub(crate) const fn mix64(mut k: u64) -> u64 {
     k ^= k >> 33;
     k = k.overflowing_mul(0xff51_afd7_ed55_8ccd).0;
     k ^= k >> 33;

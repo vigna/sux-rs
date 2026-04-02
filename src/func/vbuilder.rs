@@ -90,6 +90,8 @@ const LOG2_MAX_SHARDS: u32 = 16;
 ///
 /// The low-level methods below are for advanced use cases:
 ///
+/// - [`try_build_func`](Self::try_build_func) — builds a [`VFunc`],
+///   draining the store to save memory.
 /// - [`try_build_func_and_store`](Self::try_build_func_and_store) — builds
 ///   a [`VFunc`] and returns the populated [`ShardStore`] for reuse.
 ///
@@ -629,8 +631,86 @@ impl<
     E: ShardEdge<S, 3>,
 > VBuilder<D, S, E>
 {
-    /// Builds a new [`VFunc`], optionally retaining the populated shard
-    /// store for reuse.
+    /// Builds a new [`VFunc`], draining the shard store during
+    /// construction to free memory as shards are consumed.
+    ///
+    /// This is a low-level method that requires a thorough understanding
+    /// of the builder's internal state.
+    ///
+    /// `new_data(bit_width, len)` allocates the backend storage of the
+    /// given bit width and length.
+    ///
+    /// The store is drained (freed) during construction. If you need
+    /// to keep the store for building signed wrappers or secondary
+    /// structures, use
+    /// [`try_build_func_and_store`](Self::try_build_func_and_store)
+    /// instead.
+    pub fn try_build_func<
+        T: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<T>,
+        P: ProgressLog + Clone + Send + Sync,
+        K: FallibleRewindableLender<
+                RewindError: Error + Send + Sync + 'static,
+                Error: Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+    >(
+        mut self,
+        keys: K,
+        values: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend D::Value>,
+        new_data: fn(usize, usize) -> D,
+        pl: &mut P,
+    ) -> anyhow::Result<(VFunc<T, D, S, E>, K)>
+    where
+        D::Value: AsU128,
+        SigVal<S, D::Value>: RadixKey,
+        SigVal<E::LocalSig, D::Value>: BitXor + BitXorAssign,
+        D: for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>,
+        for<'a> ShardDataIter<'a, D>: Send,
+        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
+    {
+        let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, D::Value>| sig_val.val;
+
+        self.try_populate_and_build(
+            keys,
+            values,
+            &mut |builder, seed, mut store, max_value, _num_keys, pl: &mut P, _state: &mut ()| {
+                builder.bit_width = max_value.as_u128().bit_len() as usize;
+
+                let data = new_data(
+                    builder.bit_width,
+                    builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
+                );
+
+                pl.info(format_args!(
+                    "Number of keys: {} Max value: {} Bit width: {}",
+                    builder.num_keys,
+                    {
+                        let v: u128 = max_value.as_u128();
+                        v
+                    },
+                    builder.bit_width,
+                ));
+
+                let func = builder.try_build_from_shard_iter(
+                    seed,
+                    data,
+                    store.drain(),
+                    &get_val,
+                    &|_| {},
+                    pl,
+                )?;
+                Ok(func)
+            },
+            pl,
+            (),
+        )
+    }
+
+    /// Builds a new [`VFunc`], preserving the populated shard store for
+    /// reuse.
     ///
     /// This is a low-level method that requires a thorough understanding
     /// of the builder's internal state.
@@ -642,12 +722,10 @@ impl<
     /// populated during construction. The caller can pass it to
     /// [`try_build_func_with_store`](Self::try_build_func_with_store)
     /// to build additional functions without re-hashing the keys, or
-    /// simply drop it.
-    ///
-    /// If `drain_store` is `true`, the store is drained during
-    /// construction (freeing memory as shards are consumed); the
-    /// returned store is empty. If `false`, the store is preserved
-    /// intact for reuse.
+    /// simply drop it. The store is preserved intact (not drained). If
+    /// you do not need the store, use
+    /// [`try_build_func`](Self::try_build_func) instead, which drains
+    /// the store to free memory during construction.
     pub fn try_build_func_and_store<
         T: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<T>,
@@ -664,7 +742,6 @@ impl<
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend D::Value>,
         new_data: fn(usize, usize) -> D,
-        drain_store: bool,
         pl: &mut P,
     ) -> anyhow::Result<(
         VFunc<T, D, S, E>,
@@ -702,15 +779,10 @@ impl<
                     builder.bit_width,
                 ));
 
-                let shard_iter: Box<dyn Iterator<Item = _> + Send + Sync + '_> = if drain_store {
-                    store.drain()
-                } else {
-                    store.iter()
-                };
                 let func = builder.try_build_from_shard_iter(
                     seed,
                     data,
-                    shard_iter,
+                    store.iter(),
                     &get_val,
                     &|_| {},
                     pl,

@@ -627,28 +627,166 @@ pub type SignedLcpMmphfStr<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
     SignedFunc<LcpMmphf<str, BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 /// A [`SignedFunc`] wrapping a [`LcpMmphf`] for `[u8]` keys.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::SignedLcpMmphfSliceU8;
+/// # use sux::utils::FromSlice;
+/// let keys: Vec<Vec<u8>> = vec![
+///     b"alpha".to_vec(), b"beta".to_vec(),
+///     b"delta".to_vec(), b"gamma".to_vec(),
+/// ];
+/// let func: SignedLcpMmphfSliceU8 =
+///     SignedLcpMmphfSliceU8::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+///
+/// for (i, key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key.as_slice()), Some(i));
+/// }
+/// assert_eq!(func.get(b"not_a_key".as_slice()), None);
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 pub type SignedLcpMmphfSliceU8<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
     SignedFunc<LcpMmphf<[u8], BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 // ── SignedFunc convenience aliases (Lcp2Mmphf) ───────────────────
 
 /// A [`SignedFunc`] wrapping a [`Lcp2MmphfInt`].
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::SignedLcp2MmphfInt;
+/// # use sux::utils::FromSlice;
+/// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+/// let func: SignedLcp2MmphfInt<u64> =
+///     SignedLcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+///
+/// for (i, &key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key), Some(i));
+/// }
+/// assert_eq!(func.get(999), None);
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 pub type SignedLcp2MmphfInt<T, H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
     SignedFunc<Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>;
 /// A [`SignedFunc`] wrapping a [`Lcp2Mmphf`] for `str` keys.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::SignedLcp2MmphfStr;
+/// # use sux::utils::FromSlice;
+/// let keys = vec!["alpha", "beta", "delta", "gamma"];
+/// let func: SignedLcp2MmphfStr =
+///     SignedLcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+///
+/// for (i, &key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key), Some(i));
+/// }
+/// assert_eq!(func.get("not_a_key"), None);
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 pub type SignedLcp2MmphfStr<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
     SignedFunc<Lcp2Mmphf<str, BitFieldVec<Box<[usize]>>, S, E>, H>;
 /// A [`SignedFunc`] wrapping a [`Lcp2Mmphf`] for `[u8]` keys.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::SignedLcp2MmphfSliceU8;
+/// # use sux::utils::FromSlice;
+/// let keys: Vec<Vec<u8>> = vec![
+///     b"alpha".to_vec(), b"beta".to_vec(),
+///     b"delta".to_vec(), b"gamma".to_vec(),
+/// ];
+/// let func: SignedLcp2MmphfSliceU8 =
+///     SignedLcp2MmphfSliceU8::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+///
+/// for (i, key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key.as_slice()), Some(i));
+/// }
+/// assert_eq!(func.get(b"not_a_key".as_slice()), None);
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 pub type SignedLcp2MmphfSliceU8<H = Box<[u64]>, S = [u64; 2], E = FuseLge3Shards> =
     SignedFunc<Lcp2Mmphf<[u8], BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 // ── BitSignedFunc convenience aliases (LcpMmphf) ────────────────
 
 /// A [`BitSignedFunc`] wrapping a [`LcpMmphfInt`].
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::BitSignedLcpMmphfInt;
+/// # use sux::utils::FromSlice;
+/// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+/// let func: BitSignedLcpMmphfInt<u64> =
+///     BitSignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+///
+/// for (i, &key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key), Some(i));
+/// }
+/// assert_eq!(func.get(999), None);
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 pub type BitSignedLcpMmphfInt<T, H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
     BitSignedFunc<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 /// A [`BitSignedFunc`] wrapping a [`LcpMmphf`] for `str` keys.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::BitSignedLcpMmphfStr;
+/// # use sux::utils::FromSlice;
+/// let keys = vec!["alpha", "beta", "delta", "gamma"];
+/// let func: BitSignedLcpMmphfStr =
+///     BitSignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+///
+/// for (i, &key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key), Some(i));
+/// }
+/// assert_eq!(func.get("not_a_key"), None);
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 pub type BitSignedLcpMmphfStr<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
     BitSignedFunc<LcpMmphf<str, BitFieldVec<Box<[usize]>>, S, E>, H>;
 
@@ -677,9 +815,16 @@ pub type BitSignedLcp2MmphfSliceU8<
 // Constructors — helper functions
 // ═══════════════════════════════════════════════════════════════════
 
-/// Helper: fills a `Box<[W]>` hash array from a cloned key lender.
+/// Fills a `Box<[W]>` hash array from a key lender.
 ///
-/// `to_sig` converts each borrowed key to a signature.
+/// Iterates the first `n` elements of `keys`, converting each borrowed
+/// key to a signature via the `to_sig` closure and then computing the
+/// remixed hash through `shard_edge`. The resulting full-width hashes
+/// are stored in a newly allocated boxed slice.
+///
+/// # Panics
+///
+/// Panics if the lender yields fewer than `n` elements.
 #[cfg(feature = "rayon")]
 fn fill_hashes<W, S, E, L>(
     shard_edge: &E,
@@ -704,7 +849,18 @@ where
     Ok(hashes.into_boxed_slice())
 }
 
-/// Helper: fills a `BitFieldVec<Box<[H]>>` hash array from a cloned key lender.
+/// Fills a [`BitFieldVec<Box<[H]>>`](BitFieldVec) hash array from a key
+/// lender.
+///
+/// Iterates the first `n` elements of `keys`, converting each borrowed
+/// key to a signature via the `to_sig` closure and then computing the
+/// remixed hash through `shard_edge`. The hash is masked with
+/// `hash_mask` and stored in a [`BitFieldVec`] of the given
+/// `hash_width`.
+///
+/// # Panics
+///
+/// Panics if the lender yields fewer than `n` elements.
 #[cfg(feature = "rayon")]
 fn fill_bit_hashes<H, S, E, L>(
     shard_edge: &E,
@@ -852,7 +1008,6 @@ where
             keys,
             FromCloneableIntoIterator::from(0..),
             BitFieldVec::new_unaligned,
-            false,
             pl,
         )?;
 
@@ -1014,7 +1169,6 @@ where
             keys,
             FromCloneableIntoIterator::from(0..),
             BitFieldVec::<Box<[usize]>>::new_unaligned,
-            false,
             pl,
         )?;
 
@@ -1118,7 +1272,7 @@ where
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        let (func, _, keys) = LcpMmphfInt::try_new_inner(keys, n, builder, true, pl)?;
+        let (func, keys) = LcpMmphfInt::try_new_inner(keys, n, builder, pl)?;
         let mut keys = keys.rewind()?;
         let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
             T::to_sig(*key, seed)
@@ -1193,7 +1347,7 @@ where
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        let (func, _, keys) = LcpMmphf::try_new_inner(keys, n, builder, true, pl)?;
+        let (func, keys) = LcpMmphf::try_new_inner(keys, n, builder, pl)?;
         let mut keys = keys.rewind()?;
         let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
             K::to_sig(<B as Borrow<K>>::borrow(key), seed)
@@ -1437,7 +1591,7 @@ where
             (1u64 << hash_width) - 1
         };
 
-        let (func, _, keys) = LcpMmphfInt::try_new_inner(keys, n, builder, true, pl)?;
+        let (func, keys) = LcpMmphfInt::try_new_inner(keys, n, builder, pl)?;
         let mut keys = keys.rewind()?;
         let hashes = fill_bit_hashes(
             func.shard_edge(),
@@ -1532,7 +1686,7 @@ where
             (1u64 << hash_width) - 1
         };
 
-        let (func, _, keys) = LcpMmphf::try_new_inner(keys, n, builder, true, pl)?;
+        let (func, keys) = LcpMmphf::try_new_inner(keys, n, builder, pl)?;
         let mut keys = keys.rewind()?;
         let hashes = fill_bit_hashes(
             func.shard_edge(),
