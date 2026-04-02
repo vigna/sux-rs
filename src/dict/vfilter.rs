@@ -21,7 +21,7 @@ use value_traits::slices::SliceByValue;
 #[cfg(feature = "rayon")]
 use {
     crate::func::VBuilder,
-    crate::utils::{EmptyVal, FallibleRewindableLender, FromCloneableIntoIterator, SigVal},
+    crate::utils::{EmptyVal, FallibleRewindableLender, SigVal},
     anyhow::Result,
     core::error::Error,
     dsi_progress_logger::ProgressLog,
@@ -312,41 +312,12 @@ where
         for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
     {
         let filter_mask = W::MAX;
-        let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
-            W::as_from(mix64(shard_edge.edge_hash(sig_val.sig)))
-        };
-        let mut builder = builder.expected_num_keys(n);
-
-        let func = builder.try_populate_and_build(
+        let func = builder.expected_num_keys(n).try_build_filter(
             keys,
-            FromCloneableIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
-            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
-                builder.bit_width = W::BITS as usize;
-
-                let new_data: Box<[W]> = vec![
-                    W::ZERO;
-                    builder.shard_edge.num_vertices()
-                        * builder.shard_edge.num_shards()
-                ]
-                .into();
-
-                pl.info(format_args!(
-                    "Number of keys: {} Bit width: {}",
-                    builder.num_keys, builder.bit_width,
-                ));
-
-                let func = builder.try_build_from_shard_iter(
-                    seed,
-                    new_data,
-                    store.drain(),
-                    &get_val,
-                    &|_| {},
-                    pl,
-                )?;
-                Ok(func)
-            },
+            W::BITS as usize,
+            |_, len| vec![W::ZERO; len].into(),
+            &|shard_edge, sig_val| W::as_from(mix64(shard_edge.edge_hash(sig_val.sig))),
             pl,
-            (),
         )?;
 
         Ok(VFilter { func, filter_mask })
@@ -472,39 +443,12 @@ where
         assert!(filter_bits > 0);
         assert!(filter_bits <= W::BITS as usize);
         let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
-        let get_val = |shard_edge: &E, sig_val: SigVal<E::LocalSig, EmptyVal>| {
-            W::as_from(mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
-        };
-        let mut builder = builder.expected_num_keys(n);
-
-        let func = builder.try_populate_and_build(
+        let func = builder.expected_num_keys(n).try_build_filter(
             keys,
-            FromCloneableIntoIterator::from(itertools::repeat_n(EmptyVal::default(), usize::MAX)),
-            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
-                builder.bit_width = filter_bits;
-
-                let new_data = BitFieldVec::<Box<[W]>>::new_unaligned(
-                    builder.bit_width,
-                    builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
-                );
-
-                pl.info(format_args!(
-                    "Number of keys: {} Bit width: {}",
-                    builder.num_keys, builder.bit_width,
-                ));
-
-                let func = builder.try_build_from_shard_iter(
-                    seed,
-                    new_data,
-                    store.drain(),
-                    &get_val,
-                    &|_| {},
-                    pl,
-                )?;
-                Ok(func)
-            },
+            filter_bits,
+            BitFieldVec::new_unaligned,
+            &|shard_edge, sig_val| W::as_from(mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask,
             pl,
-            (),
         )?;
 
         Ok(VFilter { func, filter_mask })
