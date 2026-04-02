@@ -23,9 +23,9 @@ use {
 };
 
 use crate::bits::{BitFieldVec, BitFieldVecU};
+use crate::dict::SignableMphf;
 use crate::func::VFunc;
 use crate::func::shard_edge::ShardEdge;
-use crate::func::signed_lcp_mmphf::Mmphf;
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::PrimitiveNumber;
@@ -80,7 +80,10 @@ impl<
             );
         }
         let expected = self.func.shard_edge().remixed_hash(sig);
-        let stored = self.hashes.get_value(index.as_to::<usize>())?.as_to::<u64>();
+        let stored = self
+            .hashes
+            .get_value(index.as_to::<usize>())?
+            .as_to::<u64>();
         if stored == <H::Value>::as_from(expected).as_to::<u64>() {
             Some(index)
         } else {
@@ -158,8 +161,15 @@ impl<
             );
         }
         let expected = self.func.shard_edge().remixed_hash(sig) & self.hash_mask;
-        let stored = self.hashes.get_value(index.as_to::<usize>())?.as_to::<u64>();
-        if stored == expected { Some(index) } else { None }
+        let stored = self
+            .hashes
+            .get_value(index.as_to::<usize>())?
+            .as_to::<u64>();
+        if stored == expected {
+            Some(index)
+        } else {
+            None
+        }
     }
 
     /// Returns the index of a key associated with the given signature, if there
