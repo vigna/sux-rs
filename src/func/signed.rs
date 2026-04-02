@@ -791,16 +791,91 @@ pub type BitSignedLcpMmphfStr<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = F
     BitSignedFunc<LcpMmphf<str, BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 /// A [`BitSignedFunc`] wrapping a [`LcpMmphf`] for `[u8]` keys.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::BitSignedLcpMmphfSliceU8;
+/// # use sux::utils::FromSlice;
+/// let keys: Vec<Vec<u8>> = vec![
+///     b"alpha".to_vec(), b"beta".to_vec(),
+///     b"delta".to_vec(), b"gamma".to_vec(),
+/// ];
+/// let func: BitSignedLcpMmphfSliceU8 =
+///     BitSignedLcpMmphfSliceU8::try_new(
+///         FromSlice::new(&keys), keys.len(), 8, no_logging![],
+///     )?;
+///
+/// for (i, key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key.as_slice()), Some(i));
+/// }
+/// assert_eq!(func.get(b"not_a_key".as_slice()), None);
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 pub type BitSignedLcpMmphfSliceU8<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
     BitSignedFunc<LcpMmphf<[u8], BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 // ── BitSignedFunc convenience aliases (Lcp2Mmphf) ───────────────
 
 /// A [`BitSignedFunc`] wrapping a [`Lcp2MmphfInt`].
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::BitSignedLcp2MmphfInt;
+/// # use sux::utils::FromSlice;
+/// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+/// let func: BitSignedLcp2MmphfInt<u64> =
+///     BitSignedLcp2MmphfInt::try_new(
+///         FromSlice::new(&keys), keys.len(), 8, no_logging![],
+///     )?;
+///
+/// for (i, &key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key), Some(i));
+/// }
+/// assert_eq!(func.get(999), None);
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 pub type BitSignedLcp2MmphfInt<T, H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
     BitSignedFunc<Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, H>;
 
 /// A [`BitSignedFunc`] wrapping a [`Lcp2Mmphf`] for `str` keys.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::BitSignedLcp2MmphfStr;
+/// # use sux::utils::FromSlice;
+/// let keys = vec!["alpha", "beta", "delta", "gamma"];
+/// let func: BitSignedLcp2MmphfStr =
+///     BitSignedLcp2MmphfStr::try_new(
+///         FromSlice::new(&keys), keys.len(), 8, no_logging![],
+///     )?;
+///
+/// for (i, &key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key), Some(i));
+/// }
+/// assert_eq!(func.get("not_a_key"), None);
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 pub type BitSignedLcp2MmphfStr<H = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
     BitSignedFunc<Lcp2Mmphf<str, BitFieldVec<Box<[usize]>>, S, E>, H>;
 
