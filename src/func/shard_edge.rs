@@ -229,10 +229,12 @@ pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send 
     /// Derives a 64-bit remixed hash from a signature.
     ///
     /// This composes [`local_sig`](Self::local_sig),
-    /// [`edge_hash`](Self::edge_hash), and
-    /// [`mix64`](super::mix64) into a single call. The result is the
-    /// canonical hash used by [`VFilter`](crate::dict::VFilter) and all
-    /// signed structures to verify membership.
+    /// [`edge_hash`](Self::edge_hash), and the finalization step of Austin
+    /// Appleby's [MurmurHash3](http://code.google.com/p/smhasher/).
+    ///
+    /// The result is the canonical hash used by
+    /// [`VFilter`](crate::dict::VFilter) and all signed structures to verify
+    /// membership.
     #[inline(always)]
     fn remixed_hash(&self, sig: S) -> u64 {
         super::mix64(self.edge_hash(self.local_sig(sig)))

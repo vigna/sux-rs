@@ -153,7 +153,6 @@ impl<T: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: Sh
     pub const fn is_empty(&self) -> bool {
         self.num_keys == 0
     }
-
 }
 
 // ── Aligned ↔ Unaligned conversions ─────────────────────────────────
