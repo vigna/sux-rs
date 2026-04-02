@@ -60,7 +60,7 @@ pub type Unaligned<T> = <T as TryIntoUnaligned>::Unaligned;
 /// structure or its components.
 ///
 /// Compound types (e.g.,
-/// [`SignedLcpMmphf`](crate::func::SignedLcpMmphf)) implement this
+/// [`SignedFunc`](crate::func::SignedFunc)) implement this
 /// trait by recursively converting their inner components.
 ///
 /// You can obtain an unaligned variant of a structure just by chaining the

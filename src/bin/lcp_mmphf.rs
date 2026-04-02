@@ -12,7 +12,7 @@ use lender::FallibleLender;
 use sux::cli::{BuilderArgs, HashTypes};
 use sux::func::lcp_mmphf::*;
 use sux::func::lcp2_mmphf::*;
-use sux::func::signed_lcp_mmphf::*;
+use sux::func::signed::*;
 use sux::init_env_logger;
 use sux::utils::{DekoBufLineLender, FromSlice};
 

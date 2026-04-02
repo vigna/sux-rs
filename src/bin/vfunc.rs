@@ -15,7 +15,7 @@ use lender::FallibleLender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::cli::{BuilderArgs, HashTypes};
-use sux::dict::SignedVFunc;
+use sux::func::signed::SignedFunc;
 use sux::func::vfunc2::VFunc2;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
@@ -131,7 +131,7 @@ macro_rules! filename_save_sign(
 
         $pl.done();
 
-        let func = SignedVFunc::from_parts(func, hashes);
+        let func = SignedFunc::from_parts(func, hashes);
         if let Some(filename) = $func {
             unsafe { func.store(filename) }?;
         }
@@ -140,12 +140,13 @@ macro_rules! filename_save_sign(
 
 macro_rules! n_save_sign(
     ($h: ty, $builder:expr, $n: expr, $func: expr, $pl: expr) => {{
-        let func: SignedVFunc<_, Box<[$h]>> = SignedVFunc::try_new_with_builder(
-            FromCloneableIntoIterator::new(0_usize..$n),
-            $n,
-            $builder,
-            &mut $pl,
-        )?;
+        let func =
+            <SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
+                FromCloneableIntoIterator::new(0_usize..$n),
+                $n,
+                $builder,
+                &mut $pl,
+            )?;
         if let Some(filename) = $func {
             unsafe { func.store(filename) }?;
         }
@@ -164,14 +165,14 @@ where
     VFunc<str, BitFieldVec<Box<[usize]>>, S, E>: Serialize,
     VFunc<usize, Box<[u8]>, S, E>: Serialize,
     VFunc<str, Box<[u8]>, S, E>: Serialize,
-    SignedVFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>: Serialize,
-    SignedVFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>: Serialize,
-    SignedVFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>: Serialize,
-    SignedVFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>: Serialize,
-    SignedVFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>: Serialize,
-    SignedVFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>: Serialize,
-    SignedVFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>: Serialize,
-    SignedVFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>: Serialize,
+    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>: Serialize,
+    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>: Serialize,
+    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>: Serialize,
+    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>: Serialize,
+    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>: Serialize,
+    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>: Serialize,
+    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>: Serialize,
+    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>: Serialize,
 {
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();

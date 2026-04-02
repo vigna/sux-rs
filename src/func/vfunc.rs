@@ -158,6 +158,7 @@ impl<T: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: Sh
     ///
     /// Computes `shard_edge.edge_hash(shard_edge.local_sig(sig))`.
     /// This is useful for building signed functions outside the crate.
+    #[deprecated(note = "Use `remixed_hash_by_sig` instead")]
     #[inline]
     pub fn edge_hash_by_sig(&self, sig: S) -> u64 {
         let local_sig = self.shard_edge.local_sig(sig);
