@@ -9,9 +9,11 @@
 //! Two-step LCP-based monotone minimal perfect hash functions.
 //!
 //! Compared to [`LcpMmphfInt`](super::LcpMmphfInt) /
-//! [`LcpMmphf`](super::LcpMmphf), these variants use a [`VFunc2`] for the
-//! LCP-length component, trading 3 extra independent random memory accesses
-//! per query for ≈20–35% less space.
+//! [`LcpMmphf`](super::LcpMmphf), these variants use a
+//! [`VFunc2`](crate::func::VFunc2)-like two-step internal representation for
+//! the LCP-length component, trading 3 infrequent extra independent random
+//! memory accesses (when a second step is necessary) per query for ≈20–35% less
+//! space.
 //!
 //! See [`Lcp2MmphfInt`], [`Lcp2MmphfStr`], and [`Lcp2MmphfSliceU8`].
 //!
@@ -63,7 +65,8 @@ type LcpLen = u16;
 
 /// A two-step monotone minimal perfect hash function for sorted integers.
 ///
-/// Like [`LcpMmphfInt`](super::LcpMmphfInt) but uses a [`VFunc2`] for
+/// Like [`LcpMmphfInt`](super::LcpMmphfInt) but uses a
+/// [`VFunc2`](crate::func::VFunc2)-like two-step internal representation for
 /// the LCP-length component, trading query speed for ≈20–35% less space.
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
@@ -245,9 +248,9 @@ where
     /// Creates a two-step LCP-based MMPHF for integers using the
     /// given [`VBuilder`] configuration.
     ///
-    /// The builder controls construction parameters such as offline
-    /// mode (`offline`), thread count (`max_num_threads`), sharding
-    /// overhead (`eps`), and PRNG seed (`seed`).
+    /// The builder controls construction parameters such as [offline
+    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
     ///
     /// The keys must be provided in strictly increasing order.
     ///
@@ -792,9 +795,9 @@ where
     /// Creates a two-step LCP-based MMPHF for byte-sequence keys
     /// using the given [`VBuilder`] configuration.
     ///
-    /// The builder controls construction parameters such as offline
-    /// mode (`offline`), thread count (`max_num_threads`), sharding
-    /// overhead (`eps`), and PRNG seed (`seed`).
+    /// The builder controls construction parameters such as [offline
+    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
     ///
     /// The keys must be in strictly increasing lexicographic order.
     ///

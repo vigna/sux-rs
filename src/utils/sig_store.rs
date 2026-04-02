@@ -37,8 +37,8 @@
 //!
 //! You can iterate over the shards in a [`ShardStore`] multiple times using the
 //! method [`iter`](ShardStore::iter), or just once using the method
-//! [`into_iter`](ShardStore::into_iter). In the latter case resources
-//! (i.e., files or memory) will be released as soon as they are consumed.
+//! [`drain`](ShardStore::drain). In the latter case resources (i.e., files or
+//! memory) will be released as soon as they are consumed.
 //!
 //! The trait [`ToSig`] provides a standard way to generate signatures for a
 //! [`SigStore`]. Implementations are provided for signatures types `[u64;1]`

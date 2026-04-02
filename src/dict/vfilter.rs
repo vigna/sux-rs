@@ -41,15 +41,13 @@ use {
 /// For values of *b* that correspond to the size of an unsigned type, you can
 /// use a boxed slice as a backend.
 ///
-/// Instances are immutable; they are built using a
-/// [`VBuilder`](crate::func::VBuilder) and can be serialized with
-/// [ε-serde](https://crates.io/crates/epserde).
+/// Instances are immutable; they are built using a [`VBuilder`] and can be
+/// serialized with [ε-serde](https://crates.io/crates/epserde).
 ///
 /// This structure implements the [`Index`] trait for convenient
 /// `filter[key]` syntax (returning `&bool`).
 ///
-/// Please see the documentation of [`VBuilder`](crate::func::VBuilder)
-/// for construction examples.
+/// Please see the documentation of [`VBuilder`] for construction examples.
 ///
 /// # Generics
 ///
@@ -271,9 +269,9 @@ where
     /// * `keys` must be rewindable (they may be rewound on retry).
     /// * `n` is the expected number of keys.
     ///
-    /// The builder controls construction parameters such as offline
-    /// mode (`offline`), thread count (`max_num_threads`), sharding
-    /// overhead (`eps`), and PRNG seed (`seed`).
+    /// The builder controls construction parameters such as [offline
+    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
     ///
     /// # Examples
     ///
@@ -399,9 +397,9 @@ where
     /// * `filter_bits` is the number of hash bits per key; the
     ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
     ///
-    /// The builder controls construction parameters such as offline
-    /// mode (`offline`), thread count (`max_num_threads`), sharding
-    /// overhead (`eps`), and PRNG seed (`seed`).
+    /// The builder controls construction parameters such as [offline
+    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
     ///
     /// # Examples
     ///
