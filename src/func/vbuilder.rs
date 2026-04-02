@@ -530,51 +530,78 @@ where
     }
 }
 
-/// Handles the result of [`VBuilder::try_solve_once`], returning on
-/// success or non-retryable error and falling through on retryable
-/// [`SolveError`] variants so the caller's loop can retry with a
-/// different seed.
-macro_rules! handle_solve_result {
-    ($result:expr, $dup_count:expr, $local_dup_count:expr, $pl:expr) => {
-        match $result {
-            Ok(r) => return Ok(r),
+/// State for the retry loop used by
+/// [`VBuilder::try_populate_and_build`] and external callers that drive
+/// [`VBuilder::try_solve_once`] directly.
+///
+/// Create with [`VBuilder::retry_state`], then call
+/// [`handle_solve_result`](RetryState::handle_solve_result) after each
+/// attempt.
+pub(crate) struct RetryState {
+    prng: SmallRng,
+    dup_count: u32,
+    local_dup_count: u32,
+}
+
+impl RetryState {
+    /// Returns the next seed to try.
+    pub(crate) fn next_seed(&mut self) -> u64 {
+        self.prng.random()
+    }
+
+    /// Handles the result of a [`VBuilder::try_solve_once`] call.
+    ///
+    /// On success, returns `Ok(Some(r))`. On retryable error, logs a
+    /// warning and returns `Ok(None)` — the caller should rewind its
+    /// lenders and retry. On fatal error, returns `Err(e)`.
+    pub(crate) fn handle_solve_result<R>(
+        &mut self,
+        result: anyhow::Result<R>,
+        pl: &mut impl ProgressLog,
+    ) -> anyhow::Result<Option<R>> {
+        match result {
+            Ok(r) => Ok(Some(r)),
             Err(error) => match error.downcast::<SolveError>() {
                 Ok(vfunc_error) => match vfunc_error {
                     SolveError::DuplicateSignature => {
-                        if $dup_count >= 3 {
-                            $pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with four different seeds)"));
+                        if self.dup_count >= 3 {
+                            pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with four different seeds)"));
                             return Err(BuildError::DuplicateKey.into());
                         }
-                        $pl.warn(format_args!(
+                        pl.warn(format_args!(
                             "Duplicate 128-bit signature, trying again with a different seed..."
                         ));
-                        $dup_count += 1;
+                        self.dup_count += 1;
+                        Ok(None)
                     }
                     SolveError::DuplicateLocalSignature => {
-                        if $local_dup_count >= 2 {
-                            $pl.error(format_args!("Duplicate local signatures: use full signatures (duplicate local signatures with three different seeds)"));
+                        if self.local_dup_count >= 2 {
+                            pl.error(format_args!("Duplicate local signatures: use full signatures (duplicate local signatures with three different seeds)"));
                             return Err(BuildError::DuplicateLocalSignatures.into());
                         }
-                        $pl.warn(format_args!(
+                        pl.warn(format_args!(
                             "Duplicate local signature, trying again with a different seed..."
                         ));
-                        $local_dup_count += 1;
+                        self.local_dup_count += 1;
+                        Ok(None)
                     }
                     SolveError::MaxShardTooBig => {
-                        $pl.warn(format_args!(
+                        pl.warn(format_args!(
                             "The maximum shard is too big, trying again with a different seed..."
                         ));
+                        Ok(None)
                     }
                     SolveError::UnsolvableShard => {
-                        $pl.warn(format_args!(
+                        pl.warn(format_args!(
                             "Unsolvable shard, trying again with a different seed..."
                         ));
+                        Ok(None)
                     }
                 },
-                Err(error) => return Err(error),
+                Err(error) => Err(error),
             },
         }
-    };
+    }
 }
 
 impl<
@@ -674,6 +701,22 @@ impl<
         )
     }
 
+    /// Initializes shards and returns a [`RetryState`] for driving the
+    /// retry loop.
+    ///
+    /// This is the same initialization that
+    /// [`try_populate_and_build`](Self::try_populate_and_build) performs
+    /// at the start.
+    pub(crate) fn retry_state(&mut self, pl: &mut impl ProgressLog) -> RetryState {
+        self.init_shards_and_seed();
+        pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
+        RetryState {
+            prng: SmallRng::seed_from_u64(self.seed),
+            dup_count: 0,
+            local_dup_count: 0,
+        }
+    }
+
     /// Populates a shard store from keys and values, then calls a build
     /// closure. If the closure (or the store population) fails with a
     /// [`SolveError`], the process is retried from scratch with a new
@@ -729,19 +772,10 @@ impl<
     where
         SigVal<S, V>: RadixKey,
     {
-        if let Some(expected_num_keys) = self.expected_num_keys {
-            self.shard_edge.set_up_shards(expected_num_keys, self.eps);
-            self.log2_buckets = self.shard_edge.shard_high_bits();
-        }
-
-        let mut dup_count = 0u32;
-        let mut local_dup_count = 0u32;
-        let mut prng = SmallRng::seed_from_u64(self.seed);
-
-        pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
+        let mut rs = self.retry_state(pl);
 
         loop {
-            let seed: u64 = prng.random();
+            let seed = rs.next_seed();
 
             let result = {
                 let mut populate = |seed: u64,
@@ -764,7 +798,9 @@ impl<
                 self.try_solve_once(seed, &mut populate, build_fn, pl, &mut state)
             };
 
-            handle_solve_result!(result, dup_count, local_dup_count, pl);
+            if let Some(r) = rs.handle_solve_result(result, pl)? {
+                return Ok(r);
+            }
 
             values = values.rewind()?;
             keys = keys.rewind()?;

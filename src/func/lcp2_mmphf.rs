@@ -41,11 +41,9 @@ use xxhash_rust::xxh3;
 use {
     crate::func::VBuilder,
     crate::func::lcp_mmphf::{lcp_bits, lcp_bits_nul, log2_bucket_size},
-    crate::func::vbuilder::{BuildError, SolveError},
     anyhow::{Result, bail},
     dsi_progress_logger::ProgressLog,
     lender::*,
-    rand::{RngExt, SeedableRng, rngs::SmallRng},
     rdst::RadixKey,
     std::borrow::Borrow,
     sync_cell_slice::SyncSlice,
@@ -323,17 +321,10 @@ where
             max_lcp: 0,
         };
 
-        // We replicate the retry loop from try_populate_and_build
-        // because we need the populate closure to buffer one bucket at a
-        // time before pushing, which requires direct access to `push`.
-        let builder_seed = builder.init_shards_and_seed();
-
-        let mut dup_count = 0u32;
-        let mut local_dup_count = 0u32;
-        let mut prng = SmallRng::seed_from_u64(builder_seed);
+        let mut rs = builder.retry_state(pl);
 
         loop {
-            let seed: u64 = prng.random();
+            let seed = rs.next_seed();
 
             let result = {
                 // Buffer for the signatures in the current bucket
@@ -597,36 +588,10 @@ where
                 )
             };
 
-            match result {
-                Ok(r) => return Ok(r),
-                Err(error) => match error.downcast::<SolveError>() {
-                    Ok(vfunc_error) => match vfunc_error {
-                        SolveError::DuplicateSignature => {
-                            if dup_count >= 3 {
-                                return Err(BuildError::DuplicateKey.into());
-                            }
-                            pl.warn(format_args!("Duplicate 128-bit signature, trying again..."));
-                            dup_count += 1;
-                        }
-                        SolveError::DuplicateLocalSignature => {
-                            if local_dup_count >= 2 {
-                                return Err(BuildError::DuplicateLocalSignatures.into());
-                            }
-                            pl.warn(format_args!("Duplicate local signature, trying again..."));
-                            local_dup_count += 1;
-                        }
-                        SolveError::MaxShardTooBig => {
-                            pl.warn(format_args!("Max shard too big, trying again..."));
-                        }
-                        SolveError::UnsolvableShard => {
-                            pl.warn(format_args!("Unsolvable shard, trying again..."));
-                        }
-                    },
-                    Err(error) => return Err(error),
-                },
+            if let Some(r) = rs.handle_solve_result(result, pl)? {
+                return Ok(r);
             }
 
-            // populate closure is dropped here, releasing borrow of keys
             keys = keys.rewind()?;
         }
     }
@@ -888,17 +853,10 @@ where
             max_lcp: 0,
         };
 
-        // We replicate the retry loop from try_populate_and_build
-        // because we need the populate closure to buffer one bucket at a
-        // time before pushing, which requires direct access to `push`.
-        let builder_seed = builder.init_shards_and_seed();
-
-        let mut dup_count = 0u32;
-        let mut local_dup_count = 0u32;
-        let mut prng = SmallRng::seed_from_u64(builder_seed);
+        let mut rs = builder.retry_state(pl);
 
         loop {
-            let seed: u64 = prng.random();
+            let seed = rs.next_seed();
 
             let result = {
                 // Buffer for the signatures in the current bucket
@@ -1172,36 +1130,10 @@ where
                 )
             };
 
-            match result {
-                Ok(r) => return Ok(r),
-                Err(error) => match error.downcast::<SolveError>() {
-                    Ok(vfunc_error) => match vfunc_error {
-                        SolveError::DuplicateSignature => {
-                            if dup_count >= 3 {
-                                return Err(BuildError::DuplicateKey.into());
-                            }
-                            pl.warn(format_args!("Duplicate 128-bit signature, trying again..."));
-                            dup_count += 1;
-                        }
-                        SolveError::DuplicateLocalSignature => {
-                            if local_dup_count >= 2 {
-                                return Err(BuildError::DuplicateLocalSignatures.into());
-                            }
-                            pl.warn(format_args!("Duplicate local signature, trying again..."));
-                            local_dup_count += 1;
-                        }
-                        SolveError::MaxShardTooBig => {
-                            pl.warn(format_args!("Max shard too big, trying again..."));
-                        }
-                        SolveError::UnsolvableShard => {
-                            pl.warn(format_args!("Unsolvable shard, trying again..."));
-                        }
-                    },
-                    Err(error) => return Err(error),
-                },
+            if let Some(r) = rs.handle_solve_result(result, pl)? {
+                return Ok(r);
             }
 
-            // populate closure is dropped here, releasing borrow of keys
             keys = keys.rewind()?;
         }
     }
