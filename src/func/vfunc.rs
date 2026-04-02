@@ -154,28 +154,6 @@ impl<T: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: Sh
         self.num_keys == 0
     }
 
-    /// Returns the edge hash derived from a full signature.
-    ///
-    /// Computes `shard_edge.edge_hash(shard_edge.local_sig(sig))`.
-    /// This is useful for building signed functions outside the crate.
-    #[deprecated(note = "Use `remixed_hash_by_sig` instead")]
-    #[inline]
-    pub fn edge_hash_by_sig(&self, sig: S) -> u64 {
-        let local_sig = self.shard_edge.local_sig(sig);
-        self.shard_edge.edge_hash(local_sig)
-    }
-
-    /// Returns the remixed hash derived from a full signature.
-    ///
-    /// Computes `shard_edge.remixed_hash(sig)`, i.e.,
-    /// [`mix64`](super::mix64) applied to
-    /// [`edge_hash_by_sig`](Self::edge_hash_by_sig). This is the
-    /// canonical verification hash used by
-    /// [`VFilter`](crate::dict::VFilter) and all signed structures.
-    #[inline]
-    pub fn remixed_hash_by_sig(&self, sig: S) -> u64 {
-        self.shard_edge.remixed_hash(sig)
-    }
 }
 
 // ── Aligned ↔ Unaligned conversions ─────────────────────────────────
@@ -338,11 +316,10 @@ where
     {
         Ok(builder
             .expected_num_keys(n)
-            .try_build_func_and_store(
+            .try_build_func(
                 keys,
                 values,
                 |_bit_width, len| vec![W::ZERO; len].into(),
-                true,
                 pl,
             )?
             .0)
@@ -461,11 +438,10 @@ where
     ) -> Result<Self> {
         builder
             .expected_num_keys(n)
-            .try_build_func_and_store(
+            .try_build_func(
                 keys,
                 values,
                 |bit_width, len| BitFieldVec::<Box<[W]>>::new_unaligned(bit_width, len),
-                true,
                 pl,
             )
             .map(|res| res.0)

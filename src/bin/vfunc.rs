@@ -101,37 +101,13 @@ fn main() -> Result<()> {
 
 macro_rules! filename_save_sign(
     ($h: ty, $builder:expr, $filename: expr, $func: expr, $n: expr, $pl: expr) => {{
-        use sux::utils::ShardStore;
-        use num_primitive::PrimitiveNumber;
-        use value_traits::slices::SliceByValueMut;
-
-        let (func, mut store, _) = $builder.try_build_func_and_store(
-            DekoBufLineLender::from_path($filename)?.take($n),
-            FromCloneableIntoIterator::from(0_usize..),
-            BitFieldVec::new_unaligned,
-            false,
-            &mut $pl,
-        )?;
-
-        let num_keys = func.len();
-        let mut hashes = vec![<$h>::MIN; num_keys].into_boxed_slice();
-
-        $pl.item_name("hash");
-        $pl.expected_updates(Some(num_keys));
-        $pl.start("Storing hashes...");
-
-        for shard in store.iter() {
-            for sig_val in shard.iter() {
-                let pos = sig_val.val;
-                let hash = <$h>::as_from(func.remixed_hash_by_sig(sig_val.sig));
-                hashes.set_value(pos, hash);
-                $pl.light_update();
-            }
-        }
-
-        $pl.done();
-
-        let func = SignedFunc::from_parts(func, hashes);
+        let func =
+            <SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
+                DekoBufLineLender::from_path($filename)?.take($n),
+                $n,
+                $builder,
+                &mut $pl,
+            )?;
         if let Some(filename) = $func {
             unsafe { func.store(filename) }?;
         }
@@ -189,11 +165,10 @@ where
         }
         match args.hash_type {
             None => {
-                let (func, _, _) = builder.try_build_func_and_store(
+                let (func, _) = builder.try_build_func(
                     DekoBufLineLender::from_path(filename)?.take(n),
                     FromCloneableIntoIterator::from(0_usize..),
                     BitFieldVec::<Box<[usize]>>::new_unaligned,
-                    true,
                     &mut pl,
                 )?;
                 if let Some(filename) = args.func {
