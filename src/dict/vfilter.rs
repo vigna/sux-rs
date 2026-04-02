@@ -106,8 +106,8 @@ where
     pub fn contains_by_sig(&self, sig: S) -> bool {
         // Derive the expected hash from the signature via the canonical
         // remixed hash, and mask to hash_bits.
-        let expected = self.func.shard_edge.remixed_hash(sig).as_to::<D::Value>()
-            & self.filter_mask;
+        let expected =
+            self.func.shard_edge.remixed_hash(sig).as_to::<D::Value>() & self.filter_mask;
         // Compare against the hash stored by the VFunc.
         self.func.get_by_sig(sig) == expected
     }

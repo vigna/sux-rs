@@ -664,8 +664,7 @@ where
         for i in 0..n {
             let key = keys.next()?.unwrap();
             let k_ref: &K = <B as Borrow<K>>::borrow(key);
-            let h =
-                (shard_edge.remixed_hash(K::to_sig(k_ref, seed)) & hash_mask).as_to::<H>();
+            let h = (shard_edge.remixed_hash(K::to_sig(k_ref, seed)) & hash_mask).as_to::<H>();
             hashes.set_value(i, h);
         }
 
