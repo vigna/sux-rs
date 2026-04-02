@@ -60,9 +60,8 @@ use crate::{func::shard_edge::ShardEdge, utils::Sig};
 /// wrappers.
 ///
 /// Provides access to the seed, shard edge, and key count, so that
-/// [`SignedFunc`](crate::func::SignedFunc) and
-/// [`BitSignedFunc`](crate::func::BitSignedFunc) can verify hashes
-/// without knowing which specific MMPHF variant they wrap.
+/// [`SignedFunc`] and [`BitSignedFunc`] can verify hashes without knowing which
+/// specific MMPHF variant they wrap.
 pub trait SignableMphf {
     type Sig: Sig;
     type Edge: ShardEdge<Self::Sig, 3>;

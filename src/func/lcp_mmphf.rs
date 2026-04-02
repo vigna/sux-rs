@@ -301,9 +301,9 @@ where
     /// Creates a new LCP-based monotone minimal perfect hash function
     /// for integers using the given [`VBuilder`] configuration.
     ///
-    /// The builder controls construction parameters such as offline
-    /// mode (`offline`), thread count (`max_num_threads`), sharding
-    /// overhead (`eps`), and PRNG seed (`seed`).
+    /// The builder controls construction parameters such as [offline
+    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
     ///
     /// The keys must be provided in strictly increasing order.
     ///
@@ -855,9 +855,9 @@ where
     /// for byte-sequence keys using the given [`VBuilder`]
     /// configuration.
     ///
-    /// The builder controls construction parameters such as offline
-    /// mode (`offline`), thread count (`max_num_threads`), sharding
-    /// overhead (`eps`), and PRNG seed (`seed`).
+    /// The builder controls construction parameters such as [offline
+    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
     ///
     /// The keys must be in strictly increasing lexicographic order.
     ///

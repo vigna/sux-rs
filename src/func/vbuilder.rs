@@ -41,7 +41,7 @@ use super::shard_edge::FuseLge3Shards;
 
 const LOG2_MAX_SHARDS: u32 = 16;
 
-/// A builder for [`VFunc`] and [`VFilter`].
+/// A builder for [`VFunc`] and [`VFilter`](crate::dict::VFilter).
 ///
 /// Keys must implement the [`ToSig`] trait, which provides a method to compute
 /// a signature of the key.
@@ -64,8 +64,8 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// The generic parameters are explained in the [`VFunc`] documentation. You
 /// have to choose the type of the output values and the backend. The remaining
 /// parameters have default values that are the same as those of
-/// [`VFunc`]/[`VFilter`], and some elaboration about them can be found in their
-/// documentation.
+/// [`VFunc`]/[`VFilter`](crate::dict::VFilter), and some elaboration about them
+/// can be found in their documentation.
 ///
 /// All construction methods require to pass one or two [`FallibleRewindableLender`]s
 /// (keys and possibly values), and the construction might fail and keys might
@@ -80,8 +80,10 @@ const LOG2_MAX_SHARDS: u32 = 16;
 ///
 /// - **Building a [`VFunc`]?** Use [`VFunc::try_new`] or
 ///   [`VFunc::try_new_with_builder`].
-/// - **Building a [`VFilter`]?** Use [`VFilter::try_new`](crate::dict::VFilter::try_new)
+///
+/// - **Building a [`VFilter`](crate::dict::VFilter)?** Use [`VFilter::try_new`](crate::dict::VFilter::try_new)
 ///   or [`VFilter::try_new_with_builder`](crate::dict::VFilter::try_new_with_builder).
+///
 /// - **Building a signed function?** Use
 ///   [`SignedFunc::try_new`](crate::func::SignedFunc::try_new) or the
 ///   type-specific aliases ([`SignedLcpMmphfStr`](crate::func::SignedLcpMmphfStr), etc.).
@@ -90,10 +92,13 @@ const LOG2_MAX_SHARDS: u32 = 16;
 ///
 /// - [`try_build_func_and_store`](Self::try_build_func_and_store) — builds
 ///   a [`VFunc`] and returns the populated [`ShardStore`] for reuse.
+///
 /// - [`try_build_func_with_store`](Self::try_build_func_with_store) — builds
 ///   from an existing store (used by compound functions like [`VFunc2`]).
+///
 /// - [`try_build_filter`](Self::try_build_filter) — builds a filter-mode
 ///   [`VFunc`] from keys only.
+///
 /// - [`try_populate_and_build`](Self::try_populate_and_build) — generic
 ///   retry loop with a caller-supplied build closure.
 

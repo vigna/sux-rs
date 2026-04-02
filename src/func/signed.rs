@@ -8,6 +8,13 @@
 
 //! Signed static functions and monotone minimal perfect hash functions.
 //!
+//! A signed function stores for each key a hash. When querying a key, the
+//! function first computes the hash of the key and compares it with the stored
+//! hash for the returned index. If the hashes match, the index is returned;
+//! otherwise, `None` is returned. This allows the function to reject queries
+//! for keys outside the original set, with a false-positive probability
+//! depending on the size of the stored hashes.
+//!
 //! Two wrappers are provided:
 //!
 //! - [`SignedFunc`] stores full-width hashes (e.g., `Box<[u64]>`).
@@ -16,13 +23,12 @@
 //!   caller-chosen bit width. False-positive probability is
 //!   2<sup>-`hash_width`</sup>.
 //!
-//! Both wrappers are generic over the inner function `F` (which must
-//! implement [`SignableMphf`](crate::dict::SignableMphf)) and the hash
-//! storage `H`. Per-inner-type `get` methods are provided via
-//! monomorphized `impl` blocks.
+//! Both wrappers are generic over the inner function `F` (which must implement
+//! [`SignableMphf`]) and the hash storage `H`. Per-inner-type `get` methods are
+//! provided via monomorphized `impl` blocks.
 //!
 //! See [`SignedLcpMmphfInt`], [`SignedLcpMmphfStr`],
-//! [`BitSignedLcpMmphfInt`], [`BitSignedLcpMmphfStr`], etc. for
+//! [`BitSignedLcpMmphfInt`], [`BitSignedLcpMmphfStr`], etc., for
 //! convenience type aliases.
 
 use std::borrow::Borrow;
@@ -786,9 +792,13 @@ where
     /// * `keys` must be rewindable (they may be rewound on retry).
     /// * `n` is the expected number of keys.
     ///
-    /// The builder controls construction parameters such as offline
-    /// mode (`offline`), thread count (`max_num_threads`), sharding
-    /// overhead (`eps`), and PRNG seed (`seed`).
+    /// The builder controls construction parameters such as [offline
+    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+    ///
+    /// The builder controls construction parameters such as [offline
+    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
     ///
     /// # Examples
     ///
@@ -940,9 +950,9 @@ where
     /// * `hash_width` is the number of hash bits per key (at most
     ///   `H::BITS`).
     ///
-    /// The builder controls construction parameters such as offline
-    /// mode (`offline`), thread count (`max_num_threads`), sharding
-    /// overhead (`eps`), and PRNG seed (`seed`).
+    /// The builder controls construction parameters such as [offline
+    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
     ///
     /// # Examples
     ///

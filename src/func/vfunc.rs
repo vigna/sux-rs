@@ -290,9 +290,9 @@ where
     ///   order) and rewindable (they may be rewound on retry).
     /// * `n` is the expected number of keys.
     ///
-    /// The builder controls construction parameters such as offline
-    /// mode (`offline`), thread count (`max_num_threads`), sharding
-    /// overhead (`eps`), and PRNG seed (`seed`).
+    /// The builder controls construction parameters such as [offline
+    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
     ///
     /// # Examples
     ///
@@ -417,9 +417,9 @@ where
     ///   order) and rewindable (they may be rewound on retry).
     /// * `n` is the expected number of keys.
     ///
-    /// The builder controls construction parameters such as offline
-    /// mode (`offline`), thread count (`max_num_threads`), sharding
-    /// overhead (`eps`), and PRNG seed (`seed`).
+    /// The builder controls construction parameters such as [offline
+    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
     ///
     /// # Examples
     ///

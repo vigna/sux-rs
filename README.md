@@ -23,8 +23,8 @@ from [the DSI Utilities] and new structures.
   prefix omission].
 - new state-of-the-art structures for [static functions] and [static filters],
   scaling to trillions of keys, and providing very fast queries;
-- support for [signed index functions];
 - [monotone minimal perfect hash functions] based on longest common prefixes;
+- support for [signed minimal perfect hash functions];
 - [partial arrays], that is, “arrays with holes”, implemented using ranking or
   Elias–Fano;
 - [lists] (e.g., [compressed lists of integers]).
@@ -212,7 +212,7 @@ Union nor the Italian MUR can be held responsible for them.
 [serde]: https://crates.io/crates/serde/
 [`deko`]: https://crates.io/crates/deko/
 [`lenders`]: https://docs.rs/sux/latest/sux/utils/lenders/
-[signed index functions]: https://docs.rs/sux/latest/sux/dict/signed_vfunc/struct.SignedVFunc.html
+[signed minimal perfect hash functions]: https://docs.rs/sux/latest/sux/dict/signed_vfunc/struct.SignedVFunc.html
 [lists]: https://docs.rs/sux/latest/sux/list/index.html
 [compressed lists of integers]: https://docs.rs/sux/latest/sux/list/comp_int_list/struct.CompIntList.html
 [`AsRef<W>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
