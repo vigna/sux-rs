@@ -209,7 +209,10 @@ where
     /// default [`VBuilder`] settings.
     ///
     /// The number of hash bits per key equals `W::BITS`, giving a
-    /// false-positive rate of 2<sup>−`W::BITS`</sup>.
+    /// false-positive rate of 2<sup>−`W::BITS`</sup>. To use fewer
+    /// bits per key (trading space for a higher false-positive rate),
+    /// use the [`BitFieldVec`] variant with an explicit `filter_bits`
+    /// parameter.
     ///
     /// * `keys` must be rewindable (they may be rewound on retry).
     /// * `n` is the expected number of keys; a significantly wrong
@@ -447,7 +450,9 @@ where
             keys,
             filter_bits,
             BitFieldVec::new_unaligned,
-            &|shard_edge, sig_val| W::as_from(mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask,
+            &|shard_edge, sig_val| {
+                W::as_from(mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
+            },
             pl,
         )?;
 

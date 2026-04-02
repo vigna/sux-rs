@@ -11,11 +11,16 @@ use anyhow::Result;
 use dsi_progress_logger::*;
 use sux::{
     bits::BitFieldVec,
-    dict::{BitSignedVFunc, SignedVFunc},
-    func::{VFunc, shard_edge::FuseLge3Shards},
+    func::{BitSignedFunc, SignedFunc, VFunc, shard_edge::FuseLge3Shards},
     traits::TryIntoUnaligned,
     utils::FromCloneableIntoIterator,
 };
+
+type MySignedVFunc =
+    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>, Box<[usize]>>;
+
+type MyBitSignedVFunc =
+    BitSignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;
 
 #[test]
 fn test_signed_vfunc() -> Result<()> {
@@ -26,10 +31,8 @@ fn test_signed_vfunc() -> Result<()> {
 
     let mut pl = ProgressLogger::default();
     let n = 1000;
-    let func: SignedVFunc<
-        VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>,
-        Box<[usize]>,
-    > = SignedVFunc::try_new(FromCloneableIntoIterator::from(0..n), n, &mut pl)?;
+    let func: MySignedVFunc =
+        MySignedVFunc::try_new(FromCloneableIntoIterator::from(0..n), n, &mut pl)?;
     let func = func.try_into_unaligned()?;
     for i in 0..n {
         assert_eq!(Some(i), func.get(i));
@@ -56,8 +59,8 @@ fn test_bit_signed_vfunc() -> Result<()> {
 
     let mut pl = ProgressLogger::default();
     let n = 1000;
-    let func: BitSignedVFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>> =
-        BitSignedVFunc::try_new(FromCloneableIntoIterator::from(0..n), n, hash_bits, &mut pl)?;
+    let func: MyBitSignedVFunc =
+        MyBitSignedVFunc::try_new(FromCloneableIntoIterator::from(0..n), n, hash_bits, &mut pl)?;
     let func = func.try_into_unaligned()?;
     for i in 0..n {
         assert_eq!(Some(i), func.get(i));

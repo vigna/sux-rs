@@ -16,10 +16,16 @@
 //!   immutable lists of strings or byte sequences with random access.
 //! - [`MappedRearCodedListStr`] / [`MappedRearCodedListSliceU8`]: Rear-coded
 //!   lists with element reordering for better compression.
-//! - [`SignedVFunc`] / [`BitSignedVFunc`]:
+//! - [`SignedFunc`] / [`BitSignedFunc`]:
 //!   Index functions verified by hash signatures, returning `None` on mismatch.
+//!   These are re-exported from [`func::signed`](crate::func::signed); see
+//!   also the type aliases [`SignedLcpMmphfInt`](crate::func::SignedLcpMmphfInt),
+//!   [`SignedLcpMmphfStr`](crate::func::SignedLcpMmphfStr), etc.
 //! - [`VFilter`]: Static filters (approximate membership structures) based on
-//!   hash comparison.
+//!   hash comparison. Use the `Box<[W]>` backend for full-width hashes, or the
+//!   `BitFieldVec` backend with an explicit `filter_bits` parameter for
+//!   space/false-positive tradeoffs. See the [choosing a type](crate::func#choosing-a-type)
+//!   guide.
 //! - [`SliceSeq`]: Adapters exposing slice references as indexed sequences.
 //!
 //! These structures implement traits from the
@@ -43,8 +49,7 @@ pub use mapped_rear_coded_list::{MappedRearCodedListSliceU8, MappedRearCodedList
 mod slice_seq;
 pub use slice_seq::SliceSeq;
 
-pub mod signed_vfunc;
-pub use signed_vfunc::{BitSignedVFunc, SignedVFunc};
+pub use crate::func::signed::{BitSignedFunc, SignedFunc};
 
 pub mod vfilter;
 pub use vfilter::VFilter;
@@ -55,10 +60,8 @@ use crate::{func::shard_edge::ShardEdge, utils::Sig};
 /// wrappers.
 ///
 /// Provides access to the seed, shard edge, and key count, so that
-/// [`SignedVFunc`](crate::dict::SignedVFunc),
-/// [`BitSignedVFunc`](crate::dict::BitSignedVFunc),
-/// [`SignedLcpMmphf`](crate::dict::SignedLcpMmphf) and
-/// [`BitSignedLcpMmphf`](crate::dict::BitSignedLcpMmphf) can verify hashes
+/// [`SignedFunc`](crate::func::SignedFunc) and
+/// [`BitSignedFunc`](crate::func::BitSignedFunc) can verify hashes
 /// without knowing which specific MMPHF variant they wrap.
 pub trait SignableMphf {
     type Sig: Sig;

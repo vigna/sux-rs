@@ -153,8 +153,13 @@ impl<S: Sig + PartialEq, V: BinSafe> PartialEq for SigVal<S, V> {
     repr(C),
     epserde(zero_copy)
 )]
-/// A newtype around `()` that is used to implement [`BitXor`] and
-/// [`BitXorAssign`] as no-ops.
+/// Zero-sized placeholder value type for filter-mode construction.
+///
+/// Used internally by [`VFilter`](crate::dict::VFilter) and
+/// [`VBuilder::try_build_filter`](crate::func::VBuilder::try_build_filter)
+/// when building structures that map keys to hash-derived values rather
+/// than caller-supplied values. All arithmetic operations ([`BitXor`],
+/// [`BitXorAssign`]) are no-ops.
 pub struct EmptyVal(());
 
 impl BitXor for EmptyVal {

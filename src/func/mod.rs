@@ -29,9 +29,34 @@
 //!   [`LcpMmphfInt`]/[`LcpMmphf`] that use a [`VFunc2`] to reduce space usage, at
 //!   the cost of slightly slower queries.
 //!
+//! - [`SignedFunc`]/[`BitSignedFunc`] wrap any of the above with per-key
+//!   verification hashes, returning `None` for keys outside the original set.
+//!   See also the convenience aliases [`SignedLcpMmphfInt`],
+//!   [`SignedLcpMmphfStr`], etc.
+//!
 //! Most structures implement the
 //! [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing them
 //! to be converted into (usually faster) structures using unaligned access.
+//!
+//! # Choosing a type
+//!
+//! | Need | Type | Space overhead |
+//! |------|------|----------------|
+//! | Map keys → arbitrary values | [`VFunc`] | ~2.3 bits/key + value bits |
+//! | Same, skewed value distribution | [`VFunc2`] | less for skewed |
+//! | Map sorted keys → rank (monotone) | [`LcpMmphfInt`] / [`LcpMmphf`] | ~1.8 bits/key |
+//! | Same, less space, slower queries | [`Lcp2MmphfInt`] / [`Lcp2Mmphf`] | ~1.4 bits/key |
+//! | Approximate membership (Bloom-like) | [`VFilter`](crate::dict::VFilter) | ~1.13 × filter_bits per key |
+//! | Any of the above + reject unknown keys | [`SignedFunc`] / [`BitSignedFunc`] | inner cost + hash bits |
+//!
+//! All constructors follow the pattern `try_new(keys, …, pl)` for default
+//! settings, and `try_new_with_builder(keys, …, builder, pl)` to configure
+//! the [`VBuilder`] (offline mode, thread count, sharding overhead, seed).
+//!
+//! [`SignedFunc`] and [`BitSignedFunc`] wrap any inner function. Use
+//! [`BitSignedFunc`] when you want sub-word-width hashes (e.g., 8-bit for
+//! ~0.4% false positives); use [`SignedFunc`] for full-width hashes
+//! (faster comparison).
 
 mod vfunc;
 pub use vfunc::*;
@@ -50,8 +75,8 @@ pub use lcp_mmphf::*;
 pub mod lcp2_mmphf;
 pub use lcp2_mmphf::*;
 
-pub mod signed_lcp_mmphf;
-pub use signed_lcp_mmphf::*;
+pub mod signed;
+pub use signed::*;
 
 pub mod shard_edge;
 

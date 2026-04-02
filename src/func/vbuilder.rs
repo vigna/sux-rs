@@ -74,26 +74,28 @@ const LOG2_MAX_SHARDS: u32 = 16;
 /// The type of the keys of the resulting filter or function will be the type of
 /// the elements of the [`FallibleRewindableLender`].
 ///
-/// # Signed index functions
+/// # Which method to use
 ///
-/// The methods [`try_build_sig_index`](VBuilder::try_build_sig_index) and
-/// [`try_build_bit_sig_index`](VBuilder::try_build_bit_sig_index) build index
-/// functions (i.e., functions mapping elements of a list to their rank) and
-/// they associate hashes to keys, so the result of the index function can be
-/// checked. See the documentation of the
-/// [`signed_vfunc`](crate::dict::signed_vfunc) module for more details.
+/// Most users should not call `VBuilder` methods directly. Instead:
 ///
-/// # Building from stores
+/// - **Building a [`VFunc`]?** Use [`VFunc::try_new`] or
+///   [`VFunc::try_new_with_builder`].
+/// - **Building a [`VFilter`]?** Use [`VFilter::try_new`](crate::dict::VFilter::try_new)
+///   or [`VFilter::try_new_with_builder`](crate::dict::VFilter::try_new_with_builder).
+/// - **Building a signed function?** Use
+///   [`SignedFunc::try_new`](crate::func::SignedFunc::try_new) or the
+///   type-specific aliases ([`SignedLcpMmphfStr`](crate::func::SignedLcpMmphfStr), etc.).
 ///
-/// The low-level method
-/// [`try_build_func_with_store`](VBuilder::try_build_func_with_store)
-/// builds a function from a [`ShardStore`] containing signatures and
-/// values. The store is expected to be already populated; the method
-/// recalculates sharding for the actual key count. It can be combined
-/// with [`FilteredShardStore`] to build from a filtered subset. This
-/// is used when building compound functions such as [`VFunc2`].
+/// The low-level methods below are for advanced use cases:
 ///
-/// See [`VFunc::try_new`], [`VFilter::try_new`], etc. for usage examples.
+/// - [`try_build_func_and_store`](Self::try_build_func_and_store) — builds
+///   a [`VFunc`] and returns the populated [`ShardStore`] for reuse.
+/// - [`try_build_func_with_store`](Self::try_build_func_with_store) — builds
+///   from an existing store (used by compound functions like [`VFunc2`]).
+/// - [`try_build_filter`](Self::try_build_filter) — builds a filter-mode
+///   [`VFunc`] from keys only.
+/// - [`try_populate_and_build`](Self::try_populate_and_build) — generic
+///   retry loop with a caller-supplied build closure.
 
 #[derive(Setters, Debug, Derivative)]
 #[derivative(Default)]
@@ -476,7 +478,13 @@ where
         for<'a> <ShardDataIter<'a, BitFieldVec<Box<[W]>>> as Iterator>::Item: Send,
     {
         self.try_build_func_with_store_and_inspect(
-            seed, shard_edge, max_value, shard_store, get_val, &|_| {}, pl,
+            seed,
+            shard_edge,
+            max_value,
+            shard_store,
+            get_val,
+            &|_| {},
+            pl,
         )
     }
 
@@ -744,24 +752,31 @@ impl<
             let seed = rs.next_seed();
 
             let result = {
-                let mut populate = |seed: u64,
-                                    push: &mut dyn FnMut(SigVal<S, EmptyVal>) -> anyhow::Result<()>,
-                                    pl: &mut P,
-                                    _state: &mut ()| {
-                    while let Some(key) = keys.next()? {
-                        pl.light_update();
-                        push(SigVal {
-                            sig: T::to_sig(key.borrow(), seed),
-                            val: EmptyVal::default(),
-                        })?;
-                    }
-                    Ok(EmptyVal::default())
-                };
+                let mut populate =
+                    |seed: u64,
+                     push: &mut dyn FnMut(SigVal<S, EmptyVal>) -> anyhow::Result<()>,
+                     pl: &mut P,
+                     _state: &mut ()| {
+                        while let Some(key) = keys.next()? {
+                            pl.light_update();
+                            push(SigVal {
+                                sig: T::to_sig(key.borrow(), seed),
+                                val: EmptyVal::default(),
+                            })?;
+                        }
+                        Ok(EmptyVal::default())
+                    };
 
                 self.try_solve_once(
                     seed,
                     &mut populate,
-                    &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
+                    &mut |builder,
+                          seed,
+                          mut store,
+                          _max_value,
+                          _num_keys,
+                          pl: &mut P,
+                          _state: &mut ()| {
                         builder.bit_width = bit_width;
 
                         let data = new_data(
